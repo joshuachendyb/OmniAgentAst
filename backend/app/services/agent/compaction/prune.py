@@ -63,7 +63,7 @@ from app.services.agent.compaction_constants import (
     VALUE_WEIGHT_TOOL_CALL_DECISION,
 )
 from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
-from app.services.agent.token_estimate import estimate_tokens  # 2026-10-30 小欧: chars→token 唯一实现(原私有 _released_tokens, DRY)
+from app.services.agent.agent_utils import estimate_tokens  # 2026-10-30 小欧: chars→token 唯一实现(原私有 _released_tokens, DRY); 2026-10-31 迁 agent_utils
 from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
 
 logger = logging.getLogger(__name__)

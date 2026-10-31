@@ -34,6 +34,9 @@
 # 2026-10-30 - 小欧 - _format_read_result 补 truncated_by_tool 入参(#2 raw str handler 透传 data["truncated"]):
 #   工具层截断(READ_OUTLIMIT_CHARS / 5MiB 读入闸门)此前只在正文尾部留标记, 截断后剩余行数 < OBS_READ_MAX_ROWS 时
 #   页脚仍打 "✓ 无截断-完整", 与正文标记矛盾(内容看起来完整) —— 页脚判定纳入工具层截断。
+# 2026-10-31 - 小欧 - 三堂会审同源收口: 删除本模块 _safe_llm_sub(与 toolhelper.tool_utils 各写一份
+#   类型防御, DRY 违反), 8 处调用改调 app.utils.type_utils.safe_sub_dict(单一真源); 判断语义完全一致
+#   (非 dict 顶层/子值一律归一为空 dict), 零行为变更。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -101,6 +104,7 @@ from typing import Any, Dict, Optional
 
 from app.logger import logger
 from app.utils.text_utils import truncate_text  # 2026-08-18 小健 三堂会审: target展示截断收敛到公共函数(消除120/200手写分歧)
+from app.utils.type_utils import safe_sub_dict  # 2026-10-31 小欧 三堂会审: status/action 防御取值收口公用函数(与 toolhelper 同源)
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
@@ -144,17 +148,6 @@ from app.tools.tool_constants import (
 _METRICS_RENDERED_BY_HANDLER = frozenset({"page_count"})
 
 
-def _safe_llm_sub(llm_data, key: str) -> dict:
-    """2026-08-18 小健 三堂会审 修复(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
-    防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。
-    2026-08-18 小欧 补全: 顶层 llm_data 本身非 dict(工具实现不规范) 时同样防御——原 (llm_data or {})
-    仅防 None/空值, str 等真值类型仍触发 .get 崩溃, 现统一 isinstance 前置判定。"""
-    if not isinstance(llm_data, dict):
-        return {}
-    _v = llm_data.get(key)
-    return _v if isinstance(_v, dict) else {}
-
-
 # 处理对象候选键(通用优先级)
 _TARGET_KEYS_FALLBACK = ("path", "source", "url", "sql", "query", "command")
 # 按工具名覆盖优先级(键名小写); 未列的走 FALLBACK
@@ -177,7 +170,7 @@ def _tool_target(llm_data) -> str:
     2026-08-18 小健 三堂会审: 统一取值口径(收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处重复读取, DRY);
       防御 action/params 为非 dict。返回未截断原始串, 截断由调用方按需处理。
     """
-    _action = _safe_llm_sub(llm_data, "action")
+    _action = safe_sub_dict(llm_data, "action")
     if not isinstance(_action, dict):
         return ""
     _params = _action.get("params")
@@ -194,7 +187,7 @@ def _tool_target(llm_data) -> str:
 def _truncation_msg(llm_data: dict = None) -> str:
     """工具类型感知的截断消息 — 小沈 2026-07-08"""
     if llm_data:
-        tool = _safe_llm_sub(llm_data, "action").get("tool", "")
+        tool = safe_sub_dict(llm_data, "action").get("tool", "")
         if tool in ("read", "edit"):
             return "\n... (截断，完整内容见文件)"
     return "\n... (截断)"
@@ -271,7 +264,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
 
         # ── #2 raw str — read / #2-fetchpage — fetchpage ──
         if "content" in data and isinstance(data["content"], str):
-            _tool = _safe_llm_sub(llm_data, "action").get("tool", "")
+            _tool = safe_sub_dict(llm_data, "action").get("tool", "")
             if _tool == "fetchpage":
                 return _format_fetchpage_result(data["content"], llm_data)
             if _tool == "read":
@@ -294,7 +287,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_items(data["items"])
 
         # ── #25 read_xlsx — 1 tool: read_xlsx（含CSV, 单sheet headers+rows 专属行×列 + 两态） ──
-        _act_tool = _safe_llm_sub(llm_data, "action").get("tool", "") if llm_data else ""
+        _act_tool = safe_sub_dict(llm_data, "action").get("tool", "") if llm_data else ""
         if _act_tool == "read_xlsx" and "headers" in data and "rows" in data:
             return _format_xlsx_result(data, llm_data)
 
@@ -411,7 +404,7 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
     按 tool 路由到自然单位 handler: read_pdf→页感知 / read_docx→段落窗口 / clipboard→文本行窗口
     — 小欧 2026-07-20"""
     content = data.get("text", "")
-    tool = _safe_llm_sub(llm_data, "action").get("tool", "")
+    tool = safe_sub_dict(llm_data, "action").get("tool", "")
     if tool == "read_pdf":
         return _format_pdf_result(content, data, llm_data)
     if tool == "read_docx":
@@ -672,11 +665,11 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 def _format_llm_data(llm_data: Dict) -> str:
     """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts
     2026-08-18 小健 三堂会审 修复: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
-    2026-08-18 小欧 补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 _safe_llm_sub 同源防御)"""
+    2026-08-18 小欧 补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 type_utils.safe_sub_dict 同源防御)"""
     if not isinstance(llm_data, dict):
         llm_data = {}
-    status = _safe_llm_sub(llm_data, "status")
-    action = _safe_llm_sub(llm_data, "action")
+    status = safe_sub_dict(llm_data, "status")
+    action = safe_sub_dict(llm_data, "action")
     summary = llm_data.get("summary", "")
     exec_code = status.get("exec_code", "success")
     message = status.get("message", "")
@@ -779,7 +772,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     — 小欧 2026-07-06 18:39:02
     """
     # 2026-08-18 小欧 补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
-    #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 _safe_llm_sub 同源防御)
+    #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 type_utils.safe_sub_dict 同源防御)
     if not isinstance(llm_data, dict):
         llm_data = {}
     text = _format_llm_data(llm_data)

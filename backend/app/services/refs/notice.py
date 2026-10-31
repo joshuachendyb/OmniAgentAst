@@ -33,7 +33,7 @@
 from typing import Any, Dict, List, Optional
 
 from app.logger import logger, log_and_print
-from app.services.agent.token_estimate import estimate_tokens
+from app.services.agent.agent_utils import estimate_tokens   # 2026-10-31 小欧: 自 token_estimate 迁入 agent_utils
 from app.utils.sse_formatter import format_sse_event
 
 # 日志体量上限(引用正文永不落日志, 只留可追溯的路径/行区间/计数) — 小欧-2026-10-30

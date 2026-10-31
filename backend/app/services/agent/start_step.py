@@ -100,6 +100,15 @@
 # 2026-10-31 小欧 - 术语订正(北京老陈令): 0.5 是「限制系数」(limit ratio, 压缩摘要专用, 固定值), 不是「调节系数」;
 #   调节系数是 tuning.trim.trigger_ratio(0.9), 只服务 loop 裁剪触发阈值。本模块 _threshold=ctx×限制系数 的语义为
 #   「压缩摘要 limit」, 不是门槛, 也不是 loop 的触发阈值。仅订正注释, 零逻辑变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - DRY 收敛(北京老陈令): _maybe_compact_injected_history 与 _assemble_anchor_delta 两处
+#   重复的 int(ctx × start_limit_ratio) 算式抽为模块级 start_compress_summary_threshold(ctx), 唯一真源;
+#   两处调用改为该函数, 同时删掉两处各自的 START_LIMIT_RATIO 局部导入(已由函数内单点持有)。零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 公用函数收口(北京老陈令): start_compress_summary_threshold 迁 app/services/agent/agent_utils.py
+#   (agent 层公用函数统一入口, 同批并入原 token_estimate.estimate_tokens 并删除该文件); 本模块改顶部 import,
+#   两处调用不变, 零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 函数改名(北京老陈令): start_compress_summary_threshold → compress_summary_threshold,
+#   去掉 start 前缀(该口径=窗口×限制系数, 非 start 阶段专用, 其他调用方同样可用); 本模块 import 与两处调用、
+#   文档引用同步改名, 零行为变更。— 小欧-2026-10-31
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -122,6 +131,7 @@ from typing import Any, Dict, List, Optional
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
 from app.logger import logger, log_and_print
 from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
+from app.services.agent.agent_utils import compress_summary_threshold  # 小欧-2026-10-31: 压缩摘要阈值唯一真源迁 agent_utils(agent 层公用函数收口)
 
 # 2026-10-26 小欧 - _start_summary 来源前缀: 让前端/日志一眼区分摘要来源
 #   往次摘要=复用锚点；本次摘要=本轮新压
@@ -339,7 +349,6 @@ def _maybe_compact_injected_history(agent) -> None:
     agent._needs_compact = False
     from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
         START_COMPACTION_ENABLED,
-        START_LIMIT_RATIO,
     )
     _start_enabled = bool(get_config().get('tuning.compaction.start_enabled', START_COMPACTION_ENABLED))  # 小欧 2026-09-23 compaction配置化
     if not _start_enabled:
@@ -354,15 +363,14 @@ def _maybe_compact_injected_history(agent) -> None:
     # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
     # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
     _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-    # 2026-10-31 小欧 术语订正(北京老陈令): _start_ratio 是「限制系数」(limit ratio, 压缩摘要专用, 固定 0.5),
+    # 2026-10-31 小欧 术语订正(北京老陈令): 阈值函数内取的是「限制系数」(limit ratio, 压缩摘要专用, 固定 0.5),
     #   不是「调节系数」(调节系数=tuning.trim.trigger_ratio=0.9, 只服务 loop 裁剪)。
-    #   下面乘积的语义是「压缩摘要 limit」, 不是门槛, 也不是 loop 触发阈值。
-    _start_ratio = float(get_config().get('tuning.compaction.start_limit_ratio', START_LIMIT_RATIO))  # 限制系数(缺省 0.5; 配置读取仅测试可覆盖)
-    _threshold = int(_ctx * _start_ratio)   # 压缩摘要 limit
+    #   返回值的语义是「压缩摘要 limit」, 不是门槛, 也不是 loop 触发阈值。
+    _threshold = compress_summary_threshold(_ctx)   # 压缩摘要 limit(算式唯一真源=该函数)
     rough = MessageBuilder._estimate_tokens(history)
     if rough > _threshold:
         agent._needs_compact = True
-        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_start_ratio}), 置 _needs_compact")
+        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_threshold / _ctx:.4g}), 置 _needs_compact")
 
 
 async def _emit_summarizing(agent, scope: str, count: int) -> None:
@@ -416,6 +424,9 @@ async def _compact_injected_history(agent) -> str:
                 find_tail_start, preserve_recent_budget,
             )
             _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
+            # 2026-10-31 小欧 口径说明(北京老陈令: 保持原样, 补注释): 此处只扣输出缓冲, 不扣 tools 预留,
+            #   与 loop 裁剪的 trim_budget_base 是两个口径 —— 摘要前降本的保尾预算吃 preserve_recent_budget
+            #   的 [2000, 8000] 夹取, tools 预留对结果无影响(ctx≥82000 两口径同值), 故不并入, 避免语义混用。
             _tail_budget = preserve_recent_budget(max(1, _ctx - COMPACTION_BUFFER))
             _tail_start = find_tail_start(_hist_for_summary, _tail_budget)
             _hist_for_summary, _released = prune_tool_output_keeping_tail(
@@ -489,7 +500,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
       即"摘要顶掉已压缩的老历史, 原文只保留新增部分", 每段原文至多被压一次, 保真度不低于全量重压。
       2026-10-29 北京老陈令: 本轮产出新摘要时注入件=最后任务usermessage + 新摘要 + delta 段尾部 N 轮
       (delta 整体不注入); 复用/失败回退仍为 [摘要] + delta。
-    关联逻辑: 压缩摘要 limit 与老路同尺(START_LIMIT_RATIO × ctx, 北京老陈 2026-10-14 纠正: 不用
+    关联逻辑: 压缩摘要 limit 与老路同尺(compress_summary_threshold(ctx), 北京老陈 2026-10-14 纠正: 不用
       COMPACTION_BUFFER —— 它是"输出预留缓冲", 语义不符); 增量压缩复用 generate_chunked_summary;
       失败(取消/异常/校验拒收)回退"旧锚点摘要 + 全量 delta", 比老路的全量历史更省, 链不断。 — 小欧-2026-10-14
     """
@@ -523,11 +534,10 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
                            "复用锚点摘要(无增量)")
         return True
     try:
-        from app.services.agent.compaction_constants import START_LIMIT_RATIO
         from app.services.agent.message_builder import MessageBuilder
         from app.services.task.task_runtime import check_cancelled
         _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-        _threshold = int(_ctx * float(get_config().get('tuning.compaction.start_limit_ratio', START_LIMIT_RATIO)))
+        _threshold = compress_summary_threshold(_ctx)   # 压缩摘要 limit(与超窗判定同源, DRY)
         _delta_tokens = MessageBuilder._estimate_tokens(delta_msgs)
     except Exception as e:
         logger.warning(f"[start_step] 增量路径阈值估算失败, 按超窗处理: {type(e).__name__}: {e!r}")

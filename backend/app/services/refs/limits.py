@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-10-29 小欧 新建: 输入框引用阈值单一真源(从 DTO/resolver/budget/前端散落收口) — 小欧-2026-10-29
 # 2026-10-30 小欧 三堂会审 A16: 配置比例钳制到 (0,1], 越界回落默认值(0/负数=全拒, >1=全放, 皆破坏预算) — 小欧-2026-10-30
+# 2026-10-31 小欧 预算基准收口: budget_base_of 改调 agent_utils.trim_budget_base, 与 message_builder
+#   裁剪预算同一真源(原两处各写一份 window-buffer-tools 减法) — 小欧-2026-10-31
 """services.refs.limits — 引用预算阈值的唯一真源
 
 职责(单一职责): 由「本次生效模型的 context_limit」派生出引用链路需要的全部阈值:
@@ -14,9 +16,8 @@ from dataclasses import dataclass
 
 from app.config import get_config
 from app.logger import logger
-from app.services.agent.compaction_constants import (
-    CHARS_PER_TOKEN, COMPACTION_BUFFER, TOOLS_TOKEN_RESERVE,
-)
+from app.services.agent.agent_utils import trim_budget_base  # 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源)
+from app.services.agent.compaction_constants import CHARS_PER_TOKEN
 
 # 引用条数上限: 前端入队即拦、后端 DTO 再拦(双保险, 防止任意条引用直入 prompt)
 MAX_REFS = 20
@@ -35,12 +36,14 @@ class RefLimits:
 
 
 def budget_base_of(context_limit: int) -> int:
-    """预算基准: 窗口 - 输出缓冲 - tools预留。与 trim_history 同源口径(message_builder.py:531)。
+    """预算基准: 窗口 - 输出缓冲 - tools预留。与 trim_history 同源口径。
 
     2026-10-29 小欧 - 运行时化: context_limit 由 agent_runner.py:627 用 llm_service.context_limit
     覆盖 MAX_CONTEXT_TOKENS, 故本函数必须接收运行时值, 禁写死 262144/212144。
+    2026-10-31 小欧 - 算式收口: 直调 agent_utils.trim_budget_base(与 message_builder._trim_signal
+    同一真源), 引用域与裁剪域的预算口径不再各写一份 — 小欧-2026-10-31
     """
-    return int(context_limit) - COMPACTION_BUFFER - TOOLS_TOKEN_RESERVE
+    return trim_budget_base(context_limit)
 
 
 def _ratio_of(cfg: dict, key: str, default: float) -> float:

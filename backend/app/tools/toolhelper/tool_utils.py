@@ -3,6 +3,8 @@
 # 2026-10-26 小沈: 新建。从 fetch_webpage._save_to_file 抽取 save_text_to_file,
 #   调 write 工具走完整安全链路(路径校验/文件类型/内容安全/编码/语法/mtime/仲裁/操作记录),
 #   基准 project_root, 供网络工具等"调 write 落盘"场景复用(复用优先, 禁止重复实现)。
+# 2026-10-31 小欧: 同源修复 —— llm_data→status/action→params 逐层取值改走 app.utils.type_utils.safe_sub_dict
+#   (原 `.get(k, {}).get(...)` 只防缺键, 值为 None/str 时 AttributeError; 与 observation_formatter 同名同源缺陷)。
 """
 toolhelper/tool_utils.py — 工具通用辅助函数(跨工具复用的非业务逻辑辅助)
 
@@ -11,6 +13,7 @@ Author: 小沈 2026-10-26
 from typing import Tuple
 
 from app.utils.path_utils import absolutize_path, has_path_traversal
+from app.utils.type_utils import safe_sub_dict  # 2026-10-31 小欧: 嵌套取值防御收口公用函数(与 observation_formatter 同源)
 
 __all__ = [
     "save_text_to_file",
@@ -55,10 +58,13 @@ async def save_text_to_file(path: str, content: str) -> Tuple[str, str]:
     if _wr is None:
         return "落盘失败:write工具返回None", ""
 
-    _wl = _wr.get("llm_data", {})
-    _status = _wl.get("status", {})
+    _wl = safe_sub_dict(_wr, "llm_data")        # _wr/llm_data 任一非 dict 一律归一为空 dict
+    _status = safe_sub_dict(_wl, "status")
     _code = _status.get("exec_code", "error")
     if _code in ("success", "warning"):
-        _saved = _wl.get("action", {}).get("params", {}).get("path", _abs_path)
+        # 三层下钻(action→params→path): 每层都可能是 None/str, 故逐层走 safe_sub_dict;
+        # 原 `.get(k, {}).get(...)` 只防缺键, 值为 None/str 时 AttributeError — 小欧 2026-10-31
+        _params = safe_sub_dict(safe_sub_dict(_wl, "action"), "params")
+        _saved = _params.get("path", _abs_path)
         return f"已保存至{_saved}({len(content)}字符)", str(_saved)
     return f"落盘失败:{_status.get('detail', '写入失败')}", ""

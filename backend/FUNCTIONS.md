@@ -118,6 +118,8 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `to_int_or` | 配置值转 int；None/非数字回落默认值，**0 视为合法值不吞** | value, default | int |
+| `to_dict_or` | 任意值归一为 dict；dict 原样，None/str/list 等一律空 dict（`(v or {})` 防不住真值 str） | value | dict |
+| `safe_sub_dict` | 嵌套安全取子字典：`safe_sub_dict(safe_sub_dict(llm_data,"action"),"params")`；逐层非 dict 归一为空，取代 `.get(k,{}).get(...)` | data, key | dict |
 
 ### 1.9 ID生成（id_utils.py）
 
@@ -283,7 +285,11 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `fc_atomic_units` | 把 assistant(tool_calls) 与其 tool 结果编成 FC 原子单元（整组取舍，永不拆散）。**唯一真源**：`fc_message_types.fc_atomic_units`（2026-10-20 小欧 由 compaction/prune 私有实现迁至协议层——prune 顶层 import message_builder，反向导入必成环；迁中立层后 message_builder 裁剪与 prune 价值保留共用一份）。调用方须按组整体取舍、组内升序展开，保证 assistant 恒在 tool 之前 | messages: List[Dict] | List[List[int]] |
 | `_msg_cost` | 单条消息的预算占用 token，复用 `MessageBuilder._estimate_tokens` 同一真源（原 `len(content)/CHARS_PER_TOKEN` 自算漏算 tool_calls 结构开销，实测决策消息 0 vs 41，致 budget 约束不准） | msg: Dict | int |
 | `_valid_summary_or_empty` | C4 摘要结构校验（单函数，两摘要函数共用）：空响应/长度下限/六段齐全/拒绝开头/压缩比，任一不过返空串走零退化；阈值优先读 `tuning.compaction.summary_min_chars`（缺省 200） | text: str, src_len: int = 0 | str（有效原文/空串） |
-| `estimate_tokens` | **chars→token 估算唯一实现**（`services/agent/token_estimate.py`，与系数真源 `compaction_constants.CHARS_PER_TOKEN` 同域）：`int(len(str(content))/CHARS_PER_TOKEN)`。2026-10-30 收口 `prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行（DRY）；口径只算文本，不算消息列表的 tool_calls 结构开销（那属 `MessageBuilder._estimate_tokens`） | content: Any（None/空 → 0） | int |
+| `estimate_tokens` | **chars→token 估算唯一实现**（`services/agent/agent_utils.py`，与系数真源 `compaction_constants.CHARS_PER_TOKEN` 同域）：`int(len(str(content))/CHARS_PER_TOKEN)`。2026-10-30 收口 `prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行（DRY）；2026-10-31 文件由 `token_estimate.py` 改名并入 `agent_utils.py`。口径只算文本，不算消息列表的 tool_calls 结构开销（那属 `MessageBuilder._estimate_tokens`） | content: Any（None/空 → 0） | int |
+| `compress_summary_threshold` | **压缩摘要 limit 唯一真源**：`int(ctx × tuning.compaction.start_limit_ratio)`（缺省 0.5）。消费方 `start_step._maybe_compact_injected_history`（超窗判定）与 `_assemble_anchor_delta`（增量阈值）。术语：「限制系数」只服务压缩摘要，勿与 loop 裁剪「调节系数」混用 | ctx: int | int |
+| `trim_budget_base` | **loop 裁剪预算基准唯一真源**：`ctx - tuning.trim.compaction_buffer - tuning.trim.tools_token_reserve`。消费方 `MessageBuilder._trim_signal`（信号三元组）、`trim_conv_threshold`、`trim_queue_budget`、`refs.limits.budget_base_of`（引用域同口径） | ctx: int | int |
+| `trim_conv_threshold` | **loop 裁剪触发阈值唯一真源**：`int(trim_budget_base(ctx) × tuning.trim.trigger_ratio)`。消费方 `_trim_signal` 的 abs_trigger 判定 | ctx: int | int |
+| `trim_queue_budget` | **loop 裁剪队列预算唯一真源**：`int(trim_budget_base(ctx) × trigger_ratio²)`（触发线之上再乘一次系数，保证裁完必低于触发线，否则裁了仍触发即死循环）。消费方 `trim_history`（再扣保护区占用） | ctx: int | int |
 
 > 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 > 2026-10-20 小欧: `fc_atomic_units` 唯一真源已迁至 `services/agent/fc_message_types.py`（协议层，零依赖），本模块 `keep_valuable_messages` 与 `message_builder` 裁剪复用；本表保留于 3.5 节以示与降本链路的关系。
@@ -666,6 +672,7 @@ def my_parse_json(json_str):
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 | v5.17 | 2026-10-30 23:20:00 | **§3.6 `[54]` 三堂会审整改**(小欧): ①`_ws_apply` 不变量兜底——旧默认行被编辑/删除时默认标志继承给新列表首条(维持"默认工作区始终存在"系统不变量, 防 PATCH 后零默认行→下次建任务新建时间戳目录); ②`_backfill_ws_default` 存量库一次性回填——无 is_default=1 行的会话把最后一条置 1(防 342 个老会话下次建任务各建一个垃圾目录); ③`_verify_ws_columns` 启动期 fail-loud 复核三标注列(仿 `_verify_acc_columns` 先例, 防 `_ensure_column` 隐性失败致运行期 SELECT 隐性 OperationalError); ④新增常量 `MAX_WS_INJECT_CHARS=4096`——prompt 注入块总字符上限(防 64 目录×500 字符≈30KB 撑爆, 超限只保留前若干行+省略提示) | 小欧 |
+| v5.19 | 2026-10-31 15:52:00 | **§3.5 / §1.8 公用函数收口**(小欧, 北京老陈令): ①§3.5 登记 `compress_summary_threshold`(窗口×限制系数)/`trim_budget_base`(窗口-输出缓冲-tools预留)/`trim_conv_threshold`(基准×调节系数)/`trim_queue_budget`(基准×调节系数²), 四者均落 `services/agent/agent_utils.py`, 消费方 `start_step` 两处 / `message_builder._trim_signal`+`trim_history` / `refs.limits.budget_base_of` 全部改调, 生产侧零手写算式; `estimate_tokens` 宿主路径由 `token_estimate.py` 更正为 `agent_utils.py`; 同批删死属性 `MessageBuilder._tools_token_reserve`(该口径由 `trim_budget_base` 单点持有)。②§1.8 新登记 `to_dict_or`/`safe_sub_dict`(嵌套取值防御公用化), `observation_formatter._safe_llm_sub` 与 `toolhelper.tool_utils.save_text_to_file` 改调同一真源, 消除 `.get(k,{}).get(...)` 在值为 None/str 时的 AttributeError | 小欧 |
 | v5.18 | 2026-10-31 00:42:00 | **§3.6 `[54]` 三堂会审整改(修正)**(小欧): ①撤 `_ws_apply` "首条顶上"兜底(B定案A): 默认标志只按 path 继承, 默认行被删/改名时不继承, 交 reconcile 按规则2重建; ②`_backfill_ws_default` 改名 `_backfill_ws_default_legacy`, 改造为"存量库一次性识别老默认目录并置 is_default=1"(正则匹配路径中内嵌会话ID前4位, 门控: 仅 is_default 列本次新加才跑, 防复活已删默认行破坏规则2); ③`_append_ws_suffix` 注入块文案定稿: 删属性/memo/默认标注, 目录行纯路径, 首行"本次任务新增会话工作目录", 尾行统一"会话工作目录" | 小欧 |
 | v5.16 | 2026-10-30 21:12:41 | **§3.8 `report_refs` 口径修正：`paths=` 不截断**(小欧, 北京老陈令): 删 `_paths_text` 的 60 字符右截断与常量 `REF_LOG_PATH_MAX_CHARS` —— 右截断会连 `:start-end` 与文件名一起切掉, 同一文件的"整份"与"行片段"在汇总行变成完全相同的字符串, 定位信息丢失; 现给完整路径, 行长度只由 5 条上限 + "另N条"计数控制 | 小欧 |
 | v5.15 | 2026-10-30 20:21:41 | **§3.5 新登记 `estimate_tokens` + 新增 §3.8 引用处置观测**(小欧): ①`services/agent/token_estimate.py` 成为 chars→token 唯一实现, 收口 `compaction.prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行(DRY, 5 处调用点改公共函数); ②§3.8 登记 `summarize_refs`/`refs_counts_text`/`report_refs`/`build_refs_ready_notice`/`create_refs_ready_event`——引用进 loop 前 1 行汇总日志(log_and_print)+≤5 行明细+SSE `notice(kind=refs_ready)` 三通道共用同一份数字, 引用正文永不落日志 | 小欧 |

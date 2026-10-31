@@ -97,6 +97,13 @@
 #   由 init_history/reset_per_run 同步维护, 保证整个会话内规则最多出现一次 — 小欧-2026-10-30
 # 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 导入源改 app.constants(常量自 compaction_constants 迁入系统层,
 #   单一真源), 值与行为零变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - _trim_signal 的绝对值触发改调 agent_utils.trim_conv_threshold(北京老陈令):
+#   原内联算式 budget_base × self._trim_trigger_ratio 收口为命名函数(与压缩摘要阈值同款模式),
+#   公式 (窗口-输出缓冲-tools预留)×调节系数; 取整向下(<1 token 差异), 其余分支零变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 三口径全部收口 agent_utils(北京老陈令): ①_trim_signal 的预算基准内联减法改调
+#   trim_budget_base ②队列预算 trim_base×ratio² 改调 trim_queue_budget(trim_history 内联算式删除)
+#   ③删 _tools_token_reserve 属性 —— trim_budget_base 已单点读 tuning.trim.tools_token_reserve,
+#   该属性生产侧零读取(仅测试读)。预算链数值不变 — 小欧-2026-10-31
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -124,7 +131,6 @@ from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 常量迁�
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER, CHARS_PER_TOKEN, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
     TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
-    TOOLS_TOKEN_RESERVE,
     TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
     TRIM_CEILING_ROUNDS_MARGIN,
     TRIM_MIN_MESSAGES,
@@ -134,6 +140,7 @@ from app.services.agent.fc_message_types import (
     message_to_dict, dict_to_message,
 )
 from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
+from app.services.agent.agent_utils import trim_budget_base, trim_conv_threshold, trim_queue_budget  # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源
 
 # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -195,7 +202,8 @@ class MessageBuilder:
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
         self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
         self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
-        self._tools_token_reserve: int = int(get_config().get('tuning.trim.tools_token_reserve', TOOLS_TOKEN_RESERVE))  # 2026-10-25 小欧 预算预留tools定义token
+        # 2026-10-31 小欧: _tools_token_reserve 属性删除 —— trim_budget_base 已单点持有该口径,
+        #   生产侧零读取(仅测试读), 保留即成死属性; tools 预留改由 agent_utils 读配置
         # 2026-10-29 小欧 保护区轮数改唯一解析(北京老陈令断案): 与 start_step 注入件尾部轮数同源单一真源(split_turn.resolve_protect_rounds), 原地夹取算式收敛
         from app.services.agent.compaction.split_turn import resolve_protect_rounds  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
         self._keep_recent_rounds: int = resolve_protect_rounds()  # 最近N工具步硬保护(北京老陈令), 5-20 默认5
@@ -497,7 +505,7 @@ class MessageBuilder:
     #   | # | 条件 | 代码 |
     #   |---|------|------|
     #   | 1 | 增量触发 | rough - last_total_tokens > COMPACTION_BUFFER |
-    #   | 2 | 绝对值触发 | rough > budget_base × 0.9 |
+    #   | 2 | 绝对值触发 | rough > trim_conv_threshold(ctx) |
     #   | 3 | 消息数兜底 | msg_count > MAX_ROUNDS × 2 + 5 |
     #   | 守卫 | 新任务不裁 | msg_count <= 5 → return False |
     # 裁剪后达标标准(6条):
@@ -514,7 +522,7 @@ class MessageBuilder:
 
         三个触发条件(任一为真即 True):
         - 增量触发: 本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
-        - 绝对值触发: 粗估 > 触发阈值(裁剪预算 × 阈值调节系数, 默认0.9)
+        - 绝对值触发: 粗估 > 触发阈值(裁剪预算 × 阈值调节系数, 唯一真源 agent_utils.trim_conv_threshold)
         - 消息数兜底: msg_count > MAX_ROUNDS×2+5
 
         msg_count 计数规则:
@@ -536,10 +544,10 @@ class MessageBuilder:
             非 link 任务: 2=(system + 任务提问), guard 拦(msg_count ≤ 5), 前几轮不裁剪
             累积至 msg_count > 5 后才放行信号计算
       
-        裁剪预算(budget_base) = MAX_CONTEXT_TOKENS - _compaction_buffer - _tools_token_reserve
-        阈值调节系数(TRIM_TRIGGER_RATIO) = 0.9, 用于两处:
-          ① 裁剪入口(触发阈值) = budget_base × ratio (一次方) — 决定何时触发裁剪
-          ② 裁剪出口(队列预算) = budget_base × ratio² (二次方) — 决定队列可用预算
+        裁剪预算(trim_budget_base) = MAX_CONTEXT_TOKENS - 输出缓冲 - tools预留 (三值均由 agent_utils 单点给出)
+        阈值调节系数(tuning.trim.trigger_ratio) 用于两处:
+          ① 裁剪入口(触发阈值) = 裁剪预算基准 × ratio (一次方) — agent_utils.trim_conv_threshold
+          ② 裁剪出口(队列预算) = 裁剪预算基准 × ratio² (二次方) — agent_utils.trim_queue_budget
         第1轮无 last_total_tokens → 增量条件不成立, 只走绝对值 + 消息数。
         结果存储到 _trim_signal_result, 供 trim_history() 读取。
         返回 True 表示应触发裁剪。
@@ -551,15 +559,15 @@ class MessageBuilder:
             self._trim_signal_result = (False, 0, 0, False, False)
             return False
         rough_current = self._estimate_tokens(self.conversation_history)
-        # 预算链: 窗口(262144) - 输出缓冲(20000) - tools预留(30000) = budget_base(212144)
-        # 触发阈值 = budget_base × 0.9 = 190930; 队列预算 = budget_base × 0.9² - 保护区token
-        budget_base = self.MAX_CONTEXT_TOKENS - self._compaction_buffer - self._tools_token_reserve
+        # 预算链: 窗口(262144) - 输出缓冲(20000) - tools预留(30000) = 裁剪预算基准(212144)
+        # 触发阈值 = 基准 × 调节系数(唯一真源: agent_utils.trim_conv_threshold)
+        trim_base = trim_budget_base(self.MAX_CONTEXT_TOKENS)
         delta_trigger = (self.last_total_tokens is not None and
                          rough_current - self.last_total_tokens > self._compaction_buffer)
-        abs_trigger = rough_current > budget_base * self._trim_trigger_ratio
+        abs_trigger = rough_current > trim_conv_threshold(self.MAX_CONTEXT_TOKENS)
         msg_ceiling = self._max_rounds * TRIM_CEILING_ROUND_FACTOR + TRIM_CEILING_ROUNDS_MARGIN
         signal = delta_trigger or abs_trigger or msg_count > msg_ceiling
-        self._trim_signal_result = (signal, rough_current, budget_base, delta_trigger, abs_trigger)
+        self._trim_signal_result = (signal, rough_current, trim_base, delta_trigger, abs_trigger)
         return signal
 
     def trim_history(self) -> None:
@@ -569,9 +577,9 @@ class MessageBuilder:
         调用方应先调 _trim_signal() 判断是否触发, 触发后调本方法执行裁剪。
 
         裁剪流程:
-        1. 重复触发抑制: rough≤budget_base 时 cooldown 抑制 N 轮内重复进入; rough>budget_base 接近窗口上限时强制裁剪防 400
+        1. 重复触发抑制: rough≤预算基准时 cooldown 抑制 N 轮内重复进入; rough>预算基准 接近窗口上限时强制裁剪防 400
         2. 裁前截断 >4000 字符超长单条(truncate_oversized_message), 防止单条 tool 结果超出预算致整轮丢弃
-        3. 分区: 保护区=倒数1~N轮(不进裁剪队列), 队列=倒数第N+1及更早(传入find_tail_start), 队列预算=budget_base×系数²−保护区token
+        3. 分区: 保护区=倒数1~N轮(不进裁剪队列), 队列=倒数第N+1及更早(传入find_tail_start), 队列预算=预算基准×系数²−保护区token
         4. 裁剪走 compaction 组合: find_tail_start(align_turn=True) 切点对齐 user 边界整轮不拆 + remove_dangling_tool_calls 清理孤儿 FC 对
         5. 保护区超出预算时仅保留保护区(硬保护, 容忍窗口溢出)
         6. 无旧轮可裁/预算不足时保留原历史直接返回(不重建/不动裁剪旗/不复位冷却); 仅裁剪分支跑 dangling 清理
@@ -584,13 +592,13 @@ class MessageBuilder:
         try:
             if self._trim_signal_result is None:
                 return
-            signal, rough_current, budget_base, delta_trigger, abs_trigger = self._trim_signal_result
+            signal, rough_current, trim_base, delta_trigger, abs_trigger = self._trim_signal_result
             if not signal:
                 return
             msg_count = len(self.conversation_history)  # 日志用
 
-            # 重复触发抑制: 触发后 rough≤budget_base 时 find_tail_start 无可裁, cooldown 抑制 N 轮内重复进入; rough>budget_base 接近窗口上限时强制裁剪防 400 — 小欧 2026-10-25
-            if rough_current <= budget_base and not self._trim_cooldown.allow():
+            # 重复触发抑制: 触发后 rough≤预算基准时 find_tail_start 无可裁, cooldown 抑制 N 轮内重复进入; rough>预算基准 接近窗口上限时强制裁剪防 400 — 小欧 2026-10-25
+            if rough_current <= trim_base and not self._trim_cooldown.allow():
                 return
 
             # 复用 compaction 现成函数; 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧 2026-10-25
@@ -605,12 +613,13 @@ class MessageBuilder:
             keep_from = find_recent_rounds_start(hist, self._keep_recent_rounds)  # 倒数第 N 轮起点(保护区起点)
             protected = hist[keep_from:]  # 倒数 1~N 轮, 不裁
             queue = hist[prefix:keep_from]  # 倒数第 N+1 及更早, 传入裁剪函数
-            # 队列预算 = budget_base×系数² - 保护区已占用; 保护区超预算时 budget_for_queue<0, 走 else 分支
+            # 队列预算 = 队列预算口径(基准×系数², 唯一真源=trim_queue_budget) - 保护区已占用;
+            # 保护区超预算时 budget_for_queue<0, 走 else 分支
             protected_tokens = self._estimate_tokens(protected)
-            budget_for_queue = budget_base * self._trim_trigger_ratio * self._trim_trigger_ratio - protected_tokens
+            budget_for_queue = trim_queue_budget(self.MAX_CONTEXT_TOKENS) - protected_tokens
             if budget_for_queue > 0 and queue:
                 tail_start = prefix + find_tail_start(queue, budget_for_queue, align_turn=True)
-            elif rough_current > budget_base and queue:
+            elif rough_current > trim_base and queue:
                 # 2026-10-30 小欧 溢窗分支(原 else 的一半, 行为不变, 注释订正): 粗估已超裁剪预算, 属真溢窗,
                 #   队列整体让位保保护区 —— 只额外保留"保护区那轮的提问 user", 防有答无问 — 小欧-2026-10-30
                 tail_start = keep_from
@@ -624,7 +633,7 @@ class MessageBuilder:
                 #   这个偏保守的队列预算不够 → 原 else 直接按"丢光队列"处理, 与本文档第 6 条"预算不足时
                 #   保留原历史直接返回"相反, 属过度裁剪。改为退回硬剩余预算(budget_base - 保护区)再判:
                 #   留得下就留, 仍留不下才 tail_start=prefix(早退保留原历史) — 小欧-2026-10-30
-                remaining = budget_base - protected_tokens
+                remaining = trim_base - protected_tokens
                 tail_start = (prefix + find_tail_start(queue, remaining, align_turn=True)
                               if queue and remaining > 0 else prefix)
             # 三段结构:
