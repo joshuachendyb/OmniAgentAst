@@ -64,6 +64,10 @@
                         llm.context_limit_default 设置项默认值由魔法数字 262144 改引本常量;
                         引用方(lifecycle/service/message_builder/stream_orchestrator)导入路径同步改
                         app.constants, compaction_constants 不再定义 — 小欧-2026-10-31
+    2026-10-31 小欧 新增引用体积预算比例默认值 REF_SINGLE_RATIO/REF_TOTAL_RATIO/REF_REJECT_RATIO/
+                        REF_INTERJECT_RATIO: 原为 services/refs/limits.resolve_limits 内联字面量(0.20/
+                        0.40/0.60/0.05), 收口至本文件作单一真源, 配置键 tuning.refs.* 仍可覆盖;
+                        取值零变更 — 小欧-2026-10-31
 
 """
 
@@ -155,6 +159,13 @@ REF_AVG_LINE_CHARS = 80   # 【系统级】使用对象: services/refs/resolver(
 REF_HEAD_RATIO = 0.6      # 【系统级】使用对象: services/refs/clip(头尾摘录: 头 60%)
 REF_TAIL_RATIO = 0.2      # 【系统级】使用对象: services/refs/clip(头尾摘录: 尾 20%)
 REF_MIN_KEEP_LINES = 10   # 【系统级】使用对象: services/refs/budget(C 档压缩最低保留行数)
+
+# 引用体积预算比例默认值(2026-10-31 小欧): 唯一真源 —— 配置键 tuning.refs.* 覆盖, 未配/非法即用本组;
+#   消费方: services/refs/limits.resolve_limits(预算基准 × 比例 = 各档 token 上限)
+REF_SINGLE_RATIO = 0.20     # 【系统级】tuning.refs.single_ratio: 首发单条上限 = 预算基准 × 20%
+REF_TOTAL_RATIO = 0.40      # 【系统级】tuning.refs.total_ratio: 首发合计上限, 超此进 C 档等比压缩
+REF_REJECT_RATIO = 0.60     # 【系统级】tuning.refs.reject_ratio: 首发拒绝线, 压缩后仍超则整批拒绝
+REF_INTERJECT_RATIO = 0.05  # 【系统级】tuning.refs.interject_ratio: 插话单条=合计, 超即整批拒绝
 
 # 引用来源白名单(2026-10-30 小欧): 唯一真源 —— 编排入口过滤(browse_service.sanitize_refs)
 #   与渲染期过滤(refs.render)共用, 防止"入口放行、渲染静默丢弃"的两套口径分叉

@@ -4,6 +4,9 @@
 # 2026-10-30 小欧 三堂会审 A16: 配置比例钳制到 (0,1], 越界回落默认值(0/负数=全拒, >1=全放, 皆破坏预算) — 小欧-2026-10-30
 # 2026-10-31 小欧 预算基准收口: budget_base_of 改调 agent_utils.trim_budget_base, 与 message_builder
 #   裁剪预算同一真源(原两处各写一份 window-buffer-tools 减法) — 小欧-2026-10-31
+# 2026-10-31 小欧 三堂会审 DRY: 四个预算比例默认值(0.20/0.40/0.60/0.05)原内联在本文件
+#   resolve_limits, 与常量域分家; 收口至 app/constants(REF_*_RATIO), 本文件只做取值+钳制,
+#   配置键 tuning.refs.* 仍可覆盖, 数值零变更 — 小欧-2026-10-31
 """services.refs.limits — 引用预算阈值的唯一真源
 
 职责(单一职责): 由「本次生效模型的 context_limit」派生出引用链路需要的全部阈值:
@@ -18,6 +21,10 @@ from app.config import get_config
 from app.logger import logger
 # 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源); CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
 from app.services.agent.agent_utils import trim_budget_base, CHARS_PER_TOKEN
+# 2026-10-31 小欧: 四个预算比例默认值单一真源在常量域(配置 tuning.refs.* 可覆盖) — 小欧-2026-10-31
+from app.constants import (
+    REF_INTERJECT_RATIO, REF_REJECT_RATIO, REF_SINGLE_RATIO, REF_TOTAL_RATIO,
+)
 
 # 引用条数上限: 前端入队即拦、后端 DTO 再拦(双保险, 防止任意条引用直入 prompt)
 MAX_REFS = 20
@@ -71,10 +78,10 @@ def resolve_limits(context_limit: int, scope: str = "first") -> RefLimits:
     插话: 单条与合计同值 5%, 不降级(超限直接拒绝)。
     """
     cfg = get_config().get("tuning.refs", {}) or {}
-    _single_r = _ratio_of(cfg, "single_ratio", 0.20)
-    _total_r = _ratio_of(cfg, "total_ratio", 0.40)
-    _reject_r = _ratio_of(cfg, "reject_ratio", 0.60)
-    _interject_r = _ratio_of(cfg, "interject_ratio", 0.05)
+    _single_r = _ratio_of(cfg, "single_ratio", REF_SINGLE_RATIO)
+    _total_r = _ratio_of(cfg, "total_ratio", REF_TOTAL_RATIO)
+    _reject_r = _ratio_of(cfg, "reject_ratio", REF_REJECT_RATIO)
+    _interject_r = _ratio_of(cfg, "interject_ratio", REF_INTERJECT_RATIO)
     base = budget_base_of(context_limit)
     single_t = int(base * _single_r)
     if scope == "interject":
