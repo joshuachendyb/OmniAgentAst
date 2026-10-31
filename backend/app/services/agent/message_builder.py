@@ -129,7 +129,7 @@ from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
-    COMPACTION_BUFFER, CHARS_PER_TOKEN, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
+    COMPACTION_BUFFER, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
     TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
     TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
     TRIM_CEILING_ROUNDS_MARGIN,
@@ -140,7 +140,10 @@ from app.services.agent.fc_message_types import (
     message_to_dict, dict_to_message,
 )
 from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
-from app.services.agent.agent_utils import trim_budget_base, trim_conv_threshold, trim_queue_budget  # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源
+# 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
+from app.services.agent.agent_utils import (
+    trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
+)
 
 # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -718,10 +721,11 @@ class MessageBuilder:
 
     @staticmethod
     def _estimate_tokens(messages: List[Dict]) -> int:
-        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(2.25, 中文主导, 2026-10-25 真实会话标定), 零外部依赖
+        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(1.86, 2483 次真实调用实测 2026-10-31), 零外部依赖
 
         对标 OpenCode Token.estimate / Hermes estimate_tokens_rough
         2026-10-04 小欧: 系数 4→1.8→2.5(当日两次); 浮点系数下 // 返回 float, 故恒用 int(x / c) 显式取整
+        2026-10-31 小欧: 系数 2.25→1.86(实测下界, 偏保守不低估撞窗); 定义已迁 agent_utils, 本模块仅导入。— 小欧-2026-10-31
         """
         return int(MessageBuilder._total_chars(messages) / CHARS_PER_TOKEN)
 

@@ -19,6 +19,9 @@
 #   2026-10-31 小欧 新增 trim_queue_budget(北京老陈令): 队列预算 = 裁剪预算基准 × 调节系数²,
 #     原 message_builder.trim_history 内联算式删除改调本函数; 至此 loop 裁剪三个口径
 #     (基准/触发线/队列预算)全部单点 — 小欧-2026-10-31
+#   2026-10-31 小欧 新增 conv_threshold(北京老陈令): start 压缩前 conv 超窗判定线 = 窗口 × 调节系数,
+#     直接对窗口取比例(不扣 buffer/tools 预留); 消费方 start_step._compact_injected_history —
+#     超此线才阶梯裁剪到 trim_conv_threshold(目标线)以内再压缩 — 小欧-2026-10-31
 
 """services.agent.agent_utils — agent 域公用函数收口 — 小欧 2026-10-31
 
@@ -36,9 +39,14 @@
 from app.config import get_config
 
 from app.services.agent.compaction_constants import (
-    CHARS_PER_TOKEN, START_LIMIT_RATIO,
-    COMPACTION_BUFFER, TOOLS_TOKEN_RESERVE, TRIM_TRIGGER_RATIO,
+    START_LIMIT_RATIO, COMPACTION_BUFFER, TOOLS_TOKEN_RESERVE, TRIM_TRIGGER_RATIO,
 )
+
+# chars→token 换算系数 — 小欧 2026-10-31
+# 意义: 本文件是全仓唯一定义处, 与消费它的估算函数 estimate_tokens 同址; 其他模块一律导入, 禁止另立。
+# 取值: 1.86 字/token —— 2483 次真实调用实测(消息字符 + tools schema 口径) Σ字符/Σprompt_tokens=1.860;
+#   原 2.25 系统性低估 21%(中位 25%、p90 55%), 改后取实测下界(系数取小=估算偏大=偏保守, 不低估撞窗)。
+CHARS_PER_TOKEN = 1.86
 
 
 def estimate_tokens(content) -> int:
@@ -129,5 +137,24 @@ def trim_queue_budget(ctx: int) -> int:
     return int(trim_budget_base(ctx) * _ratio * _ratio)
 
 
+def conv_threshold(ctx: int) -> int:
+    """start 压缩前 conv 超窗判定线: 窗口 × 调节系数 — 小欧 2026-10-31
+
+    适用场景: start_step._compact_injected_history 进入压缩前的唯一判定——注入历史估算
+      超过本阈值才做阶梯裁剪, 未超则不裁直接压缩(零行为变化)。
+    使用方法: 传运行时上下文窗口 token 数, 返回判定线 token 数。
+    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输出: int(ctx × 调节系数), 缺省 TRIM_TRIGGER_RATIO=0.8。
+    前置条件: ctx > 0。
+    关联逻辑: 与 trim_conv_threshold 分工——本函数=「要不要裁」(直接对窗口取比例, 不扣
+      buffer/tools 预留); trim_conv_threshold=「裁到哪」(对裁剪预算基准取比例)。
+      因基准 = 窗口 - 50000, 故目标线恒低于判定线, 裁完必落在判定线之下。
+    取整说明: 与 trim_conv_threshold 同款向下取整。
+    """
+    return int(int(ctx) * float(get_config().get(
+        'tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO)))
+
+
 __all__ = ["estimate_tokens", "compress_summary_threshold",
-           "trim_budget_base", "trim_conv_threshold", "trim_queue_budget"]
+           "trim_budget_base", "trim_conv_threshold", "trim_queue_budget",
+           "conv_threshold"]

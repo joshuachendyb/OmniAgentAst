@@ -8,7 +8,9 @@
 
 与 app/constants.py 边界(DRY 不重复):
   压缩/裁剪核心阈值本文件权威定义(自 app/constants.py 迁入 2026-08-17):
-    MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT
+    COMPACTION_BUFFER/TEMP_HISTORY_CHAR_LIMIT
+  CHARS_PER_TOKEN 不在本文件: 与 token 估算函数同址, 定于 agent_utils.py(2026-10-31 迁出)。
+  MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO 已删: 门限一律由运行时 context_limit × 比例计算。
   其余「压缩裁剪专属」常量(PRUNE_*/SUMMARY_*/TRIGGER_*/COOLDOWN_*/TAIL_*/SPLIT_*/ASSEMBLE_*)亦定义在本文件。
   app/constants.py 不再承载压缩/裁剪相关常量(DEFAULT_CONTEXT_LIMIT 系系统级 LLM 常量, 非压缩裁剪专属,
   2026-10-31 迁回 app/constants.py, 与 settings_registry llm.context_limit_default 同源)。
@@ -53,6 +55,17 @@
                         与 settings_registry llm.context_limit_default 设置项默认值收敛同一真源(消魔法数字);
                         本文件删除定义, 引用方(lifecycle/service/message_builder/stream_orchestrator)同步改
                         从 app.constants 导入, 勿再从本文件导入 — 小欧-2026-10-31
+  2026-10-31 小欧 CHARS_PER_TOKEN 2.25→1.86: 2483 次真实调用实测(消息字符+tools schema)=1.860 字/token,
+                        原 2.25 系统性低估 21%(中位 25%、p90 55%), 改为实测下界(取小=估算偏大=保守);
+                        连带 start 压缩前超窗裁剪判定线/目标线口径(agent_utils.conv_threshold /
+                        trim_conv_threshold) — 小欧-2026-10-31
+  2026-10-31 小欧 TOOL_SUMMARY_HEAD_CHARS 120→500(=SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 北京老陈令):
+                        shrink_to_budget 第2级由"远段全清零"改"保首+清零", 保首 500 经真实日志实测定档
+                        (远段 106 条 tool/均值 7140 字 → 留 26,139 tok = 目标 13.7%) — 小欧-2026-10-31
+  2026-10-31 小欧 保首长度去裸字面量(北京老陈令): TOOL_SUMMARY_HEAD_CHARS 定义移到 SPLIT_TURN_MAX_ASSISTANT_CHARS
+                        之后, 值写成 SPLIT_TURN_MAX_ASSISTANT_CHARS // 8(禁写死 500)——上游门限一调, 保首随之等比;
+                        头注边界同步订正(去掉已迁出的 CHARS_PER_TOKEN / 已删的 MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO)。
+                        — 小欧-2026-10-31
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
@@ -81,8 +94,9 @@ TOOLS_TOKEN_RESERVE = 30000
 #   防 loop 进行中裁掉当前推理的直接上下文(上一步调了什么/得到什么)致推理断裂, 亦防裁剪抖动。
 #   配置 tuning.trim.keep_recent_rounds, 取值范围 5-20, 默认 5。 — 小欧 2026-10-25
 KEEP_RECENT_ROUNDS = 5
-# 意义: chars→token 换算系数, 10 真实会话标定加权均值 2.363 字/token; 系数越大→估算越小→越低估→裁得越晚→越易撞窗 400 — 小欧 2026-10-25
-CHARS_PER_TOKEN = 2.25
+# 2026-10-31 小欧 CHARS_PER_TOKEN 迁出本文件(北京老陈令): 该系数是 token 估算的换算底数,
+#   定义位置必须与估算代码同址 → 现唯一定义在 agent_utils.py 的 estimate_tokens 正上方;
+#   消费方(message_builder / compaction.prune / refs.limits)一律从 agent_utils 导入, 本文件不再定义。
 # 意义: 临时历史字符上限
 TEMP_HISTORY_CHAR_LIMIT = 50000
 
@@ -112,23 +126,22 @@ PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token �
 
 # ---- 消息价值权重与摘要截长(魔法数字清账归常量域 — 小欧-2026-10-29) ——————————————————————
 # 意义: VALUE_WEIGHT_*/keep_valuable_messages 消息语义价值权重(越高越优先保留);
-#       TOOL_SUMMARY_HEAD_CHARS/clear_tool_outputs 换摘要时原文头部截取长度;
+#       TOOL_SUMMARY_HEAD_CHARS 超长 tool 输出保首段长度(定义见下方「保尾切分」段, 派生自 SPLIT_TURN_MAX_ASSISTANT_CHARS);
 #       TOOL_SUMMARY_PREVIEW_CHARS/get_last_tool_summary 死循环纠偏注入预览截长;
 #       TRIM_MIN_MESSAGES/_trim_signal 对过短历史不评估裁剪的结构下限;
 #       TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN/裁剪兜底上限 = max_rounds×factor+margin;
 #       PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/resolve_protect_rounds 对 tuning.trim.keep_recent_rounds 的夹取上下限。
 # 默认值依据: 权重大小序=历史记忆>system>tool_calls决策>assistant正文>其他兜底>tool纯输出(原 _value_weight 内联值直迁);
-#       截长 120≈一行摘要可读长度、200≈纠偏预览够 LLM 判断末次工具行为; TRIM_MIN_MESSAGES=防小历史裁剪抖动的结构下限;
+#       截长 500(≈4000 的 1/8, 2026-10-31 实测定档)=远段 tool 保首可读长度、200≈纠偏预览够 LLM 判断末次工具行为; TRIM_MIN_MESSAGES=防小历史裁剪抖动的结构下限;
 #       factor=2/margin=5 为 max_rounds 二倍量级+安全余量(兜底上限, 非精细控制); PROTECT_ROUNDS 范围=KEEP_RECENT_ROUNDS
 #       配置既定取值区间(2026-10-25 北京老陈定案)。
-# 可选范围: 权重 0~100 须保持既定大小序; 截长 100~500; TRIM_MIN_MESSAGES 建议 3~10; PROTECT_ROUNDS 建议 3~30。
+# 可选范围: 权重 0~100 须保持既定大小序; 截长 100~1000; TRIM_MIN_MESSAGES 建议 3~10; PROTECT_ROUNDS 建议 3~30。
 VALUE_WEIGHT_HISTORY_MEM = 100            # _history_mem 消息权重(历史记忆直注, 最高)
 VALUE_WEIGHT_SYSTEM = 90                  # system 消息权重(对话身份/规则载体)
 VALUE_WEIGHT_TOOL_CALL_DECISION = 80      # assistant(tool_calls) 决策消息权重(调了什么工具)
 VALUE_WEIGHT_ASSISTANT = 70               # assistant 正文权重(thought/answer)
 VALUE_WEIGHT_OTHER = 50                   # 其余角色兜底权重
 VALUE_WEIGHT_TOOL = 10                    # tool 纯输出权重(价值最低, 先删)
-TOOL_SUMMARY_HEAD_CHARS = 120             # clear_tool_outputs 换摘要时原文头部截取长度
 TOOL_SUMMARY_PREVIEW_CHARS = 200          # get_last_tool_summary 死循环纠偏预览截长
 TRIM_MIN_MESSAGES = 5                     # 历史条数<=此值不评估裁剪(防小历史抖动)
 TRIM_CEILING_ROUND_FACTOR = 2             # 裁剪兜底上限 = max_rounds × 此系数 + 余量
@@ -177,10 +190,17 @@ TAIL_TOKEN_RATIO = 0.25      # 保尾窗口占可用预算比例(14.3.2 preserve
 TAIL_TOKEN_MIN = 2000        # 保尾预算下限(14.3.2 select: max(2000, usable*0.25))
 TAIL_TOKEN_MAX = 8000        # 保尾预算上限(14.3.2 select: min(8000, ...))
 SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断(14.9.2 splitTurn)
+# 2026-10-31 小欧 派生(北京老陈令, 禁裸字面量): 保首长度 = 上面这个 4000 的 1/8, 随上游门限等比缩放。
+# 用途: shrink_to_budget 第2级「远段长 tool 输出保首」+ 第3级「旧轮 tool_call 参数保首」(同一把尺)。
+# 定档依据: 真实 prompt 日志 3 次 ~41 万 tok 调用(远段 106 条 tool, 均值 7140 字)实测——保首 1/8 后远段留
+#   26,139 tok(占裁剪目标 190,929 的 13.7%), 第2级落在约 3 万 tok, 不触发第4/5级「丢整轮」; 1/16 仅 3.6%
+#   (只够一行, 摘要 LLM 看不出这是什么); 1/4 与 1/2 分别占 25.4%/45.7%, 1/2 更等于 SUMMARY_FEED_MAX_CHARS
+#   (摘要 feed 上限) → 压了等于没压。— 小欧-2026-10-31
+TOOL_SUMMARY_HEAD_CHARS = SPLIT_TURN_MAX_ASSISTANT_CHARS // 8  # 超长 tool 输出/参数保首段长度(=4000/8=500)
 
 # ---- 语义替换(use_tool_summary 门槛) ————————————————————
 # 意义: USE_SUMMARY_MIN_CHARS/tool 消息参与"换一行语义摘要"的最小 content 长度门槛。
-# 默认值依据: 300字≈133tok(CHARS_PER_TOKEN=2.25)。低于此长度的观察信息密度高(文件清单/命中数/行数细节),
+# 默认值依据: 300字≈161tok(CHARS_PER_TOKEN=1.86, 2026-10-31 实测值)。低于此长度的观察信息密度高(文件清单/命中数/行数细节),
 #   换成一行模板摘要 token 收益趋零而信息全失(三堂会审实测: 40~80字搜索/读取观察被换成十余字状态行)。
 # 可选范围: 200~800(过低重现信息灭失, 过高使替换通道大面积空转)。
 USE_SUMMARY_MIN_CHARS = 300  # use_tool_summary 最小参与长度门槛(三堂会审修复, 北京老陈定案 2026-10-29)

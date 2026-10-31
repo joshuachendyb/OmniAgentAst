@@ -16,8 +16,8 @@ from dataclasses import dataclass
 
 from app.config import get_config
 from app.logger import logger
-from app.services.agent.agent_utils import trim_budget_base  # 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源)
-from app.services.agent.compaction_constants import CHARS_PER_TOKEN
+# 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源); CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
+from app.services.agent.agent_utils import trim_budget_base, CHARS_PER_TOKEN
 
 # 引用条数上限: 前端入队即拦、后端 DTO 再拦(双保险, 防止任意条引用直入 prompt)
 MAX_REFS = 20
