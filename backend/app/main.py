@@ -59,6 +59,10 @@
 # 2026-10-30 小欧 - 请求耗时埋点+ X-Request-Id 中间件(_RequestTimingMiddleware, 纯 ASGI),
 #   给"前端 60s 超时"提供后端侧对账依据; 改后用纯 ASGI(不用 BaseHTTPMiddleware)并补异常穿出日志
 #   reqId 日志 —— 理由见中间件定义处注释。 — 小欧-2026-10-30
+# 2026-11-01 小欧 - 前端静态兜底判据收紧(_HAS_WEB: is_dir→index.html is_file): 半截 dist
+#   (清产物/构建中)不再挂 SPA mount+catch-all, 根路径探活得干净 404 而非 500+全栈栈刷屏;
+#   root 与 spa_fallback 入口增 index.html 实存防御(运行中被删回 404 JSON/降级 JSON, 绝不
+#   FileResponse 抛 RuntimeError 未处理异常)。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -341,7 +345,8 @@ _WEB_DIR = (
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 )
-_HAS_WEB = _WEB_DIR.is_dir()
+_INDEX_HTML = _WEB_DIR / "index.html"   # 2026-11-01 小欧 - 半截 dist 防御锚点: 目录在而 index.html 不在即"无前端"
+_HAS_WEB = _INDEX_HTML.is_file()        # 判据收紧 is_dir→is_file: 半截 dist(清产物/构建中)不再挂兜底
 
 if _HAS_WEB:
     logger.info(f"前端静态目录已定位: {_WEB_DIR}")
@@ -493,8 +498,9 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    if _HAS_WEB:
-        return FileResponse(str(_WEB_DIR / "index.html"))
+    # 2026-11-01 小欧 - 入口防御: index.html 运行中被删(原依据 _HAS_WEB 导入时快照已成旧值)不炸
+    if _HAS_WEB and _INDEX_HTML.is_file():
+        return FileResponse(str(_INDEX_HTML))
     # 2026-09-27 小欧 - docs 键随 _ENABLE_DOCS 条件化：默认关闭时无条件返回即对外广播一个必 404 的地址
     return {
         "message": "OmniAgentAst API",
@@ -517,5 +523,13 @@ if _HAS_WEB:
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str):
-        """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html"""
-        return FileResponse(str(_WEB_DIR / "index.html"))
+        """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html。
+
+        2026-11-01 小欧 - 运行态防御: index.html 缺失(半截 dist/被删)回 404 JSON,
+        不再 FileResponse 抛 RuntimeError 未处理异常(500+全栈栈刷屏, 见错误族A取证)。"""
+        if not _INDEX_HTML.is_file():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"前端页面资源缺失: {_INDEX_HTML}"},
+            )
+        return FileResponse(str(_INDEX_HTML))
