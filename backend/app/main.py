@@ -70,6 +70,12 @@
 #   路由给 404, 同一故障态两种表现。改后 index.html 与 assets/ 同时在才算有前端, root / mount+
 #   catch-all 三处共用一处定义; 顺带纠正 62-65 行"根路径探活得干净 404"的措辞 — 实测 root 返回
 #   200 API JSON, 404 是除 / 之外无 catch-all 的路径。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 撤 _frontend_ready, 按北京老陈定案收口判据范围(YAGNI): 造"前端是否可用"这个概念
+#   本身就是多余 —— 全仓只有 assets 目录缺失会让 StaticFiles.__init__ 抛异常, 只拦这一件即可。
+#   ① 开发态(frontend/dist 是构建产物, 随时可删可半截)不预判任何目录, 只 try/except: 挂不上就
+#      降级 API-only + 告警, 服务照常起; ② 打包态(_MEIPASS/web 由 spec 铺好)按 assets 实存决定挂
+#      不挂, 缺了指名告警(属构建缺陷, 与"用户删产物"区分); ③ index.html 不作判据, 仅在 root /
+#      spa_fallback 请求期确认文件在, 防 FileResponse 发送期抛未处理异常(500)。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -347,31 +353,16 @@ _mount(auth_router, "auth")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+_IS_FROZEN = getattr(sys, "frozen", False)   # 打包态: 目录由 spec 铺好; 开发态: frontend/dist 是构建产物
 _WEB_DIR = (
     Path(sys._MEIPASS) / "web"
-    if getattr(sys, "frozen", False)
+    if _IS_FROZEN
     else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 )
-_ASSETS_DIR = _WEB_DIR / "assets"       # 2026-11-01 小欧 - assets 缺失时 StaticFiles.__init__ 即 RuntimeError(半截 dist)
-_INDEX_HTML = _WEB_DIR / "index.html"   # 2026-11-01 小欧 - 半截 dist 防御锚点: 目录在而 index.html 不在即"无前端"
-
-
-def _frontend_ready() -> bool:
-    """前端是否可用(本仓唯一定义) — 2026-11-01 小欧
-
-    index.html 与 assets/ 必须同时在: 缺 assets 的 index.html 是白屏死页面(JS 全 404),
-    缺 index.html 的 assets/ 无入口。root / mount+catch-all 三处共用本判据, 杜绝同一故障态
-    在两处给出不同结果(2026-11-01 复核: 原 _HAS_WEB 只判 index.html, 半截 assets 时 root
-    返 index.html 白屏, 而 catch-all 未注册同一路由给 404)。 — 小欧-2026-11-01
-    """
-    return _INDEX_HTML.is_file() and _ASSETS_DIR.is_dir()
-
-
-# 导入期快照: 判据收紧 is_dir→is_file(半截 dist 不再挂兜底), 再并入 assets 实存 — 小欧-2026-11-01
-_HAS_WEB = _frontend_ready()
-
-if _HAS_WEB:
-    logger.info(f"前端静态目录已定位: {_WEB_DIR}")
+# 2026-11-01 小欧 - 全仓只有 assets 会导致崩溃: 目录缺失时 StaticFiles.__init__ 抛 RuntimeError。
+#   index.html 缺失只是 FileResponse 打空, 请求期兜住即可, 不作为"有无前端"的判据 — 小欧-2026-11-01
+_ASSETS_DIR = _WEB_DIR / "assets"
+_INDEX_HTML = _WEB_DIR / "index.html"
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
@@ -520,9 +511,8 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    # 2026-11-01 小欧 - 入口防御: 运行中 dist 被删/半截(导入期快照 _HAS_WEB 已成旧值)不炸;
-    #   判据走 _frontend_ready() 与 mount/catch-all 同源, 半截 assets 时回落 API JSON 而非白屏 — 小欧-2026-11-01
-    if _frontend_ready():
+    # 2026-11-01 小欧 - 只防 FileResponse 打到不存在的文件(发送期抛未处理异常→500), 不判断前端完整度 — 小欧-2026-11-01
+    if _INDEX_HTML.is_file():
         return FileResponse(str(_INDEX_HTML))
     # 2026-09-27 小欧 - docs 键随 _ENABLE_DOCS 条件化：默认关闭时无条件返回即对外广播一个必 404 的地址
     return {
@@ -541,18 +531,29 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-if _HAS_WEB:      # 含 assets 实存判定(_frontend_ready): assets 缺失时 StaticFiles.__init__ 即 RuntimeError, 不可 mount
-    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+# 2026-11-01 小欧 - 静态挂载只处理一件会崩的事(assets 缺失 → StaticFiles.__init__ 抛 RuntimeError):
+#   打包态按 assets 实存决定挂不挂(缺了就指名告警, 属构建缺陷); 开发态不预判 —— frontend/dist
+#   是构建产物, 随时可删可半截, 挂不上就降级 API-only, 只告警不崩服务 — 小欧-2026-11-01
+_STATIC_MOUNTED = False
+if _IS_FROZEN and not _ASSETS_DIR.is_dir():
+    logger.warning(f"[前端] 打包缺 assets 目录, 跳过静态挂载: {_ASSETS_DIR}")
+else:
+    try:
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+        _STATIC_MOUNTED = True
+    except Exception as exc:      # 开发态半截 dist: 降级 API-only, 不拖死服务
+        logger.warning(f"[前端] 静态挂载失败, 降级为 API-only: {exc}")
+
+if _STATIC_MOUNTED:
+    logger.info(f"前端静态目录已定位: {_WEB_DIR}")
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str):
         """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html。
 
         2026-11-01 小欧 - 运行态防御: index.html 缺失(半截 dist/被删)回 404 JSON,
-        不再 FileResponse 抛 RuntimeError 未处理异常(500+全栈栈刷屏, 见错误族A取证)。
-        2026-11-01 小欧 - 判据并入 assets: 走 _frontend_ready() 与 root/mount 同源, 半截 assets
-        同样回 404 JSON(原只判 index.html, 会给出 index.html 但 JS 全 404 的白屏) — 小欧-2026-11-01"""
-        if not _frontend_ready():
+        不再 FileResponse 抛 RuntimeError 未处理异常(500+全栈栈刷屏, 见错误族A取证)。"""
+        if not _INDEX_HTML.is_file():
             return JSONResponse(
                 status_code=404,
                 content={"detail": f"前端页面资源缺失: {_INDEX_HTML}"},
