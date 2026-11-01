@@ -63,6 +63,8 @@
 #   (清产物/构建中)不再挂 SPA mount+catch-all, 根路径探活得干净 404 而非 500+全栈栈刷屏;
 #   root 与 spa_fallback 入口增 index.html 实存防御(运行中被删回 404 JSON/降级 JSON, 绝不
 #   FileResponse 抛 RuntimeError 未处理异常)。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - assets 挂载守卫: (_WEB_DIR/"assets").is_dir() 半截 assets 不再 StaticFiles 启动期崩服务。
+#   (同族: 有 index.html 而 assets 缺失时原判据已过但 mount 即炸, 与判据收紧互补) — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -518,7 +520,7 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-if _HAS_WEB:
+if _HAS_WEB and (_WEB_DIR / "assets").is_dir():   # 2026-11-01 小欧 - assets 半截时 StaticFiles 启动期即 RuntimeError, 守卫防崩
     app.mount("/assets", StaticFiles(directory=str(_WEB_DIR / "assets")), name="static-assets")
 
     @app.get("/{path:path}", include_in_schema=False)
