@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-22 小欧 - 新建：管理选项弹窗——Tag 展示/添加/删除当前模型
-//  param_options 选项列表；保存前交叉校验悬空默认值（defaults[key] 不在新列表 → Modal.confirm
-//  同批回提 default_params 重置首项，复用后端 merge_nested_patch 同批合并零后端改动）。
+//  param_options 选项列表；保存前交叉校验悬空默认值（baseline[key] 不在新列表 → Modal.confirm
+//  同批回提 model_params 重置首项，复用后端 merge_nested_patch 同批合并零后端改动）。
+// 2026-11-01 小欧 - 键名统一：props `defaults` → `baseline`，请求体 `default_params` → `model_params` - 小欧-2026-11-01
 // 2026-09-22 小欧 - KISS+令牌收口：`dangling && dangling !== undefined` 冗余判断 → `dangling`（truthy 即非 undefined）；marginBottom:4/marginTop:4/fontSize:12 裸数字 → Spacing.XS/FontSize.SECONDARY - 小欧-2026-09-22
 // 2026-09-24 22:56:21 小欧 - 闭环：加 disabled prop（保存中禁用「保存」提交+doSave 头部守卫）——
 //   三堂会审发现外部 saveModelGroup saving 进行中弹窗仍可提交 param_options，与模型组保存并发写
@@ -10,6 +11,10 @@
 // 2026-10-10 小欧 - 弹窗归一：主 Modal → SettingsModal 标准壳（form=520 宽度档、confirmLoading、
 //   discard 关闭语义、destroyOnHidden）；warning/confirm 静态弹用仍走 antd Modal（无统一壳需求，不动）。
 //   实测：宽 520 / ESC 可关，符合设计。
+// 2026-11-01 小欧 - 悬空值回提只送变更键：原 `{...baseline, [dangling]: 首项}` 会就地展开整份基线，
+//   把 useSettings 注入的「厂商声明 context_length」物化成用户参数落盘 —— 后端 update_model 的
+//   model_params 是 merge 语义（dict(orig).update(patch)），只需送 `{ [dangling]: 首项 }`；
+//   物化后会压住厂商后续上调的声明窗口 —— 小欧-2026-11-01
 import React, { useState } from 'react';
 import { Button, Input, Modal, Space, Tag } from 'antd'; // Modal 仍需：warning/confirm 静态弹用
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -22,10 +27,10 @@ interface Props {
   model: string;
   // 当前模型三层解析后的 param_options（{reasoning_effort: ['low','medium','high'], ...}）
   paramOptions: Record<string, string[]>;
-  // 当前模型 default_params（悬空值交叉校验数据源）
-  defaults: Record<string, unknown>;
+  // 当前模型已保存参数基线（悬空值交叉校验数据源）
+  baseline: Record<string, unknown>;
   onClose: () => void;
-  // 保存成功后回调（父级刷新 paramOptions + defaults）
+  // 保存成功后回调（父级刷新 paramOptions + baseline）
   onSaved: () => Promise<void> | void;
   // 2026-09-24 小欧 - 闭环：保存中(saving) 禁用提交，防与模型组保存并发写 YAML 致快照错位 — 小欧-2026-09-24
   disabled?: boolean;
@@ -36,7 +41,7 @@ export const ParamOptionsModal: React.FC<Props> = ({
   provider,
   model,
   paramOptions,
-  defaults,
+  baseline,
   onClose,
   onSaved,
   disabled = false,
@@ -91,16 +96,16 @@ export const ParamOptionsModal: React.FC<Props> = ({
         return;
       }
     }
-    // 悬空值交叉校验：defaults[key] 不在新列表 → confirm 同批回提 default_params 重置首项
+    // 悬空值交叉校验：baseline[key] 不在新列表 → confirm 同批回提 model_params 重置首项
     const dangling = toChangedKeys().find(
       (k) =>
-        defaults[k] !== undefined &&
-        defaults[k] !== null &&
-        !(draft[k] ?? []).includes(String(defaults[k]))
+        baseline[k] !== undefined &&
+        baseline[k] !== null &&
+        !(draft[k] ?? []).includes(String(baseline[k]))
     );
     if (dangling) {
       Modal.confirm({
-        title: `默认值 ${dangling}='${String(defaults[dangling])}' 不在新选项内`,
+        title: `默认值 ${dangling}='${String(baseline[dangling])}' 不在新选项内`,
         content: `将重置为该参数第一选项 '${(draft[dangling] ?? [])[0] ?? ''}'，继续？`,
         okText: '确认重置',
         cancelText: '取消',
@@ -111,10 +116,9 @@ export const ParamOptionsModal: React.FC<Props> = ({
           try {
             await modelApi.updateModel(provider, model, {
               param_options: draft,
-              default_params: {
-                ...defaults,
-                [dangling]: (draft[dangling] ?? [])[0],
-              },
+              // 2026-11-01 小欧 - 只送被重置的那一个键（后端 merge 语义），
+              //   展开 baseline 会把基线注入行(厂商声明 context_length)一并物化落盘 — 小欧-2026-11-01
+              model_params: { [dangling]: (draft[dangling] ?? [])[0] },
             });
             await onSaved();
             onClose();

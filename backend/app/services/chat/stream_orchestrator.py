@@ -269,7 +269,7 @@ from typing import Optional, AsyncGenerator, Dict, List
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
 # 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
-from app.constants import DEFAULT_CONTEXT_LIMIT   # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
+from app.constants import DEFAULT_CONTEXT_LENGTH   # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
 from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
 # 回执 + 观测(汇总/日志/refs_ready notice, 两通道共用同一份数字) — 小欧 2026-10-30
 from app.services.refs.notice import (
@@ -295,7 +295,7 @@ from app.services.task.task_registry import (
     set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
     has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
     inject_message_to_task,
-    get_task_field,               # 2026-10-30 小欧 A19 插话取目标任务生效模型 context_limit — 小欧-2026-10-30
+    get_task_field,               # 2026-10-30 小欧 A19 插话取目标任务生效模型 context_length — 小欧-2026-10-30
     cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
 )
 from app.services.task.task_runtime import (
@@ -587,7 +587,7 @@ async def chat_stream_orchestrator(
                 return
             # 2026-10-30 小欧 A19(设计 6.2 序 11): 插话必须与首发同路带引用。
             #   原实现只注入 user_input, 前端 postInterject 仍上行 refs → 插话引用全丢。
-            #   预算取**目标任务**生效模型的 context_limit(运行中 agent 已持有); 插话档 5%
+            #   预算取**目标任务**生效模型的 context_length(运行中 agent 已持有); 插话档 5%
             #   (超限即拒, 不降级)。解析/裁决失败与首发同语义显式阻断, 不静默吞引用。
             #   2026-10-30 小欧 批2/3: 回执(refs_notice)与拒绝帧都经**目标任务缓冲**下发 ——
             #   插话的新 POST 流前端只 readToEnd 不解析, 直 yield 用户收不到(载体纪律见 notice 模块)。
@@ -595,7 +595,7 @@ async def chat_stream_orchestrator(
             #   漏了 resolver 的 dropped, 读不出来的文件既不在回执里也不在"全部不可用"点名里。
             _tgt_agent = await get_task_field(_active_tid, "agent")
             _tgt_ctx = int(getattr(getattr(_tgt_agent, "llm_client", None),
-                                   "context_limit", None) or DEFAULT_CONTEXT_LIMIT)
+                                   "context_length", None) or DEFAULT_CONTEXT_LENGTH)
             _ilimits = resolve_limits(_tgt_ctx, "interject")
             _ifinal, _iall_notices = await prepare_refs(
                 _start_kept, limits=_ilimits, scope="interject", sanitized_dropped=_s_dropped)
@@ -862,16 +862,16 @@ async def chat_stream_orchestrator(
         except Exception as _e:  # noqa: BLE001 - 序号仅供文案, 失败降级不阻断任务
             logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
         # ── 引用解析+体积裁决(设计 4.3/4.7): 建 agent 之后、_start_meta 注入之前 ─────
-        #   2026-10-30 小欧 A1: 运行时窗口取 agent.llm_client.context_limit。
+        #   2026-10-30 小欧 A1: 运行时窗口取 agent.llm_client.context_length。
         #   切小窗口模型时引用预算会被放大数倍。llm_client 是会话覆盖后的生效快照, 唯一真源。
         #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断),
         #   已收口到 services.refs.pipeline.prepare_refs(与插话共用同一顺序与实现)。
-        #   2026-10-31 小欧: 兜底或 DEFAULT_CONTEXT_LIMIT —— 与插话分支兜底同源同写法, 消
+        #   2026-10-31 小欧: 兜底或 DEFAULT_CONTEXT_LENGTH —— 与插话分支兜底同源同写法, 消
         #   message_builder.MAX_CONTEXT_TOKENS 绕行取值(该构造默认值本就是同一数, KISS-DIRECT);
-        #   正常链路 llm_client.context_limit 恒有值(parse_model_params 三级兜底), 本兜底仅防
+        #   正常链路 llm_client.context_length 恒有值(parse_model_params 四级兜底), 本兜底仅防
         #   llm_client 缺失边沿 —— 插话/首发两兜底单口径(DRY)。 — 小欧-2026-10-31
-        _ctx_limit = int(getattr(agent.llm_client, "context_limit", None)
-                         or DEFAULT_CONTEXT_LIMIT)
+        _ctx_limit = int(getattr(agent.llm_client, "context_length", None)
+                         or DEFAULT_CONTEXT_LENGTH)
         _limits = resolve_limits(_ctx_limit, "first")
         # 回执条目全链汇集: 读取失败/截断(resolver) + 压缩/拒绝(budget) + 越界/无 path(sanitize)。
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。

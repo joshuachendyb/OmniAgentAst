@@ -32,7 +32,7 @@
 // 2026-09-22 小强 - ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
 // 2026-09-22 小欧 - ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；后续才消费渲染 Select）
 // 2026-09-22 小欧 - onSubmitAddModel 透传 range/capabilities/param_options 到 modelApi.addModel
-//   （原仅透 default_params，新模型建出即带元数据/选项，不必回参数区返工）
+//   （原仅透 model_params，新模型建出即带元数据/选项，不必回参数区返工）
 // 2026-09-22 小欧 - ProviderConfig fallback 加 label:''（providerConfig 类型补 label 后
 //   fallback 对象须同构，否则选中未加载 Provider 时 ProviderConfig 表单缺显示名初值）
 // 2026-09-22 小欧 - ProviderConfig fallback timeout 60→150（与后端常量/三层回落对齐，
@@ -126,6 +126,9 @@
 //   能力 vs ③Provider 草稿），北京老陈实证改③区点放弃无反应、灰色 Tip 说瞎话。现点亮条件=
 //   ②或③任一脏，onOk 清 providerDraft + providerResetSeq 自增令 ProviderConfig 重挂载（本地输入
 //   按 config=已保存值重新回显，组件内部逻辑/保存链零改动），弹窗文案同步四类清单 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 键名统一（北京老陈令）：ModelParams.defaults → baseline、ParamOptionsModal 同；
+//   onSubmitAddModel 透传 default_params → model_params；providerConfig fallback base_url → api_base。
+//   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md - 小欧-2026-11-01
 import React, { useState } from 'react';
 import {
   Button,
@@ -319,7 +322,7 @@ const SettingsPage: React.FC = () => {
   );
 
   // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
-  //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
+  //   单一真相源——不用 envOverride，其 keys 来自 model_params，无参数模型会是 {} 判不出）
   const envManaged =
     state.model.providerConfig[state.model.selectedProvider]?.env === true;
 
@@ -339,7 +342,7 @@ const SettingsPage: React.FC = () => {
       ? Object.values(
           isDirty(
             state.model.params,
-            state.model.defaults,
+            state.model.baseline,
             state.model.envOverride
           )
         ).filter(Boolean).length +
@@ -564,7 +567,7 @@ const SettingsPage: React.FC = () => {
         )}
         <ModelParams
           params={state.model.params}
-          defaults={state.model.defaults}
+          baseline={state.model.baseline}
           ranges={state.model.ranges}
           options={state.model.paramOptions}
           envOverride={state.model.envOverride}
@@ -576,7 +579,7 @@ const SettingsPage: React.FC = () => {
         />
         {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
-          其 keys 来自 default_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
+          其 keys 来自 model_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>模型能力</span>
           <span style={{ flex: 1 }}>
@@ -622,7 +625,7 @@ const SettingsPage: React.FC = () => {
                 // 2026-09-27 小欧 - 掩码契约 {configured, masked}，与 model.api.ts ProviderEntry /
                 // ProviderConfig.config / settings2/types.ts 保持同一契约（缺 masked 键 tsc 直接报错）
                 api_key: { configured: false, masked: '' },
-                base_url: '',
+                api_base: '',
                 label: '',
                 timeout: 150, // 缺省 fallback 与后端常量对齐（原 60≠运行时 150）
                 max_retries: 3,
@@ -722,13 +725,13 @@ const SettingsPage: React.FC = () => {
           }
         />
         {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
-          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
+          refreshModels 重拉 param_options + baseline，与添加模型后回显同通道） */}
         <ParamOptionsModal
           open={state.model.paramOptionsModalOpen}
           provider={state.model.selectedProvider}
           model={state.model.selectedModel}
           paramOptions={state.model.paramOptions}
-          defaults={state.model.defaults}
+          baseline={state.model.baseline}
           onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
           // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交 — 小欧-2026-09-24
           disabled={s.saving}
@@ -774,7 +777,7 @@ const SettingsPage: React.FC = () => {
               provider: d.provider,
               model: d.model,
               label: d.label,
-              ...(d.default_params ? { default_params: d.default_params } : {}),
+              ...(d.model_params ? { model_params: d.model_params } : {}),
               ...(d.range ? { range: d.range } : {}),
               ...(d.capabilities ? { capabilities: d.capabilities } : {}),
               ...(d.param_options ? { param_options: d.param_options } : {}),
@@ -804,7 +807,7 @@ const SettingsPage: React.FC = () => {
         }}
         onConfirmDelete={async () => {
           // 2026-09-24 小欧 - 删除前先强制保存模型 Tab 未落库改动——删除成功后的 load() 会全量
-          //   重建 model 态（defaults/params/能力/删除名单全部重载），不保存会静默丢弃当前焦点模型的
+          //   重建 model 态（baseline/params/能力/删除名单全部重载），不保存会静默丢弃当前焦点模型的
           //   未存参数/能力/删除意图；与 selectProvider/selectModel 同款防线（复用 ensureModelSaved）
           if (!(await s.ensureModelSaved())) return;
           const target = state.model.deleteTarget ?? '';

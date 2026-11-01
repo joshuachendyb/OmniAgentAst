@@ -24,7 +24,7 @@
 #   MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_ENABLED 由 app.constants / compaction 包迁至 agent 层根
 #   compaction_constants.py, 导入路径随之更新为 app.services.agent.compaction_constants(局部导入防包级依赖)
 # 2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案, start超窗=上下文×1/2): 超窗基准改读运行时窗口
-#   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_limit 覆盖, 与 loop 同基准),
+#   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_length 覆盖, 与 loop 同基准),
 #   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
 # 2026-08-18 - 小欧 - start契约改造: _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
@@ -380,7 +380,7 @@ def _maybe_compact_injected_history(agent) -> None:
     history = list(getattr(agent, "_injected_history_msgs", None) or [])
     if not history:
         return
-    # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
+    # 上下文窗口基准 = 运行时 context_length(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
     # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
     _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
     # 2026-10-31 小欧 术语订正(北京老陈令): 阈值函数内取的是「限制系数」(limit ratio, 压缩摘要专用, 固定 0.5),

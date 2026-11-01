@@ -8,7 +8,7 @@
 // 2026-09-21 小强 - 删死分支 group==='chat'：后端注册表已删 chat 组，该块永不渲染（分组对齐后端唯一源）
 // 2026-09-21 小欧 - 渲染修复: sources 缺键回退 ?? 'yaml' → ?? 'default'（后端缺省 source='default'，缺键=默认值语义）
 // 2026-09-21 小强 - 系统Tab 3 小节（运维日志/工程目录/关于）：sectionOf 按 logging./paths.logs→运维日志、paths.*→工程目录、app.*→系统参数、其余→关于（对齐后端 system 组 12 项结构）
-// 2026-09-23 小欧 - LLM补充采样参数: sectionOf 加 general 组「模型参数」小节（llm.sampling.* + llm.context_limit_default → '模型参数'）
+// 2026-09-23 小欧 - LLM补充采样参数: sectionOf 加 general 组「模型参数」小节（llm.sampling.* + llm.context_length_default → '模型参数'）
 // 2026-09-23 小欧 - trim/compaction配置化: sectionOf 加 tuning.trim.→'裁剪(Trim)'、tuning.compaction.→'压缩(Compaction)' 两独立分块
 // 2026-09-23 小欧 - cors_origins 迁系统组: tuning 分支删 network 映射，改挂 system 分支「关于」上方；键名去 tuning 前缀 network.cors_origins — 小欧-2026-09-23
 // 2026-09-24 21:36:38 小欧 - tuning.stream_task.→tuning.live_front. 前缀同步(组名改，分组显示名「前后端之间的流/任务/缓存」不动) — 小欧-2026-09-24
@@ -34,6 +34,8 @@
 // 2026-10-18 小欧 - 危险键随子命名空间跟改: security.hitl_enabled → security.hitl.enabled、
 //   security.confirmDangerousOps → security.system.confirm_dangerous_ops, DANGEROUS_KEYS/LABELS/EFFECTS 三处同步。
 // 2026-10-18 小欧 - 注释精简冗余标注, 技术说明原样保留。
+// 2026-11-01 小欧 - 键名统一: sectionOf 判据 llm.context_limit_default → llm.context_length_default
+//   （后端 settings_registry 键已改名；此处不改则「通用兜底模型参数」小节永远匹配不到） — 小欧-2026-11-01
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -69,7 +71,7 @@ function sectionOf(group: string, key: string): string | null {
   // ✅ general 组加模型参数小节（仿 system/tuning 分支写法）— 小欧 2026-09-23
   if (group === 'general') {
     // 2026-09-28 小欧: 小节名改「通用兜底模型参数」（全局兜底默认值，单模型值以「模型」Tab 为准）— 小欧-2026-09-28
-    if (key.startsWith('llm.sampling.') || key === 'llm.context_limit_default')
+    if (key.startsWith('llm.sampling.') || key === 'llm.context_length_default')
       return '通用兜底模型参数';
     return null; // 通用组其余项（workspace/logging/agent.*）保持无小节原样
   }

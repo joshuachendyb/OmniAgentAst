@@ -10,10 +10,10 @@
   压缩/裁剪核心阈值本文件权威定义(自 app/constants.py 迁入 2026-08-17):
     COMPACTION_BUFFER/TEMP_HISTORY_CHAR_LIMIT
   CHARS_PER_TOKEN 不在本文件: 与 token 估算函数同址, 定于 agent_utils.py(2026-10-31 迁出)。
-  MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO 已删: 门限一律由运行时 context_limit × 比例计算。
+  MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO 已删: 门限一律由运行时 context_length × 比例计算。
   其余「压缩裁剪专属」常量(PRUNE_*/SUMMARY_*/TRIGGER_*/COOLDOWN_*/TAIL_*/SPLIT_*/ASSEMBLE_*)亦定义在本文件。
-  app/constants.py 不再承载压缩/裁剪相关常量(DEFAULT_CONTEXT_LIMIT 系系统级 LLM 常量, 非压缩裁剪专属,
-  2026-10-31 迁回 app/constants.py, 与 settings_registry llm.context_limit_default 同源)。
+  app/constants.py 不再承载压缩/裁剪相关常量(DEFAULT_CONTEXT_LENGTH 系系统级 LLM 常量, 非压缩裁剪专属,
+  2026-10-31 迁回 app/constants.py, 与 settings_registry llm.context_length_default 同源)。
 
 编辑历史:
 # 格式规范: {日期} {署名} {修改内容}
@@ -70,15 +70,15 @@
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
 # ============================================================
-# DEFAULT_CONTEXT_LIMIT(262144=256K) 已迁出本文件 → app/constants.py(系统级 LLM 常量, 2026-10-31):
-#   settings_registry llm.context_limit_default 设置项默认值与本兜底同源消魔法数字; 引用方
+# DEFAULT_CONTEXT_LENGTH(262144=256K) 已迁出本文件 → app/constants.py(系统级 LLM 常量, 2026-10-31):
+#   settings_registry llm.context_length_default 设置项默认值与本兜底同源消魔法数字; 引用方
 #   (lifecycle/service/message_builder/stream_orchestrator)已同步改自 app.constants 导入 — 小欧-2026-10-31
 # 意义: 压缩摘要限制系数(=上下文×1/2, 北京老陈 2026-08-17 定案; 2026-10-31 由 START_TRIGGER_RATIO 改名)——
 #       start 一次性注入历史更保守, 限制更低; 超于此即置 _needs_compact 触发 C4 锚定摘要。
 #       术语: 本值是「限制系数」(limit ratio), 只服务压缩摘要; 「调节系数」是 TRIM_TRIGGER_RATIO, 只服务 loop 裁剪。
 #       配置键 tuning.compaction.start_limit_ratio(2026-10-31 由 start_trigger_ratio 改名)。
 START_LIMIT_RATIO = 0.5
-# 意义: loop 裁剪阈值调节系数, 作用于裁剪预算(context_limit-compaction_buffer-tools_token_reserve):
+# 意义: loop 裁剪阈值调节系数, 作用于裁剪预算(context_length-compaction_buffer-tools_token_reserve):
 #       ① 裁剪入口阈值=预算×系数(一次方), 粗估超过此阈值触发绝对值安全网
 #       ② 裁剪出口队列预算=预算×系数²(二次方), 队列只能用此预算
 #       与裁剪预算同源单口径 — 小欧 2026-10-25

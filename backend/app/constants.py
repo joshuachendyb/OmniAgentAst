@@ -64,6 +64,9 @@
                         llm.context_limit_default 设置项默认值由魔法数字 262144 改引本常量;
                         引用方(lifecycle/service/message_builder/stream_orchestrator)导入路径同步改
                         app.constants, compaction_constants 不再定义 — 小欧-2026-10-31
+    2026-11-01 小欧 键名统一: DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH, 与厂商通用键
+                        context_length 同名(原 context_limit 系自造名, 全仓统一后仅存一个名字);
+                        取值顺序同步补 model_meta 一层 — 小欧-2026-11-01
     2026-10-31 小欧 新增引用体积预算比例默认值 REF_SINGLE_RATIO/REF_TOTAL_RATIO/REF_REJECT_RATIO/
                         REF_INTERJECT_RATIO: 原为 services/refs/limits.resolve_limits 内联字面量(0.20/
                         0.40/0.60/0.05), 收口至本文件作单一真源, 配置键 tuning.refs.* 仍可覆盖;
@@ -109,11 +112,12 @@ LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大�
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
 LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输出 token 数(None=不限)
 
-# 意义: LLM 上下文窗口默认上限 = 256K(未在 model_params.context_limit 配置时的兜底, 取值顺序:
-#       配置 model_params.context_limit 优先 → llm.context_limit_default 全局默认 → 本常量最终兜底)
+# 意义: LLM 上下文窗口默认上限 = 256K(未配置时的兜底, 取值顺序:
+#       model_params.context_length 用户显式 → model_meta.context_length 厂商声明 →
+#       llm.context_length_default 全局默认 → 本常量最终兜底)
 # 来源: 自 app/services/agent/compaction_constants.py 迁入(2026-10-31)——settings_registry
-#       「llm.context_limit_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
-DEFAULT_CONTEXT_LIMIT = 262144  # 【系统级】使用对象: settings_registry(llm.context_limit_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
+#       「llm.context_length_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
+DEFAULT_CONTEXT_LENGTH = 262144  # 【系统级】使用对象: settings_registry(llm.context_length_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
 
 # ============================================================
 # 3. 网络与超时

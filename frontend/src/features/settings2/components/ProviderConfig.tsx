@@ -42,6 +42,10 @@
 //   无需输入. 非空Key, 必须输入新密码并保存」，较前稿短约 130px、窄屏不再折行 — 小欧-2026-11-01
 // 2026-11-01 小欧 - 未设密钥态贴颜色二次修订（北京老陈选型）：中性灰 → antd 橙 Tag（与旧
 //   「有 N 项未保存」角标同款）；空 key 是需用户注意的状态，灰不醒目 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 键名统一（北京老陈令，全链一个名字）：①表单字段/UI 标签/config 属性/上报 patch
+//   `base_url` → `api_base`（与后端 yaml 真源同名）；②删 `retry_times` 死字段（后端只认 max_retries，
+//   该键从未被读取，留着就是第二个名字的温床）；③本地 state `baseUrl` → `apiBase`、HARDCODED_KEYS
+//   同步改名。样式令牌 baseUrlWidth 属视觉尺寸常量，与配置键无关，不改 — 小欧-2026-11-01
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch, Tag } from 'antd';
@@ -58,7 +62,7 @@ import { EnvTag } from './icons';
 // 2026-09-22 小欧 - DRY：渲染跳过与动态收集共用一份 HARDCODED_KEYS
 const HARDCODED_KEYS = new Set([
   'api_key',
-  'base_url',
+  'api_base',
   'label',
   'timeout',
   'max_retries',
@@ -70,11 +74,11 @@ interface Props {
     // 2026-09-27 小欧 - 掩码契约 {configured, masked}（后端一次生成 masked，本组件只原样下传），
     // 与 model.api.ts 的 ProviderEntry.api_key 保持一致（同一契约两处声明，形状必须相同）
     api_key: { configured: boolean; masked: string };
-    base_url: string;
+    // 2026-11-01 小欧 - base_url → api_base（与后端 yaml 真源同名，全链一个名字）- 小欧-2026-11-01
+    api_base: string;
     label: string;
     timeout: number;
     max_retries: number;
-    retry_times?: number;
     env: boolean;
     param_types?: Record<
       string,
@@ -84,10 +88,9 @@ interface Props {
   };
   onSave: (patch: {
     api_key?: string;
-    base_url?: string;
+    api_base?: string;
     label?: string;
     timeout?: number;
-    retry_times?: number;
     max_retries?: number;
     clear?: boolean;
     [key: string]: unknown;
@@ -112,7 +115,7 @@ export const ProviderConfig: React.FC<Props> = ({
 }) => {
   const [saving, setSaving] = useState(false);
   const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState(config.base_url ?? '');
+  const [apiBase, setApiBase] = useState(config.api_base ?? '');
   const [label, setLabel] = useState(config.label ?? '');
   const [timeout, setTimeoutVal] = useState(config.timeout ?? 150);
   const [maxRetries, setMaxRetries] = useState(config.max_retries ?? 3);
@@ -143,11 +146,11 @@ export const ProviderConfig: React.FC<Props> = ({
   const buildDiff = useCallback((): Record<string, unknown> => {
     const diff: Record<string, unknown> = {};
     if (apiKey.trim() !== '') diff.api_key = apiKey.trim();
-    const nowBase = baseUrl.trim();
+    const nowBase = apiBase.trim();
     // 2026-09-27 - 小欧 - 比较时只 trim 待提交的一边，配置那边用原值。
     // 原因：历史脏数据的 api_base 可能带首尾空格（后端下发时原样透出）。若两边都 trim，
     //       脏值 trim 后与输入值相同 → 判定"没改" → 按钮不亮，脏值永远清不掉。
-    if (nowBase !== (config.base_url || '')) diff.base_url = nowBase;
+    if (nowBase !== (config.api_base || '')) diff.api_base = nowBase;
     const nowLabel = label.trim();
     if (nowLabel !== '' && nowLabel !== (config.label || ''))
       diff.label = nowLabel;
@@ -160,7 +163,7 @@ export const ProviderConfig: React.FC<Props> = ({
     }
     return diff;
     // 依赖含 config 基线：缓存刷新/内联 fallback 换引用也会重算，等值即空 diff，lint 干净 — 小欧 2026-09-27
-  }, [apiKey, baseUrl, label, timeout, maxRetries, dynamicValues, config]);
+  }, [apiKey, apiBase, label, timeout, maxRetries, dynamicValues, config]);
 
   // 同一份 diff 双出口：本地脏计数（按钮亮/灰）+ 父层草稿（底部保存栏）。
   // 有意不做本地签名去重：父层保存成功会单方面清空 providerDraft，本地签名会卡在旧值不再上报，
@@ -244,7 +247,7 @@ export const ProviderConfig: React.FC<Props> = ({
           ── ③ Provider 配置 ──
         </span>
         {/* 无修改 → 灰白不可点；有修改 → 蓝 + 「（N 项）」（N=diff 键数，与底部保存栏同源）。
-            base_url 守卫是"原本有值却被清空"（错误状态），不是"当前为空"——原本就空的老配置
+            api_base 守卫是"原本有值却被清空"（错误状态），不是"当前为空"——原本就空的老配置
             仍须能改其它字段（设计稿曾用"当前为空"一票否决，属退化，已修）。— 小欧 2026-09-26 */}
         <Button
           type={dirtyCount > 0 ? 'primary' : 'default'}
@@ -252,7 +255,7 @@ export const ProviderConfig: React.FC<Props> = ({
           loading={saving}
           disabled={
             dirtyCount === 0 ||
-            (baseUrl.trim() === '' && (config.base_url || '').trim() !== '')
+            (apiBase.trim() === '' && (config.api_base || '').trim() !== '')
           }
         >
           保存 Provider 配置（立即生效）
@@ -260,11 +263,11 @@ export const ProviderConfig: React.FC<Props> = ({
         </Button>
         {/* 2026-09-26 小欧 - 迁出为 TestConnectionProbe（SRP 拆分）：
             与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。
-            base_url 为空时同样禁用（地址不通测了无意义）。 */}
+            api_base 为空时同样禁用（地址不通测了无意义）。 */}
         <TestConnectionProbe
           providerName={name}
           probeKey={apiKey}
-          baseUrlReady={baseUrl.trim() !== ''}
+          baseUrlReady={apiBase.trim() !== ''}
           marginLeft={Spacing.SM}
         />
         <span style={{ flex: 1 }} />
@@ -300,28 +303,28 @@ export const ProviderConfig: React.FC<Props> = ({
       {/* 2026-10-31 - 小欧 - 空 api_key 的语义说明收口到 SecretRevealInput 单一出处，
           本处原第二份说明与它矛盾（"留空"一词两义把操作路径搅浑），删除 — 小欧-2026-11-01 */}
 
-      {/* base_url */}
+      {/* api_base */}
       <div style={settingsRowStyle}>
-        <span style={settingsLabelStyle}>base_url</span>
+        <span style={settingsLabelStyle}>api_base</span>
         <span style={{ flex: 1 }}>
           <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
+            value={apiBase}
+            onChange={(e) => setApiBase(e.target.value)}
             style={{ width: settingsControl.baseUrlWidth }}
           />
         </span>
       </div>
-      {/* 小欧 2026-09-26: base_url 空 = 错误状态(红色警示)，原样回显不改写。
+      {/* 小欧 2026-09-26: api_base 空 = 错误状态(红色警示)，原样回显不改写。
           红色复用既有语义 token Colors.ERROR(utils/stepStyles.ts:140)，不新造色值。 */}
       <div
         style={{
           ...EXTRA_STYLE,
-          color: baseUrl.trim() === '' ? Colors.ERROR : undefined,
+          color: apiBase.trim() === '' ? Colors.ERROR : undefined,
         }}
       >
-        {baseUrl.trim() === ''
+        {apiBase.trim() === ''
           ? 'API 地址为空：无法调用该 Provider。'
-          : 'API 地址（base_url）必填；为空时无法调用该 Provider。'}
+          : 'API 地址（api_base）必填；为空时无法调用该 Provider。'}
       </div>
 
       {/* 显示名 */}

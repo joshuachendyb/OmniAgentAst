@@ -81,7 +81,7 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
         provider: PROVIDER,
         model: sibling,
         label: `${sibling}-兄弟`,
-        default_params: {},
+        model_params: {},
         param_options: { reasoning_effort: ['low', 'medium', 'high'] },
       },
     });
@@ -190,7 +190,7 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
     const b = postBody!;
     expect(b.provider).toBe(PROVIDER);
     expect(b.model).toBe(newModel);
-    expect((b.default_params as Record<string, unknown>).reasoning_effort).toBe(
+    expect((b.model_params as Record<string, unknown>).reasoning_effort).toBe(
       'high'
     );
     const po = (b.param_options as Record<string, string[]>) ?? {};
@@ -199,7 +199,7 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
     expect(po.reasoning_effort).toEqual(['low', 'medium', 'high']);
     console.log(
       `[E2E] 步骤9 POST body 校验通过: provider=${b.provider} model=${b.model} ` +
-        `default_params.reasoning_effort=${JSON.stringify((b.default_params as Record<string, unknown>).reasoning_effort)} ` +
+        `model_params.reasoning_effort=${JSON.stringify((b.model_params as Record<string, unknown>).reasoning_effort)} ` +
         `param_options.reasoning_effort=${JSON.stringify(po.reasoning_effort)}`
     );
 

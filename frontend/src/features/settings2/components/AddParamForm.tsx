@@ -24,15 +24,15 @@
 //   说明，测试亦按 placeholder 查询），三控件「参数名|类型|值」单行 settingsRowStyle + gap:Spacing.LG，
 //   行尾注释列 flex:1 与预设行注释列同位同色 - 小欧-2026-09-23
 // 2026-09-24 小欧 - PARAM_PRESETS 显示顺序按北京老陈指定调整：
-//   context_limit → temperature → max_tokens → reasoning_effort → top_p → seed → frequency_penalty → presence_penalty
+//   context_length → temperature → max_tokens → reasoning_effort → top_p → seed → frequency_penalty → presence_penalty
 //   （仅重排数组元素顺序，各预设字段内容不变；已存在的参数仍会被 existingKeys 过滤，剩余项保持新相对序）- 小欧-2026-09-24
 // 2026-09-24 小欧 - top_p/seed 的 desc 改口语化（北京老陈反馈原说明不清楚）- 小欧-2026-09-24
 // 2026-09-24 小欧 - seed desc 再改：补数字含义（北京老陈反馈看不出数字变化差异）- 小欧-2026-09-24
 // 2026-09-24 22:56:21 小欧 - 闭环：加 disabled prop（保存中禁用「确认」提交+handleAdd 守卫）——
 //   三堂会审发现参数区/重置/入口按钮已锁 saving，但表单内批量 onAdd 未锁：保存 await 期间仍可注入
 //   新键，与 saveModelGroup 闭包快照错位竞态（目标漏洞）；取消按钮不改 state 不禁 - 小欧-2026-09-24
-// 2026-09-25 05:29:51 小健 - context_limit 预设上限 900000→2000000（北京老陈确认，对齐后端
-//   settings_registry llm.context_limit_default range_=[200000,2000000] 口径）; 注释列补范围显示
+// 2026-09-25 05:29:51 小健 - context_length 预设上限 900000→2000000（北京老陈确认，对齐后端
+//   settings_registry llm.context_length_default range_=[200000,2000000] 口径）; 注释列补范围显示
 //   （原范围仅在 placeholder，输入后不可见，填 1000000 越界无提示且确认按钮灰）— 小健-2026-09-25
 // 2026-09-25 05:44:50 小健 - 预设 range 改引用单源 PARAM_DEFAULT_RANGES（与 ModelParams 兜底共用，
 //   杜绝两处范围字面量漂移）— 小健-2026-09-25

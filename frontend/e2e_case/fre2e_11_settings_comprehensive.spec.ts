@@ -880,24 +880,24 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     });
   });
 
-  test('35 Provider配置 base_url读取', async ({ page }) => {
+  test('35 Provider配置 api_base读取', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
     const cfg = page.locator('[data-section="provider-config"]');
     const baseRow = cfg
-      .getByText('base_url', { exact: true })
+      .getByText('api_base', { exact: true })
       .locator('xpath=..');
     const val = await baseRow.locator('input').inputValue();
     expect(val.length).toBeGreaterThan(0);
-    console.log(`[E2E] 35 base_url=${val}`);
+    console.log(`[E2E] 35 api_base=${val}`);
   });
 
-  test('36 Provider配置 base_url编辑→保存→回显', async ({ page }) => {
+  test('36 Provider配置 api_base编辑→保存→回显', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
     const cfg = page.locator('[data-section="provider-config"]');
     const baseRow = cfg
-      .getByText('base_url', { exact: true })
+      .getByText('api_base', { exact: true })
       .locator('xpath=..');
     const input = baseRow.locator('input');
     const before = await input.inputValue();
@@ -1002,7 +1002,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
         models: Array<{
           name: string;
           label: string;
-          default_params?: Record<string, unknown>;
+          model_params?: Record<string, unknown>;
           range?: Record<string, { min: number; max: number }>;
         }>;
       }>;
@@ -1019,7 +1019,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
           providerLabel: provider.label || provider.name,
           model: model.name,
           modelLabel: model.label || model.name,
-          original: model.default_params?.temperature,
+          original: model.model_params?.temperature,
           range: model.range?.temperature,
         }))
       )
@@ -1069,7 +1069,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       await apiPut(
         request,
         `/models/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.model)}`,
-        { default_params: { temperature: newTemperature } }
+        { model_params: { temperature: newTemperature } }
       );
       await goto(page);
       await tab(page, /模\s*型/);
@@ -1096,7 +1096,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
         await apiPut(
           request,
           `/models/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.model)}`,
-          { default_params: { temperature: originalTemperature } }
+          { model_params: { temperature: originalTemperature } }
         );
       }
     }

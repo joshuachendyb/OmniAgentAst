@@ -83,7 +83,7 @@ from typing import Any, Dict, List, Optional
 from app.config import ENV_INJECTED_KEYS
 # 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
 #   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
-from app.constants import DEFAULT_CONTEXT_LIMIT
+from app.constants import DEFAULT_CONTEXT_LENGTH
 
 # 只读免确认白名单的**默认展示值**取自安全层内置清单(services→safety 依赖方向合法, 与本包
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
@@ -146,24 +146,24 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("agent.max_steps", "int", "最大轮数", 10000, range_=[1, 10000],
               notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
-              notice="控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
+              notice="全局默认:控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
         _item("llm.sampling.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
-              notice="单次 LLM 调用最大输出 token 数，超长截断"),
+              notice="全局默认:单次 LLM 调用最大输出 token 数，超长截断"),
         _item("llm.sampling.top_p", "float", "核采样 top_p", 1.0, range_=[0, 1],
-              notice="核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选；通常与温度二选一调节，同时调易相互抵消"),
+              notice="全局默认:核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选；通常与温度二选一调节，同时调易相互抵消"),
         _item("llm.sampling.frequency_penalty", "float", "频次惩罚 (frequency_penalty)", 0, range_=[-2, 2],
-              notice="正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用"),
+              notice="全局默认:正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用"),
         _item("llm.sampling.presence_penalty", "float", "存在惩罚 (presence_penalty)", 0, range_=[-2, 2],
-              notice="正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
+              notice="全局默认:正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
         _item("llm.sampling.enable_thinking", "bool", "思考开关", True,
-              notice="全局思考开关默认值（单个模型没单独配置时用这个）：开=模型先思考再回答；关=直接回答。单模型可在模型参数里单独覆盖"),
+              notice="全局默认:思考开关默认值（单个模型没单独配置时用这个）：开=模型先思考再回答；关=直接回答。单模型可在模型参数里单独覆盖"),
         _item("llm.sampling.reasoning_effort", "select", "推理深度", "medium",
               options=["low", "medium", "high"],
               notice="全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high)。"
                      "少数派值(none/minimal/xhigh/max)各模型支持不同，放全局会导致切模型时HTTP 400，"
                      "需在模型参数里单独配置"),
-        _item("llm.context_limit_default", "int", "默认上下文窗口", DEFAULT_CONTEXT_LIMIT, range_=[200000, 2000000],
-              notice="模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
+        _item("llm.context_length_default", "int", "默认上下文窗口", DEFAULT_CONTEXT_LENGTH, range_=[200000, 2000000],
+              notice="全局默认:模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
@@ -397,11 +397,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("tuning.trim.trigger_ratio", "float", "裁剪阈值调节系数", 0.8, range_=[0.5, 0.95],
               notice="裁剪入口阈值=budget_base×系数(一次方)；裁剪出口队列预算=budget_base×系数²(二次方)；调小更早触发且队列预算更小，调大更晚触发且队列预算更大"),
         _item("tuning.trim.compaction_buffer", "int", "上下文预留空间", 20000, range_=[1000, 100000],
-              notice="裁剪预算中扣除的输出预留；不足则裁完 messages 已逼近 context_limit"),
+              notice="裁剪预算中扣除的输出预留；不足则裁完 messages 已逼近 context_length"),
         _item("tuning.trim.keep_recent_rounds", "int", "最近轮硬保护", 5, range_=[5, 20],
               notice="裁剪时最近 N 个 FC 工具步(assistant.tool_calls+tool)不参与裁剪，第 N+1 步起按预算整轮裁"),
         _item("tuning.trim.tools_token_reserve", "int", "tools 定义预留", 30000, range_=[5000, 80000],
-              notice="tools schema 占用的输入 token 预留；不足则 messages 裁至预算仍会超 context_limit 致LLM报400错误"),
+              notice="tools schema 占用的输入 token 预留；不足则 messages 裁至预算仍会超 context_length 致LLM报400错误"),
         # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）---
         _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
               notice="任务刚开始如果发现以前的对话太长装不下，先自动压成一段摘要再开始干活；关掉则不压、直接硬删"),

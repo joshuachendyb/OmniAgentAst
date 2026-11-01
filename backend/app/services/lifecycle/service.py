@@ -40,6 +40,12 @@
 #   单一真源), 取值顺序不变(配置 model_params.context_limit 优先, 否则 llm.context_limit_default, 最终本常量兜底) — 小欧-2026-10-31
 # 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 局部导入上提至模块顶部(与 stream_orchestrator:264 风格统一,
 #   KISS-DIRECT 无函数内藏 import); app/constants 纯叶子模块无循环导入风险, 零行为变化 — 小欧-2026-10-31
+# 2026-11-01 小欧 - 键名统一: context_limit → context_length(厂商通用名, 与 model_meta 同名同义),
+#   常量 DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH; parse_model_params 取值顺序补一层
+#   model_meta.context_length(厂商声明), 使模型库勾选保存的窗口真正生效 — 小欧-2026-11-01
+# 2026-11-01 13:30 小欧 - parse_model_params 增窗口来源留痕(ctx_source: user/meta/global/constant)
+#   并打一行 [窗口] 日志: 不补测试代码的前提下, 让任何一次真实会话都能核对「落库值 == 运行时值」,
+#   消除静默回落 262144 的盲区 — 小欧-2026-11-01
 """
 service — 服务创建与获取
 
@@ -56,7 +62,7 @@ from app.db.models.chat_models import ModelRef
 from app.services.lifecycle.lifecycle import close_instance_sync
 from app.services.lifecycle.connection_scope import ConnectionScope  # 唯一所有者 — 小欧-2026-09-25
 from app.config import get_config  # 新增 — 小欧 2026-09-23
-from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
+from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
 
 logger = setup_logger(__name__)
 
@@ -194,20 +200,47 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
 
 
 def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int]:
-    """解析 provider 配置的 model_params → (extra_body_params, context_limit)
+    """解析 provider 配置的 model_params → (extra_body_params, context_length)
     复用优先/DRY 归一(小欧 2026-09-01): 原逻辑双份嵌在 create_service_instance(本文件) 与
     stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
-    行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 llm.context_limit_default 全局兜底),
-    余量作 extra_body_params(无则 None)。与历史行为完全一致(仅去重, 不改逻辑)。"""
-    model_params = (provider_config or {}).get("model_params", {}) or {}
+    行为: 取目标 model 专属 dict, pop context_length(用户显式值),
+    余量作 extra_body_params(无则 None)。
+    上下文窗口取值顺序(2026-11-01 小欧 统一键名后补第二层):
+      model_params.context_length(用户显式) > model_meta.context_length(厂商声明)
+      > llm.context_length_default(全局默认) > DEFAULT_CONTEXT_LENGTH(常量兜底)。
+    补 model_meta 一层的理由: 模型库勾选保存的 ctx 落在 model_meta, 此前无任何运行期读者,
+    存了从不生效(小模型被按 262144 用反而超限, 大模型白白只用零头) — 小欧-2026-11-01
+    """
+    provider_config = provider_config or {}
+    model_params = provider_config.get("model_params", {}) or {}
     specific_params = dict(model_params.get(model, {})) if model_params else {}
     # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23
-    context_limit = specific_params.pop("context_limit", get_config().get("llm.context_limit_default", DEFAULT_CONTEXT_LIMIT))
+    # 2026-11-01 小欧 - 键名 context_limit → context_length: 与厂商通用名/ model_meta 同名;
+    #   必须 pop 出来, 否则该键会随 extra_body_params 进请求体, 多数厂商不认直接 400
+    context_length = specific_params.pop("context_length", None)
+    ctx_source = "user" if context_length is not None else ""
+    if context_length is None:
+        meta_block = provider_config.get("model_meta") or {}
+        model_meta = meta_block.get(model) if isinstance(meta_block, dict) else None
+        if isinstance(model_meta, dict):
+            context_length = model_meta.get("context_length")
+            if context_length is not None:
+                ctx_source = "meta"
+    if context_length is None:
+        context_length = get_config().get("llm.context_length_default", DEFAULT_CONTEXT_LENGTH)
+        ctx_source = "global"
+        if context_length is None:
+            context_length = DEFAULT_CONTEXT_LENGTH
+            ctx_source = "constant"
+    # 2026-11-01 小欧 - 窗口来源留痕(北京老陈指令: 不补测试代码, 改让运行日志自证):
+    #   「落库值 == 运行时值」此前是四个盲区叠加(无展示面/无渲染面/静默回落/无断言), 债藏4个月;
+    #   打出 source 后任何一次真实会话都能当场核对窗口是用户设的、厂商声明的, 还是兜底来的。
+    logger.info(f"[窗口] model={model} context_length={context_length} source={ctx_source}")
     # 2026-10-10 小欧 enable_thinking 移进 chat_template_kwargs(provider 期望的位置) — 小欧-2026-10-10
     enable_thinking = specific_params.pop("enable_thinking", None)
     if enable_thinking is not None:
         specific_params.setdefault("chat_template_kwargs", {})["enable_thinking"] = enable_thinking
-    return (specific_params or None), context_limit
+    return (specific_params or None), context_length
 
 
 def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
@@ -241,7 +274,7 @@ def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseA
     2026-08-22 小欧 归一报告v1.25 6.6: BaseAIService 构造改传 llm_model=ModelRef(provider+model+api_base),
     api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY);
     2026-09-26 小欧 签名收归 ModelRef(禁散参数拆解, KISS-DIRECT)+api_base 解析收归 _resolve_api_base(DRY)"""
-    extra_body_params, context_limit = parse_model_params(provider_config, model_ref.model)
+    extra_body_params, context_length = parse_model_params(provider_config, model_ref.model)
     max_tokens = _resolve_max_tokens(provider_config, model_ref.model)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
@@ -274,7 +307,7 @@ def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseA
         presence_penalty=provider_config.get("presence_penalty"),  # 新增 — 小欧 2026-09-23
         seed=provider_config.get("seed", None),
         extra_body_params=extra_body_params,
-        context_limit=context_limit,
+        context_length=context_length,
     )
 
 

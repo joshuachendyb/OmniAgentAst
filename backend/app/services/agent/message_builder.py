@@ -136,7 +136,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
-from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出
+from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出; 2026-11-01 键名统一改 DEFAULT_CONTEXT_LENGTH
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
     TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
@@ -226,7 +226,7 @@ class MessageBuilder:
     — 小欧 2026-07-22
     """
 
-    def __init__(self, max_context_tokens: int = DEFAULT_CONTEXT_LIMIT):
+    def __init__(self, max_context_tokens: int = DEFAULT_CONTEXT_LENGTH):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_TOKENS = max_context_tokens

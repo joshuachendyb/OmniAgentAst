@@ -168,7 +168,7 @@
 # 2026-10-01 小欧 - 落库重试锁: _process_single_step 内 update_task 补 retry_locked=3。运行期逐步落库后每事件写事务翻倍, SQLite busy_timeout 仅 500ms, 并发多任务下撞写锁概率显著上升; 原缺省 retry_locked=0 致撞锁即降级 warning(丢 token 明细), 必修
 # 2026-10-04 小欧 - 正名 context_overview 发射节奏注释(原称"每次必发", 实受下方 if 门控: 首轮/裁剪轮/每5轮), 逻辑未动
 # 2026-10-04 小欧 - usage 帧新增 context_window(运行时上下文窗口, 取 message_builder.MAX_CONTEXT_TOKENS,
-#   由 agent_runner 按 llm_service.context_limit 覆盖): 前端据此算占窗率, 不新增数据源
+#   由 agent_runner 按 llm_service.context_length 覆盖): 前端据此算占窗率, 不新增数据源
 # 2026-10-07 北京老陈 history_context 首帧前移: 第1轮那次移除(改由 react_loop 在 emit start 之前发,
 #   压缩决策后即知真实水位); 帧构造收归 telemetry.build_history_context_step(与 react_loop 共用, DRY);
 #   裁剪轮/每5轮的水位更新条件不变。
@@ -468,7 +468,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                     task_accumulated_tokens=agent.task_accumulated_tokens,         # 11.1 新增
                     session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
-                    # 2026-10-04 小欧: 随 usage 帧下发当前任务模型上下文窗口(运行时权威值, agent_runner 已按 llm_service.context_limit 覆盖),
+                    # 2026-10-04 小欧: 随 usage 帧下发当前任务模型上下文窗口(运行时权威值, agent_runner 已按 llm_service.context_length 覆盖),
                     #   前端据此算"本轮 P / 窗口"占用率; 不新增数据源, 复用 message_builder 唯一真源 — 小欧 2026-10-04
                     context_window=int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0),
                 )

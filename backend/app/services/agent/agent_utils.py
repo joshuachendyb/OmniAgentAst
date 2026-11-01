@@ -69,7 +69,7 @@ def compress_summary_threshold(ctx: int) -> int:
               ②锚点增量阈值(start_step._assemble_anchor_delta);
               ③其余按「窗口 × 限制系数」取压缩摘要 limit 的场景(与 start 阶段无关的调用方同样可用)。
     使用方法: 传运行时上下文窗口 token 数, 返回压缩摘要 limit token 数。
-    输入: ctx = agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输入: ctx = agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_length)。
     输出: int(ctx × 限制系数)。
     前置条件: ctx > 0。
     公式: int(ctx × tuning.compaction.start_limit_ratio), 缺省 START_LIMIT_RATIO=0.5。
@@ -87,7 +87,7 @@ def trim_budget_base(ctx: int) -> int:
     适用场景: ①_trim_signal 的信号三元组(供 trim_history 后续判定)
               ②trim_conv_threshold 的乘数底数。
     使用方法: 传运行时上下文窗口 token 数, 返回可用内容预算 token 数。
-    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_length)。
     输出: ctx - 输出缓冲 - tools 预留。
     前置条件: 无; ctx 过小时结果为负, 由调用方按既有语义处理(恒触发/让位)。
     公式: ctx - tuning.trim.compaction_buffer - tuning.trim.tools_token_reserve;
@@ -105,7 +105,7 @@ def trim_conv_threshold(ctx: int) -> int:
 
     适用场景: message_builder._trim_signal 的 abs_trigger 判定(粗估 > 本阈值即触发裁剪)。
     使用方法: 传运行时上下文窗口 token 数, 返回触发阈值 token 数。
-    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_length)。
     输出: int(trim_budget_base(ctx) × 调节系数)。
     前置条件: 无; 预算基准为负时本值亦为负, 即恒触发。
     公式: trim_budget_base(ctx) × tuning.trim.trigger_ratio; 缺省 TRIM_TRIGGER_RATIO。
@@ -124,7 +124,7 @@ def trim_queue_budget(ctx: int) -> int:
     适用场景: message_builder.trim_history 的队列预算(protected 之外还允许留多少),
       配合 find_tail_start(align_turn=True) 决定队尾切点。
     使用方法: 传运行时上下文窗口 token 数, 返回队列预算 token 数(尚未扣保护区占用)。
-    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_length)。
     输出: int(trim_budget_base(ctx) × 调节系数²)。
     前置条件: 无; 结果为负表示连保护区都超预算, 调用方应走"不裁队列"分支。
     公式: trim_budget_base(ctx) × tuning.trim.trigger_ratio²; 缺省 TRIM_TRIGGER_RATIO。
@@ -143,7 +143,7 @@ def conv_threshold(ctx: int) -> int:
     适用场景: start_step._compact_injected_history 进入压缩前的唯一判定——注入历史估算
       超过本阈值才做阶梯裁剪, 未超则不裁直接压缩(零行为变化)。
     使用方法: 传运行时上下文窗口 token 数, 返回判定线 token 数。
-    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_limit)。
+    输入: ctx = MessageBuilder.MAX_CONTEXT_TOKENS(agent_runner 已覆盖为模型 context_length)。
     输出: int(ctx × 调节系数), 缺省 TRIM_TRIGGER_RATIO=0.8。
     前置条件: ctx > 0。
     关联逻辑: 与 trim_conv_threshold 分工——本函数=「要不要裁」(直接对窗口取比例, 不扣

@@ -98,6 +98,8 @@
 #   重试后才收尾, 期间前端无任何取消反馈。改为 yield create_cancelled_chunk(stream_error_type="cancelled"),
 #   经 llm_call stream_error 分支转 error_type=cancelled → handle_answer 产 final(cancelled)。 小欧-2026-10-30
 # 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+# 2026-11-01 小欧 - 键名统一: 构造参数/实例属性/snapshot 参数 context_limit → context_length
+#   (与厂商通用键 model_meta.context_length 同名同义, 消我方自造名) — 小欧-2026-11-01
 """
 LLM 核心模块 — BaseAIService
 
@@ -143,7 +145,7 @@ class BaseAIService:
         presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
         seed: Optional[int] = None,
         extra_body_params: Optional[Dict] = None,
-        context_limit: Optional[int] = None,
+        context_length: Optional[int] = None,
         shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
         client_lease: Optional[SharedClientLease] = None,  # 与 shared_client 成对的池 lease, close() 归还 — 小欧-2026-09-25
     ):
@@ -179,7 +181,7 @@ class BaseAIService:
             if isinstance(user_ctk, dict) and default_ctk:
                 merged_params["chat_template_kwargs"] = {**default_ctk, **user_ctk}
         self.extra_body_params = merged_params
-        self.context_limit = context_limit
+        self.context_length = context_length
         self._llm_sdk = None
         self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
         self._client_lease = client_lease   # 共享池 lease(close 时归还, 归零由 ConnectionScope 关) — 小欧-2026-09-25
@@ -230,7 +232,7 @@ class BaseAIService:
     def snapshot(self, model_ref: Optional[ModelRef] = None,
                  api_key: Optional[str] = None,
                  extra_body_params: Optional[Dict] = None,
-                 context_limit: Optional[int] = None,
+                 context_length: Optional[int] = None,
                  shared_client: Optional["httpx.AsyncClient"] = None,
                  client_lease: Optional[SharedClientLease] = None,
                  max_retries: Optional[int] = None,
@@ -248,8 +250,8 @@ class BaseAIService:
         模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。小欧 2026-09-25: _is_snapshot
         标记消亡(runner 无条件 close, 判据在 close 三分支内); 共享快照经 client_lease 归还池引用。
         L2 切跨 provider 模型(2026-09-01 小欧): 快照必须携带"目标 provider"的 api_key 与
-        个性参数(model_params/context_limit), 否则沿用全局默认 provider(agnes) 会走错端点、
-        用错 key、丢 reasoning_effort/context_limit(api_base/api_key/model_params 缺一不可)。
+        个性参数(model_params/context_length), 否则沿用全局默认 provider(agnes) 会走错端点、
+        用错 key、丢 reasoning_effort/context_length(api_base/api_key/model_params 缺一不可)。
         extra_body_params 由 __init__ 权威合并(顶层键用户优先, chat_template_kwargs 深合并,
         保 enable_thinking:True 兜底), 此处仅直传不重复合并(DRY+KISS-DIRECT)。"""
         snap = BaseAIService(
@@ -267,7 +269,7 @@ class BaseAIService:
             presence_penalty=self._inherit(self.presence_penalty, presence_penalty, inherit_missing),
             seed=self._inherit(self.seed, seed, inherit_missing),
             extra_body_params=self._inherit(self.extra_body_params, extra_body_params, inherit_missing),
-            context_limit=self._inherit(self.context_limit, context_limit, inherit_missing),
+            context_length=self._inherit(self.context_length, context_length, inherit_missing),
             shared_client=shared_client,  # C1: 共享与否由调用方(resolver)按 provider 判据定, 构造期定论
             client_lease=client_lease,  # 与 shared_client 成对: 同 provider 快照接管池 lease — 小欧-2026-09-25
         )

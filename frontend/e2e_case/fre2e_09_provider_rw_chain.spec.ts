@@ -98,7 +98,7 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
         provider: pname,
         model: mname,
         label: `${pname}-模型`,
-        default_params: {},
+        model_params: {},
         param_options: {},
       },
     });
@@ -195,11 +195,11 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     );
     await target.click({ timeout: 10_000 });
     await page.waitForTimeout(800);
-    // 确认已切换：form 内 base_url/显示名 input 的 value（toContainText 不读 input value 属性）
+    // 确认已切换：form 内 api_base/显示名 input 的 value（toContainText 不读 input value 属性）
     const cfg = page.locator('[data-section="provider-config"]');
     await expect(
       cfg
-        .getByText('base_url', { exact: true })
+        .getByText('api_base', { exact: true })
         .locator('xpath=..')
         .locator('input')
     ).toHaveValue('https://api.example.com/v1', { timeout: 15_000 });

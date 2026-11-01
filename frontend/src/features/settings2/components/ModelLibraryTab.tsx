@@ -36,6 +36,10 @@
 //   而非 antd message —— 后者被项目 lint 规则 no-restricted-syntax 禁用 — 小欧-2026-10-10
 // 2026-10-26 18:45:00 - 小欧 - saveModels 增 max_output_length 上送（与 context_length 同策略：?? undefined，
 //   空值不发送，后端不覆盖已有值）。
+// 2026-11-01 小欧 - 问题 7（断网即失明）修复：两列改为「远端值优先，缺失时回落到本地已存元数据」，
+//   数据源=providers[].models（GET /models 已带 model_meta 的两字段，不新增接口），回落值加 * 标记并在
+//   统计行说明，杜绝把本地旧值误当远端实时值；保存时同样取该回落值，避免远端缺失把已存窗口清空。
+//   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 第八章 — 小欧-2026-11-01
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -62,6 +66,7 @@ import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import { modelApi } from '@/services/api/model.api';
 import type {
+  ModelEntry,
   ProviderEntry,
   RemoteModelItem,
   RemoteModelsResponse,
@@ -261,6 +266,56 @@ export const ModelLibraryTab: React.FC<Props> = ({
   // 不拦就是让用户拉得到、勾得了、存不进。对齐 ProviderConfig 的 isEnv 口径 — 小欧 2026-09-29
   const isEnv = provider?.env === true;
 
+  // 2026-11-01 小欧 - 问题 7：本地已存元数据索引（key=模型名，与远端 id 同值）。
+  //   单源 = providers[].models（GET /models 已下发 model_meta 的 context_length/max_output_length），
+  //   不新增接口、不复制状态 — 小欧-2026-11-01
+  const storedMeta = useMemo(() => {
+    const map = new Map<string, ModelEntry>();
+    for (const m of provider?.models ?? []) map.set(m.name, m);
+    return map;
+  }, [provider]);
+
+  /** 两列取值：远端优先（实时真源），远端缺失/不可用时回落本地已存；都没有返回 null 显 – 。 */
+  const pickMeta = (
+    m: RemoteModelItem,
+    key: 'context_length' | 'max_output_length'
+  ): { value: number | null; fromStored: boolean } => {
+    const remoteValue = m[key];
+    if (typeof remoteValue === 'number' && remoteValue > 0)
+      return { value: remoteValue, fromStored: false };
+    const stored = storedMeta.get(m.id)?.[key];
+    if (typeof stored === 'number' && stored > 0)
+      return { value: stored, fromStored: true };
+    return { value: null, fromStored: false };
+  };
+
+  /** 两列单元格：回落值加 * 并说明来源，避免本地旧值被当成远端实时值。 */
+  const renderMetaCell = (
+    m: RemoteModelItem,
+    key: 'context_length' | 'max_output_length'
+  ) => {
+    const { value, fromStored } = pickMeta(m, key);
+    return (
+      <span style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}>
+        {formatContext(value)}
+        {fromStored && (
+          <Tooltip title="远端未返回该字段，数值取自本地已存元数据">
+            <span style={{ color: Colors.TEXT.WEAK }}>*</span>
+          </Tooltip>
+        )}
+      </span>
+    );
+  };
+
+  // 统计行提示：本轮是否有回落，有才提示（无回落不打扰）
+  const storedFilled = remote?.ok
+    ? remote.models.some(
+        (m) =>
+          pickMeta(m, 'context_length').fromStored ||
+          pickMeta(m, 'max_output_length').fromStored
+      )
+    : false;
+
   // 元数据可用性按筛选器独立判定: qnaigc 81 项全有 context_length 却无 pricing，
   // 单一开关会因"有上下文"而全开，另三类照样筛出空结果。remote 为 null 返回 null 而非全 false，
   // 否则未拉取就四路置灰，用户会误以为该 provider 不支持 — 小欧 2026-09-29
@@ -439,11 +494,14 @@ export const ModelLibraryTab: React.FC<Props> = ({
           //   （北京老陈指令）。
           const saveModels = finalList.map((id) => {
             const m = remote?.models.find((x) => x.id === id);
+            // 2026-11-01 小欧 - 远端缺该字段时取本地已存值，避免把已落库的窗口/输出上限清空 - 小欧-2026-11-01
             return m
               ? {
                   id,
-                  context_length: m.context_length ?? undefined,
-                  max_output_length: m.max_output_length ?? undefined,
+                  context_length:
+                    pickMeta(m, 'context_length').value ?? undefined,
+                  max_output_length:
+                    pickMeta(m, 'max_output_length').value ?? undefined,
                   input_modalities: m.input_modalities ?? [],
                   output_modalities: m.output_modalities ?? [],
                   supported_parameters: m.supported_parameters ?? [],
@@ -531,31 +589,25 @@ export const ModelLibraryTab: React.FC<Props> = ({
        *  读表顺序即"先看能吐多少再看能吃多少"。复用 formatContext，不另立格式化函数(DRY)。 */}
       <Table.Column
         title="输出上限"
-        dataIndex="max_output_length"
         width={88}
         align="right"
         sorter={(a: RemoteModelItem, b: RemoteModelItem) =>
-          (a.max_output_length ?? 0) - (b.max_output_length ?? 0)
+          (pickMeta(a, 'max_output_length').value ?? 0) -
+          (pickMeta(b, 'max_output_length').value ?? 0)
         }
-        render={(n: number | null | undefined) => (
-          <span style={{ fontSize: FontSize.SECONDARY }}>
-            {formatContext(n)}
-          </span>
-        )}
+        render={(_, m: RemoteModelItem) =>
+          renderMetaCell(m, 'max_output_length')
+        }
       />
       <Table.Column
         title={<span style={{ whiteSpace: 'nowrap' }}>上下文窗口</span>}
-        dataIndex="context_length"
         width={116}
         align="right"
         sorter={(a: RemoteModelItem, b: RemoteModelItem) =>
-          (a.context_length ?? 0) - (b.context_length ?? 0)
+          (pickMeta(a, 'context_length').value ?? 0) -
+          (pickMeta(b, 'context_length').value ?? 0)
         }
-        render={(n: number | null | undefined) => (
-          <span style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}>
-            {formatContext(n)}
-          </span>
-        )}
+        render={(_, m: RemoteModelItem) => renderMetaCell(m, 'context_length')}
       />
       <Table.Column
         // 列头必须自带单位: 单位删掉、或塞进 Tooltip 都等于默认不可见(用户不看悬停就不知道
@@ -874,6 +926,8 @@ export const ModelLibraryTab: React.FC<Props> = ({
           共 {remote.models.length} 个模型
           {filterCount > 0 ? `，命中 ${filtered.length} 个` : ''}
           ，已配置 {remote.configured.length} 个，已勾选 {finalList.length} 个
+          {/* 2026-11-01 小欧 - 问题 7：回落值来源说明（只在真有回落时出现）- 小欧-2026-11-01 */}
+          {storedFilled && '（带 * 的数值取自本地已存元数据，远端本次未返回）'}
           {/* 2026-10-09 小欧 - 下线项不再计入勾选；此处改报"保存时将移除"并点名，未保存前配置不动 */}
           {preservedIds.length > 0 &&
             `（另有 ${preservedIds.length} 个已下线项将在保存时移除：${preservedIds.join('、')}）`}

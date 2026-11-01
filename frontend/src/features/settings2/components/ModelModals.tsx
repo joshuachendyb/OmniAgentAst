@@ -41,6 +41,8 @@
 // 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: 添加模型窗 width form(520)→display(800) + layout vertical→horizontal + labelCol(span5, 右对齐), 与「添加 Provider」同款版式 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 06:31:51 小欧 - 标签改左对齐成三条竖线: labelCol textAlign right→left(标签列起点统一, 控件起点统一); labelCol span 9 相关(详见内联注释) — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 08:02:51 小欧 - Provider 输入框加长与地址 hover 看全长: 超长地址框内放不下, 原生 title 跟随输入值实时显示完整串(空值不弹); API Key 是掩码不加(hover 弹明文等于泄密) — 小欧-2026-10-11
+// 编辑历史: 2026-11-01 小欧 - 键名统一: 添加模型弹窗参数模板的读写字段 default_params → model_params
+//   （候选来源 ModelEntry.model_params / 提交体 model_params），与后端 DTO 同名 — 小欧-2026-11-01
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -94,7 +96,7 @@ interface Props {
     provider: string;
     model: string;
     label: string;
-    default_params?: Record<string, unknown>;
+    model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
     capabilities?: string[];
     param_options?: Record<string, string[]>;
@@ -136,12 +138,12 @@ export const ModelModals: React.FC<Props> = (props) => {
     setMProvider(props.selectedProvider);
   }, [props.selectedProvider]);
 
-  // 模板区：候选 = 所选 Provider 已有模型 default_params ∪ param_options key 并集
+  // 模板区：候选 = 所选 Provider 已有模型 model_params ∪ param_options key 并集
   const sibModels = providers.find((p) => p.name === mProvider)?.models ?? [];
   const candKeys = Array.from(
     new Set([
       ...sibModels.flatMap((m) => [
-        ...Object.keys(m.default_params ?? {}),
+        ...Object.keys(m.model_params ?? {}),
         ...Object.keys(m.param_options ?? {}),
       ]),
       ...PARAM_PRESETS.map((p) => p.key),
@@ -179,7 +181,7 @@ export const ModelModals: React.FC<Props> = (props) => {
         model: v.model,
         label: v.model,
         ...(Object.keys(collected.params).length
-          ? { default_params: collected.params }
+          ? { model_params: collected.params }
           : {}),
         ...(Object.keys(collected.options).length
           ? { param_options: collected.options }
@@ -238,7 +240,7 @@ export const ModelModals: React.FC<Props> = (props) => {
     const preset = PARAM_PRESETS.find((p) => p.key === key);
     return (
       collected.params[key] ??
-      sibModels[0]?.default_params?.[key] ??
+      sibModels[0]?.model_params?.[key] ??
       preset?.default
     );
   };
@@ -390,7 +392,7 @@ export const ModelModals: React.FC<Props> = (props) => {
               </Form.Item>
             </Col>
           </Row>
-          {/* 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集
+          {/* 参数模板：勾选即带入，候选=兄弟模型 model_params ∪ param_options key 并集
               2026-10-10 22:15 小欧 - 视觉优化：①裸排的11 行套 ModalSection 弱容器，与必填表单分层
               （原为一行灰字浮在表单下，11 行 checkbox+input 连成一片"墙"，看不出这是可选区）；
               ②按 枚举/数值/开关 三类分组（用户能按类型定位，不再逐行扫）；
@@ -531,7 +533,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           </ModalSection>
 
           <ModalSection title="连接" style={{ marginTop: Spacing.MD }}>
-            {/* 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
+            {/* 小欧 2026-09-26: api_base 必填 — URL 是 Provider 的必要配置，
                 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
                 2026-10-10 22:35 小欧 - API 地址/API Key 改并排（原上下排把「批量模型」块
                 顶出可视区，滚动区正好切在输入框中间像坏掉了）。

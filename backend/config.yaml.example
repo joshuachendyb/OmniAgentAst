@@ -11,7 +11,7 @@
 #   2026-09-21 - 小欧 - 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
 #   2026-09-22 - 小欧 - 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
 #   2026-09-22 - 小欧 - 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
-#   2026-09-23 - 小欧 - LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
+#   2026-09-23 - 小欧 - LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_length_default）
 #   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
 #   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
 #   2026-09-23 - 小欧 - 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
@@ -29,6 +29,8 @@
 #   2026-10-18 小欧 - 补 hitl.shell_readonly_prefixes: 原为代码内硬编码, 收紧须发版; 留空即回退内置名单。
 #   2026-10-25 小欧 - tuning.trim 3 键→5 键: 加 keep_recent_rounds=5(裁剪时最近 N 个 FC 工具步不裁, 5-20)、
 #     tools_token_reserve=30000(tools schema 输入 token 预留, 防裁完仍超窗 400); 与 settings_registry 同批注册。
+#   2026-11-01 小欧 - 键名统一: ai.{p}.model_params/model_meta 内的 context_limit → context_length、
+#     llm.context_limit_default → llm.context_length_default（与运行时真源同名，旧名作废不保留别名）— 小欧-2026-11-01
 #   2026-10-25 23:09 小欧 - tuning.trim.trigger_ratio 0.75→0.9: 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径; 与 settings_registry 同批改。
 #   2026-11-01 小欧 - ai 域新增 kilo Provider 块: 免费网关(实测 /models 拉 384 模型与 :free/0 价调用均免
 #     key, 付费需自填 key); 与真实 config.yaml 同步接入 — 小欧-2026-11-01
@@ -153,7 +155,7 @@ ai:
       - z-ai/glm-4.7-flash-free
     timeout: 60
     max_retries: 3
-  # 模型参数当前值（运行时透传 extra_body/context_limit）：写法是在对应模型下挂 model_params，
+  # 模型参数当前值（运行时透传 extra_body/context_length）：写法是在对应模型下挂 model_params，
   #   key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）；
   #   设置页「+ 添加参数」勾选预设后保存即按此形状写入 — 小欧-2026-10-11
 
@@ -390,7 +392,7 @@ llm:
     frequency_penalty: 0      # 正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用
     presence_penalty: 0       # 正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用
     reasoning_effort: low     # 全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high).默认low
-  context_limit_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
+  context_length_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
 
 # 调优配置（前端「调优」Tab 展示；9子组33键，network 已迁顶层）— 小欧-2026-09-23
 tuning:

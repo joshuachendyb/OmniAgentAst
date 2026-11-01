@@ -271,7 +271,7 @@ shell 命令执行前的**静态风险判定**单一权威。三类同域关注�
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_limit)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；context_limit 配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
+| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_length)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；取值顺序 model_params.context_length > model_meta.context_length > llm.context_length_default > DEFAULT_CONTEXT_LENGTH，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
 
 > 落点说明(2026-09-01 小欧 复用优先/DRY 归一): 原逻辑双份嵌在 create_service_instance(service.py) 与 stream_orchestrator(L2 跨 provider 快照), 归一为本函数唯一权威, 消除双份漂移; 行为与历史一致(仅去重, 不改逻辑)。
 
@@ -649,11 +649,11 @@ def my_parse_json(json_str):
 |--------|------|------|--------|
 | `get_models` | GET /models：providers/models 层级 + current_model_ref | 无 | Dict: {providers, current_model_ref} |
 | `get_providers` | GET /providers：provider 列表（含掩码 key） | 无 | List[Dict] |
-| `add_model` | POST /models：校验存在+唯一 → 单次 region 合并落盘 | provider, model, label, default_params, range_, capabilities | Dict: {ok, mtime, ...} |
-| `update_model` | PUT /models/{p}/{m}：label/range/capabilities 写 model_meta；default_params 逐键 merge；remove_params 键级删除（先从 model_params/range/param_options 删键再 merge default_params，空 dp=整块清空与 P8 叠加） | provider, model, fields | Dict: {ok, model, mtime} |
+| `add_model` | POST /models：校验存在+唯一 → 单次 region 合并落盘 | provider, model, label, model_params, range_, capabilities | Dict: {ok, mtime, ...} |
+| `update_model` | PUT /models/{p}/{m}：label/range/capabilities 写 model_meta；model_params 逐键 merge；remove_params 键级删除（先从 model_params/range/param_options 删键再 merge model_params，空 mp=整块清空与 P8 叠加） | provider, model, fields | Dict: {ok, model, mtime} |
 | `delete_model` | DELETE：models[] 移除 + 清 model_params/model_meta 块；删当前 → 自动切换（switched_to）；无模型跨 provider 回退 | provider, model | Dict: {ok, switched_to, mtime} |
 | `add_provider` | POST /providers：name 唯一 → 写入 ai.{name} 块 | name, label, api_base, api_key, model, timeout | Dict: {ok, provider, mtime} |
-| `update_provider_config` | PUT /providers/{name}：改 api_key/base_url/timeout 立即生效；clear=true 清空 api_key | name, fields | Dict: {ok, provider, mtime} |
+| `update_provider_config` | PUT /providers/{name}：改 api_key/api_base/timeout 立即生效；clear=true 清空 api_key | name, fields | Dict: {ok, provider, mtime} |
 | `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
 | `_require_provider_for_fetch` | [68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) | name, ai | Tuple[Dict[str, Any], str] |
 | `_http_get_remote_models` | [68] HTTP 拉取层 GET {api_base}/models → (resp, err)；网络异常统一 err 文案；timeout 30s | api_base, headers | Tuple[Any, Optional[str]] |
@@ -671,6 +671,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.20 | 2026-11-01 14:40:00 | **键名统一**(北京老陈令: 一个概念一个名字, 不排期一次改净): ①1.x `parse_model_params` 返回值由 `context_limit` 更名 `context_length`, 取值顺序补 `model_meta.context_length` 层(model_params 用户值 > 厂商声明 > 全局默认 > 常量兜底), 常量 `DEFAULT_CONTEXT_LIMIT` → `DEFAULT_CONTEXT_LENGTH`；②10.3 `add_model`/`update_model` 形参与请求体 `default_params` → `model_params`, `_models_of` 下发键同改并补下发 `context_length`(模型库保存的窗口此前无读取面)；③10.3 `update_provider_config` 删 `base_url`/`retry_times` 别名, 只认 `api_base`/`max_retries`；④全局设置键 `llm.context_limit_default` → `llm.context_length_default` | 小欧 |
 | v5.17 | 2026-10-30 23:20:00 | **§3.6 `[54]` 三堂会审整改**(小欧): ①`_ws_apply` 不变量兜底——旧默认行被编辑/删除时默认标志继承给新列表首条(维持"默认工作区始终存在"系统不变量, 防 PATCH 后零默认行→下次建任务新建时间戳目录); ②`_backfill_ws_default` 存量库一次性回填——无 is_default=1 行的会话把最后一条置 1(防 342 个老会话下次建任务各建一个垃圾目录); ③`_verify_ws_columns` 启动期 fail-loud 复核三标注列(仿 `_verify_acc_columns` 先例, 防 `_ensure_column` 隐性失败致运行期 SELECT 隐性 OperationalError); ④新增常量 `MAX_WS_INJECT_CHARS=4096`——prompt 注入块总字符上限(防 64 目录×500 字符≈30KB 撑爆, 超限只保留前若干行+省略提示) | 小欧 |
 | v5.19 | 2026-10-31 15:52:00 | **§3.5 / §1.8 公用函数收口**(小欧, 北京老陈令): ①§3.5 登记 `compress_summary_threshold`(窗口×限制系数)/`trim_budget_base`(窗口-输出缓冲-tools预留)/`trim_conv_threshold`(基准×调节系数)/`trim_queue_budget`(基准×调节系数²), 四者均落 `services/agent/agent_utils.py`, 消费方 `start_step` 两处 / `message_builder._trim_signal`+`trim_history` / `refs.limits.budget_base_of` 全部改调, 生产侧零手写算式; `estimate_tokens` 宿主路径由 `token_estimate.py` 更正为 `agent_utils.py`; 同批删死属性 `MessageBuilder._tools_token_reserve`(该口径由 `trim_budget_base` 单点持有)。②§1.8 新登记 `to_dict_or`/`safe_sub_dict`(嵌套取值防御公用化), `observation_formatter._safe_llm_sub` 与 `toolhelper.tool_utils.save_text_to_file` 改调同一真源, 消除 `.get(k,{}).get(...)` 在值为 None/str 时的 AttributeError | 小欧 |
 | v5.18 | 2026-10-31 00:42:00 | **§3.6 `[54]` 三堂会审整改(修正)**(小欧): ①撤 `_ws_apply` "首条顶上"兜底(B定案A): 默认标志只按 path 继承, 默认行被删/改名时不继承, 交 reconcile 按规则2重建; ②`_backfill_ws_default` 改名 `_backfill_ws_default_legacy`, 改造为"存量库一次性识别老默认目录并置 is_default=1"(正则匹配路径中内嵌会话ID前4位, 门控: 仅 is_default 列本次新加才跑, 防复活已删默认行破坏规则2); ③`_append_ws_suffix` 注入块文案定稿: 删属性/memo/默认标注, 目录行纯路径, 首行"本次任务新增会话工作目录", 尾行统一"会话工作目录" | 小欧 |

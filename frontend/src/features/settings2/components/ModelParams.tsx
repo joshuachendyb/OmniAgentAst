@@ -24,6 +24,10 @@
 //   - 小欧-2026-09-24
 // 2026-09-25 05:44:50 小健 - range 取值加内置兜底 PARAM_DEFAULT_RANGES[key]（meta 未存 range 时），
 //   统一同为数值参数却有的显示滑块+数字框、有的只出数字框的显示形态（北京老陈选定方案）— 小健-2026-09-25
+// 2026-11-01 小欧 - 键名统一：①props `defaults` → `baseline`（已保存参数基线，与调用方 ModelState 同名）；
+//   ②参数名 context_limit → context_length（与厂商通用名/后端真源同名）。
+//   并集渲染 + `params[key] ?? baseline[key]` 显示兜底不变 —— 厂商声明窗口经 load 通道注入 baseline 后，
+//   context_length 行即可见可编辑（原本因基线缺失连行都渲染不出来）- 小欧-2026-11-01
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -38,7 +42,8 @@ import { DirtyDot, EnvTag } from './icons';
 
 interface Props {
   params: Record<string, unknown>;
-  defaults: Record<string, unknown>;
+  // 2026-11-01 小欧 - 由 defaults 改名 baseline（已保存参数基线，脏判定/显示兜底双用）- 小欧-2026-11-01
+  baseline: Record<string, unknown>;
   ranges: Record<string, { min: number; max: number }>;
   options?: Record<string, string[]>;
   envOverride: Record<string, boolean>;
@@ -51,7 +56,7 @@ interface Props {
 
 export const ModelParams: React.FC<Props> = ({
   params,
-  defaults,
+  baseline,
   ranges,
   options,
   envOverride,
@@ -59,15 +64,15 @@ export const ModelParams: React.FC<Props> = ({
   onDelete,
   disabled = false,
 }) => {
-  const dirty = isDirty(params, defaults, envOverride);
+  const dirty = isDirty(params, baseline, envOverride);
   return (
     <div>
-      {[...new Set([...Object.keys(defaults), ...Object.keys(params)])].map(
+      {[...new Set([...Object.keys(baseline), ...Object.keys(params)])].map(
         (key) => {
           // 2026-09-25 05:44:50 小健 - 北京老陈选定前端兜底统一: meta 未存 range 时按参数名取内置默认范围,
-          //   杜绝同为 context_limit 却「有滑块/纯数字框」两种形态(取决于该模型当初加参数时是否写入 range)— 小健-2026-09-25
+          //   杜绝同为 context_length 却「有滑块/纯数字框」两种形态(取决于该模型当初加参数时是否写入 range)— 小健-2026-09-25
           const range = ranges[key] ?? PARAM_DEFAULT_RANGES[key];
-          const rawValue = params[key] ?? defaults[key];
+          const rawValue = params[key] ?? baseline[key];
           const enumOpts = (options ?? {})[key];
           const numValue =
             typeof rawValue === 'number' ? rawValue : Number(rawValue);
@@ -157,7 +162,7 @@ export const ModelParams: React.FC<Props> = ({
                     try {
                       JSON.parse(e.target.value);
                     } catch {
-                      onChange(key, defaults[key]);
+                      onChange(key, baseline[key]);
                     }
                   }}
                 />

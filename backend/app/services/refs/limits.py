@@ -9,7 +9,7 @@
 #   配置键 tuning.refs.* 仍可覆盖, 数值零变更 — 小欧-2026-10-31
 """services.refs.limits — 引用预算阈值的唯一真源
 
-职责(单一职责): 由「本次生效模型的 context_limit」派生出引用链路需要的全部阈值:
+职责(单一职责): 由「本次生效模型的 context_length」派生出引用链路需要的全部阈值:
   单条上限/合计上限/拒绝线(首发) + 插话上限(interject) + 字符上限 + MAX_REFS。
 为何独立: 阈值散在 DTO/resolver/budget/前端四处的历史已实测分叉(2MB 在 models.py:19 与
   browse_service.py:112 两处独立取值, 口径已分家); 本模块成为唯一入口, 改阈值只改一处。
@@ -33,7 +33,7 @@ MAX_REFS = 20
 @dataclass(frozen=True)
 class RefLimits:
     """一批阈值(预算基准派生)。全部只读, 供 resolver/budget/orchestrator 消费。"""
-    budget_base: int          # 预算基准 = context_limit - compaction_buffer - tools_token_reserve
+    budget_base: int          # 预算基准 = context_length - compaction_buffer - tools_token_reserve
     single_cap_tokens: int    # 首发单条上限(预算×0.20)
     total_cap_tokens: int     # 首发合计上限(预算×0.40)
     reject_tokens: int        # 首发拒绝线(预算×0.60)
@@ -42,15 +42,16 @@ class RefLimits:
     read_max_bytes: int       # 单条读取字节上限(= 单条字符上限, 保守 1 字符 1 字节)
 
 
-def budget_base_of(context_limit: int) -> int:
+def budget_base_of(context_length: int) -> int:
     """预算基准: 窗口 - 输出缓冲 - tools预留。与 trim_history 同源口径。
 
-    2026-10-29 小欧 - 运行时化: context_limit 由 agent_runner.py:627 用 llm_service.context_limit
+    2026-10-29 小欧 - 运行时化: context_length 由 agent_runner.py:627 用 llm_service.context_length
     覆盖 MAX_CONTEXT_TOKENS, 故本函数必须接收运行时值, 禁写死 262144/212144。
     2026-10-31 小欧 - 算式收口: 直调 agent_utils.trim_budget_base(与 message_builder._trim_signal
     同一真源), 引用域与裁剪域的预算口径不再各写一份 — 小欧-2026-10-31
+    2026-11-01 小欧 - 键名统一: context_limit → context_length — 小欧-2026-11-01
     """
-    return trim_budget_base(context_limit)
+    return trim_budget_base(context_length)
 
 
 def _ratio_of(cfg: dict, key: str, default: float) -> float:
@@ -71,7 +72,7 @@ def _ratio_of(cfg: dict, key: str, default: float) -> float:
     return value
 
 
-def resolve_limits(context_limit: int, scope: str = "first") -> RefLimits:
+def resolve_limits(context_length: int, scope: str = "first") -> RefLimits:
     """派发阈值。scope: first | interject。预算反推, 不写死字节数。
 
     首发: 单条 20% / 合计 40% / 拒绝 60%(北京老陈 2026-10-29 裁定)。
@@ -82,7 +83,7 @@ def resolve_limits(context_limit: int, scope: str = "first") -> RefLimits:
     _total_r = _ratio_of(cfg, "total_ratio", REF_TOTAL_RATIO)
     _reject_r = _ratio_of(cfg, "reject_ratio", REF_REJECT_RATIO)
     _interject_r = _ratio_of(cfg, "interject_ratio", REF_INTERJECT_RATIO)
-    base = budget_base_of(context_limit)
+    base = budget_base_of(context_length)
     single_t = int(base * _single_r)
     if scope == "interject":
         interject_t = int(base * _interject_r)

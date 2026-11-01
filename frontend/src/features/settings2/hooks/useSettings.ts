@@ -98,6 +98,13 @@
 //   ③mtimeRef 实时镜像：saveAll/saveGroup/ensureModelSaved 异步编排链捕获旧 render 闭包，
 //   守卫读 state.mtime 必得旧值自误判（load reset 清草稿老病同源），新守卫一律读 ref；
 //   syncMtime/load 双写点同拍刷新 - 小欧-2026-11-01
+// 2026-11-01 小欧 - 键名统一（北京老陈令，全局一次改净不排期）：①`default_params` → `model_params`
+//   （六处读写 + saveModelGroup 请求体 + providers 缓存 patch；后端 DTO/服务/前端 api 层同拍改名）；
+//   ②`defaults` → `baseline`（ModelState 快照语义名，与通用设置 llm.context_length_default 同名混淆
+//   的病根铲除）；③四通道 load/selectProvider/selectModel/refreshModels 基线改写
+//   withDeclaredContextLength(model_params, context_length)：用户值优先、厂商声明值仅兜底，
+//   ②参数区 context_length 行由此恒可编辑且默认显示厂商声明窗口。详见
+//   doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 问题 1/2 - 小欧-2026-11-01
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -116,6 +123,8 @@ import {
   // 2026-09-24 小欧 - ②能力归一/保存转换（modelUtils 单源，与 SettingsPage 共用词表）- 小欧-2026-09-24
   normalizeCaps,
   capsForSave,
+  // 2026-11-01 小欧 - 基线补厂商声明窗口（用户值优先，声明值仅兜底）：四条通道共用单点 — 小欧-2026-11-01
+  withDeclaredContextLength,
 } from '../utils/modelUtils';
 import type { ModelState, SettingsState, TabKey } from '../types';
 import {
@@ -128,7 +137,7 @@ import {
 const PREF_KEY = 'omni.prefs.v1';
 
 // 2026-09-22 小欧 - DRY 收口：load()/refreshModels() 两处 providerConfig 构建完全重复 → 抽公共构建函数
-//   api_key/base_url/label/timeout/max_retries/env + 动态参数值（rate_limit 等 param_types 元数据驱动新键，
+//   api_key/api_base/label/timeout/max_retries/env + 动态参数值（rate_limit 等 param_types 元数据驱动新键，
 //   跳过具名键/元数据/列表类，其余标量照抄）；只此一处维护，杜绝改一处漏一处
 const DYNAMIC_PROVIDER_SKIP_KEYS = [
   'name',
@@ -150,7 +159,7 @@ function buildProviderConfig(
       p.name,
       {
         api_key: p.api_key,
-        base_url: p.api_base,
+        api_base: p.api_base,
         label: p.label,
         timeout: p.timeout,
         max_retries: p.max_retries,
@@ -211,7 +220,7 @@ const initialModel = () => ({
   selectedProvider: '',
   selectedModel: '',
   params: {},
-  defaults: {},
+  baseline: {},
   ranges: {},
   paramOptions: {},
   // 2026-09-23 小欧 - 能力编辑副本+基线（load 四通道回填覆盖）
@@ -325,7 +334,7 @@ export function useSettings() {
   const load = useCallback(
     // 2026-09-26 - 小欧 - 修 C03「刷新 secret 掩码时静默清空模型区未保存修改」（三遍核实确认成立）：
     //   新增 `keepModel`：只刷新"设置区"(schema/values/sources/baseline/mtime)，**原样保留模型区**
-    //   (selectedProvider/selectedModel/params/defaults/capabilities/envOverride/providerConfig)。
+    //   (selectedProvider/selectedModel/params/baseline/capabilities/envOverride/providerConfig)。
     //   起因：secret 行落盘后需重拉以刷新掩码，走的是 onRefresh → load()，而 load() 原实现
     //   **无条件重建整个 model 区**（见下方 setState 中 `model: {...initialModel(), ...}`）。
     //   `preserve` 逻辑只保护**设置区**的脏键缓冲，模型区的未保存编辑（改了参数/能力/勾了 env/
@@ -364,17 +373,20 @@ export function useSettings() {
         const current =
           provider?.models.find((m) => m.name === (ref?.model ?? '')) ??
           provider?.models[0];
-        const defaults = Object.fromEntries(
-          Object.entries(
-            (current?.default_params ?? {}) as Record<string, unknown>
-          )
+        // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口
+        //   (withDeclaredContextLength: 用户值优先, 声明值仅兜底) — 小欧-2026-11-01
+        const baseline = withDeclaredContextLength(
+          (current?.model_params ?? {}) as Record<string, unknown>,
+          current?.context_length
         );
         const providerConfig = buildProviderConfig(models.providers);
         // S5：provider 由 {NAME}_API_KEY 环境变量接管时（后端 update_model/update_provider_config
         // 均 _raise_if_env_takeover 拒绝），其模型参数保存必败 → 参数区整体标记 envOverride 禁用。
+        // 2026-11-01 小欧 - 键集与另三通道同源改取 baseline：基线含厂商声明窗口注入行，
+        //   若仍按 model_params 取键，env 接管时注入行不会标禁改（四通道口径不一） — 小欧-2026-11-01
         const envOverride = getEnvOverride(
           provider?.env,
-          Object.keys(current?.default_params ?? {})
+          Object.keys(baseline)
         );
         setState((s) => {
           const resetAll = opts?.reset ?? false;
@@ -414,8 +426,8 @@ export function useSettings() {
                   providers: models.providers,
                   selectedProvider: provider?.name ?? '',
                   selectedModel: current?.name ?? '',
-                  params: { ...defaults },
-                  defaults,
+                  params: { ...baseline },
+                  baseline,
                   ranges: {
                     ...((current?.range ?? {}) as Record<
                       string,
@@ -553,7 +565,7 @@ export function useSettings() {
   // 2026-09-23 小欧 - 定案：能力脏计入 +1（isDirty 已联合判定，计数不跟上会「模型(0 项)却可保存」显示失真）
   const dirtyCount = useMemo(() => {
     const modelDirty = Object.values(
-      isDirty(state.model.params, state.model.defaults, state.model.envOverride)
+      isDirty(state.model.params, state.model.baseline, state.model.envOverride)
     ).filter(Boolean).length;
     const capsDirty = isCapsDirty(
       state.model.capabilities,
@@ -575,7 +587,7 @@ export function useSettings() {
   }, [
     state.dirtyKeys,
     state.model.params,
-    state.model.defaults,
+    state.model.baseline,
     state.model.envOverride,
     state.model.capabilities,
     state.model.capabilitiesBaseline,
@@ -782,7 +794,7 @@ export function useSettings() {
     async (opts?: { skipMtimeCheck?: boolean }) => {
       const dirty = isDirty(
         state.model.params,
-        state.model.defaults,
+        state.model.baseline,
         state.model.envOverride
       );
       const changed = Object.fromEntries(
@@ -790,31 +802,31 @@ export function useSettings() {
           .filter((k) => dirty[k])
           .map((k) => [k, state.model.params[k]])
       );
-      // 2026-09-23 小欧 - 能力脏也算可保存；★空 changed 不带 default_params
-      //   （后端 default_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
+      // 2026-09-23 小欧 - 能力脏也算可保存；★空 changed 不带 model_params
+      //   （后端 model_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
       const capsChanged = isCapsDirty(
         state.model.capabilities,
         state.model.capabilitiesBaseline
       );
-      // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 default_params，只送 remove_params）
+      // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 model_params，只送 remove_params）
       const hasRemovals = state.model.removedParams.length > 0;
       if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
         return { ok: true as const };
       // 2026-09-23 小欧 - 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
       //   无新键时 body 与原来完全一致（零行为变化）
-      const prevDefaults = state.model.defaults;
-      const newKeys = Object.keys(changed).filter((k) => !(k in prevDefaults));
+      const prevBaseline = state.model.baseline;
+      const newKeys = Object.keys(changed).filter((k) => !(k in prevBaseline));
       const body: {
-        default_params?: Record<string, unknown>;
+        model_params?: Record<string, unknown>;
         range?: Record<string, { min: number; max: number }>;
         param_options?: Record<string, string[]>;
         capabilities?: string[];
-        // 2026-09-24 小欧 - ①键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
+        // 2026-09-24 小欧 - ①键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
         remove_params?: string[];
       } = {};
       if (hasRemovals) body.remove_params = [...state.model.removedParams];
       if (Object.keys(changed).length) {
-        body.default_params = changed;
+        body.model_params = changed;
         if (newKeys.length) {
           // 2026-11-01 小欧 - 形态信封收口：只随新键捎带其自身 range/param_options。
           //   原全量 {...state.model.ranges}/{...paramOptions} 会把已放弃未保存键的形态
@@ -852,7 +864,7 @@ export function useSettings() {
           }
         }
         // A1：模型参数写 ai.{provider}.model_params.{model}.{key}（运行时 parse_model_params 消费），
-        // 经 PUT /models/{provider}/{model} 的 default_params 通道，不再走 /settings 裸 key（registry 无此 key 会保存失败）
+        // 经 PUT /models/{provider}/{model} 的 model_params 通道，不再走 /settings 裸 key（registry 无此 key 会保存失败）
         const r = await modelApi.updateModel(
           state.model.selectedProvider,
           state.model.selectedModel,
@@ -865,17 +877,17 @@ export function useSettings() {
         showSuccess('模型参数已保存');
         // 2026-09-23 小欧 - providers 内该模型 capabilities 同步 patch
         //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
-        // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
-        //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
+        // 2026-09-24 小欧 - 修复：同步补 model_params/range/param_options 回写 providers 缓存
+        //   （原仅同步 capabilities——model_params 仍是 load 时旧值，selectModel 切回读 entry.model_params
         //   得旧值，参数区显示旧值而非刚保存的新值；range/param_options 新增键落盘同类隐患一并回写）- 小欧-2026-09-24
         // 2026-09-24 小欧 - ①保存成功后清空 removedParams；②capabilitiesBaseline 存归一态（与 state 一致防假脏）；
         //   providers 缓存存保存态 capsForSave（空→[] 防 tags 假显文本；有增强→['text',...extras]）- 小欧-2026-09-24
         const capsSaved = capsForSave(state.model.capabilities);
-        // 2026-09-27 小欧 - 修 F10：函数式更新。defaults 仍存**本次实际提交的那份** params（落盘的就是
+        // 2026-09-27 小欧 - 修 F10：函数式更新。baseline 仍存**本次实际提交的那份** params（落盘的就是
         //   它，用新值当基线等于把未保存的编辑当成已保存）；但 isDirty 按**最新** params 重算，
         //   请求在飞期间的新编辑不会被硬置的 false 吞掉（原先它变成保存按钮都点不亮的隐形脏）。
         patchModel((m) => ({
-          defaults: { ...state.model.params },
+          baseline: { ...state.model.params },
           capabilitiesBaseline: normalizeCaps([...state.model.capabilities]),
           removedParams: [],
           // 2026-11-01 小欧 - R1(三堂会审批准): 删除键已真落盘, 回显快照同步清, 不留死亡数据 - 小欧-2026-11-01
@@ -890,7 +902,7 @@ export function useSettings() {
                       ? m
                       : {
                           ...m,
-                          default_params: { ...state.model.params },
+                          model_params: { ...state.model.params },
                           range: { ...state.model.ranges },
                           param_options: { ...state.model.paramOptions },
                           capabilities: capsSaved,
@@ -933,10 +945,10 @@ export function useSettings() {
     async (patch?: Record<string, unknown>) => {
       const draft = patch ?? state.model.providerDraft;
       if (!Object.keys(draft).length) return { ok: true as const };
-      // 2026-09-27 小欧 - 修 F6：base_url 为空是错误态（组件内按钮已 disabled 并红字标注），
-      //   但草稿里会带 base_url:'' 走底部保存栏进来，此前无校验直接 PUT → 落盘空地址、
+      // 2026-09-27 小欧 - 修 F6：api_base 为空是错误态（组件内按钮已 disabled 并红字标注），
+      //   但草稿里会带 api_base:'' 走底部保存栏进来，此前无校验直接 PUT → 落盘空地址、
       //   该 Provider 全部调用失败。校验下沉到此处，组件按钮与底栏两处同源（DRY）。
-      if ('base_url' in draft && !String(draft.base_url ?? '').trim()) {
+      if ('api_base' in draft && !String(draft.api_base ?? '').trim()) {
         showMessage(
           ErrorType.VALIDATE_CONFIG_FAILED,
           'API 地址不能为空，请填写后再保存'
@@ -995,7 +1007,7 @@ export function useSettings() {
   const ensureModelSaved = useCallback(async (): Promise<boolean> => {
     const dirtyMap = isDirty(
       state.model.params,
-      state.model.defaults,
+      state.model.baseline,
       state.model.envOverride
     );
     // 2026-09-23 小欧 - 放行条件补能力脏（否则"能力改了没存就切模型"静默丢失）
@@ -1098,14 +1110,16 @@ export function useSettings() {
       if (!(await ensureModelSaved())) return;
       // 2026-09-21 小欧 解耦：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
       //   + 参数区联动；不再写 ai.model_ref——全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal
-      const defaults = {
-        ...((first?.default_params ?? {}) as Record<string, unknown>),
-      };
+      // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
+      const baseline = withDeclaredContextLength(
+        (first?.model_params ?? {}) as Record<string, unknown>,
+        first?.context_length
+      );
       patchModel({
         selectedProvider: name,
         selectedModel: first?.name ?? '',
-        params: defaults,
-        defaults,
+        params: baseline,
+        baseline,
         ranges: {
           ...((first?.range ?? {}) as Record<
             string,
@@ -1119,10 +1133,8 @@ export function useSettings() {
         capabilities: normalizeCaps([...(first?.capabilities ?? [])]),
         capabilitiesBaseline: normalizeCaps([...(first?.capabilities ?? [])]),
         // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
-        envOverride: getEnvOverride(
-          p.env,
-          Object.keys(first?.default_params ?? {})
-        ),
+        // 2026-11-01 小欧 - 键集改取 baseline（含厂商声明窗口注入行），四通道同源 - 小欧-2026-11-01
+        envOverride: getEnvOverride(p.env, Object.keys(baseline)),
         // 2026-09-24 小欧 - ①切 Provider 重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
         removedParams: [],
         isDirty: false,
@@ -1140,10 +1152,11 @@ export function useSettings() {
       // 修复：先保存未落库参数，再改焦点，防切换时参数静默丢失
       if (!(await ensureModelSaved())) return;
       // 2026-09-21 小欧 解耦：同 selectProvider，只切前端焦点，不再写 ai.model_ref
-      const nextDefaults = { ...entry.default_params } as Record<
-        string,
-        unknown
-      >;
+      // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
+      const nextBaseline = withDeclaredContextLength(
+        { ...entry.model_params } as Record<string, unknown>,
+        entry.context_length
+      );
       const nextRanges = { ...(entry.range ?? {}) } as Record<
         string,
         { min: number; max: number }
@@ -1152,14 +1165,14 @@ export function useSettings() {
         string,
         string[]
       >;
-      // 参数已随 ensureModelSaved 落库，新模型按默认值展示，无残留脏态/幽灵参数
+      // 参数已随 ensureModelSaved 落库，新模型按已保存值展示，无残留脏态/幽灵参数
       const providerEntry = state.model.providers.find(
         (x) => x.name === state.model.selectedProvider
       );
       patchModel({
         selectedModel: name,
-        params: { ...nextDefaults },
-        defaults: nextDefaults,
+        params: { ...nextBaseline },
+        baseline: nextBaseline,
         ranges: nextRanges,
         paramOptions: nextOptions,
         // 2026-09-24 小欧 - ②selectModel 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
@@ -1168,15 +1181,15 @@ export function useSettings() {
         // S5：选中 provider 为 env 接管时同步禁用其参数区
         envOverride: getEnvOverride(
           providerEntry?.env,
-          Object.keys(nextDefaults)
+          Object.keys(nextBaseline)
         ),
         // 2026-09-24 小欧 - ①切模型重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
         // 2026-11-01 小欧 - R2(三堂会审批准): 回显快照随切模型同清, A 模型快照不得残留到 B - 小欧-2026-11-01
         removedParams: [],
         removedDrafts: {},
-        isDirty: Object.values(
-          isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
-        ).some(Boolean),
+        // 2026-11-01 小欧 - 原 isDirty({...baseline}, baseline, ...) 恒为 false（比的就是同一份基线），
+        //   死计算删除；切模型后无未保存编辑，与 selectProvider/refreshModels 通道同值 — 小欧-2026-11-01
+        isDirty: false,
       });
     },
     [patchModel, state.model, ensureModelSaved]
@@ -1216,7 +1229,7 @@ export function useSettings() {
             ...s.model,
             params,
             isDirty: Object.values(
-              isDirty(params, s.model.defaults, s.model.envOverride)
+              isDirty(params, s.model.baseline, s.model.envOverride)
             ).some(Boolean),
           },
         };
@@ -1237,7 +1250,7 @@ export function useSettings() {
       );
       const next = normalizeCaps([...uiValues, ...unknown]);
       const paramsDirty = Object.values(
-        isDirty(s.model.params, s.model.defaults, s.model.envOverride)
+        isDirty(s.model.params, s.model.baseline, s.model.envOverride)
       ).some(Boolean);
       return {
         ...s,
@@ -1253,7 +1266,7 @@ export function useSettings() {
     });
   }, []);
 
-  // 2026-09-23 小欧 - addParam：新键注入 params+ranges+paramOptions，defaults 不同步（立即判脏）
+  // 2026-09-23 小欧 - addParam：新键注入 params+ranges+paramOptions，baseline 不同步（立即判脏）
   const addParam = useCallback(
     (
       key: string,
@@ -1289,7 +1302,7 @@ export function useSettings() {
           ? { ...s.model.paramOptions, [key]: meta.options }
           : s.model.paramOptions;
         // 2026-09-24 小欧 - ①重新加入已删键时从 removedParams 摘除（净效果：删后又加回同名键 = 无需后端删除）；
-        //   仅该键从名单移除，isDirty 仍为 true（新键不在 defaults，注入即脏）- 小欧-2026-09-24
+        //   仅该键从名单移除，isDirty 仍为 true（新键不在 baseline，注入即脏）- 小欧-2026-09-24
         const removedParams = s.model.removedParams.filter((k) => k !== key);
         return {
           ...s,
@@ -1314,11 +1327,11 @@ export function useSettings() {
   );
 
   // 2026-09-24 小欧 - ①removeParam：参数行 × 删除（A 方案，点即删无确认）——四处同步删键
-  //   （params/defaults/ranges/paramOptions；defaults 必须删否则 params⊔defaults 并集仍渲染、「重置为默认」复活）；
-  //   仅 key∈defaults（已落盘）记入 removedParams 待后端 remove_params；未保存新键直接丢弃不送后端。
+  //   （params/baseline/ranges/paramOptions；baseline 必须删否则 params⊔baseline 并集仍渲染、「重置为默认」复活）；
+  //   仅 key∈baseline（已落盘）记入 removedParams 待后端 remove_params；未保存新键直接丢弃不送后端。
   //   env 接管键 UI 已禁用，此处再守一道（防绕过）；isDirty 联合 caps/removedParams/paramsDirty - 小欧-2026-09-24
   // 2026-11-01 小欧 - 删已落盘键时补记 removedDrafts 快照（已保存值/范围/选项，delete 前取值）：
-  //   支撑「放弃修改」按快照回显删除行——defaults 四路全删设计不变（并集渲染复活防线不动），
+  //   支撑「放弃修改」按快照回显删除行——baseline 四路全删设计不变（并集渲染复活防线不动），
   //   快照解决的是放弃修改的回显值来源 - 小欧-2026-11-01
   const removeParam = useCallback(
     (key: string) => {
@@ -1327,17 +1340,17 @@ export function useSettings() {
         return;
       }
       setState((s) => {
-        if (!(key in s.model.params) && !(key in s.model.defaults)) return s;
+        if (!(key in s.model.params) && !(key in s.model.baseline)) return s;
         const params = { ...s.model.params };
-        const defaults = { ...s.model.defaults };
+        const baseline = { ...s.model.baseline };
         const ranges = { ...s.model.ranges };
         const paramOptions = { ...s.model.paramOptions };
-        const wasPersisted = key in defaults;
+        const wasPersisted = key in baseline;
         delete params[key];
-        // 2026-11-01 小欧 - 删除键的快照必须在 delete defaults[key] 之前取值——defaults[key]
+        // 2026-11-01 小欧 - 删除键的快照必须在 delete baseline[key] 之前取值——baseline[key]
         //   此刻就是该键的已保存值（load 装载 / 保存成功回写基准，两者都=后端已保存态） - 小欧-2026-11-01
-        const savedValue = defaults[key];
-        delete defaults[key];
+        const savedValue = baseline[key];
+        delete baseline[key];
         delete ranges[key];
         delete paramOptions[key];
         const removedDrafts = { ...s.model.removedDrafts };
@@ -1356,7 +1369,7 @@ export function useSettings() {
             : [...s.model.removedParams, key]
           : s.model.removedParams.filter((k) => k !== key);
         const paramsDirty = Object.values(
-          isDirty(params, defaults, s.model.envOverride)
+          isDirty(params, baseline, s.model.envOverride)
         ).some(Boolean);
         const capsDirty = isCapsDirty(
           s.model.capabilities,
@@ -1367,7 +1380,7 @@ export function useSettings() {
           model: {
             ...s.model,
             params,
-            defaults,
+            baseline,
             ranges,
             paramOptions,
             removedDrafts,
@@ -1386,30 +1399,30 @@ export function useSettings() {
   //   仅能力脏时点「重置为默认」→ 能力修改变不可保存。同 saveAll/isGroupDirty 的联合语义对齐）
   // 2026-09-24 小欧 - ①重置不清 removedParams（结构变更保留，仍需保存才落盘）；isDirty 联合之 - 小欧-2026-09-24
   // 2026-11-01 小欧 - 改造为「放弃修改」（北京老陈批准主案：保存↔放弃对称）：一拍全撤三类未保存修改——
-  //   ①参数值还原为已保存值(defaults)；②removedParams 清空 + 按 removedDrafts 快照逐键回填
+  //   ①参数值还原为已保存值(baseline)；②removedParams 清空 + 按 removedDrafts 快照逐键回填
   //   （removeParam 四路全删设计下，键名单回不出已保存值——验收实测原假设证伪，机制修正记 types.ts）
   //   ③能力勾选还原为基线（normalizeCaps 值与脏同拍还原——历史上只清脏不还原显示值致静默丢失的
   //   病根，铲掉）；isDirty:false 同拍归零。纯内存撤销不碰后端；函数式更新读最新 model；
   //   hook 内部名保持 resetParams 不改 — 小欧-2026-11-01
   const resetParams = useCallback(() => {
     patchModel((m) => {
-      const params = { ...m.defaults };
-      const defaults = { ...m.defaults };
+      const params = { ...m.baseline };
+      const baseline = { ...m.baseline };
       const ranges = { ...m.ranges };
       const paramOptions = { ...m.paramOptions };
       // ②回填：removedParams 里的每个已落盘键，把快照的已保存值/范围/选项原样放回
-      //   （defaults 也回填——并集渲染与 isDirty 基线都依赖它；未快照键=未保存新键，本就不该复活）
+      //   （baseline 也回填——并集渲染与 isDirty 基线都依赖它；未快照键=未保存新键，本就不该复活）
       for (const key of m.removedParams) {
         const d = m.removedDrafts[key];
         if (!d) continue;
         params[key] = d.value;
-        defaults[key] = d.value;
+        baseline[key] = d.value;
         if (d.range) ranges[key] = d.range;
         if (d.options) paramOptions[key] = d.options;
       }
       return {
         params,
-        defaults,
+        baseline,
         ranges,
         paramOptions,
         removedParams: [],
@@ -1433,14 +1446,16 @@ export function useSettings() {
         const p = models.providers.find((x) => x.name === select.provider);
         const m = p?.models.find((x) => x.name === select.model);
         if (p && m) {
-          const defaults = {
-            ...(m.default_params as Record<string, unknown>),
-          };
+          // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
+          const baseline = withDeclaredContextLength(
+            (m.model_params ?? {}) as Record<string, unknown>,
+            m.context_length
+          );
           patchModel({
             selectedProvider: p.name,
             selectedModel: m.name,
-            params: { ...defaults },
-            defaults,
+            params: { ...baseline },
+            baseline,
             ranges: {
               ...(m.range as Record<string, { min: number; max: number }>),
             },
@@ -1451,7 +1466,7 @@ export function useSettings() {
             capabilities: normalizeCaps([...(m.capabilities ?? [])]),
             capabilitiesBaseline: normalizeCaps([...(m.capabilities ?? [])]),
             // S5：目标 provider env 接管时禁用其参数区
-            envOverride: getEnvOverride(p.env, Object.keys(defaults)),
+            envOverride: getEnvOverride(p.env, Object.keys(baseline)),
             // 2026-09-24 小欧 - ①定位重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
             removedParams: [],
             isDirty: false,

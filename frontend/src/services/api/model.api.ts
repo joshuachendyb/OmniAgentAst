@@ -38,16 +38,27 @@
 // 编辑历史: 2026-10-11 小欧 - 对齐后端 DTO effort_levels/effort_default: 增 effort_levels?: string[](推理强度档位)/effort_default?: string | null(默认值); 非 DeepSeek 不返回 → 空数组/undefined; 北京老陈令两个都加 — 小欧-2026-10-11
 // 2026-10-26 18:45:00 - 小欧 - replaceModels 类型 Pick 增 max_output_length（对齐后端 DTO，保存时一并持久化输出上限）。
 // ModelEntry 增 max_output_length（从 model_meta 读取，供 LLM 调用链设置 max_tokens 上限）— 小欧-2026-10-26
+// 2026-11-01 小欧 - 键名统一（北京老陈指令：一个概念一个名字，不留别名）:
+//   ①ModelEntry.default_params → model_params（与后端 yaml 真源同名）；
+//   ②ModelEntry 补 context_length（后端本次才开始下发 model_meta 的厂商声明窗口）；
+//   ③ProviderConfigPatch.base_url → api_base，删 retry_times（只留 max_retries）。— 小欧-2026-11-01
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
 export interface ModelEntry {
   name: string;
   label: string;
-  default_params: Record<string, unknown>;
+  // 2026-11-01 小欧 - 键名统一: default_params → model_params(与后端 yaml 真源同名) — 小欧-2026-11-01
+  model_params: Record<string, unknown>;
   param_options?: Record<string, string[]>;
   range: Record<string, { min: number; max: number }>;
   capabilities: string[];
+  /**
+   * 厂商声明的上下文窗口(token)。来源 model_meta.context_length。
+   * 2026-11-01 小欧 - 后端原不下发该字段, ②参数区因此拿不到声明值(库保存的窗口既不可见也不可改) — 小欧-2026-11-01
+   * undefined/null = 厂商未声明。**不得在此处造值**，上层按 model_params → meta → 全局默认逐级兜底。
+   */
+  context_length?: number | null;
   /** 模型最大输出 token 数。后端未下发 → undefined，由 LLM 调用链回退到全局默认值。 — 小欧-2026-10-26 */
   max_output_length?: number | null;
 }
@@ -221,10 +232,9 @@ export interface ZenReportItem {
 
 export interface ProviderConfigPatch {
   api_key?: string;
-  base_url?: string;
+  api_base?: string;
   label?: string;
   timeout?: number;
-  retry_times?: number;
   max_retries?: number;
   clear?: boolean;
 }
@@ -241,7 +251,7 @@ export const modelApi = {
     provider: string;
     model: string;
     label?: string;
-    default_params?: Record<string, unknown>;
+    model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
     capabilities?: string[];
     param_options?: Record<string, string[]>;
@@ -256,10 +266,10 @@ export const modelApi = {
     data: Partial<
       Pick<
         ModelEntry,
-        'label' | 'default_params' | 'range' | 'capabilities' | 'param_options'
+        'label' | 'model_params' | 'range' | 'capabilities' | 'param_options'
       >
     > & {
-      // 2026-09-24 小欧 - 键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
+      // 2026-09-24 小欧 - 键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
       remove_params?: string[];
     }
   ): Promise<ModelMutationResult> => {

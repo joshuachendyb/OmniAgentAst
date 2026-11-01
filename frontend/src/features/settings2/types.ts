@@ -25,6 +25,8 @@
 //   providerDraft: Record<string, unknown> —— ③区表单字段的变更草稿（只含改过的键，空对象=干净），
 //   由 ProviderConfig 经 onDraftChange 上报 diff，dirtyCount/isGroupDirty/saveGroup/saveAll/
 //   ensureModelSaved/beforeunload/checkMtime 全链纳入；保存经 saveProviderDraft → PUT /providers 落盘 - 小欧-2026-09-27
+// 2026-11-01 小欧 - 键名统一：ModelState.defaults → baseline（消与 llm.context_length_default 撞名）；
+//   providerConfig.base_url → api_base（与后端 yaml 真源同名）- 小欧-2026-11-01
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -50,7 +52,12 @@ export interface ModelState {
   selectedProvider: string;
   selectedModel: string;
   params: Record<string, unknown>;
-  defaults: Record<string, unknown>;
+  /**
+   * 已保存参数基线（服务端 GET /models 回来的 model_params 副本），只服务脏判定与「放弃修改」回填。
+   * 2026-11-01 小欧 - 由 defaults 改名：原名与通用设置的 llm.context_length_default 撞名，
+   *   实际语义是"已保存基线"而非"默认值"（北京老陈 2026-11-01 裁定改名）- 小欧-2026-11-01
+   */
+  baseline: Record<string, unknown>;
   ranges: Record<string, { min: number; max: number }>;
   paramOptions: Record<string, string[]>;
   // 2026-09-23 小欧 - 实施：能力编辑副本与持久化基线（baseline 不注入，保脏）
@@ -63,7 +70,8 @@ export interface ModelState {
       // 2026-09-27 小欧 - 掩码契约 {configured, masked}（masked 由后端生成，前端纯回显；
       //   与 model.api.ts ProviderEntry / ProviderConfig.config / SettingsPage 兜底值同为一份契约）
       api_key: { configured: boolean; masked: string };
-      base_url: string;
+      // 2026-11-01 小欧 - base_url → api_base(与后端 yaml 真源同名) - 小欧-2026-11-01
+      api_base: string;
       label: string;
       timeout: number;
       max_retries: number;
@@ -83,10 +91,10 @@ export interface ModelState {
   paramOptionsModalOpen: boolean;
   // 2026-09-23 小欧 - 实施：「+ 添加参数」内联表单开关
   addParamFormOpen: boolean;
-  // 2026-09-24 小欧 - 参数键级删除待提交名单（defaults 已有键被 × 删除时入列，保存时送 remove_params）- 小欧-2026-09-24
+  // 2026-09-24 小欧 - 参数键级删除待提交名单（baseline 已有键被 × 删除时入列，保存时送 remove_params）- 小欧-2026-09-24
   removedParams: string[];
   // 2026-11-01 小欧 - 放弃修改回显快照（北京老陈批准「放弃修改」主案的机制支撑）：× 删除已落盘键时
-  //   removeParam 把该键的已保存值/范围/选项快照存此（仅 defaults 已有键记录）——removeParam 四路
+  //   removeParam 把该键的已保存值/范围/选项快照存此（仅 baseline 已有键记录）——removeParam 四路
   //   全删后 removedParams 单凭键名单回不出已保存值，「放弃修改」需按快照逐键回填；
   //   纯内存草稿，放弃/保存/重载任一路即失效 - 小欧-2026-11-01
   removedDrafts: Record<

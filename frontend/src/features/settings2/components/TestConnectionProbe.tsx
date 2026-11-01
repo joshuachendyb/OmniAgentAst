@@ -33,7 +33,7 @@ const CATEGORY_TEXT: Record<string, string> = {
   endpoint_unsupported:
     '该 Provider 不支持模型列表检测（无 /models 端点），key 未验证 —— 不代表 key 无效',
   network_error:
-    '无法连接，请检查 base_url 是否填写正确、网络是否可达（与 key 无关）',
+    '无法连接，请检查 api_base 是否填写正确、网络是否可达（与 key 无关）',
 };
 
 /** 未知 category 的兜底文案（后端新增分类 / 分类拼错时不会显示 undefined）。 */
@@ -44,7 +44,7 @@ export interface TestConnectionProbeProps {
   providerName: string;
   /** 输入框里的 key（可为空 —— 为空则后端回落到已保存值 / env） */
   probeKey: string;
-  /** base_url 是否已填（空则按钮禁用：地址不通测了无意义） */
+  /** api_base 是否已填（空则按钮禁用：地址不通测了无意义） */
   baseUrlReady: boolean;
   /** 按钮左间距（由调用方传既有令牌值，避免本组件硬编码间距） */
   marginLeft: number | string;

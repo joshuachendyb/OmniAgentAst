@@ -59,6 +59,12 @@
    2026-10-11 07:33:47 - 小欧 - RemoteModelItem 增 publish_time(zenmux 真发布时间, created 全假不可用; 不下发则 None, 与 free/stability 同政策; 字段内联已记 2026-10-10) — 小欧 2026-10-11
    2026-10-11 - 小欧 - RemoteModelItem 增 effort_levels/effort_default(DeepSeek 实测下发, 此前被静默丢弃; 非 DeepSeek 不返回 → 空列表/None; 北京老陈令两个都加) — 小欧 2026-10-11
    2026-10-26 18:45:00 - 小欧 - ProviderModelSelection 增 max_output_length（与 context_length 同策略：Optional[int]，空值不发送；解析层已归一，此处只承接）。前端 replaceModels 同步扩展。
+   2026-11-01 小欧 - 键名统一(北京老陈指令: 同类问题一轮改完, 不留别名):
+      ①ProviderConfigUpdate 字段 base_url → api_base（与 yaml 真源同名），删 retry_times 只留 max_retries；
+      ②ModelCreateRequest/ModelUpdateRequest 字段 default_params → model_params（与 yaml 真源同名）；
+      ③_get_models 下发键 default_params → model_params，并补下发 context_length（原只透 max_output_length，
+        前端②参数区拿不到厂商声明窗口，导致库保存的值既不下发也无编辑面）。
+      旧名不留兼容分支（项目铁律禁止 backward）— 小欧-2026-11-01
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -88,7 +94,8 @@ class ModelCreateRequest(BaseModel):
     provider: str = Field(...)
     model: str = Field(...)
     label: str = Field("")
-    default_params: Dict[str, Any] = Field(default_factory=dict)
+    # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名, 消翻译层) - 小欧-2026-11-01
+    model_params: Dict[str, Any] = Field(default_factory=dict)
     range: Dict[str, Any] = Field(default_factory=dict)
     capabilities: List[str] = Field(default_factory=list)
     param_options: Optional[Dict[str, List[str]]] = Field(default=None)
@@ -96,7 +103,7 @@ class ModelCreateRequest(BaseModel):
 
 class ModelUpdateRequest(BaseModel):
     label: Optional[str] = Field(default=None)
-    default_params: Optional[Dict[str, Any]] = Field(default=None)
+    model_params: Optional[Dict[str, Any]] = Field(default=None)
     range: Optional[Dict[str, Any]] = Field(default=None)
     capabilities: Optional[List[str]] = Field(default=None)
     param_options: Optional[Dict[str, List[str]]] = Field(default=None)
@@ -105,9 +112,9 @@ class ModelUpdateRequest(BaseModel):
 
 
 class ProviderConfigUpdate(BaseModel):
-    """Provider 配置更新 DTO — 2026-09-22 小欧 补 max_retries：
-    前端 ProviderConfig.tsx 发送 max_retries，DTO 原只有 retry_times 别名——Pydantic v2
-    默认 extra='ignore' 会丢弃未声明字段，补声明后 model_dump(exclude_none=True) 才落盘。
+    """Provider 配置更新 DTO — 2026-09-22 小欧 补 max_retries。
+    2026-11-01 小欧 - 键名统一: 删 base_url 别名(统一 api_base) 与 retry_times 别名(统一 max_retries)；
+      原注释记录的「DTO 只有 retry_times、前端发 max_retries」双名问题至此消除 - 小欧-2026-11-01
     extra='allow'：静态字段仍强类型，动态字段（param_types 元数据驱动）
     放行——违背"前端零改代码"初衷的每个新参数无需改 DTO；后端白名单见 update_provider_config。"""
     model_config = ConfigDict(extra='allow')
@@ -119,7 +126,7 @@ class ProviderConfigUpdate(BaseModel):
     #     ③非空字符串         = 设置（先 strip 再落盘）
     #     ④clear=true         = 清空（显式写空串，唯一允许清空的途径）
     #   另：clear=true 与非空 api_key **互斥**，同传返回 400。
-    #   ⑤base_url 空/纯空白  = 错误状态，返回 400（与 api_key 三态方向相反）。
+    #   ⑤api_base 空/纯空白  = 错误状态，返回 400（与 api_key 三态方向相反）。
     api_key: Optional[str] = Field(
         default=None,
         description=(
@@ -127,12 +134,11 @@ class ProviderConfigUpdate(BaseModel):
             "清空须用 clear=true(与 api_key 互斥, 同传 400)。空串不再擦除已保存的 key"
         ),
     )
-    base_url: Optional[str] = Field(
+    api_base: Optional[str] = Field(
         default=None,
         description="API 地址。**必填语义**: 空/纯空白返回 400(错误状态，不可保存) —— 与 api_key 的'空=不修改'方向相反",
     )
     timeout: Optional[int] = Field(default=None)
-    retry_times: Optional[int] = Field(default=None)
     max_retries: Optional[int] = Field(default=None)
     clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
 
@@ -242,7 +248,7 @@ async def get_models():
 @handle_config_errors("添加模型")
 async def add_model(req: ModelCreateRequest):
     return svc.add_model(req.provider, req.model, req.label,
-                         req.default_params, req.range, req.capabilities,
+                         req.model_params, req.range, req.capabilities,
                          req.param_options)
 
 

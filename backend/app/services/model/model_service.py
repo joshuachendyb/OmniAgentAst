@@ -168,6 +168,12 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   top_provider.max_completion_tokens 嵌套层，原提取链（顶层键 + output_modalities[*].max_length）
 #   两路都够不到此层致模型库「输出上限」列恒空。_extract_max_output_length 增第三优先级兜底：
 #   前两路未命中才读 top_provider（对既有厂商零影响，命中顺序不变）— 小欧-2026-11-01
+# 2026-11-01 13:25 - 小欧 - 键名全深度统一（北京老陈指令：一个概念一个名字，不允许别名长期存在）：
+#   (1)_models_of 下发键 default_params → model_params（与 yaml 真源同名，消掉 API 层翻译）；
+#      补下发 context_length（原只透 max_output_length，前端②参数区拿不到厂商声明窗口）；
+#   (2)add_model 形参 default_params → model_params；update_model 出参键同名；
+#   (3)update_provider_config 删 key_map 的 base_url 与 retry_times 别名（只留 api_base / max_retries），
+#      空 URL 400 校验由双键循环收敛为 api_base 单键 — 小欧-2026-11-01
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -264,10 +270,14 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
         out.append({
             "name": m,
             "label": str(meta.get("label") or m),
-            "default_params": params,
+            # 2026-11-01 小欧 - 键名统一: 下发键 default_params → model_params, 与 yaml 真源同名(消翻译层)
+            "model_params": params,
             "range": meta.get("range") or {},
             "capabilities": meta.get("capabilities") or [],
             "param_options": _resolve_param_options(ai, provider, m, params, meta),
+            # 2026-11-01 小欧 - 补下发模型声明窗口: 原只透 max_output_length, 前端②参数区拿不到声明值
+            #   (问题2/问题3: 库保存的 context_length 既不下发也无编辑面)
+            "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
         })
     return out
@@ -317,10 +327,11 @@ def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
 
 
 def add_model(provider: str, model: str, label: str = "",
-              default_params: Optional[Dict[str, Any]] = None,
+              model_params: Optional[Dict[str, Any]] = None,
               range_: Optional[Dict[str, Any]] = None,
               capabilities: Optional[List[str]] = None,
               param_options: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
+    # 2026-11-01 小欧 - 形参键名统一 default_params → model_params(与前端口径/POST DTO 同名) - 小欧-2026-11-01
     ai = _raw_ai()
     if provider not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {provider}")
@@ -334,7 +345,7 @@ def add_model(provider: str, model: str, label: str = "",
     for k, vs in allowed.items():
         if not isinstance(vs, list) or not vs or not all(isinstance(x, str) for x in vs):
             raise ValueError(f"不支持的选项表: {k}须为非空string[]")
-    for k, v in (default_params or {}).items():
+    for k, v in (model_params or {}).items():
         allow = allowed.get(k, DEFAULT_PARAM_OPTIONS.get(k))
         if allow is not None and v not in allow:
             raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allow}")
@@ -345,7 +356,7 @@ def add_model(provider: str, model: str, label: str = "",
     tree: Dict[str, Any] = {
         "ai": {provider: {
             "models": models,
-            "model_params": {model: default_params or {}},
+            "model_params": {model: model_params or {}},
             "model_meta": {model: {
                 "label": label or model,
                 "range": range_ or {},
@@ -364,8 +375,9 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         raise ValueError(f"模型不存在: {provider}/{model}")
     _raise_if_env_takeover(provider)
     # 白名单放行+落model_meta（小欧 2026-09-22：加 param_options，否则送了即报不支持的配置项）
-    # 2026-09-24 小欧：加 remove_params（键级删除，与 default_params merge 叠加）— 小欧-2026-09-24
-    unknown = set(fields) - {"label", "range", "capabilities", "default_params", "param_options", "remove_params"}
+    # 2026-09-24 小欧：加 remove_params（键级删除，与 model_params merge 叠加）— 小欧-2026-09-24
+    # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名) - 小欧-2026-11-01
+    unknown = set(fields) - {"label", "range", "capabilities", "model_params", "param_options", "remove_params"}
     if unknown:
         raise ValueError(f"不支持的配置项: {sorted(unknown)}")
     tree: Dict[str, Any] = {"ai": {provider: {}}}
@@ -373,7 +385,7 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     for k in ("label", "range", "capabilities"):
         if fields.get(k) is not None:
             node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
-    dp = fields.get("default_params")
+    mp = fields.get("model_params")
     # v1.6：先合并本次新选项再校验，避免同批改选项+改值时用旧单子误杀（小欧 2026-09-22）
     cur = next((x for x in _models_of(ai, provider) if x["name"] == model), None) or {}
     allowed = dict(cur.get("param_options") or {})
@@ -381,8 +393,8 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         for k, v in fields["param_options"].items():
             if isinstance(v, list) and v:
                 allowed[k] = list(v)
-    if isinstance(dp, dict):
-        for k, v in dp.items():
+    if isinstance(mp, dict):
+        for k, v in mp.items():
             if k in allowed and v not in allowed[k]:
                 raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allowed[k]}")
     # 2026-09-24 小欧：remove_params 键级删除——拷贝当前 model_params 删键得 new_params；
@@ -401,21 +413,21 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         new_params = dict(orig_params)
         for k in removed:
             new_params.pop(k, None)
-    if isinstance(dp, dict):
-        if dp:
+    if isinstance(mp, dict):
+        if mp:
             if new_params is None:
                 new_params = dict(orig_params)
-            new_params.update(dp)
+            new_params.update(mp)
         else:
-            # 2026-09-21 小欧 修复：空 default_params 提交 = 显式清空模型参数块（原实现走
+            # 2026-09-21 小欧 修复：空 model_params 提交 = 显式清空模型参数块（原实现走
             # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
             new_params = {}
-    # 仅 remove 真命中或 default_params 有变更才写 model_params（全 miss 不空写）
+    # 仅 remove 真命中或 model_params 有变更才写 model_params（全 miss 不空写）
     # 2026-09-25 小欧 修复删除意图丢失复发（守护测试 verify_bz_remove_params_guard 实证）：
     #   _iter_nested_ops 把非空 dict 递归展平为叶键写（无整块替换语义），直接落 new_params 块会丢删键意图
-    #   → temperature 残留。改显式 None 删键意向（_set_nested_path 原生删键），保留 dp/keep 语义。
-    if new_params is not None and (removed_hit or isinstance(dp, dict)):
+    #   → temperature 残留。改显式 None 删键意向（_set_nested_path 原生删键），保留 mp/keep 语义。
+    if new_params is not None and (removed_hit or isinstance(mp, dict)):
         pn = node.setdefault("model_params", {})
         pn[model] = new_params
         if removed_hit:
@@ -429,10 +441,10 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     #   生效，防 293 行同批 param_options 覆盖复活）；删键改用与 model_params 同一个 None
     #   意向机制（merge 内核 None 分支：删叶键+回收空父级）。原裁剪 dict 整块回写在本合并器
     #   叶级归并语义下只能写存活叶键、删不掉兄弟键（删 max_tokens 后 range.max_tokens 残留实证；
-    #   仅单键清空走空 dict 整块替换侥幸全清）；跳过 default_params 重加键（keep）；
+    #   仅单键清空走空 dict 整块替换侥幸全清）；跳过 model_params 重加键（keep）；
     #   仅实际命中才 setdefault 建 model_meta 块（防空块污染）—— 小欧-2026-11-01
     if isinstance(removed, list) and removed:
-        keep = set(dp) if isinstance(dp, dict) else set()
+        keep = set(mp) if isinstance(mp, dict) else set()
         base_meta = (ai[provider].get("model_meta", {}) or {}).get(model, {}) or {}
         node_meta = node.get("model_meta", {}).get(model)
         for meta_key in ("range", "param_options"):
@@ -527,7 +539,7 @@ def add_provider(name: str, label: str = "", api_base: str = "",
         # 2026-09-27 - 小欧 - api_base 与 label 一并 strip（与 update_provider_config 同一口径）：
         #   校验时用 .strip() 判非空，落盘却原样写，两者不一致 ⇒ YAML 存脏值。
         #   消费端 get_models(:232) / resolver(:274) / client_sdk(:296) 均不 strip，
-        #   带空格的 base_url 会让 httpx 拿到 " https://x/v1 " 而真实请求失败。
+        #   带空格的 api_base 会让 httpx 拿到 " https://x/v1 " 而真实请求失败。
         "api_base": str(api_base).strip(),
         "api_key": str(api_key or "").strip(),
         "timeout": timeout, "max_retries": max_retries, "models": ms}}}
@@ -540,8 +552,10 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     if name not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {name}")
     _raise_if_env_takeover(name)
-    key_map = {"api_key": "api_key", "base_url": "api_base", "api_base": "api_base",
-               "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries",
+    # 2026-11-01 小欧 - 键名统一: 删 base_url 别名(统一 api_base) 与 retry_times 别名(统一 max_retries)
+    #   项目铁律禁止 backward 兼容层, 别名长期存在=每次保存都要翻译一遍, 且两侧 strip 口径漂移过(2026-09-27)
+    key_map = {"api_key": "api_key", "api_base": "api_base",
+               "timeout": "timeout", "max_retries": "max_retries",
                "label": "label", "param_options": "param_options"}
     # 字段白名单：仅 key_map + PROVIDER_PARAM_TYPES + clear（清空标记）内字段可落盘，其余拒（防任意键注入）
     if isinstance(fields, dict):
@@ -554,17 +568,17 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     # 三条契约在本函数一次落地（同函数禁止拆两次改）：
     #   api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
     #   clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
-    #   base_url 空即错误状态：空/纯空白 → 400，不再"清空后照存"
+    #   api_base 空即错误状态：空/纯空白 → 400，不再"清空后照存"
     # ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500，故此处显式抛 400 HTTPException
     if fields.get("clear") is True and str(fields.get("api_key") or "").strip():
         raise HTTPException(status_code=400,
                             detail="clear=true 与 api_key 设置值不能同时提交：请只提交其中一项")
-    for _url_key in ("base_url", "api_base"):
-        _url_val = fields.get(_url_key)
-        if _url_key in fields and _url_val is not None and not str(_url_val).strip():
-            raise HTTPException(
-                status_code=400,
-                detail=f"{_url_key} 为空：URL 是 Provider 的必要配置，无法调用，请填写完整地址")
+    # 2026-11-01 小欧 - 单键判定(原双键 base_url/api_base 循环): 别名已删, 只校验 api_base
+    if "api_base" in fields and fields.get("api_base") is not None \
+            and not str(fields.get("api_base")).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="api_base 为空：URL 是 Provider 的必要配置，无法调用，请填写完整地址")
     tree: Dict[str, Any] = {"ai": {name: {}}}
     node = tree["ai"][name]
     # 2026-09-26 - 小欧 - 单遍 if/elif 分流（原两遍遍历+`k not in key_map` 排除重叠三键），
@@ -579,7 +593,7 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
                     if cleaned:
                         node["api_key"] = cleaned
                 else:
-                    # 2026-09-27 - 小欧 - 其余字符串字段（label / base_url / api_base）同样 strip 后落盘，
+                    # 2026-09-27 - 小欧 - 其余字符串字段（label / api_base）同样 strip 后落盘，
                     # 与 api_key 同一口径（DRY：清洗只做一次，不靠调用方自觉）
                     node[key_map[k]] = v.strip() if isinstance(v, str) else v
         elif k in PROVIDER_PARAM_TYPES:
@@ -930,7 +944,7 @@ def _classify_remote_result(status_code: Optional[int], network_err: bool) -> st
       ok                     2xx                     key 有效
       key_invalid            401 / 403               key 无效或无权限
       endpoint_unsupported   404 / 405 / 501         该 provider 无 /models 端点，key 未验证
-      network_error          超时 / 连接失败          base_url 或网络问题，与 key 无关
+      network_error          超时 / 连接失败          api_base 或网络问题，与 key 无关
     """
     if network_err:
         return "network_error"

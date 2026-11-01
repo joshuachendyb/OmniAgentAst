@@ -59,18 +59,19 @@ from app.services.agent.compaction.split_turn import (
 )
 
 
-def split_history_window(messages: List[Dict], context_limit: int,
+def split_history_window(messages: List[Dict], context_length: int,
                          reserve: int) -> Tuple[List[Dict], List[Dict], int]:
     """把历史切为 {old_head(待压缩), tail_part(保尾原样保留), absolute_tail_start} — 小健 2026-08-17
 
     适用场景: C4 锚定摘要压缩前, 把对话历史切成"待压缩旧段 + 保尾新区"。
     使用方法: 对消息列表 + 模型上下文/预留调用, 返回三要素供后续注入摘要。
-    输入: messages 消息列表; context_limit 模型上下文上限; reserve 输出预留 buffer。
+    输入: messages 消息列表; context_length 模型上下文上限; reserve 输出预留 buffer。
     输出: (old_head 待压缩段, tail_part 保尾段, absolute_tail_start 保尾起点下标)。
-    前置条件: context_limit > reserve; messages 非空。
+    前置条件: context_length > reserve; messages 非空。
     设计文档: [4] 14.3.2 select() 返回 {head, tail_start_id} + 14.5 装配过滤。
+    2026-11-01 小欧 - 形参键名统一 context_limit → context_length — 小欧-2026-11-01
     """
-    budget = preserve_recent_budget(max(1, context_limit - reserve))
+    budget = preserve_recent_budget(max(1, context_length - reserve))
     tail_start = find_tail_start(messages, budget)
     old_head = messages[:tail_start]
     tail_part = messages[tail_start:]

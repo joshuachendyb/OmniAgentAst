@@ -623,8 +623,8 @@ async def run_agent_in_background(
             if task_id in running_tasks:
                 running_tasks[task_id]["agent"] = agent
         llm_service = getattr(agent, "llm_client", None)
-        if llm_service is not None and hasattr(llm_service, "context_limit") and llm_service.context_limit:
-            agent.message_builder.MAX_CONTEXT_TOKENS = llm_service.context_limit
+        if llm_service is not None and hasattr(llm_service, "context_length") and llm_service.context_length:
+            agent.message_builder.MAX_CONTEXT_TOKENS = llm_service.context_length
 
         # 注入停止检查回调，消除 llm→task 反向依赖 — 小沈 2026-06-17
         # 小欧 2026-07-13: 采用"循环粒度取消"(方案 B)。_stop_check 仅查取消(中断在飞 LLM 流);

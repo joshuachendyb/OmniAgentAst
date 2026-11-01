@@ -290,7 +290,7 @@ async def resolve_session_client(scope, session_id):
                 override_ref,
                 api_key=_pv_key,
                 extra_body_params=_pv_ebp,
-                context_limit=_pv_ctx,
+                context_length=_pv_ctx,
                 max_retries=_cfg.get("max_retries"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=4)
                 timeout=_cfg.get("timeout"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=200)
                 max_tokens=_resolve_max_tokens(_cfg, _ov.model or ""),  # 2026-10-29 小欧: 场景齐全——跨 provider 按目标 provider+model 解析(model_meta.max_output_length), 未配回落默认

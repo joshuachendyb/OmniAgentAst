@@ -204,7 +204,7 @@ test.describe('模型库 Tab 全链路 E2E-12 (有头+mock)', () => {
         provider: pname,
         model: SEED_ID,
         label: SEED_ID,
-        default_params: { temperature: 0.7 },
+        model_params: { temperature: 0.7 },
       },
     });
     expect(am.status()).toBe(200);
@@ -346,12 +346,12 @@ test.describe('模型库 Tab 全链路 E2E-12 (有头+mock)', () => {
       // 6) 给 alpha 挂 model_params（制造孤儿清理前置条件）
       const putAlpha = await request.put(
         `${BASE}/models/${encodeURIComponent(pname)}/${encodeURIComponent(ALPHA_ID)}`,
-        { data: { default_params: { temperature: 0.7 } } }
+        { data: { model_params: { temperature: 0.7 } } }
       );
       expect([200, 204]).toContain(putAlpha.status());
       const yamlAfterPut = fs.readFileSync(CONFIG_YAML, 'utf8');
       expect(yamlAfterPut).toContain(ALPHA_ID);
-      console.log('[E2E] 步骤6 alpha 已挂 default_params ok');
+      console.log('[E2E] 步骤6 alpha 已挂 model_params ok');
 
       // 7) 回模型库，取消勾选 alpha，再保存 → alpha 消失 + 无孤儿
       await tab(page, /模型库/);

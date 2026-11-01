@@ -27,19 +27,20 @@ from app.services.agent.compaction_constants import (
 # ---- should_compact_now: 动态窗口触发(14.9.6 K1) —————————————————————————
 
 
-def should_compact_now(current_tokens: int, context_limit: int,
+def should_compact_now(current_tokens: int, context_length: int,
                        reserve: int, msg_count: int,
                        max_msgs: int = TRIGGER_MAX_MSGS) -> bool:
     """动态窗口触发, 大窗口下消息数兜底 — 小欧 2026-08-16
 
     适用场景: 超大上下文窗口模型(如 900K)下, 固定比例阈值形同虚设时用; 供 compress_long_tool_output/keep_valuable_messages 补触发。
     使用方法: 直接调用, 传窗口 token 数 + 消息数, 返回是否该压缩。
-    输入: current_tokens 当前 token 数; context_limit 模型上限; reserve 输出预留;
+    输入: current_tokens 当前 token 数; context_length 模型上限; reserve 输出预留;
           msg_count 当前消息条数; max_msgs 消息数兜底阈值(默认 TRIGGER_MAX_MSGS=80)。
     输出: bool —— True 需压缩。
-    前置条件: context_limit > reserve。
+    前置条件: context_length > reserve。
+    2026-11-01 小欧 - 形参键名统一 context_limit → context_length — 小欧-2026-11-01
     """
-    usable = context_limit - reserve
+    usable = context_length - reserve
     if current_tokens >= usable:
         return True
     if msg_count >= max_msgs:        # 大窗口下消息数兜底触发, 防"不触发"

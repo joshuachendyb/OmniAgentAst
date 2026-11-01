@@ -482,7 +482,7 @@ def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[
     """嵌套树扁平化为 (路径段, 值) 列表；叶段保持字面名，绝不按点号分裂
     （模型/Provider 名含点号时必须在模型域使用 merge_nested_patch）。
     2026-09-21 小欧 根治：空 dict 叶值显式 yield 空块 {}——原实现把 {} 当内部节点
-    展开导致零 ops（"清空模型参数/空块"永远写不落盘，PUT default_params={} 静默无效果）。"""
+    展开导致零 ops（"清空模型参数/空块"永远写不落盘，PUT model_params={} 静默无效果）。"""
     if not isinstance(tree, dict):
         yield prefix, tree
         return

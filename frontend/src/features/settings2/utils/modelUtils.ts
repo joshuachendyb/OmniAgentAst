@@ -17,6 +17,10 @@
 //   漏同步则存 minimal 报"非法选项"；fre2e_08 用自带列表，不受影响） — 小欧-2026-10-10
 // 2026-10-24 小欧 - reasoning_effort options 移除 minimal: OpenAI 官方文档 "Not all reasoning models
 //   support every value"，minimal 是少数派值，全局兜底只留 low/medium/high — 小欧-2026-10-24
+// 2026-11-01 小欧 - 键名统一 + 上下文窗口可编辑（北京老陈指令）：
+//   ①PARAM_DEFAULT_RANGES / PARAM_PRESETS 的 context_limit → context_length（与后端 yaml 真源同名）；
+//   ②新增 withDeclaredContextLength：基线补厂商声明窗口（用户值优先，声明值仅兜底），
+//     使模型库勾选进来的模型在②参数区也有一条可编辑的 context_length 行 — 小欧-2026-11-01
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -58,18 +62,48 @@ function sameValue(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** 模型 Tab 脏态：值与默认不一致且未被 env 接管（6.2）。 */
+/** 模型 Tab 脏态：值与已保存基线不一致且未被 env 接管（6.2）。 */
 export function isDirty(
   params: Record<string, unknown>,
-  defaults: Record<string, unknown>,
+  baseline: Record<string, unknown>,
   env: Record<string, boolean>
 ): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   Object.keys(params).forEach((key) => {
-    out[key] = !env[key] && !sameValue(params[key], defaults[key]);
+    out[key] = !env[key] && !sameValue(params[key], baseline[key]);
   });
   return out;
 }
+
+/**
+ * 已保存参数基线：用户值优先，厂商声明窗口仅兜底。
+ *
+ * 2026-11-01 小欧 - 上下文窗口可编辑落地（问题 3）：②参数区的行集合 = 基线键集，
+ *   模型库勾选进来的模型 `model_params` 是空的 → 连一行都没有，落库的 `model_meta.context_length`
+ *   既不可见也不可改。故基线补一条 `context_length`：
+ *     取值顺序 `model_params.context_length`（用户） ?? `model_meta.context_length`（厂商声明）。
+ *
+ * **顺序不能反**：若直接取厂商声明值，用户把窗口从 200K 调小到 100K 后，基线仍是 200K，
+ *   每次切换模型都立刻是"未保存"脏态（永远脏，且改不干净）——这是 2026-11-01 三堂会审 E2。
+ *
+ * 只写基线不写当前值：`isDirty` 只遍历 `params` 的键，故只有基线有该键不会误判脏；
+ *   `ModelParams` 的并集渲染用 `params[key] ?? baseline[key]` 取到基线值显示。
+ *
+ * 删除语义（E3）：用户删掉该行 = 恢复厂商声明值，行会重新出现。这不是 bug，是兜底语义的必然。
+ */
+export const withDeclaredContextLength = (
+  params: Record<string, unknown>,
+  declared: number | null | undefined
+): Record<string, unknown> => {
+  const out: Record<string, unknown> = { ...params };
+  if (out.context_length !== undefined && out.context_length !== null) {
+    return out; // 用户已显式设置，声明值不得覆盖
+  }
+  if (typeof declared === 'number' && declared > 0) {
+    out.context_length = declared;
+  }
+  return out;
+};
 
 /** 超出新模型范围自动截断（7.5 范围截断 / 8.2.10 切换边界）。 */
 export function clampToRange(
@@ -173,11 +207,12 @@ export const KNOWN_CAPABILITY_VALUES: ReadonlySet<string> = new Set(
 );
 
 // 2026-09-25 05:44:50 小健 - 模型参数默认范围单源（北京老陈选定前端兜底统一显示形态）：
-//   AddParamForm 预设表与 ModelParams 渲染共用，杜绝两处范围漂移（如 context_limit 上限 900000↔2000000）— 小健-2026-09-25
+//   AddParamForm 预设表与 ModelParams 渲染共用，杜绝两处范围漂移（如 context_length 上限 900000↔2000000）— 小健-2026-09-25
+// 2026-11-01 小欧 - 键名统一 context_limit → context_length（与后端 yaml 真源/厂商通用名同名）— 小欧-2026-11-01
 export const PARAM_DEFAULT_RANGES: Readonly<
   Record<string, { min: number; max: number }>
 > = {
-  context_limit: { min: 1000, max: 2000000 },
+  context_length: { min: 1000, max: 2000000 },
   temperature: { min: 0, max: 2 },
   max_tokens: { min: 1, max: 100000 },
   top_p: { min: 0, max: 1 },
@@ -190,12 +225,12 @@ export const PARAM_DEFAULT_RANGES: Readonly<
 /** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐设计 v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
 export const PARAM_PRESETS = [
   {
-    key: 'context_limit',
+    key: 'context_length',
     type: 'number' as const,
     default: 262144,
-    range: PARAM_DEFAULT_RANGES.context_limit,
-    label: '上下文限制',
-    desc: '上下文窗口上限，超限裁剪旧轮',
+    range: PARAM_DEFAULT_RANGES.context_length,
+    label: '上下文窗口',
+    desc: '上下文窗口上限(token)，超限裁剪旧轮；不设则用厂商声明值',
   },
   {
     key: 'temperature',
