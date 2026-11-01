@@ -41,6 +41,9 @@
 //   （成对引符包路径今起可识别；ASCII 引号因与 JSON 字符串撞车禁入——J5 双反斜杠回归实证）；
 //   行内代码带空格盘符路径整段全匹配才转。严格三分支优先级不动、相对路径不放开空格、
 //   不查盘不造假链接（架构口径不变）— 小欧-2026-11-01
+// 2026-11-01 小欧 - 修上一版退化并只增不减：单趟 replace 改手工 exec 循环，⑤ 只吃自己那条候选、
+//   残余回同一循环继续扫（同行后续路径不再被吞）；run 按盘符锚切段逐条识别；段内取末个扩展名锚
+//   （多词文件名/版本号让位真扩展名）；无锚时"分隔符紧跟空白/行尾"判为带空格目录。— 小欧-2026-11-01
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -238,25 +241,20 @@ const PATH_REL = `[^${PATH_STOP}:\\\\/][^${PATH_STOP}:]*[\\\\/][^${PATH_STOP}:]*
 const PATH_SEG = `[^${PATH_STOP}:\\\\/]+`;
 const PATH_ABS_DIR = `[A-Za-z]:[\\\\/](?:${PATH_SEG}[\\\\/])+(?![^${PATH_STOP}:\\\\/])`;
 
-// 2026-11-01 小欧 - 空格容差（盘符绝对专用）：文件名带空格（`AI Agent架构…探索.md`）时，
-//   严格分支因 PATH_STOP 含 `\s` 在文件名中途截断、凑不出扩展名 → 整条放弃。改为
-//   **两段式**：正则只负责圈住「无硬终止符的最大 run」（空白可入 run，中文引符/书名号/
-//   标点/冒号/换行/制表仍是硬终止），截断裁决交给代码 policy `firstHitAbsCand`——
-//   首击扩展名锚 + 锚后紧跟 / \ . 即非锚（版本号 v2.0.md 的 .0 要让位给真扩展名），
-//   锚后残余（如「 总结如下」）原样放回正文。散文吞吃的误伤面由「至少含一个空白 +
-//   盘符锚 + 扩展名锚」三重约束压住；相对路径**不放开**空格（真歧义，散文可撞）。
-//   ASCII 引号不进 lead（与 JSON 字符串撞车，markdown-file-ref-link J5 回归实证）— 小欧-2026-11-01
+// 2026-11-01 小欧 - 空格容差（盘符绝对专用）：正则只圈「无硬终止符的最大 run」（空白可入 run），
+//   谁是文件/目录交 resolveAbsCand 裁决；run 内多条路径按盘符锚切段逐条识别，残余回扫不丢 token — 小欧-2026-11-01
 /** run 硬终止集 = 原终止集去掉 `\s`（空白正是要容差的分隔）+ 显式换行/制表 */
 const RUN_STOP = '<>()\\[\\]{}"`\'|,;，。；：！？、（）【】《》“”‘’\\n\\r\\t';
 /** 空格容差 run：至少含一个空白（与严格三分支互斥，严格优先；正则不过刀，只圈界碑） */
 const PATH_ABS_SP = `[A-Za-z]:[\\\\/](?=[^${RUN_STOP}]*[\\s])[^${RUN_STOP}]*`;
 
 /**
- * 单趟识别三类 token（顺序即优先级，替换结果不会被二次扫描）：
+ * 单趟识别四类 token（顺序即优先级；命中段整体跳过，不产生重叠）：
  *   ① 显式标记 `[[文件:path#L1-L2]]`
  *   ② 已有 markdown 链接/图片 —— 原样保留，防二次转换
  *   ③ URL —— 原样保留（早于裸路径，防 `https://x/a.md` 被当成相对路径）
  *   ④ 裸绝对路径（盘符）/绝对目录/含目录的相对路径 —— 转链接（href 存原文），其余原样
+ *   ⑤ 空格容差 run（盘符绝对专用）—— 由 convertRuns 循环裁出候选，残余回扫
  */
 const FILE_REF_TOKEN_RE = new RegExp(
   // 2026-10-22 小欧 - markPath 允许含 ']'（此前排除 ']' 导致 `[[文件:a[1].md]]` 整条匹配不上，
@@ -288,14 +286,33 @@ const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
 const isBadPath = (p: string): boolean =>
   !p || /[\r\n\t\0]/.test(p) || p.split(/[\\/]/).includes('..');
 
-// 2026-11-01 小欧 - 空格容差的截断 policy（SRP：正则只圈界碑，裁决在这里）— 小欧-2026-11-01
-/** 首击扩展名锚：run 内从左到右找 `.alnum{1,10}`；紧跟 `/`、`\`、`.` 或字母数字续字
- *  （版本号 v2.0.md 的 `.0`、路径中点 `my.dir\readme.txt` 的 `.dir` 要让位给真锚）即非锚；
- *  首个真锚的截断点即候选，找不到（`E:\my docs\` 目录带空格、纯散文）返回 null → 原文。
- *  ⚠ 无 `g` 标志局部正则：`exec` 的 lastIndex 是模块级陷阱（跨调用残留会漏首击锚）。 */
-const firstHitAbsCand = (run: string): string | null => {
-  const m = /\.[A-Za-z0-9]{1,10}(?![A-Za-z0-9./\\])/.exec(run);
-  return m ? run.slice(0, m.index + m[0].length) : null;
+// 2026-11-01 小欧 - run 裁决 policy（SRP：正则只圈界碑，切哪一条交这里）— 小欧-2026-11-01
+/** run 内按盘符锚切段：`F:\a b\x.md F:\c.md` 两条路径各自成段，后一条不被前一条吞掉 */
+const absSegments = (run: string): string[] =>
+  run.split(/(?=[A-Za-z]:[\\/])/).filter(Boolean);
+
+/**
+ * 段内裁决 → {path, rest}：
+ *   有扩展名锚 → 取**末个**锚截断为文件（多词文件名 `AI Agent架构…探索.md` 与版本号
+ *     `v2.0 plan.md` 的 `.0` 都让位给真扩展名）；
+ *   无锚 → 「分隔符紧跟空白/行尾」截断为带空格目录（`F:\my docs\proj\ 下有很多文件`）；
+ *   两者皆无 → null（原文退回，不造假链接）。
+ */
+const resolveAbsCand = (seg: string): { path: string; rest: string } | null => {
+  // ⚠ 局部正则带 g 只在本函数内跑完，lastIndex 不跨调用残留（不建模块级 g 正则）
+  const ext = /\.[A-Za-z0-9]{1,10}(?![A-Za-z0-9./\\])/g;
+  let hit: RegExpExecArray | null = null;
+  for (let m = ext.exec(seg); m; m = ext.exec(seg)) hit = m;
+  if (hit) {
+    const end = hit.index + hit[0].length;
+    return { path: seg.slice(0, end), rest: seg.slice(end) };
+  }
+  const dir = /[\\/](?=\s|$)/.exec(seg);
+  if (dir) {
+    const end = dir.index + 1;
+    return { path: seg.slice(0, end), rest: seg.slice(end) };
+  }
+  return null;
 };
 
 /**
@@ -332,9 +349,22 @@ const toFileRefMarkdown = (
   return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(raw)}${lines})`;
 };
 
-const convertRuns = (text: string, projectRoot?: string): string =>
-  text.replace(FILE_REF_TOKEN_RE, (whole, ...rest) => {
-    const g = rest[rest.length - 1] as FileRefTokenGroups;
+/**
+ * 单趟前向扫描：命中即追加替换结果，**⑤ 只吃自己那一条候选**，残余留在 text 里由本循环继续扫
+ * （字符串替换结果不参与二次扫描 → 旧版 replace 会把同行后续路径整段吞掉，此处从机制上消除）。
+ */
+const convertRuns = (text: string, projectRoot?: string): string => {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    FILE_REF_TOKEN_RE.lastIndex = pos;
+    const m = FILE_REF_TOKEN_RE.exec(text);
+    if (!m) break;
+    const whole = m[0];
+    const g = (m.groups ?? {}) as FileRefTokenGroups;
+    const lead = g.lead ?? '';
+    let piece = whole;
+    let consumed = whole.length;
 
     if (g.markPath) {
       // 2026-10-23 小欧 - 显式标记是 Agent 的明确引用：允许无目录相对名；href 存原文 — 小欧-2026-10-23
@@ -342,26 +372,28 @@ const convertRuns = (text: string, projectRoot?: string): string =>
         g.markFrom && !isDirPath(g.markPath)
           ? `&line=${g.markFrom}${g.markTo ? `-${g.markTo}` : ''}`
           : '';
-      const link = toFileRefMarkdown(g.markPath, projectRoot, true, lines);
-      return link ?? whole;
+      piece = toFileRefMarkdown(g.markPath, projectRoot, true, lines) ?? whole;
+    } else if (g.spacedAbs) {
+      // 2026-11-01 小欧 - ⑤ 空格容差：只吃首段裁决出的那一条，锚后残余（散文/后续路径）回扫不丢 — 小欧-2026-11-01
+      const cand = resolveAbsCand(absSegments(g.spacedAbs)[0] ?? '');
+      const link = cand ? toFileRefMarkdown(cand.path, projectRoot) : null;
+      if (cand && link) {
+        piece = `${lead}${link}`;
+        consumed = lead.length + cand.path.length;
+      }
+    } else {
+      const raw = g.bareDirAbs ?? g.bareAbs ?? g.bareRel;
+      if (raw) {
+        const link = toFileRefMarkdown(raw, projectRoot);
+        if (link) piece = `${lead}${link}`;
+      }
     }
 
-    // 2026-11-01 小欧 - 空格容差分支（⑤，最末优先级）：run 内首击扩展名锚截断，
-    //   截断后残余原样放回正文（它已被正则吞进 run，不还回去就丢散文）；形态不过
-    //   或无锚 → 整条原文，与严格分支「不造假链接」同口径 — 小欧-2026-11-01
-    if (g.spacedAbs) {
-      const cand = firstHitAbsCand(g.spacedAbs);
-      if (!cand) return whole;
-      const link = toFileRefMarkdown(cand, projectRoot);
-      if (!link) return whole;
-      return `${g.lead ?? ''}${link}${g.spacedAbs.slice(cand.length)}`;
-    }
-
-    const raw = g.bareDirAbs ?? g.bareAbs ?? g.bareRel;
-    if (!raw) return whole;
-    const link = toFileRefMarkdown(raw, projectRoot);
-    return link ? `${g.lead ?? ''}${link}` : whole;
-  });
+    out += text.slice(pos, m.index) + piece;
+    pos = m.index + Math.max(consumed, 1);
+  }
+  return out + text.slice(pos);
+};
 
 /**
  * 行内代码的**形态**门槛：整段无空白且末段是字母开头扩展名（`a.md` / `x.json`）。
@@ -381,13 +413,12 @@ const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 const toWholePathLink = (code: string, projectRoot?: string): string | null => {
   const raw = code.trim();
   if (isPathLike(raw)) return toFileRefMarkdown(raw, projectRoot);
-  // 2026-11-01 小欧 - 带空格盘符绝对路径：行内代码引号是天然界碑（无散文歧义），整段
-  //   首击扩展名锚截到行尾即全匹配才转；截断后仍有残余（代码段含额外说明词）→ 语义
-  //   不唯一，退原文不造假链接 — 小欧-2026-11-01
-  if (isDriveAbsPath(raw) && /\s/.test(raw)) {
-    const cand = firstHitAbsCand(raw);
-    if (cand && cand === raw) return toFileRefMarkdown(cand, projectRoot);
-  }
+  // 2026-11-01 小欧 - 带空格盘符路径（文件/目录同规则）：整段即路径才转，有残余 = 语义不唯一 → 原文 — 小欧-2026-11-01
+  const cand =
+    isDriveAbsPath(raw) && /\s/.test(raw)
+      ? resolveAbsCand(absSegments(raw)[0] ?? '')
+      : null;
+  if (cand && !cand.rest) return toFileRefMarkdown(cand.path, projectRoot);
   return null;
 };
 
