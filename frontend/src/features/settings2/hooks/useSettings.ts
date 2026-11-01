@@ -89,6 +89,15 @@
 // 2026-11-01 小欧 - 三堂会审（北京老陈令）：终裁两颗灰钮常显不藏、灰态 Tip 只剩真话（「此模型还没有参数」
 //   分支铲除）。R1/R2 会审修：saveModelGroup 成功回写 + selectModel 补 removedDrafts:{} 对称清空，
 //   死亡快照零残留；R3（放弃未保存新键悬挂 range/options）挂账 - 小欧-2026-11-01
+// 2026-11-01 08:45 小欧 - 实测三实锤修复（真实场景 case 定谳后落码，北京老陈批准）：
+//   ①saveModelGroup 形态信封收口（R3 挂账兑现）：新键才挂 range/param_options，且只带
+//   newKeys 自身形态、空 map 不挂字段——原全量信封把已放弃未保存键的形态押车落 model_meta
+//   （界面上不存在的键的元数据真落盘实证）；空 map 挂块会触发后端整块替换误清其他键形态。
+//   ②saveProviderDraft 补 mtime 外改守卫，与 saveKeys/saveModelGroup 对齐同机制（同一次
+//   外部改动差分实证：模型路拦停+告警、本路静默覆写落盘），依赖补 load。
+//   ③mtimeRef 实时镜像：saveAll/saveGroup/ensureModelSaved 异步编排链捕获旧 render 闭包，
+//   守卫读 state.mtime 必得旧值自误判（load reset 清草稿老病同源），新守卫一律读 ref；
+//   syncMtime/load 双写点同拍刷新 - 小欧-2026-11-01
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -296,9 +305,17 @@ export function useSettings() {
     []
   );
 
+  // 2026-11-01 小欧 - mtime 实时镜像 ref：saveAll/saveGroup/ensureModelSaved 异步编排链捕获的
+  //   保存函数是旧 render 闭包，读 state.mtime 必得旧值——同链前一路已自写落盘 bump mtime 后，
+  //   后一路守卫必误判「外部更新」→ load reset 清空用户草稿（2026-09-27 修过的串行化病根同源）。
+  //   新守卫比对一律读 mtimeRef（syncMtime/load 双写点保持同拍）- 小欧-2026-11-01
+  const mtimeRef = useRef(0);
   /** A7：保存/模型 CRUD 后同步落盘后 mtime，防假后门刷新误判（9.2.8/9.2.9 共用）。 */
   const syncMtime = useCallback((mtime: number | undefined | null) => {
-    if (mtime) setState((s) => ({ ...s, mtime }));
+    if (mtime) {
+      mtimeRef.current = mtime;
+      setState((s) => ({ ...s, mtime }));
+    }
   }, []);
 
   /** 首次加载：schema + 全量值 + 模型列表一次拉取（6.3/7.0.5）。 */
@@ -423,6 +440,8 @@ export function useSettings() {
                 },
           };
         });
+        // 2026-11-01 小欧 - load 直写 mtime 同拍镜像 ref（守卫实时比对单源） - 小欧-2026-11-01
+        if (all.mtime) mtimeRef.current = all.mtime;
       } catch {
         // 31候选 #22：load 失败只保留全页 Result（loadError 由 SettingsPage 整屏渲染），
         //   不再叠加 handleApiError 系统 toast——原双提示重复噪询；Result 自带重试入口
@@ -797,8 +816,20 @@ export function useSettings() {
       if (Object.keys(changed).length) {
         body.default_params = changed;
         if (newKeys.length) {
-          body.range = { ...state.model.ranges };
-          body.param_options = { ...state.model.paramOptions };
+          // 2026-11-01 小欧 - 形态信封收口：只随新键捎带其自身 range/param_options。
+          //   原全量 {...state.model.ranges}/{...paramOptions} 会把已放弃未保存键的形态
+          //   押车落 model_meta（界面上不存在的键的元数据真落盘实证）。空 map 不挂字段：
+          //   挂空块会触发后端整块替换语义，误清既有其他键的形态 - 小欧-2026-11-01
+          const rangeNew: Record<string, { min: number; max: number }> = {};
+          const optNew: Record<string, string[]> = {};
+          for (const k of newKeys) {
+            const r = state.model.ranges[k];
+            if (r) rangeNew[k] = r;
+            const o = state.model.paramOptions[k];
+            if (o && o.length) optNew[k] = o;
+          }
+          if (Object.keys(rangeNew).length) body.range = rangeNew;
+          if (Object.keys(optNew).length) body.param_options = optNew;
         }
       }
       // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
@@ -914,6 +945,19 @@ export function useSettings() {
       }
       setSaving(true);
       try {
+        // 2026-11-01 小欧 - mtime 外改守卫补齐：Provider 配置同落 config.yaml，与 saveKeys/
+        //   saveModelGroup 同机制（同一次外部改动差分实证：模型路拦停+告警，本路静默覆写落盘）。
+        //   外部已更新则刷新+提示并中止；比对读 mtimeRef（编排链旧闭包读 state.mtime 必得旧值）；
+        //   同链前一路（saveKeys/saveModelGroup）成功已 syncMtime，自写不会自误判 - 小欧-2026-11-01
+        const curMtime = await settingsApi.getMtime();
+        if (curMtime !== mtimeRef.current) {
+          await load({ reset: true });
+          showMessage(
+            ErrorType.WARNING,
+            '配置已被外部更新，已重新加载，请核对后重新保存'
+          );
+          return { ok: false as const };
+        }
         const r = await modelApi.updateProvider(
           state.model.selectedProvider,
           draft
@@ -942,6 +986,7 @@ export function useSettings() {
       syncMtime,
       reloadProviderCache,
       patchModel,
+      load,
     ]
   );
 

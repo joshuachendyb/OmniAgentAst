@@ -159,6 +159,11 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # _models_of 增 max_output_length（从 model_meta 读取，供 LLM 调用链设置 max_tokens 上限）— 小欧-2026-10-26
 # 2026-10-31 - 小欧 - fetch_remote_models 删本地"空 key 摘 Authorization"实现, 收口到
 #   ProviderAdapter.auth_headers 单点: 同一条规则写多处必然漂移, 且探测链与真对话链口径必须一致。 — 小欧 2026-10-31
+# 2026-11-01 08:45 - 小欧 - update_model 删除清理失效修复：meta range/param_options 的删键改
+#   与 model_params 同一个 None 意向机制（merge 内核 None 分支删叶键+回收空父级）。原裁剪
+#   dict 整块回写在叶级归并合并器下只能写存活叶键、删不掉兄弟键（删 max_tokens 后
+#   range.max_tokens 残留实证；仅单键清空走空 dict 整块替换侥幸全清），命中判定与 keep 语义
+#   不变、仅实际命中才建块 — 小欧-2026-11-01
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -417,19 +422,22 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     if isinstance(fields.get("param_options"), dict):
         node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]
     # remove 同步清 range/param_options——在 fields 写入之后执行（删除意图最终
-    #   生效，防 293 行同批 param_options 覆盖复活）；跳过 default_params 中重加键（keep）；
-    #   仅实际命中才 setdefault 建 model_meta 块（防空块污染）；range/options 单循环（DRY）
+    #   生效，防 293 行同批 param_options 覆盖复活）；删键改用与 model_params 同一个 None
+    #   意向机制（merge 内核 None 分支：删叶键+回收空父级）。原裁剪 dict 整块回写在本合并器
+    #   叶级归并语义下只能写存活叶键、删不掉兄弟键（删 max_tokens 后 range.max_tokens 残留实证；
+    #   仅单键清空走空 dict 整块替换侥幸全清）；跳过 default_params 重加键（keep）；
+    #   仅实际命中才 setdefault 建 model_meta 块（防空块污染）—— 小欧-2026-11-01
     if isinstance(removed, list) and removed:
         keep = set(dp) if isinstance(dp, dict) else set()
         base_meta = (ai[provider].get("model_meta", {}) or {}).get(model, {}) or {}
         node_meta = node.get("model_meta", {}).get(model)
         for meta_key in ("range", "param_options"):
-            cur = dict((node_meta or {}).get(meta_key) or base_meta.get(meta_key) or {})
-            hit_keys = [k for k in removed if k not in keep and k in cur]
-            if hit_keys:
-                for k in hit_keys:
-                    cur.pop(k, None)
-                node.setdefault("model_meta", {}).setdefault(model, {})[meta_key] = cur
+            meta_src = dict((node_meta or {}).get(meta_key) or base_meta.get(meta_key) or {})
+            for k in removed:
+                if k in keep or k not in meta_src:
+                    continue
+                meta_write = node.setdefault("model_meta", {}).setdefault(model, {})
+                meta_write.setdefault(meta_key, {})[k] = None  # None=删键意图
     if not node:
         # remove_params 全为不存在键 = 幂等 no-op，成功返回不写盘（原仍全量 merge，
         #   空耗备份/原子重写/mtime 抖动）；其余无有效配置项仍拒
