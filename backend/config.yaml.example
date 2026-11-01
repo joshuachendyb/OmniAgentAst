@@ -30,6 +30,11 @@
 #   2026-10-25 小欧 - tuning.trim 3 键→5 键: 加 keep_recent_rounds=5(裁剪时最近 N 个 FC 工具步不裁, 5-20)、
 #     tools_token_reserve=30000(tools schema 输入 token 预留, 防裁完仍超窗 400); 与 settings_registry 同批注册。
 #   2026-10-25 23:09 小欧 - tuning.trim.trigger_ratio 0.75→0.9: 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径; 与 settings_registry 同批改。
+#   2026-11-01 小欧 - ai 域新增 kilo Provider 块: 免费网关(实测 /models 拉 384 模型与 :free/0 价调用均免
+#     key, 付费需自填 key); 与真实 config.yaml 同步接入 — 小欧-2026-11-01
+#   2026-11-01 09:25 小欧 - kilo 块补 5 个 free 模型 + 全量 model_meta(镜像真配置模型库保存实况:
+#     cohere/north-mini-code:free、kilo-auto/free、nvidia/nemotron-3.5-super-vl:free、
+#     openrouter/free、reflection/beam-free) — 小欧-2026-11-01
 #
 #
 # 严禁事项 — 小欧 2026-09-21
@@ -186,6 +191,121 @@ ai:
       - MiniMax-M3
     timeout: 60
     max_retries: 3
+
+  # kilo.ai 免费网关 — 小欧-2026-11-01：/models 拉取与 :free/0 价模型调用均免 key（实测 384 模型），
+  # 付费模型调用才需填 api_key；api_key 留空即免 key 使用（免费面已可用），models 空表=到模型库拉取勾选。
+  # 以下 models/model_meta 镜像自真实 config.yaml（2026-11-01 模型库保存实况）
+  kilo:
+    api_base: https://ai-gateway.kilo.ai/api/v1
+    api_key: ''
+    timeout: 120
+    max_retries: 3
+    models:
+      - cohere/north-mini-code:free
+      - kilo-auto/free
+      - nvidia/nemotron-3.5-super-vl:free
+      - openrouter/free
+      - reflection/beam-free
+    model_meta:
+      cohere/north-mini-code:free:
+        context_length: 256000
+        max_output_length: 64000
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - frequency_penalty
+          - include_reasoning
+          - max_tokens
+          - presence_penalty
+          - reasoning
+          - seed
+          - stop
+          - temperature
+          - tool_choice
+          - tools
+          - top_k
+          - top_p
+        supported_features: []
+      kilo-auto/free:
+        context_length: 256000
+        max_output_length: 32768
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - max_tokens
+          - temperature
+          - tools
+          - reasoning
+          - include_reasoning
+        supported_features: []
+      nvidia/nemotron-3.5-super-vl:free:
+        context_length: 1000000
+        max_output_length: 131072
+        input_modalities:
+          - text
+          - image
+          - video
+        output_modalities:
+          - text
+        supported_parameters:
+          - include_reasoning
+          - max_tokens
+          - reasoning
+          - response_format
+          - seed
+          - structured_outputs
+          - temperature
+          - tool_choice
+          - tools
+          - top_p
+        supported_features: []
+      openrouter/free:
+        context_length: 200000
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+        supported_parameters:
+          - frequency_penalty
+          - include_reasoning
+          - logprobs
+          - max_completion_tokens
+          - max_tokens
+          - min_p
+          - presence_penalty
+          - reasoning
+          - reasoning_effort
+          - repetition_penalty
+          - response_format
+          - seed
+          - stop
+          - structured_outputs
+          - temperature
+          - tool_choice
+          - tools
+          - top_k
+          - top_logprobs
+          - top_p
+        supported_features: []
+      reflection/beam-free:
+        context_length: 1048576
+        max_output_length: 131072
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - max_tokens
+          - temperature
+          - tools
+          - reasoning
+          - include_reasoning
+        supported_features: []
 
 # 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:

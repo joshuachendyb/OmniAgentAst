@@ -164,6 +164,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   dict 整块回写在叶级归并合并器下只能写存活叶键、删不掉兄弟键（删 max_tokens 后
 #   range.max_tokens 残留实证；仅单键清空走空 dict 整块替换侥幸全清），命中判定与 keep 语义
 #   不变、仅实际命中才建块 — 小欧-2026-11-01
+# 2026-11-01 09:15 - 小欧 - kilo.ai 输出上限提取补充：该厂商把单次输出上限放
+#   top_provider.max_completion_tokens 嵌套层，原提取链（顶层键 + output_modalities[*].max_length）
+#   两路都够不到此层致模型库「输出上限」列恒空。_extract_max_output_length 增第三优先级兜底：
+#   前两路未命中才读 top_provider（对既有厂商零影响，命中顺序不变）— 小欧-2026-11-01
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -802,6 +806,14 @@ def _extract_max_output_length(item: Dict[str, Any]) -> Optional[int]:
             val = node.get("value")
             if isinstance(val, int) and not isinstance(val, bool):
                 return val
+    # 2026-11-01 小欧 - kilo.ai 第三优先级兜底：该厂商把单次输出上限藏
+    #   top_provider.max_completion_tokens，前两路都够不到 → 「输出上限」列恒空。
+    #   前两路未命中才读此层，既有厂商（值在顶层或 output_modalities）命中顺序不变 — 小欧-2026-11-01
+    _top = item.get("top_provider")
+    if isinstance(_top, dict):
+        _val = _top.get("max_completion_tokens")
+        if isinstance(_val, int) and not isinstance(_val, bool):
+            return _val
     return None
 
 
