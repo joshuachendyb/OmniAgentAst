@@ -33,6 +33,9 @@
 #   收口为单一截断口径; 门限判定改用它估"实际喂进去的体积"(tool content 按 feed_max 截断后),
 #   治"拿未截断原文估→tool-heavy 历史虚报→误触发白裁旧轮" — 小欧-2026-10-31
 # 2026-10-31 小欧 - estimate_feed_tokens docstring 声明"不含 SUMMARY_TEMPLATE/_SUMMARY_TAIL_USER 固定开销", 算法未动。— 小欧-2026-10-31
+# 2026-11-01 小欧 - 七段重构(北京老陈亲定, 与 summary_prompt.py 同源): _SUMMARY_SECTIONS 改七段
+#   (Goal→Previous Task Goal, Key Decisions→Task Plan and Decisions, 新增 Important Context 段, 顺序随模板定音);
+#   _SUMMARY_TAIL_USER 文案「六段」→「七段」(语言保持中文不动, 10-07 实测背景在案) — 小欧-2026-11-01
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -50,15 +53,16 @@ from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用
 
 # 摘要收尾指令(防"半截对话→续写", 见文件头编辑历史)
-_SUMMARY_TAIL_USER = "以下是本次需要摘要的历史对话内容。请按 system 指定格式输出六段摘要。"
+_SUMMARY_TAIL_USER = "以下是本次需要摘要的历史对话内容。请按 system 指定格式输出七段摘要。"
 
 
-# 六段标记(与 SUMMARY_TEMPLATE 同源, 改模板即改此处) — 小欧 2026-10-12
+# 七段标记(与 SUMMARY_TEMPLATE 同源, 改模板即改此处) — 小欧 2026-10-12 / 2026-11-01 七段化
 # 2026-10-25 小欧 段名去冒号(北京老陈令): Agents-A1 用 ## 段名 格式(无冒号), 原 "段名:" 子串匹配失败致摘要被误弃;
 #   段名列表去冒号, 既供正则匹配, 也供子串兜底 — 小欧-2026-10-25
 # 2026-10-26 小沈: 段名对齐 opencode 描述(Critical Context→Important Details, 删 Next Steps, 增 Summary), 与 summary_prompt.py 同源 — 小沈-2026-10-26
-_SUMMARY_SECTIONS = ("Goal", "Key Decisions", "Important Details",
-                     "Progress", "Summary", "Relevant Files")
+# 2026-11-01 小欧: 七段定音(北京老陈亲定): Goal→Previous Task Goal, Key Decisions→Task Plan and Decisions, 新增 Important Context, 顺序随模板 — 小欧-2026-11-01
+_SUMMARY_SECTIONS = ("Previous Task Goal", "Task Plan and Decisions", "Important Details",
+                     "Progress", "Summary", "Important Context", "Relevant Files")
 _SUMMARY_MIN_CHARS = 200  # 缺省; 优先读 tuning.compaction.summary_min_chars（与本文件配置化口径一致）
 _REFUSAL_PREFIXES = ("抱歉", "对不起", "很抱歉")
 
@@ -76,11 +80,11 @@ _SECTION_RE = re.compile(
 
 
 def _sections_complete(t: str) -> bool:
-    """六段标记是否齐全 — 2026-10-25 小欧 双重校验(北京老陈令)
+    """七段标记是否齐全 — 2026-10-25 小欧 双重校验(北京老陈令)
 
     方法1(正则): 精确匹配段名, 容忍 ## 段名 / 段名: / **段名:** 三种形式;
     方法2(子串): 正则未全中时, 退化为段名子串查(最宽松, 段名本身出现即算);
-    任一方法找全六段即通过。"""
+    任一方法找全七段即通过。"""
     # 方法1: 正则匹配
     found = {m.group(1).lower() for m in _SECTION_RE.finditer(t)}
     if found == {s.lower() for s in _SUMMARY_SECTIONS}:
@@ -94,7 +98,7 @@ def _valid_summary_or_empty(text: str, src_len: int = 0) -> str:
     """摘要结构校验（单函数，两摘要函数共用）— 小欧 2026-10-12
 
     任一不过返空串，调用方走现有零退化路径（装配原历史），不改流程：
-    ①长度下限（太短必是垃圾）；②六段标记齐全（正则+子串双重, 容忍 ##/段名:/**段名:** 变体）；
+    ①长度下限（太短必是垃圾）；②七段标记齐全（正则+子串双重, 容忍 ##/段名:/**段名:** 变体）；
     ③拒绝话术开头（只认开头，避正文误伤）；④不比原文长（没压反而胀）。
     """
     t = (text or "").strip()
@@ -161,7 +165,7 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict]) -> str:
     适用场景: C4 锚定摘要压缩(当前唯一接入主链路); 长任务跨多轮/续聊需保决策链, 且已放开 R4 零 LLM 原则。
     使用方法: 由 react_cycle._compact_injected_history await 调用(传 agent + 对话历史); 也可独立对任意消息列表调用。
     输入: llm_agent Agent 对象(须含 .llm_client, 用于发起流式调用); messages 对话消息列表。
-    输出: str 锚定摘要文本(SUMMARY_TEMPLATE 六段 Markdown); 为空表示未产出(上层原样保留历史, 零退化)。
+    输出: str 锚定摘要文本(SUMMARY_TEMPLATE 七段 Markdown); 为空表示未产出(上层原样保留历史, 零退化)。
     前置条件: 由 react_cycle._compact_injected_history await 调用(仅在 start 超窗判定后), 不放宽安全门;
               tools=None 走 Text 模式不触发工具; 首参必须是 agent 对象而非 llm_client
     """
