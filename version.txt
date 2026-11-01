@@ -1,3 +1,49 @@
+v1.5.3
+更新时间: 2026-11-01 11:10:21 - 小欧-2026-11-01
+## v1.5.2以来 变更汇总(35个commit: fix11/docs9/refactor8/feat5/chore2) - 小欧-2026-11-01
+[2026-11-01 11:10:21 小欧] 范围=v1.5.2以来全部commit(35个); 主线=会话工作区目录四元组化重构[54]+start压缩摘要与loop裁剪[62]+引用链路预算与体积限制[63]+注入装配与目录块+设置面板settings2与Provider密钥+模型服务kilo网关接入与文件引用chip识别+性能稳定性; 注:含5个feat(四元组化重构/五级阶梯压缩/注入装配单一化/目录块注入/摘要模板七段重构),用户裁定按PATCH记v1.5.3
+### 1.5.3.1 会话工作区目录四元组化重构（[54]）
+[一致性核查v17] docs 94c462d7c [54]会话工作区目录 一致性核查v17(行号刷新/§H改为store架构增量/删backward兼容与YAGNI函数/新增§九10大规范审查) - 小欧 2026-10-30
+[四元组化全链路重构] feat 9407a95d9 [54]会话工作区目录全链路四元组化重构(workspace_property/memo/is_default三标注字段DB→Service→Snapshot→Prompt→API→前端全链一致+reconcile始终创建默认工作区+属性归一化唯一源+面板草稿升级行内编辑) - 小欧 2026-10-30
+[三堂会审整改修正] refactor 558d7d8e2 [54]三堂会审整改修正(B定案+注入文案+存量迁移+前端统一) - 小欧 2026-10-31
+[压缩术语注释订正] refactor 6d0138c54 start_step START_TRIGGER_RATIO改名START_LIMIT_RATIO+压缩术语注释订正(0.5=限制系数/0.9=调节系数,零逻辑变更) - 小欧 2026-10-31
+[魔法数字清账] refactor 1e07aaea3 constants DEFAULT_CONTEXT_LIMIT迁app/constants单一真源+settings_registry默认值消魔法数字+首插话兜底口径统一 - 小欧 2026-10-31
+[公用函数收口] refactor 3da72b884 agent_utils,type_utils 压缩裁剪阈值预算与嵌套取值防御收口公用函数 - 小欧 2026-10-31
+[CHARS_PER_TOKEN迁址+实测标定] refactor 9055f04e6 agent_utils,compaction_constants,message_builder,refs/limits CHARS_PER_TOKEN迁址agent_utils与估算函数同址并改实测值1.86(2483次真实调用标定,原2.25低估21%)+新增conv_threshold判定线统一口径 - 小欧 2026-10-31
+### 1.5.3.2 start压缩摘要与loop裁剪（[62]）
+[五级阶梯压缩] feat 33d328b9c compaction 新增shrink_to_budget五级阶梯(截单条/远段tool保首500/截tool_call参数/丢远轮)+summary抽_build_feed并新增estimate_feed_tokens+prune清空加_compressed守卫 - 小欧 2026-10-31
+[压缩前超窗闸门] fix 2255d15a2 start_step 压缩摘要前超窗闸门: 老路与增量路统一feed口径判定(estimate_feed_tokens)+超判定线阶梯裁到trim门限+失败回退注入收缩副本 - 小欧 2026-10-31
+[保尾同尺+参数截断迁址] refactor 2d19aac16 split_turn,assembler,start_step,message_builder 保尾同尺+摘要前闸门收口+参数截断原语迁址+_args_raw - 小欧 2026-10-31
+[tool_call截断合法JSON] fix 43fe28f1f client_sdk.py,split_turn.py tool_call截断后arguments必须为合法JSON+无user边界按当前轮保4000+wire层arguments/content归一 - 小欧 2026-10-31
+[真问题整改] fix 9cd7677e5 assembler/split_turn/summary/start_step start压缩摘要与loop裁剪 真问题整改(日志分列/空continue/口径边界/压缩率分母) - 小欧 2026-10-31
+[62 技术逻辑流程分析] docs 8def40465 [62]start压缩摘要与loop裁剪 技术逻辑流程分析与10大规范核查 - 小欧 2026-10-31
+[62 5.2只留真问题+整改记录] docs 95f65dfef [62]start压缩摘要与loop裁剪 5.2只留真问题+5.6整改记录 - 小欧 2026-10-31
+[摘要模板七段重构] feat 54f9c9375 summary_prompt.py 压缩摘要模板七段重构(Goal改Previous Task Goal/Key Decisions改Task Plan and Decisions/新增Important Context段,北京老陈亲定顺序,校验器_SUMMARY_SECTIONS与收尾指令四处联动,描述全英文分工防串义) - 小欧 2026-11-01
+[loop裁剪notice可见性] fix 3e9c8a174 react_step.py+infoMaps.tsx loop裁剪notice可见性补齐(真裁才发射/trimming done不占位置2/token数读遥测真源/与summarizing信封对齐,遥测口径不动) - 小欧 2026-11-01
+### 1.5.3.3 引用链路预算与体积限制（[63]）
+[预算比例集中到常量域] refactor 9e186b093 refs/limits+constants 引用预算比例默认值集中到常量域 + [63]引用体积限制与截断总结文档 - 小欧 2026-10-31
+### 1.5.3.4 注入装配与目录块（workspace_block/orchestrator）
+[注入装配单一化] feat 18350edde workspace_block+message_builder 注入装配单一化(引用块/目录块前置+插话三态) + [61]落码记录 - 小欧 2026-10-31
+[目录块注入汇总日志与超限提示] feat c83a6ee71 workspace_block+orchestrator 目录块注入汇总日志与超限提示(5.6/D4) + [61]10.6补齐记录 - 小欧 2026-10-31
+[61 注释与实现对齐] docs a2d540c88 workspace_block+orchestrator+[61] 注释与实现对齐(渲染权归编排层) - 小欧 2026-10-31
+[taskinfo注释位序号订正] docs 81867aec2 taskinfo注释 动态状态位序号订正为位置2(原写第4位为旧布局) - 小欧 2026-10-31
+[注释清除文档号与章节号引用] docs 0d9de1382 workspace_block+orchestrator+message_builder 注释清除文档号与章节号引用 - 小欧 2026-10-31
+[注释清除文档号/章节号/用例号与行号] docs d5d4769ea message_builder+react_loop+react_step 注释清除文档号/章节号/用例号与行号引用(仅改注释) - 小欧 2026-10-31
+### 1.5.3.5 设置面板settings2与Provider密钥
+[api_key留空即不发Authorization头] fix c2b6230f6 provider_adapter+resolver+validation api_key 留空即不发送 Authorization 头且不再拦死 - 小欧 2026-10-31
+[密钥状态贴两态橙签] fix c511713ef settings2 密钥状态贴两态橙签+Tab组级脏点+底栏分工说明行+条件按钮常显 - 小欧 2026-11-01
+[放弃修改全域扩权+removedDrafts快照回显] fix b4b72f7ab settings2 放弃修改全域扩权+removedDrafts快照回显+灰钮常显Tip收紧+R1R2会审对称清理 - 小欧 2026-11-01
+[模型信封收口+mtime守卫] fix df0045f72 settings2 模型信封收口+Provider保存mtime守卫补齐+后端删键meta清理None意向机制 - 小欧 2026-11-01
+### 1.5.3.6 模型服务kilo网关+文件引用chip+性能稳定性
+[kilo输出上限top_provider提取兜底] fix c33ab4e28 model_service.py kilo输出上限top_provider提取兜底(第三优先级,既有厂商零影响)+config.yaml.example接入kilo免费网关块(5模型+全量meta镜像) - 小欧 2026-11-01
+[FileRefChip正文空格容差识别] fix cdd87e22a FileRefChip.tsx 正文chip空格容差识别(盘符绝对run圈界碑+首击扩展名锚截断+锚后残余放回+中文引符界碑+行内代码整段全匹配,严格分支优先级不动零退化) - 小欧 2026-11-01
+[Files+History prettier格式归一] refactor 3d53ad092 Files+History prettier格式归一零语义(既有漂移历史欠账清零,check:full全门禁绿) - 小欧 2026-11-01
+[read_text_file offset单独给读到文件尾] fix b3baf8c44 read_text_file offset单独给=读到文件尾, 输出闸门覆盖无上界窗口 - 小欧 2026-10-30
+### 1.5.3.7 版本记录清理与收尾
+[v1.5.3汇总登记] docs ca50091ef version.txt v1.5.3汇总(3个commit: feat1/fix1/docs1) - 小欧 2026-10-30
+[v1.5.4汇总登记] docs 76c8f0bab version.txt v1.5.4汇总(1个commit: refactor1) - 小欧 2026-10-31
+[清理v1.5.4汇总块] chore 758576624 清理version.txt v1.5.4汇总块(用户不要求自动打tag) - 小欧 2026-10-31
+[清理v1.5.3汇总块] chore 92ef078a1 清理version.txt v1.5.3汇总块(tag已删,重新打tag) - 小欧 2026-10-31
 v1.5.2
 更新时间: 2026-10-30 20:57:33 - 小欧-2026-10-30
 ## v1.5.1以来 变更汇总(73个commit: fix25/feat12/refactor7/docs26/perf1/test1/chore1) - 小欧-2026-10-30
