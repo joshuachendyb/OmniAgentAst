@@ -80,6 +80,16 @@
 #   缺哪项都 logger.error 点名(构建缺陷必须一眼看出); 开发态不乱判 —— 不预判目录, 只兜 StaticFiles
 #   的"目录不存在"RuntimeError, 其它异常照常抛(不给真 bug 兜底); 同时把开发态告警级别由 warning
 #   提到 error, 因为"挂不上"对 dev 是异常状态而非正常降级。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 终稿(北京老陈定案, 推翻上一条):
+#   ① 开发态 —— **不管目录是啥玩意**: frontend/dist 是构建产物, 存在与否/叫什么全由开发者掌握,
+#      后端不预判、不打任何告警; 只把 StaticFiles 构造期的 RuntimeError(目录不存在)咽掉, 没 dist
+#      就 API-only, 服务照常起。(反驳上一条: 本仓前端日常跑 vite :5173, 后端没 dist 是常态,
+#      每次启动打 ERROR 等于把常态判成故障, 真故障反被淹没。)
+#   ② 打包态 —— **只能验证 assets/**: _MEIPASS/web 由 spec 铺好, 名字固定, 但前端产物里只有
+#      assets/ 目录缺失会让 StaticFiles.__init__ 抛 RuntimeError 把服务搞崩, 故只校验这一件, 缺了
+#      点名 logger.error + 不挂载。index.html 不在启动期校验 —— 它缺了谁都不会崩, 只是没有页面,
+#      由 root / catch-all 在请求期回 JSON 讲清楚。
+#   ③ 两态共用同一条 mount 代码(DRY), 唯一分叉是"失败时要不要喊"。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -535,31 +545,26 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-# 2026-11-01 小欧 - 判决强度按环境分离(北京老陈定案: 开发不乱判, 打包不少判):
-#   打包态 —— 不少判: assets(会让 StaticFiles.__init__ 抛)与 index.html(缺了前端全废)逐项查,
-#     缺哪项都点名 logger.error, 属构建缺陷, 必须一眼看出打包漏了文件;
-#   开发态 —— 不乱判: 不预判任何目录(frontend/dist 是构建产物, 可删可半截可改名), 只兜
-#     StaticFiles 的"目录不存在"RuntimeError; 其它异常照常抛出, 不给真 bug 兜底 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 静态托管终稿(北京老陈定案: 开发不管, 打包只验 assets/):
+#   开发态: 不预判、不告警 —— 没 dist 就 API-only; 只咽 StaticFiles 的"目录不存在"RuntimeError。
+#   打包态: 只校验 assets/ 在不在(它是唯一会让 StaticFiles.__init__ 崩的东西), 缺了点名 error 不挂载。
+#   index.html 一律不在启动期校验, 由 root / catch-all 在请求期兜住(缺了回 JSON, 不炸)。 — 小欧-2026-11-01
 _STATIC_MOUNTED = False
-_missing_web = []
-if _IS_FROZEN:
-    if not _ASSETS_DIR.is_dir():
-        _missing_web.append(str(_ASSETS_DIR))
-    if not _INDEX_HTML.is_file():
-        _missing_web.append(str(_INDEX_HTML))
-
-if _missing_web:
-    logger.error(f"[前端] 打包缺文件, 跳过静态挂载: {_missing_web}")
+if _IS_FROZEN and not _ASSETS_DIR.is_dir():
+    logger.error(f"[前端] 打包缺 assets 目录, 前端不可用: {_ASSETS_DIR}")
 else:
     try:
         app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
         _STATIC_MOUNTED = True
-    except RuntimeError as exc:      # 仅兜"目录不可用"; 其它异常不吞, 免给真 bug 兜底
-        logger.error(f"[前端] 静态挂载失败(目录不可用), 降级为 API-only: {exc}")
+        logger.info(f"前端静态目录已定位: {_WEB_DIR}")
+    except RuntimeError as exc:
+        # 打包态上面已确认 assets 存在, 走到这里属权限/文件系统异常, 必须喊; 开发态没 dist 是常态, 不喊
+        if _IS_FROZEN:
+            logger.error(f"[前端] 打包态静态挂载失败: {exc}")
 
 if _STATIC_MOUNTED:
-    logger.info(f"前端静态目录已定位: {_WEB_DIR}")
-
+    # 只在 /assets 真挂上时才注册 catch-all: 否则 /assets/*.js 会落到这里拿到 HTML,
+    # 浏览器按 text/html 解析 JS → 报错比 404 更难查 — 小欧-2026-11-01
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str):
         """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html。
