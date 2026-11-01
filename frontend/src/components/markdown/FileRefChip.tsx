@@ -34,6 +34,13 @@
 // 2026-10-29 小欧 - 删两处 resolveChipUrl 的 { source: 'chat' } 实参：该参数两支返回值相同（死参数，
 //   同文件改动见 utils/fileDeepLink.ts），传了不产生任何差异；同时导航 state 只留 internal: true —
 //   internal 已完整表达"站内跳转", source 是同一次跳转里恒真的重复判据(Files 页已按 DRY 收敛) — 小欧-2026-10-29
+// 2026-11-01 - 小欧 - 空格容差（真退化疑案定案：非改错，是 10 月既定的 PATH_STOP 含 `\s`
+//   边界撞上带空格文件名 `AI Agent架构模型深度研究与创新探索.md` 的既设计取舍）：
+//   ⑤新分支盘符绝对 run（正则圈界碑/代码裁决）——首击扩展名锚截断 + 锚后紧跟 / \ . 让位
+//   （版本号与路径中点不误锚），锚后残余原样放回；lead 类补**中文成对引符/书名号**界碑
+//   （成对引符包路径今起可识别；ASCII 引号因与 JSON 字符串撞车禁入——J5 双反斜杠回归实证）；
+//   行内代码带空格盘符路径整段全匹配才转。严格三分支优先级不动、相对路径不放开空格、
+//   不查盘不造假链接（架构口径不变）— 小欧-2026-11-01
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -231,6 +238,19 @@ const PATH_REL = `[^${PATH_STOP}:\\\\/][^${PATH_STOP}:]*[\\\\/][^${PATH_STOP}:]*
 const PATH_SEG = `[^${PATH_STOP}:\\\\/]+`;
 const PATH_ABS_DIR = `[A-Za-z]:[\\\\/](?:${PATH_SEG}[\\\\/])+(?![^${PATH_STOP}:\\\\/])`;
 
+// 2026-11-01 小欧 - 空格容差（盘符绝对专用）：文件名带空格（`AI Agent架构…探索.md`）时，
+//   严格分支因 PATH_STOP 含 `\s` 在文件名中途截断、凑不出扩展名 → 整条放弃。改为
+//   **两段式**：正则只负责圈住「无硬终止符的最大 run」（空白可入 run，中文引符/书名号/
+//   标点/冒号/换行/制表仍是硬终止），截断裁决交给代码 policy `firstHitAbsCand`——
+//   首击扩展名锚 + 锚后紧跟 / \ . 即非锚（版本号 v2.0.md 的 .0 要让位给真扩展名），
+//   锚后残余（如「 总结如下」）原样放回正文。散文吞吃的误伤面由「至少含一个空白 +
+//   盘符锚 + 扩展名锚」三重约束压住；相对路径**不放开**空格（真歧义，散文可撞）。
+//   ASCII 引号不进 lead（与 JSON 字符串撞车，markdown-file-ref-link J5 回归实证）— 小欧-2026-11-01
+/** run 硬终止集 = 原终止集去掉 `\s`（空白正是要容差的分隔）+ 显式换行/制表 */
+const RUN_STOP = '<>()\\[\\]{}"`\'|,;，。；：！？、（）【】《》“”‘’\\n\\r\\t';
+/** 空格容差 run：至少含一个空白（与严格三分支互斥，严格优先；正则不过刀，只圈界碑） */
+const PATH_ABS_SP = `[A-Za-z]:[\\\\/](?=[^${RUN_STOP}]*[\\s])[^${RUN_STOP}]*`;
+
 /**
  * 单趟识别三类 token（顺序即优先级，替换结果不会被二次扫描）：
  *   ① 显式标记 `[[文件:path#L1-L2]]`
@@ -245,7 +265,7 @@ const FILE_REF_TOKEN_RE = new RegExp(
   '\\[\\[文件:(?<markPath>[^|\\n]+?)(?:#L(?<markFrom>\\d+)(?:-L?(?<markTo>\\d+))?)?\\]\\]' +
     '|!?\\[[^\\]]*\\]\\([^)]*\\)' +
     '|(?:https?|ftp|file):\\/\\/[^\\s<>()]+' +
-    `|(?<lead>^|[\\s（(【，,;；:：=*])(?:(?<bareDirAbs>${PATH_ABS_DIR})|(?<bareAbs>${PATH_ABS})|(?<bareRel>${PATH_REL}))`,
+    `|(?<lead>^|[\\s“”‘’《》（(【，,;；:：=*])(?:(?<bareDirAbs>${PATH_ABS_DIR})|(?<bareAbs>${PATH_ABS})|(?<bareRel>${PATH_REL})|(?<spacedAbs>${PATH_ABS_SP}))`,
   'gu'
 );
 
@@ -257,6 +277,8 @@ interface FileRefTokenGroups {
   bareDirAbs?: string;
   bareAbs?: string;
   bareRel?: string;
+  /** 2026-11-01 小欧 - 空格容差 run（盘符绝对专用），截断由 convertRuns policy 裁决 */
+  spacedAbs?: string;
 }
 
 /** label 里的方括号与反斜杠要转义，否则 markdown 链接解析被截断 */
@@ -265,6 +287,16 @@ const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
 /** 形态/安全门槛：控制字符与 `..` 穿越不是可链接路径（绝对路径同样适用） */
 const isBadPath = (p: string): boolean =>
   !p || /[\r\n\t\0]/.test(p) || p.split(/[\\/]/).includes('..');
+
+// 2026-11-01 小欧 - 空格容差的截断 policy（SRP：正则只圈界碑，裁决在这里）— 小欧-2026-11-01
+/** 首击扩展名锚：run 内从左到右找 `.alnum{1,10}`；紧跟 `/`、`\`、`.` 或字母数字续字
+ *  （版本号 v2.0.md 的 `.0`、路径中点 `my.dir\readme.txt` 的 `.dir` 要让位给真锚）即非锚；
+ *  首个真锚的截断点即候选，找不到（`E:\my docs\` 目录带空格、纯散文）返回 null → 原文。
+ *  ⚠ 无 `g` 标志局部正则：`exec` 的 lastIndex 是模块级陷阱（跨调用残留会漏首击锚）。 */
+const firstHitAbsCand = (run: string): string | null => {
+  const m = /\.[A-Za-z0-9]{1,10}(?![A-Za-z0-9./\\])/.exec(run);
+  return m ? run.slice(0, m.index + m[0].length) : null;
+};
 
 /**
  * 裸路径、行内代码、显式标记**共用的链接构造**（唯一真源，DRY）：
@@ -314,6 +346,17 @@ const convertRuns = (text: string, projectRoot?: string): string =>
       return link ?? whole;
     }
 
+    // 2026-11-01 小欧 - 空格容差分支（⑤，最末优先级）：run 内首击扩展名锚截断，
+    //   截断后残余原样放回正文（它已被正则吞进 run，不还回去就丢散文）；形态不过
+    //   或无锚 → 整条原文，与严格分支「不造假链接」同口径 — 小欧-2026-11-01
+    if (g.spacedAbs) {
+      const cand = firstHitAbsCand(g.spacedAbs);
+      if (!cand) return whole;
+      const link = toFileRefMarkdown(cand, projectRoot);
+      if (!link) return whole;
+      return `${g.lead ?? ''}${link}${g.spacedAbs.slice(cand.length)}`;
+    }
+
     const raw = g.bareDirAbs ?? g.bareAbs ?? g.bareRel;
     if (!raw) return whole;
     const link = toFileRefMarkdown(raw, projectRoot);
@@ -337,8 +380,15 @@ const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 /** 行内代码整段就是一个路径时才转链接；夹带其他文字一律原样，避免把示例改成可点链接 */
 const toWholePathLink = (code: string, projectRoot?: string): string | null => {
   const raw = code.trim();
-  if (!isPathLike(raw)) return null;
-  return toFileRefMarkdown(raw, projectRoot);
+  if (isPathLike(raw)) return toFileRefMarkdown(raw, projectRoot);
+  // 2026-11-01 小欧 - 带空格盘符绝对路径：行内代码引号是天然界碑（无散文歧义），整段
+  //   首击扩展名锚截到行尾即全匹配才转；截断后仍有残余（代码段含额外说明词）→ 语义
+  //   不唯一，退原文不造假链接 — 小欧-2026-11-01
+  if (isDriveAbsPath(raw) && /\s/.test(raw)) {
+    const cand = firstHitAbsCand(raw);
+    if (cand && cand === raw) return toFileRefMarkdown(cand, projectRoot);
+  }
+  return null;
 };
 
 /** 行内代码段按整段路径转换，其余文字走裸路径识别 */
