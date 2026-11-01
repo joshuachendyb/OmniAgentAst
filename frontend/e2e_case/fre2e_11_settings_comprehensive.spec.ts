@@ -19,6 +19,9 @@ import * as fs from 'fs';
  *   settingValue/expectReadonlyRow 收口抽取 — 小健-2026-09-25
  * 编辑历史: 2026-10-22 小欧 - 对齐弹窗/标签改版: 「显示名」字段已删(3处); 安全标签改名
  *   (安全设置→安全模块启用); .or() strict mode violation → 改单一定位器 — 小欧-2026-10-22
+ * 编辑历史: 2026-11-01 小欧 - 测试对齐（北京老陈解冻令，随 settings2 主案）：②参数区按钮
+ *   「重置为默认」改名「放弃修改」（一拍全撤三类未保存修改），22/42 两用例按钮定位
+ *   /重置为默认/ → /放弃修改/，用例名与 log 同步；仅改断言定位，用例语义不变 — 小欧-2026-11-01
  */
 // 2026-09-28 小欧 - 配置隔离铁律落地（本用例 34/36 曾把当前 provider 的 label/api_base 改成
 //   测试值再「改回」，中途被杀就把 https://api.e2e-test.example.com/v1 永久留在真配置，
@@ -568,19 +571,20 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     ).toBeVisible({ timeout: 5_000 });
   });
 
-  test('22 选择器 重置为默认按钮状态', async ({ page }) => {
+  test('22 参数区 放弃修改按钮状态', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
     await page.waitForTimeout(1000);
-    // 重置按钮可能在未选模型/无参数时不显示
-    const resetBtn = page.getByRole('button', { name: /重置为默认/ });
+    // 2026-09-25 06:20 小健 - 原条件渲染版注释「未选模型/无参数时不显示」已过期：
+    //   2026-11-01 按钮常显禁用（#4 常显化），无参数/无脏时只是 disabled — 小欧-2026-11-01
+    const resetBtn = page.getByRole('button', { name: /放弃修改/ });
     const cnt = await resetBtn.count();
     if (cnt > 0) {
       const isDisabled = await resetBtn.isDisabled().catch(() => true);
-      console.log(`[E2E] 22 重置按钮存在, disabled=${isDisabled}`);
+      console.log(`[E2E] 22 放弃修改按钮存在, disabled=${isDisabled}`);
       expect(typeof isDisabled).toBe('boolean');
     } else {
-      console.log('[E2E] 22 重置按钮不存在（无参数/未选模型），视为正常');
+      console.log('[E2E] 22 放弃修改按钮不存在，视为正常');
     }
   });
 
@@ -1098,11 +1102,11 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     }
   });
 
-  test('42 参数区 重置为默认确认弹窗', async ({ page }) => {
+  test('42 参数区 放弃修改确认弹窗', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
     await page.waitForTimeout(1000);
-    const resetBtn = page.getByRole('button', { name: /重置为默认/ });
+    const resetBtn = page.getByRole('button', { name: /放弃修改/ });
     const cnt = await resetBtn.count();
     if (cnt > 0) {
       const isDisabled = await resetBtn.isDisabled().catch(() => true);
@@ -1115,14 +1119,14 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
             .locator('.ant-btn:not(.ant-btn-dangerous)')
             .first()
             .click();
-          console.log('[E2E] 42 重置确认弹窗已弹出并取消');
+          console.log('[E2E] 42 放弃修改确认弹窗已弹出并取消');
         }
       } else {
-        console.log('[E2E] 42 重置按钮disabled（无脏态），跳过');
+        console.log('[E2E] 42 放弃修改按钮disabled（无脏态），跳过');
       }
       expect(typeof isDisabled).toBe('boolean');
     } else {
-      console.log('[E2E] 42 重置按钮不存在，跳过');
+      console.log('[E2E] 42 放弃修改按钮不存在，跳过');
     }
   });
 

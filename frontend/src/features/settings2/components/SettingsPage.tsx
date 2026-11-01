@@ -114,6 +114,18 @@
 // 2026-11-01 小欧 - #4 条件按钮常显（北京老陈拍板）：②参数区「管理推理深度」「重置为默认」不再凭空
 //   出现消失——判据提取 hasManagementOptions/hasModelParams 常算，无数据时按钮常显禁用 + Tooltip
 //   说明原因；三按钮等宽组位置恒定（disabled 元素 span 包裹系 antd 官方约束）— 小欧-2026-11-01
+// 2026-11-01 小欧 - ②参数区按钮改名「放弃修改」（北京老陈批准主案，原「重置为默认」名不符实——
+//   只撤值修改、撤不掉×删键与能力勾选）：确认弹窗同步放弃语义（title「⚠ 放弃修改」/okText「确认放弃」/
+//   content 三类全撤说明+已保存配置不受影响），Tooltip「参数无修改」→「无未保存修改」，按钮位置与
+//   常显禁用规则不动，onOk 调用 s.resetParams() 名不变 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 灰态 Tip 文案人话化（北京老陈批「指路版」）：「当前模型没有参数」→
+//   「此模型还没有参数——没东西可放弃，先点「添加模型参数」」；「无未保存修改」→「还没改过任何参数，
+//   不用放弃」；管理推理深度「当前模型没有可管理的参数选项」→「此模型还没有参数——先加参数，
+//   才有选项可管理」。灰按钮常显禁用不变，Tip 是点不动的唯一解释位，病在文案不在机制 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 「放弃修改」扩权全域（北京老陈批准）：管理页未保存修改原拆两本账（②参数/
+//   能力 vs ③Provider 草稿），北京老陈实证改③区点放弃无反应、灰色 Tip 说瞎话。现点亮条件=
+//   ②或③任一脏，onOk 清 providerDraft + providerResetSeq 自增令 ProviderConfig 重挂载（本地输入
+//   按 config=已保存值重新回显，组件内部逻辑/保存链零改动），弹窗文案同步四类清单 — 小欧-2026-11-01
 import React, { useState } from 'react';
 import {
   Button,
@@ -178,6 +190,11 @@ const SettingsPage: React.FC = () => {
     key: string;
     anchor?: string | null;
   } | null>(null);
+  // 2026-11-01 小欧 - 全域放弃（北京老陈批准扩权）：ProviderConfig 字段值存组件本地 useState
+  //   （从 config props 初始化），父层只清 providerDraft 不会改它显示——用 key 合入自增序号，
+  //   放弃修改时整体重挂载、按已保存配置重新回显（不碰组件内部逻辑，config 本身从未被编辑改写）
+  //   — 小欧-2026-11-01
+  const [providerResetSeq, setProviderResetSeq] = useState(0);
 
   // 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
   // 原 jumpTo 直接切 Tab 绕过确认，会静默丢弃当前组未保存修改
@@ -399,7 +416,9 @@ const SettingsPage: React.FC = () => {
     // 2026-11-01 小欧 - #4 常显化判据：原条件渲染的布尔量提取，一次计算两处引用 — 小欧-2026-11-01
     const hasManagementOptions =
       Object.keys(state.model.paramOptions).length > 0;
-    const hasModelParams = Object.keys(state.model.params).length > 0;
+    // 2026-11-01 小欧 - 全域放弃判据：③Provider 草稿纳入「放弃修改」点亮条件（账本拆分反人类病根，
+    //   北京老陈实证：改了③区点放弃无反应）— 小欧-2026-11-01
+    const hasProviderDraft = Object.keys(state.model.providerDraft).length > 0;
     return (
       <div>
         <div data-section="selector">
@@ -438,13 +457,12 @@ const SettingsPage: React.FC = () => {
             >
               添加模型参数
             </Button>
-            {/* 2026-11-01 小欧 - 常显化（北京老陈拍板 #4 反感凭空出现消失）：按钮不再整个消失，
-              无数据时禁用置灰 + Tooltip 说明原因，三按钮位置恒定不跳位。
-              disabled 元素不响应鼠标事件，Tooltip 需 span 包裹（antd 官方约束）— 小欧-2026-11-01 */}
+            {/* 2026-11-01 小欧 - 终裁（北京老陈）：两颗灰钮不藏，常显——位置恒定不跳位。
+              Tip 只解释「为什么灰」，严禁说「没有参数」（③区有值时那是瞎话）— 小欧-2026-11-01 */}
             <Tooltip
               title={
                 !hasManagementOptions
-                  ? '当前模型没有可管理的参数选项'
+                  ? '还没有可管理的参数选项——添加模型勾选「参数选项」后这里才可用'
                   : undefined
               }
             >
@@ -459,22 +477,23 @@ const SettingsPage: React.FC = () => {
                 </Button>
               </span>
             </Tooltip>
-            {/* 2026-11-01 小欧 - 常显化（同「管理推理深度」#4）：不再因无参数/无修改消失，
-              disabled+Tooltip 说明原因；仍仅清参数脏、能力脏保留（十遍会审 F1 见 resetParams）— 小欧-2026-11-01 */}
+            {/* 2026-11-01 小欧 - 终裁（北京老陈）：本钮同样不藏、常显（同「管理推理深度」）。
+              同日扩权：③Provider 草稿一并纳入点亮与放弃范围。灰态 Tip 一句真话，
+              「此模型还没有参数」分支铲除（③区有值时说「没有参数」是瞎话）— 小欧-2026-11-01 */}
             <Tooltip
               title={
-                !hasModelParams
-                  ? '当前模型没有参数'
-                  : !state.model.isDirty
-                    ? '参数无修改'
-                    : undefined
+                !state.model.isDirty && !hasProviderDraft
+                  ? '还没改过任何参数，不用放弃'
+                  : undefined
               }
             >
               <span style={{ display: 'inline-flex' }}>
                 <Button
                   style={{ width: settingsControl.actionBtnWidth }}
-                  // 2026-09-24 小欧：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
-                  disabled={!state.model.isDirty || s.saving}
+                  // 2026-09-24 小欧：保存中禁放弃修改（防保存期间改 state 致快照错位）— 小欧-2026-09-24
+                  disabled={
+                    (!state.model.isDirty && !hasProviderDraft) || s.saving
+                  }
                   onClick={() => {
                     Modal.confirm({
                       title: (
@@ -484,27 +503,48 @@ const SettingsPage: React.FC = () => {
                             fontWeight: FontWeight.BOLD,
                           }}
                         >
-                          ⚠ 重置为默认
+                          ⚠ 放弃修改
                         </span>
                       ),
                       content: (
-                        <span style={{ color: Colors.TEXT.SECONDARY }}>
-                          将恢复该模型全部参数为默认值，当前修改将丢失。
-                        </span>
+                        // 2026-11-01 小欧 - 排版整改（北京老陈）：四类各占一行、行距拉开——原四类连排
+                        // 分号绕行糊成一片；关键词仍逐字保留，仅排版重排 — 小欧-2026-11-01
+                        <div
+                          style={{
+                            color: Colors.TEXT.SECONDARY,
+                            lineHeight: 2,
+                          }}
+                        >
+                          <div>将放弃该页全部未保存修改：</div>
+                          <div>①参数值还原为已保存值</div>
+                          <div>②×删除的参数恢复回列表</div>
+                          <div>③能力勾选还原为已保存勾选</div>
+                          <div>
+                            ④Provider
+                            配置（地址/显示名/超时/重试/速率限制）还原为已保存值
+                          </div>
+                          <div style={{ marginTop: Spacing.SM }}>
+                            已保存的配置不受影响，此操作只撤内存草稿、不改动后端。
+                          </div>
+                        </div>
                       ),
-                      okText: '确认重置',
+                      okText: '确认放弃',
                       okButtonProps: { danger: true },
                       cancelText: '取消',
                       width: settingsModalWidth.confirm,
                       onOk: () => {
-                        // 2026-09-24 小欧 - 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
+                        // 2026-09-24 小欧 - 闭环：保存进行中确认放弃竞态守卫（防放弃覆写保存中快照）
+                        // 2026-11-01 小欧 - 扩权：③Provider 草稿一并清 + ProviderConfig 重挂载
+                        //   复位本地输入（重挂载后 effect 空diff上报，setProviderDraft 等值去重不干扰）
                         if (s.saving) return;
                         s.resetParams();
+                        s.patchModel({ providerDraft: {} });
+                        setProviderResetSeq((x) => x + 1);
                       },
                     });
                   }}
                 >
-                  重置为默认
+                  放弃修改
                 </Button>
               </span>
             </Tooltip>
@@ -573,7 +613,9 @@ const SettingsPage: React.FC = () => {
         <div data-section="provider-config">
           {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}
           <ProviderConfig
-            key={state.model.selectedProvider}
+            // 2026-11-01 小欧 - key 合入自增序号：放弃修改后重挂载、按 config props（=已保存配置）
+            //   重新初始化全部本地输入，达成③区视觉回滚（见本文件头部 providerResetSeq 注释）
+            key={`${state.model.selectedProvider}#${providerResetSeq}`}
             name={state.model.selectedProvider}
             config={
               state.model.providerConfig[state.model.selectedProvider] ?? {

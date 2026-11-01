@@ -18,6 +18,9 @@
 //   本契约在项目内有 5 处声明：model.api.ts ProviderEntry / config.api.ts ProviderInfo /
 //   ProviderConfig.config / SettingsPage 兜底值 / 本文件（另有 settings.api.ts getTokenStatus 的
 //   masked 为同一形状）。缺任一处 tsc 即报 masked 缺失 — 小欧-2026-09-27
+// 2026-11-01 小欧 - ModelState 补 removedDrafts（放弃修改回显快照，配合 removedParams）——
+//   removeParam 历史设计四路全删后键名单回不出已保存值，「放弃修改」须按快照回填；纯内存
+//   草稿，放弃/保存/重载任一路即失效 - 小欧-2026-11-01
 // 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：ModelState 补
 //   providerDraft: Record<string, unknown> —— ③区表单字段的变更草稿（只含改过的键，空对象=干净），
 //   由 ProviderConfig 经 onDraftChange 上报 diff，dirtyCount/isGroupDirty/saveGroup/saveAll/
@@ -82,6 +85,14 @@ export interface ModelState {
   addParamFormOpen: boolean;
   // 2026-09-24 小欧 - 参数键级删除待提交名单（defaults 已有键被 × 删除时入列，保存时送 remove_params）- 小欧-2026-09-24
   removedParams: string[];
+  // 2026-11-01 小欧 - 放弃修改回显快照（北京老陈批准「放弃修改」主案的机制支撑）：× 删除已落盘键时
+  //   removeParam 把该键的已保存值/范围/选项快照存此（仅 defaults 已有键记录）——removeParam 四路
+  //   全删后 removedParams 单凭键名单回不出已保存值，「放弃修改」需按快照逐键回填；
+  //   纯内存草稿，放弃/保存/重载任一路即失效 - 小欧-2026-11-01
+  removedDrafts: Record<
+    string,
+    { value: unknown; range?: { min: number; max: number }; options?: string[] }
+  >;
   deleteConfirmOpen: boolean;
   deleteTarget: string | null;
 }

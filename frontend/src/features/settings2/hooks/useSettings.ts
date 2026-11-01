@@ -77,6 +77,18 @@
 //   请求在飞期间的新编辑变成保存按钮都点不亮的隐形脏）；④ghost 键连 values 一并复位到 baseline
 //   （原先只删 dirtyKeys，值还留着改后内容，界面照显却已不算未保存）—— 小欧-2026-09-27
 // 2026-10-05 小欧 - saveKeys 成功派发设置保存事件(文档[9] §5.12); 事件名上移 constants/settingsEvents, 解除 settings2→chat 跨feature 反向依赖 — 小欧-2026-10-05
+// 2026-11-01 小欧 - resetParams 改造为「放弃修改」（北京老陈批准主案：保存↔放弃对称）：一拍全撤三类
+//   未保存修改（①参数值→已保存值 ②×删键恢复——removedParams 清空 ③能力勾选→基线，值与脏同拍还原
+//   铲掉历史上「只清脏不还原显示值」的静默丢失病根），isDirty 同拍归零；纯内存撤销不碰后端，
+//   hook 内部名保持 resetParams 不改 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 机制修正（实施验收实证）：② 的原假设「键存于 defaults 清单即回显」不成立——
+//   removeParam 历史设计四路全删（params/defaults/ranges/paramOptions，防并集渲染复活），已保存值随删
+//   即失，放弃修改回不出删除行。改法：removedParams 增内存快照 removedDrafts（删已落盘键时记录
+//   已保存值/范围/选项），放弃修改逐键回填再清空；保存链（isDirty 只遍历 params 键 + remove_params
+//   独立通道）不碰，无双报数 - 小欧-2026-11-01
+// 2026-11-01 小欧 - 三堂会审（北京老陈令）：终裁两颗灰钮常显不藏、灰态 Tip 只剩真话（「此模型还没有参数」
+//   分支铲除）。R1/R2 会审修：saveModelGroup 成功回写 + selectModel 补 removedDrafts:{} 对称清空，
+//   死亡快照零残留；R3（放弃未保存新键悬挂 range/options）挂账 - 小欧-2026-11-01
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -210,6 +222,11 @@ const initialModel = () => ({
   addParamFormOpen: false,
   // 2026-09-24 小欧 - ①参数键级删除待提交名单初始空 — 小欧-2026-09-24
   removedParams: [] as string[],
+  // 2026-11-01 小欧 - 放弃修改回显快照初始空（load 非 keepModel 重建即清；类型见 types.ts ModelState）— 小欧-2026-11-01
+  removedDrafts: {} as Record<
+    string,
+    { value: unknown; range?: { min: number; max: number }; options?: string[] }
+  >,
   deleteConfirmOpen: false,
   deleteTarget: null as string | null,
 });
@@ -830,6 +847,8 @@ export function useSettings() {
           defaults: { ...state.model.params },
           capabilitiesBaseline: normalizeCaps([...state.model.capabilities]),
           removedParams: [],
+          // 2026-11-01 小欧 - R1(三堂会审批准): 删除键已真落盘, 回显快照同步清, 不留死亡数据 - 小欧-2026-11-01
+          removedDrafts: {},
           providers: state.model.providers.map((p) =>
             p.name !== state.model.selectedProvider
               ? p
@@ -1107,7 +1126,9 @@ export function useSettings() {
           Object.keys(nextDefaults)
         ),
         // 2026-09-24 小欧 - ①切模型重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
+        // 2026-11-01 小欧 - R2(三堂会审批准): 回显快照随切模型同清, A 模型快照不得残留到 B - 小欧-2026-11-01
         removedParams: [],
+        removedDrafts: {},
         isDirty: Object.values(
           isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
         ).some(Boolean),
@@ -1251,6 +1272,9 @@ export function useSettings() {
   //   （params/defaults/ranges/paramOptions；defaults 必须删否则 params⊔defaults 并集仍渲染、「重置为默认」复活）；
   //   仅 key∈defaults（已落盘）记入 removedParams 待后端 remove_params；未保存新键直接丢弃不送后端。
   //   env 接管键 UI 已禁用，此处再守一道（防绕过）；isDirty 联合 caps/removedParams/paramsDirty - 小欧-2026-09-24
+  // 2026-11-01 小欧 - 删已落盘键时补记 removedDrafts 快照（已保存值/范围/选项，delete 前取值）：
+  //   支撑「放弃修改」按快照回显删除行——defaults 四路全删设计不变（并集渲染复活防线不动），
+  //   快照解决的是放弃修改的回显值来源 - 小欧-2026-11-01
   const removeParam = useCallback(
     (key: string) => {
       if (state.model.envOverride[key]) {
@@ -1265,9 +1289,22 @@ export function useSettings() {
         const paramOptions = { ...s.model.paramOptions };
         const wasPersisted = key in defaults;
         delete params[key];
+        // 2026-11-01 小欧 - 删除键的快照必须在 delete defaults[key] 之前取值——defaults[key]
+        //   此刻就是该键的已保存值（load 装载 / 保存成功回写基准，两者都=后端已保存态） - 小欧-2026-11-01
+        const savedValue = defaults[key];
         delete defaults[key];
         delete ranges[key];
         delete paramOptions[key];
+        const removedDrafts = { ...s.model.removedDrafts };
+        if (wasPersisted) {
+          // 2026-11-01 小欧 - 已落盘键删除 → 快照已保存值（放弃修改按此回填，savedValue/ranges/
+          //   paramOptions 此后即被上面三行删失）；每键覆盖式记录，同一键反复删存不会串 - 小欧-2026-11-01
+          removedDrafts[key] = {
+            value: savedValue,
+            range: s.model.ranges[key],
+            options: s.model.paramOptions[key],
+          };
+        }
         const removedParams = wasPersisted
           ? s.model.removedParams.includes(key)
             ? s.model.removedParams
@@ -1288,6 +1325,7 @@ export function useSettings() {
             defaults,
             ranges,
             paramOptions,
+            removedDrafts,
             removedParams,
             isDirty: paramsDirty || capsDirty || removedParams.length > 0,
           },
@@ -1295,28 +1333,47 @@ export function useSettings() {
       });
     },
     // 2026-09-24 小欧 - deps 只留 envOverride（state.model.capabilities* 在 setState 回调内经 s 读取，lint unnecessary 修正）
+    // 2026-11-01 小欧 - removedDrafts 草稿经 setState 回调内 s 读取（同 capabilities 惯例），不进 deps - 小欧-2026-11-01
     [state.model.envOverride]
   );
 
   // 2026-09-23 小欧 - 重置只清参数脏，能力脏保留（原 isDirty:false 连能力脏一起抹，
   //   仅能力脏时点「重置为默认」→ 能力修改变不可保存。同 saveAll/isGroupDirty 的联合语义对齐）
   // 2026-09-24 小欧 - ①重置不清 removedParams（结构变更保留，仍需保存才落盘）；isDirty 联合之 - 小欧-2026-09-24
+  // 2026-11-01 小欧 - 改造为「放弃修改」（北京老陈批准主案：保存↔放弃对称）：一拍全撤三类未保存修改——
+  //   ①参数值还原为已保存值(defaults)；②removedParams 清空 + 按 removedDrafts 快照逐键回填
+  //   （removeParam 四路全删设计下，键名单回不出已保存值——验收实测原假设证伪，机制修正记 types.ts）
+  //   ③能力勾选还原为基线（normalizeCaps 值与脏同拍还原——历史上只清脏不还原显示值致静默丢失的
+  //   病根，铲掉）；isDirty:false 同拍归零。纯内存撤销不碰后端；函数式更新读最新 model；
+  //   hook 内部名保持 resetParams 不改 — 小欧-2026-11-01
   const resetParams = useCallback(() => {
-    patchModel({
-      params: { ...state.model.defaults },
-      isDirty:
-        isCapsDirty(
-          state.model.capabilities,
-          state.model.capabilitiesBaseline
-        ) || state.model.removedParams.length > 0,
+    patchModel((m) => {
+      const params = { ...m.defaults };
+      const defaults = { ...m.defaults };
+      const ranges = { ...m.ranges };
+      const paramOptions = { ...m.paramOptions };
+      // ②回填：removedParams 里的每个已落盘键，把快照的已保存值/范围/选项原样放回
+      //   （defaults 也回填——并集渲染与 isDirty 基线都依赖它；未快照键=未保存新键，本就不该复活）
+      for (const key of m.removedParams) {
+        const d = m.removedDrafts[key];
+        if (!d) continue;
+        params[key] = d.value;
+        defaults[key] = d.value;
+        if (d.range) ranges[key] = d.range;
+        if (d.options) paramOptions[key] = d.options;
+      }
+      return {
+        params,
+        defaults,
+        ranges,
+        paramOptions,
+        removedParams: [],
+        removedDrafts: {},
+        capabilities: normalizeCaps([...m.capabilitiesBaseline]),
+        isDirty: false,
+      };
     });
-  }, [
-    patchModel,
-    state.model.defaults,
-    state.model.capabilities,
-    state.model.capabilitiesBaseline,
-    state.model.removedParams,
-  ]);
+  }, [patchModel]);
 
   const refreshModels = useCallback(
     async (select?: { provider: string; model: string }) => {
