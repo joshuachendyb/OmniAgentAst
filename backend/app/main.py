@@ -9,7 +9,7 @@
 # 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
-# 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
+# 2026-08-16 - 小欧 - 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
 # 2026-09-21 - 小欧 - model_router 挂载 tags "model"→"models"（OpenAPI 分组标签）
@@ -25,7 +25,6 @@
 #   **应用级**路由，不在任何 APIRouter 内，走不到 verify_token，实跑确认无 token 可拉走全部端点与模型。
 #   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
 #   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
-#   同轮精简冗长注释（三堂会审叙事压缩为结论）。
 # 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
 #   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
 # 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 调 storage.reconcile_orphaned_tasks, 收尾崩溃残留的 executing 残行(按 start_time<进程启动时刻判归属, 不误伤多 worker) — 小欧-2026-09-29
@@ -59,7 +58,9 @@
 # 2026-10-30 小欧 - 请求耗时埋点+ X-Request-Id 中间件(_RequestTimingMiddleware, 纯 ASGI),
 #   给"前端 60s 超时"提供后端侧对账依据; 改后用纯 ASGI(不用 BaseHTTPMiddleware)并补异常穿出日志
 #   reqId 日志 —— 理由见中间件定义处注释。 — 小欧-2026-10-30
-# 2026-11-01 小欧 - 静态托管定案: 开发态不判任何目录(没 dist 即 API-only, 零告警); 打包态逐项验 assets/ 与 index.html, 缺哪项点名 error 且不挂载。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 静态托管: 开发态不判任何目录(API-only 零告警); 打包态逐项验 assets 与 index.html,
+#   缺哪项点名 error 且不挂载 — 小欧-2026-11-01
+# 2026-11-01 20:10 小欧 - 静态托管收进打包态, 开发 8000 纯 API(root 404, 零 dist 引用) — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -94,7 +95,7 @@ from app.api.v1.settings_routes import router as settings_router
 from app.api.v1.model_routes import router as model_router
 from app.api.v1.file_routes import router as file_router  # 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览(J1~J5 底座) — 小欧-2026-10-13
 from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
-from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
+from app.api.v1.token_usage import router as token_usage_router  # token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 # 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
@@ -324,7 +325,7 @@ _mount(messages.router, "sessions")
 _mount(chat_execution_router.router, "execution")
 _mount(metrics.router, "metrics")
 _mount(task_queries_router, "task-queries")
-_mount(token_usage_router, "token-usage")  # S2(10.1.7②-6) — 小欧 2026-08-16
+_mount(token_usage_router, "token-usage")  # token 四维度查询 API — 小欧 2026-08-16
 # 2026-09-27 小欧 - 访问口令路由改走 _mount()：原为绕过唯一入口而手写 include_router，
 #   与上方"新增 router 漏 dependencies= 是最大失效来源"的论证自相矛盾。
 #   豁免判定（首设自举/只能本机改口令）全在 deps.verify_token 内，与挂载方式无关。
@@ -332,22 +333,18 @@ _mount(auth_router, "auth")
 
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──
-# frozen: _internal/web/ (spec datas 塞入 frontend/dist 内容)
-# 源码调试: ../frontend/dist/ (npm run build 产物)
+# 2026-11-01 小欧 - 静态托管仅打包态(exe); 开发态 8000 纯 API, 不解析 dist — 小欧-2026-11-01
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-_IS_FROZEN = getattr(sys, "frozen", False)   # 打包态: 目录由 spec 铺好; 开发态: frontend/dist 是构建产物
-_WEB_DIR = (
-    Path(sys._MEIPASS) / "web"
-    if _IS_FROZEN
-    else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-)
-# 2026-11-01 小欧 - 全仓只有 assets 会导致崩溃: 目录缺失时 StaticFiles.__init__ 抛 RuntimeError。
-#   index.html 缺失只是 FileResponse 打空, 请求期兜住即可, 不作开发态判据;
-#   打包态例外: 缺 index.html 同属构建缺陷, 进 _missing_web 阻止挂载(见下方打包态逐项验) — 小欧-2026-11-01
-_ASSETS_DIR = _WEB_DIR / "assets"
-_INDEX_HTML = _WEB_DIR / "index.html"
+_IS_FROZEN = getattr(sys, "frozen", False)
+_WEB_DIR = _ASSETS_DIR = _INDEX_HTML = None   # 开发态不解析任何 dist 路径 — 小欧 2026-11-01
+if _IS_FROZEN:
+    _WEB_DIR = Path(sys._MEIPASS) / "web"       # 打包态: spec datas 铺在 _internal/web/
+    # 2026-11-01 小欧 - 全仓只有 assets 缺失会导致崩溃: StaticFiles.__init__ 抛 RuntimeError;
+    #   index.html 缺失只是 FileResponse 打空, 请求期兜住即可(见下方打包态逐项验) — 小欧-2026-11-01
+    _ASSETS_DIR = _WEB_DIR / "assets"
+    _INDEX_HTML = _WEB_DIR / "index.html"
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
@@ -496,15 +493,17 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    # 2026-11-01 小欧 - 只防 FileResponse 打到不存在的文件(发送期抛未处理异常→500), 不判断前端完整度 — 小欧-2026-11-01
-    if _INDEX_HTML.is_file():
-        return FileResponse(str(_INDEX_HTML))
-    # 2026-09-27 小欧 - docs 键随 _ENABLE_DOCS 条件化：默认关闭时无条件返回即对外广播一个必 404 的地址
-    return {
-        "message": "OmniAgentAst API",
-        "version": app_version,
-        **({"docs": "/docs"} if _ENABLE_DOCS else {}),
-    }
+    # 2026-11-01 小欧 - 开发态 root 严谨 404(纯 API, 页面走 5173); 打包态出页面 — 小欧-2026-11-01
+    if _IS_FROZEN:
+        if _INDEX_HTML.is_file():   # 只防 FileResponse 打不存在的文件(发送期抛未处理异常→500) — 小欧-2026-11-01
+            return FileResponse(str(_INDEX_HTML))
+        # docs 键随 _ENABLE_DOCS 条件化: 关闭时无条件返回即对外广播一个必 404 的地址 — 小欧 2026-09-27
+        return {
+            "message": "OmniAgentAst API",
+            "version": app_version,
+            **({"docs": "/docs"} if _ENABLE_DOCS else {}),
+        }
+    return JSONResponse(status_code=404, content={"detail": "开发环境是纯 API 端口；前端页面请走 http://localhost:5173"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -516,38 +515,32 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-# 2026-11-01 小欧 - 开发态不判任何目录(没 dist 即 API-only, 零告警); 打包态逐项验 assets/ 与 index.html:
-#   assets 缺 → StaticFiles.__init__ 抛 RuntimeError 起不来; index.html 缺 → 只有 JSON/白屏, 同属构建缺陷。
+# 2026-11-01 小欧 - 静态托管收进打包态; 开发态纯 API, 零 dist 引用零告警 — 小欧-2026-11-01
 _STATIC_MOUNTED = False
-_missing_web: list[str] = []
-if _IS_FROZEN:                      # 开发态 _missing_web 恒空 = 不预判任何目录
+if _IS_FROZEN:
+    _missing_web: list[str] = []                 # 打包态逐项验 assets/ 与 index.html
     if not _ASSETS_DIR.is_dir():
         _missing_web.append(str(_ASSETS_DIR))
     if not _INDEX_HTML.is_file():
         _missing_web.append(str(_INDEX_HTML))
-
-for _p in _missing_web:
-    logger.error(f"[前端] 打包缺文件, 前端不可用: {_p}")
-
-if not _missing_web:
-    try:
-        app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
-        _STATIC_MOUNTED = True
-        logger.info(f"前端静态目录已定位: {_WEB_DIR}")
-    except RuntimeError as exc:
-        # 打包态上面已确认 assets 存在, 走到这里属权限/文件系统异常, 必须喊; 开发态没 dist 是常态, 不喊
-        if _IS_FROZEN:
+    for _p in _missing_web:
+        logger.error(f"[前端] 打包缺文件, 前端不可用: {_p}")
+    if not _missing_web:
+        try:
+            app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
+            _STATIC_MOUNTED = True
+            logger.info(f"前端静态目录已定位: {_WEB_DIR}")
+        except RuntimeError as exc:
             logger.error(f"[前端] 打包态静态挂载失败: {exc}")
-
-if _STATIC_MOUNTED:
-    # 只在 /assets 真挂上时才注册 catch-all: 否则 /assets/*.js 会落到这里拿到 HTML,
-    # 浏览器按 text/html 解析 JS → 报错比 404 更难查 — 小欧-2026-11-01
-    @app.get("/{path:path}", include_in_schema=False)
-    async def spa_fallback(path: str):
-        """前端 SPA catch-all: 浏览器路由(/chat /files /settings)返回 index.html; 文件不在则回 404 JSON。"""
-        if not _INDEX_HTML.is_file():
-            return JSONResponse(
-                status_code=404,
-                content={"detail": f"前端页面资源缺失: {_INDEX_HTML}"},
-            )
-        return FileResponse(str(_INDEX_HTML))
+    if _STATIC_MOUNTED:
+        # 只在 /assets 真挂上时才注册 catch-all: 否则 /assets/*.js 会落到这里拿到 HTML,
+        # 浏览器按 text/html 解析 JS → 报错比 404 更难查 — 小欧-2026-11-01
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa_fallback(path: str):
+            """前端 SPA catch-all: 浏览器路由(/chat /files /settings)返回 index.html; 文件不在则回 404 JSON。"""
+            if not _INDEX_HTML.is_file():
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": f"前端页面资源缺失: {_INDEX_HTML}"},
+                )
+            return FileResponse(str(_INDEX_HTML))

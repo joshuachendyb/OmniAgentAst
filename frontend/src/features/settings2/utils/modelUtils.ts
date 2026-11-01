@@ -6,8 +6,8 @@
 // 2026-09-22 小欧 - 实施 isDirty 对象深比较：补 sameValue（Object.is 快路径 + 双对象
 //    JSON.stringify 深比），替换原 `!==`——对象/数组参数两个独立字面量内容相同但引用不同被判恒脏
 // 2026-09-23 小欧 - 新增 isCapsDirty + CAPABILITY_OPTIONS（复用既有 sameValue 与单源词表）- 小欧-2026-09-23
-// 2026-09-23 小欧 - 十遍会审：isCapsDirty 排序后比（集合语义防手写 YAML 顺序假脏）+
-//   F4 增 KNOWN_CAPABILITY_VALUES 单源（setCapabilities 每次重建 Set → 模块常量）- 小欧-2026-09-23
+// 2026-09-23 小欧 - isCapsDirty 排序后比(集合语义, 手写 YAML 顺序不产生假脏);
+//   新增 KNOWN_CAPABILITY_VALUES 单源(setCapabilities 每次重建 Set → 模块常量) - 小欧-2026-09-23
 // 2026-09-24 小欧 - 能力默认值语义（北京老陈拍板）：①文本项 disabled 恒勾选；②normalizeCaps 归一恒含 text
 //   （load/select 四通道防假脏）；③capsForSave 保存转换——无增强送 []、有增强送 ['text',...extras] - 小欧-2026-09-24
 // 2026-10-03 小欧 - 免费判定迁入本纯函数层（原组件内私有，无法单测）；判据扩为三判据 OR — 小欧 2026-10-03
@@ -35,7 +35,7 @@ export const isFreeNameSuffix = (v: string | undefined | null): boolean => {
   return s.endsWith('-free') || s.endsWith(':free');
 };
 
-/** 免费判据单点收口，三判据 OR（北京老陈 2026-10-03 定案，兼容优先）：
+/** 免费判据单点收口，三判据 OR（2026-10-03 确认，兼容优先）：
  *  ①free === true（AMD 记账标记，非"要花钱"）②名称 free 尾巴 ③pricing 双 0（2026-09-29 原判据不变）。
  *  OR 的已知代价：AMD MinerU2.5-Pro（free=false + pricing 双 0）会显示「免费」，已如实告知并接受。
  *  严格 === true：远端下发字符串 "true" 时不冒充免费。 */
@@ -62,7 +62,7 @@ function sameValue(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** 模型 Tab 脏态：值与已保存基线不一致且未被 env 接管（6.2）。 */
+/** 模型 Tab 脏态：值与已保存基线不一致且未被 env 接管。 */
 export function isDirty(
   params: Record<string, unknown>,
   baseline: Record<string, unknown>,
@@ -78,18 +78,12 @@ export function isDirty(
 /**
  * 已保存参数基线：用户值优先，厂商声明窗口仅兜底。
  *
- * 2026-11-01 小欧 - 上下文窗口可编辑落地（问题 3）：②参数区的行集合 = 基线键集，
- *   模型库勾选进来的模型 `model_params` 是空的 → 连一行都没有，落库的 `model_meta.context_length`
- *   既不可见也不可改。故基线补一条 `context_length`：
- *     取值顺序 `model_params.context_length`（用户） ?? `model_meta.context_length`（厂商声明）。
+ * 2026-11-01 小欧 - 基线补一条 `context_length`：模型库勾选进来的模型 `model_params` 为空,
+ *   无此条则窗口行不可见不可改; 取值 `model_params.context_length`(用户) ?? `model_meta.context_length`(声明)。
+ *   顺序不可反: 先取声明值会致基线不随用户改动, 每次切模型恒为脏态。
  *
- * **顺序不能反**：若直接取厂商声明值，用户把窗口从 200K 调小到 100K 后，基线仍是 200K，
- *   每次切换模型都立刻是"未保存"脏态（永远脏，且改不干净）——这是 2026-11-01 三堂会审 E2。
- *
- * 只写基线不写当前值：`isDirty` 只遍历 `params` 的键，故只有基线有该键不会误判脏；
- *   `ModelParams` 的并集渲染用 `params[key] ?? baseline[key]` 取到基线值显示。
- *
- * 删除语义（E3）：用户删掉该行 = 恢复厂商声明值，行会重新出现。这不是 bug，是兜底语义的必然。
+ * 只写基线不写当前值：isDirty 只遍历 params 键不误判脏；渲染用 `params[key] ?? baseline[key]` 显示。
+ * 删除语义：用户删行 = 恢复厂商声明值, 行重新出现(兜底语义必然)。 — 小欧 2026-11-01
  */
 export const withDeclaredContextLength = (
   params: Record<string, unknown>,
@@ -105,7 +99,7 @@ export const withDeclaredContextLength = (
   return out;
 };
 
-/** 超出新模型范围自动截断（7.5 范围截断 / 8.2.10 切换边界）。 */
+/** 超出新模型范围自动截断。 */
 export function clampToRange(
   value: unknown,
   range?: { min: number; max: number }
@@ -116,7 +110,7 @@ export function clampToRange(
   return value;
 }
 
-/** 保存前 schema 校验：返回首个错误 {key, message}，通过返回 null（7.5 首个错误控件红框+定位）。 */
+/** 保存前 schema 校验：返回首个错误 {key, message}，通过返回 null。 */
 export function validate(
   items: SettingSchemaItem[],
   values: Record<string, unknown>
@@ -172,8 +166,8 @@ export function validate(
 }
 
 // 2026-09-23 小欧 - 实施：模型能力脏判定 + 能力枚举单源词表（useSettings 合并与 SettingsPage 渲染共用，杜绝词表漂移）- 小欧-2026-09-23
-// 2026-09-23 小欧 - 十遍会审：排序后比较（能力是集合语义；手写 YAML 顺序与 UI 选项顺序不一致时
-//   JSON 串比误判假脏。只改本函数内部，不动共享 sameValue——params 数组顺序敏感处仍需顺序比）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 排序后比较(能力是集合语义; 手写 YAML 顺序与 UI 选项顺序不一致时 JSON 串比误判假脏,
+//   只改本函数内部, 不动共享 sameValue——params 数组顺序敏感处仍需顺序比) - 小欧-2026-09-23
 export const isCapsDirty = (caps: string[], baseline: string[]): boolean =>
   !sameValue([...caps].sort(), [...baseline].sort());
 
@@ -200,8 +194,7 @@ export const capsForSave = (caps: string[]): string[] => {
   return extras.length ? ['text', ...extras] : [];
 };
 
-// 2026-09-23 小欧 - 十遍会审：已知能力值集合单源（setCapabilities 每次调用重建 Set → 模块级常量，
-//   与 CAPABILITY_OPTIONS 同源，增枚举只改一处）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 已知能力值集合单源(与 CAPABILITY_OPTIONS 同源, 增枚举只改一处) - 小欧-2026-09-23
 export const KNOWN_CAPABILITY_VALUES: ReadonlySet<string> = new Set(
   CAPABILITY_OPTIONS.map((o) => o.value)
 );
@@ -245,8 +238,8 @@ export const PARAM_PRESETS = [
     type: 'number' as const,
     default: 16384,
     range: PARAM_DEFAULT_RANGES.max_tokens,
-    label: '最大Token',
-    desc: 'LLM的单次最大输出 token 数，超长截断',
+    label: '最大输出Token',  // 2026-11-01 小欧 原名「最大Token」语义含糊, 用户指令改为「最大输出Token」
+    desc: '最大输出 token 数(输出封顶)，超长截断；与厂商声明/厂商级上限取最小',
   },
   {
     key: 'reasoning_effort',

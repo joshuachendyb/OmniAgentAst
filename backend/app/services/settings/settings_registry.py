@@ -147,8 +147,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
               notice="全局默认:控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
-        _item("llm.sampling.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
-              notice="全局默认:单次 LLM 调用最大输出 token 数，超长截断"),
+        _item("llm.sampling.max_tokens", "int", "最大输出Token", 16384, range_=[1, 100000],  # 2026-11-01 小欧 原名「单次最大 token」含糊, 用户指令改
+              notice="全局默认:最大输出 token 数(输出封顶)，超长截断；与厂商声明/厂商级上限取最小"),
         _item("llm.sampling.top_p", "float", "核采样 top_p", 1.0, range_=[0, 1],
               notice="全局默认:核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选；通常与温度二选一调节，同时调易相互抵消"),
         _item("llm.sampling.frequency_penalty", "float", "频次惩罚 (frequency_penalty)", 0, range_=[-2, 2],

@@ -15,7 +15,7 @@
 #   _ensure_client + 暴露 _shared_client(httpx.AsyncClient 连接池引用)供 resolver 快照构造期注入;
 #   快照经 create_llm_client(shared_client=...) 建独立 LLMClient 复用连接池(非 LLMClient 对象)。
 #   compliance: DRY(复用原 _ensure_client 路径)/KISS-DIRECT
-# 2026-09-20 - 小欧 - 三堂会审两处竞态修复: ①_ensure_client失败时回滚半初始化实例防缓存; ②get_service_for_model加_instance_lock防竞态
+# 2026-09-20 - 小欧 - 两处竞态修复: _ensure_client 失败时回滚半初始化实例防缓存; get_service_for_model 加 _instance_lock 防竞态
 # 2026-09-22 - 小欧 - create_service_instance 改传 timeout=None/max_retries=None
 #   （源 provider_config.get 去默认值，None=未设 → BaseAIService 内部三层回落 tuning>常量；原来写死
 #    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费）
@@ -43,9 +43,9 @@
 # 2026-11-01 小欧 - 键名统一: context_limit → context_length(厂商通用名, 与 model_meta 同名同义),
 #   常量 DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH; parse_model_params 取值顺序补一层
 #   model_meta.context_length(厂商声明), 使模型库勾选保存的窗口真正生效 — 小欧-2026-11-01
-# 2026-11-01 13:30 小欧 - parse_model_params 增窗口来源留痕(ctx_source: user/meta/global/constant)
-#   并打一行 [窗口] 日志: 不补测试代码的前提下, 让任何一次真实会话都能核对「落库值 == 运行时值」,
-#   消除静默回落 262144 的盲区 — 小欧-2026-11-01
+# 2026-11-01 13:30 小欧 - parse_model_params 增窗口来源留痕(ctx_source)打一行 [窗口] 日志, 会话当场核对运行时窗口值 — 小欧-2026-11-01
+# 2026-11-01 19:28 小欧 - max_tokens 单写入口: parse_model_params 增第三出口 user_max_tokens(不随 extra_body 出网);
+#   _resolve_max_tokens 收为 min(provider级/模型级用户值/厂商声明) 唯一算法, provider 级配置必须生效 — 小欧-2026-11-01
 """
 service — 服务创建与获取
 
@@ -199,24 +199,18 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
     return provider_config
 
 
-def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int]:
-    """解析 provider 配置的 model_params → (extra_body_params, context_length)
-    复用优先/DRY 归一(小欧 2026-09-01): 原逻辑双份嵌在 create_service_instance(本文件) 与
-    stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
-    行为: 取目标 model 专属 dict, pop context_length(用户显式值),
-    余量作 extra_body_params(无则 None)。
-    上下文窗口取值顺序(2026-11-01 小欧 统一键名后补第二层):
-      model_params.context_length(用户显式) > model_meta.context_length(厂商声明)
-      > llm.context_length_default(全局默认) > DEFAULT_CONTEXT_LENGTH(常量兜底)。
-    补 model_meta 一层的理由: 模型库勾选保存的 ctx 落在 model_meta, 此前无任何运行期读者,
-    存了从不生效(小模型被按 262144 用反而超限, 大模型白白只用零头) — 小欧-2026-11-01
+def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int, Optional[int]]:
+    """解析 provider 配置的 model_params[目标model] → (extra_body_params, context_length, user_max_tokens)。
+    DRY 归一: 收敛为唯一权威, 与 stream_orchestrator(L2 快照)共用, 杜绝双份漂移 — 小欧 2026-09-01
+    逐键 pop 严禁随 extra_body 出网: context_length→窗口, max_tokens→输出上限(交 _resolve_max_tokens 取小) — 小欧 2026-11-01
+    窗口四级: 用户 model_params > model_meta 厂商声明 > llm.context_length_default > DEFAULT_CONTEXT_LENGTH 兜底;
+      补 model_meta 层使模型库勾选保存的窗口生效(此前存而不用) — 小欧 2026-11-01
     """
     provider_config = provider_config or {}
     model_params = provider_config.get("model_params", {}) or {}
     specific_params = dict(model_params.get(model, {})) if model_params else {}
     # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23
-    # 2026-11-01 小欧 - 键名 context_limit → context_length: 与厂商通用名/ model_meta 同名;
-    #   必须 pop 出来, 否则该键会随 extra_body_params 进请求体, 多数厂商不认直接 400
+    # 2026-11-01 小欧 - 键名 context_limit → context_length(与 model_meta 同名); 必须 pop, 否则随 extra_body 出网多数厂商 400
     context_length = specific_params.pop("context_length", None)
     ctx_source = "user" if context_length is not None else ""
     if context_length is None:
@@ -232,15 +226,14 @@ def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict
         if context_length is None:
             context_length = DEFAULT_CONTEXT_LENGTH
             ctx_source = "constant"
-    # 2026-11-01 小欧 - 窗口来源留痕(北京老陈指令: 不补测试代码, 改让运行日志自证):
-    #   「落库值 == 运行时值」此前是四个盲区叠加(无展示面/无渲染面/静默回落/无断言), 债藏4个月;
-    #   打出 source 后任何一次真实会话都能当场核对窗口是用户设的、厂商声明的, 还是兜底来的。
+    # 2026-11-01 小欧 - 窗口来源留痕日志: 任何真实会话当场可核对生效窗口是用户设的/厂商声明的/兜底来的
     logger.info(f"[窗口] model={model} context_length={context_length} source={ctx_source}")
     # 2026-10-10 小欧 enable_thinking 移进 chat_template_kwargs(provider 期望的位置) — 小欧-2026-10-10
     enable_thinking = specific_params.pop("enable_thinking", None)
     if enable_thinking is not None:
         specific_params.setdefault("chat_template_kwargs", {})["enable_thinking"] = enable_thinking
-    return (specific_params or None), context_length
+    user_max_tokens = specific_params.pop("max_tokens", None)  # 第三出口, 严禁随 extra_body 出网 — 小欧-2026-11-01
+    return (specific_params or None), context_length, user_max_tokens
 
 
 def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
@@ -253,19 +246,20 @@ def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
     return (model_ref.api_base or "").strip() or (provider_config.get("api_base") or "").strip()
 
 
-def _resolve_max_tokens(provider_config: dict, model: str) -> Optional[int]:
-    """解析 max_tokens 上限：从 model_meta 读 max_output_length，与用户值取较小值 — 小欧-2026-10-26"""
+def _resolve_max_tokens(provider_config: dict, model: str,
+                        user_max_tokens: Optional[int] = None) -> Optional[int]:
+    """输出上限唯一算法: min(ai.{pv}.max_tokens, model_params 用户值, max_output_length 厂商声明),
+    配置了必须生效(北京老陈 2026-11-01); 全缺→None 回落全局 llm.sampling.max_tokens — 小欧-2026-11-01"""
     meta_block = provider_config.get("model_meta")
-    if not isinstance(meta_block, dict):
-        meta_block = {}
-    model_meta = meta_block.get(model)
-    if not isinstance(model_meta, dict):
-        model_meta = {}
-    max_output_length = model_meta.get("max_output_length")
-    user_max_tokens = provider_config.get("max_tokens")
-    if user_max_tokens is not None and max_output_length is not None:
-        return min(user_max_tokens, max_output_length)
-    return user_max_tokens if user_max_tokens is not None else max_output_length
+    model_meta = meta_block.get(model) if isinstance(meta_block, dict) else None
+    declared = model_meta.get("max_output_length") if isinstance(model_meta, dict) else None
+    provider_cap = provider_config.get("max_tokens")
+    present = [(src, v) for src, v in
+               (("provider", provider_cap), ("user", user_max_tokens), ("meta", declared))
+               if v is not None]
+    source, value = min(present, key=lambda sv: sv[1]) if present else ("none", None)
+    logger.info(f"[输出上限] model={model} max_tokens={value} source={source}")  # 来源留痕, 与[窗口]同款 — 小欧-2026-11-01
+    return value
 
 
 def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseAIService:
@@ -274,14 +268,13 @@ def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseA
     2026-08-22 小欧 归一报告v1.25 6.6: BaseAIService 构造改传 llm_model=ModelRef(provider+model+api_base),
     api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY);
     2026-09-26 小欧 签名收归 ModelRef(禁散参数拆解, KISS-DIRECT)+api_base 解析收归 _resolve_api_base(DRY)"""
-    extra_body_params, context_length = parse_model_params(provider_config, model_ref.model)
-    max_tokens = _resolve_max_tokens(provider_config, model_ref.model)
+    extra_body_params, context_length, user_max_tokens = parse_model_params(provider_config, model_ref.model)
+    max_tokens = _resolve_max_tokens(provider_config, model_ref.model, user_max_tokens)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
         # 【编辑历史 — 最新在下】
         # 2026-09-26 - 小欧 - 修「openai.com 兜底使 client_sdk 新增的 400 在主路径不可达」（三遍核实确认成立）：
-        #   原 `or "https://api.openai.com/v1"` 与既定裁定**直接矛盾** ——
-        #   client_sdk 那边已刻意删掉 _default_base_url/_DEFAULT_URLS 兜底并改为
+        #     client_sdk 那边已刻意删掉 _default_base_url/_DEFAULT_URLS 兜底并改为
         #   「URL 为空 → raise HTTPException(400)『请到设置页填写完整地址』」，
         #   理由写得很清楚：静默兜底会把远程 provider 打到本机、绕过中转直连官方计费。
         #   但本函数是**聊天主路径**的 instance 构造入口，api_base 在这里被强行兜成非空 ⇒

@@ -21,7 +21,7 @@
 #   ②会话决议失败路径(跨provider配置查找失败 / 读 sessionModel 异常)不再返回 None
 #     (破坏C1), 经 _default_snapshot 派生全局默认快照兜底(复用共享连接池)。
 #   compliance: DRY(两失败路径共用 helper)/KISS-DIRECT/禁止backward
-# 2026-09-20 - 小欧 - 三堂会审修复: resolve_session_client添加hasattr类型保护(防非ModelRef类型如dict导致AttributeError静默失效)
+# 2026-09-20 - 小欧 - resolve_session_client 添加 hasattr 类型保护(防非 ModelRef 类型如 dict 致 AttributeError 静默失效)
 # 2026-09-21 - 小欧 - 修复 None 陷阱: _extract_provider_model 的 .get('provider','')/get('model','') 改为 .get() or ''；
 #   _validate_model_in_list 的 .get('models',[]) 改为 .get() or []（key 存在但值为 None 时原写法返回 None）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: _extract_provider_model 改读结构化 ai.model_ref（删扁平 ai.provider/ai.model
@@ -37,27 +37,22 @@
 #   ②fetch_remote_models 按设计返回错误分类：探测失败不再一律 HTTPException，
 #     改返 (models, error_kind, status_code) 三元组 —— 调用方（model_routes.test-connection）
 #     据此分「地址问题」与「key 问题」两套文案，不再把两类根因混成一句泛化报错。— 小欧 2026-09-26
-# 2026-09-26 (三堂会审后修正) - 小欧 - ①[退化·已实测复现] 设计文档把 api_base 的
-#   `or 本代地址` 回落无条件删除，但同 provider 时 _pv_cfg 恒为 None ⇒ api_base=None ⇒
-#   会话内换同一 provider 的模型 100% 报 400。已按"是否跨 provider"分语义修复(见下方 _same_pv)。
-#   ②[编辑历史位置违规+DRY] 同一事实原在文件头与函数体各写一份，已删函数体内那份。
-#   ③[史实订正] 上一条②的记录称设计文档改的是 fetch_remote_models —— 该函数不在本文件
-#   (在 model_service.py)，本文件真正被改的是上述 api_base 回落。
-# 2026-09-26 (三堂会审后修正·四) - 小欧 - [DRY] 降级兜底收敛为唯一出口 _fallback_snapshot()：
-#   原 :254(配置查找失败) 与 :312(读会话失败) 两处逐字重复"派生快照→标记→返回"，且曾因独立
-#   evolve 漏加一处专属异常上抛(即设计文档要消灭的行为 B)。日志分工: 调用方只报原因(reason)，
-#   _default_snapshot 统一报"降级到哪个模型"，消除两条重叠 warning。
-# 2026-10-29 - 小欧 - 修"快照丢 provider 定制值"遗留(场景齐全, 老陈三堂会审): resolve_session_client 跨 provider 快照
-#   补传 max_retries/timeout/max_tokens/temperature/top_p/frequency_penalty/presence_penalty/seed + inherit_missing=_same_pv;
-#   原快照沿用全局 agnes=3/120 致会话切 sensenova 后重试次数仍显 3、超时误用 120(老陈实测 max_retries=4 不生效)。 小欧-2026-10-29
-# 2026-10-29 - 小欧 - KISS 审查(老陈裁定全部修复): 调用侧 8 次"(_pv_cfg or {}).get(...)"收敛为一次
-#   _cfg = _pv_cfg or {}（同 provider 时 _pv_cfg=None 防炸, 跨 provider 到 snapshot 处已非 None）。 小欧-2026-10-29
+# 2026-09-26 - 小欧 - api_base 回落修复: 删掉"or 本代地址"回落致同 provider 时 _pv_cfg 恒 None ⇒ api_base=None ⇒ 会话内换模型 400,
+#   改按是否跨 provider 分语义修复(见下方 _same_pv); 同轮删文件头与函数体重复记录、订正 fetch_remote_models 实在 model_service.py
+# 2026-09-26 - 小欧 - DRY: 降级兜底收敛为唯一出口 _fallback_snapshot(): 配置查找失败与读会话失败两处逐字重复已合并;
+#   日志分工=调用方只报原因(reason), _default_snapshot 统一报降级目标, 消除两条重叠 warning
+# 2026-10-29 - 小欧 - 修跨 provider 快照丢定制值: 快照补传 max_retries/timeout/max_tokens/temperature/top_p/
+#   frequency_penalty/presence_penalty/seed + inherit_missing=_same_pv; 原沿用全局 agnes=3/120 致定制重试/超时不生效
+# 2026-10-29 - 小欧 - KISS: 调用侧 8 次"(_pv_cfg or {}).get(...)"收敛为一次 _cfg = _pv_cfg or {}
+#   （同 provider 时 _pv_cfg=None 防炸, 跨 provider 到 snapshot 处已非 None）。 小欧-2026-10-29
 # 2026-10-29 - 小欧 - 修测试发现的真实回归: _resolve_max_tokens 原为跨 provider 分支内局部导入,
 #   但 snapshot 调用在分支外也用它 → 同 provider 换模型时 UnboundLocalError(被外层 except 降级回全局
 #   模型, 换模型 100% 失效); 已把导入提到分支入口, 删分支内重复导入。 小欧-2026-10-29
 # 2026-10-31 - 小欧 - 跨 provider 空 api_key 不再抛 ProviderKeyMissingError 拦死: 留空即"不带
 #   Authorization 头"(本机 Ollama/vLLM 等无鉴权端点), 交由 ProviderAdapter.auth_headers 单点判空;
 #   仍不回落全局默认 key(跨 provider 绝不用他人凭据)。 小欧-2026-10-31
+# 2026-11-01 19:28 小欧 - 同 provider 换模型也按目标 provider+model 重解析: parse_model_params 收敛为唯一入口
+#   (3 元组含用户 max_tokens), inherit_missing=False 未配回落默认, 根治沿用旧模型参数 — 小欧-2026-11-01
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -235,15 +230,21 @@ async def resolve_session_client(scope, session_id):
             # 2026-09-01 小欧: L2 切跨 provider 模型, api_base/api_key/model_params(含 context_limit)
             # 均按目标 provider+model 从 config.yaml 查出(后端内部, 不落库、不出前端);
             # api_base 必须用目标 provider 的, 而非 _ov.api_base or 全局(全局=agnes 地址, 仍 503)
-            from app.services.lifecycle.service import parse_model_params, _resolve_max_tokens  # 2026-10-29 小欧: 提到分支入口——_resolve_max_tokens 在 snapshot(分支外)也用, 原仅在跨 provider 分支内导入, 致同 provider 换模型 UnboundLocalError(测试发现)
+            # 导入提到分支入口: snapshot 分支外也用 _resolve_max_tokens, 原仅跨 provider 分支内导入致同 provider 换模型报未定义 — 小欧-2026-10-29
+            from app.services.lifecycle.service import parse_model_params, _resolve_max_tokens
+            # 目标模型身份: 覆盖优先, 余沿用全局(同/跨 provider 统一口径的前提) — 小欧 2026-11-01
+            _target_pv = _ov.provider or ai_service.llm_model.provider
+            _target_model = _ov.model or ai_service.llm_model.model
+            _same_pv = (_target_pv == ai_service.llm_model.provider)
             _pv_cfg = None
             _pv_key = None
-            _pv_ebp = None
-            _pv_ctx = None
-            if _ov.provider and _ov.provider != ai_service.llm_model.provider:
+            if _same_pv:
+                # 同 provider 也按目标 provider+model 重解析: 原实现仅跨 provider 查配置, 会话内换模型
+                # 沿用旧模型的 max_tokens/extra_body_params/context_length(实测 131072 切 32768 仍发 131072) — 小欧 2026-11-01
+                _pv_cfg = get_ai_config_resolver().get_service_config(_target_pv, _target_model)
+            else:
                 try:
-                    _pv_cfg = get_ai_config_resolver().get_service_config(
-                        _ov.provider, _ov.model or "")
+                    _pv_cfg = get_ai_config_resolver().get_service_config(_target_pv, _target_model)
                     # 密钥空白判定收口 - 小欧 - 2026-09-26: 密钥空白判定收口到公用函数
                     #   is_blank_secret（与 lifecycle/validation.py 同一权威，杜绝第三份不一致写法）
                     _pv_key = (None if is_blank_secret(_pv_cfg.get("api_key"))
@@ -255,29 +256,25 @@ async def resolve_session_client(scope, session_id):
                     #   等于"系统不支持空 api_key"; 仍不回落全局默认 key(隔离语义不变)。
                     # env 安全性: get_service_config 的 cfg 已过 _apply_env_overrides，env key 已入配置。
                     _pv_key = "" if _pv_key is None else _pv_key
-                    # model_params 解析复用 service.parse_model_params(DRY 唯一权威, 与全局实例同逻辑)
-                    _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
                 except ProviderKeyMissingError:
                     raise   # 专属异常必须冒泡: 被下方 except Exception 降级即等于用全局 key 继续跑
                 except Exception as _pv_e:
-                    logger.warning(f"[chat] 按 provider 查配置失败({_ov.provider}): {_pv_e}, 放弃会话模型覆盖")
+                    logger.warning(f"[chat] 按 provider 查配置失败({_target_pv}): {_pv_e}, 放弃会话模型覆盖")
                     _pv_cfg = None
                     _pv_key = None
-                    _pv_ebp = None
-                    _pv_ctx = None
-            if _pv_cfg is None and _ov.provider and _ov.provider != ai_service.llm_model.provider:
+            if _pv_cfg is None and not _same_pv:
                 _snap = _fallback_snapshot(
                     ai_service, lease,
                     f"会话模型覆盖已跳过(配置查找失败), 使用全局默认模型快照: "
                     f"provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
                 transferred = True   # 默认快照接管 lease(close 归还) — 小欧-2026-09-25
                 return _snap
-            # 同 provider 时 _pv_cfg 恒为 None，api_base 必须沿用本代地址（否则会话内换模型全报 400，
-            # 退化史见文件头「三堂会审后修正」①）；跨 provider 才留空由 LLMClient 报错。
-            _same_pv = (not _ov.provider or _ov.provider == ai_service.llm_model.provider)
+            # model_params 解析唯一入口(同/跨 provider 一处): 参数体/窗口/用户 max_tokens 三出口 — 小欧 2026-11-01
+            _pv_ebp, _pv_ctx, _pv_user_mt = parse_model_params(_pv_cfg, _target_model)
+            # 同 provider: api_base 必须沿用本代地址, 否则会话内换模型全报 400(退化史见文件头 api_base 回落条目) — 小欧-2026-11-01
             override_ref = ModelRef(
-                provider=_ov.provider or ai_service.llm_model.provider,
-                model=_ov.model or ai_service.llm_model.model,
+                provider=_target_pv,
+                model=_target_model,
                 api_base=(
                     ai_service.llm_model.api_base            # 同 provider: 沿用本代地址(原行为, 不可删)
                     if _same_pv
@@ -285,7 +282,7 @@ async def resolve_session_client(scope, session_id):
                 ),
                 display_name=_ov.display_name or ai_service.llm_model.display_name,
             )
-            _cfg = _pv_cfg or {}  # 2026-10-29 小欧 KISS: 收敛 8 处重复"or {}"(同 provider 时 _pv_cfg=None 防炸, 跨 provider 到此处已非 None)
+            _cfg = _pv_cfg  # 同/跨 provider 到此必非 None(失败已提前 return), 删退化空典 — 小欧 2026-11-01
             session_client = ai_service.snapshot(
                 override_ref,
                 api_key=_pv_key,
@@ -293,13 +290,13 @@ async def resolve_session_client(scope, session_id):
                 context_length=_pv_ctx,
                 max_retries=_cfg.get("max_retries"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=4)
                 timeout=_cfg.get("timeout"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=200)
-                max_tokens=_resolve_max_tokens(_cfg, _ov.model or ""),  # 2026-10-29 小欧: 场景齐全——跨 provider 按目标 provider+model 解析(model_meta.max_output_length), 未配回落默认
+                max_tokens=_resolve_max_tokens(_cfg, _target_model, _pv_user_mt),  # 三层取小唯一算法 — 小欧 2026-11-01
                 temperature=_cfg.get("temperature"),  # 2026-10-29 小欧: 场景齐全——跨 provider 一律按目标 provider 取参, 未配回落默认, 绝不沿用全局(agnes)
                 top_p=_cfg.get("top_p"),
                 frequency_penalty=_cfg.get("frequency_penalty"),
                 presence_penalty=_cfg.get("presence_penalty"),
                 seed=_cfg.get("seed"),
-                inherit_missing=_same_pv,  # 跨 provider(False)未配项回落默认, 同 provider(True)沿用 self 定制值 — 小欧-2026-10-29
+                inherit_missing=False,  # 各参数已按目标 provider+model 权威解析, 未配回落默认, 严禁沿用旧模型 — 小欧 2026-11-01
                 shared_client=(lease.client if _same_pv else None),  # 同 provider 复用本代共享池; 跨 provider 独占新池 — 小欧-2026-09-25
                 client_lease=(lease if _same_pv else None),  # lease 与池成对: 同 provider 接管(close 归还), 跨 provider 不接 — 小欧-2026-09-25
             )
