@@ -179,6 +179,9 @@
 # 2026-10-30 小欧 - _absorb_inbox 注入合并超长截断方向修正为**保尾部** —— 插话正文前可能拼引用区块,
 #   原 `[:_max_chars]` 切尾部会先丢引用、再丢用户消息开头; 保尾部才能留下用户真正写的话, 截断处留显式标记 — 小欧-2026-10-30
 # 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+# 2026-11-01 小欧 - 裁剪可见性(北京老陈令): trim_history 真裁剪发生时补一条 notice(kind=trimming, phase=done)，
+#   与 summarizing 信封同构——此前 trim 只进 telemetry(task_metrics.trim_count/trim_tokens)，SSE 零帧前端无感知；
+#   瞬时动作单发 done 不占位置2，token 数读唯一真源 _trimmed_tokens_this_round；未真裁(空转/冷却)零发射 — 小欧-2026-11-01
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -339,6 +342,18 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     await _absorb_inbox(agent)
     if agent.message_builder._trim_signal():  # 信号触发后才裁剪 — 小欧 2026-10-25
         agent.message_builder.trim_history()
+        # 2026-11-01 小欧 - 裁剪可见性(北京老陈令): 真裁剪发生时发一条 notice(kind=trimming, phase=done)。
+        #   发射形态=本文件同行 MetaStep(retrying/truncated) 同款 _emit_publish 直发(全函数唯一发射收口；
+        #   禁走 await 属性方法——测试桩 emitter 为同步 Mock, await 属性返回值必炸)；phase 必须显式
+        #   done(sseParser 缺省回落 'start' 会误占位置2)；token 数读唯一真源 _trimmed_tokens_this_round；
+        #   未真裁(_trimmed_this_round=False: 空转/冷却)零发射不刷屏 — 小欧-2026-11-01
+        if getattr(agent.message_builder, "_trimmed_this_round", False):
+            await _emit_publish(agent._step_emitter.emit(MetaStep(
+                step=agent.llm_call_count, type="notice",
+                content=f"历史对话已裁剪(裁掉约{getattr(agent.message_builder, '_trimmed_tokens_this_round', 0)} tok)",
+                kind="trimming",
+                phase="done",
+            )).to_dict())
     agent.telemetry.on_trim(
         getattr(agent.message_builder, "_trimmed_this_round", False),
         getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),

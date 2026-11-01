@@ -66,7 +66,7 @@ export interface ExecutionStep {
   //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
   reject_type?: string;
   // 2026-10-25 小欧: 通知信封字段(type='notice' 时有效)
-  notice_kind?: string; // 通知种类: summarizing/installing/extracting/refs_ready/ws_inject
+  notice_kind?: string; // 通知种类: summarizing/installing/extracting/refs_ready/ws_inject/trimming
   notice_phase?: 'start' | 'done' | 'failed'; // 阶段: start(事前)/done(成功)/failed(失败)
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
   // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：

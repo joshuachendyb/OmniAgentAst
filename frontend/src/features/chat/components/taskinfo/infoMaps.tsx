@@ -20,6 +20,7 @@
 // 编辑历史: 2026-10-26 小沈 - NOTICE_CONFIG新增extracting三态(start/done/failed), 复用Spin/Check/Warning图标 — 小沈-2026-10-26
 // 编辑历史: 2026-10-30 小欧 - NOTICE_CONFIG新增refs_ready_done/refs_ready_failed(引用处置汇总, 无start态) — 小欧-2026-10-30
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+// 编辑历史: 2026-11-01 小欧 - NOTICE_CONFIG 加 trimming_done(对话历史裁剪 notice, 后端 react_step 真裁剪帧发射): ScissorOutlined 剪刀图标, 时间线按 kind+phase 查表 — 小欧-2026-11-01
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -31,6 +32,7 @@ import {
   CloseCircleOutlined,
   CheckCircleOutlined,
   SyncOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
 // 2026-10-09 小欧[20]: ContextSource 改复用帧类型(DRY, 不手写平铺形状)
@@ -139,6 +141,9 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   // ws_inject(事项目录块超限省略) — 小欧 2026-10-31: 只发 done(本轮目录已装配、有省略),
   // 语义非失败; 用警示图标与"成功进入"的 refs_ready_done 区分
   ws_inject_done: <WarningOutlined />,
+  // trimming(对话历史裁剪) — 小欧-2026-11-01: 只发 done(瞬时动作, 无 start/failed 态;
+  // 空转/冷却不发射), 剪刀图标与"被替换成摘要"的 summarizing_done 区分
+  trimming_done: <ScissorOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------
