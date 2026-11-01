@@ -59,41 +59,7 @@
 # 2026-10-30 小欧 - 请求耗时埋点+ X-Request-Id 中间件(_RequestTimingMiddleware, 纯 ASGI),
 #   给"前端 60s 超时"提供后端侧对账依据; 改后用纯 ASGI(不用 BaseHTTPMiddleware)并补异常穿出日志
 #   reqId 日志 —— 理由见中间件定义处注释。 — 小欧-2026-10-30
-# 2026-11-01 小欧 - 前端静态兜底判据收紧(_HAS_WEB: is_dir→index.html is_file): 半截 dist
-#   (清产物/构建中)不再挂 SPA mount+catch-all, 根路径探活得干净 404 而非 500+全栈栈刷屏;
-#   root 与 spa_fallback 入口增 index.html 实存防御(运行中被删回 404 JSON/降级 JSON, 绝不
-#   FileResponse 抛 RuntimeError 未处理异常)。 — 小欧-2026-11-01
-# 2026-11-01 小欧 - assets 挂载守卫: (_WEB_DIR/"assets").is_dir() 半截 assets 不再 StaticFiles 启动期崩服务。
-#   (同族: 有 index.html 而 assets 缺失时原判据已过但 mount 即炸, 与判据收紧互补) — 小欧-2026-11-01
-# 2026-11-01 小欧 - 判据收成单一真源(_frontend_ready): 上面两轮的 assets 守卫写在 mount 的 if 上,
-#   造成"有前端"存在两套判据 — 半截 assets 时 root 返 index.html(白屏) 而 catch-all 未注册同一
-#   路由给 404, 同一故障态两种表现。改后 index.html 与 assets/ 同时在才算有前端, root / mount+
-#   catch-all 三处共用一处定义; 顺带纠正 62-65 行"根路径探活得干净 404"的措辞 — 实测 root 返回
-#   200 API JSON, 404 是除 / 之外无 catch-all 的路径。 — 小欧-2026-11-01
-# 2026-11-01 小欧 - 撤 _frontend_ready, 按北京老陈定案收口判据范围(YAGNI): 造"前端是否可用"这个概念
-#   本身就是多余 —— 全仓只有 assets 目录缺失会让 StaticFiles.__init__ 抛异常, 只拦这一件即可。
-#   ① 开发态(frontend/dist 是构建产物, 随时可删可半截)不预判任何目录, 只 try/except: 挂不上就
-#      降级 API-only + 告警, 服务照常起; ② 打包态(_MEIPASS/web 由 spec 铺好)按 assets 实存决定挂
-#      不挂, 缺了指名告警(属构建缺陷, 与"用户删产物"区分); ③ index.html 不作判据, 仅在 root /
-#      spa_fallback 请求期确认文件在, 防 FileResponse 发送期抛未处理异常(500)。 — 小欧-2026-11-01
-# 2026-11-01 小欧 - 判决强度按环境分离(北京老陈定案): 打包态不少判 —— assets 与 index.html 逐项查,
-#   缺哪项都 logger.error 点名(构建缺陷必须一眼看出); 开发态不乱判 —— 不预判目录, 只兜 StaticFiles
-#   的"目录不存在"RuntimeError, 其它异常照常抛(不给真 bug 兜底); 同时把开发态告警级别由 warning
-#   提到 error, 因为"挂不上"对 dev 是异常状态而非正常降级。 — 小欧-2026-11-01
-# 2026-11-01 小欧 - 终稿(北京老陈定案, 推翻上一条):
-#   ① 开发态 —— **不管目录是啥玩意**: frontend/dist 是构建产物, 存在与否/叫什么全由开发者掌握,
-#      后端不预判、不打任何告警; 只把 StaticFiles 构造期的 RuntimeError(目录不存在)咽掉, 没 dist
-#      就 API-only, 服务照常起。(反驳上一条: 本仓前端日常跑 vite :5173, 后端没 dist 是常态,
-#      每次启动打 ERROR 等于把常态判成故障, 真故障反被淹没。)
-#   ② 打包态 —— **只能验证 assets/**: _MEIPASS/web 由 spec 铺好, 名字固定, 但前端产物里只有
-#      assets/ 目录缺失会让 StaticFiles.__init__ 抛 RuntimeError 把服务搞崩, 故只校验这一件, 缺了
-#      点名 logger.error + 不挂载。index.html 不在启动期校验 —— 它缺了谁都不会崩, 只是没有页面,
-#      由 root / catch-all 在请求期回 JSON 讲清楚。
-#   ③ 两态共用同一条 mount 代码(DRY), 唯一分叉是"失败时要不要喊"。 — 小欧-2026-11-01
-# 2026-11-01 小欧 - 再订正(北京老陈定案: 打包环境不能少验证): 上一条"只验 assets、不验 index.html"
-#   属少验 —— index.html 缺失虽不让进程崩, 但双击 exe 只拿到 JSON/白屏, 对用户就是"应用废了",
-#   必须在启动期点名, 不能留到运行期才发现。故打包态改回**逐项验**: assets/ 与 index.html 各查一次,
-#   缺哪项报哪项(带完整路径)且不挂载; 开发态仍是一字不判(见上一条①)。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 静态托管定案: 开发态不判任何目录(没 dist 即 API-only, 零告警); 打包态逐项验 assets/ 与 index.html, 缺哪项点名 error 且不挂载。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -549,12 +515,8 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-# 2026-11-01 小欧 - 静态托管终稿(北京老陈定案: 开发不管, 打包不少验):
-#   开发态: 不预判、不告警 —— 没 dist 就 API-only; 只咽 StaticFiles 的"目录不存在"RuntimeError。
-#   打包态: assets/ 与 index.html **逐项验**, 缺哪项就点名哪项 logger.error 且不挂载 ——
-#     assets 缺 → StaticFiles.__init__ 直接抛 RuntimeError 把服务搞崩;
-#     index.html 缺 → 服务起得来但双击 exe 只能拿到 JSON/白屏, 对用户就是"应用废了",
-#     同样属构建缺陷, 不能留给运行期才发现。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 开发态不判任何目录(没 dist 即 API-only, 零告警); 打包态逐项验 assets/ 与 index.html:
+#   assets 缺 → StaticFiles.__init__ 抛 RuntimeError 起不来; index.html 缺 → 只有 JSON/白屏, 同属构建缺陷。
 _STATIC_MOUNTED = False
 _missing_web: list[str] = []
 if _IS_FROZEN:                      # 开发态 _missing_web 恒空 = 不预判任何目录
@@ -581,10 +543,7 @@ if _STATIC_MOUNTED:
     # 浏览器按 text/html 解析 JS → 报错比 404 更难查 — 小欧-2026-11-01
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str):
-        """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html。
-
-        2026-11-01 小欧 - 运行态防御: index.html 缺失(半截 dist/被删)回 404 JSON,
-        不再 FileResponse 抛 RuntimeError 未处理异常(500+全栈栈刷屏, 见错误族A取证)。"""
+        """前端 SPA catch-all: 浏览器路由(/chat /files /settings)返回 index.html; 文件不在则回 404 JSON。"""
         if not _INDEX_HTML.is_file():
             return JSONResponse(
                 status_code=404,
