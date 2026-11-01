@@ -90,6 +90,10 @@
 #      点名 logger.error + 不挂载。index.html 不在启动期校验 —— 它缺了谁都不会崩, 只是没有页面,
 #      由 root / catch-all 在请求期回 JSON 讲清楚。
 #   ③ 两态共用同一条 mount 代码(DRY), 唯一分叉是"失败时要不要喊"。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 再订正(北京老陈定案: 打包环境不能少验证): 上一条"只验 assets、不验 index.html"
+#   属少验 —— index.html 缺失虽不让进程崩, 但双击 exe 只拿到 JSON/白屏, 对用户就是"应用废了",
+#   必须在启动期点名, 不能留到运行期才发现。故打包态改回**逐项验**: assets/ 与 index.html 各查一次,
+#   缺哪项报哪项(带完整路径)且不挂载; 开发态仍是一字不判(见上一条①)。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -545,14 +549,24 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-# 2026-11-01 小欧 - 静态托管终稿(北京老陈定案: 开发不管, 打包只验 assets/):
+# 2026-11-01 小欧 - 静态托管终稿(北京老陈定案: 开发不管, 打包不少验):
 #   开发态: 不预判、不告警 —— 没 dist 就 API-only; 只咽 StaticFiles 的"目录不存在"RuntimeError。
-#   打包态: 只校验 assets/ 在不在(它是唯一会让 StaticFiles.__init__ 崩的东西), 缺了点名 error 不挂载。
-#   index.html 一律不在启动期校验, 由 root / catch-all 在请求期兜住(缺了回 JSON, 不炸)。 — 小欧-2026-11-01
+#   打包态: assets/ 与 index.html **逐项验**, 缺哪项就点名哪项 logger.error 且不挂载 ——
+#     assets 缺 → StaticFiles.__init__ 直接抛 RuntimeError 把服务搞崩;
+#     index.html 缺 → 服务起得来但双击 exe 只能拿到 JSON/白屏, 对用户就是"应用废了",
+#     同样属构建缺陷, 不能留给运行期才发现。 — 小欧-2026-11-01
 _STATIC_MOUNTED = False
-if _IS_FROZEN and not _ASSETS_DIR.is_dir():
-    logger.error(f"[前端] 打包缺 assets 目录, 前端不可用: {_ASSETS_DIR}")
-else:
+_missing_web: list[str] = []
+if _IS_FROZEN:                      # 开发态 _missing_web 恒空 = 不预判任何目录
+    if not _ASSETS_DIR.is_dir():
+        _missing_web.append(str(_ASSETS_DIR))
+    if not _INDEX_HTML.is_file():
+        _missing_web.append(str(_INDEX_HTML))
+
+for _p in _missing_web:
+    logger.error(f"[前端] 打包缺文件, 前端不可用: {_p}")
+
+if not _missing_web:
     try:
         app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
         _STATIC_MOUNTED = True
