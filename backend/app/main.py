@@ -76,6 +76,10 @@
 #      降级 API-only + 告警, 服务照常起; ② 打包态(_MEIPASS/web 由 spec 铺好)按 assets 实存决定挂
 #      不挂, 缺了指名告警(属构建缺陷, 与"用户删产物"区分); ③ index.html 不作判据, 仅在 root /
 #      spa_fallback 请求期确认文件在, 防 FileResponse 发送期抛未处理异常(500)。 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 判决强度按环境分离(北京老陈定案): 打包态不少判 —— assets 与 index.html 逐项查,
+#   缺哪项都 logger.error 点名(构建缺陷必须一眼看出); 开发态不乱判 —— 不预判目录, 只兜 StaticFiles
+#   的"目录不存在"RuntimeError, 其它异常照常抛(不给真 bug 兜底); 同时把开发态告警级别由 warning
+#   提到 error, 因为"挂不上"对 dev 是异常状态而非正常降级。 — 小欧-2026-11-01
 import sys
 import asyncio
 import time
@@ -531,18 +535,27 @@ async def favicon():
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
 # 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
 # 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
-# 2026-11-01 小欧 - 静态挂载只处理一件会崩的事(assets 缺失 → StaticFiles.__init__ 抛 RuntimeError):
-#   打包态按 assets 实存决定挂不挂(缺了就指名告警, 属构建缺陷); 开发态不预判 —— frontend/dist
-#   是构建产物, 随时可删可半截, 挂不上就降级 API-only, 只告警不崩服务 — 小欧-2026-11-01
+# 2026-11-01 小欧 - 判决强度按环境分离(北京老陈定案: 开发不乱判, 打包不少判):
+#   打包态 —— 不少判: assets(会让 StaticFiles.__init__ 抛)与 index.html(缺了前端全废)逐项查,
+#     缺哪项都点名 logger.error, 属构建缺陷, 必须一眼看出打包漏了文件;
+#   开发态 —— 不乱判: 不预判任何目录(frontend/dist 是构建产物, 可删可半截可改名), 只兜
+#     StaticFiles 的"目录不存在"RuntimeError; 其它异常照常抛出, 不给真 bug 兜底 — 小欧-2026-11-01
 _STATIC_MOUNTED = False
-if _IS_FROZEN and not _ASSETS_DIR.is_dir():
-    logger.warning(f"[前端] 打包缺 assets 目录, 跳过静态挂载: {_ASSETS_DIR}")
+_missing_web = []
+if _IS_FROZEN:
+    if not _ASSETS_DIR.is_dir():
+        _missing_web.append(str(_ASSETS_DIR))
+    if not _INDEX_HTML.is_file():
+        _missing_web.append(str(_INDEX_HTML))
+
+if _missing_web:
+    logger.error(f"[前端] 打包缺文件, 跳过静态挂载: {_missing_web}")
 else:
     try:
         app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="static-assets")
         _STATIC_MOUNTED = True
-    except Exception as exc:      # 开发态半截 dist: 降级 API-only, 不拖死服务
-        logger.warning(f"[前端] 静态挂载失败, 降级为 API-only: {exc}")
+    except RuntimeError as exc:      # 仅兜"目录不可用"; 其它异常不吞, 免给真 bug 兜底
+        logger.error(f"[前端] 静态挂载失败(目录不可用), 降级为 API-only: {exc}")
 
 if _STATIC_MOUNTED:
     logger.info(f"前端静态目录已定位: {_WEB_DIR}")
