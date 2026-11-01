@@ -173,12 +173,15 @@ const HistoryPage: React.FC = () => {
           response.sessions.map(async (s) => {
             try {
               const r = await sessionApi.getWorkspaces(s.session_id);
-              return [s.session_id, r.workspaces.map((w) => ({
-                path: w.path,
-                workspace_property: w.workspace_property || 'read_write',
-                memo: w.memo || null,
-                is_default: Boolean(w.is_default),
-              })) as WorkspaceEntry[]] as const;
+              return [
+                s.session_id,
+                r.workspaces.map((w) => ({
+                  path: w.path,
+                  workspace_property: w.workspace_property || 'read_write',
+                  memo: w.memo || null,
+                  is_default: Boolean(w.is_default),
+                })) as WorkspaceEntry[],
+              ] as const;
             } catch {
               return [s.session_id, [] as WorkspaceEntry[]] as const;
             }
@@ -684,9 +687,12 @@ const HistoryPage: React.FC = () => {
                           if (!wsList || wsList.length === 0) return null;
                           const display = wsList.slice(0, 2);
                           const extra = wsList.length - display.length;
-                          const tooltipText = wsList.map((w) =>
-                            `${w.path}${w.is_default ? ' (默认)' : ''} [${wsPropLabel(w.workspace_property)}]${w.memo ? ` ${w.memo}` : ''}`
-                          ).join('\n');
+                          const tooltipText = wsList
+                            .map(
+                              (w) =>
+                                `${w.path}${w.is_default ? ' (默认)' : ''} [${wsPropLabel(w.workspace_property)}]${w.memo ? ` ${w.memo}` : ''}`
+                            )
+                            .join('\n');
                           return (
                             <div
                               style={{
@@ -717,7 +723,9 @@ const HistoryPage: React.FC = () => {
                                 </Typography.Text>
                               </Tooltip>
                               {wsList.some((w) => w.is_default) && (
-                                <Tag color="gold" style={{ fontSize: 11 }}>默认</Tag>
+                                <Tag color="gold" style={{ fontSize: 11 }}>
+                                  默认
+                                </Tag>
                               )}
                             </div>
                           );
