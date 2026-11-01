@@ -54,7 +54,8 @@ app_tree = Tree(
 )
 
 # 前端 dist → _internal/web/（双击exe完整应用）— 小欧 2026-10-27
-# 需先 npm run build 生成 frontend/dist/，否则跳过（main.py 会 _HAS_WEB=False 不 mount）
+# 需先 npm run build 生成 frontend/dist/，否则不打包(目录缺失时跳过);
+#   挂载判据在 main.py(_STATIC_MOUNTED/_missing_web): 打包态缺 assets/index.html 启动即 error 喊出, 开发态没 dist 静默 API-only — 小欧 2026-11-01
 _frontend_dist = REPO / "frontend" / "dist"
 _frontend_datas = [(str(_frontend_dist), "web")] if _frontend_dist.is_dir() else []
 

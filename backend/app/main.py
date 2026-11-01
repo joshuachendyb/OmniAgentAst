@@ -344,7 +344,8 @@ _WEB_DIR = (
     else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 )
 # 2026-11-01 小欧 - 全仓只有 assets 会导致崩溃: 目录缺失时 StaticFiles.__init__ 抛 RuntimeError。
-#   index.html 缺失只是 FileResponse 打空, 请求期兜住即可, 不作为"有无前端"的判据 — 小欧-2026-11-01
+#   index.html 缺失只是 FileResponse 打空, 请求期兜住即可, 不作开发态判据;
+#   打包态例外: 缺 index.html 同属构建缺陷, 进 _missing_web 阻止挂载(见下方打包态逐项验) — 小欧-2026-11-01
 _ASSETS_DIR = _WEB_DIR / "assets"
 _INDEX_HTML = _WEB_DIR / "index.html"
 
