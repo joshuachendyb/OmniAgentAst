@@ -19,7 +19,7 @@
 //   support every value"，minimal 是少数派值，全局兜底只留 low/medium/high — 小欧-2026-10-24
 // 2026-11-01 小欧 - 键名统一 + 上下文窗口可编辑（北京老陈指令）：
 //   ①PARAM_DEFAULT_RANGES / PARAM_PRESETS 的 context_limit → context_length（与后端 yaml 真源同名）；
-//   ②新增 withDeclaredContextLength：基线补厂商声明窗口（用户值优先，声明值仅兜底），
+//   ②新增 withDeclaredMeta：基线补厂商声明窗口与输出上限（用户值优先，声明值仅兜底），
 //     使模型库勾选进来的模型在②参数区也有一条可编辑的 context_length 行 — 小欧-2026-11-01
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
@@ -76,25 +76,29 @@ export function isDirty(
 }
 
 /**
- * 已保存参数基线：用户值优先，厂商声明窗口仅兜底。
- *
- * 2026-11-01 小欧 - 基线补一条 `context_length`：模型库勾选进来的模型 `model_params` 为空,
- *   无此条则窗口行不可见不可改; 取值 `model_params.context_length`(用户) ?? `model_meta.context_length`(声明)。
- *   顺序不可反: 先取声明值会致基线不随用户改动, 每次切模型恒为脏态。
- *
- * 只写基线不写当前值：isDirty 只遍历 params 键不误判脏；渲染用 `params[key] ?? baseline[key]` 显示。
- * 删除语义：用户删行 = 恢复厂商声明值, 行重新出现(兜底语义必然)。 — 小欧 2026-11-01
+ * 已保存参数基线：用户值优先，厂商声明值(context_length/max_output_length)仅兜底，两键独立判缺补齐。
+ * 2026-11-01 小欧 - 声明值只入基线不入 params(少脏态); max_output_length 行只读, 严禁开放编辑
+ *   (该键不在后端 pop 名单, 曾随 extra_body 出网易被厂商 400) — 小欧 2026-11-01
  */
-export const withDeclaredContextLength = (
+export const withDeclaredMeta = (
   params: Record<string, unknown>,
-  declared: number | null | undefined
+  declaredCtx: number | null | undefined,
+  declaredMaxOut: number | null | undefined
 ): Record<string, unknown> => {
   const out: Record<string, unknown> = { ...params };
-  if (out.context_length !== undefined && out.context_length !== null) {
-    return out; // 用户已显式设置，声明值不得覆盖
+  if (
+    (out.context_length === undefined || out.context_length === null) &&
+    typeof declaredCtx === 'number' &&
+    declaredCtx > 0
+  ) {
+    out.context_length = declaredCtx;
   }
-  if (typeof declared === 'number' && declared > 0) {
-    out.context_length = declared;
+  if (
+    (out.max_output_length === undefined || out.max_output_length === null) &&
+    typeof declaredMaxOut === 'number' &&
+    declaredMaxOut > 0
+  ) {
+    out.max_output_length = declaredMaxOut;
   }
   return out;
 };

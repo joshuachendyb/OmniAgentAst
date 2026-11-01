@@ -28,10 +28,11 @@
 //   ②参数名 context_limit → context_length（与厂商通用名/后端真源同名）。
 //   并集渲染 + `params[key] ?? baseline[key]` 显示兜底不变 —— 厂商声明窗口经 load 通道注入 baseline 后，
 //   context_length 行即可见可编辑（原本因基线缺失连行都渲染不出来）- 小欧-2026-11-01
+// 2026-11-01 小欧 - 基线补 max_output_length 声明行: 控件只读+标「厂商声明」+不显删除钮(该键非后端解析白名单, 随 extra_body 出网易 400) — 小欧-2026-11-01
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
-import { Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import {
   settingsControl,
   settingsRowStyle,
@@ -53,6 +54,9 @@ interface Props {
   // 2026-09-24 小欧：保存中 saving 锁定参数行（控件+×按钮 disabled）— 小欧-2026-09-24
   disabled?: boolean;
 }
+
+// 2026-11-01 小欧 - 厂商声明只读键(基线注入, 非用户参数): max_output_length 必锁死防随 extra_body 出网 — 小欧-2026-11-01
+const isDeclaredOnlyKey = (key: string): boolean => key === 'max_output_length';
 
 export const ModelParams: React.FC<Props> = ({
   params,
@@ -79,8 +83,10 @@ export const ModelParams: React.FC<Props> = ({
           // 修正(2026-09-21 小强)：env 接管键禁用控件 + EnvTag 标识——
           // 原可编辑但 setParam 写入被 isDirty 排除，静默无效（改假值/保存假成功/切走丢失）([设置页UI审计] 问题2)
           const envKey = envOverride[key];
-          // 2026-09-24 小欧：保存中整体锁定（envKey||disabled 单点；EnvTag 下方仍只认 envKey）
-          const lock = envKey || disabled;
+          // 2026-11-01 小欧 - 声明只读键并入锁集; UI 标签单独识别(不与 env 键混一) — 小欧-2026-11-01
+          const declaredOnly = isDeclaredOnlyKey(key);
+          // 2026-09-24 小欧：保存中整体锁定（envKey||disabled||declaredOnly 单点；EnvTag 只认 envKey）
+          const lock = envKey || declaredOnly || disabled;
           const renderControl = (): React.ReactNode => {
             if (range) {
               const safeNum = isNaN(numValue) ? range.min : numValue;
@@ -180,12 +186,19 @@ export const ModelParams: React.FC<Props> = ({
           return (
             <div key={key} data-settings-key={key} style={settingsRowStyle}>
               <span style={settingsLabelStyle}>
-                {key} {envKey && <EnvTag />}
+                {key}{' '}
+                {declaredOnly && (
+                  <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>
+                    厂商声明
+                  </span>
+                )}{' '}
+                {envKey && <EnvTag />}
               </span>
               <span style={{ flex: 1 }}>{renderControl()}</span>
               {dirty[key] && <DirtyDot />}
               {/* 2026-09-24 小欧 - ①删除参数：行尾 × 图标钮，env 接管禁用；点即删（北京老陈拍板 A 方案）- 小欧-2026-09-24 */}
-              {onDelete && (
+              {/* 2026-11-01 小欧 - 声明只读键不显删除钮(删了对应 yaml 里什么都没有, 重现造成误导) — 小欧-2026-11-01 */}
+              {onDelete && !declaredOnly && (
                 <Button
                   type="text"
                   size="small"

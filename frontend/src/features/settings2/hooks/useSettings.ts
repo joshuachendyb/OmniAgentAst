@@ -102,7 +102,7 @@
 //   （六处读写 + saveModelGroup 请求体 + providers 缓存 patch；后端 DTO/服务/前端 api 层同拍改名）；
 //   ②`defaults` → `baseline`（ModelState 快照语义名，与通用设置 llm.context_length_default 同名混淆
 //   的病根铲除）；③四通道 load/selectProvider/selectModel/refreshModels 基线改写
-//   withDeclaredContextLength(model_params, context_length)：用户值优先、厂商声明值仅兜底，
+//   withDeclaredMeta(model_params, context_length, max_output_length)：用户值优先、厂商声明值仅兜底，
 //   ②参数区 context_length 行由此恒可编辑且默认显示厂商声明窗口。详见
 //   doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 问题 1/2 - 小欧-2026-11-01
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -124,7 +124,7 @@ import {
   normalizeCaps,
   capsForSave,
   // 2026-11-01 小欧 - 基线补厂商声明窗口（用户值优先，声明值仅兜底）：四条通道共用单点 — 小欧-2026-11-01
-  withDeclaredContextLength,
+  withDeclaredMeta,
 } from '../utils/modelUtils';
 import type { ModelState, SettingsState, TabKey } from '../types';
 import {
@@ -373,11 +373,11 @@ export function useSettings() {
         const current =
           provider?.models.find((m) => m.name === (ref?.model ?? '')) ??
           provider?.models[0];
-        // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口
-        //   (withDeclaredContextLength: 用户值优先, 声明值仅兜底) — 小欧-2026-11-01
-        const baseline = withDeclaredContextLength(
+        // 2026-11-01 小欧 - withDeclaredMeta: 基线补厂商声明窗口与输出上限(用户值优先, 只缺才补) — 小欧-2026-11-01
+        const baseline = withDeclaredMeta(
           (current?.model_params ?? {}) as Record<string, unknown>,
-          current?.context_length
+          current?.context_length,
+          current?.max_output_length
         );
         const providerConfig = buildProviderConfig(models.providers);
         // S5：provider 由 {NAME}_API_KEY 环境变量接管时（后端 update_model/update_provider_config
@@ -1110,10 +1110,11 @@ export function useSettings() {
       if (!(await ensureModelSaved())) return;
       // 2026-09-21 小欧 解耦：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
       //   + 参数区联动；不再写 ai.model_ref——全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal
-      // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
-      const baseline = withDeclaredContextLength(
+      // 2026-11-01 小欧 - withDeclaredMeta: 基线补厂商声明窗口与输出上限(用户值优先, 只缺才补) — 小欧-2026-11-01
+      const baseline = withDeclaredMeta(
         (first?.model_params ?? {}) as Record<string, unknown>,
-        first?.context_length
+        first?.context_length,
+        first?.max_output_length
       );
       patchModel({
         selectedProvider: name,
@@ -1152,10 +1153,11 @@ export function useSettings() {
       // 修复：先保存未落库参数，再改焦点，防切换时参数静默丢失
       if (!(await ensureModelSaved())) return;
       // 2026-09-21 小欧 解耦：同 selectProvider，只切前端焦点，不再写 ai.model_ref
-      // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
-      const nextBaseline = withDeclaredContextLength(
+      // 2026-11-01 小欧 - withDeclaredMeta: 基线补厂商声明窗口与输出上限(用户值优先, 只缺才补) — 小欧-2026-11-01
+      const nextBaseline = withDeclaredMeta(
         { ...entry.model_params } as Record<string, unknown>,
-        entry.context_length
+        entry.context_length,
+        entry.max_output_length
       );
       const nextRanges = { ...(entry.range ?? {}) } as Record<
         string,
@@ -1446,10 +1448,11 @@ export function useSettings() {
         const p = models.providers.find((x) => x.name === select.provider);
         const m = p?.models.find((x) => x.name === select.model);
         if (p && m) {
-          // 2026-11-01 小欧 - 键名统一 default_params → model_params；基线补厂商声明窗口（用户值优先）- 小欧-2026-11-01
-          const baseline = withDeclaredContextLength(
+          // 2026-11-01 小欧 - 键名统一 default_params → model_params；withDeclaredMeta 补声明窗口与输出上限 — 小欧-2026-11-01
+          const baseline = withDeclaredMeta(
             (m.model_params ?? {}) as Record<string, unknown>,
-            m.context_length
+            m.context_length,
+            m.max_output_length
           );
           patchModel({
             selectedProvider: p.name,
