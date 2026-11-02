@@ -21,6 +21,8 @@
 # 2026-11-02 小欧 - /health 再加 server_ip(本机局域网IP, lru_cache)与 pid: 他人访问地址与卡死排错要用的可执行信息 — 小欧-2026-11-02
 # 2026-11-02 小欧 - 再加 uptime_s(进程存活时长)与 loop_lag_ms(事件循环调度延迟点采样): 前端"耗时"只能推断卡死,
 #   这两个字段把"网络慢"与"事件循环被占死"分开, 与 AGENTS.md 的 py-spy 取证串成一条证据链 — 小欧-2026-11-02
+# 2026-11-03 小欧 - server_ip 剔除 127./169.254./0. 并补 UDP 选路兜底: 原实现未过滤, 未配 hosts 的 Windows
+#   会给出 127.0.0.1; 兜底仅在前者全不可用时走(VPN 多网卡会命中隧道地址) — 小欧-2026-11-03
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -46,9 +48,25 @@ router = APIRouter()
 
 @lru_cache(maxsize=1)
 def _server_lan_ip() -> str:
-    """本机局域网IP(进程内只解析一次) — 2026-11-02 小欧: 供顶栏服务胶囊显示可被他人访问的地址"""
+    """本机局域网IP(进程内解析一次) — 2026-11-02 小欧: 供顶栏服务胶囊显示可被他人访问的地址
+
+    2026-11-03 小欧 - 取 hostname 解析出的非环回/非链路本地 IPv4(原实现未过滤, 未配 hosts/DNS 的
+    Windows 常解析成 127.0.0.1, 该值对外毫无用处); 全部不可用时退回 UDP 选路(只查路由表, 不发包,
+    对 VPN 多网卡机器会命中隧道地址, 故仅作兜底)。进程内缓存: 免每次探活做名字解析拖慢 /health,
+    网卡地址变更后重启进程即刷新。
+    """
     try:
-        return socket.gethostbyname(socket.gethostname())
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip.startswith(("127.", "169.254.", "0.")):
+                continue
+            return ip
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
     except OSError:
         return ""
 
