@@ -126,6 +126,7 @@ const StreamStatusPill: React.FC = () => {
       <span
         role="button"
         aria-label="SSE 流状态"
+        className={view.tone === 'ok' ? 'stream-pill-ok' : undefined}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
