@@ -18,7 +18,6 @@
 /* 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(恒一行): 信息带已恒定1行(P0-3), 其余信息全收弹框;
  *   浮层入口热区 min-height 32→20 与 .taskinfo-token 对齐, 整条压回一行高度(原32撑高成"像2行") — 小欧-2026-09-15 */
 /* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
-/* 编辑历史: 2026-11-02 小欧 - 顶栏流状态灯: .stream-pill-ok 覆盖 antd processing 点的底色/光环为绿(#52c41a=Colors.SUCCESS), 保留呼吸动画, 与"流进行中"绿字同色 — 小欧-2026-11-02 */
 /* 编辑历史: 2026-09-18 小欧 - 居中修复(北京老陈驱动): .waiting-cursor/.action-waiting-cursor 1.4em 盒子 baseline 对齐致等待圈上浮如上标，改 vertical-align:middle 与文字中线对齐(尺寸/动画/颜色不动) — 小欧-2026-09-18 */
 /* 编辑历史: 2026-10-05 小欧 - ReasoningIcon(=EyeIcon 眼睛, step 页面"推理内容..."折叠行前置图标) 动画 + .reasoning-icon-dim 两态 + prefers-reduced-motion;
    三堂会审: dim 类原无组件挂载(死规则)致裁定两态零落地, 现由 ReasoningIcon 按 dim 挂载; 订正"CSS变量"误导注释 — 小欧-2026-10-05 */
@@ -43,6 +42,7 @@
  *   框线图的边框才能像素级闭合(Cascadia 1.707 格 / Consolas 1.819 格 → 汉字行边框残差)。
  *   本变量供 .doc-body code 等 CSS 侧消费; TS 侧由 utils/stepStyles.ts 的 FontFamily.MONO
  *   引用 var(--font-mono, monospace) → 两侧同一份栈, 改一处即全应用生效(DRY) — 小欧-2026-10-22 */
+/* 编辑历史: 2026-11-02 小欧 - 顶栏流状态灯"流进行中": .stream-pill-ok 覆盖 antd processing 点底色/光环为绿(#52c41a 同 Colors.SUCCESS), 保留呼吸动画 — 小欧-2026-11-02 */
 :root {
   --font-mono:
     'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
@@ -700,13 +700,13 @@
   outline: none;
 }
 
-/* 2026-11-02 小欧 - 顶栏流状态灯"流进行中": antd processing 点自带呼吸光环(antStatusProcessing),
- *   只换底色与光环描边为绿(Colors.SUCCESS #52c41a), 动画/尺寸/位置不动 —— 绿字绿点同色且仍有动画 — 小欧-2026-11-02
- *   选择器刻意比 antd 的 .ant-badge.ant-badge-status .ant-badge-status-processing 多一个类: 平手时
- *   antd 运行时注入的样式在 index.css 之后, 会被它盖回蓝色 — 小欧-2026-11-02 */
+/* 2026-11-02 小欧 - "流进行中"绿点: 底色/光环改绿(#52c41a 同 Colors.SUCCESS), 保留 antd 呼吸动画;
+ *   选择器 4 类压过 antd 的 3 类, 不依赖样式注入顺序 — 小欧-2026-11-02 */
 .stream-pill-ok .ant-badge.ant-badge-status .ant-badge-status-processing {
   background: #52c41a;
 }
-.stream-pill-ok .ant-badge.ant-badge-status .ant-badge-status-processing::after {
+.stream-pill-ok
+  .ant-badge.ant-badge-status
+  .ant-badge-status-processing::after {
   border-color: #52c41a;
 }

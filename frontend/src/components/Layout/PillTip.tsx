@@ -1,10 +1,4 @@
-/**
- * PillTip - 顶栏胶囊的 Tooltip 内容骨架(配置胶囊/服务胶囊共用)
- * 视觉结构: 状态点+标题 / 副说明 / 分隔线 / 键值行(标签列对齐) / 明细条目 / 动作出路
- *
- * @author 小欧
- * @date 2026-11-02
- */
+/** PillTip - 顶栏胶囊 Tooltip 骨架: 状态点+标题/副说明/分隔线/对齐键值/明细条目/动作出路(三胶囊共用)。 @author 小欧 @date 2026-11-02 */
 // 编辑历史: 2026-11-02 小欧 - 新建: 两胶囊 Tip 统一骨架(北京老陈令: 按高级设计师水准重做视觉), 全令牌零硬编码色值 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 版式定稿: 白色卡片浮层(浅底文字令牌), 字号收14/12两档, 键值行改栅格40px对齐 — 小欧-2026-11-02
 import React, { type CSSProperties } from 'react';
@@ -16,9 +10,7 @@ import {
   BorderWidth,
   FontFamily,
 } from '../../utils/stepStyles';
-
-// 2026-11-02 小欧 - 新增 alert(橘红): 严重度递进 黄(迟滞)→橘红(静默)→红(中断), 见 Colors.ORANGE_RED — 小欧-2026-11-02
-type Tone = 'ok' | 'warn' | 'alert' | 'error' | 'neutral';
+import { TONE_COLOR, type Tone } from '../../utils/tone';
 
 // 2026-11-02 小欧 - 浮层版式常量: 宽度区间/标签列宽(4字48px+留白, 服务胶囊"循环延迟/运行时长"须容得下)/状态点径/行高比 — 小欧-2026-11-02
 const TIP_MIN_W = 240;
@@ -31,14 +23,6 @@ const LABEL_COL_W = 56;
 const DOT_SIZE = 8;
 const LINE_HEIGHT = 1.6;
 
-const TONE_COLOR: Record<Tone, string> = {
-  ok: Colors.SUCCESS,
-  warn: Colors.WARNING,
-  alert: Colors.ORANGE_RED,
-  error: Colors.ERROR,
-  neutral: Colors.TEXT.TERTIARY,
-};
-
 export interface PillTipRow {
   label: string;
   value: string;
@@ -47,12 +31,13 @@ export interface PillTipRow {
   /** 分组小标题: 与上一行不同则先渲染一条分组条(值缺省=不分组, 配置胶囊沿用) — 2026-11-02 小欧 */
   group?: string;
   /** 值异常时的语义色(正常值不着色, 保持灰阶克制) — 2026-11-02 小欧 */
-  tone?: 'ok' | 'warn' | 'alert' | 'error';
+  tone?: Exclude<Tone, 'neutral'>;
 }
 
 export interface PillTipItem {
   text: string;
-  tone: 'warn' | 'error';
+  /** 缺省=普通说明, 只有真告警才给颜色 — 2026-11-02 小欧 */
+  tone?: 'warn' | 'error';
 }
 
 export interface PillTipAction {
@@ -187,7 +172,13 @@ export const PillTip: React.FC<PillTipProps> = ({
               lineHeight: LINE_HEIGHT,
             }}
           >
-            <span style={{ color: TONE_COLOR[item.tone] }}>•</span>
+            <span
+              style={{
+                color: item.tone ? TONE_COLOR[item.tone] : Colors.TEXT.TERTIARY,
+              }}
+            >
+              •
+            </span>
             <span
               style={{
                 fontSize: FontSize.SECONDARY,

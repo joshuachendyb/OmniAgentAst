@@ -1,10 +1,4 @@
-/**
- * ServiceStatusPill - 顶栏后端服务存活胶囊: /health 探测三级(绿正常/黄缓慢/红离线),
- * 挂载自动检测+点击重检; 与 ConfigStatusPill(配置是否允许发消息)正交, 本胶囊只答"后端能不能应答"
- *
- * @author 小欧
- * @date 2026-11-02
- */
+/** ServiceStatusPill - 顶栏后端存活胶囊: /health 三级(绿正常/黄缓慢/红离线), 挂载自检+点击重检。 @author 小欧 @date 2026-11-02 */
 // 编辑历史: 2026-11-02 小欧 - 新建: 服务状态与配置状态分立(北京老陈令); 黄态=响应缓慢(端口在监听但服务僵死的早期体征), 不查DB — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - Tooltip 全量常显(北京老陈定案): 耗时/本机地址/访问地址/请求前缀/连接方式/PID 逐行 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细), 地址走等宽可选中 — 小欧-2026-11-02
@@ -21,6 +15,7 @@ import type { BadgeProps } from 'antd';
 import { useApp } from '../../contexts/AppContext';
 import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
 import { PillTip, PILL_TIP_ROOT_MAX_W, type PillTipRow } from './PillTip';
+import { streamDataRows } from './streamPillRows';
 import {
   Spacing,
   FontSize,
@@ -257,29 +252,7 @@ const ServiceStatusPill: React.FC = () => {
       tone: streamTone,
       group: 'SSE 流',
     },
-    {
-      label: '业务帧',
-      value:
-        streamView.bizAgeSec === null
-          ? '未收到'
-          : `${streamView.bizAgeSec} 秒前`,
-      tone: streamView.bizStale ? 'warn' : undefined,
-    },
-    {
-      label: '最近心跳',
-      value:
-        streamView.heartbeatAgeSec === null
-          ? '未收到'
-          : `${streamView.heartbeatAgeSec} 秒前`,
-    },
-    {
-      label: '最后字节',
-      value:
-        streamView.dataAgeSec === null
-          ? '未收到'
-          : `${streamView.dataAgeSec} 秒前`,
-      tone: streamView.dataStale ? 'warn' : undefined,
-    },
+    ...streamDataRows(streamView),
   ];
 
   return (

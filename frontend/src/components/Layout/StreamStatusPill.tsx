@@ -1,11 +1,6 @@
-/**
- * StreamStatusPill - 顶栏 SSE 流状态小灯：只答"当前这条流活没活、心跳新不新"，
- * 与 ServiceStatusPill(进程能不能应答)、ConfigStatusPill(配置是否允许发消息)三者正交。
- *
- * @author 小欧
- * @date 2026-11-02
- */
-// 编辑历史: 2026-11-02 小欧 - 新建: 只读 store 聚合快照(1s 采样), 不发任何请求; 浮层显会话/状态/任务/心跳/静默/判死阈值 — 小欧-2026-11-02
+/** StreamStatusPill - 顶栏 SSE 流状态灯(与 Service/Config 胶囊正交)。 @author 小欧 @date 2026-11-02 */
+// 编辑历史: 2026-11-02 小欧 - 新建: 只读 store 聚合快照(共享 1s 采样), 不发任何请求 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - badge 由 tone 单点映射, 浮层数据行抽到 streamPillRows 与胶囊共用 — 小欧-2026-11-02
 import React from 'react';
 import { Badge, Tooltip } from 'antd';
 
@@ -19,17 +14,22 @@ import {
   Spacing,
   BorderWidth,
 } from '../../utils/stepStyles';
+import { TONE_COLOR } from '../../utils/tone';
 import { PillTip, PILL_TIP_ROOT_MAX_W, type PillTipRow } from './PillTip';
+import { streamDataRows } from './streamPillRows';
 
 // 2026-11-02 小欧 - 顶栏白底悬停浅灰, 与配置/服务胶囊同令牌 — 小欧-2026-11-02
 const HOVER_BG = Colors.BG.HOVER;
 
-const TONE_COLOR: Record<StreamTone, string> = {
-  ok: Colors.SUCCESS,
-  warn: Colors.WARNING,
-  alert: Colors.ORANGE_RED,
-  error: Colors.ERROR,
-  neutral: Colors.TEXT.SECONDARY,
+const BADGE_OF: Record<
+  StreamTone,
+  'success' | 'processing' | 'warning' | 'error' | 'default'
+> = {
+  ok: 'processing',
+  warn: 'warning',
+  alert: 'default',
+  error: 'error',
+  neutral: 'default',
 };
 
 /** 流状态原值 → 人话, 未知值原样回显(不吞不猜) — 2026-11-02 小欧 */
@@ -45,8 +45,6 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 const shortId = (id: string | null): string => (id ? id.slice(0, 8) : '—');
-const ageText = (sec: number | null): string =>
-  sec === null ? '未收到' : `${sec} 秒前`;
 
 const StreamStatusPill: React.FC = () => {
   const view = useStreamPulse();
@@ -62,14 +60,7 @@ const StreamStatusPill: React.FC = () => {
         },
         { label: '状态', value: STATUS_TEXT[p.status] ?? p.status },
         { label: '任务', value: shortId(p.serverTaskId), mono: true },
-        {
-          label: '业务帧',
-          value: ageText(view.bizAgeSec),
-          tone: view.bizStale ? 'warn' : undefined,
-          group: '数据',
-        },
-        { label: '心跳', value: ageText(view.heartbeatAgeSec) },
-        { label: '最后字节', value: ageText(view.dataAgeSec) },
+        ...streamDataRows(view, '数据'),
         { label: '判死', value: `${IDLE_TIMEOUT / 1000}s 无字节` },
         ...(p.activeSessions > 1
           ? [{ label: '并发', value: `${p.activeSessions} 条流` }]
@@ -111,11 +102,9 @@ const StreamStatusPill: React.FC = () => {
               ? [
                   {
                     text: '心跳只证明连接没断（后端静默 25s 才发一次）；有无产出看业务帧，二者分开判',
-                    tone: 'warn' as const,
                   },
                   {
                     text: `${IDLE_TIMEOUT / 1000}s 内无任何字节才判死并断点续传`,
-                    tone: 'warn' as const,
                   },
                 ]
               : undefined
@@ -124,7 +113,7 @@ const StreamStatusPill: React.FC = () => {
       }
     >
       <span
-        role="button"
+        role="img"
         aria-label="SSE 流状态"
         className={view.tone === 'ok' ? 'stream-pill-ok' : undefined}
         style={{
@@ -145,7 +134,7 @@ const StreamStatusPill: React.FC = () => {
         {view.tone === 'alert' ? (
           <Badge color={Colors.ORANGE_RED} text={label} />
         ) : (
-          <Badge status={view.badge} text={label} />
+          <Badge status={BADGE_OF[view.tone]} text={label} />
         )}
       </span>
     </Tooltip>
