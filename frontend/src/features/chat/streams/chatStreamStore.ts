@@ -87,6 +87,7 @@ import type {
   StreamBackup,
   StreamEvent,
   StreamStatus,
+  ReconnectStatus,
   ResumeResult,
 } from './backupTypes'; // 5.1 唯一定义处
 import {
@@ -152,16 +153,17 @@ export function getActiveSessionStatusList(): Array<{
 
 /**
  * 2026-11-02 小欧 - 顶栏流状态灯数据源：整库一次聚合，只读、绝不创建会话。
- * 挑选口径：先取非终态且非 idle 的会话，其中取 heartbeatTs 最大者（最近还在说话的那条）；
- * 全空返回空态。activeSessions 供浮层显示并发流条数。
+ * 挑选口径：非终态非 idle 会话中取"最近有动静"者(业务帧/心跳/任意字节三者最大)，全空返回空态。
  */
 export interface StreamPulse {
   active: boolean;
   sessionId: string | null;
-  status: string;
-  reconnectStatus: string;
+  status: StreamStatus;
+  reconnectStatus: ReconnectStatus;
   isReceiving: boolean;
   serverTaskId: string | null;
+  /** 读循环是否在飞(响应头已到、已开始收帧)。false=请求已发出但事件流未建立 */
+  pumpActive: boolean;
   heartbeatTs: number;
   /** 最近一个业务帧（chunk/action/observation/stats…，不含 `: ping`）的时间 */
   lastBizTs: number;
@@ -169,13 +171,17 @@ export interface StreamPulse {
   activeSessions: number;
 }
 
+/** 会话最近一次"有动静"的时刻: 三条时间线取最大, 避免用单一线索判断谁最活跃 — 2026-11-02 小欧 */
+const lastActivityOf = (s: ChatStreamSession): number =>
+  Math.max(s.lastDataTime, s.lastBizTs, s.heartbeatTs);
+
 export function buildStreamPulse(): StreamPulse {
   let picked: ChatStreamSession | undefined;
   let activeSessions = 0;
   sessions.forEach((s) => {
     if (isTerminalStatus(s.status) || s.status === 'idle') return;
     activeSessions += 1;
-    if (!picked || s.heartbeatTs > picked.heartbeatTs) picked = s;
+    if (!picked || lastActivityOf(s) > lastActivityOf(picked)) picked = s;
   });
   if (!picked) {
     return {
@@ -185,6 +191,7 @@ export function buildStreamPulse(): StreamPulse {
       reconnectStatus: 'idle',
       isReceiving: false,
       serverTaskId: null,
+      pumpActive: false,
       heartbeatTs: 0,
       lastBizTs: 0,
       lastDataTime: 0,
@@ -198,6 +205,7 @@ export function buildStreamPulse(): StreamPulse {
     reconnectStatus: picked.reconnectStatus,
     isReceiving: picked.isReceiving,
     serverTaskId: picked.serverTaskId,
+    pumpActive: picked.pumpActive,
     heartbeatTs: picked.heartbeatTs,
     lastBizTs: picked.lastBizTs,
     lastDataTime: picked.lastDataTime,

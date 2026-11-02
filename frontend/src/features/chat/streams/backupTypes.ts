@@ -44,6 +44,9 @@ export type StreamStatus =
   | 'failed'
   | 'cancelled';
 
+/** 连接恢复态: 快照与顶栏聚合共用同一联合, 禁止再写内联字面量 — 2026-11-02 小欧 */
+export type ReconnectStatus = 'idle' | 'connecting' | 'reconnecting' | 'failed';
+
 export type ResumeResult =
   | 'terminal'
   | 'pending_draft'
@@ -87,7 +90,7 @@ export interface SessionSnapshot {
   status: StreamStatus;
   /** v1.29：raw 形态（见上方类型定义），归一化在消费侧 */
   pendingAuthorization: PendingAuthorizationPayload | null;
-  reconnectStatus: 'idle' | 'connecting' | 'reconnecting' | 'failed';
+  reconnectStatus: ReconnectStatus;
   /**
    * 2026-09-29 22:47:10 小欧（[63] 5.4 防退化修复）：最近一次心跳时间戳。
    * 5.4 原稿未把它列入快照，bump() 因 11 个快照键全等而早退不通知 → useSyncExternalStore

@@ -1,35 +1,24 @@
-﻿// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏 SSE 流状态灯数据源。1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏), 派生纯函数导出供单测 — 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 状态机改为看业务帧: 心跳只证明连接没断, 不能证明后端在产出;
-//   原判据用"任何字节"(含 `: ping`) → 只发心跳的空转流永远显示"流进行中" — 小欧-2026-11-02
-import { useEffect, useState } from 'react';
+﻿// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏流状态灯数据源, 1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 判据拆三线: lastBizTs=有无产出 / heartbeatTs=连接断没断 / lastDataTime=对齐 60s 判死; 补"连接中"档 — 小欧-2026-11-02
+import { useSyncExternalStore } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
 import type { StreamPulse } from '../streams/chatStreamStore';
+import type { Tone } from '../../../utils/tone';
 
 /** 采样周期: 只展示"距今秒数", 1s 粒度足够 — 2026-11-02 小欧 */
 const PULSE_TICK_MS = 1000;
 
 /**
- * 静默阈值: 30s。
- *
- * 三处口径共用一个数, 靠的是后端的时序预算: 流一静默, 后端 25s 发一次 `: ping`;
- * 因此"30s 没业务帧"= 一个心跳周期已经过去还没产出, "30s 没字节"= 连心跳都断了一轮。
- * 两个判断都以此为界, 不各设一套数字 (改后端 HEARTBEAT_INTERVAL 须同步本值)。
- *
- * 关键区分 (这是原实现的病根):
- *   - lastBizTs  只被业务帧(chunk/action/observation/stats…)刷新 → 答"后端在不在干活"
- *   - heartbeatTs 只被 `: ping` 刷新                              → 答"连接断没断"
- *   - lastDataTime 任何字节都刷新                                 → 只用于和 transport 判死窗口对齐
- *   只看 lastDataTime 会把"只发心跳的空转"当成"正在产出", 灯永远是绿的。
- * — 2026-11-02 小欧
+ * 静默阈值 30s = 后端心跳上限 25s(settings_registry range_[5,25]) + 5s 余量;
+ * 心跳必先于阈值到达, 灯不会在"正常的静默期"掉到更重的档 — 2026-11-02 小欧
  */
 const STALE_SEC = 30;
 
-export type StreamTone = 'ok' | 'warn' | 'alert' | 'error' | 'neutral';
+export type StreamTone = Tone;
 
 export interface StreamPulseView {
   tone: StreamTone;
-  badge: 'success' | 'processing' | 'warning' | 'error' | 'default';
   text: string;
   main: string;
   pulse: StreamPulse;
@@ -50,8 +39,7 @@ const ageOf = (ts: number, nowMs: number): number | null =>
 
 /**
  * 2026-11-02 小欧 - 流状态 → 灯态单一派生口（纯函数，可单测）。
- * 优先级：断流 > 重连/恢复 > 等确认 > 有产出 > 只有心跳 > 都没了。
- * 判据全部取 store 既有字段，不新造状态。
+ * 优先级：断流 > 重连/恢复 > 等确认 > 未建流 > 有产出 > 只有心跳 > 都没了。
  */
 export const deriveStreamState = (
   p: StreamPulse,
@@ -62,8 +50,7 @@ export const deriveStreamState = (
   const bizAgeSec = ageOf(p.lastBizTs, nowMs);
   const bizStale = bizAgeSec !== null && bizAgeSec >= STALE_SEC;
   const dataStale = dataAgeSec !== null && dataAgeSec >= STALE_SEC;
-  // "在产出"必须有证据: 有业务帧且未超阈值。从没收到过业务帧(会话刚建)一律不算产出 ——
-  //   宁可让灯显示"等待后端", 也不要让只发心跳的空转流冒充"进行中" — 2026-11-02 小欧
+  // "在产出"必须有证据: 有业务帧且未超阈值。从没收到过业务帧一律不算产出 — 2026-11-02 小欧
   const hasOutput = bizAgeSec !== null && bizAgeSec < STALE_SEC;
   const base = {
     pulse: p,
@@ -78,18 +65,14 @@ export const deriveStreamState = (
     return {
       ...base,
       tone: 'neutral',
-      badge: 'default',
       text: '无流',
       main: '当前没有进行中的任务流',
     };
   }
-  // 2026-11-02 小欧 - status='failed' 是终态, store 聚合口不会把终态会话算作活跃流;
-  //   该分支只作纯函数防御(外部直接喂终态快照时仍判中断), 真正的"流中断"由 reconnectStatus=failed 表达 — 小欧-2026-11-02
   if (p.status === 'failed' || p.reconnectStatus === 'failed') {
     return {
       ...base,
       tone: 'error',
-      badge: 'error',
       text: '流中断',
       main: '连接已断开且未能自动恢复，可在会话内重新发送',
     };
@@ -98,7 +81,6 @@ export const deriveStreamState = (
     return {
       ...base,
       tone: 'warn',
-      badge: 'warning',
       text: '重连中',
       main: '连接中断，正按 after_seq 断点续传',
     };
@@ -107,52 +89,48 @@ export const deriveStreamState = (
     return {
       ...base,
       tone: 'warn',
-      badge: 'warning',
       text: '等待确认',
       main: '任务在等人工确认，空闲计时已暂停',
     };
   }
-  if (p.isReceiving || p.status === 'active' || p.status === 'retrying') {
-    // 一档: 业务帧在流动 → 后端真在产出
-    if (hasOutput) {
-      return {
-        ...base,
-        tone: 'ok',
-        badge: 'processing',
-        text: '流进行中',
-        main: '后端正在推送事件',
-      };
-    }
-    // 二档: 业务帧停了, 但心跳还在 → 连接正常、后端暂时没输出(思考/跑工具/排队)
-    if (heartbeatAgeSec !== null && heartbeatAgeSec < STALE_SEC) {
-      return {
-        ...base,
-        tone: 'warn',
-        badge: 'warning',
-        text: '流迟滞',
-        main:
-          bizAgeSec === null
-            ? '心跳正常，尚未收到任何业务事件（后端在思考或执行工具，连接未断）'
-            : `已 ${bizAgeSec} 秒无事件输出，心跳正常（后端在思考或执行工具，连接未断）`,
-      };
-    }
-    // 三档: 心跳也过期 → 连保活都断了, 只等 transport 60s 判死。橘红: 比迟滞更重, 但还没到中断
+  // 请求已发出、读循环还没建立(响应头未到): 不是"没产出", 只是还没开始收 — 2026-11-02 小欧
+  if (!p.pumpActive) {
     return {
       ...base,
-      tone: 'alert',
-      badge: 'warning',
-      text: '流静默',
-      main: `已 ${dataAgeSec ?? 0} 秒无任何数据（业务帧与心跳均无）`,
+      tone: 'neutral',
+      text: '连接中',
+      main: '请求已发出，等待后端开始推送事件',
     };
   }
-  // 兜底: pulse.status 只可能是 active/paused/retrying/recovering(其余状态被 store 过滤),
-  //   上面四档已全覆盖, 本分支正常不可达。语义与"无流"同(灰=没有在跑的东西), 不留第二个灰标签 — 2026-11-02 小欧
+  if (hasOutput) {
+    return {
+      ...base,
+      tone: 'ok',
+      text: '流进行中',
+      main: '后端正在推送事件',
+    };
+  }
+  // 业务帧停了, 但心跳还在 → 后端在思考/跑工具, 连接未断
+  if (heartbeatAgeSec !== null && heartbeatAgeSec < STALE_SEC) {
+    return {
+      ...base,
+      tone: 'warn',
+      text: '流迟滞',
+      main:
+        bizAgeSec === null
+          ? '心跳正常，尚未收到业务事件（后端在思考或执行工具，连接未断）'
+          : `已 ${bizAgeSec} 秒无事件输出，心跳正常（后端在思考或执行工具，连接未断）`,
+    };
+  }
+  // 心跳也过期 → 连保活都断了, 只等 transport 60s 判死。橘红: 比迟滞更重, 但还没到中断
   return {
     ...base,
-    tone: 'neutral',
-    badge: 'default',
-    text: '无流',
-    main: '当前没有进行中的任务流',
+    tone: 'alert',
+    text: '流静默',
+    main:
+      dataAgeSec === null
+        ? '尚未收到任何数据（业务帧与心跳均无）'
+        : `已 ${dataAgeSec} 秒无任何数据（业务帧与心跳均无）`,
   };
 };
 
@@ -169,23 +147,38 @@ const sameView = (a: StreamPulseView, b: StreamPulseView): boolean =>
   a.pulse.status === b.pulse.status &&
   a.pulse.reconnectStatus === b.pulse.reconnectStatus &&
   a.pulse.serverTaskId === b.pulse.serverTaskId &&
-  a.pulse.activeSessions === b.pulse.activeSessions;
+  a.pulse.activeSessions === b.pulse.activeSessions &&
+  a.pulse.pumpActive === b.pulse.pumpActive;
 
-/** 2026-11-02 小欧 - 顶栏流状态灯: 1s 采样。派生结果无变化时返回旧引用, 无谓重渲为零。 */
+// 2026-11-02 小欧 - 全应用共用一个 1s ticker + 一份快照: 顶栏两个胶囊读同一事实, 不同步各自的定时器 — 小欧-2026-11-02
+let cachedView: StreamPulseView | null = null;
+let timer: number | null = null;
+const listeners = new Set<() => void>();
+
+const readView = (): StreamPulseView => {
+  const next = deriveStreamState(chatStreamStore.getPulse(), Date.now());
+  if (!cachedView || !sameView(cachedView, next)) cachedView = next;
+  return cachedView;
+};
+
+const subscribe = (listener: () => void): (() => void) => {
+  listeners.add(listener);
+  if (timer === null) {
+    timer = window.setInterval(() => {
+      readView();
+      listeners.forEach((fn) => fn());
+    }, PULSE_TICK_MS);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && timer !== null) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  };
+};
+
+/** 2026-11-02 小欧 - 顶栏流状态灯: 共享 1s 采样, 派生结果无变化时引用不变, 无谓重渲为零。 */
 export function useStreamPulse(): StreamPulseView {
-  const [view, setView] = useState<StreamPulseView>(() =>
-    deriveStreamState(chatStreamStore.getPulse(), Date.now())
-  );
-
-  useEffect(() => {
-    const tick = () => {
-      const next = deriveStreamState(chatStreamStore.getPulse(), Date.now());
-      setView((prev) => (sameView(prev, next) ? prev : next));
-    };
-    tick();
-    const id = window.setInterval(tick, PULSE_TICK_MS);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return view;
+  return useSyncExternalStore(subscribe, readView, readView);
 }
