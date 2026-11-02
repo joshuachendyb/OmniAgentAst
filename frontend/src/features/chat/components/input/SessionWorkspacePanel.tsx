@@ -15,10 +15,16 @@
  * 2026-11-02 小欧 - 删本地 isAbsolute(自建盘符/UNC 正则), 复用 utils/projectPath.isAbsolutePath — 小欧-2026-11-02
  * 2026-11-02 小欧 - 全量重写: 只读区两行常驻、行结构两行真grid、路径完整折行不裁剪、
  *   属性去色、422草稿恢复、Esc脏确认、三态互斥 — 小欧-2026-11-02
+ * 2026-11-02 小欧 - 一致性整改: 路径配对统一 wsPathKey、属性持久化下沉 wsProp、只读区抽 CtxRow、
+ *   恢复条按 recovered 常驻(问题改完仍可放弃)、取数显式 prune — 小欧-2026-11-02
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InputRef } from 'antd';
-import type { ClipboardEvent as ReactClipboardEvent } from 'react';
+import type {
+  ClipboardEvent as ReactClipboardEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from 'react';
 import {
   Modal,
   List,
@@ -66,8 +72,10 @@ import { workspaceStore } from '../../services/sessionWorkspaceStore';
 import { isAbsolutePath } from '@/utils/projectPath';
 import {
   DEFAULT_WS_PROP,
-  WS_PROP_PRESETS,
+  saveCustomProp,
+  wsPathKey,
   wsPropLabel as propLabel,
+  wsPropOptions,
   wsPropValue as propValue,
 } from '@/utils/wsProp';
 
@@ -82,7 +90,7 @@ const ACTION_COL = 104;
 /** 只读区标签列宽（两行标签同列起，值列才可能对齐） */
 const CTX_LABEL_WIDTH = 72;
 
-/** 路径完整显示：超宽折行，任意字符可断（无分隔的长目录名也能断），不裁剪不省略 */
+/** 路径文本与次要文字样式：面板内多行复用，避免同一对字色散落十余处 — 小欧-2026-11-02 */
 const PATH_TEXT_STYLE = {
   display: 'block',
   fontFamily: FontFamily.MONO,
@@ -91,6 +99,78 @@ const PATH_TEXT_STYLE = {
   lineHeight: '20px',
   wordBreak: 'break-all',
 } as const;
+
+/** 次要文字（正文色 + 12 号）：面板内十余处同款，收成一处 — 小欧-2026-11-02 */
+const TEXT_MUTED = {
+  fontSize: FontSize.SECONDARY,
+  color: Colors.TEXT.PRIMARY,
+} as const;
+
+/** 只读区一行（项目根 / 授权目录）：标签列定宽对齐，值完整折行不裁剪 — 小欧-2026-11-02 */
+function CtxRow({
+  icon,
+  label,
+  value,
+  copyText,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  copyText: string;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: Spacing.XS,
+        minHeight: 22,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 14,
+          lineHeight: '22px',
+          color: Colors.TEXT.SECONDARY,
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </span>
+      <Typography.Text
+        style={{
+          width: CTX_LABEL_WIDTH,
+          flexShrink: 0,
+          lineHeight: '22px',
+          ...TEXT_MUTED,
+        }}
+      >
+        {label}
+      </Typography.Text>
+      <Typography.Text
+        copyable={
+          copyText ? { text: copyText, tooltips: ['复制', '已复制'] } : false
+        }
+        style={{
+          fontFamily: FontFamily.MONO,
+          lineHeight: '22px',
+          minWidth: 0,
+          wordBreak: 'break-all',
+          ...TEXT_MUTED,
+        }}
+      >
+        {value || '（未配置）'}
+      </Typography.Text>
+    </div>
+  );
+}
+
+/** Esc：先掐断冒泡（否则弹窗一起关），再执行就地处理 — 小欧-2026-11-02 */
+const stopEsc = (ev: ReactKeyboardEvent, run: () => void) => {
+  if (ev.key !== 'Escape') return;
+  ev.stopPropagation();
+  run();
+};
 
 /** 面板内部草稿：is_default 只读展示（PATCH 不携带） */
 type WsDraft = {
@@ -112,33 +192,6 @@ const toDraft = (w: {
   memo: w.memo || '',
   is_default: Boolean(w.is_default),
 });
-
-const CUSTOM_PROPS_KEY = 'ws_custom_props';
-const MAX_CUSTOM_PROPS = 16;
-
-/** 读自定义属性列表（localStorage，失败降级空数组） */
-function loadCustomProps(): string[] {
-  try {
-    const raw = localStorage.getItem(CUSTOM_PROPS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-/** 存自定义属性（预设不存、已有不存、FIFO 淘汰、失败静默） */
-function saveCustomProp(prop: string): void {
-  if (WS_PROP_PRESETS.some((p) => p.value === prop || p.label === prop)) return;
-  const list = loadCustomProps();
-  if (list.includes(prop)) return;
-  list.push(prop);
-  if (list.length > MAX_CUSTOM_PROPS) list.shift();
-  try {
-    localStorage.setItem(CUSTOM_PROPS_KEY, JSON.stringify(list));
-  } catch {
-    /* 隐私模式/配额满：静默降级，不影响主流程 */
-  }
-}
 
 export default function SessionWorkspacePanel({
   sessionId,
@@ -176,19 +229,8 @@ export default function SessionWorkspacePanel({
 
   const badCount = Object.keys(badMap).length;
 
-  /** AutoComplete options = 预设 + localStorage 自定义（去重），新增区/编辑区共享 */
-  const propOptions = useMemo(() => {
-    const base = WS_PROP_PRESETS.map((p) => ({
-      value: p.value,
-      label: p.label,
-    }));
-    const extra = loadCustomProps()
-      .filter(
-        (c) => !WS_PROP_PRESETS.some((p) => p.value === c || p.label === c)
-      )
-      .map((c) => ({ value: c, label: c }));
-    return [...base, ...extra];
-  }, []);
+  /** AutoComplete options = 预设 + 自定义（wsProp 单一真源，面板不重复过滤） — 小欧-2026-11-02 */
+  const propOptions = useMemo(() => wsPropOptions(), []);
 
   /** 打开即重拉（无暂存：关闭即丢）。
    *  422 快照优先于库真值：用户上次提交没通过时，草稿比库更接近他的意图。 */
@@ -196,7 +238,8 @@ export default function SessionWorkspacePanel({
     const seq = ++loadSeqRef.current;
     setLoadState('loading');
     try {
-      const r = await sessionApi.getWorkspaces(sessionId);
+      // prune=true: 只有"用户主动打开面板"才清库；浏览页/对账一律纯读 — 小欧-2026-11-02
+      const r = await sessionApi.getWorkspaces(sessionId, true);
       if (seq !== loadSeqRef.current) return;
       setProjectRoot(r.project_root);
       setAllowedDirs(r.allowed_dirs);
@@ -217,17 +260,17 @@ export default function SessionWorkspacePanel({
           const defaults = new Set(
             r.workspaces
               .filter((w) => w.is_default)
-              .map((w) => w.path.toLowerCase())
+              .map((w) => wsPathKey(w.path))
           );
           setEntries(
             rec.items.map((i) => ({
               ...toDraft(i),
-              is_default: defaults.has(i.path.toLowerCase()),
+              is_default: defaults.has(wsPathKey(i.path)),
             }))
           );
           setBadMap(
             Object.fromEntries(
-              rec.bad.map((b) => [b.path.toLowerCase(), b.reason])
+              rec.bad.map((b) => [wsPathKey(b.path), b.reason])
             )
           );
           setRecovered(true);
@@ -266,7 +309,7 @@ export default function SessionWorkspacePanel({
   /** 清掉某路径（小写）的问题标记 */
   const dropBad = (p: string) =>
     setBadMap((m) => {
-      const k = p.toLowerCase();
+      const k = wsPathKey(p);
       if (!m[k]) return m;
       const next = { ...m };
       delete next[k];
@@ -281,9 +324,9 @@ export default function SessionWorkspacePanel({
     dirtyRef.current = true;
     dropBad(v);
     setEntries((es) =>
-      es.some((e) => e.path.toLowerCase() === v.toLowerCase())
+      es.some((e) => wsPathKey(e.path) === wsPathKey(v))
         ? es.map((e) =>
-            e.path.toLowerCase() === v.toLowerCase()
+            wsPathKey(e.path) === wsPathKey(v)
               ? { ...e, workspace_property: p, memo }
               : e
           )
@@ -307,7 +350,7 @@ export default function SessionWorkspacePanel({
   };
 
   /** 粘贴收尾：合法条已入列则清备注；非法行留在输入框等修正 */
-  const setTheRest = (bad: string[], goodCount: number) => {
+  const applyPasteResult = (bad: string[], goodCount: number) => {
     setInput(bad.join('\n'));
     if (goodCount > 0) {
       setMemoInput('');
@@ -334,7 +377,7 @@ export default function SessionWorkspacePanel({
     const good = lines.filter(isAbsolutePath);
     const bad = lines.filter((l) => !isAbsolutePath(l));
     good.forEach((v) => pushDraft(v, propInput, memoInput.trim()));
-    setTheRest(bad, good.length);
+    applyPasteResult(bad, good.length);
   };
 
   /** 行级复制（真需求：粘到资源管理器/终端） */
@@ -366,7 +409,7 @@ export default function SessionWorkspacePanel({
       return;
     }
     const clash = entries.some(
-      (e) => e.path !== editingPath && e.path.toLowerCase() === v.toLowerCase()
+      (e) => e.path !== editingPath && wsPathKey(e.path) === wsPathKey(v)
     );
     if (clash) {
       setEditErr('该目录已在列表中');
@@ -441,7 +484,7 @@ export default function SessionWorkspacePanel({
   };
 
   /** 快照里未能对应到任何行的原因（极少见：后端归一化后路径形态变了） */
-  const matchedKeys = new Set(entries.map((e) => e.path.toLowerCase()));
+  const matchedKeys = new Set(entries.map((e) => wsPathKey(e.path)));
   const unmatchedBad = Object.entries(badMap).filter(
     ([k]) => !matchedKeys.has(k)
   );
@@ -482,103 +525,23 @@ export default function SessionWorkspacePanel({
             padding: `${Spacing.XS}px 0`,
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: Spacing.XS,
-              minHeight: 22,
-            }}
-          >
-            <FolderOutlined
-              style={{
-                fontSize: 14,
-                lineHeight: '22px',
-                color: Colors.TEXT.SECONDARY,
-                flexShrink: 0,
-              }}
-            />
-            <Typography.Text
-              style={{
-                width: CTX_LABEL_WIDTH,
-                flexShrink: 0,
-                lineHeight: '22px',
-                fontSize: FontSize.SECONDARY,
-                color: Colors.TEXT.PRIMARY,
-              }}
-            >
-              项目根
-            </Typography.Text>
-            <Typography.Text
-              copyable={
-                projectRoot
-                  ? { text: projectRoot, tooltips: ['复制', '已复制'] }
-                  : false
-              }
-              style={{
-                fontFamily: FontFamily.MONO,
-                fontSize: FontSize.SECONDARY,
-                lineHeight: '22px',
-                color: Colors.TEXT.PRIMARY,
-                minWidth: 0,
-                wordBreak: 'break-all',
-              }}
-            >
-              {projectRoot || '（未配置）'}
-            </Typography.Text>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: Spacing.XS,
-              minHeight: 22,
-            }}
-          >
-            <LockOutlined
-              style={{
-                fontSize: 14,
-                lineHeight: '22px',
-                color: Colors.TEXT.SECONDARY,
-                flexShrink: 0,
-              }}
-            />
-            <Typography.Text
-              style={{
-                width: CTX_LABEL_WIDTH,
-                flexShrink: 0,
-                lineHeight: '22px',
-                fontSize: FontSize.SECONDARY,
-                color: Colors.TEXT.PRIMARY,
-              }}
-            >
-              授权目录
-            </Typography.Text>
-            <Typography.Text
-              copyable={
-                allowedDirs.length
-                  ? {
-                      text: allowedDirs.join('\n'),
-                      tooltips: ['复制', '已复制'],
-                    }
-                  : false
-              }
-              style={{
-                fontFamily: FontFamily.MONO,
-                fontSize: FontSize.SECONDARY,
-                lineHeight: '22px',
-                color: Colors.TEXT.PRIMARY,
-                minWidth: 0,
-                wordBreak: 'break-all',
-              }}
-            >
-              {allowedDirs.length ? allowedDirs.join('；') : '（未配置）'}
-            </Typography.Text>
-          </div>
+          <CtxRow
+            icon={<FolderOutlined />}
+            label="项目根"
+            value={projectRoot}
+            copyText={projectRoot}
+          />
+          <CtxRow
+            icon={<LockOutlined />}
+            label="授权目录"
+            value={allowedDirs.join('；')}
+            copyText={allowedDirs.length ? allowedDirs.join('\n') : ''}
+          />
         </div>
 
-        {/* 恢复条：保存被拒后草稿已恢复，问题行需修正或移除 */}
-        {recovered && badCount > 0 && (
+        {/* 恢复条：只要草稿来自 422 快照就常驻（问题改完后仍需一个"放弃"出口，
+            否则快照会一直留在 store，下次打开又恢复，与"关闭即放弃"直觉冲突） */}
+        {recovered && (
           <div
             role="status"
             style={{
@@ -592,15 +555,10 @@ export default function SessionWorkspacePanel({
             <div
               style={{ display: 'flex', alignItems: 'center', gap: Spacing.MD }}
             >
-              <Typography.Text
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.PRIMARY,
-                  flex: 1,
-                }}
-              >
-                上次保存未通过，已恢复你的修改（{badCount}{' '}
-                条需修正）。修正或移除后才能保存。
+              <Typography.Text style={{ ...TEXT_MUTED, flex: 1 }}>
+                {badCount > 0
+                  ? `上次保存未通过，已恢复你的修改（${badCount} 条需修正）。修正或移除后才能保存。`
+                  : '上次保存未通过，已恢复你的修改。确认无误后点「确定」保存。'}
               </Typography.Text>
               <Button
                 type="text"
@@ -638,11 +596,7 @@ export default function SessionWorkspacePanel({
           }}
         >
           <Typography.Text
-            style={{
-              fontSize: FontSize.SECONDARY,
-              fontWeight: FontWeight.MEDIUM,
-              color: Colors.TEXT.PRIMARY,
-            }}
+            style={{ ...TEXT_MUTED, fontWeight: FontWeight.MEDIUM }}
           >
             已配置目录
           </Typography.Text>
@@ -724,12 +678,7 @@ export default function SessionWorkspacePanel({
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
-                    <span
-                      style={{
-                        fontSize: FontSize.SECONDARY,
-                        color: Colors.TEXT.PRIMARY,
-                      }}
-                    >
+                    <span style={TEXT_MUTED}>
                       此会话尚未配置目录。发送消息后系统会自动创建默认工作区。
                     </span>
                   }
@@ -748,7 +697,7 @@ export default function SessionWorkspacePanel({
             }}
             renderItem={(e) => {
               const editing = editingPath === e.path;
-              const reason = badMap[e.path.toLowerCase()];
+              const reason = badMap[wsPathKey(e.path)];
               return (
                 <List.Item style={{ padding: 0, minHeight: 48 }}>
                   {/* 真网格：内容列多少字都不影响动作列位置；
@@ -778,18 +727,12 @@ export default function SessionWorkspacePanel({
                               setEditErr('');
                             }}
                             onPressEnter={saveEdit}
-                            onKeyDown={(ev) => {
-                              if (ev.key === 'Escape') {
-                                ev.stopPropagation(); // 行级取消，不关窗
-                                cancelEdit();
-                              }
-                            }}
+                            onKeyDown={(ev) => stopEsc(ev, cancelEdit)}
                           />
                           {e.is_default && (
                             <Typography.Text
                               style={{
-                                fontSize: FontSize.SECONDARY,
-                                color: Colors.TEXT.PRIMARY,
+                                ...TEXT_MUTED,
                                 display: 'block',
                                 marginTop: Spacing.XS,
                               }}
@@ -813,12 +756,7 @@ export default function SessionWorkspacePanel({
                               placeholder="备注（可选）"
                               onChange={(ev) => setEditMemo(ev.target.value)}
                               onPressEnter={saveEdit}
-                              onKeyDown={(ev) => {
-                                if (ev.key === 'Escape') {
-                                  ev.stopPropagation();
-                                  cancelEdit();
-                                }
-                              }}
+                              onKeyDown={(ev) => stopEsc(ev, cancelEdit)}
                               style={{ flex: 1 }}
                             />
                           </Space.Compact>
@@ -890,11 +828,7 @@ export default function SessionWorkspacePanel({
                               </Tag>
                             )}
                             <Typography.Text
-                              style={{
-                                fontSize: FontSize.SECONDARY,
-                                color: Colors.TEXT.PRIMARY,
-                                flexShrink: 0,
-                              }}
+                              style={{ ...TEXT_MUTED, flexShrink: 0 }}
                             >
                               {propLabel(e.workspace_property)}
                             </Typography.Text>
@@ -923,8 +857,7 @@ export default function SessionWorkspacePanel({
                             ) : e.memo ? (
                               <Typography.Text
                                 style={{
-                                  fontSize: FontSize.SECONDARY,
-                                  color: Colors.TEXT.PRIMARY,
+                                  ...TEXT_MUTED,
                                   minWidth: 0,
                                   wordBreak: 'break-all',
                                 }}
@@ -1017,11 +950,7 @@ export default function SessionWorkspacePanel({
               }}
             >
               <Typography.Text
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  fontWeight: FontWeight.MEDIUM,
-                  color: Colors.TEXT.PRIMARY,
-                }}
+                style={{ ...TEXT_MUTED, fontWeight: FontWeight.MEDIUM }}
               >
                 新增目录
               </Typography.Text>
@@ -1045,11 +974,12 @@ export default function SessionWorkspacePanel({
                 onPaste={handlePaste}
                 onPressEnter={addEntry}
                 onKeyDown={(ev) => {
-                  if (ev.key !== 'Escape') return;
+                  // 有内容时 Esc=就地清空（不关窗）；空着则交给弹窗关闭 — 小欧-2026-11-02
                   if (input || inputErr) {
-                    ev.stopPropagation(); // 有内容时 Esc=就地清空，不关窗
-                    setInput('');
-                    setInputErr('');
+                    stopEsc(ev, () => {
+                      setInput('');
+                      setInputErr('');
+                    });
                   }
                 }}
               />
@@ -1089,10 +1019,7 @@ export default function SessionWorkspacePanel({
               onChange={(e) => setMemoInput(e.target.value)}
               onPressEnter={addEntry}
               onKeyDown={(ev) => {
-                if (ev.key === 'Escape' && memoInput) {
-                  ev.stopPropagation();
-                  setMemoInput('');
-                }
+                if (memoInput) stopEsc(ev, () => setMemoInput(''));
               }}
             />
           </>

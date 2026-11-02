@@ -19,8 +19,8 @@
 
 // 编辑历史: 2026-10-30 小欧 - [54]全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
 //   (标注类, 不参与安全判定; 前端只读展示) — 小欧-2026-10-30
-// 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里已无不可用行, UI 无需表达该状态);
-//   WorkspacesResponse 删 unusable、增 pruned(清理计数, >0 一次性提示) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里不再回传不可用行, UI 无需表达该状态);
+//   WorkspacesResponse 删 unusable、增 pruned(仅 prune=true 时非 0) — 小欧-2026-11-02
 
 /**
  * 流式API响应类型定义
@@ -408,7 +408,7 @@ export interface WorkspaceEntry {
 export interface WorkspacesResponse {
   session_id: string;
   workspaces: WorkspaceEntry[];
-  /** 本次 GET 清理的不可用行数（>0 时前端一次性提示；不落常驻 UI）— 2026-11-02 小欧 */
+  /** 仅 prune=true 时清理的不可用行数（>0 一次性提示；不落常驻 UI）— 2026-11-02 小欧 */
   pruned: number;
   project_root: string;
   allowed_dirs: string[];

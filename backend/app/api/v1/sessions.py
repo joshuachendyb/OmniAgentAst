@@ -22,8 +22,8 @@
 
 # 2026-10-30 小欧 - [54]全链路重构: WorkspaceItem/WorkspaceUpdate 收单形态(list[WorkspaceItem], 不收 list[str]);
 #   GET 返回四字段(path/workspace_property/memo/is_default); PATCH 传 dict 三元组。 — 小欧-2026-10-30
-# 2026-11-02 小欧 - GET /workspaces 即清: 不可用行经 prune_unusable_rows 在请求内删库行,
-#   清理条数作 pruned 带回(前端一次性提示); 响应删 unusable — 小欧-2026-11-02
+# 2026-11-02 小欧 - GET /workspaces 增 prune(默认 false 纯读): 仅面板打开时显式清不可用行,
+#   条数按 rowcount 作 pruned 带回; 响应不含 unusable — 小欧-2026-11-02
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
@@ -154,12 +154,11 @@ class WorkspaceUpdate(BaseModel):
 
 
 @router.get("/sessions/{session_id}/workspaces")
-def get_session_workspaces_endpoint(session_id: str):
+def get_session_workspaces_endpoint(session_id: str, prune: bool = False):
     """读该会话使用的目录列表。
 
-    2026-11-02 小欧 - GET 即清: classify_workspace_rows 判出的不可用行（禁区/非法/
-    不存在）经 prune_unusable_rows 在本次请求内删库行（绝不动磁盘），清理条数作
-    pruned 带回供前端一次性提示；响应不再携带 unusable（库里已无不可用行）。
+    2026-11-02 小欧 - `prune=true` 才清库(面板打开时显式请求), 默认纯读: 历史页/文件页等
+    顺手 GET 的调用方不传参即零副作用。清理只删库行不动磁盘, 条数按 rowcount 作 pruned 带回；
     会话不存在/已删 → 404；顺带返回 project_root/allowed_dirs 只读字段（不进 PATCH）。"""
     from app.config import get_config
     from app.services.chat.workspace_service import (
@@ -173,7 +172,8 @@ def get_session_workspaces_endpoint(session_id: str):
             raise HTTPException(status_code=404, detail="会话不存在")
         rows = get_session_workspaces(conn, session_id)
         effective, unusable = classify_workspace_rows(rows)
-        pruned = prune_unusable_rows(conn, session_id, unusable)  # GET 即清: 只删库行, 不动磁盘
+        # prune 由调用方显式请求: 默认纯读, 浏览类 GET 不改数据 — 小欧-2026-11-02
+        pruned = prune_unusable_rows(conn, session_id, unusable) if prune else 0
     _cfg = get_config()
     return {
         "session_id": session_id,

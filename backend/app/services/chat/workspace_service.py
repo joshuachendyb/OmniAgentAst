@@ -14,6 +14,8 @@
 #   本模块只保留存储侧上限(MAX_WORKSPACES/MAX_PATH_CHARS); 渲染与截断不再散落编排层 — 小欧-2026-10-31
 # 2026-11-02 小欧 - 不可用行清库唯一出口 prune_unusable_rows(返回清理条数); _ws_precheck 补 is_dir;
 #   reconcile 废 mkdir 补建(用户目录永不自动建) + 默认区目录收口 _ensure_ws_dir — 小欧-2026-11-02
+# 2026-11-02 小欧 - 清库改调用方显式请求(默认纯读)且按 rowcount 计数; 新增 _judge_path 收口
+#   预检/过滤唯一判据, 消两处各写一套 — 小欧-2026-11-02
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -156,36 +158,52 @@ def _ws_deny_reason(p: str) -> Optional[str]:
     return None
 
 
+def _judge_path(p: str) -> tuple[Optional[str], Optional[str]]:
+    """路径合法性唯一判据（2026-11-02 小欧）—— 预检与过滤共用，禁两处各写一遍。
+
+    返回 (reason, kind)；reason 为 None 即通过（kind 同时为 None）。
+    顺序固定：禁区判定先行，再判存在性 —— 与 classify_workspace_rows 契约一致。
+    kind 机器可读（denied / missing），供 reconcile 按 kind 行事，不匹配文案。"""
+    reason = _ws_deny_reason(p)              # 禁区判定先行，全套判据
+    if reason:
+        return reason, "denied"
+    if not Path(p).is_dir():                 # 必须是目录：不存在/是文件都不收
+        return "目录不存在或不是目录", "missing"
+    return None, None
+
+
 def prune_unusable_rows(conn, session_id: str, unusable: list[dict]) -> int:
-    """不可用行清库唯一出口（2026-11-02 小欧）—— GET 与 reconcile 共用。
+    """不可用行清库唯一出口（2026-11-02 小欧）—— GET(prune) 与 reconcile 共用。
 
     库里只允许可用目录：禁区/非法/不存在三类一律删库行，处置口径一致。
-    返回本轮清掉的行数（GET 带进响应，前端据此一次性提示）。
+    返回本轮**实际删掉**的行数（按 rowcount，delete 未命中不计）：
+    GET 带进响应，前端据此一次性提示，绝不虚报。
     ⚠ 只删数据库行，绝不删磁盘目录（磁盘归用户处置）；单条失败只跳过，不拖垮请求。"""
     removed = 0
     for u in unusable:
         try:
-            conn.execute(
+            cur = conn.execute(
                 "DELETE FROM chat_session_workspaces WHERE session_id = ? AND path = ?",
                 (session_id, u["path"]))
         except Exception as _e:
             _ws_warn(f"不可用行清库失败(本轮保留, 下轮再试): {u['path']} - {_e}")
             continue
-        removed += 1
+        if cur.rowcount <= 0:                # 未命中: 库行已不存在(并发/形态差异), 不虚报
+            _ws_warn(f"不可用行未命中库行(已不在库中): {u['path']}")
+            continue
+        removed += cur.rowcount
         _ws_warn(f"不可用行已清库({u['kind']}): {u['path']}")
     return removed
 
 
 def _ws_precheck(paths: list[str]) -> list[dict]:
-    """合法性预检：逐条走判据。返回被拒清单，不抛异常（调用方整单 422）。
+    """合法性预检：逐条走 _judge_path 唯一判据。返回被拒清单，不抛异常（调用方整单 422）。
 
-    2026-11-02 小欧 - 补「目录必须存在」(is_dir)：missing 整单 422 逐条点名；
-    禁区判定先行，与 classify_workspace_rows 的裁决顺序一致。"""
+    2026-11-02 小欧 - 补「目录必须存在」：与 classify_workspace_rows 同判据同文案，
+    两处口径不再各写一套（判据变更只改 _judge_path）。"""
     rejected = []
     for p in paths:
-        reason = _ws_deny_reason(p)
-        if not reason and not Path(p).is_dir():
-            reason = "目录不存在（不收不存在的路径）"
+        reason, _kind = _judge_path(p)
         if reason:
             rejected.append({"path": p, "reason": reason})
     return rejected
@@ -274,8 +292,7 @@ def classify_workspace_rows(rows) -> tuple[list, list]:
 
     裁决顺序（禁区判定必须先于存在判定）：
        归一化失败 → 不可用（优雅跳过，绝不抛；调用方整单不崩）
-       `_ws_deny_reason` 全套判据 → 不可用（禁区/系统保护/宽根）
-       非目录（不存在，或是个文件）→ 不可用
+       `_judge_path(p)` → 其余判据（禁区/系统保护/宽根/非目录）单一真源，与预检同口径
        通过 → 有效
 
     unusable 每项带机器可读 `kind`（reconcile 按 kind 行事，不匹配 reason 字符串）：
@@ -288,12 +305,9 @@ def classify_workspace_rows(rows) -> tuple[list, list]:
             unusable.append({"path": r["path"], "reason": f"路径非法({type(_e).__name__})",
                              "kind": "illegal"})
             continue
-        reason = _ws_deny_reason(p)          # 禁区判定先行，全套判据
+        reason, kind = _judge_path(p)        # 判据单一真源，与 _ws_precheck 同口径
         if reason:
-            unusable.append({"path": p, "reason": reason, "kind": "denied"})
-            continue
-        if not Path(p).is_dir():             # 必须是目录：不存在/是文件都不收
-            unusable.append({"path": p, "reason": "不是目录或不存在", "kind": "missing"})
+            unusable.append({"path": p, "reason": reason, "kind": kind})
             continue
         _prop, _memo = _normalize_ws_meta(r["workspace_property"], r["memo"])
         _is_def = bool(r["is_default"])

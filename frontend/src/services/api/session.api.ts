@@ -11,6 +11,8 @@
 
 // 编辑历史: 2026-10-30 小欧 - [54]全链路重构: patchWorkspaces 入参改对象数组
 //   ({path, workspace_property, memo}[]), 不再收 string[]; GET 响应含四字段。 — 小欧-2026-10-30
+// 编辑历史: 2026-11-02 小欧 - getWorkspaces 增可选 prune(默认纯读): 仅面板打开时清不可用行,
+//   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -276,14 +278,18 @@ export const sessionApi = {
     return response.data;
   },
 
-  // 2026-10-10 小欧 - 文档[16] §3.6.1 新增：会话使用的目录读口
-  //   ⚠ 响应含 project_root/allowed_dirs 只读字段（决策82）：只展示，永不进 PATCH
-  getWorkspaces: async (sessionId: string): Promise<WorkspacesResponse> => {
+  // 2026-11-02 小欧 - 会话目录读口: prune=true 才清库(面板主动请求), 默认纯读零副作用;
+  //   响应含 project_root/allowed_dirs 只读字段, 只展示永不进 PATCH
+  getWorkspaces: async (
+    sessionId: string,
+    prune?: boolean
+  ): Promise<WorkspacesResponse> => {
     if (!sessionId || !sessionId.trim()) {
       throw new Error('会话ID不能为空');
     }
     const response = await api.get<WorkspacesResponse>(
-      `/sessions/${encodeURIComponent(sessionId)}/workspaces`
+      `/sessions/${encodeURIComponent(sessionId)}/workspaces`,
+      prune ? { params: { prune: true } } : undefined
     );
     return response.data;
   },
