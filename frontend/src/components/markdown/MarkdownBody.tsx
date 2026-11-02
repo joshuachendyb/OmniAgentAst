@@ -24,6 +24,9 @@
 //   1.12–1.17em 行间留缝 → 框线竖线断成虚线; 行高 ≤1.14 时竖线连成实线 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 文件引用分流放开外部路径：isValidRelPath 或 isExternalAbsPath（根外盘符绝对）
 //   都渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
+// 2026-11-02 小欧 - 文件引用改走唯一链接组件 PathLink（原 FileRefChip）：本文件只圈 markdown 结构
+//   （FILEREF_MD_RE），href 内部布局交 projectPath.parseFileRefLink 解析，形态门槛交 resolvePathTarget — 小欧-2026-11-02
+// 2026-11-02 小欧 - `/file-ref?` 前缀判据改调 projectPath.hasFileRefLink，删本文件内联 includes — 小欧-2026-11-02
 import React from 'react';
 import {
   BorderWidth,
@@ -36,10 +39,10 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
-// 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
-import { FileRefChip, isValidRelPath } from './FileRefChip';
-import { isDriveAbsPath } from '@/utils/projectPath';
-import { decodePathParam } from '@/utils/fileDeepLink';
+// 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink；形态门槛交由 resolvePathTarget — 小欧-2026-11-02
+// 2026-11-02 小欧 - 正文 chip 传 pin：恢复旧 FileRefChip 的「别针」引用入口（合并时丢失）— 小欧-2026-11-02
+import { PathLink } from '@/components/PathLink';
+import { hasFileRefLink, parseFileRefLink } from '@/utils/projectPath';
 
 /**
  * 行内标记: 代码 > 粗体 > 斜体, 按优先级单趟切分(不递归, 免嵌套自匹配)。
@@ -61,8 +64,9 @@ const LINE_STYLE: React.CSSProperties = { whiteSpace: 'pre-wrap' };
 //   ⚠ 绝不能把它作为**新的捕获组**加进 INLINE_RE —— String.split 会把每个捕获组都当独立片段返回，
 //   多一个组就会多出一片重复渲染。故用独立的 exec 循环（见 renderInline）。
 //   label 允许转义括号（\\] 等）：文件名含 ']' 时 label 会被转义，不放行就识别不到整条链接。
-const FILEREF_MD_RE =
-  /\[((?:\\.|[^\]])*)\]\(\/file-ref\?path=([^)\s]+)(?:&line=(\d+)(?:-(\d+))?)?\)/g;
+// 2026-11-02 小欧 - 本正则只圈 markdown 结构（label + href），href 内部布局交
+//   projectPath.parseFileRefLink 解析（唯一解析点，与 buildFileRefLink 同源）— 小欧-2026-11-02
+const FILEREF_MD_RE = /\[((?:\\.|[^\]])*)\]\((\/file-ref\?[^)\s]*)\)/g;
 
 /** 行内渲染（不含文件引用链接） */
 const renderPlainInline = (text: string, keyBase: string): React.ReactNode[] =>
@@ -121,7 +125,7 @@ const renderPlainInline = (text: string, keyBase: string): React.ReactNode[] =>
  *   切到 MD_IMPL=1 会让 J5 卡片**静默消失**（无任何报错）—— 故两分支都要覆盖。
  */
 const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
-  if (!text.includes('/file-ref?')) return renderPlainInline(text, keyBase);
+  if (!hasFileRefLink(text)) return renderPlainInline(text, keyBase);
   const out: React.ReactNode[] = [];
   let last = 0;
   let idx = 0;
@@ -133,18 +137,15 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
         ...renderPlainInline(text.slice(last, m.index), `${keyBase}-p${idx++}`)
       );
     }
-    const rel = decodePathParam(m[2]);
-    // 2026-10-22 小欧 - 外部盘符绝对路径（不在项目根内）同样渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
-    if (rel && (isValidRelPath(rel) || isDriveAbsPath(rel))) {
+    const parts = parseFileRefLink(m[2]);
+    // 2026-11-02 小欧 - 能否链接由 PathLink 内 resolvePathTarget 裁决，此处只判 href 是否合法 — 小欧-2026-11-02
+    if (parts) {
       out.push(
-        <FileRefChip
+        <PathLink
           key={`${keyBase}-fr${idx++}`}
-          relPath={rel}
-          lineRange={
-            m[3]
-              ? { start: Number(m[3]), end: m[4] ? Number(m[4]) : Number(m[3]) }
-              : undefined
-          }
+          rawPath={parts.rawPath}
+          lineRange={parts.lineRange}
+          pin
         />
       );
     } else {

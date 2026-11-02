@@ -17,13 +17,15 @@
 // 编辑历史: 2026-10-22 小杨 - 对象/数组值改递归渲染, 嵌套 path 字段同样可点;
 //   多行值走折叠体不做整段链接; 对象不再预生成 JSON 摘要(大对象省一次字符串化) — 小杨-2026-10-22
 // 2026-10-23 小欧 - 透传 tool 名：目录类工具（isDirToolPath）的 path 按目录渲染 — 小欧-2026-10-23
+// 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink），本文件只透传
+//   rawPath/dirHint/projectRoot — 小欧-2026-11-02
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
 // 2026-10-21 小杨 - 路径判定单一真源 + 路径可点击 + 项目根取数
 import { isDirToolPath, isPathParam } from './paramCategories';
 import { PathAwareJson } from './PathAwareJson';
-import { PathLink } from './PathLink';
+import { PathLink } from '@/components/PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import {
   BorderWidth,
@@ -167,9 +169,12 @@ const ParamNode: React.FC<ParamNodeProps> = ({
             <>
               {': '}
               <PathLink
-                value={value}
+                rawPath={value}
                 projectRoot={projectRoot}
-                isDirHint={dirHint}
+                dirHint={dirHint}
+                variant="inline"
+                strictShape
+                tooltip
               />
             </>
           ) : typeof value === 'object' && value !== null ? (

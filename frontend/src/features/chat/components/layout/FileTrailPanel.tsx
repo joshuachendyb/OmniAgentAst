@@ -15,6 +15,9 @@
 //   2026-10-24 小欧 - 点文件路径改 SPA 导航（useOptionalNavigate），不再新标签页打开；与正文 PathLink/FileRefChip 对齐 — 小欧-2026-10-24
 //   2026-10-30 小欧 - 引用提示统一走 quoteWithToast(成功/超限/读取失败三分支唯一实现): 原实现漏 too_many 分支,
 //     超上限被报成"读取失败", 用户会去检查一个根本没坏的文件 — 小欧-2026-10-30
+//   2026-11-02 小欧 - 行内路径改复用唯一链接组件 PathLink（删自建 button+nav+渲染期根解析）：
+//     原实现是第二套「路径点击 → 跳转」，用渲染期根，而 PathLink 用点击实时根，口径会漂；
+//     图标/可点性/不可链接降级一并交给 PathLink — 小欧-2026-11-02
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -28,20 +31,14 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Empty, Skeleton } from 'antd';
-import {
-  CaretRightOutlined,
-  FileOutlined,
-  FolderOutlined,
-  PaperClipOutlined,
-} from '@ant-design/icons';
+import { CaretRightOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { type RecentFile } from '@/services/api/file.api';
 // 2026-10-22 小欧 - 引用入口统一，不再直接调 composerRefStore
 import { quoteWithToast } from '@/features/refs/quoteToast'; // 引用提示三分支唯一实现 — 小欧 2026-10-30
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
-import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
-import { isDriveAbsPath } from '@/utils/projectPath';
-import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+// 2026-11-02 小欧 - 路径渲染复用唯一链接组件（判据/图标/点击口径/降级全在组件内）— 小欧-2026-11-02
+import { PathLink } from '@/components/PathLink';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
 
@@ -75,21 +72,6 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
 }) => {
   const { files, loading, reload } = useRecentFiles(sessionId);
   const [expanded, setExpanded] = useState(readExpanded);
-  // 2026-10-24 小欧 - SPA 导航（与正文 PathLink/FileRefChip 对齐），不再新标签页打开；
-  //   useOptionalNavigate 无 Router 上下文时整页跳兜底 — 小欧-2026-10-24
-  const nav = useOptionalNavigate();
-
-  const buildTrailPath = (f: RecentFile): string => {
-    const target =
-      f.type === 'dir'
-        ? /[\\/]$/.test(f.path)
-          ? f.path
-          : `${f.path}/`
-        : f.path;
-    return isDriveAbsPath(target)
-      ? buildExternalDeepLink(target)
-      : buildFileDeepLink(target);
-  };
 
   /**
    * 2026-10-21 小欧 - 足迹**自动刷新**：
@@ -220,106 +202,89 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
               本会话 Agent 还没有读写过文件
             </div>
           ) : (
-            files.map((f) => (
-              <div
-                key={f.path}
-                style={{
-                  display: 'flex',
-                  /* 2026-10-23 小欧 - 路径折多行时 center 会让图标/徽标/时间/引用悬在行中间
-                     错开首行 → flex-start 对齐首行（单行时两者等价） — 小欧-2026-10-23 */
-                  alignItems: 'flex-start',
-                  gap: Spacing.SM,
-                  padding: `${Spacing.XS}px 0`,
-                }}
-              >
-                {f.type === 'dir' ? (
-                  <FolderOutlined
-                    style={{ color: Colors.PRIMARY, flexShrink: 0 }}
-                  />
-                ) : (
-                  <FileOutlined
-                    style={{ color: Colors.PRIMARY, flexShrink: 0 }}
-                  />
-                )}
-                {/* 键盘目标①：文件路径 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
-                <button
-                  type="button"
-                  /* 2026-10-24 小欧 - SPA 导航（与正文 PathLink/FileRefChip 对齐），不再新标签页打开；
-                     useOptionalNavigate 无 Router 上下文时整页跳兜底 — 小欧-2026-10-24 */
-                  onClick={() => nav(buildTrailPath(f))}
+            files.map((f) => {
+              // 2026-11-02 小欧 - ops 兜底取一次：原 `(f.ops ?? [])` 在本行内写三遍 — 小欧-2026-11-02
+              const ops = f.ops ?? [];
+              return (
+                <div
+                  key={f.path}
                   style={{
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    padding: 0,
-                    color: Colors.TEXT.PRIMARY,
-                    textAlign: 'left',
-                    flex: 1,
-                    minWidth: 0,
-                    /* 2026-10-23 小欧 - 全路径不截断、超宽折行（去 ellipsis/nowrap） — 小欧-2026-10-23 */
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all',
+                    display: 'flex',
+                    /* 2026-10-23 小欧 - 路径折多行时 center 会让图标/徽标/时间/引用悬在行中间
+                       错开首行 → flex-start 对齐首行（单行时两者等价） — 小欧-2026-10-23 */
+                    alignItems: 'flex-start',
+                    gap: Spacing.SM,
+                    padding: `${Spacing.XS}px 0`,
                   }}
                 >
-                  {f.path}
-                </button>
-                {/* ops 徽标**只显前 2 个**，其余折叠为 +N（真实取值域 16 个工具名） */}
-                {(f.ops ?? []).slice(0, 2).map((op) => (
-                  <span
-                    key={op}
-                    style={{
-                      color: OP_COLOR[op] ?? Colors.TEXT.WEAK,
-                      fontSize: chatTokens.fontSM,
-                    }}
-                  >
-                    {OP_LABEL[op] ?? op}
+                  {/* 键盘目标①：文件路径 = 打开文件。2026-11-02 小欧 - 改复用唯一链接组件 PathLink：
+                      图标/可点性/点击实时取根/不可链接降级全在组件内，本面板不再自建 button+nav — 小欧-2026-11-02 */}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <PathLink
+                      rawPath={f.path}
+                      dirHint={f.type === 'dir'}
+                      variant="inline"
+                      tooltip
+                    />
                   </span>
-                ))}
-                {(f.ops ?? []).length > 2 && (
+                  {/* ops 徽标**只显前 2 个**，其余折叠为 +N（真实取值域 16 个工具名） */}
+                  {ops.slice(0, 2).map((op) => (
+                    <span
+                      key={op}
+                      style={{
+                        color: OP_COLOR[op] ?? Colors.TEXT.WEAK,
+                        fontSize: chatTokens.fontSM,
+                      }}
+                    >
+                      {OP_LABEL[op] ?? op}
+                    </span>
+                  ))}
+                  {ops.length > 2 && (
+                    <span
+                      style={{
+                        color: Colors.TEXT.WEAK,
+                        fontSize: chatTokens.fontSM,
+                      }}
+                    >
+                      +{ops.length - 2}
+                    </span>
+                  )}
                   <span
+                    title="文件最后修改时间"
                     style={{
-                      color: Colors.TEXT.WEAK,
+                      color: Colors.TEXT.SECONDARY,
                       fontSize: chatTokens.fontSM,
+                      marginLeft: 'auto',
                     }}
                   >
-                    +{(f.ops ?? []).length - 2}
+                    {f.mtime}
                   </span>
-                )}
-                <span
-                  title="文件最后修改时间"
-                  style={{
-                    color: Colors.TEXT.SECONDARY,
-                    fontSize: chatTokens.fontSM,
-                    marginLeft: 'auto',
-                  }}
-                >
-                  {f.mtime}
-                </span>
-                {/* 键盘目标②：引用（仅文本；图片由查看器处理，文本通道不读取）— 小杨-2026-10-21 */}
-                {f.preview === 'text' && (
-                  <button
-                    type="button"
-                    onClick={() => void sendAsRef(f)}
-                    title="引用到对话"
-                    aria-label={`把 ${f.name} 引用到对话`}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      color: Colors.PRIMARY,
-                      fontSize: chatTokens.fontSM,
-                      padding: '2px 4px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <PaperClipOutlined /> 引用
-                  </button>
-                )}
-              </div>
-            ))
+                  {/* 键盘目标②：引用（仅文本；图片由查看器处理，文本通道不读取）— 小杨-2026-10-21 */}
+                  {f.preview === 'text' && (
+                    <button
+                      type="button"
+                      onClick={() => void sendAsRef(f)}
+                      title="引用到对话"
+                      aria-label={`把 ${f.name} 引用到对话`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        color: Colors.PRIMARY,
+                        fontSize: chatTokens.fontSM,
+                        padding: '2px 4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <PaperClipOutlined /> 引用
+                    </button>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

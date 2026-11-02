@@ -49,6 +49,8 @@
 //   路径键优先归「路径」组（不被载荷类抢走）；多行值走折叠体不做整段链接 — 小杨-2026-10-22
 // 2026-10-23 小欧 - dirHintKeys（isDirToolPath 单一判定）贯穿分组视图/规格表/PlainValue/PathAwareJson；
 //   结果视图不接（raw_data 回显路径不属工具参数声明域）— 小欧-2026-10-23
+// 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink）：判据/图标/点击口径/降级
+//   收在组件内，本文件只透传 rawPath/dirHint/projectRoot — 小欧-2026-11-02
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
@@ -59,7 +61,7 @@ import {
   isPathParam,
 } from './paramCategories';
 import { PathAwareJson } from './PathAwareJson';
-import { PathLink } from './PathLink';
+import { PathLink } from '@/components/PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
@@ -842,9 +844,12 @@ const GroupView: React.FC<{
                     typeof v === 'string' &&
                     isPathParam(k, v) ? (
                       <PathLink
-                        value={v}
+                        rawPath={v}
                         projectRoot={projectRoot}
-                        isDirHint={dirHintKeys?.has(k) === true}
+                        dirHint={dirHintKeys?.has(k) === true}
+                        variant="inline"
+                        strictShape
+                        tooltip
                       />
                     ) : (
                       <ParamValue
@@ -940,9 +945,12 @@ const SpecView: React.FC<{
               </>
             ) : typeof v === 'string' && isPathParam(k, v) ? (
               <PathLink
-                value={v}
+                rawPath={v}
                 projectRoot={projectRoot}
-                isDirHint={dirHint(k)}
+                dirHint={dirHint(k)}
+                variant="inline"
+                strictShape
+                tooltip
               />
             ) : (
               /* 2026-10-13 23:55 小欧 - RC4: 透传 valueMode, 结果模式下空串走「(空)」占位 */

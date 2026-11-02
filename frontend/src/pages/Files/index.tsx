@@ -22,7 +22,7 @@
 //     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
 // 2026-10-22 小欧 - 外部文件预览：ext=1 深链（chip 外部链接）/ 定位框根外绝对路径 → 直开外部
 //   只读预览；判据 isExternalAbsPath（盘符绝对且归一到不了根内，根内绝对先归一走树定位）— 小欧-2026-10-22
-// 2026-10-22 小欧 - 三堂会审阻断修复：external 态只有置值无清零 → 先开外部再点树内文件时
+// 2026-10-22 小欧 - 阻断缺陷修复：external 态只有置值无清零 → 先开外部再点树内文件时
 //   FilePreview 停在上一份外部文件（点树像没反应）。深链与树点击两个出口收口为 selectTreeFile
 //   （先清外部态再选中），判定只写一处 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 工具条目录可见性增强：只读浏览旁加「目录: [路径]」，路径名高亮
@@ -69,6 +69,17 @@
 
 // 2026-10-30 小欧 - [54]全链路重构: 「设为会话工作目录」PATCH 全量覆盖必须携带既有三字段
 //   (path/workspace_property/memo), 防属性/备注被清空; 读回时按 path 匹配旧值回填。 — 小欧-2026-10-30
+// 2026-11-02 小欧 - 取根收敛到唯一入口 fetchProjectRoot：本页 loadRoot 不再自己 fileApi.fetchRoot，
+//   全前端只许一套取根方法（根内被判根外的结构性成因之一就是多套根并存）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 深链入口判据统一：路径判定只调 resolvePathTarget，删 ext=1 与 isExternal 两套
+//   分支（同一个「根外」写两遍且目录/窄屏口径不一致）；ext=1 只作生成端标记，归属一律看
+//   target.isExternal / target.isDir；internal 分支不再单写一遍 openPath（清外部态后与普通深链
+//   同一管道）；删 decodePathParam 二次解码（useSearchParams 已解一次）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 判据集中化收尾：joinAbsPath 改从 utils/projectPath 引入；外部引用文件名改用
+//   baseName（原内联 split(/[\\/]/).pop()）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 末轮三堂会审：深链 effect 的「绝对路径等根」改读 target.pending（原重写一遍
+//   isDriveAbsPath && !projectRoot，与解析函数内同一判据重复）；openExternalDir 去掉重复的
+//   setLinkErr(null)（唯一调用方 openExternalTarget 已写，两处同写同一状态）— 小欧-2026-11-02
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -103,20 +114,21 @@ import { LockOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fileApi, type FileNode } from '@/services/api/file.api';
 import { sessionApi } from '@/services/api/session.api';
+// 2026-11-02 小欧 - 路径判定/取根各只剩一个入口（resolvePathTarget / fetchProjectRoot）— 小欧-2026-11-02
 import {
-  toAbsolutePath,
+  baseName,
+  joinAbsPath,
+  resolvePathTarget,
   samePath,
-  toRelativePath,
-  isDriveAbsPath,
-  isDirPath,
-  isExternalAbsPath,
+  toAbsolutePath,
 } from '@/utils/projectPath';
-import { decodePathParam } from '@/utils/fileDeepLink';
+// 2026-11-02 小欧 - 取根统一走唯一入口 fetchProjectRoot（文件页不再自己拉 /files/root） — 小欧-2026-11-02
+import { fetchProjectRoot } from '@/hooks/useProjectRoot';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard';
 // 2026-10-23 小欧 - 外部目录挂树：合成根 __ext__ + mergeKids 合并外部子层 — 小欧-2026-10-23
-import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
+import { mergeKids, prefixKeys } from '@/utils/fileTree';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在调用方读好时仍只把 size 传给 quote*，正文由后端读（不传 content）。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
@@ -293,11 +305,8 @@ const SplitPane: React.FC<{
 const FilesPage: React.FC = () => {
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const locationState = (nav as any) ? undefined : undefined; // keep simple; read from history state via window if needed is heavy
-  // 2026-10-28 小欧 - 站内聊天跳转传 internal 标记（优先用项目根解析），外部直链不走此逻辑
-  const navState =
-    (typeof window !== 'undefined' && (window.history.state as any)?.usr) ||
-    null;
+  // 2026-11-02 小欧 - 删两处死代码：locationState（(nav as any) ? undefined : undefined 的空壳）
+  //   与模块级 navState —— 后者与深链 effect 内局部 state 读取重复，且从未被引用 — 小欧-2026-11-02
   const { md } = Grid.useBreakpoint(); // antd 5.12 未从 'antd' 顶层导出 useBreakpoint，走 Grid 命名空间
   const isNarrow = md === false;
 
@@ -380,7 +389,7 @@ const FilesPage: React.FC = () => {
   );
 
   /** 外部目录树懒加载：按绝对路径拉子层，key 为相对外部根的 posix — 小欧-2026-10-23
-   *  2026-10-23 三堂会审 - absDir 作参数传入（不依赖闭包 externalBase，修 openExternalDir
+   *  2026-10-23 小欧 - absDir 作参数传入（不依赖闭包 externalBase，修 openExternalDir
    *    setExternalBase 后立即调用时闭包仍是旧值的时序 bug）；relKey 传 '.'=整树赋值，否则 merge。
    *  2026-10-24 小欧 - 懒加载子目录时，后端返回的 key 相对于被请求子目录（如 models），
    *    需要 prefixKeys(r.nodes, relKey) 拼成外部根相对路径（如 backend/app/db/models），
@@ -429,7 +438,6 @@ const FilesPage: React.FC = () => {
           return Array.from(next);
         });
       }
-      setLinkErr(null);
       if (isNarrow) setNarrowTab('preview');
     },
     [loadExternalDir, isNarrow, setExpandedKeys, setLoadedKeys, setNarrowTab]
@@ -462,11 +470,10 @@ const FilesPage: React.FC = () => {
   /** 页级兜底 —— root 拉不到 → 整页 Result + 重试（不静默空页） */
   const loadRoot = useCallback(async () => {
     setRootErr(null);
-    try {
-      const r = await fileApi.fetchRoot();
-      setProjectRoot(r.project_root);
-    } catch {
-      setProjectRoot('');
+    // 2026-11-02 小欧 - 取根统一走 fetchProjectRoot（唯一入口，实时不缓存），不再自己调 fileApi.fetchRoot — 小欧-2026-11-02
+    const root = await fetchProjectRoot();
+    setProjectRoot(root);
+    if (!root) {
       // 2026-10-21 小杨 - 用户口吻（原「请检查 workspace.project_root 配置」是开发者语言）
       setRootErr('项目根目录不存在或不可访问，请检查「工作目录」设置后重试。');
     }
@@ -479,7 +486,7 @@ const FilesPage: React.FC = () => {
   /**
    * 2026-10-23 小欧 - onLoadDir 统一入口：__ext__ 前缀 key 走外部树补拉（fetchExternalTree），
    *   其余走项目根树补拉（loadDir）。合成根 __ext__ 自身点展开时拉外部根首层。
-   *   2026-10-23 三堂会审 - 补 externalBase 依赖：absDir 由外部根拼出，依赖缺失时外部根
+   *   2026-10-23 小欧 - 补 externalBase 依赖：absDir 由外部根拼出，依赖缺失时外部根
    *   变化后回调仍持旧闭包值。— 小欧-2026-10-23
    */
   const handleLoadDir = useCallback(
@@ -568,6 +575,37 @@ const FilesPage: React.FC = () => {
   );
 
   /**
+   * 根外目标统一出口（定位框与深链入口共用）：
+   *   目录 → 挂外部树（只定位不预览，不清 externalPath 以保持上一份预览）；
+   *   文件 → 外部只读预览（带行号、窄屏切预览 Tab）；两者都清「未找到」提示。
+   * 2026-11-02 小欧 - 原定位框与深链入口各写一遍这段外部处理，任一处改动漏另一处即口径漂移 — 小欧-2026-11-02
+   */
+  const openExternalTarget = useCallback(
+    (
+      raw: string,
+      isDir: boolean,
+      lineRange: { start: number; end: number } | null
+    ): void => {
+      if (isDir) {
+        void openExternalDir(raw);
+      } else {
+        setExternalPath(raw);
+        setLineRange(lineRange);
+        if (isNarrow) setNarrowTab('preview');
+      }
+      setLinkErr(null);
+    },
+    [
+      isNarrow,
+      openExternalDir,
+      setExternalPath,
+      setLineRange,
+      setNarrowTab,
+      setLinkErr,
+    ]
+  );
+
+  /**
    * 定位框统一入口（2026-10-23 小欧 - 根外目录也开放）：
    * 根外盘符绝对路径：目录 → 挂外部树（openExternalDir），文件 → 外部只读预览；
    * 根内/相对 → 树内定位。— 小欧-2026-10-23
@@ -576,40 +614,26 @@ const FilesPage: React.FC = () => {
     async (input: string): Promise<boolean> => {
       const raw = input.trim();
       if (!raw) return false;
-      // 2026-10-22 小欧 - 外部判据：盘符绝对路径且归一到不了根内（根内绝对先归一走树定位）— 小欧-2026-10-22
-      if (isExternalAbsPath(raw, projectRoot)) {
-        // 2026-10-23 小欧 - 根外目录（尾分隔符）挂外部树，不预览；根外文件直开外部只读预览 — 小欧-2026-10-23
-        if (isDirPath(raw)) {
-          void openExternalDir(raw);
-        } else {
-          setExternalPath(raw);
-          setLineRange(null);
-          setLinkErr(null);
-          if (isNarrow) setNarrowTab('preview');
-        }
+      // 2026-11-02 小欧 - 内外/目录/相对全部来自唯一路径解析函数 resolvePathTarget — 小欧-2026-11-02
+      const t = resolvePathTarget(raw, projectRoot);
+      if (t.isExternal) {
+        openExternalTarget(raw, t.isDir, null);
         return true;
       }
-      const rel = toRelativePath(raw, projectRoot);
-      if (!rel) return false;
-      return openPath(rel);
+      if (!t.linked || !t.rel) return false;
+      return openPath(t.rel);
     },
-    [
-      openPath,
-      openExternalDir,
-      isNarrow,
-      projectRoot,
-      setExternalPath,
-      setLineRange,
-      setNarrowTab,
-    ]
+    [openExternalTarget, openPath, projectRoot]
   );
 
   /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
   useEffect(() => {
-    const state =
-      (window.history.state as any)?.usr ||
-      (window.history.state as any) ||
-      null;
+    // 2026-11-02 小欧 - 去 any：只读 internal 一个字段，按实际形状声明即可（不再用 any 逃逸类型）— 小欧-2026-11-02
+    const histState = window.history.state as {
+      usr?: { internal?: boolean } | null;
+      internal?: boolean;
+    } | null;
+    const state = histState?.usr || histState || null;
     // 2026-10-29 小欧 - 站内跳转唯一标记是 internal: true（source 标记已删，勿再引入并行判据）— 小欧-2026-10-29
     const isInternal = state?.internal === true;
     const rawPath = params.get('path');
@@ -625,67 +649,35 @@ const FilesPage: React.FC = () => {
     //   不走树定位（外部文件不在项目根树内，expandToPath 必失败）。— 小欧-2026-10-22
     // 2026-10-23 小欧 - ext=1 目录（尾分隔符）改挂外部树：fetchExternalTree 拉子层 + 合成 __ext__ 根，
     //   右侧预览不动；ext=1 文件维持 setExternalPath 外部只读预览。— 小欧-2026-10-23
-    // 2026-10-28 小欧 - 站内聊天跳转（internal=true）：优先用项目根解析相对路径，不被外部目录状态覆盖
-    if (isInternal && !isDriveAbsPath(rawPath) && projectRoot) {
-      const rel = toRelativePath(rawPath, projectRoot);
-      if (rel && treeReady) {
-        void (async () => {
-          const ok = await openPath(rel, lineRange);
-          if (ok) {
-            setLinkErr(null);
-            setExternalPath(null);
-            return;
-          }
-          setLinkErr({ path: rel });
-          setNarrowTab('preview');
-        })();
-        return;
-      }
+    // 2026-11-02 小欧 - 内外/目录/相对全部来自唯一路径解析函数（本页不再自判）— 小欧-2026-11-02
+    const target = resolvePathTarget(rawPath, projectRoot, { lineRange });
+    // 2026-11-02 小欧 - 外部路径只有一个处理口（原 ext=1 分支与下方 isExternal 分支重复，
+    //   且 ext=1 目录/文件与普通深链口径不一致）：目录挂外部树、文件直开外部只读预览。
+    //   ext=1 只是生成端标记，归属一律以 target.isExternal 为准 — 小欧-2026-11-02
+    if (target.isExternal) {
+      openExternalTarget(rawPath, target.isDir, lineRange);
+      return;
     }
-    if (params.get('ext') === '1') {
-      const p = decodePathParam(rawPath);
-      if (p && isExternalAbsPath(p, projectRoot)) {
-        if (isDirPath(p)) {
-          // 根外目录：挂外部树（不清 externalPath，保持上一份预览；目录只定位不预览）
-          void openExternalDir(p);
-        } else {
-          setExternalPath(p);
-          setLineRange(lineRange);
-        }
-        setLinkErr(null);
-        return;
-      }
-      // 2026-10-28 小欧 - ext=1 但 isExternal=false（路径在当前根内）：chip 渲染时用了过期
-      //   useProjectRoot 把根内路径误判成"外部"生成 ext=1 深链，Files 页用最新根判为根内，
-      //   ext=1 与根内矛盾 → 此处不 setLinkErr，穿透到下方普通深链管道
-      //   （isDriveAbsPath→toRelativePath→openPath 树定位）。同口径如实说明：
-      //   ext=1 + 解码失败 / ext=1 + 相对路径也一并穿透，由下方管道按形态统一定位或
-      //   如实报错，不在本分支另造第二种失败面；仅"根外"在上方显式 return 处理。— 小欧-2026-10-28
-    }
-    // 2026-10-23 小欧 - 深链 path 可能是**正文原文**（盘符绝对或相对）：
-    //   根未取回时绝对路径归属未定 → 等根；根外绝对 → 外部只读预览；根内绝对 → 归一为相对后树定位。
-    //   chip 不再补根，归一职责只在文件页入口这一处。— 小欧-2026-10-23
-    if (isDriveAbsPath(rawPath)) {
-      if (!projectRoot) return;
-      if (isExternalAbsPath(rawPath, projectRoot)) {
-        setExternalPath(rawPath);
-        setLineRange(lineRange);
-        setLinkErr(null);
-        if (isNarrow) setNarrowTab('preview');
-        return;
-      }
-    }
+    // 2026-10-28 小欧 - 带 ext=1 但路径在当前根内（chip 用过期根误判成外部）：不 setLinkErr，
+    //   穿透到下方树定位管道，如实说明而不是另造失败面 — 小欧-2026-10-28
+    // 2026-11-02 小欧 - 等根守卫：归属未定（盘符绝对 + 根未回）由解析结果的 pending 给出，
+    //   本页不再自己重写一遍「绝对路径需要根」的判据 — 小欧-2026-11-02
+    if (target.pending) return;
     // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
     //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
     //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
     //   现在等 treeReady 后再展开。
     if (!treeReady) return;
-    const rel = toRelativePath(rawPath, projectRoot);
+    const rel = target.rel;
     if (!rel) {
       setLinkErr({ path: rawPath });
       setNarrowTab('preview');
       return;
     }
+    // 2026-10-28 小欧 - 站内聊天跳转（internal=true）先清外部态：否则 FilePreview 停在外部分支
+    //   （node effect 被 external 挡回、external.path 未变不重载），点树内文件像没反应 — 小欧-2026-10-28
+    // 2026-11-02 小欧 - internal 与普通深链共用下面同一段定位管道（原各写一遍 openPath + 失败提示）— 小欧-2026-11-02
+    if (isInternal) setExternalPath(null);
     void (async () => {
       const ok = await openPath(rel, lineRange);
       if (!ok) {
@@ -950,12 +942,12 @@ const FilesPage: React.FC = () => {
           )
         }
         onSendExternal={(_, absPath, size) =>
-          pushRef(absPath.split(/[\\/]/).pop() || absPath, absPath, size)
+          pushRef(baseName(absPath) || absPath, absPath, size)
         }
         // 2026-10-23 小欧 - 外部文件选区引用（与根内选区同能力，走 pushRef(..., range)）— 小欧-2026-10-23
         onSendExternalSelection={(_, absPath, range, size) =>
           pushRef(
-            `${absPath.split(/[\\/]/).pop() || absPath} L${range.start}-${range.end}`,
+            `${baseName(absPath) || absPath} L${range.start}-${range.end}`,
             absPath,
             size,
             range

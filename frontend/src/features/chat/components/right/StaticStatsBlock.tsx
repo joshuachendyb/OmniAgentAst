@@ -32,14 +32,16 @@
 //   5 碎片节→2 大语义组(任务元信息=基本信息+Token / 执行结果=工具汇总+产出物), 错误低频独立贴边保留;
 //   ③截断一致——工具调用链参数 slice(0,80) 硬截改 EllipsisTip+CSS 宽度省略(对齐 TaskInfoBar 位2 做法);
 //   ④基本信息去"开始/结束"(用户令), grid 4列→2列; 工具汇总单行·连接改 flex 换行 chip — 小欧-2026-10-28
-// 2026-10-28 小欧 - 去魔法数字(三堂会审): 展开区遗留数字字面量全部令牌化/常量化——
+// 2026-10-28 小欧 - 去魔法数字: 展开区遗留数字字面量全部令牌化/常量化——
 //   复用现有令牌: 12px→Spacing.LG(容器padding), 1px→BorderWidth.THIN(section/chip/错误条边框),
 //   2px→BorderWidth.THICK(sectionTitle色条), 4→Radius.SM(错误条圆角);
 //   无现成令牌提模块级局部常量(命名沿用 ParamsPanel NESTED_INDENT_PX 先例):
 //   LABEL_COL_W=72(基本信息标签列宽)/ARROW_SIZE=20(链折叠箭头直径)/CHIP_RADIUS=2(chip圆角,Radius.SM=4偏大)/
 //   CHAIN_ROW_GAP=Spacing.XS/2(链行间距)/SEQ_COL_W=20(链序号列宽)/PARAM_MAX_W=320(参数省略最大宽)/
 //   ART_INDEX_W=16(产出物序号列宽)/ERR_PAD_Y=2(错误条纵向内边距,横向用Spacing.SM)。
-//   纯样式令牌化零逻辑改动, 视觉零变化; 三堂会审通过(合规/合理/关联) — 小欧-2026-10-28
+//   纯样式令牌化零逻辑改动, 视觉零变化 — 小欧-2026-10-28
+// 2026-11-02 小欧 - 产出物路径改走唯一链接组件 PathLink（原 FilePathLink）：判据/图标/点击口径/
+//   降级全部收在组件内，本组件只给 rawPath 与 dirHint；别针由业务层并列渲染，不进通用组件 — 小欧-2026-11-02
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -74,7 +76,10 @@ import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复�
 import { formatTokenK } from '../taskinfo/infoMaps'; // 2026-10-28 小欧 - 展开区域 Token 主值用 K/M 单位(对齐 TitleBlock) — 小欧-2026-10-28
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
-import { FilePathLink } from '@/components/FilePathLink';
+// 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink（行内 + 等宽）；别针不属链接组件 — 小欧-2026-11-02
+import { PathLink } from '@/components/PathLink';
+// 2026-11-02 小欧 - 别针按钮由业务层注入（PathLink 属通用层，不反向依赖 features/refs）— 小欧-2026-11-02
+import { QuoteButton } from '@/features/refs/QuoteButton';
 
 // ==================== 展开区局部尺寸常量 ====================
 // 2026-10-28 小欧 - 去魔法数字: 本组件专属尺寸(无现成令牌)提模块级常量;
@@ -407,9 +412,19 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 >
                   {a.type}
                 </span>
-                {/* 2026-10-22 小欧 - 路径 → 可点深链
-                    判界（根内/形态）在 FilePathLink 内统一处理，根外路径退化为纯文本 */}
-                <FilePathLink rawPath={a.path} text={a.path} />
+                {/* 2026-11-02 小欧 - 路径 → 可点深链：判界在 PathLink 内统一处理，根外路径退化为纯文本；
+                    别针在本层并列组合 —— PathLink 只做链接，不承担引用业务动作 — 小欧-2026-11-02 */}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: Spacing.XS,
+                    minWidth: 0,
+                  }}
+                >
+                  <PathLink rawPath={a.path} variant="inline" mono tooltip />
+                  <QuoteButton path={a.path} />
+                </span>
               </div>
             ))
           ) : (

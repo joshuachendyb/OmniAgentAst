@@ -10,16 +10,25 @@
 //   失效触发：复用既有 SETTINGS_SAVED_EVT 广播（与 useStepRenderPrefs 同款订阅法，
 //   不另立事件名、不在事件里塞 payload —— 与 constants/settingsEvents.ts 的事件语义一致）。
 //   失效时**保留旧根**直到新根取回，避免刷新瞬间所有 chip 闪成相对路径。 — 小欧-2026-10-22
+// 2026-11-02 小欧 - 去结果缓存（北京老陈定案「每次重新取根」）：load() 只共享在途请求，
+//   完成后丢弃；新增 getFreshProjectRoot() 供 chip 点击现取根 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 收敛为**唯一**取根函数 fetchProjectRoot()：删 getCurrentProjectRoot（读快照）
+//   与 getFreshProjectRoot（与 load 重复），渲染订阅仍由 useProjectRoot 承担 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 设置保存监听改模块级注册一次（原每个订阅组件各注册一个）；fetchProjectRoot
+//   改为 export const（去掉多余的 export{} 转发）— 小欧-2026-11-02
 /**
- * useProjectRoot —— `GET /files/root` 的**唯一**取数入口（模块级订阅式缓存）
+ * useProjectRoot —— `GET /files/root` 的**唯一**取数入口（实时取数，结果不缓存）
  *
- * 用途：把工具参数里的**绝对路径**转成文件页深链用的**相对路径**（PathLink / FileRefChip）。
- * 缓存理由：同一页面可能渲染几十个 path 参数，参数视图与规格表两个入口都要用 ——
- *   每次各拉一次 /files/root 是纯浪费（后端无 IO，但多一次往返）。
+ * 只导出三件，职责互斥、不重叠：
+ *  - `fetchProjectRoot()`：唯一取根函数。每次调用实时打 `/files/root`（同刻在途请求合并去重）。
+ *  - `useProjectRoot()`：唯一渲染订阅。内部调 `fetchProjectRoot()`，根变化时触发重渲染。
+ *  - `resolveChipUrlFresh()`：点击唯一入口。现取根 → 交 projectPath.resolvePathTarget 裁决。
+ * 禁止再新增「读快照取根」的第二个入口（快照/现取并存 → 根内被判根外）。
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import { fileApi } from '@/services/api/file.api';
 import { SETTINGS_SAVED_EVT } from '@/constants/settingsEvents';
+import { resolvePathTarget, type PathTargetOptions } from '@/utils/projectPath';
 
 /** 缓存快照：root=当前项目根；gen=失效代号（每次失效自增，驱动订阅方重取） */
 type Snapshot = { root: string; gen: number };
@@ -39,22 +48,29 @@ const publish = (root: string): void => {
   notify();
 };
 
-const load = (): Promise<string> => {
+/**
+ * 唯一取根函数（实时）：每次调用都打一次 `/files/root`，结果不缓存（同刻在途请求合并）。
+ * 2026-11-02 小欧 - 渲染订阅、chip 点击、文件页取根全部走本函数，禁止再各自拉 /files/root — 小欧-2026-11-02
+ */
+export const fetchProjectRoot = (): Promise<string> => {
   if (cached) return cached;
-  // 2026-10-22 小欧 - fetchRoot() 包在 Promise.resolve().then() 里：同步抛出也能落到 .catch
-  //   （否则异常逃出 useEffect → React 提交期报错 → 整块渲染崩） — 小欧-2026-10-22
-  cached = Promise.resolve()
+  // 2026-11-02 小欧 - 去结果缓存（北京老陈定案「每次重新取根」）：只共享**在途请求**，
+  //   一回来立即丢弃 cached → 下次调用重新打 /files/root，不再跨渲染/跨会话持旧根 — 小欧-2026-11-02
+  const p = Promise.resolve()
     .then(() => fileApi.fetchRoot())
     .then((r) => {
       publish(r.project_root);
       return r.project_root;
     })
     .catch(() => {
-      cached = null; // 失败不缓存（下次可重试）
       publish('');
       return '';
+    })
+    .finally(() => {
+      if (cached === p) cached = null;
     });
-  return cached;
+  cached = p;
+  return p;
 };
 
 const subscribe = (cb: () => void): (() => void) => {
@@ -67,23 +83,19 @@ const subscribe = (cb: () => void): (() => void) => {
 const getSnapshot = (): Snapshot => snapshot;
 
 /**
- * 取当前项目根（非 hook，供事件处理函数/onClick 实时调用）。
- * 2026-10-28 小欧 - chip 点击时需用最新根决定 ext=1 vs 普通深链，不能依赖渲染时
- *   useProjectRoot 的快照（项目根切换后 invalidate 到 fetch 返回的时序窗口内
- *   snapshot.root 仍是旧根）。本函数读模块级 snapshot.root，hook 订阅方重取后
- *   snapshot 更新，本函数随即返回新值。— 小欧-2026-10-28
- */
-export const getCurrentProjectRoot = (): string => snapshot.root;
-
-/**
- * 失效项目根缓存 —— 项目根改了（设置页改 workspace.project_root 落盘 / 后端配置变更）后调用。
- * 清掉在途与缓存并自增 gen → 订阅中的 hook 重取真值（与 SETTINGS_SAVED_EVT 订阅方同一套路）。
+ * 通知重取 —— 项目根可能已变（设置页落盘 / 后端配置变更）时清在途并自增 gen，
+ * 订阅中的 hook 重新走 `fetchProjectRoot()`。**不是取根入口**，只发信号。
  */
 export const invalidateProjectRoot = (): void => {
   cached = null;
   snapshot = { ...snapshot, gen: snapshot.gen + 1 };
   notify();
 };
+
+// 2026-11-02 小欧 - 设置保存监听改模块级注册**一次**：原在 useProjectRoot 的 effect 里
+//   每个订阅组件各注册一个（一屏几十个路径 = 几十个监听器），且卸载时序不同步 — 小欧-2026-11-02
+if (typeof window !== 'undefined')
+  window.addEventListener(SETTINGS_SAVED_EVT, invalidateProjectRoot);
 
 export const useProjectRoot = (enabled = true): string => {
   const { root, gen } = useSyncExternalStore(
@@ -93,12 +105,28 @@ export const useProjectRoot = (enabled = true): string => {
   );
   useEffect(() => {
     if (!enabled) return;
-    void load();
-    // 2026-10-22 小欧 - 设置保存后失效重取（项目根可能刚被改） — 小欧-2026-10-22
-    const onSettingsSaved = () => invalidateProjectRoot();
-    window.addEventListener(SETTINGS_SAVED_EVT, onSettingsSaved);
-    return () =>
-      window.removeEventListener(SETTINGS_SAVED_EVT, onSettingsSaved);
+    // 2026-11-02 小欧 - 唯一取根函数（实时，不读缓存） — 小欧-2026-11-02
+    void fetchProjectRoot();
   }, [enabled, gen]);
   return root;
+};
+
+/**
+ * 点击时**实时取根**再算深链（所有 chip / 链接点击的唯一入口）。
+ * 2026-11-02 小欧 - 自 utils/fileDeepLink.ts 移入（该文件已并入 utils/projectPath.ts）：
+ *   本函数是唯一需要「取根 + 路径解析」两件事的地方，放在取根模块里避免纯判据模块
+ *   反向依赖 React / 网络 — 小欧-2026-11-02
+ */
+export const resolveChipUrlFresh = async (
+  rawPath: string,
+  lineRange?: { start: number; end: number } | null,
+  opts: Omit<PathTargetOptions, 'lineRange'> = {}
+): Promise<string> => {
+  const target = resolvePathTarget(rawPath, await fetchProjectRoot(), {
+    ...opts,
+    lineRange,
+  });
+  // 2026-11-02 小欧 - 判不过返回空串，由调用方判空不跳：原实现退回原文深链，
+  //   与 FileTrailPanel 的 if(url) 口径矛盾（同一路径一处跳一处不跳）— 小欧-2026-11-02
+  return target.url;
 };

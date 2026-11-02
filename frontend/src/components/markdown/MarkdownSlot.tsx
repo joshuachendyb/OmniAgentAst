@@ -27,10 +27,12 @@
 //   导入 normalizeMarkdownArt, 在 markdown=false 早退后算 artText, 两个渲染分支共用该入口;
 //   接入前算法已完成: 边线行跟随内容行的规范几何 / 边界逐框认领 / 接头字符(┬┴┼)原位保留 /
 //   误伤守卫(须含框角) / 宽度模型按 Sarasa Mono SC 实测口径。 — 小欧-2026-10-22
+// 2026-11-02 小欧 - 取根触发判据改复用 projectPath.hasDriveAbsPath，删本文件内嵌盘符正则 — 小欧-2026-11-02
 import React from 'react';
 import { MarkdownBody } from './MarkdownBody'; // MD_IMPL=1 分支(零依赖, 静态引入)
 import { useDeferredPreprocess } from './useDeferredPreprocess'; // 2026-10-21 小杨 - 文件引用预处理（流式期节流）
 import { useProjectRoot } from '@/hooks/useProjectRoot';
+import { hasDriveAbsPath } from '@/utils/projectPath';
 import { normalizeMarkdownArt } from './asciiArt'; // 2026-10-22 小欧 - 框线图归一化(两渲染分支唯一入口)
 /** MD_IMPL=0 分支: lazy 分块, 避免纯文本用户下载 react-markdown 三件套 */
 const MarkdownText = React.lazy(() => import('./MarkdownText'));
@@ -70,9 +72,9 @@ const MarkdownSlot: React.FC<MarkdownSlotProps> = ({
   //   用 useDeferredPreprocess（流式期节流），不用裸 useMemo（每 chunk 全量跑正则）。
   //   2026-10-22 小欧 - 裸绝对路径按 projectRoot 归一（取不到时绝对路径保持原文，相对路径不受影响）
   //   只有出现盘符绝对路径才取根，纯文本/纯相对路径不打 /files/root
-  const projectRoot = useProjectRoot(
-    /(?:^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]/.test(text)
-  );
+  //   2026-11-02 小欧 - 盘符判据改复用 utils/projectPath.hasDriveAbsPath（原内嵌一份正则，
+  //   与正文识别的判据各写一遍）— 小欧-2026-11-02
+  const projectRoot = useProjectRoot(hasDriveAbsPath(text));
   const safeText = useDeferredPreprocess(text, projectRoot);
   // 2026-10-22 小欧 - 框线图(ASCII art)归一化**唯一位**:
   //   归一化跑在 **deferred 文本**上: 急迫更新先出(原文), 归一化随后在稳定文本上补齐 ——

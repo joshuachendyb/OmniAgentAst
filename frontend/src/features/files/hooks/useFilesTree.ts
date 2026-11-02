@@ -7,11 +7,15 @@
 //     withSeqGate（loadDir / expandToPath 各抄一遍判据，改口径会「改 A 漏 B」；原 claimDir
 //     把纯计算与写 ref 混一个函数，违 SLAP）。claimDir 失去全部消费者被删；
 //     beginTreeReq 不抽（AbortController 是浏览器生命周期 API，抽了即为抽象而抽象）— 小欧-2026-10-22
+// 2026-11-02 小欧 - expandToPath 的 key 归一改调 projectPath.norm（唯一实现），只额外剥前导 `./`：
+//   原自写「反斜杠转正 + 折叠重复分隔符」是第二套归一口径，且不剥尾分隔符 →
+//   `a/b/` 这类入参拼出的 key 带尾斜杠，findNode 恒 miss — 小欧-2026-11-02
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fileApi, type FileNode } from '@/services/api/file.api';
 import { findNode } from '@/features/files/components/FilesTree';
 import { buildScanNotices, mergeKids } from '@/utils/fileTree';
 import { isSilentError } from '@/services/error/handler';
+import { norm } from '@/utils/projectPath';
 
 export type TreeStatus =
   | { phase: 'loading' }
@@ -94,10 +98,7 @@ export function useFilesTree() {
 
   const expandToPath = useCallback(
     async (rel: string): Promise<FileNode | null> => {
-      const targetKey = rel
-        .replace(/\\/g, '/')
-        .replace(/^\.\/+/, '')
-        .replace(/\/+/g, '/');
+      const targetKey = norm(rel).replace(/^\.\/+/, '');
       const segs = targetKey.split('/').filter(Boolean);
       const dirKeys: string[] = [];
       let cur = '';

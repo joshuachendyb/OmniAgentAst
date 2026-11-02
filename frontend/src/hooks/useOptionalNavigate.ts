@@ -1,4 +1,6 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：可选导航（无 Router 上下文不抛） — 小杨-2026-10-21
+// 2026-11-02 小欧 - 补 options 透传（react-router 的 { state }）：原签名只能传 to，
+//   站内跳转标记 internal:true 带不进去 → 文件页无法清外部预览态（与 PathLink 的 useNavigate 口径分叉）— 小欧-2026-11-02
 /**
  * useOptionalNavigate —— "有 Router 就 SPA 跳，没有就整页跳"的可选导航
  *
@@ -15,21 +17,30 @@
 import { useContext } from 'react';
 import { UNSAFE_NavigationContext } from 'react-router';
 
-export type OptionalNavigate = (to: string) => void;
+/** 与 react-router `navigate(to, options)` 同形的第二个参数（只用到 state） */
+export interface OptionalNavigateOptions {
+  state?: unknown;
+}
+
+export type OptionalNavigate = (
+  to: string,
+  options?: OptionalNavigateOptions
+) => void;
 
 interface NavigationCtx {
-  navigator?: { push?: (to: string) => void };
+  navigator?: { push?: (to: string, state?: unknown) => void };
 }
 
 export const useOptionalNavigate = (): OptionalNavigate => {
   const ctx = useContext(UNSAFE_NavigationContext) as NavigationCtx | null;
   const navigator = ctx?.navigator;
-  return (to: string) => {
+  return (to: string, options?: OptionalNavigateOptions) => {
     if (navigator?.push) {
-      navigator.push(to);
+      // react-router 的 navigator.push 收 (to, state)：state 落 history.state.usr
+      navigator.push(to, options?.state);
       return;
     }
-    // 无 Router 上下文（单测 / 非路由容器）→ 整页跳转兜底
+    // 无 Router 上下文（单测 / 非路由容器）→ 整页跳转兜底（state 随整页跳丢失，无消费方）
     window.location.assign(to);
   };
 };

@@ -3,6 +3,15 @@
 //   isPathLike 放宽为绝对盘符/尾斜杠/末段扩展名三选一，并排除 URL — 小杨-2026-10-22
 // 2026-10-23 小欧 - 增 DIR_TOOLS + isDirToolPath：目录类工具（listdir/tree/find）的路径参数
 //   按目录渲染（顶层目录名也放行深链）；键判定沿用 PATH_KEYS 以覆盖后端别名键 — 小欧-2026-10-23
+// 2026-11-02 小欧 - isPathLike 改复用 utils/projectPath 判据（hasSeparator/isUrlLike/isDriveAbsPath/
+//   isDirPath/isFileLikePath），删本文件自建 4 条正则；扩展名上限随之由 8 统一到 EXT_MAX=10 — 小欧-2026-11-02
+import {
+  hasSeparator,
+  isDirPath,
+  isDriveAbsPath,
+  isFileLikePath,
+  isUrlLike,
+} from '@/utils/projectPath';
 /**
  * 路径类参数判定 —— **单一真源**
  *
@@ -19,14 +28,15 @@
 /**
  * 路径特征：含分隔符，且满足任一硬特征（防误伤 SQL/代码片段）：
  *   绝对盘符 / 尾斜杠目录 / 末段扩展名。
+ * 2026-11-02 小欧 - 判据全部改为复用 utils/projectPath 单点：原自建 URL / 盘符 / 尾斜杠 / 扩展名
+ *   四条正则，扩展名写死 `{1,8}` 与 projectPath 的 EXT_MAX=10 口径冲突（同一路径在参数面板
+ *   与正文/深链两处判定不一致）— 小欧-2026-11-02
  */
 export const isPathLike = (v: string): boolean => {
   const s = v.trim();
-  if (!s || !/[\\/]/.test(s)) return false;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(s)) return false;
-  if (/^[A-Za-z]:[\\/]/.test(s) || /[\\/]$/.test(s)) return true;
-  const last = s.split(/[\\/]/).pop() ?? '';
-  return /\.[A-Za-z0-9]{1,8}$/.test(last);
+  if (!s || !hasSeparator(s)) return false;
+  if (isUrlLike(s)) return false;
+  return isDriveAbsPath(s) || isDirPath(s) || isFileLikePath(s);
 };
 
 /**

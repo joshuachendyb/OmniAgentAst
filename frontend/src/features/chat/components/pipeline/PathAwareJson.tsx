@@ -3,6 +3,7 @@
 //   标量按 JSON 语义输出（NaN/Infinity 与 JSON 一致为 null）— 小杨-2026-10-22
 // 2026-10-23 小欧 - 透传 isDirHint（工具语义声明目录，顶层入口算一次全链路透传，
 //   嵌套 path 同样按目录渲染）— 小欧-2026-10-23
+// 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink），递归结构与 props 未变 — 小欧-2026-11-02
 /**
  * PathAwareJson —— 保持 JSON 形态，把 path 字段的值渲染成 PathLink。
  *
@@ -11,7 +12,7 @@
  */
 import React from 'react';
 import { isPathParam } from './paramCategories';
-import { PathLink } from './PathLink';
+import { PathLink } from '@/components/PathLink';
 
 export interface PathAwareJsonProps {
   value: unknown;
@@ -32,9 +33,12 @@ const JsonNode: React.FC<PathAwareJsonProps & { keyHint?: string }> = ({
         <>
           &quot;
           <PathLink
-            value={value}
+            rawPath={value}
             projectRoot={projectRoot}
-            isDirHint={isDirHint}
+            dirHint={isDirHint}
+            variant="inline"
+            strictShape
+            tooltip
           />
           &quot;
         </>

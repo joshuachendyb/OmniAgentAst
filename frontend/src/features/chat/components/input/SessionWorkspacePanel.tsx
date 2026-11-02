@@ -37,6 +37,8 @@
  *   不渲染删除按钮 + remove() 防御兜底(默认行 no-op)。删除只能系统外(资源管理器)手动删目录,
  *   下次建任务 reconcile 按 [54] 规则2 重建; 列表条目系统内部不提供删除。
  *   — 小欧-2026-10-31
+ * 编辑历史: 2026-11-02 小欧 - 删本地 isAbsolute（自建盘符/UNC 正则），改复用
+ *   utils/projectPath.isAbsolutePath —— 全前端绝对路径判据只此一处 — 小欧-2026-11-02
  */
 import {
   useCallback,
@@ -79,6 +81,7 @@ import {
   wsPropLabel as propLabel,
   wsPropValue as propValue,
 } from '@/utils/wsProp';
+import { isAbsolutePath } from '@/utils/projectPath';
 
 interface Props {
   sessionId: string;
@@ -86,8 +89,8 @@ interface Props {
   onClose: () => void;
 }
 
-/** 只做绝对路径格式校验；存在性与禁区交后端判（决策74，避免前端造禁区表） */
-const isAbsolute = (p: string) => /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
+// 2026-11-02 小欧 - 删本地 isAbsolute（自建盘符/UNC 正则），改复用 utils/projectPath.isAbsolutePath：
+//   全前端绝对路径判据只此一处 — 小欧-2026-11-02
 
 /** 面板内部草稿：path + 属性 + memo + 默认标志（is_default 只读展示，PATCH 不携带） */
 type WsDraft = {
@@ -218,7 +221,7 @@ export default function SessionWorkspacePanel({
   /** 新增（同路径覆盖属性/memo，不产生重复行） */
   const addEntry = () => {
     const v = input.trim();
-    if (!v || !isAbsolute(v)) {
+    if (!v || !isAbsolutePath(v)) {
       setInputErr('请输入绝对路径');
       return;
     }
@@ -257,7 +260,7 @@ export default function SessionWorkspacePanel({
   const saveEdit = () => {
     if (!editingPath) return;
     const v = editPath.trim();
-    if (!v || !isAbsolute(v)) {
+    if (!v || !isAbsolutePath(v)) {
       setEditErr('请输入绝对路径');
       return;
     }

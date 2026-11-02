@@ -27,6 +27,7 @@
 //   ③ 非外部绝对路径由 toAbsolutePath 返回（projectPath.ts 已同步改为 \ 风格）— 小欧-2026-10-25
 // 2026-10-23 小欧 - 外部目录图标琥珀金（Colors.WARNING #AD6800），与根内蓝色文件夹视觉区分；
 //   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
+// 2026-11-02 小欧 - joinAbsPath 改从 utils/projectPath 引入（已由 utils/fileTree 迁入）— 小欧-2026-11-02
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -35,8 +36,7 @@ import { fileIcon } from '@/components/fileIcon';
 import { formatBytes } from '@/utils/format';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
-import { toAbsolutePath } from '@/utils/projectPath';
-import { joinAbsPath } from '@/utils/fileTree';
+import { joinAbsPath, toAbsolutePath } from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';

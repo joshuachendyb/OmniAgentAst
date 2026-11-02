@@ -37,6 +37,10 @@
 //   框线竖线断成虚线; 行高 ≤1.14 时连成实线 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 文件引用分流放开外部路径：isValidRelPath 或 isExternalAbsPath（根外盘符绝对）
 //   都渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
+// 2026-11-02 小欧 - a 组件按 `/file-ref?` 前缀分流到唯一链接组件 PathLink（原 FileRefChip）；
+//   解析只调 parseFileRefLink（与 buildFileRefLink 同源），非法编码/形态非法退纯文本 — 小欧-2026-11-02
+// 2026-11-02 小欧 - `/file-ref?` 前缀判据改调 projectPath.isFileRefLink，删本文件内联 startsWith — 小欧-2026-11-02
+// 2026-11-02 小欧 - 正文 chip 传 pin：恢复旧 FileRefChip 的「别针」引用入口（合并时丢失）— 小欧-2026-11-02
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,11 +57,10 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
-// 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
-import { FileRefChip, isValidRelPath } from './FileRefChip';
-import { isDriveAbsPath } from '@/utils/projectPath';
+// 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink；形态门槛交由 resolvePathTarget — 小欧-2026-11-02
+import { PathLink } from '@/components/PathLink';
 import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
-import { decodePathParam } from '@/utils/fileDeepLink';
+import { isFileRefLink, parseFileRefLink } from '@/utils/projectPath';
 
 /**
  * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(缺陷 1)。
@@ -277,34 +280,20 @@ const mdComponents = {
     ) : (
       <PreBlock {...props} />
     ),
-  // 2026-10-21 小杨 - 文件引用链接分流 —— /file-ref?path=… 渲染成 FileRefChip（App 内跳转）
+  // 2026-10-21 小杨 - 文件引用链接分流 —— /file-ref?path=… 渲染成 PathLink（App 内跳转）
   //   ⚠ 绝不能直接复用下面的 <a>：它硬编码 target="_blank" → 文件引用会**新开浏览器标签页**（桌面端灾难）。
   //   故在 a 组件内提前 return，按 href 前缀分流。
   a: (props: MdProps) => {
     const href = props.href ?? '';
-    if (href.startsWith('/file-ref?')) {
-      const m = /^\/file-ref\?path=([^&]+)(?:&line=(\d+)(?:-(\d+))?)?$/.exec(
-        href
+    // 2026-11-02 小欧 - 只有 /file-ref? 前缀才进路径分支；href 解析交唯一解析点
+    //   parseFileRefLink（与 buildFileRefLink 同源）— 小欧-2026-11-02
+    if (isFileRefLink(href)) {
+      const parts = parseFileRefLink(href);
+      // 非法百分号编码 / 形态非法 → 退化纯文本，不造假链接
+      if (!parts) return <>{props.children}</>;
+      return (
+        <PathLink rawPath={parts.rawPath} lineRange={parts.lineRange} pin />
       );
-      // 非法百分号编码（如 %E0%A4%A）不能让整块渲染抛 URIError
-      const p = m ? decodePathParam(m[1]) : null;
-      // 2026-10-22 小欧 - 外部盘符绝对路径（不在项目根内）同样渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
-      if (m && p && (isValidRelPath(p) || isDriveAbsPath(p))) {
-        return (
-          <FileRefChip
-            relPath={p}
-            lineRange={
-              m[2]
-                ? {
-                    start: Number(m[2]),
-                    end: m[3] ? Number(m[3]) : Number(m[2]),
-                  }
-                : undefined
-            }
-          />
-        );
-      }
-      return <>{props.children}</>; // 校验不过 → 退化纯文本，不造假链接
     }
     return (
       <a

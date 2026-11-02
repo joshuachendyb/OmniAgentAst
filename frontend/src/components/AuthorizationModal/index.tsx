@@ -87,6 +87,7 @@
 
 // 编辑历史: 2026-10-11 00:55:20 小欧 - HTL危险确认列出具体变更+后果提示; 计时钟移标题行右侧并缩至44(辅助信息退位, 主内容优先); CountdownRing 直径可调配套 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 07:18:01 小欧 - 计时钟44px定稿 + 秒数去重(环内已有数字, 文字只讲到点会怎样); confirmTimeout=0(禁倒计时)不渲染环, 改显式文案「不自动拒绝(倒计时已禁用)」— 小欧-2026-10-11
+// 编辑历史: 2026-11-02 小欧 - truncatePath/truncateDir 的分隔符归一改调 projectPath.norm，删本文件自建 replace — 小欧-2026-11-02
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
 import {
@@ -107,6 +108,7 @@ import CountdownRing from './CountdownRing';
 // 2026-10-11 02:40 小欧 - 标题改自绘 span 后不再用 Typography.Title（原生 h5 带默认 margin，
 //   在 flex 行里会被挤折行），字重直接给数值 600，与原 h5 视觉一致。
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
+import { norm } from '@/utils/projectPath';
 
 // 2026-10-11 03:30 小欧 - Title 已彻底不用（03:05 起标题自绘 span），同步摘除解构避免死变量告警
 const { Text } = Typography;
@@ -236,17 +238,17 @@ const TEMP_AUTH_LEVELS = new Set([
 
 const truncatePath = (p: string): string => {
   if (!p) return p;
-  const norm = p.replace(/\\/g, '/');
-  const parts = norm.split('/').filter(Boolean);
-  if (parts.length <= 3) return norm;
+  const n = norm(p);
+  const parts = n.split('/').filter(Boolean);
+  if (parts.length <= 3) return n;
   return `…/${parts.slice(-3).join('/')}`;
 };
 
 // 操作范围行只显示目录(去掉末尾文件名, 保留完整目录路径, 不截断)
 const truncateDir = (p: string): string => {
   if (!p) return p;
-  const norm = p.replace(/\\/g, '/');
-  return norm.replace(/\/[^/]*$/, '') || norm;
+  const n = norm(p);
+  return n.replace(/\/[^/]*$/, '') || n;
 };
 
 const truncateValue = (v: string, max = 80): string =>

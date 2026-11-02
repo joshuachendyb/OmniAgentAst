@@ -63,6 +63,12 @@
 //   workspaceStore(只取 list.length), Props 删 sessionWorkspaces/setSessionWorkspaces。原路径让一次保存
 //   触发 useChatPanels(50+ 依赖)整体重建 6 个面板, 恰好撞上流式出帧最密的一刻; 目录是低频元数据,
 //   不该寄生在高频渲染链上, 写口统一收敛到 services/sessionWorkspaceStore — 小欧-2026-10-30
+// 2026-11-02 小欧 - 引用 chip 点击改走唯一路径解析 resolveChipUrlFresh（原自拼 buildFileDeepLink，
+//   根外路径会生成无 ext=1 的内部深链）+ SPA 导航（原 window.open 新标签页，await 后会被弹窗拦截）— 小欧-2026-11-02
+// 2026-11-02 小欧 - @ 补全的路径形态判据改调 projectPath.isLinkableRelPath（原内嵌扩展名 {1,8} 正则，
+//   与 EXT_MAX=10 口径冲突）— 小欧-2026-11-02
+// 2026-11-02 小欧 - chip 跳转补 { state: { internal: true } }（与 PathLink 同口径）：缺该标记时
+//   文件页不清外部预览态，点 chip 后右侧仍停在上一个外部文件 — 小欧-2026-11-02
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -114,7 +120,11 @@ import {
   type ComposerRef,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
-import { buildFileDeepLink } from '@/utils/fileDeepLink';
+import { resolveChipUrlFresh } from '@/hooks/useProjectRoot';
+import { isLinkableRelPath } from '@/utils/projectPath';
+// 2026-11-02 小欧 - 引用 chip 点击改 SPA 导航（与 PathLink/FileTrailPanel 同一口径，且避开
+//   await 后再 window.open 被浏览器当弹窗拦截）— 小欧-2026-11-02
+import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
 import { showMessage, ErrorType } from '../../../services/error/handler';
 import { chatTokens } from '@/theme/tokens';
 import {
@@ -247,6 +257,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [focusKey, setFocusKey] = useState(0);
   const wasBlockedRef = useRef(sendBlocked);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // 2026-11-02 小欧 - 引用 chip 点击的唯一跳转口（有 Router 走 SPA，无 Router 整页跳）— 小欧-2026-11-02
+  const nav = useOptionalNavigate();
   useEffect(() => {
     const was = wasBlockedRef.current;
     wasBlockedRef.current = sendBlocked;
@@ -529,7 +541,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const query = at >= 0 ? v.slice(at + 1, caret) : '';
       const prev = at > 0 ? v[at - 1] : '';
       const atBoundary = !/[A-Za-z0-9._%+-]/.test(prev);
-      const looksPath = /[\\/]|[\w-]+\.[A-Za-z0-9]{1,8}$/.test(query);
+      // 2026-11-02 小欧 - 路径形态改复用 utils/projectPath.isLinkableRelPath（含分隔符或带扩展名）：
+      //   原内嵌正则写死扩展名 `{1,8}`，与 EXT_MAX=10 口径冲突 — 小欧-2026-11-02
+      const looksPath = isLinkableRelPath(query);
       const looksBareName =
         /^[A-Za-z0-9_.-]+$/.test(query) && !query.includes('.');
       const ok =
@@ -692,9 +706,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
                   //   不跳文件页（否则点开一个空 path 的死链），仅作展示
                   if (!r.path) return;
-                  window.open(
-                    buildFileDeepLink(r.path, r.lineRange ?? null),
-                    '_blank'
+                  // 2026-11-02 小欧 - 改走唯一路径解析（点击实时取根），不再直接拼内部深链：
+                  //   根外路径原实现会生成无 ext=1 的内部深链 → 文件页必报找不到 — 小欧-2026-11-02
+                  void resolveChipUrlFresh(r.path, r.lineRange ?? null).then(
+                    // 点击时实时判不过 → 不跳空链；跳转口径与 PathLink 一致（SPA 导航 + internal 标记）
+                    // 2026-11-02 小欧 - 补 internal:true：缺它文件页不清外部预览态，点 chip 像没反应 — 小欧-2026-11-02
+                    (url) => {
+                      if (url) nav(url, { state: { internal: true } });
+                    }
                   );
                 }}
               >
