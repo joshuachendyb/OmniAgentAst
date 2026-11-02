@@ -242,7 +242,7 @@ export const PARAM_PRESETS = [
     type: 'number' as const,
     default: 16384,
     range: PARAM_DEFAULT_RANGES.max_tokens,
-    label: '最大输出Token',  // 2026-11-01 小欧 原名「最大Token」语义含糊, 用户指令改为「最大输出Token」
+    label: '最大输出Token', // 2026-11-01 小欧 原名「最大Token」语义含糊, 用户指令改为「最大输出Token」
     desc: '最大输出 token 数(输出封顶)，超长截断；与厂商声明/厂商级上限取最小',
   },
   {

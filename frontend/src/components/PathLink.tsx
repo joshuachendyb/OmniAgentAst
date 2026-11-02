@@ -273,11 +273,7 @@ export const PathLink: React.FC<PathLinkProps> = ({
     isExternal: target.isExternal,
   };
   const link = inRouter ? (
-    <RoutedLink
-      {...linkProps}
-      dirHint={dirHint}
-      strictShape={strictShape}
-    />
+    <RoutedLink {...linkProps} dirHint={dirHint} strictShape={strictShape} />
   ) : (
     // 无 Router 兜底：同一 LinkBody，落点整页跳（sink 决定，不新开标签页）
     <LinkBody

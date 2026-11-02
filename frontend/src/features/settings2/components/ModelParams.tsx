@@ -188,7 +188,12 @@ export const ModelParams: React.FC<Props> = ({
               <span style={settingsLabelStyle}>
                 {key}{' '}
                 {declaredOnly && (
-                  <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>
+                  <span
+                    style={{
+                      fontSize: FontSize.SECONDARY,
+                      color: Colors.TEXT.WEAK,
+                    }}
+                  >
                     厂商声明
                   </span>
                 )}{' '}
