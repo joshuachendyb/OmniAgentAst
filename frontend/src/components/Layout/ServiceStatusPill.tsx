@@ -10,14 +10,13 @@
 // 编辑历史: 2026-11-02 小欧 - 探活耗时与事件循环并成一行"响应": 常态只给正常, 异常才给 往返·循环 数字(兼定位卡在链路还是循环) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 响应行单位定案毫秒(1820 ms): 时钟格式易被误读成"服务器运作时长"; 离线文案改吃 PROBE_TIMEOUT_MS 免字面量漂移 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG 与根宽别名 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 小欧 - 删浮层「SSE 流」组: 与流状态胶囊浮层同源同数据(重复), 服务浮层只答进程/链路 — 小欧-2026-11-03
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useApp } from '../../contexts/AppContext';
-import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
 import { PillTip, type PillTipRow } from './PillTip';
 import { PillShell } from './PillShell';
-import { streamDataRows } from './streamPillRows';
 import { FontSize, Colors } from '../../utils/stepStyles';
 import { API_BASE_URL } from '../../services/api/client';
 import {
@@ -206,14 +205,9 @@ const ServiceStatusPill: React.FC = () => {
       ? Math.round(healthStatus.uptime_s * 1000)
       : null;
 
-  // 2026-11-02 小欧 - 流状态并入浮层: 同一个后端进程, 但探活与 SSE 是两条独立链路,
-  //   并排显示才能区分"进程还活着 / 这条流已经断了" — 小欧-2026-11-02
-  const streamView = useStreamPulse();
-  const streamTone =
-    streamView.tone === 'neutral' ? undefined : streamView.tone;
-
   // 2026-11-02 小欧 - 分组八行(全量常显): 地址组答"连的是谁", 探测组答"这一次测出什么", 进程组答"是哪条命、活了多久";
   //   响应行常态只给"正常", 数字只在异常时出现, 免假精确也免与存活时长混淆 — 小欧-2026-11-02
+  //   2026-11-03 小欧 - 流状态组已删(与流状态胶囊浮层重复), 本浮层只答进程与链路 — 小欧-2026-11-03
   const responseView = deriveResponse(latencyMs, loopLagMs);
   const rows: PillTipRow[] = [
     { label: '本机', value: lanAddr || '未上报', mono: true, group: '地址' },
@@ -238,13 +232,6 @@ const ServiceStatusPill: React.FC = () => {
         .join(' · '),
       group: '后端进程',
     },
-    {
-      label: '流状态',
-      value: streamView.pulse.active ? streamView.text : '无进行中的流',
-      tone: streamTone,
-      group: 'SSE 流',
-    },
-    ...streamDataRows(streamView),
   ];
 
   return (
