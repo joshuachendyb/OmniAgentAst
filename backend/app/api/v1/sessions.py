@@ -25,6 +25,7 @@
 
 # 2026-11-02 小欧 - GET /workspaces 增 prune(默认 false 纯读): 仅面板打开时显式清不可用行,
 #   条数按 rowcount 作 pruned 带回; 响应不含 unusable — 小欧-2026-11-02
+# 2026-11-02 小欧 - 删死类 _SessionCreate(私有、全仓零引用, 端点直接吃 SessionCreate) — 小欧-2026-11-02
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
@@ -52,11 +53,6 @@ from app.services.chat.storage import (
 )
 
 router = APIRouter()
-
-
-class _SessionCreate(SessionCreate):
-    """会话创建 DTO(继承 models 以兼容现有响应) — 薄壳透传"""
-    pass
 
 
 @router.post("/sessions")
