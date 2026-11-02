@@ -23,6 +23,9 @@ type Tone = 'ok' | 'warn' | 'error' | 'neutral';
 const TIP_MIN_W = 240;
 /** 内容最大宽, 胶囊侧据此算浮层根宽上限(antd 根节点默认 250px 会提前折行) — 2026-11-02 小欧 */
 export const PILL_TIP_MAX_W = 320;
+/** 浮层根宽上限: 内容宽+左右padding+描边; 三个胶囊共用同一算法 — 2026-11-02 小欧 */
+export const PILL_TIP_ROOT_MAX_W =
+  PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
 const LABEL_COL_W = 56;
 const DOT_SIZE = 8;
 const LINE_HEIGHT = 1.6;

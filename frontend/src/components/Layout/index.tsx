@@ -69,6 +69,7 @@ import {
 import { GlobalModelSelect } from './GlobalModelSelect';
 import { ConfigStatusPill } from './ConfigStatusPill';
 import { ServiceStatusPill } from './ServiceStatusPill';
+import { StreamStatusPill } from './StreamStatusPill';
 import ShortcutPanel from '../ShortcutPanel';
 import { TitleSpinIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
@@ -354,6 +355,8 @@ const AppLayout: React.FC<LayoutProps> = ({
             <ConfigStatusPill />
             {/* 后端服务状态胶囊 - 2026-11-02 小欧 新建(北京老陈令): 与配置胶囊分立, 只答"后端能不能应答"/health三态(绿正常/黄缓慢或降级/红离线), Tooltip全量常显地址/PID/耗时 — 小欧-2026-11-02 */}
             <ServiceStatusPill />
+            {/* SSE 流状态小灯 - 2026-11-02 小欧 新建: 与服务胶囊正交, 只答"当前这条流活没活/心跳新不新", 只读 store 不发请求 — 小欧-2026-11-02 */}
+            <StreamStatusPill />
             {/* 2026-10-27 小欧 - 菜单宽度切换(宽/窄菜单, 漂亮的视觉设计) */}
             <SidebarModeSwitcher />
             <Avatar size="small" icon={<DesktopOutlined />} />

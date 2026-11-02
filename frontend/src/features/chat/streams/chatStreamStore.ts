@@ -150,6 +150,57 @@ export function getActiveSessionStatusList(): Array<{
   return out;
 }
 
+/**
+ * 2026-11-02 小欧 - 顶栏流状态灯数据源：整库一次聚合，只读、绝不创建会话。
+ * 挑选口径：先取非终态且非 idle 的会话，其中取 heartbeatTs 最大者（最近还在说话的那条）；
+ * 全空返回空态。activeSessions 供浮层显示并发流条数。
+ */
+export interface StreamPulse {
+  active: boolean;
+  sessionId: string | null;
+  status: string;
+  reconnectStatus: string;
+  isReceiving: boolean;
+  serverTaskId: string | null;
+  heartbeatTs: number;
+  lastDataTime: number;
+  activeSessions: number;
+}
+
+export function buildStreamPulse(): StreamPulse {
+  let picked: ChatStreamSession | undefined;
+  let activeSessions = 0;
+  sessions.forEach((s) => {
+    if (isTerminalStatus(s.status) || s.status === 'idle') return;
+    activeSessions += 1;
+    if (!picked || s.heartbeatTs > picked.heartbeatTs) picked = s;
+  });
+  if (!picked) {
+    return {
+      active: false,
+      sessionId: null,
+      status: 'idle',
+      reconnectStatus: 'idle',
+      isReceiving: false,
+      serverTaskId: null,
+      heartbeatTs: 0,
+      lastDataTime: 0,
+      activeSessions,
+    };
+  }
+  return {
+    active: true,
+    sessionId: picked.sessionId,
+    status: picked.status,
+    reconnectStatus: picked.reconnectStatus,
+    isReceiving: picked.isReceiving,
+    serverTaskId: picked.serverTaskId,
+    heartbeatTs: picked.heartbeatTs,
+    lastDataTime: picked.lastDataTime,
+    activeSessions,
+  };
+}
+
 /** 2026-09-30 07:58 小欧 - 会话状态 → ResumeResult 单一判定口。
  *  sendMessage 尾与 resume 活流守卫共用同一口径（DRY：终态/非终态二分只写一次，不两处各抄一遍）。 */
 function resumeResultOf(s: ChatStreamSession): ResumeResult {
@@ -721,6 +772,9 @@ export const chatStreamStore = {
   },
 
   hasSession: (sessionId: string) => sessions.has(sessionId),
+
+  /** 2026-11-02 小欧 - 顶栏流状态灯: 只读聚合快照(不创建会话), 由调用方按需采样。 */
+  getPulse: (): StreamPulse => buildStreamPulse(),
 
   /** 终态 TTL 排期（幂等）：实现已归模块级 scheduleTerminalEvictOf（见其注释的说明），
    *  本方法仅为对外 API 保留，内部不再另写一份。 */

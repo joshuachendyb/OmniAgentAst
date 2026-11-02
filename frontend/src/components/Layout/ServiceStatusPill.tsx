@@ -19,7 +19,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useApp } from '../../contexts/AppContext';
-import { PillTip, PILL_TIP_MAX_W, type PillTipRow } from './PillTip';
+import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
+import { PillTip, PILL_TIP_ROOT_MAX_W, type PillTipRow } from './PillTip';
 import {
   Spacing,
   FontSize,
@@ -36,8 +37,8 @@ import type { HealthStatus } from '../../services/api/health.api';
 
 // 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与配置胶囊同令牌) — 小欧-2026-11-02
 const HOVER_BG = Colors.BG.HOVER;
-// 2026-11-02 小欧 - 浮层根宽上限: 内容宽+左右padding+描边, 破 antd 根节点默认250px提前折行 — 小欧-2026-11-02
-const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
+// 2026-11-02 小欧 - 浮层根宽上限随 PillTip 统一(与配置/流状态胶囊同算法) — 小欧-2026-11-02
+const TIP_ROOT_MAX_W = PILL_TIP_ROOT_MAX_W;
 // 2026-11-02 小欧 - 应答时刻取后端本地ISO的年月日+时刻段(不new Date, 免浏览器时区二次换算); 只留时刻会看不出是哪天 — 小欧-2026-11-02
 const stampOf = (iso?: string): string => {
   const [date, time] = (iso ?? '').split('T');
@@ -218,6 +219,12 @@ const ServiceStatusPill: React.FC = () => {
       ? Math.round(healthStatus.uptime_s * 1000)
       : null;
 
+  // 2026-11-02 小欧 - 流状态并入浮层: 同一个后端进程, 但探活与 SSE 是两条独立链路,
+  //   并排显示才能区分"进程还活着 / 这条流已经断了" — 小欧-2026-11-02
+  const streamView = useStreamPulse();
+  const streamTone =
+    streamView.tone === 'neutral' ? undefined : streamView.tone;
+
   // 2026-11-02 小欧 - 分组八行(全量常显): 地址组答"连的是谁", 探测组答"这一次测出什么", 进程组答"是哪条命、活了多久";
   //   响应行常态只给"正常", 数字只在异常时出现, 免假精确也免与存活时长混淆 — 小欧-2026-11-02
   const responseView = deriveResponse(latencyMs, loopLagMs);
@@ -243,6 +250,20 @@ const ServiceStatusPill: React.FC = () => {
         .filter(Boolean)
         .join(' · '),
       group: '后端进程',
+    },
+    {
+      label: '流状态',
+      value: streamView.pulse.active ? streamView.text : '无进行中的流',
+      tone: streamTone,
+      group: 'SSE 流',
+    },
+    {
+      label: '最近心跳',
+      value:
+        streamView.heartbeatAgeSec === null
+          ? '未收到'
+          : `${streamView.heartbeatAgeSec} 秒前`,
+      tone: streamView.heartbeatStale ? 'warn' : undefined,
     },
   ];
 

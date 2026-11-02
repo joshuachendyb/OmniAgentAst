@@ -123,7 +123,10 @@ function clearFirstChunkTimer(s: ChatStreamSession): void {
   });
 }
 
-const IDLE_TIMEOUT = 60_000; // 无数据判定断连（心跳刷新；HITL 等待期暂停，useSSE.ts:912-933）
+/** 空闲判死窗口: 60s 内未收到任何字节即判连接死亡并续传。
+ *  与后端 HEARTBEAT_INTERVAL=25s 是一对预算(2×25<60, 窗口内必含 2 次心跳), 改一侧须同步改另一侧。
+ *  导出供顶栏流状态灯显示阈值, 避免浮层另写一份字面量 — 2026-11-02 小欧 */
+export const IDLE_TIMEOUT = 60_000;
 const MAX_ATTEMPTS = 3; // 重连次数上限（useSSE reconnectAttemptsRef 口径 useSSE.ts:543-547）
 // 2026-09-30 小欧 - SSE 单帧字节上限（残包 buf 的内存护栏）。
 //   取 8MB：远大于正常帧，又远低于能让标签页 OOM 的量级，与快照的 4MB 阈值同数量级。
