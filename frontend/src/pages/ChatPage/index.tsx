@@ -121,8 +121,11 @@ const ChatPage: React.FC = () => {
     latestTaskId,
     updateTaskResponse, // 小欧 2026-09-11 SSE final 帧到达时即时更新 task response — 小欧-2026-09-11
   } = useSessionTasks(sessionId);
-  // 2026-10-08 小欧 - 文档[11]: 挂上真实 refresh(渲染期赋值, 供上方 onTasksChanged 经 ref 调用)
-  refreshTasksRef.current = refreshTasks;
+  // 2026-11-02 小欧 - ref 中转是顺序依赖所必需(useChatFacade 的 sessionId 来自其返回值,
+  //   useSessionTasks 只能声明在其后), 回调经 ref 取最新 refresh; 改为 effect 同步, 避免渲染期写 ref。
+  useEffect(() => {
+    refreshTasksRef.current = refreshTasks;
+  }, [refreshTasks]);
   const { effective } = useModelLayer({
     sessionId,
     sessionVersion: chatState.sessionVersion,

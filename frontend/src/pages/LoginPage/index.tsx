@@ -12,7 +12,10 @@
  *   2026-11-02 小欧 - 三堂会审整改（逻辑零变更）：①抽 showAuthError 消除两处重复三元（DRY）；
  *     ② detailOf 并入 forbiddenDetail，messageOf 复用全局 extractErrorMessage（复用优先）；
  *     ③ 警示框/灰字硬编码色改 Colors 令牌（新增 WARNING_BORDER 与 ERROR_BORDER 对称）；
- *     ④ 副文 13px 归 12px 二档制（M2）。类型仍用 AUTH_401/403：400 等参数错误归网络类会误导。
+ *     ④ 副文 13px 归 12px 二档制（M2）。
+ *   2026-11-02 小欧 - 错误类型严格分类：showAuthError 改用 classifyError（401/403/网络/超时/服务端
+ *     各归其类），UNKNOWN（400 等业务错误）兜底为 BACKEND_ERROR，不再一律报 AUTH_401。
+ *     测试改为部分 mock（保留真实 classifyError/extractErrorMessage，只拦 showMessage）。
  *
  * 背景：服务绑 0.0.0.0（多机部署硬前提不可收窄），鉴权前局域网任意设备可直调任何接口
  *   （读走全部 provider 明文密钥 / 改擦密钥 / 越权读会话）。本页是口令录入入口：
@@ -29,6 +32,7 @@ import { Button, Input } from 'antd';
 import { getAccessToken, setAccessToken } from '@/services/api/client';
 // 2026-09-26 小欧 - 统一提示规范（禁 message.*，走 error/handler）
 import {
+  classifyError,
   ErrorType,
   extractErrorMessage,
   showMessage,
@@ -248,11 +252,6 @@ const LoginPage: React.FC = () => {
 
 export default LoginPage;
 
-/** 2026-09-27 小欧 - axios 错误对象里取 HTTP 状态码（axios 内部路径不稳定，不直接摸） */
-function statusOf(e: unknown): number | undefined {
-  return (e as { response?: { status?: number } } | null)?.response?.status;
-}
-
 /** 403 的 detail 是精确引导（如「只能在服务端本机进行」）；只认 detail，无则兜底中文 */
 function forbiddenDetail(e: unknown): string {
   const d = (e as { response?: { data?: { detail?: string } } } | null)
@@ -267,21 +266,21 @@ function messageOf(e: unknown): string {
 
 /**
  * 2026-11-02 小欧 - 登录/首设失败统一提示口径，消除两处重复三元：
- * 403 透传后端原话；401 报口令无效；其余（网络/服务端/参数）带前缀转述真实原因。
- * 类型统一用鉴权流程失败（AUTH_401/AUTH_403）——本页所有失败都表现为"进不来"，
- * 不另设网络类：400 等参数错误若归网络类会误导用户去查网络。
+ * 403 透传后端原话；401 报口令无效；其余按 classifyError 的真实分类报（网络/超时/服务端），
+ * 400 等业务错误 classifyError 归 UNKNOWN，改用 BACKEND_ERROR，避免给用户看"未知错误"。
  */
 function showAuthError(e: unknown, firstSetup: boolean): void {
-  if (statusOf(e) === 403) {
+  const type = classifyError(e);
+  if (type === ErrorType.AUTH_403) {
     showMessage(ErrorType.AUTH_403, forbiddenDetail(e));
     return;
   }
-  if (statusOf(e) === 401) {
+  if (type === ErrorType.AUTH_401) {
     showMessage(ErrorType.AUTH_401, '访问口令无效');
     return;
   }
   showMessage(
-    ErrorType.AUTH_401,
+    type === ErrorType.UNKNOWN ? ErrorType.BACKEND_ERROR : type,
     `${firstSetup ? '设置访问口令失败' : '验证失败'}：${messageOf(e)}`
   );
 }
