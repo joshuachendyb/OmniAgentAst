@@ -145,12 +145,14 @@ export const deriveStreamState = (
       main: `已 ${dataAgeSec ?? 0} 秒无任何数据（业务帧与心跳均无）`,
     };
   }
+  // 兜底: pulse.status 只可能是 active/paused/retrying/recovering(其余状态被 store 过滤),
+  //   上面四档已全覆盖, 本分支正常不可达。语义与"无流"同(灰=没有在跑的东西), 不留第二个灰标签 — 2026-11-02 小欧
   return {
     ...base,
     tone: 'neutral',
     badge: 'default',
-    text: '已连接',
-    main: '会话存在但当前无数据推送',
+    text: '无流',
+    main: '当前没有进行中的任务流',
   };
 };
 
