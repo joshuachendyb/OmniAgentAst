@@ -2,13 +2,14 @@
 // 编辑历史: 2026-11-02 小欧 - 新建: 只读 store 聚合快照(共享 1s 采样), 不发任何请求 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - badge 由 tone 单点映射, 浮层数据行抽到 streamPillRows 与胶囊共用 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 小欧 - 字号归 PillShell 统一定(12), 标签只留语义色 — 小欧-2026-11-03
 import React from 'react';
 import { Badge } from 'antd';
 
 import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
 import type { StreamTone } from '../../features/chat/hooks/useStreamPulse';
 import { IDLE_TIMEOUT } from '../../features/chat/streams/chatStreamTransport';
-import { Colors, FontSize } from '../../utils/stepStyles';
+import { Colors } from '../../utils/stepStyles';
 import { TONE_COLOR } from '../../utils/tone';
 import { PillTip, type PillTipRow } from './PillTip';
 import { PillShell } from './PillShell';
@@ -62,15 +63,9 @@ const StreamStatusPill: React.FC = () => {
     : [{ label: '流', value: '无进行中的任务' }];
 
   // 2026-11-02 小欧 - 文字与状态点同色; antd Badge 没有橘红 status, alert 档走自定义 color 点 — 小欧-2026-11-02
+  // 2026-11-03 小欧 - 字号由 PillShell 统一定(12); 此处只留语义色, 字号行高成对同源 — 小欧-2026-11-03
   const label = (
-    <span
-      style={{
-        fontSize: FontSize.SECONDARY,
-        color: TONE_COLOR[view.tone],
-      }}
-    >
-      {view.text}
-    </span>
+    <span style={{ color: TONE_COLOR[view.tone] }}>{view.text}</span>
   );
 
   return (

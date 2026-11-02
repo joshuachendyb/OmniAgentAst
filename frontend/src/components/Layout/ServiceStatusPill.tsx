@@ -11,13 +11,14 @@
 // 编辑历史: 2026-11-02 小欧 - 响应行单位定案毫秒(1820 ms): 时钟格式易被误读成"服务器运作时长"; 离线文案改吃 PROBE_TIMEOUT_MS 免字面量漂移 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG 与根宽别名 — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 小欧 - 删浮层「SSE 流」组: 与流状态胶囊浮层同源同数据(重复), 服务浮层只答进程/链路 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 小欧 - 字号归 PillShell 统一定(12), 本文件文字只留语义色 — 小欧-2026-11-03
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useApp } from '../../contexts/AppContext';
 import { PillTip, type PillTipRow } from './PillTip';
 import { PillShell } from './PillShell';
-import { FontSize, Colors } from '../../utils/stepStyles';
+import { Colors } from '../../utils/stepStyles';
 import { API_BASE_URL } from '../../services/api/client';
 import {
   SLOW_RESPONSE_MS,
@@ -260,11 +261,7 @@ const ServiceStatusPill: React.FC = () => {
     >
       <Badge
         status={state.badge}
-        text={
-          <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
-            {state.text}
-          </span>
-        }
+        text={<span style={{ color: state.color }}>{state.text}</span>}
       />
     </PillShell>
   );

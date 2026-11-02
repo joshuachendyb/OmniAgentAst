@@ -7,10 +7,18 @@
  */
 // 编辑历史: 2026-11-03 小欧 - 新建: 三胶囊各自复制 Tooltip 颜色/styles、容器栅格与 hover 事件(DRY),
 //   抽出外壳后三处只留内容 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 小欧 - 容器收口字号12/行高16px/nowrap: 原继承顶栏 64px 行高致色块高 72px(字的6倍);
+//   16+pad8=24 与顶栏 Button/Select 同高, 三胶囊不再各自声明字号 — 小欧-2026-11-03
 import React, { type CSSProperties, type ReactNode } from 'react';
 import { Tooltip } from 'antd';
 import type { TooltipProps } from 'antd';
-import { Colors, Radius, Spacing, BorderWidth } from '../../utils/stepStyles';
+import {
+  Colors,
+  Radius,
+  Spacing,
+  BorderWidth,
+  FontSize,
+} from '../../utils/stepStyles';
 import { PILL_TIP_ROOT_MAX_W } from './PillTip';
 
 /** 浮层白卡片: 根宽上限/内边距/描边/圆角, 三胶囊同一份 — 小欧-2026-11-03 */
@@ -29,12 +37,17 @@ const TOOLTIP_PROPS: Pick<TooltipProps, 'color' | 'styles'> = {
 /** 顶栏白底上的悬停浅灰(与侧栏底条 hover 同令牌) — 小欧-2026-11-03 */
 const HOVER_BG = Colors.BG.HOVER;
 
-/** 容器栅格: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM — 小欧-2026-11-03 */
+/** 容器栅格: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM, 字12 — 小欧-2026-11-03
+ *  行高钉死16px(保留裸值: 字号令牌12/14无同值可替): 顶栏 .ant-layout-header 默认 64px 行高会被继承,
+ *  色块高 72px=12px 字的 6 倍; 16+上下 pad 8=24 与顶栏 Button/Select/Avatar 同高。nowrap 防挤压逐字换行 — 小欧-2026-11-03 */
 const SHELL_STYLE: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   padding: `${Spacing.XS}px ${Spacing.MD}px`,
   borderRadius: Radius.SM,
+  fontSize: FontSize.SECONDARY,
+  lineHeight: '16px',
+  whiteSpace: 'nowrap',
   transition: 'background 0.2s',
 };
 

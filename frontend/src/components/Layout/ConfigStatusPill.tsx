@@ -10,6 +10,7 @@
 // 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细/动作), 删内联堆叠 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body)并删指向不存在id的aria-describedby死属性 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG 与根宽重算 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 小欧 - 字号归 PillShell 统一定(12), 本文件文字只留语义色 — 小欧-2026-11-03
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import type { BadgeProps } from 'antd';
@@ -17,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
 import { PillTip } from './PillTip';
 import { PillShell } from './PillShell';
-import { FontSize, Colors } from '../../utils/stepStyles';
+import { Colors } from '../../utils/stepStyles';
 import type { ValidateResponse } from '../../services/api/chat.api';
 
 // 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
@@ -165,11 +166,7 @@ const ConfigStatusPill: React.FC = () => {
     >
       <Badge
         status={state.badge}
-        text={
-          <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
-            {state.text}
-          </span>
-        }
+        text={<span style={{ color: state.color }}>{state.text}</span>}
       />
     </PillShell>
   );
