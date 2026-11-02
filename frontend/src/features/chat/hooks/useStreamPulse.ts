@@ -1,6 +1,8 @@
 ﻿// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏流状态灯数据源, 1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 判据拆三线: lastBizTs=有无产出 / heartbeatTs=连接断没断 / lastDataTime=对齐 60s 判死; 补"连接中"档 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 06:40:41 小欧 - 8 档各带 phase 标识(表现层按它选视觉, 不拿中文文案当键); sameView 同步比较 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 06:52:40 小欧 - 标签去术语并统一 3 字: 无流→无任务 / 流进行中→流持续 / 等待确认→待确认,
+//   八档等宽, 胶囊不因档位跳宽; 流持续与流迟滞成对(在出数 / 出数迟滞), 只改文案, phase 与判据不变 — 小欧-2026-11-03
 import { useSyncExternalStore } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
@@ -80,7 +82,7 @@ export const deriveStreamState = (
       ...base,
       phase: 'idle',
       tone: 'neutral',
-      text: '无流',
+      text: '无任务',
       main: '当前没有进行中的任务流',
     };
   }
@@ -107,7 +109,7 @@ export const deriveStreamState = (
       ...base,
       phase: 'waiting',
       tone: 'warn',
-      text: '等待确认',
+      text: '待确认',
       main: '任务在等人工确认，空闲计时已暂停',
     };
   }
@@ -126,7 +128,7 @@ export const deriveStreamState = (
       ...base,
       phase: 'running',
       tone: 'ok',
-      text: '流进行中',
+      text: '流持续',
       main: '后端正在推送事件',
     };
   }

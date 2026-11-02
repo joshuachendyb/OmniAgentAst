@@ -3,6 +3,7 @@
 // 编辑历史: 2026-11-02 小欧 - badge 由 tone 单点映射, 浮层数据行抽到 streamPillRows 与胶囊共用 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 小欧 - 字号归 PillShell 统一定(12), 标签只留语义色 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 06:52:40 小欧 - 空态浮层不再复读标题(流/无进行中的任务), 改一行提示 — 小欧-2026-11-03
 import React from 'react';
 import { Badge } from 'antd';
 
@@ -60,7 +61,7 @@ const StreamStatusPill: React.FC = () => {
           ? [{ label: '并发', value: `${p.activeSessions} 条流` }]
           : []),
       ]
-    : [{ label: '流', value: '无进行中的任务' }];
+    : [{ label: '提示', value: '发送任务后这里显示实时状态' }];
 
   // 2026-11-02 小欧 - 文字与状态点同色; antd Badge 没有橘红 status, alert 档走自定义 color 点 — 小欧-2026-11-02
   // 2026-11-03 小欧 - 字号由 PillShell 统一定(12); 此处只留语义色, 字号行高成对同源 — 小欧-2026-11-03
