@@ -53,6 +53,7 @@
 #   仍不回落全局默认 key(跨 provider 绝不用他人凭据)。 小欧-2026-10-31
 # 2026-11-01 19:28 小欧 - 同 provider 换模型也按目标 provider+model 重解析: parse_model_params 收敛为唯一入口
 #   (3 元组含用户 max_tokens), inherit_missing=False 未配回落默认, 根治沿用旧模型参数 — 小欧-2026-11-01
+# 2026-11-02 - 小欧 - validate_config 4元组: ④models列表警告归warnings不再计入errors判死(列表漏维护≠不可用), 唯一调用方validate_chat_config同步 - 小欧-2026-11-02
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -158,20 +159,19 @@ class AIConfigResolver:
         return ai_config[provider]
 
     def validate_config(self) -> tuple:
-        """验证AI配置有效性 — 完全复用已有方法 — 小欧 2026-08-22 返回值归一 ModelRef
-        Returns:
-            (is_valid, config_model: ModelRef, error_messages)
-        """
+        """验证AI配置有效性 — 小欧 2026-08-22 ModelRef; 2026-11-02 小欧 红黄分级: ④models列表警告归warnings不再计入errors判死,
+        唯一调用方 stream_orchestrator.validate_chat_config 同步4元组; Returns: (is_valid, config_model, errors, warnings)"""
         ai_config = self.get_ai_config()
         provider, model = self._extract_provider_model(ai_config)
-        errors = []
+        errors: list = []
+        warnings: list = []
         try:
             warning = self._validate_all(ai_config, provider, model)
             if warning:
-                errors.append(warning)
+                warnings.append(warning)
         except ValueError as e:
             errors.append(str(e))
-        return (len(errors) == 0, ModelRef(provider=provider or "unknown", model=model or ""), errors)
+        return (len(errors) == 0, ModelRef(provider=provider or "unknown", model=model or ""), errors, warnings)
 
 
 _global_resolver: Optional[AIConfigResolver] = None

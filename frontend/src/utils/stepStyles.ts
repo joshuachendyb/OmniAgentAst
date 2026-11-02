@@ -33,6 +33,7 @@
 // 编辑历史: 2026-10-22 小欧 - FontFamily.MONO 字体栈换 Sarasa Mono SC 栈首(框线/CJK 宽度与
 //   asciiArt.ts 列宽模型对齐); 仓内 5 处硬编码字体栈收敛到本令牌(AboutFiles/StaticStatsBlock 2处/
 //   SecretRevealInput/FilePreview) — 小欧-2026-10-22
+// 编辑历史: 2026-11-02 小欧 - 三堂会审尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -136,6 +137,8 @@ export const Spacing = {
   MD: 8, // 中间距
   LG: 12, // 大间距
   XL: 16, // 超大间距
+  // 2026-11-02 小欧 - XXL=20: Layout顶栏左右距/NavContent底条宽态左右距收口(原硬码20) — 小欧-2026-11-02
+  XXL: 20, // 特大间距（顶栏/底条横向留白）
 } as const;
 
 // 2026-08-30 小欧 北京老陈最新定案(字体留白全0 + 行高=字号+4): 流水线段距单点——
@@ -156,6 +159,8 @@ export const Radius = {
   SM: 4, // 小圆角
   DEFAULT: 6, // 中圆角
   LG: 8, // 大圆角
+  // 2026-11-02 小欧 - CONTAINER=12: Layout内容区大容器圆角收口(原硬码12) — 小欧-2026-11-02
+  CONTAINER: 12, // 大容器圆角
 } as const;
 
 // 2026-10-07 小欧 - step 行首图标统一规格(解决"犬牙交错": 盒子不等宽/图形内缩/gap 不一致 三重叠加):
@@ -179,6 +184,8 @@ export const Colors = {
     TERTIARY: '#999999', // 辅助文字 - 浅灰
     WEAK: '#888888', // 弱文字 - 空态/斜体
     STRONG: '#333333', // 强文字 - 文件名/重点（替代硬码#333/#262626）
+    // 2026-11-02 小欧 - MUTED=#666: Layout顶栏"用户"名/弹窗辅助说明灰收口(原6处散落#666), 与SECONDARY(#8c8c8c)不同值保原视觉零差 — 小欧-2026-11-02
+    MUTED: '#666',
   },
   // 背景颜色（3种浅色）
   BG: {
@@ -187,6 +194,8 @@ export const Colors = {
     TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
     LIGHT: '#fafafa', // 浅背景（别名）
     WARNING_LIGHT: '#fffbe6', // 警告浅底（高亮背景，替 rgba）
+    // 2026-11-02 小欧 - HOVER=#f0f0f0: Layout底部版本信息hover底收口(与BORDER.LIGHT同值, BG/BORDER各自组内语义不混用) — 小欧-2026-11-02
+    HOVER: '#f0f0f0',
   },
   // 边框颜色（3种浅色）
   BORDER: {
@@ -243,6 +252,8 @@ export const Size = {
   //   固定 460 会在 <492px 视口下撑破视口(此坑见 [29] v2.4 第⑩项)。
   PARAMS_PANEL_MIN_W: 460, // 浮层面板最小宽(标题 nowrap 所需下限; 窄屏由 min() 收敛到视口内)
   PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
+  // 2026-11-02 小欧 - HEADER_HEIGHT=43: 顶栏Header/LayoutSkeleton/NavContent Logo区三处同值43收口(纵向对齐三方, 改一处全联动) — 小欧-2026-11-02
+  HEADER_HEIGHT: 43, // 顶栏高度(三文件对齐锚点)
 } as const;
 
 // ==================== 步骤配置 ====================

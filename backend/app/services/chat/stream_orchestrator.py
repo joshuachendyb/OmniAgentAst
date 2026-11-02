@@ -251,6 +251,7 @@
 # 2026-10-31 小欧 - 目录块在编排层渲染一次, 汇总日志(report_ws_block)与
 #   超限轻提示(build_ws_notice, 复用 notice 信封)取同一份数字; 文本经 _start_meta.ws_block 交
 #   init_history 装配 —— 注入/日志/回执不再各算一遍 — 小欧-2026-10-31
+# 2026-11-02 - 小欧 - validate_chat_config 三级分级: 第5步凭证校验(api_key/api_base空白黄牌, 漏配key不再谎绿)+status/errors/warnings实装(顶栏胶囊承接) - 小欧-2026-11-02
 
 
 
@@ -386,29 +387,51 @@ def generate_task_id() -> str:
 async def validate_chat_config():
     """聊天配置校验 — 自 api/v1/chat/openai.py 迁入 orchestrator — 小欧 2026-08-13
     2026-08-22 小欧 归一报告v1.25 6.6: resolver.validate_config 返回 (is_valid, ModelRef, errors);
-    响应键 provider/model 归一为 model_ref 结构(方案B 前端随后端)"""
+    响应键 provider/model 归一为 model_ref 结构(方案B 前端随后端)
+    2026-11-02 小欧 - 三级分级: resolver 4元组(④models预警不判死)+第5步凭证校验(复用lifecycle权威, 解决漏配key胶囊仍绿);
+    status='success'/'warning'/'failed'"""
     from app.logger import logger
     try:
         resolver = get_ai_config_resolver()
-        is_valid, config_model, error_messages = resolver.validate_config()
+        is_valid, config_model, errors, warnings = resolver.validate_config()
+        # 第5步: 凭证校验(api_key/api_base 空白=预警不拦截, 无鉴权端点合法) — 复用设置页深校验同一权威
+        from app.services.lifecycle.validation import validate_credentials
+        cred_errors, cred_warnings = validate_credentials(
+            resolver.get_ai_config(), config_model.provider)
+        errors.extend(cred_errors)
+        warnings.extend(cred_warnings)
+        model_ref = {"provider": config_model.provider or "unknown",
+                     "model": config_model.model or ""}
         if not is_valid:
             return {
                 "valid": False,
-                "message": f"配置验证失败: {', '.join(error_messages)}",
-                "model_ref": {"provider": config_model.provider or "unknown",
-                              "model": config_model.model or ""},
+                "status": "failed",
+                "message": f"配置错误: {'; '.join(errors)}",
+                "model_ref": model_ref,
+                "errors": errors,
+                "warnings": warnings,
             }
+        # 文本派生, 允许 — 预警存在时如实告知"可用但有隐患"
+        message = (f"配置就绪: {config_model.provider} ({config_model.model})"
+                   if not warnings else
+                   f"配置可用，有 {len(warnings)} 项预警: {'; '.join(warnings)}")
         return {
             "valid": True,
-            "message": f"配置验证通过: {config_model.provider} ({config_model.model})",   # 文本派生, 允许
-            "model_ref": {"provider": config_model.provider, "model": config_model.model},
+            "status": "warning" if warnings else "success",
+            "message": message,
+            "model_ref": model_ref,
+            "errors": errors,
+            "warnings": warnings,
         }
     except Exception as e:
         logger.error(f"验证AI服务配置失败: {e}")
         return {
             "valid": False,
+            "status": "failed",
             "message": f"验证失败: {str(e)}",
             "model_ref": None,
+            "errors": [],
+            "warnings": [],
         }
 
 
