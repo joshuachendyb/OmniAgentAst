@@ -19,6 +19,8 @@
 #   守卫提为共用模块 api/v1/_gates.py, 与 /tool/list、/tool/execute 同一道门; 不在 health.py 复写一遍(违 DRY)。/health 不受影响。
 # 2026-11-02 小欧 - /health 响应加 host 字段(Host头): 顶栏服务胶囊需显示真实后端地址, 开发(Vite代理)/打包(同源或直连)通用 — 小欧-2026-11-02
 # 2026-11-02 小欧 - /health 再加 server_ip(本机局域网IP, lru_cache)与 pid: 他人访问地址与卡死排错要用的可执行信息 — 小欧-2026-11-02
+# 2026-11-02 小欧 - 再加 uptime_s(进程存活时长)与 loop_lag_ms(事件循环调度延迟点采样): 前端"耗时"只能推断卡死,
+#   这两个字段把"网络慢"与"事件循环被占死"分开, 与 AGENTS.md 的 py-spy 取证串成一条证据链 — 小欧-2026-11-02
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -29,6 +31,8 @@ from pydantic import BaseModel
 
 import os
 import socket
+import asyncio
+import time
 from functools import lru_cache
 
 from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁定: /echo 受调试开关约束
@@ -48,6 +52,20 @@ def _server_lan_ip() -> str:
     except OSError:
         return ""
 
+# 2026-11-02 小欧 - 进程启动时刻(本模块在 app 导入期加载, 与进程启动同刻); monotonic 不受系统时钟调整影响
+_STARTED_AT = time.monotonic()
+
+
+async def _loop_lag_ms() -> float:
+    """事件循环调度延迟(点采样, 毫秒) — 2026-11-02 小欧
+
+    做法: 让出一次控制权, 量"多久才被重新调度"。循环被同步任务占死时该值显著上升,
+    故可与前端往返耗时对照, 区分"网络慢"与"事件循环卡住"。只代表此刻, 不是历史峰值。
+    """
+    started = time.monotonic()
+    await asyncio.sleep(0)
+    return round((time.monotonic() - started) * 1000, 3)
+
 # ===== health =====
 
 class HealthResponse(BaseModel):
@@ -58,6 +76,8 @@ class HealthResponse(BaseModel):
     host: str = ""  # 2026-11-02 小欧 - 后端视角访问地址(Host头), 顶栏服务胶囊显示真实后端地址(开发/打包通用)
     server_ip: str = ""  # 2026-11-02 小欧 - 本机局域网IP, 供他人访问时使用
     pid: int = 0  # 2026-11-02 小欧 - 进程号, 卡死时直接对应 py-spy dump --pid
+    uptime_s: float = 0.0  # 2026-11-02 小欧 - 进程已存活秒数(重启即归零, 与 pid 变化互相印证)
+    loop_lag_ms: float = 0.0  # 2026-11-02 小欧 - 事件循环调度延迟点采样, 区分网络慢与循环被占死
 
 class EchoRequest(BaseModel):
     message: str
@@ -88,6 +108,9 @@ async def health_check(request: Request):
         host=request.headers.get("host", ""),
         server_ip=_server_lan_ip(),
         pid=os.getpid(),
+        # 2026-11-02 小欧 - 存活时长与循环延迟: 顶栏胶囊据此区分"重启过/网络慢/事件循环被占死"
+        uptime_s=round(time.monotonic() - _STARTED_AT, 3),
+        loop_lag_ms=await _loop_lag_ms(),
     )
 
 @router.post("/echo", response_model=EchoResponse)
