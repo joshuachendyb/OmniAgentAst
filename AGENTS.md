@@ -107,15 +107,19 @@ pytest -k test_name                               # match by name
 
 #### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
 
-| 方式 | 命令(workdir=`backend/`) | 热重载 | 说明 |
-|---|---|---|---|
-| 一(推荐) | `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` | 稳定 | watchfiles 就是 reload 运行器: 盯 `app/` → 变更即**杀子进程重开**; Windows 用 `TerminateProcess`, 不依赖控制台事件 |
-| 二(旧) | `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000` | 首次保存即永久失效 | `restart()` 用 `os.kill(child, CTRL_C_EVENT)` 停子进程, Windows 下子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 上游 0.54 仍未修, 升级无效 |
+**方式一(推荐, 日常开发用这个)**: 双击 `backend\start.bat`, 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1`。
+内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
 
-- **判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 此时 worker 照常应答, 只有热重载失效(表现: 改了代码不生效、Ctrl+C 也退不掉, 只能 kill)。
-- **方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
-- 两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
-- `backend/start.bat`、`start_e2e.bat` 目前仍是方式二。
+**方式二(旧, 别用)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`。
+uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程, 子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 从第一次保存文件起热重载永久失效, 而 worker 照常应答, 极易误判"服务正常"。上游 0.54 仍未修, 升级无效。
+
+**判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 表现是改代码不生效、Ctrl+C 也退不掉, 只能 kill。
+
+**方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
+
+两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
+
+`backend/start.bat`、`backend/start_e2e.bat` 均已改为调用 `backend/start_dev.ps1`; `start_dev.ps1` 用 UTF-8 with BOM 保存(PowerShell 5.1 需要), `start_e2e.bat` 用 GBK 保存(控制台中文)。
 
 ### Frontend (workdir=`frontend/`)
 
@@ -158,7 +162,8 @@ npm run test -- --run <name>  # single test
 
 1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force`
 2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
-   `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'F:\OmniAgentAs-repair\backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal`
+   `Start-Process powershell -ArgumentList "-NoExit","-ExecutionPolicy","Bypass","-Command","& 'F:\OmniAgentAs-01\backend\start_e2e.bat'" -WindowStyle Normal`
+   （`start_e2e.bat` 内设 `LOG_LEVEL=WARNING` 后调 `start_dev.ps1`=watchfiles 热重载；**勿用 `uvicorn --reload`**，Windows 上首次改文件即卡死）
 3. 验证：`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
 
 #### 执行脚本（铁律）
