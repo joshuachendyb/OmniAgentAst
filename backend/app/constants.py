@@ -201,12 +201,15 @@ INBOX_MAX = 20  # 【系统级】使用对象: task_registry 注入队列 maxsiz
 # 2026-09-08 小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
 HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.stream_reader 心跳周期(秒)
 #   【与前端数字的关系 — 设计依据】:
-#   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/hooks/useSSE.ts), 即 60s 内未收到任何数据字节即判定连接死亡。
+#   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/features/chat/streams/chatStreamTransport.ts,
+#      原 frontend/src/hooks/useSSE.ts 已迁走), 即 60s 内未收到任何数据字节即判定连接死亡。
 #   ② 后端心跳: 每 HEARTBEAT_INTERVAL=25s 无业务事件(如 tool 参数流式期间)向前端发 SSE 注释行 ": ping\n" 保活。
 #   ③ 错开原则(北京老陈 2026-09-08 裁定): 心跳 25s 必须 < 前端 60s 且非整倍数错开 —— 任何 60s 判死窗口内必含至少
 #      2 次心跳(25/50s), 网络/调度抖动下心跳先于前端判死刷新空闲计时, 前端不会误判死引发多余重连;
 #      若真断连心跳随连接自然停发, 前端仍按 60s 判死走重连/兜底(方案二)。变更本常量时必须同步改前端 IDLE_TIMEOUT,
 #      保持"心跳周期 < 前端判死窗口"; 原 60s 心跳与 60s 判死同时到期零余量, 已废弃(见 stream_orchestrator 编辑历史 2026-09-08)。
+#   ④ 配置上限: tuning.live_front.heartbeat_interval 限定 [5, 30] —— 要保证 60s 窗口内至少 2 次心跳须 2×心跳≤60,
+#      原上限 60 会把安全余量吃到零(2026-11-02 小欧收口)。
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 # 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl.timeout, config.yaml优先): 此常量作兜底默认

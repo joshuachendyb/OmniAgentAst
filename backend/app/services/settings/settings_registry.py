@@ -412,8 +412,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
               notice="[暂时无用]压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
         # --- live_front: 连接保活/任务清理/缓存/事件流水保留（5 键；原名 stream_task，改名防与 tuning.llm.stream_* 混淆）---
-        _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
-              notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),
+        _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 30],
+              notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活（上限 30 秒=60 秒窗口内至少 2 次心跳，再大就吃掉安全余量）"),
         _item("tuning.live_front.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
               notice="已经做完的任务在列表里保留几小时后自动清掉（正在跑的不受影响）；调小=列表干净但翻不了旧任务，调大=能回看更久"),
         _item("tuning.live_front.tool_cache_ttl", "int", "结果复用时间(秒)", 300, range_=[60, 3600],
