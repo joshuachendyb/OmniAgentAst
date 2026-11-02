@@ -57,22 +57,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 - 位置2 数据源对象形态
-import { API_BASE_URL } from '../services/api/client';
-import { useChatFacade } from '../features/chat/hooks/useChatFacade';
-import { useSessionTasks } from '../features/chat/hooks/useSessionTasks';
-import { useModelLayer } from '../features/chat/hooks/useModelLayer';
-import { useAuthorization } from '../features/chat/hooks/useAuthorization';
-import { useChatScroll } from '../features/chat/hooks/useChatScroll';
-import { useSessionMeta } from '../features/chat/hooks/useSessionMeta';
-import { useTaskSelection } from '../features/chat/hooks/useTaskSelection';
-import { useChainTokens } from '../features/chat/hooks/useChainTokens';
-import { useChatInit } from '../features/chat/hooks/useChatInit';
-import { useChatLifecycle } from '../features/chat/hooks/useChatLifecycle';
-import { useChatTitle } from '../features/chat/hooks/useChatTitle';
-import { useChatPanels } from '../features/chat/hooks/useChatPanels';
-import type { SendOpts } from '../types/chat'; // 2026-10-07 小欧 - 对象参数
-import { SessionLayout } from '../features/chat/components/layout/SessionLayout';
-import AuthorizationModal from '../components/AuthorizationModal';
+import { API_BASE_URL } from '../../services/api/client';
+import { useChatFacade } from '../../features/chat/hooks/useChatFacade';
+import { useSessionTasks } from '../../features/chat/hooks/useSessionTasks';
+import { useModelLayer } from '../../features/chat/hooks/useModelLayer';
+import { useAuthorization } from '../../features/chat/hooks/useAuthorization';
+import { useChatScroll } from '../../features/chat/hooks/useChatScroll';
+import { useSessionMeta } from '../../features/chat/hooks/useSessionMeta';
+import { useTaskSelection } from '../../features/chat/hooks/useTaskSelection';
+import { useChainTokens } from '../../features/chat/hooks/useChainTokens';
+import { useChatInit } from '../../features/chat/hooks/useChatInit';
+import { useChatLifecycle } from '../../features/chat/hooks/useChatLifecycle';
+import { useChatTitle } from '../../features/chat/hooks/useChatTitle';
+import { useChatPanels } from '../../features/chat/hooks/useChatPanels';
+import type { SendOpts } from '../../types/chat'; // 2026-10-07 小欧 - 对象参数
+import { SessionLayout } from '../../features/chat/components/layout/SessionLayout';
+import AuthorizationModal from '../../components/AuthorizationModal';
 import { Colors } from '@/utils/stepStyles';
 
 const ChatPage: React.FC = () => {
