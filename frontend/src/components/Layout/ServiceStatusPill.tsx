@@ -11,6 +11,7 @@
 // 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body), 键值行序=本机/访问/前缀/连接/耗时/进程 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 打开Tip即静默重检: 挂载快照会被后端重启/字段变更拖旧(空值误判), 静默重检不翻检测中态免闪烁 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 耗时改 时:分:秒.毫秒 渲染(31ms→00:00:00.031), Tip 耗时行与缓慢态结论同格式 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - Tip 扩成分组十行(地址4/运行时6): 补循环延迟/应答时刻/数据库/运行时长, 阈值改由 health.api 单一口径 — 小欧-2026-11-02
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
@@ -24,22 +25,37 @@ import {
   BorderWidth,
 } from '../../utils/stepStyles';
 import { API_BASE_URL } from '../../services/api/client';
+import { SLOW_RESPONSE_MS } from '../../services/api/health.api';
 import type { HealthStatus } from '../../services/api/health.api';
 
 // 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与配置胶囊同令牌) — 小欧-2026-11-02
 const HOVER_BG = Colors.BG.HOVER;
 // 2026-11-02 小欧 - 浮层根宽上限: 内容宽+左右padding+描边, 破 antd 根节点默认250px提前折行 — 小欧-2026-11-02
 const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
-// 2026-11-02 小欧 - 本机探活正常在10ms级, 超1.5s说明事件循环已被占死(见AGENTS.md卡死取证) — 小欧-2026-11-02
-const SLOW_MS = 1500;
 // 2026-11-02 小欧 - 耗时统一渲染为 时:分:秒.毫秒(纯毫秒数在秒级/超时值上不可读) — 小欧-2026-11-02
+// 2026-11-02 小欧 - 入口先取整: 循环延迟是小数毫秒(0.432), 直接取模会渲染出 "00:00:00.0.432" — 小欧-2026-11-02
 const formatDuration = (ms: number): string => {
   const pad = (n: number, width = 2) => String(n).padStart(width, '0');
-  const hour = Math.floor(ms / 3_600_000);
-  const minute = Math.floor((ms % 3_600_000) / 60_000);
-  const second = Math.floor((ms % 60_000) / 1000);
-  return `${pad(hour)}:${pad(minute)}:${pad(second)}.${pad(ms % 1000, 3)}`;
+  const total = Math.max(0, Math.floor(ms));
+  const hour = Math.floor(total / 3_600_000);
+  const minute = Math.floor((total % 3_600_000) / 60_000);
+  const second = Math.floor((total % 60_000) / 1000);
+  return `${pad(hour)}:${pad(minute)}:${pad(second)}.${pad(total % 1000, 3)}`;
 };
+// 2026-11-02 小欧 - 应答时刻取后端本地ISO的年月日+时刻段(不new Date, 免浏览器时区二次换算); 只留时刻会看不出是哪天 — 小欧-2026-11-02
+const stampOf = (iso?: string): string => {
+  const [date, time] = (iso ?? '').split('T');
+  return date && time ? `${date} ${time.slice(0, 8)}` : '';
+};
+// 2026-11-02 小欧 - 数据库自报状态: 有码值才着色, 缺失不着色(不漏报也不虚报) — 小欧-2026-11-02
+const DB_VIEW: Record<string, { text: string; tone: 'ok' | 'warn' }> = {
+  healthy: { text: '正常', tone: 'ok' },
+  degraded: { text: '降级', tone: 'warn' },
+};
+// 2026-11-02 小欧 - 循环延迟是瞬时延迟: 健康 0.4ms 与亚健康 40ms 的区别全在毫秒小数位,
+//   强套时:分:秒.毫秒会永远显示 .000 失去分辨力, 故亚秒级给 ms 单位(2位小数), 跨秒才升级时钟格式 — 小欧-2026-11-02
+const formatDelay = (ms: number): string =>
+  ms < 1000 ? `${Number(ms.toFixed(2))} ms` : formatDuration(ms);
 // 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
 const TONE_OF = {
   ok: 'ok',
@@ -97,7 +113,7 @@ const deriveState = (
         };
   }
   // 缓慢优先于降级: 卡死体征比后端自报降级更值得先看
-  if (latencyMs !== null && latencyMs >= SLOW_MS) {
+  if (latencyMs !== null && latencyMs >= SLOW_RESPONSE_MS) {
     return {
       badge: 'warning',
       kind: 'slow',
@@ -112,7 +128,7 @@ const deriveState = (
       kind: 'slow',
       text: '服务降级',
       color: Colors.WARNING,
-      main: '后端应答正常但自报降级，部分功能可能受限',
+      main: '后端应答正常但数据库校验未过，部分功能可能受限',
     };
   }
   return {
@@ -170,15 +186,41 @@ const ServiceStatusPill: React.FC = () => {
     ? `${healthStatus.server_ip}${portInHost ? `:${portInHost}` : ''}`
     : '';
 
-  // 2026-11-02 小欧 - 键值行固定六行(全量常显): 缺值标"—/未上报", 绝不因数据缺失而整行消失 — 小欧-2026-11-02
+  // 2026-11-02 小欧 - 后端自报诊断量: 循环延迟点采样/应答时刻/存活时长/数据库, 缺字段一律"未上报" — 小欧-2026-11-02
+  const loopLagMs = healthStatus?.loop_lag_ms ?? null;
+  const dbView = healthStatus?.db_status
+    ? DB_VIEW[healthStatus.db_status]
+    : undefined;
+  const answeredAt = stampOf(healthStatus?.timestamp);
+  const uptimeMs =
+    typeof healthStatus?.uptime_s === 'number'
+      ? Math.round(healthStatus.uptime_s * 1000)
+      : null;
+
+  // 2026-11-02 小欧 - 分组十行(全量常显): 地址组答"连的是谁", 运行时组答"此刻什么状态"; 缺值标未上报, 绝不整行消失 — 小欧-2026-11-02
   const rows: PillTipRow[] = [
-    { label: '本机', value: lanAddr || '未上报', mono: true },
+    { label: '本机', value: lanAddr || '未上报', mono: true, group: '地址' },
     { label: '访问', value: host || '未上报', mono: true },
     { label: '前缀', value: API_BASE_URL, mono: true },
     { label: '连接', value: CONN_KIND },
     {
       label: '耗时',
       value: latencyMs !== null ? formatDuration(latencyMs) : '—',
+      group: '运行时',
+    },
+    {
+      label: '循环延迟',
+      value: loopLagMs !== null ? formatDelay(loopLagMs) : '未上报',
+      tone:
+        loopLagMs !== null && loopLagMs >= SLOW_RESPONSE_MS
+          ? 'warn'
+          : undefined,
+    },
+    { label: '应答时刻', value: answeredAt || '未上报' },
+    { label: '数据库', value: dbView?.text ?? '未上报', tone: dbView?.tone },
+    {
+      label: '运行时长',
+      value: uptimeMs !== null ? formatDuration(uptimeMs) : '未上报',
     },
     {
       label: '进程',

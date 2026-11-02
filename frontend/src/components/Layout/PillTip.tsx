@@ -19,11 +19,11 @@ import {
 
 type Tone = 'ok' | 'warn' | 'error' | 'neutral';
 
-// 2026-11-02 小欧 - 浮层版式常量: 宽度区间/标签列宽(两字12px=24+留白)/状态点径/行高比 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 浮层版式常量: 宽度区间/标签列宽(4字48px+留白, 服务胶囊"循环延迟/运行时长"须容得下)/状态点径/行高比 — 小欧-2026-11-02
 const TIP_MIN_W = 240;
 /** 内容最大宽, 胶囊侧据此算浮层根宽上限(antd 根节点默认 250px 会提前折行) — 2026-11-02 小欧 */
 export const PILL_TIP_MAX_W = 320;
-const LABEL_COL_W = 40;
+const LABEL_COL_W = 56;
 const DOT_SIZE = 8;
 const LINE_HEIGHT = 1.6;
 
@@ -39,6 +39,10 @@ export interface PillTipRow {
   value: string;
   /** 地址/ID 等机器可读值走等宽字体并可选中复制 */
   mono?: boolean;
+  /** 分组小标题: 与上一行不同则先渲染一条分组条(值缺省=不分组, 配置胶囊沿用) — 2026-11-02 小欧 */
+  group?: string;
+  /** 值异常时的语义色(正常值不着色, 保持灰阶克制) — 2026-11-02 小欧 */
+  tone?: 'ok' | 'warn' | 'error';
 }
 
 export interface PillTipItem {
@@ -120,31 +124,49 @@ export const PillTip: React.FC<PillTipProps> = ({
     {!!rows?.length && (
       <>
         <div style={RULE_STYLE} />
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `${LABEL_COL_W}px 1fr`,
-              alignItems: 'baseline',
-              lineHeight: LINE_HEIGHT,
-            }}
-          >
-            <span style={LABEL_STYLE}>{row.label}</span>
-            <span
-              style={{
-                fontSize: row.mono ? FontSize.CODE : FontSize.SECONDARY,
-                fontFamily: row.mono ? FontFamily.MONO : undefined,
-                color: Colors.TEXT.STRONG,
-                fontVariantNumeric: 'tabular-nums',
-                overflowWrap: 'anywhere',
-                userSelect: 'text',
-              }}
-            >
-              {row.value}
-            </span>
-          </div>
-        ))}
+        {rows.map((row, idx) => {
+          // 2026-11-02 小欧 - 分组条: 只在组名变化时出现, 首组不加上边距(分隔线已隔开)
+          const showGroup = !!row.group && row.group !== rows[idx - 1]?.group;
+          return (
+            <React.Fragment key={row.label}>
+              {showGroup && (
+                <div
+                  style={{
+                    marginTop: idx === 0 ? 0 : Spacing.MD,
+                    marginBottom: Spacing.XS / 2,
+                    fontSize: FontSize.SECONDARY,
+                    color: Colors.TEXT.TERTIARY,
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  {row.group}
+                </div>
+              )}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `${LABEL_COL_W}px 1fr`,
+                  alignItems: 'baseline',
+                  lineHeight: LINE_HEIGHT,
+                }}
+              >
+                <span style={LABEL_STYLE}>{row.label}</span>
+                <span
+                  style={{
+                    fontSize: row.mono ? FontSize.CODE : FontSize.SECONDARY,
+                    fontFamily: row.mono ? FontFamily.MONO : undefined,
+                    color: row.tone ? TONE_COLOR[row.tone] : Colors.TEXT.STRONG,
+                    fontVariantNumeric: 'tabular-nums',
+                    overflowWrap: 'anywhere',
+                    userSelect: 'text',
+                  }}
+                >
+                  {row.value}
+                </span>
+              </div>
+            </React.Fragment>
+          );
+        })}
       </>
     )}
 
