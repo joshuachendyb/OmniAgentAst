@@ -62,15 +62,13 @@ const StreamStatusPill: React.FC = () => {
         { label: '状态', value: STATUS_TEXT[p.status] ?? p.status },
         { label: '任务', value: shortId(p.serverTaskId), mono: true },
         {
-          label: '心跳',
-          value: ageText(view.heartbeatAgeSec),
-          group: '心跳',
+          label: '业务帧',
+          value: ageText(view.bizAgeSec),
+          tone: view.bizStale ? 'warn' : undefined,
+          group: '数据',
         },
-        {
-          label: '静默',
-          value: ageText(view.dataAgeSec),
-          tone: view.dataStale ? 'warn' : undefined,
-        },
+        { label: '心跳', value: ageText(view.heartbeatAgeSec) },
+        { label: '最后字节', value: ageText(view.dataAgeSec) },
         { label: '判死', value: `${IDLE_TIMEOUT / 1000}s 无字节` },
         ...(p.activeSessions > 1
           ? [{ label: '并发', value: `${p.activeSessions} 条流` }]
@@ -99,7 +97,11 @@ const StreamStatusPill: React.FC = () => {
             p.active
               ? [
                   {
-                    text: `心跳由后端按周期推送；${IDLE_TIMEOUT / 1000}s 内无任何字节才判死并断点续传`,
+                    text: '心跳只证明连接没断（后端静默 25s 才发一次）；有无产出看业务帧，二者分开判',
+                    tone: 'warn' as const,
+                  },
+                  {
+                    text: `${IDLE_TIMEOUT / 1000}s 内无任何字节才判死并断点续传`,
                     tone: 'warn' as const,
                   },
                 ]

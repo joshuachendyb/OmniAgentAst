@@ -163,6 +163,8 @@ export interface StreamPulse {
   isReceiving: boolean;
   serverTaskId: string | null;
   heartbeatTs: number;
+  /** 最近一个业务帧（chunk/action/observation/stats…，不含 `: ping`）的时间 */
+  lastBizTs: number;
   lastDataTime: number;
   activeSessions: number;
 }
@@ -184,6 +186,7 @@ export function buildStreamPulse(): StreamPulse {
       isReceiving: false,
       serverTaskId: null,
       heartbeatTs: 0,
+      lastBizTs: 0,
       lastDataTime: 0,
       activeSessions,
     };
@@ -196,6 +199,7 @@ export function buildStreamPulse(): StreamPulse {
     isReceiving: picked.isReceiving,
     serverTaskId: picked.serverTaskId,
     heartbeatTs: picked.heartbeatTs,
+    lastBizTs: picked.lastBizTs,
     lastDataTime: picked.lastDataTime,
     activeSessions,
   };

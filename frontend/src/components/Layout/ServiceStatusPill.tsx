@@ -258,6 +258,14 @@ const ServiceStatusPill: React.FC = () => {
       group: 'SSE 流',
     },
     {
+      label: '业务帧',
+      value:
+        streamView.bizAgeSec === null
+          ? '未收到'
+          : `${streamView.bizAgeSec} 秒前`,
+      tone: streamView.bizStale ? 'warn' : undefined,
+    },
+    {
       label: '最近心跳',
       value:
         streamView.heartbeatAgeSec === null
@@ -265,7 +273,7 @@ const ServiceStatusPill: React.FC = () => {
           : `${streamView.heartbeatAgeSec} 秒前`,
     },
     {
-      label: '最近数据',
+      label: '最后字节',
       value:
         streamView.dataAgeSec === null
           ? '未收到'
