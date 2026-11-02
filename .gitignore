@@ -33,6 +33,9 @@ frontend/src/tests/
 backend/e2etests/output
 # logs & temp
 backend/logs/
+frontend/logs/
+
+# 2026-11-02 小欧: 前端常驻启停脚本的 dev 日志/pid 文件目录, 不入库 - 小欧-2026-11-02
 backend/pt*.txt
 backend/pt.txt
 backend/json_backup/
