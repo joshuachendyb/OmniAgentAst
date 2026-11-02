@@ -12,6 +12,9 @@
 // 编辑历史: 2026-11-02 小欧 - 打开Tip即静默重检: 挂载快照会被后端重启/字段变更拖旧(空值误判), 静默重检不翻检测中态免闪烁 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 耗时改 时:分:秒.毫秒 渲染(31ms→00:00:00.031), Tip 耗时行与缓慢态结论同格式 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - Tip 扩成分组十行(地址4/运行时6): 补循环延迟/应答时刻/数据库/运行时长, 阈值改由 health.api 单一口径 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 存活时长并入进程行改人话(7分34秒)+三组分口径, 消除"耗时/运行时长"像重复指标 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 探活耗时与事件循环并成一行"响应": 常态只给正常, 异常才给 往返·循环 数字(兼定位卡在链路还是循环) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 响应行单位定案毫秒(1820 ms): 时钟格式易被误读成"服务器运作时长"; 离线文案改吃 PROBE_TIMEOUT_MS 免字面量漂移 — 小欧-2026-11-02
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
@@ -25,23 +28,16 @@ import {
   BorderWidth,
 } from '../../utils/stepStyles';
 import { API_BASE_URL } from '../../services/api/client';
-import { SLOW_RESPONSE_MS } from '../../services/api/health.api';
+import {
+  SLOW_RESPONSE_MS,
+  PROBE_TIMEOUT_MS,
+} from '../../services/api/health.api';
 import type { HealthStatus } from '../../services/api/health.api';
 
 // 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与配置胶囊同令牌) — 小欧-2026-11-02
 const HOVER_BG = Colors.BG.HOVER;
 // 2026-11-02 小欧 - 浮层根宽上限: 内容宽+左右padding+描边, 破 antd 根节点默认250px提前折行 — 小欧-2026-11-02
 const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
-// 2026-11-02 小欧 - 耗时统一渲染为 时:分:秒.毫秒(纯毫秒数在秒级/超时值上不可读) — 小欧-2026-11-02
-// 2026-11-02 小欧 - 入口先取整: 循环延迟是小数毫秒(0.432), 直接取模会渲染出 "00:00:00.0.432" — 小欧-2026-11-02
-const formatDuration = (ms: number): string => {
-  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
-  const total = Math.max(0, Math.floor(ms));
-  const hour = Math.floor(total / 3_600_000);
-  const minute = Math.floor((total % 3_600_000) / 60_000);
-  const second = Math.floor((total % 60_000) / 1000);
-  return `${pad(hour)}:${pad(minute)}:${pad(second)}.${pad(total % 1000, 3)}`;
-};
 // 2026-11-02 小欧 - 应答时刻取后端本地ISO的年月日+时刻段(不new Date, 免浏览器时区二次换算); 只留时刻会看不出是哪天 — 小欧-2026-11-02
 const stampOf = (iso?: string): string => {
   const [date, time] = (iso ?? '').split('T');
@@ -52,11 +48,23 @@ const DB_VIEW: Record<string, { text: string; tone: 'ok' | 'warn' }> = {
   healthy: { text: '正常', tone: 'ok' },
   degraded: { text: '降级', tone: 'warn' },
 };
-// 2026-11-02 小欧 - 循环延迟: 健康值在毫秒小数位(0.4ms), 套时钟格式永远显示 .000 无信息量;
-//   故常态给"正常"二字, 异常才给数值(ms), 既免第三个"像时间"的数字, 也保住分辨力 — 小欧-2026-11-02
-const LOOP_OK_MS = 10;
+// 2026-11-02 小欧 - 响应行: 平时只给"正常"二字, 数字只在异常时出现; 单位统一毫秒(北京老陈定案:
+//   本行只答"这一次响应多少毫秒", 借用时:分:秒.毫秒反而与"已运行"混淆, 也让人误读成服务器运行时长) — 小欧-2026-11-02
+//   循环延迟只在它本身越线时追加, 用于回答"慢在链路还是慢在事件循环" — 小欧-2026-11-02
 const LOOP_BAD_MS = 100;
-// 2026-11-02 小欧 - 进程存活时长按人话写(天/时/分/秒): 与"探活耗时"的时钟格式区分开, 毫秒对 uptime 无意义 — 小欧-2026-11-02
+const deriveResponse = (
+  latencyMs: number | null,
+  loopLagMs: number | null
+): { text: string; tone?: 'ok' | 'warn' } => {
+  if (latencyMs === null) return { text: '未上报' };
+  const slow = latencyMs >= SLOW_RESPONSE_MS;
+  const loopHeavy = loopLagMs !== null && loopLagMs >= LOOP_BAD_MS;
+  if (!slow && !loopHeavy) return { text: '正常', tone: 'ok' };
+  const parts = [`${Math.round(latencyMs)} ms`];
+  if (loopHeavy) parts.push(`循环 ${Math.round(loopLagMs)} ms`);
+  return { text: parts.join(' · '), tone: 'warn' };
+};
+// 2026-11-02 小欧 - 进程存活时长按人话写(天/时/分/秒): 与响应耗时的毫秒数彻底区分, 避免被读成"服务器运作时长" — 小欧-2026-11-02
 const formatUptime = (ms: number): string => {
   const s = Math.max(0, Math.floor(ms / 1000));
   const day = Math.floor(s / 86400);
@@ -114,7 +122,7 @@ const deriveState = (
           kind: 'down',
           text: '服务离线',
           color: Colors.ERROR,
-          main: '后端无响应: 连接被拒或超过 5 秒未返回',
+          main: `后端无响应: 连接被拒或超过 ${PROBE_TIMEOUT_MS / 1000} 秒未返回`,
         }
       : {
           badge: 'default',
@@ -131,7 +139,8 @@ const deriveState = (
       kind: 'slow',
       text: '服务缓慢',
       color: Colors.WARNING,
-      main: `后端响应耗时 ${formatDuration(latencyMs)}，事件循环可能被占死`,
+      // 2026-11-02 小欧 - 结论文案与响应行同单位(ms), 不下"已占死"的断言: 慢可以是排队也可以是循环被占 — 小欧-2026-11-02
+      main: `后端响应 ${Math.round(latencyMs)} ms（阈值 ${SLOW_RESPONSE_MS} ms），可能正在排队或事件循环被占`,
     };
   }
   if (health.status !== 'healthy') {
@@ -209,34 +218,19 @@ const ServiceStatusPill: React.FC = () => {
       ? Math.round(healthStatus.uptime_s * 1000)
       : null;
 
-  // 2026-11-02 小欧 - 分组九行(全量常显): 地址组答"连的是谁", 探测组答"这一次测出什么", 进程组答"是哪条命、活了多久";
-  //   耗时与存活时长语义不同源, 故分处两组且各自贴合量级(时钟/人话), 不再像两个重复指标 — 小欧-2026-11-02
+  // 2026-11-02 小欧 - 分组八行(全量常显): 地址组答"连的是谁", 探测组答"这一次测出什么", 进程组答"是哪条命、活了多久";
+  //   响应行常态只给"正常", 数字只在异常时出现, 免假精确也免与存活时长混淆 — 小欧-2026-11-02
+  const responseView = deriveResponse(latencyMs, loopLagMs);
   const rows: PillTipRow[] = [
     { label: '本机', value: lanAddr || '未上报', mono: true, group: '地址' },
     { label: '访问', value: host || '未上报', mono: true },
     { label: '前缀', value: API_BASE_URL, mono: true },
     { label: '连接', value: CONN_KIND },
     {
-      label: '探活耗时',
-      value: latencyMs !== null ? formatDuration(latencyMs) : '—',
+      label: '响应耗时',
+      value: responseView.text,
+      tone: responseView.tone,
       group: '本次探测',
-    },
-    {
-      label: '事件循环',
-      value:
-        loopLagMs === null
-          ? '未上报'
-          : loopLagMs < LOOP_OK_MS
-            ? '正常'
-            : `${Math.round(loopLagMs)} ms`,
-      tone:
-        loopLagMs === null
-          ? undefined
-          : loopLagMs < LOOP_OK_MS
-            ? 'ok'
-            : loopLagMs >= LOOP_BAD_MS
-              ? 'warn'
-              : undefined,
     },
     { label: '应答时刻', value: answeredAt || '未上报' },
     { label: '数据库', value: dbView?.text ?? '未上报', tone: dbView?.tone },
