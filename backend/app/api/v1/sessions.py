@@ -2,26 +2,27 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - 修复: 删手动BEGIN/COMMIT，归属get_conn事务管理
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入改 get_local_iso_timestamp; title_updated_at 输出改 to_local_iso(不再转UTC)
-# 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): 业务逻辑(create/list/update/delete/titles_batch + 辅助函数)迁入
-#   services/chat/session_service.py; 删除会话的 display_name 缓存清理改经 message_service.delete_session_display_names
-#   (不再 direct import messages 缓存对象)。本文件降为路由薄壳(DTO+路由+调service)。
-# 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 GET /sessions/{id}/tasks(B1会话任务列表+任务数=用户消息数) +
-#   GET /sessions/{id}/trust(D1信任清单) + DELETE /sessions/{id}/trust/{tool}(D3撤销信任)。
-# 2026-08-26 - 小欧 - D-2(8.D): 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
-#   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel) + 顶栏创建/更新时间悬浮数据源。
-#   路由置于文件末尾(防御性习惯; 本路由与 /titles/batch、/{id}/tasks 等子路径段数不同, 实际无遮蔽关系)。
+# 2026-08-13 - 小欧 - 业务逻辑(create/list/update/delete/titles_batch+辅助)迁入 session_service;
+#   会话 display_name 缓存清理改经 message_service; 本文件降为路由薄壳(DTO+路由+调service)
+# 2026-08-20 - 小欧 - 新增 GET /sessions/{id}/tasks(会话任务列表+任务数=用户消息数) +
+#   GET /sessions/{id}/trust(信任清单) + DELETE /sessions/{id}/trust/{tool}(撤销信任)
+# 2026-08-26 - 小欧 - 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
+#   供设置界面读会话级信息与顶栏创建/更新时间悬浮; 路由置文件末尾(与子路径段数不同, 无遮蔽)
 # 2026-08-30 - 小欧 - 会话响应增强 v1.103: 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5: DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
 #   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
-# 2026-09-03 - 小欧/北京老陈 - sessions端点补日志: trust相关端点(list/delete)补info/warning, 改前无log无法排查信任操作
-# 2026-10-01 - 小欧 - 解 [1] E8: 删除 POST /sessions/{id}/execution_steps 端点及其 save_execution_steps/ExecutionStepsUpdate 导入(连带 session_service 同名导入)。该端点全仓零调用方，其底层实现自 2026-08-27 起已不写任何步骤，留着会误导为"步骤落库入口"。真入口见 storage.append_execution_step
-# 2026-10-03 - 小欧 - 文档[4] 5.7 项5: 新增 PATCH /sessions/{id}/link(全链路唯一新增端点)
-# 2026-10-03 - 小欧 - 文档[4] 5.7.7/5.7.8 废止: 删除 PATCH /sessions/{id}/link 端点(北京老陈定案开关只准随消息发出, 严禁独立影响后端; 前端零调用)。写入口收敛为唯一一条: 消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
+# 2026-09-03 - 小欧 - sessions 端点补日志: trust 相关端点(list/delete)补 info/warning, 改前无 log 无法排查信任操作
+# 2026-10-01 - 小欧 - 删除 POST /sessions/{id}/execution_steps 端点及其 save_execution_steps/ExecutionStepsUpdate 导入(连带 session_service 同名导入)。
+#   该端点全仓零调用方, 底层自 2026-08-27 起已不写任何步骤, 留着会误导为"步骤落库入口"; 真入口见 storage.append_execution_step
+# 2026-10-03 - 小欧 - 新增 PATCH /sessions/{id}/link(全链路唯一新增端点)
+# 2026-10-03 - 小欧 - 废止 PATCH /sessions/{id}/link 端点: 开关只准随消息发出, 严禁独立影响后端, 前端零调用。
+#   写入口收敛为唯一一条: 消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn
 # 2026-10-10 - 小欧 - 新增会话 Workspace 读写端点(GET/PATCH /sessions/{id}/workspaces), 写口唯一,
 #   body 即全量覆盖; 禁区整单 422, 会话不存在 404。
 
-# 2026-10-30 小欧 - [54]全链路重构: WorkspaceItem/WorkspaceUpdate 收单形态(list[WorkspaceItem], 不收 list[str]);
+# 2026-10-30 小欧 - 全链路重构: WorkspaceItem/WorkspaceUpdate 收单形态(list[WorkspaceItem], 不收 list[str]);
 #   GET 返回四字段(path/workspace_property/memo/is_default); PATCH 传 dict 三元组。 — 小欧-2026-10-30
+
 # 2026-11-02 小欧 - GET /workspaces 增 prune(默认 false 纯读): 仅面板打开时显式清不可用行,
 #   条数按 rowcount 作 pruned 带回; 响应不含 unusable — 小欧-2026-11-02
 
@@ -102,7 +103,7 @@ def list_session_tasks_endpoint(session_id: str):
 @router.get("/sessions/{session_id}/trust")
 def list_session_trust_endpoint(session_id: str):
     """D1(10.5 问题4): 会话已信任工具清单 — 小欧 2026-08-20"""
-    # 2026-09-03 小欧/北京老陈: trust查询补日志
+    # 2026-09-03 小欧: trust查询补日志
     from app.logger import logger as _log
     with db.get_conn("chat") as conn:
         rows = list_session_trust(conn, session_id)
@@ -113,7 +114,7 @@ def list_session_trust_endpoint(session_id: str):
 @router.delete("/sessions/{session_id}/trust/{tool_name}")
 def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optional[str] = None):
     """D3(10.5 问题4): 撤销会话对指定信任对象的信任 — 小欧 2026-08-20; v1.5 增 query path 精确撤销(path=None 删工具级通配行)"""
-    # 2026-09-03 小欧/北京老陈: trust撤销补日志
+    # 2026-09-03 小欧: trust撤销补日志
     from app.logger import logger as _log
     _log.info(f"[trust] 撤销信任: session_id={session_id}, tool={tool_name}, path={path}")
     with db.get_conn("chat") as conn:

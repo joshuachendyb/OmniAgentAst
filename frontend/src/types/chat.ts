@@ -17,8 +17,9 @@
 // 编辑历史: 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRefPayload 删 content 字段
 //   (前端不再上行正文, wire 只带标识; 正文由后端 resolver 读盘拼装) — 小欧-2026-10-29
 
-// 编辑历史: 2026-10-30 小欧 - [54]全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
+// 编辑历史: 2026-10-30 小欧 - 全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
 //   (标注类, 不参与安全判定; 前端只读展示) — 小欧-2026-10-30
+
 // 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里不再回传不可用行, UI 无需表达该状态);
 //   WorkspacesResponse 删 unusable、增 pruned(仅 prune=true 时非 0) — 小欧-2026-11-02
 
@@ -35,9 +36,7 @@
 
 import type { ExecutionStep } from './execution';
 
-// ============================================================
-// 消息类型定义（8种）
-// ============================================================
+// ==================== 消息类型定义（8种） ====================
 
 /**
  * start类型 - 任务开始
@@ -156,7 +155,7 @@ export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'notice';
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
  * 发送时机：状态变化时（取消/暂停/恢复/重试）
- * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
+ * 【2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
   type: 'paused' | 'retrying' | 'resumed' | 'notice';
@@ -169,9 +168,7 @@ export interface StatusMessage {
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
 }
 
-// ============================================================
-// 联合类型
-// ============================================================
+// ==================== 联合类型 ====================
 
 /**
  * 流式消息联合类型 - 所有可能的响应类型
@@ -186,9 +183,7 @@ export type StreamMessage =
   | ErrorMessage
   | StatusMessage;
 
-// ============================================================
-// 辅助类型
-// ============================================================
+// ==================== 辅助类型 ====================
 
 /**
  * 检查是否为指定类型
@@ -238,9 +233,7 @@ export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
   );
 }
 
-// ============================================================
-// 聊天相关类型
-// ============================================================
+// ==================== 聊天相关类型 ====================
 
 /**
  * 聊天消息（用户发送的消息）
@@ -302,9 +295,7 @@ export interface TaskControlResponse {
   message: string;
 }
 
-// ============================================================
-// NewChatContainer 专用类型 - 小新 2026-03-13
-// ============================================================
+// ============ NewChatContainer 专用类型 - 小新 2026-03-13 ============
 
 /**
  * 聊天消息（扩展）
@@ -372,7 +363,7 @@ export interface HistoryLoadResult {
 }
 
 /**
- * 发送选项（对象参数 — 决策 14: 两个相邻 boolean 位置参数 TS 拦不住错位；
+ * 发送选项（对象参数: 两个相邻 boolean 位置参数 TS 拦不住错位；
  * 集中单点定义，消费方 import，不散在各处写字面量（DRY）。
  */
 export interface SendOpts {
@@ -386,9 +377,8 @@ export interface SendOpts {
 }
 
 /**
- * 会话使用的目录（后端 chat_session_workspaces 表）
- * 2026-10-10 小欧 -  新增
- * ⚠ 不进 SendOpts：前端不携带目录列表，只调 GET/PATCH 端点（独立端点，决策77简化）
+ * 会话使用的目录（后端 chat_session_workspaces 表）— 2026-10-10 小欧 新增
+ * ⚠ 不进 SendOpts：前端不携带目录列表，只调独立 GET/PATCH 端点
  */
 export interface WorkspaceEntry {
   path: string;
@@ -401,9 +391,8 @@ export interface WorkspaceEntry {
 }
 
 /**
- * GET /sessions/{id}/workspaces 响应
- * 2026-10-10 小欧 - /3.6.6
- * project_root/allowed_dirs 为只读字段（决策82），只展示不提交
+ * GET /sessions/{id}/workspaces 响应 — 2026-10-10 小欧
+ * project_root/allowed_dirs 为只读字段，只展示不提交
  */
 export interface WorkspacesResponse {
   session_id: string;

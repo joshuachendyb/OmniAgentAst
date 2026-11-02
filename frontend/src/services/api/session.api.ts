@@ -1,16 +1,15 @@
-// 编辑历史: 2026-10-01 小欧 - 解 [1] E4/E2-1（见 doc-10月优化/[1]刷新后显示其他任务结果）：
-//   ①ApiMessage 增可选 task_id（后端 MessageResponse 配对任务ID）——此前消息只带 execution_steps 而无归属，
-//     消费方无法判断步骤属于哪个任务，这是前端"跨任务降级把别的任务步骤当本任务显示"的契约层根因；
-//   ②删 saveExecutionSteps（随 [1] E8 后端 execution_steps 端点与空壳退役，前端零调用方）— 小欧-2026-10-01
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.2: GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源
-//   随会话加载主路径下发, 前端唯一读取点); getSessionMessages 映射处补值(缺省 false)。不新增 setSessionLink
-//   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
-// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
-// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.1: 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段) + patchWorkspaces(全量覆盖写, [] = 清空)
+// 编辑历史: 2026-10-01 小欧 - ApiMessage 增可选 task_id(后端 MessageResponse 配对任务ID): 此前消息只带
+//   execution_steps 无归属, 消费方无法判断步骤属于哪个任务(跨任务混显的契约层根因); 同时删 saveExecutionSteps
+// 编辑历史: 2026-10-03 小欧 - GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源, 随会话加载下发);
+//   getSessionMessages 映射处补值(缺省 false); 不新增 setSessionLink(值随消息落库, 按 YAGNI 不引入) — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - saveMessage 入参加 allow_interject(开关随消息携带)
+// 编辑历史: 2026-10-10 小欧 - 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段)
+//   + patchWorkspaces(全量覆盖写, [] = 清空)
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: updateSession拆为updateSessionTitle(只改标题)+updateSessionModel(只改模型), 消除"改标题"与"切模型"耦合(长标题触发422根因) - 小欧-2026-10-24
 
-// 编辑历史: 2026-10-30 小欧 - [54]全链路重构: patchWorkspaces 入参改对象数组
+// 编辑历史: 2026-10-30 小欧 - 全链路重构: patchWorkspaces 入参改对象数组
 //   ({path, workspace_property, memo}[]), 不再收 string[]; GET 响应含四字段。 — 小欧-2026-10-30
+
 // 编辑历史: 2026-11-02 小欧 - getWorkspaces 增可选 prune(默认纯读): 仅面板打开时清不可用行,
 //   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
 
@@ -48,9 +47,8 @@ export interface ApiMessage {
   display_name?: string;
   is_reasoning?: boolean;
   thought?: string;
-  // 2026-10-01 小欧 解 [1] E4/E2-1: 后端 MessageResponse 新增该字段(配对任务ID)。
-  //   此前消息只带 execution_steps 而无归属, 消费方无法判断步骤属于哪个任务 ——
-  //   这是前端"跨任务降级把别的任务步骤当本任务显示"(RightViewer C3)的契约层根因。
+  // 2026-10-01 小欧 - 后端 MessageResponse 新增该字段(配对任务ID): 此前消息只带 execution_steps 无归属,
+  //   跨任务降级会把别的任务步骤当本任务显示 — 小欧-2026-10-01
   task_id?: string | null;
 }
 
@@ -197,9 +195,8 @@ export const sessionApi = {
     return response.data;
   },
 
-  // 2026-10-01 小欧 解 [1] E8: 原 saveExecutionSteps 删除 ——
-  //   全仓零调用, 且后端端点已下线(其实现自 2026-08-27 起不写任何步骤, 只分配 ai_message_id)。
-  //   留着会 POST 到已不存在的端点。步骤数据一律由 SSE 实时 + 运行期逐步落库产生。
+  // 2026-10-01 小欧 - 原 saveExecutionSteps 删除: 全仓零调用, 后端端点已下线(实现自 2026-08-27 起
+  //   不写任何步骤); 留着会 POST 到不存在的端点, 步骤一律由 SSE 实时 + 运行期逐步落库 — 小欧-2026-10-01
 
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
     const response = await api.delete<{ success: boolean }>(
@@ -208,9 +205,8 @@ export const sessionApi = {
     return response.data;
   },
 
-  // 编辑历史: 2026-10-24 小欧 - SRP拆分: 原 updateSession 把"改标题"和"切会话模型"两个独立业务耦合在一个函数,
-  //   title 是必传位置参数致 ModelPicker 被迫传标题, 长标题(>200字符)触发后端 422 校验失败(模型切换失效)。
-  //   拆为 updateSessionTitle(只改标题) + updateSessionModel(只改模型), 各自单一职责, 后端 exclude_unset 天然兼容。
+  // 编辑历史: 2026-10-24 小欧 - SRP拆分: 原 updateSession 把"改标题"与"切会话模型"耦合在一个函数,
+  //   title 必传致 ModelPicker 被迫传标题, 长标题触发后端 422; 拆为 updateSessionTitle + updateSessionModel
   updateSessionTitle: async (
     sessionId: string,
     title: string,
@@ -294,11 +290,8 @@ export const sessionApi = {
     return response.data;
   },
 
-  // 2026-10-10 小欧 - 文档[16] §3.6.1 新增：会话使用的目录写口
-  //   body 即全量覆盖写（[] = 清空）；命中禁区整单 422，detail 落在 error.workspace_rejected
-  // 2026-10-30 18:36:36 小欧 - 单独收窄超时(60s→20s)：本请求已改为「后台提交」，
-  //   全局 60s 会让一次排队/后端占满要干等一分钟才给反馈；写库只有两条 SQL，
-  //   20s 未答即按"未确认"处理，随后由 workspaceStore 对账拉回库真值（见 store 头注）。
+  // 2026-10-30 18:36:36 小欧 - 会话目录写口: body 即全量覆盖写([] = 清空), 命中禁区整单 422
+  //   (detail 落 error.workspace_rejected); 超时收窄 20s(后台提交, 未答由 store 对账拉回库真值) — 小欧-2026-10-30
   patchWorkspaces: async (
     sessionId: string,
     sessionWorkspaces: {

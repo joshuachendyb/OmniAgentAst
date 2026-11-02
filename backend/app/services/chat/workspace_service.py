@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-14 小欧: 路径校验导入改从 app.safety.path_safe_check(路径校验已升系统层)
-# 2026-10-21 小欧 - J3: _ws_deny_reason 准入口径 = 只拒禁区·系统档(forbidden_system),
+# 2026-10-21 小欧 - _ws_deny_reason 准入口径 = 只拒禁区·系统档(forbidden_system),
 #   forbidden_non_system 档(代码目录/允许根)放行, 修常见配置整单 422 — 小欧-2026-10-21
-# 2026-10-28 小欧 - [54]全链路重构: workspace_property/memo/is_default 三标注字段。
-#   常量+归一化唯一源; get/select/apply/set/classify/load/reconcile 全链路四元组化;
-#   reconcile 始终创建默认工作区(项目根感知+旧默认降级)。标注字段不参与安全判定。
-# 2026-10-30 小欧 - 三堂会审 B(定案A): _ws_apply 撤回"未命中默认行→首条兜底"。
-#   默认标志只按 path 继承; 默认行被删/被改名 → 不继承, 交 reconcile 按 [54] 规则2
-#   重建。兜底会把用户目录误标为默认区, 并让"删除后重建"永远不触发。默认区的路径
-#   由系统按项目根生成, 面板已禁止改默认行路径, 故 path 继承即完备。
+# 2026-10-28 小欧 - 全链路重构: workspace_property/memo/is_default 三标注字段(常量+归一化唯一源);
+#   get/select/apply/set/classify/load/reconcile 四元组化, 标注字段不参与安全判定 — 小欧-2026-10-28
+# 2026-10-30 小欧 - _ws_apply 撤回"未命中默认行→首条兜底": 默认标志只按 path 继承, 默认行被删/改名
+#   不继承(交 reconcile 重建); 兜底会误标用户目录且让"删除后重建"永不触发, 默认行路径由系统生成故继承即完备
 # 2026-10-31 小欧 - MAX_WS_INJECT_CHARS 迁 app.services.agent.workspace_block(注入块唯一渲染处),
 #   本模块只保留存储侧上限(MAX_WORKSPACES/MAX_PATH_CHARS); 渲染与截断不再散落编排层 — 小欧-2026-10-31
 # 2026-11-02 小欧 - 不可用行清库唯一出口 prune_unusable_rows(返回清理条数); _ws_precheck 补 is_dir;
@@ -33,9 +30,7 @@ from app.logger import logger
 WORKSPACE_REJECTED_FIELD = "workspace_rejected"
 MAX_WORKSPACES = 64        # 单会话目录数上限(防一条 PATCH 灌爆面板/库)
 MAX_PATH_CHARS = 240       # 显式长度上限(Windows MAX_PATH 260 留余量), 不靠底层 resolve 碰运气
-                           # 撤回(2026-10-10)：240→200 系无实证收紧 ——
-                           #   从未有真实路径因此失败，且会拒绝原本合法的 200~240 字符路径。
-                           #   恢复 240 原值；要收紧必须先有真实失败 case。
+                           # 240 为实证值: 无真实路径因 200~240 失败, 收紧须先有真实失败 case
 
 # 2026-10-28 小欧 - 属性/备注常量与标签映射（单一真源）
 MAX_PROP_CHARS = 32
@@ -139,15 +134,13 @@ def _is_broad_root(p: str) -> bool:
 def _ws_deny_reason(p: str) -> Optional[str]:
     """会话目录合法性判据：返回拒绝原因(None=可用)。复用全局判据，不自造黑名单。
 
-    2026-10-21 小欧 - J3 口径(北京老陈裁定): 准入只有一条 —— 不能落在**禁区·系统档**
+    2026-10-21 小欧 - 准入口径: 准入只有一条 —— 不能落在**禁区·系统档**
       (forbidden_system, 写格=DENY; 非法路径/异常也兜底到该档, fail-closed)。
       forbidden_non_system 档(代码目录/允许根/启动目录)一律放行: 原实现 `if scope:` 把
       写线矩阵里的 CONFIRM 档也当 DENY → 常见配置整单 422, 会话目录根本设不上。
       宽根规则保留: 授权家目录/盘根会放大删除允许范围, 与档位无关。"""
-    # 2026-10-15 小欧: path_safe_check.validate_path 已随三线分离删除,
-    #   等价能力迁至 app.safety.write_path_check.validate_write(返回三元组, system 口径一致)。
-    #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
-    # 2026-10-16 小欧 - 去越层: services 层只走写线公开接口, 不越过它直接摸底层分类模块
+    # 2026-10-15 小欧: validate_path 随三线分离删除, 等价能力迁 app.safety.write_path_check.validate_write
+    #   (三元组, system 口径一致, 原延迟导入未同步会 ImportError); 2026-10-16 起 services 只走写线公开接口
     from app.safety.write_path_check import validate_write as _validate_write_path
     from app.safety.path_dir_lists import SCOPE_FORBIDDEN_SYSTEM
     _ok, _msg, scope = _validate_write_path(p)
@@ -353,9 +346,8 @@ def reconcile_session_workspaces(conn, session_id: str) -> list[tuple[str, str, 
     rows = get_session_workspaces(conn, session_id)
     current_root = get_config().get_project_root()
 
-    # ── 默认工作区是否需创建/重建 ──
-    # 需要（任一）：a) 无任何 is_default=1 行（首次，或用户删了默认行）
-    #               b) 默认行不在当前项目根下（项目根变了）
+    # ── 默认工作区是否需创建/重建: 无 is_default 行(首次/用户删了) 或默认行不在当前项目根下 ──
+    #    任一成立即重建, 否则沿用现有默认行; 默认行路径由系统生成, 面板禁改
     need_new_default = True
     for r in rows:
         if r["is_default"] and Path(r["path"]).parent == Path(current_root):
