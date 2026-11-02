@@ -10,6 +10,8 @@
 //   连带删 label 中间层，外壳与纯文本态直接用 rawPath — 小欧-2026-11-02
 // 2026-11-02 小欧 - 增 pin 开关：正文 chip 恢复旧 FileRefChip 的「别针」引用入口（合并时丢失），
 //   可见性用同一次 resolvePathTarget 结果判定（已链接且非目录），调用方不自判 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 恢复无 Router 兜底（设置页安全Tab 独立渲染场景，旧 FileRefChip 行为）：
+//   已链接时保持链接形态，点击走 resolveChipUrlFresh 现取根，判不过不跳 — 小欧-2026-11-02
 /**
  * PathLink —— 路径 → 文件页链接的**唯一** UI 组件。
  *
@@ -185,6 +187,21 @@ interface RoutedLinkProps extends LinkBodyProps {
   strictShape?: boolean;
 }
 
+/**
+ * 唯一点击口径：点击时显取根解析 → 判不过不跳；落点由调用方决定（Router 内 SPA 跳 /
+ * Router 外整页跳），共用同一个「现取根 + if (u)」判定，不造两套。 — 小欧-2026-11-02
+ */
+const goFresh = (
+  rawPath: string,
+  lineRange: { start: number; end: number } | null | undefined,
+  opts: { dirHint?: boolean; strictShape?: boolean },
+  sink: (url: string) => void
+): void => {
+  void resolveChipUrlFresh(rawPath, lineRange, opts).then((u) => {
+    if (u) sink(u);
+  });
+};
+
 /** Router 内的点击形态（单独一层，保证 useNavigate 只在有 Router 时被调用） */
 const RoutedLink: React.FC<RoutedLinkProps> = ({
   rawPath,
@@ -199,15 +216,11 @@ const RoutedLink: React.FC<RoutedLinkProps> = ({
       {...body}
       rawPath={rawPath}
       lineRange={lineRange}
-      onGo={() => {
-        void resolveChipUrlFresh(rawPath, lineRange, {
-          dirHint,
-          strictShape,
-        }).then((u) => {
-          // 2026-11-02 小欧 - 点击时实时判不过（根已变/形态非法）→ 不跳空链 — 小欧-2026-11-02
-          if (u) nav(u, { state: { internal: true } });
-        });
-      }}
+      onGo={() =>
+        goFresh(rawPath, lineRange, { dirHint, strictShape }, (u) =>
+          nav(u, { state: { internal: true } })
+        )
+      }
     />
   );
 };
@@ -234,9 +247,9 @@ export const PathLink: React.FC<PathLinkProps> = ({
     lineRange,
   });
 
-  // 2026-11-02 小欧 - 不可链接的唯一出口：判定不过 / 无 Router 都走同一段纯文本，
-  //   不再各写一份 span（DRY）— 小欧-2026-11-02
-  if (!target.linked || !inRouter) {
+  // 2026-11-02 小欧 - 判定不过的唯一出口是纯文本；已链接则无 Router 时也要出链接
+  //   （旧 FileRefChip 的兜底：设置页安全Tab 独立渲染等场景，点击整页跳）— 小欧-2026-11-02
+  if (!target.linked) {
     const plain = (
       <span
         data-path-state="unlinked"
@@ -245,24 +258,35 @@ export const PathLink: React.FC<PathLinkProps> = ({
         {rawPath}
       </span>
     );
-    const reason = inRouter
-      ? (target.reason ?? '无法在文件页打开')
-      : '当前页面不支持应用内跳转';
+    const reason = target.reason ?? '无法在文件页打开';
     return tooltip ? <Tooltip title={reason}>{plain}</Tooltip> : plain;
   }
 
-  const link = (
+  const linkProps = {
+    rawPath,
+    lineRange,
+    variant,
+    tooltip,
+    mono,
+    url: target.url,
+    isDir: target.isDir,
+    isExternal: target.isExternal,
+  };
+  const link = inRouter ? (
     <RoutedLink
-      rawPath={rawPath}
-      lineRange={lineRange}
+      {...linkProps}
       dirHint={dirHint}
       strictShape={strictShape}
-      variant={variant}
-      tooltip={tooltip}
-      mono={mono}
-      url={target.url}
-      isDir={target.isDir}
-      isExternal={target.isExternal}
+    />
+  ) : (
+    // 无 Router 兜底：同一 LinkBody，落点整页跳（sink 决定，不新开标签页）
+    <LinkBody
+      {...linkProps}
+      onGo={() =>
+        goFresh(rawPath, lineRange, { dirHint, strictShape }, (u) =>
+          window.location.assign(u)
+        )
+      }
     />
   );
   // 别针只对文件（引用只对文本文件）；目录/未链接不出 — 小欧-2026-11-02
