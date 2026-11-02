@@ -1,46 +1,43 @@
 ﻿// 编辑历史: 2026-02-17 小新 - 创建Layout组件(左右分栏+响应式)
 // 编辑历史: 2026-02-18 小新 - 添加移动端响应式支持
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生
-// 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
-// 2026-08-27 小欧 - 三堂会审: #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
+// 编辑历史: 2026-08-27 小欧 - serviceStatus.success→valid字段名对齐后端返回
+// 编辑历史: 2026-08-27 小欧 - 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
+// 编辑历史: 2026-08-27 小欧 - #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
+// 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复注释行尾多余空白, 防止格式再次出错
 // 编辑历史: 2026-09-08 小欧 - 删顶部模型状态指示Tag(北京老陈令): 右侧已有独立模型Select+检查按钮, 左侧Tag功能完全冗余, 删除更简洁 — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 删左侧Logo区Avatar(北京老陈令): 顶部仅保留文字标识"OmniAgentAst.", 更简洁 — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 标题图标化(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader(蓝绿橙, 与 title-icon-compare.html 的D三色版一致),
 //   复用 waiting-spin 逆时针1s常转, Tooltip 保留原标题; Title 组件仍被 Logo 区使用, import 保留 — 小欧-2026-09-08
-// 编辑历史: 2026-09-20 小强 - 侧边"系统设置"菜单/快捷跳转由 /settings 切换为 /settings2(设置2版: 6Tab+模型管理) — 小强-2026-09-20
-// 2026-09-21 小欧 - 旧设置页整体退休: 配置验证弹窗"去设置"跳转由 /settings 改 /settings2(旧页路由已移除)
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去refreshAll解构; isManualRefreshing改[,setIsManualRefreshing]
 //   (保留setter调用防死状态:131注释, 仅弃读值) — 小欧-2026-09-09
-// 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①删左侧Logo区文字Title,
-//   换嗅title-icon-compare 70号斜向波浪3x3九色点阵(SVG36x36, gridwave动画); ②"OmniAgentAst."文字移右侧顶栏
-//   动画圈圈(title-spin-icon)之后(brand-title-text); ③Title组件随Logo区文字删除不再使用, 保留import防他处引用破坏 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①删Logo区文字Title, 换斜向波浪3x3九色点阵SVG(gridwave动画);
+//   ②"OmniAgentAst."移右侧顶栏圈圈(title-spin-icon)之后(brand-title-text); ③Title组件不再使用, 保留import防他处引用破坏 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 10大规范自查整改: ①删Typography/Title死import(禁止backward); ②9个rect抽
 //   LOGO_GRID_CELLS常量数组+map迭代渲染(DRY); ③行内width/height冗余删除由CSS定义(DRY) — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 动画图标抽离(北京老陈令): 左侧Logo点阵+右侧顶栏圈圈两段内联SVG统一移入
 //   新建 AnimatedIcons/index.tsx(LogoGridIcon/TitleSpinIcon, 数据+渲染随组件走), Layout改import引用, LOGO_GRID_CELLS随组件移走 — 小欧-2026-09-15
-// 编辑历史: 2026-09-15 小欧 - 折叠后Logo不显示修复+菜单栏优化落地(北京老陈令): ①折叠态Logo渲染条件去!collapsed(容器居中展示);
-//   ② Logo区高度64→43与Topbar Header对齐; ③ Logo包Tooltip"OmniAgentAst"(折叠态可识别);
-//   ④ disabled项统一为"即将上线"预留样式(文件管理与知识库一致, opacity0.6+Tooltip);
-//   ⑤ 展开态Logo左缘对齐菜单图象标中心(padding 5px); ⑥菜单栏默认折叠(useState true, 北京老陈令) — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 折叠后Logo不显示修复+菜单栏优化(北京老陈令): ①折叠态Logo渲染条件去!collapsed; ②Logo区高度64→43对齐Header;
+//   ③Logo包Tooltip"OmniAgentAst"; ④disabled项统一"即将上线"预留样式; ⑤展开态Logo对齐菜单图标中心; ⑥菜单栏默认折叠 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 折叠态Tooltip黑框无字修复(北京老陈反馈): 折叠时AntD自动Tooltip取label文本,
 //   label为JSX(Badge/Tooltip包裹)取不到字符串→黑框无字, 所有菜单项显式加title字符串兜底 — 小欧-2026-09-15
+// 编辑历史: 2026-09-20 小强 - 侧边"系统设置"菜单/快捷跳转由 /settings 切换为 /settings2(设置2版: 6Tab+模型管理) — 小强-2026-09-20
+// 编辑历史: 2026-09-21 小欧 - 旧设置页整体退休: 配置验证弹窗"去设置"跳转由 /settings 改 /settings2(旧页路由已移除)
 // 编辑历史: 2026-09-21 小强 - 顶栏Header优化: ①删写-only死状态isManualRefreshing(值从未被读, 收尾09-09半删YAGNI);
-//   ②配置验证Tag emoji改WarningOutlined(7.9.4禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
+//   ②配置验证Tag emoji改WarningOutlined(禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - DRY收口: handleModelChange改经configApi.switchCurrentModel共用切全局模型唯一写链(去本地装配ai_model_ref) — 小强-2026-09-21
 // 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: handleModelChange改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
-// 编辑历史: 2026-10-25 小欧 - 修复左侧菜单tooltip双重显示: 移除所有menu item的title属性,
-//   展开时原生title触发tooltip + 折叠时antd自带tooltip = 双重显示;
-//   移除后展开无tooltip, 折叠由antd自动从label提取文本显示 — 小欧-2026-10-25
+// 编辑历史: 2026-10-20 小欧 - Content底部留白10→4px(北京老陈令): 压缩聊天页输入区下方红框留白(上层ChatPage已8→2, 本层为全站通用底距) — 小欧-2026-10-20
 // 编辑历史: 2026-10-21 小杨 - 文件管理菜单解禁(/files 去掉 disabled 与"即将上线" Tooltip) + 双 tooltip 收敛(只留原生 title) — 小杨-2026-10-21
-// 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): 支持宽/窄菜单切换;
-//   宽菜单: 展开=180px, 折叠=80px (适合大屏, 显示更多内容);
-//   窄菜单: 展开=120px, 折叠=48px (适合小屏, 节省空间);
-//   顶栏添加漂亮的视觉切换图标(用户头像前), localStorage 持久化用户选择;
-//   窄菜单模式下修复文字截断: <style>从Menu内部移到外部(AntD 5.x Menu不渲染非菜单项children);
-//   CSS属性从padding-left/right改为逻辑属性padding-inline-start/end + margin-inline-start/end;
-//   补充覆盖.ant-menu-item-icon的margin-inline-end和.ant-menu-title-content的overflow — 小欧-2026-10-27
+// 编辑历史: 2026-10-25 小欧 - 修左侧菜单tooltip双重显示: 移除所有menu item的title属性(展开原生title+折叠antd自带=双重显示),
+//   移除后展开无tooltip, 折叠由antd自动从label提取文本显示 — 小欧-2026-10-25
+// 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): 宽/窄菜单切换(宽:180/80px, 窄:120/48px)+顶栏切换图标localStorage持久化;
+//   窄模式文字截断修复: <style>移出Menu(AntD 5.x不渲染非菜单项children), padding改逻辑属性+补图标/正文margin覆盖 — 小欧-2026-10-27
+// 编辑历史: 2026-11-02 小欧 - 顶栏模型选择框 minWidth:350 改定宽+popupMatchSelectWidth=false 弹层自适应全宽条(长名不再撑宽选中框,下拉完整显示provider (model)),端内HMR实测两框生效 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 顶栏模型框宽度归常量TOP_MODEL_SELECT_WIDTH=180(选中框+弹层minWidth两槽位共引,调宽只改一行),与底部ModelPicker各自持常量互不共享隔离 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 北京老陈令: 顶框选中框width回归minWidth下限语义(修手改minWidth::双冒号语法错),常量仅作下限 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 历史条目合规整改: 抹除各类序号类引用(15处), 超行条目压缩为2行, 乱序条目按日期归位; 条目未删, 技术含义不变 - 小欧-2026-11-02
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -50,10 +47,8 @@
  * @version 1.1.0
  * @since 2026-02-17
  * @update 2026-02-18 添加移动端响应式支持
- * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
+ * @update 2026-08-22 小欧 - model结构化归一(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
  */
-// 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
-// 编辑历史: 2026-10-20 小欧 - Content底部留白10→4px(北京老陈令): 压缩聊天页输入区下方红框留白(上层ChatPage已8→2, 本层为全站通用底距) — 小欧-2026-10-20
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -104,8 +99,11 @@ const { useBreakpoint } = Grid;
 const { Option } = Select;
 const { Sider, Content, Header } = Layout;
 
-// 2026-08-27 小欧 三堂会审B32: 版本号统一定义(DRY), 避免硬编码散落多处
+// 2026-08-27 小欧 - 版本号统一定义(DRY), 避免硬编码散落多处
 const APP_VERSION = 'v2.1.0';
+
+// 2026-11-02 小欧 - 顶部全局模型选择框宽度唯一可调点(仅作minWidth下限): 选中框+弹层minWidth两槽位共引, 改下限只改此一行; 与底部会话级ModelPicker常量互不共享隔离 — 小欧-2026-11-02
+const TOP_MODEL_SELECT_WIDTH = 180;
 
 type MenuItem = Required<MenuProps>['items'][number];
 
@@ -367,7 +365,7 @@ const AppLayout: React.FC<LayoutProps> = ({
     if (currentModel) {
       return `${currentModel.provider}-${currentModel.model}`;
     }
-    // 其次从 serviceStatus 获取（验证后的当前模型）— 归一: model_ref 结构派生(方案B 前端随后端) — 小欧 2026-08-22
+    // 其次从 serviceStatus 获取（验证后的当前模型）— 归一: model_ref 结构派生 — 小欧 2026-08-22
     if (serviceStatus?.model_ref?.provider && serviceStatus?.model_ref?.model) {
       return `${serviceStatus.model_ref.provider}-${serviceStatus.model_ref.model}`;
     }
@@ -411,7 +409,7 @@ const AppLayout: React.FC<LayoutProps> = ({
           modelInfo: modelInfo,
         });
       } else if (!serviceStatus.valid) {
-        // 2026-08-27 小欧 修复#31: ValidateResponse.valid(后端返回valid)
+        // 2026-08-27 小欧 - ValidateResponse.valid(后端返回valid)
         // ❌ 失败状态
         setValidationErrorModal({
           visible: true,
@@ -466,7 +464,7 @@ const AppLayout: React.FC<LayoutProps> = ({
         display_name: selectedModel.display_name,
       });
 
-      // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
+      // 归一(小欧 2026-08-22): ai_provider/ai_model → ai_model_ref 结构
       // 2026-09-24 小欧 - DRY收口: 改经switchAndRefreshModel(API+成功/失败刷新收口), 不再直调configApi+手动refreshAfterModelChange
       const result = await switchAndRefreshModel(
         selectedModel.provider,
@@ -710,7 +708,7 @@ const AppLayout: React.FC<LayoutProps> = ({
         }}
       />
 
-      {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息, UX-L04: 添加点击查看版本详情 */}
+      {/* 底部信息 - 前端小新代修改: 优化底部信息, 添加点击查看版本详情 */}
       <div
         style={{
           position: 'absolute',
@@ -766,7 +764,7 @@ const AppLayout: React.FC<LayoutProps> = ({
           {renderNavContent()}
         </Drawer>
       ) : (
-        /* 桌面端：左侧导航栏 - 前端小新代修改 VIS-L02: 220px→180px */
+        /* 桌面端：左侧导航栏 - 前端小新代修改: 220px→180px */
         /* 2026-10-27 小欧 - 侧边栏宽度优化: 支持宽/窄菜单切换, 从 localStorage 读取 */
         <Sider
           width={sidebarWidths.expanded}
@@ -801,7 +799,7 @@ const AppLayout: React.FC<LayoutProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-            {/* 移动端菜单按钮 - 前端小新代修改 UX-L02: 增大按钮尺寸，添加tooltip */}
+            {/* 移动端菜单按钮 - 前端小新代修改: 增大按钮尺寸，添加tooltip */}
             {isMobile && (
               <Button
                 type="text"
@@ -823,7 +821,7 @@ const AppLayout: React.FC<LayoutProps> = ({
               OmniAgentAst.
             </span>
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
-            {/* 2026-09-21 小强 - emoji禁令(7.9.4)：⚠️改WarningOutlined图标 */}
+            {/* 2026-09-21 小强 - emoji禁令：⚠️改WarningOutlined图标 */}
             {validationResult &&
               (!validationResult.success ||
                 (validationResult.warnings &&
@@ -848,9 +846,13 @@ const AppLayout: React.FC<LayoutProps> = ({
             {modelList.length > 0 ? (
               <Select
                 value={currentProvider}
-                style={{ minWidth: 350 }}
-                styles={{ popup: { root: { minWidth: 350 } } }}
+                style={{ minWidth: TOP_MODEL_SELECT_WIDTH }}
+                styles={{
+                  popup: { root: { minWidth: TOP_MODEL_SELECT_WIDTH } },
+                }}
                 size="small"
+                // 2026-11-02 小欧 框宽下限+弹层下限共引TOP_MODEL_SELECT_WIDTH(改下限只改一行,与底部ModelPicker隔离); popupMatchSelectWidth=false 弹层仍自适应取最长选项 — 小欧-2026-11-02
+                popupMatchSelectWidth={false}
                 // 【新增】打开下拉框时刷新模型列表，获取最新配置
                 onOpenChange={async (open: boolean) => {
                   if (open) {
@@ -892,7 +894,7 @@ const AppLayout: React.FC<LayoutProps> = ({
           </div>
         </Header>
 
-        {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
+        {/* 主内容区 - 只有这层有留白 - 前端小新代修改: 留白优化, 背景色优化 */}
         {/* 
           📝 留白调整说明（修改这里调整 Card 组件与外边框的间距）：
           padding: "上 右 下 左"
