@@ -9,6 +9,7 @@
 // 编辑历史: 2026-11-02 小欧 - Tooltip 全量常显(北京老陈定案): 耗时/本机地址/访问地址/请求前缀/连接方式/PID 逐行 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细), 地址走等宽可选中 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body), 键值行序=本机/访问/前缀/连接/耗时/进程 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 打开Tip即静默重检: 挂载快照会被后端重启/字段变更拖旧(空值误判), 静默重检不翻检测中态免闪烁 — 小欧-2026-11-02
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
@@ -122,28 +123,34 @@ const ServiceStatusPill: React.FC = () => {
   const checkingRef = useRef(false);
 
   // 检测: ref 防重入(setState 异步, 并发点击守不住); 耗时由本组件夹表, 结果经 AppContext 回灌
-  const handleCheck = useCallback(async () => {
-    if (checkingRef.current) return;
-    checkingRef.current = true;
-    setChecking(true);
-    setLatencyMs(null);
-    const startedAt = performance.now();
-    try {
-      const health = await refreshHealth();
-      setLatencyMs(
-        health === null ? null : Math.round(performance.now() - startedAt)
-      );
-      setHasChecked(true);
-    } finally {
-      checkingRef.current = false;
-      setChecking(false);
-    }
-  }, [refreshHealth]);
+  // visible=true = 点击重检(翻"检测中"给反馈); false = Tip 打开时的静默重检(不翻态, 免每次悬停闪一下)
+  const runCheck = useCallback(
+    async (visible: boolean) => {
+      if (checkingRef.current) return;
+      checkingRef.current = true;
+      if (visible) {
+        setChecking(true);
+        setLatencyMs(null);
+      }
+      const startedAt = performance.now();
+      try {
+        const health = await refreshHealth();
+        setLatencyMs(
+          health === null ? null : Math.round(performance.now() - startedAt)
+        );
+        setHasChecked(true);
+      } finally {
+        checkingRef.current = false;
+        if (visible) setChecking(false);
+      }
+    },
+    [refreshHealth]
+  );
 
   // 挂载即自动检测(一次只读探活, 无定时器), 点击胶囊=重新检测
   useEffect(() => {
-    void handleCheck();
-  }, [handleCheck]);
+    void runCheck(true);
+  }, [runCheck]);
 
   const state = deriveState(checking, hasChecked, healthStatus, latencyMs);
 
@@ -170,6 +177,10 @@ const ServiceStatusPill: React.FC = () => {
   return (
     <Tooltip
       color={Colors.BG.PRIMARY}
+      // 2026-11-02 小欧 - Tip 每次打开先静默重检: 保证看到的是此刻真值, 而不是挂载时的快照 — 小欧-2026-11-02
+      onOpenChange={(open) => {
+        if (open) void runCheck(false);
+      }}
       styles={{
         root: { maxWidth: TIP_ROOT_MAX_W },
         body: {
@@ -195,7 +206,7 @@ const ServiceStatusPill: React.FC = () => {
       <span
         role="button"
         aria-label="后端服务状态"
-        onClick={handleCheck}
+        onClick={() => void runCheck(true)}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
