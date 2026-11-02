@@ -9,20 +9,16 @@
 // 编辑历史: 2026-11-02 小欧 - 存活时长并入进程行改人话(7分34秒)+三组分口径, 消除"耗时/运行时长"像重复指标 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 探活耗时与事件循环并成一行"响应": 常态只给正常, 异常才给 往返·循环 数字(兼定位卡在链路还是循环) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 响应行单位定案毫秒(1820 ms): 时钟格式易被误读成"服务器运作时长"; 离线文案改吃 PROBE_TIMEOUT_MS 免字面量漂移 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG 与根宽别名 — 小欧-2026-11-03
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Tooltip } from 'antd';
+import { Badge } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useApp } from '../../contexts/AppContext';
 import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
-import { PillTip, PILL_TIP_ROOT_MAX_W, type PillTipRow } from './PillTip';
+import { PillTip, type PillTipRow } from './PillTip';
+import { PillShell } from './PillShell';
 import { streamDataRows } from './streamPillRows';
-import {
-  Spacing,
-  FontSize,
-  Colors,
-  Radius,
-  BorderWidth,
-} from '../../utils/stepStyles';
+import { FontSize, Colors } from '../../utils/stepStyles';
 import { API_BASE_URL } from '../../services/api/client';
 import {
   SLOW_RESPONSE_MS,
@@ -30,10 +26,6 @@ import {
 } from '../../services/api/health.api';
 import type { HealthStatus } from '../../services/api/health.api';
 
-// 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与配置胶囊同令牌) — 小欧-2026-11-02
-const HOVER_BG = Colors.BG.HOVER;
-// 2026-11-02 小欧 - 浮层根宽上限随 PillTip 统一(与配置/流状态胶囊同算法) — 小欧-2026-11-02
-const TIP_ROOT_MAX_W = PILL_TIP_ROOT_MAX_W;
 // 2026-11-02 小欧 - 应答时刻取后端本地ISO的年月日+时刻段(不new Date, 免浏览器时区二次换算); 只留时刻会看不出是哪天 — 小欧-2026-11-02
 const stampOf = (iso?: string): string => {
   const [date, time] = (iso ?? '').split('T');
@@ -256,21 +248,16 @@ const ServiceStatusPill: React.FC = () => {
   ];
 
   return (
-    <Tooltip
-      color={Colors.BG.PRIMARY}
+    <PillShell
+      role="button"
+      ariaLabel="后端服务状态"
+      onClick={() => void runCheck(true)}
+      busy={checking}
       // 2026-11-02 小欧 - Tip 每次打开先静默重检: 保证看到的是此刻真值, 而不是挂载时的快照 — 小欧-2026-11-02
-      onOpenChange={(open) => {
+      onTooltipOpenChange={(open) => {
         if (open) void runCheck(false);
       }}
-      styles={{
-        root: { maxWidth: TIP_ROOT_MAX_W },
-        body: {
-          padding: `${Spacing.MD}px ${Spacing.LG}px`,
-          border: `${BorderWidth.THIN}px solid ${Colors.BORDER.VERTICAL}`,
-          borderRadius: Radius.LG,
-        },
-      }}
-      title={
+      tooltip={
         <PillTip
           tone={TONE_OF[state.kind]}
           title={state.text}
@@ -284,36 +271,15 @@ const ServiceStatusPill: React.FC = () => {
         />
       }
     >
-      <span
-        role="button"
-        aria-label="后端服务状态"
-        onClick={() => void runCheck(true)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          // 2026-11-02 小欧 - 令牌纪律: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM, 与配置胶囊同款 — 小欧-2026-11-02
-          padding: `${Spacing.XS}px ${Spacing.MD}px`,
-          borderRadius: Radius.SM,
-          cursor: checking ? 'default' : 'pointer',
-          transition: 'background 0.2s',
-        }}
-        onMouseEnter={(e) => {
-          if (!checking) e.currentTarget.style.background = HOVER_BG;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        <Badge
-          status={state.badge}
-          text={
-            <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
-              {state.text}
-            </span>
-          }
-        />
-      </span>
-    </Tooltip>
+      <Badge
+        status={state.badge}
+        text={
+          <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
+            {state.text}
+          </span>
+        }
+      />
+    </PillShell>
   );
 };
 

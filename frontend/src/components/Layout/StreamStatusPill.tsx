@@ -1,25 +1,18 @@
 /** StreamStatusPill - 顶栏 SSE 流状态灯(与 Service/Config 胶囊正交)。 @author 小欧 @date 2026-11-02 */
 // 编辑历史: 2026-11-02 小欧 - 新建: 只读 store 聚合快照(共享 1s 采样), 不发任何请求 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - badge 由 tone 单点映射, 浮层数据行抽到 streamPillRows 与胶囊共用 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG — 小欧-2026-11-03
 import React from 'react';
-import { Badge, Tooltip } from 'antd';
+import { Badge } from 'antd';
 
 import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
 import type { StreamTone } from '../../features/chat/hooks/useStreamPulse';
 import { IDLE_TIMEOUT } from '../../features/chat/streams/chatStreamTransport';
-import {
-  Colors,
-  FontSize,
-  Radius,
-  Spacing,
-  BorderWidth,
-} from '../../utils/stepStyles';
+import { Colors, FontSize } from '../../utils/stepStyles';
 import { TONE_COLOR } from '../../utils/tone';
-import { PillTip, PILL_TIP_ROOT_MAX_W, type PillTipRow } from './PillTip';
+import { PillTip, type PillTipRow } from './PillTip';
+import { PillShell } from './PillShell';
 import { streamDataRows } from './streamPillRows';
-
-// 2026-11-02 小欧 - 顶栏白底悬停浅灰, 与配置/服务胶囊同令牌 — 小欧-2026-11-02
-const HOVER_BG = Colors.BG.HOVER;
 
 const BADGE_OF: Record<
   StreamTone,
@@ -81,17 +74,11 @@ const StreamStatusPill: React.FC = () => {
   );
 
   return (
-    <Tooltip
-      color={Colors.BG.PRIMARY}
-      styles={{
-        root: { maxWidth: PILL_TIP_ROOT_MAX_W },
-        body: {
-          padding: `${Spacing.MD}px ${Spacing.LG}px`,
-          border: `${BorderWidth.THIN}px solid ${Colors.BORDER.VERTICAL}`,
-          borderRadius: Radius.LG,
-        },
-      }}
-      title={
+    <PillShell
+      role="img"
+      ariaLabel="SSE 流状态"
+      className={view.tone === 'ok' ? 'stream-pill-ok' : undefined}
+      tooltip={
         <PillTip
           tone={view.tone}
           title={view.text}
@@ -112,32 +99,12 @@ const StreamStatusPill: React.FC = () => {
         />
       }
     >
-      <span
-        role="img"
-        aria-label="SSE 流状态"
-        className={view.tone === 'ok' ? 'stream-pill-ok' : undefined}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          padding: `${Spacing.XS}px ${Spacing.MD}px`,
-          borderRadius: Radius.SM,
-          cursor: 'help',
-          transition: 'background 0.2s',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = HOVER_BG;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        {view.tone === 'alert' ? (
-          <Badge color={Colors.ORANGE_RED} text={label} />
-        ) : (
-          <Badge status={BADGE_OF[view.tone]} text={label} />
-        )}
-      </span>
-    </Tooltip>
+      {view.tone === 'alert' ? (
+        <Badge color={Colors.ORANGE_RED} text={label} />
+      ) : (
+        <Badge status={BADGE_OF[view.tone]} text={label} />
+      )}
+    </PillShell>
   );
 };
 

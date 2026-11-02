@@ -9,25 +9,16 @@
 //   挂载自动检测+Tooltip明细+去设置出路, 语义=可发消息而非文件校验通过 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细/动作), 删内联堆叠 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body)并删指向不存在id的aria-describedby死属性 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 小欧 - 收口: 浮层卡片/容器栅格/hover 交 PillShell, 删本文件 HOVER_BG 与根宽重算 — 小欧-2026-11-03
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Tooltip } from 'antd';
+import { Badge } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
-import { PillTip, PILL_TIP_MAX_W } from './PillTip';
-import {
-  Spacing,
-  FontSize,
-  Colors,
-  Radius,
-  BorderWidth,
-} from '../../utils/stepStyles';
+import { PillTip } from './PillTip';
+import { PillShell } from './PillShell';
+import { FontSize, Colors } from '../../utils/stepStyles';
 import type { ValidateResponse } from '../../services/api/chat.api';
-
-// 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与侧栏底条hover同令牌)
-const HOVER_BG = Colors.BG.HOVER;
-// 2026-11-02 小欧 - 浮层根宽上限: 内容宽+左右padding+描边, 破 antd 根节点默认250px提前折行 — 小欧-2026-11-02
-const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
 
 // 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
 const TONE_OF = {
@@ -146,17 +137,12 @@ const ConfigStatusPill: React.FC = () => {
           : [];
 
   return (
-    <Tooltip
-      color={Colors.BG.PRIMARY}
-      styles={{
-        root: { maxWidth: TIP_ROOT_MAX_W },
-        body: {
-          padding: `${Spacing.MD}px ${Spacing.LG}px`,
-          border: `${BorderWidth.THIN}px solid ${Colors.BORDER.VERTICAL}`,
-          borderRadius: Radius.LG,
-        },
-      }}
-      title={
+    <PillShell
+      role="button"
+      ariaLabel="模型配置状态"
+      onClick={handleCheck}
+      busy={checking}
+      tooltip={
         <PillTip
           tone={TONE_OF[state.kind]}
           title={state.text}
@@ -177,36 +163,15 @@ const ConfigStatusPill: React.FC = () => {
         />
       }
     >
-      <span
-        role="button"
-        aria-label="模型配置状态"
-        onClick={handleCheck}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          // 2026-11-02 小欧 - 令牌纪律: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM(例: SidebarModeSwitcher同款) — 小欧-2026-11-02
-          padding: `${Spacing.XS}px ${Spacing.MD}px`,
-          borderRadius: Radius.SM,
-          cursor: checking ? 'default' : 'pointer',
-          transition: 'background 0.2s',
-        }}
-        onMouseEnter={(e) => {
-          if (!checking) e.currentTarget.style.background = HOVER_BG;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        <Badge
-          status={state.badge}
-          text={
-            <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
-              {state.text}
-            </span>
-          }
-        />
-      </span>
-    </Tooltip>
+      <Badge
+        status={state.badge}
+        text={
+          <span style={{ fontSize: FontSize.SECONDARY, color: state.color }}>
+            {state.text}
+          </span>
+        }
+      />
+    </PillShell>
   );
 };
 
