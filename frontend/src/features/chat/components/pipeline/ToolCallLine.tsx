@@ -104,6 +104,7 @@ import {
   Size,
 } from '@/utils/stepStyles';
 import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import { ClockStopwatch } from '@/components/WaitingIcons/clockStopwatch'; // 2026-11-03 小欧: 首行右端钟面(步骤级计时落位) — 小欧-2026-11-03
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 
 interface ToolCallLineProps {
@@ -115,7 +116,7 @@ interface ToolCallLineProps {
   // 2026-09-30 小欧 - tool/reason 转可选以匹配上游 deniedEntries（单一真源）类型；
   //   无名条目已由 PipelineRenderer 渲染前 .filter(e => e.tool) 拦掉，此处只需类型一致。
   deniedTools?: Array<{ tool?: string; reason?: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
-  waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(与齿轮并存) — 小欧-2026-09-17
+  waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(2026-11-03 改挂首行右端) — 小欧-2026-09-17
 }
 
 // 2026-09-17 小欧 会审V3(#8): 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
@@ -266,6 +267,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         >
           <GearIcon />
           {firstLine} {attemptLabel}
+          {/* 2026-11-03 小欧 - 步骤级钟面落首行右端(北京老陈定案: 齿轮位置/动画不动): 门控与下方齿轮一致 —
+              已出结果/被拦截/回放均不挂, 不给已结束的步骤留计时 — 小欧-2026-11-03 */}
+          {!hasResult &&
+            tools.length > 0 &&
+            !interrupted &&
+            !replay &&
+            waitClock && <ClockStopwatch {...waitClock} kind="tool" />}
         </span>
         {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
@@ -292,9 +300,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               </span>
             )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
-            <ToolWaitingIcon
-              waitClock={waitClock}
-            /> /* 2026-09-17 小欧: 齿轮与钟面并存(追加) — 小欧-2026-09-17 */
+            <ToolWaitingIcon /> /* 2026-11-03 小欧: 齿轮本体不动, 钟面已移首行右端 — 小欧-2026-11-03 */
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (

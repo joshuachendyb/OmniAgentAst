@@ -358,6 +358,8 @@ interface PipelineRendererProps {
     Array<{ tool?: string; reason?: string; reject_type?: string }>
   >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
+  // 2026-11-03 小欧 - 消费点收口: 等待段→ThinkingStream 标题行右端, 工具段→ToolCallLine 首行右端;
+  //   TextStream 不再消费(蓝波纹光标只留图形, 计时归顶栏) — 小欧-2026-11-03
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -462,10 +464,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 compact
                 defaultExpanded={reasoningVisible}
                 running={gi > thinkEndIdx} // 2026-10-07 小欧 - 转: 尚无 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
+                waitClock={waitClock} // 2026-11-03 小欧 - 钟面移到标题行右端(图标不动), 步骤级计时语义不变 — 小欧-2026-11-03
               />
               <div style={{ margin: stepMargin(false) }}>
-                <ThoughtWaitingIcon waitClock={waitClock} />{' '}
-                {/* 2026-09-17 小欧: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
+                <ThoughtWaitingIcon />{' '}
+                {/* 2026-11-03 小欧: 钟面已迁标题行右端, 图标本体位置/动画不动 — 小欧-2026-11-03 */}
               </div>
             </React.Fragment>
           );
@@ -508,7 +511,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               typing={isLive}
               cursor={isLive}
               compact={seg.sameStep}
-              waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
               markdown={thoughtMarkdown} // 2026-10-05 小欧: thought 块 Markdown 渲染(「思考排版」, 文档[9] §5.8) — 小欧-2026-10-05
             />
           );
@@ -596,7 +598,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               deniedEntries
                 ?.get(seg.action.step as number)
                 ?.filter((e) => e.tool)}
-              waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
+              waitClock={waitClock} // 2026-11-03 小欧 - 工具等待钟面改挂首行右端(齿轮图标不动) — 小欧-2026-11-03
             />
           );
         }

@@ -421,6 +421,14 @@
   transform-box: fill-box;
   animation: clock-beat 0.6s ease-out 1;
 }
+/* 2026-11-03 07:52:00 小欧 - 顶栏实例(line-height:1 收敛时钟盒高, 否则继承 .ant-layout-header 的 64px
+   行高把钟面撑高; 只作用于顶栏, 步骤级钟面盒高不变) — 小欧-2026-11-03 */
+.header-wait-clock {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
 
 /* ReasoningIcon — step 页面"推理内容..."折叠行的前置图标
    本段图标可换(备用件常驻, 改 ReasoningIcon 别名取值即可): 眼睛(EyeIcon) / 信号柱(SignalBarsIcon) /

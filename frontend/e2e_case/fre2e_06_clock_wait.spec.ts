@@ -135,7 +135,12 @@ test.describe('心跳等待感知钟面', () => {
     // 2026-09-28 小欧 - 收窄到 :visible。钟面挂在多个等待窗口(打字机段/ToolCallLine 等待段)，
     //   每窗口一实例且各自从挂载时刻起算；原取 .first() 可能命中非当前可见的那一个。
     //   紧接命中后立即连拍，确保两次快照落在同一挂载实例上（窗口切换会重置计时）。
-    const visibleClock = () => page.locator('.clock-stopwatch:visible').first();
+    // 2026-11-03 小欧 - 排除顶栏钟面(.clock-stopwatch-header): 它的起点是"距最近业务帧",
+    //   业务帧一到就归零重算/退场, 秒数不单调, 拿它做递增断言必假红 — 小欧-2026-11-03
+    const visibleClock = () =>
+      page
+        .locator('.clock-stopwatch:visible:not(.clock-stopwatch-header)')
+        .first();
     const getText = async () => {
       const svgTexts = visibleClock().locator('svg text');
       return await svgTexts

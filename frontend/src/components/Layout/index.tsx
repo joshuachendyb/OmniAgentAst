@@ -46,6 +46,7 @@
 // 编辑历史: 2026-11-02 小欧 - 功能重设计: "检查服务"按钮+三态弹窗半死链(成功/警告分支死后端无status字段)+toast复读 → ConfigStatusPill配置状态胶囊(语义订正: 实查config.yaml四步校验) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 顶栏加ServiceStatusPill(服务存活与本胶囊分立); 版本号改为从AppContext的/health派生, 删壳层单独打health的useEffect与healthApi导入 - 小欧-2026-11-02
 // 编辑历史: 2026-11-03 06:40:41 小欧 - 顶栏标题圈圈换 TitleStreamIcon(流状态联动): 壳层零逻辑, 仍是纯插槽 - 小欧-2026-11-03
+// 编辑历史: 2026-11-03 07:52:00 小欧 - 品牌字后插入 HeaderWaitClock(顶栏等待钟面), 壳层仍是纯插槽 - 小欧-2026-11-03
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -72,6 +73,7 @@ import { ConfigStatusPill } from './ConfigStatusPill';
 import { ServiceStatusPill } from './ServiceStatusPill';
 import { StreamStatusPill } from './StreamStatusPill';
 import { TitleStreamIcon } from './TitleStreamIcon';
+import { HeaderWaitClock } from './HeaderWaitClock'; // 2026-11-03 小欧: 品牌字后的顶栏钟面 — 小欧-2026-11-03
 import ShortcutPanel from '../ShortcutPanel';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
@@ -344,6 +346,9 @@ const AppLayout: React.FC<LayoutProps> = ({
             <span className="brand-title-text" aria-label="OmniAgentAst">
               OmniAgentAst.
             </span>
+            {/* 2026-11-03 小欧 - 顶栏等待钟面(北京老陈定案): 紧随品牌字之后, 品牌锁定完整、
+                不插进三粒胶囊节奏; 只在等满 10s 后出现, 平时零占宽, 无"任务跑了多久"文案(taskinfo 已有) — 小欧-2026-11-03 */}
+            <HeaderWaitClock />
           </div>
 
           {/* 右侧操作区 */}

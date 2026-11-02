@@ -1,6 +1,9 @@
 // 编辑历史: 2026-09-17 小欧 - 新增: 心跳等待感知微型钟面独立控件(北京老陈定案):
 //   短针贴内缘环带扫动(60s归零重扫)＋中央纯秒数(≥10s)＋心跳微闪光波(存活确认)＋三档色(绿/黄/橙红)
 //   ＋整数分钟里程碑文字; 与等待图标并存(追加不替换) — 小欧-2026-09-17
+// 编辑历史: 2026-11-03 07:52:00 小欧 - 计时起点可外给 sinceTs(顶栏=距最近业务帧, 不传=挂载起算);
+//   里程碑文案改口语(等回复/工具已跑, ≥60min 折为小时+分), 新增 className 供顶栏实例区分 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 07:58:00 小欧 - 新增 hideNote(顶栏宽度硬约束: 只留表盘+秒数, 文字归步骤级钟面/胶囊) — 小欧-2026-11-03
 import React, { useEffect, useRef, useState } from 'react';
 import { Colors } from '@/utils/stepStyles';
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧: 钟面信号打包类型(定义于类型层, 避免 types→components 反向依赖) — 小欧-2026-09-17
@@ -20,17 +23,42 @@ const LEVEL_COLOR = {
 type Level = keyof typeof LEVEL_COLOR;
 
 export interface ClockStopwatchProps extends ClockSignals {
-  /** 里程碑文字主语: llm="等 LLM 已达 N 分钟"; tool="工具执行已达 N 分钟" */
+  /** 里程碑文字主语: llm="等回复 N 分钟"; tool="工具已跑 N 分钟" */
   kind?: 'llm' | 'tool';
+  /**
+   * 2026-11-03 小欧 - 计时起点(epoch ms)。>0 时秒数 = Date.now() - sinceTs, 用于语义为
+   *   "距某事实多久"的场景(顶栏: 距最近业务帧); 不传则沿用挂载起算(步骤级: 本步等了多久)。
+   */
+  sinceTs?: number;
+  /** 附加类名(顶栏实例用: 样式/测试可与步骤级钟面区分) */
+  className?: string;
+  /**
+   * 2026-11-03 小欧 - 只留读数不写文字(顶栏实例): 顶栏宽度是硬约束(窄面板本就溢出),
+   *   里程碑/断连文字由步骤级钟面与三粒胶囊承担, 顶栏只保留固定宽度的表盘+秒数。
+   *   组件能力不减: aria-label 仍带 note, 分支判定照旧。
+   */
+  hideNote?: boolean;
 }
+
+/** 时长口径: <60min 只报分钟, ≥60min 折"X 小时 Y 分"(不再出现"等回复 185 分钟") */
+const formatSpan = (sec: number): string => {
+  const min = Math.floor(sec / 60);
+  return min >= 60
+    ? `${Math.floor(min / 60)} 小时 ${min % 60} 分`
+    : `${min} 分钟`;
+};
 
 export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
   lastBizTsRef,
   lastDataTsRef,
   heartbeatTs,
   kind = 'llm',
+  sinceTs,
+  className,
+  hideNote = false,
 }) => {
-  // 计时起点 = 组件挂载时刻(performance.now 差值, 防系统时钟跳变/后台节流丢秒)
+  // 计时起点 = 组件挂载时刻(performance.now 差值, 防系统时钟跳变/后台节流丢秒);
+  //   外给 sinceTs 时改按该事实时刻算, 挂载时刻不再参与 — 2026-11-03 小欧
   const startedAtRef = useRef<number>(performance.now());
   const [, setTick] = useState(0);
   const [beatTick, setBeatTick] = useState(0);
@@ -46,9 +74,9 @@ export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
     if (heartbeatTs > 0) setBeatTick((t) => t + 1);
   }, [heartbeatTs]);
 
-  const elapsedSec = Math.floor(
-    (performance.now() - startedAtRef.current) / 1000
-  );
+  const elapsedSec = sinceTs
+    ? Math.max(0, Math.floor((Date.now() - sinceTs) / 1000))
+    : Math.floor((performance.now() - startedAtRef.current) / 1000);
   if (elapsedSec < APPEAR_SEC) return null; // 短等待不显示
 
   // 基线未初始化(<=0)视为无静默, 防首帧误判灰档/升档
@@ -70,8 +98,8 @@ export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
     level = 'orange';
     note =
       kind === 'tool'
-        ? `工具执行已达 ${Math.floor(bizSilenceSec / 60)} 分钟`
-        : `等 LLM 已达 ${Math.floor(bizSilenceSec / 60)} 分钟`;
+        ? `工具已跑 ${formatSpan(bizSilenceSec)}`
+        : `等回复 ${formatSpan(bizSilenceSec)}`;
   } else if (bizSilenceSec >= YELLOW_SEC) {
     level = 'yellow';
   }
@@ -81,7 +109,7 @@ export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
 
   return (
     <span
-      className="clock-stopwatch"
+      className={className ? `clock-stopwatch ${className}` : 'clock-stopwatch'}
       role="img"
       aria-label={
         note ? `已等待 ${elapsedSec} 秒, ${note}` : `已等待 ${elapsedSec} 秒`
@@ -135,7 +163,7 @@ export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
           {elapsedSec}
         </text>
       </svg>
-      {note && (
+      {!hideNote && note && (
         <span className="clock-stopwatch-note" style={{ color }}>
           {note}
         </span>

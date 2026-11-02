@@ -11,10 +11,10 @@
 // 编辑历史: 2026-10-07 小欧 - EyeIcon/SignalBarsIcon/SunIcon/ApproachDotsIcon 统一加 animating prop, EyeIcon 删 dim prop
 //   (北京老陈裁定动画与展开/收起解耦后 dim 已无消费方); 5图标接口统一为 {size, animating},
 //   换图标只改 ReasoningIcon 别名取值, 调用方零改动 — 小欧-2026-10-07
+// 编辑历史: 2026-11-03 07:52:00 小欧 - 三图标去掉 waitClock 与内嵌钟面(钟面改挂步骤标题行右端/顶栏),
+//   图标本身位置与动画一字未动(北京老陈定案: 图标不动, 只把钟面拔出来) — 小欧-2026-11-03
 import React from 'react';
 import { Colors, Icon } from '@/utils/stepStyles';
-import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 实施: 微型钟面(追加并存) — 小欧-2026-09-17
-import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 
 /**
  * ThoughtWaitingIcon — 绿色270°弧线旋转
@@ -22,29 +22,25 @@ import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: �
  * 原位置：PipelineRenderer.tsx 内联 const WaitingIcon（私有）
  */
 // 2026-09-17 小欧 实施: 等待图标(类型身份: 绿=思考) 与钟面(等待时长) 并存, 语义正交 — 小欧-2026-09-17
+// 2026-11-03 小欧: 钟面已迁到步骤标题行右端(ThinkingStream 插槽), 本图标回归纯图标、无 prop — 小欧-2026-11-03
 // 2026-10-08 小欧 尺寸归一 Icon.BOX(北京老陈令"统一完成后再看效果再微调"):
 //   原 width="1.4em"(em 相对父字号, 实测父14→27.67px 父12→23.72px 会漂移), 且与 index.css
 //   的 .waiting-cursor svg{width:1.4em} 重复两处(CSS 类选择器赢, 改一处漏一处)。
 //   现尺寸真源唯一在本 SVG 属性, CSS 只留 display/animation/vertical-align。— 小欧-2026-10-08
-export const ThoughtWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
-  waitClock,
-}) => (
-  <>
-    <span className="waiting-cursor" aria-label="等待思考输出">
-      <svg
-        width={Icon.BOX}
-        height={Icon.BOX}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={Colors.SUCCESS}
-        strokeWidth={2}
-        strokeLinecap="round"
-      >
-        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-      </svg>
-    </span>
-    {waitClock && <ClockStopwatch {...waitClock} kind="llm" />}
-  </>
+export const ThoughtWaitingIcon: React.FC = () => (
+  <span className="waiting-cursor" aria-label="等待思考输出">
+    <svg
+      width={Icon.BOX}
+      height={Icon.BOX}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={Colors.SUCCESS}
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  </span>
 );
 
 /**
@@ -54,33 +50,28 @@ export const ThoughtWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
  */
 // 2026-10-08 小欧: 补 width/height=Icon.BOX —— 原 SVG 无尺寸属性, 完全靠 index.css 的
 //   .tool-waiting-cursor svg{width:1.1em} 给, 机制与绿圈(靠SVG)相反。尺寸真源归一。— 小欧-2026-10-08
-export const ToolWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
-  waitClock,
-}) => (
-  <>
-    <span className="tool-waiting-cursor" aria-label="等待工具完成">
-      <svg
-        width={Icon.BOX}
-        height={Icon.BOX}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={Colors.WAIT_ACTION}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M12 2v4" />
-        <path d="M12 18v4" />
-        <path d="M4.93 4.93l2.83 2.83" />
-        <path d="M16.24 16.24l2.83 2.83" />
-        <path d="M2 12h4" />
-        <path d="M18 12h4" />
-        <path d="M4.93 19.07l2.83-2.83" />
-        <path d="M16.24 7.76l2.83-2.83" />
-      </svg>
-    </span>
-    {waitClock && <ClockStopwatch {...waitClock} kind="tool" />}
-  </>
+export const ToolWaitingIcon: React.FC = () => (
+  <span className="tool-waiting-cursor" aria-label="等待工具完成">
+    <svg
+      width={Icon.BOX}
+      height={Icon.BOX}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={Colors.WAIT_ACTION}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="M4.93 4.93l2.83 2.83" />
+      <path d="M16.24 16.24l2.83 2.83" />
+      <path d="M2 12h4" />
+      <path d="M18 12h4" />
+      <path d="M4.93 19.07l2.83-2.83" />
+      <path d="M16.24 7.76l2.83-2.83" />
+    </svg>
+  </span>
 );
 
 /**
@@ -90,39 +81,34 @@ export const ToolWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
  * 动画：蓝核心圆 + 两层扩散波纹，scale 0.5→1.4 + opacity 1→0，1.8s周期，不旋转
  */
 // 2026-10-08 小欧: width/height="1.4em" → Icon.BOX —— 与绿圈同源问题(em 随父字号漂移)。— 小欧-2026-10-08
-export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
-  waitClock,
-}) => (
-  <>
-    <span className="action-waiting-cursor" aria-label="等待action到达">
-      <svg
-        viewBox="0 0 36 36"
-        width={Icon.BOX}
-        height={Icon.BOX}
-        fill="none"
-        strokeWidth={2}
-      >
-        <circle cx="18" cy="18" r="6" stroke={Colors.PRIMARY} />
-        <circle
-          cx="18"
-          cy="18"
-          r="10"
-          opacity="0.6"
-          className="action-ripple-1"
-          stroke={Colors.PRIMARY}
-        />
-        <circle
-          cx="18"
-          cy="18"
-          r="10"
-          opacity="0.6"
-          className="action-ripple-2"
-          stroke={Colors.PRIMARY}
-        />
-      </svg>
-    </span>
-    {waitClock && <ClockStopwatch {...waitClock} kind="llm" />}
-  </>
+export const ActionWaitingIcon: React.FC = () => (
+  <span className="action-waiting-cursor" aria-label="等待action到达">
+    <svg
+      viewBox="0 0 36 36"
+      width={Icon.BOX}
+      height={Icon.BOX}
+      fill="none"
+      strokeWidth={2}
+    >
+      <circle cx="18" cy="18" r="6" stroke={Colors.PRIMARY} />
+      <circle
+        cx="18"
+        cy="18"
+        r="10"
+        opacity="0.6"
+        className="action-ripple-1"
+        stroke={Colors.PRIMARY}
+      />
+      <circle
+        cx="18"
+        cy="18"
+        r="10"
+        opacity="0.6"
+        className="action-ripple-2"
+        stroke={Colors.PRIMARY}
+      />
+    </svg>
+  </span>
 );
 
 /**
