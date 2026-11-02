@@ -45,6 +45,7 @@
 // 编辑历史: 2026-11-02 小欧 - 死链删除: ValidationDetailModal+顶栏死Tag+validationModalVisible+validationResult解构全删(AppContext validationResult仅被写null, Tag条件恒false永不可达), 零行为变化 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 功能重设计: "检查服务"按钮+三态弹窗半死链(成功/警告分支死后端无status字段)+toast复读 → ConfigStatusPill配置状态胶囊(语义订正: 实查config.yaml四步校验) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 顶栏加ServiceStatusPill(服务存活与本胶囊分立); 版本号改为从AppContext的/health派生, 删壳层单独打health的useEffect与healthApi导入 - 小欧-2026-11-02
+// 编辑历史: 2026-11-03 06:40:41 小欧 - 顶栏标题圈圈换 TitleStreamIcon(流状态联动): 壳层零逻辑, 仍是纯插槽 - 小欧-2026-11-03
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -70,8 +71,8 @@ import { GlobalModelSelect } from './GlobalModelSelect';
 import { ConfigStatusPill } from './ConfigStatusPill';
 import { ServiceStatusPill } from './ServiceStatusPill';
 import { StreamStatusPill } from './StreamStatusPill';
+import { TitleStreamIcon } from './TitleStreamIcon';
 import ShortcutPanel from '../ShortcutPanel';
-import { TitleSpinIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
 import {
@@ -333,10 +334,11 @@ const AppLayout: React.FC<LayoutProps> = ({
             )}
             {/* 2026-09-08 小欧 - 标题图标化(北京老陈令): "对话与任务"文字换D三色弧段loader(蓝绿橙),
                 与对比页 title-icon-compare.html 的 D 三色版一致, 1s逆时针常转; Tooltip 保留原标题, 无障碍 — 小欧-2026-09-08
-                2026-09-15 小欧 - 内联SVG抽离至 AnimatedIcons/TitleSpinIcon — 小欧-2026-09-15 */}
+                2026-09-15 小欧 - 内联SVG抽离至 AnimatedIcons/TitleSpinIcon — 小欧-2026-09-15
+                2026-11-03 06:40:41 小欧 - 换 TitleStreamIcon 联动流状态: 转速=节奏(停/快/慢), 文案与颜色仍归流胶囊 — 小欧-2026-11-03 */}
             {/* 2026-10-21 小杨 - 双 tooltip 收敛：原生 title 即可 */}
             <span title="事项对话">
-              <TitleSpinIcon />
+              <TitleStreamIcon />
             </span>
             {/* 2026-09-15 小欧 - 品牌文字移此(北京老陈令): 左侧文字Logo挪到动画圈圈之后, 字号/粗细/色与左侧一致 — 小欧-2026-09-15 */}
             <span className="brand-title-text" aria-label="OmniAgentAst">

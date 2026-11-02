@@ -1,6 +1,8 @@
 // 编辑历史: 2026-09-15 小欧 - 新建动画图标组件组(北京老陈令): LogoGridIcon(左侧品牌logo 3x3九色点阵,
 //   原Layout内联提取, 含LOGO_GRID_CELLS数据) / TitleSpinIcon(右侧顶栏D三色弧段loader, 原Layout内联提取),
 //   统一集中管理动画图标, DRY复用 — 小欧-2026-09-15
+// 编辑历史: 2026-11-03 06:40:41 小欧 - TitleSpinIcon 增可选 className 透传(调用方挂状态修饰类):
+//   图标库保持哑组件, 不认识流状态也不认识具体转速 — 小欧-2026-11-03
 import React from 'react';
 
 // 2026-09-15 小欧 - 品牌logo九色点阵数据(title-icon-compare 70号斜向波浪):
@@ -51,8 +53,13 @@ export const LogoGridIcon: React.FC = () => (
  * 用途：顶栏"对话与任务"标识, 三角色弧段复用waiting-spin逆时针1s常转
  * 原位置：Layout/index.tsx 内联 SVG(Tooltip 内嵌, 2026-09-08 标题图标化)
  */
-export const TitleSpinIcon: React.FC = () => (
-  <span className="title-spin-icon" aria-label="对话与任务">
+export const TitleSpinIcon: React.FC<{ className?: string }> = ({
+  className,
+}) => (
+  <span
+    className={className ? `title-spin-icon ${className}` : 'title-spin-icon'}
+    aria-label="对话与任务"
+  >
     <svg
       viewBox="0 0 24 24"
       fill="none"

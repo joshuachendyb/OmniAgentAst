@@ -1,5 +1,6 @@
 ﻿// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏流状态灯数据源, 1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 判据拆三线: lastBizTs=有无产出 / heartbeatTs=连接断没断 / lastDataTime=对齐 60s 判死; 补"连接中"档 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 06:40:41 小欧 - 8 档各带 phase 标识(表现层按它选视觉, 不拿中文文案当键); sameView 同步比较 — 小欧-2026-11-03
 import { useSyncExternalStore } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
@@ -17,7 +18,20 @@ const STALE_SEC = 30;
 
 export type StreamTone = Tone;
 
+/** 2026-11-03 06:40:41 小欧 - 8 档状态名(与 CSS 类 spin-<phase> 一一对应):
+ *  表现层只认 phase, 不再拿中文文案当判断键(改文案不会悄悄失效) — 小欧-2026-11-03 */
+export type StreamPhase =
+  | 'idle'
+  | 'connecting'
+  | 'running'
+  | 'stalled'
+  | 'reconnecting'
+  | 'waiting'
+  | 'silent'
+  | 'down';
+
 export interface StreamPulseView {
+  phase: StreamPhase;
   tone: StreamTone;
   text: string;
   main: string;
@@ -64,6 +78,7 @@ export const deriveStreamState = (
   if (!p.active) {
     return {
       ...base,
+      phase: 'idle',
       tone: 'neutral',
       text: '无流',
       main: '当前没有进行中的任务流',
@@ -72,6 +87,7 @@ export const deriveStreamState = (
   if (p.status === 'failed' || p.reconnectStatus === 'failed') {
     return {
       ...base,
+      phase: 'down',
       tone: 'error',
       text: '流中断',
       main: '连接已断开且未能自动恢复，可在会话内重新发送',
@@ -80,6 +96,7 @@ export const deriveStreamState = (
   if (p.reconnectStatus === 'reconnecting' || p.status === 'recovering') {
     return {
       ...base,
+      phase: 'reconnecting',
       tone: 'warn',
       text: '重连中',
       main: '连接中断，正按 after_seq 断点续传',
@@ -88,6 +105,7 @@ export const deriveStreamState = (
   if (p.status === 'paused') {
     return {
       ...base,
+      phase: 'waiting',
       tone: 'warn',
       text: '等待确认',
       main: '任务在等人工确认，空闲计时已暂停',
@@ -97,6 +115,7 @@ export const deriveStreamState = (
   if (!p.pumpActive) {
     return {
       ...base,
+      phase: 'connecting',
       tone: 'neutral',
       text: '连接中',
       main: '请求已发出，等待后端开始推送事件',
@@ -105,6 +124,7 @@ export const deriveStreamState = (
   if (hasOutput) {
     return {
       ...base,
+      phase: 'running',
       tone: 'ok',
       text: '流进行中',
       main: '后端正在推送事件',
@@ -114,6 +134,7 @@ export const deriveStreamState = (
   if (heartbeatAgeSec !== null && heartbeatAgeSec < STALE_SEC) {
     return {
       ...base,
+      phase: 'stalled',
       tone: 'warn',
       text: '流迟滞',
       main:
@@ -125,6 +146,7 @@ export const deriveStreamState = (
   // 心跳也过期 → 连保活都断了, 只等 transport 60s 判死。橘红: 比迟滞更重, 但还没到中断
   return {
     ...base,
+    phase: 'silent',
     tone: 'alert',
     text: '流静默',
     main:
@@ -135,6 +157,7 @@ export const deriveStreamState = (
 };
 
 const sameView = (a: StreamPulseView, b: StreamPulseView): boolean =>
+  a.phase === b.phase &&
   a.tone === b.tone &&
   a.text === b.text &&
   a.main === b.main &&

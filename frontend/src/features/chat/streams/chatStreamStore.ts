@@ -74,6 +74,8 @@
 // 编辑历史: 2026-10-30 小欧 - 批3收尾: ①interject 不再 finally 清 pendingSentRefs(只 throw 时清,
 //   否则 refs_blocked 帧异步到达时台账已空, chips 丢失); ②restoreSentRefs 去 0ms 延迟(输入框改按
 //   id 精确移除, 重建条目是新 id 不会被踩); ③toWireRef 改从 refs/identity 导入(投影归 refs 域) — 小欧-2026-10-30
+// 编辑历史: 2026-11-03 06:40:41 小欧 - 多流挑选口径: 先比业务帧再比三线最大(原三线同权, 静默流刚发心跳会盖过
+//   正在出数的流, 顶栏误报"流迟滞"); "在跑"判据收口到 isRunningStatus, 与历史页角标共用一份 — 小欧-2026-11-03
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -133,6 +135,12 @@ export function isTerminalStatus(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
+/** 2026-11-03 06:40:41 小欧 - 「在跑」唯一判据(非终态且非 idle): 顶栏流灯计数与历史页「运行中」角标共用,
+ *  原先两处各写一遍同一判据(De Morgan 双份), 口径一改必漏改另一处 — 小欧-2026-11-03 */
+export function isRunningStatus(status: string): boolean {
+  return !isTerminalStatus(status) && status !== 'idle';
+}
+
 /** 列出当前仍有未结束任务的会话（供 History 页「运行中」角标与顶部一览条）。
  *  2026-10-05 22:16:38 小欧 - 运行状态展示需求: 后端多会话并发已支持，但此前用户无从知晓
  *  哪个会话的任务还在跑；本函数是「在跑会话」的唯一对外查询口，无任何新 SSE 事件、零新接口。
@@ -144,16 +152,16 @@ export function getActiveSessionStatusList(): Array<{
 }> {
   const out: Array<{ sessionId: string; status: string }> = [];
   sessions.forEach((s) => {
-    if (!isTerminalStatus(s.status) && s.status !== 'idle') {
-      out.push({ sessionId: s.sessionId, status: s.status });
-    }
+    if (!isRunningStatus(s.status)) return;
+    out.push({ sessionId: s.sessionId, status: s.status });
   });
   return out;
 }
 
 /**
  * 2026-11-02 小欧 - 顶栏流状态灯数据源：整库一次聚合，只读、绝不创建会话。
- * 挑选口径：非终态非 idle 会话中取"最近有动静"者(业务帧/心跳/任意字节三者最大)，全空返回空态。
+ * 挑选口径：非终态非 idle 会话中取"最像在干活"者(业务帧最新者优先, 平手比三线最大)，全空返回空态。
+ * 2026-11-03 06:40:41 小欧 - 明细只描述这一条, 其余仅计入 activeSessions(并发数) — 小欧-2026-11-03
  */
 export interface StreamPulse {
   active: boolean;
@@ -175,13 +183,24 @@ export interface StreamPulse {
 const lastActivityOf = (s: ChatStreamSession): number =>
   Math.max(s.lastDataTime, s.lastBizTs, s.heartbeatTs);
 
+/** 2026-11-03 06:40:41 小欧 - 挑选口径: 先比最近业务帧(有产出者优先), 平手再比三线最大。
+ *  原口径三线同权: 静默流刚发过一次心跳(5~25s 一次)就能盖过正在出数的流, 顶栏会把"流迟滞"报到一条
+ *  正常推进的会话头上; 业务帧比心跳更能代表"谁在干活", 故提为第一关键字 — 小欧-2026-11-03 */
+const isBetterPick = (
+  cand: ChatStreamSession,
+  cur: ChatStreamSession
+): boolean =>
+  cand.lastBizTs !== cur.lastBizTs
+    ? cand.lastBizTs > cur.lastBizTs
+    : lastActivityOf(cand) > lastActivityOf(cur);
+
 export function buildStreamPulse(): StreamPulse {
   let picked: ChatStreamSession | undefined;
   let activeSessions = 0;
   sessions.forEach((s) => {
-    if (isTerminalStatus(s.status) || s.status === 'idle') return;
+    if (!isRunningStatus(s.status)) return;
     activeSessions += 1;
-    if (!picked || lastActivityOf(s) > lastActivityOf(picked)) picked = s;
+    if (!picked || isBetterPick(s, picked)) picked = s;
   });
   if (!picked) {
     return {
