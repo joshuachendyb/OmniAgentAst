@@ -61,6 +61,9 @@ interface AppState {
   // 后端服务存活(/health: 应答+耗时), 与上面配置校验语义分立 — 2026-11-02 小欧
   healthStatus: HealthStatus | null;
 
+  // 后端版本号(version.txt 首行), 仅探活成功时更新 — 2026-11-02 小欧
+  appVersion: string | null;
+
   // 标记是否已初始化（防止重复加载）
   isInitialized: boolean;
 
@@ -118,6 +121,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
   // 后端服务存活(/health) — 2026-11-02 小欧
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  // 2026-11-02 小欧 - 版本号只进不退: 探活失败不许把菜单栏版本清成"—"(观测失败不得污染展示) — 小欧-2026-11-02
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
@@ -192,12 +197,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
   /**
    * 刷新后端服务存活状态(/health) — 2026-11-02 小欧
-   * 只探"后端能不能应答", 不看配置内容也不看DB; 失败置 null 由视图派生离线态
+   * 只探"后端能不能应答", 不看配置内容; 失败置 null 由视图派生离线态。
+   * 版本号单独存且只进不退: 一次探活失败不抹掉已知版本(原实现连带把菜单栏版本清成"—")
    */
   const refreshHealth = useCallback(async (): Promise<HealthStatus | null> => {
     try {
       const health = await healthApi.checkHealth();
       setHealthStatus(health);
+      if (health.version) setAppVersion(health.version);
       return health;
     } catch (error) {
       console.warn('刷新后端服务状态失败:', error);
@@ -305,6 +312,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     serviceStatus,
     serviceStatusLoading,
     healthStatus,
+    appVersion,
     isInitialized,
     initError,
 

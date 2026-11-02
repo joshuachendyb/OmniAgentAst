@@ -16,6 +16,8 @@ const HealthCheck: React.FC = () => {
 
   const checkHealth = async () => {
     try {
+      // 2026-11-02 小欧 - 本页是 /health 的第三个消费者(调试面板, 用户主动点"重新检查");
+      //   探活本身已 _silent 不弹全局 toast, 这里按本页语境自行提示, 不参与顶栏胶囊 — 小欧-2026-11-02
       const data = await healthApi.checkHealth();
       setStatus(data.status);
       setVersion(data.version);

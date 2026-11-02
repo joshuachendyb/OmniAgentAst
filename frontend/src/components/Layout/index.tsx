@@ -158,10 +158,10 @@ const AppLayout: React.FC<LayoutProps> = ({
   const isMobile = !screens.md; // md 以下认为是移动端
 
   // ⭐ 使用AppContext缓存API数据，避免重复调用
-  const { initializeApp, isInitialized, initError, healthStatus } = useApp();
+  const { initializeApp, isInitialized, initError, appVersion } = useApp();
 
-  // 2026-11-02 小欧 - 版本号真源化: 从 AppContext 的 /health 结果派生(与服务胶囊共用同一次请求), 经props下发菜单栏底部 — 小欧-2026-11-02
-  const appVersion = healthStatus?.version || '—';
+  // 2026-11-02 小欧 - 版本号真源化: 取后端 /health 的 version(version.txt 首行), 由 AppContext 存且只进不退;
+  //   探活失败不再连带把底条版本清成"—"(旧实现直读 healthStatus?.version) — 小欧-2026-11-02
 
   // 【新增】骨架屏显示状态
   const [skeletonState, setSkeletonState] = useState<{
@@ -262,7 +262,7 @@ const AppLayout: React.FC<LayoutProps> = ({
             currentSessionId={currentSessionId}
             onOpenShortcuts={() => setShortcutPanelVisible(true)}
             onCloseDrawer={() => setDrawerVisible(false)}
-            appVersion={appVersion}
+            appVersion={appVersion || '—'}
           />
         </Drawer>
       ) : (
@@ -287,7 +287,7 @@ const AppLayout: React.FC<LayoutProps> = ({
             sidebarMode={sidebarMode}
             currentSessionId={currentSessionId}
             onOpenShortcuts={() => setShortcutPanelVisible(true)}
-            appVersion={appVersion}
+            appVersion={appVersion || '—'}
           />
         </Sider>
       )}

@@ -28,8 +28,9 @@ import type {
 } from 'axios';
 import { handleApiError } from '../error/handler';
 import type { RequestDiagnostics } from '../error/handler'; // 2026-10-30 小欧 - 诊断上下文类型
-// 2026-10-30 小欧 - 超时探活复用既有 /health 检查(3s 超时), 不另写探测
-import { checkNetworkConnection } from '../../utils/network';
+// 2026-11-02 小欧 - 超时探活改调 probeAlive: 探活口径(超时5s/判据)单一来源在 health.api.ts,
+//   原 utils/network.ts(fetch+3s)已删 —— 两套超时会在 3~5s 窗口给出互斥结论 — 小欧-2026-11-02
+import { probeAlive } from './health.api';
 
 /** Vite 注入的环境变量（测试环境无 import.meta.env 时的类型兜底）。 */
 const VITE_ENV =
@@ -342,9 +343,9 @@ api.interceptors.response.use(
     }
 
     // 2026-10-30 小欧 - 超时探一次 /health, 结果只用来选文案(不下"服务已停止"的断言)
-    //   传 API_BASE_URL(含 /api/v1): network.ts 内部拼 `${base}/health`, 与 useChatSend.ts:146 同款传参
+    // 2026-11-02 小欧 - 探活收口到 probeAlive(健康簿内拼 /health, 超时5s), 与发送前预检同一实现同一阈值
     if (isTimeoutError(error)) {
-      const alive = await checkNetworkConnection(API_BASE_URL);
+      const alive = await probeAlive();
       handleApiError(error, {
         message: alive ? TIMEOUT_HINT_BUSY : TIMEOUT_HINT_DOWN,
         diag,

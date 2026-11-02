@@ -83,12 +83,11 @@
 | `computeTaskActive` | 任务活跃判定提纯（streaming/highlight/badge 统一入口） | 状态入参 | boolean |
 | `computeIsCurrentLive` | 是否当前直播任务判定提纯 | ComputeIsCurrentLiveArgs | boolean |
 
-### 1.7 剪贴板/网络/客户端（clipboard.ts / network.ts / clientInfo.ts）
+### 1.7 剪贴板/客户端（clipboard.ts / clientInfo.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `copyTextToClipboard` | 剪贴板复制（异常兜底） | text: string | Promise<void> |
-| `checkNetworkConnection` | 网络连通检查 | — | Promise<boolean> |
 | `getClientInfo` / `getClientOS` / `isMobile` | 客户端信息/系统/移动端判定 | 无 | ClientInfo/string/boolean |
 
 ### 1.8 日志样式（logStyles.ts，console 调试日志统一出口）
@@ -167,6 +166,7 @@
 | `trustApi` | getTrust/revokeTrust | 信任查询/撤销 |
 | `tokenUsageApi` | getChainTokens | 上下文链 token |
 | `healthApi` | checkHealth/echo | 健康检查/回显 |
+| `probeAlive` / `PROBE_TIMEOUT_MS` / `SLOW_RESPONSE_MS` | 后端存活判据与阈值（探活唯一出处：发送前预检/超时归因/顶栏胶囊共用；原 utils/network.ts 的 fetch+3s 已删） | 无 | Promise<boolean> / number |
 
 ### 2.5 错误处理（error/handler.ts，提示语唯一出口）
 
@@ -294,3 +294,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-09-23 14:19:12 | 初始版本：登记全局层（utils 1.1–1.9/theme 令牌）、服务层（api 簿 2.1–2.4/error handler 2.5）、通用组件层、通用 Hooks 层、settings2 特征层（modelUtils/icons/useSettings 契约）；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序语义、resetParams 联合置脏） | 小欧 |
+| v1.1 | 2026-11-02 | 探活口径收敛：删 utils/network.ts（checkNetworkConnection，名"网络检查"实为后端健康检查），改为 services/api/health.api.ts 的 probeAlive + PROBE_TIMEOUT_MS + SLOW_RESPONSE_MS 单一出处，1.7 与 2.4 同步登记 | 小欧 |

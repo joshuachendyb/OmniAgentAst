@@ -38,10 +38,9 @@ import {
   classifyError,
   ErrorType,
 } from '@/services/error/handler'; // 2026-10-07 小欧 - classifyError 供 SESSION_BUSY 分支
-import { checkNetworkConnection } from '../../../utils/network';
+import { probeAlive } from '../../../services/api/health.api';
 import { showNetworkError } from '../../../utils/chatMessages';
 import { sessionApi } from '../../../services/api/session.api';
-import { API_BASE_URL } from '../../../services/api/client';
 import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
@@ -141,24 +140,21 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       // 3. 设置加载状态
       setLoading(true);
 
-      // 4. 网络连接检查
-      try {
-        const isNetworkOK = await checkNetworkConnection(API_BASE_URL);
-        if (!isNetworkOK) {
-          console.error('[handleSend] 网络连接异常');
-          showNetworkError();
-          setLoading(false);
-          // 停止等待计时器
-          if (waitTimerRef.current) {
-            clearInterval(waitTimerRef.current);
-            waitTimerRef.current = null;
-          }
-          setWaitTime(0);
-          resetSendFlags(); // 2026-10-08 小欧 - 网络失败早退同样须复位标记(否则插话永久卡死)
-          return;
+      // 4. 后端存活预检 — 2026-11-02 小欧: 改调 probeAlive, 与超时归因/顶栏胶囊同一实现同一5s阈值;
+      //    probeAlive 内部吞异常返回 boolean, 故原 try/catch 为死代码已删
+      const backendAlive = await probeAlive();
+      if (!backendAlive) {
+        console.error('[handleSend] 后端探活失败');
+        showNetworkError();
+        setLoading(false);
+        // 停止等待计时器
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
         }
-      } catch (error) {
-        console.warn('[handleSend] 网络检查异常:', error);
+        setWaitTime(0);
+        resetSendFlags(); // 2026-10-08 小欧 - 网络失败早退同样须复位标记(否则插话永久卡死)
+        return;
       }
 
       // 5. 创建用户消息（乐观更新）
