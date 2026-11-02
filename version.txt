@@ -1,3 +1,35 @@
+v1.5.4
+更新时间: 2026-11-02 17:30:37 - 小欧-2026-11-02
+## v1.5.3以来 变更汇总(32个commit: docs12/fix11/refactor6/feat2/style1) - 小欧-2026-11-02
+[2026-11-02 17:30:37 小欧] 范围=v1.5.3以来全部commit(32个); 主线=main.py静态托管与SPA兜底定案(11-01多轮收敛)+模型参数显示链路(context_length/max_tokens三层取min/max_output_length只读行)+路径到链接链路收敛为单一判据单一实现(projectPath/PathLink/FileRefChip/useProjectRoot)+事项工作区面板UI优化(422草稿恢复/GET纯读/恢复条常驻)+前端常驻启停脚本根治连坐杀进程树+研究报告[1][3][4]多篇修订(v1.7新增[4]任务状态对齐DB六态); 注:feat仅2个(启停脚本+面板UI优化)且均为局部功能,按PATCH记v1.5.4
+### 1.5.4.1 main.py 静态托管定案与SPA兜底收紧（11-01）
+[SPA兜底判据收紧] fix 0eebda564 main.py SPA兜底判据收紧is_file+root与catchall入口防御404 - 小欧 2026-11-01
+[assets挂载守卫] fix 4d6254fca main.py assets挂载守卫 StaticFiles启动期防御半截dist - 小欧 2026-11-01
+[静态判据单一真源] fix b26254abd main.py 前端静态判据收成单一真源_frontend_ready - 小欧 2026-11-01
+[静态托管多轮收敛] refactor 744aa4eaa+7b035e4d4+aecfe8980+6d097340a main.py 静态托管四轮收敛(开发态不预判目录/判决按环境分离/打包只验assets逐项验证) - 小欧 2026-11-01
+[注释订正] docs bec3037b6+4fce82742 main.py,OmniAgentBackend.spec 注释订正与编辑历史压行(三堂会审发现2处) - 小欧 2026-11-01
+### 1.5.4.2 模型参数显示链路（11-01）
+[参数键名一次改净] fix 2041496ad model_service.py+useSettings.ts 模型参数键名一次改净(context_limit→context_length 等)+上下文窗口四层取值与②参数区可编辑 - 小欧 2026-11-01
+[max_tokens单写入口] fix 40480e0ae service.py,resolver.py,main.py,settings_registry.py,modelUtils.ts max_tokens单写入口三层取min+同provider换模型重解析inherit_missing=False+静态托管收进打包态+标签改最大输出Token - 小欧 2026-11-01
+[max_output_length只读行] fix fc9466d11 modelUtils.ts,useSettings.ts,ModelParams.ts 参数区补显示厂商声明max_output_length(只读行,四通道同源) - 小欧 2026-11-01
+[链路分析报告] docs 94b66c8b8 [2]模型参数显示链路分析报告 v2.6.1(模型参数显示链路分析与十轮三堂会审结论) - 小欧 2026-11-01
+### 1.5.4.3 路径到链接链路收敛为单一判据单一实现（11-02）
+[链路单一判据收敛] refactor 3470a9237 projectPath.ts+PathLink.tsx+useProjectRoot.ts 路径到链接链路收敛为单一判据单一实现(resolvePathTarget唯一解析+PathLink唯一UI+fetchProjectRoot唯一取根+点击口径唯一+判据10处复用+7套重复实现删除+接口契约5项修正+功能退化8项修复) - 小欧 2026-11-02
+[恢复无Router兜底] fix 1951a286a PathLink.tsx 恢复无Router兜底(已链接恒出链接+整页跳,goFresh点击口径单点) - 小欧 2026-11-02
+[正文规矩定案] fix c16f20580+123d27119 projectPath.ts 正文规矩定案(相对路径末段必带扩展名才转链接,相对目录一律纯文本;盘符单段无尾无扩展名按目录出chip,NOTAIL放宽+根自身不转守卫) - 小欧 2026-11-02
+[chip识别只增不减] fix 3272bc2c5 FileRefChip.tsx 正文chip识别只增不减(exec前向循环防吞后续token+盘符锚切段+段内末锚裁决+带空格目录首次可识别) - 小欧 2026-11-01
+[路径链路文档] docs adc03c7bd+74aa2d1eb [3]前端-正文-工具参数-文件足迹 当前实现说明v1.6+路径链路v1.7(唯一判据/唯一点击/接口契约/真实阻塞与边界6条) - 小欧 2026-11-02
+### 1.5.4.4 事项工作区面板UI优化与注释清理（11-02）
+[优化方案重写] docs f5b2bd09b+fc6aa47ae [1]事项工作区面板UI优化方案 v4.1§七实施代码清单+全文重写v5.1(信息架构减法/两行网格/422草稿恢复/只读区两行常驻) - 小欧 2026-11-01
+[panel UI落地] feat ceb2bfd91 SessionWorkspacePanel 事项工作区面板UI优化(路径完整折行不裁剪/只读区两行常驻/422草稿恢复/GET即清不可用行/pruned计数/删PROP_COLORS死代码) - 小欧 2026-11-02
+[GET纯读+收口] fix a150492be sessions.py,workspace_service.py,SessionWorkspacePanel.tsx,session.api.ts,wsProp.ts,chat.ts GET默认纯读+prune显式清库/新增_judge_path收口判据/rowcount诚实计数/路径键统一wsPathKey/恢复条常驻/属性持久化下沉 - 小欧 2026-11-02
+[注释清理] refactor d3878d227 sessions.py,workspace_service.py,session.api.ts,chat.ts 注释与编辑历史清理(去文档号/章节号/决策号/评审字样,超长注释块压缩不超2行) - 小欧 2026-11-02
+### 1.5.4.5 前端常驻启停脚本升级tag规则文档（11-02）
+[前端启停脚本] feat ab1e19196 start_frontend.ps1,stop_frontend.ps1,start_frontend.bat,stop_frontend.bat,.gitignore 前端常驻启停脚本(独立隐藏控制台+就绪轮询+双链路健康校验+pid落盘),根治关窗口连坐杀进程树 - 小欧 2026-11-02
+[公用函数铁规] docs e4e051559+f02a1ef04 AGENTS.md 公用函数规范新增前端共享函数条目(FUNCTIONS_FRONT.md清单先查后建)+注释与编辑历史铁规收紧 - 小欧 2026-11-02
+[prettier格式归一] style c3e74e922 PathLink/ModelParams/modelUtils 补 prettier 格式化(1951a286a遗留,仅格式无逻辑变更) - 小欧 2026-11-02
+### 1.5.4.6 [4]服务端信息前端展示研究报告（11-02）
+[研究报告三轮修订] docs 7c3021f45+24940d7cf+b787c5526 [4]服务端信息前端展示研究分析报告 v1.5→v1.6→v1.7(顶栏综合健康灯/侧边任务监控菜单页/第九章完整可实施代码;v1.7订正任务状态对齐task_db六态success无completed+error真列名+metrics空态与近1小时口径+自检清单补4条) - 小欧 2026-11-02
 v1.5.3
 更新时间: 2026-11-01 11:10:21 - 小欧-2026-11-01
 ## v1.5.2以来 变更汇总(35个commit: fix11/docs9/refactor8/feat5/chore2) - 小欧-2026-11-01
