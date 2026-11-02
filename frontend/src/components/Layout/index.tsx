@@ -44,6 +44,7 @@
 // 编辑历史: 2026-11-02 小欧 - 三堂会审魔法数字清零: 壳层高43/抽屉220/层级99,100/投影×2/pad16,20,24/字20/8,12/内容区6,6,4,6,12,100ms 共14处, 令牌或命名常量(零视觉差) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 三堂会审死链删除: ValidationDetailModal+顶栏死Tag+validationModalVisible+validationResult解构全删(AppContext validationResult仅被写null, Tag条件恒false永不可达), 零行为变化 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 功能重设计: "检查服务"按钮+三态弹窗半死链(成功/警告分支死后端无status字段)+toast复读 → ConfigStatusPill配置状态胶囊(语义订正: 实查config.yaml四步校验) - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 顶栏加ServiceStatusPill(服务存活与本胶囊分立); 版本号改为从AppContext的/health派生, 删壳层单独打health的useEffect与healthApi导入 - 小欧-2026-11-02
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -67,6 +68,7 @@ import {
 } from './SidebarModeSwitcher';
 import { GlobalModelSelect } from './GlobalModelSelect';
 import { ConfigStatusPill } from './ConfigStatusPill';
+import { ServiceStatusPill } from './ServiceStatusPill';
 import ShortcutPanel from '../ShortcutPanel';
 import { TitleSpinIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
@@ -79,7 +81,6 @@ import {
   Radius,
 } from '../../utils/stepStyles';
 import { handleError, ErrorType } from '@/services/error/handler';
-import { healthApi } from '../../services/api/health.api';
 // import useInitializationProgress from "../../hooks/useInitializationProgress"; // 步骤9预留
 
 const { useBreakpoint } = Grid;
@@ -156,25 +157,11 @@ const AppLayout: React.FC<LayoutProps> = ({
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md 以下认为是移动端
 
-  // 2026-11-02 小欧 - 版本号真源化: 取后端health.version(=version.txt首行)一次, 经props下发NavContent菜单栏底部显示(北京老陈令: 只放菜单栏底部) — 小欧-2026-11-02
-  const [appVersion, setAppVersion] = useState('');
-  useEffect(() => {
-    let cancelled = false;
-    healthApi
-      .checkHealth()
-      .then((h) => {
-        if (!cancelled) setAppVersion(h.version || '—');
-      })
-      .catch(() => {
-        if (!cancelled) setAppVersion('—');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // ⭐ 使用AppContext缓存API数据，避免重复调用
-  const { initializeApp, isInitialized, initError } = useApp();
+  const { initializeApp, isInitialized, initError, healthStatus } = useApp();
+
+  // 2026-11-02 小欧 - 版本号真源化: 从 AppContext 的 /health 结果派生(与服务胶囊共用同一次请求), 经props下发菜单栏底部 — 小欧-2026-11-02
+  const appVersion = healthStatus?.version || '—';
 
   // 【新增】骨架屏显示状态
   const [skeletonState, setSkeletonState] = useState<{
@@ -365,6 +352,8 @@ const AppLayout: React.FC<LayoutProps> = ({
             <GlobalModelSelect />
             {/* 模型配置状态胶囊 - 2026-11-02 小欧 重设计: 五步校验三级分级(绿就绪/黄预警/红错误)语义=可发消息与否, 自动检测+点击重检(config.yaml完整性+凭证预警, 非LLM连通/非后端存活), 替代旧"检查服务"按钮+三态弹窗死链 — 小欧-2026-11-02 */}
             <ConfigStatusPill />
+            {/* 后端服务状态胶囊 - 2026-11-02 小欧 新建(北京老陈令): 与配置胶囊分立, 只答"后端能不能应答"/health三态(绿正常/黄缓慢或降级/红离线), Tooltip全量常显地址/PID/耗时 — 小欧-2026-11-02 */}
+            <ServiceStatusPill />
             {/* 2026-10-27 小欧 - 菜单宽度切换(宽/窄菜单, 漂亮的视觉设计) */}
             <SidebarModeSwitcher />
             <Avatar size="small" icon={<DesktopOutlined />} />

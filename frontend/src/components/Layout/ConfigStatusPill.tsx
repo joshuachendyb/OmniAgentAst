@@ -7,18 +7,36 @@
  */
 // 编辑历史: 2026-11-02 小欧 - 三级可用性重设计(北京老陈令): 绿/黄/红分级承接后端status字段实装,
 //   挂载自动检测+Tooltip明细+去设置出路, 语义=可发消息而非文件校验通过 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细/动作), 删内联堆叠 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body)并删指向不存在id的aria-describedby死属性 — 小欧-2026-11-02
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
-import { Spacing, FontSize, Colors, Radius } from '../../utils/stepStyles';
+import { PillTip, PILL_TIP_MAX_W } from './PillTip';
+import {
+  Spacing,
+  FontSize,
+  Colors,
+  Radius,
+  BorderWidth,
+} from '../../utils/stepStyles';
 import type { ValidateResponse } from '../../services/api/chat.api';
 
 // 2026-11-02 小欧 - 顶栏白底上的悬停浅灰(与侧栏底条hover同令牌)
 const HOVER_BG = Colors.BG.HOVER;
-// 2026-11-02 小欧 - Tooltip 明细最大宽, 防单条长文案(凭证预警原文较长)撑爆悬浮层 - 小欧-2026-11-02
-const TIP_MAX_WIDTH = 320;
+// 2026-11-02 小欧 - 浮层根宽上限: 内容宽+左右padding+描边, 破 antd 根节点默认250px提前折行 — 小欧-2026-11-02
+const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
+
+// 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
+const TONE_OF = {
+  ok: 'ok',
+  warn: 'warn',
+  fail: 'error',
+  netfail: 'error',
+  busy: 'neutral',
+} as const;
 
 interface PillState {
   badge: BadgeProps['status'];
@@ -129,34 +147,39 @@ const ConfigStatusPill: React.FC = () => {
 
   return (
     <Tooltip
+      color={Colors.BG.PRIMARY}
+      styles={{
+        root: { maxWidth: TIP_ROOT_MAX_W },
+        body: {
+          padding: `${Spacing.MD}px ${Spacing.LG}px`,
+          border: `${BorderWidth.THIN}px solid ${Colors.BORDER.VERTICAL}`,
+          borderRadius: Radius.LG,
+        },
+      }}
       title={
-        <div style={{ maxWidth: TIP_MAX_WIDTH }}>
-          <div>{state.main}</div>
-          {modelInfo && `当前配置: ${modelInfo}`}
-          {detailItems.map((item, idx) => (
-            <div key={idx}>{`· ${item}`}</div>
-          ))}
-          {(state.kind === 'fail' || state.kind === 'warn') && (
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="去设置页修改配置"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate('/settings2');
-              }}
-              style={{ color: Colors.PRIMARY, cursor: 'pointer' }}
-            >
-              去设置页修改 →
-            </span>
-          )}
-        </div>
+        <PillTip
+          tone={TONE_OF[state.kind]}
+          title={state.text}
+          subtitle={state.main}
+          rows={[{ label: '模型', value: modelInfo || '未确认', mono: true }]}
+          items={detailItems.map((text) => ({
+            text,
+            tone: state.kind === 'warn' ? 'warn' : 'error',
+          }))}
+          action={
+            state.kind === 'fail' || state.kind === 'warn'
+              ? {
+                  label: '去设置页修改',
+                  onAction: () => navigate('/settings2'),
+                }
+              : undefined
+          }
+        />
       }
     >
       <span
         role="button"
         aria-label="模型配置状态"
-        aria-describedby="config-status-detail"
         onClick={handleCheck}
         style={{
           display: 'inline-flex',

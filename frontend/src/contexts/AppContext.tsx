@@ -5,6 +5,7 @@
 //   顶栏 Layout.handleModelChange 与设置页 CurrentModelRefCard.onOk 两调用方只管展示逻辑, 杜绝再漏刷 modelList — 小欧-2026-09-24
 // 编辑历史: 2026-11-02 小欧 - 三堂会审死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult五件全清(只被写null+死Tag恒false, 零消费方) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 状态跟随: refreshAfterModelChange 并刷 refreshServiceStatus(零成本本地校验, 非旧外部AI API验证), 切模型后顶栏胶囊即随新配置 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 新增 healthStatus/refreshHealth: 顶栏服务胶囊状态源(/health应答与耗时), 与 serviceStatus(配置校验)分立不合流 — 小欧-2026-11-02
 /**
  * 应用全局状态上下文 - AppContext.tsx
  *
@@ -28,6 +29,7 @@ import React, {
 } from 'react';
 import { configApi } from '../services/api/config.api';
 import { chatApi, type ValidateResponse } from '../services/api/chat.api';
+import { healthApi, type HealthStatus } from '../services/api/health.api';
 import { sessionApi } from '../services/api/session.api';
 /**
  * 模型数据类型
@@ -56,6 +58,9 @@ interface AppState {
   serviceStatus: ValidateResponse | null;
   serviceStatusLoading: boolean;
 
+  // 后端服务存活(/health: 应答+耗时), 与上面配置校验语义分立 — 2026-11-02 小欧
+  healthStatus: HealthStatus | null;
+
   // 标记是否已初始化（防止重复加载）
   isInitialized: boolean;
 
@@ -71,6 +76,7 @@ interface AppContextType extends AppState {
   refreshSessionCount: () => Promise<void>;
   refreshModelList: () => Promise<void>;
   refreshServiceStatus: () => Promise<ValidateResponse | null>;
+  refreshHealth: () => Promise<HealthStatus | null>;
   refreshAfterModelChange: () => Promise<void>;
   // 2026-09-24 小欧 - 切全局模型收口入口: API调用+成功/失败刷新内置, 调用方不再各记刷新
   switchAndRefreshModel: (
@@ -109,6 +115,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     null
   );
   const [serviceStatusLoading, setServiceStatusLoading] = useState(false);
+
+  // 后端服务存活(/health) — 2026-11-02 小欧
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
 
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
@@ -180,6 +189,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
         setServiceStatusLoading(false);
       }
     }, []);
+
+  /**
+   * 刷新后端服务存活状态(/health) — 2026-11-02 小欧
+   * 只探"后端能不能应答", 不看配置内容也不看DB; 失败置 null 由视图派生离线态
+   */
+  const refreshHealth = useCallback(async (): Promise<HealthStatus | null> => {
+    try {
+      const health = await healthApi.checkHealth();
+      setHealthStatus(health);
+      return health;
+    } catch (error) {
+      console.warn('刷新后端服务状态失败:', error);
+      setHealthStatus(null);
+      return null;
+    }
+  }, []);
 
   /**
    * 串行刷新方法（解决时序问题）
@@ -279,6 +304,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     modelListLoading,
     serviceStatus,
     serviceStatusLoading,
+    healthStatus,
     isInitialized,
     initError,
 
@@ -286,6 +312,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     refreshSessionCount,
     refreshModelList,
     refreshServiceStatus,
+    refreshHealth,
     refreshAfterModelChange,
     switchAndRefreshModel,
     initializeApp,
