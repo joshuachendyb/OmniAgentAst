@@ -43,6 +43,8 @@
  *   本变量供 .doc-body code 等 CSS 侧消费; TS 侧由 utils/stepStyles.ts 的 FontFamily.MONO
  *   引用 var(--font-mono, monospace) → 两侧同一份栈, 改一处即全应用生效(DRY) — 小欧-2026-10-22 */
 /* 编辑历史: 2026-11-02 小欧 - 顶栏流状态灯"流进行中": .stream-pill-ok 覆盖 antd processing 点底色/光环为绿(#52c41a 同 Colors.SUCCESS), 保留呼吸动画 — 小欧-2026-11-02 */
+/* 编辑历史: 2026-11-03 06:22:32 小欧 - .title-spin-icon inline-block→block: 顶栏标题圈圈与 OmniAgentAst. 中心线差 4.25px(偏高),
+ *   因 inline-block 在父 span 内成行盒, 撑起 .ant-layout-header 继承的 64px 行高 strut 后按基线落位; 改块级后行盒消失, 尺寸/动画/图形零改动 — 小欧-2026-11-03 */
 :root {
   --font-mono:
     'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
@@ -187,8 +189,11 @@
 }
 
 /* 2026-09-08 小欧 - 标题图标(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader, 复用waiting-spin逆时针1s常转, 尺寸20px — 小欧-2026-09-08 */
+/* 2026-11-03 06:22:32 小欧 - 圈圈改块级(display:block): 原 inline-block 在父 span 内生成行盒,
+   把 .ant-layout-header 继承的 64px 行高当 strut(行盒撑高 64), 图标按基线落位 → 视觉中心 17px, 比文字中线 21.25px 偏高 4.25px;
+   块级后父 span 无行盒, 高度回到 20px, 由 Header 的 align-items:center 居中到 21.5px。尺寸/动画/图形不变 — 小欧-2026-11-03 */
 .title-spin-icon {
-  display: inline-block;
+  display: block;
   animation: waiting-spin 1s linear infinite;
 }
 .title-spin-icon svg {
