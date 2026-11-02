@@ -12,6 +12,8 @@
 #   由系统按项目根生成, 面板已禁止改默认行路径, 故 path 继承即完备。
 # 2026-10-31 小欧 - MAX_WS_INJECT_CHARS 迁 app.services.agent.workspace_block(注入块唯一渲染处),
 #   本模块只保留存储侧上限(MAX_WORKSPACES/MAX_PATH_CHARS); 渲染与截断不再散落编排层 — 小欧-2026-10-31
+# 2026-11-02 小欧 - 不可用行清库唯一出口 prune_unusable_rows(返回清理条数); _ws_precheck 补 is_dir;
+#   reconcile 废 mkdir 补建(用户目录永不自动建) + 默认区目录收口 _ensure_ws_dir — 小欧-2026-11-02
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -154,11 +156,36 @@ def _ws_deny_reason(p: str) -> Optional[str]:
     return None
 
 
+def prune_unusable_rows(conn, session_id: str, unusable: list[dict]) -> int:
+    """不可用行清库唯一出口（2026-11-02 小欧）—— GET 与 reconcile 共用。
+
+    库里只允许可用目录：禁区/非法/不存在三类一律删库行，处置口径一致。
+    返回本轮清掉的行数（GET 带进响应，前端据此一次性提示）。
+    ⚠ 只删数据库行，绝不删磁盘目录（磁盘归用户处置）；单条失败只跳过，不拖垮请求。"""
+    removed = 0
+    for u in unusable:
+        try:
+            conn.execute(
+                "DELETE FROM chat_session_workspaces WHERE session_id = ? AND path = ?",
+                (session_id, u["path"]))
+        except Exception as _e:
+            _ws_warn(f"不可用行清库失败(本轮保留, 下轮再试): {u['path']} - {_e}")
+            continue
+        removed += 1
+        _ws_warn(f"不可用行已清库({u['kind']}): {u['path']}")
+    return removed
+
+
 def _ws_precheck(paths: list[str]) -> list[dict]:
-    """合法性预检：逐条走判据。返回被拒清单，不抛异常（调用方整单 422）。"""
+    """合法性预检：逐条走判据。返回被拒清单，不抛异常（调用方整单 422）。
+
+    2026-11-02 小欧 - 补「目录必须存在」(is_dir)：missing 整单 422 逐条点名；
+    禁区判定先行，与 classify_workspace_rows 的裁决顺序一致。"""
     rejected = []
     for p in paths:
         reason = _ws_deny_reason(p)
+        if not reason and not Path(p).is_dir():
+            reason = "目录不存在（不收不存在的路径）"
         if reason:
             rejected.append({"path": p, "reason": reason})
     return rejected
@@ -286,14 +313,28 @@ def _load_workspaces_conn(conn, session_id: str) -> list[tuple[str, str, Optiona
     return effective
 
 
+
+def _ensure_ws_dir(p: str) -> bool:
+    """默认工作区物理目录创建/修复唯一出口（2026-11-02 小欧）。
+
+    mkdir 补建废除后，系统只在默认工作区建目录；用户目录绝不代建
+    （磁盘目录归用户处置）。失败仅告警返回 False，该行将被判 missing→清库，
+    下次 reconcile 自愈重建。"""
+    try:
+        Path(p).mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as _e:
+        _ws_warn(f"默认工作区目录创建失败(下轮 reconcile 自愈重建): {p} - {_e}")
+        return False
+
+
 def reconcile_session_workspaces(conn, session_id: str) -> list[tuple[str, str, Optional[str], bool]]:
-    """创建新 Task 并绑定该会话时的唯一落盘入口。
+    """创建新 Task 并绑定该会话时的唯一落盘入口（2026-11-02 小欧 更新）。
 
-    默认工作区始终存在（先添加目录也建）→ 逐条裁决（禁区行清库 / 缺目录则建 / 可用则留）
-    → 返回有效条目集。用户目录同样在此懒建（面板 GET 不建，只此处建）。
-    返回 [(path, workspace_property, memo, is_default)] 四元组。
-
-    ⚠ 只删数据库行，绝不删除磁盘目录。"""
+    默认区缺失/目录丢失 → 登记新默认行 + _ensure_ws_dir 修复（系统自己的区）；
+    其余条目三类 kind（missing/denied/illegal）一律经 prune_unusable_rows 清库，
+    废除 mkdir 补建；末尾重读重判返回有效四元组集（供任务快照）。
+    ⚠ 只删数据库行，绝不删磁盘目录；用户目录永不自动建。"""
     from app.config import get_config
     rows = get_session_workspaces(conn, session_id)
     current_root = get_config().get_project_root()
@@ -327,34 +368,21 @@ def reconcile_session_workspaces(conn, session_id: str) -> list[tuple[str, str, 
                     "UPDATE chat_session_workspaces SET is_default = 0 "
                     "WHERE session_id = ? AND is_default = 1 AND path <> ?",
                     (session_id, _p))
+                _ensure_ws_dir(_p)  # 默认区物理目录只在此建(用户目录永不代建)
                 logger.info(f"[chat] 默认工作区已就绪: session={session_id} path={_p}")
             except Exception as _e:
                 logger.warning(f"[chat] 默认工作区登记失败（本轮无默认区，下次再试）: {_e}")
         rows = get_session_workspaces(conn, session_id)
 
+    # 2026-11-02 小欧 - 默认行目录丢失: 系统自己的区, 修复而非清库
+    for r in rows:
+        if r["is_default"] and not Path(r["path"]).is_dir():
+            _ensure_ws_dir(r["path"])
+
     _, unusable = classify_workspace_rows(rows)
-    for u in unusable:
-        if u["kind"] != "denied":
-            continue                                     # 脏行/缺目录：本轮跳过，下次再看
-        try:                                             # 禁区行：从表里清掉（只删库行）
-            conn.execute(
-                "DELETE FROM chat_session_workspaces WHERE session_id = ? AND path = ?",
-                (session_id, u["path"]))
-        except Exception as _de:
-            logger.warning(f"[chat] 禁区目录清理失败(本轮仍不放行): {u['path']} - {_de}")
-            continue
-        logger.warning(f"[chat] 会话工作区已落入禁区, 已从列表清理: {u['path']}")
+    prune_unusable_rows(conn, session_id, unusable)   # 三类 kind 一律清库，共用唯一出口
 
-    for u in unusable:                                   # 缺目录：建出来（禁区/脏行不建）
-        if u["kind"] != "missing":
-            continue
-        try:
-            Path(u["path"]).mkdir(parents=True, exist_ok=True)
-            logger.info(f"[chat] 会话工作区目录不存在, 已自动建立: {u['path']}")
-        except Exception as _e:
-            logger.warning(f"[chat] 会话工作区目录建立失败(本轮不生效, 下次再试): {u['path']} - {_e}")
-
-    return _load_workspaces_conn(conn, session_id)       # 重读重判：刚建好的目录本轮即生效
+    return _load_workspaces_conn(conn, session_id)    # 重读重判：有效条目集最终确认
 
 
 def _build_default_workspace_dir(session_id: str):

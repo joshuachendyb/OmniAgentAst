@@ -22,6 +22,8 @@
 
 # 2026-10-30 小欧 - [54]全链路重构: WorkspaceItem/WorkspaceUpdate 收单形态(list[WorkspaceItem], 不收 list[str]);
 #   GET 返回四字段(path/workspace_property/memo/is_default); PATCH 传 dict 三元组。 — 小欧-2026-10-30
+# 2026-11-02 小欧 - GET /workspaces 即清: 不可用行经 prune_unusable_rows 在请求内删库行,
+#   清理条数作 pruned 带回(前端一次性提示); 响应删 unusable — 小欧-2026-11-02
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
@@ -154,29 +156,30 @@ class WorkspaceUpdate(BaseModel):
 @router.get("/sessions/{session_id}/workspaces")
 def get_session_workspaces_endpoint(session_id: str):
     """读该会话使用的目录列表。
-    BUG-6 订正：不再纯读表直吐 —— 禁区行会原样进面板误导用户。
-    改走 `classify_workspace_rows` 同一真源过滤，有效进 `workspaces`，
-    不可用(禁区/非法/非目录)进 `unusable` 带原因，前端可置灰。
-    会话不存在/已删 → 404(不再对垃圾 id 返回空 200)。
-    [16]§3.1#4：顺带返回 `project_root`＋`allowed_dirs` 只读字段，
-    供面板只读区展示（全局 config 口径，与删除根同源；只读，绝不进 PATCH）。"""
+
+    2026-11-02 小欧 - GET 即清: classify_workspace_rows 判出的不可用行（禁区/非法/
+    不存在）经 prune_unusable_rows 在本次请求内删库行（绝不动磁盘），清理条数作
+    pruned 带回供前端一次性提示；响应不再携带 unusable（库里已无不可用行）。
+    会话不存在/已删 → 404；顺带返回 project_root/allowed_dirs 只读字段（不进 PATCH）。"""
     from app.config import get_config
     from app.services.chat.workspace_service import (
         get_session_workspaces,
         classify_workspace_rows,
+        prune_unusable_rows,
         session_exists,
     )
     with db.get_conn("chat") as conn:
         if not session_exists(conn, session_id):
             raise HTTPException(status_code=404, detail="会话不存在")
         rows = get_session_workspaces(conn, session_id)
-    effective, unusable = classify_workspace_rows(rows)
+        effective, unusable = classify_workspace_rows(rows)
+        pruned = prune_unusable_rows(conn, session_id, unusable)  # GET 即清: 只删库行, 不动磁盘
     _cfg = get_config()
     return {
         "session_id": session_id,
         "workspaces": [{"path": p, "workspace_property": r, "memo": m, "is_default": bool(d)}
                        for p, r, m, d in effective],
-        "unusable": unusable,
+        "pruned": pruned,
         "project_root": _cfg.get_project_root(),
         "allowed_dirs": list(_cfg.get_allowed_dirs() or []),
     }

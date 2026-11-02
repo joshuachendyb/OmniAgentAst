@@ -19,6 +19,8 @@
 
 // 编辑历史: 2026-10-30 小欧 - [54]全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
 //   (标注类, 不参与安全判定; 前端只读展示) — 小欧-2026-10-30
+// 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里已无不可用行, UI 无需表达该状态);
+//   WorkspacesResponse 删 unusable、增 pruned(清理计数, >0 一次性提示) — 小欧-2026-11-02
 
 /**
  * 流式API响应类型定义
@@ -399,17 +401,6 @@ export interface WorkspaceEntry {
 }
 
 /**
- * 不可用目录（禁区/非法/非目录），后端 classify_workspace_rows 判定
- * 2026-10-10 小欧 -  新增
- * kind 与后端 unusable 项的机器可读分类一一对应（reconcile 按 kind 行事）
- */
-export interface UnusableEntry {
-  path: string;
-  reason: string;
-  kind: 'illegal' | 'denied' | 'missing';
-}
-
-/**
  * GET /sessions/{id}/workspaces 响应
  * 2026-10-10 小欧 - /3.6.6
  * project_root/allowed_dirs 为只读字段（决策82），只展示不提交
@@ -417,7 +408,8 @@ export interface UnusableEntry {
 export interface WorkspacesResponse {
   session_id: string;
   workspaces: WorkspaceEntry[];
-  unusable: UnusableEntry[];
+  /** 本次 GET 清理的不可用行数（>0 时前端一次性提示；不落常驻 UI）— 2026-11-02 小欧 */
+  pruned: number;
   project_root: string;
   allowed_dirs: string[];
 }

@@ -1,46 +1,37 @@
 /**
- * sessionWorkspaceStore — 会话事务空间（会话使用目录）的前端单一真源 + 唯一提交出口
+ * sessionWorkspaceStore — 会话使用目录的前端单一真源 + 唯一提交出口
  *
  * 创建: 2026-10-30 18:36:36 小欧
+ * 更新: 2026-11-02 小欧 — 422 草稿可恢复（rejected 快照 + clearRejected）
  *
- * 【为什么要有这个 store —— 三条路彻底分开】
- *   A 编辑器 SessionWorkspacePanel：只管"编辑意图"。点「确定」= 本地立即关闭，
- *     把列表交给本 store 提交，**自己绝不持有网络、绝不等待往返**。
- *   B 提交器 workspaceStore.commit：唯一写口。脱离组件生命周期跑完 PATCH 并裁决结果
- *     （成功=权威列表落位；422=整单拒绝，逐条点名 + 留痕；其他=全局错误通道 + 失败对账）。
+ * 【三条路】
+ *   A 编辑器 SessionWorkspacePanel：只管编辑意图。点「确定」= 本地立即关闭 +
+ *     把列表交给本 store 提交，自己绝不持有网络、绝不等待往返。
+ *   B 提交器 commit：唯一写口。成功=权威列表落位；422=草稿存快照 + 逐条
+ *     toast 点名；其他=全局错误通道 + 失败对账。
  *   C 渲染 ChatInput 徽标：subscribe 本 store，只取数量。
  *
- * 【原来错在哪（对应线上现象）】
- *   ① 关闭被网络绑定：原 confirm() `await patchWorkspaces()` 成功才 onClose()。
- *      一次请求排队 / 后端被在跑任务占满，弹窗就一直转圈不消失；axios 默认 60s 超时后
- *      还停在原地 → 用户看到的就是"弹窗迟迟不消失，甚至一直不消失"。
- *      界面的进度绝不能由一次网络往返决定。
- *   ② 目录数据挂在 useChatPanels 那个 50+ 依赖的巨型面板 memo 上（只为算一个徽标数字），
- *      一次保存就把 7 条面板 entry（含 RightViewer 全量管道）全部重新 render，
- *      偏偏这一刻正是流式出帧最密的时候。目录是低频元数据，不该寄生在高频渲染链上。
- *   ③ 被拒留痕原本存在弹框组件内部，弹框一关就没了 —— 而现在提交与关闭解耦，
- *      留痕必须能跨关闭存活到下一次打开（notice 字段）。
+ * 【为什么 422 必须留草稿】
+ *   提交与关闭解耦后组件随 destroyOnHidden 销毁，草稿只活在这一帧 ——
+ *   一次整单 422 就会让用户粘的 20 条目录全部蒸发。
+ *   快照只存内存、不落 localStorage：脱离本次打开即无意义。
  *
- * 【写入者只有三处，全部收敛在本文件】
- *   loadSession(sessionId) 切会话取数 / commit() 保存结果与失败对账 / 无会话时 loadSession('') 清场
- * 读取者：ChatInput 徽标（数量）、SessionWorkspacePanel（notice 留痕）。
+ * 【写入者三处，全部收敛在本文件】
+ *   loadSession / commit / clearRejected
+ * 读取者：ChatInput 徽标（数量）、SessionWorkspacePanel（打开时取 rejected 恢复草稿）
  *
  * @author 小欧
  * @date 2026-10-30
  *
- * 编辑历史: 2026-10-30 小欧 - [54]全链路重构: commit 入参升级为 WorkspacePatchItem[]
+ * 编辑历史: 2026-10-30 小欧 - 全链路重构: commit 入参升级为 WorkspacePatchItem[]
  *   ({path, workspace_property, memo}), 不再收 string[]; 属性/备注随行上行。 — 小欧-2026-10-30
+ * 编辑历史: 2026-11-02 小欧 - 新增 rejected 快照与 clearRejected, 422 保留草稿;
+ *   代际守卫/提交与关闭解耦/失败对账 逻辑零改动 — 小欧-2026-11-02
  */
 
 import { sessionApi } from '@/services/api/session.api';
 import { handleError, showMessage, ErrorType } from '@/services/error/handler';
 import type { WorkspaceEntry } from '@/types/chat';
-
-/** 被整单拒绝的条目（后端 422 的 workspace_rejected 逐条原因） */
-export interface WorkspaceRejection {
-  path: string;
-  reason: string;
-}
 
 /** 提交载荷：只有三个可写字段；is_default 由后端 reconcile / _ws_apply 维护 */
 export type WorkspacePatchItem = Pick<
@@ -48,22 +39,28 @@ export type WorkspacePatchItem = Pick<
   'path' | 'workspace_property' | 'memo'
 >;
 
+/** 422 恢复快照：整单被拒时把用户这次提交原样留住，下次打开面板据此恢复草稿 */
+export interface RejectedDraft {
+  items: WorkspacePatchItem[];
+  bad: { path: string; reason: string }[];
+}
+
 interface WorkspaceState {
   /** 当前所属会话；异步结果回来时与它比对，不同即丢弃（切会话竞态） */
   sessionId: string;
   list: WorkspaceEntry[];
-  /** 上次保存被拒的条目：提交与关闭解耦后留痕必须活在组件之外，下次打开面板回看 */
-  notice: WorkspaceRejection[];
+  /** 未被用户处置的 422 草稿快照（内存态，不落盘） */
+  rejected: RejectedDraft | null;
 }
 
-const EMPTY: WorkspaceState = { sessionId: '', list: [], notice: [] };
+const EMPTY: WorkspaceState = { sessionId: '', list: [], rejected: null };
 
 let state: WorkspaceState = EMPTY;
 const listeners = new Set<() => void>();
 
-/** 取数代际：切会话/重复触发时只认最后一次，旧代结果一律丢弃 */
+/** 取数代际：切会话/重复触发时只认最后一次 */
 let loadSeq = 0;
-/** 提交代际：并发提交只认最后一次，避免旧结果覆盖新列表 */
+/** 提交代际：并发提交只认最后一次 */
 let commitSeq = 0;
 
 const setState = (next: WorkspaceState) => {
@@ -82,25 +79,24 @@ const subscribe = (listener: () => void): (() => void) => {
 };
 
 /** 422 信封：后端 detail 经全局异常处理器包装成 error.workspace_rejected */
-const rejectionsOf = (e: unknown): WorkspaceRejection[] => {
+const rejectionsOf = (e: unknown): { path: string; reason: string }[] => {
   const raw = (
     e as {
       response?: { data?: { error?: { workspace_rejected?: unknown } } };
     }
   )?.response?.data?.error?.workspace_rejected;
-  return Array.isArray(raw) ? (raw as WorkspaceRejection[]) : [];
+  return Array.isArray(raw) ? (raw as { path: string; reason: string }[]) : [];
 };
 
 /** 失败对账：把徽标拉回库里的真值。
- *  为什么必须对账而不是"失败就当没发生"：超时/连接中断时后端可能已经写成功，
- *  前端无从分辨，只能以库为准（唯一权威），否则徽标会与真实配置长期分叉。 */
+ *  超时/连接中断时后端可能已写成功，前端无从分辨，只能以库为准。 */
 const reconcile = async (sessionId: string) => {
   try {
     const r = await sessionApi.getWorkspaces(sessionId);
     if (state.sessionId !== sessionId) return;
-    setState({ ...state, list: r.workspaces });
+    setState({ ...state, list: r.workspaces }); // rejected 保留：草稿还没处置
   } catch {
-    // 对账本身失败：保持旧值即可，不做二次提示（用户刚看过主错误）
+    // 对账本身失败：保持旧值，不做二次提示（用户刚看过主错误）
   }
 };
 
@@ -112,8 +108,7 @@ const loadSession = async (sessionId: string): Promise<void> => {
     return;
   }
   if (state.sessionId !== sessionId) {
-    // 切会话立即换主，避免旧会话的目录数字挂在新区徽标上
-    setState({ sessionId, list: [], notice: [] });
+    setState({ sessionId, list: [], rejected: null }); // 换会话即弃旧草稿
   }
   try {
     const r = await sessionApi.getWorkspaces(sessionId);
@@ -121,14 +116,11 @@ const loadSession = async (sessionId: string): Promise<void> => {
     setState({ ...state, list: r.workspaces });
   } catch {
     if (seq !== loadSeq || state.sessionId !== sessionId) return;
-    setState({ ...state, list: [] }); // 会话本身照常可用，目录未知即空
+    setState({ ...state, list: [] });
   }
 };
 
-/** 保存提交：**不再有返回值可等** —— 调用方（编辑器）点完就关，结果走 store 与 toast。
- *  成功：以请求列表为权威落位（后端 422 是整单拒绝，200 即库中全部有效行）；
- *  422：逐条点名 + 留痕入 store + 对账；
- *  其他：全局错误通道 + 对账。 */
+/** 提交：点完即关。成功=权威列表落位清快照；422=快照留存+逐条点名；其他=错误通道+对账。 */
 const commit = async (
   sessionId: string,
   items: WorkspacePatchItem[]
@@ -139,19 +131,23 @@ const commit = async (
     if (seq !== commitSeq || state.sessionId !== sessionId) return;
     setState({
       sessionId,
-      // 成功即以请求列表为权威落位：三字段原样保留，禁止退化成 { path }
+      // 三字段原样保留，禁止退化成 { path }
       list: items.map((i) => ({ ...i })),
-      notice: [],
+      rejected: null,
     });
   } catch (e: unknown) {
     if (seq !== commitSeq) return;
-    const items = rejectionsOf(e);
-    if (items.length) {
+    const bad = rejectionsOf(e);
+    if (bad.length) {
       if (state.sessionId === sessionId) {
-        setState({ ...state, notice: items });
+        // 草稿原样留住：被拒的是"整单"，用户改完一条不该重打另外 19 条
+        setState({
+          ...state,
+          rejected: { items: items.map((i) => ({ ...i })), bad },
+        });
       }
-      // 统一错误通道：走 showMessage（查表+去重+分级），禁自造 notify/裸调 message
-      items.forEach((x) =>
+      // 统一错误通道：toast 逐条点名（查表+去重+分级），禁自造 notify/裸调 message
+      bad.forEach((x) =>
         showMessage(ErrorType.WORKSPACE_REJECTED, `${x.path}：${x.reason}`)
       );
     } else {
@@ -161,9 +157,16 @@ const commit = async (
   }
 };
 
+/** 用户放弃被拒草稿：清快照，面板据库真值重载 */
+const clearRejected = (sessionId: string): void => {
+  if (state.sessionId !== sessionId || !state.rejected) return;
+  setState({ ...state, rejected: null });
+};
+
 export const workspaceStore = {
   subscribe,
   getSnapshot,
   loadSession,
   commit,
+  clearRejected,
 };

@@ -203,6 +203,9 @@ export const Colors = {
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
+  // 2026-11-02 小欧 - 错误**文字**专用色 #a8071a: 原 #ff4d4f 在 #fff1f0 上仅 3.0:1(不达 AA),
+  //   红-8 为 7.1:1 / 白底 7.8:1; ERROR 仍作边框与图标色 — 小欧-2026-11-02
+  ERROR_TEXT: '#a8071a',
 
   // 2026-10-27 小欧 - PILL_* 三态胶囊专用色(doc[48] N1): 原 SUCCESS/ERROR/BORDER.STRONG 配白字
   //   实测对比度 2.27/3.27/1.84:1, 全不达 WCAG AA 4.5:1(cancelled 灰底白字几乎不可读)。
