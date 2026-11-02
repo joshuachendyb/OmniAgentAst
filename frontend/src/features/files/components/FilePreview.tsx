@@ -23,6 +23,8 @@
 //   外部提示条文案缩短为「根外File:」— 小欧-2026-10-23
 // 2026-10-30 小欧 - 6 处 readFile/readExternalFile 调用传 silent:true：这些路径失败时本组件已用
 //   setErr/showMessage 给出局部可见提示，全局 toast 属重复且文案更含糊；probeRef 不传（无局部反馈）— 小欧-2026-10-30
+// 2026-11-03 小欧 - 复制路径/文件名 Tooltip 弃用 deprecated 的 overlayInnerStyle, 改 styles.body
+//   (同一常量喂 4 处, 不折行与自适应宽度不变) — 小欧-2026-11-03
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -43,6 +45,7 @@ import {
   Spin,
   Tooltip,
 } from 'antd';
+import type { TooltipProps } from 'antd';
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { FileNode, ReadResponse } from '@/services/api/file.api';
 import { fileApi, ImageUnchanged } from '@/services/api/file.api';
@@ -81,11 +84,14 @@ const TOOLBAR_STYLE: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
-/** 路径 Tooltip 弹出层：单行不折行 + 自适应完整包裹（antd 默认限宽会截断长路径）— 小欧-2026-10-22 */
-const PATH_TOOLTIP_INNER_STYLE: React.CSSProperties = {
-  whiteSpace: 'nowrap',
-  maxWidth: 'none',
-  width: 'max-content',
+/** 路径 Tooltip 弹出层：单行不折行 + 自适应完整包裹（antd 默认限宽会截断长路径）— 小欧-2026-10-22
+ *  2026-11-03 小欧 - 由 overlayInnerStyle 改 styles.body（antd 已弃用前者），语义一致 — 小欧-2026-11-03 */
+const PATH_TOOLTIP_STYLES: NonNullable<TooltipProps['styles']> = {
+  body: {
+    whiteSpace: 'nowrap',
+    maxWidth: 'none',
+    width: 'max-content',
+  },
 };
 
 export interface FilePreviewProps {
@@ -521,7 +527,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         <div style={TOOLBAR_STYLE}>
           <Tooltip
             title={toAbsolutePath(node.key, projectRoot) ?? node.key}
-            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+            styles={PATH_TOOLTIP_STYLES}
           >
             <Button
               size="small"
@@ -648,10 +654,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         {/* 2026-10-22 小欧 - 预览文件标题：引用按钮前展示当前文件名，超 10 汉字宽度截断 + Tooltip 显完整 — 小欧-2026-10-22 */}
         {isExternal ? (
           /* 2026-10-22 小欧 - 外部文件标题：文件名**红色框框**（与根内文件明显区分）— 小欧-2026-10-22 */
-          <Tooltip
-            title={external?.path ?? ''}
-            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
-          >
+          <Tooltip title={external?.path ?? ''} styles={PATH_TOOLTIP_STYLES}>
             <span
               style={{
                 color: Colors.ERROR,
@@ -673,7 +676,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         ) : (
           <Tooltip
             title={toAbsolutePath(node!.key, projectRoot) ?? node!.key}
-            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+            styles={PATH_TOOLTIP_STYLES}
           >
             <span
               style={{
@@ -718,7 +721,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               ? (external?.path ?? '')
               : (toAbsolutePath(node!.key, projectRoot) ?? node!.key)
           }
-          overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+          styles={PATH_TOOLTIP_STYLES}
         >
           <Button
             size="small"
