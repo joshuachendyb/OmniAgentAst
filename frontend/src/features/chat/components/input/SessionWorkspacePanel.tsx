@@ -17,6 +17,8 @@
  *   属性去色、422草稿恢复、Esc脏确认、三态互斥 — 小欧-2026-11-02
  * 2026-11-02 小欧 - 一致性整改: 路径配对统一 wsPathKey、属性持久化下沉 wsProp、只读区抽 CtxRow、
  *   恢复条按 recovered 常驻(问题改完仍可放弃)、取数显式 prune — 小欧-2026-11-02
+ * 2026-11-02 小欧 - 收口: 复制复用 utils/clipboard、读失败透传原始错误、未匹配问题行显式计数、
+ *   字号/内边距改引令牌 — 小欧-2026-11-02
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InputRef } from 'antd';
@@ -70,6 +72,7 @@ import {
 import { workspaceStore } from '../../services/sessionWorkspaceStore';
 /** 只做绝对路径格式校验（全局幂等判据）；存在性与禁区交后端判，前端不造禁区表 */
 import { isAbsolutePath } from '@/utils/projectPath';
+import { copyTextToClipboard } from '@/utils/clipboard';
 import {
   DEFAULT_WS_PROP,
   saveCustomProp,
@@ -129,7 +132,7 @@ function CtxRow({
     >
       <span
         style={{
-          fontSize: 14,
+          fontSize: FontSize.PRIMARY,
           lineHeight: '22px',
           color: Colors.TEXT.SECONDARY,
           flexShrink: 0,
@@ -281,13 +284,14 @@ export default function SessionWorkspacePanel({
         }
       }
       setLoadState('ready');
-    } catch {
+    } catch (e) {
       if (seq !== loadSeqRef.current) return;
       setProjectRoot('');
       setAllowedDirs([]);
       setEditingPath(null);
       setLoadState('failed');
-      handleError(new Error('读取会话目录失败'));
+      // 透传原始错误: 判定分类(超时/离线/404)与后端 detail 都在 e 里, 自造 Error 会全丢 — 小欧-2026-11-02
+      handleError(e);
     }
   }, [sessionId]);
 
@@ -380,14 +384,14 @@ export default function SessionWorkspacePanel({
     applyPasteResult(bad, good.length);
   };
 
-  /** 行级复制（真需求：粘到资源管理器/终端） */
+  /** 行级复制（真需求：粘到资源管理器/终端）；复用 utils/clipboard 唯一实现，成功才提示 — 小欧-2026-11-02 */
   const copyPath = async (p: string) => {
-    try {
-      await navigator.clipboard.writeText(p);
+    const r = await copyTextToClipboard(p);
+    if (r.ok) {
       showSuccess('已复制路径');
-    } catch {
-      showMessage(ErrorType.COPY_FAILED, '复制失败：浏览器未授权剪贴板');
+      return;
     }
+    showMessage(ErrorType.COPY_FAILED, '复制失败：浏览器未授权剪贴板');
   };
 
   /** 进入编辑态 */
@@ -582,6 +586,17 @@ export default function SessionWorkspacePanel({
                 · {p}：{r}
               </div>
             ))}
+            {unmatchedBad.length > 3 && (
+              <div
+                style={{
+                  fontSize: FontSize.SMALL,
+                  color: Colors.TEXT.PRIMARY,
+                  marginTop: Spacing.XS,
+                }}
+              >
+                {`另有 ${unmatchedBad.length - 3} 条未显示（「放弃修改」可整体丢弃）`}
+              </div>
+            )}
           </div>
         )}
 
@@ -814,7 +829,7 @@ export default function SessionWorkspacePanel({
                               <Tag
                                 style={{
                                   margin: 0,
-                                  padding: '0 4px',
+                                  padding: `0 ${Spacing.XS}px`,
                                   fontSize: FontSize.SMALL,
                                   lineHeight: '14px',
                                   color: Colors.INFO,
