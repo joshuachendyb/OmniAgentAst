@@ -96,11 +96,26 @@
 ### Backend (workdir=`backend/`)
 
 ```bash
-python -m uvicorn app.main:app --reload          # dev server (port 8000)
+# 开发服务: 两种启动方式, 见下方《后端开发服务启动: 两种方式》
+watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app   # 方式一(推荐)
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000  # 方式二(旧, 会卡死)
+
 pytest                                            # all tests
 pytest -x --tb=short                              # fast fail
 pytest -k test_name                               # match by name
 ```
+
+#### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
+
+| 方式 | 命令(workdir=`backend/`) | 热重载 | 说明 |
+|---|---|---|---|
+| 一(推荐) | `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` | 稳定 | watchfiles 就是 reload 运行器: 盯 `app/` → 变更即**杀子进程重开**; Windows 用 `TerminateProcess`, 不依赖控制台事件 |
+| 二(旧) | `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000` | 首次保存即永久失效 | `restart()` 用 `os.kill(child, CTRL_C_EVENT)` 停子进程, Windows 下子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 上游 0.54 仍未修, 升级无效 |
+
+- **判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 此时 worker 照常应答, 只有热重载失效(表现: 改了代码不生效、Ctrl+C 也退不掉, 只能 kill)。
+- **方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
+- 两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
+- `backend/start.bat`、`start_e2e.bat` 目前仍是方式二。
 
 ### Frontend (workdir=`frontend/`)
 
