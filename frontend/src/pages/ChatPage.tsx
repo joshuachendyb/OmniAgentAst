@@ -52,9 +52,11 @@
 // 编辑历史: 2026-10-28 小欧 - onSuccess 补 refreshTasks 兜底: 任务完成(final帧)刷新左栏 status(executing→completed),
 //   根治 final_stats 帧丢失竞态致 refresh 不触发→左栏永久卡 executing; 经 refreshTasksRef 调用(解闭包陈旧), 见 L97 区块 — 小欧-2026-10-28
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+// 编辑历史: 2026-11-02 小欧 - 注释整改(逻辑零变更): 删过期存疑条目(原 L157-170 "RightViewer L424 仍调 refreshTasks" 与代码不符,
+//   RightViewer 已删该覆盖, 左侧写入仅 updateTaskResponse) - 小欧-2026-11-02
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位置2数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 - 位置2 数据源对象形态
 import { API_BASE_URL } from '../services/api/client';
 import { useChatFacade } from '../features/chat/hooks/useChatFacade';
 import { useSessionTasks } from '../features/chat/hooks/useSessionTasks';
@@ -68,27 +70,27 @@ import { useChatInit } from '../features/chat/hooks/useChatInit';
 import { useChatLifecycle } from '../features/chat/hooks/useChatLifecycle';
 import { useChatTitle } from '../features/chat/hooks/useChatTitle';
 import { useChatPanels } from '../features/chat/hooks/useChatPanels';
-import type { SendOpts } from '../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import type { SendOpts } from '../types/chat'; // 2026-10-07 小欧 - 对象参数
 import { SessionLayout } from '../features/chat/components/layout/SessionLayout';
 import AuthorizationModal from '../components/AuthorizationModal';
 import { Colors } from '@/utils/stepStyles';
 
 const ChatPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  // 2026-09-10 小欧: thought重复根治(三堂会审定案): 传稳定urlSessionId字符串给useChatInit,
-  //   effect依赖它(非全局searchParams对象引用), 流式期间session_id不变即不重跑initializeSession。 — 小欧-2026-09-10
+  // 2026-11-02 小欧 - 稳定 urlSessionId 字符串：useChatInit 的 effect 依赖它而非 searchParams 对象引用，
+  // 流式期间 session_id 不变即不重跑 initializeSession。
   const urlSessionId = searchParams.get('session_id');
-  const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 6.3.4: 对象形态(位置2 类型+分层字段) — 小欧-2026-09-08
+  const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 - 对象形态(位置2 类型+分层字段)
   const [rightOpen, setRightOpen] = useState(true);
-  // 2026-09-01 小欧 方案C: 左列最新任务锚点ref(常驻, 传入useChatPanels→TaskListPanel滚动定位)
+  // 2026-11-02 小欧 - 左列最新任务锚点 ref（传入 useChatPanels → TaskListPanel 滚动定位）
   const latestTaskRef = useRef<HTMLDivElement | null>(null);
-  // 2026-10-08 小欧 - 文档[11]: refreshTasks 在本组件下方(useSessionTasks)才声明, 而 onTasksChanged
+  // 2026-10-08 小欧 - refreshTasks 在本组件下方(useSessionTasks)才声明, 而 onTasksChanged
   //   要在 useChatFacade 入参里给 → 用 ref 中转(同 useChatCallbacks 的 onSuccessRef 模式, 解闭包陈旧)
   const refreshTasksRef = useRef<() => void>(() => undefined);
-  // [63] 5.16：流状态已常驻 Store，本组件只订阅，不再拥有流的生命周期
+  // 2026-11-02 小欧 - 流状态常驻 Store，本组件只订阅，不拥有流的生命周期
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
-    sessionId: urlSessionId ?? undefined, // 未解析出真实 sessionId 时不 ensureSession（5.4 约束）
+    sessionId: urlSessionId ?? undefined, // 未解析出真实 sessionId 时不 ensureSession
     onError: (liveError: LiveError) => setLiveError(liveError),
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
     // 2026-10-28 小欧 - 补 refreshTasks 兜底: 任务完成后刷新左栏任务状态(executing→completed)。
@@ -143,7 +145,7 @@ const ChatPage: React.FC = () => {
     tasks
   );
 
-  // 2026-08-30 小欧 diff⑦: G2修复(4.8.4.2) serverTaskId变化即刷新任务列表(SSE start帧任务产生即入列, 左列实时可见)
+  // 2026-11-02 小欧 - serverTaskId 变化即刷新任务列表：SSE start 帧产生任务即入列，左列实时可见
   const prevServerTaskIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevServerTaskIdRef.current !== chatStreaming.serverTaskId) {
@@ -154,20 +156,8 @@ const ChatPage: React.FC = () => {
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
-  // ── ChatPage 文件职责: 主页面组件, 编排整个聊天流程 ──
-  // ── 左侧任务回复区: 本文件负责"什么时候写" ──
-  // 触发条件: isReceiving 从 true 翻 false(SSE final 帧到达)
-  // 行为: 从 executionSteps 找 type=final 的 step, 取其 response 写入左侧任务
-  // 限制: 仅 final.response 非空时才写(即 failed/cancelled/return_direct 长条终态);
-  //       completed 正常完成的 final.response 为空, 本 effect 不写, 左侧此时空白
-  // 后续: final_stats 帧到达后, RightViewer L424 的 effect 会调 refreshTasks()
-  //       从 DB 拉完整正文覆盖左侧(此时左侧才显示完整回复)
-  //
-  // 铁命令(北京老陈 2026-09-12):--没有遵守命令 没有按照要求实施
-  //   "左侧 response 只允许源自 final.response, 严禁用 DB/消息内容/refreshTasks 兜底"
-  //   但代码实际情况: RightViewer L424 的 effect 仍保留 refreshTasks 调用,
-  //   final_stats 到达时会从 DB 拉完整 response 覆盖左侧。
-  //   注释说"DB刷新覆盖已据令删除"与代码不一致。 — 小欧-2026-09-12, 2026-09-13
+  // 2026-11-02 小欧 - 左侧回复区写入：isReceiving 翻 false 时取 executionSteps 中 type=final 的 response 写入，
+  // 仅非空才写（completed 正常完成的 final.response 为空，左侧留空，历史回放从 DB 读）。
   const prevReceivingForR3Ref = useRef(false);
   useEffect(() => {
     if (
@@ -191,7 +181,7 @@ const ChatPage: React.FC = () => {
     updateTaskResponse,
   ]);
 
-  // 2026-08-30 小欧 v1.100: 点击任务 → 右栏展开(4.5.1 联动锚定: 点击查看即展开)
+  // 2026-11-02 小欧 - 点击任务 → 右栏展开（点击查看即展开）
   const handleSelectTaskOpenRight = useCallback(
     (taskId: string) => {
       setRightOpen(true);
@@ -211,7 +201,7 @@ const ChatPage: React.FC = () => {
   const handleSend = useCallback(
     async (content: string, opts: SendOpts) => {
       setLiveError(null);
-      setRightOpen(true); // 2026-09-15 小欧: 新任务发送即展开右侧step面板(方案B, 直线入口) — 小欧-2026-09-15
+      setRightOpen(true); // 2026-11-02 小欧 - 发送即展开右侧 step 面板（唯一发送入口，直线调用）
       await chatSend.handleSend(content, opts);
     },
     [chatSend, setLiveError, setRightOpen]
@@ -223,21 +213,19 @@ const ChatPage: React.FC = () => {
     [chatState.setLinkEnabled]
   );
 
-  // 2026-08-27 小欧 修复#42: 切换会话时重置跨会话泄漏状态(liveError)
+  // 2026-11-02 小欧 - 切换会话时重置跨会话泄漏状态（liveError）
   useEffect(() => {
     setLiveError(null);
   }, [sessionId]);
 
-  // 2026-09-02 小欧 - 同类DB滞后修复: 直播失败文案到达即刷新左列, 消DB executing残留(与useTaskInfo徽标兜底同窗) - 小欧-2026-09-02
+  // 2026-11-02 小欧 - 直播失败文案到达即刷新左列，消除 DB executing 残留
   useEffect(() => {
     if (liveError) void refreshTasks();
   }, [liveError, refreshTasks]);
 
   // 会话初始化 / 生命周期 / 标题编辑（抽离至各 hook）
   useChatInit({ chatFacade, urlSessionId });
-  // 2026-09-13 小欧 北京老陈定案: 新建会话时右侧面板整体折叠(收起)——rightOpen 原默认且新建不复位,
-  //   旧会话右栏残留信息虽已根治清空, 但新会话页面右栏仍展开占位(仅剩"暂无执行记录"空态)不符预期;
-  //   新建动作同步 setRightOpen(false), 新会话默认右栏收起, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
+  // 2026-11-02 小欧 - 新建会话时右栏收起（setRightOpen(false)），点任务经 handleSelectTaskOpenRight 再展开
   const { handleNewSession: handleNewSessionBase } = useChatLifecycle({
     chatFacade,
   });

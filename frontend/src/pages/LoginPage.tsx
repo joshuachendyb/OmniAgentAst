@@ -9,6 +9,10 @@
  *   2026-09-27 小欧 - 实施后十轮会审修 3 处：① handleSubmit 增并发守卫（回车不受 Button
  *     loading 约束，连按会重复提交）；② 口令输入框验证中 disabled（避免界面显示值与实际提交值
  *     不一致）；③ 首设提交前复查后端状态（进页结论可能已过期，直接 setToken 会静默覆盖他人刚设的口令）
+ *   2026-11-02 小欧 - 三堂会审整改（逻辑零变更）：①抽 showAuthError 消除两处重复三元（DRY）；
+ *     ② detailOf 并入 forbiddenDetail，messageOf 复用全局 extractErrorMessage（复用优先）；
+ *     ③ 警示框/灰字硬编码色改 Colors 令牌（新增 WARNING_BORDER 与 ERROR_BORDER 对称）；
+ *     ④ 副文 13px 归 12px 二档制（M2）。类型仍用 AUTH_401/403：400 等参数错误归网络类会误导。
  *
  * 背景：服务绑 0.0.0.0（多机部署硬前提不可收窄），鉴权前局域网任意设备可直调任何接口
  *   （读走全部 provider 明文密钥 / 改擦密钥 / 越权读会话）。本页是口令录入入口：
@@ -24,7 +28,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Input } from 'antd';
 import { getAccessToken, setAccessToken } from '@/services/api/client';
 // 2026-09-26 小欧 - 统一提示规范（禁 message.*，走 error/handler）
-import { ErrorType, showMessage } from '@/services/error/handler';
+import {
+  ErrorType,
+  extractErrorMessage,
+  showMessage,
+} from '@/services/error/handler';
+import { Colors, FontSize } from '@/utils/stepStyles';
 // 2026-09-26 小欧 - 首次设置/查状态走 authApi
 import { authApi } from '@/services/api/settings.api';
 
@@ -43,11 +52,11 @@ type BlockedReason = 'not_local' | 'proxy_untrusted' | null;
 const WARN_BOX: React.CSSProperties = {
   maxWidth: 380,
   padding: 12,
-  border: '1px solid #ffd591',
-  background: '#fffbe6',
+  border: `1px solid ${Colors.WARNING_BORDER}`,
+  background: Colors.WARNING_BG,
   borderRadius: 6,
-  fontSize: 13,
-  color: '#ad6800',
+  fontSize: FontSize.SECONDARY,
+  color: Colors.WARNING,
   textAlign: 'left',
   lineHeight: 1.7,
 };
@@ -135,32 +144,18 @@ const LoginPage: React.FC = () => {
       navigate('/', { replace: true });
     } catch (e) {
       if (view.kind === 'firstSetup') {
-        // 首设失败要与"口令无效"区分开：后端拒（口令太短/env 接管/非本机 403）或本地
-        // 存储写失败，都与"口令无效"无关，文案必须指向真实原因（4.4.2）。
-        showMessage(
-          isForbidden(e) ? ErrorType.AUTH_403 : ErrorType.AUTH_401,
-          isForbidden(e)
-            ? forbiddenDetail(e)
-            : `设置访问口令失败：${messageOf(e)}`
-        );
+        // 首设失败与"口令无效"无关（后端拒：口令太短/env 接管/非本机 403，或本地写失败），
+        // 文案必须指向真实原因，不能一律报"口令无效"。
+        showAuthError(e, true);
         return;
       }
-      // 回滚用 try 包住：5.5 让 setAccessToken 写失败会抛错，回滚再抛会盖掉原错误
+      // 回滚用 try 包住：setAccessToken 写失败会抛错，回滚再抛会盖掉原错误
       try {
         setAccessToken(prev);
       } catch {
         /* 回滚失败不掩盖原错误 */
       }
-      showMessage(
-        // 403 是"你不能做这事"、401 是"口令不对"、其余多为网络/服务端异常 —— 三种必须
-        // 分开，一律报"访问口令无效"会把用户引向反复重输的死路（错 4/错 6 同类病根）。
-        isForbidden(e) ? ErrorType.AUTH_403 : ErrorType.AUTH_401,
-        isForbidden(e)
-          ? forbiddenDetail(e)
-          : statusOf(e) === 401
-            ? '访问口令无效'
-            : `验证失败：${messageOf(e)}`
-      );
+      showAuthError(e, false);
     } finally {
       setVerifying(false);
     }
@@ -178,7 +173,7 @@ const LoginPage: React.FC = () => {
       }}
     >
       {view.kind === 'checking' && (
-        <div style={{ fontSize: 13, color: '#8c8c8c' }}>
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
           正在检查访问口令状态…
         </div>
       )}
@@ -215,7 +210,7 @@ const LoginPage: React.FC = () => {
               ? '首次使用，请设置访问口令'
               : '请输入访问口令'}
           </div>
-          <div style={{ fontSize: 13, color: '#8c8c8c' }}>
+          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
             本服务部署在局域网内，需口令才能访问
           </div>
           {view.kind === 'firstSetup' && (
@@ -258,23 +253,35 @@ function statusOf(e: unknown): number | undefined {
   return (e as { response?: { status?: number } } | null)?.response?.status;
 }
 
-function isForbidden(e: unknown): boolean {
-  return statusOf(e) === 403;
-}
-
-/** 后端 detail 原话；没给（网络错误等）返回 undefined，由调用方决定回落文案 */
-function detailOf(e: unknown): string | undefined {
+/** 403 的 detail 是精确引导（如「只能在服务端本机进行」）；只认 detail，无则兜底中文 */
+function forbiddenDetail(e: unknown): string {
   const d = (e as { response?: { data?: { detail?: string } } } | null)
     ?.response?.data?.detail;
-  return typeof d === 'string' && d ? d : undefined;
+  return typeof d === 'string' && d ? d : '此操作不被允许，请按提示处理';
 }
 
-/** 403 的 detail 是精确引导（如「只能在服务端本机进行」），优先原话，没给才用兜底串 */
-function forbiddenDetail(e: unknown): string {
-  return detailOf(e) ?? '此操作不被允许，请按提示处理';
-}
-
-/** 给用户看的错误文本：后端 detail 原话优先，其次错误对象自身 message（网络错误等） */
+/** 错误文本：复用全局 extractErrorMessage（后端 detail/message 优先），无则对象自身 message */
 function messageOf(e: unknown): string {
-  return detailOf(e) ?? (e instanceof Error ? e.message : String(e));
+  return extractErrorMessage(e) ?? (e instanceof Error ? e.message : String(e));
+}
+
+/**
+ * 2026-11-02 小欧 - 登录/首设失败统一提示口径，消除两处重复三元：
+ * 403 透传后端原话；401 报口令无效；其余（网络/服务端/参数）带前缀转述真实原因。
+ * 类型统一用鉴权流程失败（AUTH_401/AUTH_403）——本页所有失败都表现为"进不来"，
+ * 不另设网络类：400 等参数错误若归网络类会误导用户去查网络。
+ */
+function showAuthError(e: unknown, firstSetup: boolean): void {
+  if (statusOf(e) === 403) {
+    showMessage(ErrorType.AUTH_403, forbiddenDetail(e));
+    return;
+  }
+  if (statusOf(e) === 401) {
+    showMessage(ErrorType.AUTH_401, '访问口令无效');
+    return;
+  }
+  showMessage(
+    ErrorType.AUTH_401,
+    `${firstSetup ? '设置访问口令失败' : '验证失败'}：${messageOf(e)}`
+  );
 }

@@ -237,6 +237,7 @@ export const Colors = {
   ACCENT_ORANGE: '#d4380d',
   WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
+  WARNING_BORDER: '#ffd591', // 警告浅框(与 ERROR_BORDER 对称, 登录页警示框令牌化) — 小欧-2026-11-02
 } as const;
 
 // 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
