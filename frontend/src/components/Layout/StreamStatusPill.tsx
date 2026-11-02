@@ -27,6 +27,7 @@ const HOVER_BG = Colors.BG.HOVER;
 const TONE_COLOR: Record<StreamTone, string> = {
   ok: Colors.SUCCESS,
   warn: Colors.WARNING,
+  alert: Colors.ORANGE_RED,
   error: Colors.ERROR,
   neutral: Colors.TEXT.SECONDARY,
 };
@@ -75,6 +76,18 @@ const StreamStatusPill: React.FC = () => {
           : []),
       ]
     : [{ label: '流', value: '无进行中的任务' }];
+
+  // 2026-11-02 小欧 - 文字与状态点同色; antd Badge 没有橘红 status, alert 档走自定义 color 点 — 小欧-2026-11-02
+  const label = (
+    <span
+      style={{
+        fontSize: FontSize.SECONDARY,
+        color: TONE_COLOR[view.tone],
+      }}
+    >
+      {view.text}
+    </span>
+  );
 
   return (
     <Tooltip
@@ -128,19 +141,11 @@ const StreamStatusPill: React.FC = () => {
           e.currentTarget.style.background = 'transparent';
         }}
       >
-        <Badge
-          status={view.badge}
-          text={
-            <span
-              style={{
-                fontSize: FontSize.SECONDARY,
-                color: TONE_COLOR[view.tone],
-              }}
-            >
-              {view.text}
-            </span>
-          }
-        />
+        {view.tone === 'alert' ? (
+          <Badge color={Colors.ORANGE_RED} text={label} />
+        ) : (
+          <Badge status={view.badge} text={label} />
+        )}
       </span>
     </Tooltip>
   );

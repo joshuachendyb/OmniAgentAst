@@ -25,7 +25,7 @@ const PULSE_TICK_MS = 1000;
  */
 const STALE_SEC = 30;
 
-export type StreamTone = 'ok' | 'warn' | 'error' | 'neutral';
+export type StreamTone = 'ok' | 'warn' | 'alert' | 'error' | 'neutral';
 
 export interface StreamPulseView {
   tone: StreamTone;
@@ -136,10 +136,10 @@ export const deriveStreamState = (
             : `已 ${bizAgeSec} 秒无事件输出，心跳正常（后端在思考或执行工具，连接未断）`,
       };
     }
-    // 三档: 心跳也过期 → 连保活都断了, 只等 transport 60s 判死
+    // 三档: 心跳也过期 → 连保活都断了, 只等 transport 60s 判死。橘红: 比迟滞更重, 但还没到中断
     return {
       ...base,
-      tone: 'warn',
+      tone: 'alert',
       badge: 'warning',
       text: '流静默',
       main: `已 ${dataAgeSec ?? 0} 秒无任何数据（业务帧与心跳均无）`,

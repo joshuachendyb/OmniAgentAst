@@ -17,7 +17,8 @@ import {
   FontFamily,
 } from '../../utils/stepStyles';
 
-type Tone = 'ok' | 'warn' | 'error' | 'neutral';
+// 2026-11-02 小欧 - 新增 alert(橘红): 严重度递进 黄(迟滞)→橘红(静默)→红(中断), 见 Colors.ORANGE_RED — 小欧-2026-11-02
+type Tone = 'ok' | 'warn' | 'alert' | 'error' | 'neutral';
 
 // 2026-11-02 小欧 - 浮层版式常量: 宽度区间/标签列宽(4字48px+留白, 服务胶囊"循环延迟/运行时长"须容得下)/状态点径/行高比 — 小欧-2026-11-02
 const TIP_MIN_W = 240;
@@ -33,6 +34,7 @@ const LINE_HEIGHT = 1.6;
 const TONE_COLOR: Record<Tone, string> = {
   ok: Colors.SUCCESS,
   warn: Colors.WARNING,
+  alert: Colors.ORANGE_RED,
   error: Colors.ERROR,
   neutral: Colors.TEXT.TERTIARY,
 };
@@ -45,7 +47,7 @@ export interface PillTipRow {
   /** 分组小标题: 与上一行不同则先渲染一条分组条(值缺省=不分组, 配置胶囊沿用) — 2026-11-02 小欧 */
   group?: string;
   /** 值异常时的语义色(正常值不着色, 保持灰阶克制) — 2026-11-02 小欧 */
-  tone?: 'ok' | 'warn' | 'error';
+  tone?: 'ok' | 'warn' | 'alert' | 'error';
 }
 
 export interface PillTipItem {
