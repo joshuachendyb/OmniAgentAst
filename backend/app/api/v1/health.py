@@ -17,6 +17,8 @@
 #   settings_service.app_version()(每次实时读文件); 消除与 /settings.version、GET /config/version-file 长期不一致
 # 2026-10-15 北京老陈裁定(开关外扩) - /echo(调试通信探针, 非产品功能) 纳入 require_debug_mode 约束:
 #   守卫提为共用模块 api/v1/_gates.py, 与 /tool/list、/tool/execute 同一道门; 不在 health.py 复写一遍(违 DRY)。/health 不受影响。
+# 2026-11-02 小欧 - /health 响应加 host 字段(Host头): 顶栏服务胶囊需显示真实后端地址, 开发(Vite代理)/打包(同源或直连)通用 — 小欧-2026-11-02
+# 2026-11-02 小欧 - /health 再加 server_ip(本机局域网IP, lru_cache)与 pid: 他人访问地址与卡死排错要用的可执行信息 — 小欧-2026-11-02
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -24,6 +26,10 @@ COPY from individual files, only changed import paths — 小欧 2026-07-10
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
+
+import os
+import socket
+from functools import lru_cache
 
 from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁定: /echo 受调试开关约束
 from app.db import db
@@ -33,6 +39,15 @@ from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 �
 
 router = APIRouter()
 
+
+@lru_cache(maxsize=1)
+def _server_lan_ip() -> str:
+    """本机局域网IP(进程内只解析一次) — 2026-11-02 小欧: 供顶栏服务胶囊显示可被他人访问的地址"""
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return ""
+
 # ===== health =====
 
 class HealthResponse(BaseModel):
@@ -40,6 +55,9 @@ class HealthResponse(BaseModel):
     timestamp: str
     version: str
     db_status: str = "unknown"  # 小欧 2026-07-23 #14: 真实DB连接验证
+    host: str = ""  # 2026-11-02 小欧 - 后端视角访问地址(Host头), 顶栏服务胶囊显示真实后端地址(开发/打包通用)
+    server_ip: str = ""  # 2026-11-02 小欧 - 本机局域网IP, 供他人访问时使用
+    pid: int = 0  # 2026-11-02 小欧 - 进程号, 卡死时直接对应 py-spy dump --pid
 
 class EchoRequest(BaseModel):
     message: str
@@ -66,6 +84,10 @@ async def health_check(request: Request):
         timestamp=get_local_iso_timestamp(),
         version=get_app_version(),
         db_status=db_status,
+        # 2026-11-02 小欧 - Host头即前端实际访问到的后端地址: dev经Vite代理(changeOrigin)=proxy target, 打包=访问域名或直连地址
+        host=request.headers.get("host", ""),
+        server_ip=_server_lan_ip(),
+        pid=os.getpid(),
     )
 
 @router.post("/echo", response_model=EchoResponse)
