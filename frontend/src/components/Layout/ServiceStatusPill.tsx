@@ -263,7 +263,14 @@ const ServiceStatusPill: React.FC = () => {
         streamView.heartbeatAgeSec === null
           ? '未收到'
           : `${streamView.heartbeatAgeSec} 秒前`,
-      tone: streamView.heartbeatStale ? 'warn' : undefined,
+    },
+    {
+      label: '最近数据',
+      value:
+        streamView.dataAgeSec === null
+          ? '未收到'
+          : `${streamView.dataAgeSec} 秒前`,
+      tone: streamView.dataStale ? 'warn' : undefined,
     },
   ];
 

@@ -1,4 +1,4 @@
-// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏 SSE 流状态灯数据源。1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏), 派生纯函数导出供单测 — 小欧-2026-11-02
+﻿// 编辑历史: 2026-11-02 小欧 - 新建: 顶栏 SSE 流状态灯数据源。1s 采样 store 聚合快照(不订阅 store, 免每 token 重渲顶栏), 派生纯函数导出供单测 — 小欧-2026-11-02
 import { useEffect, useState } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
@@ -7,8 +7,12 @@ import type { StreamPulse } from '../streams/chatStreamStore';
 /** 采样周期: 只展示"距今秒数", 1s 粒度足够 — 2026-11-02 小欧 */
 const PULSE_TICK_MS = 1000;
 
-/** 心跳迟滞判定: 后端 25s 一拍, 超 2 拍未到即标黄(不升级为断流, 断流由 60s 判死接管) — 2026-11-02 小欧 */
-const HEARTBEAT_STALE_SEC = 50;
+/**
+ * 静默判定: 30s 内没有任何字节(业务帧/心跳都算)才标黄。
+ * 不能用 heartbeatTs 判健康 —— 后端只在静默 25s 时才发 `: ping`, 正常流式输出时业务帧不断、
+ * 心跳反而不发, 用心跳年龄判"迟滞"会把最活跃的时刻判成异常(实测踩中)。 — 2026-11-02 小欧
+ */
+const DATA_STALE_SEC = 30;
 
 export type StreamTone = 'ok' | 'warn' | 'error' | 'neutral';
 
@@ -18,12 +22,12 @@ export interface StreamPulseView {
   text: string;
   main: string;
   pulse: StreamPulse;
-  /** 最近心跳距今秒；null = 本会话从未收到心跳 */
+  /** 最近心跳距今秒；null = 本会话从未收到心跳（静默期才有心跳，流式输出中不会刷新） */
   heartbeatAgeSec: number | null;
-  /** 最近收到任意数据距今秒；null = 本会话未产生数据 */
+  /** 最近收到任意字节距今秒；null = 本会话未产生数据 */
   dataAgeSec: number | null;
-  /** 心跳已明显迟滞（仅对流进行中的会话有意义） */
-  heartbeatStale: boolean;
+  /** 流进行中但长时间无任何字节（含心跳） */
+  dataStale: boolean;
 }
 
 const ageOf = (ts: number, nowMs: number): number | null =>
@@ -49,7 +53,7 @@ export const deriveStreamState = (
       badge: 'default',
       text: '无流',
       main: '当前没有进行中的任务流',
-      heartbeatStale: false,
+      dataStale: false,
     };
   }
   // 2026-11-02 小欧 - status='failed' 是终态, store 聚合口不会把终态会话算作活跃流;
@@ -61,7 +65,7 @@ export const deriveStreamState = (
       badge: 'error',
       text: '流中断',
       main: '连接已断开且未能自动恢复，可在会话内重新发送',
-      heartbeatStale: false,
+      dataStale: false,
     };
   }
   if (p.reconnectStatus === 'reconnecting' || p.status === 'recovering') {
@@ -71,7 +75,7 @@ export const deriveStreamState = (
       badge: 'warning',
       text: '重连中',
       main: '连接中断，正按 after_seq 断点续传',
-      heartbeatStale: false,
+      dataStale: false,
     };
   }
   if (p.status === 'paused') {
@@ -81,21 +85,21 @@ export const deriveStreamState = (
       badge: 'warning',
       text: '等待确认',
       main: '任务在等人工确认，空闲计时已暂停',
-      heartbeatStale: false,
+      dataStale: false,
     };
   }
   if (p.isReceiving || p.status === 'active' || p.status === 'retrying') {
-    const stale =
-      heartbeatAgeSec !== null && heartbeatAgeSec >= HEARTBEAT_STALE_SEC;
+    // 2026-11-02 小欧 - 判据用 lastDataTime(任何字节)而非 heartbeatTs: 见 DATA_STALE_SEC 注释 — 小欧-2026-11-02
+    const stale = dataAgeSec !== null && dataAgeSec >= DATA_STALE_SEC;
     return {
       ...base,
       tone: stale ? 'warn' : 'ok',
       badge: stale ? 'warning' : 'processing',
-      text: stale ? '流迟滞' : '流进行中',
+      text: stale ? '流静默' : '流进行中',
       main: stale
-        ? `SSE 连接活跃但已 ${heartbeatAgeSec} 秒未收到心跳`
+        ? `已 ${dataAgeSec} 秒未收到任何数据（业务帧与心跳均无）`
         : 'SSE 连接活跃，正在接收服务端事件',
-      heartbeatStale: stale,
+      dataStale: stale,
     };
   }
   return {
@@ -104,7 +108,7 @@ export const deriveStreamState = (
     badge: 'default',
     text: '已连接',
     main: '会话存在但当前无数据推送',
-    heartbeatStale: false,
+    dataStale: false,
   };
 };
 
@@ -114,7 +118,7 @@ const sameView = (a: StreamPulseView, b: StreamPulseView): boolean =>
   a.main === b.main &&
   a.heartbeatAgeSec === b.heartbeatAgeSec &&
   a.dataAgeSec === b.dataAgeSec &&
-  a.heartbeatStale === b.heartbeatStale &&
+  a.dataStale === b.dataStale &&
   a.pulse.sessionId === b.pulse.sessionId &&
   a.pulse.status === b.pulse.status &&
   a.pulse.reconnectStatus === b.pulse.reconnectStatus &&

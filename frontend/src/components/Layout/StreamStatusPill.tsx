@@ -65,9 +65,12 @@ const StreamStatusPill: React.FC = () => {
           label: '心跳',
           value: ageText(view.heartbeatAgeSec),
           group: '心跳',
-          tone: view.heartbeatStale ? 'warn' : undefined,
         },
-        { label: '静默', value: ageText(view.dataAgeSec) },
+        {
+          label: '静默',
+          value: ageText(view.dataAgeSec),
+          tone: view.dataStale ? 'warn' : undefined,
+        },
         { label: '判死', value: `${IDLE_TIMEOUT / 1000}s 无字节` },
         ...(p.activeSessions > 1
           ? [{ label: '并发', value: `${p.activeSessions} 条流` }]
