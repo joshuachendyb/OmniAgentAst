@@ -39,6 +39,9 @@
 //   /[\\/]/.test，第四、第五份判据碎片）；toRelativePath 对「等于根」返回 ''（与 relFromRoot 同口径），
 //   内外判定直接读它并删 isUnderRoot（原对同一段前缀比对算两遍）；PathTarget 增 pending —
 //   「绝对路径 + 根未取回」由解析结果给出，文件页不再自己重写一遍同一判据 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 北京老陈定案（仅正文）：toFileRefMarkdown 收紧——相对路径末段必须带扩展名
+//   才按文件转（无扩展名按目录认，而相对目录一律纯文本，含显式标记 [[文件:docs\]]）；
+//   盘符绝对路径维持「扩展名=文件 / 无扩展名=目录」不变 — 小欧-2026-11-02
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
  *
@@ -614,20 +617,23 @@ const toFileRefMarkdown = (
   const dir = asDir || isDirPath(raw);
   const abs = isDriveAbsPath(raw);
   if (dir) {
+    // 2026-11-02 小欧 - 北京老陈定案（**仅正文**）：相对目录一律不解析=纯文本——目录可点
+    //   只有盘符绝对一种；[[文件:docs\]] 显式标记同拒，调用方保留原文（裸识别层 PATH_ABS_DIR
+    //   本就只认盘符，此处把显式标记一并收紧）— 小欧-2026-11-02
+    if (!abs) return null;
     // 绝对目录：根未取回时分不清内/外，等根（宁可晚一拍，也不给错归属）
-    if (abs && !projectRoot) return null;
-    // 相对目录：仅显式标记可点（正文里的“答复/思考”不是路径）
-    if (!abs && !explicit) return null;
-    // 显式标记可绕过「必须含分隔符」，但绕不过形态门槛（UNC / 根斜杠 / `..`）
-    if (!abs && !isValidRelPath(raw)) return null;
+    if (!projectRoot) return null;
   } else if (!abs) {
+    // 2026-11-02 小欧 - 北京老陈定案（**仅正文**）：相对路径**末段必须带扩展名**才按文件转；
+    //   无扩展名按目录认，而相对目录=纯文本，故正文连显式标记 [[文件:docs\build]] 一并拒。
+    //   盘符绝对路径不在此列（扩展名文件/无扩展名目录两分支判法不变）— 小欧-2026-11-02
+    if (!isFileLikePath(raw)) return null;
     // 2026-11-02 小欧 - toRelativePath 已保证 rel 形态合法（relFromRoot 内唯一校验点），
     //   此处不再复检 isValidRelPath — 小欧-2026-11-02
     const rel = toRelativePath(raw, projectRoot);
     if (!rel) return null;
     // 2026-10-23 小欧 - 判“有没有目录”看原文（`./a.md` 显式带当前目录，不算裸文件名）— 小欧-2026-10-23
     if (!explicit && !hasSeparator(raw)) return null;
-    if (!isLinkableRelPath(rel)) return null;
   }
   return `[${escapeLabel(raw)}](${buildFileRefLink(raw, lineRange)})`;
 };
