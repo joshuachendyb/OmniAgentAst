@@ -52,10 +52,22 @@ const DB_VIEW: Record<string, { text: string; tone: 'ok' | 'warn' }> = {
   healthy: { text: '正常', tone: 'ok' },
   degraded: { text: '降级', tone: 'warn' },
 };
-// 2026-11-02 小欧 - 循环延迟是瞬时延迟: 健康 0.4ms 与亚健康 40ms 的区别全在毫秒小数位,
-//   强套时:分:秒.毫秒会永远显示 .000 失去分辨力, 故亚秒级给 ms 单位(2位小数), 跨秒才升级时钟格式 — 小欧-2026-11-02
-const formatDelay = (ms: number): string =>
-  ms < 1000 ? `${Number(ms.toFixed(2))} ms` : formatDuration(ms);
+// 2026-11-02 小欧 - 循环延迟: 健康值在毫秒小数位(0.4ms), 套时钟格式永远显示 .000 无信息量;
+//   故常态给"正常"二字, 异常才给数值(ms), 既免第三个"像时间"的数字, 也保住分辨力 — 小欧-2026-11-02
+const LOOP_OK_MS = 10;
+const LOOP_BAD_MS = 100;
+// 2026-11-02 小欧 - 进程存活时长按人话写(天/时/分/秒): 与"探活耗时"的时钟格式区分开, 毫秒对 uptime 无意义 — 小欧-2026-11-02
+const formatUptime = (ms: number): string => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const day = Math.floor(s / 86400);
+  const hour = Math.floor((s % 86400) / 3600);
+  const minute = Math.floor((s % 3600) / 60);
+  const second = s % 60;
+  if (day) return `${day}天${hour}小时`;
+  if (hour) return `${hour}小时${minute}分`;
+  if (minute) return `${minute}分${second}秒`;
+  return `${second}秒`;
+};
 // 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
 const TONE_OF = {
   ok: 'ok',
@@ -197,34 +209,46 @@ const ServiceStatusPill: React.FC = () => {
       ? Math.round(healthStatus.uptime_s * 1000)
       : null;
 
-  // 2026-11-02 小欧 - 分组十行(全量常显): 地址组答"连的是谁", 运行时组答"此刻什么状态"; 缺值标未上报, 绝不整行消失 — 小欧-2026-11-02
+  // 2026-11-02 小欧 - 分组九行(全量常显): 地址组答"连的是谁", 探测组答"这一次测出什么", 进程组答"是哪条命、活了多久";
+  //   耗时与存活时长语义不同源, 故分处两组且各自贴合量级(时钟/人话), 不再像两个重复指标 — 小欧-2026-11-02
   const rows: PillTipRow[] = [
     { label: '本机', value: lanAddr || '未上报', mono: true, group: '地址' },
     { label: '访问', value: host || '未上报', mono: true },
     { label: '前缀', value: API_BASE_URL, mono: true },
     { label: '连接', value: CONN_KIND },
     {
-      label: '耗时',
+      label: '探活耗时',
       value: latencyMs !== null ? formatDuration(latencyMs) : '—',
-      group: '运行时',
+      group: '本次探测',
     },
     {
-      label: '循环延迟',
-      value: loopLagMs !== null ? formatDelay(loopLagMs) : '未上报',
+      label: '事件循环',
+      value:
+        loopLagMs === null
+          ? '未上报'
+          : loopLagMs < LOOP_OK_MS
+            ? '正常'
+            : `${Math.round(loopLagMs)} ms`,
       tone:
-        loopLagMs !== null && loopLagMs >= SLOW_RESPONSE_MS
-          ? 'warn'
-          : undefined,
+        loopLagMs === null
+          ? undefined
+          : loopLagMs < LOOP_OK_MS
+            ? 'ok'
+            : loopLagMs >= LOOP_BAD_MS
+              ? 'warn'
+              : undefined,
     },
     { label: '应答时刻', value: answeredAt || '未上报' },
     { label: '数据库', value: dbView?.text ?? '未上报', tone: dbView?.tone },
     {
-      label: '运行时长',
-      value: uptimeMs !== null ? formatDuration(uptimeMs) : '未上报',
-    },
-    {
       label: '进程',
-      value: healthStatus?.pid ? String(healthStatus.pid) : '—',
+      value: [
+        healthStatus?.pid ? String(healthStatus.pid) : '—',
+        uptimeMs !== null ? `已运行 ${formatUptime(uptimeMs)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      group: '后端进程',
     },
   ];
 
