@@ -11,7 +11,7 @@
  * @date 2026-11-02
  */
 // 编辑历史: 2026-11-02 小欧 - SRP拆分新建: 领域逻辑自AppLayout迁入(index.tsx 362~374/448~493/845~876), 逻辑零改动 - 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 三堂会审死字段删除: onSwitchAttempted不再传display_name(接收侧hook从不读该字段) - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 死字段删除: onSwitchAttempted不再传display_name(接收侧hook从不读该字段) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 解钩: onSwitchAttempted prop与attemptedModel登记全删(消费方useValidationFeedback已废) - 小欧-2026-11-02
 import React from 'react';
 import { Select, Tag } from 'antd';

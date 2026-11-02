@@ -9,7 +9,7 @@
  *   2026-09-27 小欧 - 实施后十轮会审修 3 处：① handleSubmit 增并发守卫（回车不受 Button
  *     loading 约束，连按会重复提交）；② 口令输入框验证中 disabled（避免界面显示值与实际提交值
  *     不一致）；③ 首设提交前复查后端状态（进页结论可能已过期，直接 setToken 会静默覆盖他人刚设的口令）
- *   2026-11-02 小欧 - 三堂会审整改（逻辑零变更）：①抽 showAuthError 消除两处重复三元（DRY）；
+ *   2026-11-02 小欧 - 整改（逻辑零变更）：①抽 showAuthError 消除两处重复三元（DRY）；
  *     ② detailOf 并入 forbiddenDetail，messageOf 复用全局 extractErrorMessage（复用优先）；
  *     ③ 警示框/灰字硬编码色改 Colors 令牌（新增 WARNING_BORDER 与 ERROR_BORDER 对称）；
  *     ④ 副文 13px 归 12px 二档制（M2）。
@@ -177,7 +177,9 @@ const LoginPage: React.FC = () => {
       }}
     >
       {view.kind === 'checking' && (
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+        <div
+          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+        >
           正在检查访问口令状态…
         </div>
       )}
@@ -214,7 +216,12 @@ const LoginPage: React.FC = () => {
               ? '首次使用，请设置访问口令'
               : '请输入访问口令'}
           </div>
-          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+            }}
+          >
             本服务部署在局域网内，需口令才能访问
           </div>
           {view.kind === 'firstSetup' && (

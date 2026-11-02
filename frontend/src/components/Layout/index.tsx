@@ -41,8 +41,8 @@
 // 编辑历史: 2026-11-02 小欧 - SRP拆分6件套迁出: useValidationFeedback/GlobalModelSelect/ServiceCheckButton/ValidationDetailModal/ValidationErrorModal/NavContent, 壳层只留组合编排 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 版本号真源化: APP_VERSION死字串删除, health.version(version.txt首行)入props走NavContent底条; 底条bottom抬到触发条上方治从未显示 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - SidebarModeSwitcher控件及宽窄模式常量/读写迁独立文件, 壳层回归组合编排单职责 - 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 三堂会审魔法数字清零: 壳层高43/抽屉220/层级99,100/投影×2/pad16,20,24/字20/8,12/内容区6,6,4,6,12,100ms 共14处, 令牌或命名常量(零视觉差) - 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 三堂会审死链删除: ValidationDetailModal+顶栏死Tag+validationModalVisible+validationResult解构全删(AppContext validationResult仅被写null, Tag条件恒false永不可达), 零行为变化 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 魔法数字清零: 壳层高43/抽屉220/层级99,100/投影×2/pad16,20,24/字20/8,12/内容区6,6,4,6,12,100ms 共14处, 令牌或命名常量(零视觉差) - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 死链删除: ValidationDetailModal+顶栏死Tag+validationModalVisible+validationResult解构全删(AppContext validationResult仅被写null, Tag条件恒false永不可达), 零行为变化 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 功能重设计: "检查服务"按钮+三态弹窗半死链(成功/警告分支死后端无status字段)+toast复读 → ConfigStatusPill配置状态胶囊(语义订正: 实查config.yaml四步校验) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 顶栏加ServiceStatusPill(服务存活与本胶囊分立); 版本号改为从AppContext的/health派生, 删壳层单独打health的useEffect与healthApi导入 - 小欧-2026-11-02
 /**
@@ -88,7 +88,7 @@ const { useBreakpoint } = Grid;
 
 const { Sider, Content, Header } = Layout;
 
-// 2026-11-02 小欧 - 三堂会审魔法数字收口: 壳层专属值命名常量化, 步长/尺寸有令牌处直接用令牌; 色值无同值令牌按stepStyles硬规定留组件常量不进库 — 小欧-2026-11-02
+// 2026-11-02 小欧 - 魔法数字收口: 壳层专属值命名常量化, 步长/尺寸有令牌处直接用令牌; 色值无同值令牌按stepStyles硬规定留组件常量不进库 — 小欧-2026-11-02
 const MOBILE_DRAWER_WIDTH = 220; // 移动端抽屉宽
 const HEADER_GAP = 24; // 顶栏左组元素间距
 const HEADER_SHADOW = '0 2px 8px rgba(0,0,0,0.05)'; // 顶栏投影
@@ -302,7 +302,7 @@ const AppLayout: React.FC<LayoutProps> = ({
             // 2026-09-21 小强 - 令牌零视觉差：#fff=Colors.BG.PRIMARY
             background: Colors.BG.PRIMARY,
             boxShadow: HEADER_SHADOW,
-            // 2026-11-02 小欧 - 三堂会审收口: 16=Spacing.XL, 20=Spacing.XXL(零视差) — 小欧-2026-11-02
+            // 2026-11-02 小欧 - 收口: 16=Spacing.XL, 20=Spacing.XXL(零视差) — 小欧-2026-11-02
             padding: isMobile ? `0 ${Spacing.XL}px` : `0 ${Spacing.XXL}px`,
             display: 'flex',
             alignItems: 'center',
@@ -326,7 +326,7 @@ const AppLayout: React.FC<LayoutProps> = ({
                 title="打开导航菜单"
                 style={{
                   fontSize: MENU_BUTTON_FONT_SIZE,
-                  // 2026-11-02 小欧 - 三堂会审收口: 8=Spacing.MD, 12=Spacing.LG(零视差) — 小欧-2026-11-02
+                  // 2026-11-02 小欧 - 收口: 8=Spacing.MD, 12=Spacing.LG(零视差) — 小欧-2026-11-02
                   padding: `${Spacing.MD}px ${Spacing.LG}px`,
                 }}
               />
@@ -381,7 +381,7 @@ const AppLayout: React.FC<LayoutProps> = ({
         <Content
           style={{
             margin: 0,
-            // 2026-10-20 小欧 - 底10→4(北京老陈令: 红框留白压缩), 其余三边不变; 2026-11-02 三堂会审收口: 6=Spacing.SM, 4=Spacing.XS(零视差) — 小欧-2026-11-02
+            // 2026-10-20 小欧 - 底10→4(北京老陈令: 红框留白压缩), 其余三边不变; 2026-11-02 收口: 6=Spacing.SM, 4=Spacing.XS(零视差) — 小欧-2026-11-02
             padding: `${Spacing.SM}px ${Spacing.SM}px ${Spacing.XS}px ${Spacing.SM}px`,
             background: CONTENT_BG,
             borderRadius: Radius.CONTAINER,

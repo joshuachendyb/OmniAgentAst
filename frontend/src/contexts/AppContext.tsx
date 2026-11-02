@@ -3,7 +3,7 @@
 //   ——整 status 对象打印属调试残留, 已 setServiceStatus(status) 承接状态, 打点无追踪增量价值 — 小欧-2026-09-09
 // 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: 新增 switchAndRefreshModel — 切全局模型API+成功/失败刷新收口到一处,
 //   顶栏 Layout.handleModelChange 与设置页 CurrentModelRefCard.onOk 两调用方只管展示逻辑, 杜绝再漏刷 modelList — 小欧-2026-09-24
-// 编辑历史: 2026-11-02 小欧 - 三堂会审死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult五件全清(只被写null+死Tag恒false, 零消费方) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult五件全清(只被写null+死Tag恒false, 零消费方) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 状态跟随: refreshAfterModelChange 并刷 refreshServiceStatus(零成本本地校验, 非旧外部AI API验证), 切模型后顶栏胶囊即随新配置 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 新增 healthStatus/refreshHealth: 顶栏服务胶囊状态源(/health应答与耗时), 与 serviceStatus(配置校验)分立不合流 — 小欧-2026-11-02
 /**
@@ -17,7 +17,7 @@
  * @since 2026-03-12
  */
 
-/* 2026-11-02 小欧 - 三堂会审死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult类型 五件全死(validationResult仅被写null, 锚注L209"validateConfig需要provider参数暂时跳过"), 连带壳层死Tag/ValidationDetailModal一并清: 删前会审实勘, 零行为变化 - 小欧-2026-11-02 */
+/* 2026-11-02 小欧 - 死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult类型 五件全死(validationResult仅被写null, 锚注L209"validateConfig需要provider参数暂时跳过"), 连带壳层死Tag/ValidationDetailModal一并清: 删前实勘, 零行为变化 - 小欧-2026-11-02 */
 
 import React, {
   createContext,

@@ -1,14 +1,14 @@
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
-// 2026-08-27 小欧 - 三堂会审: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与设计文档调色板不一致)
-// 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
+// 编辑历史: 2026-08-27 小欧 - 8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
+// 2026-08-27 小欧: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与设计文档调色板不一致)
+// 2026-08-27 小欧: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
 // 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
 // 2026-08-28 小沈 - 修复: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
-// 2026-08-28 小欧 - 三堂会审v1.3: Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发; FontSize.SECONDARY 13→12 废13档统一14/12二档 - 小欧-2026-08-28
+// 2026-08-28 小欧 - v1.3: Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发; FontSize.SECONDARY 13→12 废13档统一14/12二档 - 小欧-2026-08-28
 // 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-09-09 小欧 - 修复: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
 // 编辑历史: 2026-09-11 小欧 - M3b/M3c(title段独立+折叠区复合兜底): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
-// 编辑历史: 2026-09-11 小欧 - 三堂会审修复: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 修复: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
@@ -33,7 +33,7 @@
 // 编辑历史: 2026-10-22 小欧 - FontFamily.MONO 字体栈换 Sarasa Mono SC 栈首(框线/CJK 宽度与
 //   asciiArt.ts 列宽模型对齐); 仓内 5 处硬编码字体栈收敛到本令牌(AboutFiles/StaticStatsBlock 2处/
 //   SecretRevealInput/FilePreview) — 小欧-2026-10-22
-// 编辑历史: 2026-11-02 小欧 - 三堂会审尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -258,7 +258,7 @@ export const Size = {
 } as const;
 
 // ==================== 步骤配置 ====================
-// 2026-08-27 小欧 三堂会审: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
+// 2026-08-27 小欧: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
 // 仅 stepStyles.test.ts 引用, src(renderers) 只用上方 6 个令牌与类型(YAGNI/KISS/禁止backward)
 
 // 2026-08-27 小欧 修复step-6: 最小 stepMeta 映射(仅 label/priority/layout), 供下方 getStep* 使用;

@@ -10,7 +10,7 @@
  * @date 2026-11-02
  */
 // 编辑历史: 2026-11-02 小欧 - SRP拆分新建: SIDEBAR_MODES/readSidebarMode/writeSidebarMode/getSidebarWidths/SidebarModeSwitcher自index.tsx 104~208原样迁入, 逻辑零改动 - 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 三堂会审收口: svg盒16=Icon.BOX, pad4/8=Spacing.XS/MD, 圆角4=Radius.SM, 字12=FontSize.SECONDARY, hover底rgba留组件常量(零视差) - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 收口: svg盒16=Icon.BOX, pad4/8=Spacing.XS/MD, 圆角4=Radius.SM, 字12=FontSize.SECONDARY, hover底rgba留组件常量(零视差) - 小欧-2026-11-02
 import React, { useState } from 'react';
 import { Button } from 'antd';
 import {
@@ -74,7 +74,7 @@ export const SidebarModeSwitcher: React.FC = () => {
     );
   };
 
-  // 2026-10-27 小欧 - 宽菜单图标(三个竖条, 宽度较大); 2026-11-02 三堂会审收口: 盒边16=Icon.BOX — 小欧-2026-10-27
+  // 2026-10-27 小欧 - 宽菜单图标(三个竖条, 宽度较大); 2026-11-02 收口: 盒边16=Icon.BOX — 小欧-2026-10-27
   const renderWideIcon = () => (
     <svg
       width={Icon.BOX}
@@ -111,7 +111,7 @@ export const SidebarModeSwitcher: React.FC = () => {
       title={mode === 'wide' ? '切换到窄菜单' : '切换到宽菜单'}
       style={{
         color: Colors.TEXT.MUTED,
-        // 2026-11-02 小欧 - 三堂会审收口: 4=Spacing.XS, 8=Spacing.MD, 圆角4=Radius.SM(零视差) — 小欧-2026-11-02
+        // 2026-11-02 小欧 - 收口: 4=Spacing.XS, 8=Spacing.MD, 圆角4=Radius.SM(零视差) — 小欧-2026-11-02
         padding: `${Spacing.XS}px ${Spacing.MD}px`,
         borderRadius: Radius.SM,
         transition: 'all 0.2s',

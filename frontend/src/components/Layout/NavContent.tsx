@@ -11,7 +11,7 @@
  */
 // 编辑历史: 2026-11-02 小欧 - SRP拆分新建: menuItems/handleMenuClick/renderNavContent(646~744)自index.tsx原样迁入 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 版本号真源化+防覆盖: appVersion改由后端health.version(version.txt首行)props下发(原手写死v2.1.0删除); 底条bottom抬到触发条上方治"桌面端从未显示" - 小欧-2026-11-02
-// 编辑历史: 2026-11-02 小欧 - 三堂会审魔法数字收口: 43=Size.HEADER_HEIGHT, 12=Spacing.LG, 16/8/20=Spacing.XL/MD/XXL, #e8e8e8=Colors.BORDER.VERTICAL; 13px字档无同值令牌零视差保留 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 魔法数字收口: 43=Size.HEADER_HEIGHT, 12=Spacing.LG, 16/8/20=Spacing.XL/MD/XXL, #e8e8e8=Colors.BORDER.VERTICAL; 13px字档无同值令牌零视差保留 — 小欧-2026-11-02
 import React from 'react';
 import { Badge, Menu } from 'antd';
 import type { MenuProps } from 'antd';
@@ -143,7 +143,7 @@ const NavContent: React.FC<{
       {/* Logo区域 */}
       <div
         style={{
-          // 2026-09-15 小欧 - 高度64→43: 与顶栏Header纵向对齐, 三态统一; 2026-11-02 三堂会审收口43=Size.HEADER_HEIGHT — 小欧-2026-09-15
+          // 2026-09-15 小欧 - 高度64→43: 与顶栏Header纵向对齐, 三态统一; 2026-11-02 收口43=Size.HEADER_HEIGHT — 小欧-2026-09-15
           height: Size.HEADER_HEIGHT,
           display: 'flex',
           alignItems: 'center',
@@ -192,7 +192,7 @@ const NavContent: React.FC<{
         onClick={handleMenuClick}
         style={{
           borderRight: 0,
-          // 2026-11-02 小欧 - 三堂会审收口: 12=Spacing.LG(零视差) — 小欧-2026-11-02
+          // 2026-11-02 小欧 - 收口: 12=Spacing.LG(零视差) — 小欧-2026-11-02
           paddingTop: Spacing.LG,
           paddingBottom: Spacing.LG,
         }}
@@ -206,12 +206,12 @@ const NavContent: React.FC<{
           bottom: isMobile ? 0 : SIDER_TRIGGER_HEIGHT,
           left: 0,
           right: 0,
-          // 2026-10-27 小欧 - 窄菜单模式下减少左右padding, 防止文字被截断; 2026-11-02 三堂会审收口: 16=Spacing.XL, 8=Spacing.MD, 20=Spacing.XXL — 小欧-2026-10-27
+          // 2026-10-27 小欧 - 窄菜单模式下减少左右padding, 防止文字被截断; 2026-11-02 收口: 16=Spacing.XL, 8=Spacing.MD, 20=Spacing.XXL — 小欧-2026-10-27
           padding:
             sidebarMode === 'narrow'
               ? `${Spacing.XL}px ${Spacing.MD}px`
               : `${Spacing.XL}px ${Spacing.XXL}px`,
-          // 2026-11-02 小欧 - 三堂会审收口: #e8e8e8=Colors.BORDER.VERTICAL(同值零视差) — 小欧-2026-11-02
+          // 2026-11-02 小欧 - 收口: #e8e8e8=Colors.BORDER.VERTICAL(同值零视差) — 小欧-2026-11-02
           borderTop: `1px solid ${Colors.BORDER.VERTICAL}`,
           // 13px保留裸值: FontSize令牌二档14/12, 换任一即变视觉, 无同值可替 — 小欧-2026-11-02
           fontSize: 13,

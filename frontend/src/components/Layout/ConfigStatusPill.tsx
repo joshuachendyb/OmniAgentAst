@@ -184,7 +184,7 @@ const ConfigStatusPill: React.FC = () => {
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          // 2026-11-02 小欧 - 三堂会审令牌纪律: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM(例: SidebarModeSwitcher同款) — 小欧-2026-11-02
+          // 2026-11-02 小欧 - 令牌纪律: pad 4/8=Spacing.XS/MD, 圆角4=Radius.SM(例: SidebarModeSwitcher同款) — 小欧-2026-11-02
           padding: `${Spacing.XS}px ${Spacing.MD}px`,
           borderRadius: Radius.SM,
           cursor: checking ? 'default' : 'pointer',
