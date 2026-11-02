@@ -10,6 +10,7 @@
 // 编辑历史: 2026-11-02 小欧 - Tip 视觉重做: 改共用 PillTip 骨架(状态点/标题/分隔线/对齐键值/明细), 地址走等宽可选中 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 浮层改白卡片(color+styles.body), 键值行序=本机/访问/前缀/连接/耗时/进程 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 打开Tip即静默重检: 挂载快照会被后端重启/字段变更拖旧(空值误判), 静默重检不翻检测中态免闪烁 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 耗时改 时:分:秒.毫秒 渲染(31ms→00:00:00.031), Tip 耗时行与缓慢态结论同格式 — 小欧-2026-11-02
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Tooltip } from 'antd';
 import type { BadgeProps } from 'antd';
@@ -31,6 +32,14 @@ const HOVER_BG = Colors.BG.HOVER;
 const TIP_ROOT_MAX_W = PILL_TIP_MAX_W + Spacing.LG * 2 + BorderWidth.THIN * 2;
 // 2026-11-02 小欧 - 本机探活正常在10ms级, 超1.5s说明事件循环已被占死(见AGENTS.md卡死取证) — 小欧-2026-11-02
 const SLOW_MS = 1500;
+// 2026-11-02 小欧 - 耗时统一渲染为 时:分:秒.毫秒(纯毫秒数在秒级/超时值上不可读) — 小欧-2026-11-02
+const formatDuration = (ms: number): string => {
+  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+  const hour = Math.floor(ms / 3_600_000);
+  const minute = Math.floor((ms % 3_600_000) / 60_000);
+  const second = Math.floor((ms % 60_000) / 1000);
+  return `${pad(hour)}:${pad(minute)}:${pad(second)}.${pad(ms % 1000, 3)}`;
+};
 // 2026-11-02 小欧 - 胶囊态→Tip 状态点色语义映射 — 小欧-2026-11-02
 const TONE_OF = {
   ok: 'ok',
@@ -94,7 +103,7 @@ const deriveState = (
       kind: 'slow',
       text: '服务缓慢',
       color: Colors.WARNING,
-      main: `后端响应耗时 ${latencyMs}ms，事件循环可能被占死`,
+      main: `后端响应耗时 ${formatDuration(latencyMs)}，事件循环可能被占死`,
     };
   }
   if (health.status !== 'healthy') {
@@ -167,7 +176,10 @@ const ServiceStatusPill: React.FC = () => {
     { label: '访问', value: host || '未上报', mono: true },
     { label: '前缀', value: API_BASE_URL, mono: true },
     { label: '连接', value: CONN_KIND },
-    { label: '耗时', value: latencyMs !== null ? `${latencyMs}ms` : '—' },
+    {
+      label: '耗时',
+      value: latencyMs !== null ? formatDuration(latencyMs) : '—',
+    },
     {
       label: '进程',
       value: healthStatus?.pid ? String(healthStatus.pid) : '—',
