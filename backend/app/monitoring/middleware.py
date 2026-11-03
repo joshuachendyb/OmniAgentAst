@@ -10,6 +10,7 @@
 小欧 2026-08-14 monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 """
 
+import asyncio
 import time
 from typing import Dict, List, Optional, Any
 
@@ -102,17 +103,20 @@ class MonitoringMiddleware:
         
         if status_code >= 400:
             self._record("errors_total", 1, {**base_labels, "status": str(status_code)})
-        # 11.2-C 落 monitoring.db（后台线程/连接池，不阻塞事件循环）— 小欧 2026-11-03
-        #   原实现同步调用 persist_http_request → get_conn_with_retry → time.sleep 重试，
-        #   全跑在事件循环线程上，撞锁时整站停摆（2026-11-03 实测 py-spy 卡在 db/database.py:274）。
-        #   改为 await db.atxn（跑在 _DB_TXN_POOL 子线程），loop 永不被 DB I/O 占用。
+        # 11.2-C 落 monitoring.db（fire-and-forget：不阻塞响应路径与事件循环）— 小欧 2026-11-03
+        #   原 await storage.persist_http_request 会让 response.start 等 DB 写完成（虽在子线程不占 loop，但延迟首字节）。
+        #   改为 create_task 调度，异常在 task 内捕获并记录，主链路零等待。
         from app.monitoring import storage
         _kind = "llm" if path == "/api/v1/chat/stream" else "other"
-        try:
-            await storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
-        except Exception as _e:
-            from app.logger import logger
-            logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2
+
+        async def _do_persist():
+            try:
+                await storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
+            except Exception as _e:
+                from app.logger import logger
+                logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")
+
+        asyncio.create_task(_do_persist())
 
 
 def setup_monitoring(app) -> MetricsCollector:

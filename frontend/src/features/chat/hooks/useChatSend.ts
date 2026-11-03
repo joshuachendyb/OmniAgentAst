@@ -105,6 +105,9 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const isSendingRef = useRef(false);
   // 2026-10-08 小欧 - 插话在飞单飞。isSendingRef 不可复用(它 finally 要等整条 SSE 跑完, 会把插话永久挡死)
   const isInterjectingRef = useRef(false);
+  // 2026-11-03 小欧 - 所属会话 id（owner-scoped 防重）：A 任务在跑时切 B 并发送，B 的 finally 才清 guard，
+  //   A 的 finally 因 sendingSessionRef 已被 B 覆盖而不误清；auto-create 后更新为新建会话 id。 — 小欧-2026-11-03
+  const sendingSessionRef = useRef<string | null>(null);
 
   // 2026-11-03 小欧 - 会话切换复位防重标记（北京老陈报告：任务在跑时点"新建会话"，新会话发送钮解灰后
   //   仍发不出去）。病根：防重标记的生命周期覆盖整条 SSE（handleSend 的 await 直到流结束），在 A 跑任务
@@ -115,6 +118,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   useEffect(() => {
     if (prevSessionIdRef.current !== null) {
       isSendingRef.current = false;
+      sendingSessionRef.current = null;
       isInterjectingRef.current = false;
     }
     prevSessionIdRef.current = sessionId;
@@ -135,8 +139,11 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       // 1. 基础验证（插话不受 isSendingRef 约束, 也不占用该标记）
       if (!messageContent.trim()) return;
       if (!isInterject) {
-        if (isSendingRef.current) return;
+        // 2026-11-03 小欧 - owner-scoped 防重：只当"同一会话的发送仍在飞"才挡；
+        //   A 跑任务时切 B 并发送，sendingSessionRef(A) !== sessionId(B) → 不挡，B 可发。
+        if (isSendingRef.current && sendingSessionRef.current === sessionId) return;
         isSendingRef.current = true;
+        sendingSessionRef.current = sessionId; // 初始 owner（auto-create 前为 null，创建后更新）
       } else if (isInterjectingRef.current) {
         return; // 2026-10-08 小欧 - 插话在飞, 拒重复提交
       } else {
@@ -184,6 +191,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       setMessages((prev) => [...prev, userMessage]);
       logUserSend(userMessage.content);
 
+      let ownerForCleanup: string | null = sessionId;
       try {
         // 7. 创建会话（如果需要）
         let currentSessionId = sessionId;
@@ -194,6 +202,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           currentSessionId = newSession.session_id;
           setSessionId(currentSessionId);
           currentSessionIdRef.current = currentSessionId;
+          if (!isInterject) sendingSessionRef.current = currentSessionId; // auto-create后更新owner
+      if (!isInterject) ownerForCleanup = currentSessionId;
           // 2026-09-30 小欧 - 自动建会话同样要把 id 写进 URL（经唯一写入口上抛），
           //   否则刷新后地址栏无 session_id，只能回退到"最近会话"猜测
           onUrlSessionChange?.(currentSessionId);
@@ -253,7 +263,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         // finally只负责清理防重标记和计时器
         // 2026-10-07 小欧 - 插话不碰这些(计时器属运行中任务, 清它=把等待钟面打没)
         if (!isInterject) {
-          isSendingRef.current = false; // 2026-08-28 小强 修复#12: 重置防重标记
+          if (sendingSessionRef.current === ownerForCleanup) { isSendingRef.current = false; sendingSessionRef.current = null; }
           // 停止等待计时器
           if (waitTimerRef.current) {
             clearInterval(waitTimerRef.current);
