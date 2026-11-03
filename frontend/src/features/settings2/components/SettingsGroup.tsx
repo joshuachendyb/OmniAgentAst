@@ -37,6 +37,8 @@
 // 2026-11-01 小欧 - 键名统一: sectionOf 判据 llm.context_limit_default → llm.context_length_default
 //   （后端 settings_registry 键已改名；此处不改则「通用兜底模型参数」小节永远匹配不到） — 小欧-2026-11-01
 // 2026-11-03 小欧 - sectionOf system 分支增「数据治理」分组: system.chat_retention_days 匹配到后单列一节渲染 — 小欧-2026-11-03
+// 2026-11-03 小欧 - 系统组现状更正(L10/L80 的「3 小节/12 项」已过期): 实际 5 小节 = 运维日志/工程目录/网络/
+//   数据治理/关于, 共 13 项; 无 app.* 项故「系统参数」小节不渲染 — 小欧-2026-11-03
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -78,6 +80,8 @@ function sectionOf(group: string, key: string): string | null {
   }
   if (group === 'system') {
     // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
+    // 2026-11-03 小欧 - 更正: 现 5 小节(运维日志/工程目录/网络/数据治理/关于), system 组 13 项;
+    //   无 app.* 项, 下方 app. 分支保留为将来扩展兜底 — 小欧-2026-11-03
     // 2026-09-23 小欧 - cors_origins 自 tuning 迁入系统组：关于上方新增「网络」分块，键名 network.cors_origins — 小欧-2026-09-23
     if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';
     if (key.startsWith('paths.')) return '工程目录';
