@@ -5,6 +5,9 @@
 # 2026-10-30 - 小欧 - 停摆判据改用"事件循环独立心跳"(见 _loop_ticker) — 原判据只认 reader 的
 #   beat, 客户端背压(reader 卡在 yield)时 beat 同样缺失, 会被误判成停摆并 dump 出无证据的栈;
 #   全局"写阻塞计数"方案已否决: 一个僵死客户端会让看门狗对所有 reader 永久失效。
+# 2026-11-04 小欧 - dump 改有界执行(_run_bounded): subprocess.run 的 timeout 管不到 Popen.__init__,
+#   2026-11-04 卡死事故中 py-spy 卡在 CreateProcess 内 → 看门狗线程被永久占住, 现场全丢;
+#   现整个调用放一次性 daemon 线程 + 有界 join, 超时放弃并留痕。
 """
 loop_watchdog — 事件循环心跳看门狗
 
@@ -152,6 +155,29 @@ def _watch_loop() -> None:
             logger.warning(f"[观测] 看门狗巡检异常(线程不退出, 下轮继续): {type(_e).__name__}: {_e}")
 
 
+def _run_bounded(cmd: List[str], timeout: float):
+    """有界执行外部取证命令 — 2026-11-04 小欧
+
+    为什么不能用 subprocess.run(timeout=...): 它的 timeout 只在 Popen 构造成功后才生效,
+    而 2026-11-04 事故中 py-spy 正是卡在 Popen.__init__(CreateProcess) 内 —— 超时根本没开始,
+    看门狗线程被永久占住, 现场全丢(logs/pyspy 最新文件仍是 2026-10-29)。
+    改为: 整个调用放进一次性 daemon 线程, 主线程只做有界 join, 超时即放弃留痕。"""
+    box: list = []
+
+    def _worker():
+        try:
+            box.append(subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace"))
+        except Exception as _e:      # noqa: BLE001 - 取证失败不能打断看门狗
+            box.append(_e)
+
+    t = threading.Thread(target=_worker, daemon=True, name="watchdog-pyspy")
+    t.start()
+    t.join(timeout + 5)
+    return box[0] if box else None
+
+
 def _dump_evidence(stale: float) -> None:
     """py-spy dump 全PID留证; py-spy不可用时降级告警(§4.4③) — 小欧 2026-10-04"""
     pids: List[int] = [os.getpid(), os.getppid()]
@@ -164,13 +190,12 @@ def _dump_evidence(stale: float) -> None:
     ts = time.strftime("%Y%m%d_%H%M%S")
     dumped = False
     for pid in pids:
-        try:
-            r = subprocess.run(
-                [py_spy, "dump", "--pid", str(pid)],
-                capture_output=True, text=True, timeout=30,
-                encoding="utf-8", errors="replace")
-        except Exception as _e:
-            logger.warning(f"[观测] py-spy dump pid={pid}异常({_e}) → 手动: py-spy dump --pid {pid}")
+        r = _run_bounded([py_spy, "dump", "--pid", str(pid)], 30)
+        if r is None:
+            logger.warning(f"[观测] py-spy dump pid={pid} 超35s未返回(进程级挂起) → 手动: py-spy dump --pid {pid}")
+            continue
+        if isinstance(r, Exception):
+            logger.warning(f"[观测] py-spy dump pid={pid}异常({r}) → 手动: py-spy dump --pid {pid}")
             continue
         if r.returncode != 0:
             logger.warning(f"[观测] py-spy dump pid={pid}失败(rc={r.returncode}): {(r.stderr or r.stdout or '')[:300]} → 手动: py-spy dump --pid {pid}")

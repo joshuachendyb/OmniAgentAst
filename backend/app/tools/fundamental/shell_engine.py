@@ -98,6 +98,13 @@
 # 2026-09-22 小欧 - constants.py 配置化迁移：shell_pool 槽位改读 tuning 配置
 # 2026-10-09 - 小欧 - _CLEANUP_GUARD_TIMEOUT 15→10(北京老陈裁定「全局15 清理阀门为10」): 本值是OS级挂起时清理链最长等待的设计上限非实测值(实测365.2ms, 不可用实测替代设计阈值定档); 10s仍完整覆盖taskkill(5s)+_poll_pid_exit二次确认(5s)+unlink(0.15s)。
 # 强耦合·改一须破一同步: 本值 < INSURANCE_BUFFER(15) ⇒ 保险丝恒晚于_await_cleanup_guard返回, 绝不截断补清理; 日后若调到>15须同步上调BUFFER否则临时文件残留。实测timeout=2死循环: 清理365.2ms/总3.92s(<窗口17s)/6临时文件零残留; 边界留痕: "守卫线程异常死亡"兜底分支理论最坏 join(10)+_kill_tree(≤10)=20s>15, 触发前提极苛刻不改(该兜底是清理残留最后一道, 削它属本末倒置)。compliance: KISS-DIRECT/禁止backward
+# 2026-11-04 小欧 - 根治 shell 卡死全局放大(逐线程取证: 4个新建线程 CPU=0 且 _started 从未置位, 卡在 Thread.start()):
+#   ① _exec_locked 删"每条命令起临时写线程"(_wrt.start() 是卡死点) → 实例级常驻 _StdinWriter 单线程, 线程创建从每命令一次降为每实例一次;
+#   ② _probe 改轻量探活(proc.poll + 写通道健康), 不再复用 _exec(原探活要建6个临时文件+全套执行框架, 使 acquire 复用路径成为卡死入口);
+#   ③ _start 就绪握手仍真跑一条探针(_exec): stdout=DEVNULL 无法回读, 且必须验证"能执行",
+#     冷启动~1.5s 必须落在 _start 内(否则占用调用方 timeout, timeout=1 会反复重建);
+#     该路径原本也走 _exec, 线程创建点已由 ① 根除, 故无新增风险。
+#   验证: 池/引擎测试全绿, acquire 复用探活由秒级降至微秒级, 就绪语义与旧实现一致。
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -135,7 +142,7 @@ import atexit
 import contextlib
 import locale
 import os
-import re as re_mod
+import queue
 import shutil
 import subprocess
 import sys
@@ -146,7 +153,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from app.logger import logger, log_recovered  # ② 已自愈档 — 小欧 2026-10-06
-from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT_SHORT
+from app.tools.tool_constants import SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT_SHORT
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -161,13 +168,13 @@ from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, SHELL_POOL_IDLE_TIMEOU
 #   C4  多行命令经stdin→PS解析器卡死等待输入
 #       → _exec_locked: ps_cmd写.ps1文件 + 只喂一句【单行】dot-source
 #   C5  向已死进程写stdin→管道阻塞
-#       → _exec_locked: 写前poll探活 + BrokenPipe/OSError捕获→_EXIT_PROCESS_DIED
+#       → 实例级常驻写线程 _StdinWriter(队列+Event有界等待) + 写前poll探活; 超时=写线程卡住→判死重建 — 2026-11-04 小欧
 #   C6  锁内阻塞操作→拖死全池
 #       → acquire evict_to_close / release close / cleanup close 全部移出池锁
 #   C7  池锁↔实例锁交叉死锁
 #       → 锁序固定「先池锁释放→再拿实例锁」, 从不嵌套持有(无环可成)
 #   C8  半死进程(假活)复用→exec挂起
-#       → _probe()响应性探活 + _start()就绪握手(_READY_PROBE_TIMEOUT=10s) + _poll_for_file超时兜底kill
+#       → _probe()轻量探活(进程存活+写通道健康, 微秒级, 不建临时文件/不起线程) + 真执行timeout兜底kill — 2026-11-04 小欧
 #   C9  清理打断in-flight exec
 #       → close() acquire(timeout=5)未获锁也force-kill进程; exec侧_poll_for_file有界返回
 #   C10 子进程持管道→communicate挂满(仅cmd/bash分支)
@@ -190,9 +197,8 @@ from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, SHELL_POOL_IDLE_TIMEOU
 _ERROR_NO_SHELL = {"stdout": "", "stderr": "PowerShell不可用", "exit_code": -1}
 _ERROR_TIMEOUT  = {"stdout": "", "stderr": "timeout", "exit_code": -1, "timed_out": True}
 _EXIT_PROCESS_DIED = -2          # 进程死亡 sentinel，外部重试用
-_PROBE_TIMEOUT = 3               # 响应性探活超时(秒)：半死进程3秒内无回执即判死 — 小欧 2026-08-06
 _READY_PROBE_TIMEOUT = 10        # 就绪握手超时(秒)：首次启动慢(profile/杀软/慢盘)放宽到10s, 防误杀刚拉起进程 — 小欧 2026-08-06
-_PROBE_CMD = "Write-Output __OMNI_PROBE__"   # 探活命令：轻量、无副作用、输出唯一标记 — 小欧 2026-08-06
+_PROBE_CMD = "Write-Output __OMNI_PROBE__"   # 就绪握手探针命令：轻量、无副作用、输出唯一标记 — 小欧 2026-08-06
 ACQUIRE_WAIT_TIMEOUT = 2        # acquire 并发限流等待超时(秒)：有界排队, 超时明确抛ShellPoolBusyError(不temp不卡死) — v2.8 小欧 2026-08-06
 _CWD_WAIT_TIMEOUT = 3           # .cwd落地等待超时(秒)：ps_cmd最后一行才写.cwd, code有内容≠PS执行完, 等.cwd非空=PS已完成最后Out-File(句柄已释放) — v2.11 小欧 2026-08-08
 _UNLINK_RETRY = 3               # 临时文件unlink失败重试次数：覆盖Out-File句柄延迟释放竞态窗口(作用于全部6个临时文件) — v2.11 小欧 2026-08-08
@@ -208,6 +214,70 @@ _CLEANUP_GUARD_TIMEOUT = 10     # [M1] 清理链守护线程join超时(秒): M6�
 _LOCK_WAIT_GUARD = 10        # 实例锁等待护栏(秒): 等锁上限=_LOCK_WAIT_GUARD+命令timeout, 超时返回_ERROR_LOCK_BUSY — 治理层3 小欧 2026-10-04
 _STDIN_WRITE_TIMEOUT = 5     # stdin写入上限(秒): 超时=存活不读(管道背压/半死) → M6守卫清理+重启 — 治理层3 小欧 2026-10-04
 _ERROR_LOCK_BUSY = {"stdout": "", "stderr": "shell instance lock busy", "exit_code": -1}   # 等锁超时明确失败,dict模式同:188 — 治理层3 小欧 2026-10-04
+
+# ═══════════════════════════════════════════════════════
+#  _StdinWriter — 实例级常驻 stdin 写线程
+# ═══════════════════════════════════════════════════════
+
+class _StdinWriter:
+    """实例级常驻 stdin 写线程：命令路径零线程创建，写操作有界等待 — 2026-11-04 小欧
+
+    【为什么必须常驻】原 _exec_locked 每条命令 new 一个临时写线程并 join；
+    事故取证(2026-11-04)显示 Thread.start() 在 Windows 线程入口偶发停顿：
+    新线程 CPU=0 且 threading.Event._started 从未置位，主线程永久卡在
+    threading.Thread.start() 内 → 该 executor worker 再也回不来 → 超时重试逐个烧掉
+    默认 executor → getaddrinfo 也排不上 → 事件循环整体僵死。
+    改为实例级常驻单线程后，线程创建从"每命令一次"降为"每实例一次"，
+    命令路径只剩 queue.put + Event.wait(timeout)，不存在任何线程创建点。
+
+    【有界语义】写线程卡在 stdin.write(管道背压/进程半死)时，调用方 wait 超时即返回，
+    由 _exec_locked 判死并走 M6 守卫清理+重建；写线程本身 daemon，随实例销毁自生自灭。
+    """
+
+    _SENTINEL = object()
+
+    def __init__(self, stdin, name: str = "shell-stdin-writer"):
+        self._stdin = stdin
+        self._q: "queue.Queue" = queue.Queue()
+        self._broken = False
+        self._thread = threading.Thread(target=self._run, daemon=True, name=name)
+        self._thread.start()
+
+    def _run(self):
+        while True:
+            item = self._q.get()
+            if item is _StdinWriter._SENTINEL:
+                return
+            data, evt, box = item
+            try:
+                self._stdin.write(data)
+                self._stdin.flush()
+            except (BrokenPipeError, OSError, ValueError) as e:
+                box.append(e)
+            finally:
+                evt.set()
+
+    def write(self, data: bytes, timeout: float) -> Optional[BaseException]:
+        """有界写入：None=成功；异常实例=写失败(管道死)；TimeoutError=写线程卡住。"""
+        if self._broken:
+            return BrokenPipeError("stdin writer 已标记损坏")
+        evt = threading.Event()
+        box: list = []
+        self._q.put((data, evt, box))
+        if not evt.wait(timeout):
+            self._broken = True     # 卡住的写线程无法自愈，后续写直接快速失败，促调用方判死重建
+            return TimeoutError(f"stdin写入{timeout}s未返回")
+        return box[0] if box else None
+
+    def healthy(self) -> bool:
+        """写通道健康 = 未损坏 且 写线程仍存活(仅查状态，不做任何阻塞操作)。"""
+        return (not self._broken) and self._thread.is_alive()
+
+    def stop(self):
+        """投递退出哨兵(不 join)：线程空闲时立即退出，卡在 write 时随实例销毁自灭。"""
+        self._broken = True
+        self._q.put(_StdinWriter._SENTINEL)
+
 
 # ═══════════════════════════════════════════════════════
 #  _TempFiles — 临时文件 contextmanager
@@ -379,6 +449,7 @@ class PersistentShell:
         self._shell_type = shell_type
         self._stderr_path: Optional[str] = None   # stderr 日志文件路径(半死可观测) — 小欧 2026-08-06
         self._stderr_handle = None                # v2.10 BugFix(小健 2026-08-06): 持stderr句柄引用, Popen异常时显式关闭防句柄泄漏(详见_start)
+        self._stdin_writer: Optional[_StdinWriter] = None   # 实例级常驻写线程(命令路径零线程创建) — 2026-11-04 小欧
         self._guard_ctx: Optional[dict] = None    # [守卫拆分 小欧 2026-09-19] 守卫拆分上下文: 见 _cleanup_guard_start/_await_cleanup_guard
 
     # ── 公共方法 ────────────────────────────────
@@ -437,24 +508,54 @@ class PersistentShell:
             return True
         return self._start(env)
 
-    def _probe(self, env: Optional[Dict[str, str]] = None, timeout: Optional[int] = None) -> bool:
-        """响应性探活(纯探测, 不重建)：进程死或半死返回 False, 由调用方决定重建。— [卡死场景C8] 小欧 2026-08-06
-        复用 _exec 机制(DRY)：半死时 _exec 内部 _poll_for_file 超时 → 自动 _kill_tree+_close。
-        timeout 可选: 就绪握手传 _READY_PROBE_TIMEOUT(首次启动慢), 探活默认 _PROBE_TIMEOUT。 — 小欧 2026-08-06
-        返回 True=健康可复用; False=进程不可用(可能已被 _exec 销毁)。 — 小欧 2026-08-06"""
-        if self._proc is None or self._proc.poll() is not None:
-            return False                      # 进程已死/未启动 → 不可复用
-        try:                                            # [M7] 保序: 底层 _exec 任何异常都被捕获, 367 上报必达 — 小欧 2026-09-19
-            result = self._exec(_PROBE_CMD, timeout=timeout or _PROBE_TIMEOUT)   # 复用现有执行机制
-        except Exception as e:
-            logger.warning(f"[卡死C8] 探活异常(非timeout)→已销毁重建 (pid={getattr(self._proc, 'pid', None)}, err={e})")
-            self._close()
+    def _probe(self) -> bool:
+        """轻量探活(纯状态查询, 微秒级, 不建临时文件/不起线程/不执行命令) — 2026-11-04 小欧
+
+        判据: 进程存活(poll) + stdin 写通道健康(_StdinWriter 未损坏且线程存活)。
+        【为什么不再复用 _exec】原实现每探活一次就要建 6 个临时文件、走完整执行框架、
+        再起一个写线程 —— 使 acquire 复用路径本身成为卡死入口(本次事故 step4 即
+        acquire→_probe→_exec→Thread.start 卡住)，且正常路径白付秒级开销。
+        【半死进程怎么办】探活不再验证"命令能否执行"，这类实例在真执行时由
+        _poll_for_file(timeout) 捕获 → 守卫杀进程 → release 判死剔除 → 下次重建。
+        代价是偶发一次 timeout，换来探活零成本、零卡死风险。
+        【M7 保序】任何异常都不得逃逸出本方法，统一判不可用并销毁。"""
+        try:
+            if self._proc is None or self._proc.poll() is not None:
+                return False                      # 进程已死/未启动 → 不可复用
+            w = self._stdin_writer
+            if w is None or not w.healthy():
+                logger.warning(f"[卡死C8] 探活失败(stdin写通道不可用)→销毁 (pid={getattr(self._proc, 'pid', None)})")
+                self._close()
+                return False
+            return True
+        except Exception as e:                    # [M7] 异常本地化: 上报必达, 绝不向上抛 — 小欧 2026-11-04
+            logger.warning(f"[卡死C8] 探活异常→销毁重建 (err={e!r})")
+            try:
+                self._close()
+            except Exception:
+                pass
+            return False
+
+    def _ready_handshake(self) -> bool:
+        """启动就绪握手: 真跑一条探针命令, 确认 pwsh 已能执行(不只是管道可写) — 2026-11-04 小欧
+
+        【为什么必须真执行】① stdout 是 DEVNULL, 无法靠回读输出判就绪, 只能看结果文件;
+        ② "管道可写"不等于"能执行": profile 损坏/解析器异常只有真跑一条才暴露;
+        ③ 冷启动实测约1.5s, 必须落在 _start 内 —— 否则这1.5s会占用调用方的 timeout 预算,
+           timeout=1 的命令在重启后必然再次超时, 陷入"超时→重建→再超时"的恶性循环。
+        【为什么现在安全】旧实现的问题不在本路径, 而在 _exec_locked 每条命令都新建写线程
+        (Thread.start 是事故卡死点); 该点已由实例级常驻 _StdinWriter 根除, 故此处复用
+        _exec 不再有任何线程创建。且本方法只在新建实例时走一次(_probe 热路径已改轻量状态查询)。
+        【M7 保序】异常不外抛, 统一判未就绪。"""
+        try:
+            result = self._exec(_PROBE_CMD, timeout=_READY_PROBE_TIMEOUT)
+        except Exception as e:                    # [M7] 异常本地化 — 小欧 2026-11-04
+            logger.warning(f"[卡死C8] 就绪握手异常→判未就绪: {e!r}")
             return False
         if result.get("timed_out"):
-            logger.warning(f"[卡死C8] 探活失败(半死)→已销毁 (pid={getattr(self._proc, 'pid', None)})")
-            self._close()                     # 半死销毁(重建由调用方负责)
+            logger.warning("[卡死C8] 就绪握手超时(冷启动过慢/进程半死)→判未就绪")
             return False
-        return "__OMNI_PROBE__" in result.get("stdout", "")
+        return "__OMNI_PROBE__" in (result.get("stdout") or "")
 
     def _start(self, env: Optional[Dict[str, str]] = None) -> bool:
         self._close()
@@ -504,10 +605,10 @@ class PersistentShell:
                 self._close()
                 return False
             self._alive = True
-            # ② 就绪握手：启动后立即纯探测一次，未就绪则销毁(调用方重建) — 治#3 小欧 2026-08-06
+            # ② 常驻写线程 + 就绪握手(轻量)：启动后立即投一条探针确认管道可写、进程未秒退 — 2026-11-04 小欧
             # v2.7 BugFix(小欧 2026-08-06): 握手用 _READY_PROBE_TIMEOUT(10s), 避免冷启动>3s被误杀
-            # [卡死场景C8] 半死进程假活防护: 冷启动慢/杀软/慢盘不误杀, 真半死则销毁重建 — 小欧 2026-08-06
-            if not self._probe(env, timeout=_READY_PROBE_TIMEOUT):
+            self._stdin_writer = _StdinWriter(self._proc.stdin)
+            if not self._ready_handshake():
                 # ② 补偿已完整: 半死进程被 _close 销毁并由调用方重建, 无泄漏无损坏 → RECOVERED(②)
                 log_recovered(logger, "[PersistentShell] 就绪握手失败，进程未就绪(已销毁待重建)")
                 self._close()
@@ -605,27 +706,22 @@ class PersistentShell:
                 if self._proc is None or self._proc.poll() is not None:
                     logger.warning(f"[卡死C5] 写stdin前探活: 进程已死, 返回_EXIT_PROCESS_DIED → 走重启分支 (pid={self._proc.pid if self._proc else None})")
                     return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
-                # 治理层3(2026-10-04 小欧): stdin写入有界化, daemon线程+join(_STDIN_WRITE_TIMEOUT), 异常归集回抛复用下方C5分支。
-                #   超时=存活不读(管道背压/半死) → M6守卫清理, 返回_EXIT_PROCESS_DIED走重启, 不再无限阻塞。
-                _stdin = self._proc.stdin
-                _wr_err: list = []
-                def _do_write():
-                    try:
-                        _stdin.write(feed.encode(locale.getpreferredencoding(), errors="replace"))
-                        _stdin.flush()
-                    except (BrokenPipeError, OSError, ValueError) as _e:
-                        _wr_err.append(_e)
-                _wrt = threading.Thread(target=_do_write, daemon=True, name="shell-stdin-writer")
-                _wrt.start()
-                _wrt.join(_STDIN_WRITE_TIMEOUT)
-                if _wr_err:
-                    raise _wr_err[0]
-                if _wrt.is_alive():
-                    logger.warning(f"[卡死C5b] stdin写入{_STDIN_WRITE_TIMEOUT}s未返回(管道背压/半死) → M6守卫清理+重启 (pid={self._proc.pid if self._proc else None})")
+                # 2026-11-04 小欧 - 根治: 原此处每条命令 new 一个临时写线程并 join(Thread.start 是事故卡死点)。
+                #   改由实例级常驻 _StdinWriter 投递(队列+Event有界等待): 命令路径零线程创建。
+                #   超时=写线程卡住(管道背压/半死) → M6守卫清理+重启, 不再无限阻塞。
+                _w = self._stdin_writer
+                if _w is None:
+                    logger.warning("[卡死C5] stdin写通道缺失(实例未就绪) → 返回_EXIT_PROCESS_DIED, 走重启分支")
+                    return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
+                _wr_err = _w.write(feed.encode(locale.getpreferredencoding(), errors="replace"), _STDIN_WRITE_TIMEOUT)
+                if isinstance(_wr_err, TimeoutError):
+                    logger.warning(f"[卡死C5b] stdin写入{_STDIN_WRITE_TIMEOUT}s未返回(写线程卡住/管道背压) → M6守卫清理+重启 (pid={self._proc.pid if self._proc else None})")
                     self._cleanup_guard_start()
                     return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
+                if _wr_err is not None:
+                    raise _wr_err
             except (BrokenPipeError, OSError, ValueError):
-                logger.warning(f"[卡死C5] 向死进程写stdin触发管道异常(BrokenPipe/OSError/ValueError) → 返回_EXIT_PROCESS_DIED, 走重启分支")
+                logger.warning("[卡死C5] 向死进程写stdin触发管道异常(BrokenPipe/OSError/ValueError) → 返回_EXIT_PROCESS_DIED, 走重启分支")
                 return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
 
             # [卡死场景C8/C14] 有界兜底: 命令超时(含半死/死循环/锁被hold) → 守卫清理, 返回timeout(非永久阻塞) — 小欧 2026-08-06
@@ -693,6 +789,7 @@ class PersistentShell:
         ctx["pid"] = getattr(self._proc, 'pid', None)
         self._proc = None
         self._alive = False
+        self._discard_stdin()                           # 写线程随实例销毁(投哨兵, 不 join) — 2026-11-04 小欧
 
         err_box: list = []                              # [异常兜底 小欧 2026-09-19] daemon线程异常通信(闭包列表)
         def _worker():
@@ -886,8 +983,17 @@ class PersistentShell:
                 logger.warning(f"[卡死C11] 关闭进程失败(pid={self._proc.pid}): {e}")
             self._proc = None
             self._alive = False
+        # 2026-11-04 小欧 - 写线程回收: 先投哨兵再清引用, 空闲线程立即退出(卡在write的随进程销毁自灭)
+        self._discard_stdin()
         # [超时分支回收 小欧 2026-09-19] stderr 句柄+临时文件回收统一走 _discard_stderr(与守卫超时分支共用, DRY)
         self._discard_stderr(self._proc)
+
+    def _discard_stdin(self):
+        """回收 stdin 常驻写线程(幂等, 不 join) — 2026-11-04 小欧"""
+        w = self._stdin_writer
+        self._stdin_writer = None
+        if w is not None:
+            w.stop()
 
 
 # ═══════════════════════════════════════════════════════
@@ -933,7 +1039,7 @@ class ShellPoolManager:
           Phase0: sem.acquire(有界等待) — 同key并发≤max_per_type; 超时明确抛ShellPoolBusyError
                   (拿到槽位⇒活跃acquire<max⇒池满则必有空闲复用/未满则新建, temp分支不可达, 已删)
           Phase1(持锁): 仅找空闲实例+空闲超时兜底, 零耗时(治#6)
-          Phase2(解锁): 复用→_probe()探活; 新建→_start()启动
+          Phase2(解锁): 复用→_probe()轻量探活; 新建→_start()启动
           Phase3: 探活/启动失败→剔除销毁→有界重试
         槽位生命周期: acquire 拿1槽; release/cleanup 各归还1次(_inst_map存在性判定防超归)
         锁序防死锁(C7): 先取池锁(Phase1) → 释放后再拿实例锁(Phase2), 从不嵌套持有两把锁
@@ -993,8 +1099,8 @@ class ShellPoolManager:
                 # [卡死场景C6] 锁外 close 空闲超时淘汰实例, 不阻塞全池 — v2.7 BugFix(小欧 2026-08-06)
                 for inst in evict_to_close:
                     inst.close()
-                # ── Phase2(解锁): 新建→_start; 复用→_probe(失败必 return False, 经 _close 销毁, M7 保序) ──
-                ok = inst._start(env) if fresh else inst._probe(env)   # v2.7 BugFix: env 透传, 防 API key 泄漏 — 小欧 2026-08-06
+                # ── Phase2(解锁): 新建→_start; 复用→_probe(轻量探活, 不执行命令/不建临时文件/不起线程) ──
+                ok = inst._start(env) if fresh else inst._probe()   # v2.7 BugFix: env 透传, 防 API key 泄漏 — 小欧 2026-08-06
                 if ok:
                     return inst
                 # [卡死场景C13] Phase3: 失败→销毁剔除→有界重试

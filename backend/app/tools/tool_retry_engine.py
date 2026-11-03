@@ -92,9 +92,13 @@ Author: 小沈 - 2026-05-27
 """
 
 import asyncio
+import concurrent.futures
 import inspect
+import queue
+import threading
 from typing import Any, Callable, Dict, Optional
 
+from app.config import get_config
 from app.logger import logger
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
@@ -146,6 +150,60 @@ INSURANCE_BUFFER = 15
 PROGRESSIVE_MAX = 300
 
 # ============================================================
+# shell 专用有界执行器 — 2026-11-04 小欧 根治(shell 卡死全局放大)
+#
+# 【病根】shell() 是同步函数, 原经 asyncio.to_thread 落到事件循环的【默认】executor。
+#   ① asyncio.wait_for 无法取消线程 → 每次超时永久占死一个默认 worker;
+#   ② 更致命: ThreadPoolExecutor.submit 在"需要新建 worker"时, 会在【调用线程】里执行
+#      Thread.start()(concurrent/futures/thread.py _adjust_thread_count), 而 shell 正是
+#      从事件循环线程提交的 → 线程创建一旦停顿(2026-11-04 事故: 新线程 CPU=0、
+#      _started 从未置位), 事件循环当场僵死, 连 getaddrinfo 的 run_in_executor 也陪葬。
+# 【方案】
+#   ① 隔离: shell 走专用执行器, 默认 executor 只留给 DNS/文件等短任务;
+#   ② 预热: worker 在导入期一次性建满, 运行期 submit 只入队 —— "在 loop 线程里创建线程"
+#      这个动作在运行期彻底不存在; 建不起来=启动即失败, 早暴露;
+#   ③ 有界: 提交前占位, 占不到就明确失败。卡死的 worker 不会被无界任务继续堆叠,
+#      也不会把后续正常请求无限期拖住。这是单次请求级退避, 不是跨请求熔断 ——
+#      偶发故障不应污染后续正常请求(熔断器方案已否决: 一次偶发即长期禁用 shell, 得不偿失)。
+# ============================================================
+_SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execute_command"})
+_SHELL_EXECUTOR_MAX = max(32, int(get_config().get("tuning.concurrency.shell_pool_max_per_type", 8)) * 4)
+_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)
+
+
+class _ShellWorkerPool:
+    """固定 N 个常驻 worker 的极简执行器：提交只入队, 运行期绝不创建线程 — 2026-11-04 小欧
+
+    为什么不用 ThreadPoolExecutor: 它的 worker 是懒创建的, 且 submit() 会在调用线程里
+    调 Thread.start(); 而 CPython 的 _idle_semaphore 短路让"导入期预热"无法保证建满。
+    本类在构造时把 N 个 daemon 线程一次性建好, submit() 只是 queue.put, 语义确定。
+    """
+
+    def __init__(self, n: int, name: str):
+        self._q: "queue.Queue" = queue.Queue()
+        for i in range(n):
+            threading.Thread(target=self._run, name=f"{name}-{i}", daemon=True).start()
+
+    def _run(self):
+        while True:
+            fn, fut = self._q.get()
+            # 排队期已被 asyncio 取消的任务直接丢弃; RUNNING 后 cancel() 无效, 结果照常回填
+            if not fut.set_running_or_notify_cancel():
+                continue
+            try:
+                fut.set_result(fn())
+            except BaseException as e:      # noqa: BLE001 - 必须回填给等待方, 否则协程永久悬挂
+                fut.set_exception(e)
+
+    def submit(self, fn) -> concurrent.futures.Future:
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+        self._q.put((fn, fut))
+        return fut
+
+
+_SHELL_EXECUTOR = _ShellWorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
+
+# ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)
 # 仅登记日志实证的 LLM 参数混淆(全库 参数验证失败 1285次/17文件), YAGNI 不臆造:
 #   002948 grep 收到 type=file(grep无type, 应改用glob或find工具)
@@ -187,7 +245,7 @@ class ToolRetryEngine:
         self._tools = tools
     
     async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
-                                timeout: float) -> Any:
+                                timeout: float, action: str = "") -> Any:
         """
         统一单次工具调用 — 小沈 2026-06-08 重构
         小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
@@ -196,17 +254,42 @@ class ToolRetryEngine:
         参数说明(两条超时线交汇点, 北京老陈 2026-08-06 10:05:21):
           normalized_input 是校验后参数, 内含 timeout 则随 tool(**normalized_input) 原样传给 tool(①线);
           timeout 参数是保险丝(②线), 仅用于 asyncio.wait_for 掐整个调用, 不传给 tool 本身。
+        2026-11-04 小欧: shell 类工具改走专用有界执行器, 不再占用默认 executor
+          (默认 executor 被 shell 卡死占满后, getaddrinfo 等短任务同样排不上 → 全站僵死)。
         """
         # 治理第0步(2026-10-04 小欧): 同步工具经下方to_thread卸载出事件循环;
         #   禁止把shell()改成async def — 改协程会走本分支直调, 卸载被取消, 阻塞回到事件循环(功能退化)。
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+        if action in _SHELL_TOOL_NAMES:
+            return await self._execute_in_shell_executor(tool, normalized_input, timeout)
         result = await asyncio.wait_for(
             asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
         )
         if inspect.iscoroutine(result):
             return await asyncio.wait_for(result, timeout=timeout)
         return result
+
+    async def _execute_in_shell_executor(self, tool: Callable, params: Dict[str, Any],
+                                         timeout: float) -> Any:
+        """shell 专用执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
+
+        排队上限复用保险丝预算(timeout): 拿不到空闲 worker 说明前序 shell 调用卡死未归还,
+        此时明确失败(分类器归 TIMEOUT, 走既有重试/回退语义), 而不是无限排队或去摸 exec。"""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while not _SHELL_SLOTS.acquire(blocking=False):
+            if loop.time() >= deadline:
+                raise TimeoutError(
+                    f"shell 专用执行器无空闲 worker(前序 shell 调用卡死未归还), 等待{timeout:.0f}s → 明确失败")
+            await asyncio.sleep(0.1)
+        try:
+            fut = _SHELL_EXECUTOR.submit(lambda: tool(**params))
+        except BaseException:
+            _SHELL_SLOTS.release()
+            raise
+        fut.add_done_callback(lambda _f: _SHELL_SLOTS.release())
+        return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
     
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
@@ -366,7 +449,7 @@ class ToolRetryEngine:
         max_retries, _, _, base_timeout = self._get_retry_config(action)   # 2026-10-09 小欧: 取 max_retries 供保险丝算重试链总预算
         timeout = self._compute_fuse(action, params_or_error, base_timeout, 0, max_retries)
         try:
-            result = await self._execute_tool_once(tool, params_or_error, timeout)
+            result = await self._execute_tool_once(tool, params_or_error, timeout, action=action)
             if isinstance(result, dict):
                 result.setdefault("other_data", {})["retry_count"] = 0
             if on_attempt_recorded:
@@ -618,7 +701,7 @@ class ToolRetryEngine:
                 except Exception as cb_err:
                     logger.warning(f"[Retry][L3] on_retry_started回调异常: {cb_err}")
             try:
-                result = await self._execute_tool_once(tool, params, timeout)
+                result = await self._execute_tool_once(tool, params, timeout, action=action)
                 if isinstance(result, dict):
                     other = result.get("other_data", {})
                     if not isinstance(other, dict):
