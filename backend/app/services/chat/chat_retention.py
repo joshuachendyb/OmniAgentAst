@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 2026-11-03 - XiaoOu - new chat retention cleanup function - XiaoOu-2026-11-03
 """chat_history.db 保留期清理（数据治理）— 小欧 2026-11-03
 
 设计（KISS-DIRECT）：

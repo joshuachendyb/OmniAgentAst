@@ -78,7 +78,6 @@
  * @date 2026-08-26
  */
 
-// 2026-11-03 - XiaoOu - step timer as text digits on first line - XiaoOu-2026-11-03
 import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';

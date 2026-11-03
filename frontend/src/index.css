@@ -3,7 +3,6 @@
 /* 编辑历史: 2026-09-03 小欧 - 工具执行等待动画(设计文档v1.8): 新增.tool-waiting-cursor 齿轮+扳手组合橙#fa8c16, 复用waiting-spin, 挂ToolCallLine摘要头下 - 小欧-2026-09-03 */
 /* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
 /* 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": ToolCallLine 等待动画图标由"齿轮+扳手组合"改标准单齿轮(Feather settings),
-// 2026-11-03 - XiaoOu - wait-timer-text no border + font-mono - XiaoOu-2026-11-03
    本 CSS 类只管旋转动画(1em 尺寸/逆时针1s转), 图标 SVG 内容变更在 ToolCallLine.tsx 内, 此处零改动 - 小欧-2026-09-06 */
 /* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
    .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
@@ -48,6 +47,8 @@
  *   因 inline-block 在父 span 内成行盒, 撑起 .ant-layout-header 继承的 64px 行高 strut 后按基线落位; 改块级后行盒消失, 尺寸/动画/图形零改动 — 小欧-2026-11-03 */
 /* 编辑历史: 2026-11-03 06:40:41 小欧 - 标题圈圈联动流状态: 新增 8 档 spin-<phase> 修饰类(停/1.6s/1s/3s/0.8s/6s),
  *   仅"流静默/流中断"两档让位告警色, 另加 reduced-motion 停转; 品牌三色其余全程不变 — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-03 小欧 - 步骤级计时文字数码(WaitTimerText): 新增 .wait-timer-text(无描边底色框, 同色淡底绿/黄/橙红/灰四档,
+ *   tabular-nums 等宽读数, 挂步骤标题行右端/工具首行右端) + 字体栈改引 --font-mono(单一真源) — 小欧-2026-11-03 */
 :root {
   --font-mono:
     'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,

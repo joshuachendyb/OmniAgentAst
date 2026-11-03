@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 2026-11-03 - XiaoOu - add system.chat_retention_days item - XiaoOu-2026-11-03
 """
 settings_registry — 设置页唯一 Schema 源：key/类型/默认值/值域/存储/来源规则只定一次，
 key 全局唯一，加载自检重复直接拒启。
@@ -77,6 +76,8 @@ key 全局唯一，加载自检重复直接拒启。
       加参数必须先同步 config.yaml.example, 严禁只在 registry 加 — 小欧-2026-10-25
    2026-10-31 小欧 - llm.context_limit_default 默认值 262144 魔法数字改引 app.constants.DEFAULT_CONTEXT_LIMIT
       (常量自 compaction_constants 迁入 app/constants.py, 设置项默认值与 runtime 兜底同一真源, 值不变) — 小欧-2026-10-31
+   2026-11-03 小欧 - system 组新增 system.chat_retention_days(对话历史保留天数, int 0-3650, restart=True,
+      0=关闭; 启动期清理超期会话, 配合设置页系统tab「数据治理」分组渲染) — 小欧-2026-11-03
 """
 from typing import Any, Dict, List, Optional
 

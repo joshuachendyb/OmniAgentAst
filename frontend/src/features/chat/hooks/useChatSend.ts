@@ -33,8 +33,6 @@
  * @version 1.0.0
  * @since 2026-04-23
  */
-
-// 2026-11-03 - XiaoOu - owner-scoped isSendingRef - XiaoOu-2026-11-03
 import { useCallback, useEffect, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重); 2026-11-03 小欧: 加useEffect(切会话复位防重标记)
 import {
   handleError,

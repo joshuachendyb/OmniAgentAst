@@ -103,6 +103,8 @@
 //     内容本已全量挂在 DOM 上, 再分批只会裁掉尾部(答复段), 属纯退化; streaming 仍是"全量"的硬门(打字机末段位);
 //   ②useLazyRender 改为尾部窗口, 哨兵移到列表**开头**(上翻加载更早段), 与右栏"自动滚到内容末端"一致;
 //   ③段位判定/段 key 改用绝对下标(startIndex+i), 使向上扩批次时既有段 key 不漂移(不重挂载、折叠态不丢) — 小欧-2026-10-30
+// 2026-11-03 小欧 - 等待图标计时器解耦: 步骤级计时从等待图标解剖为独立文字数码(WaitTimerText), 三个等待图标位置/动画零改动,
+//   ThoughtWaitingIcon/ToolWaitingIcon 只留图标, 计时读数挂首行右端; 蓝色波纹留句尾 — 小欧-2026-11-03
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -114,7 +116,6 @@
  * @date 2026-08-26
  */
 
-// 2026-11-03 - XiaoOu - waiting icon timing adjustments - XiaoOu-2026-11-03
 import React, { useMemo } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生
