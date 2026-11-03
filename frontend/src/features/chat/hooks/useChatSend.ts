@@ -16,6 +16,8 @@
 // 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（首连与插话两条路径都传 refs，正文不承载引用内容）；
 //   发送成功后记引用台账（只存路径不存正文；插话不记） — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 台账改由 chatStreamStore 在 start 帧按真实 taskId 落账（插话不记） — 小杨-2026-10-21
+// 编辑历史: 2026-11-03 09:10:00 小欧 - 切会话复位发送防重标记: 标记跨整条 SSE, 在 A 跑任务时切到 B,
+//   B 的发送被静默丢弃(按钮已解灰却发不出去) — 小欧-2026-11-03
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -32,7 +34,7 @@
  * @since 2026-04-23
  */
 
-import { useCallback, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重)
+import { useCallback, useEffect, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重); 2026-11-03 小欧: 加useEffect(切会话复位防重标记)
 import {
   handleError,
   classifyError,
@@ -103,6 +105,20 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const isSendingRef = useRef(false);
   // 2026-10-08 小欧 - 插话在飞单飞。isSendingRef 不可复用(它 finally 要等整条 SSE 跑完, 会把插话永久挡死)
   const isInterjectingRef = useRef(false);
+
+  // 2026-11-03 小欧 - 会话切换复位防重标记（北京老陈报告：任务在跑时点"新建会话"，新会话发送钮解灰后
+  //   仍发不出去）。病根：防重标记的生命周期覆盖整条 SSE（handleSend 的 await 直到流结束），在 A 跑任务
+  //   时切到 B，标记仍为 true → B 的 handleSend 在首行守卫处静默 return。此处只复位本页标记，不动 A 的
+  //   在飞请求（旧会话回切仍由 Store 的 isReceiving/isProcessing 把关）。
+  //   prev===null 不复位：那是"首发消息自动建会话"（null→新 id），本次发送正在进行，复位会放过重复提交。 — 小欧-2026-11-03
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== null) {
+      isSendingRef.current = false;
+      isInterjectingRef.current = false;
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const handleSend = useCallback(
     async (

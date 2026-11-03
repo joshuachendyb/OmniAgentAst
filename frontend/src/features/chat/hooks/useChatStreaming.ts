@@ -52,6 +52,8 @@
 // 编辑历史: 2026-10-30 小欧 - 对外契约补 status(Store 快照原值只读透传): 取消终态帧未送达时, TaskInfoBar/
 //   RightViewer 的徽标兜底需要 store 终态判据; 原 useChatPanels 内联 getSnapshot 且未入 useMemo 依赖,
 //   status 变化面板不重算(兜底永不生效)。本 hook 已是该快照的消费方, 补透传比消费方二次直读 store 更直。 — 小欧-2026-10-30
+// 编辑历史: 2026-11-03 09:10:00 小欧 - 切会话补复位页面级 loading 闩锁: 任务在 A 跑时切到新会话,
+//   终态回调随订阅解绑 → onComplete 永不执行 → loading 恒 true(发送钮永久置灰/停止暂停常驻) — 小欧-2026-11-03
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -72,7 +74,7 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback, useState, useEffect, useMemo } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条 — 小欧-2026-09-06
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条; 2026-11-03 小欧: 加 useRef(切会话复位 loading 闩锁)
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
@@ -399,6 +401,9 @@ export const useChatStreaming = (
   const { setLoading, setWaitTime, setIsRetrying, setMessages, setIsPaused } =
     state;
 
+  // 2026-11-03 小欧 - 上一次的 sessionId（区分"真切换"与"首发自动建会话"），供下方 loading 复位判据 — 小欧-2026-11-03
+  const prevSessionIdRef = useRef<string | null>(null);
+
   // 2026-09-30 小欧 - 会话切换时复位**会话级** ref（与 useChatCallbacks 内同名 effect 配对，
   //   两组各在其所有者内复位，不跨层、不扩 facade 接口面）。
   //   病根：Store 已按 sessionId 严格隔离，但这批视图 ref 是全局单例、四条切换入口无一复位
@@ -430,6 +435,15 @@ export const useChatStreaming = (
       showStepsFalseDone: false,
       showStepsTrueDone: false,
     };
+    // 2026-11-03 小欧 - 复位页面级 loading 闩锁（北京老陈报告：任务在跑时点"新建会话"，新会话发送钮
+    //   永久置灰、停止/暂停常驻，旧流结束后仍不解锁）。病根：loading 仅由 onComplete 单点清，而订阅
+    //   随 sessionId 走 —— 切走后旧流终态回调不再执行，闩锁永不释放。此处只解本页闩锁，不动 Store 中
+    //   旧会话的流（回切旧会话时仍由该会话 isReceiving 显示停止/暂停）。prev===null 不清：那是
+    //   "首发消息自动建会话"（null→新 id），任务刚起步，清了会把在跑任务的发送门解锁。 — 小欧-2026-11-03
+    if (prevSessionIdRef.current !== null) {
+      setLoading(false);
+    }
+    prevSessionIdRef.current = sessionId;
   }, [
     sessionId,
     cancelInProgressRef,
@@ -441,6 +455,7 @@ export const useChatStreaming = (
     logFlagsRef,
     waitTimerRef,
     setIsPaused,
+    setLoading,
   ]);
 
   // 发送消息函数（包装useSSE的sendMessage）
