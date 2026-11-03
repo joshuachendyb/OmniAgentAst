@@ -204,15 +204,19 @@ async def retention_cleanup_monitoring(http_days: int = 7, metrics_days: int = 7
     _c_llm = (datetime.now() - timedelta(days=int(llm_days))).isoformat(sep=" ")
     def _q(conn):
         n = {}
+        # 先取超期 task_id 清单（task_metrics 删除前），避免删完后子查询为空
+        _expired_task_ids = [r[0] for r in conn.execute(
+            "SELECT task_id FROM task_metrics WHERE created_at < ?", (_c_task,)).fetchall()]
         n["http_requests"] = conn.execute(
             "DELETE FROM http_requests WHERE timestamp < ?", (_c_http,)).rowcount
         n["metrics"] = conn.execute(
             "DELETE FROM metrics WHERE timestamp < ?", (_c_metrics,)).rowcount
+        n["task_tool_metrics"] = 0
+        for _tid in _expired_task_ids:
+            n["task_tool_metrics"] += conn.execute(
+                "DELETE FROM task_tool_metrics WHERE task_id = ?", (_tid,)).rowcount
         n["task_metrics"] = conn.execute(
             "DELETE FROM task_metrics WHERE created_at < ?", (_c_task,)).rowcount
-        n["task_tool_metrics"] = conn.execute(
-            "DELETE FROM task_tool_metrics WHERE task_id IN (SELECT task_id FROM task_metrics WHERE created_at < ?)",
-            (_c_task,)).rowcount
         n["llm_calls"] = conn.execute(
             "DELETE FROM llm_calls WHERE timestamp < ?", (_c_llm,)).rowcount
         return n
