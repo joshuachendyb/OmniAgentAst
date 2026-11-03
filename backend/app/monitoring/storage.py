@@ -20,6 +20,9 @@
 #   同步 CREATE TABLE、persist _cols、PRAGMA 幂等补列三处; 旧列保留不删但不再写(禁 backward 不删历史数据)。
 #   漏补列会导致老库 INSERT 报 no column named context_compressed(动态列名 INSERT, 见 persist_task_metrics)。
 # 2026-11-03 小欧 - persist_http_request 改 async(走 db.atxn 子线程池,不卡事件循环) + 新增 retention_cleanup_monitoring(后台定期清超期 http/metrics 数据) — 小欧-2026-11-03
+# 2026-11-04 - 小欧 - persist_http_request 的 atxn 补 retry_locked=3: busy_timeout=500ms + retry_locked=0 时,
+#   并发写事务体撞锁直接抛出(实证 06:51 两条 database is locked), 且该表为每请求高频写, 撞锁概率最高。
+#   atxn 本已支持 retry_locked(0.5/1/2s 退避), 此处仅显式开启, 不改 get_conn 解析逻辑。
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。
@@ -184,7 +187,9 @@ async def persist_http_request(method: str, path: str, status_code: int, kind: s
                 ("http_requests_total", "counter", 1.0,
                  '{"method":"%s","path":"%s","status":"%s"}' % (method, path, status_code), _ts),
             )
-        await _db.atxn("monitoring", _q)
+        # 2026-11-04 小欧 - 补 retry_locked=3: busy_timeout=500ms 下事务体撞锁直接抛(实证 database is locked),
+        # 本表每请求高频写, 撞锁概率最高; atxn 已支持 0.5/1/2s 退避, 此处仅显式开启。
+        await _db.atxn("monitoring", _q, retry_locked=3)
     except Exception as _e:
         from app.logger import logger
         logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21
