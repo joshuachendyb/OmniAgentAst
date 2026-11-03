@@ -12,6 +12,8 @@
 
 // 编辑历史: 2026-11-02 小欧 - getWorkspaces 增可选 prune(默认纯读): 仅面板打开时清不可用行,
 //   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
+//   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -35,6 +37,21 @@ export interface SessionListResponse {
   page: number;
   page_size: number;
   sessions: Session[];
+}
+
+/** 跨会话在跑任务的一行(后端 chat_tasks 权威口径) — 小欧-2026-11-03
+ *  status 是 DB 词表(executing/paused/completed...), 消费前必须经 chatStreamStore.toStreamStatus 归一。 */
+export interface RunningTask {
+  task_id: string;
+  session_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunningTasksResponse {
+  total: number;
+  tasks: RunningTask[];
 }
 
 export interface ApiMessage {
@@ -272,6 +289,24 @@ export const sessionApi = {
     }
     const response = await api.get<BatchTitleResponse>(url);
     return response.data;
+  },
+
+  // 2026-11-03 小欧 - 跨会话在跑任务(历史页角标/顶栏浮层的后端权威来源): 只读、一条 SQL。
+  //   调用方只在挂载/窗口聚焦/列表重载时各调一次, 不做轮询 — 小欧-2026-11-03
+  listRunningTasks: async (): Promise<RunningTasksResponse> => {
+    const response = await api.get<RunningTasksResponse>(
+      '/sessions/tasks/running'
+    );
+    return response.data;
+  },
+
+  // 2026-11-03 小欧 - 单任务状态轻量读口(前端退订后每 60s 后台复核专用): 只读单行,
+  //   替代拉整会话任务正文的 /sessions/{id}/tasks; task 为 null 表示该任务行不存在(=已结束, 常态非异常)
+  getTaskStatus: async (taskId: string): Promise<RunningTask | null> => {
+    const response = await api.get<{ task: RunningTask | null }>(
+      `/sessions/tasks/${encodeURIComponent(taskId)}`
+    );
+    return response.data.task;
   },
 
   // 2026-11-02 小欧 - 会话目录读口: prune=true 才清库(面板主动请求), 默认纯读零副作用;

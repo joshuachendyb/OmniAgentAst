@@ -47,6 +47,12 @@
 // 编辑历史: 2026-11-02 小欧 - 顶栏加ServiceStatusPill(服务存活与本胶囊分立); 版本号改为从AppContext的/health派生, 删壳层单独打health的useEffect与healthApi导入 - 小欧-2026-11-02
 // 编辑历史: 2026-11-03 06:40:41 小欧 - 顶栏标题圈圈换 TitleStreamIcon(流状态联动): 壳层零逻辑, 仍是纯插槽 - 小欧-2026-11-03
 // 编辑历史: 2026-11-03 07:52:00 小欧 - 品牌字后插入 HeaderWaitClock(顶栏等待钟面), 壳层仍是纯插槽 - 小欧-2026-11-03
+// 编辑历史: 2026-11-03 12:58:00 小欧 - 顶栏三件(圈圈/钟面/胶囊)统一收 currentSessionId: 只报当前会话,
+//   并行会话不上镜(浮层仅计数), 壳层仍零逻辑、只透传 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 14:30:00 小欧 - 顶栏主语改由本层解析: 会话页在眼前取 ChatPage 发布的会话,
+//   否则取 LATEST_RUNNING(开跑最晚且仍在跑); currentSessionId 只留给侧栏, 不再当顶栏主语 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 16:40 小欧 - 主语改读 foregroundSessionStore(页面发布, URL 不再当权威): mounted 与 sessionId
+//   分开表达; 挂载/窗口聚焦/路由变化各拉一次 refreshRunningTasks, 壳层仍只透传 — 小欧-2026-11-03
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -74,6 +80,12 @@ import { ServiceStatusPill } from './ServiceStatusPill';
 import { StreamStatusPill } from './StreamStatusPill';
 import { TitleStreamIcon } from './TitleStreamIcon';
 import { HeaderWaitClock } from './HeaderWaitClock'; // 2026-11-03 小欧: 品牌字后的顶栏钟面 — 小欧-2026-11-03
+import {
+  LATEST_RUNNING,
+  type PulseSubject,
+} from '@/features/chat/streams/chatStreamStore';
+import { useForegroundSession } from '@/features/chat/services/foregroundSessionStore';
+import { refreshRunningTasks } from '@/features/chat/streams/runningTasksStore';
 import ShortcutPanel from '../ShortcutPanel';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
@@ -133,6 +145,26 @@ const AppLayout: React.FC<LayoutProps> = ({
   activeKey = '/',
   currentSessionId = null,
 }) => {
+  // 2026-11-03 小欧 - 顶栏三件主语(与侧栏 currentSessionId 分家): 会话页在眼前取页面发布的会话(URL 非权威),
+  //   否则 LATEST_RUNNING, 由 store 按任务开跑时刻每秒重算, 不随落库抖动。
+  const foreground = useForegroundSession();
+  const pulseSubject: PulseSubject = foreground.mounted
+    ? foreground.sessionId
+    : LATEST_RUNNING;
+  // 2026-11-03 小欧 - 后端在跑任务对齐: 内存表只记"本页见过什么", 刷新即空, 真值只在后端。
+  //   挂载/窗口聚焦/标签页可见各拉一次(单飞去重, 不轮询), 拉不到保留上次结果, 不闪成 0。
+  useEffect(() => {
+    void refreshRunningTasks();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshRunningTasks();
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
   // 路由导航
   const navigate = useNavigate();
   // 导航折叠状态
@@ -340,15 +372,14 @@ const AppLayout: React.FC<LayoutProps> = ({
                 2026-11-03 06:40:41 小欧 - 换 TitleStreamIcon 联动流状态: 转速=节奏(停/快/慢), 文案与颜色仍归流胶囊 — 小欧-2026-11-03 */}
             {/* 2026-10-21 小杨 - 双 tooltip 收敛：原生 title 即可 */}
             <span title="事项对话">
-              <TitleStreamIcon />
+              <TitleStreamIcon subject={pulseSubject} />
             </span>
             {/* 2026-09-15 小欧 - 品牌文字移此(北京老陈令): 左侧文字Logo挪到动画圈圈之后, 字号/粗细/色与左侧一致 — 小欧-2026-09-15 */}
             <span className="brand-title-text" aria-label="OmniAgentAst">
               OmniAgentAst.
             </span>
-            {/* 2026-11-03 小欧 - 顶栏等待钟面(北京老陈定案): 紧随品牌字之后, 品牌锁定完整、
-                不插进三粒胶囊节奏; 只在等满 10s 后出现, 平时零占宽, 无"任务跑了多久"文案(taskinfo 已有) — 小欧-2026-11-03 */}
-            <HeaderWaitClock />
+            {/* 2026-11-03 小欧 - 顶栏等待钟面: 紧随品牌字之后, 不插进三粒胶囊节奏; 平时零占宽 — 小欧-2026-11-03 */}
+            <HeaderWaitClock subject={pulseSubject} />
           </div>
 
           {/* 右侧操作区 */}
@@ -363,7 +394,7 @@ const AppLayout: React.FC<LayoutProps> = ({
             {/* 后端服务状态胶囊 - 2026-11-02 小欧 新建(北京老陈令): 与配置胶囊分立, 只答"后端能不能应答"/health三态(绿正常/黄缓慢或降级/红离线), Tooltip全量常显地址/PID/耗时 — 小欧-2026-11-02 */}
             <ServiceStatusPill />
             {/* SSE 流状态小灯 - 2026-11-02 小欧 新建: 与服务胶囊正交, 只答"当前这条流活没活/心跳新不新", 只读 store 不发请求 — 小欧-2026-11-02 */}
-            <StreamStatusPill />
+            <StreamStatusPill subject={pulseSubject} />
             {/* 2026-10-27 小欧 - 菜单宽度切换(宽/窄菜单, 漂亮的视觉设计) */}
             <SidebarModeSwitcher />
             <Avatar size="small" icon={<DesktopOutlined />} />

@@ -71,11 +71,14 @@
                         REF_INTERJECT_RATIO: 原为 services/refs/limits.resolve_limits 内联字面量(0.20/
                         0.40/0.60/0.05), 收口至本文件作单一真源, 配置键 tuning.refs.* 仍可覆盖;
                         取值零变更 — 小欧-2026-10-31
+    2026-11-03 小欧 新增 ChatTaskStatus 枚举 + 三集合(TERMINAL/STATUSES/NON_RUNNING): chat_tasks.status
+                        单一真源, 收口 INSERT/DDL 默认值/reconcile WHERE 三处魔法字符串 — 小欧-2026-11-03
 
 """
 
 import re
 from datetime import timedelta
+from enum import Enum
 
 # ============================================================
 # 1. HTTP 状态码与错误码
@@ -236,5 +239,34 @@ UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')  # 【系统级】使�
 # ============================================================
 
 SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}  # 【系统级】使用对象: hash工具+safety/hash_helper 哈希算法白名单 — 从 tools/tool_constants.py 迁入 小沈 2026-08-13
+
+# ============================================================
+# 9. 会话任务状态词表（chat_tasks.status 单一真源） — 小欧-2026-11-03
+# ============================================================
+
+class ChatTaskStatus(str, Enum):
+    """chat_tasks.status 合法取值(后端单一真源): 收口 INSERT/DDL 默认值/reconcile WHERE 三处魔法字符串。
+    与前端 StreamStatus 词表不同(多 idle/retrying/recovering 连接相位), executing↔active 由前端 toStreamStatus 翻译。 — 小欧-2026-11-03"""
+    EXECUTING = "executing"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+#: 终态集合(任务不再推进) —— 与前端 TERMINAL_STATUSES 同义
+CHAT_TASK_TERMINAL_STATUSES: frozenset[str] = frozenset({
+    ChatTaskStatus.COMPLETED.value,
+    ChatTaskStatus.FAILED.value,
+    ChatTaskStatus.CANCELLED.value,
+})
+
+#: 全部合法值(供写入校验与契约自检)
+CHAT_TASK_STATUSES: frozenset[str] = frozenset(s.value for s in ChatTaskStatus)
+
+#: 在跑 = 非终态。'idle' 不在本词表内(无任何写入方), 但历史库可能有残留行,
+#: 故与终态一起排除 —— 与 list_running_tasks 的 24h 年龄窗同旨: 宁可少报, 不虚报。
+CHAT_TASK_NON_RUNNING_STATUSES: frozenset[str] = CHAT_TASK_TERMINAL_STATUSES | {"idle"}
+
 
 

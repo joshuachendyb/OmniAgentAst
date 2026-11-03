@@ -79,6 +79,8 @@
 //   改判终止读循环 —— 后端 yield 后直接 return, 既不建任务也不发 final; 原实现当"业务中间帧"放行,
 //   流随即 EOF 且 lastSeq 仍为 -1 → 再叠一条"空响应"假错误(用户看到两个错)。同时按"是否收到过数据帧"
 //   区分 EOF: 收到过帧但无 seq 的流不再误报空响应、不再自动重连 — 小欧-2026-10-30
+// 编辑历史: 2026-11-03 小欧 - handleGetNotFound/observeByPolling 的终态赋值删 `as StreamStatus` 断言,
+//   改走 toStreamStatus 归一(DB 词表 executing 不再原样落前端字段) — 小欧-2026-11-03
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -98,13 +100,13 @@ import type {
   PendingAuthorizationPayload,
   ResumeResult,
   SessionSnapshot,
-  StreamStatus,
 } from './backupTypes';
 import {
   chatStreamStore,
   commit,
   emitEvent,
   isTerminalStatus,
+  toStreamStatus, // 2026-11-03 小欧 - DB 状态→前端词表的唯一归一入口(替代 as StreamStatus 断言)
   type ChatStreamSession,
 } from './chatStreamStore';
 import { refNoticeStore } from '@/features/refs/store';
@@ -524,7 +526,7 @@ async function handleGetNotFound(s: ChatStreamSession): Promise<ResumeResult> {
   if (!t) return 'not_found';
   if (isTerminalStatus(t.status)) {
     commit(s, (d) => {
-      d.status = t.status as StreamStatus;
+      d.status = toStreamStatus(t.status);
       markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
     });
     chatStreamStore.clearCompleted(s.sessionId);
@@ -554,7 +556,7 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
       if (!t) return 'not_found';
       if (isTerminalStatus(t.status)) {
         commit(s, (d) => {
-          d.status = t.status as StreamStatus;
+          d.status = toStreamStatus(t.status);
           markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
         });
         chatStreamStore.clearCompleted(s.sessionId);

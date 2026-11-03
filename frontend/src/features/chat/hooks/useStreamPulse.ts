@@ -3,10 +3,19 @@
 // 编辑历史: 2026-11-03 06:40:41 小欧 - 8 档各带 phase 标识(表现层按它选视觉, 不拿中文文案当键); sameView 同步比较 — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 06:52:40 小欧 - 标签去术语并统一 3 字: 无流→无任务 / 流进行中→流持续 / 等待确认→待确认,
 //   八档等宽, 胶囊不因档位跳宽; 流持续与流迟滞成对(在出数 / 出数迟滞), 只改文案, phase 与判据不变 — 小欧-2026-11-03
-import { useSyncExternalStore } from 'react';
+// 编辑历史: 2026-11-03 12:31:00 小欧 - 增第 9 档 detached(运行中): 本页释放实时连接、后端任务仍在跑时,
+//   原逻辑落到 !pumpActive 分支谎报"连接中"; 判据取 pulse.released(store 退订宽限期已到), 与"已发请求未收帧"分家 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 12:58:00 小欧 - 主语收口: useStreamPulse(foregroundSessionId) 只采样当前会话
+//   (顶栏三件同源同主语), 缓存按会话 id 归属; 其余在跑会话仅计入 pulse.activeSessions — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 14:30:00 小欧 - 入参改为主语 PulseSubject: 会话页给页面发布的会话 id,
+//   非会话页给 LATEST_RUNNING(开跑最晚且仍在跑), 排序键为任务开跑时刻, 不随落库抖动 — 小欧-2026-11-03
+// 编辑历史: 2026-11-03 16:40 小欧 - 删 sameOthers/activeSessions(在跑列表收口 runningTasksStore), 缓存改为按主语 Map,
+//   采样透传 getMergedRunningTasks(): 刷新后内存为空仍能报出「开跑最晚且仍在跑」 — 小欧-2026-11-03
+import { useCallback, useSyncExternalStore } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
-import type { StreamPulse } from '../streams/chatStreamStore';
+import type { PulseSubject, StreamPulse } from '../streams/chatStreamStore';
+import { getMergedRunningTasks } from '../streams/runningTasksStore';
 import type { Tone } from '../../../utils/tone';
 
 /** 采样周期: 只展示"距今秒数", 1s 粒度足够 — 2026-11-02 小欧 */
@@ -30,7 +39,9 @@ export type StreamPhase =
   | 'reconnecting'
   | 'waiting'
   | 'silent'
-  | 'down';
+  | 'down'
+  /** 2026-11-03 小欧 - 本页已释放连接、任务仍在后端执行(切走会话/新会话后的长任务) */
+  | 'detached';
 
 export interface StreamPulseView {
   phase: StreamPhase;
@@ -113,6 +124,19 @@ export const deriveStreamState = (
       main: '任务在等人工确认，空闲计时已暂停',
     };
   }
+  // 2026-11-03 小欧 - 释放态优先于"连接中": 本页已主动断开实时流而任务仍在后端跑(见 store.settleReleasedSession),
+  //   否则会落到 !pumpActive 分支谎报"请求已发出, 等后端推事件"。
+  if (!p.pumpActive && p.released) {
+    return {
+      ...base,
+      phase: 'detached',
+      tone: 'ok',
+      text: '运行中',
+      // 两种来路共用此档: ①本页退订宽限期已到(每 60s 复核); ②本页从未持有该任务(刷新/换标签页,
+      // 状态来自后端在跑快照)。文案只陈述共同事实, 不写死"每 60 秒"这类只对前者成立的细节。
+      main: '本页未持有实时连接，任务仍在后端执行（状态随后端复核刷新）',
+    };
+  }
   // 请求已发出、读循环还没建立(响应头未到): 不是"没产出", 只是还没开始收 — 2026-11-02 小欧
   if (!p.pumpActive) {
     return {
@@ -172,25 +196,36 @@ const sameView = (a: StreamPulseView, b: StreamPulseView): boolean =>
   a.pulse.status === b.pulse.status &&
   a.pulse.reconnectStatus === b.pulse.reconnectStatus &&
   a.pulse.serverTaskId === b.pulse.serverTaskId &&
-  a.pulse.activeSessions === b.pulse.activeSessions &&
-  a.pulse.pumpActive === b.pulse.pumpActive;
+  a.pulse.pumpActive === b.pulse.pumpActive &&
+  a.pulse.released === b.pulse.released;
 
-// 2026-11-02 小欧 - 全应用共用一个 1s ticker + 一份快照: 顶栏两个胶囊读同一事实, 不同步各自的定时器 — 小欧-2026-11-02
-let cachedView: StreamPulseView | null = null;
+// 2026-11-02 小欧 - 全应用共用一个 1s ticker: 顶栏两个胶囊读同一事实, 不同步各自的定时器 — 小欧-2026-11-02
+/** 2026-11-03 小欧 - 派生结果按主语归属缓存(原单槽 cachedFor): 两个采样点主语不同时, 单槽每秒被判"变了"白重渲。
+ *  主语基数极小(会话 id / LATEST_RUNNING / null), 溢出即整清。 */
+const VIEW_CACHE_MAX = 8;
+const viewCache = new Map<PulseSubject, StreamPulseView>();
 let timer: number | null = null;
 const listeners = new Set<() => void>();
 
-const readView = (): StreamPulseView => {
-  const next = deriveStreamState(chatStreamStore.getPulse(), Date.now());
-  if (!cachedView || !sameView(cachedView, next)) cachedView = next;
-  return cachedView;
+/** 2026-11-03 小欧 - 采样口带主语(顶栏三件同源同主语), 同一秒内派生结果不变则返回原引用。
+ *  透传系统级在跑(后端 ∪ 内存合并): 刷新后内存为空时顶栏仍能报出「开跑最晚且仍在跑」, 不谎报"无任务"。 */
+const readViewOf = (subject: PulseSubject): StreamPulseView => {
+  const prev = viewCache.get(subject);
+  const next = deriveStreamState(
+    chatStreamStore.getPulse(subject, getMergedRunningTasks()),
+    Date.now()
+  );
+  if (prev && sameView(prev, next)) return prev;
+  if (viewCache.size >= VIEW_CACHE_MAX) viewCache.clear();
+  viewCache.set(subject, next);
+  return next;
 };
 
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
   if (timer === null) {
     timer = window.setInterval(() => {
-      readView();
+      // 秒数每秒变: 通知各自重算(重算结果无变化时引用不变, React 自动跳过)
       listeners.forEach((fn) => fn());
     }, PULSE_TICK_MS);
   }
@@ -203,7 +238,9 @@ const subscribe = (listener: () => void): (() => void) => {
   };
 };
 
-/** 2026-11-02 小欧 - 顶栏流状态灯: 共享 1s 采样, 派生结果无变化时引用不变, 无谓重渲为零。 */
-export function useStreamPulse(): StreamPulseView {
-  return useSyncExternalStore(subscribe, readView, readView);
+/** 顶栏流状态灯: 共享 1s 采样, 派生结果无变化时引用不变 — 2026-11-02 小欧
+ *  2026-11-03 小欧 - 入参为主语(会话页=页面发布的会话 id, 非会话页=LATEST_RUNNING), 三件同源同主语, 由 AppLayout 透传。 */
+export function useStreamPulse(subject: PulseSubject = null): StreamPulseView {
+  const getSnapshot = useCallback(() => readViewOf(subject), [subject]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

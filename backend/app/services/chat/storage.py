@@ -132,6 +132,8 @@
 # 2026-10-27 - 小欧 - P1-① 消除 N+1: 新增 load_execution_steps_batch(批量加载步骤, 一次查询替代 N 次
 #   load_execution_steps; 按 ai_message_id 聚合 task 集合动态 OR 分批 _BULK_CHUNK=500 防 SQLite
 #   "Expression tree too large"; 返回结构与单查一致 _strip_thought_content) — 小欧-2026-10-27
+# 2026-11-03 - 小欧 - 新增 list_running_tasks/get_task_status(跨会话在跑任务 + 单任务轻量读, 带 24h 僵尸年龄窗);
+#   update_task 增 status 词表校验(非法值打 ERROR 并 fail-safe 落 failed); 三处状态字面量改引 constants.ChatTaskStatus — 小欧-2026-11-03
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -142,6 +144,7 @@ import json
 import sqlite3
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
+from datetime import datetime, timedelta  # 2026-11-03 小欧 - 在跑任务僵尸年龄窗(见 list_running_tasks)
 from typing import Any, Dict, List, Optional, Tuple
 from sqlite3 import Connection
 
@@ -150,6 +153,7 @@ from pydantic import BaseModel, Field
 
 from app.logger import logger
 from app.db import db
+from app.constants import ChatTaskStatus, CHAT_TASK_NON_RUNNING_STATUSES, CHAT_TASK_STATUSES  # 2026-11-03 小欧 - 任务状态词表单一真源
 from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.secret_utils import redact_step_params  # 落库出口脱敏(step 参数敏感键) — 小欧 2026-10-19
@@ -450,7 +454,7 @@ def insert_task(
         (task_id, session_id, user_message_id, ai_message_id, user_input,
          context_link_mode, context_root_task_id,
          task_model.model_dump_json(),   # 必填参数直取( 删永不可达的 else None 死防御) 小欧 2026-08-22
-         now, "executing", now, now),
+         now, ChatTaskStatus.EXECUTING.value, now, now),
     )
 
 
@@ -478,7 +482,14 @@ def update_task(
     error_type: Optional[str] = None, error_message: Optional[str] = None,
     artifacts: Optional[list] = None,
 ) -> None:
-    """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖 — 小欧 2026-08-16"""
+    """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖 — 小欧 2026-08-16
+    2026-11-03 小欧 - 补 status 词表校验: 非法值打 ERROR 并 fail-safe 落 failed(同 _STATUS_MAP 原则), 不阻断主链路。"""
+    if status is not None and status not in CHAT_TASK_STATUSES:
+        logger.error(
+            f"[storage] update_task 收到非法 status={status!r}(task={task_id}), "
+            f"合法值={sorted(CHAT_TASK_STATUSES)}, 已按 fail-safe 落 failed"
+        )
+        status = ChatTaskStatus.FAILED.value
     _f, _v = [], []
     for _k, _val in (("response", response), ("status", status), ("end_time", end_time),
                      ("duration", duration), ("accumulated_usage", accumulated_usage),
@@ -517,13 +528,14 @@ def reconcile_orphaned_tasks(conn: Connection, boot_iso: str) -> int:
     now = get_local_iso_timestamp()
     cur = conn.execute(
         """UPDATE chat_tasks
-           SET status = 'failed',
+           SET status = ?,
                error_type = 'task_interrupted',
                error_message = '服务重启导致任务中断，后端不支持续算，请重新发起',
                end_time = ?, updated_at = ?
-         WHERE status = 'executing'
+         WHERE status = ?
            AND (start_time IS NULL OR start_time < ?)""",
-        (now, now, boot_iso),
+        (ChatTaskStatus.FAILED.value, now, now,
+         ChatTaskStatus.EXECUTING.value, boot_iso),
     )
     return cur.rowcount
 
@@ -1143,6 +1155,43 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
         out.append(d)
     latest_task_id = out[-1]["task_id"] if out else None   # ASC 后最末行为最新任务, 显式锚点 — 小欧 2026-08-30
     return out, total, latest_task_id
+
+
+# 2026-11-03 小欧 - 非终态行的僵尸年龄上限: reconcile_orphaned_tasks 只在启动期收尾, 进程内漏走
+#   finally 的行会永久停在默认 'executing'(db_initializer), 角标虚高; 超过即按残行排除。
+RUNNING_TASK_MAX_AGE_HOURS = 24
+
+
+def list_running_tasks(conn: Connection) -> List[Dict[str, Any]]:
+    """跨会话在跑任务(历史页角标/顶栏浮层的权威来源): 非终态且非 idle, 只读无副作用。 — 小欧-2026-11-03
+    2026-11-03 小欧 - 补僵尸兜底: start_time 早于 RUNNING_TASK_MAX_AGE_HOURS 不算在跑(NULL 视为刚建立, 按在跑)。"""
+    cutoff = (
+        datetime.now() - timedelta(hours=RUNNING_TASK_MAX_AGE_HOURS)
+    ).isoformat()
+    # 2026-11-03 小欧 - 排除集取自 constants.CHAT_TASK_NON_RUNNING_STATUSES(单一真源):
+    #   原为内联字面量, 与 INSERT/reconcile 各写一份, 加状态值必漏改其一。
+    _excluded = sorted(CHAT_TASK_NON_RUNNING_STATUSES)
+    _ph = ",".join("?" * len(_excluded))
+    rows = conn.execute(
+        f"""SELECT task_id, session_id, status, created_at, updated_at
+            FROM chat_tasks
+            WHERE status NOT IN ({_ph})
+              AND (start_time IS NULL OR start_time > ?)
+            ORDER BY created_at DESC""",
+        (*_excluded, cutoff),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_task_status(conn: Connection, task_id: str) -> Optional[Dict[str, Any]]:
+    """单任务状态轻量读口(退订后的后台复核专用): task_id 为 UNIQUE, 单行读, 不拉整会话正文。 — 小欧-2026-11-03
+    不存在返回 None(调用方据此落 idle, 不当异常)。"""
+    row = conn.execute(
+        """SELECT task_id, session_id, status, created_at, updated_at
+           FROM chat_tasks WHERE task_id=?""",
+        (task_id,),
+    ).fetchone()
+    return dict(row) if row is not None else None
 
 
 def get_task_tool_stats(conn: Connection, task_id: str) -> list:

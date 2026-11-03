@@ -49,6 +49,8 @@
  *   仅"流静默/流中断"两档让位告警色, 另加 reduced-motion 停转; 品牌三色其余全程不变 — 小欧-2026-11-03 */
 /* 编辑历史: 2026-11-03 小欧 - 步骤级计时文字数码(WaitTimerText): 新增 .wait-timer-text(无描边底色框, 同色淡底绿/黄/橙红/灰四档,
  *   tabular-nums 等宽读数, 挂步骤标题行右端/工具首行右端) + 字体栈改引 --font-mono(单一真源) — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-03 12:31:30 小欧 - 标题圈圈补第 9 档 .title-spin-icon.spin-detached(3s 慢转): 连接已释放但后端任务仍在跑,
+ *   无帧可收, 与"流持续(1s)"常态区分; 上方档位说明"8 档"同步订正为"9 档" — 小欧-2026-11-03 */
 :root {
   --font-mono:
     'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
@@ -206,7 +208,7 @@
   height: 20px;
 }
 
-/* 2026-11-03 06:40:41 小欧 - 圈圈联动流状态(8 档, 类名 spin-<phase> 由 TitleStreamIcon 直挂):
+/* 2026-11-03 06:40:41 小欧 - 圈圈联动流状态(9 档, 类名 spin-<phase> 由 TitleStreamIcon 直挂):
    节奏=转速(视觉真源全在本块), 文字/颜色/秒数仍归流状态胶囊, 一处一个通道。
    spin-running 故意不写规则: 基础 1s 即"流进行中"; 缺类只回落 1s, 不会渲染错乱 — 小欧-2026-11-03 */
 .title-spin-icon.spin-idle,
@@ -225,6 +227,11 @@
 }
 .title-spin-icon.spin-silent {
   animation-duration: 6s; /* 濒死: 连心跳都没了, 只剩一丝气 */
+}
+/* 2026-11-03 12:31:30 小欧 - 第 9 档 detached(顶栏"运行中"): 连接已释放但后端任务还在跑,
+   没有帧可收 → 慢转表示"在跑但本页不接收", 与流持续的 1s 常态区分 — 小欧-2026-11-03 */
+.title-spin-icon.spin-detached {
+  animation-duration: 3s;
 }
 /* 只有"濒死/已断"两档让位告警色(品牌三色其余全程不动), 色值与 Colors.ORANGE_RED / Colors.ERROR 同值 — 2026-11-03 小欧 */
 .title-spin-icon.spin-silent svg path {
@@ -431,8 +438,8 @@
   line-height: 1;
   flex-shrink: 0;
 }
-/* 2026-11-03 08:12:00 小欧 - 步骤级计时改文字数码皮(waitTimerText): 纯数码 + 同色淡底框(无描边,
-   北京老陈定案: 有边线不好看), 尺寸固定(等宽数字 + min-width)防标题行随秒数抖动 — 小欧-2026-11-03 */
+/* 2026-11-03 08:12:00 小欧 - 步骤级计时改文字数码皮(waitTimerText): 纯数码 + 同色淡底框(无描边),
+   尺寸固定(等宽数字 + min-width)防标题行随秒数抖动 — 小欧-2026-11-03 */
 .wait-timer-text {
   display: inline-flex;
   align-items: center;

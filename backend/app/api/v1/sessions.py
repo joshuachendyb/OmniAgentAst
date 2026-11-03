@@ -26,6 +26,8 @@
 # 2026-11-02 小欧 - GET /workspaces 增 prune(默认 false 纯读): 仅面板打开时显式清不可用行,
 #   条数按 rowcount 作 pruned 带回; 响应不含 unusable — 小欧-2026-11-02
 # 2026-11-02 小欧 - 删死类 _SessionCreate(私有、全仓零引用, 端点直接吃 SessionCreate) — 小欧-2026-11-02
+# 2026-11-03 小欧 - 新增 GET /sessions/tasks/running(跨会话在跑任务, 历史页角标/顶栏浮层权威来源)
+#   + GET /sessions/tasks/{task_id}(退订后 60s 复核的单任务轻量读, 替代拉整会话任务正文) — 小欧-2026-11-03
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
@@ -50,6 +52,8 @@ from app.services.chat.storage import (
     list_session_tasks,
     list_session_trust,
     delete_session_trust,
+    list_running_tasks,
+    get_task_status,
 )
 
 router = APIRouter()
@@ -85,6 +89,24 @@ def get_session_titles_batch_endpoint(
     session_ids: str = Query(..., description="逗号分隔的会话ID列表")
 ):
     return get_session_titles_batch(session_ids)
+
+
+@router.get("/sessions/tasks/running")
+def list_running_tasks_endpoint():
+    """跨会话在跑任务(历史页角标/顶栏浮层的后端权威来源): 非终态且非 idle, 只读。 — 小欧-2026-11-03
+    前端只在挂载/窗口聚焦/列表重载时各调一次, 不做轮询。"""
+    with db.get_conn("chat") as conn:
+        tasks = list_running_tasks(conn)
+    return {"total": len(tasks), "tasks": tasks}
+
+
+@router.get("/sessions/tasks/{task_id}")
+def get_task_status_endpoint(task_id: str):
+    """单任务状态轻量读口(退订后 60s 后台复核专用): task_id 为 UNIQUE, 单行读, 不拉任务正文。 — 小欧-2026-11-03
+    任务行不存在返回 {"task": null} 而非 404 —— 前端据此落 idle, "已结束"是常态不是异常。"""
+    with db.get_conn("chat") as conn:
+        task = get_task_status(conn, task_id)
+    return {"task": task}
 
 
 @router.get("/sessions/{session_id}/tasks")

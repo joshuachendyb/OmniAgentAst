@@ -42,6 +42,8 @@
 
 // 编辑历史: 2026-10-30 小欧 - [54]全链路重构: workspaceMap 升级为 WorkspaceEntry[](含属性/memo/is_default);
 //  卡片目录行展示默认 Tag + 属性 Tag + memo Tooltip。 — 小欧-2026-10-30
+// 编辑历史: 2026-11-03 16:40 小欧 - 在跑角标/一览条收口 runningTasksStore.useMergedRunningTasks(后端快照 ∪ 内存, 后端优先):
+//   删逐会话 subscribe 的 tick(会让 store 以为有人在看, 后台 SSE 永不释放), TAG 收窄穷尽, 一览条不限条数 — 小欧-2026-11-03
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -74,8 +76,15 @@ import {
 import { sessionApi, type Session } from '../../services/api/session.api';
 import type { WorkspaceEntry } from '@/types/chat';
 // [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
-import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
-import { getActiveSessionStatusList } from '@/features/chat/streams/chatStreamStore';
+import {
+  chatStreamStore,
+  isRunningStatus,
+  type RunningStreamStatus,
+} from '@/features/chat/streams/chatStreamStore';
+import {
+  refreshRunningTasks,
+  useMergedRunningTasks,
+} from '@/features/chat/streams/runningTasksStore';
 import { Spacing } from '@/utils/stepStyles';
 import { useNavigate } from 'react-router-dom';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
@@ -127,23 +136,25 @@ const HistoryPage: React.FC = () => {
   // 2026-08-27 小欧 修复: 真实总会话数(totalSessions)，与过滤命中数(pagination.total)区分，用于清空守卫与顶部 Badge
   const [totalSessions, setTotalSessions] = useState(0);
 
-  // 2026-10-05 22:16:38 小欧 - 在跑任务指示(SIG-A+B)：tick 只驱动重渲染，真源在 chatStreamStore。
-  //   非订阅时历史列表不刷新；此处对当前在跑会话各自 subscribe，终态翻转时 tick 一次即驱动角标/条隐藏 —
-  //   列表每次 loadSessions 也会换绑订阅(增/删/改后重新读 getActiveSessionStatusList)。
-  const [, setRunTick] = useState(0);
+  // 2026-11-03 小欧 - 在跑任务唯一读口(后端快照 ∪ 内存新任务, 1s 采样): 原"逐会话 subscribe"的 tick 已删
+  //   (会让 store 以为有人在看, 后台 SSE 永不释放); 列表每次重载再向后端对齐, 刷新后角标不凭空消失。
   useEffect(() => {
-    const active = getActiveSessionStatusList();
-    const unsubs = active.map(({ sessionId }) =>
-      chatStreamStore.subscribe(sessionId, () => setRunTick((n) => n + 1))
-    );
-    return () => unsubs.forEach((u) => u());
+    void refreshRunningTasks();
   }, [sessions]);
 
-  // 渲染期一次性读取「会话→在跑状态」表，角标与顶部条共用，不拆两次扫描（DRY）
-  const activeStatusById = new Map<string, string>(
-    getActiveSessionStatusList().map((a) => [a.sessionId, a.status])
-  );
-  const activeCount = activeStatusById.size;
+  // 2026-11-03 小欧 - 角标与一览条共用同一张表(DRY): 按会话归并(同会话取开跑最新一条), 状态已归一为 StreamStatus;
+  //   值类型收窄为 RunningStreamStatus, 使下面 TAG 可声明穷尽 Record —— 漏键编译期即红, 不靠运行时兜底。
+  const mergedRunning = useMergedRunningTasks();
+  const activeStatusById = new Map<string, RunningStreamStatus>();
+  mergedRunning.forEach((t) => {
+    if (!activeStatusById.has(t.sessionId) && isRunningStatus(t.status))
+      activeStatusById.set(t.sessionId, t.status);
+  });
+  const activeEntries = Array.from(activeStatusById, ([sessionId, status]) => ({
+    sessionId,
+    status,
+  }));
+  const activeCount = activeEntries.length;
 
   useEffect(() => {
     keywordRef.current = keyword;
@@ -505,8 +516,8 @@ const HistoryPage: React.FC = () => {
             loading={loading}
           />
 
-          {/* 2026-10-05 22:16:38 小欧 - 顶部一览条(方案B)：有活跃会话时显示「当前 N 个会话在跑」，
-              每个 Tag 点击直达（用户主动导航，不抢占当前页面）；空状态直接不渲染，避免占位 */}
+          {/* 2026-10-05 22:16:38 小欧 - 顶部一览条(方案B): 有活跃会话时显示「当前 N 个会话在跑」, 每个 Tag 点击直达。
+              2026-11-03 小欧 - 不设数量上限: 只报数量不报是哪个等于让用户去猜, Space wrap 已能自动换行 — 小欧-2026-11-03 */}
           {activeCount > 0 && (
             <Alert
               type="info"
@@ -516,28 +527,21 @@ const HistoryPage: React.FC = () => {
               message={
                 <Space wrap size={Spacing.SM}>
                   <Text strong>当前 {activeCount} 个会话在跑：</Text>
-                  {getActiveSessionStatusList()
-                    .slice(0, 3)
-                    .map((a) => {
-                      const s = sessions.find(
-                        (x) => x.session_id === a.sessionId
-                      );
-                      return (
-                        <Tag
-                          key={a.sessionId}
-                          style={{ cursor: 'pointer' }}
-                          color={
-                            a.status === 'paused' ? 'warning' : 'processing'
-                          }
-                          onClick={() => handleResume(a.sessionId)}
-                        >
-                          {s?.title || '未命名会话'}
-                        </Tag>
-                      );
-                    })}
-                  {activeCount > 3 && (
-                    <Text type="secondary">另 {activeCount - 3} 条</Text>
-                  )}
+                  {activeEntries.map((a) => {
+                    const s = sessions.find(
+                      (x) => x.session_id === a.sessionId
+                    );
+                    return (
+                      <Tag
+                        key={a.sessionId}
+                        style={{ cursor: 'pointer' }}
+                        color={a.status === 'paused' ? 'warning' : 'processing'}
+                        onClick={() => handleResume(a.sessionId)}
+                      >
+                        {s?.title || a.sessionId.slice(0, 8)}
+                      </Tag>
+                    );
+                  })}
                 </Space>
               }
             />
@@ -655,8 +659,10 @@ const HistoryPage: React.FC = () => {
                                 session.session_id
                               );
                               if (!st) return null;
+                              // 2026-11-03 小欧 - 键收窄为 RunningStreamStatus(穷尽): 漏写任一在跑态即编译错误,
+                              //   原 Record<string,...> 放过 undefined, 致角标静默不渲染。
                               const TAG: Record<
-                                string,
+                                RunningStreamStatus,
                                 { color: string; text: string }
                               > = {
                                 active: { color: 'processing', text: '运行中' },
@@ -668,14 +674,14 @@ const HistoryPage: React.FC = () => {
                                 retrying: { color: 'gold', text: '重试中' },
                               };
                               const t = TAG[st];
-                              return t ? (
+                              return (
                                 <Tag
                                   color={t.color}
                                   icon={<LoadingOutlined spin />}
                                 >
                                   {t.text}
                                 </Tag>
-                              ) : null;
+                              );
                             })()}
                           </Space>
                         </div>

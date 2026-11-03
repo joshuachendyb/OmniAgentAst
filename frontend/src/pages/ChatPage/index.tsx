@@ -54,7 +54,15 @@
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 // 编辑历史: 2026-11-02 小欧 - 注释整改(逻辑零变更): 删过期存疑条目(原 L157-170 "RightViewer L424 仍调 refreshTasks" 与代码不符,
 //   RightViewer 已删该覆盖, 左侧写入仅 updateTaskResponse) - 小欧-2026-11-02
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// 编辑历史: 2026-11-03 小欧 - 顶栏主语由本页发布(foregroundSessionStore): useLayoutEffect 发布当前会话、卸载即交还
+//   LATEST_RUNNING 口径(URL 无 session_id 时曾与画面不一致) - 小欧-2026-11-03
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 - 位置2 数据源对象形态
 import { API_BASE_URL } from '../../services/api/client';
@@ -70,6 +78,10 @@ import { useChatInit } from '../../features/chat/hooks/useChatInit';
 import { useChatLifecycle } from '../../features/chat/hooks/useChatLifecycle';
 import { useChatTitle } from '../../features/chat/hooks/useChatTitle';
 import { useChatPanels } from '../../features/chat/hooks/useChatPanels';
+import {
+  publishForegroundSession,
+  clearForegroundSession,
+} from '../../features/chat/services/foregroundSessionStore';
 import type { SendOpts } from '../../types/chat'; // 2026-10-07 小欧 - 对象参数
 import { SessionLayout } from '../../features/chat/components/layout/SessionLayout';
 import AuthorizationModal from '../../components/AuthorizationModal';
@@ -113,6 +125,13 @@ const ChatPage: React.FC = () => {
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
   const { sessionId } = chatState;
+  // 2026-11-03 小欧 - 顶栏主语发布(会话页口径): URL 不是权威(`/` 无 session_id 时顶栏报"无任务"), 本页显示哪个就报哪个。
+  //   用 useLayoutEffect 而非 useEffect: 后者绘制后跑, 首帧会闪一次"别的会话/后台任务"的状态。
+  useLayoutEffect(() => {
+    publishForegroundSession(sessionId || null);
+  }, [sessionId]);
+  // 卸载即交还「开跑最晚且仍在跑」口径(非会话页); 与发布分开, 避免切换会话时 clear→publish 抖动
+  useLayoutEffect(() => clearForegroundSession, []);
   const {
     tasks,
     total,
