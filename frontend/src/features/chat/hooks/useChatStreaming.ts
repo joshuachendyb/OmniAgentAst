@@ -74,6 +74,7 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
+// 2026-11-03 - XiaoOu - reset loading latch on session switch - XiaoOu-2026-11-03
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条; 2026-11-03 小欧: 加 useRef(切会话复位 loading 闩锁)
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';

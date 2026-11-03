@@ -36,6 +36,7 @@
 // 2026-10-18 小欧 - 注释精简冗余标注, 技术说明原样保留。
 // 2026-11-01 小欧 - 键名统一: sectionOf 判据 llm.context_limit_default → llm.context_length_default
 //   （后端 settings_registry 键已改名；此处不改则「通用兜底模型参数」小节永远匹配不到） — 小欧-2026-11-01
+// 2026-11-03 - XiaoOu - sectionOf data-governance group - XiaoOu-2026-11-03
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';

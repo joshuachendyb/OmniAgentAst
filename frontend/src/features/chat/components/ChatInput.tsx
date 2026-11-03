@@ -1,3 +1,4 @@
+// 2026-11-03 - XiaoOu - R4-1 ref clear on submit - XiaoOu-2026-11-03
 ﻿// 编辑历史: 2026-08-26 小欧 - 输入框组合根: 六组件组合, Props兼容父级+modelPickerSlot/onSend二参
 // 编辑历史: 2026-08-28 小欧 - 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CI-01乐观清空(先save后清, onSend失败由父级回补)②CI-02增sessionId入参+useEffect重置draft防跨会话泄漏 — 小欧-2026-09-02

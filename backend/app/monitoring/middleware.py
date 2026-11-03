@@ -4,6 +4,7 @@
 # 2026-08-20 - 小欧 - 11.2-C 落 monitoring.db 独立库: MonitoringMiddleware._record_response 新增
 #   persist_http_request(method, path, status_code, kind, duration, request_size, 0) 调用(非阻塞降级, 独立库 storage,
 #   response_size 暂以 0 占位; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
+# 2026-11-03 - XiaoOu - monitoring async fire-and-forget - XiaoOu-2026-11-03
 """
 监控中间件模块
 负责HTTP请求监控和门面函数

@@ -61,6 +61,7 @@
 # 2026-11-01 小欧 - 静态托管: 开发态不判任何目录(API-only 零告警); 打包态逐项验 assets 与 index.html,
 #   缺哪项点名 error 且不挂载 — 小欧-2026-11-01
 # 2026-11-01 20:10 小欧 - 静态托管收进打包态, 开发 8000 纯 API(root 404, 零 dist 引用) — 小欧-2026-11-01
+# 2026-11-03 - XiaoOu - monitoring retention task + chat retention startup cleanup - XiaoOu-2026-11-03
 import sys
 import asyncio
 import time

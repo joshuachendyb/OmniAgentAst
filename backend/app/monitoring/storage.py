@@ -19,6 +19,7 @@
 # 2026-10-08 - 小欧 - context_injected_ratio 改语义明确列(context_compressed INTEGER + context_compress_saved_pct REAL):
 #   同步 CREATE TABLE、persist _cols、PRAGMA 幂等补列三处; 旧列保留不删但不再写(禁 backward 不删历史数据)。
 #   漏补列会导致老库 INSERT 报 no column named context_compressed(动态列名 INSERT, 见 persist_task_metrics)。
+# 2026-11-03 - XiaoOu - persist_http_request async + retention_cleanup_monitoring - XiaoOu-2026-11-03
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。

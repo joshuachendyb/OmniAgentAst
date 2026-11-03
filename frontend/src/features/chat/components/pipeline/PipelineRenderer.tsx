@@ -114,6 +114,7 @@
  * @date 2026-08-26
  */
 
+// 2026-11-03 - XiaoOu - waiting icon timing adjustments - XiaoOu-2026-11-03
 import React, { useMemo } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生

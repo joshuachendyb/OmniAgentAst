@@ -77,6 +77,7 @@
 // 编辑历史: 2026-11-03 06:40:41 小欧 - 多流挑选口径: 先比业务帧再比三线最大(原三线同权, 静默流刚发心跳会盖过
 //   正在出数的流, 顶栏误报"流迟滞"); "在跑"判据收口到 isRunningStatus, 与历史页角标共用一份 — 小欧-2026-11-03
 
+// 2026-11-03 - XiaoOu - no direct change this commit - XiaoOu-2026-11-03
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
 import type { ChatRefPayload } from '@/types/chat';

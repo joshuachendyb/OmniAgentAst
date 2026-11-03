@@ -1,3 +1,4 @@
+// 2026-11-03 - XiaoOu - title stream icon + header wait clock + pills - XiaoOu-2026-11-03
 ﻿// 编辑历史: 2026-02-17 小新 - 创建Layout组件(左右分栏+响应式)
 // 编辑历史: 2026-02-18 小新 - 添加移动端响应式支持
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-11-03 - XiaoOu - add system.chat_retention_days item - XiaoOu-2026-11-03
 """
 settings_registry — 设置页唯一 Schema 源：key/类型/默认值/值域/存储/来源规则只定一次，
 key 全局唯一，加载自检重复直接拒启。
