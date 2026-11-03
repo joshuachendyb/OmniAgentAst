@@ -1,13 +1,13 @@
-v1.6.0
+v1.5.6
 更新时间: 2026-11-03 11:03:58 - 小欧-2026-11-03
 ## v1.5.5以来 变更汇总(7个commit: fix1/perf1/docs5) - 小欧-2026-11-03
-[2026-11-03 11:03:58 小欧] 范围=v1.5.5以来全部commit(7个); 主线=后端卡死根治(monitoring落盘fire-and-forget: persist_http_request改async走db.atxn子线程池+_record_response_metrics改async+create_task调度, 响应路径零同步IO)+owner-scoped isSendingRef(记录所属会话id, A的finally不误清B)+monitoring retention task_tool_metrics删除顺序修正(先取超期task_id再删)+今日14源文件编辑历史条目合规修复(补缺失/归位, 修乱插import前与注释块中间); 注:fix/perf2个(后端卡死根治+发送闩锁防误清+retention顺序), 属后端稳定与数据治理成批落地, 按MAJOR记v1.6.0
-### 1.6.0.1 后端卡死根治与monitoring保留期（11-03）
+[2026-11-03 11:03:58 小欧] 范围=v1.5.5以来全部commit(7个); 主线=后端卡死根治(monitoring落盘fire-and-forget: persist_http_request改async走db.atxn子线程池+_record_response_metrics改async+create_task调度, 响应路径零同步IO)+owner-scoped isSendingRef(记录所属会话id, A的finally不误清B)+monitoring retention task_tool_metrics删除顺序修正(先取超期task_id再删)+今日14源文件编辑历史条目合规修复(补缺失/归位, 修乱插import前与注释块中间); 注:fix/perf2个(后端卡死根治+发送闩锁防误清+retention顺序), 属后端稳定与数据治理成批落地, 按MINOR记v1.5.6
+### 1.5.6.1 后端卡死根治与monitoring保留期（11-03）
 [落盘fire-and-forget] perf+fix e16b0304c monitoring/middleware.py+storage.py persist_http_request改async(db.atxn子线程池)+_record_response_metrics改async+create_task调度, 响应路径零同步IO - 小欧 2026-11-03
 [retention顺序修正] fix e1e37768f monitoring/storage.py task_tool_metrics删除顺序: 先取超期task_id再删(避免task_metrics先删子查询为空漏删) - 小欧 2026-11-03
-### 1.6.0.2 发送防重与跨会话闩锁（11-03）
+### 1.5.6.2 发送防重与跨会话闩锁（11-03）
 [owner-scoped发送闩锁] perf+fix e16b0304c useChatSend.ts owner-scoped isSendingRef记录所属会话id, A的finally不误清B - 小欧 2026-11-03
-### 1.6.0.3 编辑历史合规与文档（11-03）
+### 1.5.6.3 编辑历史合规与文档（11-03）
 [编辑历史归位] docs 881431873+b27e1125d 今日14个源文件编辑历史条目补缺失/归位(修乱插import前/注释块中间), 纯注释零逻辑变更 - 小欧 2026-11-03
 [治理说明] docs 72b7f2b2b+665ea9417 [5]后端卡死治理处理说明+补充附录A-H - 小欧 2026-11-03
 [状态指示说明] docs e9f2ca229 [7]顶栏状态指示功能说明分析 - 小欧 2026-11-03
