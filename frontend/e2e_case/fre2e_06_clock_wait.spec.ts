@@ -102,7 +102,9 @@ test.describe('心跳等待感知钟面', () => {
     //   → 原 30×2s=60s 窗口恰好落在「钟面按设计不出现」的时段，30 次全 0 是**误报**，
     //     而非产品缺陷（实测钟面在长文本流式输出期正常显示）。
     //   改为：轮询到钟面出现或任务终态为止（上限 300s），终态也算一次探测。
-    const clockEl = page.locator('.clock-stopwatch');
+    // 2026-11-03 小欧 - 步骤级计时已改文字数码皮(.wait-timer-text, 北京老陈定案: 表盘只留顶栏),
+    //   故本用例的"出现/递增/终态消失"三断言一律改看它 — 小欧-2026-11-03
+    const clockEl = page.locator('.wait-timer-text');
     let clockCount = 0;
     const pollDeadline = Date.now() + 300_000;
     for (let i = 0; Date.now() < pollDeadline; i += 1) {
@@ -135,18 +137,18 @@ test.describe('心跳等待感知钟面', () => {
     // 2026-09-28 小欧 - 收窄到 :visible。钟面挂在多个等待窗口(打字机段/ToolCallLine 等待段)，
     //   每窗口一实例且各自从挂载时刻起算；原取 .first() 可能命中非当前可见的那一个。
     //   紧接命中后立即连拍，确保两次快照落在同一挂载实例上（窗口切换会重置计时）。
-    // 2026-11-03 小欧 - 排除顶栏钟面(.clock-stopwatch-header): 它的起点是"距最近业务帧",
-    //   业务帧一到就归零重算/退场, 秒数不单调, 拿它做递增断言必假红 — 小欧-2026-11-03
-    const visibleClock = () =>
-      page
-        .locator('.clock-stopwatch:visible:not(.clock-stopwatch-header)')
-        .first();
+    // 2026-11-03 小欧 - 取舍口改为文字数码(框内只有数码, 如 "12s" / "1:05"), 递增断言按解析秒数比。
+    //   顶栏表盘(.clock-stopwatch-header)不参与: 它的起点是"距最近业务帧", 秒数不单调, 拿它断言必假红。
+    const visibleTimer = () => page.locator('.wait-timer-text:visible').first();
     const getText = async () => {
-      const svgTexts = visibleClock().locator('svg text');
-      return await svgTexts
-        .first()
+      const raw = await visibleTimer()
         .textContent({ timeout: 10_000 })
         .catch(() => null);
+      if (!raw) return null;
+      const parts = raw.trim().split(':');
+      if (parts.length === 1) return Number(parts[0].replace('s', '')); // "12s"
+      if (parts.length === 2) return Number(parts[0]) * 60 + Number(parts[1]); // "1:05"
+      return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]); // "1:02:05"
     };
     const t1 = await getText();
     await page.waitForTimeout(3000);
@@ -163,7 +165,7 @@ test.describe('心跳等待感知钟面', () => {
     // === 验证 5: 终态后钟面消失 ===
     const finalClockCount = await clockEl.count();
     console.log(
-      `[E2E-CLOCK] 终态后 DOM .clock-stopwatch count = ${finalClockCount}`
+      `[E2E-CLOCK] 终态后 DOM .wait-timer-text count = ${finalClockCount}`
     );
     expect(finalClockCount).toBe(0);
 

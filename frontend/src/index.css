@@ -429,6 +429,25 @@
   line-height: 1;
   flex-shrink: 0;
 }
+/* 2026-11-03 08:12:00 小欧 - 步骤级计时改文字数码皮(waitTimerText): 纯数码 + 同色淡底框(无描边,
+   北京老陈定案: 有边线不好看), 尺寸固定(等宽数字 + min-width)防标题行随秒数抖动 — 小欧-2026-11-03 */
+.wait-timer-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 34px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
 
 /* ReasoningIcon — step 页面"推理内容..."折叠行的前置图标
    本段图标可换(备用件常驻, 改 ReasoningIcon 别名取值即可): 眼睛(EyeIcon) / 信号柱(SignalBarsIcon) /

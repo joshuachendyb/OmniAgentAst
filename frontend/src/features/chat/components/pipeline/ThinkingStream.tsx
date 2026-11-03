@@ -21,6 +21,8 @@
 //   ②图标按 expanded 传 dim(收起=亮+动画 / 展开=暗+静止, CSS 侧两态)
 //   ③defaultExpanded 改为"设置变化即跟随"(此前仅挂载读一次, 设为关对已渲染段无反应) — 小欧-2026-10-05
 // 编辑历史: 2026-10-05 小欧 - 第2轮会审: 统一"手动折叠vs设置默认值"三处相反注释为单一语义(设置是默认值, 变即新基线) — 小欧-2026-10-05
+// 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改落标题行右端文字数码(WaitTimerText, 不摆表盘);
+//   表盘只留顶栏 HeaderWaitClock, 图标位置动画不动 — 小欧-2026-11-03
 /**
  * ThinkingStream - 思考流（思考图标行 + 尾随光标）
  *
@@ -40,7 +42,7 @@ import { ReasoningIcon } from '@/components/WaitingIcons'; // 2026-10-05 小欧:
 // 2026-10-07 小欧 - 删 size={24}: 显式传值会覆盖图标内 Icon.BOX 默认值, 导致方框盒子 24px 与齿轮/水滴 16px 不同列
 //   (北京老陈: 图标要好看中心对齐, 不许犬牙交错); 改由图标组件自己取 Icon.BOX — 小欧-2026-10-07
 import { useDisclosure } from '@/features/chat/hooks/useDisclosure'; // 2026-10-05 小欧: 折叠切换公用 hook(§5.6) — 小欧-2026-10-05
-import { ClockStopwatch } from '@/components/WaitingIcons/clockStopwatch'; // 2026-11-03 小欧: 标题行右端钟面(步骤级计时的落位) — 小欧-2026-11-03
+import { WaitTimerText } from '@/components/WaitingIcons/waitTimerText'; // 2026-11-03 小欧: 标题行右端文字数码计时(表盘只留顶栏) — 小欧-2026-11-03
 import type { ClockSignals } from '@/types/sse'; // 2026-11-03 小欧: 钟面信号类型 — 小欧-2026-11-03
 
 interface ThinkingStreamProps {
@@ -61,8 +63,8 @@ interface ThinkingStreamProps {
    */
   running?: boolean;
   /**
-   * 2026-11-03 小欧 - 等待钟面信号(北京老陈定案): 步骤级计时落位在「推理内容...」标题行右端,
-   *   与前置图标同一条基线; 不传即不渲染(终态/回放/已完成段无钟面)。
+   * 2026-11-03 小欧 - 等待计时信号(北京老陈定案): 步骤级计时落在「推理内容...」标题行右端,
+   *   文字数码+底色框(不摆表盘, 表盘只留顶栏), 与前置图标同一基线; 不传即不渲染(终态/回放)。
    *   计时起点=挂载时刻(本步进入等待的时刻), 与"本步等了多久"语义一致。
    */
   waitClock?: ClockSignals;
@@ -149,9 +151,10 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
           expanded={expanded}
           animated={false}
         />
-        {/* 2026-11-03 小欧 - 步骤级钟面落在标题行右端(箭头之后), 与整行同为 flex 子项:
-            竖直由 align-items:center 对齐, 间距走本行 gap(SM), 点击穿透到整行折叠(与箭头同侧语义) — 小欧-2026-11-03 */}
-        {waitClock && <ClockStopwatch {...waitClock} kind="llm" />}
+        {/* 2026-11-03 小欧 - 步骤级计时落在标题行右端(箭头之后), 与整行同为 flex 子项:
+            竖直由 align-items:center 对齐, 间距走本行 gap(SM), 点击穿透到整行折叠(与箭头同侧语义);
+            形态为文字数码+底色框(北京老陈定案: 表盘只留顶栏) — 小欧-2026-11-03 */}
+        {waitClock && <WaitTimerText {...waitClock} kind="llm" />}
       </span>
       {/* 正文: 折叠态不显全文(防刷屏挤掉后续 step) 展开态显示完整内容 */}
       {expanded && (

@@ -60,8 +60,9 @@ test.describe('量化交易研究-复杂多步', () => {
 
     console.log('[E2E-CLOCK] 流已启动, 等待 15s...');
 
-    // 每 2s 轮询钟面出现(最多等 60s)
-    const clockEl = page.locator('.clock-stopwatch');
+    // 每 2s 轮询计时出现(最多等 60s)
+    // 2026-11-03 小欧 - 步骤级计时改文字数码皮(.wait-timer-text), 表盘只留顶栏 — 小欧-2026-11-03
+    const clockEl = page.locator('.wait-timer-text');
     let clockCount = 0;
     for (let i = 0; i < 30; i++) {
       await page.waitForTimeout(2000);
@@ -73,8 +74,11 @@ test.describe('量化交易研究-复杂多步', () => {
     if (clockCount >= 1) {
       // 秒数快照(软断言: 重挂载时 useRef 重置, 秒数可能不单调)
       const getText = async () => {
-        const svgTexts = clockEl.first().locator('svg text');
-        return await svgTexts.first().textContent();
+        const raw = await clockEl.first().textContent({ timeout: 10_000 });
+        const parts = (raw ?? '').trim().split(':');
+        return parts.length === 1
+          ? Number(parts[0].replace('s', ''))
+          : Number(parts[0]) * 60 + Number(parts[1]);
       };
       const t1 = await getText();
       await page.waitForTimeout(3000);

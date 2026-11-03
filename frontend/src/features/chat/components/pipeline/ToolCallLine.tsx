@@ -65,6 +65,8 @@
 //   另订正 D-11 注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
 //   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除 — 小欧-2026-10-14
 // 2026-10-23 小欧 - 参数树传 tool 名（ParamsTree 的 tool prop），目录类工具的 path 按目录渲染 — 小欧-2026-10-23
+// 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改挂首行右端文字数码(WaitTimerText, 齿轮位置动画不动);
+//   门控与齿轮同源(已出结果/被拦截/回放不挂) — 小欧-2026-11-03
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -104,7 +106,7 @@ import {
   Size,
 } from '@/utils/stepStyles';
 import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
-import { ClockStopwatch } from '@/components/WaitingIcons/clockStopwatch'; // 2026-11-03 小欧: 首行右端钟面(步骤级计时落位) — 小欧-2026-11-03
+import { WaitTimerText } from '@/components/WaitingIcons/waitTimerText'; // 2026-11-03 小欧: 首行右端文字数码计时(表盘只留顶栏) — 小欧-2026-11-03
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 
 interface ToolCallLineProps {
@@ -267,13 +269,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         >
           <GearIcon />
           {firstLine} {attemptLabel}
-          {/* 2026-11-03 小欧 - 步骤级钟面落首行右端(北京老陈定案: 齿轮位置/动画不动): 门控与下方齿轮一致 —
-              已出结果/被拦截/回放均不挂, 不给已结束的步骤留计时 — 小欧-2026-11-03 */}
+          {/* 2026-11-03 小欧 - 步骤级计时落首行右端(北京老陈定案: 齿轮位置/动画不动, 计时用文字数码):
+              门控与下方齿轮一致 —— 已出结果/被拦截/回放均不挂, 不给已结束的步骤留计时 — 小欧-2026-11-03 */}
           {!hasResult &&
             tools.length > 0 &&
             !interrupted &&
             !replay &&
-            waitClock && <ClockStopwatch {...waitClock} kind="tool" />}
+            waitClock && <WaitTimerText {...waitClock} kind="tool" />}
         </span>
         {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
