@@ -475,7 +475,8 @@ async def startup_event():
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
     _start_monitoring_retention_task()  # 2026-11-03 xiaoou: monitoring.db retention (http/metrics 7d, task/llm 30d), never on request path
     import os as _os
-    _cfg_chat_retention = get_config().get('tuning.live_front.chat_retention_days', 0)
+    _cfg_chat_retention = get_config().get('system.chat_retention_days',
+                            get_config().get('tuning.live_front.chat_retention_days', 0))
     _chat_retention_days = int(_os.getenv('OMNIAGENT_CHAT_RETENTION_DAYS', str(_cfg_chat_retention)) or '0')
     if _chat_retention_days > 0:
         try:

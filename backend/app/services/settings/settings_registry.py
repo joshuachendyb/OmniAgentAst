@@ -319,6 +319,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
               notice="仅跨域部署时生效（如前端独立CDN、E2E代理）；打包版同源运行无需配置"),
+        # --- 对话历史保留（1 键，归 tuning.live_front 命名空间，启动时清理超期会话）---
+        _item("system.chat_retention_days", "int", "对话历史保留天数", 0,
+              range_=[0, 3650], restart=True,
+              notice="保留近 N 天的对话历史（0=关闭，不删用户历史）；>0 时启动时清理超期会话（级联 tasks/steps/events），建议先备份 chat_history.db"),
         # --- 关于（2 只读） ---
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
