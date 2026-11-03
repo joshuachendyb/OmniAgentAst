@@ -18,6 +18,9 @@
 // 编辑历史: 2026-10-21 小杨 - 台账改由 chatStreamStore 在 start 帧按真实 taskId 落账（插话不记） — 小杨-2026-10-21
 // 编辑历史: 2026-11-03 09:10:00 小欧 - 切会话复位发送防重标记: 标记跨整条 SSE, 在 A 跑任务时切到 B,
 //   B 的发送被静默丢弃(按钮已解灰却发不出去) — 小欧-2026-11-03
+
+// 编辑历史: 2026-11-03 17:40:00 小欧 - 三堂会审修复: line 205 ownerForCleanup 缩进 6→10 空格(与 if 块内 line 204 对齐, KISS-DIRECT 合规) — 小欧-2026-11-03
+
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -202,7 +205,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           setSessionId(currentSessionId);
           currentSessionIdRef.current = currentSessionId;
           if (!isInterject) sendingSessionRef.current = currentSessionId; // auto-create后更新owner
-      if (!isInterject) ownerForCleanup = currentSessionId;
+          if (!isInterject) ownerForCleanup = currentSessionId;
           // 2026-09-30 小欧 - 自动建会话同样要把 id 写进 URL（经唯一写入口上抛），
           //   否则刷新后地址栏无 session_id，只能回退到"最近会话"猜测
           onUrlSessionChange?.(currentSessionId);
