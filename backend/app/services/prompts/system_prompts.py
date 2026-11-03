@@ -82,10 +82,12 @@ class PromptBuilder:
 
     _TOOL_CALL_RULES_BASE = """
 【Office文件】
--禁用文本工具,不支持.doc.xls.ppt.odt.ods.odp.rtf
+-搜备用文档工具,用专有的文档读写tool
+-不支持.doc.xls.ppt.odt.ods.odp.rtf格式处理
 
 【媒体文件】
--禁用文本/office工具
+-搜备用媒体工具,使用专用的媒体读写tool
+
 
 """
 
