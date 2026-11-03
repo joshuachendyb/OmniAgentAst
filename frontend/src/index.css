@@ -439,7 +439,9 @@
   min-width: 34px;
   padding: 0 6px;
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 2026-11-03 09:18:00 小欧 - 硬编码栈是唯一漏网处, 改引 --font-mono(唯一真相源):
+     Windows 上 ui-monospace 落浏览器默认等宽, 与全应用等宽字形两套; 数码只吃 tabular-nums — 小欧-2026-11-03 */
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
