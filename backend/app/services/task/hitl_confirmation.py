@@ -32,6 +32,7 @@
 #   security.hitl_timeout → security.hitl.timeout; 改前 registry 只出后者, 本处恒读不到(恒走常量),
 #   过期清理判据与真 HITL 确认超时不再同源。
 # 2026-10-18 小欧 - 注释精简冗余标注(S2/T1/超时配置化/路径订正 四处, 技术说明与日期署名原样保留)。
+# 2026-11-03 小欧 - 确认失效/重复确认/窗口关闭三处 WARNING→DEBUG/INFO(请求侧状态与正常超时) — 小欧-2026-11-03
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -139,7 +140,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
         entry = _pending_confirmations.get(confirm_id)
     if entry is None:
         # 2026-09-03 小欧/北京老陈: entry=None补日志 — 改前静默返回False, 无法区分"不存在"和"已处理"
-        logger.warning(f"[HITL] wait_for_confirmation: entry=None confirm_id={confirm_id}")
+        logger.debug(f"[HITL] wait_for_confirmation: entry=None confirm_id={confirm_id}")  # 2026-11-03 小欧: 确认已失效, 降 DEBUG
         return {"confirmed": False, "trust_session": False}
 
     try:
@@ -161,7 +162,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
                     return {"confirmed": False, "trust_session": False}
            # 2026-10-11 小欧 - 日志措辞对齐: expired 的语义是"确认窗口关闭、未收到人工授权",
         #   与工具执行耗时无关; 原写"确认超时"易被误读为工具慢。键名/返回值不变。
-        logger.warning(f"[HITL] 确认窗口已关闭(未获人工授权): confirm_id={confirm_id}, timeout={timeout}s")
+        logger.info(f"[HITL] 确认窗口已关闭(未获人工授权): confirm_id={confirm_id}, timeout={timeout}s")  # 2026-11-03 小欧: 超时拒属正常流程, 降 INFO
         return {"confirmed": False, "trust_session": False, "expired": True}
     finally:
         with _pending_lock:
@@ -185,12 +186,12 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
         entry = _pending_confirmations.get(confirm_id)
     if entry is None:
         # 2026-09-03 小欧/北京老陈: entry=None补日志 — 改前静默返回False, 无法排查confirm_id去向
-        logger.warning(f"[HITL] resolve_confirmation: entry=None confirm_id={confirm_id}")
+        logger.debug(f"[HITL] resolve_confirmation: entry=None confirm_id={confirm_id}")  # 2026-11-03 小欧: 确认已失效, 降 DEBUG
         return False
 
     if entry.future.done():
         # 2026-09-03 小欧/北京老陈: future.done()补日志 — 改前静默返回False, 无法确认是否已超时/已resolve
-        logger.warning(f"[HITL] resolve_confirmation: future已done confirm_id={confirm_id}")
+        logger.debug(f"[HITL] resolve_confirmation: future已done confirm_id={confirm_id}")  # 2026-11-03 小欧: 重复确认, 降 DEBUG
         return False
 
     _task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""

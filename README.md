@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**系统版本**: v1.2.5 | **更新时间**: 2026-10-11 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-10-11
+**系统版本**: v1.2.5 | **更新时间**: 2026-11-03 22:20 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-11-03（撤销双键：`logging.file_level`+`logging.console_level` 合回单键 `logging.level`，控制台只显示 ==该级别 的行、文件按常规阈值记 ≥该级别；`LOG_LEVEL` 覆盖项同步）
 
 
 ---
@@ -505,10 +505,10 @@ model_meta:
 
 | 键 | 说明 |
 |----|------|
-| `logging.level` | 日志级别（DEBUG / INFO / WARNING / ERROR） |
-| `logging.debug` | 调试模式（true/false）；true 时日志/文件落盘在 `backend/files/`+`backend/logs/`，false 落到用户级目录 |
-| `logging.max_file_size` | 单日志文件大小上限（字节） |
-| `logging.backup_count` | 轮转保留文件数 |
+| `logging.level` | 日志级别，一个值两种用法：后端控制台（黑窗口）只显示「等于该级别」的日志；日志文件按常规方式记录「该级别及以上」 |
+| `logging.debug` | 调试模式（true/false）；true 时日志强制 DEBUG（仅文件，控制台仍按 `logging.level` 精确显示）、日志/文件落盘在 `backend/files/`+`backend/logs/`，false 落到用户级目录 |
+| `logging.max_file_size` | 单日志文件大小上限（字节，需重启） |
+| `logging.backup_count` | 轮转保留文件数（需重启） |
 
 ### 7.6 `security` — 安全配置
 

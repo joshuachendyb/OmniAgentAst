@@ -66,6 +66,8 @@
 
 # 2026-10-26 小沈 - build_history_context_step 增顶层 content 构造(北京老陈令): 首帧算 content=userinput[10]+压缩情况
 #   (无历史/直接注入/压缩模型[provider/model] 三态), 存槽 _first_frame_content, 后续帧从槽读保持不变; 槽位随 telemetry 实例每任务新建(天然隔离)。 — 小沈-2026-10-26
+# 2026-11-03 小欧 - log_and_print 增 level 参数: _log_task_end 任务结束汇总显式传 level="WARNING"
+#   (任务起止必须可见), 文件通道仍固定 INFO 落盘 — 小欧-2026-11-03
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -633,4 +635,4 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
             parts.append(f"steps=[{step_summary}]")
         parts.append(f"total_steps={total}")
     _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
-    log_and_print(_msg)
+    log_and_print(_msg, level="WARNING")

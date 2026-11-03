@@ -11,6 +11,7 @@
 # 2026-10-30 小欧 - 三堂会审修复(北京老陈令): _summary stash 前补 isinstance(llm_data, dict) 守卫 ——
 #   原式对非 dict 的非空 llm_data 抛 AttributeError, 且位于 try 之外会中断整轮观察构建;
 #   _summary 仍只服务 get_last_tool_summary(死循环纠偏), 不再用于改写 tool content — 小欧-2026-10-30
+# 2026-11-03 小欧 - 参数截断修复提示 WARNING→INFO(自愈修复非故障) — 小欧-2026-11-03
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -112,7 +113,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
         repair_warning = call.get("_repair_warning", "")
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
-            logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
+            logger.info(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")  # 2026-11-03 小欧: 自愈修复, 降 INFO
         # 2026-10-29 小欧 - 通电 _summary stash: 工具摘要独立字段随 tool 消息 tuck(北京老陈令);
         #   异常分支( result=Exception )无 llm_data → 空串 → add_tool_result 不 stash(空值安全) — 小欧-2026-10-29
         # 2026-10-30 小欧 - 三堂会审修复: llm_data 加 isinstance 守卫(与上方 :92/:136 同口径) ——

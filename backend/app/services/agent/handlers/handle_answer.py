@@ -57,6 +57,8 @@
 #   FinalStep 携带 cancel_source 落库/SSE下发, 不再统一"用户取消" — 北京老陈 2026-09-08
 # 2026-09-08 小欧 北京老陈指令(console可见性): C路径取消终态 logger.info→log_and_print 双写,
 #   后端命令行可见"终态 CANCELLED + source" — 小欧-2026-09-08
+# 2026-11-03 小欧 - log_and_print 增 level 参数: C 路径取消终态显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+#   同轮 [Final] 终态全文行一并传 level="WARNING"(控制台默认档即可见终态正文) — 小欧-2026-11-03
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -113,7 +115,7 @@ async def handle_answer(agent, parsed: Dict) -> dict:
             #   文案按来源区分(不再统一"用户取消"), FinalStep 带 cancel_source 落库/下发 — 北京老陈 2026-09-08
             from app.services.task.task_runtime import cancel_terminal_text
             cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
-            log_and_print(f"{time.strftime('%H:%M:%S')} [answer] step={step} 终态 CANCELLED source={cancel_source}: {content}")  # 2026-09-08 小欧: 双写(console可见取消终态) — 小欧-2026-09-08
+            log_and_print(f"{time.strftime('%H:%M:%S')} [answer] step={step} 终态 CANCELLED source={cancel_source}: {content}", level="WARNING")  # 2026-09-08 小欧: 双写(console可见取消终态) — 小欧-2026-09-08
             _events.extend(agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step, response=cancel_terminal_text(cancel_source), outcome="cancelled",
                 error_type="cancelled", error_message=content, cancel_source=cancel_source,
@@ -198,7 +200,7 @@ async def handle_answer(agent, parsed: Dict) -> dict:
             content = deduped
 
     # 2026-08-30 小欧 恢复[Final]终态全文打印: 65f4de7f7(08-28)把response=全文误改为response_len, 终态正文不再上控制台; log_and_print复用07-23统一收口+08-30控制台离线化(事件循环零阻塞)
-    log_and_print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response_len={len(content)}, response={content}")
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Final] step={step}, response_len={len(content)}, response={content}", level="WARNING")
     _events.extend(agent._step_emitter.emit_completed_final(
         step=step, response=content, reasoning=reasoning,
     ))  # 小健 2026-09-05：completed 由 dispatch 外层置状态，工厂不提前置; 4A: yield转发→extend — 小欧-2026-09-06

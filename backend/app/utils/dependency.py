@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-11-03 小欧 - 打包版(exe)不支持运行时 pip 安装两处 WARNING→INFO(设计限制非故障) — 小欧-2026-11-03
 """
 依赖自动安装工具 — 统一处理运行时Python依赖
 
@@ -254,7 +256,7 @@ def install_batch(packages: Iterable[str]) -> None:
     if not pkgs:
         return
     if getattr(sys, "frozen", False):
-        logger.warning(f"[依赖] 打包版(exe)不支持运行时批量装({len(pkgs)} 个): {', '.join(pkgs[:8])}")
+        logger.info(f"[依赖] 打包版(exe)不支持运行时批量装({len(pkgs)} 个): {', '.join(pkgs[:8])}")  # 2026-11-03 小欧: 设计限制, 降 INFO
         return
     cmd = [sys.executable, "-m", "pip", "install", "-q", "-c", _constraints_file()] + pkgs
     with _PIP_LOCK:
@@ -386,7 +388,7 @@ def ensure_dependency(
     #   调 pip 会被自家 argparse 以 unrecognized arguments 打回刷屏；且即便装上 frozen
     #   进程也看不见(只认 _MEIPASS)。直接返回 False，并给出可操作提示（要加包重打）。
     if getattr(sys, "frozen", False):
-        logger.warning(
+        logger.info(  # 2026-11-03 小欧: 打包版设计限制, 降 INFO
             f"[依赖] 打包版(exe)缺失依赖 '{pip_package}'：不支持运行时 pip 安装，已跳过。"
             f"需要该功能请重打包含该依赖的版本；或改用源码运行并执行 `pip install {pip_package}`。"
         )

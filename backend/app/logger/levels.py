@@ -3,6 +3,10 @@
 
 编辑历史:
 2026-10-06 - 小欧 - ② 新增 RECOVERED 档(25, 介于 INFO20 与 WARNING30 之间)
+2026-11-03 - 小欧 - 新增 to_level_int(): 级别名→logging 整数级别的唯一换算点(DRY),
+  收口 LogConfig.get_console_level_int / log_and_print / shared_handler._get_file_level 三处 ——
+  原三处各写一遍 getLevelName+isinstance, 其中 _get_file_level 用裸 getattr 遇坏配置直接 AttributeError
+  让服务起不来(控制台侧却安全回落, 两边不一致) — 小欧-2026-11-03
 """
 import logging
 
@@ -23,4 +27,15 @@ def log_recovered(logger, msg: str) -> None:
     logger.log(RECOVERED, msg)
 
 
-__all__ = ["RECOVERED", "log_recovered"]
+def to_level_int(name: str, default: int = logging.INFO) -> int:
+    """级别名→logging 整数级别(唯一换算点) — 小欧-2026-11-03
+
+    非法/未知名回落 default, 两种口径的分歧只体现在传参上, 不再各写一套换算:
+    - 配置值取 WARNING(坏配置不放大控制台噪音);
+    - 行档位取 INFO(坏档位名不吞行, 照常落文件)。
+    """
+    lv = logging.getLevelName(str(name).upper())
+    return lv if isinstance(lv, int) else default
+
+
+__all__ = ["RECOVERED", "log_recovered", "to_level_int"]

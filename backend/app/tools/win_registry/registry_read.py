@@ -15,6 +15,7 @@
 #   registry_write 在写失败(PermissionError/ValueError/Exception)分支回滚; _backup_registry 返回值缓存到
 #   _backup_file 供恢复定位。compliance: SRP(恢复职责归属读取侧备份)+禁止backward
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取注册表→读注册表
+# 2026-11-03 小欧 - reg 命令不存在跳过备份 WARNING→INFO(环境限制) — 小欧-2026-11-03
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -110,7 +111,7 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[s
         # 2026-09-20 小欧 D-7: 失败显式返回 None, 不返回不可用路径(调用方据此中止)
         return None
     except FileNotFoundError:
-        logger.warning("[registry] reg命令不存在,跳过备份")
+        logger.info("[registry] reg命令不存在,跳过备份")  # 2026-11-03 小欧: 环境限制, 降 INFO
         return None
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")

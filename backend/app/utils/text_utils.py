@@ -13,6 +13,7 @@
 # 2026-10-30 小欧 - 新增公用 count_lines(编辑器口径数行数: 末尾换行不产生新行): 文件页
 #   (browse_service._count_content_lines)与引用压缩(refs.budget)共用本函数, 避免 "a\n" 一处算 1 行、
 #   一处算 2 行导致回执行数虚高; _count_content_lines 改委托本函数(DRY) — 小欧-2026-10-30
+# 2026-11-03 小欧 - 重复内容去重截断提示 WARNING→INFO(自愈) — 小欧-2026-11-03
 """
 文本处理工具函数 — 小沈 2026-06-09
 
@@ -265,7 +266,7 @@ def dedup_repeat(content: str) -> str:
     ratio = 1 - len(deduped) / len(content)
     if ratio < DUP_RATIO:
         return content
-    logger.warning(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {ratio:.0%}), 已去重截断")
+    logger.info(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {ratio:.0%}), 已去重截断")  # 2026-11-03 小欧: 自愈, 降 INFO
     return deduped
 
 

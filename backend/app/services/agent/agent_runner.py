@@ -189,6 +189,8 @@
 #   react_loop 原第1发同步移除。
 # 2026-10-12 小欧 - 首帧 thought-start 带 task_id（北京老陈令）: 前端凭 task_id 开门显示, 后续帧不带 — 小欧-2026-10-12
 # 2026-10-14 小欧 - linked 增量摘要: 抽 _build_history_context(先查锚点再定加载范围: 有锚点只取 delta, 否则全量老路, 异常一律降级全量) — 小欧-2026-10-14
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 取消来源兜底(orchestrator_error)显式传 level="WARNING" — 小欧-2026-11-03
+#   同轮 [Runner] 增量摘要锚点命中行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -206,13 +208,12 @@ SSE 连接只从 event_log 按 seq 偏移读取，支持断线重连。 — 小�
 
 import asyncio
 import itertools
-import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
 from app.db import db
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.services.agent.steps import ErrorStep, MetaStep, FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
+from app.services.agent.steps import FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.task.task_registry import task_cleanup
 from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
@@ -269,7 +270,8 @@ async def _build_history_context(db_ops, session_id) -> dict:
             _delta = db_ops.load_previous(session_id, lower_message_id=_anchor["delta_lower_message_id"])
             log_and_print(
                 f"[Runner] 增量摘要锚点命中(锚点task={_anchor.get('task_id')}, "
-                f"delta原始{len(_delta or [])}条) — 只压新增段"
+                f"delta原始{len(_delta or [])}条) — 只压新增段",
+                level="WARNING",
             )
             return {"chain_summary_anchor": _anchor, "chain_delta_messages": _delta or []}
     except Exception as _e:
@@ -308,7 +310,7 @@ async def _persist_final(coro):
         except asyncio.CancelledError:
             # 双重cancel: _t 已脱离外层继续运行(loop存活即必达), add_done_callback 已确保异常被 retrieve
             # 不 re-raise 避免外层 CancelledError 重入; return None 等价终态降级 — 小沈 2026-08-24
-            logger.debug(f"[Shield] 双重cancel, 孤儿task异常已由done_callback retrieve")
+            logger.debug("[Shield] 双重cancel, 孤儿task异常已由done_callback retrieve")
             return None
 
 
@@ -680,7 +682,7 @@ async def run_agent_in_background(
                 # 方案五 G路径: CancelledError 系 orchestrator 异常→bg_task.cancel() 触发(链路),
                 #   非用户取消, 未标记来源则定为后端自保取消; A/B 若已标记则尊重原来源不覆盖 — 小欧 2026-09-08
                 agent._cancel_source = "orchestrator_error"
-                log_and_print(f"{time.strftime('%H:%M:%S')} [Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
+                log_and_print(f"{time.strftime('%H:%M:%S')} [Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)", level="WARNING")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:

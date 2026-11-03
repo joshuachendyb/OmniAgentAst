@@ -103,6 +103,9 @@ python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8
 pytest                                            # all tests
 pytest -x --tb=short                              # fast fail
 pytest -k test_name                               # match by name
+
+ruff check --select F <改动文件>                    # 提交前必过: F 类存量已清零, 零容忍 — 小欧-2026-11-03
+ruff check --select ARG,RET,SIM,PIE <改动文件>       # 附加参考: 该四类存量 15 条, 只判断新增 — 小欧-2026-11-03
 ```
 
 #### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
@@ -267,6 +270,7 @@ FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` �
 | **httpx version lock** | `httpx==0.26.0` required. Don't upgrade — 0.28.1+ upgrades httpcore which breaks TLS. |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, FILE}`. |
+| **config 真源与同步** | 新增配置键三同步：`backend/config.yaml.example`（唯一 git 跟踪模板）+ `settings_registry.py` + `config/config.yaml`（**仓库根**，gitignore 运行副本，唯一被 `get_config_path()` 实读）。**`backend/config/config.yaml` 属历史双轨遗留，2026-11-03 决定删除，禁止再创建** — 小欧-2026-11-03 |
 
 ## Shell 卡死取证（偶发，必读）
 

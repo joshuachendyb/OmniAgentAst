@@ -4,6 +4,7 @@
 # 编辑历史: 2026-09-23 小欧 新建
 # 编辑历史: 2026-10-11 小欧 键名 opencodeZen→ZenFree(与 config 模板/前端对齐); get_provider_adapter
 #   加固: is not None 判空 + 回落告警去歧义/同名去重(防假值对象/大小写漂移静默吞掉 + 防刷屏) — 小欧-2026-10-11
+# 编辑历史: 2026-11-03 小欧 无专属适配器回落日志 WARNING→INFO(未适配厂商是常态, 已按 provider 去重) — 小欧-2026-11-03
 
 from typing import Dict, Set
 
@@ -38,7 +39,7 @@ def get_provider_adapter(provider: str) -> ProviderAdapter:
     #   名去重, 每名只警告一次 — 未适配厂商是常态(通用基类本就支持), 每次调用刷屏成噪音。
     if provider not in _warned_providers:
         _warned_providers.add(provider)
-        logger.warning(
+        logger.info(  # 2026-11-03 小欧: 未适配厂商走通用基类是常态, 降 INFO
             "[provider] '%s' 无专属适配器, 使用通用基类; 已有专属适配器的厂商: %s",
             provider, list(_ADAPTERS.keys())
         )

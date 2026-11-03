@@ -11,12 +11,25 @@
 # 2026-10-25 - 小欧 - LogConfig 方法改调 get_config() 取实时值, 删导入期类属性快照:
 #   get_config() 内置 mtime 缓存未变则直接返回, 零额外成本; 配置改动无需重启即被读取感知。 - 小欧-2026-10-25
 # 2026-10-25 - 小欧 - get_log_level 单次 get_config() 提 cfg 局部变量(会审缺陷2): 消双重 stat。 - 小欧-2026-10-25
+# 2026-11-03 - 小欧 - LogConfig 新增 get_console_level()(logging.console_level, 默认 WARNING 零行为变化),
+#   控制台显示阈值与文件日志解耦; 供 shared_handler 装配/热重载读 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - get_log_level→get_file_level, 键 logging.level→logging.file_level(名副其实, 唯一管文件):
+#   调试模式开启时仍强制 DEBUG — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 新增 get_console_level_int(): 控制台级别字符串→int 的唯一换算点, shared_handler 与
+#   log_and_print 共用; 原换算散在 shared_handler 私有函数, 被 __init__ 跨模块导入 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - console_level 语义定为「精确档位」: 控制台只出 == 该级别的记录(不是 >= 阈值), 文件仍 >= 阈值 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 换算下沉 levels.to_level_int(DRY), 本类只传 default=WARNING — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 撤销双键(北京老陈令: 一个值即可): 键回到单键 logging.level, 新增 get_log_level() 取原值;
+#   get_console_level_int() 读同一原值, 控制台只显示 == 该值的行 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 删 get_file_level() 纯中转层(三跳违反 KISS-DIRECT): 调试强制下沉到唯一消费点
+#   shared_handler._get_file_level — 小欧-2026-11-03
 
 import logging
 import logging.handlers
 from pathlib import Path
 from app.utils.time_utils import now_str
 from app.config import get_config, get_frozen_dir
+from app.logger.levels import to_level_int  # 2026-11-03 小欧: 级别名→int 唯一换算点(DRY)
 
 _frozen = get_frozen_dir()
 LOG_DIR = (_frozen / "logs") if _frozen is not None else Path(__file__).parent.parent.parent / "logs"
@@ -40,10 +53,24 @@ class LogConfig:
 
     @classmethod
     def get_log_level(cls) -> str:
-        cfg = get_config()
-        if cfg.get('logging.debug', False):
-            return "DEBUG"
-        return cfg.get('logging.level', 'INFO')
+        """日志级别(logging.level, 配置原值) — 小欧-2026-11-03
+
+        一个键两种用法(北京老陈定, 不再拆 console_level):
+        - 控制台: 只显示「级别 == 该值」的行(精确匹配), 见 get_console_level_int;
+        - 日志文件: 记「级别 >= 该值」(logging 常规阈值), 调试强制在唯一消费点
+          shared_handler._get_file_level() 内施加 —— 本类不再多出一层纯中转的 get_file_level()。
+        """
+        return str(get_config().get('logging.level', 'INFO')).upper()
+
+    @classmethod
+    def get_console_level_int(cls) -> int:
+        """控制台级别→logging 整数级别(唯一换算点) — 小欧-2026-11-03
+
+        shared_handler 装配/热重载、ConsoleMirrorHandler 精确档位判定与 log_and_print 上屏判定同读此函数;
+        换算复用 levels.to_level_int(DRY), 配置值非法时回落 WARNING, 不让坏配置放大控制台噪音。
+        读的是 logging.level 原值(不取调试模式强制后的 DEBUG) — 小欧-2026-11-03
+        """
+        return to_level_int(cls.get_log_level(), logging.WARNING)
 
     @classmethod
     def get_max_bytes(cls) -> int:

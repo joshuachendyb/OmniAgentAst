@@ -62,6 +62,11 @@
 #   缺哪项点名 error 且不挂载 — 小欧-2026-11-01
 # 2026-11-01 20:10 小欧 - 静态托管收进打包态, 开发 8000 纯 API(root 404, 零 dist 引用) — 小欧-2026-11-01
 # 2026-11-03 小欧 - 接 _start_monitoring_retention_task(每小时清 monitoring 超期数据,后台子线) + 启动期 chat_retention(读 system.chat_retention_days, 默认关闭), 均失败只告警不阻断 — 小欧-2026-11-03
+# 2026-11-03 小欧 - 新增裸 /health 别名(与 /api/v1/health 同源一份真 JSON): 外部探针(opencode-cli 每30s打 /health)
+#   在 dev 态原 404 刷屏、打包态被 spa_fallback 拿 index.html 假 200; 别名须注册在 _IS_FROZEN catch-all 之前 — 小欧-2026-11-03
+# 2026-11-03 小欧 - http_exception_handler 4xx 全降 INFO(客户端请求不合法/资源不存在, 非服务端故障)、
+#   5xx 保持 ERROR; 422 校验错误同降 INFO。原 probe-404 特例随之删除 — 小欧-2026-11-03
+# 2026-11-03 21:30 小欧 - 四处后台任务 create_task→spawn_bg(强引用防 GC 收口, shutdown 仍按引用 cancel) — 小欧-2026-11-03
 import sys
 import asyncio
 import time
@@ -85,6 +90,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.datastructures import MutableHeaders  # 2026-10-30 小欧: 纯 ASGI 计时中间件回写响应头
 import traceback
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: 后台任务统一存引用防 GC(与 middleware 同源)
 from app.tools import ensure_tools_registered
 from app.config import get_config, get_code_root, env_flag
 from pathlib import Path
@@ -107,7 +113,6 @@ from app.logger import logger
 from app.logger.shared_handler import install_access_noise_filter  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤
 from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
-from app.config import get_config
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧 - 文档[33] 5.18: 过期会话信任回收(TTL)
 from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
@@ -244,8 +249,9 @@ setup_monitoring(app)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # 记录请求路径/方法/客户端, 便于定位 404 等异常的真正来源(原日志仅记状态码, 无法定位) — 小欧 2026-07-13
     client = request.client.host if request.client else "unknown"
-    # 2026-08-09 小欧: task006 — 4xx客户端错误降WARNING, 5xx服务端错误保持ERROR(真实故障), 减少噪音
-    _log = logger.warning if exc.status_code < 500 else logger.error
+    # 2026-11-03 小欧 - 4xx 一律 INFO(客户端请求不合法/资源不存在, 非服务端故障, 不该占 WARNING 刷屏);
+    #   5xx 保持 ERROR(真实故障)。原 probe-404 特例随 4xx 全降而失效, 一并删除 — 小欧-2026-11-03
+    _log = logger.info if exc.status_code < 500 else logger.error
     _log(f"HTTP Exception: {exc.status_code} - {exc.detail} | {request.method} {request.url.path} client={client}")
     return JSONResponse(
         status_code=exc.status_code,
@@ -260,8 +266,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # 2026-08-09 小欧: task006 — 422恒为客户端请求参数错误, 由ERROR降WARNING, 避免非法请求噪音污染ERROR日志
-    logger.warning(f"Validation Error: {exc.errors()}")
+    # 2026-11-03 小欧 - 422 恒为客户端参数错误, 由 WARNING 降 INFO(不占真故障档位, 不进控制台) — 小欧-2026-11-03
+    logger.info(f"Validation Error: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
@@ -376,7 +382,7 @@ async def _periodic_cleanup_loop() -> None:
 def _start_cleanup_task() -> None:
     """启动后台周期清理任务 — 小沈 2026-06-08; 闭包展平+改名 小欧 2026-07-15"""
     global _cleanup_task_ref
-    _cleanup_task_ref = asyncio.create_task(_periodic_cleanup_loop())
+    _cleanup_task_ref = spawn_bg(_periodic_cleanup_loop())  # 2026-11-03 小欧: 强引用防 GC 收口 spawn_bg
     logger.info("后台清理任务已启动")
 
 
@@ -401,7 +407,7 @@ def _start_journal_retention_task() -> None:
             except Exception as exc:
                 logger.warning(f"[Journal] WAL checkpoint 失败: {exc}")
             await asyncio.sleep(3600)
-    _journal_retention_ref = asyncio.create_task(_loop())   # 存引用防 GC（同 _cleanup_task_ref 模式）
+    _journal_retention_ref = spawn_bg(_loop())   # 2026-11-03 小欧: 强引用防 GC 收口 spawn_bg(shutdown 仍按此引用 cancel)
     logger.info("Journal 保留期清理任务已启动")
 
 
@@ -422,7 +428,7 @@ def _start_monitoring_retention_task() -> None:
             except Exception as exc:
                 logger.warning("[Monitoring] retention cleanup failed (degrade): %r" % exc)
             await asyncio.sleep(3600)
-    _monitoring_retention_ref = asyncio.create_task(_loop())
+    _monitoring_retention_ref = spawn_bg(_loop())   # 2026-11-03 小欧: 强引用防 GC 收口 spawn_bg
     logger.info("Monitoring retention cleanup task started")
 
 
@@ -446,39 +452,45 @@ _log_watcher_ref: Optional[asyncio.Task] = None  # 同 _cleanup_task_ref 模式,
 def _start_log_level_watcher() -> None:
     """启动日志级别热重载后台任务 — 小欧 2026-10-25"""
     global _log_watcher_ref
-    _log_watcher_ref = asyncio.create_task(_log_level_watcher_loop())
+    _log_watcher_ref = spawn_bg(_log_level_watcher_loop())   # 2026-11-03 小欧: 强引用防 GC 收口 spawn_bg
 
 
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
-    import time as _time
-    _t0 = _time.time()
+    # 2026-11-03 小欧 - 删函数内 `import time as _time`(模块级已有 import time, 重复导入违反 DRY):
+    #   本函数内 13 处调用同步改回 time.* — 小欧-2026-11-03
+    _t0 = time.time()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
     # 只收尾"本进程启动之前创建"的行：防御性护栏，防有人误起第二个后端进程时误伤对方任务 — 小欧 2026-09-29
     _boot_iso = get_local_iso_timestamp()
     db.init()
-    logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
+    logger.info(f"[启动耗时] db.init: {time.time()-_t0:.3f}s")
     # L0 僵尸任务收尾：崩溃遗留的 executing 残行改终态，不让任务列表永远显示"执行中" — 小欧 2026-09-29
-    _t_recon = _time.time()
+    _t_recon = time.time()
     _recon_n = await db.atxn("chat", lambda c: reconcile_orphaned_tasks(c, _boot_iso))
     if _recon_n:
         logger.warning(f"[启动] 收尾僵尸任务 {_recon_n} 个（上次进程中断残留，已标 failed/task_interrupted）")
-    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t_recon:.3f}s")
-    _t1 = _time.time()
+    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {time.time()-_t_recon:.3f}s")
+    _t1 = time.time()
     ensure_tools_registered()
-    logger.info(f"[启动耗时] ensure_tools_registered: {_time.time()-_t1:.3f}s")
-    _t2 = _time.time()
+    logger.info(f"[启动耗时] ensure_tools_registered: {time.time()-_t1:.3f}s")
+    _t2 = time.time()
     _start_cleanup_task()
-    logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
+    logger.info(f"[启动耗时] _start_cleanup_task: {time.time()-_t2:.3f}s")
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
     _start_monitoring_retention_task()  # 2026-11-03 xiaoou: monitoring.db retention (http/metrics 7d, task/llm 30d), never on request path
-    import os as _os
-    _cfg_chat_retention = get_config().get('system.chat_retention_days',
-                            get_config().get('tuning.live_front.chat_retention_days', 0))
-    _chat_retention_days = int(_os.getenv('OMNIAGENT_CHAT_RETENTION_DAYS', str(_cfg_chat_retention)) or '0')
+    # 2026-11-03 小欧 - chat_retention 启动参数: 只读 system.chat_retention_days(删已迁移旧键回退, 禁 backward),
+    #   复用模块级 os, get_config() 单次; int() 失败降级 0 仅告警, 不让坏 env 抛穿启动 — 小欧-2026-11-03
+    _retention_raw = (os.getenv('OMNIAGENT_CHAT_RETENTION_DAYS')
+                      or get_config().get('system.chat_retention_days', 0) or 0)
+    try:
+        _chat_retention_days = int(_retention_raw)
+    except (TypeError, ValueError):
+        logger.warning(f"[chat_retention] 保留天数值非法({_retention_raw!r}), 本轮不清理(降级)")
+        _chat_retention_days = 0
     if _chat_retention_days > 0:
         try:
             from app.services.chat.chat_retention import retention_cleanup_chat as _crc
@@ -488,7 +500,7 @@ async def startup_event():
             logger.warning('[chat_retention] startup sweep failed (degrade): %r' % _exc)
     _start_log_level_watcher()   # 2026-10-25 小欧: 日志级别热重载, config 改动免重启
     # 2026-10-03 小欧 - 启动期一次性对账 Journal(③) vs chat_task_steps(②), 只告警不自动补 — 文档[5] 5.3 D2
-    _t4 = _time.time()
+    _t4 = time.time()
     try:
         from app.services.chat.stream_event_journal import journal_steps_reconcile as _reconcile
         for _bad in await _reconcile():
@@ -497,12 +509,12 @@ async def startup_event():
                          f"步骤已落库但 Journal 缺帧, 该任务重连回放将缺内容")
     except Exception as exc:            # 对账失败只 warning, 不阻断启动(同 retention_cleanup 降级范式)
         logger.warning(f"[Reconcile] Journal/steps 对账失败: {exc}")
-    logger.info(f"[启动耗时] journal_steps_reconcile: {_time.time()-_t4:.3f}s")
+    logger.info(f"[启动耗时] journal_steps_reconcile: {time.time()-_t4:.3f}s")
     # 鉴权配置自检（未注入 forwarded_allow_ips / 白名单全网通配 → 告警），只观测不改判定
-    _t3 = _time.time()
+    _t3 = time.time()
     warn_startup_checks()
-    logger.info(f"[启动耗时] warn_startup_checks: {_time.time()-_t3:.3f}s")
-    logger.info(f"[启动耗时] startup_event 合计: {_time.time()-_t0:.3f}s")
+    logger.info(f"[启动耗时] warn_startup_checks: {time.time()-_t3:.3f}s")
+    logger.info(f"[启动耗时] startup_event 合计: {time.time()-_t0:.3f}s")
     from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()
@@ -546,6 +558,12 @@ async def root():
 async def favicon():
     # 浏览器自动请求 favicon 时返回 204，避免 main.py:87 全局异常处理器记录 404 噪声 — 小欧 2026-07-13
     return Response(status_code=204)
+
+
+@app.get("/health", response_model=health.HealthResponse, include_in_schema=False)
+async def health_alias(request: Request):
+    # 2026-11-03 小欧 - 裸 /health 别名同源真 JSON(dev 态探针404刷屏根治); 须在 _IS_FROZEN catch-all 前注册 — 小欧-2026-11-03
+    return await health.build_health_response(request.headers.get("host", ""))
 
 
 # ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──

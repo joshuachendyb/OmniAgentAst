@@ -182,6 +182,8 @@
 # 2026-11-01 小欧 - 裁剪可见性(北京老陈令): trim_history 真裁剪发生时补一条 notice(kind=trimming, phase=done)，
 #   与 summarizing 信封同构——此前 trim 只进 telemetry(task_metrics.trim_count/trim_tokens)，SSE 零帧前端无感知；
 #   瞬时动作单发 done 不占位置2，token 数读唯一真源 _trimmed_tokens_this_round；未真裁(空转/冷却)零发射 — 小欧-2026-11-01
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 3 处异常/取消调用点(empty_response/consecutive_truncation/
+#   same_tool_loop)显式传 level="WARNING", 不受控制台级别静音 — 小欧-2026-11-03
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -527,7 +529,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     # ── 场景A: 空响应 — LLM未返回有效数据 ──────────────────────
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
-        log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response")  # 小欧 2026-07-02 控制台
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Error] step={step}, empty_response", level="WARNING")  # 小欧 2026-07-02 控制台
         set_failed(agent, "LLM返回空响应，任务终止")
         await _emit_publish(agent._step_emitter.emit(MetaStep(
             step=step, type="error", content="LLM返回空响应，任务终止", error_type="empty_response", severity="warn"
@@ -567,7 +569,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试")
-            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation")  # 小欧 2026-07-02 控制台
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, consecutive_truncation", level="WARNING")  # 小欧 2026-07-02 控制台
             # 解决问题18(2.4④): 连续截断取消前发 MetaStep(type="truncated") 统一"输出被截断"事件 — 小欧 2026-08-20
             await _emit_publish(agent._step_emitter.emit(MetaStep(
                 step=step, type="truncated",
@@ -626,7 +628,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             _warn_same_tool_loop(agent, llm_response, _cnt)
         elif _cnt >= _MAX_CONSECUTIVE_SAME_TOOL_CALLS:    # count>=5(第5次相同调用): 硬终止 — 小欧 2026-08-08
             logger.warning(f"[run_react_cycle] LLM连续{_cnt}步调用相同工具(step={step}), 判定死循环, 终止")
-            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop")  # 小欧 2026-08-08 控制台
+            log_and_print(f"{time.strftime('%H:%M:%S')} [Cancel] step={step}, same_tool_loop", level="WARNING")  # 小欧 2026-08-08 控制台
             set_failed(agent, f"模型连续{_cnt}步重复调用相同工具, 疑似死循环, 任务终止")
             _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
                 step=step,

@@ -13,6 +13,8 @@
 #   reconcile 废 mkdir 补建(用户目录永不自动建) + 默认区目录收口 _ensure_ws_dir — 小欧-2026-11-02
 # 2026-11-02 小欧 - 清库改调用方显式请求(默认纯读)且按 rowcount 计数; 新增 _judge_path 收口
 #   预检/过滤唯一判据, 消两处各写一套 — 小欧-2026-11-02
+# 2026-11-03 小欧 - _ws_warn 增 level 入参(默认 WARNING); 已清库/本轮不生效/默认目录创建失败
+#   三处降 INFO(自愈与请求侧分支), 真异常仍 WARNING — 小欧-2026-11-03
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -22,6 +24,7 @@
 编辑历史: 2026-10-10 小欧 概念订正 — 表只装"会话使用的目录", 删 is_default / ws_initialized
            两个为错误概念而生的字段, 删 get_session_default_dir/get_authorized_dirs 两个取数口
 """
+import logging  # 2026-11-03 小欧: _ws_warn 档位入参用 logging.WARNING/INFO
 from pathlib import Path
 from typing import Optional
 
@@ -78,9 +81,10 @@ def _normalize_ws_meta(prop, memo) -> tuple[str, Optional[str]]:
     return ws_prop_value(prop), (_m or None)
 
 
-def _ws_warn(msg: str) -> None:
-    """统一告警出口：日志前缀只此一处(DRY)，测试可直挂 handler 断言"""
-    logger.warning(f"[workspace] {msg}")
+def _ws_warn(msg: str, level: int = logging.WARNING) -> None:
+    """统一告警出口：日志前缀只此一处(DRY)，测试可直挂 handler 断言。
+    2026-11-03 小欧 — 增 level 入参：自愈/请求侧分支传 INFO，真异常仍 WARNING"""
+    logger.log(level, f"[workspace] {msg}")
 
 
 def _normalize_ws_path(p: str) -> str:
@@ -185,7 +189,7 @@ def prune_unusable_rows(conn, session_id: str, unusable: list[dict]) -> int:
             _ws_warn(f"不可用行未命中库行(已不在库中): {u['path']}")
             continue
         removed += cur.rowcount
-        _ws_warn(f"不可用行已清库({u['kind']}): {u['path']}")
+        _ws_warn(f"不可用行已清库({u['kind']}): {u['path']}", logging.INFO)  # 2026-11-03 小欧: 清理动作正常, 降 INFO
     return removed
 
 
@@ -316,7 +320,7 @@ def _load_workspaces_conn(conn, session_id: str) -> list[tuple[str, str, Optiona
     且行还在、进入会话时也不会补建，错位会一直持续。"""
     effective, unusable = classify_workspace_rows(get_session_workspaces(conn, session_id))
     for u in unusable:
-        _ws_warn(f"会话工作区本轮不生效({u['reason']}): {u['path']}")
+        _ws_warn(f"会话工作区本轮不生效({u['reason']}): {u['path']}", logging.INFO)  # 2026-11-03 小欧: 请求侧路径问题, 降 INFO
     return effective
 
 
@@ -331,7 +335,7 @@ def _ensure_ws_dir(p: str) -> bool:
         Path(p).mkdir(parents=True, exist_ok=True)
         return True
     except Exception as _e:
-        _ws_warn(f"默认工作区目录创建失败(下轮 reconcile 自愈重建): {p} - {_e}")
+        _ws_warn(f"默认工作区目录创建失败(下轮 reconcile 自愈重建): {p} - {_e}", logging.INFO)  # 2026-11-03 小欧: 自愈路径, 降 INFO
         return False
 
 

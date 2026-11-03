@@ -56,6 +56,8 @@
 #   会打断 agent_runner finally 内正在跑的收尾(_publish_final_stats 无 shield、done.set() 在其后),
 #   致终态统计丢失、SSE 需等 journal 判死约 60s 才关。判据不用 task["cancelled"](它可能在 agent 协程
 #   登记前就被置位, 拿它当判据会丢掉唯一一次打断 in-flight await 的机会)。compliance: KISS-DIRECT/SRP
+# 2026-11-03 小欧 - cancel_task 取消请求 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+# 2026-11-03 小欧 - 任务不存在/暂停超时自动恢复两处 WARNING→DEBUG/INFO(资源与自愈) — 小欧-2026-11-03
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -73,12 +75,11 @@ from app.utils.sse_formatter import format_agent_sse
 from app.utils.response_utils import api_success, api_failure
 from app.services.task.task_state import (
     check_cancelled, check_paused, check_was_paused,
-    get_task_field, get_pause_event, running_tasks_lock, running_tasks,
+    get_pause_event, running_tasks,
     StreamBuffer,  # 2026-10-30 小欧 - R4: 取消检查需读 buffer.event_log 判"是否已有真实终态"
 )
 from app.services.task.task_registry import (
-    set_cancelled, pop_task_field,
-    set_was_paused, set_resumed, build_step_dict,   # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
+    set_cancelled, set_was_paused, set_resumed, build_step_dict,   # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
     claim_agent_task_for_cancel,                    # 2026-10-30 小欧: 取消幂等(首次才打断 agent 协程)
 )
 
@@ -135,7 +136,7 @@ def _cancel_final_dict(task_id: str, source: Optional[str] = None) -> dict:
 
 async def cancel_task(task_id: str, session_id=None, source: str = "user_requested") -> dict:
     cancel_time = datetime.now()
-    log_and_print(f"{time.strftime('%H:%M:%S')} [TaskControl] 取消任务 {task_id} source={source}")  # 2026-09-08 小欧: 双写(console可见取消请求) — 小欧-2026-09-08
+    log_and_print(f"{time.strftime('%H:%M:%S')} [TaskControl] 取消任务 {task_id} source={source}", level="WARNING")  # 2026-09-08 小欧: 双写(console可见取消请求) — 小欧-2026-09-08
     success = await set_cancelled(
         task_id,
         cancel_time=cancel_time.isoformat(),
@@ -179,7 +180,7 @@ async def cancel_task(task_id: str, session_id=None, source: str = "user_request
         logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled,保留记录")
         return api_success(message=f"任务 {task_id} 已取消", task_status="cancelled", cancel_time=cancel_time.isoformat())
     else:
-        logger.warning(f"[TaskControl] 任务 {task_id} 不存在,可能已结束")
+        logger.debug(f"[TaskControl] 任务 {task_id} 不存在,可能已结束")  # 2026-11-03 小欧: 资源不存在, 降 DEBUG
         return api_failure(message=f"任务 {task_id} 不存在", task_status="not_found")
 
 # ============================================================
@@ -226,7 +227,7 @@ async def task_cancel_check_and_yield(
             return None
         _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")  # 方案五: source 随落库值带出 — 小欧 2026-09-08
         step_dict = _cancel_final_dict(task_id, _cancel_source)
-        logger.info(f"[Step] 发送 final(cancelled) 步骤")
+        logger.info("[Step] 发送 final(cancelled) 步骤")
         current_execution_steps.append(step_dict)
         return format_agent_sse(step_dict)
     return None
@@ -283,7 +284,7 @@ async def _pause_core(
         else:
             await pause_event.wait()
     except asyncio.TimeoutError:
-        logger.warning(f"[task_pause_check] 任务{task_id}暂停超时({timeout}s),自动恢复")
+        logger.info(f"[task_pause_check] 任务{task_id}暂停超时({timeout}s),自动恢复")  # 2026-11-03 小欧: 自愈动作, 降 INFO
         # 2026-10-30 小欧 P1: 超时=真恢复(复用 set_resumed, DRY): 清 paused+置 running+set 事件,
         #   让后台 wait_for_resume 与前端消费路径一同醒来继续 —— 原实现仅清 _was_paused 不清 paused
         #   不 set 事件, 后台路径仍无限等, 任务永久卡 SUSPENDED/乒乓。暂停期间已取消则不自动恢复

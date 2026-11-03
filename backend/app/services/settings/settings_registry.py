@@ -82,6 +82,24 @@ key 全局唯一，加载自检重复直接拒启。
    2026-11-03 17:40 小欧 - 三堂会审修复: line 324 注释「归 tuning.live_front 命名空间」改「归 system 命名空间」
       (实际 key=system.chat_retention_days, 注释与代码对齐) — 小欧-2026-11-03
 
+   2026-11-03 小欧 - general 组新增 logging.console_level(select, 默认 WARNING, 放 logging.debug 之后):
+      控制台(黑窗口)显示阈值与文件日志解耦, 默认 WARNING 零行为变化; 消费方 _get_console_level
+      (logger/config+shared_handler), restart=False 走热重载10s生效。同轮同步 config.yaml.example
+      与 config/config.yaml(铁规三处同步), general 12→13 项 — 小欧-2026-11-03
+   2026-11-03 小欧 - 两级日志名副其实+归位: logging.level→logging.file_level(标签「文件日志级别」)移入 general 紧随调试模式;
+      debug/level 的 restart 纠正为 False(10s 热重载实测生效), 「调试模式」notice 补全真实作用域 — 小欧-2026-11-03
+   2026-11-03 21:30 小欧 - 设置项 notice 订正: 「调试模式」删去不存在的「删除类硬阻断豁免」(与 hitl 两项
+       「硬防线仍生效」自相矛盾); max_file_size/backup_count 恢复 restart=True — 小欧-2026-11-03
+   2026-11-03 21:35 小欧 - 更正 L86 表述: console_level 消费方已收口为 LogConfig.get_console_level_int()
+      (logger/config 唯一换算点, shared_handler 与 log_and_print 共用), 私有 _get_console_level 已删除 — 小欧-2026-11-03
+   2026-11-03 21:40 小欧 - console_level 语义改「精确档位」: 控制台只显示 == 所选级别的记录(log_and_print 与
+      ConsoleMirrorHandler 同口径), notice 同步改写; 文件通道仍为 >= 阈值 — 小欧-2026-11-03
+   2026-11-03 21:56 小欧 - 两档位独立(北京老陈令): 删 _get_gate_level()=min(文件,控制台), 总闸恒定 DEBUG;
+      两项 notice 均补「互不影响」表述 — 小欧-2026-11-03
+   2026-11-03 22:20 小欧 - 再撤销双键(北京老陈令: 一个值即可, 拆两个是画蛇添足): console_level 整项删除,
+      general 14→13 项; 键回单一 logging.level(标签「日志级别」, 默认 WARNING), notice 写明一值两用法 —
+      控制台只显示 == 该值的行, 日志文件按原逻辑记 >= 该值; debug true 时文件强制 DEBUG、控制台不受影响 — 小欧-2026-11-03
+
 """
 from typing import Any, Dict, List, Optional
 
@@ -141,14 +159,19 @@ list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则
 
 
 GROUPS: Dict[str, Dict[str, Any]] = {
-    # 4.1 通用（general，12 项）
+    # 4.1 通用（general，13 项）
     "general": {"label": "通用", "items": [
         # 默认空：config.get_project_root 靠 `if root:` 判空后回退用户主目录（Path.home()）
         _item("workspace.project_root", "text", "项目根目录", ""),
         _item("workspace.allowed_dirs", "textarea", "授权目录", "",
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
-        _item("logging.debug", "bool", "调试模式", True, restart=True,
-              notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
+        _item("logging.debug", "bool", "调试模式", True,
+              notice="全局调试开关（不止日志）：开=日志强制 DEBUG 且带文件名行号、开放调试接口（/echo、/tool/*）、文件落盘到 backend\\files（打包运行=程序目录 files）；关=按「日志级别」记录、文件落盘到用户目录 ~/.omniagent\\files、调试接口关闭。改动后约 10 秒自动生效，无需重启"),
+        # 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可, 拆两个是画蛇添足): 单键 logging.level,
+        #   控制台只显示 == 该值的行, 日志文件按原逻辑记 >= 该值; 调试模式开时文件强制 DEBUG(控制台不受影响)
+        _item("logging.level", "select", "日志级别", "WARNING",
+              options=["DEBUG", "INFO", "WARNING", "ERROR"],
+              notice="一个值两种用法：后端控制台（黑窗口）只显示「等于所选级别」的日志，不连带其他级别（例如选 WARNING 只显警告行，选 DEBUG 只显调试行）；日志文件（位置见下方「日志目录」）按常规方式记录「该级别及以上」。上方「调试模式」开启时日志文件被强制为 DEBUG，控制台不受影响。改动后约 10 秒自动生效，无需重启", env_key="LOG_LEVEL"),
         _item("agent.max_steps", "int", "最大轮数", 10000, range_=[1, 10000],
               notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
@@ -294,18 +317,18 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("sandbox.tool.syntax_check.typescript", "bool", "TypeScript(TSX)", True,
               notice="检测 .ts / .tsx代码文开关.开-支持检测,关-不检查"),
     ]},
-    # 4.5 系统（system，13 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 1 网络 CORS + 2 关于只读）
+    # 4.5 系统（system，13 项：2 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 1 网络 CORS + 1 数据治理 + 2 关于只读）
     #   注意：本小节新增 / 删除 paths.* 条目务必同步 settings_service._item_data 的 paths 派生字典，
     #   二者 keys 一一对应，漏配将抛 KeyError（fail-fast 防静默空白）
     "system": {"label": "系统", "items": [
-        # --- 运维日志（3 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
-        _item("logging.level", "select", "日志级别", "INFO",
-              options=["DEBUG", "INFO", "WARNING", "ERROR"], restart=True,
-              notice="日志记录级别，DEBUG 最详细", env_key="LOG_LEVEL"),
+        # --- 运维日志（2 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
+        #   2026-11-03 小欧 - 「日志级别」已移至通用组(单键, 兼管控制台精确显示与文件阈值), 紧随调试模式 — 小欧-2026-11-03
+        #   2026-11-03 小欧 - 恢复 restart=True: maxBytes/backupCount 只在 SafeRotatingFileHandler 构造期读取,
+        #     refresh_log_levels 不重刷 → 改完必须重启, 不能标"免重启" — 小欧-2026-11-03
         _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, range_=[1024, 1073741824], restart=True,
-              notice="单个日志文件大小上限，超限自动轮转"),
+              notice="单个日志文件大小上限，超限自动轮转（需重启生效）"),
         _item("logging.backup_count", "int", "日志备份数", 5, range_=[1, 100], restart=True,
-              notice="日志轮转保留的备份文件个数"),
+              notice="日志轮转保留的备份文件个数（需重启生效）"),
         _item("paths.logs", "readonly", "日志目录", None, readonly=True,
               notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),
         # --- 工程目录（6 只读；值实时派生见 settings_service._item_data） ---

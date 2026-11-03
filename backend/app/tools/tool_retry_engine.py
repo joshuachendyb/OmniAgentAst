@@ -76,6 +76,7 @@
 #   分类器对 TimeoutError→TIMEOUT 映射本已存在, 重造无增量)。行为不变: error dict 可重试类别重试、耗尽返回失败。
 # 2026-10-09 - 小欧 - 保险丝公式重写(北京老陈裁定 BUFFER=15+timeout不重试): max(inner,CEILING=600)+30 恒630与max_retries脱钩, 退化为固定定时器丧失兜底意义(YAGNI), 且inner调大时兜底预算被正常执行吃掉; 改 inner×(max_retries+1)+BUFFER="整条重试链总闸", 恒>内层最坏总耗时不变式保持。实测bash75/compress315/httpget105/download195(原均630); 删INSURANCE_CEILING, 保留_get_schema_timeout_default(算inner的必要输入)。
 # 2026-10-09 - 小欧 - 修复bool timeout潜在缺陷(本次重写暴露非引入): isinstance(True,int)为真使timeout=True被当inner=1, 旧公式被CEILING=600掩盖, 新公式下暴露为compress保险丝16(应315)反小于内层超时会抢先截杀; 新增_is_positive_number显式排除bool, 走schema默认兜底, 正常int/float行为零变化。compliance: YAGNI/DRY/KISS-DIRECT
+# 2026-11-03 小欧 - [参数验证] 非法字段 WARNING→DEBUG(LLM 编参数属调用方错误) — 小欧-2026-11-03
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -454,7 +455,7 @@ class ToolRetryEngine:
                     _props_desc = ", ".join(
                         f"{k}: {v.get('type', '?')}" for k, v in input_schema.get("properties", {}).items()
                     )
-                    logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
+                    logger.debug(f"[参数验证] action={action} 含非法字段: {invalid_keys}")  # 2026-11-03 小欧: LLM 编参数属调用方错误, 降 DEBUG
                     return self._build_retry_error(
                         ERR_INVALID_PARAMS,
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",

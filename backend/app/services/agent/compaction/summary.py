@@ -36,6 +36,7 @@
 # 2026-11-01 小欧 - 七段重构(北京老陈亲定, 与 summary_prompt.py 同源): _SUMMARY_SECTIONS 改七段
 #   (Goal→Previous Task Goal, Key Decisions→Task Plan and Decisions, 新增 Important Context 段, 顺序随模板定音);
 #   _SUMMARY_TAIL_USER 文案「六段」→「七段」(语言保持中文不动, 10-07 实测背景在案) — 小欧-2026-11-01
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 摘要结构校验未过(丢弃用原历史)显式传 level="WARNING" — 小欧-2026-11-03
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -115,7 +116,7 @@ def _valid_summary_or_empty(text: str, src_len: int = 0) -> str:
     elif src_len > 0 and len(t) >= src_len:
         reason = f"未压缩({len(t)}字>=原文{src_len}字)"
     if reason:
-        log_and_print(f"[compaction.summary] 摘要结构校验未过({reason})，丢弃用原历史")
+        log_and_print(f"[compaction.summary] 摘要结构校验未过({reason})，丢弃用原历史", level="WARNING")
         return ""
     return t
 

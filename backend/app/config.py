@@ -22,6 +22,8 @@
 # 2026-09-27 小欧 - security 段 env 注入的手写键名清单改为 ENV_INJECTED_KEYS 常量 +
 #   _inject_registry_env 统一遍历；与 registry.env_inject 的一致性由 _build_index 启动自检保证
 #   （原手写清单在同日键改名时漏改 → env 值注入旧键，页面读新键得 None，显示与生效脱节）
+# 2026-11-03 小欧 - 键名名副其实: logging.level → logging.file_level, LOG_LEVEL env 注入同步改键 — 小欧-2026-11-03
+# 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可): 键回到单键 logging.level, LOG_LEVEL env 注入同步 — 小欧-2026-11-03
 
 import functools
 import os
@@ -151,7 +153,7 @@ class Config:
                 ai_config['model_ref'] = _ref
             _ref['provider'] = _env_provider
         
-        # 日志级别
+        # 日志级别(单键 logging.level, 撤销 file_level/console_level 双键 — 北京老陈令 2026-11-03)
         logging_config = self._config_data.get('logging', {})
         if env_nonempty('LOG_LEVEL'):
             logging_config['level'] = os.getenv('LOG_LEVEL')

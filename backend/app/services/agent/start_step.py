@@ -125,6 +125,8 @@
 #   两路各一行调用; 并补注"两把尺各管一段"(触发判定原文口径 vs 裁剪 feed 口径), 防后人误改成一致。— 小欧-2026-10-31
 # 2026-10-31 小欧 - 上条"两条路门限统一用 feed"限定范围: 仅指 _shrink_before_summary 的窗口门限; 增量 B 门
 #   仍按原文口径 _estimate_tokens, 两把尺不同是设计, 勿统一。另: 增量路压缩率分母改用收缩前 delta(_pre_shrink_delta)。— 小欧-2026-10-31
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 摘要失败降级显式传 level="WARNING"(降级必须可见);
+#   同轮 2 处「开始调 LLM 生成摘要」进度行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -143,9 +145,12 @@ linked 增量摘要总览(2026-10-14, 北京老陈定案): link 链不再每次�
   契约: 摘要存"覆盖上界任务行"的 chat_tasks.task_summary 列(该行即下次锚点); 无锚点/失败一律走老路, 零退化。
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
+
+if TYPE_CHECKING:  # 2026-11-03 小欧 - 仅供注解解析: StartStep 实体在函数内局部导入防包级环, 注解引用此前是悬空名
+    from app.services.agent.steps import StartStep  # noqa: F401
 from app.logger import logger, log_and_print
 from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
 from app.services.agent.agent_utils import compress_summary_threshold  # 小欧-2026-10-31: 压缩摘要阈值唯一真源迁 agent_utils(agent 层公用函数收口)
@@ -501,7 +506,7 @@ async def _compact_injected_history(agent) -> str:
                 agent._needs_compact = False
                 return ""
         # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
-        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条")
+        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条", level="WARNING")
         await _emit_summarizing(agent, "全量", len(_hist_for_summary))
         summary_text = await generate_anchored_summary(agent, _hist_for_summary)
         if _task_id and await check_cancelled(_task_id):
@@ -525,7 +530,7 @@ async def _compact_injected_history(agent) -> str:
         agent._injected_history_msgs = _hist_for_summary
         logger.info(f"[start_step] 摘要失败降级(复用已收缩历史): {len(_hist_for_summary)}条/"
                     f"{MessageBuilder._estimate_tokens(_hist_for_summary)} tok")
-        log_and_print(f"[start_step] 摘要失败降级: 注入已收缩历史 {len(_hist_for_summary)} 条")
+        log_and_print(f"[start_step] 摘要失败降级: 注入已收缩历史 {len(_hist_for_summary)} 条", level="WARNING")
     agent._needs_compact = False
     return summary_text
 
@@ -622,7 +627,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
             logger.info("[start_step] 增量摘要前检测到取消, 跳过摘要(回退复用锚点摘要)")
         else:
             # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
-            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条")
+            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条", level="WARNING")
             await _emit_summarizing(agent, "增量", len(delta_msgs))
             new_summary = await generate_chunked_summary(agent, delta_msgs, anchor_summary)
             if _task_id and await check_cancelled(_task_id):

@@ -46,6 +46,8 @@
 # 2026-10-25 - 小欧 - 无窗口/无 console 模式加固: 导入期 _probe_console() 探测 stdout, 不可用
 #   (PyInstaller --noconsole 时 stdout=None)则 _CONSOLE_OK=False, console_put/worker 静默旁路,
 #   不入队不空转; 文件日志走 SafeRotatingFileHandler 不受影响。
+# 2026-11-03 小欧 - ConsoleMirrorHandler.emit 增「精确档位」判定(北京老陈令): 只输出 == 所选级别的记录,
+#   不连带更高级别(文件通道仍是 >= 阈值); handler.level 只负责挡更低级别 — 小欧-2026-11-03
 """
 console_writer — 控制台镜像输出(事件循环线程零同步 stdout 写)
 编写人 小欧 2026-08-30
@@ -126,6 +128,10 @@ class ConsoleMirrorHandler(logging.Handler):
         self.terminator = ""
 
     def emit(self, record: logging.LogRecord) -> None:
+        # 2026-11-03 小欧 - 控制台「精确档位」(北京老陈令): 只输出级别 == logging.level 的记录(单键, 与文件通道
+        #   同一值两种用法); 更低级别已被 handler.level 挡在 callHandlers, 此处只挡更高 — 小欧-2026-11-03
+        if record.levelno != self.level:
+            return
         try:
             console_put(self.format(record))
         except Exception:

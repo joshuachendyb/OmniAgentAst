@@ -30,6 +30,20 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   sessions/{id}/tasks / task/{id} / task/{id}/steps 正则); SSE process-events 保留(发消息核心链路)。
 #   Filter 挂 logger 级: 噪音拦下不进任何 handler(console+文件都不要, 老陈改裁定案); 文件 handler 保留(业务+SSE落盘)。
 #   args 索引修正: uvicorn 0.46 path 在 args[2] 非 args[1](原读错致过滤失效)。幂等安装。 小欧-2026-10-29
+# 2026-11-03 - 小欧 - 控制台镜像阈值可配: ConsoleMirrorHandler 级别读 LogConfig.get_console_level_int()
+#   (logging.console_level, 默认 WARNING 零行为变化), setup 装配与 refresh_log_levels 热重载同源生效。 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 文件/控制台两级解耦: 键 logging.level→logging.file_level, _get_log_level→_get_file_level,
+#   logger 总闸新增 _get_gate_level()=min(文件, 控制台), 修复控制台选 DEBUG 却被文件总闸拦住的问题。 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 删私有 _get_console_level(原被 app/logger/__init__ 跨模块导入): 换算唯一落点改
+#   LogConfig.get_console_level_int(), 本文件三处引用同步 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 控制台「精确档位」(北京老陈令): ConsoleMirrorHandler.emit 内只放 == self.level 的记录,
+#   不再连带更高级别; 文件 handler 仍 >= 阈值 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 修复两级解耦后控制台静默: 控制台 handler 补挂 SessionFilter(格式串含 %(session_id)s,
+#   原仅文件 handler 挂靠其先执行顺带注入; 文件级别更高时 session_id 缺失 → format 抛 KeyError 被吞) — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - _get_gate_level()=min(文件, 控制台) 作废并删除(北京老陈令: 两档位不能有关系):
+#   改 _logger_base_level()=DEBUG 恒定不参与裁决, 文件 handler 只读阈值, 控制台 handler 只做精确匹配 — 小欧-2026-11-03
+# 2026-11-03 - 小欧 - 撤销双键(北京老陈令: 一个值即可): 全部回到单键 logging.level —
+#   文件 handler 按 >= 阈值(调试模式强制 DEBUG), 控制台 handler 按 == 精确匹配; 两通道读同一个值, 用法不同 — 小欧-2026-11-03
 
 import logging
 import re
@@ -38,6 +52,7 @@ from typing import Optional
 
 from app.logger.config import SafeRotatingFileHandler, LogConfig
 from app.logger.console_writer import ConsoleMirrorHandler  # 小欧 2026-09-29: 控制台镜像走队列, 禁同步写 stderr
+from app.logger.levels import to_level_int  # 2026-11-03 小欧: 级别名→int 唯一换算点(DRY)
 
 # ---- 会话上下文（session_id），供日志 SessionFilter 注入 — 小沈 2026-07-30 ————
 
@@ -105,9 +120,16 @@ class SessionFilter(logging.Filter):
 
 # ---- 公共工具 -----------------------------------------------------
 
-def _get_log_level() -> int:
-    """读取配置日志级别 — 小欧 2026-10-25 抽函数(setup_logger 与 setup_uvicorn_loggers 共用)"""
-    return getattr(logging, LogConfig.get_log_level().upper())
+def _get_file_level() -> int:
+    """读取文件落盘级别(常规阈值 >=) — 文件通道唯一裁决点 — 小欧 2026-10-25
+    2026-11-03 小欧 - 换算改走 levels.to_level_int, 坏配置回落 INFO: 原裸 getattr(logging, ...) 遇
+    手改坏值(如 level: VERBOSE)直接 AttributeError 让服务起不来, 与控制台侧安全回落不一致 — 小欧-2026-11-03
+    2026-11-03 小欧 - 调试强制 DEBUG 收敛到本处(原 LogConfig.get_file_level 纯中转层已删),
+    文件与控制台的全部差异就只剩这一行 — 小欧-2026-11-03
+    """
+    if LogConfig.is_debug_mode():
+        return logging.DEBUG
+    return to_level_int(LogConfig.get_log_level(), logging.INFO)
 
 
 def _build_fmt(is_debug: bool) -> str:
@@ -120,6 +142,17 @@ def _build_fmt(is_debug: bool) -> str:
 def _build_formatter(is_debug: bool) -> logging.Formatter:
     """文件/控制台统一 formatter — 小欧 2026-10-25"""
     return logging.Formatter(_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
+
+
+def _logger_base_level() -> int:
+    """logger 总闸恒定取最低档 DEBUG — 小欧-2026-11-03
+
+    总闸只做"不拦", 放行全部记录, 由两个 handler 各自裁决(同一个配置值 logging.level, 两种用法):
+    - 文件 handler: >= 该值(常规阈值, 调试模式强制 DEBUG), 见 _get_file_level();
+    - 控制台 handler: == 该值(精确匹配), 见 ConsoleMirrorHandler.emit。
+    原 _get_gate_level()=min(文件, 控制台) 让两条通道互为约束, 已删除。 — 小欧-2026-11-03
+    """
+    return logging.DEBUG
 
 
 # ---- setup_logger -----------------------------------------------------
@@ -135,7 +168,7 @@ def setup_logger(name: str) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    log_level = _get_log_level()
+    log_level = _get_file_level()
     is_debug = LogConfig.is_debug_mode()
 
     formatter = _build_formatter(is_debug)
@@ -147,15 +180,19 @@ def setup_logger(name: str) -> logging.Logger:
 
     # console handler — 2026-09-29 小欧 换掉 logging.StreamHandler(直写 stderr):
     #   同步写 stderr 遇阻塞型 stderr 时 emit() 永久阻塞, 而 Handler.handle() 持 handler 锁,
-    #   连带冻结事件循环线程。改投 ConsoleMirrorHandler 队列, 级别 WARNING, 控制台仅镜像。
-    console_handler = ConsoleMirrorHandler(level=logging.WARNING)
+    #   连带冻结事件循环线程。改投 ConsoleMirrorHandler 队列, 控制台仅镜像。
+    console_handler = ConsoleMirrorHandler(level=LogConfig.get_console_level_int())
     console_handler.setFormatter(
         _TruncateConsoleFormatter(fmt=_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
     )
+    # 2026-11-03 小欧 - 控制台 handler 补挂 SessionFilter: 格式串含 %(session_id)s, 原只挂文件 handler 靠其先跑
+    #   顺带注入; 文件级别更高时低级别记录不进文件 handler → session_id 缺失 → format KeyError 被吞 — 小欧-2026-11-03
+    console_handler.addFilter(SessionFilter())
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    logger.setLevel(log_level)
+    # 2026-11-03 小欧 - 总闸恒定 DEBUG: 两档位互不牵连, 各自 handler 裁决(原 min(文件,控制台) 已删) — 小欧-2026-11-03
+    logger.setLevel(_logger_base_level())
     logger.propagate = False
 
     return logger
@@ -176,13 +213,13 @@ def setup_uvicorn_loggers() -> None:
 
     file_handler = _get_shared_handler()
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(_get_log_level())
+    file_handler.setLevel(_get_file_level())
 
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.handlers.clear()
         lg.addHandler(file_handler)
-        lg.setLevel(_get_log_level())
+        lg.setLevel(_logger_base_level())
         lg.propagate = False
 
 
@@ -234,7 +271,7 @@ def install_access_noise_filter() -> None:
     if _fh not in _lg.handlers:
         _lg.addHandler(_fh)
     _fh.setFormatter(_build_formatter(LogConfig.is_debug_mode()))
-    _fh.setLevel(_get_log_level())
+    _fh.setLevel(_get_file_level())
     # ② 噪音 filter 挂 logger 级: 拦住的记录不进任何 handler, 彻底不要(console+文件) — 老陈 2026-10-29
     for _f in list(_lg.filters):
         if isinstance(_f, UvicornAccessFilter):
@@ -253,9 +290,12 @@ def refresh_log_levels() -> None:
     """按当前配置重刷 logger 级别与格式 — 小欧 2026-10-25
     遍历 logging 全局 loggerDict, 只处理 app./uvicorn 前缀(本项目的 logger),
     第三方 logger(httpx/asyncio/fastapi 等)不动。幂等: 配置未变则结果不变。
-    供 main.py 周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
+    供 main.py 周期 watcher 调用, 使 config.yaml 的 logging.debug / logging.level 改动免重启生效。
+    2026-11-03 小欧 - 单键(北京老陈令: 撤销 console_level 拆分): 总闸恒定 DEBUG, 文件 handler 按
+    logging.level 常规阈值(>=, 调试模式强制 DEBUG)刷新, 控制台 handler 按 == 精确匹配同一值刷新 — 小欧-2026-11-03
     """
-    log_level = _get_log_level()
+    log_level = _get_file_level()
+    base_level = _logger_base_level()
     is_debug = LogConfig.is_debug_mode()
 
     file_handler = _get_shared_handler()
@@ -267,11 +307,13 @@ def refresh_log_levels() -> None:
             continue
         if not name.startswith(("app.", "uvicorn")):
             continue
-        if obj.level != log_level:
-            obj.setLevel(log_level)
+        if obj.level != base_level:
+            obj.setLevel(base_level)
         for h in obj.handlers:
             if isinstance(h, ConsoleMirrorHandler):
                 h.setFormatter(
                     _TruncateConsoleFormatter(fmt=_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
                 )
+                # 2026-11-03 小欧 - 精确档位随配置热重载(setup 装配已读 logging.level, 此处复刷同源)
+                h.setLevel(LogConfig.get_console_level_int())
 

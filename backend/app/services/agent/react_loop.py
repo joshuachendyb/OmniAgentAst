@@ -70,6 +70,8 @@
 #   产final+cancelled终态帧终止(不发start帧不进while); 循环顶取消终止收敛 _terminate_cancelled 统一收口(DRY)。
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
 # 2026-10-31 小欧 - init_history 补传 ws_text(编排层渲染的目录块), 本层不再取快照 — 小欧-2026-10-31
+# 2026-11-03 小欧 - _terminate_cancelled 取消终态 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+#   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -78,7 +80,7 @@
 """
 
 import time  # 2026-09-08 小欧: 双写console带时间戳 — 小欧-2026-09-08
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
 from app.config import get_config
 from app.services.agent.steps import FinalStep, MetaStep  # ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
@@ -112,7 +114,7 @@ async def _terminate_cancelled(agent, task_id, _publish) -> bool:
     if not await check_cancelled(task_id):
         return False
     cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
-    log_and_print(f"{time.strftime('%H:%M:%S')} [run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")  # 双写(console可见) — 小欧-2026-10-30
+    log_and_print(f"{time.strftime('%H:%M:%S')} [run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled", level="WARNING")  # 双写(console可见) — 小欧-2026-10-30
     _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
         # 首轮前取消(llm_call_count 尚未+1=0)时, step=0 与 start(step=0)双 step0(与"start占0,业务从1起"矛盾); or 1 接续唯一步号 — 小健 2026-08-17
         step=agent.llm_call_count or 1,
@@ -222,9 +224,9 @@ async def run_react_cycle(
     agent.message_builder.inject_history(_injected)
     if _summary:
         if getattr(agent, "_pending_chain_summary_cover", None) is True:
-            log_and_print(f"[start_summary] 新摘要注入: usermessage+摘要+尾部轮次 共{len(_injected)}条")
+            log_and_print(f"[start_summary] 新摘要注入: usermessage+摘要+尾部轮次 共{len(_injected)}条", level="WARNING")
         else:
-            log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {max(len(_injected) - 1, 0)}条")
+            log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {max(len(_injected) - 1, 0)}条", level="WARNING")
     _tele_hc = getattr(agent, "telemetry", None)
     if _tele_hc is not None:
         # 2026-10-26 小沈: 首帧 content 的 userinput 预览(截断10字符), 供 history_context 首帧读取
@@ -242,7 +244,7 @@ async def run_react_cycle(
                 _cover_id = await db.atxn("chat", lambda c: storage.save_chain_cover_summary(
                     c, context_root_task_id=_cover_root, current_task_id=agent.task_id, summary=_summary))
                 if _cover_id:
-                    log_and_print(f"[start_summary] 摘要已落库(锚点任务={_cover_id}, len={len(_summary)})")
+                    log_and_print(f"[start_summary] 摘要已落库(锚点任务={_cover_id}, len={len(_summary)})", level="WARNING")
                 else:
                     logger.warning("[start_summary] 摘要未落库(链内无覆盖上界任务行或写入失败), 下次走老路")
             except Exception as _e:

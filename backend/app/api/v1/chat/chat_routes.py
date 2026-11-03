@@ -30,6 +30,7 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元2: /chat/stream 改以关键字透传 link_enabled(会话 link 开关
 #   开关真值随消息到达), 关键字传防与编排器后续新增形参错位。
 # 2026-10-30 - 小欧 - 注释缩进修正(零逻辑): refs 关键字透传注释缩进对齐, 无行为变化 — 小欧-2026-10-30
+# 2026-11-03 - 小欧 - [HITL-confirm] 缺 confirm_id / 已处理 两处 WARNING→DEBUG(请求侧参数问题) — 小欧-2026-11-03
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -110,14 +111,14 @@ async def confirm_stream_endpoint(request: Request):
         trust_session = body.get("trust_session", False)
 
         if not confirm_id:
-            _log.warning("[HITL-confirm] 缺少confirm_id")
+            _log.debug("[HITL-confirm] 缺少confirm_id")  # 2026-11-03 小欧: 请求参数缺失, 降 DEBUG
             return {"success": False, "error": "missing confirm_id"}
 
         _log.info(f"[HITL-confirm] 收到确认: confirm_id={confirm_id}, confirmed={confirmed}, trust_session={trust_session}")
         ok = await resolve_confirmation(confirm_id, confirmed, trust_session)  # 5.1(2026-09-02 小欧): resolve 改 async, await 同步落库零竞态
 
         if not ok:
-            _log.warning(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")
+            _log.debug(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")  # 2026-11-03 小欧: 资源状态, 降 DEBUG
             return {"success": False, "error": "confirm_id not found or already processed", "code": "confirm_stale"}
 
         _log.info(f"[HITL-confirm] 确认成功: confirm_id={confirm_id}")

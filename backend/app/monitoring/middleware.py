@@ -5,18 +5,20 @@
 #   persist_http_request(method, path, status_code, kind, duration, request_size, 0) 调用(非阻塞降级, 独立库 storage,
 #   response_size 暂以 0 占位; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
 # 2026-11-03 小欧 - 落盘去卡事件循环: _record_response_metrics 改 async, 经 db.atxn 进落库子线程池 + fire-and-forget(create_task), 响应路径零同步 IO — 小欧-2026-11-03
+# 2026-11-03 小欧 - 修: 裸 create_task 换 spawn_bg(app/utils, 存引用防 GC 挂起销毁),
+#   done 自摘防集合泄漏; 与 main.py 四处"存引用防 GC"纪律归一 — 小欧-2026-11-03
 """
 监控中间件模块
 负责HTTP请求监控和门面函数
 小欧 2026-08-14 monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 """
 
-import asyncio
 import time
 from typing import Dict, List, Optional, Any
 
 from app.logger import logger
 from app.monitoring.collector import MetricsCollector, Metric
+from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: fire-and-forget 统一存引用防 GC
 
 
 # 全局指标收集器实例
@@ -104,9 +106,8 @@ class MonitoringMiddleware:
         
         if status_code >= 400:
             self._record("errors_total", 1, {**base_labels, "status": str(status_code)})
-        # 11.2-C 落 monitoring.db（fire-and-forget：不阻塞响应路径与事件循环）— 小欧 2026-11-03
-        #   原 await storage.persist_http_request 会让 response.start 等 DB 写完成（虽在子线程不占 loop，但延迟首字节）。
-        #   改为 create_task 调度，异常在 task 内捕获并记录，主链路零等待。
+        # 11.2-C 落 monitoring.db(fire-and-forget 不阻塞响应路径): 原 await 延迟首字节, 改调度后台任务;
+        #   2026-11-03 裸 create_task 换 spawn_bg(事件循环只持弱引用, 挂起中任务可被GC销毁不走except) — 小欧-2026-11-03
         from app.monitoring import storage
         _kind = "llm" if path == "/api/v1/chat/stream" else "other"
 
@@ -117,7 +118,7 @@ class MonitoringMiddleware:
                 from app.logger import logger
                 logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")
 
-        asyncio.create_task(_do_persist())
+        spawn_bg(_do_persist())
 
 
 def setup_monitoring(app) -> MetricsCollector:

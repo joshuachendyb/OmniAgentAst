@@ -30,6 +30,7 @@
 #   返回的 meta 判未知(去 get_tool 重复查)。注: get_tool 内部本已调 normalize_tool_name(registry.py:283-294),
 #   故原码对别名工具名不误判; 本次仅为单次归一/少一次查表的收敛, 行为等价。
 # 2026-10-18 - 小欧 - 随契约调整同步: 直调 API 的"待确认"判读改 needs_confirm。判定分支(自动确认直通 vs 回给调用方自行裁决)零变更。
+# 2026-11-03 - 小欧 - 未知工具拒绝执行 WARNING→DEBUG(LLM 编造工具名属调用方错误) — 小欧-2026-11-03
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -156,7 +157,7 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     #    报 Unhandled Exception)。门面层是其入口适配, 补注册校验: 未知工具返 success=False(fail-closed,
     #    与 is_success 的"工具未找到"语义一致), 缺参/未实现不进入安全层。
     if _tool_meta is None:
-        logger.warning(f"[tool_facade] 未知工具, 拒绝执行: {tool_name!r}")
+        logger.debug(f"[tool_facade] 未知工具, 拒绝执行: {tool_name!r}")  # 2026-11-03 小欧: LLM 编造工具名属调用方错误, 降 DEBUG
         return {"tool_name": tool_name, "success": False,
                 "result": {}, "error": f"未知工具: {tool_name}"}
 

@@ -12,6 +12,7 @@
 #   check_shell_self_kill(command, pool_pids) -> bool, 只答"通过/不通过";
 #   返回值与用户可见文案由调用方(path_tool_safety_checker)构造 — 本模块不产 SafetyResult。
 #   搬运纪律: 能复制不重写, 全部代码逐字搬迁, 只改 import 与函数名。
+# 2026-11-03 小欧 - 池快照缺失退化提示 WARNING→INFO(退化兜底非故障, 仍留日志可查) — 小欧-2026-11-03
 """shell 自杀检查 — 安全层无状态纯函数（零 import 工具层）
 
 用途  : 判断命令要杀的进程是不是自己人（自己 / 父进程 / Shell 池）
@@ -30,13 +31,13 @@ from app.safety.shell_text_atoms import shell_normalize_command
 def build_protected_pids(pool_pids: Optional[set] = None) -> set:
     """宿主关键进程 PID 集合（后端自身+父进程+传入的 shell 池快照）— 小欧 2026-10-16
 
-    pool_pids=None 退化为仅自身+父进程, 不崩; 退化必打 warning(静默退化=池失护)。
+    pool_pids=None 退化为仅自身+父进程, 不崩; 退化必留日志(INFO 档可查, 静默退化=池失护)。
     """
     pids = {os.getpid(), os.getppid()}  # uvicorn --reload 父子双进程，getppid 必带
     if pool_pids:
         pids |= set(pool_pids)
     elif pool_pids is None:  # None=上游未递入(告警); 空集=池空闲(常态, 不告警)
-        logger.warning("[shell_process_guard] 未递入池快照，退化为仅自身+父进程")
+        logger.info("[shell_process_guard] 未递入池快照，退化为仅自身+父进程")  # 2026-11-03 小欧: 退化兜底非故障, 降 INFO
     return pids
 
 

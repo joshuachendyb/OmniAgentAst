@@ -62,6 +62,8 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   零改动时原样返回入参对象(不复制不改入参), 常态路径零行为变化 — 小欧-2026-10-31
 """
 
+# 编辑历史:
+# 2026-11-03 小欧 - 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障) — 小欧-2026-11-03
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
 import httpx
 import inspect  # SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
@@ -482,7 +484,7 @@ class LLMClient:
         2026-10-28 小欧: 解包三要素, error_type/error_code 附加到异常对象(供错误分类器读 error.type 细分 429 限流/配额)。"""
         if response.status_code >= 400:
             if response.status_code in _RETRYABLE_STATUS:
-                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, 交 base_service L1 重试): {body_text}")
+                logger.info(f"[LLM] HTTP {response.status_code} 响应体(可重试, 交 base_service L1 重试): {body_text}")  # 2026-11-03 小欧: 可重试限流/瞬时, 降 INFO
             else:
                 logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
             server_msg, _et, _ec = _extract_server_error_message(body_text)  # 2026-10-28 解包三要素

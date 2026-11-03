@@ -7,6 +7,7 @@
 # 2026-10-31 小欧 三堂会审 DRY: 四个预算比例默认值(0.20/0.40/0.60/0.05)原内联在本文件
 #   resolve_limits, 与常量域分家; 收口至 app/constants(REF_*_RATIO), 本文件只做取值+钳制,
 #   配置键 tuning.refs.* 仍可覆盖, 数值零变更 — 小欧-2026-10-31
+# 2026-11-03 小欧 - 阈值比例非法回落默认 WARNING→INFO(配置容错) — 小欧-2026-11-03
 """services.refs.limits — 引用预算阈值的唯一真源
 
 职责(单一职责): 由「本次生效模型的 context_length」派生出引用链路需要的全部阈值:
@@ -64,7 +65,7 @@ def _ratio_of(cfg: dict, key: str, default: float) -> float:
     try:
         value = float(raw)
     except (TypeError, ValueError):
-        logger.warning("[refs] 阈值比例非法(%s=%r), 回落默认 %s", key, raw, default)
+        logger.info("[refs] 阈值比例非法(%s=%r), 回落默认 %s", key, raw, default)  # 2026-11-03 小欧: 配置容错, 降 INFO
         return default
     if not 0 < value <= 1:
         logger.warning("[refs] 阈值比例越界(%s=%s), 回落默认 %s", key, value, default)

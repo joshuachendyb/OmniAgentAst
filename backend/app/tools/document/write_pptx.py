@@ -13,6 +13,7 @@
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 # 2026-10-12 小欧 - tool_zh改短名词: 写入PPT→写PPT
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-11-03 小欧 - 表格超版心跳过 WARNING→INFO(正常跳过) — 小欧-2026-11-03
 """
 D8: write_pptx — 写入PPT文档
 
@@ -166,7 +167,7 @@ def _add_pptx_table(slide, table_data, start_top=None):
     # 2026-07-31 小欧: Bug⑭ — 上方表格已把 top 推出版心时 max_height 为负, add_table 负高度崩溃/损坏XML。
     # 可用高度不足0.5英寸时跳过该表格(保留当前 top, 供后续表格继续判断)
     if max_height < int(Inches(0.5)):
-        logger.warning("[write_pptx] 表格超出版心范围, 跳过该表格")
+        logger.info("[write_pptx] 表格超出版心范围, 跳过该表格")  # 2026-11-03 小欧: 正常跳过, 降 INFO
         return Emu(int(top))
     row_height = min(int(Inches(0.4)), max_height // rows)
     height = Emu(row_height * rows)

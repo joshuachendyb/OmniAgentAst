@@ -96,6 +96,8 @@
 # 2026-10-20 小欧 - 范围门下沉到本层(自守): 本模块只承担路径安全权限判定, 非 PATH_TOOLS 工具在
 #   **注册判定之后**直接返回放行(pass_result)。直调入口(tool_facade/测试)不必依赖上游名单门,
 #   也保证未注册工具仍先被硬拦(注册判定在前)。范围门唯一落点=本层, safety_gate 的入口名单门同日删除。
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 4 处硬拦截(未注册/自杀/危险命令/权限)显式传 level="WARNING",
+#   安全拦截不受控制台级别静音, 与进度类(默认 DEBUG)分流 — 小欧-2026-11-03
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -329,7 +331,7 @@ class PathToolSafetyChecker:
         #   未注册 = 无元数据 = 无法定确认策略与权限线, 只能拒(fail-closed), 不按任一条线推定放行。
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
-            log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}")
+            log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}", level="WARNING")
             return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}",
                             safety_level=SafetyLevel.BLOCK_UNREGISTERED)
 
@@ -348,7 +350,7 @@ class PathToolSafetyChecker:
             self_kill = PathToolSafetyChecker._check_shell_kill(
                 (params or {}).get("command", ""), pool_pids)
             if self_kill is not None:
-                log_and_print(f"[PathToolSafetyChecker] 自杀检查拦截(硬拦): {self_kill.message}")
+                log_and_print(f"[PathToolSafetyChecker] 自杀检查拦截(硬拦): {self_kill.message}", level="WARNING")
                 return self_kill
 
         # [4-1] 危险命令组(2026-10-16 定序, 任一命中即返回, 互不穿透):
@@ -367,7 +369,7 @@ class PathToolSafetyChecker:
                 from app.safety.shell_danger_command import check_shell_danger_command_all_shells
                 _danger = check_shell_danger_command_all_shells(_cmd)
                 if _danger is not None:
-                    log_and_print(f"[PathToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}")
+                    log_and_print(f"[PathToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}", level="WARNING")
                     return _danger
             # 中风险命令: 命中进 HITL 确认
             if safety_switch("security.system.shell_risk_block"):
@@ -382,7 +384,7 @@ class PathToolSafetyChecker:
         known_risk = self._check_known_risks(tool_name, params or {})
         if known_risk is not None:
             if known_risk.blocked:
-                log_and_print(f"[PathToolSafetyChecker] 权限硬拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
+                log_and_print(f"[PathToolSafetyChecker] 权限硬拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}", level="WARNING")
                 return known_risk
             # needs_confirm=True: 授权请求, 交确认层(信任/HITL)
             logger.info(f"[PathToolSafetyChecker] 授权请求转确认: tool={tool_name}, auth_path={known_risk.auth_path}, bypass={_bypass}, {known_risk.message}")

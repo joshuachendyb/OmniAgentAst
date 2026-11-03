@@ -15,6 +15,7 @@
 # 2026-10-01 小欧 - 解 [1] A1(运行期逐步落库): StreamBuffer 增 persist_sink 可选 async 回调(由 agent_runner 注入 chat_task_steps 落库路由)，挂在 publish 收口而非调用点——事件有三条发布路径(_emit_publish / handle_action 直连 _buf.publish / _events 批量)，挂调用点必漏 thought/observation；纯内存 publish 与 Journal 版 publish_with_journal 同步承接。sink 调用于 publish_lock 锁外(注入方含 Prompt 日志文件写，持锁会把所有 publish 串行化)，seq 分配与 append 已在锁内原子完成故顺序安全。本模块保持 DB-agnostic，不感知 chat_task_steps
 # 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): StreamBuffer 增 flush_sink 可选 async 回调(由 agent_runner 注入)。
 #   persist_sink 管帧入队、flush_sink 等队列排空, 二者同源保证 chat_task_steps 落库。本模块仍 DB-agnostic。
+# 2026-11-03 小欧 - Journal buffer 复用提示 WARNING→INFO(正常复用) — 小欧-2026-11-03
 """
 task_state — 运行态任务数据存储 + 只读查询
 
@@ -101,7 +102,7 @@ def create_task_stream_buffer(task_id: str, session_id: str, journal_sink=None) 
     """
     existing = agent_streams.get(task_id)
     if existing is not None and existing.journal_backed:
-        logger.warning(f"[Journal] buffer 已存在 task={task_id}，复用，不重建")
+        logger.info(f"[Journal] buffer 已存在 task={task_id}，复用，不重建")  # 2026-11-03 小欧: 正常复用, 降 INFO
         return existing
     buf = StreamBuffer(journal_backed=journal_sink is not None)
     agent_streams[task_id] = buf

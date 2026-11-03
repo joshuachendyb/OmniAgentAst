@@ -10,6 +10,7 @@
 # 2026-10-14 - 小欧 - 删死词"进程": 实测该词在BM25语料零命中(全库无"进程"字样), 属误导性关键词;
 #   且系统确无进程管理工具(SYSTEM仅event_log/create_task/delete_task/list_tasks/which/sysinfo),
 #   进程类需求用首轮已注入的bash(tasklist/taskkill)。删后7个非首轮分类仍全覆盖。
+# 2026-11-03 小欧 - tag 未闭合告警 WARNING→DEBUG: 正则启发式, 每次构建 prompt 必打且多为误报 — 小欧-2026-11-03
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -152,6 +153,6 @@ class PromptBuilder:
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
             if tag not in closed and tag not in ('角色','br','能力','铁规-任务处理','执行纪律','searchtool-搜备用工具'):
-                logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
+                logger.debug(f"[PromptBuilder] tag <{tag}> 可能未闭合")  # 2026-11-03 小欧: 正则启发式误报(每次构建 prompt 必打), 降 DEBUG
 
         return result

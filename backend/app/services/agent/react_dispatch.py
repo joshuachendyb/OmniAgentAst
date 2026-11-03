@@ -31,6 +31,7 @@
 #   HITL 确认窗口关闭、未收到人工授权, 与"执行耗时"无关; 原写"超时"使 LLM 误判工具慢而反复重试同一受保护
 #   路径, 连撞3次判死胡同(实测 2026-10-11 zen_verify.py)。仅改中文呈现, 键名 timeout(前端
 #   deniedStepSet 停齿轮控制信号 + 分桶计数键 _deny_counts 的键) 保持不变 — 小欧-2026-10-11
+# 2026-11-03 小欧 - log_and_print 增 level 参数: [Thought] 步骤行显式传 level="WARNING", 控制台默认档即可见 — 小欧-2026-11-03
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -83,7 +84,7 @@ async def _dispatch_handler(agent, llm_response):
     reasoning = llm_response.get("reasoning", "")
     if thought or reasoning:  # 2026-07-19 小欧 修复: reason-only action step也输出控制台
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
-        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}", level="WARNING")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response)
     else:

@@ -3,6 +3,7 @@
 # 2026-08-08 - 小欧 - 全程统一本地时区: Metric.timestamp / cutoff_time 由 aware UTC 改 naive 本地, 消除 metrics API summary 每指标 timestamp 的 +00:00 偏移; L30与L94必须同步改否则比较TypeError
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件为包内文件移动(无 import 改动)
 # 2026-08-20 - 小欧 - 遥测收敛: 本文件仍只做 HTTP/系统指标采集(MetricsCollector), 任务/LLM/工具/裁剪遥测已独立进 agent_telemetry/storage, 无业务改动仅补标准编辑历史头
+# 2026-11-03 - 小欧 - 未注册指标名 WARNING→INFO(采集侧未知名称) — 小欧-2026-11-03
 """
 指标收集器模块
 负责指标类型定义、指标数据结构和收集逻辑
@@ -69,7 +70,7 @@ class MetricsCollector:
         """获取指标类型 - 小沈 2026-06-08"""
         metric_type = self._metrics_config.get(name)
         if not metric_type:
-            logger.warning(f"未注册的指标名称: {name}")
+            logger.info(f"未注册的指标名称: {name}")  # 2026-11-03 小欧: 采集侧未知指标, 降 INFO
         return metric_type
     
     def _create_metric(self, name: str, metric_type, value: float, labels: Optional[Dict[str, str]]) -> Metric:

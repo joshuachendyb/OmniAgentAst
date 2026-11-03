@@ -10,6 +10,12 @@
 # 2026-10-30 小欧 北京老陈令「路径不许截断」: 删 _paths_text 的 60 字符右截断(连同
 #   REF_LOG_PATH_MAX_CHARS) —— 右截断会连 `:start-end` 与文件名一起切掉, 同文件整份与片段
 #   在汇总行变成同一字符串; 现给完整路径, 行长度只由 5 条上限 + "另N条" 控制 — 小欧-2026-10-30
+# 2026-11-03 小欧 - report_refs 汇总行 log_and_print 按裁决分流: head=BLOCKED → level="WARNING" 上屏,
+#   其余 level="DEBUG" 静音(避开每请求一行的进度噪音) — 小欧-2026-11-03
+# 2026-11-03 小欧 - 同上 OK 档 DEBUG→INFO(文件全量优先): 文件通道已改为按声明档位落盘, 留 DEBUG 会随
+#   file_level=INFO 一起沉掉; INFO 档默认不上控制台, 噪音口径不变 — 小欧-2026-11-03
+# 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可): 单键 logging.level, 文件=常规阈值(>=), 控制台=精确匹配(==);
+#   OK 汇总行留 INFO 声明 → 值=WARNING 时该行只落文件不再上控制台也不进文件(常规流水, 丢了可接受) — 小欧-2026-11-03
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 
@@ -212,11 +218,14 @@ def report_refs(scope: str, summary: Dict[str, int],
     引用正文永不落日志 —— 只留路径/行区间/字符数/token/reason, 正文仍在 _start_meta["refs"]。
     """
     head = "OK" if summary["items"] else "BLOCKED"
+    # 2026-11-03 小欧 - OK 档 DEBUG→INFO: 单键 logging.level(文件=>=阈值, 控制台=精确匹配), 值=WARNING 时
+    #   INFO 档该行不落文件也不上屏(常规流水, 丢了可接受); BLOCKED 档 WARNING 两通道都在 — 小欧-2026-11-03
     log_and_print(
         f"[refs] {head} scope={scope} files={summary['files']} "
         f"fragments={summary['fragments']} items={summary['items']} "
         f"tokens={summary['tokens']} rejected={summary['rejected']} "
-        f"paths={_paths_text(final_refs)}"
+        f"paths={_paths_text(final_refs)}",
+        level="WARNING" if head == "BLOCKED" else "INFO",
     )
     lines = _detail_lines(final_refs, notices)
     for line in lines[:REF_LOG_DETAIL_MAX]:

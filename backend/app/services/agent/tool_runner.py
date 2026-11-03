@@ -8,6 +8,8 @@
 # 2026-10-19 小欧 - 修复单工具分支执行错对象: 原用入参 tool_name/tool_params(原始主调用), 安全门过滤后
 #   _exec_calls 可能只剩后续调用, 主调用被拒时仍会执行被拒工具; 改取 all_calls[0]。同时日志参数经
 #   redact_sensitive_params 脱敏敏感键。
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 4 处 [action_handler] 调度日志(单工具/并行/分组明细/顺序)
+#   显式传 level="WARNING", 控制台默认 WARNING 档即可见步骤 — 小欧-2026-11-03
 import asyncio
 import time
 from typing import Dict, List, Any
@@ -68,7 +70,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             # A: 单工具 — 2026-10-19 小欧: 取 all_calls[0](安全门过滤后的真实执行集);
             #   原用入参 tool_name/tool_params(原始主调用)会在主调用被拒、后续调用存活时执行被拒工具
             _only = all_calls[0]
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={_cn(_only)}")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={_cn(_only)}", level="WARNING")
             # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
             _cb = on_attempt_recorded(1) if on_attempt_recorded else None
             result = await execute_tool(agent, _cn(_only), _cp(_only), agent._retry_engine,
@@ -78,7 +80,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         elif is_parallel:
             # B': 并行分组调度 — 冲突组内串行, 无冲突组并行("该并行就并行") — 小欧 2026-08-09
             _names = [_cn(c) for c in all_calls]
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}", level="WARNING")
             groups = _partition_calls(all_calls)
             # DRY(规范6): 每组冲突判定只算一次, 监控(_gmode)与执行(_run_group)共用,
             # 消除二次 _has_conflict 冗余调用; 纯函数确定性保证监控与实际执行必然一致(无失真) — 小欧 2026-08-09
@@ -90,7 +92,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 _gconf.append(_conflicted)
                 _gmode = "单工具" if len(_g) == 1 else ("并行" if not _conflicted else "串行")
                 _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}", level="WARNING")
 
             async def _run_group(indices: List[int], conflicted: bool):
                 group = [all_calls[i] for i in indices]
@@ -136,7 +138,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             # C: 非并行模式 → 顺序执行（一个不丢）
             _names = [_cn(c) for c in all_calls]
             _reason = "非并行模式"
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}")
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}", level="WARNING")
             results = []
             for _gi, call in enumerate(all_calls, 1):
                 try:

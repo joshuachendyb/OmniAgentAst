@@ -10,6 +10,7 @@
 # 2026-10-24 小欧 - 纠偏消息修正(北京老陈令): ①文案"你的上一次操作无效"改"上一次调用工具执行完成:{summary}",
 #   经 message_builder.get_last_tool_summary() 取末条 role:tool 摘要注入(SRP: 读走 message_builder 不裸扫);
 #   ②注释/docstring "assistant role" 改 "user role"(实现本为 user, 注释写错) — 小欧-2026-10-24
+# 2026-11-03 小欧 - log_and_print 增 level 参数: [Loop] 同签名纠偏日志显式传 level="WARNING"(默认档可见) — 小欧-2026-11-03
 
 """react_inference — 状态推断基元(常量 + 守卫判定函数群)
 
@@ -164,4 +165,4 @@ def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
     })
     agent._warned_same_tool_loop = getattr(agent, "_warned_same_tool_loop", 0) + 1
     logger.info(f"[run_react_cycle] LLM连续{count}次调用相同工具 {_tool}, 注入纠偏警告(第{agent._warned_same_tool_loop}条)")
-    log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}")
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Loop] step={agent.llm_call_count} same tool warn={_tool}", level="WARNING")

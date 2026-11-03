@@ -12,6 +12,7 @@
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 # 2026-10-12 小欧 - tool_zh改短名词: 写入PDF→写PDF
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-11-03 小欧 - 未找到中文字体提示 WARNING→INFO(环境提示) — 小欧-2026-11-03
 """
 D7: write_pdf — 写入PDF文档
 
@@ -188,7 +189,7 @@ def write_pdf(
         if chinese_style is None or title_style is None:
             chinese_style = styles['Normal']
             title_style = styles['Title']
-            logger.warning("[write_pdf] 未找到可用中文字体, 中文可能显示为方框, 建议安装simsun.ttc/msyh.ttc")
+            logger.info("[write_pdf] 未找到可用中文字体, 中文可能显示为方框, 建议安装simsun.ttc/msyh.ttc")  # 2026-11-03 小欧: 环境提示, 降 INFO
 
         elements = []
 
