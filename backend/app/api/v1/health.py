@@ -23,6 +23,9 @@
 #   这两个字段把"网络慢"与"事件循环被占死"分开, 与 AGENTS.md 的 py-spy 取证串成一条证据链 — 小欧-2026-11-02
 # 2026-11-03 小欧 - server_ip 剔除 127./169.254./0. 并补 UDP 选路兜底: 原实现未过滤, 未配 hosts 的 Windows
 #   会给出 127.0.0.1; 兜底仅在前者全不可用时走(VPN 多网卡会命中隧道地址) — 小欧-2026-11-03
+# 2026-11-03 小欧 - 组装逻辑抽 build_health_response(host) 共用: main.py 新增裸 /health 别名(外部探针如
+#   opencode-cli 每30s打 /health)同源一份真 JSON(DRY); 别名须早于打包态 spa_fallback catch-all 注册 — 小欧-2026-11-03
+# 2026-11-03 小欧 - _server_lan_ip 取序反转: UDP 选路(真实出口网卡)提首选、hostname 解析降兜底, 原序在多网卡机器上易先命中虚拟适配器 — 小欧-2026-11-03
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -48,27 +51,33 @@ router = APIRouter()
 
 @lru_cache(maxsize=1)
 def _server_lan_ip() -> str:
-    """本机局域网IP(进程内解析一次) — 2026-11-02 小欧: 供顶栏服务胶囊显示可被他人访问的地址
+    """本机出口局域网IP(进程内解析一次) — 2026-11-02 小欧: 供顶栏服务胶囊显示可被他人访问的地址
 
-    2026-11-03 小欧 - 取 hostname 解析出的非环回/非链路本地 IPv4(原实现未过滤, 未配 hosts/DNS 的
-    Windows 常解析成 127.0.0.1, 该值对外毫无用处); 全部不可用时退回 UDP 选路(只查路由表, 不发包,
-    对 VPN 多网卡机器会命中隧道地址, 故仅作兜底)。进程内缓存: 免每次探活做名字解析拖慢 /health,
-    网卡地址变更后重启进程即刷新。
+    2026-11-03 小欧 - 取序: UDP 选路(走真实路由表, 得实际出口网卡地址)首选, hostname 解析兜底; getaddrinfo
+    返回序由 hosts/DNS 决定, 多网卡机器常把 VMware/Hyper-V/VPN 虚拟适配器排最前(他人连不上)。两者均剔除
+    127./169.254./0.; 进程内缓存免每次探活做名字解析, 网卡变更重启进程即刷新。VPN 有默认路由时两法都可能
+    返回隧道地址, 无 psutil 无法按适配器类型甄别 — 小欧-2026-11-03
     """
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ip = info[4][0]
-            if ip.startswith(("127.", "169.254.", "0.")):
-                continue
-            return ip
-    except OSError:
-        pass
+    def _usable(ip: str) -> bool:
+        return bool(ip) and not ip.startswith(("127.", "169.254.", "0."))
+
+    # 首选: UDP 选路 —— 只查路由表不发包, 拿真实出口网卡地址
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("8.8.8.8", 80))
-            return probe.getsockname()[0]
+            ip = probe.getsockname()[0]
+            if _usable(ip):
+                return ip
     except OSError:
-        return ""
+        pass
+    # 兜底: hostname 解析(无默认路由/离线/全部不可用时)
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            if _usable(info[4][0]):
+                return info[4][0]
+    except OSError:
+        pass
+    return ""
 
 # 2026-11-02 小欧 - 进程启动时刻(本模块在 app 导入期加载, 与进程启动同刻); monotonic 不受系统时钟调整影响
 _STARTED_AT = time.monotonic()
@@ -104,11 +113,8 @@ class EchoResponse(BaseModel):
     received: str
     timestamp: str
 
-@router.get("/health", response_model=HealthResponse)
-async def health_check(request: Request):
-    """
-    健康检查接口
-    """
+async def build_health_response(host: str) -> HealthResponse:
+    """组装健康响应 — 共用: /api/v1/health 与 main.py 裸 /health 别名同源一份真 JSON — 2026-11-03 小欧"""
     db_status = "healthy"
     for db_name in ["chat", "operations", "task_tracker"]:
         try:
@@ -123,13 +129,20 @@ async def health_check(request: Request):
         version=get_app_version(),
         db_status=db_status,
         # 2026-11-02 小欧 - Host头即前端实际访问到的后端地址: dev经Vite代理(changeOrigin)=proxy target, 打包=访问域名或直连地址
-        host=request.headers.get("host", ""),
+        host=host,
         server_ip=_server_lan_ip(),
         pid=os.getpid(),
         # 2026-11-02 小欧 - 存活时长与循环延迟: 顶栏胶囊据此区分"重启过/网络慢/事件循环被占死"
         uptime_s=round(time.monotonic() - _STARTED_AT, 3),
         loop_lag_ms=await _loop_lag_ms(),
     )
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check(request: Request):
+    """
+    健康检查接口
+    """
+    return await build_health_response(request.headers.get("host", ""))
 
 @router.post("/echo", response_model=EchoResponse)
 async def echo(data: EchoRequest):
