@@ -404,6 +404,27 @@ def _start_journal_retention_task() -> None:
     logger.info("Journal 保留期清理任务已启动")
 
 
+_monitoring_retention_ref = None  # xiaoou 2026-11-03: monitoring retention task ref
+
+
+def _start_monitoring_retention_task() -> None:
+    """monitoring.db retention cleanup: independent background task, never on request path - xiaoou 2026-11-03"""
+    global _monitoring_retention_ref
+    async def _loop() -> None:
+        while True:
+            try:
+                from app.monitoring import storage as _mon_storage
+                n = await _mon_storage.retention_cleanup_monitoring(
+                    http_days=7, metrics_days=7, task_days=30, llm_days=30)
+                if n and any(v for v in n.values()):
+                    logger.info("[Monitoring] retention cleanup: %s" % n)
+            except Exception as exc:
+                logger.warning("[Monitoring] retention cleanup failed (degrade): %r" % exc)
+            await asyncio.sleep(3600)
+    _monitoring_retention_ref = asyncio.create_task(_loop())
+    logger.info("Monitoring retention cleanup task started")
+
+
 async def _log_level_watcher_loop() -> None:
     """日志级别热重载: 周期检查 config 并重刷已装配 logger 级别 — 小欧 2026-10-25
     config.yaml 的 logging.debug / logging.level 改动后, 最迟一个周期内生效, 免重启。
@@ -452,6 +473,16 @@ async def startup_event():
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
+    _start_monitoring_retention_task()  # 2026-11-03 xiaoou: monitoring.db retention (http/metrics 7d, task/llm 30d), never on request path
+    import os as _os
+    _chat_retention_days = int(_os.getenv('OMNIAGENT_CHAT_RETENTION_DAYS', '0') or '0')
+    if _chat_retention_days > 0:
+        try:
+            from app.services.chat.chat_retention import retention_cleanup_chat as _crc
+            _n = await _crc(_chat_retention_days)
+            logger.info('[chat_retention] startup sweep deleted %d sessions (retention=%d days)' % (_n, _chat_retention_days))
+        except Exception as _exc:
+            logger.warning('[chat_retention] startup sweep failed (degrade): %r' % _exc)
     _start_log_level_watcher()   # 2026-10-25 小欧: 日志级别热重载, config 改动免重启
     # 2026-10-03 小欧 - 启动期一次性对账 Journal(③) vs chat_task_steps(②), 只告警不自动补 — 文档[5] 5.3 D2
     _t4 = _time.time()
@@ -484,6 +515,8 @@ async def shutdown_event():
         _cleanup_task_ref.cancel()
     if _journal_retention_ref is not None and not _journal_retention_ref.done():   # [63] 3.6.7 关联：新增任务与 _cleanup_task_ref 同生命周期
         _journal_retention_ref.cancel()
+    if _monitoring_retention_ref is not None and not _monitoring_retention_ref.done():   # 2026-11-03 xiaoou
+        _monitoring_retention_ref.cancel()
     if _log_watcher_ref is not None and not _log_watcher_ref.done():   # 2026-10-25 小欧: 日志级别热重载任务同生命周期
         _log_watcher_ref.cancel()
     # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)

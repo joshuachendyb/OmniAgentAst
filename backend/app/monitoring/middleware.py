@@ -80,7 +80,7 @@ class MonitoringMiddleware:
         """创建包装send — 闭包提取为工厂方法 — 小健 2026-05-29"""
         async def wrapper(message):
             if message["type"] == "http.response.start":
-                self._record_response_metrics(message, start_time, method, path, body_size[0])
+                await self._record_response_metrics(message, start_time, method, path, body_size[0])
             await send(message)
         return wrapper
     
@@ -88,7 +88,7 @@ class MonitoringMiddleware:
         """记录单个指标 - 小沈 2026-06-08"""
         self.collector.record_metric(name=name, value=value, labels=labels)
     
-    def _record_response_metrics(self, message, start_time, method, path, request_size):
+    async def _record_response_metrics(self, message, start_time, method, path, request_size):
         """记录响应指标 — 提取的独立方法 — 小健 2026-05-29"""
         status_code = message["status"]
         base_labels = {"method": method, "path": path}
@@ -102,10 +102,17 @@ class MonitoringMiddleware:
         
         if status_code >= 400:
             self._record("errors_total", 1, {**base_labels, "status": str(status_code)})
-        # 11.2-C 落 monitoring.db（独立库，非阻塞降级）— 小欧 2026-08-20
+        # 11.2-C 落 monitoring.db（后台线程/连接池，不阻塞事件循环）— 小欧 2026-11-03
+        #   原实现同步调用 persist_http_request → get_conn_with_retry → time.sleep 重试，
+        #   全跑在事件循环线程上，撞锁时整站停摆（2026-11-03 实测 py-spy 卡在 db/database.py:274）。
+        #   改为 await db.atxn（跑在 _DB_TXN_POOL 子线程），loop 永不被 DB I/O 占用。
         from app.monitoring import storage
         _kind = "llm" if path == "/api/v1/chat/stream" else "other"
-        storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
+        try:
+            await storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
+        except Exception as _e:
+            from app.logger import logger
+            logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2
 
 
 def setup_monitoring(app) -> MetricsCollector:

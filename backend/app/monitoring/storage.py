@@ -162,7 +162,7 @@ def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
             )
 
 
-def persist_http_request(method: str, path: str, status_code: int, kind: str,
+async def persist_http_request(method: str, path: str, status_code: int, kind: str,
                          duration: float, request_size: int = 0, response_size: int = 0) -> None:
     """middleware 每请求后 flush 一行（原始 + 计数器入 metrics 表）；非阻塞降级
     定位声明(12.2-Q9): 本表为服务级流量指标, 不关联 task_id/session_id —— middleware
@@ -172,7 +172,7 @@ def persist_http_request(method: str, path: str, status_code: int, kind: str,
     from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
     try:
         _ts = datetime.now().isoformat(sep=" ")
-        with _db.get_conn_with_retry("monitoring") as conn:
+        def _q(conn):
             conn.execute(
                 "INSERT INTO http_requests(method, path, status_code, kind, duration_seconds, "
                 "request_size_bytes, response_size_bytes, timestamp) VALUES (?,?,?,?,?,?,?,?)",
@@ -183,6 +183,42 @@ def persist_http_request(method: str, path: str, status_code: int, kind: str,
                 ("http_requests_total", "counter", 1.0,
                  '{"method":"%s","path":"%s","status":"%s"}' % (method, path, status_code), _ts),
             )
+        await _db.atxn("monitoring", _q)
     except Exception as _e:
         from app.logger import logger
         logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21
+
+async def retention_cleanup_monitoring(http_days: int = 7, metrics_days: int = 7,
+                                     task_days: int = 30, llm_days: int = 30) -> dict:
+    """monitoring db retention cleanup (background task, not on request path) - xiaoou 2026-11-03
+
+    - http_requests / metrics: keep last http_days/metrics_days (regenerable service traffic)
+    - task_metrics / task_tool_metrics / llm_calls: keep last task_days/llm_days
+    Returns deleted row counts per table. Failures only warning, never block main (degrade pattern).
+    """
+    from datetime import datetime, timedelta
+    from app.db import db as _db
+    _c_http = (datetime.now() - timedelta(days=int(http_days))).isoformat(sep=" ")
+    _c_metrics = (datetime.now() - timedelta(days=int(metrics_days))).isoformat(sep=" ")
+    _c_task = (datetime.now() - timedelta(days=int(task_days))).isoformat(sep=" ")
+    _c_llm = (datetime.now() - timedelta(days=int(llm_days))).isoformat(sep=" ")
+    def _q(conn):
+        n = {}
+        n["http_requests"] = conn.execute(
+            "DELETE FROM http_requests WHERE timestamp < ?", (_c_http,)).rowcount
+        n["metrics"] = conn.execute(
+            "DELETE FROM metrics WHERE timestamp < ?", (_c_metrics,)).rowcount
+        n["task_metrics"] = conn.execute(
+            "DELETE FROM task_metrics WHERE created_at < ?", (_c_task,)).rowcount
+        n["task_tool_metrics"] = conn.execute(
+            "DELETE FROM task_tool_metrics WHERE task_id IN (SELECT task_id FROM task_metrics WHERE created_at < ?)",
+            (_c_task,)).rowcount
+        n["llm_calls"] = conn.execute(
+            "DELETE FROM llm_calls WHERE timestamp < ?", (_c_llm,)).rowcount
+        return n
+    try:
+        return await _db.atxn("monitoring", _q)
+    except Exception as _e:
+        from app.logger import logger
+        logger.warning(f"[monitoring] retention cleanup failed (degrade): {_e!r}")
+        return {}
