@@ -1749,17 +1749,17 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   });
 
   // ── 系统Tab (85-92) ────────────────────────────────────────
-  test('85 系统 logging.level读取', async ({ page, request }) => {
+  test('85 通用 logging.level读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const val = before.groups.system.data['logging.level'];
+    const val = before.groups.general.data['logging.level'];
     console.log(`[E2E] 85 logging.level=${val}`);
   });
 
-  test('86 系统 logging.level编辑→保存→落盘', async ({ page, request }) => {
+  test('86 通用 logging.level编辑→保存→落盘', async ({ page, request }) => {
     await editSaveVerify(page, request, {
-      tabName: /系\s*统/,
+      tabName: /通\s*用/,
       settingKey: 'logging.level',
       newValue: 'DEBUG',
       yamlSnippet: 'level: DEBUG',
