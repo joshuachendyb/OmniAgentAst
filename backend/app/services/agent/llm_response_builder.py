@@ -8,6 +8,7 @@
 # 2026-09-17 小欧 文案修改: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
 # 2026-10-06 小欧 修 P1-02: _log_llm_response 的 response_content 走公共 truncate_text 截断预览
 #   (契约要求 截断版/完整版 分离, 原同传 assembled_json 致落盘两字段全等且体积翻倍)
+# 2026-11-04 小欧 _yield_error_response: rate_limit(自愈性外部限速,L1/L2可恢复)日志ERROR→WARNING, 致死类不动 — 小欧-2026-11-04
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -105,7 +106,8 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
     # M5: 空消息场景补强诊断上下文(exc类型/分类), 防根因丢失 — 小欧 2026-07-16
     diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
-    logger.error(f"[LLM] {error_msg}{diag}")
+    # 2026-11-04 小欧 - rate_limit属外部瞬态限速,L1/L2重试自愈(对齐llm_call.py:340降级先例); 致死类仍ERROR
+    (logger.warning if exc_type == "rate_limit" else logger.error)(f"[LLM] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
     # chunk 产物即 StreamChunk(工厂构造, payload 装 {"type":"error",...} 全保真) — 小欧 2026-09-06
     return create_payload_chunk(
@@ -120,7 +122,7 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent, fini
     type="answer" 的含义: agent 推断 LLM 已完成任务(无 tool_calls,仅文本输出),
     将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。
     — 小欧 2026-07-19 新增 finish_reason 参数(API最后chunk回传:stop/length/content_filter)"""
-    logger.info(f"[LLM] 原始响应(answer):\n")
+    logger.info("[LLM] 原始响应(answer):\n")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}
