@@ -82,6 +82,7 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('paths.')) return '工程目录';
     if (key.startsWith('app.')) return '系统参数';
     if (key.startsWith('network.')) return '网络';
+    if (key === 'system.chat_retention_days') return '数据治理';
     return '关于';
   }
   // 2026-09-26 小欧: appearance 组分 2 块 ——
