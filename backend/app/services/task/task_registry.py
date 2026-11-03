@@ -38,6 +38,9 @@
 #   并置位), 首次返回 agent 协程句柄, 其后恒 None —— 堵 cancel_task 重复调用时二次 cancel 打断
 #   agent_runner finally 收尾(final_stats 丢失 / done 不置位 / SSE 等约 60s)。判据刻意不用
 #   task["cancelled"](它可能在协程登记前已置位, 会误丢唯一一次打断机会)。 — 小欧-2026-10-30
+# 2026-11-03 小欧 - uid 非法拒绝注入 WARNING→DEBUG(调用方参数非法) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删 8 个零使用的 task_state 再导出 + 未用 TASK_TIMEOUT(死导入);
+#   门面/调用方改直连 task_state 真源 — 小欧-2026-11-04
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -54,21 +57,12 @@ from typing import Any, Dict, List, Optional, Tuple   # 2026-09-20 小欧 13.4.1
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
-from app.constants import TASK_TIMEOUT as _D_TASK_TIMEOUT
 from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
 from app.config import get_config
 from datetime import timedelta
 from app.utils.response_utils import api_success, api_failure
 
 from app.services.task.task_state import (
-    check_cancelled,
-    check_paused,
-    check_was_paused,
-    get_running_task_status,
-    is_task_running,
-    get_cancel_request_time,
-    get_pause_event,
-    get_task_field,
     running_tasks_lock,
     running_tasks,
 )
@@ -151,7 +145,7 @@ async def inject_message_to_task(task_id: str, content: str, user_message_id: in
         if _q is None:
             return False
         if (user_message_id or 0) <= 0:   # None/0/负 均拒(防 None 传入 TypeError, 兜底编排降级)
-            logger.warning(f"[TaskRegistry] uid={user_message_id} 非法, 拒绝注入(task={task_id})")
+            logger.debug(f"[TaskRegistry] uid={user_message_id} 非法, 拒绝注入(task={task_id})")  # 2026-11-03 小欧: 参数非法, 降 DEBUG
             return False
         try:
             _q.put_nowait((content, user_message_id))

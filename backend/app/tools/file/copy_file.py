@@ -31,6 +31,8 @@
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归路径安全层), 仅留 for_overwrite 覆盖警告。
 # 2026-10-17 - 小欧 - 执行诚实性P0: 源不存在时 _copy_sync 建空目标报 success, 改抛 FileNotFoundError(此前被合法性检查遮蔽)。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(与 move 同口径: 源 EXISTS / 目标 WRITE)
+# 2026-11-03 小欧 - 目标目录已存在删除重建提示 WARNING→INFO(业务分支) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 typing.Tuple(死导入) — 小欧-2026-11-04
 """
 F7: copy_file — 复制文件
 
@@ -47,7 +49,7 @@ import os
 import shutil
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional  # 2026-11-04 小欧: 删未使用的 Tuple(死导入) — 小欧-2026-11-04
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
@@ -182,7 +184,7 @@ async def copy(
             elif src.is_dir():
                 if recursive:
                     if Path(_dst_lp).exists():
-                        logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
+                        logger.info(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")  # 2026-11-03 小欧: 业务分支, 降 INFO
                         if not os.access(_dst_lp, os.W_OK):
                             os.chmod(_dst_lp, os.stat(_dst_lp).st_mode | 0o200)
                         shutil.rmtree(_dst_lp, onerror=_remove_readonly)

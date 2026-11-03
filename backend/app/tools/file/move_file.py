@@ -27,6 +27,8 @@
 # 2026-10-14 小欧 - summary 统一口径: `移文件{source} -> {destination}，成功`(动词用 tool_zh, 成功后置) — 小欧-2026-10-14
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 路径安全层), 仅留 for_overwrite 覆盖警告。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE), 根治空路径落成 cwd 搬走工作目录的事故
+# 2026-11-03 小欧 - 目标目录已存在删除后移动提示 WARNING→INFO(业务分支) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 typing.Tuple(死导入) — 小欧-2026-11-04
 """
 F10: move_file — 移动文件
 
@@ -41,7 +43,7 @@ import os
 import shutil
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional  # 2026-11-04 小欧: 删未使用的 Tuple(死导入) — 小欧-2026-11-04
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
@@ -140,7 +142,7 @@ async def _move_file_impl(
                 if not os.access(_dst_lp, os.W_OK):
                     os.chmod(_dst_lp, os.stat(_dst_lp).st_mode | 0o200)
                 if Path(_dst_lp).is_dir():
-                    logger.warning(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
+                    logger.info(f"[move] overwrite模式: 目标目录已存在,将删除后移动: {dst}")  # 2026-11-03 小欧: 业务分支, 降 INFO
                     shutil.rmtree(_dst_lp, onerror=_remove_readonly)
                 else:
                     Path(_dst_lp).unlink()

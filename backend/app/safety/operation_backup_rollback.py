@@ -18,6 +18,7 @@
 #   L87 移回后无清理, .rollback_bak 永久残留; 新增 _bak_renamed 记录并在移回成功后删除
 #   (目录走 rmtree onerror=remove_readonly, 文件走 unlink), 回滚不留残留
 # 2026-10-15 北京老陈裁定 - 并入 operation_backup.py: 备份是回滚的前置动作, 同处一文件; 文件名改 operation_backup_rollback 以名实相符(源自小沈 2026-07-26 拆分)。
+# 2026-11-04 小欧 - 补缺失 timestamp_for_filename 导入: 深嵌套备份路径构造引用未定义名会 NameError — 小欧-2026-11-04
 """
 operation_backup_rollback — 操作备份与回滚 操作回滚
 
@@ -32,6 +33,7 @@ from typing import Any, Dict, Optional
 from app.db import db
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.utils.time_utils import timestamp_for_filename  # 2026-11-04 小欧: 补缺失导入(备份路径时间戳, 原 NameError) — 小欧-2026-11-04
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
 from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13

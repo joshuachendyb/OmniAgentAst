@@ -100,6 +100,8 @@
 # 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 # 2026-11-01 小欧 - 键名统一: 构造参数/实例属性/snapshot 参数 context_limit → context_length
 #   (与厂商通用键 model_meta.context_length 同名同义, 消我方自造名) — 小欧-2026-11-01
+# 2026-11-03 小欧 - [Retry][L1] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 typing.Any(死导入) — 小欧-2026-11-04
 """
 LLM 核心模块 — BaseAIService
 
@@ -112,7 +114,7 @@ import asyncio
 import time
 import random  # 2026-10-28 小欧: 429 退避抖动(±jitter)防并发撞限流窗口
 import json as _json
-from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
+from typing import List, Dict, Optional, AsyncGenerator, Callable  # 2026-11-04 小欧: 删未使用的 Any(死导入) — 小欧-2026-11-04
 
 import httpx
 from app.logger import logger
@@ -532,7 +534,7 @@ class BaseAIService:
                         # 修正(小欧 2026-07-18): 仅当整个 delta 完全为空(协议残余)才告警;
                         #   正常的参数续传(arguments-only, 无 name)属预期行为, 不再刷屏 warning。
                         if not (_tc_id or _tc_name or _tc_args):
-                            logger.warning(f"[BaseAIService] 收到完全为空的 tool_call delta, 跳过: idx={idx}, entry={entry}")
+                            logger.info(f"[BaseAIService] 收到完全为空的 tool_call delta, 跳过: idx={idx}, entry={entry}")  # 2026-11-03 小欧: 跳过即可, 降 INFO
 
                     # ③ tool_call流式超时（总时长的3/5）— 2026-07-16 小欧
                     # 工具参数(如 write content)可能极长(>10万字符), LLM 生成期间
@@ -615,7 +617,7 @@ class BaseAIService:
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1
                     wait_time = self._retry_wait_seconds(e, retry_count)   # 2026-09-30 小欧: 抽为共用静态方法(DRY)
-                    logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")
+                    logger.info(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")  # 2026-11-03 小欧: 重试属自愈流程, 降 INFO
                     # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_call 消费转 MetaStep(retrying) 发前端;
                     #   不设 stream_error 故不触发读方 break; retry_notice 带原始错误文本。
                     #   小欧 2026-09-08 修复: 实测生产日志 httpx.ReadTimeout 的 str(e) 恒为空串

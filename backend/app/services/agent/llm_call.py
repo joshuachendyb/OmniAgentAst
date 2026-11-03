@@ -72,6 +72,8 @@
 #   真根因另在 request_stream 调用前裸 return(见 base_service 2026-10-30 条)。保留①(L2 循环顶查取消)
 #   与③(FC 降级短路必须走 error payload: 该处直接 yield 给 react_step, 不经 call_llm_stream 的
 #   stream_error 翻译, 裸 cancelled chunk 会被当空 chunk → llm_response=None → set_failed)。 小欧-2026-10-30
+# 2026-11-03 小欧 - [Retry][L2] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 create_cancelled_chunk(死导入) + 无占位符 f 前缀(F541) — 小欧-2026-11-04
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -104,7 +106,7 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
 from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE, RETRY_BACKOFF_CAP as _D_BACKOFF_CAP
 from app.config import get_config
 from app.llm.adapters import get_provider_adapter  # 2026-10-20 小欧 call_llm_text_task 迁入(原 summary.py 内 lazy 导入)
-from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 小欧 2026-09-20 修复 +create_cancelled_chunk(降级前取消短路收尾)
+from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 2026-11-04 删未使用的 create_cancelled_chunk(已改 _yield_error_response) — 小欧-2026-11-04
 from app.utils.text_utils import extract_tool_call_xml
 from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
 from app.logger import logger
@@ -200,7 +202,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         raise
     except Exception as e:
         if getattr(agent.llm_client, '_cancelled', False):
-            logger.info(f"[LLM] 调用因取消而中断, 跳过异常响应")
+            logger.info("[LLM] 调用因取消而中断, 跳过异常响应")  # 2026-11-04 小欧: 去无占位符的 f 前缀(F541) — 小欧-2026-11-04
             yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
             return
         yield _yield_error_response(f"LLM调用异常: {e}", agent, exc=e)
@@ -335,7 +337,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         except LLMResponseError as e:
             last_error = e
             wait_time = min(0.5 * (2 ** attempt), _D_BACKOFF_CAP)  # 2026-10-28 小欧: 裸30→_D_BACKOFF_CAP(与L1共用RETRY_BACKOFF_CAP, DRY消魔数)
-            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次, 等待{wait_time}秒: {e}")
+            logger.info(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次, 等待{wait_time}秒: {e}")  # 2026-11-03 小欧: 重试属自愈流程, 降 INFO
             # 小欧 2026-09-02: L2 重试事件透传发前端
             yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",

@@ -141,6 +141,8 @@
 #   统一 `执行Shell命令{cmd_short}，成功`; output_len/stderr_len 入 metrics 结构化承接(通用渲染)
 # 2026-10-09 - 小欧 - bash 超时hint改写: 原「增大timeout参数」属反向引导 — 实测(卡死事故复盘)LLM写了逐字符扫描52MB文本的脚本, timeout=300超时后采纳本hint提到600, 而同轮真正解决问题的是"重写算法"(改完37.5s跑完), 即加预算对性能问题无效且徒增5分钟等待。
 #   改为按「先诊断命令本身→再考虑调预算」排序: 查低效写法(逐字符循环/大文件全量扫描)优先优化算法; 写入.py脚本便于定位; 确认已排除性能问题后才考虑增大timeout(加前置条件); 与TOOL_TIMEOUT_HINTS中delete/write/edit/readmedia已正确写法(分批/减小范围)对齐。
+# 2026-11-03 小欧 - cwd 不存在回退上级/临时目录两处 WARNING→INFO(有兜底) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 PersistentShell(死导入, 测试均直接从 shell_engine 导入) — 小欧-2026-11-04
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -241,7 +243,7 @@ from app.tools.file.file_encoding import get_file_encoding
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16: 中风险层独立
 from app.tools.context import get_current_task_id  # ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
-from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
+from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入) — 小欧-2026-11-04
 from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
@@ -312,13 +314,13 @@ def _resolve_safe_cwd(cwd: str) -> str:
     parent = os.path.dirname(cwd) if cwd else ""
     while parent:
         if os.path.isdir(parent):
-            logger.warning(f"[Shell] cwd不存在, 回退: {cwd} → {parent}")
+            logger.info(f"[Shell] cwd不存在, 回退: {cwd} → {parent}")  # 2026-11-03 小欧: 有兜底, 降 INFO
             return parent
         next_parent = os.path.dirname(parent)
         if next_parent == parent:
             break
         parent = next_parent
-    logger.warning(f"[Shell] cwd不存在且无可用上级目录, 回退临时目录: {cwd} → {tempfile.gettempdir()}")
+    logger.info(f"[Shell] cwd不存在且无可用上级目录, 回退临时目录: {cwd} → {tempfile.gettempdir()}")  # 2026-11-03 小欧: 有兜底, 降 INFO
     return tempfile.gettempdir()
 
 

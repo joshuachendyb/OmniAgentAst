@@ -29,6 +29,7 @@
 #   归属判定异常(classify_path 抛异常)原归类 system 永不授权硬拦, 改放行。
 #   判定失败≠确定危险, 不能因解析能力不足错杀; 确定危险(空路径/`..`穿越)仍拦。
 #   修改点: validate_read 异常分支 → 放行(True, None, None)。
+# 2026-11-04 小欧 - 补缺失 logger 导入: 异常分支引用未定义名会 NameError, 致解析失败放行兜底失效 — 小欧-2026-11-04
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方说明含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -61,6 +62,7 @@ from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收�
     SCOPE_FORBIDDEN_SYSTEM,
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
+from app.logger import logger  # 2026-11-04 小欧: 补缺失导入(原 except 分支 NameError, 放行兜底失效) — 小欧-2026-11-04
 
 READ_MODE = "read"
 

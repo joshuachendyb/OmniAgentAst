@@ -215,6 +215,9 @@
 #   清 </会话工作目录> 前多余空行。测试同步(本仓库 tests/ 被 gitignore 不入库):
 #   test_injection_uses_both_tags → test_injection_uses_session_workspace_tag,
 #   断言改为不含 <system-reminder>; 23 passed。
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 任务启动(user_input)与客户端断开两处显式传 level="WARNING"
+#   (任务起止必须可见), 均在大段日志拼装末行 — 小欧-2026-11-03
+#   同轮任务启动时间戳(INFO: 时间)与 [SSE] 心跳两行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
 
 # 2026-10-29 小欧 - 输入框引用读取权收归后端: 建 agent 后调 resolver.resolve_refs 读齐全部引用正文
 #   (并发4/超时5s/同path合并, 失败分类标记), 结果经 _start_meta["refs"] 注入 assemble_start_step;
@@ -252,6 +255,8 @@
 #   超限轻提示(build_ws_notice, 复用 notice 信封)取同一份数字; 文本经 _start_meta.ws_block 交
 #   init_history 装配 —— 注入/日志/回执不再各算一遍 — 小欧-2026-10-31
 # 2026-11-02 - 小欧 - validate_chat_config 三级分级: 第5步凭证校验(api_key/api_base空白黄牌, 漏配key不再谎绿)+status/errors/warnings实装(顶栏胶囊承接) - 小欧-2026-11-02
+# 2026-11-03 - 小欧 - 输入校验失败两条(消息列表/内容为空) WARNING→DEBUG(请求体不合法) — 小欧-2026-11-03
+# 2026-11-04 - 小欧 - get_task_field 改从 task_state 直连真源(registry 不再再导出) — 小欧-2026-11-04
 
 
 
@@ -265,7 +270,7 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional, AsyncGenerator, Dict, List
+from typing import Optional, AsyncGenerator
 
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
@@ -283,7 +288,6 @@ from app.services.refs.notice import (
     summarize_refs,
 )
 from app.services.refs.pipeline import prepare_refs                        # 解析→裁决→回执汇集唯一流水线
-from app.services.refs.render import render_refs_block                     # 引用正文前置区块(零 IO)
 from app.services.model.resolver import (
     ProviderKeyMissingError,
     get_ai_config_resolver,
@@ -296,9 +300,9 @@ from app.services.task.task_registry import (
     set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
     has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
     inject_message_to_task,
-    get_task_field,               # 2026-10-30 小欧 A19 插话取目标任务生效模型 context_length — 小欧-2026-10-30
     cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
 )
+from app.services.task.task_state import get_task_field  # 2026-11-04 小欧: 直连真源(registry 不再再导出) — 小欧-2026-11-04
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
@@ -504,7 +508,7 @@ async def chat_stream_orchestrator(
     # ── 编排输入校验(消息非空) ——————————————————————————————————————— 小健 2026-08-17
     if not messages:
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
-        logger.warning("[chat] 输入校验失败: 消息列表为空")
+        logger.debug("[chat] 输入校验失败: 消息列表为空")  # 2026-11-03 小欧: 请求体不合法, 降 DEBUG
         yield create_error_response(error_type="invalid_request", error_message="消息列表不能为空")
         return
 
@@ -517,7 +521,7 @@ async def chat_stream_orchestrator(
     user_input = messages[-1].content or ""
     if not user_input.strip():
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
-        logger.warning("[chat] 输入校验失败: 消息内容为空")
+        logger.debug("[chat] 输入校验失败: 消息内容为空")  # 2026-11-03 小欧: 请求体不合法, 降 DEBUG
         yield create_error_response(error_type="invalid_request", error_message="消息内容不能为空")
         return
 
@@ -561,7 +565,7 @@ async def chat_stream_orchestrator(
                 logger.info(f"[chat] E2 track缺失, DB兜底恢复upper: session={session_id}, user_msg_id={_user_msg_id}")
         except Exception as _eu:
             logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
-    log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}", level="WARNING")
 
     bg_task = None  # 修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
     _session_client = None  # 快照预初始化: finally 交接守卫用(防 NameError) — 小欧-2026-09-25
@@ -826,7 +830,8 @@ async def chat_stream_orchestrator(
             f"[TASK_START] provider={agent.llm_client.llm_model.provider} model={agent.llm_client.llm_model.model} |\n "
             f"task_id={task_id} session_id={session_id} "
             f"user_message_id={_user_msg_id} |\n "
-            f"user_input={user_input}"
+            f"user_input={user_input}",
+            level="WARNING",
         )
         # ── 编排组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖  agent) —— 小健 2026-08-17
         # 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
@@ -1008,7 +1013,7 @@ async def chat_stream_orchestrator(
     # ── 编排异常/收尾(断连静默/异常取消后台/reset ContextVar) ——— 小健 2026-08-17; 小沈 2026-08-29 修复: 去 finally 还原单例副作用
     except asyncio.CancelledError:
         # 客户端断开：静默返回，agent 后台继续 2026-07-12 小欧 2026-07-12
-        log_and_print(f"{time.strftime('%H:%M:%S')} [chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")  # 2026-09-08 小欧: 双写(console可见断开动作) — 小欧-2026-09-08
+        log_and_print(f"{time.strftime('%H:%M:%S')} [chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续", level="WARNING")  # 2026-09-08 小欧: 双写(console可见断开动作) — 小欧-2026-09-08
         return
     except Exception as e:
         logger.error(f"[chat_stream_orchestrator] Error: {e}", exc_info=True)
@@ -1089,7 +1094,7 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                         await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py, 与前端 IDLE_TIMEOUT=60s 错开)
                     except asyncio.TimeoutError:
                         heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(指令双写+计数) 小欧-2026-09-08
-                        log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发: ping 保活")  # 2026-09-08 小欧: debug→双写(指令) 小欧-2026-09-08
+                        log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发: ping 保活", level="WARNING")  # 2026-09-08 小欧: debug→双写(指令) 小欧-2026-09-08
                         # 方案一 SSE keep-alive 心跳( 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
                         #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
                         #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),

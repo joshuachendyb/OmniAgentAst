@@ -105,6 +105,8 @@
 # 2026-10-17 小欧 - 配套修复: _denied_out 改 append, 认领拒绝反馈得以写回。
 # 2026-10-19 小欧 - 敏感参数分流: 应用日志(下方 params_str)经 redact_sensitive_params 遮蔽;
 #   预览/canonical ActionStep(SSE) 展示原文(用户本人数据), canonical 落库时由 storage.append_execution_step 遮蔽。
+# 2026-11-03 小欧 - log_and_print 增 level 参数: [Action] 步骤行显式传 level="WARNING", 控制台默认档即可见 — 小欧-2026-11-03
+# 2026-11-03 小欧 - tool_name 为空 WARNING→DEBUG(LLM 输出缺参数) — 小欧-2026-11-03
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -124,50 +126,28 @@ handle_action — action编排处理(门禁已拆出)
 小健 2026-09-04 拆分: 原docstring"3个函数"随 execute_tools/build_observation 下沉更新为"2个顶层函数", 明确下沉去向(详见头部编辑历史)
 小健 2026-09-05 10.4第二阶段: 门禁拆出safety_gate后, docstring随文件改名handle_action同步更新为"仅1个顶层函数"
 """
-import asyncio
 
 import time
-from dataclasses import dataclass, field
-from itertools import zip_longest  # 2026-09-03 小欧 修复: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断丢失 tool_result
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List
 from app.logger import logger, log_and_print
 
-from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
-from app.config import get_config
-from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
-from app.services.agent.status_table import AgentStatus, set_status
-from app.services.agent.observation_formatter import build_observation_text
-from app.services.agent.tool_executor import execute_tool
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, MetaStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
 from app.services.task.task_context import set_current_task_id
-from app.db.models.operation_models import OperationStatus
-from app.db import db
 
-from app.tools.tool_constants import FILE_OPERATION_TOOLS
-from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.utils.secret_utils import redact_sensitive_params
-from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
-from app.tools.registry import tool_registry  # 2026-08-18 小健: target字段从工具schema主参数自动推导(取代硬编码_TARGE_FIELD)
-from app.tools.target_utils import _resolve_target_field, _extract_target  # 2026-09-04 小健 拆分: target提取下沉工具层
+from app.tools.target_utils import _extract_target  # 2026-09-04 小健 拆分: target提取下沉工具层
 from app.file_persist import make_fp_callback  # 2026-09-04 小健 拆分: 文件A落盘回调工厂下沉file_persist
 
 # 2026-09-04 小健 拆分: 以下函数/类已拆分至3个新文件(action_input_parser/observation_builder/tool_runner), 先复制后修改
-from app.services.agent.action_input_parser import _build_call_list, BuildCallListResult  # 2026-09-04 小健 下沉: LLM action输入解析
+from app.services.agent.action_input_parser import _build_call_list  # 2026-09-04 小健 下沉: LLM action输入解析
 from app.services.agent.observation_builder import ObservationContext, build_observation, _add_denial_feedback  # 2026-09-04 小健 下沉: 观察反馈构建层
 from app.services.agent.tool_runner import execute_tools  # 2026-09-04 小健 下沉: 工具执行调度
 from app.services.agent.reasoning_guard import note_progress  # 2026-09-05 小健 8.3: action侧计数归零收口至reasoning_guard
 from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 2026-09-05 小健 10.4第二阶段: 门禁整搬safety_gate
 
 
-# 以下常量/函数已拆分至 app/tools/file_tool_utils.py — 小健 2026-09-04
-from app.tools.file_tool_utils import _auto_correct_file_tool, _EXT_TO_READ_TOOL, _EXT_TO_WRITE_TOOL
-
-# 以下常量/函数已拆分至 app/tools/conflict_detector.py — 小健 2026-09-04
-from app.tools.conflict_detector import _has_conflict, _partition_calls, _WRITE_OPS, _READ_TOOLS
-
-# 以下常量/函数已拆分 — 小健 2026-09-04 / 2026-10-14 小欧
-from app.tools.conflict_detector import _parse_paths
-from app.tools.tool_constants import WINDOW_TARGET_TOOLS
+# 2026-11-03 小欧 - 移除三条「已拆分至 file_tool_utils / conflict_detector / tool_constants」悬空标签:
+#   随 30 条拆分遗留死导入一并清除(导入已删, 标签无指代; 下沉去向见模块 docstring 与头部编辑历史) — 小欧-2026-11-03
 
 
 def _action_tools_view(calls: List[Dict]) -> List[Dict]:
@@ -205,7 +185,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
     step = agent.llm_call_count
 
     if not call_result.tool_name:
-        logger.warning(f"[handle_action] tool_name为空, parsed={parsed}")
+        logger.debug(f"[handle_action] tool_name为空, parsed={parsed}")  # 2026-11-03 小欧: LLM 输出缺参数, 降 DEBUG
         # 2026-09-05 小健 8.3: 归零改 note_progress(收口至reasoning_guard); 原2026-07-17 小欧 注释: action空名异常非reasoning-only, 归零防残留
         note_progress(agent)
         # chendyg 2026-07-01: 删set_failed，_dispatch_handler从MetaStep(type="error")推断状态
@@ -216,7 +196,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
 
     params_str = str(redact_sensitive_params(call_result.tool_params)); params_short = (params_str[:180] + '..') if len(params_str) > 180 else params_str  # 小欧 2026-07-01 控制台截断 — 小沈 2026-07-05 50→100; 2026-10-19 小欧 日志先脱敏敏感键
     # 2026-08-30 小欧 收口: 裸print→log_and_print(延续2026-07-23统一治理), 控制台镜像离线化 + [Action]文件留痕增强
-    log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")
+    log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}", level="WARNING")
 
     # 修复(2026-09-06 小欧): thought 先于预览落地(契约 thought→action 前序)
     #   — 原实现 thought 仅 append _events 延迟发布, 预览 ActionStep 直接 publish
