@@ -1,3 +1,51 @@
+v1.5.5
+更新时间: 2026-11-03 09:30:00 - 小欧-2026-11-03
+## v1.5.4以来 变更汇总(46个commit: feat8/fix19/refactor13/docs5/chore1) - 小欧-2026-11-03
+[2026-11-03 09:30:00 小欧] 范围=v1.5.4以来全部commit(46个); 主线=顶栏三胶囊体系(配置状态/服务存活/流状态)+PillShell外壳收口消除DRY违规+等待计时器三层解耦(waitTiming口径/clockStopwatch表盘/waitTimerText数码)+流状态联动(TitleStreamIcon 8档转速)+health.py增诊断字段(host/server_ip/pid/uptime_s/loop_lag_ms)+server_ip剔除环回与UDP兜底+心跳上限60→25与前后端错开关系+ChatInput引用清空提前+切会话闩锁复位+FilePreview Tooltip API迁移+[4]研究报告v1.9; 注:feat8个(顶栏三胶囊+流状态灯+圈圈联动+health诊断字段+start_dev.ps1+ConfigStatusPill),属顶栏信息展示体系成批落地,按PATCH记v1.5.5
+### 1.5.5.1 顶栏配置状态胶囊与Layout SRP拆分（11-02）
+[配置状态胶囊] feat dc5c4cfc6 ConfigStatusPill顶栏配置状态胶囊重设计(Layout SRP拆分+验证死链全删+validate五步三级分级+凭证校验补位+切模型状态随刷) - 小欧 2026-11-02
+[模型选择框宽度] fix f20bc18cf Layout/index.tsx,ModelPicker.tsx 模型选择框宽度各归常量+弹层自适应popupMatchSelectWidth=false - 小欧 2026-11-02
+### 1.5.5.2 顶栏服务状态胶囊与health诊断字段（11-02~11-03）
+[health增字段] feat d5a7ff530+cdb63c359 health.py 增host/server_ip/pid/uptime_s/loop_lag_ms 供顶栏区分重启/网络慢/事件循环卡死 - 小欧 2026-11-02
+[服务胶囊] feat 74fd527a9 Layout 顶栏新增ServiceStatusPill服务状态胶囊并重做两胶囊Tooltip视觉 - 小欧 2026-11-02
+[Tip静默重检] fix e1151aea7 ServiceStatusPill 打开Tip即静默重检 消除挂载快照空值 - 小欧 2026-11-02
+[耗时格式] fix 4e3f0fefc+2971da7ea+929d3e7ea ServiceStatusPill 耗时改时:分:秒.毫秒→改毫秒+消除耗时与存活时长重复观感+响应行改名 - 小欧 2026-11-02
+[Tip分组十行] feat 8f627eaaf ServiceStatusPill Tip分组十行 补循环延迟/应答时刻/数据库/运行时长 - 小欧 2026-11-02
+[探活收口] refactor 4e9e701dd health.api.ts 探活收口probeAlive删network.ts 超时阈值单一来源并修探活弹toast与版本被清空 - 小欧 2026-11-02
+[server_ip修复] fix 897f0e212 health.py server_ip 剔除环回与链路本地地址并补UDP选路兜底 - 小欧 2026-11-03
+[删浮层流组] refactor a22718495 ServiceStatusPill 删浮层SSE流组(与流状态胶囊同源重复) - 小欧 2026-11-03
+### 1.5.5.3 顶栏流状态灯与心跳错开关系（11-02）
+[流状态灯] feat 70cfb07b8 StreamStatusPill/useStreamPulse 顶栏SSE流状态灯(只读store聚合) - 小欧 2026-11-02
+[心跳上限] fix f81c2c030+4c738297c settings_registry/constants 心跳周期配置上限60→30→25(前端30s阈值须留5s余量) - 小欧 2026-11-02
+[判据三线分离] fix 11dddb029+82463b607+fa82bbf88 useStreamPulse/chatStreamStore/backupTypes 判据三线分离(业务帧=产出/心跳=连接/末字节=判死) - 小欧 2026-11-02
+[流静默橘红] fix 1b2ff6617+ef750d8a0 StreamStatusPill流静默改橘红+流进行中改绿点(覆盖antd processing色) - 小欧 2026-11-02
+[删不可达档] refactor faf909e8b useStreamPulse 删除不可达的已连接档 - 小欧 2026-11-02
+[语义色单一真源] refactor 3de18baf2 StreamStatusPill/PillTip/ServiceStatusPill/tone/streamPillRows/index.css 语义色单一真源+数据行唯一实现 - 小欧 2026-11-02
+### 1.5.5.4 PillShell外壳收口与三胶囊DRY违规修复（11-03）
+[外壳收口] refactor 4a68d1e29 PillShell/ConfigStatusPill/ServiceStatusPill/StreamStatusPill 三胶囊外壳收口(浮层卡片/容器栅格/hover/光标单点定义) - 小欧 2026-11-03
+[块高齐平] fix 009b488c8 PillShell 胶囊hover块高72→24与顶栏控件齐平 - 小欧 2026-11-03
+### 1.5.5.5 流状态联动与标签统一（11-03）
+[圈圈联动] feat 0f618200d TitleStreamIcon 顶栏圈圈8档转速联动流状态+多流挑选改业务帧优先 - 小欧 2026-11-03
+[圈圈块级] fix b49d3cf47 index.css 顶栏标题圈圈改块级去掉64px行高strut - 小欧 2026-11-03
+[标签统一] refactor 85f54e9ec StreamStatusPill 流状态标签统一3字(无任务/流持续/待确认) - 小欧 2026-11-03
+### 1.5.5.6 等待计时器三层解耦（11-03）
+[解耦重分层] refactor d1a3533dd clockStopwatch+WaitingIcons+ThinkingStream+ToolCallLine+HeaderWaitClock 等待计时器解耦重分层 - 小欧 2026-11-03
+[文字数码] refactor 221d9c181 waitTiming+waitTimerText+clockStopwatch 步骤级计时改文字数码(口径抽waitTiming单一真源) - 小欧 2026-11-03
+### 1.5.5.7 其他修复（11-02~11-03）
+[页面统一] refactor 10fb37b63+cf84750fa+58f7f8df3 ChatPage/LoginPage 五页形态统一+ref赋值改effect+删过期注释 - 小欧 2026-11-02
+[注释摘要化] docs 51faa4dda Layout/AppContext等注释摘要化与令牌说明修正 - 小欧 2026-11-02
+[面板修复] refactor 5391bde71+9f650cc4b SessionWorkspacePanel读失败透传+sessions删死类_SessionCreate - 小欧 2026-11-02
+[start_dev] feat 01c2c8595+docs dd2cf4812+68906b77f start_dev.ps1 watchfiles开发启动器+AGENTS.md后端启动方式 - 小欧 2026-11-02
+[FilePreview] fix f39df40c3 FilePreview 路径Tooltip弃用overlayInnerStyle改styles.body - 小欧 2026-11-03
+[ChatInput] fix ea00565cb ChatInput R4-1引用清空提前到提交瞬间与草稿同刻 - 小欧 2026-11-03
+[闩锁复位] fix c1b200dc0 useChatStreaming+useChatSend 切会话复位loading与发送防重闩锁 - 小欧 2026-11-03
+[字体栈DRY] fix 87c3a0f94 index.css .wait-timer-text字体栈改引--font-mono单一真相源 - 小欧 2026-11-03
+### 1.5.5.8 文档（11-02~11-03）
+[研究报告] docs 9474209cb+7deac18e9+e32f693e8 [4]服务端信息前端展示研究分析报告 v1.8→v1.9+reload失效分析报告 - 小欧 2026-11-02~03
+[reload报告] docs 60dfd2429 deleted(清理) - 小欧 2026-11-02
+v1.5.4
+更新时间: 2026-11-02 17:30:37 - 小欧-2026-11-02
+
 v1.5.4
 更新时间: 2026-11-02 17:30:37 - 小欧-2026-11-02
 ## v1.5.3以来 变更汇总(32个commit: docs12/fix11/refactor6/feat2/style1) - 小欧-2026-11-02
