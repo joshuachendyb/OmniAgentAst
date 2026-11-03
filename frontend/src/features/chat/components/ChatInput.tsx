@@ -69,6 +69,8 @@
 //   与 EXT_MAX=10 口径冲突）— 小欧-2026-11-02
 // 2026-11-02 小欧 - chip 跳转补 { state: { internal: true } }（与 PathLink 同口径）：缺该标记时
 //   文件页不清外部预览态，点 chip 后右侧仍停在上一个外部文件 — 小欧-2026-11-02
+// 2026-11-03 小欧 R4-1 - 引用清空提前到提交瞬间(与草稿同刻), 失败分支对称还原;
+//   原清空在 onSend 返回后, 而其全程闭合 SSE 终态 → 执行中插话重复携带上一轮引用 — 小欧-2026-11-03
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -406,6 +408,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const backup = draft;
     exitHistory();
     setDraft('');
+    // 2026-11-03 小欧 R4-1: 引用与草稿同刻清(提交瞬间按 id 只清本轮), 原在 onSend 返回后才清
+    //   ——而 onSend 全程闭合到 SSE 终态, 执行中插话会把上一轮引用原样再上行一次。
+    const sentIds = new Set(refsToSend.map((r) => r.id));
+    removeWhere((r) => sentIds.has(r.id));
     // 2026-10-13 小欧: 标记提交中, 使 hook 能区分「建会话回填」与「用户真切会话」
     markSubmitted();
     try {
@@ -420,15 +426,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       addRecentInput(cleanText);
       setRecents(loadRecentInputs());
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
-      // 2026-10-30 小欧 批3: 只移除**本轮已发送**的条目(按 id), 不再 clear() ——
-      //   refs_blocked 回执会在发送途中把台账原样重建回引用区(新 id), clear() 会把
-      //   刚恢复的 chips 一起抹掉; 按 id 移除后两条路径互不干扰, 恢复不必再延后一拍。
-      const sentIds = new Set(refsToSend.map((r) => r.id));
-      removeWhere((r) => sentIds.has(r.id));
     } catch {
       setDraft(backup);
       cancelSubmitted();
-      // refs 保留（不 setRefs）—— 发送失败草稿与引用都还在
+      // R4-1 对称还原: 失败把本轮 chips 按原条目还回(mergeRefs 按 path 原位合并, 不产重复) — 小欧-2026-11-03
+      refsToSend.forEach((r) => add(r));
     }
   };
 
