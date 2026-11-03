@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-31 00:42:00
-**最近更新**: 2026-10-31 00:42:00 小欧 §3.6 `[54]` 三堂会审整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-03 21:32:39
+**最近更新**: 2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
 
@@ -185,6 +185,14 @@ shell 命令执行前的**静态风险判定**单一权威。三类同域关注�
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `aclose_stream` | 安全关闭异步流：存在 `aclose()` 则 await 并吞掉收尾期异常（收尾失败不应掩盖主流程异常），无则退化为 `close()`；供 `llm_call.py` / `base_service.py` 的 finally 复用 | stream: Any | None |
+
+### 1.17 后台任务生成（background_tasks.py，位于 app/utils/）
+
+fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asyncio.create_task` 只被事件循环弱引用，挂起中的任务可被 GC 中途销毁（销毁不走 except，落盘/统计静默丢失）；本函数由模块级集合持强引用、done 后自动 discard，与 main.py「存引用防 GC」纪律、agent_runner `_background_tasks` 模式同源收口。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `spawn_bg` | 生成引用受保护的后台任务：语义同 create_task（立即调度立即返回），done 回调自摘引用并对非取消任务 retrieve 消化 exception 防 "never retrieved" 日志噪音；任务异常仍由任务内部自捕获落日志。接入面：`monitoring/middleware.py` 持久化任务 + `app/main.py` 四处常驻循环（`_cleanup_task_ref`/`_journal_retention_ref`/`_monitoring_retention_ref`/`_log_watcher_ref`，shutdown 仍按引用 cancel） | coro: Coroutine | asyncio.Task |
 
 ---
 
