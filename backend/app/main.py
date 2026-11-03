@@ -67,10 +67,14 @@
 # 2026-11-03 小欧 - http_exception_handler 4xx 全降 INFO(客户端请求不合法/资源不存在, 非服务端故障)、
 #   5xx 保持 ERROR; 422 校验错误同降 INFO。原 probe-404 特例随之删除 — 小欧-2026-11-03
 # 2026-11-03 21:30 小欧 - 四处后台任务 create_task→spawn_bg(强引用防 GC 收口, shutdown 仍按引用 cancel) — 小欧-2026-11-03
+# 2026-11-04 小欧 - R1(三堂会审残留): startup 预热 loop 默认线程池(新增 threading/ThreadPoolExecutor import),
+#   非 shell 同步工具 asyncio.to_thread 运行期不再在事件循环线程懒建 Thread.start(同 shell 卡死病灶另一半) — 小欧-2026-11-04
 import sys
 import asyncio
 import time
 import uuid
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -449,6 +453,19 @@ async def _log_level_watcher_loop() -> None:
 _log_watcher_ref: Optional[asyncio.Task] = None  # 同 _cleanup_task_ref 模式, 供 shutdown cancel
 
 
+def _prewarm_loop_default_executor() -> None:
+    """启动期预热 loop 默认线程池: 阻塞任务逐个逼建满 worker, Thread.start 全部发生在启动期循环线程。
+    非 shell 同步工具经 asyncio.to_thread 走此池, 运行期不再热路径懒建线程(同 _ShellWorkerPool 病灶另一半)。— 小欧 2026-11-04"""
+    _n = min(32, (os.process_cpu_count() or 1) + 4)   # 与 CPython 默认 executor 的 max_workers 同式, 容量语义不变
+    _block = threading.Event()
+    _ex = ThreadPoolExecutor(max_workers=_n, thread_name_prefix="tool-sync")
+    for _ in range(_n):
+        _ex.submit(_block.wait, 10)   # 阻塞任务使 idle 计数归零, 逐次强制 spawn 至建满
+    _block.set()   # 立即放行, worker 后台自行收尾
+    asyncio.get_running_loop().set_default_executor(_ex)
+    logger.info(f"[启动耗时] 默认线程池预热: {_n} workers 已建满(tool-sync)")
+
+
 def _start_log_level_watcher() -> None:
     """启动日志级别热重载后台任务 — 小欧 2026-10-25"""
     global _log_watcher_ref
@@ -463,6 +480,8 @@ async def startup_event():
     _t0 = time.time()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
+    # 2026-11-04 小欧 - R1: 预热线程池必须在任何后台任务/请求动用 executor 前建满
+    _prewarm_loop_default_executor()
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
     # 只收尾"本进程启动之前创建"的行：防御性护栏，防有人误起第二个后端进程时误伤对方任务 — 小欧 2026-09-29
     _boot_iso = get_local_iso_timestamp()
