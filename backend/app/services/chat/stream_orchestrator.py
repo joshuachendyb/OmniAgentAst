@@ -257,6 +257,8 @@
 # 2026-11-02 - 小欧 - validate_chat_config 三级分级: 第5步凭证校验(api_key/api_base空白黄牌, 漏配key不再谎绿)+status/errors/warnings实装(顶栏胶囊承接) - 小欧-2026-11-02
 # 2026-11-03 - 小欧 - 输入校验失败两条(消息列表/内容为空) WARNING→DEBUG(请求体不合法) — 小欧-2026-11-03
 # 2026-11-04 - 小欧 - get_task_field 改从 task_state 直连真源(registry 不再再导出) — 小欧-2026-11-04
+# 2026-11-04 - 小欧 - bind_message_to_task 的 atxn 补 retry_locked=3: 每消息高频写, 5 会话并发实测撞锁
+#   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面 — 小欧-2026-11-04
 
 
 
@@ -374,7 +376,8 @@ async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
         return
     try:
         from app.services.chat.storage import bind_message_to_task
-        _ok = await db.atxn("chat", lambda c: bind_message_to_task(c, user_message_id, task_id))
+        # 2026-11-04 小欧 - retry_locked=3: 每消息高频写, 并发会话实测撞锁, atxn 已有退避仅显式开启 — 小欧-2026-11-04
+        _ok = await db.atxn("chat", lambda c: bind_message_to_task(c, user_message_id, task_id), retry_locked=3)
         if not _ok:
             logger.warning(
                 f"[注入] bind 0行(task={task_id}, uid={user_message_id}): "

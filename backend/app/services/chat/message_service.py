@@ -40,20 +40,19 @@
 # 2026-10-30 - 小欧 - save_message 的 DB 段改走 await db.atxn(子线程), 不再在事件循环
 #   主线程同步跑 sqlite3 与 get_conn 锁重试 time.sleep; 409 门拆两段(只读判据 + 写入), await 移出连接上下文;
 #   同时删死变量 display_name_to_save、非 user 角色不查开关(409 门只拦 user, 免一次无用 DB 往返)
+# 2026-11-04 - 小欧 - save_message 的 atxn 补 retry_locked=3: 用户消息高频写, 5 会话并发实测撞锁
+#   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面; 顺清 4 处存量子类 Unused import(F401) — 小欧-2026-11-04
 """
 message_service — 消息业务服务(services/chat)
 
 职责(方案4.7.3, 小欧 2026-08-13): 会话消息历史读取/保存 + display_name 缓存(独占)。
 API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
-from typing import Optional
-
 from app.logger import logger
-from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.cache import LRUCache
 from app.constants import MAX_CACHE_SIZE as _D_CACHE_SIZE
 from app.config import get_config
-from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.utils.time_utils import get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import MessageResponse
 from app.services.chat.storage import track_user_message, load_execution_steps_batch  # P1-① 小欧 2026-10-27: 批量加载替代 N+1(单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用)
@@ -285,5 +284,6 @@ async def save_message(session_id: str, message):
                 detail="任务执行中，插话开关未开启；请等待完成或先取消",  # 与编排器兜底 error_message、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
             )
 
-    message_id = await db.atxn("chat", _save_message_txn, session_id, message, carried)
+    # 2026-11-04 小欧 - retry_locked=3: 用户消息高频写, 并发会话实测撞锁, atxn 已有退避仅显式开启 — 小欧-2026-11-04
+    message_id = await db.atxn("chat", _save_message_txn, session_id, message, carried, retry_locked=3)
     return {"success": True, "message_id": message_id}

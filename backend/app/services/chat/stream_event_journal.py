@@ -4,6 +4,8 @@
 #   与本文件其余函数体风格统一(缩进错位会让后续维护者误判其为模块级语句) — 小欧-2026-09-29 21:37:55
 # 编辑历史: 2026-10-03 小欧 - 新增 journal_steps_reconcile: Journal(③) vs chat_task_steps(②) 启动期对账,
 #   只告警不自动修(反推业务步需重放落库过滤判定 = 第二套真源, 违反 DRY/SRP) — 文档[5] 5.3 D2 — 小欧-2026-10-03
+# 编辑历史: 2026-11-04 小欧 - append 的 atxn 补 retry_locked=3: 每 SSE 事件逐条高频写, 5 会话并发实测撞锁
+#   (database.py:293 ×4), atxn 已有退避仅显式开启 — 小欧-2026-11-04
 import json
 from datetime import datetime, timedelta
 from typing import Optional
@@ -22,10 +24,11 @@ async def append(task_id: str, session_id: str, seq: int, event_type: str, paylo
     （同名接口向内兼容，单事件路径不变），一次事务提交多行，帧 1:1、seq 逐帧"""
     payload_json = safe_json_dumps(payload, ensure_ascii=False)
     created_at = get_local_iso_timestamp()
+    # 2026-11-04 小欧 - retry_locked=3: 每 SSE 事件逐条高频写, 5会话并发实测撞锁(database.py:293 ×4), atxn 已有退避仅显式开启
     await db.atxn("chat", lambda conn: conn.execute(
         "INSERT OR IGNORE INTO chat_stream_events"
         "(task_id, session_id, seq, event_type, payload_json, created_at) VALUES (?,?,?,?,?,?)",
-        (task_id, session_id, seq, event_type, payload_json, created_at)))
+        (task_id, session_id, seq, event_type, payload_json, created_at)), retry_locked=3)
 
 
 async def read_after(task_id: str, after_seq: int, limit: int = PAGE_SIZE):
