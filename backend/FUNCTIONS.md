@@ -446,6 +446,16 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `error_hints.py` | 工具结果解释层错误提示: `permission_error_hint`(写入权限不足) / `hint_for_write_error`(写入异常按 errno/类型精准提示) / `hint_for_read_error`(读取异常) / `sql_error_hint`(SQL异常, 覆盖 no column/table/UNIQUE/多语句/语法等) / `hint_for_data_error`(数据处理异常, 含 pandas/sqlite3 分支) |
 | `tool_utils.py` | 工具通用辅助: `save_text_to_file`(调 write 工具落盘, 基准 project_root, 完整安全链路) |
 
+### 4.2.1 工具名/参数别名（app/tools/tools_alias_mapper.py）
+
+LLM 工具名与参数名的别名归一层，schema 校验前执行（调用点：`action_input_parser`/`tool_retry_engine:385`/`tool_facade:164`）。登记标准沿用 task007：仅登记日志实证的 LLM 参数混淆，YAGNI 不臆造。
+
+| 函数/常量 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `normalize_params` | 应用 `PARAM_ALIASES`（键名归一，规范名已存在时别名键被忽略）与 `PARAM_VALUE_ALIASES`（枚举值归一） | tool_name: str, params: Dict | (normalized_params, has_mapping) |
+| `PARAM_ALIASES["edit"]` | `file_path/filepath/file/filename/file_name→path`、`model→mode`（键名混淆实证：session 12b317fe 一次 6 条 edit 全废，`model:"once"` 即 `mode` 枚举值，语义唯一指向） | — | Dict |
+| `add_param_alias` | 运行期登记别名（幂等覆盖） | tool_name, alias, canonical | None |
+
 ### 4.3 基础工具（app/tools/fundamental/）
 
 | 函数名 | 功能 | 参数 | 返回值 |
@@ -723,6 +733,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.22 | 2026-11-04 12:52:53 | **§新 4.2.1 工具名/参数别名登记**（补漏项）: `tools_alias_mapper.normalize_params`/`PARAM_ALIASES`/`add_param_alias` 首次入册；`PARAM_ALIASES["edit"]` 增 `model→mode` 键名别名（日志实证 session 12b317fe 12:47:25 一次 6 条 edit 全废，`model:"once"` 即 mode 枚举，语义唯一指向；`normalize_params` 在 schema 校验前执行，已验证救活该调用与双传边界安全） | 小欧 |
 | v5.21 | 2026-11-04 12:19:56 | **新增 §1.18~§1.21（shell 卡死根治的四个公用层）**: ①`proc_io.py`（`drain_until_exit`/`drain_after_exit`/`run`/`TRUNCATED_NOTE`）零线程读管道取代 `communicate`；②`proc_utils.py`（`kill_process_tree`/`kill_pid_descendants`）零建进程树杀，ppid 映射 BFS 支持根已退出；③`workers.py`（`WorkerPool`/`ThreadLeasePool`）启动期建满、运行期零 `Thread.start`；④`spawn_gate.py`（`install_spawn_gate`/`mark_runtime_started`/`snapshot`/`SpawnGateBusy`）可回收租约 + 看门狗 | 小欧 |
 | v5.20 | 2026-11-01 14:40:00 | **键名统一**(北京老陈令: 一个概念一个名字, 不排期一次改净): ①1.x `parse_model_params` 返回值由 `context_limit` 更名 `context_length`, 取值顺序补 `model_meta.context_length` 层(model_params 用户值 > 厂商声明 > 全局默认 > 常量兜底), 常量 `DEFAULT_CONTEXT_LIMIT` → `DEFAULT_CONTEXT_LENGTH`；②10.3 `add_model`/`update_model` 形参与请求体 `default_params` → `model_params`, `_models_of` 下发键同改并补下发 `context_length`(模型库保存的窗口此前无读取面)；③10.3 `update_provider_config` 删 `base_url`/`retry_times` 别名, 只认 `api_base`/`max_retries`；④全局设置键 `llm.context_limit_default` → `llm.context_length_default` | 小欧 |
 | v5.17 | 2026-10-30 23:20:00 | **§3.6 `[54]` 三堂会审整改**(小欧): ①`_ws_apply` 不变量兜底——旧默认行被编辑/删除时默认标志继承给新列表首条(维持"默认工作区始终存在"系统不变量, 防 PATCH 后零默认行→下次建任务新建时间戳目录); ②`_backfill_ws_default` 存量库一次性回填——无 is_default=1 行的会话把最后一条置 1(防 342 个老会话下次建任务各建一个垃圾目录); ③`_verify_ws_columns` 启动期 fail-loud 复核三标注列(仿 `_verify_acc_columns` 先例, 防 `_ensure_column` 隐性失败致运行期 SELECT 隐性 OperationalError); ④新增常量 `MAX_WS_INJECT_CHARS=4096`——prompt 注入块总字符上限(防 64 目录×500 字符≈30KB 撑爆, 超限只保留前若干行+省略提示) | 小欧 |

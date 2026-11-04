@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-07 - 小欧 - 文件由 param_alias_mapper.py 重命名为 tools_alias_mapper.py(名实相符: 既有工具名别名也有参数别名); import处同步更新(registry/tool_retry_engine/action_handler/test)
+# 2026-11-04 - 小欧 - edit 增 model→mode 键名别名(日志实证: session 12b317fe 一次 6 条 edit 全废, LLM 把 mode 写成 model)
 # 2026-07-20 - 小欧 - 删 output_mode 参数别名映射: grep 已去除 output_mode 参数(默认即 content 模式), 该别名失效, 删除死映射避免误导
 # 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
 # 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(write), 防"工具未注册"误拦截(com-test 03暴露)
@@ -50,6 +51,7 @@ PARAM_ALIASES = {
         "file": "path",
         "filename": "path",
         "file_name": "path",
+        "model": "mode",  # 键名混淆实证: session 12b317fe 6连发全废(model:"once"), 语义唯一指向mode — 2026-11-04 小欧
     },
     "readmedia": {
         "file_path": "path",
