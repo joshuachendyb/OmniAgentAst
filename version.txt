@@ -1,3 +1,26 @@
+v1.6.1
+发布时间: 2026-11-04 12:24:58 - 小欧-2026-11-04
+## v1.6.0汇总 变更汇总(16个commit: fix2/refactor1/docs13) - 小欧-2026-11-04
+[2026-11-04 12:24:58 小欧] 范围=v1.6.0以来全部commit(16个); 说明=①shell 卡死根治第二阶段(承 v1.6.0 的"卸同步 exec"): 零线程读管道 proc_io 取代 Popen.communicate 的 _readerthread、ppid 映射 BFS 零建进程树杀 proc_utils、常驻线程池 workers(运行期零 Thread.start)、可强制回收租约闸门 spawn_gate(RLock→Lease+看门狗)、启动期预热 ps7/ps5+anyio 40+各池建满、/health 暴露 runtime_thread_starts/gate_timeouts/forced_reclaims 三零判据; ②run_server 启动端口占用预检; ③README/附件设计/部署说明 13 篇文档修订。注: 无新增功能面, 纯稳定性与文档 → PATCH v1.6.1
+### 1.6.1.1 shell 卡死根治(零线程读 + 可回收租约)
+[红队6缺陷修复] fix af5a25aab proc_io+proc_utils+spawn_gate 零线程读管道/ppid树杀/可回收租约 根治Windows shell卡死(红队6缺陷) - 小欧 2026-11-04
+[第一阶段重构] refactor 4705b12ff shell_engine+utils 根治Windows创建进程×建线程loader lock互锁(常驻线程池+零子进程树杀+全局闸门) - 小欧 2026-11-04
+### 1.6.1.2 启动期预检
+[端口占用预检] fix 15829daf5 run_server.py 启动端口预检(占用则打印PID/进程名/路径+PS与CMD双命令+换端口建议, 不再白跑1.7s初始化后报10048) - 小欧 2026-11-04
+### 1.6.1.3 文档修订(13篇)
+[README目录与E2E数量] docs 557dd7840 README 修正项目结构目录名及E2E测试数量 - 小欧 2026-11-04
+[README工具分类终版] docs 55d01d2d7 README工具分类最终修正-FILE11/DOCUMENT11(含extract/compress/readmedia) - 小欧 2026-11-04
+[README网络与基础类] docs f71fbe2c4 README工具分类修正-NETWORK3/FUNDAMENTAL6(searchweb/fetchpage已迁回) - 小欧 2026-11-04
+[README E2E数量] docs 035e58ea9 README E2E测试数量修正62→67 - 小欧 2026-11-04
+[README工具数量] docs ecb3308c9 README工具分类数量修正-FILE14/NETWORK5/DOCUMENT8/FUNDAMENTAL4 - 小欧 2026-11-04
+[部署说明端口条目] docs 4054e4102 同源SPA打包与部署说明 端口占用条目改写为预检新行为+修正部署包结构(version.txt等落_internal) - 小欧 2026-11-04
+[附件一致性v4] docs b2583c7d8 [12]附件功能 全文一致性检查修复v4(类型词典归一/补VIDEO白名单/diff锚对齐) - 小欧 2026-11-04
+[部署包结构] docs b79742658 同源SPA打包与部署说明 修正onedir部署包结构(资源落_internal) - 小欧 2026-11-04
+[附件阶段轴] docs 84f8116fd [12]附件功能 阶段轴改为附件类型S0-S4 - 小欧 2026-11-04
+[README全量更新] docs 6797d7d34 README全量更新v1.6.0-第九章watchfiles双模式+打包章节边界 - 小欧 2026-11-04
+[README第九章] docs f4658a6f9 README 第九章开发环境补充watchfiles双模式+第九章重写打包章节边界 - 小欧 2026-11-04
+[附件设计清单] docs ca1a9ae59 [12]附件功能S0-S5完整实施设计与代码清单 - 小欧 2026-11-04
+[附件设计v9对账] docs ff822ef82 [56]附件设计文档 v9 代码对账修订 - 小欧 2026-11-04
 v1.6.0
 更新时间: 2026-11-04 07:59:16 - 小欧-2026-11-04
 ## v1.5.6以来 变更汇总(18个commit: fix8/feat3/refactor2/docs3/perf1/test1) - 小欧-2026-11-04
