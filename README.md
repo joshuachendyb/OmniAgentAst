@@ -126,15 +126,15 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
-| FILE | 11 | 文件读写、搜索、编辑、复制移动、目录树 |
-| NETWORK | 3 | HTTP 请求、下载、端口探测 |
-| SYSTEM | 6 | 任务管理、事件日志、系统信息、命令查找 |
-| DESKTOP | 11 | 窗口管理、截屏、剪贴板、键鼠（通知在 FUNDAMENTAL） |
-| DOCUMENT | 11 | PDF/Word/Excel/PPT 读写、压缩解压、媒体读取 |
-| DATAANALYSIS | 6 | SQL 查询/执行、图表生成、数据筛选/分析 |
-| FUNDAMENTAL | 6 | Shell 执行、网页抓取、搜索、通知、时间日期 |
+| FILE | 14 | 读取、写入、编辑、搜索、压缩解压、复制移动删除重命名 |
+| NETWORK | 5 | HTTP请求、下载、网页抓取、网络搜索、端口探测 |
+| SYSTEM | 6 | 计划任务管理、事件日志、系统信息、命令查找 |
+| DESKTOP | 11 | 窗口管理、鼠标键盘控制、截屏、剪贴板 |
+| DOCUMENT | 8 | PDF/Word/Excel/PPT读写 |
+| DATAANALYSIS | 6 | SQL查询/执行、图表生成、数据筛选分析 |
+| FUNDAMENTAL | 4 | Shell执行、网页抓取、搜索工具、通知 |
 | WIN_REGISTRY | 3 | 注册表读/写/删 |
-| TIMER | 6 | 定时器设置/列出/清除、时间计算 |
+| TIMER | 6 | 定时器设置/清除/列出、时间计算 |
 | 合计 | 63 | |
 
 ### 3.2 工具注册架构
