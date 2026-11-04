@@ -40,12 +40,19 @@
 #     help 文案精简为"可信反向代理 IP(逗号分隔,含 IPv6)…"; ⚠ 警告文案同步精简。
 #     注: 不能写 localhost —— uvicorn 按 TCP 对端 IP 匹配(proxy_headers.py),
 #     DNS 已把 localhost 解析成 IP, 字面量永不匹配。 — 小欧-2026-10-30
+#   2026-11-04 小欧 - 新增端口预检 _port_busy/_port_owner/_explain_port_busy: 占用时不做
+#     _deploy_resources 与 app.main 导入(原要白跑 1.7s 初始化, 到 uvicorn bind 才报
+#     Errno 10048 退出, 用户看到的是"启动到一半就死"), 改为启动前试绑即判, 打印占用者
+#     PID/进程名/路径 + 两条出路(本程序已在运行→直接浏览器用; 否则给清理命令/换端口)。
+#     不自动杀进程: 占用者可能是无关程序或在跑任务的本程序实例, 自动杀等于误杀/丢数据。
+#     — 小欧-2026-11-04
 # ============================================================================
 import argparse
 import shutil
 import sys
 from multiprocessing import freeze_support
 from pathlib import Path
+from typing import Optional, Tuple
 
 if sys.platform == "win32":
     import asyncio
@@ -59,6 +66,88 @@ if sys.platform == "win32":
 # 打包版默认端口(北京老陈令: 与代码库惯例 :8000 双开不冲突; 避开 E2E 代理 :9000)。
 # 改端口只改这里, 重打即生效; 显式传 --port 恒优先 — 小欧-2026-10-11
 DEFAULT_PORT = 8500
+
+
+def _port_busy(host: str, port: int) -> bool:
+    """试绑同 host/port 判占用(绑完立即关) — 小欧 2026-11-04
+
+    与 uvicorn 内部绑定同口径, 但提前到任何初始化之前, 避免白跑 1.7s 才报 10048。
+    Windows 下未设 SO_REUSEADDR, 已被监听的端口 bind 必抛 OSError, 与 uvicorn 一致。
+    """
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((host, port))
+        return False
+    except OSError:
+        return True
+    finally:
+        sock.close()
+
+
+def _port_owner(port: int) -> Optional[Tuple[int, str, str]]:
+    """查监听 port 的进程 (pid, 进程名, 可执行路径); 不可用/无权限返回 None — 小欧 2026-11-04"""
+    try:
+        import psutil
+
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.status != psutil.CONN_LISTEN or not conn.laddr or conn.laddr.port != port:
+                continue
+            if not conn.pid:
+                return None
+            try:
+                proc = psutil.Process(conn.pid)
+                cmd = proc.cmdline()
+                return conn.pid, proc.name(), (cmd[0] if cmd else "")
+            except Exception:
+                return conn.pid, "", ""
+    except Exception:
+        return None
+    return None
+
+
+def _explain_port_busy(host: str, port: int) -> None:
+    """端口占用的人话说明: 是谁占的 + 两条出路(直接用/清理或换端口) — 小欧 2026-11-04"""
+    owner = _port_owner(port)
+    pid, name, exe = owner if owner else (0, "", "")
+    is_self = "omniagent" in name.lower() or "omniagent" in exe.lower()
+    shown_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    rule = "=" * 68
+
+    print(f"\n{rule}", flush=True)
+    print(f"[run_server] ❌ 端口 {port} 已被占用, 本次启动终止(未改动任何文件)", flush=True)
+    print(rule, flush=True)
+    if pid:
+        print(f"  占用者: PID {pid}  {name or '未知进程'}", flush=True)
+        if exe:
+            print(f"          {exe}", flush=True)
+    else:
+        print("  占用者: 未识别(可能权限不足, 或被系统进程占用)", flush=True)
+
+    if is_self:
+        print(f"\n  ✅ 判断: 本程序已经在运行, 不用再开一个 —— 浏览器直接访问:", flush=True)
+        print(f"     👉 http://{shown_host}:{port}", flush=True)
+        print("\n  只有确认要重启时才需要结束它:", flush=True)
+    else:
+        print("\n  要用本程序, 先清理占用者(或换个端口):", flush=True)
+
+    if pid:
+        print(f"\n  ① 结束占用进程", flush=True)
+        print(f"     PowerShell:  Stop-Process -Id {pid} -Force", flush=True)
+        print(f"     CMD:         taskkill /F /PID {pid}", flush=True)
+    else:
+        print(f"\n  ① 查出是谁占的", flush=True)
+        print(f"     PowerShell:  Get-NetTCPConnection -LocalPort {port} -State Listen", flush=True)
+        print(f"                  Get-NetTCPConnection -LocalPort {port} -State Listen"
+              f" | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}", flush=True)
+        print(f"     CMD:         netstat -ano | findstr :{port}", flush=True)
+        print(f"                  for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port}"
+              f" ^| findstr LISTENING') do taskkill /F /PID %a", flush=True)
+    print("  ② 再双击本程序", flush=True)
+    print(f"\n  不想清理也可以直接换端口启动(两种命令行相同):", flush=True)
+    print(f"     OmniAgentBackend.exe --port {port + 1}", flush=True)
+    print(f"{rule}\n", flush=True)
 
 
 def _exe_dir() -> Path:
@@ -148,6 +237,11 @@ def main() -> None:
         # 真回环与伪造而取消回环豁免（deps._is_trusted_localhost），即本机也要输口令。
         print("[run_server] ⚠️ 警告：--forwarded-allow-ips=* 会信任所有来源，"
               "客户端可伪造来源 IP，本机访问将不再自动豁免口令。", flush=True)
+
+    # 端口预检: 被占则说明是谁占的并给出出路后退出, 不进入 _deploy_resources/app.main 初始化 — 小欧 2026-11-04
+    if _port_busy(args.host, args.port):
+        _explain_port_busy(args.host, args.port)
+        sys.exit(1)
 
     base = _exe_dir()
     _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
