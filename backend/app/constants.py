@@ -26,7 +26,7 @@
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
   2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
-  2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+  2026-07-15 小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
   2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
   2026-07-17 小沈 FC重命名: LLM_RESPONSE_FALLBACK(原FC_FALLBACK_ENABLED)+LLM_RESPONSE_RETRIES(原FC_MAX_RETRIES)
   2026-07-22 小欧 MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 命名统一（值200000不变），注释同步更新
@@ -34,16 +34,51 @@
         日志result截断长度,防MemoryError); action_handler导入改为
         from app.constants 引用
    2026-08-14 小欧 改名名实相符: model_schemas.py → config_schemas.py(注释同步)
-    2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
+    2026-08-17 小健 常量归属迁移: 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
     2026-09-02 小欧 v1.5.13 新增 HITL_CONFIRM_LEAD=10 / BYPASS_AUTO_LEAD=2 两个计时提前量常量(会话信任修复方案5.7.3/5.7.4: 后端唯一计时权威, 前端倒计时=后端窗口−提前量, 消除前后端计时竞态)
     2026-09-03 小欧/北京老陈 新增 HITL_MIN_CONFIRM_TIMEOUT=3 前端倒计时最小值常量(改前三处max(5,bt-LEAD)硬编码5→常量3)
-    2026-09-08 北京老陈裁定+小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
+    2026-09-08 小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
         原硬编码 timeout=25.0 → 常量引用; 常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系设计依据, 常量与前端改动联动)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
+    2026-09-22 小欧 DEFAULT_CORS_ORIGINS 删除死配置 localhost:3000(全仓零引用, 早期 CRA 遗留) + 补注释说明端口关系(前端:5173 直连后端:8000 走 CORS, proxy 同源不走)
+    2026-09-23 小欧 删除 LLM_STREAM_OPTIONS 死常量(消费方 base_service 改读 tuning.llm.stream_options.include_usage 开关组 dict, 全仓零引用, 功能零退化)
+    2026-09-23 小欧 删除 MAX_CONSECUTIVE_CHUNKS 死常量(should_promote 死链清理：历史接口全仓零调用，chunk_buffer/initialize_run_state 引用同步删除)
+    2026-09-28 小欧 新增 INBOX_MAX=20 活跃任务注入 inbox 队列上限(满则注入失败降级新建任务, 消息不丢) — 小欧-2026-09-28
+    2026-10-18 小欧 - 开关键名随设置项分组前缀跟改: security.hitl_timeout → security.hitl.timeout、
+      security.hitl_enabled → security.hitl.enabled(与 config.yaml/registry/path_tool_safety_checker 同键);
+      HITL_TIMEOUT 取值与兜底逻辑零变更。同批精简注释冗余标注, 技术说明原样保留。
+    2026-10-28 小欧 - 新增重试退避参数: RETRY_BACKOFF_BASE=3(L1既有3^n常量化消魔数)、
+      RETRY_BACKOFF_CAP=120(L1 429分支+L2 llm_call:283裸30合并共用DRY; 用户裁定统一120)、RATE_LIMIT_BACKOFF_JITTER=0.2(429 ±20%抖动) — 小欧-2026-10-28
+    2026-10-28 小欧 - 三堂会审删除 RATE_LIMIT_MAX_RETRIES/RATE_LIMIT_TOTAL_WINDOW(全仓零引用 YAGNI):
+      重试次数已由既有 max_retries 路径覆盖, 总窗口累计逻辑未实现(注释承诺与事实不符) — 小欧-2026-10-28
+
+    2026-10-29 小欧 新增输入框引用摘录比例常量: REF_AVG_LINE_CHARS(=80, 行均字符估算用) +
+                        REF_HEAD_RATIO(=0.6) + REF_TAIL_RATIO(=0.2) + REF_MIN_KEEP_LINES(=10, 头尾摘录
+                        保底行数)——供 services/refs/resolver 头尾摘录与行数估算消费, 单一真源 — 小欧-2026-10-29
+    2026-10-30 小欧 批2/批3: ①REF_* 使用对象随实现迁移更正 —— REF_HEAD_RATIO/REF_TAIL_RATIO 归
+                        services/refs/clip(头尾摘录), REF_MIN_KEEP_LINES 归 services/refs/budget(C 档压缩),
+                        REF_AVG_LINE_CHARS 归 resolver(行均估算); ②新增 REF_KINDS 来源白名单(单一真源,
+                        编排入口 sanitize_refs 与渲染期 render_refs_block 共用, 防入口放行/渲染静默丢弃分叉) — 小欧-2026-10-30
+    2026-10-31 小欧 新增 DEFAULT_CONTEXT_LIMIT=262144(256K, 自 compaction_constants:57 迁入):
+                        LLM 上下文窗口默认上限(配置优先否则兜底, 见常量注释)——settings_registry
+                        llm.context_limit_default 设置项默认值由魔法数字 262144 改引本常量;
+                        引用方(lifecycle/service/message_builder/stream_orchestrator)导入路径同步改
+                        app.constants, compaction_constants 不再定义 — 小欧-2026-10-31
+    2026-11-01 小欧 键名统一: DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH, 与厂商通用键
+                        context_length 同名(原 context_limit 系自造名, 全仓统一后仅存一个名字);
+                        取值顺序同步补 model_meta 一层 — 小欧-2026-11-01
+    2026-10-31 小欧 新增引用体积预算比例默认值 REF_SINGLE_RATIO/REF_TOTAL_RATIO/REF_REJECT_RATIO/
+                        REF_INTERJECT_RATIO: 原为 services/refs/limits.resolve_limits 内联字面量(0.20/
+                        0.40/0.60/0.05), 收口至本文件作单一真源, 配置键 tuning.refs.* 仍可覆盖;
+                        取值零变更 — 小欧-2026-10-31
+    2026-11-03 小欧 新增 ChatTaskStatus 枚举 + 三集合(TERMINAL/STATUSES/NON_RUNNING): chat_tasks.status
+                        单一真源, 收口 INSERT/DDL 默认值/reconcile WHERE 三处魔法字符串 — 小欧-2026-11-03
+
 """
 
 import re
 from datetime import timedelta
+from enum import Enum
 
 # ============================================================
 # 1. HTTP 状态码与错误码
@@ -59,7 +94,6 @@ from datetime import timedelta
 # 2026-08-05 小欧 核对说明(北京老陈 2026-08-05 裁定: max_steps 现为调试需要, 不改代码): 运行时 max_steps 由 config.yaml 的 app.max_steps 控制(当前=10000),
 # 创建 Agent 链路(openai.py:256 UniversalAgent 不传 max_steps)经 base_agent.py get_max_steps() 取配置; 本常量 100 与配置 10000 不一致系历史遗留, 禁止据其推断循环步数上限
 DEFAULT_MAX_STEPS = 100  # 【系统级】使用对象: 仅 config_schemas.py API 请求体默认值
-MAX_CONSECUTIVE_CHUNKS = 5  # 【系统级】使用对象: Agent 循环连续 chunk 上限
 MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 promote 的 chunk 上限
 
 # ============================================================
@@ -69,11 +103,24 @@ MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 
 LLM_TEMPERATURE = 0.7  # 【系统级】使用对象: LLM 客户端采样温度
 LLM_TOOL_CHOICE = "auto"  # 【系统级】使用对象: LLM 客户端 tool_choice 模式
 LLM_STREAM_MAX_RETRIES = 3  # 【系统级】使用对象: LLM 流式最大重试次数
-LLM_STREAM_OPTIONS = {"include_usage": True}  # 【系统级】使用对象: LLM 流式选项
+# ============ 重试退避参数(L1通用+L2共用) — 小欧 2026-10-28 ============
+# L1(HTTP层,base_service) 429 缺省 Retry-After 时用 3^n 指数退避+抖动, 非429同为 3^n;
+# L2(响应层,llm_call) 0.5*2^n。两层封顶共用 RETRY_BACKOFF_CAP=120(L2原裸30,按用户裁定统一为120)。
+# 重试次数由既有 self.max_retries / LLM_RESPONSE_RETRIES 控制; 配额耗尽(insufficient_quota)不重试直接打死。
+RETRY_BACKOFF_BASE = 3          # 【系统级】使用对象: L1 重试退避基数(3^n, base_service 通用+429分支共用) — 小欧-2026-10-28
+RETRY_BACKOFF_CAP = 120         # 【系统级】使用对象: 重试退避上限(秒), L1 429分支 + L2(llm_call:283) 共用; 120=L1既有3+9+27+81累计量级的单次封顶 — 小欧-2026-10-28
+RATE_LIMIT_BACKOFF_JITTER = 0.2 # 【系统级】使用对象: L1 429 退避抖动比例(±20% 随机化, 防并发撞同一限流窗口) — 小欧-2026-10-28
 LLM_RESPONSE_FALLBACK = True  # 【系统级】使用对象: LLM响应错误降级开关(FC模式错误→Text降级) — 小沈 2026-07-17
 LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大重试次数(如空/无效响应) — 小沈 2026-07-17
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
 LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输出 token 数(None=不限)
+
+# 意义: LLM 上下文窗口默认上限 = 256K(未配置时的兜底, 取值顺序:
+#       model_params.context_length 用户显式 → model_meta.context_length 厂商声明 →
+#       llm.context_length_default 全局默认 → 本常量最终兜底)
+# 来源: 自 app/services/agent/compaction_constants.py 迁入(2026-10-31)——settings_registry
+#       「llm.context_length_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
+DEFAULT_CONTEXT_LENGTH = 262144  # 【系统级】使用对象: settings_registry(llm.context_length_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
 
 # ============================================================
 # 3. 网络与超时
@@ -93,7 +140,13 @@ STREAM_TOTAL_TIMEOUT = 500  # 【系统级】使用对象: base_service.request_
 
 # BROWSER_USER_AGENT 已迁移到 tool_constants.py → TOOL_BROWSER_UA
 
-DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"  # 【系统级】使用对象: API 服务 CORS 允许源
+# CORS 允许来源（直连模式下浏览器预检用）。
+# 端口关系：前端(:5173) 直连后端(:8000) 时，浏览器发 CORS 预检，后端 CORSMiddleware 校验 Origin。
+#   - localhost:5173 / 127.0.0.1:5173：Vite dev server 默认端口（vite.config.ts:42）
+#     浏览器把 localhost 和 127.0.0.1 当不同 Origin，所以两个都写。
+# 改前端端口时须同步更新此值（或走 network.cors_origins 配置化）。
+# 不适用于 Vite proxy 模式（proxy 同源无 CORS 问题）。
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"  # 【系统级】使用对象: API 服务 CORS 允许源
 
 # ============================================================
 # 4. 内容截断与字符限制
@@ -105,6 +158,26 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://local
 # 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
 PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
 ACTION_LOG_RESULT_MAX_CHARS = 5000  # 【系统级】使用对象: action_handler.py(日志 tool_result 截断长度, 防 MemoryError)
+
+
+# 输入框引用摘录比例(2026-10-29 小欧): 引用链路头尾摘录与行数估算 —
+#   消费方: services/refs/{resolver,clip,budget}(摘录) + services/refs/render(来源白名单)
+REF_AVG_LINE_CHARS = 80   # 【系统级】使用对象: services/refs/resolver(行均字符估算, 头尾摘录行数)
+REF_HEAD_RATIO = 0.6      # 【系统级】使用对象: services/refs/clip(头尾摘录: 头 60%)
+REF_TAIL_RATIO = 0.2      # 【系统级】使用对象: services/refs/clip(头尾摘录: 尾 20%)
+REF_MIN_KEEP_LINES = 10   # 【系统级】使用对象: services/refs/budget(C 档压缩最低保留行数)
+
+# 引用体积预算比例默认值(2026-10-31 小欧): 唯一真源 —— 配置键 tuning.refs.* 覆盖, 未配/非法即用本组;
+#   消费方: services/refs/limits.resolve_limits(预算基准 × 比例 = 各档 token 上限)
+REF_SINGLE_RATIO = 0.20     # 【系统级】tuning.refs.single_ratio: 首发单条上限 = 预算基准 × 20%
+REF_TOTAL_RATIO = 0.40      # 【系统级】tuning.refs.total_ratio: 首发合计上限, 超此进 C 档等比压缩
+REF_REJECT_RATIO = 0.60     # 【系统级】tuning.refs.reject_ratio: 首发拒绝线, 压缩后仍超则整批拒绝
+REF_INTERJECT_RATIO = 0.05  # 【系统级】tuning.refs.interject_ratio: 插话单条=合计, 超即整批拒绝
+
+# 引用来源白名单(2026-10-30 小欧): 唯一真源 —— 编排入口过滤(browse_service.sanitize_refs)
+#   与渲染期过滤(refs.render)共用, 防止"入口放行、渲染静默丢弃"的两套口径分叉
+REF_KINDS = frozenset({"file", "selection", "log", "message"})
+
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;
 #     工具相关长度上限已统一迁至 app/tools/tool_constants.py (OBS_*/SHELL_*/WEB_*/XLSX_*/HTTP_*/DOWNLOAD_*/WRITE_TEXT_*)
@@ -123,19 +196,27 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
 
-# 2026-09-08 北京老陈裁定+小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
+# 2026-09-28 小欧: 活跃任务注入 inbox 队列上限 — 防无界堆积致合并超 context 上限;
+# 满则 inject_message_to_task 返回 False, 编排降级走正常新建任务(消息不丢)。
+# 【取值依据】20: 单任务一轮 ReAct 内用户连发超 20 条属异常刷屏, 降级新建比继续堆积更合理。
+INBOX_MAX = 20  # 【系统级】使用对象: task_registry 注入队列 maxsize
+
+# 2026-09-08 小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
 HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.stream_reader 心跳周期(秒)
 #   【与前端数字的关系 — 设计依据】:
-#   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/hooks/useSSE.ts), 即 60s 内未收到任何数据字节即判定连接死亡。
+#   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/features/chat/streams/chatStreamTransport.ts,
+#      原 frontend/src/hooks/useSSE.ts 已迁走), 即 60s 内未收到任何数据字节即判定连接死亡。
 #   ② 后端心跳: 每 HEARTBEAT_INTERVAL=25s 无业务事件(如 tool 参数流式期间)向前端发 SSE 注释行 ": ping\n" 保活。
 #   ③ 错开原则(北京老陈 2026-09-08 裁定): 心跳 25s 必须 < 前端 60s 且非整倍数错开 —— 任何 60s 判死窗口内必含至少
 #      2 次心跳(25/50s), 网络/调度抖动下心跳先于前端判死刷新空闲计时, 前端不会误判死引发多余重连;
 #      若真断连心跳随连接自然停发, 前端仍按 60s 判死走重连/兜底(方案二)。变更本常量时必须同步改前端 IDLE_TIMEOUT,
 #      保持"心跳周期 < 前端判死窗口"; 原 60s 心跳与 60s 判死同时到期零余量, 已废弃(见 stream_orchestrator 编辑历史 2026-09-08)。
+#   ④ 配置上限: tuning.live_front.heartbeat_interval 限定 [5, 25] —— 既保证 60s 窗口内至少 2 次心跳,
+#      又保证心跳周期始终短于顶栏状态灯的 30s 静默判据(留 5s 余量), 上限 30 会让两者同时到点致灯抖动 — 小欧-2026-11-02
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
-# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl_timeout, config.yaml优先): 此常量作兜底默认
-HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl_timeout 覆盖
+# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl.timeout, config.yaml优先): 此常量作兜底默认
+HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl.timeout 覆盖
 HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
 BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
 HITL_MIN_CONFIRM_TIMEOUT = 3  # 2026-09-03 小欧/北京老陈: 前端倒计时最小值(后端窗口-LEAD钳制下限, 改前硬编码5→现常量3)
@@ -158,5 +239,34 @@ UTC_OFFSET_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})')  # 【系统级】使�
 # ============================================================
 
 SUPPORTED_ALGORITHMS: set[str] = {"md5", "sha1", "sha256", "sha512"}  # 【系统级】使用对象: hash工具+safety/hash_helper 哈希算法白名单 — 从 tools/tool_constants.py 迁入 小沈 2026-08-13
+
+# ============================================================
+# 9. 会话任务状态词表（chat_tasks.status 单一真源） — 小欧-2026-11-03
+# ============================================================
+
+class ChatTaskStatus(str, Enum):
+    """chat_tasks.status 合法取值(后端单一真源): 收口 INSERT/DDL 默认值/reconcile WHERE 三处魔法字符串。
+    与前端 StreamStatus 词表不同(多 idle/retrying/recovering 连接相位), executing↔active 由前端 toStreamStatus 翻译。 — 小欧-2026-11-03"""
+    EXECUTING = "executing"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+#: 终态集合(任务不再推进) —— 与前端 TERMINAL_STATUSES 同义
+CHAT_TASK_TERMINAL_STATUSES: frozenset[str] = frozenset({
+    ChatTaskStatus.COMPLETED.value,
+    ChatTaskStatus.FAILED.value,
+    ChatTaskStatus.CANCELLED.value,
+})
+
+#: 全部合法值(供写入校验与契约自检)
+CHAT_TASK_STATUSES: frozenset[str] = frozenset(s.value for s in ChatTaskStatus)
+
+#: 在跑 = 非终态。'idle' 不在本词表内(无任何写入方), 但历史库可能有残留行,
+#: 故与终态一起排除 —— 与 list_running_tasks 的 24h 年龄窗同旨: 宁可少报, 不虚报。
+CHAT_TASK_NON_RUNNING_STATUSES: frozenset[str] = CHAT_TASK_TERMINAL_STATUSES | {"idle"}
+
 
 

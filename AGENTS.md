@@ -1,20 +1,27 @@
 # AGENTS.md - OmniAgentAs-desk
-### 1.1 头条铁规：分析问题、写文档、编辑历史\注释、commit规则，升级tag
+### 1.1 头条铁规：代码编辑、文档签名、编辑历史\注释、commit规则，升级tag
 **系统命令**：本机必须使用Windows系统命令。杜绝使用Linux命令
+**打tag**：1.在version.txt文件头部插入版本汇总升级信息和从上一个tag以来的所有commit的变更信息的说明.2.打tag
+
+**代码编辑禁令** 严禁用代码 脚本来操作代码编辑\替换,否则导致代码编码错误
+**注释+编辑历史** 严禁超过2行,要求精炼准确,使用技术术语说明,
+    严禁插入:文档号 章节号, bug, 问题序号 评审\会审\裁定等文档和bug序号等,过期无法理解的无意义字符
+**严禁以测试代码作为锁死错误系统逻辑的修改借口**  测试用例只用于发现问题，严禁以测试代码为借口去固化错误的系统逻辑或容忍烂代码。
+
 **文档签名**：（1）文档名称: +签名+时间； （2）内容签名： +编写/ 更新人 + 签名  （3）编辑型文档， 禁止删历史版本信息。
-**代码编辑历史**： 格式: 日期+署名+修改的目和逻辑说明
+**代码编辑历史**： 修改代码的修改汇总说明, 位置在代码的头部板块
+                  格式: 日期+署名+修改的目和逻辑说明
                   插入: 最新的编辑历史在板块最下边,<严禁中间插入>
 **提交标题**:   格式 `<type>:<代码名> <description> - <签名>-<日期>`，types: feat/fix/refactor/perf/test/docs
-        严令禁止 commit任何测试相关的代码文件
-**打tag**：1.在version.txt文件头部插入从上一个tag以来的所有commit的变更信息的说明.2.打tag
+    严令禁止commit任何测试case代码--不提交不是不可以修改错误的case 必须修改本地代码.
 
-**严禁** 用PowerShell 脚本来操作代码编辑\替换,否则导致代码编码错误
 
-## 1.2 编码铁规（必须遵守）--代码落盘前和落盘后进行<三堂会审>= 合规\合理\关联逻辑审查
-**合规检查**  严格检查代码是否遵守10大规范--合规检查,
-**合理检查**  逻辑流程是否最优雅/最佳,杜绝绕来绕去
-**关联逻辑检查**相关代码上上下下,前前后后的逻辑功能,必须增强且进化功能,严禁退化功能
-**10大规范**  日常6条 + 重构4条:
+## 1.2 <三堂会审>修改代码后,提交前--代码落盘前和落盘后审核 合规\合理\关联逻辑审查
+**合规审查**  核查代码中的每一处 修改违反了代码10大规范哪些规范?
+**合理审查**  挖掘逻辑流程是否最优雅/最佳? 从系统全局流程和逻辑高度, 是不是最差,绕来绕去
+**关联审查**  核查相关上上下下,前前后后代码逻辑,哪些是退化的?哪些是很差的逻辑流程.
+
+*10大规范**  日常6条 + 重构4条:
 
 **日常编码**  6 条规范
 
@@ -56,6 +63,7 @@
 | 规则 | 说明 |
 |------|------|
 | **先查后建** | 写代码前先查`backend/FUNCTIONS.md`清单，有则复用，无则新建 |
+|前端 共享函数|  前端共享函数代码frontend\FUNCTIONS_FRONT.md清单，有则复用，无则新建|
 | **分层存放** | 全局层`app/utils/`、Agent层`agent_utils/`、工具层`toolhelper/` |
 | **禁止重复** | 相同逻辑禁止重复实现，必须使用已有公用函数 |
 | **及时更新** | 新建公用函数后必须添加到FUNCTIONS.md清单 |
@@ -68,7 +76,7 @@
 
 **后端为主**: 前端迎合后端的策略,逻辑和参数对应进行设计和修改
 ## 1.6 代码复核 复查纪律
-1. 读取最新本地代码 熟读3遍, 复核10遍
+1. 读取最新本地代码 熟读10遍, 复核3遍---三堂会审
 2. 复查的要求,功能只能正确\增强\优化, 杜绝退化
 3. 合规检查和合理检查
 
@@ -88,11 +96,33 @@
 ### Backend (workdir=`backend/`)
 
 ```bash
-python -m uvicorn app.main:app --reload          # dev server (port 8000)
+# 开发服务: 两种启动方式, 见下方《后端开发服务启动: 两种方式》
+watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app   # 方式一(推荐)
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000  # 方式二(旧, 会卡死)
+
 pytest                                            # all tests
 pytest -x --tb=short                              # fast fail
 pytest -k test_name                               # match by name
+
+ruff check --select F <改动文件>                    # 提交前必过: F 类存量已清零, 零容忍 — 小欧-2026-11-03
+ruff check --select ARG,RET,SIM,PIE <改动文件>       # 附加参考: 该四类存量 15 条, 只判断新增 — 小欧-2026-11-03
 ```
+
+#### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
+
+**方式一(推荐, 日常开发用这个)**: 双击 `backend\start.bat`, 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1`。
+内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
+
+**方式二(旧, 别用)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`。
+uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程, 子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 从第一次保存文件起热重载永久失效, 而 worker 照常应答, 极易误判"服务正常"。上游 0.54 仍未修, 升级无效。
+
+**判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 表现是改代码不生效、Ctrl+C 也退不掉, 只能 kill。
+
+**方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
+
+两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
+
+`backend/start.bat`、`backend/start_e2e.bat` 均已改为调用 `backend/start_dev.ps1`; `start_dev.ps1` 用 UTF-8 with BOM 保存(PowerShell 5.1 需要), `start_e2e.bat` 用 GBK 保存(控制台中文)。
 
 ### Frontend (workdir=`frontend/`)
 
@@ -100,25 +130,47 @@ pytest -k test_name                               # match by name
 npm run dev          # Vite dev server (port 5173)
 npm run test         # Vitest
 npm run test -- --run <name>  # single test
-npm run lint         # ESLint
-npm run format:check # Prettier
-npm run check        # lint + format:check (run before commit)
-npm run test:e2e     # Playwright
+  npm run lint         # ESLint
+  npm run lint:e2e     # ESLint (e2e_case / e2e_front_lib / src/tests/support)
+  npm run typecheck     # tsc -p tsconfig.json      (仅 src)
+  npm run typecheck:e2e # tsc -p tsconfig.e2e.json  (e2e_case / e2e_front_lib)
+  npm run format:check # Prettier
+  npm run check        # lint + format:check（不含 typecheck）
+  npm run check:full   # typecheck + typecheck:e2e + lint + lint:e2e + format:check
+                       # ← 提交前跑这条。npm run check 不含任何 typecheck,
+                       #   而 tsconfig.json 只 include ["src"], e2e_case/ 与 e2e_front_lib/
+                       #   不在其内(Playwright/Vitest 走 esbuild 转译, 不做类型检查),
+                       #   故漏跑 typecheck:e2e 时 e2e 的类型错误在构建期完全不可见。
+  npm run test:e2e     # Playwright
 ```
 
 ---
 
 ## E2E 全链路测试（核心要点）
 
-> 完整流程见 `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.8）。以下为「启动」与「执行检查」的抽取要点，每次 E2E 必读。
+> 后端完整流程见 `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md`（v2.19）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
 
-### 启动后端（每次测试前必做）
+**配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
+- **数据隔离铁律（2026-09-30 修订）**：上一条只管住了 `config.yaml`，**管不到 SQLite** —— `app/db/database.py` 原在 `__init__` 硬编码 `Path.home()/".omniagent"`，且 `db=DatabaseManager()` 在导入期即构造、路径被冻结，故任何裸用 `db.get_conn()` 的测试都直写真库（实测污染真库：空会话 / `hello` / `v2` 垃圾会话，每跑一次全量单测多几个）。**修订**：
+  - 数据目录唯一解析点 = `app/db/database.py` 的 `resolve_db_dir()`，认环境变量 `OMNIAGENT_DATA_DIR`，未设则回落 `~/.omniagent`；**在 `get_conn` 内惰性解析**，不在 `__init__` 冻结（db 单例导入期构造，冻结会受导入顺序影响，conftest 来不及设 env）
+  - `isolated_config_dir` 现在**同时**设 `OMNIAGENT_DATA_DIR` 指向同一临时目录，teardown 一并还原
+  - 测试要指向任意库（含 `_DB_FILES` 之外的库名，如 `test_db_atxn` 的 `"test"`）走 `db._db_overrides` 覆盖口，**禁止改生产解析逻辑迁就测试**
+  - **效果**：任何走 `db.get_conn()` 的测试自动"够不到"真库，无需逐个 patch，也不会漏掉将来新增的测试。**E2E 不受影响** —— E2E 走 HTTP 打后端进程，库路径由后端进程 env 决定，与测试进程无关
+
+### 后端 E2E（pytest + 真实后端 + 真实 LLM）
+
+**定位**：验证 API→Agent→LLM→Tool→DB→SSE 全链路，深度校验 DB 记录完整性、SSE-DB 一致性、prompt 日志对齐、token 用量追踪。76 个 case（P0-P5/PAR/重连/复合），核心 helper `e2e_helpers.py`（32 函数，2350 行）。
+
+#### 启动后端（每次测试前必做）
+
 1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force`
 2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
-   `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'G:\OmniAgentAs-desk\backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal`
+   `Start-Process powershell -ArgumentList "-NoExit","-ExecutionPolicy","Bypass","-Command","& 'F:\OmniAgentAs-01\backend\start_e2e.bat'" -WindowStyle Normal`
+   （`start_e2e.bat` 内设 `LOG_LEVEL=WARNING` 后调 `start_dev.ps1`=watchfiles 热重载；**勿用 `uvicorn --reload`**，Windows 上首次改文件即卡死）
 3. 验证：`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
 
-### 执行脚本（铁律）
+#### 执行脚本（铁律）
+
 - **一次只跑一个 case**，严禁批量；核心脚本默认超时 2000s，**严禁给启动脚本另设超时**
 - E2E 调真实 LLM，单次常 >120s；OpenCode bash 工具会强杀进程 → **必须用 subprocess.Popen 方式**，禁止直接 bash `python -m pytest`
 - 方式：用 Python 内联脚本调 `subprocess.Popen`，bash tool timeout 设 `9007199254740991`，pytest 自行管理超时（`--timeout=2900`）；stdout/stderr 落盘 `tests/output/XXX_stdout.txt` / `XXX_stderr.txt`，结果查 junitxml
@@ -143,64 +195,60 @@ npm run test:e2e     # Playwright
   "
   ```
 
-### 执行检查（手动，逐项验证）
+#### 执行检查（手动，逐项验证）
+
 按 3 项验证，全过才进入下一个 case：
 1. **代码错误异常检查（最高优先级）**：查日志 traceback/ERROR、SSE 是否有 error 事件 → 有则立即停，走修复
 2. **调用链分析**：工具选择/顺序/LLM 次数是否合理，输出 `[CALL CHAIN]`
 3. **参数正确性**：路径/关键词等是否准确
 
-### 铁律
+---
+
+### 前端 E2E（Playwright + 真实浏览器 + 真实后端）
+
+**定位**：验证浏览器 UI→SSE 流→UI 渲染→断线重连全链路。8 个 case（fre2e_01~08），公共库 `e2e_front_lib/`（4 模块：POM/进程控制/SSE 诊断/普通会话封装）。
+
+#### 架构特点
+
+| 角色 | 进程 | 职责 |
+|------|------|------|
+| 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀** |
+| 后端代理 B | `e2e_case/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（断线测试用） |
+| 后端 C | uvicorn `:8000` | 内存任务持有者 |
+
+断线测试原理：`killPort(9000)` 杀 B → 浏览器↔A 完好、仅 API 链路断（真 TCP RST）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=` 断点续传。
+
+#### 执行方式
+
+```bash
+npx playwright test fre2e_01_reconnect_ui.spec.ts --headed --reporter=line   # 单 case
+npm run test:e2e      # 整组（先 lint + format）
+npm run test:e2e:ui   # UI 模式
+npm run test:e2e:debug # 调试模式
+```
+
+#### 关键机制
+
+| 机制 | 说明 |
+|------|------|
+| 日志对账防假通过 | `logBaseOf` 记基线 → `readLogSince` 只读本轮新增 → 断言重连端点 `after_seq>0` |
+| 真进程断流 | `killPort(9000)` 产生真实 TCP RST；禁 `setOffline`（无法断 in-flight SSE） |
+| run-on 检测 | `hasAdjacentDup` 逐行检测行内相邻重复（6~30 步滑动窗口） |
+| 诊断挂满+失败即打 | 开头必 `attachStreamDiag`；任何一步失败先 `printDiag` 打全量证据链再 throw |
+
+---
+
+### 测试的铁律（前后端共用）
+
 - 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
 - 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
-
 ---
 
-## Architecture (Current)
+## Request Flow
 
-> 架构详情（架构图、工具体系、Agent体系、安全体系、项目结构、技术栈）见 `README.md` 二~六章。
-> 此处仅保留 AGENTS.md 独有的技术要点。
+FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` → `UniversalAgent.run_react_cycle()` → SSE。详细架构见 `README.md` 二~六章。
 
-**Request flow**: FastAPI `/api/v1` → `services/chat/stream.py`(SSE 编排) → `UniversalAgent.run_react_cycle()` → SSE
-
-**Agent system** (`backend/app/services/agent/`):
-- `base_agent.py` — `BaseAgent(ABC)`，含 `run_react_cycle` 编排钩子
-- `universal_agent.py` — `UniversalAgent(BaseAgent)`，唯一实现类（配置驱动，**无 AgentFactory 分发**）
-- `react_cycle.py` — ReAct 循环核心（薄调度：调用 LLM → 解析 → 分派 handler → 产出 Step）
-- `handlers/` — ReAct 循环业务处理器（action / answer）
-- `steps/` — Step 类型定义（ThoughtStep, ToolStep, FinalStep 等）
-- 其余模块：`message_builder.py` / `observation_formatter.py` / `status_table.py` / `tool_executor.py` / `tool_retry_engine.py` / `tool_cache_manager.py` / `llm_stream.py` / `initialize_run_state.py` / `fc_message_types.py`
-
-**Tool registry** (`backend/app/tools/`):
-- `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
-- `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `fundamental`, `dataanalysis`, `timer`, `win_registry`
-- Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
-
-**LLM client** (`backend/app/llm/`):
-- `client_sdk.py` — LLMClient(httpx封装)
-- `core.py` — BaseAIService(基类)
-- `stream_parser.py` — 流式响应解析
-
-**Safety** (`backend/app/services/safety/`):
-- `tool_safety_checker.py` — 工具执行前安全检查
-- `file_safety/` — 文件操作安全(备份/回滚/查询)
-
-
-### Frontend: `frontend/src/main.tsx` → Vite+React
-
-- `src/pages/` — page components
-- `src/contexts/` — React Context 状态（AppContext / SecurityContext）
-- `src/hooks/` — 聊天流/任务控制/持久化等 Hook（`hooks/chat/`）
-- `src/components/` — UI 组件（Chat / Security / Layout 等）
-- `src/services/` — API layer
-- `src/utils/` — formatters, step rendering, SSE handling
-
----
-
-
----
-
-## Key Dependencies
+---## Key Dependencies
 
 | Layer | Tech | Notes |
 |-------|------|-------|
@@ -220,9 +268,20 @@ npm run test:e2e     # Playwright
 | Pitfall | Detail |
 |---------|--------|
 | **httpx version lock** | `httpx==0.26.0` required. Don't upgrade — 0.28.1+ upgrades httpcore which breaks TLS. |
-| **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
-| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, SHELL, FILE}`. |
+| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, FILE}`. |
+| **config 真源与同步** | 新增配置键三同步：`backend/config.yaml.example`（唯一 git 跟踪模板）+ `settings_registry.py` + `config/config.yaml`（**仓库根**，gitignore 运行副本，唯一被 `get_config_path()` 实读）。**`backend/config/config.yaml` 属历史双轨遗留，2026-11-03 决定删除，禁止再创建** — 小欧-2026-11-03 |
+
+## Shell 卡死取证（偶发，必读）
+
+症状：SSE 空闲超时 60 秒 + 日志停写 + `/health` 超时（**端口在监听 ≠ 服务活着**）。
+
+```powershell
+py-spy dump --pid (Get-NetTCPConnection -LocalPort 8000 -State Listen).OwningProcess   # 唯一可靠定位手段
+Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }   # 重启: --reload 双进程，只 kill 父进程无效
+```
+
+根因结构：`shell_engine` 同步 `exec()` 跑在事件循环里（挂死→全服务僵死）、完成信号靠临时文件轮询（进程半死则永不到达）、常驻池锁跨任务共享。根治＝`to_thread` 卸载 + 只读命令改独立子进程。详见 `doc-9月优化/[53]`。
 
 
 
@@ -252,6 +311,6 @@ npm run test:e2e     # Playwright
 - kebab-case filenames (`my-component.tsx`)
 - No default exports for components
 - Use `@/` alias for absolute imports
-- Run `npm run check` before commit
+- Run `npm run check:full` before commit — 2026-10-01 小欧 修订：`check` 只含 `lint` + `format:check`，**不含任何 typecheck**；而 `tsconfig.json` 只 `include ["src"]`、`tsconfig.e2e.json` 才管 `e2e_case/`+`e2e_front_lib/`，故漏跑 `typecheck:e2e` 时 e2e 类型错误在构建期完全不可见（2026-10-01 实测：4 处漏补 import + 1 处传错参数，全靠 `typecheck:e2e` 抓出，`tsc --noEmit` 抓不到）
 
 -

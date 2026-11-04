@@ -6,7 +6,7 @@
 # 2026-07-18 - 小欧 - complete_task/create_task/add_operation 时间统一 get_utc_timestamp() UTC Z; TaskQueries 三返回方法 format_timestamp 对外兜底
 # 2026-07-18 - 小欧 - add_operation/complete_task INSERT补created_at列对齐第13值get_utc_timestamp()
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入 get_utc_timestamp→get_local_iso_timestamp (本地ISO无Z入库)
-# 2026-07-23 - 小欧 - #1 fix: get_recent_tasks L210 r.get("completed_at") → r["completed_at"]
+# 2026-07-23 - 小欧 - 修复: get_recent_tasks L210 r.get("completed_at") → r["completed_at"]
 #   病根: sqlite3.Row 不支持 .get() 方法(仅支持 [] 和 keys()),
 #         r.get("completed_at") 抛出 AttributeError(11次)→main.py全局异常处理器崩溃(10次),
 #         修正为 r["completed_at"] 与同方法 L209 r["created_at"] 风格一致。
@@ -15,13 +15,13 @@
 # 2026-07-23 - 小欧 - #1补: get_task 风格统一, 删d=dict(row)临时变量, 改**dict(row) inline
 #   原由: L197-198 d.get() 虽不报错(因dict支持.get), 但与get_recent_tasks的**dict(row)+row[]风格不一致
 #         ; 保持两方法同一风格, 降低认知负担, KISS-DIRECT。
-# 2026-08-09 - 小欧 - task006 P7: create_task 改 INSERT ... ON CONFLICT(task_id) DO NOTHING 幂等化
+# 2026-08-09 - 小欧 - task006: create_task 改 INSERT ... ON CONFLICT(task_id) DO NOTHING 幂等化
 #   病根: 同一 task_id 重复初始化(agent重建/重放)时裸INSERT抛 UNIQUE constraint failed (日志3个独立日期实据)
 #   方案: 仅忽略主键冲突保留首次记录; 验证实证 OR IGNORE 会吞掉CHECK/NOT NULL约束错误(掩盖真实问题),
-#         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; P7属agent内部事务, 不产生LLM可见提示
-# 2026-08-09 - 小欧 - task005核查P7落地: create_task 幂等冲突(任务已存在)补 logger.info 日志
+#         ON CONFLICT(task_id) 只忽略主键, 其它约束照常抛出; 幂等属agent内部事务, 不产生LLM可见提示
+# 2026-08-09 - 小欧 - task005核查落地: create_task 幂等冲突(任务已存在)补 logger.info 日志
 #   病根: ON CONFLICT DO NOTHING 静默成功, 排查重放/agent重建场景无任何痕迹(可观测性缺失); 仅加日志不改语义
-# 2026-08-21 - 小欧 - 12.2-Q4(按文档[1]12.2 diff设计落地): tasks 计数单口径——①Q4-D1 complete_task 删现场
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地): tasks 计数单口径——complete_task 删现场
 #   COUNT 重算, 只写 status/completed_at; ②Q4-D2 add_operation 成功分支补 success_count+1 增量(与 failed/total
 #   同点同事务, 三计数同一口径); rolled_back_count 保留 mark_rolled_back 子查询现场 COUNT 不动(批量迁移=现场数)
 """
@@ -74,7 +74,7 @@ class TaskTracker:
                    ON CONFLICT(task_id) DO NOTHING""",
                 (task_id, "", agent_id, description, TaskStatus.EXECUTING.value, get_local_iso_timestamp()),
             )
-            # 2026-08-09 - 小欧 - task005核查P7: 幂等冲突(任务已存在)补日志, 提升可观测性(排查重放/agent重建无痕迹)
+            # 2026-08-09 - 小欧 - task005核查: 幂等冲突(任务已存在)补日志, 提升可观测性(排查重放/agent重建无痕迹)
             if cur.rowcount == 0:
                 logger.info(f"[task_db] create_task 幂等跳过(任务已存在): task_id={task_id}")
 

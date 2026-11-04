@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
@@ -7,6 +8,12 @@
 # 2026-07-22 - 小欧 - query 校验从 None 显式报错扩展为 not query or not query.strip()，空字符串/纯空白也报错而非透传搜索
 # 2026-07-24 - 小欧 - raw_text[:200]/str(e)[:200] → SEARCH_WEB_OUTPARM_LIMIT_RAW(魔数→命名常量)
 # 2026-07-25 - 小欧 - 截断治理: block[:3000](5处) → SEARCH_WEB_INER_HTML_PARSE 命名常量
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索→搜网络
+# 2026-10-20 15:22 小欧 - FIX: allowed_domains/blocked_domains 过滤失效 — schema 声明逗号分隔字符串(str)而
+#   实现签名按 List[str] 收参, 引擎层类型容错又把 LLM 传的 list dumps 成字符串再传入, 原 any(domain in url)
+#   对字符串**逐字符**比 URL(单字符'.'/'o'/'m'几乎必命中)致白名单/黑名单形同虚设。改为: 接口层
+#   _coerce_domain_list 归一(str/JSON数组串/list → list[str]) + _url_match_domain 按 host 边界匹配
+#   (host==d 或 host.endswith('.'+d), 消 'not-baidu.com' 子串假命中), 白/黑名单真正生效 | py_compile ✓
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -22,7 +29,8 @@ import base64
 import json
 import re
 import time as _time_mod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 import httpx
 
@@ -30,7 +38,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.tools.validate.url_validator import validate_proxy
 from app.constants import HTML_TAG_PATTERN
-from app.utils.json_utils import parse_json
+from app.utils.json_utils import parse_json, coerce_json
 from app.logger import logger
 from app.tools.tool_constants import TOOL_BROWSER_UA
 from app.tools.tool_constants import (
@@ -75,6 +83,33 @@ def _split_long_query(query: str, max_keywords: int = 3) -> List[str]:
     return queries
 
 
+def _coerce_domain_list(value: Union[str, List[str], None]) -> List[str]:
+    """域名过滤参数归一: 逗号分隔字符串 / JSON数组字符串 / list → list[str], 剔除空白项 — 小欧 2026-10-20
+    schema 声明逗号分隔字符串, 引擎类型容错会把 LLM 传的 list safe_json_dumps 成字符串再传入, 故两者皆可能收到。"""
+    if value is None:
+        return []
+    coerced = coerce_json(value)
+    if isinstance(coerced, list):
+        items = coerced
+    elif isinstance(coerced, str):
+        items = re.split(r'[,，;；\s]+', coerced)
+    else:
+        return []
+    return [d.strip() for d in items if isinstance(d, str) and d.strip()]
+
+
+def _url_match_domain(url: str, domain: str) -> bool:
+    """URL host 边界匹配(host==domain 或以 .domain 结尾) — 小欧 2026-10-20
+    替代原子串 `domain in url`: 后者对 'evilsite.com?s=baidu.com' 等路径/参数中的域名假命中。"""
+    if not url or not domain:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        host = url.lower()   # 无 scheme 裸串保底: 直接按全文小写边界判
+    d = domain.lower()
+    return host == d or host.endswith("." + d)
+
+
 # 2026-07-20 - 小欧 - searchweb 门限治理: snippet 返回完整内容(3.7 Tool 输出零限制), 不再截断; 显示域行×列截断收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS
 
 _CHALLENGE_KEYWORDS = ["captcha", "verify", "security", "robot", "automated",
@@ -89,6 +124,9 @@ def _build_search_web_llm_data(
     blocked_domains: Optional[List[str]] = None, num_results: int = 10,
 ) -> Dict[str, Any]:
     """search_web的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
+    # 2026-10-14 小欧 - 引擎名缀 tool_zh(北京老陈令): Parallel/Exa/Bing 三引擎降级链, content/summary 带引擎名用户才知道实际用的谁;
+    #   无引擎(失败/未知)回落裸"搜网络"。tool_zh 无逻辑判等(前后端只展示), 安全。 — 小欧-2026-10-14
+    _zh = "搜网络" if not engine_used else f"搜网络·{engine_used}"
     _act_params = {"query": query, "num_results": num_results}
     if proxy is not None:
         _act_params["proxy"] = proxy
@@ -98,16 +136,16 @@ def _build_search_web_llm_data(
         _act_params["blocked_domains"] = blocked_domains
     if exec_code == "error":
         return {
-            "summary": f"搜索{query}，失败",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
+            "summary": f"{_zh}{{{query}}}，失败",
+            "action": {"tool": "searchweb", "tool_zh": _zh, "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": hint if hint else "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"搜索{query}，成功: {result_count}条结果",
-        "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+"summary": f"{_zh}{{{query}}}，成功：{result_count}条结果",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜网络) — 小欧-2026-10-14
+            "action": {"tool": "searchweb", "tool_zh": _zh, "params": _act_params},
+        "status": {"exec_code": "success", "message": f"完成:{result_count}条结果", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},
     }
@@ -356,21 +394,25 @@ async def _search_bing(
 
 async def searchweb(
     query: str,
-    allowed_domains: Optional[List[str]] = None,
-    blocked_domains: Optional[List[str]] = None,
+    allowed_domains: Optional[str] = None,
+    blocked_domains: Optional[str] = None,
     num_results: int = 10,
     proxy: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """搜索网络 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """搜索网络 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-10-20 域名过滤参数口径与schema对齐(str,逗号分隔)"""
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         t0 = _time_mod.perf_counter()
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=proxy_err, hint="请检查代理配置", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 
+    # 2026-10-20 小欧 - 域名过滤参数归一(见文件头编辑历史): str/JSON数组串/list → list[str]
+    _allowed_domains = _coerce_domain_list(allowed_domains)
+    _blocked_domains = _coerce_domain_list(blocked_domains)
+
     # 2026-07-22 - 小欧 - None 显式报错(防None透传Bing引发NoneType异常被except吞为success空结果, 属正确性回归防护; 非长度/格式限制, 与3.6删除len(query)<2无关)
     if not query or not query.strip():
-        detail = "query 不能为空, 请提供搜索关键词" if not query else "query 不能为纯空白, 请提供搜索关键词"
+        detail = "query 不能为空" if not query else "query 不能为纯空白"  # 2026-10-14 小欧 - detail 去行动: "请提供搜索关键词"归 hint(已有), detail 只讲事实 — 小欧-2026-10-14
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=detail, hint="请提供搜索关键词", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 
@@ -400,10 +442,10 @@ async def searchweb(
 
         results = results or []
 
-        if allowed_domains:
-            results = [r for r in results if any(domain in r.get("url", "") for domain in allowed_domains)]
-        if blocked_domains:
-            results = [r for r in results if not any(domain in r.get("url", "") for domain in blocked_domains)]
+        if _allowed_domains:
+            results = [r for r in results if any(_url_match_domain(r.get("url", ""), d) for d in _allowed_domains)]
+        if _blocked_domains:
+            results = [r for r in results if not any(_url_match_domain(r.get("url", ""), d) for d in _blocked_domains)]
 
         results = results[:num_results]
 
@@ -420,7 +462,7 @@ async def searchweb(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"items": results}
         exec_code = "success"
-        llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results), proxy=proxy, allowed_domains=allowed_domains, blocked_domains=blocked_domains, num_results=num_results)
+        llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results), proxy=proxy, allowed_domains=_allowed_domains, blocked_domains=_blocked_domains, num_results=num_results)
         # ---- observation_formatter route -------------------------------------------
         # branch: #4 items
         # trigger: "items" in data — items 是 List[dict]

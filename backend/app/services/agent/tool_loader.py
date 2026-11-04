@@ -29,7 +29,7 @@ class ToolLoader:
         """初始化工具,按分类注入工具给LLM"""
         self.agent._tools_dict = {}
         # _loaded_categories 由实际加载结果重建, 保证与_tools_dict一致(单一权威: 只含真正加载了实现的分类)
-        # 2026-08-05 小欧: 修复BUG1/2 - 空实现分类不再被标记为已加载; 消除initial_categories=None时标记与实现失配
+        # 2026-08-05 小欧: 修复 - 空实现分类不再被标记为已加载; 消除initial_categories=None时标记与实现失配
         self.agent._loaded_categories = set()
         # 2026-08-13 小欧 三堂会审修复#28: 区分None与空集合 — 显式空set()为假值会回退"全部", 与"加载指定(空)"意图反转
         categories_to_load = list(initial_categories) if initial_categories is not None else list(ToolCategory)
@@ -47,7 +47,7 @@ class ToolLoader:
     def load_category(self, category: ToolCategory) -> bool:
         """动态加载单个分类的工具到_tools_dict
 
-        单一权威(2026-08-05 小欧 修复BUG1/2):
+        单一权威(2026-08-05 小欧 修复):
         - _tools_dict 与 _loaded_categories 同时写入, 保证标记=已实现
         - 返回是否真正加载成功(空实现分类返回False), 供调用方跳过标记
         """

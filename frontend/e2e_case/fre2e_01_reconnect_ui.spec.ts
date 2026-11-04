@@ -1,3 +1,5 @@
+// 编辑历史: 2026-10-22 小欧 - 增直连基址校验(启动时+首条请求后): 防 5173 被别的 vite 抢占
+//   导致页面退回相对路径 → 断流经 vite 代理被吞 → 前端无感永不重连(假绿) — 小欧-2026-10-22
 import { test, expect } from '@playwright/test';
 import {
   ChatPage,
@@ -31,6 +33,10 @@ import {
  *
  * 架构分层: 本 case（断连专项）独立存在、编排内聚于此文件;
  *   通用设施在 ../e2e_front_lib（process.ts: 进程/端口; stream-diag.ts: SSE诊断+日志对账+run-on; chat-page.ts: POM）。
+ *
+ * 2026-09-28 小欧 - expect.poll 的轮询间隔选项是 intervals（复数、数组）。原写 interval 单数 →
+ *   被静默忽略、轮询退回默认 1000ms；本文件 6 处 + fre2e_06 4 处同病。断流重连对时序敏感，
+ *   探测变慢会拖长用例并放大 flake。tsconfig.e2e.json 接入类型检查后，此类笔误由 tsc 兜住。
  * 注: context.setOffline 只拦截新请求, 无法中断 in-flight 的 SSE 流(已实测), 故不用。
  */
 
@@ -45,8 +51,8 @@ test.describe('断线重连 UI 全链路', () => {
     test.setTimeout(600_000);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } =
-      attachStreamDiag(page);
+    const diag = attachStreamDiag(page);
+    const { streamReqs, reconnectLogs, consoleAll } = diag;
 
     // 环境就绪(进程分离-跨origin): 后端代理B(:9000→8000, 页面API/SSE经VITE_API_BASE_URL直连跨域)
     //   + vite A(:5173, hmr:false, 永活服务页面)
@@ -55,30 +61,77 @@ test.describe('断线重连 UI 全链路', () => {
     //   故页面API基址注入为 http://localhost:9000/api/v1 直连代理B(跨域CORS), 杀B=浏览器直连RST。
     killPort(9000);
     await expect
-      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
     // 编辑历史: 2026-09-13 小欧 - 代理日志按轮落盘(api-proxy-<ts>.log), 断/重启两轮各独立命名 - 小欧-2026-09-13
     const proxyLog1 = proxyLogPath();
     startProxyServer(FRONTEND_DIR, proxyLog1);
     await expect
-      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(9000), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
-    killPort(5173);
+    /**
+     * 2026-10-22 小欧 - 页面服务改用**专用端口 :5175**(不再与共享 :5173 抢):
+     *   本 case 对"服务页面的那个 vite"有硬要求 —— 必须带 VITE_API_BASE_URL=:9000(直连代理)。
+     *   :5173 是共享端口, 任何别的 vite(开发者本地 dev / 另一轮 E2E)都可能抢先占住它,
+     *   页面就会静默退回相对路径 → 断流经 vite 代理被吞 → 前端无感 → 永不重连
+     *   (本 case 静默测了"没有断线")。专用端口把这份独占变成结构保证, 不再靠运气。
+     *   端口取 5175: 5173=共享 dev, 5174=隔离栈专用(ISO_VITE_PORT, 见 e2e_front_lib/isolated-env.ts)。
+     */
+    const PAGE_PORT = 5175;
+    killPort(PAGE_PORT);
     await expect
-      .poll(() => waitPortDown(5173), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(PAGE_PORT), {
+        timeout: 20_000,
+        intervals: [500],
+      })
       .toBeTruthy();
     startDevServer(
       FRONTEND_DIR,
-      'run dev -- --config e2e_case/vite.e2e.config.ts',
-      'set "VITE_API_BASE_URL=http://localhost:9000/api/v1" && '
+      `run dev -- --config e2e_case/vite.e2e.config.ts --port ${PAGE_PORT}`,
+      // 2026-10-22 小欧 - env 值订正为**纯源**(不带 /api/v1):
+      //   前端 client.ts 是 `${getApiBaseUrl()}/api/v1`(自己拼 /api/v1),
+      //   旧值 http://localhost:9000/api/v1 → 拼出 /api/v1/api/v1 双前缀,
+      //   靠代理剥一层才勉强通 —— 属"靠巧合", 且非 5173 源时双前缀还会撞 CORS。
+      'set "VITE_API_BASE_URL=http://localhost:9000" && '
     );
     await expect
-      .poll(() => waitPortUp(5173), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(PAGE_PORT), { timeout: 60_000, intervals: [500] })
+      .toBeTruthy();
+    /**
+     * 2026-10-22 小欧 - **必须校验页面服务确实带着 :9000 直连基址**（不能只看端口有响应）:
+     *   本 case 的断流语义要求"浏览器直连 :9000"——杀代理 = 浏览器侧真 TCP RST。
+     *   若页面被**别的 vite**（无 VITE_API_BASE_URL 的普通实例）服务，
+     *   页面 API 基址会退回相对路径 → 请求经 vite 代理中转 → 上游 RST 被中间代理静默吞掉
+     *   → 前端完全无感 → 永不重连 → 本 case 静默测了"没有断线"的假象
+     *   （实测踩中：DIAG 里请求全打 localhost:5173/api/v1/...，前端没发任何 after_seq 请求）。
+     *   故此处读实际服务内容判定：拿不到 :9000 基址就**立刻报错**，而不是跑满 5 分钟假红。
+     */
+    const pageUsesDirectProxy = async (): Promise<boolean> => {
+      try {
+        const r = await page.request.get(
+          `http://localhost:${PAGE_PORT}/src/services/api/client.ts`
+        );
+        if (!r.ok()) return false;
+        return (await r.text()).includes(
+          '"VITE_API_BASE_URL": "http://localhost:9000"'
+        );
+      } catch {
+        return false;
+      }
+    };
+    await expect
+      .poll(pageUsesDirectProxy, { timeout: 120_000, intervals: [1000] })
       .toBeTruthy();
 
-    await chat.gotoChat();
+    // 走专用端口(不用 baseURL 的 5173): 页面必须与"带 env 的那个 vite"同源
+    await page.goto(`http://localhost:${PAGE_PORT}/`);
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
+
+    // 2026-10-22 小欧 - 显式新建会话: 裸 URL 会命中 loadLatestHistoryMessages 自动加载
+    //   上一轮残留会话, 若该会话处于"执行中"则 sendBlocked 恒真 → 发送钮 disabled 600s 超时
+    //   (实测 F01C/F01D 两轮全红, 根因在此)。newSession 是真实用户路径, 不改变断连语义。
+    await chat.newSession();
 
     // 本轮日志基线: 只对账本次运行新增日志(防止匹配到以往轮次遗留的重连记录)
     const logBase = logBaseOf(BLOG);
@@ -95,20 +148,34 @@ test.describe('断线重连 UI 全链路', () => {
       '③将①②研究结果汇总为最终报告。注意请在完成全部研究后才输出最终报告, 不要提前收尾。';
     await chat.sendPrompt(PROMPT);
 
+    /**
+     * 2026-10-22 小欧 - **页面加载后再验一次直连基址**(只验启动时不够):
+     *   页面服务端口可能被别的 vite 抢走(共享端口 + 并发跑 E2E 高发) → 页面实际服务者
+     *   ≠ 启动时校验的对象 → 请求退回相对路径 → 断流经 vite 代理被吞掉 → 前端无感 →
+     *   永不重连(本 case 静默测了"没有断线")。实测踩中: 启动校验通过, 但首条 chat/stream
+     *   打的是 localhost:5173/api/v1/... 而非 :9000 → 断言 hasAfterSeq 恒 false。
+     *   故此处断言首条 chat/stream **真的直连 :9000**, 不满足即立刻失败并说明原因
+     *   (失败时打全量 DIAG + 页面实际 URL, 便于定位是"服务者被抢"还是"env 没生效")。
+     */
+    try {
+      await expect
+        .poll(
+          () =>
+            diag.streamReqs.some((r) => r.includes(':9000/api/v1/chat/stream')),
+          { timeout: 30_000, intervals: [500] }
+        )
+        .toBeTruthy();
+    } catch (e) {
+      console.log(`[E2E] 页面实际 URL = ${page.url()}`);
+      printDiag(diag, '', getCaseId());
+      throw e;
+    }
     // 1) 流已启动: 等"停止"按钮出现(发送后 isReceiving=true 即切停止)
     //    2026-09-13 小欧: 失败即打全量诊断(定位发送后未进流: 代理跨域拦/POST未达/token问题)
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw e;
     }
 
@@ -138,15 +205,7 @@ test.describe('断线重连 UI 全链路', () => {
     //     编辑历史: 2026-09-14 小欧 - 新增: 快模型下任务50s即终态的根因兜底 - 小欧-2026-09-14
     if (isFinalArrived()) {
       // 编辑历史: 2026-09-14 小欧 - 错过窗口时先落全量DIAG再throw(取证本轮console时间线), 便于归因任务时长/帧到达滞后 - 小欧-2026-09-14
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, logBase),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       await chat.waitDone(60_000);
       const ft = await chat.getFinalText();
       expect(ft.trim().length).toBeGreaterThan(30);
@@ -158,29 +217,34 @@ test.describe('断线重连 UI 全链路', () => {
     // 4) 杀后端代理B(:9000) → 页面<->vite(A)完好, 仅 API 链路 RST → 前端感知断线(页面不 reload)
     killPort(9000);
     await expect
-      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
 
-    // 5) 断言前端检测到断线并进入重连(console 出现 "准备重连"/"重连")
-    //    2026-09-13 小欧: 改手动轮询, 失败即打全量诊断(定位"断线未被前端感知"归属: 代理未真断/流未起/vite proxy吞错)
-    const detectReconnect = (): boolean =>
-      reconnectLogs.some((c) => c.includes('重连'));
-    const deadline = Date.now() + 30_000;
-    while (!detectReconnect() && Date.now() < deadline) {
-      await page.waitForTimeout(500);
-    }
-    if (!detectReconnect()) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
+    // 5) 断线已被前端感知 → **立刻**重启代理B(:9000, 后端任务存活, API 链路经代理恢复)
+    //    2026-10-22 小欧 - 流程订正(关键): 原实现在此等 console 出现"重连"字样(最长 30s)才重启代理,
+    //      而前端的重连预算只有 3 次(实测 T+18.9/19.7/22.2s 三次全落在代理未恢复的窗口内)
+    //      → 3 次耗尽后前端按设计转"轮询观察", 代理恢复后也不再走 SSE 续传
+    //      → 本 case 永远测不到 after_seq 续传(实测三轮全红, 根因在此)。
+    //      改为: 用**网络层**判据(出现了带 after_seq 的重连请求 = 前端已感知断线)即立刻重启代理,
+    //      让退避内的后续重试正好打在恢复后的代理上。
+    const firstResumeReq = (): boolean =>
+      streamReqs.some(
+        (r) =>
+          r.includes(' REQ ') &&
+          r.includes('/chat/stream/') &&
+          r.includes('after_seq=')
       );
+    const dl = Date.now() + 20_000;
+    while (!firstResumeReq() && Date.now() < dl) {
+      await page.waitForTimeout(200);
+    }
+    if (!firstResumeReq()) {
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw new Error('[E2E] 前端未进入重连(断线未被感知)');
     }
+    console.log(
+      '[E2E] 前端已发起带 after_seq 的重连请求 → 立刻重启代理, 让退避内的重试打在恢复后的代理上'
+    );
 
     // 6) 重启后端代理B(:9000, 后端任务存活, API 链路经代理恢复)
     //    2026-09-13 小欧: vite A(:5173) 全程未杀, 页面永活 → GET#2/3 退避重连续传不被销毁中断,
@@ -188,19 +252,39 @@ test.describe('断线重连 UI 全链路', () => {
     const proxyLog2 = proxyLogPath();
     startProxyServer(FRONTEND_DIR, proxyLog2);
     await expect
-      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(9000), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     // 7) 等流结束: "发送"按钮复现(isReceiving=false, done 已处理)
     await chat.waitDone(300_000);
 
-    // 8) 断言至少一次重连且 after_seq 递增续传(轮询等 GET 打进 console)
-    const hasAfterSeq = (): boolean =>
-      reconnectLogs.some((c) => {
-        const m = c.match(/after_seq=(\d+)/);
-        return !!m && Number(m[1]) > 0;
+    // 8) 断言**真有一次带 after_seq 的续传成功**(网络层判据: REQ 带 after_seq>0 且拿到 RES 200)
+    //    2026-10-22 小欧 - 原判据是"console 文本里出现 after_seq=N": console 只打"重连 3 次均失败"这类
+    //    汇总文案、**不含 URL** → 明明发了 after_seq=104 的续传请求也判不出(实测三轮全红)。
+    //    改看网络层(唯一真源): REQ 带 after_seq>0 + 同 URL 有 RES 200。
+    const hasAfterSeq = (): boolean => {
+      const reqs = streamReqs.filter(
+        (r) =>
+          r.includes(' REQ ') &&
+          r.includes('/chat/stream/') &&
+          r.includes('after_seq=')
+      );
+      return reqs.some((r) => {
+        const m = r.match(/after_seq=(\d+)/);
+        if (!m || Number(m[1]) <= 0) return false;
+        const url = r.split(' REQ ')[1]?.trim() ?? '';
+        return streamReqs.some(
+          (x) => x.includes(' RES 200 ') && x.includes(url)
+        );
       });
-    await expect.poll(hasAfterSeq, { timeout: 60_000 }).toBeTruthy();
+    };
+    // 2026-10-22 小欧 - 失败即打全量 DIAG(前端是否感知到断线/有没有发重连请求/后端有没有记续传)
+    try {
+      await expect.poll(hasAfterSeq, { timeout: 60_000 }).toBeTruthy();
+    } catch (e) {
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
+      throw e;
+    }
 
     // 9) 终态正文完整 + 无同段相邻重复(run-on): 断点续传若重发会造成正文二次拼接。
     //    逐行检测(仅同一文本行内比对): 跨行重复(表格分隔线/列表)不算, 行内无换行的连续重复才是流式拼接特征。
@@ -236,15 +320,7 @@ test.describe('断线重连 UI 全链路', () => {
     }
 
     // [DIAG] 无条件输出网络/重连全量诊断(供失败归因, 不参与断言)
-    printDiag(
-      streamReqs,
-      reconnectLogs,
-      sseErrors,
-      consoleAll,
-      tail,
-      allFailed,
-      getCaseId()
-    );
+    printDiag(diag, tail, getCaseId());
 
     expect(recon).not.toBeNull();
     expect(Number(recon![1])).toBeGreaterThan(0);

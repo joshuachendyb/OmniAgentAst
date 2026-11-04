@@ -15,7 +15,7 @@
 # 2026-08-16 - 小欧 - S1(10.1.4②): chat_stream_endpoint 透传 request.context_link_mode 给 orchestrator(任务上下文链)
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6): 注册task_execution_router(C1任务详情统计+C2步骤回放,
 #   嵌套于chat_router, 经main.py /api/v1前缀挂载为/api/v1/chat/execution/task/{task_id}路径)
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(5.1 落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
 # 2026-09-03 - 小欧/北京老陈 - confirm端点补日志: 改前无任何log, 问题排查全靠猜; 收到确认/确认成功/confirm_id不存在或已处理三处关键节点补info/warning
 # 2026-09-03 - 小欧/北京老陈 - 后端必有返回: 全链路try兜底, 异常也返回success False, 杜绝前端await死等(北京老陈"后端不能没有返回"铁律)
 # 2026-09-08 - 小欧 - 方案五(6.6.1): cancel 端点增 source query 参数(缺省 user_requested), 透传 task_runtime.cancel_task 落库; 支撑方案四断连超时来源区分
@@ -24,6 +24,13 @@
 #   (task_id/session_id/source), 排查"前端是否真发了取消"不再靠猜 — 小欧-2026-09-08
 # 2026-09-19 - 小欧 - P-005契约化(北京老陈批准): confirm端点 confirm_id失效响应补 code="confirm_stale" 稳定字段,
 #   前端改读 code 判定(替代字符串includes匹配), 从源头消除"后端message文案变更即前端失效"的脆弱链 — 小欧-2026-09-19
+# 2026-09-29 小欧 - 重连端点包一层 _guarded 生成器兜住回放异常→persistence_degraded（不掐断流）。
+#   try 须写在生成器体内：路由本身不迭代生成器，在路由层 try 捕不到。CancelledError 不捕 — 小欧 2026-09-29
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项7: /chat/stream 停止向编排器透传 context_link_mode(形参已废止)
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元2: /chat/stream 改以关键字透传 link_enabled(会话 link 开关
+#   开关真值随消息到达), 关键字传防与编排器后续新增形参错位。
+# 2026-10-30 - 小欧 - 注释缩进修正(零逻辑): refs 关键字透传注释缩进对齐, 无行为变化 — 小欧-2026-10-30
+# 2026-11-03 - 小欧 - [HITL-confirm] 缺 confirm_id / 已处理 两处 WARNING→DEBUG(请求侧参数问题) — 小欧-2026-11-03
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -32,7 +39,7 @@ chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 """
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.logger import logger  # 2026-09-08 小欧: cancel峰值入口留痕(仅文件, 不双写) — 小欧-2026-09-08
@@ -43,6 +50,7 @@ from app.services.chat.stream_orchestrator import (
     chat_stream_reconnect_orchestrator,
     validate_chat_config,
 )
+from app.services.chat.sse_events import create_error_response   # [63] 3.6.6 统一错误事件（定义 sse_events:47）
 from app.services.task.task_runtime import cancel_task
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.hitl_confirmation import resolve_confirmation
@@ -56,8 +64,20 @@ router.include_router(task_execution_router, tags=["task-execution"])  # v2.0 C1
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     # DTO 在 API 层解包，避免 services 层反向依赖 api/v1 — 方案4.7.3 DTO边界约定
+    # link_enabled 用关键字传, 防与编排器后续新增形参错位 — 小欧 2026-10-03
+    # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 同样关键字透传，禁位置传参。
+    #   必须在 API 层 model_dump 成 dict —— message_builder._render_refs_block 收 dict，
+    #   直接透传 pydantic ChatRef 对象会被 isinstance(data, dict) 判定**整条丢弃**，
+    #   功能表面接通实则全程空转（真实 BUG：单测喂自造 dict，全链路从未跑过）。
+    #   这也正是本仓 DTO 边界约定：DTO 在 API 层解包，services 层不感知 pydantic。
     return StreamingResponse(
-        chat_stream_orchestrator(request.messages, request.session_id, request.context_link_mode),
+        chat_stream_orchestrator(
+            request.messages,
+            request.session_id,
+            link_enabled=request.link_enabled,
+            allow_interject=request.allow_interject,   # 2026-10-06 小欧 - 文档[11] 3.4.4: 关键字透传(防与编排器形参错位)
+            refs=[r.model_dump() for r in (request.refs or [])],
+        ),
         media_type="text/event-stream",
     )
 
@@ -91,14 +111,14 @@ async def confirm_stream_endpoint(request: Request):
         trust_session = body.get("trust_session", False)
 
         if not confirm_id:
-            _log.warning("[HITL-confirm] 缺少confirm_id")
+            _log.debug("[HITL-confirm] 缺少confirm_id")  # 2026-11-03 小欧: 请求参数缺失, 降 DEBUG
             return {"success": False, "error": "missing confirm_id"}
 
         _log.info(f"[HITL-confirm] 收到确认: confirm_id={confirm_id}, confirmed={confirmed}, trust_session={trust_session}")
         ok = await resolve_confirmation(confirm_id, confirmed, trust_session)  # 5.1(2026-09-02 小欧): resolve 改 async, await 同步落库零竞态
 
         if not ok:
-            _log.warning(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")
+            _log.debug(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")  # 2026-11-03 小欧: 资源状态, 降 DEBUG
             return {"success": False, "error": "confirm_id not found or already processed", "code": "confirm_stale"}
 
         _log.info(f"[HITL-confirm] 确认成功: confirm_id={confirm_id}")
@@ -114,9 +134,20 @@ async def validate_config_endpoint():
 
 
 @router.get("/chat/stream/{task_id}")
-async def chat_stream_reconnect(task_id: str, session_id: str = None, after_seq: int = 0):
+async def chat_stream_reconnect(
+    task_id: str,
+    # Optional 而非 str：可缺省（缺失时归属无从校验，后端放行并留日志）— 小欧 2026-09-29
+    session_id: Optional[str] = None,
+    after_seq: int = Query(0, ge=0, description="续传起点(seq>=N)；禁负数否则首帧被误判缺口"),
+):
     """SSE 重连端点：读同一任务的流态缓冲，不启动新 agent — 北京老陈 2026-07-12 小欧 2026-07-12"""
-    return StreamingResponse(
-        chat_stream_reconnect_orchestrator(task_id, session_id, after_seq),
-        media_type="text/event-stream",
-    )
+    # try 须写在 async generator 体内才有效（路由不迭代生成器，捕不到执行期异常）— 小欧 2026-09-29
+    async def _guarded():
+        try:
+            async for chunk in chat_stream_reconnect_orchestrator(task_id, session_id, after_seq):
+                yield chunk
+        except Exception as exc:   # 仅兜回放异常；CancelledError（客户端断开）不捕，既有取消语义不变
+            logger.warning(f"[SSE] 回放异常(task={task_id}): {exc}")   # logger :38 既有 import
+            yield create_error_response(error_type="persistence_degraded",
+                                        error_message="回放异常，实时流不受影响")
+    return StreamingResponse(_guarded(), media_type="text/event-stream")

@@ -8,6 +8,8 @@
  * @since 2026-02-21
  */
 
+// 编辑历史: 2026-09-21 小欧 - v4.20 旧设置页退休: 快捷指令 /settings → /settings2（设置2版唯一入口，行内注释在 shortcuts 列表）
+
 import React from 'react';
 import { Modal, List, Tag, Button } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
@@ -28,7 +30,7 @@ const shortcuts: Shortcut[] = [
   { command: '/clear', description: '清空当前对话', category: '对话' },
   { command: '/help', description: '显示帮助信息', category: '帮助' },
   { command: '/history', description: '查看历史记录', category: '会话' },
-  { command: '/settings', description: '打开设置页面', category: '系统' },
+  { command: '/settings2', description: '打开设置页面', category: '系统' }, // 2026-09-21 小欧 - 旧设置页整体退休, /settings → /settings2
 ];
 
 const ShortcutPanel: React.FC<ShortcutPanelProps> = ({

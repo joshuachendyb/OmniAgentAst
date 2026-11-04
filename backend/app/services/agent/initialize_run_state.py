@@ -9,7 +9,7 @@
 # 2026-08-10 - 小欧 - I1 (第二次代码更新): 新增任务文本目录解析(_parse_task_auth_paths), 仅解析不授权不产 SSE, 挂 agent._task_auth_paths; 同步新增 _TASK_PATH_RE 正则
 # 2026-08-10 - 小欧 - 撤销 I1 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」— 删除 _parse_task_auth_paths/_TASK_PATH_RE 及调用,
 #   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
-# 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
+# 2026-08-11 - 小欧 - 三堂会审复核落地: I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
 # 2026-08-16 - 小欧 - S4(10.1.2②): sys_prompt 取到后存 agent._sys_prompt, 供 react_cycle 前置装配 start 读取(start 的 system_prompt 字段, 10.1.1③ 装配时机=initialize_run_state 后 loop 前)
 # 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _maybe_compact_injected_history(agent), 注入历史后估 token
 #   超窗(MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO)置 agent._needs_compact=True; 仅置标记不触发 LLM(实际压缩
@@ -23,19 +23,34 @@
 #   全部业务(inject/超窗判定/C4回填/装配入口), 自本文件移除 _inject_conversation_history 与
 #   _maybe_compact_injected_history 两函数定义(迁入 start_step.py)及 COMPACTION_ENABLED import;
 #   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
-# 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
-# 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
+# 2026-08-18 - 小欧 - error全仅SSE: 重置区加 agent._last_error=None(防跨任务残留)
+# 2026-08-18 - 小欧 - usage剔step_json: 重置区加 agent._usage_events=[]
+# 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
+# 2026-09-23 小欧 - 删死 import MAX_CONSECUTIVE_CHUNKS（should_promote 死链清理，ChunkBuffer 无参构造零使用）
+# 2026-10-07 北京老陈 - 删 agent.message_builder.init_history(sys_prompt, task):
+#   system/task 两条与超窗判定、C4 摘要无关(判定只算注入历史量, 摘要只吃 _injected_history_msgs),
+#   推迟到压缩决策后由 react_loop 装配段建[system, 摘要或原历史, task]; 本函数退化为纯状态重置。
+# 2026-10-10 - 小欧 -  新增 _start_summary / _compact_attempted
+#   每轮初始化(替代 start_step 内重复清零), 二者被 telemetry 读以区分"未超窗"与"压缩失败"。
+# 2026-10-14 小欧 - linked 增量摘要标记每轮清零(_injected_delta_msgs/_pending_chain_summary_cover, 防跨任务串味) — 小欧-2026-10-14
+
+# 2026-10-26 小欧 三堂会审 YAGNI: 删 _start_summary_anchor_task_id 清零(全库0消费, 死字段)
+
+# 2026-10-26 小沈 - 补 _injected_history_msgs 每轮清零(与 _injected_delta_msgs 同款, 防跨任务串味); 原仅清零 delta 未清 history,
+#   agent 复用且本次无 context 任务时残留上一轮注入历史 → telemetry 误判"直接注入"(content 串味); 同批统一
+#   _pending_chain_summary_cover 清零值 False→None(对齐 start_step:340 三态 None/True, 消除类型不一致) — 小沈-2026-10-26
+# 2026-10-29 小欧 - 补 _summary_tail_extras 每轮清零(新摘要注入附件, 与 _pending_chain_summary_cover 同款防复用残留) — 小欧-2026-10-29
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
-职责: 重置steps/message_builder/status/llm_call_count, 注入system prompt和task
+职责: 重置steps/message_builder/status/llm_call_count, 取 system prompt 存 agent._sys_prompt(不建消息)
 
 Author: 小沈 - 2026-05-31
 """
 
 from typing import Any, Dict, Optional
 
-from app.constants import MAX_CONSECUTIVE_CHUNKS
+from app.config import get_config
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.logger import logger
@@ -57,8 +72,23 @@ def initialize_run_state(
     agent._consecutive_same_tool_calls = 0
     agent._last_tool_call_sig = None
     agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
-    agent._last_error = None  # 2026-08-18 - 小欧 - P3: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
-    agent._usage_events = []  # 2026-08-18 - 小欧 - P6: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
+    agent._last_error = None  # 2026-08-18 - 小欧 - error全仅SSE: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
+    agent._usage_events = []  # 2026-08-18 - 小欧 - usage剔step_json: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
+    # 摘要与压缩标记每轮初始化(替代 start_step 内重复清零)
+    agent._start_summary = ""
+    agent._compact_attempted = False
+    # 2026-10-14 小欧 - linked 增量摘要标记: 同上必须每轮清零。agent 实例跨任务复用时,
+    #   上一任务残留的 delta/待写回标记会让本次老路(无锚点)误注入上一轮的 delta 原文 → 上下文串味。 — 小欧-2026-10-14
+    # 2026-10-26 小沈 - _injected_history_msgs 同款清零: 原仅清零 delta 未清 history, agent 复用且本次
+    #   无 context.previous_messages 时残留上一轮注入历史 → telemetry 误判"直接注入"(content 串味)。 — 小沈-2026-10-26
+    agent._injected_history_msgs = None
+    agent._injected_delta_msgs = None
+    agent._pending_chain_summary_cover = None
+    # 2026-10-26 小欧: 新增事实状态清零 —— 防 agent 复用跨任务残留(与 _injected_delta_msgs 同款)
+    agent._injected_effective_count = 0
+    agent._injected_effective_tokens = 0
+    agent._summary_tail_extras = None   # 2026-10-29 小欧: 新摘要注入附件同款清零(随 _pending_chain_summary_cover 三态) — 小欧-2026-10-29
+    agent._compressed_source_tokens = 0
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:
@@ -89,6 +119,5 @@ def initialize_run_state(
     )
 
     agent._on_before_loop(sys_prompt, task, context)
-    agent.message_builder.init_history(sys_prompt, task)
-
-    return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
+    # 2026-10-07 北京老陈: 此处不再 init_history 建 [system, task]; 推迟到压缩决策后由 react_loop 装配段建
+    return ChunkBuffer()

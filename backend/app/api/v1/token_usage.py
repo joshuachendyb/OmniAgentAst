@@ -2,19 +2,20 @@
 # 编辑历史:
 # 2026-08-16 - 小欧 - 新建: token_usage 四维度查询 API(10.1.7②-6 / 10.1.8 S2)。chat 域,
 #   GET /api/v1/token-usage?session_id=&task_id=&model= → storage.query_token_usage 聚合;
-#   亦可被文档2 6.1.7(上下文链 token 聚合接口)复用。
+#   亦可被设计文档 6.1.7(上下文链 token 聚合接口)复用。
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: query_token_usage 聚合链路改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 三层累计口径统一
 # 2026-08-20 - 小欧 - 11.1 测试驱动修复(chain 语义, 小欧单测 tests/test_token_accumulation_11_1.py 2 用例锁定): 原 GET /token-usage 的 chain_accumulated_tokens 直接返回 query_chain_accumulation(排除当前任务), 与 SSE 终态(含当前任务运行累计)口径不一致(独立任务恒为0、NULL context_root 返 None); 改为对 token_usage 全链(含当前任务)求和, 与 SSE 实时口径一致; 同步删未用 import query_chain_accumulation。
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.3: GET /token-usage ?model= 裸名过滤 → 组装
 #   ModelRef(provider+model) 结构传 query_token_usage(model_ref=), 落 task_model JSON 列 json_extract 双键过滤;
 #   import 补 ModelRef — 方案B 契约随归一
 # 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
-# 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计P0/C0/T0
+# 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计
 # 2026-09-03 小欧/北京老陈: token_usage端点补日志: 查询请求/结果/异常三处关键节点, 改前无任何log
+# 2026-09-21 小欧 - v4.20 单源收敛: ?model= 组装 ModelRef 的 provider 改读 ai.model_ref（删扁平 ai.provider）
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
-维度 = session / task / model（llm_call 由 COUNT(*) 聚合体现），口径同文档1 9.7。
+维度 = session / task / model（llm_call 由 COUNT(*) 聚合体现），口径同设计文档 9.7。
 """
 from typing import Dict, Optional
 
@@ -63,7 +64,7 @@ async def get_token_usage(session_id: Optional[str] = None,
     from app.config import get_config as _get_cfg   # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
     _model_ref = None
     if model:
-        _provider = _get_cfg().get("ai", {}).get("provider", "")
+        _provider = (_get_cfg().get("ai", {}).get("model_ref") or {}).get("provider", "")
         _model_ref = ModelRef(provider=_provider, model=model)
     def _read(conn):
         row = query_token_usage(conn, session_id=session_id, task_id=task_id, model_ref=_model_ref)

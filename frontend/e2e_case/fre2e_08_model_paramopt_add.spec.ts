@@ -1,0 +1,267 @@
+// 编辑历史: 2026-10-22 小欧 - 对齐弹窗改版: 标题改「参数模板」+「显示名」字段已删 → 删旧步骤 — 小欧-2026-10-22
+import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
+
+/**
+ * [62]P5 添加模型参数模板全链路 E2E-01 — 小欧 2026-09-22（重写重跑版）
+ *
+ * 环境: 真实后端 :8000 + 真实前端 :5173（Vite proxy /api→8000）+ 真实 config.yaml。
+ * 前置: 后端/前端已手动启动（本 case 不拉起）。有头浏览器（--headed）。
+ *
+ * 链路: 预置兄弟 param_options → 弹窗模板区(并集+默认 medium) → 勾选 reasoning_effort → 改 high
+ *   → POST /models body 含 high+param_options → config.yaml 落盘(model_params+model_meta)
+ *   → 切新模型参数区下拉 value=high（回显）
+ *
+ * [62]P9 核对（2026-09-22 小欧）: 设计 4.4-9「真实 LLM 请求体断言 reasoning_effort="high"」
+ *   — 请求体运行时消费（extra_body→body 顶层 reason_effort 字符串）由后端 BY-08
+ *   TestParseModelParamsRuntime.test_build_request_body_runtime 承担（零 mock、真实函数）；
+ *   本 E2E 负责「配置→保存→显示」三段，运行时构造透传见 create_instance_passes_extra_body。
+ *
+ * 铁规提醒: AGENTS.md 严令禁止 commit 任何测试代码文件 —— 本 spec 严禁提交。
+ *
+ * 编辑历史: 2026-09-25 04:06:45 小健 - 防真实配置污染: 弃真实兄弟模型 deepseek-v4-flash（原步骤0
+ *   直 PUT 真实模型 param_options），改临时创建 e2e-sibling-* + createdModels 集合 +
+ *   afterEach DELETE 自清理 + prettier 重排 — 小健-2026-09-25
+ */
+// 2026-09-28 小欧 - 配置隔离铁律落地：本用例 POST/DELETE /models 并断言写入落 config.yaml，
+//   原先直连开发后端 :8000 + 硬编码真配置路径（等于把「写真配置」当验收标准）。
+//   改：整个用例跑隔离栈（后端 :8898 / 代理 :9001 / 页面 vite :5174，配置为真配置副本），
+//   副本内 provider/api_key/models 与真配置一致 → 仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
+const PROVIDER = 'sensenova';
+
+const stamp = () => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+
+const createdModels = new Set<string>();
+
+test.afterEach(async ({ request }) => {
+  for (const model of createdModels) {
+    await request.delete(`${BASE}/models/${PROVIDER}/${model}`);
+  }
+  createdModels.clear();
+});
+
+test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
+  // 2026-09-28 小欧 - 隔离栈生命周期：真配置不可写，断言改读副本
+  test.beforeAll(async () => {
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
+  });
+  test.afterAll(async () => {
+    await stopIsolatedEnv();
+  });
+
+  test('模板区勾选 reasoning_effort=high → 落盘 → 回显下拉', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const newModel = `e2e-opt-${stamp()}`;
+    createdModels.add(newModel);
+    const sibling = `e2e-sibling-${stamp()}`;
+    createdModels.add(sibling);
+
+    const seed = await request.post(`${BASE}/models`, {
+      data: {
+        provider: PROVIDER,
+        model: sibling,
+        label: `${sibling}-兄弟`,
+        model_params: {},
+        param_options: { reasoning_effort: ['low', 'medium', 'high'] },
+      },
+    });
+    expect(seed.status()).toBe(200);
+    console.log(
+      `[E2E] 步骤0 预置临时兄弟 param_options ok (status=${seed.status()})`
+    );
+
+    // 1) 拦截 POST /models
+    let postBody: Record<string, unknown> | null = null;
+    page.on('request', (req) => {
+      if (
+        req.method() === 'POST' &&
+        req.url().includes('/api/v1/models') &&
+        !req.url().includes('/current')
+      ) {
+        try {
+          postBody = req.postDataJSON();
+        } catch {
+          /* noop */
+        }
+      }
+    });
+
+    // 2) 打开设置页 → 模型 Tab
+    await page.goto(`${ISO_PAGE}/settings2`);
+    await expect(page.locator('.settings-page')).toBeVisible({
+      timeout: 30_000,
+    });
+    const modelTab = page.getByRole('tab', { name: /模\s*型/ }).first();
+    await modelTab.click();
+    await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
+
+    // 3) 打开「添加模型」弹窗
+    // 2026-09-28 小欧 - 不用 getByRole(name)：页面有「添加模型」与「添加模型参数」两个同前缀按钮，
+    //   accessible name 实测带图标前缀（"plus 添加模型"），故按可见文字精确定位，
+    //   并用 .first() 锁定 ModelSelector 行内那个（另一个属参数区入口）。
+    await page.getByText('添加模型', { exact: true }).first().click();
+    const modal = page.getByRole('dialog', { name: '添加模型' });
+    await expect(modal).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(800); // 观察弹窗打开
+
+    // 4) Provider 切到 sensenova → 模板区候选重算（兄弟模型有参数才渲染模板区）
+    await modal.locator('.ant-select').first().click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item')
+      .filter({ hasText: PROVIDER })
+      .first()
+      .click();
+    // 2026-10-22 小欧 - 标题随弹窗改版对齐: 现为「参数模板」标题 + 「勾选即带入新模型，不勾则不写入」提示
+    //   (见 ModelModals 的 ModalSection title/hint), 旧标题「参数模板（勾选即带入新模型）」已不存在
+    await expect(modal.getByText('参数模板', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.waitForTimeout(800); // 观察模板区出现
+
+    // 5) 模板区出现 reasoning_effort（并集候选）+ 兄弟有枚举 → Select 默认值 medium
+    const tplRow = modal
+      .locator('label.ant-checkbox-wrapper')
+      .filter({ hasText: 'reasoning_effort' })
+      .first()
+      .locator('xpath=parent::div');
+    await expect(tplRow.locator('.ant-select')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      tplRow.locator(
+        '.ant-select-selection-item, .ant-select-selection-selected-value'
+      )
+    ).toContainText('medium');
+    console.log('[E2E] 步骤5 模板区 reasoning_effort 行已出, 默认 medium');
+
+    // 6) 勾选 reasoning_effort
+    await modal
+      .locator('label.ant-checkbox-wrapper')
+      .filter({ hasText: 'reasoning_effort' })
+      .first()
+      .click();
+    await page.waitForTimeout(800); // 观察勾选后界面
+
+    // 7) 模板区 Select 改为 high
+    await tplRow.locator('.ant-select').click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item')
+      .filter({ hasText: 'high' })
+      .first()
+      .click();
+    await page.waitForTimeout(800); // 观察改为 high 后界面
+
+    // 8) 填模型名 → 保存
+    // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除(现只有 Provider + 模型名)→
+    //   旧步骤等一个不存在的输入框, 会一直等到超时。模型名仍按原样填, 后续落盘断言走模型名。
+    const modelInput = modal.getByRole('textbox', { name: /模型名/ });
+    await expect(modelInput).toBeVisible({ timeout: 15_000 });
+    await modelInput.fill(newModel);
+    await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
+    console.log('[E2E] 步骤8 已填 模型名 并点击保存');
+
+    // 9) POST /models body 断言
+    await expect
+      .poll(() => JSON.stringify(postBody ?? null), { timeout: 30_000 })
+      .toContain('"reasoning_effort"');
+    // 2026-09-28 小欧 - 上行 poll 已确保非 null；直接断言收窄，去掉会掩盖空值的 as 强转
+    //   （postBody 声明含 null，`as Record` 属 TS2352 不安全断言）。
+    expect(postBody).not.toBeNull();
+    const b = postBody!;
+    expect(b.provider).toBe(PROVIDER);
+    expect(b.model).toBe(newModel);
+    expect((b.model_params as Record<string, unknown>).reasoning_effort).toBe(
+      'high'
+    );
+    const po = (b.param_options as Record<string, string[]>) ?? {};
+    // 全局兜底只放所有推理模型都支持的三个核心值(low/medium/high)；
+    //   少数派值(none/minimal/xhigh/max)各模型支持不同，走 per-model param_options — 小欧-2026-10-24
+    expect(po.reasoning_effort).toEqual(['low', 'medium', 'high']);
+    console.log(
+      `[E2E] 步骤9 POST body 校验通过: provider=${b.provider} model=${b.model} ` +
+        `model_params.reasoning_effort=${JSON.stringify((b.model_params as Record<string, unknown>).reasoning_effort)} ` +
+        `param_options.reasoning_effort=${JSON.stringify(po.reasoning_effort)}`
+    );
+
+    // 10) 弹窗关闭
+    await expect(modal).toBeHidden({ timeout: 30_000 });
+
+    // 11) config.yaml 落盘校验
+    await expect
+      .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
+      .toContain(`reasoning_effort: high`);
+    const cfg = fs.readFileSync(CONFIG_YAML, 'utf8');
+    // YAML 序列为多行格式（- low / - medium / - high），非内联 `[low, medium, high]`
+    const hasParams = cfg.includes('reasoning_effort: high');
+    const hasMeta =
+      cfg.includes('param_options') &&
+      cfg.includes('- low') &&
+      cfg.includes('- medium') &&
+      cfg.includes('- high');
+    expect(hasParams).toBeTruthy();
+    expect(hasMeta).toBeTruthy();
+    console.log(
+      `[E2E] 步骤11 config.yaml 落盘 ok: model_params.reasoning_effort=high=${hasParams} model_meta.param_options=${hasMeta}`
+    );
+
+    // 12) 切到新模型 → 参数区 reasoning_effort 下拉 value=high（回显）
+    // 12a) 选择器区模型下拉显示新模型 label（refreshModels select 定位后 paramOptions 已注入）
+    await expect
+      .poll(
+        async () => {
+          const sel = page.locator(
+            '.ant-select-selection-item, .ant-select-selection-selected-value'
+          );
+          for (let i = 0; i < (await sel.count()); i += 1) {
+            const t = await sel.nth(i).innerText();
+            if (t.includes('E2E参数模板模型') || t.includes('e2e-opt-')) {
+              return true;
+            }
+          }
+          return false;
+        },
+        { timeout: 45_000 }
+      )
+      .toBeTruthy();
+    // 12b) 参数区 reasoning_effort 行（②参数区）Select value=high —— 读链组装回显的下拉
+    const paramRow = page
+      .locator('div')
+      .filter({ hasText: 'reasoning_effort' })
+      .filter({ has: page.locator('.ant-select') })
+      .last();
+    await expect
+      .poll(
+        async () => {
+          const v = await paramRow
+            .locator(
+              '.ant-select-selection-item, .ant-select-selection-selected-value'
+            )
+            .innerText();
+          return v;
+        },
+        { timeout: 15_000 }
+      )
+      .toBe('high');
+    console.log('[E2E] 步骤12 回显通过: 新模型选中 + 参数区下拉 value=high');
+  });
+});

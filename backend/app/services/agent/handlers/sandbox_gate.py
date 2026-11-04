@@ -11,7 +11,7 @@
 #   resumed 非业务step, stream_reader/agent_runner 剔除不入 current_execution_steps, 不影响 total_steps。
 # 2026-09-03 小欧 沙箱用户裁决确认超时可配置化(北京老陈驱动): wait_for_confirmation_result 改读
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
-# 2026-09-03 小欧 Bug-16: sandbox paused 补齐 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段,
+# 2026-09-03 小欧 修复: sandbox paused 补齐 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段,
 #   改前缺字段致前端倒计时与后端不一致(60s/120s 错位); auto_confirm 恒False, 计时取 security.hitl_timeout−LEAD。
 # 2026-09-03 小欧 D2-02: _ct钳制max(5,bt-LEAD)避免0秒窗口（与action_handler同钳）
 # 2026-09-03 小欧 D2-03: trust_path改复用_extract_trust_path(tool,params)消除别名盲区（path/file_path/source_path等），防通配污染
@@ -25,7 +25,7 @@
 # 2026-09-05 小欧 ISS-002修复(task006问题报告核验为真实问题): sandbox_resolve 确认分支 resumed 补
 #   confirm_id(本函数入口 create_confirmation 返回值, 作用域内可用), 对齐主路resumed(action_handler带
 #   confirm_id), 前端收到resumed可据此配对关闭对应弹窗, 两通道协议一致
-# 2026-09-06 小欧 步骤3A落盘(test_path1_step3a_gateway_cutover.py T3A红→绿, 文档[6]5.3.2+5.3.3):
+# 2026-09-06 小欧 步骤3A落盘(测试红→绿, 文档落码):
 #   ① sandbox_resolve needs_ruling 分支"等待源头"收网关——删 create/wait/计时/trust_path扫描/paused/resumed
 #     组装/SUSPENDED/EXECUTING, 改 ConfirmSpec+hitl_confirm(唯一暂停源头); StreamBuffer缺失显式失败不静默;
 #     返回值仍(ok,steps), steps仅剩error类(paused/resumed由网关publish), 待收list留5.4.2(3B)
@@ -35,10 +35,10 @@
 #   由 MetaStep(type="error", error_type="blocked") 改独立 type="user_rejected" 单独发(无 error_type/
 #   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
 #   配套：react_dispatch 状态推断适配、agent_runner 仅SSE集合补入(不落库)。 — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-2 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证): sandbox_resolve
+# 2026-09-06 小欧 修复: 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证): sandbox_resolve
 #   拒绝分支构造 user_rejected 未传 tool_name(旧 error_type/blocked 亦不带, 计数一直落到主工具名下);
 #   [修复] user_rejected 事件补 tool_name=tool_name(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——危险型拦截 blocked
+# 2026-09-06 小欧 修复: 拒绝计数错键修复补全(问题挖掘文档): 与 user_rejected 同根——危险型拦截 blocked
 #   事件亦未带 tool_name(计数回退主工具名, 同键跨拦截累计漂移); [修复] blocked 事件补 tool_name=tool_name — 小欧-2026-09-06
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行98 type="error"→"rejected", 新增 reject_type="sandbox"; ②行123 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3(#11): rejected content/denied_list 去"沙箱安全检查未通过:"前缀(重复冗长+双源不同长), 同源同文 - 小欧-2026-09-17
@@ -47,26 +47,39 @@
 # 2026-09-18 小欧 偏差2修正(北京老陈审): :87主路闸与trusted闸合并为单一判据
 #   `pre.needs_ruling and (main_confirmed or (trusted and ruling_kind=="unsupported"))`, 与文档3.3合并式对齐 — 小欧-2026-09-18
 # 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段重命名同步更新 — 小欧-2026-09-18
-# 2026-09-18 小欧 - 第7章实施([50]7.2.2/7.2.4/7.3.0-A3/7.3.1-B4/B5): ①沙箱裁决ConfirmSpec content改"预检未完成：{blocked_reason or 无法完成有效预检}，
+# 2026-09-18 小欧 - 归属分类实施: ①沙箱裁决ConfirmSpec content改"预检未完成：{blocked_reason or 无法完成有效预检}，
 #   是否允许直接执行？{tool_name}"(去"沙箱"术语+携带blocked_reason), 新增safety_level="path_auth"; ②危险拦截blocked_reason截断80→140;
 #   ③用户拒绝content "用户拒绝执行"→"用户拒绝执行工具"(与safety_gate B3措辞统一) - 小欧-2026-09-18
 # 2026-09-18 小欧 - 7.3.0-A3/7.3.1-B4 精化(重查挖掘): executor blocked_reason 经 _attach_stderr_tail 附 " | 英文stderr尾部"(喂LLM自纠),
 #   A3弹窗content与B4拒绝content均改 split(" | ",1)[0] 只秀中文人话原因(英文tail仍随denied_list完整喂LLM, 前后端可读/LLM纠错职责分离);
-#   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？writetext"句读生硬) — 小欧-2026-09-18
+#   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？write"句读生硬) — 小欧-2026-09-18
 # 2026-09-18 小欧 - 毛病4精化(弹窗过宽核查): B5 用户裁决拒绝写入拒绝记忆(refusal_key 与 safety_gate 组键同口径, 延迟导入复用防环);
 #   sandbox_resolve 开头加检查点 B(覆盖豁免直通 requires=False 路径): 记忆命中不弹裁决窗直接 rejected(user),
 #   信任清除记忆, 主路刚确认(main_confirmed)不受历史约束 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="hitl",
 #   改显式传auto_confirm=False(默认即False, 显式表意自明: 沙箱裁决恒真HITL人工) — 小欧-2026-09-18
-# 2026-09-19 小欧 - Bug2+5修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
-#   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审Bug2+5)
+# 2026-09-19 小欧 - 修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
+#   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审)
+# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 与 path_tool_safety_checker 沙箱判定(=="risk")对齐, 漏改则沙箱帧带非法值。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 沙箱裁决由 "path_auth" 改 SafetyLevel.BLOCK_COMMAND。
+#   订正理由: 此处问的是"预检未通过, 是否强执行", 属命令级预检未通过(硬拦命名空间), 与路径授权(确认命名空间)无关;
+#   原 path_auth 把沙箱裁决错标成路径授权, 会让前端挂上"临时授权仅本任务有效"的说明 —— 而此处并未授予任何路径权限
+#   (本就不传 auth_path/trust_impact)。新增 SafetyLevel 顶层 import: 属 app.safety 单向依赖, 不构成 safety→services 反向越层。
+#   弹窗文案与"不传 trust_impact"的口径一律不变。
+# 2026-10-28 小欧 - 危险型拦截 rejected content 去 [:140] 字符截断(北京老陈令, 与 TaskInfoBar 显示宽度省略同批):
+#   [病根] content=pre.blocked_reason.split(" | ",1)[0][:140] 按 140 字符硬切——140 个英文(半角≈0.5汉字宽)
+#          仅占约 70 汉字宽, 剩一半空白严重不合理; 且原因>140字符时全文永久丢失(后端已硬切, 前端 hover/Tooltip 也看不到全文)。
+#   [改法] 去 [:140], 仅保留 split(" | ",1)[0] 去 stderr 英文 tail(人话原因完整保留)——
+#          全文进前端由 TaskInfoBar 事件列表 CSS text-overflow:ellipsis 按真实渲染宽度省略, 中/英/数字各填满, 全文 hover/Tooltip 可见;
+#          denied_list 仍用完整 pre.blocked_reason(含 stderr tail) 喂 LLM 自纠, 前后端/LLM 职责分离不变 — 小欧-2026-10-28
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
 依赖方向: handlers → sandbox(单向), 故本模块可安全 import sandbox, 反之不可。
 """
 from app.logger import logger
-# 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT/SENSITIVE_FIELDS
+from app.safety.safety_result import SafetyLevel  # 分类单源(safety 层, 无环: safety 不依赖 services)
+# 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT
 #   均延迟到函数内导入(小欧 2026-08-25 修复循环import回归): 本模块被 action_handler 顶层 import,
 #   若在模块顶层 import agent.steps / task.hitl_confirmation 会构成
 #   action_handler→sandbox_gate→hitl_confirmation→task_runtime→task_registry→...→action_handler 环,
@@ -126,11 +139,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         # 2026-09-17 小欧 会审V3(#11): 去"沙箱安全检查未通过:"前缀(结果语义已含"沙箱内执行失败",
         #   且 blocked_reason 现附 stderr 尾部供 LLM 自纠, 前缀只会重复冗长; denied_list 喂 LLM 与 content
         #   进前端同源同文, 不再双源不同长) — 小欧-2026-09-17
+        # 2026-10-28 小欧: 去 [:140] 字符硬切, 全文进前端按显示宽度省略 — 小欧-2026-10-28
         logger.warning(f"[sandbox] 危险型拦截拒绝: tool={tool_name}, reason={pre.blocked_reason[:200]}")
         denied_list.append((tool_name, pre.blocked_reason, call))
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="rejected",
-            content=pre.blocked_reason.split(" | ", 1)[0][:140],  # 7.3.1-B4精化: 截断80→140且去stderr尾部(_attach_stderr_tail的" | 英文tail"仅随denied_list供LLM自纠, content只展示人话原因) — 小欧-2026-09-18
+            content=pre.blocked_reason.split(" | ", 1)[0],  # 7.3.1-B4精化: 去stderr尾部供LLM自纠, content只展示人话原因; 2026-10-28 去[:140]字符截断 — 小欧-2026-10-28
             reject_type="sandbox",
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
@@ -141,15 +155,19 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     _buf = get_stream_buffer(agent.task_id)
     if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
         raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
-    # 2026-09-19 小欧 Bug2+5修复: auto_confirm从safety_result读取(不硬编码False); bypass超时→放行(与safety_gate层语义一致)
+    # 2026-09-19 小欧 修复: auto_confirm从safety_result读取(不硬编码False); bypass超时→放行(与safety_gate层语义一致)
     _sb = bool(getattr(safety_result, "auto_confirm", False))
     spec = ConfirmSpec(
         auto_confirm=_sb, tool_name=tool_name, params=params,  # 2026-09-18 小欧 去mode改布尔单源(与safety_gate同批, 老陈令) / 2026-09-19 小欧 读safety_result.auto_confirm
         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
-        severity="destructive", safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
+        # 2026-10-18 小欧: 沙箱裁决弹窗不传 trust_impact —— 此处问的是"预检未通过, 是否强执行",
+        #   并未授予路径访问权(无授权路径可判影响面), 传值会误导用户以为确认即获得该路径权限。
+        #   safety_level 改 block_command: 沙箱裁决属"命令级预检未通过", 与路径授权(确认命名空间)
+        #   无关; 原 path_auth 是把沙箱裁决错标成路径授权, 且该值已不在 SafetyLevel 枚举内。
+        safety_level=SafetyLevel.BLOCK_COMMAND)
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"] or (verdict.get("expired") and _sb):
-        # 2026-09-19 小欧 Bug5修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)
+        # 2026-09-19 小欧 修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)
         logger.info(f"[sandbox] {'bypass超时自动放行' if verdict.get('expired') else '用户裁决: 确认执行'}: tool={tool_name}")
         return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
@@ -170,11 +188,13 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
 
 async def run_sandbox_gate(agent, step, call, tool_name, params,
                            safety_result, denied, main_confirmed=False, trusted=False) -> tuple:
-    """统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
+    """[6] 统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
+    上游: [4] 危险+权限总闸 → [5] 确认层(信任豁免/用户裁决) 后汇合到此, 预检通过才真执行。
     消除 check_safety_and_confirm 中 ①auto_confirm ②用户确认 ③循环体兜底 三处重复调用。
     DRY: 三处20行重复代码→一处调用。 — 小健 2026-09-04
     3A: main_confirmed 透传(单paused, 4.4) — 小欧 2026-09-06
     3.3: trusted 透传(会话信任豁免, 能力缺口直放) — 小欧 2026-09-18
+    [SA7] 权限信任框架第7步: 沙箱预检统一入口(上游SA1三处汇合点, 下游executor.pre_execute) — 小欧-2026-10-14
     """
     pre = await sandbox_precheck(safety_result, tool_name, params)
     if pre is None:

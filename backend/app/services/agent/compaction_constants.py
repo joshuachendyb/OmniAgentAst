@@ -4,13 +4,16 @@
 职责(单一职责): 承载「消息压缩/裁剪」业务域全部常量——原全局压缩/裁剪常量(MAX_CONTEXT_TOKENS 等 5 个)
 2026-08-17 从 app/constants.py 迁入本文件(归属随用方集中到 agent/compaction 域), 不重复定义(DRY)。
 依据: doc-8月优化/[4]对话-HistoryMemory与历史裁剪设计方案 v5.10(14.9.2「压缩专属常量不堆进 app/constants.py」
-      + 第八章节常量表 + 14.9.3 trigger 代码 import 全局缓冲常量)。设计文档: 10.1.8 S5 C4+compaction 全模块。
+      + 常量表 + 14.9.3 trigger 代码 import 全局缓冲常量)。设计文档: 10.1.8 S5 C4+compaction 全模块。
 
 与 app/constants.py 边界(DRY 不重复):
   压缩/裁剪核心阈值本文件权威定义(自 app/constants.py 迁入 2026-08-17):
-    MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT
+    COMPACTION_BUFFER/TEMP_HISTORY_CHAR_LIMIT
+  CHARS_PER_TOKEN 不在本文件: 与 token 估算函数同址, 定于 agent_utils.py(2026-10-31 迁出)。
+  MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO 已删: 门限一律由运行时 context_length × 比例计算。
   其余「压缩裁剪专属」常量(PRUNE_*/SUMMARY_*/TRIGGER_*/COOLDOWN_*/TAIL_*/SPLIT_*/ASSEMBLE_*)亦定义在本文件。
-  app/constants.py 不再承载压缩/裁剪相关常量。
+  app/constants.py 不再承载压缩/裁剪相关常量(DEFAULT_CONTEXT_LENGTH 系系统级 LLM 常量, 非压缩裁剪专属,
+  2026-10-31 迁回 app/constants.py, 与 settings_registry llm.context_length_default 同源)。
 
 编辑历史:
 # 格式规范: {日期} {署名} {修改内容}
@@ -32,23 +35,68 @@
                         ×比例计算. 引用方(start_step/message_builder/trigger)同步改导入与公式
   2026-08-17 小健 开关定名开放(北京老陈 2026-08-17 拍板): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 超窗
                         判定使用, 其他任何模块不得引用); 值置 True(放开 R4 锚定摘要); start_step 超窗 gate 同步改名
+  2026-09-23 小欧 trim/compaction配置化: 本文件5常量保留作配置缺省兜底(TRIM_TRIGGER_RATIO/COMPACTION_BUFFER/START_TRIGGER_RATIO/START_COMPACTION_ENABLED/SUMMARY_FEED_MAX_CHARS)，消费方优先读 tuning.trim.*/tuning.compaction.* 配置；keep_tail 缺省 1（start_step 内联兜底，ASSEMBLE_KEEP_TAIL 仍为装配函数保留常量）
+  2026-09-23 小欧 7死常量以备后用标注: C3/T1四阈值+Hermes Pass3两阈值+ASSEMBLE_KEEP_TAIL暂无消费方，留定义供后续接线，禁止删除
+  2026-10-04 小欧 CHARS_PER_TOKEN 4→1.8→2.5(北京老陈两次定): 中文 1 字真实约 1~2 token, 4 严重低估致撞窗, 1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中。连带: 浮点系数下两处除法改显式取整(// 返回 float)
+  2026-10-05 小欧 报告 P7: 现值 2.5 仍低估约 4.8 倍, 改值须先有 E2E 基线, 值由测试钉桩。
+  2026-10-08 小欧 新增 SUMMARY_PRUNE_TOOL_OUTPUT(摘要前降本开关, 北京老陈裁定接入): True=保尾区 tool 原样 +
+    更早的清零, 真实 205 条实测省 48890 tok(36%)且摘要保住可核对数字/签名/时间戳; False=全量喂回退。
+  2026-10-25 小欧 新增 TOOLS_TOKEN_RESERVE(=30000) + KEEP_RECENT_ROUNDS(=5): 前者=trim 预算扣除的
+    tools schema 输入 token 预留(实测 Agents-A1 201 条无预留仍 400); 后者=loop 裁剪最近 N 个 FC 工具步
+    不参与裁剪(触发/预算计算不变, 配置 tuning.trim.keep_recent_rounds, 5-20 默认 5)。
+  2026-10-25 23:09 小欧 CHARS_PER_TOKEN 2.5→2.25: 10 真实会话标定 17,252,839 chars/7,299,735 精确 tok=2.363 字/token(2.5 低估5.5%=0.945x, 2.55 更差7.3%, 2.25 MAE13.0% 候选最优), 订正 2026-10-05 条「4.8倍」无实测出处结论
+  2026-10-25 23:09 小欧 TRIM_TRIGGER_RATIO 0.75→0.9(北京老陈定): 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径
+  2026-10-29 小欧 新增一组魔法数字清账常量(北京老陈令): USE_SUMMARY_MIN_CHARS/swap 最小参与长度门槛 + VALUE_WEIGHT_*/消息价值权重族 + TOOL_SUMMARY_HEAD_CHARS/TOOL_SUMMARY_PREVIEW_CHARS/摘要截长 + TRIM_MIN_MESSAGES/TRIM_CEILING_ROUND_FACTOR/TRIM_CEILING_ROUNDS_MARGIN/裁剪信号结构阈值 + PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/保护区轮数夹取上下限——各值由原消费点内联字面量直迁, 零行为变化
+
+  2026-10-30 小欧 引用摘录比例常量(REF_AVG_LINE_CHARS/REF_HEAD_RATIO/REF_TAIL_RATIO/REF_MIN_KEEP_LINES)迁出
+                        至 app/constants.py 第4节: 本文件为压缩/裁剪专属域, 引用摘录比例非其职责; 单一真源
+                        归系统层常量, resolver/clip/budget 改从 app.constants 导入 — 小欧-2026-10-30
+  2026-10-31 小欧 DEFAULT_CONTEXT_LIMIT(262144=256K) 迁出至 app/constants.py: 系统级 LLM 常量非压缩裁剪专属,
+                        与 settings_registry llm.context_limit_default 设置项默认值收敛同一真源(消魔法数字);
+                        本文件删除定义, 引用方(lifecycle/service/message_builder/stream_orchestrator)同步改
+                        从 app.constants 导入, 勿再从本文件导入 — 小欧-2026-10-31
+  2026-10-31 小欧 CHARS_PER_TOKEN 2.25→1.86: 2483 次真实调用实测(消息字符+tools schema)=1.860 字/token,
+                        原 2.25 系统性低估 21%(中位 25%、p90 55%), 改为实测下界(取小=估算偏大=保守);
+                        连带 start 压缩前超窗裁剪判定线/目标线口径(agent_utils.conv_threshold /
+                        trim_conv_threshold) — 小欧-2026-10-31
+  2026-10-31 小欧 TOOL_SUMMARY_HEAD_CHARS 120→500(=SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 北京老陈令):
+                        shrink_to_budget 第2级由"远段全清零"改"保首+清零", 保首 500 经真实日志实测定档
+                        (远段 106 条 tool/均值 7140 字 → 留 26,139 tok = 目标 13.7%) — 小欧-2026-10-31
+  2026-10-31 小欧 保首长度去裸字面量(北京老陈令): TOOL_SUMMARY_HEAD_CHARS 定义移到 SPLIT_TURN_MAX_ASSISTANT_CHARS
+                        之后, 值写成 SPLIT_TURN_MAX_ASSISTANT_CHARS // 8(禁写死 500)——上游门限一调, 保首随之等比;
+                        头注边界同步订正(去掉已迁出的 CHARS_PER_TOKEN / 已删的 MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO)。
+                        — 小欧-2026-10-31
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
 # ============================================================
-# 意义: LLM 上下文窗口默认上限(未在 model_params.context_limit 配置时兜底)
-#       自 app/services/lifecycle/service.py:74 迁入; 压缩/裁剪以运行时 context_limit(配置优先, 否则本默认)作基准 — 小健 2026-08-17
-DEFAULT_CONTEXT_LIMIT = 262144   # = 256K
-# 意义: start 超窗触发比例(=上下文×1/2, 北京老陈 2026-08-17 定案)——start 一次性注入历史更保守, 门限更低
-#       (start 超窗于此比例即置 _needs_compact 触发 C4 锚定摘要)
-START_TRIGGER_RATIO = 0.5
-# 意义: loop 执行中裁剪触发比例(=上下文×3/4, 北京老陈 2026-08-17 定案)——渐进增长允许更高占用,
-#       历史占满此比例才触发 trim_history / CompactionTrigger 绝对值安全网
-TRIM_TRIGGER_RATIO = 0.75
+# DEFAULT_CONTEXT_LENGTH(262144=256K) 已迁出本文件 → app/constants.py(系统级 LLM 常量, 2026-10-31):
+#   settings_registry llm.context_length_default 设置项默认值与本兜底同源消魔法数字; 引用方
+#   (lifecycle/service/message_builder/stream_orchestrator)已同步改自 app.constants 导入 — 小欧-2026-10-31
+# 意义: 压缩摘要限制系数(=上下文×1/2, 北京老陈 2026-08-17 定案; 2026-10-31 由 START_TRIGGER_RATIO 改名)——
+#       start 一次性注入历史更保守, 限制更低; 超于此即置 _needs_compact 触发 C4 锚定摘要。
+#       术语: 本值是「限制系数」(limit ratio), 只服务压缩摘要; 「调节系数」是 TRIM_TRIGGER_RATIO, 只服务 loop 裁剪。
+#       配置键 tuning.compaction.start_limit_ratio(2026-10-31 由 start_trigger_ratio 改名)。
+START_LIMIT_RATIO = 0.5
+# 意义: loop 裁剪阈值调节系数, 作用于裁剪预算(context_length-compaction_buffer-tools_token_reserve):
+#       ① 裁剪入口阈值=预算×系数(一次方), 粗估超过此阈值触发绝对值安全网
+#       ② 裁剪出口队列预算=预算×系数²(二次方), 队列只能用此预算
+#       与裁剪预算同源单口径 — 小欧 2026-10-25
+TRIM_TRIGGER_RATIO = 0.8
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
-# 意义: chars→token 换算系数
-CHARS_PER_TOKEN = 4
+# 意义: tools 定义(schema)token 预留——trim_history 按预算裁 messages 时, tools 定义也占输入窗口,
+#   不预留会致 messages 裁到 242K + tools 定义 20K+ ≈ 撞满 262144 → 上游 400(实测 Agents-A1 201条仍400)。
+#   17个工具schema 约 20K~30K tok, 取 30K 保守值, 可经 tuning.trim.tools_token_reserve 覆盖。 — 小欧 2026-10-25
+TOOLS_TOKEN_RESERVE = 30000
+# 意义: loop 裁剪"最近 N 个 FC 工具轮硬保护"轮数(北京老陈 2026-10-25 定案): 最近 N 个工具轮
+#   (assistant(tool_calls)+其全部 tool 结果) 不进裁剪列表, 第 N+1 轮起才允许按 token 预算裁;
+#   防 loop 进行中裁掉当前推理的直接上下文(上一步调了什么/得到什么)致推理断裂, 亦防裁剪抖动。
+#   配置 tuning.trim.keep_recent_rounds, 取值范围 5-20, 默认 5。 — 小欧 2026-10-25
+KEEP_RECENT_ROUNDS = 5
+# 2026-10-31 小欧 CHARS_PER_TOKEN 迁出本文件(北京老陈令): 该系数是 token 估算的换算底数,
+#   定义位置必须与估算代码同址 → 现唯一定义在 agent_utils.py 的 estimate_tokens 正上方;
+#   消费方(message_builder / compaction.prune / refs.limits)一律从 agent_utils 导入, 本文件不再定义。
 # 意义: 临时历史字符上限
 TEMP_HISTORY_CHAR_LIMIT = 50000
 
@@ -58,7 +106,8 @@ TEMP_HISTORY_CHAR_LIMIT = 50000
 # 默认值依据: R4「零额外 LLM 调用」原则放开, 北京老陈 2026-08-17 拍板置 True。 — 小健 2026-08-17
 START_COMPACTION_ENABLED = True
 
-# ---- 触发比例(C3 轻量/T1 紧急裁剪, [4] 第八章节) ———————————————————————————
+# ---- 触发比例(C3 轻量/T1 紧急裁剪) ———————————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：C3/T1 全量接线前暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: TRIGGER_T1_RATIO/compress_long_tool_output 触发阈值; TRIGGER_T3_RATIO/keep_valuable_messages 紧急裁剪最后安全网;
 #       TRIM_TARGET_RATIO/裁剪到目标占用比例; KEEP_TAIL_ROUNDS/保尾完整 FC 轮数。
 # 默认值依据: 借鉴 opencode/历史方案口径(50% 常规触发、95% 濒危安全网、保留最近 3 轮)。
@@ -66,16 +115,42 @@ START_COMPACTION_ENABLED = True
 TRIGGER_T1_RATIO = 0.50   # C3 的轻量实现函数 compress_long_tool_output 触发比例
 TRIGGER_T3_RATIO = 0.95   # T1 紧急裁剪法(触发比例, 窗口快爆最后安全网)
 TRIM_TARGET_RATIO = 0.50  # 裁剪目标比例
-KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, [4] 5.2 步骤4)
+KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, 5.2 步骤4)
 
 # ---- 剪枝(C3/Prune) ———————————————————————————————
 # 意义: PRUNE_MINIMUM_TOKENS/剪枝至少需释放的 token, 不足则跳过防抖动; PRUNE_PROTECT_TOKENS/保护近期工具输出细节阈值。
-# 默认值依据: 借鉴 OpenCode PRUNE_MINIMUM([4] 第八章节), 与 20K/40K 量级匹配常规消息体积。
+# 默认值依据: 借鉴 OpenCode PRUNE_MINIMUM(设计文档), 与 20K/40K 量级匹配常规消息体积。
 # 可选范围: 越小越激进(更易触发剪枝); 过小(如 <5K)易反复裁剪抖动, 过大(如 >100K)则剪枝失效。
-PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(借鉴 OpenCode PRUNE_MINIMUM, [4] 第八章节)
-PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值([4] 14.3.3; prune.py 引用 _TOKENS 权威名)
+PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(借鉴 OpenCode PRUNE_MINIMUM, 设计文档)
+PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值(14.3.3; prune.py 引用 _TOKENS 权威名)
 
-# ---- Hermes Pass3 参数截断(T1 步骤2, [4] 5.2/第八章节) ————————————————————
+# ---- 消息价值权重与摘要截长(魔法数字清账归常量域 — 小欧-2026-10-29) ——————————————————————
+# 意义: VALUE_WEIGHT_*/keep_valuable_messages 消息语义价值权重(越高越优先保留);
+#       TOOL_SUMMARY_HEAD_CHARS 超长 tool 输出保首段长度(定义见下方「保尾切分」段, 派生自 SPLIT_TURN_MAX_ASSISTANT_CHARS);
+#       TOOL_SUMMARY_PREVIEW_CHARS/get_last_tool_summary 死循环纠偏注入预览截长;
+#       TRIM_MIN_MESSAGES/_trim_signal 对过短历史不评估裁剪的结构下限;
+#       TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN/裁剪兜底上限 = max_rounds×factor+margin;
+#       PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/resolve_protect_rounds 对 tuning.trim.keep_recent_rounds 的夹取上下限。
+# 默认值依据: 权重大小序=历史记忆>system>tool_calls决策>assistant正文>其他兜底>tool纯输出(原 _value_weight 内联值直迁);
+#       截长 500(≈4000 的 1/8, 2026-10-31 实测定档)=远段 tool 保首可读长度、200≈纠偏预览够 LLM 判断末次工具行为; TRIM_MIN_MESSAGES=防小历史裁剪抖动的结构下限;
+#       factor=2/margin=5 为 max_rounds 二倍量级+安全余量(兜底上限, 非精细控制); PROTECT_ROUNDS 范围=KEEP_RECENT_ROUNDS
+#       配置既定取值区间(2026-10-25 北京老陈定案)。
+# 可选范围: 权重 0~100 须保持既定大小序; 截长 100~1000; TRIM_MIN_MESSAGES 建议 3~10; PROTECT_ROUNDS 建议 3~30。
+VALUE_WEIGHT_HISTORY_MEM = 100            # _history_mem 消息权重(历史记忆直注, 最高)
+VALUE_WEIGHT_SYSTEM = 90                  # system 消息权重(对话身份/规则载体)
+VALUE_WEIGHT_TOOL_CALL_DECISION = 80      # assistant(tool_calls) 决策消息权重(调了什么工具)
+VALUE_WEIGHT_ASSISTANT = 70               # assistant 正文权重(thought/answer)
+VALUE_WEIGHT_OTHER = 50                   # 其余角色兜底权重
+VALUE_WEIGHT_TOOL = 10                    # tool 纯输出权重(价值最低, 先删)
+TOOL_SUMMARY_PREVIEW_CHARS = 200          # get_last_tool_summary 死循环纠偏预览截长
+TRIM_MIN_MESSAGES = 5                     # 历史条数<=此值不评估裁剪(防小历史抖动)
+TRIM_CEILING_ROUND_FACTOR = 2             # 裁剪兜底上限 = max_rounds × 此系数 + 余量
+TRIM_CEILING_ROUNDS_MARGIN = 5            # 裁剪兜底上限安全余量(轮)
+PROTECT_ROUNDS_MIN = 5                    # keep_recent_rounds 配置夹取下限(2026-10-25 北京老陈定案范围)
+PROTECT_ROUNDS_MAX = 20                   # keep_recent_rounds 配置夹取上限(2026-10-25 北京老陈定案范围)
+
+# ---- Hermes Pass3 参数截断(T1 步骤2, 5.2/设计文档) ————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：Pass3 代码尚未落地，暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: PASS3_ARGS_THRESHOLD/tool_call 参数超此长度才截断; PASS3_ARG_MAX_CHARS/截断后字符串字段最大长度。
 # 默认值依据: Hermes 2 Pass3 原文参数截断口径(500/200 字符)。
 # 可选范围: 阈值过低会误伤关键参数, 建议 300~800; 截断长度建议 100~300(须保留命令可读)。
@@ -84,21 +159,26 @@ PASS3_ARG_MAX_CHARS = 200    # 截断后字符串字段最大长度
 
 # ---- 锚定摘要(C4/Anchored Summary) ——————————————————
 # 意义: SUMMARY_FEED_MAX_CHARS/喂 LLM 的单条 tool content 截断上限字符(防二次胀窗)。
-# 默认值依据: 2000 字符足以承载工具返回关键信息又不撑大上下文([4] 14.9.4②「截断喂」)。
+# 默认值依据: 2000 字符足以承载工具返回关键信息又不撑大上下文(14.9.4②「截断喂」)。
 # 可选范围: 越小越省 token 但可能丢细节, 越大越保真但增加 LLM 输入; 建议 1000~5000。
-SUMMARY_FEED_MAX_CHARS = 2000  # 喂 LLM 的单条 tool content 截断上限字符(防二次胀窗, [4] 14.9.4②「截断喂」)
+SUMMARY_FEED_MAX_CHARS = 2000  # 喂 LLM 的单条 tool content 截断上限字符(防二次胀窗, 14.9.4②「截断喂」)
+
+# 2026-10-07 北京老陈 - 摘要前是否清零旧轮 tool 结果(接 prune.prune_tool_output_keeping_tail)
+# 意义: True=保尾区原样 + 更早的 tool 清零, 省 38%(实测 205 条省 48890 tok), 代价是摘要丢失旧轮工具原文;
+#       False=全量喂, 保真但每次压缩多烧约 51689 tok。质量存疑时置 False 即刻回退。
+SUMMARY_PRUNE_TOOL_OUTPUT = True  # 默认开(北京老陈 2026-10-07 裁定接入)
 
 # ---- 触发(Trigger) ——————————————————————————————
 # 意义: TRIGGER_MAX_MSGS/大窗口模型下消息数兜底触发阈值(防超大窗口固定比例形同虚设)。
-# 默认值依据: 80 条消息为常规长对话合理上限([4] 14.9.6 K1)。
+# 默认值依据: 80 条消息为常规长对话合理上限(14.9.6 K1)。
 # 可选范围: 越小越易触发, 越大越宽松; 建议 50~150。
-TRIGGER_MAX_MSGS = 80  # 窗口触发备用消息数阈值(大窗口模型下消息数兜底触发, [4] 14.9.6 K1)
+TRIGGER_MAX_MSGS = 80  # 窗口触发备用消息数阈值(大窗口模型下消息数兜底触发, 14.9.6 K1)
 
 # ---- 冷却(Cooldown) ——————————————————————————————
 # 意义: COOLDOWN_ROUNDS/压缩后冷却轮次, 防连续轮次反复压缩抖动(尤其 C4 每次 1 次 LLM 调用)。
-# 默认值依据: 2 轮冷却足以避开连续触发又不延迟过度([4] 14.9.6 K2)。
+# 默认值依据: 2 轮冷却足以避开连续触发又不延迟过度(14.9.6 K2)。
 # 可选范围: 0=每次评估不冷却, 越大越保守(降 LLM 成本但压缩滞后); 建议 1~5。
-COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 尤其 C4 每次 1 次 LLM 调用, [4] 14.9.6 K2)
+COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 尤其 C4 每次 1 次 LLM 调用, 14.9.6 K2)
 
 # ---- 保尾切分(Split-Turn) ————————————————————————
 # 意义: TAIL_TOKEN_RATIO/保尾窗口占可用预算比例; TAIL_TOKEN_MIN/MAX/保尾预算上下限夹取;
@@ -109,10 +189,25 @@ COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 
 TAIL_TOKEN_RATIO = 0.25      # 保尾窗口占可用预算比例(14.3.2 preserveRecentBudget 用 usable*0.25)
 TAIL_TOKEN_MIN = 2000        # 保尾预算下限(14.3.2 select: max(2000, usable*0.25))
 TAIL_TOKEN_MAX = 8000        # 保尾预算上限(14.3.2 select: min(8000, ...))
-SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断([4] 14.9.2 splitTurn)
+SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断(14.9.2 splitTurn)
+# 2026-10-31 小欧 派生(北京老陈令, 禁裸字面量): 保首长度 = 上面这个 4000 的 1/8, 随上游门限等比缩放。
+# 用途: shrink_to_budget 第2级「远段长 tool 输出保首」+ 第3级「旧轮 tool_call 参数保首」(同一把尺)。
+# 定档依据: 真实 prompt 日志 3 次 ~41 万 tok 调用(远段 106 条 tool, 均值 7140 字)实测——保首 1/8 后远段留
+#   26,139 tok(占裁剪目标 190,929 的 13.7%), 第2级落在约 3 万 tok, 不触发第4/5级「丢整轮」; 1/16 仅 3.6%
+#   (只够一行, 摘要 LLM 看不出这是什么); 1/4 与 1/2 分别占 25.4%/45.7%, 1/2 更等于 SUMMARY_FEED_MAX_CHARS
+#   (摘要 feed 上限) → 压了等于没压。— 小欧-2026-10-31
+TOOL_SUMMARY_HEAD_CHARS = SPLIT_TURN_MAX_ASSISTANT_CHARS // 8  # 超长 tool 输出/参数保首段长度(=4000/8=500)
+
+# ---- 语义替换(use_tool_summary 门槛) ————————————————————
+# 意义: USE_SUMMARY_MIN_CHARS/tool 消息参与"换一行语义摘要"的最小 content 长度门槛。
+# 默认值依据: 300字≈161tok(CHARS_PER_TOKEN=1.86, 2026-10-31 实测值)。低于此长度的观察信息密度高(文件清单/命中数/行数细节),
+#   换成一行模板摘要 token 收益趋零而信息全失(三堂会审实测: 40~80字搜索/读取观察被换成十余字状态行)。
+# 可选范围: 200~800(过低重现信息灭失, 过高使替换通道大面积空转)。
+USE_SUMMARY_MIN_CHARS = 300  # use_tool_summary 最小参与长度门槛(三堂会审修复, 北京老陈定案 2026-10-29)
 
 # ---- 装配线(Assembler) ————————————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：assembler 装配函数尚未接入主链路，暂无消费方，保留供后续接线，禁止删除；运行时保尾数以 tuning.compaction.keep_tail 配置为准）
 # 意义: ASSEMBLE_KEEP_TAIL/注入摘要后保留的尾部最新消息条数(防摘要顶掉最新 task)。
-# 默认值依据: 保最新 1 条 task 即可维持对话意图([4] 14.5/10.1.7⑤)。
+# 默认值依据: 保最新 1 条 task 即可维持对话意图(14.5/10.1.7⑤)。
 # 可选范围: 0=只留摘要不保尾; 建议 1~3。
 ASSEMBLE_KEEP_TAIL = 1  # 注入摘要后保留的尾部最新消息条数(默认保最新 task 一条)

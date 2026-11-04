@@ -121,7 +121,7 @@ export const findAdjacentDup = (text: string): string[] => {
   for (const line of text.split(/\r?\n/)) {
     // 编辑历史: 2026-09-13 小欧 - 跳过纯符号行(表格分隔线 |------|)、重复片段须含字母/汉字:
     //   取证run-on命中全为Markdown表格线(LLM天然输出), 非流式拼接特征 → 误报修复 - 小欧-2026-09-13
-    if (/^[\s|:=\-+*#_.~()\[\]{}'"`\\/]*$/.test(line)) continue;
+    if (/^[\s|:=\-+*#_.~()[\]{}'"`\\/]*$/.test(line)) continue;
     for (let k = 6; k <= 30; k += 3) {
       for (let i = 0; i + 2 * k <= line.length; i++) {
         const seg = line.slice(i, i + k);
@@ -179,16 +179,14 @@ export const writeDiagToFile = (
 };
 
 /** [DIAG] 无条件输出网络/重连/后端日志片段诊断（供失败归因，不参与断言）；
- *  编辑历史: 2026-09-13 小欧 - 传 caseId 时同步落盘 e2e_case/output/diag-<caseId>-<ts>.log（统一日志/产物规范） - 小欧-2026-09-13 */
+ *  编辑历史: 2026-09-13 小欧 - 传 caseId 时同步落盘 e2e_case/output/diag-<caseId>-<ts>.log（统一日志/产物规范） - 小欧-2026-09-13
+ *  编辑历史: 2026-10-22 小沈 - 签名改为接收 DiagBundle 对象, 消除位置参数逐字段提取的冗余调用 - 小沈-2026-10-22 */
 export const printDiag = (
-  streamReqs: string[],
-  reconnectLogs: string[],
-  sseErrors: string[],
-  consoleAll: string[],
-  tail: string,
-  allFailed: string[] = [], // 2026-09-13 小欧: 全URL请求失败(定位reload前额外REFUSED) - 小欧-2026-09-13
+  diag: DiagBundle,
+  tail: string = '',
   caseId?: string
 ): void => {
+  const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } = diag;
   const lines: string[] = [];
   const emit = (l: string): void => {
     console.log(l);

@@ -12,16 +12,16 @@
 # 2026-07-18 小沈 修复: _ParamSafeConnection.execute 显式传 None 触发 sqlite3.ProgrammingError(parameters are of unsupported type), 致后端启动失败(init_chat_db 的 CREATE INDEX/ALTER TABLE 均走包装且 params=None); 改为 params is None 时调 self._conn.execute(sql) 不传 None, 冗余最小、单一闸门复用(SRP/KISS)。
 # 2026-07-18 小欧 修复回归: _SAFE_PARAM_TYPES 增加 datetime/date/time; sqlite3原生支持此三类参数(内置适配器转ISO串), 原仅允许基元类型致 task_db.complete_task(datetime.now())被误拦(日志报"DB参数类型不被支持: datetime"), 属本次闸门引入的回归。
 # 2026-07-18 - 小欧 - _validate 改 datetime/date→convert_to_utc() 自动归一化 UTC Z; _SAFE_PARAM_TYPES 移除 datetime/date 不依赖 sqlite3 废弃适配器
-# 2026-07-23 - 小欧 - #14 fix: busy_timeout 30000→500ms + get_conn_with_retry指数退避(max_retries=3: 0.5/1/2s)
+# 2026-07-23 - 小欧 - 修复: busy_timeout 30000→500ms + get_conn_with_retry指数退避(max_retries=3: 0.5/1/2s)
 #   【病根】busy_timeout=30000 + 无重试: 写竞争时sqlite内部先等30s才抛异常, 再retry等于31.5s比不修更差
 #   【改法】①busy_timeout=500(快速失败,不空等30s)②get_conn_with_retry: 仅对OperationalError+"locked"指数退避(0.5/1/2s),time.sleep总阻塞仅3.5s不拖事件循环; IntegrityError直抛不重试(YAGNI)
 #   【合规】SRP+KISS-DIRECT+YAGNI
-# 2026-08-07 - 小欧 - BUG-03/04修复: 重试下沉至get_conn统一入口(连接获取a段+commit b段, 单yield无re-yield)
-#   【病根】①BUG-03: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②BUG-04: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
+# 2026-08-07 - 小欧 - 修复: 重试下沉至get_conn统一入口(连接获取a段+commit b段, 单yield无re-yield)
+#   【病根】①原实现: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②原实现: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
 # 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
-# 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
+# 2026-08-21 - 小欧 - 差异设计落地: ①删observer条目+删init_observer方法(零调用方); ②_db_paths加timers条目(timers.db独立库); ③import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
 # 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
 """DB SDK - 统一数据库操作接口
 
@@ -45,20 +45,45 @@
 Author: 小沈 - 2026-05-28
 小欧 2026-06-18 SRP拆分: 初始化→db_initializer
 小健 2026-06-18 删除向后兼容迁移代码(db_migrator.py)
+# 2026-09-29 20:42:06 小欧 - atxn 增 retry_locked(默认0=旧调用逐字不变): 补 body 执行期 locked 有限重试(退避0.5/1/2s),
+#   仅捕 sqlite3.OperationalError 且含 "locked", 非锁错误/耗尽一律原样抛出 — 根治并发起跑事务体撞写锁 — 小欧-2026-09-29
+# 2026-10-06 - 小欧 - ①: get_conn 增就绪自证(判据表缺失即就地幂等建表, 复用当前连接避免递归, 失败仅告警不阻断)
+# 2026-10-30 - 小欧 - atxn 改投 _DB_TXN_POOL(4 worker, db-txn) 并 copy_context,
+#   与同步工具(loop 默认池)隔离; run_in_executor 不复制 context, 不显式 copy 会丢 session_id 与目录白名单判据
 """
 
 import asyncio
+import contextvars
+import functools
+from concurrent.futures import ThreadPoolExecutor
+import os
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, date, timezone
-from typing import Iterator
+from typing import Any, Dict, Iterator
 from app.logger import logger
 from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db, init_timers_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
 )
 from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
+
+# db_name → 建表函数(① 资源层自证就绪用; 与 _DB_READY_TABLE 同键) — 小欧 2026-10-06
+_INIT_BY_DB = {
+    "chat": init_chat_db,
+    "operations": init_operations_db,
+    "timers": init_timers_db,
+    "task_tracker": init_task_tracker_db,
+    "monitoring": init_monitoring_db,
+}
+
+
+# 2026-10-30 小欧 - DB 事务专用线程池
+#   为什么: atxn 原走 asyncio.to_thread → loop 默认池, 与同步工具(bash/grep/树扫描/文件读写)共用。
+#   长工具占满池时落库排队, 延迟反压到 SSE 与 REST。DB 写本就被 SQLite 文件锁串行化,
+#   池开大只空转, 故单独给 4 个 worker(够并发起跑的多会话排队, 又不与工具抢池)。
+_DB_TXN_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db-txn")
 
 
 class _ParamSafeConnection:
@@ -111,20 +136,49 @@ class _ParamSafeConnection:
         return getattr(self._conn, name)
 
 
+_DB_FILES = {
+    "chat": "chat_history.db",
+    "operations": "operations.db",
+    "timers": "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
+    "task_tracker": "task_tracker.db",
+    "monitoring": "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
+}
+
+# 各库就绪判据表(①): 与 _DB_FILES 一一对应, get_conn 见缺即就地幂等建表 — 小欧 2026-10-06
+_DB_READY_TABLE = {
+    "chat": "chat_sessions",
+    "operations": "file_operations",
+    "timers": "timers",
+    "task_tracker": "tasks",
+    "monitoring": "http_requests",
+}
+
+
+def resolve_db_dir() -> Path:
+    """数据目录唯一解析点: OMNIAGENT_DATA_DIR 优先, 否则 ~/.omniagent — 小欧 2026-09-30
+
+    病根: 路径原在 __init__ 硬编码 Path.home()/".omniagent" 且 db=DatabaseManager() 在导入期构造,
+      路径被冻结; 而 conftest 的 isolated_config_dir 只重定向配置文件(OMNIAGENT_CONFIG_PATH),
+      管不到数据库 → 任何裸用 db.get_conn() 的测试都写真库(实测污染真库: 空会话/hello/v2 等)。
+    改法: 与系统已有的 OMNIAGENT_CONFIG_PATH 对称, 增加 OMNIAGENT_DATA_DIR 开关, 且**在 get_conn
+      内惰性解析**(不在 __init__ 冻结) —— 惰性是必须的: db 单例在模块导入期即构造, 若在 __init__ 读 env
+      便受导入顺序影响, conftest 来不及设。改后测试只需设 env 即"够不到"真库(AGENTS.md 铁律:
+      根治靠"够不到"而非"事后还原"), 无需逐个测试 patch, 也不会漏掉将来新增的测试。
+    """
+    env = (os.getenv("OMNIAGENT_DATA_DIR") or "").strip()
+    return Path(env) if env else Path.home() / ".omniagent"
+
+
 class DatabaseManager:
     """统一数据库管理器(SDK核心) — 仅负责连接管理"""
-    
+
     def __init__(self):
         """初始化数据库管理器"""
-        self._db_dir = Path.home() / ".omniagent"
-        self._db_paths = {
-            "chat": self._db_dir / "chat_history.db",
-            "operations": self._db_dir / "operations.db",
-            "timers": self._db_dir / "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
-            "task_tracker": self._db_dir / "task_tracker.db",
-            "monitoring": self._db_dir / "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
-        }
-        self._db_dir.mkdir(parents=True, exist_ok=True)
+        d = resolve_db_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        # 测试注入用覆盖口: {"chat": 任意路径} 优先于 _DB_FILES 解析, 并可注册 _DB_FILES 之外的
+        # 库名(纯单测需要, 如 test_db_atxn 用 "test")。生产路径不读它, 故不构成第二套解析逻辑 — 小欧 2026-09-30
+        self._db_overrides: Dict[str, Any] = {}
 
     @contextmanager
     def get_conn(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:
@@ -142,19 +196,22 @@ class DatabaseManager:
         
         支持的db_name: chat, operations, observer, task_tracker
         
-        BUG-04修复(小欧 2026-08-07): 原get_conn_with_retry为@contextmanager且在except块内re-yield,
+        修复(小欧 2026-08-07): 原get_conn_with_retry为@contextmanager且在except块内re-yield,
             @contextmanager协议禁止二次yield → 抛出"generator didn't stop after throw()"(日志09:11:16).
             重构: 重试点只在【连接获取】与【commit】两处(均为单yield/无re-yield), 保证generator清洁退出.
-            BUG-03(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
+            修复(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
         """
         import time as _time
-        if db_name not in self._db_paths:
+        _override = self._db_overrides.get(db_name)
+        if _override is None and db_name not in _DB_FILES:
             raise ValueError(
                 f"Unknown database: {db_name}. "
-                f"Supported: {list(self._db_paths.keys())}"
+                f"Supported: {list(_DB_FILES.keys())}"
             )
 
-        db_path = self._db_paths[db_name]
+        # 惰性解析(见 resolve_db_dir docstring) — 小欧 2026-09-30
+        db_path = Path(_override) if _override else resolve_db_dir() / _DB_FILES[db_name]
+        db_path.parent.mkdir(parents=True, exist_ok=True)   # env 指向的临时目录可能尚不存在
         conn = None
 
         # (a) 连接获取: 对 connected前的 lock 指数退避重试(单次连接, 无re-yield) — 小欧 2026-08-07
@@ -170,7 +227,7 @@ class DatabaseManager:
                 #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
-                # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
+                # 外键约束: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
                 conn.execute("PRAGMA foreign_keys=ON")
                 break  # 连接成功
             except sqlite3.OperationalError as _lock_e:
@@ -189,10 +246,29 @@ class DatabaseManager:
                 logger.warning(f"[db] {db_name} 连接locked, 第{attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
                 _time.sleep(delay)
 
+        # ① 资源层自证就绪: 判据表缺失即就地幂等建表(健康探测实测空目录只建出4KB空壳库,
+        #   全部写入报 no such table; 建表原先只挂在 app 启动 db.init(), 任何不经 lifespan 的
+        #   上下文——单测/裸脚本/worker——都拿到空库)。init_* 复用 db_initializer 既幂等实现。
+        #   复用当前连接执行(不走 get_conn 避免递归), 失败仅告警不阻断: 调用方的真实操作
+        #   自会暴露问题, 此处绝不把"建表失败"变成新的失败源 — 小欧 2026-10-06
+        _ready = _DB_READY_TABLE.get(db_name)
+        if _ready and conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_ready,)
+        ).fetchone() is None:
+            try:
+                @contextmanager
+                def _reuse(_db_name=None):
+                    yield _ParamSafeConnection(conn)
+                    conn.commit()
+                _INIT_BY_DB.get(db_name)(_reuse)
+                logger.info(f"[db] {db_name} 缺判据表 {_ready}, 已就地初始化 schema")
+            except Exception as _init_e:
+                logger.warning(f"[db] {db_name} 就地初始化 schema 失败(不阻断): {_init_e}")
+
         try:
             yield _ParamSafeConnection(conn)  # 小欧 2026-07-18: 参数安全闸门包装, 校验SQL参数类型(非基元类型抛清晰错误)
 
-            # (b) 提交: 对lock指数退避重试(无re-yield, 省去外层re-yield的Bug4) — 小欧 2026-08-07
+            # (b) 提交: 对lock指数退避重试(无re-yield, 省去外层re-yield的隐患) — 小欧 2026-08-07
             for commit_attempt in range(max_retries + 1):
                 try:
                     conn.commit()
@@ -244,7 +320,7 @@ class DatabaseManager:
             with db.get_conn_with_retry("chat") as conn:
                 conn.execute("INSERT INTO ...")
 
-        小欧 2026-08-07 BUG-04修复: 原实现于except内re-yield, 违反@contextmanager协议 →
+        小欧 2026-08-07 修复: 原实现于except内re-yield, 违反@contextmanager协议 →
             "generator didn't stop after throw()" (日志09:11:16 operation_record.py:156/214).
             本方法现为get_conn薄包装(仅透传, 单次yield, 无re-yield), 重试逻辑已下沉至get_conn:
               - 连接获取期: get_conn(a)段
@@ -254,7 +330,7 @@ class DatabaseManager:
         with self.get_conn(db_name, max_retries=max_retries) as conn:
             yield conn
 
-    async def atxn(self, db_name: str, fn, *args, **kwargs):
+    async def atxn(self, db_name: str, fn, *args, retry_locked: int = 0, **kwargs):
         """异步事务壳(后端卡死修复 小欧 2026-08-24): 在子线程内执行 `with get_conn(db_name) as conn: return fn(conn, *args, **kwargs)`
 
         为什么需要它:
@@ -265,8 +341,37 @@ class DatabaseManager:
             - 整段 `with get_conn` 进 to_thread 子线程, 连接创建/使用/关闭同线程 → 零跨线程(规避 sqlite3.ProgrammingError);
             - storage.* / get_conn / 参数闸门 / 锁重试 全部复用, 零改动(DRY/KISS-DIRECT);
             - 多任务写经线程池并发 + SQLite 文件锁串行化, loop 永不被占(满足"多任务写DB可排队"诉求)。
+
+        retry_locked(小欧 2026-09-29): body 执行期 "database is locked" 的有限重试次数, 默认 0。
+            为什么需要: get_conn 只覆盖连接获取期/提交期(b段)两处锁, body 内 execute 阶段撞锁直接抛出
+              (get_conn(b)注释已明载); 并发多会话起跑时事务体撞写锁是实证高频(PAR-05 19:49 四记 locked)。
+            默认 0 = 现有 29 个调用点行为逐字不变(禁止backward/LSP: 唯一契约是"不传即零重试");
+              仅由已证实暴露的并发热写路径显式开启, 杜绝全局行为扩大(YAGNI)。
+            退避 0.5/1/2s 与 get_conn L188/L206 同一节奏(DRY), 但 sleep 在 async 层,
+              不占 to_thread 子线程, 避免与 get_conn 内部 time.sleep 叠加放大等待(KISS-DIRECT)。
+            仅捕获 sqlite3.OperationalError 且错误串含 "locked": 非锁 SQL 错误/重试耗尽一律原样抛出,
+              杜绝掩盖真实故障(对齐 get_conn "为何不对 IntegrityError 重试" 的既判据)。
         """
-        return await asyncio.to_thread(self._run_txn, db_name, fn, *args, **kwargs)
+        _delay = 0.5
+        for _attempt in range(retry_locked + 1):
+            try:
+                # 2026-10-30 小欧 - 改投专用池, 不再与工具共享 loop 默认池
+                # 必须 copy_context: asyncio.to_thread 会复制 context, run_in_executor 不会。
+                #   丢了 context 则事务体内日志失去 session_id, 且 path_dir_lists 的
+                #   _current_directory_lists ContextVar 变空 → 目录白名单判据失效(fail-closed 抛错)。
+                _loop = asyncio.get_running_loop()
+                _ctx = contextvars.copy_context()
+                return await _loop.run_in_executor(
+                    _DB_TXN_POOL,
+                    functools.partial(_ctx.run, self._run_txn, db_name, fn, *args, **kwargs),
+                )
+            except sqlite3.OperationalError as _lock_e:
+                if "locked" not in str(_lock_e) or _attempt >= retry_locked:
+                    raise
+                logger.warning(
+                    f"[db] {db_name} 事务体执行撞锁, 第{_attempt + 1}/{retry_locked}次重试, 等待{_delay:.1f}s: {_lock_e}")
+                await asyncio.sleep(_delay)
+                _delay *= 2
 
     def _run_txn(self, db_name, fn, *args, **kwargs):
         """atxn 的子线程执行体: 在单线程内开连接→执行业务→提交/回滚/关闭 — 小欧 2026-08-24"""

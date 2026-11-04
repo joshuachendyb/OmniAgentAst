@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 window_info — 列出所有窗口
 【2026-06-22 小健】从 desktop_tools.py 拆分为独立文件
@@ -11,6 +12,7 @@ window_info — 列出所有窗口
 # 2026-07-30 - 小欧 - #14:删除check_win32_platform()重复日志,只保留模块加载时一次
 # 2026-07-30 - 小欧 - hint区分非Windows平台vs缺pywin32库
 # 2026-08-05 - 小欧 - 三堂会审修复#3: find_windows_by_title 加 IsWindowVisible 过滤, 与 window_focus/window_resize 枚举口径统一, 避免 set_window_state 操作隐藏窗口
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取→取窗口信息
 import platform
 import time as _time_mod
 from typing import Any, Dict, List, Optional
@@ -127,15 +129,15 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
     _target = filter_title or "全部"
     if exec_code == "error":
         return {
-            "summary": f"获取窗口{_target}信息失败" + (f": {detail}" if detail else ""),
-            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+            "summary": f"取窗口信息{_target}，失败" + (f"：{detail}" if detail else ""),
+            "action": {"tool": "window_info", "tool_zh": "取窗口信息", "params": _act_params},
             "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"获取窗口{_target}信息成功: 共{window_count}个窗口",
-        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"取窗口信息{_target}，成功：共{window_count}个窗口",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(取窗口信息) — 小欧-2026-10-14
+        "action": {"tool": "window_info", "tool_zh": "取窗口信息", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{window_count}个窗口", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
     }

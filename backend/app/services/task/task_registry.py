@@ -1,6 +1,46 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 注释说明 TASK_TIMEOUT 兜底清理意义(防 running_tasks 内存注册表泄漏); 老陈裁定改为按终态+超时清理: 仅清非活跃(running/paused 外)且超1h任务, 避免误伤长任务/暂停任务
+# 2026-09-20 - 小欧 - B组修复(并发守卫 + 收尾窗口 orphan 兜底): ①register_task 锁内同会话活跃任务互斥守卫(TOCTOU根治, 同会话任务必须串行, 违反即抛RuntimeError);
+#   ②cleanup_task 删任务前把未吸收的 inbox 消息转入模块级 _orphaned_inbox(task_id→list), drain_inbox 任务已删时从 orphan 找回——收尾窗口注入不静默丢失。
+#   compliance: SRP/KISS-DIRECT/DRY(复用inbox队列)/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审修复: cleanup_expired_tasks过期清理前补orphan转移(与cleanup_task对齐, 防收尾窗口静默丢失)
+# 2026-09-20 - 小欧 - 提交前审查缺口补(3项): ①串行守卫命中加专属log(编排泛化error看不清TOCTOU根因);
+#   ②drain_inbox orphan找回路径加warning log(兜底命中可查); ③_orphaned_inbox加_ORPHAN_MAX_ITEMS=100上限
+#   与_trim_orphaned_inbox(终态任务无drain_inbox消费, 无上限即永久滞留内存), cleanup/过期两处转移后接入。
+#   compliance: KISS-DIRECT(上限防滞留即可, 不做TTL定时器)/禁止backward
+# 2026-09-20 - 小欧 - 串行守卫改方案②(北京老陈定案, 弃抛异常): register_task 守卫命中由 raise RuntimeError 改为
+#   返回占位活跃task_id(str), 注册成功返回 None —— 调用方(编排层)拿返回值改道注入占位任务, 竞态下消息不丢;
+#   签名 None → Optional[str]。compliance: 与"注入不静默丢失"红线同哲学(KISS-DIRECT)
+# 2026-09-22 小欧 - constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
+# 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：任务保留时长读取键路径同步，
+#   清理逻辑/默认值 1 小时零改动 — 小欧-2026-09-24
+# 2026-09-25 小欧 - ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI 消亡), 任务只登记标识与状态
+# 2026-09-25 小欧 - v1.11 类型标注补齐(AGENTS 要求 type hints): _drain_inbox(q) 补 q: asyncio.Queue
+# 2026-09-25 小欧 - v1.12 DRY 归一: 抽出 _drain_inbox(q) 供 drain_inbox / cleanup_task /
+#   cleanup_expired_tasks 三处共用(原三份逐字拷贝, 竞态兜底写法易漂移成不一致); 排空统一用
+#   except asyncio.QueueEmpty 兜底 break, 不用 while q.empty() 单一判据(empty() 与 get_nowait() 之间可能已被取空) — 小欧 2026-09-25); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
+# 2026-09-28 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.1): ①inbox 改投(内容, user_message_id)二元组,
+#   uid 随消息同行, agent 侧不再重落库取 id(根治重复落库); ②_orphaned_inbox 值类型同步元组(收尾窗口不丢 uid);
+#   ③Queue(maxsize=INBOX_MAX) 队列上限 + QueueFull 捕获(满则 return False 走编排降级, 防异常上抛);
+#   ④uid<=0 拒注入(5.6 uid 缺失防御)。
+#   compliance: SRP/KISS-DIRECT/DRY/禁止backward(删 str 兼容分支)
+# 2026-09-28 21:29 小欧 10轮会审 D-03 **撤销**前一版 F10(同 task_id 重复注册 return None 的守卫):
+#   ①YAGNI — task_id 由 generate_task_id()=uuid4().hex 生成, 重复分支不可达;
+#   ②语义二义 — register_task 返回 Optional[str] 中 None=注册成功, 该守卫返 None 会被编排
+#      (stream_orchestrator `if _reg_res:` 假值分支) 误判为"注册成功" → 同一 task_id 启动第二个
+#      agent 共享旧 inbox/pause_event/状态, 比修复前的"覆盖丢消息"失败模式更坏。
+#   故删除守卫恢复原行为, 不留半吊子防御(禁止 backward / KISS-DIRECT)。 — 小欧-2026-09-28
+# 2026-10-30 小欧 - 新增 set_agent_task: 登记 agent 协程句柄(编排层 create_task 创建, 与 SSE 请求任务不同一个),
+#   供 cancel_task 直接 cancel 该协程 —— flag+关连接打不断"响应头未到"(TTFB)的等待, 只有任务取消能在任意
+#   await 点立即生效。只登记句柄, 生命周期/强引用仍归编排层(_agent_tasks)。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 新增 claim_agent_task_for_cancel: 原子"首次领取取消权"(锁内判 agent_cancel_claimed
+#   并置位), 首次返回 agent 协程句柄, 其后恒 None —— 堵 cancel_task 重复调用时二次 cancel 打断
+#   agent_runner finally 收尾(final_stats 丢失 / done 不置位 / SSE 等约 60s)。判据刻意不用
+#   task["cancelled"](它可能在协程登记前已置位, 会误丢唯一一次打断机会)。 — 小欧-2026-10-30
+# 2026-11-03 小欧 - uid 非法拒绝注入 WARNING→DEBUG(调用方参数非法) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删 8 个零使用的 task_state 再导出 + 未用 TASK_TIMEOUT(死导入);
+#   门面/调用方改直连 task_state 真源 — 小欧-2026-11-04
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -13,52 +53,160 @@ Author: 小健 - 2026-05-31
 
 import asyncio
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需; 2026-09-28 inbox 元组化加 Tuple — 小欧-2026-09-28
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
-from app.constants import TASK_TIMEOUT
+from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
+from app.config import get_config
+from datetime import timedelta
 from app.utils.response_utils import api_success, api_failure
 
 from app.services.task.task_state import (
-    check_cancelled,
-    check_paused,
-    check_was_paused,
-    get_task_status,
-    is_task_running,
-    get_cancel_request_time,
-    get_pause_event,
-    get_task_field,
     running_tasks_lock,
     running_tasks,
 )
 
 
+# B组调制(2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
+# drain_inbox 找不到任务时从 orphan 找回, 保证收尾窗口注入不静默丢失 — SRP: 孤儿缓存独立于 running_tasks 生命周期
+# 2026-09-28 小欧: 值类型同步元组(内容, uid) — orphan 路径不改则收尾窗口注入的 uid 丢失, 重演同一根因(设计文档[76] 6.1②)
+_orphaned_inbox: Dict[str, List[Tuple[str, int]]] = {}
+
+# 缺口补(2026-09-20 小欧): orphan 上限, 超出丢弃最旧 —— 终态任务不会再有 drain_inbox 消费, 无上限即永久滞留。
+# 受控: 上限100条(dict保持插入序, next(iter)即最旧), KISS不做TTL定时器(该场景值小, 定时器过度设计)
+_ORPHAN_MAX_ITEMS = 100
+
+
+def _trim_orphaned_inbox() -> None:
+    """孤儿缓存超上限丢弃最旧条目 — 2026-09-20 小欧(缺口补)"""
+    while len(_orphaned_inbox) > _ORPHAN_MAX_ITEMS:
+        _old_tid = next(iter(_orphaned_inbox))
+        _dropped = _orphaned_inbox.pop(_old_tid, None)
+        logger.warning(
+            f"[TaskRegistry] orphan缓存超限({_ORPHAN_MAX_ITEMS}), 丢弃最旧任务 {_old_tid} "
+            f"未吸收注入消息 {len(_dropped) if _dropped else 0} 条")
+
 # ============================================================
 # 注册 / 清理
 # ============================================================
 
-async def register_task(task_id: str, ai_service: Any) -> None:
-    """注册任务到 running_tasks"""
+async def register_task(task_id: str, session_id: Optional[str] = None) -> Optional[str]:  # 删 ai_service 参数 — 小欧-2026-09-25
+    """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20
+    B-3 守卫(2026-09-20 小欧, 北京老陈定案方案②): 锁内检查同 session 已有活跃任务(running/paused), 存在即
+    **返回该活跃任务 task_id** 而非抛异常 —— 根治编排层 has_active_task_in_session 与 register_task 分离 await
+    的 TOCTOU(两会话并发双请求可注册双任务), 且不丢消息: 调用方(编排层)拿返回值改道注入占位任务, 消息保住。
+    返回 None=注册成功(本任务已入表); 返回 str=同会话已占位(本任务未入表)。同会话任务必须串行(北京老陈铁则)。"""
     async with running_tasks_lock:
+        if session_id:
+            for _tid, _t in running_tasks.items():
+                if (_tid != task_id
+                        and _t.get("session_id") == session_id
+                        and _t.get("status") in ("running", "paused")):
+                    # 方案②(2026-09-20 小欧): 返回占位tid, 由调用方改道注入(不丢消息), 不再抛异常
+                    logger.warning(
+                        f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
+                        f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
+                    return _tid
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,
             "paused": False,
+            "session_id": session_id,          # X5/X6 同会话判定
+            "_inbox": asyncio.Queue(maxsize=INBOX_MAX),  # B机制: 运行中注入消息队列, agent 侧每轮 LLM 调用前合并吸收; 2026-09-28 小欧 加上限防无界堆积(设计文档[76] 6.1③)
             "created_at": datetime.now(),
-            "ai_service": ai_service,
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
         }
         running_tasks[task_id]["_pause_event"].set()
 
 
+async def has_active_task_in_session(session_id: str) -> Optional[str]:
+    """X5/B: 该会话是否已有活跃任务(running/paused)。返回活跃 task_id(供注入); 无则 None。 — 小欧 2026-09-20"""
+    if not session_id:
+        return None
+    async with running_tasks_lock:
+        for _tid, _t in running_tasks.items():
+            if _t.get("session_id") == session_id and _t.get("status") in ("running", "paused"):
+                return _tid
+    return None
+
+
+async def inject_message_to_task(task_id: str, content: str, user_message_id: int) -> bool:
+    """B机制: 向运行中任务 inbox 投递一条新用户消息(不打断工具执行, 由 agent 下一轮 LLM 调用前合并吸收)。
+    返回 True=已投递; False=任务不存在/已终态/队列已满/uid非法(均由编排降级为新任务)。
+    2026-09-28 小欧(设计文档[76] 6.1): 改投(内容, uid)二元组, agent 侧直接取真实 uid 不再重落库;
+    uid<=0 拒注入(防御, 绝不重落库); QueueFull 捕获 — maxsize 后满队列 put_nowait 抛异常上抛会使降级失效。"""
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        if not _t or _t.get("status") not in ("running", "paused"):
+            return False
+        _q = _t.get("_inbox")
+        if _q is None:
+            return False
+        if (user_message_id or 0) <= 0:   # None/0/负 均拒(防 None 传入 TypeError, 兜底编排降级)
+            logger.debug(f"[TaskRegistry] uid={user_message_id} 非法, 拒绝注入(task={task_id})")  # 2026-11-03 小欧: 参数非法, 降 DEBUG
+            return False
+        try:
+            _q.put_nowait((content, user_message_id))
+        except asyncio.QueueFull:
+            logger.warning(
+                f"[TaskRegistry] 任务 {task_id} inbox 已满({INBOX_MAX}), 拒绝注入(编排降级新任务)")
+            return False
+    return True
+
+
+async def drain_inbox(task_id: str) -> List[Tuple[str, int]]:
+    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回 [(内容, uid)] 列表(可为空)。
+    B-4/B-7 兜底(2026-09-20 小欧): 任务已被 cleanup 删除(收尾窗口)时, 从 _orphaned_inbox 找回未吸收注入消息,
+    保证注入成功即不静默丢失(编排可据此降级/续聊)。
+    2026-09-28 小欧: 返回契约改元组(设计文档[76] 6.1⑤), uid 随消息同行。 — 小欧 2026-09-20"""
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        if not _t:
+            # 缺口补(2026-09-20 小欧): orphan 找回路径必须可查(收尾窗口兜底命中 = 注入后任务已终态)
+            _orphan = _orphaned_inbox.pop(task_id, [])
+            if _orphan:
+                logger.warning(
+                    f"[B-4/B-7] 任务 {task_id} 已从running_tasks删除, 从orphan找回未吸收注入消息 {len(_orphan)} 条")
+            return list(_orphan)
+        _q = _t.get("_inbox")
+        if _q is None:
+            return []
+        _msgs = _drain_inbox(_q)
+    return _msgs
+
+
+def _drain_inbox(q: asyncio.Queue) -> list:
+    """排空 inbox 队列 — 唯一权威(DRY 归一: drain_inbox / cleanup_task / cleanup_expired_tasks 三处共用) — 小欧 2026-09-25
+    竞态说明: 不用 while q.empty() 单一判据收尾——empty() 与 get_nowait() 之间可能已被其他协程取空,
+    必须 except asyncio.QueueEmpty 兜底 break; 三份拷贝易漂移成不一致的竞态处理, 故归一"""
+    msgs = []
+    while not q.empty():
+        try:
+            msgs.append(q.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return msgs
+
+
 async def cleanup_task(task_id: str) -> bool:
-    """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)"""
+    """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)
+    B-4/B-7 兜底(2026-09-20 小欧): 删除任务前把未吸收的 inbox 消息转入 _orphaned_inbox,
+    收尾窗口注入不随队列销毁丢失(drain_inbox 可找回)。"""
     async with running_tasks_lock:
         if task_id not in running_tasks:
             return False
         if running_tasks[task_id].get("status") != "cancelled":
+            _q = running_tasks[task_id].get("_inbox")
+            if _q is not None:
+                _leftover = _drain_inbox(_q)
+                if _leftover:
+                    _orphaned_inbox[task_id] = _leftover
+                    _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存
+                    logger.warning(
+                        f"[TaskRegistry] 任务 {task_id} cleanup 时存在未吸收注入消息 {len(_leftover)} 条, "
+                        f"已转 orphan 供找回(防收尾窗口静默丢失)")
             del running_tasks[task_id]
             return True
         return False
@@ -77,13 +225,24 @@ async def cleanup_expired_tasks() -> None:
         注: 本字典 status 实际取值仅 running/cancelled/paused(status_table 的 completed/failed 是 agent 对象枚举, 不写此字典)。
     """
     now = datetime.now()
+    _task_timeout = timedelta(hours=get_config().get("tuning.live_front.task_timeout_hours", 1))  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     async with running_tasks_lock:
         expired = [
             tid for tid, t in running_tasks.items()
-            if t.get("created_at") and now - t["created_at"] > TASK_TIMEOUT
+            if t.get("created_at") and now - t["created_at"] > _task_timeout
             and t.get("status") not in ("running", "paused")
         ]
         for tid in expired:
+            # 修复(小欧 2026-09-20): 过期清理前把未吸收inbox消息转入orphan, 与cleanup_task对齐(防收尾窗口静默丢失)
+            _q = running_tasks[tid].get("_inbox")
+            if _q is not None:
+                _leftover = _drain_inbox(_q)
+                if _leftover:
+                    _orphaned_inbox[tid] = _leftover
+                    _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存
+                    logger.warning(
+                        f"[TaskRegistry] 过期任务 {tid} cleanup时存在未吸收注入消息 {len(_leftover)} 条, "
+                        f"已转orphan供找回")
             del running_tasks[tid]
         if expired:
             logger.info(f"[TaskRegistry] 清理了 {len(expired)} 个过期任务")
@@ -116,6 +275,34 @@ async def set_cancelled(task_id: str, **extra) -> bool:
         task["status"] = "cancelled"
         task.update(extra)
         return True
+
+
+async def set_agent_task(task_id: str, agent_task) -> None:
+    """登记 agent 协程句柄(创建于编排层, 与 SSE 请求任务不同一个) — 小欧 2026-10-30
+    用途: 取消时直接 cancel 该协程, 在任意 await 点立即生效; 仅登记, 不做生命周期管理(强引用由编排层持有)。"""
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
+        if task is not None:
+            task["agent_task"] = agent_task
+
+
+async def claim_agent_task_for_cancel(task_id: str):
+    """原子领取"取消 agent 协程"的权利: 首次返回句柄, 其后恒 None — 小欧 2026-10-30
+
+    用途: cancel_task 可能被重复调用(用户连点 / 前端异常路径复位后再次点击 / 取消期间删会话),
+    第二次 cancel() 会打断 agent_runner finally 内正在跑的收尾 —— _publish_final_stats 无 shield、
+    done.set() 在其后, 结果是终态统计丢失 + SSE 要等 journal 判死约 60s 才关。
+    幂等判据用"首次实际领取"(本函数置位并用掉一次), 不用 task["cancelled"]: 该标记可能在 agent
+    协程登记之前就被置位, 拿它当判据会丢掉唯一一次打断 in-flight await 的机会。"""
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
+        if task is None or task.get("agent_cancel_claimed"):
+            return None
+        agent_task = task.get("agent_task")
+        if agent_task is None or agent_task.done():
+            return None
+        task["agent_cancel_claimed"] = True
+        return agent_task
 
 
 async def set_paused(task_id: str) -> dict:

@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-12 小欧 - tool_zh改短名词: 列出目录→列文件
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 工具只执行。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 F5: list_directory — 列出目录内容
 
@@ -23,8 +27,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
 from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.logger import logger
 
 
@@ -158,9 +163,9 @@ def _build_list_directory_llm_data(
         _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"列出目录{dir_path}，失败",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
+            "summary": f"列文件{dir_path}，失败",
+            "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -172,24 +177,24 @@ def _build_list_directory_llm_data(
     }
     if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
-        warning_detail = detail if detail else f"目录扫描超时({_listdir_timeout_sec}秒), 仅返回部分结果(共{total}条)"
+        warning_detail = detail if detail else f"目录扫描超时（{_listdir_timeout_sec}秒），仅返回部分结果（共{total}条）"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
-            "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "summary": f"列文件{dir_path}，成功：{total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列文件), 去",提示说明" — 小欧-2026-10-14
+            "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
-    summary = f"列出目录{dir_path}，成功: {total}项，{file_count}个文件，{dir_count}个目录"
+    summary = f"列文件{dir_path}，成功：{total}项，{file_count}个文件，{dir_count}个目录"
     if user_offset:
         end_offset = min(user_offset + OBS_LISTDIR_MAX_ROWS, total)
         summary += f"，第{user_offset+1}-{end_offset}项"
     return {
         "summary": summary,
-        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功：{total}项，{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }
@@ -205,6 +210,12 @@ async def listdir(
     # 路径参数统一为path,桥接到内部变量dir_path — 小欧 2026-07-11
     dir_path = path
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(dir_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path, detail=err, user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        return build_error(data={}, llm_data=llm_data)
 
     if not dir_path or not dir_path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -213,26 +224,19 @@ async def listdir(
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path,         detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path,         detail=f"sort_by只支持'name'/'size'/'mtime'，当前值：'{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
     if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0，当前值：{offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
     path = Path(dir_path)
     start_offset = offset
 
     try:
-        # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-            return build_error(data={}, llm_data=llm_data)
-
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查, 工具只执行
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
             _scan_directory_sync, path, False, 0, include_hidden, deadline,
@@ -267,7 +271,7 @@ async def listdir(
         # =============================================================================
         # 数据设计：total/statistics 从 data 移除，
         # dir_count/file_count/total_size/file_types/size_distribution 移入 llm_data.metrics
-        # summary 示例: "列出目录成功: /path (47项, 42个文件, 5个目录)"
+        # summary 示例: "列文件/path，成功：47项，42个文件，5个目录"
         # — 小欧 2026-07-06
         # =============================================================================
         if exec_code == "warning":

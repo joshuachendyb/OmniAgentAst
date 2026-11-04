@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 delete_task — 删除Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -8,12 +9,13 @@ delete_task — 删除Windows计划任务
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 删除任务→删任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS, SUBPROCESS_TIMEOUT_DEFAULT
 from app.tools.tool_constants import (
@@ -30,16 +32,16 @@ def _build_delete_task_llm_data(exec_code: str, duration_ms: int, task_name: str
     """delete_task的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除计划任务{task_name}，失败",
-            "action": {"tool": "delete_task", "tool_zh": "删除任务", "target": task_name, "params": {"task_name": task_name}},
-            "status": {"exec_code": "error", "message": "删除计划任务失败", "code": err_code or ERR_TASK_DELETE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
+            "summary": f"删任务{task_name}，失败",
+            "action": {"tool": "delete_task", "tool_zh": "删任务", "params": {"task_name": task_name}},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_TASK_DELETE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除计划任务{task_name}，成功",
-        "action": {"tool": "delete_task", "tool_zh": "删除任务", "target": task_name, "params": {"task_name": task_name}},
-        "status": {"exec_code": "success", "message": "删除计划任务成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"删任务{task_name}，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(删任务) — 小欧-2026-10-14
+        "action": {"tool": "delete_task", "tool_zh": "删任务", "params": {"task_name": task_name}},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -55,7 +57,7 @@ def delete_task(task_name: str) -> dict:
             return build_error(data={}, llm_data=llm_data)
 
         query_cmd = ["schtasks", "/query", "/tn", task_name]
-        query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
+        query_result = proc_run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
 
         if query_result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -63,7 +65,7 @@ def delete_task(task_name: str) -> dict:
             return build_error(data={}, llm_data=llm_data)
 
         cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -85,17 +87,17 @@ def delete_task(task_name: str) -> dict:
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="", hint="")
-        llm_data["summary"] = f"删除计划任务{task_name}，失败: 超时({timeout_sec}秒)"
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="", hint="命令执行超时，可重试")  # 2026-10-14 小欧 - hint 补空(内部超时, 用户无参可调) — 小欧-2026-10-14
+        llm_data["summary"] = f"删任务{task_name}，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND, detail="schtasks命令不存在", hint="schtasks命令不存在")
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND, detail="schtasks命令不存在", hint="请确认系统支持schtasks命令")  # 2026-10-14 小欧 - hint 修复述(detail 原样复读), 与 list_tasks 同说法 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[delete_task] 删除计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, str(e), hint="删除任务异常,请检查系统状态")
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, str(e), hint="删除任务异常，请检查任务是否存在及计划服务状态")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么, 点名存在性+服务 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

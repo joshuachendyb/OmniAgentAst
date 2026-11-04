@@ -4,6 +4,13 @@
 #   两分离字段归一为 model_ref: Optional[ModelRef]; _resolve_provider_model 返回 (ModelRef|None, errors);
 #   各 make_*_result 工厂与 validate_config 主流程形参同步改透传 model_ref(日志文本内取 .provider/.model
 #   拼展示串属派生, 允许) — F8 无兼容 shim, 调用点随改
+# 2026-09-26 - 小欧 - api_key 空判定收口公用函数 is_blank_secret()，消除与 model/resolver.py 的重复写法 — 小欧 2026-09-26
+# 2026-09-26 (三堂会审后修正·二) - 小欧 - 删残留的外层 `if not api_key:`：它是 is_blank_secret 的真子集，
+#   同一判定写两遍（DRY），且两套文案同指"没有可用 api_key"。详见 validate_credentials 内注释。
+# 2026-09-27 - 小欧 - 订正空 api_base 警示文案（原文"将使用默认值"撒谎：已删 client_sdk
+#   兜底，空 URL 调用即 400）。改为如实告知"调用时会报错，请到设置页填写完整地址" — 小欧 2026-09-27
+# 2026-10-31 - 小欧 - 空 api_key 由 error 降为 warning：留空即"不带 Authorization 头"，
+#   本机 Ollama/vLLM 等无鉴权端点应当能这样配，硬拦等于"系统不支持空 api_key" — 小欧-2026-10-31
 """
 validation — 配置验证
 
@@ -18,6 +25,8 @@ import os
 
 from app.config import get_config_path
 from app.db.models.chat_models import ModelRef
+# 2026-09-26 小欧 - 密钥空白判定收口到公用函数(DRY)
+from app.utils.secret_utils import is_blank_secret
 
 
 @dataclass
@@ -47,13 +56,26 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
     warnings = []
     selected_provider_config = ai_config.get(final_provider, {})
     api_key = selected_provider_config.get("api_key")
-    if not api_key:
-        errors.append(f"provider '{final_provider}' 缺少 api_key 配置")
-    elif not isinstance(api_key, str) or api_key.strip() == "":
-        errors.append(f"provider '{final_provider}' 的 api_key 为空")
+    # 2026-09-26 - 小欧 - 判空收口 is_blank_secret（缺失/空串/纯空白/类型非法统一为"未配置"），
+    #   文案带出实际类型与值，便于定位 YAML 手误。详见文件头「三堂会审后修正·二」
+    # 2026-10-31 - 小欧 - 空 key 由 error 降为 warning: api_key 留空就是"不带鉴权头",
+    #   本机 Ollama / vLLM 等无鉴权端点应当能这么配, 硬拦等于"系统不支持空 api_key"。
+    #   降级不等于不提示 —— 仍明确告知"不会携带 Authorization 头", 免得忘填 key 时完全无感。
+    if is_blank_secret(api_key):
+        warnings.append(
+            f"provider '{final_provider}' 未配置 api_key"
+            f"（缺失/空串/纯空白，或类型非法：{type(api_key).__name__}={api_key!r}），"
+            f"请求将不携带 Authorization 头；若该 Provider 需要密钥请先填写"
+        )
     api_base = selected_provider_config.get("api_base")
     if not api_base:
-        warnings.append(f"provider '{final_provider}' 未配置 api_base,将使用默认值")
+        # 2026-09-27 - 小欧 - 订正文案撒谎：原文写"将使用默认值"，但已删
+        #   client_sdk 的 _default_base_url/_DEFAULT_URLS 兜底，空 URL 构造即抛 400
+        #   （见 client_sdk.py:298「provider X 的 URL 为空，请到设置页填写完整地址」）。
+        #   继续写"用默认值"会让用户以为不填也能跑，真调用时才 400 且难归因。改为如实告知。
+        warnings.append(
+            f"provider '{final_provider}' 未配置 api_base，调用时会报错，请到设置页填写完整地址"
+        )
     return errors, warnings
 
 

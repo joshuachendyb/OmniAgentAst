@@ -6,7 +6,7 @@
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复: ①C1: task_metrics 增 trim_count/trim_tokens 列(DDL + persist _cols + PRAGMA 幂等补列迁移, 兼容老库);
 #   ②F: persist_tool_metrics 的 ON CONFLICT 由累积(`+=excluded`)改 latest-wins(`=excluded`), 与 persist_task_metrics 的 REPLACE 语义一致,
 #   消除冗余持久化(同一 task_id 落两次)时 tool 指标翻倍而汇总只留最新的不一致。
-# 2026-08-21 - 小欧 - 12.2-Q5/Q2/Q9(按文档[1]12.2 diff设计落地): ①Q5-D1 init_monitoring_db executescript 追加
+# 2026-08-21 - 小欧 - 差异设计落地: init_monitoring_db executescript 追加
 #   llm_calls 老库去重(task_id IS NOT NULL 限定防NULL分组误删)+唯一索引 idx_llm_calls_task_call(task_id,call_index);
 #   ②Q5-D2 persist_llm_calls INSERT→INSERT OR IGNORE(finalize_and_persist 重入不再翻倍, 与 task_metrics REPLACE/
 #   task_tool_metrics latest-wins 三表防重语义对齐); ③Q9-D1 persist_http_request docstring 补服务级指标定位声明;
@@ -14,8 +14,15 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2/6.7: task_metrics(model/provider→task_model JSON 单列)、
 #   llm_calls(model/provider→llm_model JSON 单列); 老库幂等补列迁移(PRAMA 查列后 ALTER, 同 C1 模式);
 #   persist 层序列化 ModelRef.model_dump_json(), 旧两列废弃保留不删
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
 #   "不依赖、纯 DB 操作、惰性导入防环", 顶层 app import 破坏该隔离承诺
+# 2026-10-08 - 小欧 - context_injected_ratio 改语义明确列(context_compressed INTEGER + context_compress_saved_pct REAL):
+#   同步 CREATE TABLE、persist _cols、PRAGMA 幂等补列三处; 旧列保留不删但不再写(禁 backward 不删历史数据)。
+#   漏补列会导致老库 INSERT 报 no column named context_compressed(动态列名 INSERT, 见 persist_task_metrics)。
+# 2026-11-03 小欧 - persist_http_request 改 async(走 db.atxn 子线程池,不卡事件循环) + 新增 retention_cleanup_monitoring(后台定期清超期 http/metrics 数据) — 小欧-2026-11-03
+# 2026-11-04 - 小欧 - persist_http_request 的 atxn 补 retry_locked=3: busy_timeout=500ms + retry_locked=0 时,
+#   并发写事务体撞锁直接抛出(实证 06:51 两条 database is locked), 且该表为每请求高频写, 撞锁概率最高。
+#   atxn 本已支持 retry_locked(0.5/1/2s 退避), 此处仅显式开启, 不改 get_conn 解析逻辑。
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。
@@ -24,7 +31,7 @@
 """
 from typing import Dict, Any, List
 
-# 三堂会审修复(P2·小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
+# 三堂会审修复(小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
 #   本文件设计声明"不依赖、纯 DB 操作", 顶层 app import 破坏该隔离承诺
 
 
@@ -47,7 +54,8 @@ def init_monitoring_db(get_conn) -> None:
                 prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER,
                 context_message_count INTEGER, context_estimated_tokens INTEGER,
                 context_truncated INTEGER, context_injected_message_count INTEGER,
-                context_injected_estimated_tokens INTEGER, context_injected_ratio REAL,
+                context_injected_estimated_tokens INTEGER, context_compressed INTEGER,
+                context_compress_saved_pct REAL,
                 created_at TEXT
             );
             CREATE TABLE IF NOT EXISTS task_tool_metrics (
@@ -93,6 +101,14 @@ def init_monitoring_db(get_conn) -> None:
         for _c in _need_cols:
             if _c not in _has_cols:
                 conn.execute(f"ALTER TABLE task_metrics ADD COLUMN {_c} INTEGER")
+        # 2026-10-08 小欧 context_injected_ratio → context_compressed/context_compress_saved_pct(老库幂等补列):
+        #   persist_task_metrics 用动态列名 INSERT(见下), 老库缺列会报 no column named context_compressed
+        #   —— 实测本机 monitoring.db 2307 行 32 列无这两列, 故必须补。旧列保留不删但不再写。
+        _ctx_compress_cols = (("context_compressed", "INTEGER"),
+                              ("context_compress_saved_pct", "REAL"))
+        for _c, _ty in _ctx_compress_cols:
+            if _c not in _has_cols:
+                conn.execute(f"ALTER TABLE task_metrics ADD COLUMN {_c} {_ty}")
         # 归一迁移(小欧 2026-08-22 报告v1.25 6.2): task_metrics/llm_calls 老库幂等补 JSON 单列(旧列废弃保留不删)
         _norm_cols = {"task_metrics": "task_model", "llm_calls": "llm_model"}
         for _t, _c in _norm_cols.items():
@@ -110,7 +126,7 @@ def persist_task_metrics(row: Dict[str, Any]) -> None:
              "estimated_cost",
              "prompt_tokens", "completion_tokens", "total_tokens", "context_message_count", "context_estimated_tokens",
              "context_truncated", "context_injected_message_count", "context_injected_estimated_tokens",
-             "context_injected_ratio", "created_at"]
+             "context_compressed", "context_compress_saved_pct", "created_at"]
     _vals = [row.get(c) for c in _cols]
     _ph = ",".join(["?"] * len(_cols))
     _sql = f"INSERT OR REPLACE INTO task_metrics({','.join(_cols)}) VALUES ({_ph})"
@@ -150,7 +166,7 @@ def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
             )
 
 
-def persist_http_request(method: str, path: str, status_code: int, kind: str,
+async def persist_http_request(method: str, path: str, status_code: int, kind: str,
                          duration: float, request_size: int = 0, response_size: int = 0) -> None:
     """middleware 每请求后 flush 一行（原始 + 计数器入 metrics 表）；非阻塞降级
     定位声明(12.2-Q9): 本表为服务级流量指标, 不关联 task_id/session_id —— middleware
@@ -160,7 +176,7 @@ def persist_http_request(method: str, path: str, status_code: int, kind: str,
     from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
     try:
         _ts = datetime.now().isoformat(sep=" ")
-        with _db.get_conn_with_retry("monitoring") as conn:
+        def _q(conn):
             conn.execute(
                 "INSERT INTO http_requests(method, path, status_code, kind, duration_seconds, "
                 "request_size_bytes, response_size_bytes, timestamp) VALUES (?,?,?,?,?,?,?,?)",
@@ -171,6 +187,48 @@ def persist_http_request(method: str, path: str, status_code: int, kind: str,
                 ("http_requests_total", "counter", 1.0,
                  '{"method":"%s","path":"%s","status":"%s"}' % (method, path, status_code), _ts),
             )
+        # 2026-11-04 小欧 - 补 retry_locked=3: busy_timeout=500ms 下事务体撞锁直接抛(实证 database is locked),
+        # 本表每请求高频写, 撞锁概率最高; atxn 已支持 0.5/1/2s 退避, 此处仅显式开启。
+        await _db.atxn("monitoring", _q, retry_locked=3)
     except Exception as _e:
         from app.logger import logger
         logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21
+
+async def retention_cleanup_monitoring(http_days: int = 7, metrics_days: int = 7,
+                                     task_days: int = 30, llm_days: int = 30) -> dict:
+    """monitoring db retention cleanup (background task, not on request path) - xiaoou 2026-11-03
+
+    - http_requests / metrics: keep last http_days/metrics_days (regenerable service traffic)
+    - task_metrics / task_tool_metrics / llm_calls: keep last task_days/llm_days
+    Returns deleted row counts per table. Failures only warning, never block main (degrade pattern).
+    """
+    from datetime import datetime, timedelta
+    from app.db import db as _db
+    _c_http = (datetime.now() - timedelta(days=int(http_days))).isoformat(sep=" ")
+    _c_metrics = (datetime.now() - timedelta(days=int(metrics_days))).isoformat(sep=" ")
+    _c_task = (datetime.now() - timedelta(days=int(task_days))).isoformat(sep=" ")
+    _c_llm = (datetime.now() - timedelta(days=int(llm_days))).isoformat(sep=" ")
+    def _q(conn):
+        n = {}
+        # 先取超期 task_id 清单（task_metrics 删除前），避免删完后子查询为空
+        _expired_task_ids = [r[0] for r in conn.execute(
+            "SELECT task_id FROM task_metrics WHERE created_at < ?", (_c_task,)).fetchall()]
+        n["http_requests"] = conn.execute(
+            "DELETE FROM http_requests WHERE timestamp < ?", (_c_http,)).rowcount
+        n["metrics"] = conn.execute(
+            "DELETE FROM metrics WHERE timestamp < ?", (_c_metrics,)).rowcount
+        n["task_tool_metrics"] = 0
+        for _tid in _expired_task_ids:
+            n["task_tool_metrics"] += conn.execute(
+                "DELETE FROM task_tool_metrics WHERE task_id = ?", (_tid,)).rowcount
+        n["task_metrics"] = conn.execute(
+            "DELETE FROM task_metrics WHERE created_at < ?", (_c_task,)).rowcount
+        n["llm_calls"] = conn.execute(
+            "DELETE FROM llm_calls WHERE timestamp < ?", (_c_llm,)).rowcount
+        return n
+    try:
+        return await _db.atxn("monitoring", _q)
+    except Exception as _e:
+        from app.logger import logger
+        logger.warning(f"[monitoring] retention cleanup failed (degrade): {_e!r}")
+        return {}

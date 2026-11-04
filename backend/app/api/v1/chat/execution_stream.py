@@ -6,14 +6,15 @@ execution_stream — 执行步骤流式查看
 # 编辑历史:
 # 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
-# 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
-# 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
+# 2026-07-18 - 小欧 - 修复: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
+# 2026-07-18 - 小欧 - 修复: 预读数据退出with再yield,连接不占SSE流
 # 2026-07-18 - 小欧 - ExecutionStep.timestamp 注解 int→str, 默认值 0→"" 与时间归一化 UTC Z 字符串对齐, 消除 int 注解与 str 实际值不一致
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
 # 2026-08-14 - 小欧 - 改名名实相符: sse.py → execution_stream.py(实为执行步骤流式查看业务端点, 非通用SSE设施)
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _generate_execution_stream 改读 fetch_session_user_message_pairs
 #     (chat_user_message+chat_tasks 重建历史, assistant 正文取 response; 不读 chat_messages)
 # 2026-08-29 - 小沈 - 修复#16: 两处读库(生成器内 + 端点内)由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
+# 2026-10-01 - 小欧 - 解 [1] E3: 读步骤补传 task_id(p["pair_task_id"]), 与 message_service/history_loader 同源; 不传则同 ai_message_id 下的多任务步骤被跨任务混读
 
 import json
 import asyncio
@@ -62,7 +63,7 @@ async def _generate_execution_stream(session_id: str):
         SSE格式的数据
     """
     try:
-        # #21 fix: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
+        # 修复: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
         # 2026-08-29 小沈 修复#16: 读库经 db.atxn 离载子线程, 不阻塞事件循环
         def _read(conn):
             rows_with_steps = []
@@ -76,7 +77,11 @@ async def _generate_execution_stream(session_id: str):
                 ai_id = p["ai_message_id"]
                 if ai_id is None:
                     continue
-                rows_with_steps.append(("assistant", p["ai_content"] or "", load_execution_steps(conn, ai_id)))
+                # 2026-10-01 小欧: 补传 task_id(解 [1] E3), 归属取 pair_task_id 与 message_service 同源
+                rows_with_steps.append((
+                    "assistant", p["ai_content"] or "",
+                    load_execution_steps(conn, ai_id, p.get("pair_task_id")),
+                ))
             return rows_with_steps
         _rows_with_steps = await db.atxn("chat", _read)
         if _rows_with_steps is None:

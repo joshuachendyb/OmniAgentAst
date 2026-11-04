@@ -1,0 +1,23 @@
+# 后端开发期工具依赖（不是运行时依赖，禁止并入 requirements.txt）
+# 创建时间: 2026-11-03 23:01:15    编写人: 小欧-2026-11-03
+#
+# 用途: 静态检查专用 —— 打捞「纯透传函数 / 死函数 / 未用导入 / 未用形参 / 重复换算」这类烂代码。
+# 与运行时隔离的依据:
+#   1) 本文件不被打包流程读取; backend/OmniAgentBackend.spec 白名单(collect_all/collect_submodules)
+#      与 modulegraph 静态分析均不含这两个包, app/ 代码也从不 import 它们 → 打包产物零影响;
+#   2) 两者均零依赖, `pip install --no-deps` 安装不会触碰 httpx==0.26.0 / httpcore==1.0.1 版本锁。
+#
+# 安装(仅开发机, 换机器重装一次即可):
+#   pip install --no-deps -r backend/requirements-dev.txt
+# 卸载(不留残留):
+#   pip uninstall ruff vulture
+#
+# 用法(建议只对改动文件跑, 存量欠账尚未清零, 全量 app 会刷出历史问题):
+#   ruff check --select F,ARG,RET,SIM,PIE <改动文件>          # 查错/未用参数/可简化写法
+#   ruff check --select F,ARG,RET,SIM,PIE --fix <改动文件>    # 自动修(仅 F401 等保守修复)
+#   vulture app --min-confidence 80                          # 查死代码(函数/类/属性从未被引用)
+#
+# 判读纪律: vulture 对「装饰器注册的路由 / 动态 getattr 调用 / 对外 API」会误报, 必须人工确认后才删。
+
+ruff==0.17.3
+vulture==2.16

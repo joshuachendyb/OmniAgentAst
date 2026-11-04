@@ -16,12 +16,14 @@ const HealthCheck: React.FC = () => {
 
   const checkHealth = async () => {
     try {
+      // 2026-11-02 小欧 - 本页是 /health 的第三个消费者(调试面板, 用户主动点"重新检查");
+      //   探活本身已 _silent 不弹全局 toast, 这里按本页语境自行提示, 不参与顶栏胶囊 — 小欧-2026-11-02
       const data = await healthApi.checkHealth();
       setStatus(data.status);
       setVersion(data.version);
     } catch (error) {
       setStatus('error');
-      // 2026-08-27 小欧 修复review-bugs#4: 健康检查失败不再静默吞掉, 统一进入错误处理中心通知用户
+      // 2026-08-27 小欧 修复: 健康检查失败不再静默吞掉, 统一进入错误处理中心通知用户
       handleError(error, {
         message: '系统健康检查失败，请确认后端服务已启动',
       });

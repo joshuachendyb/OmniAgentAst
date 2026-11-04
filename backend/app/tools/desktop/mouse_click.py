@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 mouse_click — 鼠标单击
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -14,6 +15,7 @@ mouse_click — 鼠标单击
 # 2026-07-31 - 小欧 - 三堂会审增强:支持双击,加clicks参数(默认1),click_type按clicks动态生成single/double
 # 2026-08-05 - 小欧 - 三堂会审修复#6: button/clicks 无运行时校验(绕过schema Literal直接调函数路径漏), 加 left/right/middle 与 1/2 校验
 # 2026-08-05 - 小欧 - 三堂会审复核: success metrics按钮文本"left键"中英混用(B7同类问题), 改左键/右键/中键
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 点击→点击鼠标
 
 import time as _time_mod
 from typing import Dict, Any, Optional
@@ -34,15 +36,15 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
     button_cn = {"left": "左键", "right": "右键", "middle": "中键"}.get(button, button)
     if exec_code == "error":
         return {
-            "summary": f"{click_type_text}({x_str},{y_str})，失败: {detail}",
-            "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
-            "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
+            "summary": f"{click_type_text}({x_str},{y_str})，失败：{detail}",
+            "action": {"tool": "mouse_click", "tool_zh": "点击鼠标", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
+            "status": {"exec_code": "error", "message": f"失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"{click_type_text}({x_str},{y_str})，成功",
-        "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
-        "status": {"exec_code": "success", "message": f"{click_type_text}成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "mouse_click", "tool_zh": "点击鼠标", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
+        "status": {"exec_code": "success", "message": f"成功:({x_str},{y_str})", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"x": {"value": x, "text": f"X={x_str}"}, "y": {"value": y, "text": f"Y={y_str}"}, "button": {"value": button, "text": button_cn}, "click_type": {"value": click_type, "text": click_type_text}},
     }

@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
-# 2026-08-21 - 小欧 - 12.2-Q2-D3(按文档[1]12.2 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
+# 2026-08-21 - 小欧 - 单口径落地(按文档 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
 #   logger.error 提级留痕(带 timer_id+失败后果说明), 内存取消行为零改动, 仅补可追溯性
-# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP) — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 清除定时器→清定时器
 """
 timer_clear — 清除定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -26,17 +28,17 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     """timer_clear的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"清除定时器{timer_id}，失败",
-            "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
-            "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
+            "summary": f"清定时器{timer_id}，失败",
+            "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     status_text = "已取消" if cancelled else "不存在或已触发"
     return {
-        "summary": f"清除定时器{timer_id}，成功: {status_text}",
-        "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
-        "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
+        "summary": f"清定时器{timer_id}，成功：{status_text}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(清定时器) — 小欧-2026-10-14
+        "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
+        "status": {"exec_code": "success", "message": f"{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -48,7 +50,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
     try:
         async with _timer_lock:
             # 模块级共享状态: _timers / _timer_callbacks 统一加锁
-            # — 小欧 2026-07-10 C-07
+            # — 小欧 2026-07-10
             if timer_id not in _timers:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, False)

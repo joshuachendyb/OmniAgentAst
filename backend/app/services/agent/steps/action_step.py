@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 小欧 - timestamp 注解 Optional[int]→Optional[str] 与运行时 UTC Z 字符串值对齐, 消除时间归一化不一致
-# 2026-08-18 小欧 - §10.3.3(2): 废除 action_tool, 新建 action(type="action");
+# 2026-08-18 小欧 - 落码: 废除 action_tool, 新建 action(type="action");
 #   字段收敛为 exec_type/tools(tools 元素含 tool/target/params, params 供回放重建 FC 参数)
 
 from typing import Any, Dict, List, Optional
@@ -10,7 +10,7 @@ from .base import ReasoningStep
 
 
 class ActionStep(ReasoningStep):
-    """工具执行前信号 step - 执行前 yield 一次（§10.3.3(2)）"""
+    """工具执行前信号 step - 执行前 yield 一次"""
 
     TYPE: str = "action"
 

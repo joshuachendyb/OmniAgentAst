@@ -17,14 +17,25 @@ backend/tests/
 tests/
 tests/output/
 backend/pytest-of-chend/
+# 手工压测/验收脚本(小欧 2026-09-29): 真路径零Mock但不在 pytest testpaths 内, 不会自动跑;
+# 引用内部实现, 内部签名变更后会失效, 需按需同步; 故不入库, 避免 git status 长期脏
+backend/testscompress/
+# 2026-10-29 小欧: 注入/压缩链路本地用例(引用内部实现, 内部签名变更需按需同步, 不入库; 北京老陈令) — 小欧-2026-10-29
+backend/test_inject_compact_pipeline.py
 backend/reports/
 backend/report/
 backend/output/ # 2026-09-11 小欧: 后端pytest junit输出目录, 防测试产物入库 — 小欧-2026-09-11
-backend/notes/测试记录-*.md
-frontend/src/tests/
+backend/scripts
+# e2e_helpers.RECORD_DIR 实际解析到项目根 notes/(非 backend/notes), 上行规则路径不匹配从未生效, 补正确路径 — 小欧 2026-09-29
 
+backend/e2etests/output  # 后端E2E pytest junit/stdout/stderr 产物目录, 可重跑再生 — 小欧 2026-09-29
+frontend/src/tests/
+backend/e2etests/output
 # logs & temp
 backend/logs/
+frontend/logs/
+
+# 2026-11-02 小欧: 前端常驻启停脚本的 dev 日志/pid 文件目录, 不入库 - 小欧-2026-11-02
 backend/pt*.txt
 backend/pt.txt
 backend/json_backup/
@@ -58,6 +69,7 @@ backend/verify_fixes.py
 backend/test_verify_*
 
 # node_modules
+node_modules/
 frontend/node_modules/
 
 # config (contains API keys)
@@ -86,6 +98,12 @@ frontend/playwright-report/
 # 前端 E2E 运行产物(e2e_case/output代理自落盘日志)与TS增量缓存: 小欧 2026-09-13
 frontend/e2e_case/output/
 frontend/tsconfig.node.tsbuildinfo
+# 前端 E2E 访问口令状态(globalSetup 运行时生成, 内含 token 不得入库): 小欧 2026-09-27
+frontend/e2e_front_lib/.auth-state.json
+frontend/.auth-state.json
 
 # tsc 构建产物: 小欧 2026-09-13
 *.tsbuildinfo
+
+# 根目录测试运行动态输出日志(vitest/pytest 生成 _after*/_suite* 等, 进程占用不入库): 小欧 2026-10-30
+/_*.txt

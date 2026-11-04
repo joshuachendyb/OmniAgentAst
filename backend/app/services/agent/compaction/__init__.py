@@ -1,24 +1,31 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 #   2026-08-16 小欧 新增: compaction 模块统一导出(19.4.2 目录树规划)
-#   2026-08-17 小健 落地: 补齐全量函数导出(触发/剪枝/摘要/切分/装配/冷却/修剪), 对齐 [4] 14.9.2 目录树
+#   2026-08-17 小健 落地: 补齐全量函数导出(触发/剪枝/摘要/切分/装配/冷却/修剪), 对齐 14.9.2 目录树
 #   2026-08-17 小健 改名: 8 函数名符其实全量同步(import 块 + __all__ + 模块能力集描述)
 #   2026-08-17 小健 注释同步(常量归属迁移): "专属常量 constants.py + re-export" 描述改为指向 agent 层根 compaction_constants.py 权威定义(迁出载体避免 __init__ 重链)
+#   2026-10-25 23:29 小欧 删 CompactionTrigger 导出(should_compact 死代码, 详见 trigger.py 编辑历史); __all__ 同步去 "CompactionTrigger"
+#   2026-10-31 小欧 导出 shrink_to_budget(阶梯循环收缩到 token 预算, 原 start_step 内联四段迁入 assembler) — 小欧-2026-10-31
+#   2026-10-31 小欧 导出 truncate_tool_call_args(shrink_to_budget 第3级: 截 assistant 工具参数保首) — 小欧-2026-10-31
+#   2026-10-31 小欧 三堂会审整改: truncate_tool_call_args 导入源由 assembler 改为 split_turn(迁至原语所在模块),
+#     导出名/__all__ 不变, 消费方零改动 — 小欧-2026-10-31
 """compaction 压缩/裁剪模块 — 统一导出 — 小欧 2026-08-16 / 小健 2026-08-17
 
-模块能力集([4] 14.9.2 目录树 + 14.9.6 归并总览):
-  - 触发判定: trigger.py      CompactionTrigger / should_compact_now / CompactionCooldown
-  - 剪枝压缩: prune.py        clear_tool_outputs / use_tool_summary / compress_long_tool_output / keep_valuable_messages
+模块能力集(14.9.2 目录树 + 14.9.6 归并总览):
+  - 触发判定: trigger.py      should_compact_now / CompactionCooldown
+  - 剪枝压缩: prune.py        clear_tool_outputs / use_tool_summary / compress_long_tool_output / keep_valuable_messages / prune_tool_output_keeping_tail(摘要降本, 已接入)
   - 语义摘要: summary.py      generate_anchored_summary(C4, 唯一接入主链路) / generate_chunked_summary(降本变体)
   - 固定模板: summary_prompt  SUMMARY_TEMPLATE
   - 保尾切分: split_turn.py   preserve_recent_budget / find_tail_start / truncate_oversized_message
+                              / truncate_tool_call_args(第3级: 截工具参数保首)
   - 装配修剪: assembler.py    split_history_window / get_new_messages_since / inject_compressed_summary
-                              / remove_dangling_tool_calls
+                              / remove_dangling_tool_calls / shrink_to_budget(阶梯循环收缩到预算)
   - 专属常量: 见 ../compaction_constants.py(agent 层根, 压缩裁剪核心阈值权威定义; 迁出载体避免 __init__ 重链) — 小健 2026-08-17
 """
 from app.services.agent.compaction.assembler import (
     get_new_messages_since,
     inject_compressed_summary,
+    shrink_to_budget,
     split_history_window,
     remove_dangling_tool_calls,
 )
@@ -26,12 +33,14 @@ from app.services.agent.compaction.prune import (
     clear_tool_outputs,
     compress_long_tool_output,
     keep_valuable_messages,
+    prune_tool_output_keeping_tail,
     use_tool_summary,
 )
 from app.services.agent.compaction.split_turn import (
     find_tail_start,
     preserve_recent_budget,
     truncate_oversized_message,
+    truncate_tool_call_args,
 )
 from app.services.agent.compaction.summary import (
     generate_anchored_summary,
@@ -40,13 +49,11 @@ from app.services.agent.compaction.summary import (
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 from app.services.agent.compaction.trigger import (
     CompactionCooldown,
-    CompactionTrigger,
     should_compact_now,
 )
 
 __all__ = [
     # 触发判定
-    "CompactionTrigger",
     "should_compact_now",
     "CompactionCooldown",
     # 剪枝压缩
@@ -54,6 +61,7 @@ __all__ = [
     "use_tool_summary",
     "compress_long_tool_output",
     "keep_valuable_messages",
+    "prune_tool_output_keeping_tail",  # 2026-10-07 小欧 - 摘要降本策略(保尾保留+旧轮清零), 已接入 start_step — 小欧-2026-10-07
     # 语义摘要
     "generate_anchored_summary",
     "generate_chunked_summary",
@@ -67,4 +75,6 @@ __all__ = [
     "get_new_messages_since",
     "inject_compressed_summary",
     "remove_dangling_tool_calls",
+    "shrink_to_budget",   # 2026-10-31 小欧 - 阶梯循环收缩到 token 预算(start 压缩前清洗), 已接入 start_step
+    "truncate_tool_call_args",  # 2026-10-31 小欧 - 第3级: 截 assistant 工具参数保首(单轮巨参数)
 ]

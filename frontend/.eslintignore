@@ -4,8 +4,19 @@ build
 *.local
 
 # 测试目录
-tests
+# 2026-09-28 小欧 - 原为 `tests`（无锚点，gitignore 语义按各层级目录名匹配），
+#   于是 src/tests/ 全被忽略，连带把其中的**支撑代码**（support/ 下的 globalSetup harness、
+#   live API 基址单源）也排除在类型检查与 lint 之外 —— 那是基础设施不是用例，理应受管。
+#   加前导 / 锚定为仓库根顶层 tests/（该目录已不存在），src/tests 不再被误伤；
+#   测试用例本身由下方 *.test.* / *.spec.* 规则精确忽略。
+# 注：.eslintignore 与 ignorePatterns 双源且前者优先，否定规则(!)在此无效，故只能靠锚点收窄。
+/tests
 test-*.js
+src/tests/**/*.test.ts
+src/tests/**/*.test.tsx
+src/tests/**/*.spec.ts
+src/tests/**/*.spec.tsx
+src/tests/setup.ts
 
 # 编辑器目录
 .vscode

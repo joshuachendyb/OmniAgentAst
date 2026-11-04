@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """find 文件搜索工具 — 文件名匹配搜索(支持正则/通配符/类型过滤)"""
 # 编辑历史:
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 工具只执行。
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
 # 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
-# 2026-08-06 - 小欧 - 核查7/31未实现项[14]修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
+# 2026-08-06 - 小欧 - 核查未实现项修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-12 小欧 - tool_zh改短名词: 搜索文件→搜文件
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 小欧 - find 搜索根类型校验: EXISTS→LIST_DIR(must_be=dir), 文件当搜索根原空匹配误报成功, 现报"不是目录"
 
 import asyncio
 import fnmatch
@@ -16,8 +21,9 @@ from typing import Any, Dict, List, Literal, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.logger import logger
 
 _SKIP_DIRS = frozenset({
@@ -74,9 +80,9 @@ def _build_search_files_llm_data(
         _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"搜索文件{search_dir}，失败",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
+            "summary": f"搜文件{search_dir}，失败",
+            "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和匹配模式，可更换关键词"},  # 2026-10-14 小欧 - hint 归一: 与 grep 对齐"搜索路径"; 加换策略(永真) — 小欧-2026-10-14
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -85,24 +91,29 @@ def _build_search_files_llm_data(
         _timeout_str = ""
         if truncated_by_deadline:
             _timeout_str = f"，超时({_timeout_sec}秒)"
-        warning_detail = "; ".join(detail_parts)
+        warning_detail = "；".join(detail_parts)
         _default_hint = "可缩小搜索范围或使用更精确的匹配模式以减少匹配数量; 或使用 offset 跳过前 N 项分批查看"
         return {
-            "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
+            "summary": f"搜文件{search_dir} {{{user_pattern}}}，成功：共 {total} 个匹配项，结果已截断{_timeout_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜文件), 成功替代完成 — 小欧-2026-10-14
+            "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
+            "status": {"exec_code": "warning", "message": "结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
             "metrics": {
                 "total": {"value": total, "text": f"{total}个匹配"},
             },
         }
-    summary = f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项"
+    summary = f"搜文件{search_dir} {{{user_pattern}}}，成功：共 {total} 个匹配项"
     if user_offset:
         summary += f"，第{user_offset+1}-{total}项"
+        message = f"完成:共{total}个匹配项，第{user_offset+1}-{total}项"
+    elif total == 0:
+        message = "完成:未找到匹配"
+    else:
+        message = f"完成:共{total}个匹配项"
     return {
         "summary": summary,
-        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
+        "status": {"exec_code": "success", "message": message, "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total": {"value": total, "text": f"{total}个匹配"},
@@ -121,22 +132,22 @@ async def find(
     # 路径参数统一为path,桥接到内部变量search_dir — 小欧 2026-07-11
     search_dir = path
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(初版读类用 EXISTS)
+    # 2026-10-20 小欧 - 搜索根须为目录: EXISTS 只验存在不验类型, 指向文件时空匹配误报成功; 改 LIST_DIR(must_be=dir)
+    ok, err = check_path_four_level(search_dir, OpCategory.LIST_DIR)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        return build_error(data={}, llm_data=llm_data)
     if type is not None and type not in ("file", "directory"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory',当前值: '{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory'，当前值：'{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空", hint="请输入文件名匹配模式", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, search_dir)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索目录路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
-        return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查(search_dir 已入 PATH_PARAM_KEYS), 工具只执行
     path = Path(os.path.expanduser(search_dir))
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2
@@ -168,7 +179,7 @@ async def find(
         await asyncio.to_thread(_search_sync)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint=hint_for_read_error(e, Path(search_dir).name), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"{e}", hint=hint_for_read_error(e, Path(search_dir).name), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12  # 2026-10-14 小欧 - detail 去复述("搜索失败"与 message 重复) — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))
@@ -195,7 +206,7 @@ async def find(
         # =============================================================================
         # 数据设计：total/search_dir/pattern/offset 从 data 移除，
         # 通过 llm_data.metrics/summary 传入 LLM observation。
-        # summary 示例: "搜索完成: /path 下匹配 '*.py', 共15个匹配"
+        # summary 示例: "搜文件/path {*.py}，成功：共15个匹配"
         # — 小欧 2026-07-06
         # =============================================================================
         return build_warning(
@@ -211,7 +222,7 @@ async def find(
     # =============================================================================
     # 数据设计：total/search_dir/pattern/offset 从 data 移除，
     # 通过 llm_data.metrics/summary 传入 LLM observation。
-    # summary 示例: "搜索完成: /path 下匹配 '*.py', 共15个匹配, 第1-200项"
+    # summary 示例: "搜文件/path {*.py}，成功：共15个匹配, 第1-200项"
     # — 小欧 2026-07-06
     # =============================================================================
     return build_success(

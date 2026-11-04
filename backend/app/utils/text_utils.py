@@ -2,12 +2,18 @@
 # 编辑历史:
 # 2026-06-09 - 小沈 - 新建: 文本处理公共工具
 # 2026-07-12 - 小欧 - v2.0: 新增 format_tool_call_markup
-# 2026-07-16 - 小欧 - v2.1: 新增 extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY)
+# 2026-07-16 - 小欧 - v2.1: 新增 extract_tool_call_xml(推理降级XML提取) + _format_xml_tool_block改调它(DRY)
 # 2026-08-20 - 小欧 - 遥测收敛: 本文件在遥测链路被引用(工具调用标记格式化), 本次无逻辑改动仅补标准编辑历史头
-# 2026-08-30 - 小欧 - 13.11(设计文档[2]13.12.9): 新增公用 normalize_blank_lines(空行规约, 前后端同一张规则表, 幂等);
+# 2026-08-30 - 小欧 - 空行规约(设计文档): 新增公用 normalize_blank_lines(空行规约, 前后端同一张规则表, 幂等);
 #   format_tool_call_markup 末尾 \n{3,} 压缩+strip 收敛至该公用函数(answer 轮行为逐字节等价, DRY); __all__ 登记
 # 2026-09-05 小健 - answer_focus第二阶段搬一(8.1): 新增公用 dedup_repeat(从 answer_handler._dedup_repeat 去下划线转公有,
 #   逐字复制含L97 logger.warning; 随迁REPEAT_*三常量与Counter/logger import) - 小健-2026-09-05
+# 2026-09-27 小欧 - 本轮无逻辑改动。曾把 to_int_or 放在本文件，因本文件模块级 import app.logger
+#   → app.logger.config → app.config 成环，app.config 无法复用，已移至无依赖的 app/utils/type_utils.py。
+# 2026-10-30 小欧 - 新增公用 count_lines(编辑器口径数行数: 末尾换行不产生新行): 文件页
+#   (browse_service._count_content_lines)与引用压缩(refs.budget)共用本函数, 避免 "a\n" 一处算 1 行、
+#   一处算 2 行导致回执行数虚高; _count_content_lines 改委托本函数(DRY) — 小欧-2026-10-30
+# 2026-11-03 小欧 - 重复内容去重截断提示 WARNING→INFO(自愈) — 小欧-2026-11-03
 """
 文本处理工具函数 — 小沈 2026-06-09
 
@@ -17,7 +23,7 @@
 
 Author: 小沈 - 2026-06-09
 v2.0: 新增format_tool_call_markup — 小欧 2026-07-12
-v2.1: 新增extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY) — 小欧 2026-07-16
+v2.1: 新增extract_tool_call_xml(推理降级XML提取) + _format_xml_tool_block改调它(DRY) — 小欧 2026-07-16
 """
 import json
 import re
@@ -34,6 +40,18 @@ def truncate_text(text: str, max_chars: int, suffix: Optional[str] = None) -> tu
         return text, False
     tail = suffix or f"\n...[截断 {len(text) - max_chars} 字符]"
     return text[:max_chars] + tail, True
+
+
+def count_lines(text: str) -> int:
+    """按编辑器口径数行数: 末尾换行不产生新行(与前端行号列一致) — 小欧 2026-10-30
+
+    唯一口径: 文件页行数(browse_service._count_content_lines)与引用压缩行数(refs.budget)
+    共用本函数, 避免 "a\\n" 一处算 1 行、一处算 2 行导致回执行数虚高。
+    """
+    if not text:
+        return 0
+    n = text.count("\n")
+    return n if text.endswith("\n") else n + 1
 
 
 def add_line_numbers(content: str, offset: int = 1) -> str:
@@ -109,7 +127,7 @@ def _try_format_json_tool_call(obj):
 
 
 def extract_tool_call_xml(text: str) -> Optional[Dict[str, Any]]:
-    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16 (P1-04)
+    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16 (推理降级)
 
     解析 <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
     返回 {"tool_name": str, "tool_params": Dict[str, str]}
@@ -248,7 +266,7 @@ def dedup_repeat(content: str) -> str:
     ratio = 1 - len(deduped) / len(content)
     if ratio < DUP_RATIO:
         return content
-    logger.warning(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {ratio:.0%}), 已去重截断")
+    logger.info(f"[L1-C2b] 检测到无意义重复(final {len(content)}字, 重复占比 {ratio:.0%}), 已去重截断")  # 2026-11-03 小欧: 自愈, 降 INFO
     return deduped
 
 

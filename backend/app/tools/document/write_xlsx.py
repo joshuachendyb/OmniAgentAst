@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-26 - 小欧 - summary加路径前空格
-# 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
-# 2026-08-07 - 小欧 - P04优化(北京老陈驱动 task001): 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
-# 2026-08-08 - 小欧 - P1修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
+# 2026-07-31 - 小欧 - Bug修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
+# 2026-08-07 - 小欧 - P04优化: 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
+# 2026-08-08 - 小欧 - 修复: append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘": builder 增 not_written, 仅写前检查点
+#   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词: 写入Excel→写EXCEL
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-10-20 05:27 小欧 - FIX: 删 get_column_letter 死导入(_set_xlsx_table_style 按单元格迭代定位表头行, 列字母从未使用)
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -22,9 +28,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional  # 2026-07-31 小欧: 移除未使用 Union
 
 from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, build_warning, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_XLSX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error  # 2026-07-31 小欧: 移除未使用 logger
@@ -34,7 +41,7 @@ from app.utils.table_helper import get_table_header_style_config  # 2026-07-31 �
 def _set_xlsx_table_style(ws):
     """设置Excel表格样式（表头背景色、数据单元格对齐和边框） — 小健 2026-06-24"""
     from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
-    from openpyxl.utils import get_column_letter
+    # 2026-10-20 小欧 - FIX: 删 get_column_letter 死导入(本函数按单元格迭代定位表头行, 列字母从未使用) — 小欧-2026-10-20
     
     header_config = get_table_header_style_config()
     header_fill = PatternFill(
@@ -92,33 +99,36 @@ def _adjust_xlsx_column_width(ws):
 def _build_write_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, detail: str = "",
-    user_sheet_name: str = "", hint: str = "",
+    user_sheet_name: str = "", hint: str = "", not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     if exec_code == "error":
+        # 2026-10-12 小欧 - not_written 补"文件未写入"事实(同 write_docx/write_pdf 口径,
+        #   仅写前检查点置位, 写期异常不置避免误报)
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入Excel {file_path}，失败: {detail}",
-            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "summary": f"写EXCEL{file_path}，失败：{_detail}",
+            "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_XLSX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
         # 追加模式无数据可写等非致命异常: 走warning, 让LLM感知追加无效(非静默success) — 小欧 2026-08-08
         return {
-            "summary": f"写入Excel {file_path}，警告: {detail}",
-            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "写入Excel警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
+            "summary": f"写EXCEL{file_path}，警告：{detail}",
+            "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
+            "status": {"exec_code": "warning", "message": f"警告:{detail}" if detail else "警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Excel {file_path}，成功: {row_count}行",
-        "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"写EXCEL{file_path}，成功：{row_count}行",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写EXCEL) — 小欧-2026-10-14
+        "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "row_count": {"value": row_count, "text": f"{row_count}行"},
@@ -134,35 +144,41 @@ def write_xlsx(
 ) -> Dict[str, Any]:
     """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-08-07 新增append_mode追加模式"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=err, hint="请检查输出路径", not_written=True)
+        return build_error(data={}, llm_data=llm_data)
 
-    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
+    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）—  2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=sheet_name, hint=hint)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=sheet_name, hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
-    # 2026-07-31 小欧: Bug⑳修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
+    # 2026-07-31 小欧: Bug修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
     if not isinstance(data, list):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]", not_written=True)
         return build_error(data={}, llm_data=llm_data)
     for _i, _row in enumerate(data):
         if not isinstance(_row, dict):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data的第{_i + 1}项必须是JSON对象, 收到类型: {type(_row).__name__}", user_sheet_name=sheet_name, hint="data的每个元素应为对象,如{\"col1\":1,\"col2\":2}")
+            llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data的第{_i + 1}项必须是JSON对象, 收到类型: {type(_row).__name__}", user_sheet_name=sheet_name, hint="data的每个元素应为对象,如{\"col1\":1,\"col2\":2}", not_written=True)
             return build_error(data={}, llm_data=llm_data)
     cs_error, safe_data = check_content_safety(data, "xlsx", param_name="data")
     if cs_error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})", not_written=True)
         return build_error(data={}, llm_data=llm_data)
     data = safe_data
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:

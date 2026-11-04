@@ -2,6 +2,15 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#11: 切L2模型不再以'新会话'污染后端会话标题(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 模型列表类型归一为ModelListItem; 删IIFE改直线find写法
 // 编辑历史: 2026-08-27 小欧 - 去头像-C2: 删ModelPicker内RobotOutlined后缀图标, 回落Antd默认DownOutlined下拉箭头(更符下拉心智)
+// 编辑历史: 2026-09-25 小欧 - 修双 provider 重复 + 列框自适应:
+//   (1) provider 重复: 后端 get_models display_name 已含 "provider (model)", 原再拼 " (provider)"
+//     → openai (gpt-4) (openai) 双 provider, 改直接用 display_name;
+//   (2) 列框自适应: popupMatchSelectWidth=false 弹层宽度由最长选项决定(原默认=选中框 180 截断),
+//     nowrap 防换行; 选中框保持 minWidth:180 — 小欧-2026-09-25
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: 删sessionTitle入参, 改调updateSessionModel(只发sessionModel+version), 消除"切模型"被迫传标题的耦合 - 小欧-2026-10-24
+// 编辑历史: 2026-11-02 小欧 - 选中框minWidth:180改width:180定宽: 长模型名不再撑框挤占顶栏横排(flex gap8布局), 溢出走antd省略号+外层Tooltip见全名; 下拉弹层popupMatchSelectWidth=false自适应宽不动 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 会话级模型框宽度归常量SESSION_MODEL_SELECT_WIDTH=180(调宽只改一行),与顶部Layout各自持常量互不共享隔离 - 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 北京老陈令: 底部选中框回归minWidth下限语义(不许改定宽width),常量仅作minWidth下限,其余不动 - 小欧-2026-11-02
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -28,7 +37,6 @@ import {
 
 interface ModelPickerProps {
   sessionId: string | null;
-  sessionTitle: string;
   sessionVersion: number;
   sessionModelOverride: SessionModelOverride | null;
   setSessionModelOverride: (v: SessionModelOverride | null) => void;
@@ -37,9 +45,11 @@ interface ModelPickerProps {
 
 const FOLLOW_GLOBAL = '__follow_global__';
 
+// 2026-11-02 小欧 - 会话级模型选择框宽度唯一可调点(仅作minWidth下限): 改下限只改此一行; 与顶部Layout的TOP_MODEL_SELECT_WIDTH互不共享隔离 — 小欧-2026-11-02
+const SESSION_MODEL_SELECT_WIDTH = 180;
+
 const ModelPicker: React.FC<ModelPickerProps> = ({
   sessionId,
-  sessionTitle,
   sessionVersion,
   sessionModelOverride,
   setSessionModelOverride,
@@ -86,12 +96,11 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
     const prev = sessionModelOverride;
     setLoading(true);
     try {
-      const res = await sessionApi.updateSession(
+      const res = await sessionApi.updateSessionModel(
         sessionId,
-        sessionTitle,
-        sessionVersion,
-        next
-      ); // 2026-08-27 小欧 修复#11: 移除'新会话'字面量回退, 切L2模型不应污染后端会话标题
+        next,
+        sessionVersion
+      ); // 2026-10-24 小欧 - SRP拆分: 只发 sessionModel+version, 不发标题(长标题触发422的根因)
       if (res.version) setSessionVersion(res.version);
       setSessionModelOverride(next);
     } catch (err: unknown) {
@@ -131,14 +140,21 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
         onChange={handleChange}
         loading={loading}
         disabled={!sessionId || loading}
-        style={{ minWidth: 180 }}
+        style={{ minWidth: SESSION_MODEL_SELECT_WIDTH }}
         placeholder="跟随全局"
         suffixIcon={<DownOutlined />}
+        // 2026-09-25 小欧 弹层宽自适应取最长选项 nowrap 防换行; 2026-11-02 小欧 选中框回归 minWidth 下限语义(北京老陈令: min 不许改定宽), 常量仅作下限 — 小欧-2026-11-02
+        popupMatchSelectWidth={false}
+        popupRender={(menu) => (
+          <div style={{ whiteSpace: 'nowrap' }}>{menu}</div>
+        )}
         options={[
           { value: FOLLOW_GLOBAL, label: '跟随全局' },
           ...models.map((m) => ({
             value: `${m.provider}-${m.model}`,
-            label: `${m.display_name || m.model} (${m.provider})`,
+            // 2026-09-25 小欧 修重复: 后端 getModelList display_name 已含 "provider (model)"
+            //   (config_service.get_models), 原再拼 " (provider)" 致 openai (gpt-4) (openai) 双 provider — 小欧-2026-09-25
+            label: m.display_name || `${m.provider} (${m.model})`,
           })),
         ]}
       />

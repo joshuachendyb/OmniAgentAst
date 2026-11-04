@@ -1,0 +1,480 @@
+// 编辑历史: 2026-10-06 小欧 - 随 markdown 四件套从 features/chat/components/pipeline/ 整体上移到
+//   components/markdown/ 中立层(解除 settings2 → chat 跨 feature 反向依赖)。本文件另加:
+//   ①code 分支识别 language-mermaid 交 MermaidBlock 画流程图; ②pre 分支对 mermaid 围栏
+//   不套代码块的边框/灰底/限高(靠 node 里的 hast className 判定); ③表格拆出 MdTable 支持
+//   fixedTable(仅安全Tab 分类表用, 聊天侧默认 auto 观感不变); ④th/td 加 overflowWrap。
+//   — 小欧-2026-10-06
+// 编辑历史: 2026-10-05 小欧 - 新增: thought 思考段 Markdown 渲染器(参考代码落地, v3.7)
+//   未闭合围栏尾段按纯文本渲染(避免空 <pre> 容器凭空出现致页面位移), 其余按 Markdown 渲染 — 小欧-2026-10-05
+//   v2.1 自审整改(随参考代码一并落地): ①全部自定义组件显式剥 node 防泄漏到 DOM(react-markdown v9
+//   必传 node, …rest 透传即非法属性, 禁止); ②remark-breaks 保留单换行(与 pre-wrap 现有效果一致);
+//   ③schema 补 input 标签+属性(GFM 任务列表复选框否则被净化剥掉); ④标题保留语义标签只压样式;
+//   ⑤切分与渲染按 text useMemo(防长推理×高频 chunk 重复全量解析) — 小欧-2026-10-05
+//   v3.7 小欧 落地订正(与参考代码的两处偏差, 均因参考代码自身笔误/未跑过编译):
+//     ①参考代码每个组件写成 ({ node, children }: any) 后又解构 `const { node, children } = p;`
+//        —— `p` 未定义, 直接抄会 ReferenceError; 改为统一 (props: MdProps) + 解构 props。
+//     ②参考代码 SANITIZE_SCHEMA 用 `...(defaultSchema.tagNames ?? [])` 兜空, 实测 defaultSchema.tagNames
+//        恒为数组; 保留 ?? 兜底无副作用, 不改。
+//     ③参考代码未用 FontFamily.MONO 令牌而是硬编码 'Consolas, Monaco, "Courier New", monospace',
+//        与本仓 stepStyles 令牌化要求(复用优先)冲突 —— 改走 FontFamily.MONO 单一真相源。
+//   v3.8 小欧 复核后修 4 项(有一项明确不修, 理由随附):
+//     ①P1 真缺陷: pre 被覆盖成 <>{children}</> + code 靠 className 猜"是否围栏" —— 无语言围栏
+//       (info string 为空时 hast 无 className)整段退化成行内 code, pre 数=0、块级样式全丢。
+//       改法按语义归位: pre 管块级容器, code 管行内样式, 不加依赖不加插件不留分支。
+//     ②P2 闭围栏长度未校验: 补 CommonMark 规则(闭围栏长度 >= 开围栏长度), 5 行内。
+//     ③P3 wordBreak 与 overflow 语义抵消: 用户定案二选一, 选**横向滚动**(删折行)。
+//     ④P4 `2*3*4` 渲染成 2<em>3</em>4: **不修**。这是 CommonMark 标准行为(单星号内不为空即成斜体),
+//       旧自研版为防它写的正则属非标准 hack; 修它需再引 remark 插件自造偏离标准的行为, 违
+//       "不自造轮子/KISS"且徒增维护面。如实回归标准并在此登记, 便于日后有人再问时有据可查。
+//   v3.8.1 小欧 老陈指令: 围栏代码块右上角加"复制"按钮。pre 容器改为 PreBlock(position:relative + 绝对定位按钮,
+//     复制源取原始children字符串不含按钮文字, copied后1.5s回退); code 组件不动(透传 className)。— 小欧-2026-10-05
+//   申明订正: 上一条"已加复制按钮"为总结误报, 实际未落盘; 本次才真正落盘并入单测。— 小欧-2026-10-05
+// 编辑历史: 2026-10-06 小欧 - MdTable 加 fontSize 参数(缺省 SECONDARY, 聊天侧零变化),
+//   安全Tab 分类表传 PRIMARY: 该表是设置页正文(周围 14px), 用 12px 会小 2px 层级拉不开。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
+// 2026-10-22 小杨 - 文件引用链接的路径参数改走安全解码, 非法百分号编码不再抛 URIError — 小杨-2026-10-22
+// 编辑历史: 2026-10-22 小欧 - 代码块显式行高 1.1: 原继承 1.5, │ 墨迹高 1.12–1.17em 行间留缝 →
+//   框线竖线断成虚线; 行高 ≤1.14 时连成实线 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 文件引用分流放开外部路径：isValidRelPath 或 isExternalAbsPath（根外盘符绝对）
+//   都渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
+// 2026-11-02 小欧 - a 组件按 `/file-ref?` 前缀分流到唯一链接组件 PathLink（原 FileRefChip）；
+//   解析只调 parseFileRefLink（与 buildFileRefLink 同源），非法编码/形态非法退纯文本 — 小欧-2026-11-02
+// 2026-11-02 小欧 - `/file-ref?` 前缀判据改调 projectPath.isFileRefLink，删本文件内联 startsWith — 小欧-2026-11-02
+// 2026-11-02 小欧 - 正文 chip 传 pin：恢复旧 FileRefChip 的「别针」引用入口（合并时丢失）— 小欧-2026-11-02
+import React, { useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import {
+  BorderWidth,
+  Colors,
+  FontFamily,
+  FontSize,
+  FontWeight,
+  MonoLineHeight,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
+import { CopyButton } from './CopyButton';
+// 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink；形态门槛交由 resolvePathTarget — 小欧-2026-11-02
+import { PathLink } from '@/components/PathLink';
+import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
+import { isFileRefLink, parseFileRefLink } from '@/utils/projectPath';
+
+/**
+ * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(缺陷 1)。
+ */
+interface MdProps {
+  node?: unknown;
+  children?: React.ReactNode;
+  /** 围栏语言标记 language-js(渲染 code 块必需) */
+  className?: string;
+  href?: string;
+  type?: string;
+  checked?: boolean;
+}
+
+// XSS 净化配置: 默认 schema(GitHub 风格, 天然覆盖 GFM 表格/删除线)之上只补两处缺口——
+//   ① code[className]: 围栏语言标记(language-js)渲染所需, 默认被剥离(剥掉则无法区分围栏/行内代码)
+//   ② input 标签 + type/checked/disabled: GFM 任务列表复选框所需, 默认整个标签被剥离
+// 注意: 不补 a[target/rel]——外链属性由本文件 a 组件硬编码渲染(不从 hast 取), schema 无需放行
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'input'],
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), 'className'],
+    input: ['type', 'checked', 'disabled'],
+  },
+};
+
+// 代码块容器: 显式覆盖父级 whiteSpace:pre-wrap(否则 <pre> 内换行被软化) + 限高滚动
+//   2026-10-05 小欧 P3 二选一(用户定案): 选**横向滚动** —— 删 wordBreak:'break-word'。
+//   原同时写 wordBreak 与 overflow 两者语义抵消(折行后永不出滚动条), 二者只能留一。
+//   选滚动理由: 代码块按代码语义应保列对齐, 折行破坏缩进层级; 且与 GitHub/CommonMark 生态一致。
+//   wordBreak 显式写 normal 而非删净 —— 不依赖祖先继承, 意图可读且防上游将来改 getStreamStyle 串味。
+//   2026-10-05 用户定案(方案A): 代码块改**四边整框 + 圆角 + 浅底**(此前只有左边一条 2px 竖线、
+//   透明底、直角, 三面无边)。逐项对齐 MarkdownBody 版观感: border 1px #d9d9d9(BorderWidth.DEFAULT ×
+//   Colors.BORDER.DEFAULT)、borderRadius Radius.SM、background Colors.BG.SECONDARY;
+//   **原borderLeft 竖线删除** —— 整框已含左边, 两条并存会叠成双线。
+const codeBlockStyle: React.CSSProperties = {
+  margin: `${Spacing.XS}px 0 ${Spacing.SM}px`,
+  padding: `${Spacing.XS}px ${Spacing.SM}px`,
+  border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
+  borderRadius: Radius.SM,
+  background: Colors.BG.SECONDARY,
+  fontSize: FontSize.CODE,
+  // 2026-10-22 小欧 - 显式行高取公用令牌 MonoLineHeight(1.1):
+  //   原继承流水线根容器的"字号+4"(12px 字继承 18px 行高 = 1.5) → │ 字形墨迹高只有 1.12–1.17em,
+  //   行间留缝 → 框线竖线断成**虚线**。行高 ≤1.14 时竖线才连成实线, 取 1.1 两端留余量。
+  lineHeight: MonoLineHeight,
+  fontStyle: 'normal',
+  fontFamily: FontFamily.MONO,
+  whiteSpace: 'pre',
+  wordBreak: 'normal',
+  maxHeight: 400,
+  overflow: 'auto',
+};
+
+// 行内代码: 加浅底以与正文区分(不加背景色块, 与项目"内容即容器"风格一致)
+const inlineCodeStyle: React.CSSProperties = {
+  padding: '0 3px',
+  fontSize: FontSize.CODE,
+  fontStyle: 'normal',
+  fontFamily: FontFamily.MONO,
+  color: Colors.TEXT.STRONG,
+};
+
+const H1: React.CSSProperties = {
+  fontSize: FontSize.PRIMARY,
+  fontWeight: FontWeight.BOLD,
+  color: Colors.TEXT.STRONG,
+  margin: `${Spacing.SM}px 0 ${Spacing.XS}px`,
+  lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
+};
+const H2 = H1;
+const H3: React.CSSProperties = {
+  fontSize: FontSize.SECONDARY,
+  fontWeight: FontWeight.MEDIUM,
+  color: Colors.TEXT.STRONG,
+  margin: `${Spacing.XS}px 0`,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+const H4 = H3;
+const H5: React.CSSProperties = {
+  fontSize: FontSize.SECONDARY,
+  fontWeight: FontWeight.REGULAR,
+  color: Colors.TEXT.SECONDARY,
+  margin: `${Spacing.XS}px 0`,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+const H6: React.CSSProperties = {
+  fontSize: FontSize.TERTIARY,
+  fontWeight: FontWeight.REGULAR,
+  color: Colors.TEXT.SECONDARY,
+  margin: `${Spacing.XS}px 0`,
+  lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+};
+const PARA: React.CSSProperties = {
+  margin: `${Spacing.XS}px 0`,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+const LIST: React.CSSProperties = {
+  margin: `${Spacing.XS}px 0`,
+  paddingLeft: Spacing.XL,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+const LI: React.CSSProperties = {
+  margin: 0,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+};
+
+// 2026-10-06 小欧 - 识别 pre 的内容是不是 mermaid 围栏(见下方 pre 组件的说明)
+//   ⚠️ 不能靠 props.children 判: 实测 react-markdown v9 传给自定义组件的 children
+//      是**普通对象**(constructor.name === 'Object'), React.isValidElement 恒 false。
+//      改用 react-markdown 明确提供的 node(hast 元素): pre > code > properties.className。
+//      node 只用于判断, 绝不透传到 DOM(禁透传)。
+function isMermaidFence(node: unknown): boolean {
+  const pre = node as
+    | {
+        children?: Array<{
+          tagName?: string;
+          properties?: { className?: string[] };
+        }>;
+      }
+    | null
+    | undefined;
+  const code = pre?.children?.[0];
+  return (
+    code?.tagName === 'code' &&
+    (code.properties?.className ?? []).includes('language-mermaid')
+  );
+}
+
+// 2026-10-06 小欧 - md 表格容器。fixed 模式用于安全Tab 分类表(auto 下超长单元格会独占宽度)。
+//   fontSize 缺省走 FontSize.SECONDARY(聊天流原样, 零变化); 安全Tab 分类表传 PRIMARY,
+//   否则在设置页里比周围正文小 2px、层级拉不开。
+const MdTable: React.FC<
+  MdProps & { layout: 'auto' | 'fixed'; fontSize?: number }
+> = ({ children, layout, fontSize = FontSize.SECONDARY }) => (
+  <div style={{ overflowX: 'auto', margin: `${Spacing.XS}px 0` }}>
+    <table
+      style={{
+        borderCollapse: 'collapse',
+        tableLayout: layout,
+        width: '100%',
+        fontSize,
+      }}
+    >
+      {children}
+    </table>
+  </div>
+);
+
+// Markdown 元素样式映射: 全部走 stepStyles 既有令牌, 零硬编码颜色 — 小欧-2026-10-05
+// 规则: 所有组件必须显式丢弃 node(缺陷 1), 禁止 ...rest 透传到 DOM
+// 标题保留语义标签 h1..h6(a11y 大纲不断), 只统一样式压小(遗漏 4)
+const mdComponents = {
+  h1: (props: MdProps) => <h1 style={H1}>{props.children}</h1>,
+  h2: (props: MdProps) => <h2 style={H2}>{props.children}</h2>,
+  h3: (props: MdProps) => <h3 style={H3}>{props.children}</h3>,
+  h4: (props: MdProps) => <h4 style={H4}>{props.children}</h4>,
+  h5: (props: MdProps) => <h5 style={H5}>{props.children}</h5>,
+  h6: (props: MdProps) => <h6 style={H6}>{props.children}</h6>,
+  p: (props: MdProps) => <p style={PARA}>{props.children}</p>,
+  ul: (props: MdProps) => <ul style={LIST}>{props.children}</ul>,
+  ol: (props: MdProps) => <ol style={LIST}>{props.children}</ol>,
+  li: (props: MdProps) => <li style={LI}>{props.children}</li>,
+  blockquote: (props: MdProps) => (
+    <blockquote
+      style={{
+        margin: `${Spacing.XS}px 0`,
+        paddingLeft: Spacing.MD,
+        borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
+        color: Colors.TEXT.SECONDARY,
+      }}
+    >
+      {props.children}
+    </blockquote>
+  ),
+  hr: () => (
+    <hr
+      style={{
+        border: 'none',
+        borderTop: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        margin: `${Spacing.SM}px 0`,
+      }}
+    />
+  ),
+  // className 原样透传: 围栏语言标记(language-js)是 react-markdown 挂在 code 节点上的唯一可观测
+  //   信息(设计要求保留, SANITIZE_SCHEMA 亦为它放行 className), 丢了就只剩肉眼看不出区别的
+  //   两种代码块; 行内代码 hast 上无此属性, React 自动省略该属性, 无需条件分支。
+  // 2026-10-06 小欧: ```mermaid 围栏交给 MermaidBlock 画流程图, 其余照旧走代码块样式。
+  //   className 是 react-markdown 挂在 code 节点上的唯一可观测信息(见上方注释), 故据此分流。
+  code: (props: MdProps) => {
+    if (props.className === 'language-mermaid') {
+      const raw = Array.isArray(props.children)
+        ? props.children.join('')
+        : String(props.children ?? '');
+      return <MermaidBlock chart={raw.trim()} />;
+    }
+    return (
+      <code className={props.className} style={inlineCodeStyle}>
+        {props.children}
+      </code>
+    );
+  },
+  // pre 块级容器: 直接渲染, 由本组件负责块级样式。
+  // 2026-10-05 小欧 P1 修复(原实现把 pre 覆盖成 <>{children}</> 让 code 组件自行产 pre, 靠 className
+  //   判断"是否围栏"): react-markdown v9 中 **info string 为空时 hast 的 code 节点没有 className**,
+  //   故 ```\\nplain\\n``` 这类无语言围栏被误判为行内代码, 且 pre 覆盖又把块级容器一并抹掉 →
+  //   实测 pre 数=0, 多行代码挤成一行内联、换行压平、左线/限高/等宽块样式全丢(thought 贴代码极常见)。
+  // 现按语义归位: pre = 块级容器(本组件), code = 行内样式(不论在不在 pre 内, 前者字体/换行由 pre 管) — 小欧-2026-10-05
+  // 2026-10-06 小欧(复核 #1): mermaid 围栏不走 PreBlock —— 代码块的边框/灰底/400px 限高
+  //   会把流程图压成一个带滚动条的代码框, 图还被截断。识别靠 code 组件打的 data-md-fence 标记。
+  //   连带修掉 #18: 不再需要 CSS `pre:has(.mermaid-block)` 隐藏复制按钮(老浏览器 :has() 不生效)。
+  pre: (props: MdProps) =>
+    isMermaidFence(props.node) ? (
+      <div style={{ margin: `${Spacing.XS}px 0` }}>{props.children}</div>
+    ) : (
+      <PreBlock {...props} />
+    ),
+  // 2026-10-21 小杨 - 文件引用链接分流 —— /file-ref?path=… 渲染成 PathLink（App 内跳转）
+  //   ⚠ 绝不能直接复用下面的 <a>：它硬编码 target="_blank" → 文件引用会**新开浏览器标签页**（桌面端灾难）。
+  //   故在 a 组件内提前 return，按 href 前缀分流。
+  a: (props: MdProps) => {
+    const href = props.href ?? '';
+    // 2026-11-02 小欧 - 只有 /file-ref? 前缀才进路径分支；href 解析交唯一解析点
+    //   parseFileRefLink（与 buildFileRefLink 同源）— 小欧-2026-11-02
+    if (isFileRefLink(href)) {
+      const parts = parseFileRefLink(href);
+      // 非法百分号编码 / 形态非法 → 退化纯文本，不造假链接
+      if (!parts) return <>{props.children}</>;
+      return (
+        <PathLink rawPath={parts.rawPath} lineRange={parts.lineRange} pin />
+      );
+    }
+    return (
+      <a
+        href={props.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          color: Colors.PRIMARY,
+          textDecoration: 'underline',
+          wordBreak: 'break-all',
+        }}
+      >
+        {props.children}
+      </a>
+    );
+  },
+  table: (props: MdProps) => <MdTable {...props} layout="auto" />,
+  thead: (props: MdProps) => (
+    <thead style={{ background: Colors.BG.TERTIARY }}>{props.children}</thead>
+  ),
+  // 2026-10-06 小欧: 长 token 可断行。分类表的「目录列表」列有超长路径
+  //   (如 \Windows\System32\config\SECURITY), 不断行会把该列撑到极宽、其余列被挤成逐字竖排。
+  //   ⚠️ 本项目未装 rehype-raw, md 里的 <br/> 会被 rehype-sanitize 整段丢弃, 故 md 单元格
+  //   一律用「、」分隔 + 靠本行折行, 不要写 <br/>。
+  th: (props: MdProps) => (
+    <th
+      style={{
+        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        padding: `${Spacing.XS}px ${Spacing.SM}px`,
+        textAlign: 'left',
+        fontWeight: FontWeight.MEDIUM,
+        color: Colors.TEXT.STRONG,
+        overflowWrap: 'anywhere',
+      }}
+    >
+      {props.children}
+    </th>
+  ),
+  td: (props: MdProps) => (
+    <td
+      style={{
+        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        padding: `${Spacing.XS}px ${Spacing.SM}px`,
+        color: Colors.TEXT.PRIMARY,
+        overflowWrap: 'anywhere', // 同 th
+      }}
+    >
+      {props.children}
+    </td>
+  ),
+  // GFM 任务列表复选框: 只读展示。
+  // ⚠️ 绝不能 `const { node, ...safe } = props` 再 {...safe} —— safe 里含 children,
+  //   透传给 <input> 会抛 "input is a void element tag and must neither have children" 直接崩。
+  //   故与其它组件同款: 显式丢弃 node + children, 只取白名单属性。
+  input: (props: MdProps) => (
+    <input
+      type={props.type as 'checkbox' | undefined}
+      defaultChecked={props.checked}
+      disabled
+      readOnly
+      style={{ marginRight: Spacing.XS }}
+    />
+  ),
+};
+
+/**
+ * 切分未闭合围栏尾段: 打字机逐字喂入时 ``` 刚出头就成立, 直接渲染会凭空产一个空的 <pre>
+ * 容器造成页面位移, 且尾段代码会被当成正文吞进 pre。返回 { closedPart: 可按 Markdown 渲染的前缀,
+ * openTail: 未闭合尾段(按纯文本渲染) }。
+ * 纯函数 15 行, 实时/历史同一规则通吃(已实测)。
+ */
+export const findUnclosedFenceTail = (
+  text: string
+): { closedPart: string; openTail: string } => {
+  const lines = text.split('\n');
+  let openIdx = -1;
+  let openMark = '';
+  // 2026-10-05 小欧 P2 修复(CommonMark 正确性): 原实现只比首字符(反引号 vs 波浪号), 不校验长度 ——
+  //   4 反引号开围栏、3 反引号闭围栏会被误判为闭合(规范要求闭围栏长度 >= 开围栏长度)。
+  let openLen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    if (openIdx === -1) {
+      openIdx = i;
+      openMark = m[1][0];
+      openLen = m[1].length;
+    } else if (
+      m[1][0] === openMark &&
+      m[1].length >= openLen &&
+      m[2].trim() === ''
+    ) {
+      openIdx = -1;
+    }
+  }
+  if (openIdx === -1) return { closedPart: text, openTail: '' };
+  return {
+    closedPart: lines.slice(0, openIdx).join('\n'),
+    openTail: lines.slice(openIdx).join('\n'),
+  };
+};
+
+// 2026-10-05 小欧 - 围栏代码块右上角"复制"按钮(老陈指令):
+//   取原始 children 字符串做复制源(不含按钮文本, 保证复制=代码原文), 复制后 1.5s 变"已复制"回退。
+const extractPlainText = (node: React.ReactNode): string => {
+  if (node == null || node === false) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractPlainText).join('');
+  if (React.isValidElement(node)) {
+    return extractPlainText(
+      (node.props as { children?: React.ReactNode }).children
+    );
+  }
+  return '';
+};
+
+const PreBlock: React.FC<MdProps> = (props) => {
+  // 2026-10-05 小欧: 按钮交互抽到共用 CopyButton(消除本文件与 MarkdownBody 重复实现, DRY)。
+  //   复制源=extractPlainText(props.children) 取原始字符串(不含按钮文本); 详见 CopyButton.tsx。
+  return (
+    <pre style={{ position: 'relative', ...codeBlockStyle }}>
+      <CopyButton text={extractPlainText(props.children)} />
+      {props.children}
+    </pre>
+  );
+};
+
+// 2026-10-06 小欧(复核 #6): 安全Tab 分类表走 fixed + PRIMARY 字号 —— 该表是设置页正文
+//   (周围都是 14px), 缺省 auto+SECONDARY(12px) 会比周围小 2px 且长路径列独占宽度把窄列压成竖排。
+const fixedTableComponent = (props: MdProps) => (
+  <MdTable {...props} layout="fixed" fontSize={FontSize.PRIMARY} />
+);
+
+interface MarkdownTextProps {
+  text: string;
+  /** 表格按固定列宽排(见 MdTable); 默认 auto, 聊天侧表格观感不变 */
+  fixedTable?: boolean;
+}
+
+const MarkdownText: React.FC<MarkdownTextProps> = ({
+  text,
+  fixedTable = false,
+}) => {
+  // 遗漏 5: 切分按 text 缓存, 长推理 × 高频 chunk 不再重复分段
+  const { closedPart, openTail } = useMemo(
+    () => findUnclosedFenceTail(text),
+    [text]
+  );
+
+  const mdNode = useMemo(
+    () =>
+      closedPart ? (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkBreaks]}
+          rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}
+          components={
+            fixedTable
+              ? { ...mdComponents, table: fixedTableComponent }
+              : mdComponents
+          }
+        >
+          {closedPart}
+        </ReactMarkdown>
+      ) : null,
+    [closedPart, fixedTable]
+  );
+
+  // 无折叠分支: thought 长度不定, 阈值无意义(2026-10-05 用户定案, 详见文件头编辑历史)
+  // 组件内无条件 return, 不存在"hook 数随内容变化"的风险
+  return (
+    <div style={{ whiteSpace: 'normal' }}>
+      {mdNode}
+      {/* 未闭合围栏尾段: 纯文本(pre-wrap 保留原换行), 不生成 <pre> 容器 → 页面零位移 */}
+      {openTail && (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {openTail}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export { MarkdownText };
+export default MarkdownText;

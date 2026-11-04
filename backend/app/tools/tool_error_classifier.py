@@ -20,6 +20,11 @@
 #   RemoteProtocolError(继承ProtocolError但分类器按 type().__name__ 字符串精确匹配), 原仅映射基类 "ProtocolError" 导致被归为UNKNOWN,
 #   UNKNOWN不在httpget/download/fetchpage的retryable列表 → "Server disconnected without sending a response."等瞬态断连不重试、报错误导LLM。
 #   实证: 修复前分类=UNKNOWN/httpget不重试; 修复后=PROTOCOL/重试=True。
+# 2026-09-20 - 小欧 - E-3修复(结构化工具错误的分类通道): 结构性错误若自带 category 属性则直接以其值分类
+#   (支持 ToolErrorCategory 枚举值或字符串), 不再纯依赖异常类型名/关键词猜测——与 StructuredToolError(见
+#   tool_retry_engine)及 _should_retry 的 category.value 双通道判定对齐。compliance: SRP/DRY
+# 2026-09-21 - 小欧 - BUG#11: 去除文件头 UTF-8 BOM(Python 脚本二进制操作), 修复 test_architecture_boundaries
+#   依赖方向守护测试 AST 解析红(ast.parse 报 invalid non-printable character U+FEFF)。纯编码修正, 无逻辑变更。
 
 import re
 from enum import Enum
@@ -145,7 +150,10 @@ class ToolErrorClassifier:
         """
         error_type = type(error).__name__
         error_msg = str(error).lower()
-        
+        # 2026-09-20 小欧 E-3: 结构性错误(StructuredToolError)自带 category, 免类型名/关键词猜测
+        _cat = getattr(error, "category", None)
+        if isinstance(_cat, ToolErrorCategory):
+            return _cat
         # 检查异常类型映射
         if error_type in EXCEPTION_TO_TOOL_ERROR:
             return EXCEPTION_TO_TOOL_ERROR[error_type]

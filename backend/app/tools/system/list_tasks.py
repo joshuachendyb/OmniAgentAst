@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 list_tasks — 列出Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -8,12 +9,14 @@ list_tasks — 列出Windows计划任务
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出任务→列任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
@@ -28,7 +31,7 @@ from app.tools.tool_constants import (
 def _run_schtasks_query() -> str:
     """执行 schtasks /query /fo list /v,返回 stdout 文本 — 小沈 2026-05-25"""
     cmd = ["schtasks", "/query", "/fo", "list", "/v"]
-    result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+    result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
     if result.returncode != 0:
         raise RuntimeError(f"schtasks 执行失败: {result.stderr}")
     if not result.stdout:
@@ -84,16 +87,16 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
         _params["task_name"] = task_name
     if exec_code == "error":
         return {
-            "summary": f"获取计划任务列表失败: {detail}",
-            "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
+            "summary": f"列任务，失败：{detail}",
+            "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
             "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
-        "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
-        "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"列任务，成功：共{total_raw}个，匹配{total_matched}个",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列任务) — 小欧-2026-10-14
+        "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
+        "status": {"exec_code": "success", "message": f"成功:共{total_raw}个，匹配{total_matched}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_raw, "text": f"{total_raw}个"}, "matched": {"value": total_matched, "text": f"{total_matched}个"}},
     }
@@ -132,8 +135,8 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
-        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="", hint="", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)
-        llm_data["summary"] = f"获取计划任务列表失败: 超时({timeout_sec}秒)"
+        llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="", hint="命令执行超时，可重试", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)  # 2026-10-14 小欧 - hint 补空(内部超时) — 小欧-2026-10-14
+        llm_data["summary"] = f"列任务，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except ValueError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"复制失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
@@ -8,7 +9,7 @@
 #   承载，formatter 路由改走 #0 空data分支
 # 2026-07-26 - 小欧 - recursive模式删除已存在目标目录时,shutil.rmtree缺onerror,子目录中只读文件导致WinError 5拒绝访问崩溃。
 #   增_remove_readonly闭包函数+onerror参数,与delete_file.py/operation_cleanup.py保持一致。
-# 2026-08-11 - 小欧 - 防自嵌套(北京老陈驱动): recursive复制目标在源内部→copytree无限递归自复制生成套娃垃圾
+# 2026-08-11 - 小欧 - 防自嵌套: recursive复制目标在源内部→copytree无限递归自复制生成套娃垃圾
 #   (shutil_demo/backup/shutil_demo/backup/... 历史事故源头), 并触发WinError206超长路径; 复制前拒绝目标在源内部
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
@@ -16,12 +17,22 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks(record_operation/execute_with_safety 两方法签名与 operation_record 一致), 消除 tools→safety 越层
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: _copy_sync 的 copy2/copytree/rmtree/mkdir/os调用全链
+# 2026-08-13 - 小欧 - 修复#5: _copy_sync 的 copy2/copytree/rmtree/mkdir/os调用全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套路径不再 WinError 206; 主函数目标存在探测/成功stat
 #   同步长路径化, 探测与操作口径一致(超长路径不误报"目标已存在"或stat失败)
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - 写仲裁落地: 拷贝目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
+# 2026-10-12 小欧 - tool_zh改短名词: 复制文件→复制
+# 2026-10-12 小欧 - message去tool_zh前缀: 复制成功/失败→成功/失败
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归路径安全层), 仅留 for_overwrite 覆盖警告。
+# 2026-10-17 - 小欧 - 执行诚实性P0: 源不存在时 _copy_sync 建空目标报 success, 改抛 FileNotFoundError(此前被合法性检查遮蔽)。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(与 move 同口径: 源 EXISTS / 目标 WRITE)
+# 2026-11-03 小欧 - 目标目录已存在删除重建提示 WARNING→INFO(业务分支) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 typing.Tuple(死导入) — 小欧-2026-11-04
 """
 F7: copy_file — 复制文件
 
@@ -38,17 +49,19 @@ import os
 import shutil
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional  # 2026-11-04 小欧: 删未使用的 Tuple(死导入) — 小欧-2026-11-04
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.db.models.operation_models import OperationType
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -68,18 +81,18 @@ def _build_copy_file_llm_data(
     if user_preserve_metadata is not None:
         _act_params["preserve_metadata"] = user_preserve_metadata
     if exec_code == "error":
-        detail = (extra_metrics or {}).get("detail", "复制失败")
+        detail = (extra_metrics or {}).get("detail", "")  # 2026-10-14 小欧 - detail 兜底去复述: "复制失败"与 message 重复, 别处兜底皆 "" — 小欧-2026-10-14
         return {
             "summary": f"复制文件{source}，失败",
-            "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
-            "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
+            "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-            "summary": f"复制成功: {source} -> {destination}",
-        "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
-        "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
+            "summary": f"复制文件{source} -> {destination}，成功",
+        "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},
     }
@@ -97,30 +110,21 @@ async def copy(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    if not source or not source.strip():
+    # 2026-10-17 小欧 - 路径检查统一走四级合法性总入口(与 move 同口径); 源=EXISTS(须存在), 目标=WRITE(只查拼写)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS)
+    if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "source不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
-    if not destination or not destination.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "destination不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
-    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[copy_file] 路径检查未通过: {err} src={source}")
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
-    if warn:
-        logger.warning(warn)
-    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
-    if not is_valid:
+    ok, err = check_path_four_level(destination, OpCategory.WRITE)
+    if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[copy_file] 路径检查未通过: {err} dst={destination}")
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由路径安全层唯一检查, 工具只执行+业务警告
+    _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:
         logger.warning(warn)
 
@@ -138,7 +142,7 @@ async def copy(
         try:
             if dst.resolve().is_relative_to(src.resolve()):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标路径位于源目录内部,禁止递归复制: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+                llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标路径位于源目录内部，禁止递归复制：{destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
                 return build_error(data={}, llm_data=llm_data)
         except ValueError:
             pass
@@ -154,7 +158,7 @@ async def copy(
         return build_error(data={}, llm_data=llm_data)
 
     try:
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id,
             operation_type=OperationType.COPY,
@@ -180,7 +184,7 @@ async def copy(
             elif src.is_dir():
                 if recursive:
                     if Path(_dst_lp).exists():
-                        logger.warning(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")
+                        logger.info(f"[copy] recursive模式: 目标目录已存在,将删除后重建: {dst}")  # 2026-11-03 小欧: 业务分支, 降 INFO
                         if not os.access(_dst_lp, os.W_OK):
                             os.chmod(_dst_lp, os.stat(_dst_lp).st_mode | 0o200)
                         shutil.rmtree(_dst_lp, onerror=_remove_readonly)
@@ -190,14 +194,20 @@ async def copy(
                         shutil.copytree(_src_lp, _dst_lp, copy_function=shutil.copy)
                 else:
                     Path(_dst_lp).mkdir(exist_ok=True)
+            else:
+                # 2026-10-17 小欧 - 执行诚实性: 源既非文件又非目录(不存在), 操作不可能完成必须失败,
+                #   禁止建空目标目录报 success(LLM 会误信已复制)。此为执行期事实判定, 非前置合法性检查。
+                raise FileNotFoundError(f"源不存在: {source}")
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        if operation_id:
-            success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
-        else:
-            logger.info("Database unavailable, executing copy operation without recording")
-            success = await asyncio.to_thread(_copy_sync)
+        # 拷贝目标落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        with claim_write(str(dst), task_id):
+            if operation_id:
+                success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+            else:
+                logger.info("Database unavailable, executing copy operation without recording")
+                success = await asyncio.to_thread(_copy_sync)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:

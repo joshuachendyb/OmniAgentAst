@@ -5,6 +5,9 @@ APILogger — 从 setup.py 拷出
 
 拷贝来源: setup.py 第106-207行
 """
+# 编辑历史:
+# 2026-11-03 - 小欧 - 删 __init__ 期 debug_mode 快照, 两处改实时读 LogConfig.is_debug_mode():
+#   原快照致设置页切换调试模式需重启才生效 — 小欧-2026-11-03
 
 import logging
 import time
@@ -24,7 +27,6 @@ class APILogger:
         if hasattr(self, '_initialized'):
             return
         self.logger: logging.Logger = setup_logger(__name__)
-        self.debug_mode: bool = LogConfig.is_debug_mode()
         self._request_times: dict = {}
         self._initialized = True
 
@@ -48,7 +50,7 @@ class APILogger:
             f"[{provider}] 请求开始 | ID: {request_id} | 模型: {model} | "
             f"消息长度: {message_len} | 历史消息数: {history_count}"
         )
-        if self.debug_mode:
+        if LogConfig.is_debug_mode():
             self.logger.debug(f"[{provider}] 调试模式: 消息内容长度={message_len}")
         return request_id
 
@@ -95,7 +97,7 @@ class APILogger:
             )
 
     def log_error(self, provider: str, error: str, exc_info: Optional[Exception] = None):
-        if exc_info and self.debug_mode:
+        if exc_info and LogConfig.is_debug_mode():
             self.logger.exception(f"[{provider}] 异常: {error}")
         else:
             self.logger.error(f"[{provider}] 错误: {error}")

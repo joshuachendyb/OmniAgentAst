@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 Tool函数公共辅助代码 — 纯逻辑函数集合
 【创建时间】2026-06-22 小欧
@@ -16,7 +17,7 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
 # 2026-07-21 - 小欧 - 删除死代码 validate_python_content(全仓0调用方), 语法校验统一迁至 app.tools.toolhelper.syntax_validator.validate_syntax
 # 2026-07-24 - 小欧 - 修复: 去掉 validate_csv/xml 的 str(e)[:100]截断(helper层不截断, 调用方自行决定) — 北京老陈驱动
 # 2026-08-13 - 小沈 - P5b: backup_file 迁移至 app/utils/file_utils.py(消除 services/model/persistence→tools 实现依赖), 本文件 re-export 保持下游兼容
-# 2026-08-29 - 小沈 - BugFix #11/#12: _get_connection 按连接串驱动前缀(driver-aware, make_url().get_backend_name())选 connect_args 键名(psycopg2→connect_timeout / pymysql/mysqldb/mysqlconnector→timeout / psycopg→connect_timeout, 默认 connect_timeout), 覆盖 PG/mysql 等; 原仅 mysql 字面判断转发, 致 PG 超时键名非法直连500, 与实现层 timeout 语义统一。
+# 2026-08-29 - 小沈 - 修复: _get_connection 按连接串驱动前缀(driver-aware, make_url().get_backend_name())选 connect_args 键名(psycopg2→connect_timeout / pymysql/mysqldb/mysqlconnector→timeout / psycopg→connect_timeout, 默认 connect_timeout), 覆盖 PG/mysql 等; 原仅 mysql 字面判断转发, 致 PG 超时键名非法直连500, 与实现层 timeout 语义统一。
 
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -25,13 +26,12 @@ import configparser
 import csv
 import importlib
 import locale
-import io
 import json
-import os
 import re
-import shutil
 import sqlite3
 import subprocess
+
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -99,7 +99,7 @@ def _check_python_available() -> bool:
 def _check_node_available() -> bool:
     """检查Node.js是否可用 — 小沈 2026-05-17"""
     try:
-        result = subprocess.run(
+        result = proc_run(
             ["node", "--version"],
             capture_output=True,
             timeout=SUBPROCESS_TIMEOUT_SHORT,
@@ -726,7 +726,7 @@ from app.utils.file_utils import backup_file  # P5b: 迁入 utils, 此处 re-exp
 
 def _get_connection(connection_type, connection_string=None, db_path=None, timeout=int(DEFAULT_TIMEOUT_SEC * 1000)):
     """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小欧 2026-06-24 从dataanalysis提取到公共helper
-    2026-08-29 - 小沈 - BugFix #11/#12: 按连接串驱动前缀(driver-aware, make_url().get_backend_name())选 connect_args 键名(覆盖 PG/mysql), 原仅 mysql 字面判断转发致 PG 键名非法直连500)"""
+    2026-08-29 - 小沈 - 修复: 按连接串驱动前缀(driver-aware, make_url().get_backend_name())选 connect_args 键名(覆盖 PG/mysql), 原仅 mysql 字面判断转发致 PG 键名非法直连500)"""
     try:
         if connection_type == "sqlite":
             if not db_path:

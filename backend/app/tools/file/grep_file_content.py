@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-14 - 小沈 - grep搜索结果上限改用OBS_MAX_DISPLAY_ITEMS，区分"超时"与"达上限"两种截断
 # 2026-07-18 - 小沈 - 灰区后缀跳过逻辑改为内容级探测(复用_detect_binary_content),修复日志轮转文件.log.1/.2被误判二进制跳过
@@ -10,19 +11,25 @@
 #   4. context 仅校验非负
 #   5. 跳过目录名单改用公用 SKIP_DIRS
 #   6. 文件读取走默认不限制大小
-# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 Tool 层输出截断
+# 2026-07-23 - 小欧 - 新增 Tool 层输出截断
 #    matches 超 GREP_OUTLIMIT_MATCHES_MAX=2000 截断 + data._truncated=True
 #    单条 content/before/after 字符串超 GREP_OUTLIMIT_MATCH_CONTENT_CHARS=2000 尾部截断
 #    total_matches 同步更新, 使 llm_data.summary 与实际 data 一致
 #    formatter #9 传递 data 参数以读取 _truncated 标记
-# 2026-07-23 - 小欧 - 北京老陈驱动第二轮增强: total_files 从截断结果重算
+# 2026-07-23 - 小欧 - 输出截断第二轮增强: total_files 从截断结果重算
 #    _apply_grep_outlim 返回 _real_files, GrepSyncResult 用真实值重建
 #    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
-# 2026-08-07 - 小欧 - P06优化(北京老陈驱动 task001): 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
+# 2026-08-07 - 小欧 - P06优化: 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-21 - 小欧 - 北京老陈驱动: 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
+# 2026-08-21 - 小欧 - 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
 #    真实工具(grep -r /、rg /、findstr /s C:\)均允许从根搜索。grep内部已有 deadline 截断(TOOL_TIMEOUTS["grep"]=120s,
 #    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
+# 2026-10-12 小欧 - tool_zh改短名词: 内容搜索→搜内容
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层); 文件/目录分支是执行路由, 保留。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-26 - 小欧 - grep matched 字段截断: 正则匹配原文超 GREP_OUTLIMIT_MATCHED_CHARS=500 尾部截断
+#    修复 observation 帧因 matched 含 5.3MB 单行 JSON(.pytest_cache/conv_hist) 导致 SSE 单帧超 8MB 前端判帧损坏断连
+#    同时 GREP_OUTLIMIT_MATCH_CONTENT_CHARS 2000→1000(content/before/after 同宽收窄, 与 display 行宽 OBS_GREP_MAX_ROW_CHARS=150 更协调)
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -45,13 +52,15 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, SKIP_DIRS,
     GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
+    GREP_OUTLIMIT_MATCHED_CHARS,
 )
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -94,9 +103,9 @@ def _build_grep_file_content_llm_data(
 
     if exec_code == "error":
         return {
-            "summary": f"搜索内容'{pattern}'，失败",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
+            "summary": f"搜内容{{{pattern}}}，失败",
+            "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -114,8 +123,8 @@ def _build_grep_file_content_llm_data(
             else:
                 warning_hint = ""
         return {
-            "summary": f"搜索内容'{pattern}'，成功,提示说明: {total_files}个文件{total_matches}行匹配{summary_suffix}",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
+            "summary": f"搜内容{{{pattern}}}，成功：{total_files}个文件{total_matches}行匹配{summary_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜内容), 去",提示说明" — 小欧-2026-10-14
+            "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": {
@@ -124,9 +133,9 @@ def _build_grep_file_content_llm_data(
             },
         }
     return {
-        "summary": f"搜索内容'{pattern}'，成功: {total_files}个文件{total_matches}行匹配",
-        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "summary": f"搜内容{{{pattern}}}，成功：{total_files}个文件{total_matches}行匹配",
+        "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"完成：{total_files}个文件{total_matches}行匹配", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total_files": {"value": total_files, "text": f"{total_files}个文件"},
@@ -253,10 +262,16 @@ async def grep(
         context: 返回匹配行前后各N行上下文,默认0(仅校验非负)
     """
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case)
+        return build_error(data={}, llm_data=llm_data)
     # context 仅校验非负(输入大小/长度限制已去除) — 小欧 2026-07-11 — 小欧 2026-07-20 去掉0-10上限
     if context < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"context不能为负数: {context}", hint="context 参数不能为负数", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"context不能为负数：{context}", hint="context 参数不能为负数", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
     if not path or not path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -271,7 +286,7 @@ async def grep(
     for redos_p in _REDOS_PATTERNS:
         if re_mod.search(redos_p, pattern):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case)
+            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词，可能触发ReDoS：{pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case)
             return build_error(data={}, llm_data=llm_data)
 
 
@@ -281,24 +296,14 @@ async def grep(
         regex = re_mod.compile(effective_pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效：{e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+类型 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    # path 支持文件与目录：文件用 READ_FILE 校验,目录用 LIST_DIR 校验 — 小欧 2026-07-20
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查; 文件/目录分支是执行路由(决定怎么搜), 非校验, 保留
     search_path = Path(os.path.expanduser(path))
-    if search_path.is_file():
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, str(search_path))
-    elif search_path.is_dir():
-        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, str(search_path))
-    else:
+    if not search_path.is_file() and not search_path.is_dir():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"路径不存在或不是文件/目录: {path}", hint="请提供有效的文件或目录路径", user_glob=glob, user_ignore_case=ignore_case)
-        return build_error(data={}, llm_data=llm_data)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"路径不存在或不是文件/目录：{path}", hint="请提供有效的文件或目录路径", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2
@@ -351,6 +356,15 @@ async def grep(
                         _new_ctx.append(_c)
                     _nm[_ctx_key] = _new_ctx
             _matched = _nm.get("matched", [])
+            if isinstance(_matched, list):
+                _new_matched = []
+                for _mt in _matched:
+                    if isinstance(_mt, str) and len(_mt) > GREP_OUTLIMIT_MATCHED_CHARS:
+                        _mt = _mt[:GREP_OUTLIMIT_MATCHED_CHARS] + "...(截断)"
+                        _tool_trunc = _trunc_content = True
+                    _new_matched.append(_mt)
+                _nm["matched"] = _new_matched
+                _matched = _new_matched
             _real_total += len(_matched) if isinstance(_matched, list) else 1
             _out.append(_nm)
         _real_files = len({m.get("file", "") for m in _out if m.get("file")})
@@ -375,7 +389,7 @@ async def grep(
     # =============================================================================
     # 数据设计：total_matches/total_files 既留在 data 中（供前端/断言读取），
     # 也通过 llm_data.metrics 传入 summary
-    # summary 示例: "搜索完成: 匹配5行, 3个文件"
+    # summary 示例: "搜内容{pat}，成功：3个文件5行匹配"
     # — 小欧 2026-07-06 18:46:13 原始设计移除data；小欧 2026-07-12 修正: 重新加回data(count模式此前返回空数据)
     # =============================================================================
     data: Dict[str, Any] = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}

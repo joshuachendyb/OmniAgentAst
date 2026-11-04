@@ -17,8 +17,12 @@ steps包 - ReAct Agent Step封装类
 Author: 小沈
 Date: 2026-04-15
 Updated: 2026-06-22 SRP拆分：ActionStep(action_tool) + ObservationStep(observation)
-Updated: 2026-08-18 小欧 - §10.3: 废action_tool改action, 新增ThoughtStartStep, ObservationStep仅tool_result, FinalStep删冗余加reasoning
-Updated: 2026-09-11 小欧 - 接线①: 导出 FinalStatsStep 子类(打字法显式写成 [27] 定案的 final_stats 终态) — 小欧 2026-09-11
+Updated: 2026-08-18 小欧 - 步骤结构: 废action_tool改action, 新增ThoughtStartStep, ObservationStep仅tool_result, FinalStep删冗余加reasoning
+Updated: 2026-09-11 小欧 - 接线①: 导出 FinalStatsStep 子类(打字法显式写成定案的 final_stats 终态) — 小欧 2026-09-11
+Updated: 2026-10-30 小欧 - 批2序12: ALL_STEP_TYPES 登记 "refs_notice"(引用回执, 仅SSE不落库, 与 "merged" 同类)——
+  定义与组帧在 services/refs/notice.py, 此处为唯一登记点, 转发表由它推导(不存在双登记) — 小欧 2026-10-30
+Updated: 2026-10-30 小欧 - NOTICE_KINDS 补 "refs_ready"(引用处置汇总, 走既有 notice 信封, 无新增事件类型) — 小欧 2026-10-30
+Updated: 2026-10-31 小欧 - NOTICE_KINDS 补 "ws_inject"(事项目录块超限省略提示, 同走 notice 信封) — 小欧 2026-10-31
 """
 from .base import ReasoningStep, MetaStep
 from .action_step import ActionStep
@@ -26,7 +30,7 @@ from .observation_step import ObservationStep
 from .chunk_step import ChunkStep
 from .thought_step import ThoughtStep
 from .thought_start_step import ThoughtStartStep   # 2026-08-18 小欧 新增
-from .start_content_step import StartStep           # 2026-08-18 小欧 新增(§10.1.2 P7 start 拆双)
+from .start_content_step import StartStep           # 2026-08-18 小欧 新增(start 拆双)
 from .final_step import FinalStep
 from .error_step import ErrorStep
 from .final_stats_step import FinalStatsStep
@@ -47,22 +51,44 @@ __all__ = [
 
 # ============================================================
 # 全部事件类型登记源(唯一登记处) — 小欧-2026-09-12
-# 纪律([29]4C通道路由缺口核查报告-小欧-2026-09-12 §7.3.1): 新增任何 Step/事件类型必须先在此登记,
+# 纪律(通道路由缺口核查报告-小欧-2026-09-12): 新增任何 Step/事件类型必须先在此登记,
 #   并携带通道路由表(SSE/DB/短信号 三列)逐行对照迁移, 缺一不放行。
 # 转发表推导: stream_orchestrator._SSE_FORWARD_TYPES = ALL_STEP_TYPES − {"thought"}(仅落库集), DRY 单一来源。
-# 全集来源: [29]§7.1.3(当前 HEAD 4bf3ea987 逐字面值实证)。
+# 全集来源: 当前 HEAD 4bf3ea987 逐字面值实证。
 # 2026-09-17 小欧 会审复核(#3): "user_rejected" 退位 → "rejected"(2026-09-16 统一拒绝事件后 user_rejected 零发射,
-#   登记源同步, 与 stream_orchestrator._SSE_FORWARD_TYPES 白名单/纪律[29]§7.3.1 对齐) — 小欧-2026-09-17
+#   登记源同步, 与 stream_orchestrator._SSE_FORWARD_TYPES 白名单/通道路由纪律对齐) — 小欧-2026-09-17
+# 2026-09-28 小欧 活跃任务注入(设计文档[76] 6.7): 新增 "merged"(注入应答, 替代 retrying 语义误用) —
+#   通道路由: SSE✓/DB✗/短信号✗(纯实时提示, 不落库不参与短信号), 仅SSE 组, 自动进 _SSE_FORWARD_TYPES。
 ALL_STEP_TYPES = frozenset({
     # SSE + 落库(SSE✓/DB✓)
     "start", "action", "observation", "final", "final_stats",
     # 仅SSE(SSE✓/DB✗, 实时信号)
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
-    "rejected", "stats", "context_overview", "truncated",
+    "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
+    "rejected", "truncated",
+    "notice",  # 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派, 仅SSE不落库
+    # 2026-10-30 小欧: 引用回执(部分不可用/压缩/拒绝点名), 仅SSE不落库, 与 "merged" 同类;
+    #   定义与组帧在 services/refs/notice.py, 此处为唯一登记点(转发表自动推导)
+    "refs_notice",
+    # 2026-10-04 小欧 - 订正: stats/history_context 实际属"落库需回放"(见 agent_telemetry.PERSISTED_NON_BIZ_TYPES,
+    #   agent_runner 落库路由以 SSE_ONLY_TYPES 为排除集, 二者不在其中即落库), 原被误列在仅SSE 段 — 小欧 2026-10-04
+    "stats", "history_context",
     # 仅落库(SSE✗/DB✓)
     "thought",
     # 防御性保留(当前无独立发射源)
     "cancelled",
+})
+
+# ============================================================
+# 通知信封 kind 登记源(唯一登记处) — 小欧-2026-10-25
+# 纪律: 新增通知类型必须先在此登记, 前端 execution.ts NoticeKind 同步。
+# 信封结构: type="notice" + kind(通知种类) + phase(阶段: start/done/failed) + content(文案)
+# 事前通知(phase=start)与事后通知(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
+NOTICE_KINDS = frozenset({
+    "summarizing",  # 摘要生成(start 阶段调 LLM 压缩历史)
+    "installing",   # 依赖安装(缺库自愈 pip install)
+    "refs_ready",   # 输入框引用处置汇总(引用进入本轮/全部不可用) — 小欧 2026-10-30
+    "ws_inject",    # 事项目录块超限省略提示(只提示, 不阻断) — 小欧 2026-10-31
 })
 

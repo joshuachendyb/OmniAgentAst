@@ -4,6 +4,8 @@ DRY: 从write_text_file/read_text_file/edit_text_file提取 — 小欧 2026-06-3
       新增 safe_read_lines — 小沈 2026-07-05
       2026-08-09 - 小欧 - 新增 read_file_with_encodings(合并 read_text_file/edit_text_file 两份 _try_read_file_with_encodings
       私有实现为公共版, 统一替换符阈值+mojibake检查); _looks_like_mojibake 迁入本模块
+      2026-10-21 - 小欧 - read_file_with_encodings 增 max_bytes（读前闸门，防 OOM）：
+                  不给=全量读（既有行为不变）；给了=只读前 N 字节，不整文件进内存 — 小欧-2026-10-21
 """
 
 import asyncio
@@ -13,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_fc_helper import _detect_encoding
 from app.logger import logger
-from app.tools.tool_constants import READTEXT_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
+from app.tools.tool_constants import READ_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
 
 
 _ENCODING_PRIORITY = [
@@ -122,7 +124,7 @@ def get_file_encoding(file_path: str) -> Dict[str, Any]:
 # ============================================================
 # 统一编码回退读取 — 小欧 2026-08-09 (DRY 合并)
 # 病根: read_text_file 与 edit_text_file 各有一份 _try_read_file_with_encodings,
-#       行为不一致(edittext对preferred也做替换符检查, readtext对preferred直接返回)。
+#       行为不一致(edit对preferred也做替换符检查, read对preferred直接返回)。
 # 合并为公共 read_file_with_encodings(取"增强"语义): 所有编码统一替换符阈值检查 + mojibake 检测,
 # 调用契约不变 (content, used_encoding, error)。
 # ============================================================
@@ -138,7 +140,7 @@ def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
     if not content or len(content) < 10:
         return False
     has_cjk = any('\u4e00' <= c <= '\u9fff' for c in file_path)
-    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READTEXT_INER_CJK_SAMPLE])
+    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READ_INER_CJK_SAMPLE])
     if not has_cjk:
         return False
     total = len(content)
@@ -152,12 +154,17 @@ def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
 async def read_file_with_encodings(
     path: Path,
     preferred: Optional[str] = None,
+    max_bytes: Optional[int] = None,
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """统一编码检测+同步文件读取 (content, used_encoding, error) — 小欧 2026-08-09
-    合并 read_text_file 与 edit_text_file 两份私有实现(DRY), 取增强语义:
-    - 候选: preferred 指定→优先尝试+常见中文编码兜底; 否则 auto 探测编码优先+常见中文编码
-    - 每个编码统一做替换符阈值检查(>=3且>3%)与 mojibake 检测, 不达标回退下一编码
-    返回 (content, used_encoding, error); 调用方据此比较 encoding 与 used_encoding 判断是否回退
+    """统一编码检测 + 同步文件读取 (content, used_encoding, error) — 小欧 2026-08-09
+    合并 read_text_file / edit_text_file 两份私有实现(DRY), 取增强版
+    - 候选: preferred 指定→优先尝; 否则 auto 探测编码优先+常见中文编码
+    - 每个编码统一做替换符阈值检测(>=3个且>3%) + mojibake 检测, 不达标回退下一编码
+    返回 (content, used_encoding, error); 调用方据此比 encoding 与 used_encoding 判断是否回退
+
+    2026-10-21 小欧 - max_bytes: **读前闸门**（防 OOM）。不给 = 全量读（既有行为不变）；
+    给了 = 只读前 max_bytes 字节（二进制读后解码，尾部半个多字节字符用替换符兜底），
+    大文件不再整份进内存。调用方（read 工具）按需传上限。
     """
     try:
         if preferred:
@@ -176,9 +183,15 @@ async def read_file_with_encodings(
                 continue
             try:
                 def _read(e=enc):
-                    with open(path, 'r', encoding=e, errors='replace') as f:
-                        return f.read()
+                    if max_bytes is None:
+                        with open(path, 'r', encoding=e, errors='replace') as f:
+                            return f.read()
+                    # 读前闸门：二进制读前 N 字节再解码（不整文件进内存）
+                    with open(path, 'rb') as fb:
+                        raw = fb.read(max_bytes)
+                    return raw.decode(e, errors='replace')
                 content = await asyncio.to_thread(_read)
+
                 if '\ufffd' in content:
                     _repl_count = content.count('\ufffd')
                     if _repl_count >= _REPLACEMENT_CHAR_MIN_COUNT and _repl_count > len(content) * _REPLACEMENT_CHAR_RATIO:

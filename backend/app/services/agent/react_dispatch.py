@@ -8,15 +8,15 @@
 #   与下方终态推断块逐行保留, 语义无退化(4A=T4A, 4B=T4B, 5.7调度仍为 async generator 逐条外发) - 小欧-2026-09-06
 # 2026-09-06 小欧 4C(5.8.1): 返 list 收口 — _dispatch_events 收集循环(双兼容 dict/列表源), 状态推断块逐行
 #   保留, return _dispatch_events 置于状态推断之后(终态声明先执行, 与现状时序一致); 消费端 5.8.2 同 commit
-#   await 拿 list, react_step L461 async-for 对 list 即崩, 5.8.1-5.8.5 同 commit 齐发(文档[6]5.8缺陷D1) - 小欧-2026-09-06
-# 2026-09-06 小欧 方案C三堂会审缺陷3修复(独立user_rejected适配, 北京老陈裁定"拒绝≠error"):
+#   await 拿 list, react_step L461 async-for 对 list 即崩, 同 commit 齐发(文档缺陷) - 小欧-2026-09-06
+# 2026-09-06 小欧 方案C三堂会审缺陷修复(独立user_rejected适配, 北京老陈裁定"拒绝≠error"):
 #   独立 type="user_rejected" 后, 拒绝事件不再是 type="error"(error_type=user_rejected), seen_types 无 "error"
 #   → 状态推断落 else"成功重置"分支: 拒绝计数既不累计(≥3次FAILED防死胡同机制失效) 反将已计数清零(语义错误)。
 #   [修复] ①seen_types 收集新增 _EV_DENIED("user_rejected"), error/user_rejected 事件统一入 last_denial_event
 #   槽(取轮内最后一条, 与旧"每次拒绝仅计一条"语义一致); ②推断分支改 `_EV_ERROR in seen_types or _EV_DENIED
 #   in seen_types`, err_type 按 event.type 判 user_rejected, 复用原 _RECOVERABLE_ERRORS 计数通道((tool,type)
 #   累计≥3→FAILED); ③blocked/timeout 仍走 error 分支行为不变; else"成功重置"仅真成功可达 — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-2 计数错键修复(问题挖掘文档六.6.2/6.3): ①计数 tool_name 优先读事件级 _kw["tool_name"]
+# 2026-09-06 小欧 计数错键修复(问题挖掘文档): ①计数 tool_name 优先读事件级 _kw["tool_name"]
 #   (拒绝事件自 2026-09-06 起带被拒工具名), 回退 llm_response.tool_name(旧事件/单工具兼容)——多工具并行拒绝
 #   精确分键, 不再全落主工具名下; ②成功重置改按本轮 LLM 实际发出工具集清桶(fc_context.tool_calls→function.name,
 #   与 llm_response_builder.py:41 同源; 顶层无 tool_calls, 候选diff字段已按真实结构核验修正),
@@ -27,6 +27,11 @@
 #   (统一 rejected 后 blocked/timeout 不再走 type="error", step_emitter 不记录, 守卫读空→终态退化成通用文案);
 #   ②(#2)拒绝计数桶合并——计数键按 reject_type 细分(safety/sandbox/user/timeout 分桶, 防"拦截1+超时1+拒绝1"合并误判≥3),
 #   成功重置清桶遍历 _DENY_KEY_TYPES 全量 6 键防残留; _ERR_CN 扩 safety/sandbox/user 中文映射 — 小欧-2026-09-17
+# 2026-10-11 小欧 - _ERR_CN["timeout"] 中文名"超时"→"未获授权"(北京老陈令): 该 reject_type 的真实语义是
+#   HITL 确认窗口关闭、未收到人工授权, 与"执行耗时"无关; 原写"超时"使 LLM 误判工具慢而反复重试同一受保护
+#   路径, 连撞3次判死胡同(实测 2026-10-11 zen_verify.py)。仅改中文呈现, 键名 timeout(前端
+#   deniedStepSet 停齿轮控制信号 + 分桶计数键 _deny_counts 的键) 保持不变 — 小欧-2026-10-11
+# 2026-11-03 小欧 - log_and_print 增 level 参数: [Thought] 步骤行显式传 level="WARNING", 控制台默认档即可见 — 小欧-2026-11-03
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -79,7 +84,7 @@ async def _dispatch_handler(agent, llm_response):
     reasoning = llm_response.get("reasoning", "")
     if thought or reasoning:  # 2026-07-19 小欧 修复: reason-only action step也输出控制台
         reasoning_part = f"\n{time.strftime('%H:%M:%S')} === 推理 ===\n{reasoning}" if reasoning else ""
-        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}")  # 小欧 2026-07-02 控制台
+        log_and_print(f"{time.strftime('%H:%M:%S')} [Thought] step={step}, {thought}{reasoning_part}", level="WARNING")  # 小欧 2026-07-02 控制台
     if parsed_type == "action":
         handler = handle_action(agent, llm_response)
     else:
@@ -89,7 +94,11 @@ async def _dispatch_handler(agent, llm_response):
     # 2026-09-17 小欧 会审V3(#12): 失败文案 err_type 英文→中文映射(用户可见, 原样透出 "rejected"/"blocked"/"timeout" 生硬);
     #   #2整改: 分桶的拒绝类型扩展——rejected 的 reject_type(safety/sandbox/user/timeout) 直接入文案 — 小欧-2026-09-17
     _ERR_CN: Dict[str, str] = {
-        "rejected": "拒绝", "blocked": "拦截", "timeout": "超时",
+        # 2026-10-11 小欧 - "timeout" 的中文名改"未获授权"(北京老陈令): 该reject_type 的真实语义
+        #   是 HITL 确认窗口关闭、没收到人工授权, 与"执行耗时"无关; 原写"超时"会让 LLM 误判为
+        #   工具慢/文件大而反复重试同一受保护路径, 连撞 3 次判死胡同(实测 2026-10-11 zen_verify.py)。
+        #   键名 timeout 为前端 deniedStepSet 控制信号, 保持不变, 仅中文呈现去歧义。
+        "rejected": "拒绝", "blocked": "拦截", "timeout": "未获授权",
         "safety": "安全拦截", "sandbox": "沙箱拦截", "user": "用户拒绝",
     }
     seen_types = set()
@@ -138,7 +147,7 @@ async def _dispatch_handler(agent, llm_response):
             # (往往是参数问题, 换工具/换参数即可); 仅同一工具同一类拒绝累计≥3次才说明LLM
             # 陷入死胡同, 必须停止 loop → FAILED。故用 per-(tool,type) 字典。
             # 工具名缺失时不累计(无法分键, 避免空名合并误累计), 保持可恢复回THINKING, 不误杀。
-            # BUG-2修复(2026-09-06 小欧): tool_name 优先取事件级(被拒工具精确分键), 回退 llm_response(单工具/旧事件兼容) — 小欧-2026-09-06
+            # 修复(2026-09-06 小欧): tool_name 优先取事件级(被拒工具精确分键), 回退 llm_response(单工具/旧事件兼容) — 小欧-2026-09-06
             _tool = _kw.get("tool_name", "") or llm_response.get("tool_name", "")
             if _tool:
                 # #2整改(2026-09-17 小欧): 分桶键按 reject_type 细分(rejected 事件带 safety/sandbox/user/timeout),
@@ -156,7 +165,7 @@ async def _dispatch_handler(agent, llm_response):
                     #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
-                        _fail_msg = f"工具 {_tool} 被反复{_ERR_CN.get(_rk, _rk)}(≥3次), LLM陷入死胡同, 停止循环"
+                        _fail_msg = f"工具 {_tool} 被累计{_ERR_CN.get(_rk, _rk)}(终身≥3次, 非连续), LLM陷入死胡同, 停止循环"  # 2026-09-24 小欧: “反复”改“累计”, 与per-(tool,type)终身累计实现对齐(压测三弹各跨40+分钟实证)
                         set_failed(agent, _fail_msg)
                         # #1整改(2026-09-17 小欧): set_failed 同步写 _last_error, 供 agent_runner 守卫取回终态原因。
                         #   原 blocked/timeout 走 type="error" 在 step_emitter:66 记录 _last_error; 统一 rejected 后不再触发, 原因丢失 — 小欧-2026-09-17
@@ -168,7 +177,7 @@ async def _dispatch_handler(agent, llm_response):
         # — 北京老陈 2026-07-13: 同工具成功后证明其未陷死胡同, 旧计数清零, 避免长会话里一次早已
         # 解决的历史拒绝在后续被误累计触发 FAILED(增强不退化, 逻辑无漏洞)。answer/final 步不重置。
         if llm_response.get("type") == "action":
-            # BUG-2修复(2026-09-06 小欧, 问题挖掘文档六.6.3): 成功轮按本轮 LLM 实际发出的工具调用清桶
+            # 修复(2026-09-06 小欧, 问题挖掘文档): 成功轮按本轮 LLM 实际发出的工具调用清桶
             #   (并行多工具全清, 不再误用主工具名清错桶)——源=fc_context.tool_calls(OpenAI原生, 函数名在
             #   function.name, 与 llm_response_builder.py:41 同源; 顶层无 tool_calls, 候选diff字段按真实结构修正);
             #   无调用条目时回退 tool_name(旧格式兼容, 不空清不误清) — 小欧-2026-09-06

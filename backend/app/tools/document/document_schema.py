@@ -9,14 +9,17 @@
 #   翻页参数,但schema漏更新致LLM看不到
 #   且tool_retry_engine校验拒收(非法参数)
 # 2026-07-21 - 小欧 - 修pages字段类型不安全(KISS-DIRECT): Optional[Any]→Optional[Union[int,str,List[int]]], 与运行时_parse_pdf_pages接受类型对齐, Pydantic层即拦截非法类型
-# 2026-07-21 - 小欧 - ReadDocxInput.limit description 引用 OBS_READTEXT_MAX_ROWS 常量, 加建议不超过上限说明
+# 2026-07-21 - 小欧 - ReadDocxInput.limit description 引用 OBS_READ_MAX_ROWS 常量, 加建议不超过上限说明
 # 2026-07-21 - 小欧 - 入参即信任: ReadDocxInput.limit 加 ge=1,le=1000, 支撑LLM指定1000以内段落数
 # 2026-07-25 - 小欧 - description去冗余+Field精简
 # 2026-07-26 - 小沈 - 欧阳报告: WriteDocxInput/WritePdfInput validator放宽, content+table_data都空时默认""而非报错
-# 2026-07-26 - 小沈 - Bug #6 DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
+# 2026-07-26 - 小沈 - DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
 # 2026-07-28 - 小欧 - description精确化: write_pptx.path/write_docx.path/write_xlsx.path/write_pdf.path 全部加"必填"标注
 # 2026-07-31 - 小欧 - ReadPdfInput 补 page/pages 互斥校验(model_validator): 二者同时指定时报 ValueError, 与运行时逻辑对齐(Pydantic 层即拦截非法组合); 移除未使用 Literal 导入
 # 2026-08-07 - 小欧 - WriteXlsxInput 新增 append_mode 字段(追加模式): True=文件已存在时末尾追加, False=默认覆盖; 与 write_xlsx 实现层同步 — 小欧 2026-08-07
+# 2026-10-11 - 小欧 - _SLIDE_DESC 增补硬约束首行: "⚠️ 必须直接传JSON数组(list)，禁止序列化为字符串。"
+#   起因: LLM 误把整个slides数组序列化成字符串传入 write_pptx, coerce_json 无法还原为list 而报错,
+#   且原schema描述未警示类型, LLM 重试仍照旧。首行显式约束以从源头阻断 — 小欧 2026-10-11
 """
 Document Schema - 文档工具参数模型
 
@@ -146,7 +149,8 @@ class WritePdfInput(_DocContentOrTableMixin, BaseModel):
     )
 
 
-_SLIDE_DESC = """幻灯片列表。每项Dict包含：
+_SLIDE_DESC = """⚠️ 幻灯片列表必须直接传JSON数组(list)，禁止序列化为字符串。每项Dict包含
+幻灯片列表。每项Dict包含：
 - title（必填）：标题
 - subtitle（可选）：副标题（仅封面页type=0或"cover"时显示）
 - type（可选）：布局类型，0/"cover"=封面页，1/"content"=内容页，2/"two"=两栏页，默认1

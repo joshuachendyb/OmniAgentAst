@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-25 - 小欧 - 不存在的键reg export失败日志WARNING→INFO(正常业务场景不应报WARNING)
 # 2026-07-31 - 小欧 - CRITICAL: _backup_registry 失败路径不缓存备份路径(原在 returncode!=0/FileNotFoundError/Exception 3 处均缓存)。失败后续操作命中缓存跳过备份, 导致 registry_write/delete 丢失安全保障
+# 2026-09-20 - 小欧 - 锁+备份三原则+红case驱动(红case 备份原则 驱动):
+#   ①X4: 新增 threading.Lock 保护 _registry_session_backup(多会话并行竞态);
+#   ②缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
+#   ③D-6: 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
+#   ④E-5: 去掉"缓存命中即返回"短路 → 每次调用重新导出(备份=写前最新快照);
+#   ⑤D-7: 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
+#   compliance: SRP/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审修复: _backup_registry新建备份前清理同key旧备份文件(防temp目录磁盘泄漏)
+# 2026-09-20 - 小欧 - E-2修复(写失败回滚安全网): 新增 _restore_registry_from_backup(reg import 恢复), 供
+#   registry_write 在写失败(PermissionError/ValueError/Exception)分支回滚; _backup_registry 返回值缓存到
+#   _backup_file 供恢复定位。compliance: SRP(恢复职责归属读取侧备份)+禁止backward
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取注册表→读注册表
+# 2026-11-03 小欧 - reg 命令不存在跳过备份 WARNING→INFO(环境限制) — 小欧-2026-11-03
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -12,10 +26,13 @@ registry_read — 读取Windows注册表键值
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import os
-import subprocess
+import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
+
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import tempfile
 import time as _time_mod
 import winreg
+from uuid import uuid4  # 2026-09-20 小欧 D-6: 备份文件名唯一后缀 — 小欧-2026-09-20
 from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Any  # 2026-07-31 小欧: 移除未使用 Dict
 
@@ -34,6 +51,7 @@ ROOT_KEY_MAP = {
 }
 
 _registry_session_backup = {}
+_registry_backup_lock = threading.Lock()  # 2026-09-20 小欧 X4: 保护备份缓存 — 小欧-2026-09-20
 
 
 def _validate_root_key(full_root_key: str):
@@ -53,35 +71,74 @@ def _parse_path(path: str, hive: str = "HKCU") -> tuple:
     return HIVE_MAP.get(hive, "HKEY_CURRENT_USER"), path
 
 
-def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
-    """备份注册表键到临时文件 — 小健 2026-05-19"""
-    backup_key = f"{root_key}\\{sub_key}"
-    if backup_key in _registry_session_backup:
-        return _registry_session_backup[backup_key]
-
+def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[str]:
+    """备份注册表键到临时文件 — 小健 2026-05-19
+    2026-09-20 小欧 备份三原则(A-4/D-6/E-5)+D-7 同源收敛(红case A-4/D-6/D-7/E-5 驱动):
+      A-4 缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
+      D-6 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
+      E-5 去掉"缓存命中即返回"短路 → 每次调用重新导出, 缓存仅登记供校验, 备份=写前最新快照;
+      D-7 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
+    修复(小欧 2026-09-20): 新建备份前清理同key旧备份文件, 防temp目录磁盘泄漏。
+    """
+    backup_key = f"{session_id}::{root_key}\\{sub_key}"  # A-4: 会话级缓存键
     backup_dir = tempfile.gettempdir()
-    backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{timestamp_for_filename()}.reg")
+
+    # 修复: 清理同key旧备份文件, 防磁盘泄漏
+    with _registry_backup_lock:
+        old_file = _registry_session_backup.get(backup_key)
+    if old_file and os.path.exists(old_file):
+        try:
+            os.unlink(old_file)
+        except OSError:
+            pass
+
+    backup_file = os.path.join(
+        backup_dir,
+        f"reg_backup_{session_id}_{timestamp_for_filename()}_{uuid4().hex[:8]}.reg",  # D-6: 唯一文件名
+    )
 
     try:
         export_key = f"{root_key}\\{sub_key}"
-        result = subprocess.run(
+        result = proc_run(
             ["reg", "export", export_key, backup_file, "/y"],
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
         )
         if result.returncode == 0 and os.path.exists(backup_file):
-            _registry_session_backup[backup_key] = backup_file
+            with _registry_backup_lock:  # X4
+                _registry_session_backup[backup_key] = backup_file
             logger.info(f"[registry] 备份成功: {backup_key} -> {backup_file}")
-        else:
-            logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
-            # 2026-07-31 小欧: 失败路径不缓存, 避免后续操作命中缓存跳过备份
+            return backup_file
+        logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
+        # 2026-09-20 小欧 D-7: 失败显式返回 None, 不返回不可用路径(调用方据此中止)
+        return None
     except FileNotFoundError:
-        logger.warning("[registry] reg命令不存在,跳过备份")
-        # 2026-07-31 小欧: 失败路径不缓存
+        logger.info("[registry] reg命令不存在,跳过备份")  # 2026-11-03 小欧: 环境限制, 降 INFO
+        return None
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")
-        # 2026-07-31 小欧: 失败路径不缓存
+        return None
 
-    return backup_file
+
+def _restore_registry_from_backup(backup_file: str) -> Optional[str]:
+    """从备份恢复注册表键(reg import) — 小欧 2026-09-20 E-2修复(红case E2 驱动):
+    与 _backup_registry 对称的写回滚操作, 供 registry_write/registry_delete 写失败时恢复原值,
+    杜绝"写完失败/半改"留下不可逆破损。返回 None=恢复成功或无可恢复文件; 返回错误文本=恢复失败。
+    """
+    if not backup_file or not os.path.exists(backup_file):
+        return None
+    try:
+        result = proc_run(
+            ["reg", "import", backup_file],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
+        )
+        if result.returncode == 0:
+            logger.info(f"[registry] 回滚成功: {backup_file}")
+            return None
+        logger.warning(f"[registry] reg import 回滚失败(返回码{result.returncode}): {result.stderr.strip()}")
+        return result.stderr.strip() or f"reg import 返回码 {result.returncode}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[registry] 回滚异常: {e}")
+        return str(e)
 
 
 def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
@@ -91,16 +148,16 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, v
         _act_params["value_name"] = value_name
     if exec_code == "error":
         return {
-            "summary": f"读取注册表{path}，失败",
-            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
+            "summary": f"读注册表{path}，失败",
+            "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"读取注册表{path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"读注册表{path}，成功：{value_name}={value}（{value_type}）",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读注册表) — 小欧-2026-10-14
+        "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{value_name}={value}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -182,7 +239,7 @@ def registry_read(path: str, value_name: Optional[str] = None, hive: str = "HKCU
                 hint = "请检查值名称是否正确"
             else:
                 detail = f"注册表键 {path} 没有值"
-                hint = "该键下没有可读取的值"
+                hint = "该键下没有值，请检查键路径是否正确"  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail; 空键要么路径错要么真空, 点名查路径 — 小欧-2026-10-14
         else:
             detail = f"注册表键不存在: {path}"
             hint = "请检查键路径是否正确"
@@ -194,7 +251,7 @@ def registry_read(path: str, value_name: Optional[str] = None, hive: str = "HKCU
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=str(e), hint="读取注册表异常，请检查键路径及权限")  # 2026-10-14 小欧 - hint 修空话 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

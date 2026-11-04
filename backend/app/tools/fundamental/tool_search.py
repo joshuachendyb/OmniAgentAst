@@ -13,6 +13,16 @@
 #   4. searchtool 空token分支(纯符号)不再返回全部工具top10, 返回空matches+warning
 # 2026-08-07 - 小欧 - searchtool结果选取增加"分类级名额保底"(_apply_category_floor):
 #   修复多类型混合搜索时高分类霸占top10名额, 低分分类被挤出导致一次搜索注不全分类(实测7类型混合仅命中4类)
+# 2026-10-02 - 小欧 - BM25 索引文本追加分类名: 工具改名与挪分类后按分类名搜必然零结果(category 原不进索引),
+#   使检索有"能力词"与"分类名"双路召回; category 重复率高, IDF 自动压权故不加权(不写×3);
+# 2026-10-04 - 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索工具→搜TOOL 实测能力词类查询首位无倒置
+# 2026-10-14 小欧 - BM25索引补中文分类名(name_cn): 2026-10-02只加了category.value(英文),
+#   中文分类名从未进索引。实测搜"桌面"对DESKTOP类11工具零召回(且最高分是已加载的notify,
+#   搜完等于没搜、LLM却以为搜到了); 补name_cn后9个分类中文名全部可召回, 既有关键词无退化。
+# 2026-10-19 小欧 缺库工具不入 BM25 索引: 入索引则会被搜中并注入其分类, 而渲染时又被 visible_to_llm
+#   滤掉, 结果是"搜到1个却注入0类"的误导(与上面 searchtool 自身不入索引是同一个坑)。
+#   不可用的工具既不该被搜到, 也不该被承诺。
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -76,11 +86,31 @@ def _tokenize(text: str) -> List[str]:
 
 
 def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
-    """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14"""
+    """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14
+
+    2026-10-02 小欧: 索引文本追加分类名, 使按分类搜也能召回(category 重复率高, IDF 自动压权, 不加权)
+    2026-10-14 小欧: 追加 category.name_cn(中文分类名)。2026-10-02 那次加的是 category.value(英文),
+      中文分类名从未进索引 —— 实测搜"桌面"零召回 DESKTOP 类全部 11 个工具, 搜"desktop"却全部命中。
+    """
     docs: List[List[str]] = []
     tool_names: List[str] = []
     for name, metadata in tool_registry._tools.items():
-        text = " ".join([name] * 3) + " " + metadata.description
+        # searchtool 自身不入索引: 它是首轮已注入的检索器, 搜任何词命中自己纯属噪声
+        # (实测"进程"等禁用词因出现在本工具描述里而命中自己, 反而把"零命中"变成"匹配1个但注入0类",
+        #  正是本机制要根治的误导)。searchtool 首轮恒在, 无需搜自己 - 小欧 2026-10-14
+        if name == "searchtool":
+            continue
+        # 2026-10-19 小欧 - 缺库工具不入索引: 入索引则会被搜中并注入其分类, 而渲染时
+        # 又被 visible_to_llm 滤掉, 结果是"搜到1个却注入0类"的误导(与上面 searchtool
+        # 自身那类是同一个坑)。不可用的工具既不该被搜到, 也不该被承诺。
+        if not metadata.visible_to_llm:
+            continue
+        text = (
+            " ".join([name] * 3)
+            + " " + metadata.description
+            + " " + metadata.category.value
+            + " " + metadata.category.name_cn
+        )
         docs.append(_tokenize(text))
         tool_names.append(name)
 
@@ -138,26 +168,26 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     """tool_search的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
         return {
-            "summary": f"搜索工具失败:关键词为空",
-            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
+            "summary": f"搜TOOL，失败：关键词为空",
+            "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
         # 无命中/纯符号: 正确告知LLM + hint, 避免误导LLM与错误注入 — 小欧 2026-08-05
         return {
-            "summary": f"搜索 '{query}'未匹配到工具（共 {total_tools} 个工具）",
-            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
-            "status": {"exec_code": "warning", "message": "搜索完成-未找到匹配工具", "code": "",
+            "summary": f"搜TOOL'{query}'，成功：未匹配到工具（共 {total_tools} 个工具）",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜TOOL), 补"成功"(零匹配是成功执行) — 小欧-2026-10-14
+            "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
+            "status": {"exec_code": "warning", "message": "完成-未找到匹配工具", "code": "",
                        "detail": "未找到与关键词匹配的工具", "hint": "建议更换关键词后重试，或直接描述你要完成的任务"},
             "duration_ms": duration_ms,
             "metrics": {"matched": {"value": 0, "text": "0个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
         }
     return {
-        "summary": f"搜索 '{query}'成功:匹配 {total_matched} 个（共 {total_tools} 个工具）",
-        "action": {"tool": "searchtool", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "summary": f"搜TOOL'{query}'，成功：匹配 {total_matched} 个（共 {total_tools} 个工具）",
+        "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
+        "status": {"exec_code": "success", "message": f"完成:匹配{total_matched}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"matched": {"value": total_matched, "text": f"{total_matched}个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
     }
@@ -232,7 +262,7 @@ def searchtool(query: str) -> Dict[str, Any]:
         })
 
     scored.sort(key=lambda x: x["_score"], reverse=True)
-    # P1-1修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
+    # 修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
     # 2026-08-05 小欧 无命中修复: 完全无命中时max_score=0→threshold=0→全部工具过阈值,
     # 须先判"最高分>0"才计算阈值, 否则meaningful=[] (修复误报"匹配63个"并错误注入)
     if scored and scored[0]["_score"] > 0:
@@ -257,10 +287,17 @@ def searchtool(query: str) -> Dict[str, Any]:
     # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
     # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
-        "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
+        "matches": [
+            {
+                "name": r["name"],
+                "category": r["category"],
+                "description": all_tools[r["name"]].description,
+            }
+            for r in top_results
+        ],
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
-                                             [{"name": r["name"], "category": r["category"]} for r in top_results])
+                                            [{"name": r["name"], "category": r["category"]} for r in top_results])
     # ---- observation_formatter route -------------------------------------------
     # branch: #9 matches (searchtool subtype)
     # trigger: "matches" in data → ms[0] 含 "category" 键

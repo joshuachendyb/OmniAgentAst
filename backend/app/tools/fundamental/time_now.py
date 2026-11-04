@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 time_now — 获取当前系统时间
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -7,6 +8,7 @@ time_now — 获取当前系统时间
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取时间→取时间
 import time as _time_mod
 from datetime import datetime
 from typing import Dict, Any
@@ -19,16 +21,16 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
     """time_now的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/hint参数"""
     if exec_code == "error":
         return {
-            "summary": "获取当前时间失败",
-            "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
+            "summary": "取时间，失败",
+            "action": {"tool": "timenow", "tool_zh": "取时间", "params": {}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取当前时间成功:{formatted}，{weekday}",
-        "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
-        "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"取时间，成功：{formatted}，{weekday}",  # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(取时间) — 小欧-2026-10-14
+        "action": {"tool": "timenow", "tool_zh": "取时间", "params": {}},
+        "status": {"exec_code": "success", "message": f"成功:{formatted}，{weekday}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

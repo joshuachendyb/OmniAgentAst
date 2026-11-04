@@ -3,7 +3,10 @@
 # 2026-08-14 - 小欧 - 迁移: monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 # 2026-08-20 - 小欧 - 11.2-C 落 monitoring.db 独立库: MonitoringMiddleware._record_response 新增
 #   persist_http_request(method, path, status_code, kind, duration, request_size, 0) 调用(非阻塞降级, 独立库 storage,
-#   response_size 暂以 0 占位见设计[1]⑩; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
+#   response_size 暂以 0 占位; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
+# 2026-11-03 小欧 - 落盘去卡事件循环: _record_response_metrics 改 async, 经 db.atxn 进落库子线程池 + fire-and-forget(create_task), 响应路径零同步 IO — 小欧-2026-11-03
+# 2026-11-03 小欧 - 修: 裸 create_task 换 spawn_bg(app/utils, 存引用防 GC 挂起销毁),
+#   done 自摘防集合泄漏; 与 main.py 四处"存引用防 GC"纪律归一 — 小欧-2026-11-03
 """
 监控中间件模块
 负责HTTP请求监控和门面函数
@@ -15,6 +18,7 @@ from typing import Dict, List, Optional, Any
 
 from app.logger import logger
 from app.monitoring.collector import MetricsCollector, Metric
+from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: fire-and-forget 统一存引用防 GC
 
 
 # 全局指标收集器实例
@@ -54,7 +58,7 @@ class MonitoringMiddleware:
             return await self.app(scope, receive, send)
         
         request_info = self._extract_request_info(scope)
-        # 捕获请求体大小 — 小欧 2026-07-10 M-52
+        # 捕获请求体大小 — 小欧 2026-07-10
         body_size = [0]
         async def _receive_with_size():
             msg = await receive()
@@ -80,7 +84,7 @@ class MonitoringMiddleware:
         """创建包装send — 闭包提取为工厂方法 — 小健 2026-05-29"""
         async def wrapper(message):
             if message["type"] == "http.response.start":
-                self._record_response_metrics(message, start_time, method, path, body_size[0])
+                await self._record_response_metrics(message, start_time, method, path, body_size[0])
             await send(message)
         return wrapper
     
@@ -88,7 +92,7 @@ class MonitoringMiddleware:
         """记录单个指标 - 小沈 2026-06-08"""
         self.collector.record_metric(name=name, value=value, labels=labels)
     
-    def _record_response_metrics(self, message, start_time, method, path, request_size):
+    async def _record_response_metrics(self, message, start_time, method, path, request_size):
         """记录响应指标 — 提取的独立方法 — 小健 2026-05-29"""
         status_code = message["status"]
         base_labels = {"method": method, "path": path}
@@ -102,10 +106,19 @@ class MonitoringMiddleware:
         
         if status_code >= 400:
             self._record("errors_total", 1, {**base_labels, "status": str(status_code)})
-        # 11.2-C 落 monitoring.db（独立库，非阻塞降级）— 小欧 2026-08-20
+        # 11.2-C 落 monitoring.db(fire-and-forget 不阻塞响应路径): 原 await 延迟首字节, 改调度后台任务;
+        #   2026-11-03 裸 create_task 换 spawn_bg(事件循环只持弱引用, 挂起中任务可被GC销毁不走except) — 小欧-2026-11-03
         from app.monitoring import storage
         _kind = "llm" if path == "/api/v1/chat/stream" else "other"
-        storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
+
+        async def _do_persist():
+            try:
+                await storage.persist_http_request(method, path, status_code, _kind, duration, request_size, 0)
+            except Exception as _e:
+                from app.logger import logger
+                logger.error(f"[monitoring.storage] http flush 失败(降级不阻塞主链路, 数据缺失可凭此日志追溯): {_e!r}")
+
+        spawn_bg(_do_persist())
 
 
 def setup_monitoring(app) -> MetricsCollector:

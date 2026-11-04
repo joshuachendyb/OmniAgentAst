@@ -1,16 +1,23 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、尾逗号移除、缩进统一(2空格)、空行压缩, 防止格式再次出错
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): refreshServiceStatus 删「validateService 返回」打点
 //   ——整 status 对象打印属调试残留, 已 setServiceStatus(status) 承接状态, 打点无追踪增量价值 — 小欧-2026-09-09
+// 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: 新增 switchAndRefreshModel — 切全局模型API+成功/失败刷新收口到一处,
+//   顶栏 Layout.handleModelChange 与设置页 CurrentModelRefCard.onOk 两调用方只管展示逻辑, 杜绝再漏刷 modelList — 小欧-2026-09-24
+// 编辑历史: 2026-11-02 小欧 - 死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult五件全清(只被写null+死Tag恒false, 零消费方) — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 状态跟随: refreshAfterModelChange 并刷 refreshServiceStatus(零成本本地校验, 非旧外部AI API验证), 切模型后顶栏胶囊即随新配置 — 小欧-2026-11-02
+// 编辑历史: 2026-11-02 小欧 - 新增 healthStatus/refreshHealth: 顶栏服务胶囊状态源(/health应答与耗时), 与 serviceStatus(配置校验)分立不合流 — 小欧-2026-11-02
 /**
  * 应用全局状态上下文 - AppContext.tsx
  *
  * 功能：使用React Context API缓存全局API数据，避免重复调用
- * 缓存数据：会话数量、模型列表、服务状态、验证结果
+ * 缓存数据：会话数量、模型列表、服务状态
  *
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-12
  */
+
+/* 2026-11-02 小欧 - 死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult类型 五件全死(validationResult仅被写null, 锚注L209"validateConfig需要provider参数暂时跳过"), 连带壳层死Tag/ValidationDetailModal一并清: 删前实勘, 零行为变化 - 小欧-2026-11-02 */
 
 import React, {
   createContext,
@@ -22,6 +29,7 @@ import React, {
 } from 'react';
 import { configApi } from '../services/api/config.api';
 import { chatApi, type ValidateResponse } from '../services/api/chat.api';
+import { healthApi, type HealthStatus } from '../services/api/health.api';
 import { sessionApi } from '../services/api/session.api';
 /**
  * 模型数据类型
@@ -32,18 +40,6 @@ interface ModelData {
   model: string;
   display_name: string;
   current_model: boolean;
-}
-
-/**
- * 验证结果类型
- */
-interface ValidationResult {
-  success: boolean;
-  provider: string;
-  model: string;
-  message: string;
-  errors: string[];
-  warnings: string[];
 }
 
 /**
@@ -62,9 +58,11 @@ interface AppState {
   serviceStatus: ValidateResponse | null;
   serviceStatusLoading: boolean;
 
-  // 验证结果
-  validationResult: ValidationResult | null;
-  validationLoading: boolean;
+  // 后端服务存活(/health: 应答+耗时), 与上面配置校验语义分立 — 2026-11-02 小欧
+  healthStatus: HealthStatus | null;
+
+  // 后端版本号(version.txt 首行), 仅探活成功时更新 — 2026-11-02 小欧
+  appVersion: string | null;
 
   // 标记是否已初始化（防止重复加载）
   isInitialized: boolean;
@@ -81,8 +79,13 @@ interface AppContextType extends AppState {
   refreshSessionCount: () => Promise<void>;
   refreshModelList: () => Promise<void>;
   refreshServiceStatus: () => Promise<ValidateResponse | null>;
-  refreshAll: () => Promise<void>;
+  refreshHealth: () => Promise<HealthStatus | null>;
   refreshAfterModelChange: () => Promise<void>;
+  // 2026-09-24 小欧 - 切全局模型收口入口: API调用+成功/失败刷新内置, 调用方不再各记刷新
+  switchAndRefreshModel: (
+    provider: string,
+    model: string
+  ) => Promise<{ success: boolean; message: string }>;
   initializeApp: () => Promise<void>;
 }
 
@@ -116,10 +119,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   );
   const [serviceStatusLoading, setServiceStatusLoading] = useState(false);
 
-  // 验证结果
-  const [validationResult, setValidationResult] =
-    useState<ValidationResult | null>(null);
-  const [validationLoading, setValidationLoading] = useState(false);
+  // 后端服务存活(/health) — 2026-11-02 小欧
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  // 2026-11-02 小欧 - 版本号只进不退: 探活失败不许把菜单栏版本清成"—"(观测失败不得污染展示) — 小欧-2026-11-02
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
@@ -193,36 +196,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     }, []);
 
   /**
-   * 刷新验证结果
-   * @author 小新
+   * 刷新后端服务存活状态(/health) — 2026-11-02 小欧
+   * 只探"后端能不能应答", 不看配置内容; 失败置 null 由视图派生离线态。
+   * 版本号单独存且只进不退: 一次探活失败不抹掉已知版本(原实现连带把菜单栏版本清成"—")
    */
-  const refreshValidation = useCallback(async () => {
-    setValidationLoading(true);
+  const refreshHealth = useCallback(async (): Promise<HealthStatus | null> => {
     try {
-      // validateConfig 需要 provider 参数，暂时跳过验证
-      // 验证功能在 Settings 页面使用单独的 validateConfig 调用
-      setValidationResult(null);
+      const health = await healthApi.checkHealth();
+      setHealthStatus(health);
+      if (health.version) setAppVersion(health.version);
+      return health;
     } catch (error) {
-      console.warn('刷新验证结果失败:', error);
-      setValidationResult(null);
-    } finally {
-      setValidationLoading(false);
+      console.warn('刷新后端服务状态失败:', error);
+      setHealthStatus(null);
+      return null;
     }
   }, []);
-
-  /**
-   * 刷新所有数据（并行方法）
-   * @author 小新
-   * @update 2026-04-30 小沈修复：移除 refreshServiceStatus()，避免页面切换时自动触发LLM API验证
-   *          validateService 只由用户手动点击"检查服务"按钮触发
-   */
-  const refreshAll = useCallback(async () => {
-    await Promise.all([
-      refreshSessionCount(),
-      refreshModelList(),
-      refreshValidation(),
-    ]);
-  }, [refreshSessionCount, refreshModelList, refreshValidation]);
 
   /**
    * 串行刷新方法（解决时序问题）
@@ -243,11 +232,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     //       决定是否删除备份，前端只需刷新模型列表获取打*信息
     // ============================================================
 
-    // 1. 直接刷新模型列表（后端已验证配置文件完整性）
-    await refreshModelList();
-    // 【小强修复 2026-04-07】删除 refreshSessionCount()，因为切换模型不会改变会话数量
-    // 【小强修复 2026-04-07】删除 refreshServiceStatus()，不再调用AI API验证
-  }, [refreshModelList]);
+    // 2026-11-02 小欧 - 状态跟随: 切模型后配置状态胶囊同步刷新(零成本本地校验, 非旧"外部AI API验证"), 杜绝滞留旧态 — 小欧-2026-11-02
+    // 1. 刷新模型列表（后端已验证配置文件完整性）+ 配置状态（顶栏胶囊）
+    await Promise.all([refreshModelList(), refreshServiceStatus()]);
+  }, [refreshModelList, refreshServiceStatus]);
+
+  // 2026-09-24 小欧 - DRY收口: 切全局模型唯一入口, 成功→refreshAfterModelChange刷★,
+  //   失败→后端已回滚刷列表; 两调用方(顶栏/设置页)只传provider/model, 不再各记刷新 — 小欧-2026-09-24
+  const switchAndRefreshModel = useCallback(
+    async (
+      provider: string,
+      model: string
+    ): Promise<{ success: boolean; message: string }> => {
+      const r = await configApi.switchCurrentModel(provider, model);
+      if (r.success) {
+        await refreshAfterModelChange();
+      } else {
+        // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
+        await refreshModelList();
+      }
+      return r;
+    },
+    [refreshAfterModelChange, refreshModelList]
+  );
 
   /**
    * 初始化应用（只在首次加载时调用）
@@ -272,17 +279,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
     initInProgressRef.current = true;
     setInitError(null); // 重置错误状态
-    setValidationLoading(true);
     setModelListLoading(true);
     setServiceStatusLoading(true);
     setSessionCountLoading(true);
 
     try {
-      // 1. 先验证完整配置
-      // validateConfig 需要 provider 参数，暂时跳过验证
-      setValidationResult(null);
-
-      // 2. 只获取模型列表和会话数，不调用验证服务（由用户手动点击"检查服务"按钮）
+      // 1. 只获取模型列表和会话数，不调用验证服务（由用户手动点击"检查服务"按钮）
       await Promise.all([refreshModelList(), refreshSessionCount()]);
 
       setIsInitialized(true);
@@ -294,7 +296,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       setInitError(errorMsg);
     } finally {
       initInProgressRef.current = false;
-      setValidationLoading(false);
       setModelListLoading(false);
       setServiceStatusLoading(false);
       setSessionCountLoading(false);
@@ -310,8 +311,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     modelListLoading,
     serviceStatus,
     serviceStatusLoading,
-    validationResult,
-    validationLoading,
+    healthStatus,
+    appVersion,
     isInitialized,
     initError,
 
@@ -319,8 +320,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     refreshSessionCount,
     refreshModelList,
     refreshServiceStatus,
-    refreshAll,
+    refreshHealth,
     refreshAfterModelChange,
+    switchAndRefreshModel,
     initializeApp,
   };
 

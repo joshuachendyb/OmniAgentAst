@@ -6,10 +6,13 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 """
 
 # 编辑历史:
-# 2026-07-18 小欧 #6 fix: 删除重复定义的should_force_stop(44-51)与含未定义变量content的buggy clear(62-66); 运行时正确版(68-75/77-79)保留
-# 2026-07-18 小欧 #46 fix: max_without_promote→max_chunks_before_stop，消除误导命名
+# 2026-07-18 小欧 修复: 删除重复定义的should_force_stop(44-51)与含未定义变量content的buggy clear(62-66); 运行时正确版(68-75/77-79)保留
+# 2026-07-18 小欧 修复: max_without_promote→max_chunks_before_stop，消除误导命名
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
-from app.constants import MAX_CONSECUTIVE_CHUNKS, MAX_CHUNKS_WITHOUT_PROMOTE  # noqa: F401 - 作为默认值使用
+# 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + __init__ 默认值改读 tuning 配置
+# 2026-09-23 小欧 - 删死链 should_promote/max_consecutive（历史接口全仓零调用，tuning.agent.max_consecutive_chunks 配置同步删除）; __init__ 仅保留 max_chunks_before_stop
+from app.constants import MAX_CHUNKS_WITHOUT_PROMOTE as _D_NO_PROMOTE  # noqa: F401 - 作为默认值使用
+from app.config import get_config
 
 
 class ChunkBuffer:
@@ -22,7 +25,6 @@ class ChunkBuffer:
 
     返回数据说明:
         - append: 无返回值,修改内部状态
-        - should_promote: 返回bool,True表示连续chunk数达到阈值(历史接口,当前引擎未使用)
         - should_force_stop: 返回bool,True表示累积超时需强制停止
         - flush: 返回str(buffer内容),同时清空buffer(历史接口,当前引擎未使用)
         - clear: 无返回值,仅清空buffer和计数器
@@ -30,20 +32,17 @@ class ChunkBuffer:
     Author: 小沈 2026-05-25
     """
 
-    # #46 fix: max_without_promote→max_chunks_before_stop 消除误导名 — 小欧 2026-07-18
-    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS, max_chunks_before_stop: int = MAX_CHUNKS_WITHOUT_PROMOTE):
+    # 修复: max_without_promote→max_chunks_before_stop 消除误导名 — 小欧 2026-07-18
+    def __init__(self, max_chunks_before_stop: int = None):
+        if max_chunks_before_stop is None:
+            max_chunks_before_stop = get_config().get("tuning.agent.max_chunks_without_promote", _D_NO_PROMOTE)
         self.buffer: str = ""
         self.consecutive_count: int = 0
-        self.max_consecutive: int = max_consecutive
-        self.max_chunks_before_stop: int = max_chunks_before_stop  # #46 fix: 原max_without_promote
+        self.max_chunks_before_stop: int = max_chunks_before_stop  # 修复: 原max_without_promote
 
     def append(self, content: str) -> None:
         self.buffer += content
         self.consecutive_count += 1
-
-    def should_promote(self) -> bool:
-        """连续chunk数达到阈值时返回True"""
-        return self.consecutive_count >= self.max_consecutive
 
     def flush(self) -> str:
         """清空buffer并返回内容 — 纯buffer管理

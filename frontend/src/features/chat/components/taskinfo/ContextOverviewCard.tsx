@@ -1,0 +1,403 @@
+/**
+ * ContextOverviewCard —— taskinfo「上下文」浮层卡片
+ * 小欧 2026-10-04（设计见上下文卡片设计文档）
+ *
+ * 历史任务挂弹框只显历史上下文段（DB 首帧回放，无对话上下文段）；实时任务见卡片全部内容。
+ * 编辑历史: 2026-10-04 小欧 - 自 TaskInfoBar 抽出为独立组件(G6 浮层①); 摘要单行省略(去展开按钮),
+ * 仅 truncated 补警示行; token 折算复用 infoMaps.formatTokenK(DRY)
+ * 编辑历史: 2026-10-04 小欧 - 新增可选 prop contextWindow: 装入条补「占窗率 = 估算token/窗口」, 窗口缺失则不渲染
+ * 编辑历史: 2026-10-04 小欧 - 显出跨任务注入两字段(injected_message_count/injected_estimated_tokens,
+ * 此前帧收了未渲染): 增第二行, 仅注入条数>0 时显示(多数任务为 0, 显示是噪声)
+ * 编辑历史: 2026-10-07 小欧 - token 同时给完整值与 K 缩写(格式由 formatTokenK 收于 K);
+ * 删 contextSummary prop 与其兜底: 上下文数据只认 history_context 帧(overview)
+ * 编辑历史: 2026-10-08 小欧 "不能误导用户" 四处纠正: ①`压缩比 R×`→`已压缩 X%`且仅
+ * compressed=true 时显(后端 injected_ratio 下线: 该值>1 才代表压缩生效, 标签方向相反且未压缩时≠1.0);
+ * ②`装入历史对话 N 条`→`上下文 N 条`+tooltip 说明口径(message_count 是 conv 全量, 含本轮提问与工具调用);
+ * ③`最近: X`→`最近提问: X`(后端 summary 改取注入源最后一条 user, 不再回显本轮提问); ④占窗率加(估算)标注;
+ * ⑤summary 段去单行省略改 pre-wrap 保留换行(全文一字不删); ⑥卡片宽 320→560(2048 字符在窄栏不可读)
+ * 编辑历史: 2026-10-09 小欧 - 双分组嵌套直显(删 hasTokens/numOrNull 开关); 卡片内拆两段+分割线
+ * 编辑历史: 2026-10-10 小欧 两字段各自归属 —— 删顶层 content 读法; 对话段右侧改读
+ *   conv_context.content, 历史段右侧改读 inject_context.content_link_mode(与 compressed 并排)。
+ *   此前两段读同一字段致同一句显两遍, 拆字段后各归其位。禁 backward: 不做顶层回落。
+ * 编辑历史: 2026-10-10 小欧 (本日汇总, 仅留此一条): ①只读 conv_context/inject_context
+ * 定稿结构(禁旧扁平兼容), compressed 原样直显; ②删两段 `?? ctx.text` 兜底与 summary-only 态(见
+ * infoMaps), 行内值历史任务改取 inject token; ③排版: 标题行抽 <SectionHead> 共用(DRY), 标签列定宽
+ * HEAD_LABEL_WIDTH='9em', 数据行缩进与其同起点, 而分割线/摘要框/截断警示框左侧顶卡片边通栏(框内文字
+ * paddingLeft:0), 标题右侧禁折行; ④截断警示框挪进「对话上下文」段内(truncated 属 conv_context)。
+ * 排版经四轮反复(框缩进/文字缩进/通栏), 上列③为最终形态, 冲突的中间态注释已清理。
+ * 编辑历史: 2026-10-14 小欧 - 浮层长内容被屏幕切(北京老陈反馈): ①加 centered 纵向居中, 横向仍贴按钮
+ *   (只封顶 maxHeight 不够, 位置仍贴触发器生长, 近满屏高时会被 rc-trigger 上推过头切掉顶部);
+ *   ②cardStyle 补 maxHeight:'calc(100vh - 58px)' + overflowY:'auto', 高度由内容定但封顶不超屏;
+ *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding) — 小欧-2026-10-14
+ * 编辑历史: 2026-10-26 小沈 - 浮层顶部行(北京老陈令): 加粗显示 timestamp+content(后端首帧写入 userinput[10]+压缩情况),
+ *   下接 2px 分隔线与下方信息明显区隔; 「对话上下文」「历史上下文」两个 SectionHead 标题后各带 timestamp — 小沈-2026-10-26
+ */
+import React, { useState } from 'react';
+import type { ContextOverviewFrame } from '@/types/sse';
+import {
+  CONTEXT_STATE_MAP,
+  mapStatus,
+  formatTokenK,
+  type ContextState,
+} from './infoMaps';
+import { pickConv, pickInject } from '@/utils/contextFrame';
+import { FloatingEntry } from './FloatingEntry';
+import { MetricItem } from './MetricItem';
+import {
+  Colors,
+  FontSize,
+  FontWeight,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
+
+interface Props {
+  /** history_context 帧数据(实时唯一来源); 历史任务无帧时为 null — 小欧 2026-10-04
+   *  2026-10-10 小欧[20] 删 string 联合: 生产路径恒为 object|null(useTaskInfo 直传
+   *  frames.contextOverview), string 联合是纯 phantom 且只有测试在喂 —— 禁 backward 必删。 */
+  overview: ContextOverviewFrame | null;
+  /** false = 历史任务：弹框只显历史上下文段（DB 首帧回放，无对话上下文段） — 小欧 2026-10-09 */
+  isLiveContext: boolean;
+  /** 当前任务模型上下文窗口(usage 帧带来)；缺失则不显占窗率 — 小欧 2026-10-04 */
+  contextWindow?: number | null;
+}
+
+/**
+ * 段标题行的标签列宽 —— 「对话上下文」/「历史上下文」两段同宽(均为 5 个汉字 + 4 汉字留白)
+ *
+ * 2026-10-10 标题后固定空 4 个汉字宽再显右侧信息, 且**下方数据行的起始位置
+ * 必须与标题行右侧文字的起始位置对齐**。做法: 标签列定宽(本常量), 段内数据行统一
+ * paddingLeft 同宽 —— 对齐由"同一常量"保证, 不靠手调数值 (DRY, 改一处两段同时生效)。
+ */
+const HEAD_LABEL_WIDTH = '9em';
+
+/**
+ * 段标题行 —— 两段共用(DRY: 样式只此一处, 不各写一套)
+ *
+ * 2026-10-10: ①标签列定宽 HEAD_LABEL_WIDTH, 右侧信息起点 = 该宽度, 与下方数据行同起点;
+ * ②禁折行禁折叠 —— 右侧 whiteSpace:nowrap 单行直显; ③标签 nowrap + flexShrink:0 永不被挤压。
+ */
+const SectionHead: React.FC<{
+  dotColor: string;
+  title: string;
+  children?: React.ReactNode;
+}> = ({ dotColor, title, children }) => (
+  <div style={{ display: 'flex', alignItems: 'baseline' }}>
+    <div
+      style={{
+        width: HEAD_LABEL_WIDTH,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'baseline',
+        fontWeight: FontWeight.BOLD,
+        color: Colors.TEXT.PRIMARY,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-block',
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: dotColor,
+          marginRight: Spacing.XS,
+        }}
+      />
+      {title}
+    </div>
+    {children}
+  </div>
+);
+
+export const ContextOverviewCard: React.FC<Props> = ({
+  overview,
+  isLiveContext,
+  contextWindow,
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const ctxState: ContextState = mapStatus({ overview });
+  const ctx = CONTEXT_STATE_MAP[ctxState];
+  // 读路径只认定稿双分组, 唯一真源 contextFrame
+  const convCtx = pickConv(overview);
+  const injectCtx = pickInject(overview);
+  // 后端给什么显示什么 —— 空位 "" 直显为空, 不转换不设开关
+  const convTokens = convCtx?.estimated_tokens ?? '';
+  // 2026-10-10 行内一个数, 代表"当前能看到的那个上下文"
+  // (实时=对话 conv, 历史=跨任务注入 inject), 两组都空则 formatTokenK 返回 '–'
+  const tokens = isLiveContext
+    ? convTokens
+    : (injectCtx?.injected_estimated_tokens ?? '');
+  const summary = injectCtx?.summary ?? '';
+  const count = convCtx?.message_count ?? '';
+  // 2026-10-10 小欧: 身份标识按段拆分 —— 对话段读 conv.content, 历史段读 inject.content_link_mode
+  const convContentText = convCtx?.content ?? '';
+  const linkModeText = injectCtx?.content_link_mode ?? '';
+  const injectCount = injectCtx?.injected_message_count ?? '';
+  const injectTokens = injectCtx?.injected_estimated_tokens ?? '';
+  // compressed 是后端成品情况文字, 原样直显不截不断(不拆解不解析不改写)
+  const compressedText = injectCtx?.compressed ?? '';
+  // 2026-10-10 小欧: 历史段状态点只表"有无注入"(有绿/无灰) —— 不解析 compressed 判失败(不拆成品)
+
+  // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行; 占窗率=估算 token / 窗口, 窗口缺失则不显
+  // 2026-10-09 小欧: tokens 为 "" 时不得算("" != null 恒真, ""/窗口=0 会误显 0%)
+  const usedPct =
+    typeof convTokens === 'number' && contextWindow
+      ? Math.round((convTokens / contextWindow) * 100)
+      : null;
+  // 2026-10-10 小欧[20] 修复「历史上下文」整段空白:
+  //   原门控是 injectCount —— 而 injected_message_count 在"无注入"时后端给 0/'' (agent_telemetry
+  //   :381 `_inj_count` 与 :407 未 link 分支的 ''), 于是整段输出 null, 把 content_link_mode /
+  //   compressed / summary 一起吞掉。后端在无注入时同样会发压缩情况文字(如"无历史上下文注入"),
+  //   信息到了前端却被自己的门控挡掉 —— 这是"该显示的没显示"的根因, 不是数据缺失。
+  //   改法: 门控从"条数大于0" 改为"该分组任一字段有值"(有情况即该显示), 且各字段各自判空,
+  //   避免再出现"一个字段缺失连带整段消失"。
+  const hasInjectInfo = Boolean(
+    injectCount || injectTokens || linkModeText || compressedText || summary
+  );
+  const injectPart = hasInjectInfo ? (
+    <div>
+      {injectCount ? (
+        <span>
+          跨任务注入 {injectCount} 条
+          {/* token 空位不合成 —— 否则渲染成"跨任务注入 5 条 · 估算Token约 (–)" */}
+          {typeof injectTokens === 'number' ? (
+            <span>
+              {' · 估算Token约 '}
+              {injectTokens.toLocaleString()} ({formatTokenK(injectTokens)})
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {injectCount && compressedText ? <span> · </span> : null}
+      {/* compressed 是后端成品情况文字, 原样直显不拆不改 —— 无注入时它就是唯一可显的信息 */}
+      {compressedText ? <span>{compressedText}</span> : null}
+    </div>
+  ) : null;
+  const convPart =
+    count || tokens ? (
+      <div>
+        {count ? (
+          <span title="上下文全部消息条数（含本轮提问与工具调用），非仅历史对话">
+            上下文 {count} 条
+          </span>
+        ) : null}
+        {count && tokens ? <span> · </span> : null}
+        {tokens ? <span>估算Token约 {formatTokenK(tokens)}</span> : null}
+        {/* 占窗率: 分子是 MessageBuilder 粗估 token, 与 TaskInfoBar 的 prompt token 不同口径,
+ 故标注(估算)并在 title 里说明, 避免用户误当精确值。 */}
+        {usedPct != null ? (
+          <span
+            title={`按估算 token ${convTokens} ÷ 窗口 ${contextWindow} 计算，非 LLM 实测 prompt`}
+          >
+            {' · 占窗率(估算) '}
+            {usedPct}%
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+
+  // 2026-10-10 历史任务也挂弹框(原"只显行不挂弹框"已废止), 弹框内只显历史上下文段
+  const metric = (
+    <MetricItem
+      // 2026-10-04 小欧: 标签"上下文"(短, 与卡片标题区分)
+      label="上下文"
+      // 2026-10-10 小欧: 行内值实时=对话 conv token / 历史=注入 inject token;
+      // 空位由 formatTokenK 自返 '–', 不再兜 ctx.text(前端不合成状态文案)
+      value={formatTokenK(typeof tokens === 'number' ? tokens : null)}
+      tone={ctx.tone}
+      icon={ctx.icon}
+      dataState={ctxState}
+    />
+  );
+  // 2026-10-09: 历史任务也挂弹框, 只显历史上下文段(无对话上下文段)。
+  // 历史任务的 overview 来自 DB 首帧回放(useTaskInfo detail 分支), 只有 inject_context
+  return (
+    <FloatingEntry
+      open={open}
+      onOpenChange={setOpen}
+      placement="bottomLeft"
+      // 2026-10-14 小欧 - 纵向居中(不贴按钮)。只封顶 maxHeight 不够: 位置仍贴触发器生长,
+      //   触发器在顶部时近满屏高的浮层会被 rc-trigger 上推过头 → 顶部被切(实测)。
+      centered
+      cardId="taskinfo-context-card"
+      ariaLabel="历史上下文"
+      cardStyle={{
+        // 2026-10-08 小欧 320→560: 摘要全文可达 2048 字符(六段 Markdown), 320px 窄栏会挤成细长条。
+        // 横向只放宽宽让每行可读, 不随内容变宽(width 定值 + maxWidth 兜视口)。
+        width: 560,
+        maxWidth: '90vw',
+        // 2026-10-14 小欧 - 高度由内容定但封顶不超屏; 超出走内部滚动(本卡片无固定头部,
+        //   故滚动容器是卡片自身)。58 = 留白32 + antd inner padding 24 + 边框2; 少了 26 会被上下切。
+        maxHeight: 'calc(100vh - 58px)',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: Spacing.SM,
+        // 2026-10-10 布局优化: 显式内边距与行高(此前靠 Popover 兜底, 各段行距不统一, 排版发虚)
+        padding: `${Spacing.MD}px ${Spacing.LG}px`,
+        lineHeight: 1.6,
+        fontSize: FontSize.SECONDARY,
+        color: Colors.TEXT.SECONDARY,
+      }}
+      content={
+        <>
+          {/* 2026-10-26 小沈: 顶部行(北京老陈令) — timestamp+content, 加粗, 与下方信息分隔 */}
+          {overview?.content && (
+            <>
+              <div
+                style={{
+                  fontWeight: FontWeight.BOLD,
+                  color: Colors.TEXT.PRIMARY,
+                  fontSize: FontSize.SECONDARY,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {overview?.timestamp ? `${overview.timestamp} ` : ''}
+                {overview.content}
+              </div>
+              <div
+                style={{
+                  borderTop: `2px solid ${Colors.BORDER.LIGHT}`,
+                  marginBottom: Spacing.XS,
+                }}
+              />
+            </>
+          )}
+          {/* 2026-10-09: 对话上下文段仅实时任务可见 —— conv 是逐轮水位, 历史任务不定格显示 */}
+          {isLiveContext && (
+            <>
+              {/* 2026-10-10 小欧 本段身份标识读 conv 组 —— 与历史段各读各的, 不再显同一句 */}
+              <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
+                {overview?.timestamp && (
+                  <span
+                    style={{
+                      color: Colors.TEXT.TERTIARY,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {overview.timestamp}
+                  </span>
+                )}
+                {convContentText && (
+                  <div
+                    style={{
+                      color: Colors.TEXT.TERTIARY,
+                      whiteSpace: 'nowrap',
+                      marginLeft: overview?.timestamp ? Spacing.MD : 0,
+                    }}
+                  >
+                    {convContentText}
+                  </div>
+                )}
+              </SectionHead>
+              {/* 2026-10-10 数据行按 HEAD_LABEL_WIDTH 缩进, 起点与标题行右侧文字对齐;
+ 值为 null 不渲染(否则被容器 gap 撑出空白带) */}
+              {convPart && (
+                <div style={{ paddingLeft: HEAD_LABEL_WIDTH }}>{convPart}</div>
+              )}
+              {/* 2026-10-10 截断警示归对话段内 —— truncated 是 conv_context 的字段,
+ 原挂在卡片最底下, 历史任务(无对话段)就落到了历史上下文下面, 归属错了 */}
+              {ctxState === 'truncated' && (
+                <div
+                  style={{
+                    color: Colors.WARNING,
+                    background: Colors.BG.WARNING_LIGHT,
+                    borderRadius: Radius.SM,
+                    // 框通栏贴卡片左边; 框内文字顶到框左边线
+                    padding: `${Spacing.XS}px ${Spacing.SM}px`,
+                    paddingLeft: 0,
+                    textAlign: 'left',
+                  }}
+                >
+                  {ctx.tooltip}
+                </div>
+              )}
+              {/* 2026-10-10 分割线左侧顶到卡片边, 横贯整卡(不缩进) */}
+              <div
+                style={{
+                  borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+                }}
+              />
+            </>
+          )}
+          {/* 2026-10-10 小欧[20] 状态点判据与数据行门控 hasInjectInfo 同源 ——
+              原用 injectCount, 会出现"标题右侧有压缩情况文字但点是灰的"自相矛盾 */}
+          <SectionHead
+            dotColor={hasInjectInfo ? Colors.SUCCESS : Colors.TEXT.TERTIARY}
+            title="历史上下文"
+          >
+            {/* 2026-10-10 小欧: 本段右侧 = content_link_mode(身份) + compressed(压缩情况),
+                同行顺序直显(同一 div 内并排, 不被容器 gap 撑开), 均 nowrap 不折行 */}
+            <div style={{ display: 'flex', whiteSpace: 'nowrap' }}>
+              {overview?.timestamp && (
+                <span style={{ color: Colors.TEXT.TERTIARY }}>
+                  {overview.timestamp}
+                </span>
+              )}
+              {linkModeText && (
+                <span
+                  style={{
+                    color: Colors.TEXT.TERTIARY,
+                    marginLeft: overview?.timestamp ? Spacing.MD : 0,
+                  }}
+                >
+                  {linkModeText}
+                </span>
+              )}
+              {compressedText && (
+                <span
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    marginLeft:
+                      linkModeText || overview?.timestamp ? Spacing.MD : 0,
+                  }}
+                >
+                  {compressedText}
+                </span>
+              )}
+            </div>
+          </SectionHead>
+          {/* 2026-10-10 同对话段, 数据行起点与标题行右侧文字对齐; null 不渲染空 div */}
+          {injectPart && (
+            <div style={{ paddingLeft: HEAD_LABEL_WIDTH }}>{injectPart}</div>
+          )}
+          {summary && ( // 2026-10-08 B: 全文显示, pre-wrap 保留换行, 不截断不折叠不滚动
+            // 2026-10-10: 框通栏贴卡片左边, 框内文字顶到框左边线(paddingLeft:0)
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: Colors.TEXT.PRIMARY,
+                background: Colors.BG.SECONDARY,
+                border: `1px solid ${Colors.BORDER.LIGHT}`,
+                borderRadius: Radius.SM,
+                // 框通栏贴卡片左边; 框内文字亦顶到框左边线(paddingLeft:0, 不按标签列缩进)
+                padding: `${Spacing.SM}px`,
+                paddingLeft: 0,
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: FontWeight.BOLD,
+                  marginBottom: Spacing.XS,
+                  textAlign: 'left',
+                }}
+              >
+                已注入摘要
+              </div>
+              <div style={{ lineHeight: 1.7, textAlign: 'left' }}>
+                {summary}
+              </div>
+            </div>
+          )}
+        </>
+      }
+    >
+      {metric}
+    </FloatingEntry>
+  );
+};

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 create_task — 创建Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -7,15 +9,18 @@ create_task — 创建Windows计划任务
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 创建任务→建任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.tools.validate.file_path_checker import validate_str_param
+
 from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,
@@ -87,16 +92,16 @@ def _build_create_task_llm_data(exec_code: str, duration_ms: int, task_name: str
         _act_params["schedule"] = schedule
     if exec_code == "error":
         return {
-            "summary": f"创建计划任务{task_name}，失败",
-            "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": _act_params},
-            "status": {"exec_code": "error", "message": "创建计划任务失败", "code": err_code or ERR_TASK_CREATE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
+            "summary": f"建任务{task_name}，失败",
+            "action": {"tool": "create_task", "tool_zh": "建任务", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_TASK_CREATE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"创建计划任务{task_name}，成功",
-        "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": _act_params},
-        "status": {"exec_code": "success", "message": "创建计划任务成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"建任务{task_name}，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(建任务) — 小欧-2026-10-14
+        "action": {"tool": "create_task", "tool_zh": "建任务", "params": _act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -122,7 +127,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
             return build_error(data={}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(task_name, command, schedule, None, None, None, None, interval)
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -144,8 +149,8 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, "", hint="")
-        llm_data["summary"] = f"创建计划任务{task_name}，失败: 超时({timeout_sec}秒)"
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, "", hint="命令执行超时，可重试")  # 2026-10-14 小欧 - hint 补空: 超时是内部超时(用户无参可调),"增大timeout"是馊主意; detail 为空, hint 兼报事实 — 小欧-2026-10-14
+        llm_data["summary"] = f"建任务{task_name}，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -154,7 +159,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint=f"创建任务异常,任务名: {task_name}")
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint="创建任务异常，请检查任务名称和命令参数")  # 2026-10-14 小欧 - hint 修复述: 原只复述"异常+任务名"(detail 已有), 改点名两个输入 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

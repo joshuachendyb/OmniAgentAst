@@ -1,7 +1,7 @@
 // 编辑历史: 2026-09-13 小欧 - PillBadge 简洁版：胶囊药丸标签+竖线扫光动画 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 小欧 - 扫光keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令):
 //   删本地injectShine重复注入逻辑, 改调 injectKeyframes('pillShine') 单例注入(DRY) — 小欧-2026-09-15
-// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S3/S4: 默认色引 Colors.SUCCESS 去硬编码 + 字号 FontSize.SECONDARY 收敛 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 第一阶段: 默认色引 Colors.SUCCESS 去硬编码 + 字号 FontSize.SECONDARY 收敛 — 小欧-2026-09-15
 import React from 'react';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons) — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';

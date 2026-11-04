@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-31 - 小欧 - 新增 CALLBACK_MAX_LENGTH 限制(4096字符), 防止回调内容过长导致执行失败
 # 2026-08-05 - 小欧 - 修复: _invoke_timer_callback 外层 except httpx.TimeoutException 在文本提醒(log_message)分支引用未导入的 httpx, 分支异常时触发 UnboundLocalError 掩盖真实错误; 将该 except 移入 http 分支内部(httpx 导入处), 文本分支异常统一由外层 except Exception 捕获
 # 2026-08-08 - 小欧 - 全程统一本地时区: 落盘/事件时间戳 astimezone()→本地ISO无Z(L39/L113/L117/L127/L143); trigger_at 改 naive 本地
-# 2026-08-21 - 小欧 - 12.2-Q2-D1/D2(按文档[1]12.2 diff设计落地): _timer_cb 触发状态 UPDATE 与 INSERT OR REPLACE
+# 2026-08-21 - 小欧 - 单口径落地(按文档 diff设计落地): _timer_cb 触发状态 UPDATE 与 INSERT OR REPLACE
 #   两处 except 静默 pass→logger.error 提级留痕(带 timer_id+失败后果说明), 内存定时器行为零改动, 仅补可追溯性
-# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地): 两处 db.get_conn("operations")→db.get_conn("timers"),
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档 diff设计落地): 两处 db.get_conn("operations")→db.get_conn("timers"),
 #   定时器写入切换到 timers.db 独立库(SRP); 文档漏 timer_list.py 同款修改(读者一致性) — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 设置定时器→设定时器
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -76,16 +78,16 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
         _act_params["trigger_at"] = trigger_at
     if exec_code == "error":
         return {
-            "summary": f"设置定时器{_delay_sec}秒，失败: {detail}",
-            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
-            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
+            "summary": f"设定时器{_delay_sec}秒，失败：{detail}",
+            "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"设置定时器{_delay_sec}秒，成功: {timer_id}，{_delay_sec // 60}分钟后触发",
-        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
-        "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"设定时器{_delay_sec}秒，成功：{timer_id}，{_delay_sec // 60}分钟后触发",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(设定时器) — 小欧-2026-10-14
+        "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{_delay_sec // 60}分钟后触发" if _delay_sec >= 60 else f"成功:{_delay_sec}秒后触发", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"delay": {"value": delay, "text": f"{_delay_sec // 60}分钟"}},
     }
@@ -98,12 +100,12 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
     try:
         if delay <= 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="延迟时间必须大于0")
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="请设置大于0的延迟时间")
             return build_error(data={}, llm_data=llm_data)
 
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="延迟时间不能超过24小时")
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="请设置24小时内的延迟时间")  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail, 改给行动 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
 
         if len(callback) > CALLBACK_MAX_LENGTH:
@@ -113,7 +115,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
 
         async with _timer_lock:
             # 模块级共享状态: _timer_counter / _timer_callbacks / _timers / _timer_events 统一加锁
-            # — 小欧 2026-07-10 C-07
+            # — 小欧 2026-07-10
             _timer_counter += 1
             timer_id = f"timer_{_timer_counter}_{create_timestamp()}"
             trigger_at = datetime.now() + timedelta(seconds=delay)  # 小欧 2026-08-08 全程统一本地时区: naive本地, 后续 isoformat() 无偏移

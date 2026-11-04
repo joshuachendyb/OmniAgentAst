@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页 feat:
 #   1. read_pptx 增加 slide=N 按页翻页参数
@@ -7,13 +8,18 @@
 #   3. 新增 slide 参数校验与单页选取逻辑
 #   4. 迭代变量 sld 改名防冲突(param slide)
 # 2026-07-21 - 小欧 - 文件大小安全检测: 入口加 READ_PPTX_INPUT_MAX_BYTES 字节检查，超限拒读防OOM
-# 2026-07-23 - 小欧 - 三堂会审5bug修复: total_slides未反映outlimit截断+notes_data未同步截断+删死import os as _os_mod
+# 2026-07-23 - 小欧 - 5bug修复: total_slides未反映outlimit截断+notes_data未同步截断+删死import os as _os_mod
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行; warning summary去掉三重重复detail
 # 2026-07-26 - 小欧 - OOD: 确认READ_PPTX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
-# 2026-07-26 - 小沈 - BugFix #1/#4: 截断前存_actual_slide_count,产_trunc_hint提示用slide=N读剩余页; 参数path不覆盖(Bug #3)
-# 2026-07-31 - 小欧 - Bug㉑修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
+# 2026-07-26 - 小沈 - 修复: 截断前存_actual_slide_count,产_trunc_hint提示用slide=N读剩余页; 参数path不覆盖
+# 2026-07-31 - 小欧 - Bug修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取PPT→读PPT
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: 单页读取(slide=N)的 notes 范围与 slides 统一 — 原样回传全量 notes_data
+#   按选中页过滤=False数据越界(页不在请求内); slide 超限分支亦不再携带全量 notes
 """
 D3: read_pptx — 读取PPT文档
 
@@ -32,6 +38,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_READ_PPTX, READ_PPTX_OUTLIMIT_CHARS
 from app.utils.text_utils import truncate_summary
 
@@ -46,23 +53,26 @@ def _build_read_pptx_llm_data(
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取PPT{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "summary": f"读PPT{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
+            "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     # success / warning (自然单位治理 2026-07-20 小欧: 按页翻页)
     if exec_code == "warning":
-        summary_str = f"读取PPT{file_path}，警告"
+        summary_str = f"读PPT{file_path}，警告"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读PPT) — 小欧-2026-10-14
+        message_str = f"警告：{detail}" if detail else "警告"
     elif current_slide is not None:
-        summary_str = f"读取PPT{file_path}，成功: 第{current_slide}页(共{slide_count}页)，{text_len}字符"
+        summary_str = f"读PPT{file_path}，成功：第{current_slide}页(共{slide_count}页)，{text_len}字符"
+        message_str = f"成功：第{current_slide}页(共{slide_count}页)，{text_len}字符"
     else:
-        summary_str = f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符"
+        summary_str = f"读PPT{file_path}，成功：{slide_count}页，{text_len}字符"
+        message_str = f"成功：{slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,
-        "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
-        "status": {"exec_code": exec_code, "message": "读取PPT成功", "code": "", "detail": detail, "hint": hint},
+        "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
+        "status": {"exec_code": exec_code, "message": message_str, "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "slide_count": {"value": slide_count, "text": f"{slide_count}页"},
@@ -75,6 +85,12 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
     """读取PPT文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     file_path = path
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查 — 小欧 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_document_tool(path)
@@ -85,7 +101,7 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         elif suggested_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "文件类型不匹配,请使用正确的文档格式"
+            _hint = "请检查文件路径是否存在及是否为PPT格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"(谈类型是错的) — 小欧-2026-10-14
         llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 
@@ -164,20 +180,22 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         if slide is not None:
             if slide < 1:
                 llm_data = _build_read_pptx_llm_data(
-                    "error", duration_ms, file_path, total_slides, detail=f"slide参数必须>=1,当前值: {slide}", hint="slide参数从1开始,表示第几页")
+                    "error", duration_ms, file_path, total_slides, detail=f"slide参数必须>=1，当前值：{slide}", hint="slide参数从1开始,表示第几页")
                 return build_error(data={}, llm_data=llm_data)
             if slide > total_slides:
                 llm_data = _build_read_pptx_llm_data(
-                    "warning", duration_ms, file_path, total_slides, detail=f"slide={slide}超出范围(共{total_slides}页),返回空内容", hint=f"PPT共{total_slides}页,slide取值1..{total_slides}")
+                    "warning", duration_ms, file_path, total_slides, detail=f"slide={slide}超出范围(共{total_slides}页)，返回空内容", hint=f"PPT共{total_slides}页,slide取值1..{total_slides}")
+                # 2026-10-20 小欧 - FIX: 单页读取(slide=N)下 notes 范围必须与 slides 同步 — 小欧-2026-10-20
                 result_data = {"slides": []}
-                if notes_data:
-                    result_data["notes"] = notes_data
                 return build_warning(data=result_data, llm_data=llm_data)
             slides_data = [slides_data[slide - 1]]
             sel_text = len(slides_data[0].get("text", ""))
+            # 2026-10-20 小欧 - FIX: 单页读取原回传全量 notes_data(所有页), 数据范围越界;
+            #   notes 与 slides 统一按选中页过滤 — 小欧-2026-10-20
             result_data = {"slides": slides_data}
-            if notes_data:
-                result_data["notes"] = notes_data
+            _sel_notes = [n for n in notes_data if n["slide_num"] == slide]
+            if _sel_notes:
+                result_data["notes"] = _sel_notes
             llm_data = _build_read_pptx_llm_data(
                 "success", duration_ms, file_path, total_slides, text_len=sel_text, current_slide=slide)
             return build_success(data=result_data, llm_data=llm_data)
@@ -188,7 +206,7 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         if notes_data:
             result_data["notes"] = notes_data
 
-        # 2026-07-31 小欧: Bug㉑修复 — slide_count传total_slides(实际返回页数), 与text_len/返回数据口径一致; 完整页数由_trunc_hint告知
+        # 2026-07-31 小欧: Bug修复 — slide_count传total_slides(实际返回页数), 与text_len/返回数据口径一致; 完整页数由_trunc_hint告知
         llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, total_slides, text_len=total_text, hint=_trunc_hint)
         # =============================================================================
         # 数据设计：slide_count 从 data 移除，通过 llm_data.metrics 传入 summary
@@ -196,7 +214,7 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13; 2026-07-20 加 slide 参数(按页翻页)
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #16 slides items
+        # branch:  slides items
         # trigger: "slides" in data — slides 是 List[dict], 每项含 slide_num/text/tables
         # handler: _format_slides(data)
         # file:    observation_formatter.py:_format_slides

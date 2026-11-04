@@ -3,9 +3,12 @@
 # 2026-09-05 小健 8.5拆分(llm_stream.py提取builder成员): 5个纯函数逐字移入本文件(仅改import路径, 业务零改动)
 #   _build_tool_calls_response/_log_llm_response/_format_response_error/_yield_error_response/_build_answer_response
 #   原llm_stream.py余部只剩call_llm_stream+call_llm_with_fallback, git mv改名llm_call.py
-# 2026-09-06 小欧 文档[6]2.5.2/5.9落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
-#   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审P1同react_step判定)
-# 2026-09-17 小欧 [48]修改5: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
+# 2026-09-06 小欧 文档落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
+#   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审同react_step判定)
+# 2026-09-17 小欧 文案修改: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
+# 2026-10-06 小欧 修 P1-02: _log_llm_response 的 response_content 走公共 truncate_text 截断预览
+#   (契约要求 截断版/完整版 分离, 原同传 assembled_json 致落盘两字段全等且体积翻倍)
+# 2026-11-04 小欧 _yield_error_response: rate_limit(自愈性外部限速,L1/L2可恢复)日志ERROR→WARNING, 致死类不动 — 小欧-2026-11-04
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -23,11 +26,13 @@ from typing import Optional
 from app.llm.core import LLMResponseError, create_payload_chunk
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+from app.tools.tool_constants import RESPONSE_PREVIEW_LIMIT_CHARS
+from app.utils.text_utils import truncate_text  # 2026-10-06 小欧 P1-02: response_content 截断预览复用公共函数
 
 
 def _resolve_chunk_model(agent):
-    """解析 chunk_model — 任务级快照优先(三堂会审P1, 同 react_step 判别); _task_llm_model 缺省回退 llm_client.llm_model
-    — 小欧 2026-09-06 文档[6]2.5.2"""
+    """解析 chunk_model — 任务级快照优先(三堂会审, 同 react_step 判别); _task_llm_model 缺省回退 llm_client.llm_model
+    — 小欧 2026-09-06"""
     return getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)
 
 
@@ -49,7 +54,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
             "tool_name": tc.get("tool_name", ""), "tool_params": tc.get("tool_params") or {},
             "_tool_call_id": tc.get("tool_call_id") or "",
             "_repair_warning": tc.get("_repair_warning", ""),
-            "params_raw_str": tc.get("params_raw_str", ""),   # #3 并行调用各自原始串透传(11.7.9-2③) — 小欧 2026-08-23
+            "params_raw_str": tc.get("params_raw_str", ""),   # 并行调用各自原始串透传 — 小欧 2026-08-23
         })
 
     logger.info(f"[LLM] 原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
@@ -63,7 +68,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content, "llm_reasoning": full_reasoning},  # 2026-07-19 小欧 新增/传递 llm_reasoning
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
-        "params_raw_str": first.get("params_raw_str", ""),   # #3 主调用原始 arguments 串透传(11.7.9-2③); 源=D0 base_service — 小欧 2026-08-23
+        "params_raw_str": first.get("params_raw_str", ""),   # 主调用原始 arguments 串透传; 源=D0 base_service — 小欧 2026-08-23
         "_repair_warning": first.get("_repair_warning", ""),
     }
     if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
@@ -76,8 +81,12 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
     """统一LLM响应日志 — 小欧 2026-06-25 SRP提取"""
     if finish_reason is None:
         finish_reason = "tool_calls" if response_type == "action" else "stop"
+    # 2026-10-06 小欧 修 P1-02: 契约要求 response_content=截断预览 / raw_response=完整不截断
+    #   (prompt_logger.log_llm_response docstring 明述), 原两者同传 assembled_json →
+    #   落盘「解析结果」恒等于「原始响应」且体积翻倍; 截断复用公共 truncate_text(复用优先)
+    _preview, _ = truncate_text(assembled_json, RESPONSE_PREVIEW_LIMIT_CHARS)
     get_prompt_logger().log_llm_response(
-        round_number=agent.llm_call_count, response_content=assembled_json,
+        round_number=agent.llm_call_count, response_content=_preview,
         raw_response=assembled_json, response_type=response_type,
         finish_reason=finish_reason,
         extra_info={**extra, "usage": usage_data} if usage_data else {**extra},
@@ -86,7 +95,7 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
 
 def _format_response_error(e: "LLMResponseError") -> str:
     """格式化LLM响应错误为前端友好信息 — 小沈 2026-07-17"""
-    return f"模型响应解析失败：{e.message}"  # 2026-09-17 小欧 [48]修改5: 去LLM前缀改口语, 与base_service tool_calls文案联动 — 小欧-2026-09-17
+    return f"模型响应解析失败：{e.message}"  # 2026-09-17 小欧 去LLM前缀改口语, 与base_service tool_calls文案联动 — 小欧-2026-09-17
 
 
 def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = None, exc_type: str = ""):
@@ -97,7 +106,8 @@ def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = 
     # 【E-4修复】返回type:error,DispatchHandler的error分支处理 — 小欧 2026-06-28
     # M5: 空消息场景补强诊断上下文(exc类型/分类), 防根因丢失 — 小欧 2026-07-16
     diag = f" | exc={type(exc).__name__}" if exc else (f" | type={exc_type}" if exc_type else "")
-    logger.error(f"[LLM] {error_msg}{diag}")
+    # 2026-11-04 小欧 - rate_limit属外部瞬态限速,L1/L2重试自愈(对齐llm_call.py:340降级先例); 致死类仍ERROR
+    (logger.warning if exc_type == "rate_limit" else logger.error)(f"[LLM] {error_msg}{diag}")
     _log_llm_response(agent, error_msg, "error", None, finish_reason="error")
     # chunk 产物即 StreamChunk(工厂构造, payload 装 {"type":"error",...} 全保真) — 小欧 2026-09-06
     return create_payload_chunk(
@@ -112,7 +122,7 @@ def _build_answer_response(full_content, full_reasoning, usage_data, agent, fini
     type="answer" 的含义: agent 推断 LLM 已完成任务(无 tool_calls,仅文本输出),
     将此文本作为任务最终答复,后续由 handle_answer() → FinalStep 结束循环。
     — 小欧 2026-07-19 新增 finish_reason 参数(API最后chunk回传:stop/length/content_filter)"""
-    logger.info(f"[LLM] 原始响应(answer):\n")
+    logger.info("[LLM] 原始响应(answer):\n")
     full_content = full_content.strip()
     full_reasoning = full_reasoning.strip()
     assembled = {"content": full_content, "reasoning": full_reasoning}

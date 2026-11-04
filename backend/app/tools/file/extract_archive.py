@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
 #   data 只保留 output_dir/file_list,
@@ -10,6 +11,11 @@
 #   无效格式(如 .rar)直接返回"不支持的压缩格式", 不再对未知扩展名推断出与源文件同名的 out_dir,
 #   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(解压输出目录)
+# 2026-10-12 小欧 - tool_zh改短名词: 解压文件→解压
+# 2026-10-16 - 小欧 - tool去检查化: 删源/目标合法性检查(归 路径安全层), 工具只执行。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+# 2026-10-20 小欧 - 目标检查误拦修复: dest 缺省(默认解压到源同名目录)时 10-17 的目标检查收 raw None 必判空;
+#   改先 _resolve_output_dir 解析真实 out_dir 再查(纯推导无 I/O, 格式判断先于 makedirs 的次序不变)。
 """
 F9: extract_archive — 解压文件
 
@@ -32,9 +38,10 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -53,8 +60,8 @@ def _build_extract_archive_llm_data(
     if exec_code == "error":
         return {
             "summary": f"解压文件{source}，失败",
-            "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
-            "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
+            "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -70,8 +77,8 @@ def _build_extract_archive_llm_data(
         parts.append(f"跳过{skipped_files}个文件")
     return {
         "summary": f"解压文件{source}，成功: {'，'.join(parts)}",
-        "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
-        "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _m,
     }
@@ -195,24 +202,21 @@ async def extract(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-
-    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源文件存在+是文件 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.READ_FILE, source)
-    if not is_valid:
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS)
+    if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径", user_destination=destination, user_overwrite=overwrite)
+        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-20 小欧 - dest 缺省时原样传 None 必判空误拦; 先解析真实 out_dir 再查(纯推导无 I/O, makedirs 次序不变)
+    out_dir = _resolve_output_dir(source, destination)
+    ok, err = check_path_four_level(out_dir, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查解压目标路径", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
 
-    if destination:
-        # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
-            return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 源与目标合法性由 路径安全层 唯一检查, 工具只执行
     try:
 
         lower_path = source.lower()
@@ -222,10 +226,9 @@ async def extract(
         # 推断出与源文件同名的 out_dir, 触发 os.makedirs(FileExistsError/WinError 183) — 小欧 2026-08-13
         if not any(lower_path.endswith(ext) for ext in ('.zip', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar')):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {source}", user_destination=destination, user_overwrite=overwrite)
+            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式：{source}", user_destination=destination, user_overwrite=overwrite)
             return build_error(data={}, llm_data=llm_data)
 
-        out_dir = _resolve_output_dir(source, destination)
         os.makedirs(out_dir, exist_ok=True)
 
         if lower_path.endswith('.zip'):
@@ -254,7 +257,7 @@ async def extract(
         return build_error(data={}, llm_data=llm_data)
     except tarfile.TarError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"TAR文件错误: {str(e)}", user_destination=destination, user_overwrite=overwrite)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"TAR文件错误：{str(e)}", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

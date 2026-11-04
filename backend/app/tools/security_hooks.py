@@ -2,7 +2,7 @@
 # 编辑历史:
 # 2026-08-12 - 小欧 - 新建: 工具层安全 hook 协议(A1 硬伤三修正)。签名逐字对齐 app/safety/operation_record 真实函数,
 #   直接透传零参数转换(KISS-DIRECT)。工具经 get_current_hooks() 取实现, 不再直接 import app.safety, 消除 tools→safety 越层。
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): 新增 NoOpHooks(tools 层空操作 hooks), 供 get_current_hooks() 兜底,
+# 2026-08-13 - 小沈 - 修复(三堂会审): 新增 NoOpHooks(tools 层空操作 hooks), 供 get_current_hooks() 兜底,
 #   消除工具内 _hooks.record_operation() 的 NPE 风险(入口未注入时, 如测试直接调工具函数);
 #   NoOpHooks 不依赖 safety 层, tools 自给自足, record_operation 返回 None(无 DB 记录), execute_with_safety 直接执行 operation_func。
 """
@@ -55,7 +55,7 @@ class ToolSecurityHooks(Protocol):
 
 
 class NoOpHooks:
-    """空操作 hooks(tools 层自给自足兜底, 无 DB 记录) — 小沈 2026-08-13 BUG-3修复
+    """空操作 hooks(tools 层自给自足兜底, 无 DB 记录) — 小沈 2026-08-13 修复
 
     用途: get_current_hooks() 返回 None 时(入口未注入, 如测试直接调工具函数),
           兜底返回本类实例, 消除工具内 _hooks.record_operation() NPE。

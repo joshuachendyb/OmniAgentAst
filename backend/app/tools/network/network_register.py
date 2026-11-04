@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 归组调整: searchweb/fetchpage 改读 TOOL_CATEGORY_OVERRIDE(归类单一真相源), 归 FUNDAMENTAL — 小欧-2026-10-02
+# 2026-10-19 - 小欧 - 按实现文件顶层 import 补齐依赖声明: fetchpage 用 html2text 抽正文, httpget 用 anyio
+#   跑异步(随 httpx 一并装入, 列出是为声明与实现对齐)。此前两者顶层 import 但未声明, 依赖表与实现脱节。
 """
 Network Register - 网络通信工具注册点
 
@@ -7,7 +11,7 @@ Network Register - 网络通信工具注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
-【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
+【工具列表】(共5个)— 【2026-05-17 小沈】精简: 6→5,ping+port_check→network_diagnose
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 1. httpget - 发起HTTP请求
 2. download - 下载文件到本地
@@ -26,6 +30,7 @@ Network Register - 网络通信工具注册点
 # ============================================================
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
+from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
 from app.logger import logger
 import socket
 import time
@@ -34,10 +39,12 @@ from typing import Any, Dict, Optional
 # 网络工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
 # 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
+# 2026-10-19 小欧 - 按实现文件顶层 import 补齐真实缺口: fetchpage 用 html2text 抽正文,
+#   httpget 用 anyio 跑异步(随 httpx 一并装入, 列出是为声明与实现对齐)。
 NETWORK_TOOL_DEPENDENCIES = {
-    "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "httpget": ["httpx==0.26.0", "httpcore==1.0.1", "anyio"],
     "download": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1", "html2text"],
     "searchweb": ["httpx==0.26.0", "httpcore==1.0.1"],
     "ping_port": [],  # 使用内置库
 }
@@ -136,6 +143,7 @@ NETWORK_TOOL_EXAMPLES = {
     "fetchpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
         {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
+        {"url": "https://discovery.intern-ai.org.cn/token-plan/home?tabIndex=3&dockey=02-list-models.md", "extract_format": "markdown", "prompt": "提取完整的模型列表、API参数说明", "save_to": "model_list.md"},
     ],
     "searchweb": [
         {"query": "OpenAI function calling"},
@@ -163,7 +171,7 @@ def _register_network_tools():
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
             implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
             input_model=input_model,
-            category=ToolCategory.NETWORK,
+            category=TOOL_CATEGORY_OVERRIDE.get(tool_name, ToolCategory.NETWORK),
             examples=examples,
             failure_hint_fn=failure_hint_fn,
             dependencies=NETWORK_TOOL_DEPENDENCIES.get(tool_name, []),

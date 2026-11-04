@@ -1,25 +1,24 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - #10 fix: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
-#    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
+# 2026-07-18 - 小欧 - 修复: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest, 与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
 # 2026-07-20 - 小欧 - 加【描述规范】注释:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
-# 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源),
-#    默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源;
-#    与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
+# 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源), 默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源; 与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
+# 2026-10-02 - 小欧 - 归组调整: category 改读 TOOL_CATEGORY_OVERRIDE(extract/compress/readmedia 归 DOCUMENT) — 小欧-2026-10-02
+# 2026-10-02 - 小欧 - 注册名收敛: write→write, edit→edit, read→read(仅对外注册名, 函数名/Schema类名不动)
 """
 File Register - 文件工具注册点 v3.0
 
 【架构规范】2026-04-26 小沈
-【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
+【精简时间】2026-05-18 小沈 — 工具精简:26→11
 【拆分时间】2026-06-16 小沈 — 组合工具拆分:archive_tool→2, file_operation→4
 【拆分时间】2026-06-17 小欧 — data_file_format→2: read_config_file, write_config_file
 【删除时间】2026-06-24 小欧 — 删除read_config_file/write_config_file，text工具已覆盖
 
 14个工具清单(F1-F13):
-F1  readtext     — 读取文本文件
-F2  writetext    — 写文本文件
+F1  read        — 读取文本文件
+F2  write        — 写文本文件
 F3  readmedia    — 读媒体文件
-F4  edittext     — 编辑文本文件
+F4  edit         — 编辑文本文件
 F5a listdir            — 列出目录内容
 F5b tree               — 列出目录树
 F6  find       — 搜索文件名
@@ -42,23 +41,23 @@ from app.tools.file.file_schema import (
     CompressInput,
     CopyInput,
     DeleteInput,
-    EdittextInput,
+    EditInput,
     ExtractInput,
     GrepInput,
     ListdirInput,
     TreeInput,
     MoveInput,
-    ReadtextInput,
+    ReadInput,
     ReadmediaInput,
     RenameInput,
     FindInput,
-    WritetextInput,
+    WriteInput,
 )
 
-from app.tools.file.read_text_file import readtext
-from app.tools.file.write_text_file import writetext
+from app.tools.file.read_text_file import read
+from app.tools.file.write_text_file import write
 from app.tools.file.read_media_file import readmedia
-from app.tools.file.edit_text_file import edittext
+from app.tools.file.edit_text_file import edit
 from app.tools.file.list_directory import listdir
 from app.tools.file.tree import tree
 from app.tools.file.search_files import find
@@ -71,13 +70,14 @@ from app.tools.file.delete_file import delete
 from app.tools.file.rename_file import rename
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
+from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
 from app.logger import logger
 
 # 文件工具依赖配置 — 小健 2026-06-18
 # compress的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
 FILE_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
-        "readtext", "writetext", "readmedia", "edittext",
+        "read", "write", "readmedia", "edit",
         "listdir", "tree", "find", "grep",
         "extract", "move", "copy", "delete", "rename",
     ]
@@ -92,13 +92,13 @@ FILE_TOOL_DEPENDENCIES["compress"] = ["pyzipper"]
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FILE_TOOL_DESCRIPTIONS = {
-    "readtext": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
+    "read": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
 
-    "writetext": """创建或修改文本文件。适用场景:需要写入代码、配置、日志等内容到文件时使用。""",
+    "write": """创建或修改文本文件。适用场景:需要写入代码、配置、日志等内容到文件时使用。""",
 
     "readmedia": """读取本地媒体文件(图片/音频/视频),返回Base64编码数据。支持本地文件路径。注意:不能读取URL,网页中的图片/PDF请用fetchpage自动获取。适用场景:需要分析本地图片、音频、视频文件时使用。""",
 
-    "edittext": """替换/插入文本文件中的指定内容。mode=once(只替换第一个), all(替换全部), before(在锚点前插入), after(在锚点后插入)。适用场景:需要精确修改函数名/变量/配置值,或在代码前后插入新逻辑。""",
+    "edit": """替换/插入文本文件中的指定内容。mode=once(只替换第一个), all(替换全部), before(在锚点前插入), after(在锚点后插入)。适用场景:需要精确修改函数名/变量/配置值,或在代码前后插入新逻辑。""",
 
     "listdir": """列出目录内容,返回扁平列表(当前层所有文件+目录)。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
@@ -127,12 +127,13 @@ FILE_TOOL_DESCRIPTIONS = {
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
-    "readtext": [
+    "read": [
         {"path": "D:/project/main.py"},                               # 全文
         {"path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
+        {"path": "D:/logs/app.log", "offset": 500},                  # 从第500行读到文件尾(超长截断并标记)
         {"path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
     ],
-    "writetext": [
+    "write": [
         {"path": "D:/output/test.txt", "content": "Hello World"},
         {"path": "D:/report.md", "content": "# 标题\n\n第一段内容\n\n第二段内容"},
         {"path": "D:/config.json", "content": "{\"name\": \"test\", \"value\": 123}"},
@@ -141,7 +142,7 @@ FILE_TOOL_EXAMPLES = {
     "readmedia": [
         {"path": "D:/screenshot.png"},
     ],
-    "edittext": [
+    "edit": [
         {"path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
         {"path": "D:/main.py", "old_string": "import os", "new_string": "import sys\nimport json", "mode": "all"},
         {"path": "D:/main.py", "mode": "before", "old_string": "def main():", "new_string": "# new function above main\ndef helper():\n    pass\n\n"},
@@ -162,7 +163,7 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "**/*.py", "path": "D:/project", "offset": 500},
     ],
     "grep": [
-        {"pattern": "def readtext", "path": "D:/backend"},
+        {"pattern": "def read", "path": "D:/backend"},
         {"pattern": "TODO", "path": "D:/src"},
         {"pattern": "class.*Component", "path": "D:/src", "glob": "*.py"},
         {"pattern": "def run", "path": "D:/backend", "context": 2},
@@ -196,10 +197,10 @@ FILE_TOOL_EXAMPLES = {
 # ============================================================
 
 TOOL_INPUT_MODELS = {
-    "readtext": ReadtextInput,
-    "writetext": WritetextInput,
+    "read": ReadInput,
+    "write": WriteInput,
     "readmedia": ReadmediaInput,
-    "edittext": EdittextInput,
+    "edit": EditInput,
     "listdir": ListdirInput,
     "tree": TreeInput,
     "find": FindInput,
@@ -223,10 +224,10 @@ def _register_file_tools():
     """
 
     tool_methods = {
-        "readtext": readtext,
-        "writetext": writetext,
+        "read": read,
+        "write": write,
         "readmedia": readmedia,
-        "edittext": edittext,
+        "edit": edit,
         "listdir": listdir,
         "tree": tree,
         "find": find,
@@ -239,9 +240,9 @@ def _register_file_tools():
         "rename": rename,
     }
     
-    CONFIRMATION_MAP = {
-        "delete": True,
-    }
+    # 2026-10-17 小欧 - delete 确认唯一由删线封装口 check_delete_permission(R3-R6)产出,
+    #   故不再用工具级 needs_confirmation 兜底 —— 否则 R3(允许根内普通删除, 免确认)会被误加确认(退化)。
+    CONFIRMATION_MAP = {}
 
     for name, method in tool_methods.items():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
@@ -255,7 +256,7 @@ def _register_file_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.FILE,
+            category=TOOL_CATEGORY_OVERRIDE.get(name, ToolCategory.FILE),
             implementation=method,
             version="2.0.0",
             input_model=input_model,

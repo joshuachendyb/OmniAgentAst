@@ -1,27 +1,32 @@
-// 编辑历史: 2026-09-08 小欧 - 六章6.5: 抽"标签灰 + 数值加粗 + 可选分项/图标"两段式通用组件(DRY, G5/G6 ≥4 处复用)
+﻿// 编辑历史: 2026-09-08 小欧 - 六章6.5: 抽"标签灰 + 数值加粗 + 可选分项/图标"两段式通用组件(DRY, G5/G6 ≥4 处复用)
 //   支持 detail(P/C 中灰)、tone、icon、maxWidth 截断态、tooltip、data-state(测试钩子) — 小欧-2026-09-08
+// 编辑历史: 2026-10-04 小欧 - Tooltip 加 styles.root.whiteSpace='nowrap'(禁行统一由浮层层负责, 调用方不再包 span);
+//   label 改可选(为空则不渲染标签 span, 本轮项只显数值)
+// 编辑历史: 2026-10-10 小欧 三堂会审 10 规范审计 - tertiary 色调注释同步(summary-only 态已下线, 只剩 empty)
+// 编辑历史: 2026-09-09 小欧 - v4.4 修复#1(数值 hover 变 PRIMARY):
 import React from 'react';
-import { Tooltip } from 'antd';
+
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { EllipsisTip } from './EllipsisTip';
 
 export type MetricTone = 'primary' | 'secondary' | 'warning' | 'tertiary';
 
 export interface MetricItemProps {
-  label: string; // 标签（灰 11px）
+  label?: string; // 标签（灰 11px）; 2026-10-04 小欧 改可选: 本轮项只显数值不显标签
   value: string; // 数值（加粗 12px 或 warning）
   detail?: string; // 可选分项（P/C 等，中灰 12px 500）
   tone?: MetricTone;
   icon?: React.ReactNode;
   maxWidth?: number; // >0 时数值区 ellipsis + Tooltip 全文
-  tooltip?: string;
-  dataState?: string; // aria/data 钩子（P1-8 测试断言）
+  // 2026-10-04 小欧: 保持 string(不引入 ReactNode 兼容分支); 禁行改由 Tooltip styles.root 承担
+  tooltip?: string; // 悬停全文; 一律不折行
+  dataState?: string; // aria/data 钩子（测试断言）
 }
 
 const TONE_COLOR: Record<MetricTone, string> = {
   primary: Colors.TEXT.PRIMARY,
   secondary: Colors.TEXT.SECONDARY,
-  tertiary: Colors.TEXT.TERTIARY, // 3.3: summary-only/empty 标签级弱文字
+  tertiary: Colors.TEXT.TERTIARY, // 3.3: empty 标签级弱文字
   warning: Colors.WARNING,
 };
 
@@ -48,7 +53,6 @@ export const MetricItem: React.FC<MetricItemProps> = ({
         style={{
           fontSize: FontSize.SECONDARY,
           fontWeight: FontWeight.BOLD,
-          // 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1(3.1.3 G6 数值 hover 变 PRIMARY):
           //   数值色唯一机制 = CSS 变量 --taskinfo-entry-active(回退 tone 色);
           //   .taskinfo-entry:hover 注入蓝值即可覆盖任意 tone, 无分支无 !important。 — 小欧-2026-09-09
           color: `var(--taskinfo-entry-active, ${TONE_COLOR[tone]})`,
@@ -69,12 +73,12 @@ export const MetricItem: React.FC<MetricItemProps> = ({
       )}
     </React.Fragment>
   );
+  // 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：外壳 span 的原生 title={tooltip}
+  //   就是用户要的**方框提示**，把它里面再包 antd 浮泡的一层剥掉（真正双叠的根源）。
   const wrapped = maxWidth ? (
     <EllipsisTip text={value} tooltip={tooltip} maxWidth={maxWidth}>
       {body}
     </EllipsisTip>
-  ) : tooltip ? (
-    <Tooltip title={tooltip}>{body}</Tooltip>
   ) : (
     body
   );
@@ -95,9 +99,11 @@ export const MetricItem: React.FC<MetricItemProps> = ({
         color: Colors.TEXT.TERTIARY,
       }}
     >
-      <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
-        {label}
-      </span>
+      {label && (
+        <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
+          {label}
+        </span>
+      )}
       {wrapped}
     </span>
   );

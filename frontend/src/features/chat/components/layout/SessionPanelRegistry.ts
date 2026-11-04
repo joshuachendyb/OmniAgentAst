@@ -16,6 +16,12 @@ export type SlotName =
   | 'topbar'
   | 'left'
   | 'right'
+  /**
+   * 2026-10-21 小杨 - 体验审计（版面决策）：右栏**下方**独立区。
+   *   次要面板（如「文件足迹」）放这里 = 常驻可见、可折叠、不与主面板 RightViewer 抢位，
+   *   也不再需要"同 slot 多面板渲染成 Tab"（主次同权，用户切换即失去主内容视野）。
+   */
+  | 'rightBottom'
   | 'taskinfo'
   | 'config'
   | 'input';
@@ -26,6 +32,10 @@ export interface SessionPanel {
   component: ReactNode;
   defaultVisible?: boolean;
   persistVisible?: boolean; // 开关状态是否随会话持久化(localStorage)
+  /**
+   * 2026-10-21 小杨 - 体验审计：面板**显示名**（同 slot 多个面板时渲染成 Tab，缺省会退化成 key 字符串）
+   */
+  title?: string;
 }
 
 const PANEL_VISIBLE_PREFIX = 'session_panel_visible:';

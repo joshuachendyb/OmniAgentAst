@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 registry_delete — 删除Windows注册表键值或子键
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -8,6 +9,7 @@ registry_delete — 删除Windows注册表键值或子键
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 删除注册表→删注册表
 
 import time as _time_mod
 import winreg
@@ -27,16 +29,16 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, path: str,
     """registry_delete的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除注册表{path}，失败",
-            "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
-            "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
+            "summary": f"删注册表{path}，失败",
+            "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除注册表{path}，成功: {action}",
-        "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
-        "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"删注册表{path}，成功：{action}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(删注册表) — 小欧-2026-10-14
+        "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
+        "status": {"exec_code": "success", "message": f"成功:{action}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -48,10 +50,11 @@ def _delete_registry_recursive(hkey, sub_key):
     主路径用系统 reg.exe 原子级递归删除(规避 winreg 父句柄枚举视图不刷新导致
     的嵌套子键死循环挂起, 详见 test_delete_nonempty_key_recursive_true_still_fails) — 小欧 2026-07-12
     """
-    import subprocess
+    import subprocess  # noqa: F401  (保留: 异常类型对上层可见)
+    from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
     full_key = f"{ROOT_KEY_MAP_REVERSE.get(hkey, 'HKEY_CURRENT_USER')}\\{sub_key}"
     try:
-        result = subprocess.run(
+        result = proc_run(
             ["reg", "delete", full_key, "/f"],
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT,
         )
@@ -110,7 +113,7 @@ def registry_delete(path: str, value_name: Optional[str] = None, backup_before_d
 
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
+                llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail="不能直接删除根键下的子键", hint="根键下的子键不允许删除，请更换目标")  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail; 硬规则无他法, 给换目标 — 小欧-2026-10-14
                 return build_error(data={}, llm_data=llm_data)
 
             if recursive:
@@ -160,7 +163,7 @@ def registry_delete(path: str, value_name: Optional[str] = None, backup_before_d
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=str(e), hint="删除注册表异常,请检查系统状态")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=str(e), hint="删除注册表异常，请检查键路径及权限")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

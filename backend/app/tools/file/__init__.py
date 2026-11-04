@@ -6,10 +6,10 @@ from app.tools.file.file_register import *  # 2026-07-31 小欧: 移除未使用
 
 __all__ = [
 
-    "ReadtextInput",
-    "WritetextInput",
+    "ReadInput",
+    "WriteInput",
     "ReadmediaInput",
-    "EdittextInput",
+    "EditInput",
     "ListdirInput",
     "TreeInput",
     "FindInput",

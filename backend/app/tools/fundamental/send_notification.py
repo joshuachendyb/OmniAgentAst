@@ -1,11 +1,14 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-13 - 小欧 - win10toast改为独立子进程通知隔离Tk/WndProc窗口
 # 2026-07-25 - 小欧 - 截断治理: _build_send_notification_llm_data message[:50] → 删截断移至main函数入口 _msg_preview + SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
 # 2026-07-25 - 小欧 - 三堂会审修复bug×2:
 #         ① _msg_preview = message[:50]无None守卫导致message=None时crash→改(message or "")[:50]
 #         ② build函数docstring仍写"message截断200→50 统一"→更新为"main函数入口统一截断"
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 系统通知→发通知
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 send_notification — 发送Windows系统通知
 【2026-06-22 小健】从 desktop/desktop_gui_tools.py 迁入 fundamental 为独立文件
@@ -22,7 +25,8 @@ from typing import Dict, Any
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST, SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
-from app.tools.validate.file_path_checker import validate_str_param
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
+
 
 
 def _check_module(module_name: str) -> bool:
@@ -43,16 +47,16 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
         act_params["duration"] = notif_duration
     if exec_code == "error":
         return {
-            "summary": f"发送系统通知，\"{title}\"，失败",
-            "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
-            "status": {"exec_code": "error", "message": "通知发送失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
+            "summary": f"发通知\"{title}\"，失败",
+            "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"发送系统通知，\"{title}\"，{notif_duration}秒，成功",
-        "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
-        "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"发通知\"{title}\"，成功：{notif_duration}秒",  # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(发通知), 成功后置, 时长保留 — 小欧-2026-10-14
+        "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

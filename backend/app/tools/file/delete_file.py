@@ -1,30 +1,53 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"删除文件失败,safety拦截"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-15 - 小欧 - _force_delete_sync改(bool,str)透传真实失败原因, 替代原返bool(False)导致_delete_sync包装(False,"permanent")致error_detail=模式字串而非真因。
 # 2026-07-22 - 小欧 - _force_delete_sync 加重试机制: PermissionError/OSError 最多重试3次,间隔1s。
 # 2026-07-29 - 小沈 - 三改: 1)TOOL_TIMEOUTS["delete"]=120s; 2)_force_delete_sync逐文件删除并计数,返回3-tuple(bool,str,list); 3)LLM显式看到删文件数+列表(>30截断5行5列); 4)超时提示hint指引缩小范围。
-# 2026-07-30 - 小沈 - 三堂会审修复: _delete_file_impl L200 method改用闭包容器_deleted_container[1]取实际mode(原用force标记计算,当send2trash fallback到永久删除时LLM观察mode与事实不符); error分支metrics改传extra_metrics(含deleted_files), LLM在删除超时/失败时也能看到已删文件列表。
+# 2026-07-30 - 小沈 - 修复: _delete_file_impl L200 method改用闭包容器_deleted_container[1]取实际mode(原用force标记计算,当send2trash fallback到永久删除时LLM观察mode与事实不符); error分支metrics改传extra_metrics(含deleted_files), LLM在删除超时/失败时也能看到已删文件列表。
 # 2026-08-02 - 小欧 - 最后防线加固: 新增_guard_forbidden_delete, 在delete()最前方无条件硬阻断删除盘根/项目根/系统保护目录, 不依赖security.enabled与config(根因: config security.enabled=false + 07-31撤销auto_confirm后 test_dl4_delete_root_protection真删G盘根; 本防线保证任何路径下禁删)
-# 2026-08-10 - 小欧 - ⑥删复刻_get_project_root收敛走config: _guard_forbidden_delete 项目根统一 config.get_project_root()+get_allowed_dirs()(多授权根保护); 代码库根删除保护由Safety层_is_forbidden_path(⑦)承接; 步骤1实施(北京老陈驱动「项目根目录定义混乱修复」)
+# 2026-08-10 - 小欧 - ⑥删复刻_get_project_root收敛走config: _guard_forbidden_delete 项目根统一 config.get_project_root()+get_allowed_dirs()(多授权根保护); 代码库根删除保护由Safety层_is_forbidden_path(⑦)承接; 步骤1实施
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - P1: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 函数迁移: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: _force_delete_sync/os.walk/rmdir/unlink/chmod 全链 to_win_long_path
+# 2026-08-13 - 小欧 - 修复#5: _force_delete_sync/os.walk/rmdir/unlink/chmod 全链 to_win_long_path
 #   长路径化(仅NT生效), 深嵌套目录不再 WinError 206; impl 层 is_dir/exists 探测同步长路径化
 #   (超长路径不误判"已不存在"→already_deleted); 报告仍用原始路径不暴露 \\?\ 前缀;
 #   send2trash 仍传原始路径(失败自动回退到已长路径化的永久删除)
-# 2026-08-13 - 小欧 - 三堂会审修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
+# 2026-10-15 - 小欧 - 系统保护目录判定单源化: _guard_forbidden_delete 内联 WINDOWS_SYSTEM_DIRS
+#   遍历(2026-08-03 起)删除, 改调用 app.utils.path_utils.is_system_protected_path(); 删本文件
+#   WINDOWS_SYSTEM_DIRS import(该模块反而未消费它)。旧版判据只比 startswith(sd) 前缀, 缺"扁平化跳过"逻辑, 与 path_safe_check 不一致属退化。 — 小欧-2026-10-15
+# 2026-08-13 - 小欧 - 修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
 #   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
 #   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-08-18 - 小健 - 修复(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-09-20 - 小欧 - 写仲裁落地: 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行读改写覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
+# 2026-10-14 - 小欧 - SA8标注: 本文件_guard_forbidden_delete=权限信任框架SA8(delete硬底线,执行第8步,只镜像A族+删根专属,不依赖security.enabled) — 小欧-2026-10-14
+# 2026-10-14 小欧(全局收敛) - _guard_forbidden_delete 定位为**硬底线**: 只镜像 A 族(系统目录/磁盘根)
+#   + 删除专属的受保护根本身; 受保护根本身已同步升到 Safety 层判(B族可授权), 消除"写入不拦/只有删除拦"。
+# 2026-10-16 小欧(分层原则) - **删除 _guard_forbidden_delete 整条硬底线**, 连带删
+#   from app.safety.path_classify_category import (is_disk_root / is_allowed_root_itself / is_system_protected_path)。
+#   【病根】tools 层做权限判定 = 越层 + 画蛇添足; 权限判定只能在 safety 层(4条线), 工具层只判参数合法性。
+#   【已知开洞·老陈知情接受】本函数原是"security.enabled=false 时唯一仍拦删系统目录/磁盘根/授权根的防线",
+#     撤除后开关关闭场景下删除操作无路径层兜底, 直至下一行 validate_path 业务校验生效。
+#     ★此为老陈权衡"分层纯粹性 > 开关关闭时兜底"后的明示取舍, 非遗漏, 勿当 bug 静默加回。 — 小欧-2026-10-16
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归路径安全层), 仅留 for_delete 递归/强制警告。
+# 2026-10-17 小欧 - 恢复删除硬底线(撤销 10-16 分层删除), 并入 path_utils.check_path_five_level 五级总入口; 恒传 allow_missing 保删除幂等, 禁区判定受 logging.debug 门控
+# 2026-10-17 - 小欧 - SA8标注订正(模块更名跟改): 删除硬底线已不在本文件(_guard_forbidden_delete 于 2026-10-16 删除); 现落 app/safety/delete_path_check.guard_forbidden_delete(经 check_delete_permission 封装口) 与 app/utils/path_utils.check_path_five_level 第⑤级。
+# 2026-10-18 小欧 - 删除硬底线回本文件自持: 通用入口降为 check_path_four_level(仅合法性),
+#   本文件 delete() 首行按 logging.debug 门控调用 guard_forbidden_delete(单一真源, 不本地复刻名单)。 — 小欧-2026-10-18
+# 2026-10-19 小欧 - 删除硬底线兜底判据整改: logging.debug 门控语义错误(调试开关≠安全层是否执行过),
+#   改判 _current_task_id 是否为空 —— 有任务上下文=走应用管线(安全层必先判), 无=单独直调本工具, 二者其一不重复。 — 小欧-2026-10-19
 """
 F12: delete_file — 删除文件
 
@@ -43,70 +66,15 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_delete  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
-
-
-def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除最后防线: 无条件禁止删除盘根/项目根+授权目录/系统保护目录 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
-    不依赖security.enabled, 在delete()最前方硬阻断。
-    项目根统一走 config.get_project_root(), 代码库根删除保护由 Safety 层 _is_forbidden_path(⑦) 承接。
-    返回blocked原因, 通过返回None表示允许删除。
-    """
-    try:
-        raw = Path(file_path)
-        p = raw.expanduser().resolve()
-    except Exception as e:
-        return f"安全校验: 路径解析失败({e})"
-    try:
-        if not p.exists() and not p.parent.exists():
-            return None
-    except Exception:
-        pass
-
-    # 1) 盘根(如 G:\ / C:\) — Windows: splitdrive后剩余部分为空或纯斜杠
-    try:
-        drive, rest = os.path.splitdrive(str(p))
-        if drive and not rest.strip("\\/"):
-            return f"禁止删除磁盘根目录: {file_path}"
-    except Exception:
-        pass
-
-    # 2) 系统保护目录(复用file_path_checker规则) — Windows
-    if os.name == "nt":
-        path_lower = str(p).lower().replace("\\", "/")
-        path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
-        for sd in WINDOWS_SYSTEM_DIRS:
-            sd_norm = sd.rstrip("/")
-            if path_after_drive == sd_norm or path_after_drive.startswith(sd):
-                return f"禁止删除系统目录: {file_path}"
-
-    # 3) 项目根本身及项目根的父级祖先(含盘根) + 授权目录 — 保护根不被删除
-    #    根内的具体用户文件/目录仍允许删除, 只禁各根自身及更上层。
-    try:
-        from app.config import get_config
-        protected_roots_ = [Path(get_config().get_project_root()).resolve()]
-        try:
-            allowed_dirs = get_config().get_allowed_dirs()
-            protected_roots_ += [Path(d).resolve() for d in allowed_dirs]
-        except Exception:
-            pass
-        for root_ in protected_roots_:
-            if p == root_:
-                return f"禁止删除项目根/授权根目录: {file_path}"
-            for ancestor in root_.parents:
-                if p == ancestor:
-                    return f"禁止删除项目根/授权根上级目录: {file_path}"
-    except Exception:
-        pass
-    return None
-
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-18 小欧 - 路径四级合法性总入口(权限归 safety, 删除硬底线本文件自持)
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,
@@ -114,7 +82,7 @@ def _force_delete_sync(path: Path, recursive: bool = False,
     """永久删除:逐文件删除(recursive→自底向上walk)/单文件→unlink
     返回(是否成功,模式/错误,已删文件列表) — 小沈 2026-07-29 逐文件重写"""
     last_err: Optional[Exception] = None
-    deleted_files: list[str] = []  # 在循环外初始化，retry不丢失已删文件 — 小沈 2026-07-30 三堂会审修复
+    deleted_files: list[str] = []  # 在循环外初始化，retry不丢失已删文件 — 小沈 2026-07-30 修复
 
     # #5长路径: FS操作统一走 \\?\ 前缀(仅NT), 深嵌套路径不再 WinError 206; 报告仍用原始 path — 小欧 2026-08-13
     _long = to_win_long_path(path)
@@ -167,7 +135,7 @@ def _force_delete_sync(path: Path, recursive: bool = False,
             if attempt < max_retries - 1:
                 logger.warning(f"[_force_delete_sync] 删除失败(第{attempt+1}次),等待{retry_delay}秒重试: {path}")
                 _time_mod.sleep(retry_delay)
-    err_msg = str(last_err) or f"永久删除失败: {path}"
+    err_msg = str(last_err) or f"永久删除失败：{path}"
     logger.error(f"[_force_delete_sync] 删除失败(重试{max_retries}次后放弃): {path}, 错误: {last_err}")
     return False, err_msg, deleted_files
 
@@ -218,22 +186,22 @@ def _build_delete_file_llm_data(
 
     if exec_code == "error":
         return {
-            "summary": f"删除{source}，失败",
-            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
-            "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
+            "summary": f"删除文件{source}，失败",
+            "action": {"tool": "delete", "tool_zh": "删除", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": extra_metrics,
         }
-    # 2026-08-18 小健 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance
+    # 2026-08-18 小健 修复(同源): extra_metrics.status 可能为 str, 防御 isinstance
     _st = extra_metrics.get("status")
     _st_text = _st.get("text", "") if isinstance(_st, dict) else ""
     _dl = extra_metrics.get("deleted")
     _dl_text = _dl.get("text", "") if isinstance(_dl, dict) else ""
     _suffix = _st_text or _dl_text
     return {
-        "summary": f"删除{source}，成功: {_suffix}" if _suffix else f"删除{source}，成功",
-        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
-        "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"删除文件{source}，成功: {_suffix}" if _suffix else f"删除文件{source}，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh, 成功后置, 结果量后缀保留 — 小欧-2026-10-14
+        "action": {"tool": "delete", "tool_zh": "删除", "params": _act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
     }
@@ -257,7 +225,7 @@ async def _delete_file_impl(
         if not task_id:
             return {"success": False, "error_detail": "当前没有活跃任务ID", "params": {"source": file_path}}
 
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.DELETE,
             source_path=path, sequence_number=0,
@@ -275,11 +243,13 @@ async def _delete_file_impl(
             return ok, detail  # 返回2-tuple兼容execute_with_safety
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回(bool,str)
-        if operation_id:
-            is_ok, error_detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_delete_sync)
-        else:
-            logger.info("Database unavailable, executing delete operation without recording")
-            is_ok, error_detail = await asyncio.to_thread(_delete_sync)
+        # 删除执行前登记文件写仲裁, 防跨任务并行读写覆盖 — 小欧 2026-09-20
+        with claim_write(str(path), task_id):
+            if operation_id:
+                is_ok, error_detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_delete_sync)
+            else:
+                logger.info("Database unavailable, executing delete operation without recording")
+                is_ok, error_detail = await asyncio.to_thread(_delete_sync)
 
         method = _deleted_container[1] if _deleted_container[1] else ("permanent" if force else "send2trash")  # 实际mode, fallback到force标记 — 小沈 2026-07-30
         deleted_files = _deleted_container[0]
@@ -297,28 +267,31 @@ async def delete(
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path"""
+    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path
+    删除硬底线归属几经反复: 2026-10-16 删(分层) → 2026-10-17 并入 path_utils 五级入口 → 2026-10-18 回本文件自持 → 2026-10-19 兜底判据改 _current_task_id 有无(有=走应用管线安全层已判, 无=单独直调才兜底)。 — 小欧-2026-10-19"""
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path
-    if not source or not source.strip():
+    # 2026-10-19 小欧 - 删除硬底线兜底判据(与安全层二者其一, 不再重复): 走应用管线(Agent/API 直连)时安全层
+    #   (delete_path_check.check_delete_permission ① guard_forbidden_delete)必先执行, 故仅"单独直调本工具"
+    #   (无任务上下文)时才在此兜底。旧 logging.debug 门控语义错误(调试开关≠安全层是否执行过), 已废止。
+    if _current_task_id.get() is None:
+        from app.safety.delete_path_check import guard_forbidden_delete
+        _reason = guard_forbidden_delete(source)
+        if _reason:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            logger.warning(f"[delete_file] 禁区硬底线拦截(单独调用兜底): {_reason} path={source}")
+            llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=_reason, user_recursive=recursive, user_force=force)
+            return build_error(data={}, llm_data=llm_data)
+    # 2026-10-17 小欧 - 路径检查统一走四级合法性总入口; 恒传 allow_missing=True(删除语义=不存在即已删, 与 force 参数无关)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS, allow_missing=True)
+    if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
-        return build_error(data={}, llm_data=llm_data)
-    # 最后防线: 无条件硬阻断删除盘根/项目根/系统保护目录(不依赖security.enabled与config) — 小欧 2026-08-02
-    block_reason = _guard_forbidden_delete(source)
-    if block_reason:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        logger.warning(f"[delete_file] 安全拦截: {block_reason} path={source}")
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=block_reason, user_recursive=recursive, user_force=force)
-        return build_error(data={}, llm_data=llm_data)
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[delete_file] 路径检查未通过: {err} path={source}")
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由路径安全层唯一检查, 此处仅业务警告(递归/强制)
+    _, _, warn = validate_path_for_delete(source, recursive=recursive, force=force)
     if warn:
         logger.info(warn)
 

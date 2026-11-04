@@ -8,22 +8,35 @@
 # 2026-07-20 小欧 _format_matches 改行×列(200行/150字符): 累计渲染行超出上限则截断并在末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 单行超宽尾部截断, 解决旧逻辑按单串10000字符截断致内容过大被整体丢弃、LLM 看不到匹配结果的问题
 # 2026-07-20 小欧 _format_matches 无截断时仅输出"✓ 无截断-完整"一行, 不再附加冗余截断明细; 有截断明细行去除多余花括号与错配标点
 # 2026-07-20 小欧 _format_shell_result 改行×列(200行/1000字符): 仿 _format_matches 截断收口, 末尾追加两态说明(有截断⚠已截断/无截断✓无截断-完整); 删除 OBS_MAX_STRING_LENGTH 单串截断, 解决 shell 长输出被盲截尾部问题
-# 2026-07-20 小欧 _format_fetchpage_result 新增(fetchpage 专属行×列 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500 + 两态说明); #2 raw str handler 按 action.tool=="fetchpage" 分流, readtext 维持 OBS_MAX_STRING_LENGTH 不变
-# 2026-07-20 小欧 _format_readtext_result 新增(readtext 专属行×列 OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000 + 两态说明); #2 raw str handler 按 action.tool=="readtext" 分流, OBS_MAX_STRING_LENGTH 退为未知 content 工具兜底
+# 2026-07-20 小欧 _format_fetchpage_result 新增(fetchpage 专属行×列 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500 + 两态说明); #2 raw str handler 按 action.tool=="fetchpage" 分流, read 维持 OBS_MAX_STRING_LENGTH 不变
+# 2026-07-20 小欧 _format_read_result 新增(read 专属行×列 OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000 + 两态说明); #2 raw str handler 按 action.tool=="read" 分流, OBS_MAX_STRING_LENGTH 退为未知 content 工具兜底
 # 2026-07-20 小欧 章18 listdir: _format_entries 改专属行×列(OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300) + 两态说明(truncated=显示域行×列截断 或 Tool层deadline截断 data.truncated); 空目录独立分支返回"(空目录)"不显示两态行; 删除 OBS_MAX_DISPLAY_ITEMS 引用(已由 OBS_LISTDIR_* 专属取代)
 # 2026-07-20 小欧 门限复查: #11 _format_shell_result 移除 meta 行(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型); data 详情仅 stdout/stderr+两态, 严禁与 llm_data 段重复显示(原 #11 从 data 取恒为默认空值 powershell/0ms, 既错又重复)
-# 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDITTEXT_MAX_ROWS/CHARS)+两态; writetext 的 diff 改放 llm_data 顶层经此呈现, edittext 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
+# 2026-07-20 小欧 门限复查: _format_llm_data 渲染 llm_data 顶层 "diff" 加行×列收口(OBS_EDIT_MAX_ROWS/CHARS)+两态; write 的 diff 改放 llm_data 顶层经此呈现, edit 的 diff 统一走 data["diff"]→#24, 二者均单行×列收口、严禁重复
 # 2026-07-20 小欧 httpget ②修复: _format_httpget_result 识别 _truncated 模式(安全截断), 醒目标示 _reason+⚠, 确保LLM知悉截断原因(零错觉); 正常 body 维持 json.dumps+行×列收口不变
 # 2026-07-20 小欧 门限分工核查: 修正映射表+对照截断表4处注释常量值 10000→1000(OBS_MAX_STRING_LENGTH)/500→200(OBS_MAX_DISPLAY_ITEMS)/2000→1000(OBS_HTTPGET_MAX_ROW_CHARS)/200→100(OBS_SEARCHWEB_MAX_ROWS), 对齐 tool_constants.py 实际定义值
 # 2026-07-20 小欧 读取类自然单位治理: #10 改路由→_format_pdf_result(#10a PDF页感知, read_pdf专属, page=N翻页+前3页预览+逐页"--- 第N页 ---", INER_READ_PDF_MAX_PAGES=200安全网) / _format_prose_result(#10b 段落/文本行窗口, read_docx+clipboard_ctl适用, 两态说明+取页提示); _format_tree 层级感知截断(每节点子项封顶OBS_TREE_MAX_CHILDREN+总行封顶OBS_TREE_MAX_ROWS, 基于statistics计数); _format_slides 单页改行×列(OBS_PPTX_*); 映射表注释同步更新
-# 2026-07-20 小欧 单行超宽标注: _format_prose_result 与 _format_readtext_result 对超宽行追加 "…(该行超宽已截断, 原N字符)" 标注, 避免 LLM 被静默截断误导(对应 test_long_lines 期望); 与 Tool 层零限制(3.7)一致——截断唯一收口于 formatter
-# 2026-08-05 小欧 BUG-1修复: #18 compress 触发字段 "compression_ratio"→"compression_level"
+# 2026-07-20 小欧 单行超宽标注: _format_prose_result 与 _format_read_result 对超宽行追加 "…(该行超宽已截断, 原N字符)" 标注, 避免 LLM 被静默截断误导(对应 test_long_lines 期望); 与 Tool 层零限制(3.7)一致——截断唯一收口于 formatter
+# 2026-08-05 小欧 修复: compress 触发字段 "compression_ratio"→"compression_level"
 #   【病根】compress_files.py safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 原 trigger 永不成立 → #18 成死代码
 #   【解决】改 data 恒在且 compress 独有字段 compression_level, #18 分支恢复工作; 去噪不复原大文件列表/ratio
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
+# 2026-08-18 - 小健 - 三堂会审 修复(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
 # 2026-08-18 - 小健 - 三堂会审(target截断收敛): _format_llm_data 中 target 截断由手写[:200]+"..."改为公共 truncate_text(target,200,suffix="..."), 与action侧(按设计不截断)消除手写分歧, 满足复用优先
-# 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 Bug#7(str action)防御
-# 2026-08-18 - 小欧 - 三堂会审 Bug#7补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
+# 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 str action 防御
+# 2026-08-18 - 小欧 - 三堂会审 补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
+# 2026-10-02 - 小欧 - 注册名收敛: _truncation_msg 分流 edit→edit(按 action.tool 新注册名)
+# 2026-10-05 - 小欧 - 文档[8]第八章(信息无损优先): ①P1 metrics通用渲染(此前完全不渲染, 未拼进summary的数字LLM拿不到) ②P3 error分支补data诊断补充段(detail非空时data被跳过, 遮蔽deleted_files等部分成功信息) ③P5 diff双通道固化"二选一"约束注释 ④序7 message/summary叠字去重(前缀同义与完全同义均去重, 语义不同保双段)
+# 2026-10-05 - 小欧 - 报告 P6: 新增 _TARGET_KEYS_BY_TOOL 按工具名覆盖 target 取键优先级(未列走 FALLBACK), 修多参工具固定序显示不准; 新工具只加一行。
+# 2026-10-05 - 小欧 - 文档[10]5.1.1: _METRICS_RENDERED_BY_HANDLER 移出 total_lines(改走统计段通用渲染);
+#   read_docx 的 hint 去「共 N 行」防统计段双出(单通道)
+# 2026-10-14 - 小欧 - _format_searchtool_results: 每项渲染为"工具名: 能力描述", 不带分类(分类对LLM无意义);
+#   搜到几个组织几个(≤TOOL_SEARCH_INER_RESULTS_TOP)。data.matches 仍保留 category, 注入链路依赖它。
+# 2026-10-30 - 小欧 - _format_read_result 补 truncated_by_tool 入参(#2 raw str handler 透传 data["truncated"]):
+#   工具层截断(READ_OUTLIMIT_CHARS / 5MiB 读入闸门)此前只在正文尾部留标记, 截断后剩余行数 < OBS_READ_MAX_ROWS 时
+#   页脚仍打 "✓ 无截断-完整", 与正文标记矛盾(内容看起来完整) —— 页脚判定纳入工具层截断。
+# 2026-10-31 - 小欧 - 三堂会审同源收口: 删除本模块 _safe_llm_sub(与 toolhelper.tool_utils 各写一份
+#   类型防御, DRY 违反), 8 处调用改调 app.utils.type_utils.safe_sub_dict(单一真源); 判断语义完全一致
+#   (非 dict 顶层/子值一律归一为空 dict), 零行为变更。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -45,13 +58,13 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
 工具 → handler 映射（全部 63 个工具）:
  工具            data 键                        命中 handler              formatter上限(机器二)                  tool上限(机器一)
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  readtext        {content: str}                 #2-readtext              OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  INER_READTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
+  read        {content: str}                 #2-read              OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000  INER_READ_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断)
   fetchpage       {content: str}                 #2-fetchpage             OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500  WEB_FETCH_MAX_CHARS 已删除(正文零截断, 显示域行×列收口)
-  edittext        {diff: str}                    #24 edittext             OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000  INER_EDITTEXT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
-  writetext       {content_preview: str}          #23 writetext           Tool 层 _build_content_preview 文首50+文末50 预览(用户裁定恢复); 简单拼接 "已写入内容\n"+preview, 无 OBS_WRITETEXT_*(无截断/无死代码)
-   clipboard_ctl   {text: str}                    #10b 文本行窗口          OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  N/A
+  edit        {diff: str}                    #24 edit             OBS_EDIT_MAX_ROWS=200/OBS_EDIT_MAX_ROW_CHARS=1000  INER_EDIT_READ_SIZE=10MB保留为3.4硬安全网(文件过大拒绝, 不截断); diff 零截断, 显示域行×列收口
+  write       {content_preview: str}          #23 write           Tool 层 _build_content_preview 文首50+文末50 预览(用户裁定恢复); 简单拼接 "已写入内容\n"+preview, 无 OBS_WRITE_*(无截断/无死代码)
+   clipboard_ctl   {text: str}                    #10b 文本行窗口          OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000  N/A
    read_pdf        {text: str, ...}               #10a PDF页感知          OBS_PDF_MAX_ROWS=150/OBS_PDF_MAX_ROW_CHARS=1000  页数不限(page=N取指定页, 保留"--- 第N页---"标记)
-   read_docx       {text: str, ...}               #10b 段落窗口           OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000  字符数不限(offset/limit续读)
+   read_docx       {text: str, ...}               #10b 段落窗口           OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000  字符数不限(offset/limit续读)
   read_xlsx       {headers, rows}                #25 read_xlsx            无显示域截断(无offset分页, 行/列全展示); INER_READ_XLSX_MAX_ROWS=10000保留为3.4硬安全网(超上限置truncated, 不删)
   query_sql       {columns, rows}                #5 _format_rows          行: OBS_MAX_DISPLAY_ITEMS=200         limit=50
   filter_data     {columns, rows}                #5 _format_rows+columns  行: OBS_MAX_DISPLAY_ITEMS=200         top_n(用户指定,无默认)
@@ -79,9 +92,9 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   find 自 2026-07-20 起返回全部匹配(offset 仅作跳过, 无条数上限), formatter 按 OBS_FIND_MAX_ROWS 行×列收口。
 
 Author: 小欧 2026-06-21; 小欧 2026-07-04 更新映射表; 小欧 2026-07-05 修复4个Bug, 新增专用handler分组; 小欧 2026-07-05 拆分compress/httpget/analyze_data专用handler
-  小欧 2026-07-20 章12 edittext 专属handler(#24 _format_edittext_result + OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明); edittext 由#21 fallback移出为专属handler; 映射表/截断对照表同步
+  小欧 2026-07-20 章12 edit 专属handler(#24 _format_edit_result + OBS_EDIT_MAX_ROWS/CHARS + 两态说明); edit 由#21 fallback移出为专属handler; 映射表/截断对照表同步
   小欧 2026-07-20 章13 readmedia 专属handler(#13 _format_readmedia_result); base64 为二进制编码非可读文本, 用户裁定不按文本行×列处理, 回退为仅元数据+base64字符数摘要(原行为), 不新增 OBS_READMEDIA_*(避免死代码); INER_READMEDIA_READ_SIZE 保留3.4硬安全网
-   小欧 2026-07-20 章14 用户裁定回退: writetext 恢复 Tool 层 content_preview 预览(文首50+文末50, _build_content_preview), #23 专属简单拼接 "已写入内容\n"+preview(无 OBS_WRITETEXT_* 截断/无死代码); OBS_WRITETEXT_* 删除; WRITE_TEXT_MAX_CHARS 仍依3.6删除(入参长度限制)
+   小欧 2026-07-20 章14 用户裁定回退: write 恢复 Tool 层 content_preview 预览(文首50+文末50, _build_content_preview), #23 专属简单拼接 "已写入内容\n"+preview(无 OBS_WRITE_* 截断/无死代码); OBS_WRITE_* 删除; WRITE_TEXT_MAX_CHARS 仍依3.6删除(入参长度限制)
    小欧 2026-07-20 章15 read_xlsx 门限治理: 新增 _format_xlsx_result 专属handler(#25, 按 action.tool=="read_xlsx" 分流 headers+rows); 无显示域行/列截断(read_xlsx 无offset分页, 截断会永久丢数据且无法翻页取回); 仅 3.4 硬安全网 INER_READ_XLSX_MAX_ROWS(原 XLSX_MAX_ROWS, 依3.5改名)兜底, 超上限置 data["truncated"]=True; 不新增 OBS_XLSX_*(死代码); 映射表/截断对照表同步
 """
 
@@ -91,10 +104,14 @@ from typing import Any, Dict, Optional
 
 from app.logger import logger
 from app.utils.text_utils import truncate_text  # 2026-08-18 小健 三堂会审: target展示截断收敛到公共函数(消除120/200手写分歧)
+from app.utils.type_utils import safe_sub_dict  # 2026-10-31 小欧 三堂会审: status/action 防御取值收口公用函数(与 toolhelper 同源)
 from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
     OBS_DICT_MAX_KEYS,
+    OBS_METRICS_MAX_ITEMS,
+    OBS_METRICS_VALUE_MAX_CHARS,
+    OBS_ERROR_SUPPLEMENT_MAX_CHARS,
     OBS_HTML_SUMMARY_MAX_CHARS,
     OBS_SYSINFO_FIELD_MAX_CHARS,
     OBS_GREP_MAX_ROWS,
@@ -109,10 +126,10 @@ from app.tools.tool_constants import (
     OBS_HTTPGET_MAX_ROW_CHARS,
     OBS_FETCHPAGE_MAX_ROWS,
     OBS_FETCHPAGE_MAX_ROW_CHARS,
-    OBS_READTEXT_MAX_ROWS,
-    OBS_READTEXT_MAX_ROW_CHARS,
-    OBS_EDITTEXT_MAX_ROWS,
-    OBS_EDITTEXT_MAX_ROW_CHARS,
+    OBS_READ_MAX_ROWS,
+    OBS_READ_MAX_ROW_CHARS,
+    OBS_EDIT_MAX_ROWS,
+    OBS_EDIT_MAX_ROW_CHARS,
     OBS_LISTDIR_MAX_ROWS,
     OBS_LISTDIR_MAX_ROW_CHARS,
     OBS_PDF_MAX_ROWS,
@@ -124,31 +141,54 @@ from app.tools.tool_constants import (
 )
 
 
-def _safe_llm_sub(llm_data, key: str) -> dict:
-    """2026-08-18 小健 三堂会审 Bug#7(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
-    防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。
-    2026-08-18 小欧 Bug#7补全: 顶层 llm_data 本身非 dict(工具实现不规范) 时同样防御——原 (llm_data or {})
-    仅防 None/空值, str 等真值类型仍触发 .get 崩溃, 现统一 isinstance 前置判定。"""
-    if not isinstance(llm_data, dict):
-        return {}
-    _v = llm_data.get(key)
-    return _v if isinstance(_v, dict) else {}
+# 2026-10-05 小欧 文档[8]P1: 已被 handler 自行呈现的 metrics 键, 通用渲染跳过防重复 — 小欧 2026-10-05
+# 2026-10-05 小欧 [10]4.5/5.1.1: total_lines 移出跳集合, 改走统计段通用渲染(单呈现源);
+#   配套 read_text_file summary 去 `/{total_lines}`、read_docx hint 去「共 N 行」(以下本函数的 hint 同步),
+#   三处同批落地防 total_lines 从 LLM text 消失或双出。
+_METRICS_RENDERED_BY_HANDLER = frozenset({"page_count"})
+
+
+# 处理对象候选键(通用优先级)
+_TARGET_KEYS_FALLBACK = ("path", "source", "url", "sql", "query", "command")
+# 按工具名覆盖优先级(键名小写); 未列的走 FALLBACK
+_TARGET_KEYS_BY_TOOL = {
+    "fetchpage": ("url", "source", "path"),
+    "webfetch": ("url", "source", "path"),
+    "fetchurl": ("url", "source", "path"),
+    "search": ("query", "source", "url"),
+    "websearch": ("query", "source", "url"),
+    "query": ("sql", "source", "path"),
+}
 
 
 def _tool_target(llm_data) -> str:
-    """2026-08-18 小健 三堂会审: 统一从 llm_data.action.target 取展示目标(收敛 _format_llm_data 与
-    4 个 per-tool formatter 共 5 处重复读取, DRY); 防御 action 为 str(见 Bug#7), 顺带补齐 per-tool
-    formatter 原缺失的该防御。返回未截断原始串, 截断由调用方按需处理。"""
-    _action = _safe_llm_sub(llm_data, "action")
-    _t = _action.get("target", "") if isinstance(_action, dict) else ""
-    return str(_t) if _t else ""
+    """处理对象(target)统一取法。
+
+    2026-10-04 北京老陈裁定 + 文档[8]第六章方案A/B: action.target 已删除(与 action.params 大量重复,
+      前端零消费), "处理对象"改由 action.params 按规范名派生 —— 实测 144 处 action 字面量中
+      138 处 params 键已是规范名(path/source/url/sql/query/command), 故 6 个规范名即可全覆盖。
+    2026-08-18 小健 三堂会审: 统一取值口径(收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处重复读取, DRY);
+      防御 action/params 为非 dict。返回未截断原始串, 截断由调用方按需处理。
+    """
+    _action = safe_sub_dict(llm_data, "action")
+    if not isinstance(_action, dict):
+        return ""
+    _params = _action.get("params")
+    if not isinstance(_params, dict):
+        return ""
+    _tool = str(_action.get("tool") or "").strip().lower()
+    for _k in _TARGET_KEYS_BY_TOOL.get(_tool, _TARGET_KEYS_FALLBACK):
+        _v = _params.get(_k)
+        if _v:
+            return str(_v)   # 2026-07-12 防御: target 可能非 str(如 WindowsPath), 统一 str() 化
+    return ""
 
 
 def _truncation_msg(llm_data: dict = None) -> str:
     """工具类型感知的截断消息 — 小沈 2026-07-08"""
     if llm_data:
-        tool = _safe_llm_sub(llm_data, "action").get("tool", "")
-        if tool in ("readtext", "edittext"):
+        tool = safe_sub_dict(llm_data, "action").get("tool", "")
+        if tool in ("read", "edit"):
             return "\n... (截断，完整内容见文件)"
     return "\n... (截断)"
 
@@ -170,12 +210,12 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
     # handler          工具                              工具上限(机器一)                      formatter上限(机器二)
     # ────────────────  ───────────────────────────────  ──────────────────────────────────  ──────────────────────────────────────
     # non-dict          timer_list                       无限制                             直接 str()，无截断
-    # #2 raw str        readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=1000
-    # #2-readtext      readtext                         无行数限制(仅INER_READTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_READTEXT_MAX_ROWS=200/OBS_READTEXT_MAX_ROW_CHARS=1000
+    # #2 raw str        read                         无行数限制(仅INER_READ_READ_SIZE=10MB)  OBS_MAX_STRING_LENGTH=1000
+    # #2-read      read                         无行数限制(仅INER_READ_READ_SIZE=10MB, 3.4拒绝)  OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000
     # #2-fetchpage     fetchpage                        正文零截断(无 Tool 层上限)            OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500
-    # #24 edittext     edittext                         diff 零截断(仅INER_EDITTEXT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDITTEXT_MAX_ROWS=200/OBS_EDITTEXT_MAX_ROW_CHARS=1000
-    # #23 writetext    writetext                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITETEXT_*)
-    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=1000(旧, 已废除); 2026-07-20 改自然单位: read_pdf→#10a页感知(OBS_PDF_*), read_docx/clipboard→#10b段落/文本行窗口(OBS_READTEXT_*)
+    # #24 edit     edit                         diff 零截断(仅INER_EDIT_READ_SIZE=10MB, 3.4拒绝)  OBS_EDIT_MAX_ROWS=200/OBS_EDIT_MAX_ROW_CHARS=1000
+    # #23 write    write                       content_preview 为 Tool 层预览(文首50+文末50), 简单拼接 "已写入内容\n"+preview; 无 formatter 截断(无 OBS_WRITE_*)
+    # #10 raw text      read_pdf, read_docx, clipboard_ctl 页数/字符数不限                    OBS_MAX_STRING_LENGTH=1000(旧, 已废除); 2026-07-20 改自然单位: read_pdf→#10a页感知(OBS_PDF_*), read_docx/clipboard→#10b段落/文本行窗口(OBS_READ_*)
     # #3 entries        listdir                          返回全部条目(LISTDIR_PAGE_SIZE依3.7作废删除, 有offset可翻页); 显示域行×列  OBS_LISTDIR_MAX_ROWS=200/OBS_LISTDIR_MAX_ROW_CHARS=300(两态说明)
     # #4 items          searchweb                         返回全部(num_results≤50); 显示域行×列   OBS_SEARCHWEB_MAX_ROWS=100/CHARS=500
     # #25 read_xlsx    read_xlsx                        INER_READ_XLSX_MAX_ROWS=10000(3.4硬安全网, 超上限置truncated, 不删)  无显示域行/列截断(无offset, 全量展示)
@@ -222,13 +262,13 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if not isinstance(data, dict):
             return str(data)
 
-        # ── #2 raw str — readtext / #2-fetchpage — fetchpage ──
+        # ── #2 raw str — read / #2-fetchpage — fetchpage ──
         if "content" in data and isinstance(data["content"], str):
-            _tool = _safe_llm_sub(llm_data, "action").get("tool", "")
+            _tool = safe_sub_dict(llm_data, "action").get("tool", "")
             if _tool == "fetchpage":
                 return _format_fetchpage_result(data["content"], llm_data)
-            if _tool == "readtext":
-                return _format_readtext_result(data["content"], llm_data)
+            if _tool == "read":
+                return _format_read_result(data["content"], llm_data, bool(data.get("truncated")))
             content = data["content"]
             if len(content) > OBS_MAX_STRING_LENGTH:
                 content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
@@ -247,7 +287,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_items(data["items"])
 
         # ── #25 read_xlsx — 1 tool: read_xlsx（含CSV, 单sheet headers+rows 专属行×列 + 两态） ──
-        _act_tool = _safe_llm_sub(llm_data, "action").get("tool", "") if llm_data else ""
+        _act_tool = safe_sub_dict(llm_data, "action").get("tool", "") if llm_data else ""
         if _act_tool == "read_xlsx" and "headers" in data and "rows" in data:
             return _format_xlsx_result(data, llm_data)
 
@@ -322,11 +362,13 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if "statistics" in data or "grouped_statistics" in data:
             return _format_analyze_data(data)
 
-        # ── #24 edittext — 1 tool: edittext（diff 专属行×列 + 两态） ──
+        # ── #24 edit — 1 tool: edit（diff 专属行×列 + 两态） ──
+        # 2026-10-05 小欧 文档[8]P5: diff 双通道必须二选一(本通道 data["diff"] / llm_data顶层diff),
+        #   同填会双显 — 小欧 2026-10-05
         if "diff" in data:
-            return _format_edittext_result(data["diff"], llm_data)
+            return _format_edit_result(data["diff"], llm_data)
 
-        # ── #23 writetext — 1 tool: writetext（content_preview 简单拼接; Tool 层已生成预览, 不截断/无 OBS_WRITETEXT_*） ──
+        # ── #23 write — 1 tool: write（content_preview 简单拼接; Tool 层已生成预览, 不截断/无 OBS_WRITE_*） ──
         if "content_preview" in data:
             return "已写入内容\n" + data["content_preview"]
 
@@ -335,7 +377,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_which_result(data)
 
         # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
-        # ── #21 fallback — 33 tools（排除which/edittext/writetext） ──
+        # ── #21 fallback — 33 tools（排除which/edit/write） ──
         #   move, copy, delete, rename, extract,
         #   download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
         #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,
@@ -362,15 +404,14 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
     按 tool 路由到自然单位 handler: read_pdf→页感知 / read_docx→段落窗口 / clipboard→文本行窗口
     — 小欧 2026-07-20"""
     content = data.get("text", "")
-    tool = _safe_llm_sub(llm_data, "action").get("tool", "")
+    tool = safe_sub_dict(llm_data, "action").get("tool", "")
     if tool == "read_pdf":
         return _format_pdf_result(content, data, llm_data)
     if tool == "read_docx":
-        total_lines = ((llm_data or {}).get("metrics", {}) or {}).get("total_lines", {}) or {}
-        total_lines = total_lines.get("value") if isinstance(total_lines, dict) else None
-        hint = f"共 {total_lines} 行，用 offset/limit 分段读取剩余" if total_lines else ""
+        # 2026-10-05 小欧 [10]5.1.1: total_lines 改走统计段通用渲染, hint 去「共 N 行」防双出
+        hint = "用 offset/limit 分段读取剩余" if (((llm_data or {}).get("metrics", {}) or {}).get("total_lines", {}) or {}) else ""
         return _format_prose_result(content, data, hint)
-    # clipboard 等纯文本: 文本行窗口(复用 readtext 行数/单行上限)
+    # clipboard 等纯文本: 文本行窗口(复用 read 行数/单行上限)
     return _format_prose_result(content, data, "")
 
 
@@ -405,13 +446,13 @@ def _format_pdf_result(content: str, data: dict, llm_data: dict = None) -> str:
 
 
 def _format_prose_result(content: str, data: dict, retrieval_hint: str = "") -> str:
-    """#10b 纯文本/段落窗口 handler — 适用于工具: read_docx(段落窗口, offset/limit翻页) / clipboard_ctl(文本行窗口) — 2026-07-20 自然单位治理: 行×列窗口(复用 readtext 上限), 两态 + 取回提示;
+    """#10b 纯文本/段落窗口 handler — 适用于工具: read_docx(段落窗口, offset/limit翻页) / clipboard_ctl(文本行窗口) — 2026-07-20 自然单位治理: 行×列窗口(复用 read 上限), 两态 + 取回提示;
     保留段落/换行结构, 不再盲截1000字符
     — 小欧 2026-07-20"""
     lines = content.split("\n")
     total = len(lines)
-    max_rows = OBS_READTEXT_MAX_ROWS
-    max_chars = OBS_READTEXT_MAX_ROW_CHARS
+    max_rows = OBS_READ_MAX_ROWS
+    max_chars = OBS_READ_MAX_ROW_CHARS
     shown = []
     truncated = total > max_rows
     for ln in lines[:max_rows]:
@@ -623,12 +664,12 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 
 def _format_llm_data(llm_data: Dict) -> str:
     """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts
-    2026-08-18 小健 三堂会审 Bug#7: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
-    2026-08-18 小欧 Bug#7补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 _safe_llm_sub 同源防御)"""
+    2026-08-18 小健 三堂会审 修复: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
+    2026-08-18 小欧 补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 type_utils.safe_sub_dict 同源防御)"""
     if not isinstance(llm_data, dict):
         llm_data = {}
-    status = _safe_llm_sub(llm_data, "status")
-    action = _safe_llm_sub(llm_data, "action")
+    status = safe_sub_dict(llm_data, "status")
+    action = safe_sub_dict(llm_data, "action")
     summary = llm_data.get("summary", "")
     exec_code = status.get("exec_code", "success")
     message = status.get("message", "")
@@ -655,7 +696,10 @@ def _format_llm_data(llm_data: Dict) -> str:
         status_line = f"工具执行: {_st} - 执行结果: 未知({exec_code})"
 
     # 第2行: 观察: {message} - {summary} — 小沈 2026-07-06
+    # 2026-10-05 小欧 文档[8]序7: summary 以 message 开头时只取其一带内容, 去叠字; 语义不同保双段 — 小欧 2026-10-05
     parts = [p for p in [message, summary] if p]
+    if len(parts) == 2 and summary.startswith(message):
+        parts = [summary if summary[len(message):].lstrip(" -—:：,，") else message]
     obs_text = ' - '.join(parts) if parts else '(无额外信息)'
     text = f"{status_line}\n观察: {obs_text}"
 
@@ -672,11 +716,34 @@ def _format_llm_data(llm_data: Dict) -> str:
         if hint:
             text += f"\n建议: {hint}"
 
+    # 2026-10-05 小欧 文档[8]P1: metrics 此前不渲染, 未拼进summary的数字LLM拿不到; 现补通用渲染(取text/标量, 限项数与单值长) — 小欧 2026-10-05
+    metrics = llm_data.get("metrics")
+    if isinstance(metrics, dict) and metrics:
+        _lines = []
+        for _mk, _mv in list(metrics.items())[:OBS_METRICS_MAX_ITEMS]:
+            if _mk in _METRICS_RENDERED_BY_HANDLER:
+                continue
+            if isinstance(_mv, dict):
+                _val = _mv.get("text")
+                if _val is None:
+                    _val = _mv.get("value")
+            else:
+                _val = _mv
+            if _val is None or isinstance(_val, (dict, list, tuple, set)):
+                continue
+            _s = str(_val).replace("\n", " ")[:OBS_METRICS_VALUE_MAX_CHARS]
+            if _s:
+                _lines.append(f"  {_mk}: {_s}")
+        if len(metrics) > OBS_METRICS_MAX_ITEMS:
+            _lines.append(f"  ⚠ 另有 {len(metrics) - OBS_METRICS_MAX_ITEMS} 项指标未显示")
+        if _lines:
+            text += "\n统计:" + "\n".join(_lines)
+
     diff = llm_data.get("diff", "")
     if diff:
-        # diff 为文本改动对照, 行×列收口 + 两态(与 #24 edittext 一致), 防 observation 撑爆且 LLM 知是否完整
-        max_rows = OBS_EDITTEXT_MAX_ROWS
-        max_chars = OBS_EDITTEXT_MAX_ROW_CHARS
+        # diff 为文本改动对照, 行×列收口 + 两态(与 #24 edit 一致), 防 observation 撑爆且 LLM 知是否完整
+        max_rows = OBS_EDIT_MAX_ROWS
+        max_chars = OBS_EDIT_MAX_ROW_CHARS
         rows = diff.split("\n")
         total = len(rows)
         truncated = total > max_rows
@@ -704,8 +771,8 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     最终给LLM的文本中必然包含。data中不再重复存放这些字段。
     — 小欧 2026-07-06 18:39:02
     """
-    # 2026-08-18 小欧 Bug#7补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
-    #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 _safe_llm_sub 同源防御)
+    # 2026-08-18 小欧 补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
+    #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 type_utils.safe_sub_dict 同源防御)
     if not isinstance(llm_data, dict):
         llm_data = {}
     text = _format_llm_data(llm_data)
@@ -713,7 +780,8 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     # error 统一兜底: 主通道是 llm_data.status.detail(各工具已构造);
     # 仅当 detail 为空且 data 含诊断信息时,受控渲染 data(复用既有 format_data_detail),
     # 收敛 build_error(data={}) 不一致且不退化已有 detail 的工具 — 小欧 2026-07-13
-    # 2026-08-18 小健 Bug#7: status 可能为 str, .get 前防御
+    # 2026-08-18 小健 修复: status 可能为 str, .get 前防御
+    # 2026-10-05 小欧 文档[8]P3: detail非空时data被跳过会遮蔽deleted_files等部分成功信息, 故补诊断补充段 — 小欧 2026-10-05
     _status = llm_data.get("status") if isinstance(llm_data.get("status"), dict) else {}
     if _status.get("exec_code") == "error":
         _detail = _status.get("detail", "")
@@ -721,6 +789,19 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
             _extra = format_data_detail(data, llm_data)
             if _extra:
                 text += f"\n错误详情:\n{_extra}"
+        elif data and isinstance(data, dict):
+            # detail 非空: 仅补充 data 中"未被 detail 文本覆盖"的键, 防重复又防遮蔽
+            _dtext = str(_detail)
+            _miss = {
+                k: v for k, v in data.items()
+                if k not in ("success", "params", "hint") and v not in (None, "", [], {})
+                and str(k) not in _dtext and str(v)[:40] not in _dtext
+            }
+            if _miss:
+                _sup = json.dumps(_miss, ensure_ascii=False, default=str)
+                if len(_sup) > OBS_ERROR_SUPPLEMENT_MAX_CHARS:
+                    _sup = _sup[: OBS_ERROR_SUPPLEMENT_MAX_CHARS] + f"…(已截{len(_sup) - OBS_ERROR_SUPPLEMENT_MAX_CHARS}字符)"
+                text += f"\n诊断补充:\n{_sup}"
         return text
 
     if data:
@@ -1164,7 +1245,11 @@ def _format_find_results(matches: list) -> str:
 #   输入: [{"name":"http_request","category":"network"}, {"name":"read_file","category":"file"}]
 #   输出:   http_request [network]\n  read_file [file]
 def _format_searchtool_results(matches: list) -> str:
-    """格式化 searchtool 工具搜索结果 — 小欧 2026-07-05"""
+    """格式化 searchtool 工具搜索结果 — 小欧 2026-07-05
+    2026-10-14 小欧(北京老陈裁定): 每项 = 工具名 + 能力描述, 不带分类 ——
+      LLM 只关心"搜到的这些能干什么、要不要换词重搜"; 分类对其无意义(注入后 tools schema
+      里本就带分类), 反而挤占描述的显示宽度。data.matches 仍保留 category(注入链路依赖它)。
+    """
     if not matches:
         return ""
     lines = []
@@ -1173,8 +1258,8 @@ def _format_searchtool_results(matches: list) -> str:
             lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
             break
         name = m.get("name", "")
-        cat = m.get("category", "")
-        lines.append(f"  {name} [{cat}]")
+        desc = str(m.get("description") or "").strip()
+        lines.append(f"  {name}: {desc}" if desc else f"  {name}")
     return "\n".join(lines)
 
 
@@ -1342,30 +1427,35 @@ def _format_fetchpage_result(content: str, llm_data: dict = None) -> str:
     return "\n".join(lines)
 
 
-def _format_readtext_result(content: str, llm_data: dict = None) -> str:
-    """readtext 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READTEXT_MAX_ROWS/CHARS + 两态说明"""
+def _format_read_result(content: str, llm_data: dict = None, truncated_by_tool: bool = False) -> str:
+    """read 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READ_MAX_ROWS/CHARS + 两态说明
+
+    2026-10-30 小欧 - 补 truncated_by_tool: 工具层截断(READ_OUTLIMIT_CHARS/读入闸门)此前只有
+    正文尾部的标记说明, 若截断后剩余行数 < OBS_READ_MAX_ROWS, 页脚仍会打 "✓ 无截断-完整",
+    与正文标记自相矛盾(读到的内容看起来完整)。现由调用方透传 data["truncated"] 参与页脚判定。
+    """
     _path = _tool_target(llm_data)
     lines = [f"── 文件内容 ── {_path}"]
-    truncated = False
+    truncated = bool(truncated_by_tool)
     content_lines = content.split("\n")
     total_lines = len(content_lines)
-    if total_lines > OBS_READTEXT_MAX_ROWS:
+    if total_lines > OBS_READ_MAX_ROWS:
         truncated = True
-        content_lines = content_lines[:OBS_READTEXT_MAX_ROWS]
+        content_lines = content_lines[:OBS_READ_MAX_ROWS]
     for ln in content_lines:
-        if len(ln) > OBS_READTEXT_MAX_ROW_CHARS:
+        if len(ln) > OBS_READ_MAX_ROW_CHARS:
             truncated = True
-            lines.append(f"{ln[:OBS_READTEXT_MAX_ROW_CHARS]} …(该行超宽已截断, 原{len(ln)}字符)")
+            lines.append(f"{ln[:OBS_READ_MAX_ROW_CHARS]} …(该行超宽已截断, 原{len(ln)}字符)")
         else:
             lines.append(ln)
-    if total_lines > OBS_READTEXT_MAX_ROWS:
-        lines.append(f"  ... 还有 {total_lines - OBS_READTEXT_MAX_ROWS} 行（仅展示前 {OBS_READTEXT_MAX_ROWS} 行）")
+    if total_lines > OBS_READ_MAX_ROWS:
+        lines.append(f"  ... 还有 {total_lines - OBS_READ_MAX_ROWS} 行（仅展示前 {OBS_READ_MAX_ROWS} 行）")
     lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 
 
-def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
-    """edittext 编辑差异 — 2026-07-20 门限治理(章12.4): 专属行×列 OBS_EDITTEXT_MAX_ROWS/CHARS + 两态说明
+def _format_edit_result(diff: str, llm_data: dict = None) -> str:
+    """edit 编辑差异 — 2026-07-20 门限治理(章12.4): 专属行×列 OBS_EDIT_MAX_ROWS/CHARS + 两态说明
     Tool 输出 diff 不截断(3.7); 仅显示域按行×列收口(6.4)。无 diff 时回退标量摘要。"""
     _path = _tool_target(llm_data)
     lines = [f"── 编辑差异 ── {_path}"]
@@ -1376,17 +1466,17 @@ def _format_edittext_result(diff: str, llm_data: dict = None) -> str:
     truncated = False
     diff_lines = diff.split("\n")
     total_lines = len(diff_lines)
-    if total_lines > OBS_EDITTEXT_MAX_ROWS:
+    if total_lines > OBS_EDIT_MAX_ROWS:
         truncated = True
-        diff_lines = diff_lines[:OBS_EDITTEXT_MAX_ROWS]
+        diff_lines = diff_lines[:OBS_EDIT_MAX_ROWS]
     for ln in diff_lines:
-        if len(ln) > OBS_EDITTEXT_MAX_ROW_CHARS:
+        if len(ln) > OBS_EDIT_MAX_ROW_CHARS:
             truncated = True
-            lines.append(ln[:OBS_EDITTEXT_MAX_ROW_CHARS] + "...(截断)")
+            lines.append(ln[:OBS_EDIT_MAX_ROW_CHARS] + "...(截断)")
         else:
             lines.append(ln)
-    if total_lines > OBS_EDITTEXT_MAX_ROWS:
-        lines.append(f"  ... 还有 {total_lines - OBS_EDITTEXT_MAX_ROWS} 行（仅展示前 {OBS_EDITTEXT_MAX_ROWS} 行）")
+    if total_lines > OBS_EDIT_MAX_ROWS:
+        lines.append(f"  ... 还有 {total_lines - OBS_EDIT_MAX_ROWS} 行（仅展示前 {OBS_EDIT_MAX_ROWS} 行）")
     lines.append("⚠ 已截断" if truncated else "✓ 无截断-完整")
     return "\n".join(lines)
 

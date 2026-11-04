@@ -1,25 +1,25 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-05-27 - 小沈 - 创建文件
-# 2026-06-08 - 小沈 - P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
+# 2026-06-08 - 小沈 - 参数校验与实例化: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
 # 2026-06-30 - 小欧 - 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
 # 2026-07-15 - 小沈 - 外层超时恒>内层timeout+缓冲, 防状态工具进程孤儿化
 # 2026-07-17 - 小沈 - max_retries=0日志显示超时值; [Retry][L2]→[Retry][L3]重命名
-# 2026-07-18 - 小欧 - #13 fix: _validate_params增加参数类型校验
-# 2026-07-21 - 小欧 - #17 参数验证提示改进
-# 2026-07-23 - 小欧 - #8 fix: _validate_params扩展number/object类型+值范围clamp
-# 2026-07-23 - 小欧 - #11 fix: 智能类型容错(string参数传dict/list自动修复)
+# 2026-07-18 - 小欧 - 修复: _validate_params增加参数类型校验
+# 2026-07-21 - 小欧 - 参数验证提示改进
+# 2026-07-23 - 小欧 - 修复: _validate_params扩展number/object类型+值范围clamp
+# 2026-07-23 - 小欧 - 修复: 智能类型容错(string参数传dict/list自动修复)
 # 2026-07-26 - 小沈 - 欧阳报告: 非必填None值自动丢弃
-# 2026-07-26 - 小沈 - Bug #7: None丢弃日志增强
+# 2026-07-26 - 小沈 - 修复: None丢弃日志增强
 # 2026-07-29 - 小沈 - 超时hint注入: 导入TOOL_TIMEOUT_HINTS,try_once/_execute_with_retry的TIMEOUT路径查表传hint给LLM
 # 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
 # 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
-# 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), #11 fix行为不变(ensure_ascii=False) — 北京老陈驱动
-# 2026-08-05 - 小欧 - BUG-3修复: _validate_params 值范围clamp 补 number 类型
-#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"#8 fix扩展number"不符
-#   【解决】clamp 条件由 _t=="integer" 扩为 _t in ("integer","number"), 行为一致化
-# 2026-08-05 - 小欧 - BUG-2修复: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
+# 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), 类型容错行为不变(ensure_ascii=False) — 北京老陈驱动
+# 2026-08-05 - 小欧 - 修复: _validate_params 值范围clamp 补 number 类型
+#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"扩展number"不符
+# 2026-08-05 - 小欧 - 修正: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
 #   【病根】LLM未传timeout时, 有timeout参数的工具掉入"无inner"分支用 TOOL_TIMEOUTS default=60,
 #   而工具内部真实超时是schema默认值(如compress=300), 保险丝60<内部300 → 抢先截杀,
 #   compress内部的timed_out进度/hint永远回不来, 击穿7-30"保险丝恒晚于内部超时"修复
@@ -28,10 +28,10 @@
 #   try_once 与 _execute_with_retry 两处重复保险丝逻辑收敛至 _compute_fuse (DRY)
 #   【影响】compress: LLM未传时 60→630 修复; httpget/download/fetchpage/ping_port 同型一致性纠正,
 #     内部超时即schema默认(30/60/30/5), 保险丝恒覆盖不截杀; 无timeout参数工具(listdir/delete等)不变
-# 2026-08-05 - 小欧 - BUG-2修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
+# 2026-08-05 - 小欧 - 修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
 #   【理由】tool 的 timeout 值要优先; 与 base 取 min/max 都会在 schema默认>base 时丢失 tool 真实值
 #   (如 schema默认=1800,base=60, 取min得60→保险丝630反小于内部1800截杀); 直接用 schema默认最贴近 tool 值优先
-# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与文档13.4.2"6个工具"一致
+# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与设计文档 13.4.2"6个工具"一致
 # 2026-08-05 - 小欧 - 注释按4条原则重构(老陈审阅): 明确本保险丝是toolretry引擎外部超时(非工具自身超时);
 #   注释统一拆分为 inner取值来源(原则2 LLM值/原则3 schema默认) 与 保险丝公式(原则4 max(inner,CEILING)+BUFFER);
 #   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
@@ -47,24 +47,39 @@
 #   与现有"对象→字符串"容错形成双向闭环, 不静默删除非法字段)
 # 2026-08-12 - 小欧 - 三堂会审修正: 反向容错由parse_json手写分支改为复用公共coerce_json(DRY铁规,
 #   与write_xlsx/analyze_data/filter_data共用同一参数归一化层; 非法JSON原样返回不误改, 二维List[List]不误伤, 行为等价更优)
-# 2026-08-12 - 小欧 - 三堂会审修复: 值范围clamp兼容Pydantic v2 anyOf嵌套(日志实证2026-08-11 readtext limit=1200漏过引擎层)
+# 2026-08-12 - 小欧 - 三堂会审修复: 值范围clamp兼容Pydantic v2 anyOf嵌套(日志实证2026-08-11 read limit=1200漏过引擎层)
 #   【病根】Pydantic v2对Optional[int]生成{"anyOf":[{...min/max},{"type":"null"}], "type":"integer"},
 #      maximum/minimum在anyOf[0]子结构, 顶层spec.get("minimum"/"maximum")取None→clamp全程失效,
 #      越界值(limit=1200等)直抵工具运行时靠read_text_file.py:166兜底报错
-#   【影响面】全部Optional数字+ge/le字段: readtext(offset/limit/tail)、analyze_data(top_n/limit)、
+#   【影响面】全部Optional数字+ge/le字段: read(offset/limit/tail)、analyze_data(top_n/limit)、
 #      read_docx/read_pdf(limit)、network port(1-65535)、timer year(1900-2100), 一并修复
 #   【解决】新增_extract_numeric_bounds(spec)范围提取helper(顶层优先, 无则取anyOf[0]),
 #      clamp逻辑与既有钳制语义完全一致(v<min→min, v>max→max), 仅提取路径修正, 增强无退化
-# 2026-08-13 - 小欧 - 三堂会审修复#3/#31: #31 _extract_numeric_bounds 的 anyOf 分支改全量扫描
-#   首个含 min/max 的成员, 消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
-#   #3 clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
+# 2026-08-13 - 小欧 - 三堂会审修复: _extract_numeric_bounds 的 anyOf 分支改全量扫描
+#   anyOf[0] 若含 min/max 则取, 否则取首个含 min/max 的成员,
+#   消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
+#   clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
 #   clamp 全程失效), 改为"能取到数值边界即钳制", 并补 isinstance(v,(int,float)) 防类型不可比较异常
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5.2 D3c/11.9 P4, #B 闭环 北京老陈 裁定②):
+# 2026-08-18 - 小健 - 三堂会审 修复(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码, 闭环 北京老陈 裁定②):
 #   try_once/_execute_with_retry 加 on_attempt_recorded 回调——每次实际执行(成功/失败)各回调一次,
 #   供文件A 排查副本 format 前直落盘(前端不可见铁律不变); execute_tool_with_retry 签名接收+:371 透传最后一跳(#21);
-#   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(11.7.9-2「每次尝试各写一块」),
+#   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(「每次尝试各写一块」),
 #   设计 diff 原只记末次失败与需求不符, 按需求权威执行
+# 2026-09-20 - 小欧 - E-3修复(结构化工具错误识别): 新增 StructuredToolError(携带 category 的标记异常) +
+#   _struct_error_category 提取; 错 dict 无 error_type 时回退读 other_data.category(字符串/枚举值均可);
+#   _should_retry 双通道判定: 分类器类别(category.value)或异常类型名命中 retryable 列表即重试,
+#   非字符串 error_type 不再被误拒。compliance: SRP/DIRECT
+# 2026-09-20 - 小欧 - E-3直线化(北京老陈 10大规范三堂会审, 修订上一条): 判定恢复唯一通道 category.value 匹配
+#   (TOOL_RETRY_CONFIG 的 retryable 全为 value, 类型名通道对真实配置是死通道→YAGNI); error dict 统一承载
+#   StructuredToolError(自带 category, 分类器 getattr 通道直判), 删 raise TimeoutError 绕回分支(KISS-DIRECT/DRY,
+#   分类器对 TimeoutError→TIMEOUT 映射本已存在, 重造无增量)。行为不变: error dict 可重试类别重试、耗尽返回失败。
+# 2026-10-09 - 小欧 - 保险丝公式重写(北京老陈裁定 BUFFER=15+timeout不重试): max(inner,CEILING=600)+30 恒630与max_retries脱钩, 退化为固定定时器丧失兜底意义(YAGNI), 且inner调大时兜底预算被正常执行吃掉; 改 inner×(max_retries+1)+BUFFER="整条重试链总闸", 恒>内层最坏总耗时不变式保持。实测bash75/compress315/httpget105/download195(原均630); 删INSURANCE_CEILING, 保留_get_schema_timeout_default(算inner的必要输入)。
+# 2026-10-09 - 小欧 - 修复bool timeout潜在缺陷(本次重写暴露非引入): isinstance(True,int)为真使timeout=True被当inner=1, 旧公式被CEILING=600掩盖, 新公式下暴露为compress保险丝16(应315)反小于内层超时会抢先截杀; 新增_is_positive_number显式排除bool, 走schema默认兜底, 正常int/float行为零变化。compliance: YAGNI/DRY/KISS-DIRECT
+# 2026-11-03 小欧 - [参数验证] 非法字段 WARNING→DEBUG(LLM 编参数属调用方错误) — 小欧-2026-11-03
+# 2026-11-04 小欧 - shell 卡死根治(执行器层): 删私有 _ShellWorkerPool 改 app.utils.workers.WorkerPool(同一实现,
+#   构造期建满 N 线程, 运行期 submit 只入队); 容量 _SHELL_EXECUTOR_MAX 按 tuning 配置在池构造处计算(不塞进
+#   tool_constants 纯常量表); 排队与执行共用单一 deadline(原各等 timeout, 最坏 2×timeout 撑破保险丝) — 小欧-2026-11-04
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -81,9 +96,11 @@ Author: 小沈 - 2026-05-27
 
 import asyncio
 import inspect
+import threading
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
+from app.config import get_config  # shell 执行器容量按 tuning 配置计算(配置派生值留在使用方) — 2026-11-04 小欧
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
 from app.tools.tool_constants import (
@@ -94,6 +111,7 @@ from app.tools.tool_constants import (
 from app.tools.tool_response import build_error
 from app.tools.tools_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
+from app.utils.workers import WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现(取代各文件私有池)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
@@ -104,23 +122,22 @@ from app.tools.registry import tool_registry
 #
 # 工具分两类，两类不同策略：
 #
-# 【有 inner timeout 参数的工具】（compress/shell/httpget/download/fetchpage/ping_port 6个）
-#   保险丝 = max(inner, INSURANCE_CEILING) + INSURANCE_BUFFER
+# 【有 inner timeout 参数的工具】（compress/bash/httpget/download/fetchpage/ping_port/searchweb 7个）
+#   保险丝 = inner × (max_retries + 1) + INSURANCE_BUFFER
 #   inner = 工具的超时参数值，其取值按北京老陈 4 条原则：
 #     [原则2] LLM 显式传 timeout    → inner = LLM 给的值
 #     [原则3] LLM 未传 timeout      → inner = schema 默认值（tool 的 timeout 值优先；
 #              工具有 timeout 参数时其内部真实超时即 schema 默认值，如 compress=300，
 #              不能掉入 TOOL_TIMEOUTS default=60 被截杀）
-#   [原则4] 取 max：保险丝 = max(inner, CEILING)+BUFFER，inner 超 CEILING 则随它去。
-#   CEILING=600：有 inner 的工具系统至少等10分钟（即使 LLM 传 300，保险丝也托底到 630，
-#                保证外部超时恒大于工具内部 300s deadline）；inner 超 600 则直接用 inner。
-#   BUFFER=30：保险丝比内部超时多30秒，给内部 handler 退出窗口。
+#   乘法项 (max_retries+1) = 重试链总预算：一次执行耗 inner，最多再试 max_retries 次。
+#   BUFFER=15：内层超时到点后的退场窗口，必须 ≥ 内层最长的清理尾巴
+#              （bash 超时后 _await_cleanup_guard join 上限 _CLEANUP_GUARD_TIMEOUT=10s，
+#                保险丝 15 > 10 ⇒ 恒晚于清理链返回，绝不截断补清理）
 #
-# 【无 inner timeout 参数的工具】（listdir/delete/find 等）
+# 【无 inner timeout 参数的工具】（listdir/find/grep/delete 等）
 #   [原则1] inner 必然没有 → 用 TOOL_TIMEOUTS 表里参数 或 default，渐进递增：
 #   保险丝 = min(base_timeout * (attempt+1), PROGRESSIVE_MAX)
 #   原因：工具没有内部超时概念，首次短快失败立即报错，后续逐步放宽，上限 PROGRESSIVE_MAX。
-#   PROGRESSIVE_MAX = CEILING // 2 = 300：无inner工具最长等5分钟。
 #
 # 【两条超时】梳理（北京老陈 2026-08-06 10:05:21）—— 本引擎存在两条独立的超时线：
 #   ① 传给 tool 的超时（tool 内部执行用）→ 随 params 原样传给 tool(**params)
@@ -128,12 +145,34 @@ from app.tools.registry import tool_registry
 #                            LLM 未传   → tool 用自己函数(schema)的默认值
 #      无 timeout 参数工具    ：tool 无内部超时概念，靠外部 wait_for 截断
 #   ② 保险丝超时（asyncio.wait_for 掐整个 tool 调用）→ 由 _compute_fuse 计算，见上文两处
-#   ★ 两值是独立的：传给 tool 的值 ≠ 保险丝值。例：LLM 传 timeout=300，
-#     tool 内部实际收 300，但保险丝 = max(300, CEILING)+BUFFER = 630（托底恒≥内部超时）。
+#   ★ 两值是独立的：例：LLM 传 timeout=60，tool 内部实际收 60，
+#     保险丝 = 60×(0+1)+15 = 75（恒大于内层最坏总耗时，正常执行永不被误杀）。
 # ============================================================
-INSURANCE_CEILING = 600
-INSURANCE_BUFFER = 30
-PROGRESSIVE_MAX = INSURANCE_CEILING // 2
+INSURANCE_BUFFER = 15
+PROGRESSIVE_MAX = 300
+
+# ============================================================
+# shell 专用有界执行器 — 2026-11-04 小欧 根治(shell 卡死全局放大)
+#
+# 【病根】shell() 是同步函数, 原经 asyncio.to_thread 落到事件循环的【默认】executor。
+#   ① asyncio.wait_for 无法取消线程 → 每次超时永久占死一个默认 worker;
+#   ② 更致命: ThreadPoolExecutor.submit 在"需要新建 worker"时, 会在【调用线程】里执行
+#      Thread.start()(concurrent/futures/thread.py _adjust_thread_count), 而 shell 正是
+#      从事件循环线程提交的 → 线程创建一旦停顿(2026-11-04 事故: 新线程 CPU=0、
+#      _started 从未置位), 事件循环当场僵死, 连 getaddrinfo 的 run_in_executor 也陪葬。
+# 【方案】
+#   ① 隔离: shell 走专用执行器, 默认 executor 只留给 DNS/文件等短任务;
+#   ② 预热: worker 在导入期一次性建满, 运行期 submit 只入队 —— "在 loop 线程里创建线程"
+#      这个动作在运行期彻底不存在; 建不起来=启动即失败, 早暴露;
+#   ③ 有界: 提交前占位, 占不到就明确失败。卡死的 worker 不会被无界任务继续堆叠,
+#      也不会把后续正常请求无限期拖住。这是单次请求级退避, 不是跨请求熔断 ——
+#      偶发故障不应污染后续正常请求(熔断器方案已否决: 一次偶发即长期禁用 shell, 得不偿失)。
+# ============================================================
+_SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execute_command"})
+# 执行器容量: 按 tuning 配置在本处计算(配置派生值不放进 tool_constants 的纯常量表) — 2026-11-04 小欧
+_SHELL_EXECUTOR_MAX = max(32, int(get_config().get("tuning.concurrency.shell_pool_max_per_type", 8)) * 4)
+_SHELL_EXECUTOR = WorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
+_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 与池容量同源, 不再各写一份
 
 # ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)
@@ -161,6 +200,15 @@ def _build_invalid_param_hint(action: str, invalid_keys: list) -> str:
     return "；".join(_parts)
 
 
+class StructuredToolError(Exception):
+    """结构化工具错误 — 小欧 2026-09-20 E-3 修复
+    工具以 error dict(code/exec_code="error") 返回失败时构造, 自带分类 category(ToolErrorCategory),
+    分类器据此直接判定, 不依赖异常类型名/消息关键词猜测(见 tool_error_classifier.py)。"""
+    def __init__(self, message: str, category: ToolErrorCategory):
+        super().__init__(message)
+        self.category = category
+
+
 class ToolRetryEngine:
     """统一工具重试引擎 — 绑定Agent的工具字典"""
     
@@ -168,7 +216,7 @@ class ToolRetryEngine:
         self._tools = tools
     
     async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
-                                timeout: float) -> Any:
+                                timeout: float, action: str = "") -> Any:
         """
         统一单次工具调用 — 小沈 2026-06-08 重构
         小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
@@ -177,15 +225,43 @@ class ToolRetryEngine:
         参数说明(两条超时线交汇点, 北京老陈 2026-08-06 10:05:21):
           normalized_input 是校验后参数, 内含 timeout 则随 tool(**normalized_input) 原样传给 tool(①线);
           timeout 参数是保险丝(②线), 仅用于 asyncio.wait_for 掐整个调用, 不传给 tool 本身。
+        2026-11-04 小欧: shell 类工具改走专用有界执行器, 不再占用默认 executor
+          (默认 executor 被 shell 卡死占满后, getaddrinfo 等短任务同样排不上 → 全站僵死)。
         """
+        # 治理第0步(2026-10-04 小欧): 同步工具经下方to_thread卸载出事件循环;
+        #   禁止把shell()改成async def — 改协程会走本分支直调, 卸载被取消, 阻塞回到事件循环(功能退化)。
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+        if action in _SHELL_TOOL_NAMES:
+            return await self._execute_in_shell_executor(tool, normalized_input, timeout)
         result = await asyncio.wait_for(
             asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
         )
         if inspect.iscoroutine(result):
             return await asyncio.wait_for(result, timeout=timeout)
         return result
+
+    async def _execute_in_shell_executor(self, tool: Callable, params: Dict[str, Any],
+                                         timeout: float) -> Any:
+        """shell 专用执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
+
+        单一 deadline: 排队与执行共享同一个 timeout 预算。原实现排队等 timeout、执行再等
+        timeout, 实际最坏 2×timeout, 把"保险丝"这个外部上限撑破一倍 — 现排队只消耗剩余额度。"""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while not _SHELL_SLOTS.acquire(blocking=False):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"shell 专用执行器无空闲 worker(前序 shell 调用卡死未归还), 等待{timeout:.0f}s → 明确失败")
+            await asyncio.sleep(min(0.05, remaining))
+        try:
+            fut = _SHELL_EXECUTOR.submit(lambda: tool(**params))
+        except BaseException:
+            _SHELL_SLOTS.release()
+            raise
+        fut.add_done_callback(lambda _f: _SHELL_SLOTS.release())
+        return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
     
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
@@ -200,7 +276,7 @@ class ToolRetryEngine:
             data={},
             llm_data={
                 "summary": message[:200],
-                "action": {"tool": action_name, "tool_zh": "", "target": "", "params": action_params or {}},
+                "action": {"tool": action_name, "tool_zh": "", "params": action_params or {}},
                 "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": hint or ""},
                 "duration_ms": 0,
                 "metrics": {},
@@ -236,27 +312,40 @@ class ToolRetryEngine:
             return None
 
     def _compute_fuse(self, action: str, params: Dict[str, Any],
-                      base_timeout: int, attempt: int) -> int:
+                      base_timeout: int, attempt: int, max_retries: int = 0) -> int:
         """计算单次执行保险丝超时（toolretry 引擎外部超时②线）— 按北京老陈 4 条原则：
         本方法只计算②保险丝超时(wait_for掐整个调用); ①传给 tool 的超时随 params 原样传 tool,
         两条超时线见顶部设计注释块【两条超时】。— 小欧 2026-08-06 10:05:21
         inner = 工具 timeout 参数值，取值来源：
           [原则2] LLM 显式传 timeout → inner = LLM 给的值
           [原则3] LLM 未传但工具有 timeout 参数 → inner = schema 默认值(tool 值优先)
-                 【修复BUG-2】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
+                 【修复】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
                  (如 compress schema默认300>60); 现用schema默认兜底, 保险丝恒覆盖内部超时
-        [原则4] 有 inner → 保险丝 = max(inner, CEILING)+BUFFER (取max, inner超CEILING随它去)
+        [原则4] 有 inner → 保险丝 = inner × (max_retries+1) + BUFFER(重试链总预算, 见顶部注释)
         [原则1] 无 timeout 参数工具 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
         try_once 与 _execute_with_retry 共用, 消除两处重复逻辑(DRY)
-        小欧 2026-08-05"""
+        max_retries: 由 _get_retry_config 取得的 per-tool 重试上限, 供计算重试链总预算 — 小欧 2026-10-09"""
         inner = params.get("timeout")
-        if not (isinstance(inner, (int, float)) and inner > 0):
+        if not self._is_positive_number(inner):
             schema_default = self._get_schema_timeout_default(action)
             if schema_default is not None:
                 inner = schema_default
-        if isinstance(inner, (int, float)) and inner > 0:
-            return max(int(inner), INSURANCE_CEILING) + INSURANCE_BUFFER
+        if self._is_positive_number(inner):
+            return int(inner) * (max_retries + 1) + INSURANCE_BUFFER
         return min(base_timeout * (attempt + 1), PROGRESSIVE_MAX)
+
+    @staticmethod
+    def _is_positive_number(v: Any) -> bool:
+        """是否为一个正整数/浮点数 — bool 显式排除。
+
+        2026-10-09 - 小欧 - 修复被旧公式掩盖的潜在缺陷:
+          Python 中 isinstance(True, int) 为 True, 故原 isinstance(inner,(int,float)) 判定
+          会把 LLM 误传的 timeout=True 当作 inner=1。
+          旧公式 max(1, CEILING=600)+30 恒为 630, 该缺陷被托底掩盖看不出问题;
+          公式改为 inner×(retries+1)+BUFFER 后暴露为 compress 保险丝 1×1+15=16
+          (应为 300×1+15=315), 保险丝反而远小于内层超时, 会抢先截杀正常执行。
+          故此处显式排除 bool, 让 timeout=True 走 schema 默认值兜底(与 None/0/负数 同路径)。"""
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
     
     def _prepare_execution(self, action: str, action_input: Dict[str, Any]):
         """查找工具+参数规范化+参数验证 — 统一入口，try_once与execute_tool_with_retry共享
@@ -284,7 +373,7 @@ class ToolRetryEngine:
                 data={},
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
-                    "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
+                    "action": {"tool": action, "tool_zh": "", "params": {"action": action}},
                     "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 searchtool 搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)，如'网络 搜索'，系统会自动注入整个工具分类。"},
                     "duration_ms": 0,
                     "metrics": {},
@@ -296,7 +385,7 @@ class ToolRetryEngine:
         normalized_input, _ = normalize_params(action, action_input)
         params = self._validate_params(action, normalized_input, tool)
         # 验证失败（非法参数/缺失必需参数）→ 返回error_dict，不继续执行
-        # 2026-08-18 小健 三堂会审 Bug#7(同源): llm_data.status 可能为 str, 防御 isinstance
+        # 2026-08-18 小健 三堂会审 修复(同源): llm_data.status 可能为 str, 防御 isinstance
         _ec = ""
         if isinstance(params, dict):
             _ld = params.get("llm_data")
@@ -322,17 +411,17 @@ class ToolRetryEngine:
          不需要引擎层自动重试。这避免了asyncio.gather内部的重试复杂性。
 
          小欧 2026-07-09
-         2026-08-23 小欧: 新增 on_attempt_recorded 回调(文档[1]11.8.5.2 D3c/#B 闭环 北京老陈 裁定②):
+         2026-08-23 小欧: 新增 on_attempt_recorded 回调(落盘闭环 北京老陈 裁定②):
            每次实际执行(成功/失败)回调一次, 供文件A 排查副本落盘(format 前原始现场), 前端不可见不变
         """
         tool, params_or_error = self._prepare_execution(action, action_input)
         if tool is None:
             return params_or_error
         # 复用_get_retry_config的超时查询，消除与_execute_with_retry的DRY违规 — 小欧 2026-07-09
-        _, _, _, base_timeout = self._get_retry_config(action)
-        timeout = self._compute_fuse(action, params_or_error, base_timeout, 0)
+        max_retries, _, _, base_timeout = self._get_retry_config(action)   # 2026-10-09 小欧: 取 max_retries 供保险丝算重试链总预算
+        timeout = self._compute_fuse(action, params_or_error, base_timeout, 0, max_retries)
         try:
-            result = await self._execute_tool_once(tool, params_or_error, timeout)
+            result = await self._execute_tool_once(tool, params_or_error, timeout, action=action)
             if isinstance(result, dict):
                 result.setdefault("other_data", {})["retry_count"] = 0
             if on_attempt_recorded:
@@ -388,7 +477,7 @@ class ToolRetryEngine:
     def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
         """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
         Pydantic v2对Optional[int]生成{"anyOf":[{...,"minimum"/"maximum"...},{"type":"null"}], "type":"integer"},
-        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证readtext limit=1200漏过引擎层)。
+        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证read limit=1200漏过引擎层)。
         提取顺序: 顶层优先(普通非Optional字段), 无则取anyOf[0](Optional字段), 再无返回(None,None)表示无范围约束。
         """
         if not isinstance(spec, dict):
@@ -398,8 +487,8 @@ class ToolRetryEngine:
             return top_min, top_max
         any_of = spec.get("anyOf")
         if isinstance(any_of, list):
-            # 2026-08-13 - 小欧 - 三堂会审修复#31: 全量扫描 anyOf 成员取首个含 min/max 者,
-            #   原固定 any_of[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
+            # 2026-08-13 - 小欧 - 三堂会审修复: 全量扫描 anyOf 成员取首个含 min/max 者,
+            #   原固定取 anyOf[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
             #   anyOf 成员顺序不保证。
             for a in any_of:
                 if isinstance(a, dict) and ("minimum" in a or "maximum" in a):
@@ -407,7 +496,7 @@ class ToolRetryEngine:
         return None, None
 
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
-        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
+        """验证参数（非法参数+必需参数）— 修复: 返回错误字典而非None
         小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
         params = action_input.copy()
         
@@ -421,7 +510,7 @@ class ToolRetryEngine:
                     _props_desc = ", ".join(
                         f"{k}: {v.get('type', '?')}" for k, v in input_schema.get("properties", {}).items()
                     )
-                    logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
+                    logger.debug(f"[参数验证] action={action} 含非法字段: {invalid_keys}")  # 2026-11-03 小欧: LLM 编参数属调用方错误, 降 DEBUG
                     return self._build_retry_error(
                         ERR_INVALID_PARAMS,
                         f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}；合法参数: {_props_desc}",
@@ -448,10 +537,10 @@ class ToolRetryEngine:
                     if k not in required and params[k] is None:
                         _none_discarded.append(k)
                         del params[k]
-                # #13 fix: 参数类型校验 — 小欧 2026-07-18
-                # #8 fix: +number/object类型 + 值范围clamp — 三堂会审 小欧 2026-07-23
+                # 修复: 参数类型校验 — 小欧 2026-07-18
+                # 修复: +number/object类型 + 值范围clamp — 三堂会审 小欧 2026-07-23
                 props = input_schema.get("properties", {})
-                # #11 fix: 智能类型容错(LLM常为string参数传dict/list,自动json.dumps/str修复减少重试) — 小欧 2026-07-23
+                # 修复: 智能类型容错(LLM常为string参数传dict/list,自动json.dumps/str修复减少重试) — 小欧 2026-07-23
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
@@ -495,11 +584,11 @@ class ToolRetryEngine:
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
                     )
-                # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
-                # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
+                # 修复: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
+                # 2026-08-05 小欧 修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
                 # 2026-08-12 小欧 三堂会审修复: 范围提取走_extract_numeric_bounds, 兼容Pydantic v2 anyOf嵌套
-                #   (Optional字段min/max在anyOf[0], 原顶层取None→clamp失效, limit=1200漏到运行时)
-                # 2026-08-13 - 小欧 - 三堂会审修复#3: 门控不再依赖顶层type(数组形式type如["integer","null"]
+                #   (Optional字段min/max在anyOf[0]子结构, 原顶层取None→clamp失效, limit=1200漏到运行时)
+                # 2026-08-13 - 小欧 - 三堂会审修复: 门控不再依赖顶层type(数组形式type如["integer","null"]
                 #   时 _t in ("integer","number") 为False→整段clamp被跳过), 改为以"能取到数值边界"为准。
                 for k, v in params.items():
                     spec = props.get(k)
@@ -518,12 +607,32 @@ class ToolRetryEngine:
 
         return params
     
+    @staticmethod
+    def _struct_error_category(result: Dict[str, Any]) -> ToolErrorCategory:
+        """从 error dict 提取自我声明的错误类别(E-3, 2026-09-20 小欧) — 优先 other_data.category,
+        其次字典 message 关键词(timeout/timed out), 兜底 UNKNOWN(不重试, 保守不回退于无限循环)"""
+        _other = result.get("other_data")
+        if isinstance(_other, dict):
+            _cat = _other.get("category")
+            if isinstance(_cat, str):
+                try:
+                    return ToolErrorCategory(_cat)
+                except ValueError:
+                    pass
+        _msg = str(result.get("message", "")).lower()
+        for _kw in ("timeout", "timed out", "time out"):
+            if _kw in _msg:
+                return ToolErrorCategory.TIMEOUT
+        return ToolErrorCategory.UNKNOWN
+
     def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int,
                        error_category: Optional[ToolErrorCategory] = None) -> bool:
-        """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29"""
+        """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29
+        2026-09-20 小欧 E-3直线化(北京老陈 10大规范三堂会审): 判定唯一通道 category.value 匹配——
+        TOOL_RETRY_CONFIG 的 retryable 全部为 ToolErrorCategory.value(如 "timeout"/"network"),
+        结构化错误经 StructuredToolError 自带 category 由分类器 getattr 通道直判, 不再需要异常类型名通道"""
         if error_category is None:
             error_category = ToolErrorClassifier.classify_tool_error(e)
-        # 使用 error_category.value 进行匹配，因为 TOOL_RETRY_CONFIG 中的字符串是 ToolErrorCategory.value
         is_retryable = error_category.value in retryable_errors
         return is_retryable and attempt < max_retries
 
@@ -535,7 +644,7 @@ class ToolRetryEngine:
         重试策略（遵守KISS-DIRECT原则，简单直线）：
         1. 超时策略统一走 _compute_fuse (北京老陈 4条原则)（②保险丝超时; ①传给tool超时随params走,见顶部【两条超时】）— 小欧 2026-08-06 10:05:21:
            - [原则2] LLM显式传timeout → inner=LLM值 → max(inner, CEILING)+BUFFER (有inner)
-           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【BUG-2修复】
+           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【修复】
            - [原则1] 无timeout参数 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
            → 有inner: compress(600)=630, compress(1800)=1830; LLM未传compress=630; 无inner: listdir=60/120/180 cap 300
         2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
@@ -557,20 +666,29 @@ class ToolRetryEngine:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_retries + 1):
-            timeout = self._compute_fuse(action, params, base_timeout, attempt)
+            timeout = self._compute_fuse(action, params, base_timeout, attempt, max_retries)  # 2026-10-09 小欧: 传 max_retries, 保险丝覆盖整条重试链总预算
             if attempt > 0 and on_retry_started:
                 try:
                     on_retry_started(action, attempt, max_retries, str(last_error)[:100])
                 except Exception as cb_err:
                     logger.warning(f"[Retry][L3] on_retry_started回调异常: {cb_err}")
             try:
-                result = await self._execute_tool_once(tool, params, timeout)
+                result = await self._execute_tool_once(tool, params, timeout, action=action)
                 if isinstance(result, dict):
                     other = result.get("other_data", {})
                     if not isinstance(other, dict):
                         other = {}
                     other["retry_count"] = attempt
                     result["other_data"] = other
+                    # 2026-09-20 小欧 E-3修复+直线化(北京老陈 10大规范三堂会审): 结构化错误签名
+                    #   (code/exec_code=error)识别为失败并触发重试——原"dict 一律当成功"吞掉工具返回的 error
+                    #   dict(联网超时等一次即过, 无重试机会); 统一承载 StructuredToolError(category 自声明,
+                    #   分类器 getattr 通道直判, 单一通道 category.value), 不再另 raise TimeoutError 绕回
+                    #   (KISS-DIRECT/DRY); 无 error 信号的正常 dict 语义保持不变(零退化)
+                    if result.get("code") == "error" or result.get("exec_code") == "error":
+                        raise StructuredToolError(
+                            f"tool {action} 返回结构化错误: {str(result)[:200]}",
+                            self._struct_error_category(result))
                 if on_attempt_recorded:
                     on_attempt_recorded(action, attempt, params, result, True)  # #B 本次尝试成功 — 小欧 2026-08-23
                 return result
@@ -579,7 +697,7 @@ class ToolRetryEngine:
                 error_category = ToolErrorClassifier.classify_tool_error(e)
 
                 if on_attempt_recorded:
-                    # #B 每次失败尝试均回调(置于 _should_retry 之前)——11.7.9-2「重试=多次执行=多个独立记录块,
+                    # 修复: 每次失败尝试均回调(置于 _should_retry 之前)——「重试=多次执行=多个独立记录块,
                     #   中间失败尝试也保留」; 实施修正: 设计 diff 原只记末次失败, 与需求不符, 按需求权威执行 — 小欧 2026-08-23
                     on_attempt_recorded(action, attempt, params, e, False)
 

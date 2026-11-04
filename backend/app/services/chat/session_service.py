@@ -11,12 +11,35 @@
 #     sessionModel 以 JSON 落库(替原 model_override 字符串); ③list_sessions SELECT sessionModel 列 + _parse_session_model 还原结构; ④新增 _parse_session_model(容错返 None)
 # 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): ①删除本文件重复的 _parse_session_model, 改从 storage 导入全系统唯一 parse_session_model(DRY, 杜绝双份实现漂移); ②update_session 乐观锁加固: UPDATE WHERE 追加 `AND version = ?`(比对 SELECT 时的旧版本)+ rowcount==0 抛 409, 兜住 SELECT→UPDATE 并发竞态窗口的丢失更新(与 line160 客户端版本检查互补)
 # 2026-08-22 - 小欧 - BUG修复(北京老陈 2026-08-22 铁律"系统代码不得退化"): 三堂会审乐观锁加固引入的参数顺序错乱——params 先 append session["version"] 后 append session_id, 而 SQL WHERE 为 `id = ? ... version = ?`, 致 id 占位被填成版本号→恒 rowcount==0→所有 update_session 必 409。修正: 先 append session_id 再 append session["version"], 与 WHERE 占位顺序一致。冒烟测试(临时脚本)捕获此回归
-# 2026-08-26 - 小欧 - D-2(文档2 8.D): 新增 get_session_info(session_id), GET /sessions/{session_id} 单会话信息路由,
+# 2026-08-26 - 小欧 - D-2(8.D): 新增 get_session_info(session_id), GET /sessions/{session_id} 单会话信息路由,
 #   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel), 现有端点无单会话详情。
 # 2026-08-26 - 小欧 - 三堂会审整改(get_session_info): ①SELECT 删除未消费的 title_locked/title_updated_at 两列(YAGNI,
 #   SessionResponse 无此二字段, 查了不用); ②conn.cursor() 两步改为 conn.execute 直取, 与本文件 update/delete 路径风格一致;
-#   ③docstring 使用场景补顶栏时间悬浮(文档2 8.B 已知事项①), 与设置界面并列。pytest -k "task or session" 158 passed 回归通过。
-# 2026-08-29 - 小沈 - BugFix #8: update_session 的 WHERE 裸 `version = ?` 对 version 为 NULL 的行永远不匹配(SELECT 用 COALESCE(version,1), UPDATE 未对齐)→ 迁移库 version=NULL 行更新必 409。改为 WHERE `COALESCE(version,1) = ?` 与 SELECT 对齐; 同步 SET `COALESCE(version,1)+1` 防 NULL+1=NULL 使版本号退化为空。
+#   ③docstring 使用场景补顶栏时间悬浮(已知事项①), 与设置界面并列。pytest -k "task or session" 158 passed 回归通过。
+# 2026-08-29 - 小沈 - 修复: update_session 的 WHERE 裸 `version = ?` 对 version 为 NULL 的行永远不匹配(SELECT 用 COALESCE(version,1), UPDATE 未对齐)→ 迁移库 version=NULL 行更新必 409。改为 WHERE `COALESCE(version,1) = ?` 与 SELECT 对齐; 同步 SET `COALESCE(version,1)+1` 防 NULL+1=NULL 使版本号退化为空。
+# 2026-09-20 - 小欧 - H1 会话删除级联取消(消除删除会话后孤儿任务继续写死数据的窗口):
+#   新增 _cancel_cascade + delete_session 入口级联: 删会话前收集该 session 全部 running/paused 任务,
+#   经任务原 loop run_coroutine_threadsafe 提交取消(注册 loop 判定 + self-loop 内联同步置态防死锁 +
+#   收集全部 Future 等待 result(timeout=5) 落定, 杜绝 fire-and-forget 遗留后台写库窗口)。
+#   compliance: SRP(级联职责收口本服务)/KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审修复: _cancel_cascade二次扫描补提交快照期间新注册任务(缩小漏取消窗口)
+# 2026-09-20 - 小欧 - D-2修复(删会话内存ID泄漏): delete_session 级联取消后调用 storage.forget_session_message_ids
+#   (内存 track 字典 + allocator _user_ids/_assistant_ids 双侧清空), 防同 session_id 复用/内存无限增长。
+#   compliance: SRP(历史归属 service)/禁止backward
+# 2026-10-01 小欧 - 解 [1] E8: 删除 save_execution_steps/ExecutionStepsUpdate 导入(随 sessions.py 端点与 storage 空壳退役, 本文件零使用)
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项3/4: SessionResponse 补 link_enabled + 新增窄写函数 set_session_link
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元4: set_session_link 的 UPDATE 下沉 storage.set_session_link_conn,
+#   本函数改为委托(DRY, SQL 单一来源); 改判 rowcount 返回值, 不用 conn.total_changes 差值反推。
+#   对外签名与 404 fail-loud 语义不变, 故 test_session_link_api.py 读写 case 继续有效。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.5/5.7.6 废止: 回退 SessionResponse.link_enabled 与 list_sessions/get_session_info
+#   的 COALESCE(link_enabled) 两处 SELECT。理由: 前端唯一读真源是 GET /sessions/{id}/messages(5.7.13),
+#   本字段零消费 —— 同一真源两个 HTTP 读出口即双通道隐患(DRY), 零消费字段即死重量(YAGNI)。
+#   本条以"生产代码质量由自身判据裁决"为准, 不因既有 case 断言而保留(错误 case 一并废止, 禁以测试背书烂代码)。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.7/5.7.8 废止: 删除 set_session_link 函数与 PATCH /sessions/{id}/link 端点。
+#   北京老陈定案: "切换开关 发到后端只能和消息一起发出, 严禁独立去影响后端的任何东西"。
+#   该端点前端零调用, 即零消费死端点, 与 5.7.5/5.7.6 同类同判据(YAGNI)。写入口收敛为唯一一条:
+#   消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
+# 2026-10-24 - 小欧 - create_session 标题截断200字符: useChatSend 把完整消息内容当标题, SessionCreate.title 无长度限制致超长标题入库, 后续 update_session 的 SessionUpdate.title max_length=200 校验必422。在此截断根治。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -35,7 +58,7 @@ from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timest
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
-from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model
+from app.services.chat.storage import parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
 
 
 class SessionUpdate(BaseModel):
@@ -48,7 +71,7 @@ class SessionUpdate(BaseModel):
 
 def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
                       for_count: bool = False) -> Tuple[str, List]:
-    """拷贝自 sessions.py 第38-49行"""
+    """过滤条件。追加"有真实内容"(北京老陈裁定隐藏空会话); 不用 is_valid——它建会话即 true, 过滤等于不过滤 — 小欧 2026-09-30"""
     where = "WHERE is_deleted = FALSE"
     params: List = []
     if keyword:
@@ -57,6 +80,8 @@ def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
     if is_valid is not None:
         where += " AND is_valid = ?"
         params.append(1 if is_valid else 0)
+    where += (" AND (EXISTS(SELECT 1 FROM chat_user_message u WHERE u.session_id = chat_sessions.id)"
+              "      OR EXISTS(SELECT 1 FROM chat_tasks t WHERE t.session_id = chat_sessions.id))")
     return where, params
 
 
@@ -66,6 +91,8 @@ def create_session(session_create):
     """创建会话 — 自 api/v1/sessions.py 迁入"""
     session_id = str(uuid.uuid4())
     title = session_create.title if session_create and session_create.title else f"新会话 {now_str('%Y-%m-%d %H:%M')}"
+    # 2026-10-24 小欧 - 标题截断200字符: useChatSend传完整消息内容做标题, 超长触发后续SessionUpdate 422
+    title = title[:200]
     is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
     local_time = get_local_iso_timestamp()
 
@@ -107,12 +134,14 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, message_count, is_valid, sessionModel "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
         )
         rows = cursor.fetchall()
+        # message_count 计数器退役, 改真值: 只数本页这些 id, 不扫全表(0.65ms/页) — 小欧 2026-09-30
+        message_counts = count_session_messages(conn, [row['id'] for row in rows])
 
     sessions = [
         SessionResponse(
@@ -120,7 +149,7 @@ def list_sessions(
             title=row['title'],
             created_at=format_timestamp(row['created_at']),
             updated_at=format_timestamp(row['updated_at']),
-            message_count=row['message_count'],
+            message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
             sessionModel=parse_session_model(row['sessionModel'])
         )
@@ -193,6 +222,8 @@ def update_session(session_id: str, update_data: SessionUpdate):
 
 def delete_session(session_id: str):
     """删除会话(软删) + 清理 display_name 缓存 — 自 api/v1/sessions.py 迁入, 缓存清理改经 message_service 方法"""
+    # 2026-09-20 小欧 H1: 删会话前级联取消该会话名下活跃任务(防孤儿任务继续写死数据) — 小欧-2026-09-20
+    _cancel_cascade(session_id)
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -207,10 +238,78 @@ def delete_session(session_id: str):
             'UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id = ?',
             (local_time, session_id)
         )
+        # 2026-10-10 小欧 - 文档[16]: 硬删该会话 workspace 行。软删下 FK 永不触发, 此处是唯一清理出口
+        # 不删物理目录（目录留存项目根, 用户自行清理）
+        cursor.execute("DELETE FROM chat_session_workspaces WHERE session_id = ?", (session_id,))
 
     delete_session_display_names(session_id)
+    forget_session_message_ids(session_id)  # D-2(2026-09-20 小欧): 清理内存消息ID缓存, 防驻留/陈旧复活
     logger.info(f"删除会话成功: id={session_id}")
     return {"success": True, "message": "会话删除成功"}
+
+
+def _cancel_cascade(session_id: str) -> None:
+    """H1: 取消该会话下全部 running_tasks 中活跃任务 — 小欧 2026-09-20
+    sync 函数(delete_session 走 API 线程池)不能直接 await cancel_task; 任务注册时已绑定自身 loop
+    (_task 字段), 用 run_coroutine_threadsafe 把取消动作提交回该任务的原 loop —— asyncio.Lock 不跨 loop,
+    绝不在本线程新建 loop(asyncio.run 会新建 loop → running_tasks_lock 绑定错 loop → 状态写坏/卡死)。
+    2026-09-20 小欧 A-5: 收集全部 Future 并等待完成 —— 级联取消先于删除会话落定, 杜绝 fire-and-forget
+    遗留后台写库窗口; f.result(timeout=5) 超时仅告警不阻断删除(KISS, 防死等)。
+    self-loop 分支(async 内联调 _cancel_cascade, 当前线程即目标 loop 线程): run_coroutine_threadsafe
+    提交的协程永得不到调度(future.result 阻塞 loop) → 死锁; 故直接同步置态(事件循环单线程, sync
+    函数不 yield, 与 loop 内协程互不并发, 等价于持 running_tasks_lock 的串行写), 并仍 create_task
+    调度 cancel_task 拿全 agent 取消信号。仅内联测试场景触发, 生产 delete_session 走线程池非 self-loop。"""
+    import asyncio  # 2026-09-20 小欧 H1: run_coroutine_threadsafe/get_event_loop 需 asyncio — 小欧-2026-09-20
+    import threading  # 2026-09-20 小欧 A-5: _thread_id 判 self-loop — 小欧-2026-09-20
+    try:
+        from app.services.task.task_state import running_tasks
+        from app.services.task.task_runtime import cancel_task
+        submitted = set()  # 修复(小欧 2026-09-20): 追踪已提交取消的task, 防快照间漏取消
+        futures = []
+        for _tid, _meta in list(running_tasks.items()):
+            if _meta.get("session_id") == session_id and _meta.get("status") in ("running", "paused"):
+                submitted.add(_tid)
+                _task_obj = _meta.get("_task")
+                _loop = _task_obj.get_loop() if _task_obj is not None else asyncio.get_event_loop()
+                # loop 已关闭则跳过: 不创建 coroutine, 防 never awaited 警告 — 小欧-2026-09-20
+                if _loop.is_closed():
+                    logger.info(f"[H1] 目标loop已关闭, 任务已终止: session={session_id}, task={_tid}")
+                    continue
+                # self-loop 检测: 当前线程即目标 loop 运行线程(仅内联调用) — 小欧 2026-09-20
+                if getattr(_loop, "_thread_id", None) == threading.get_ident():
+                    _meta["cancelled"] = True
+                    _meta["status"] = "cancelled"
+                    _loop.create_task(cancel_task(_tid, session_id, "session_deleted"))
+                    logger.info(f"[H1] 会话删除级联取消(self-loop同步置态): session={session_id}, task={_tid}")
+                else:
+                    _future = asyncio.run_coroutine_threadsafe(
+                        cancel_task(_tid, session_id, "session_deleted"), _loop)
+                    futures.append((_tid, _future))
+                    logger.info(f"[H1] 会话删除级联取消任务: session={session_id}, task={_tid}")
+        # 修复(小欧 2026-09-20): 二次扫描, 补提交快照期间新注册的任务(缩小漏取消窗口)
+        for _tid2, _meta2 in list(running_tasks.items()):
+            if _tid2 not in submitted and _meta2.get("session_id") == session_id and _meta2.get("status") in ("running", "paused"):
+                _task_obj2 = _meta2.get("_task")
+                _loop2 = _task_obj2.get_loop() if _task_obj2 is not None else asyncio.get_event_loop()
+                if _loop2.is_closed():
+                    continue
+                if getattr(_loop2, "_thread_id", None) == threading.get_ident():
+                    _meta2["cancelled"] = True
+                    _meta2["status"] = "cancelled"
+                    _loop2.create_task(cancel_task(_tid2, session_id, "session_deleted"))
+                else:
+                    _future2 = asyncio.run_coroutine_threadsafe(
+                        cancel_task(_tid2, session_id, "session_deleted"), _loop2)
+                    futures.append((_tid2, _future2))
+                logger.info(f"[H1] 二次扫描补提交取消: session={session_id}, task={_tid2}")
+        # 等待全部取消完成(超时仅告警不阻断删除) — 小欧 2026-09-20
+        for _tid, _future in futures:
+            try:
+                _future.result(timeout=5.0)
+            except Exception as _e:  # TimeoutError/CancelledError/任务内异常均告警放行
+                logger.warning(f"[H1] 级联取消任务 {_tid} 等待超时/失败: {_e}")
+    except Exception as _e:
+        logger.warning(f"[H1] 级联取消遍历失败(session={session_id}): {_e}")
 
 
 def get_session_titles_batch(session_ids: str):
@@ -250,23 +349,25 @@ def get_session_titles_batch(session_ids: str):
 
 
 def get_session_info(session_id: str):
-    """D-2(文档2 8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/message_count/is_valid/sessionModel)。
-    使用场景: 设置界面读取会话级信息(文档2 8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26"""
+    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel) + 真值消息数。
+    使用场景: 设置界面读取会话级信息(8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26
+    message_count 改真值(计数器退役) — 小欧 2026-09-30"""
     with db.get_conn("chat") as conn:
         row = conn.execute(
-            "SELECT id, title, created_at, updated_at, message_count, is_valid, "
+            "SELECT id, title, created_at, updated_at, is_valid, "
             "sessionModel "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        if not row:
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        message_count = count_session_messages(conn, [session_id])[session_id]
     return SessionResponse(
         session_id=row['id'],
         title=row['title'],
         created_at=format_timestamp(row['created_at']),
         updated_at=format_timestamp(row['updated_at']),
-        message_count=row['message_count'],
+        message_count=message_count,
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
     )

@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-31
 2026-07-16 小欧  统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
 2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
 2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
-2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
+2026-08-18 - 小欧 - error全仅SSE: emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: emit FinalStep 时自动注入 task/session/chain_accumulated_tokens 三层累计(读 agent 内存态, 与 react_cycle yield 值一致); 仅 FinalStep 触发, 仅外部未设置时注入
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
@@ -18,16 +18,20 @@ Author: 小沈 - 2026-05-31
 2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
 # 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
 #   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
-# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
-# 2026-09-11 小欧 - [27] 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
+# 2026-09-11 小欧 - 方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
+# 2026-09-11 小欧 - 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
 #   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
+# 2026-10-25 小欧 - 通知信封收敛: 新增 emit_notice() 统一发射器(三堂会审 DRY), 消除 start_step/tool_executor 重复实现;
+#   信封结构 type="notice" + kind + phase + content, 仅 SSE 不落库(走 SSE_ONLY_TYPES) — 小欧-2026-10-25
+# 2026-10-25 小欧 - emit_notice 内补 log_and_print(北京老陈令): 统一出口记控制台日志, 所有 notice(压缩/装包×start/done/failed)一处覆盖(DRY) — 小欧-2026-10-25
+# 2026-11-03 小欧 - log_and_print 增 level 参数: emit_notice 日志显式传 level="WARNING"(控制台默认档可见通知) — 小欧-2026-11-03
 """
 
-from typing import Any, Dict, Optional
+from typing import Optional
 import time
 
-from app.services.agent.steps import FinalStep
-from app.logger import logger
+from app.services.agent.steps import FinalStep, ReasoningStep  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
+from app.logger import logger, log_and_print
 
 
 class StepEmitter:
@@ -50,10 +54,10 @@ class StepEmitter:
                 step._session_accumulated_tokens = dict(getattr(self.agent, "session_accumulated_tokens", {}))
             if step._chain_accumulated_tokens is None:
                 step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
-            # [27] 注入 model/provider: 任务快照优先(三堂会审 P1 防还原竞态) — 小欧-2026-09-11
+            # 注入 model/provider: 任务快照优先(三堂会审 防还原竞态) — 小欧-2026-09-11
             if step._step_model is None:
                 step._step_model = getattr(self.agent, "_task_llm_model", None) or getattr(getattr(self.agent, "llm_client", None), "llm_model", None)
-            # [27] 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
+            # 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
             if step._duration is None:
                 _tele = getattr(self.agent, "telemetry", None)
                 _start = getattr(_tele, "_run_start_ts", None) if _tele else None
@@ -62,7 +66,7 @@ class StepEmitter:
         self.agent.steps.append(step)
         # 2026-08-28 小欧 yield日志审计: Step emit统一入口(覆盖全部~50个Step yield, KISS+DRY)
         logger.debug(f"[StepEmit] {getattr(step, 'type', '?')} step={getattr(step, 'step', '?')}")
-        # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
+        # 2026-08-18 - 小欧 - error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
         if getattr(step, "type", "") == "error":
             # 2026-08-18 - 小欧 - 三堂会审复核: 兼容两种 error 载体——MetaStep(type="error") 走 _kwargs,
             #   ErrorStep 走 error_type 属性(遗留); 单一出口记录, 保证 error_type 不丢
@@ -72,7 +76,7 @@ class StepEmitter:
         return step
 
     def emit_final_with_stats(self, final_step):
-        """[27] v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
+        """v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
         2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
         改为 sync 返回 (final_step,) 一元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
         2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""
@@ -94,6 +98,26 @@ class StepEmitter:
             step=step, response=response, outcome="failed",
             error_type=error_type, error_message=error_message, reasoning=reasoning,
         ))
+
+    async def emit_notice(self, kind: str, phase: str, content: str) -> None:
+        """通知信封统一发射器(事前/事后) — 小欧 2026-10-25 三堂会审
+
+        信封结构: type="notice" + kind(通知种类) + phase(start/done/failed) + content(文案)
+        事前(phase=start)与事后(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
+        buffer 判空: get_stream_buffer 可能返回 None(任务尚未建 buffer), 直接 publish 会 AttributeError。
+        """
+        log_and_print(f"[StepEmit] notice {kind}/{phase}: {content[:80]}", level="WARNING")
+        try:
+            from app.services.agent.steps import MetaStep
+            from app.services.task.task_state import get_stream_buffer
+            step = self.emit(MetaStep(
+                step=len(self.agent.steps), type="notice",
+                content=content, kind=kind, phase=phase))
+            _buf = get_stream_buffer(self.agent.task_id)
+            if _buf is not None:
+                await _buf.publish(step.to_dict())
+        except Exception as e:        # 播报失败不得影响主链
+            logger.warning(f"[StepEmitter] notice 事件播报失败(kind={kind} phase={phase}): {e}")
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-05 - 小欧 - 加hint参数
@@ -7,6 +8,11 @@
 # 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘": builder 增 not_written, 仅写前检查点
+#   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词: 写入PDF→写PDF
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-11-03 小欧 - 未找到中文字体提示 WARNING→INFO(环境提示) — 小欧-2026-11-03
 """
 D7: write_pdf — 写入PDF文档
 
@@ -26,12 +32,13 @@ from typing import Any, Dict, Optional, List
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from reportlab.lib.units import mm
 from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
 
@@ -77,24 +84,27 @@ def _create_pdf_table(table_data, chinese_style):
 def _build_write_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", detail: str = "", user_title: str = "",
-    hint: str = "", char_count: int = 0,
+    hint: str = "", char_count: int = 0, not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_title:
         _act_params["title"] = user_title
     if exec_code == "error":
+        # 2026-10-12 小欧 - not_written 补"文件未写入"事实(同 write_docx/write_text_file 口径,
+        #   仅写前检查点置位, 写期异常不置避免误报)
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入PDF {file_path}，失败: {detail}",
-            "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "summary": f"写PDF{file_path}，失败：{_detail}",
+            "action": {"tool": "write_pdf", "tool_zh": "写PDF", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_PDF, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入PDF {file_path}，成功: {char_count}字符",
-        "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "target": file_path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "写入PDF成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"写PDF{file_path}，成功：{char_count}字符",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写PDF) — 小欧-2026-10-14
+        "action": {"tool": "write_pdf", "tool_zh": "写PDF", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{char_count}字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "char_count": {"value": char_count, "text": f"{char_count}字符"},
@@ -111,24 +121,30 @@ def write_pdf(
 ) -> Dict[str, Any]:
     """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=err, hint="请检查输出路径", not_written=True)
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     if content is not None:
         cs_error, _ = check_content_safety(content, "pdf")
         if cs_error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数")
+            llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数", not_written=True)
             return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -139,7 +155,7 @@ def write_pdf(
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -173,7 +189,7 @@ def write_pdf(
         if chinese_style is None or title_style is None:
             chinese_style = styles['Normal']
             title_style = styles['Title']
-            logger.warning("[write_pdf] 未找到可用中文字体, 中文可能显示为方框, 建议安装simsun.ttc/msyh.ttc")
+            logger.info("[write_pdf] 未找到可用中文字体, 中文可能显示为方框, 建议安装simsun.ttc/msyh.ttc")  # 2026-11-03 小欧: 环境提示, 降 INFO
 
         elements = []
 

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 注册名归位: 4处 LLM 引导语 read→read(含建议工具名返回值), 与新注册名同源
+# 2026-10-16 - 小欧 - tool去检查化: 删 4 处内部 validate_path 合法性检查(归 SA1)与 op_category 形参, 只做类型检查。
 """
 文件类型检查器 - 共享函数 - 小健 2026-06-24
 
@@ -8,11 +11,11 @@
 3. 提供清晰的LLM引导信息
 
 本文件（validate层）依赖关系：
-  - 调用 validate/file_path_checker.py（路径检查）
+  - 路径合法性由 safety SA1 唯一检查，本文件只做类型检查(2026-10-16 小欧 tool去检查化)
   - 调用 validate/file_safety_checker.py -> check_tool_module（模块安装检查）
-  - check_office_file 编排：路径检查→类型检查→模块安全检查三位一体
+  - check_office_file 编排：类型检查→模块安全检查二位一体
 
-Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）独立运行、互不调用：
+Safety层（app/safety/path_tool_safety_checker.py + app/safety/path_classify_category.py）独立运行、互不调用：
   - 路径黑名单/白名单/穿越拒绝/写入大小保护/二元确认/已知风险检测
 
 使用规范：
@@ -24,7 +27,7 @@ Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）独立
 
 更新历史：
 2026-07-09 北京老陈 3个wrapper编排路径检查+类型检查+安全检查; 增加UNSUPPORTED分支
-2026-08-05 小欧 BUG-4修复: 复合压缩后缀(.tar.gz/.tar.bz2)识别 — 新增 _matches_archive_ext
+2026-08-05 小欧 修复: 复合压缩后缀(.tar.gz/.tar.bz2)识别 — 新增 _matches_archive_ext
    【病根】Path(file_path).suffix 对 "x.tar.gz" 仅返回 ".gz", 致 ARCHIVE_EXTENSIONS 里的 .tar.gz/.tar.bz2 永不可命中,
    get_file_category 返回 "unknown"、check_file_type(archive) 误判非法
    【解决】_check_archive_file 与 get_file_category 增加 endswith 全串匹配, 复合后缀优先
@@ -33,8 +36,8 @@ from pathlib import Path
 from typing import Tuple, Optional, Literal
 
 from app.tools.tool_constants import BINARY_EXTENSIONS
-from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.tools.validate.file_safety_checker import check_tool_module
+
+from app.tools.validate.tool_module_checker import check_tool_module
 
 
 # ============================================================
@@ -199,12 +202,8 @@ def check_office_file(
     专供 write_docx/write_pptx/write_xlsx/write_pdf 使用
     tool_name: 传 "write_docx"/"write_pptx"/"write_xlsx"/"write_pdf"
     北京老陈 2026-07-09"""
-    # 1. 路径检查(file_path_checker)
-    is_valid, err, _ = validate_path(OpCategory.WRITE, file_name)
-    if not is_valid:
-        return False, err, None
-
-    # 2. 类型检查(本文件，直接调check_file_type跳开check_for_document_tool防重复validate)
+    # 2026-10-16 小欧 - tool去检查化: 路径合法性由 SA1 唯一检查, 此处只做类型检查
+    # 1. 类型检查(本文件，直接调check_file_type跳开check_for_document_tool防重复validate)
     is_valid, error_detail, _ = check_file_type(
         file_name, "document", check_content=False, allow_create=allow_create
     )
@@ -239,7 +238,7 @@ def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create:
             hint = UNSUPPORTED_FORMAT_HINTS.get(suffix, "不支持的格式")
             return False, f"工具选择错误：'{suffix}'是不支持的格式。{hint}", None
         elif suffix in ARCHIVE_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", "extract_archive"
+            return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", "extract"  # 2026-10-14 小欧 - 修谎报: 工具真名是 extract(extract_archive 只是文件名), hint 点名不存在的工具名属误导 LLM — 小欧-2026-10-14
         else:
             return False, f"工具选择错误：'{suffix}'是二进制文件，不能用文本工具操作。请确认文件类型后选择合适的工具", None
     
@@ -256,7 +255,7 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
     """检查是否为媒体文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in MEDIA_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用read工具", "read"
         elif suffix in DOCUMENT_EXTENSIONS:
             doc_tool = _suggest_doc_tool(suffix)
             return False, f"工具选择错误：'{suffix}'是文档文件，不能用媒体工具操作。{doc_tool}", None
@@ -264,7 +263,7 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
             hint = UNSUPPORTED_FORMAT_HINTS.get(suffix, "不支持的格式")
             return False, f"工具选择错误：'{suffix}'是不支持的格式。{hint}", None
         else:
-            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用readtext或对应的文档工具", None
+            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用read或对应的文档工具", None
     
     return True, "", None
 
@@ -276,7 +275,7 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
         return False, f"工具选择错误：'{suffix}'是不支持的文档格式。{hint}。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     if suffix not in DOCUMENT_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用read工具", "read"
         elif suffix in MEDIA_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用readmedia工具", "readmedia"
         else:
@@ -287,7 +286,7 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
 
 def _matches_archive_ext(file_path: str) -> bool:
     """路径是否命中压缩扩展名(含复合后缀.tar.gz/.tar.bz2) — 小欧 2026-08-05
-    Path.suffix 只返回最后一个扩展名(.gz), 对 .tar.gz/.tar.bz2 需 endswith 全串匹配(BUG-4)"""
+    Path.suffix 只返回最后一个扩展名(.gz), 对 .tar.gz/.tar.bz2 需 endswith 全串匹配"""
     if not file_path:
         return False
     _fp = file_path.lower()
@@ -299,12 +298,12 @@ def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[st
     if suffix in UNSUPPORTED_FORMAT_HINTS and suffix in ('.rar', '.7z'):
         hint = UNSUPPORTED_FORMAT_HINTS[suffix]
         return False, f"工具选择错误：'{suffix}'是不支持的压缩格式。{hint}。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
-    # 复合后缀优先: .tar.gz/.tar.bz2 的 Path.suffix 仅得 .gz, 须 endswith 全串匹配 — 小欧 2026-08-05 BUG-4
+    # 复合后缀优先: .tar.gz/.tar.bz2 的 Path.suffix 仅得 .gz, 须 endswith 全串匹配 — 小欧 2026-08-05
     if _matches_archive_ext(str(path)):
         return True, "", None
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read工具", "read"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     
@@ -359,25 +358,17 @@ def check_for_text_tool(
     file_path: str,
     check_content: bool = True,
     allow_create: bool = False,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供readtext/writetext/edittext调用 — 路径检查+类型检查
+    """供read/write/edit调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "text", check_content, allow_create)
 
 
 def check_for_media_tool(
     file_path: str,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供readmedia调用 — 路径检查+类型检查
+    """供readmedia调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "media", check_content=False)
 
 
@@ -391,13 +382,9 @@ def check_for_archive_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
 def check_for_document_tool(
     file_path: str,
     allow_create: bool = False,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供read_docx/read_pptx/read_xlsx/read_pdf调用 — 路径检查+类型检查
+    """供read_docx/read_pptx/read_xlsx/read_pdf调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "document", check_content=False, allow_create=allow_create)
 
 
@@ -424,7 +411,7 @@ def get_file_category(file_path: str) -> Optional[str]:
     elif suffix in DOCUMENT_EXTENSIONS:
         return "document"
     elif _matches_archive_ext(file_path):
-        # 复合后缀优先(Path.suffix 对 .tar.gz 只得 .gz) — 小欧 2026-08-05 BUG-4
+        # 复合后缀优先(Path.suffix 对 .tar.gz 只得 .gz) — 小欧 2026-08-05
         return "archive"
     elif suffix in ARCHIVE_EXTENSIONS:
         return "archive"
@@ -462,5 +449,4 @@ __all__ = [
     "ARCHIVE_EXTENSIONS",
     "UNSUPPORTED_EXTENSIONS",
     "UNSUPPORTED_FORMAT_HINTS",
-    "OpCategory",
 ]

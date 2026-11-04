@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-10-07 小欧 修复: 摘要输入只取"注入的历史" agent._injected_history_msgs, 不再从 conversation_history
+#   反推(猜首条system/末条task)。① 原实现把含末尾本轮task的历史喂给摘要LLM, 模型当成待执行指令→
+#   越权调工具(实测glm-5.2: finish=tool_calls并写文件); ② summary.py:69 是"追加"system而非替换,
+#   带上原system会让feed出现两条system→模型困惑。
 # 2026-08-17 小健 新建: start 任务输入装配完整过程独立模块(北京老陈驱动, 痛斥 start 业务割裂散落多处)——把
-#   start 全部业务收拢一个文件: 注入会话历史 _inject_conversation_history / 超窗判定 _maybe_compact_injected_history
-#   / C4 锚定摘要回填 _compact_injected_history / 装配入口 assemble_start_step; 自 initialize_run_state.py 与
-#   react_cycle.py 迁入, 单一归属; react_cycle 只保留薄调用(不 import chat 层, P4 解耦)
+#   start 全部业务收拢一个文件: 注入会话历史 / 超窗判定 / C4 锚定摘要 / 装配入口; 自 initialize_run_state.py 与
+#   react_cycle.py 迁入, 单一归属; react_cycle 只保留薄调用(不 import chat 层, 解耦)
 # 2026-08-17 小健 三思三省彻底收敛(老陈驱动): 契约构造业务自 sse_events 迁入本模块——新增 _build_start_contract
 #   在单模块内算 context_summary 快照(message_count/total_tokens) + 构造 MetaStep(type="start", step=0),
 #   并据 orchestrator 注入的运行元数据 agent._start_meta(ai_service/task_id/next_step/user_input/session_id/
@@ -13,6 +16,7 @@
 #   agent.llm_client 同对象, orchestrator 构造 agent 时注入), _build_start_contract 直接读 agent.llm_client;
 #   _start_meta 仅装 agent 拿不到的 chat 数据(task_id/next_step/user_input/session_id/链字段/warning);
 #   ② KISS/SLAP——assemble_start_step/_build_start_contract 去掉无谓 async(内部零 await), 同步函数直线返回
+#     (注: 2026-10-07 因摘要需 await LLM, assemble_start_step 已改回 async, 本条仅记当时结论)
 # 2026-08-17 小健 全系统DRY扫描收敛(老陈指示按10大规范): task_id 改读 agent.task_id(base_agent:59 权威持有,
 #   orchestrator 构造时注入), 不再依赖 _start_meta["task_id"]; _start_meta 只承载 next_step/session_id/user_input/
 #   链字段/warning(react_cycle 拿不到的必需运行数据), 与 ai_service 删除同属真冗余收敛(单一归属) — 小健 2026-08-17
@@ -20,62 +24,286 @@
 #   MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_ENABLED 由 app.constants / compaction 包迁至 agent 层根
 #   compaction_constants.py, 导入路径随之更新为 app.services.agent.compaction_constants(局部导入防包级依赖)
 # 2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案, start超窗=上下文×1/2): 超窗基准改读运行时窗口
-#   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_limit 覆盖, 与 loop 同基准),
+#   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_length 覆盖, 与 loop 同基准),
 #   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
-# 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
+# 2026-08-18 - 小欧 - start契约改造: _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
 # 2026-08-18 - 小欧 - 三堂会审复核(回归修复): _build_start_contract 补 _start_meta None/非 dict 防御, 防 _meta.get AttributeError, 兑现既声明的「无 _start_meta 返回 None 旁路兼容」契约
 # 2026-08-20 - 小欧 - 11.3-A 跨任务注入基线快照: assemble_start_step 完成时调 TaskTelemetry 记录注入上下文基线(固定不漂移), 供后续任务 context_overview/injected 对比
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5: _build_start_contract 构造 StartStep 改传
 #   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
 #   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
-# 2026-08-29 - 小沈 - bug#2修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
+# 2026-08-29 - 小沈 - 修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
+# 2026-09-23 - 小欧 - compaction配置化: _maybe 读 tuning.compaction.start_enabled/start_trigger_ratio
+# 2026-10-07 北京老陈 _build_injected_history: 原名 _inject_conversation_history(会调 inject_history 写
+#   conversation_history)→ 改名并只构建+留存 _injected_history_msgs; 同批历史原被写两次(本阶段写205条,
+#   随后 react_loop init_history 清空再写), 现 conversation_history 唯一写入点在 react_loop 装配段。
+# 2026-10-07 北京老陈 _maybe_compact_injected_history: 判定数据源 conversation_history → _injected_history_msgs
+#   (口径=注入历史, 不含 system/task; init_history 已推迟, 此刻 conversation_history 为空)。
+# 2026-10-07 北京老陈 _compact_injected_history: 改返回摘要文本, 不再装配 conversation_history、不碰 system/task。
+# 2026-10-07 北京老陈 assemble_start_step: 判定+摘要下沉回本函数并置于契约构造之前; 因摘要 await LLM,
+#   本函数改 async(调用方 react_loop 已加 await)。_start_summary 首行清零防异常残留上次值。
+# 2026-10-07 北京老陈 _compact_injected_history: 摘要 await(30~60s)前后各查一次 check_cancelled,
+#   避免长等待期间暂停/取消/新消息无响应; 被取消返回空串由调用方零退化装配原历史。
+# 2026-10-07 北京老陈: 校正 5 处与代码不符的 docstring(判定数据源/摘要调用方/init_history 阶段/步骤序号/前置条件)。
+# 2026-10-08 小欧 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的,
+#   编排为 preserve_recent_budget/find_tail_start(split_turn) 算边界 + prune_tool_output_keeping_tail(prune) 执行,
+#   本模块零算法; 逐条浅拷贝隔离防清零原地改污染 _injected_history_msgs(摘要失败时零退化要用)。 — 小欧-2026-10-08
+# 2026-10-19 小欧 摘要进度播报: 摘要 await LLM 动辄数十秒(本文件头注释自记 30~60s), 期间 SSE 无任何帧,
+#   用户只见转圈、与卡死无异; 且发生在 start 阶段(用户刚发出消息, 期待最强), 此处静默比装包更让人不安。
+#   新增 _emit_summarizing, 在两条 LLM 路径(增量 generate_chunked_summary / 全量 generate_anchored_summary)
+#   调 LLM 前各播一条 MetaStep(type=summarizing), 与 tool_executor 的 installing 同构。文案带 scope 与条数,
+#   区分两条路径并让用户判断耗时量级; 只报事实不承诺成败(成败由随后的 history_context 帧交代)。
+# 2026-10-08 小欧 北京老陈裁定"不能误导用户" — set_injected_context 增传 last_user_text: 遥测原从 conversation_history
+#   末条取 summary, 首帧时那正是用户刚发的本轮提问, 标签"最近"等于把自己的提问回显一遍(实测四条帧全是用户原话);
+#   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08
+# 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
+# 2026-10-14 小欧 - linked 增量摘要: 抽 _strip_history_msgs(全量/delta 共用, delta 保留末条 user 防断链) + _assemble_anchor_delta(锚点命中只压新增段: 小则复用零 LLM, 超限调 generate_chunked_summary 增量压缩, 失败回退旧摘要+delta) — 小欧-2026-10-14
+# 2026-10-24 小欧 - 修复: _build_injected_history 调用 _strip_history_msgs 传 drop_last_user=False, 防丢弃链1 user_input。_load_previous_messages 已用 upper_message_id 排除本轮 user 消息, drop_last_user=True 会错误丢弃上一轮(链1)的 user_input, 致 LLM 不知"继续"指何事(实测链1 秒挂 HTTP 401, 注入历史仅 55 tokens "任务执行失败", LLM 探索共享目录执行旧任务)。— 小欧-2026-10-24
+# 2026-10-25 小欧 - 增量摘要冗余消除(北京老陈令): delta 超阈值压缩产出 new_summary 时, delta 内容已含在 summary 中; 原代码仍注入原始 delta(冗余+顺序错), 改为 _injected_delta_msgs=None 阻止注入 — 小欧-2026-10-25
+# 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
+#   _emit_summarizing 文案不变, 调用点5处统一迁移 — 小欧-2026-10-25
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): summarizing notice 去冗余词(历史/生成重复), 失败文案缩到10字 — 小欧-2026-10-25
+# 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 全量摘要成功路径 logger.debug→info(可观测);
+#   失败(else)路径补 logger.info(与增量路径 373 行同模式, 互补不冗余) — 小欧-2026-10-25
+
+# 2026-10-26 小欧 三堂会审修复: ① YAGNI删 _start_summary_anchor_task_id(全库0消费);
+#   ② 路径①补 emit_notice(与②③④一致); ③ DRY: telemetry _inj_count/_inj_tokens 抽取为 _get_injected_facts
+#   ④ 路径③ count 改实际注入条数(1条新摘要), 原显示原始条数(1+len(delta))但实际只注入1条, 前端误导
+#   ⑤ 老路压缩成功路径补 _injected_effective_count=1(与 linked 路径③同口径), 防 telemetry fallback 成 len(previous_messages)
+
+# 2026-10-25 小欧 - 摘要失败降级(北京老陈令): 摘要校验失败不再直接回退全量原历史(超窗必400), 按"离得远价值低、
+#   离得近价值大"时间衰减序 split_history_window 切 old_head(远)+tail(近), prune_tool_output_keeping_tail
+#   清零 old_head 旧 tool 输出释放大头 token, 保尾原样; 接起闲置的 split_history_window — 小欧-2026-10-25
+
+# 2026-10-29 小欧 - 新摘要注入件升级(北京老陈令): 本轮新产生摘要时, 注入件由"纯摘要"升级为
+#   「最后任务usermessage + 摘要 + 产生摘要的那份 conv 历史数组倒数5轮」(摘要从谁压出来就取谁:
+#   增量③=delta_msgs, 老路④=_injected_history_msgs; user 切片内重复照注不去重; 轮数写常量
+#   SUMMARY_TAIL_ROUNDS=5 不配置化, 切分复用 split_turn.find_recent_rounds_start, FC 配对不拆散)。
+#   复用锚点摘要(①②)与无摘要路径维持现状。新增 _extract_summary_tail / _build_summary_injection
+#   (组装单点, react_loop 共用, DRY)。— 小欧-2026-10-29
+# 2026-10-29 小欧 - 删 :531 重复的"增量摘要生成完成"日志行(三堂会审发现, 同文案连打两行属冗余, DRY);
+#   仅去重日志, 零逻辑变更。— 小欧-2026-10-29
+# 2026-10-29 小欧 - 尾部轮数改单一解析(北京老陈令断案"系统路径整体最佳"): 注入件尾部轮数删写死常量 SUMMARY_TAIL_ROUNDS,
+#   改调 split_turn.resolve_protect_rounds() 与运行时裁剪保护区同源单一真源(tuning.trim.keep_recent_rounds, clamp
+#   5~20, 默认 5=5 零行为变化); 同批在 _extract_summary_tail 落设计边界声明: 注入件尾部轮(3键重载体)无 _summary 对
+#   use_tool_summary 免疫属设计内——附件随附同源覆盖摘要, 整轮裁掉时语义仍由摘要承载, 不加 DB 查询回灌(YAGNI)。
+#   — 小欧-2026-10-29
+# 2026-10-29 小欧 - 魔法数字清账(北京老陈令): _extract_summary_tail 解析失败兜底 _tail_n=5 写死改 KEEP_RECENT_ROUNDS
+#   常量引用(与解析函数缺省同源), 代码零行为变化。— 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审二轮两修(北京老陈令"坐实问题再修"):
+#   ①_strip_history_msgs 末尾统一剪 FC 孤儿 —— 上方剥离畸形 tool_calls 后其 tool 结果失去调用方, 而注入历史
+#     全链路从不调用 remove_dangling_tool_calls(唯一调用点在 trim 裁剪分支), 孤儿直达 provider 首帧 400
+#     (实测注入件 tool 1 条/有调用方 0 条);
+#   ②摘要来源标签归一 —— 落库带"[本次摘要]: ", 读回锚点再标"[往次摘要]: "成双层(实测), 且该串还作为
+#     "已有摘要"喂给下一次压缩; 新增 _strip_summary_labels 单点, 读锚点与 _prefix_summary 两侧统一剥净 — 小欧-2026-10-30
+# 2026-10-31 小欧 - 术语订正(北京老陈令): 0.5 是「限制系数」(limit ratio, 压缩摘要专用, 固定值), 不是「调节系数」;
+#   调节系数是 tuning.trim.trigger_ratio(0.9), 只服务 loop 裁剪触发阈值。本模块 _threshold=ctx×限制系数 的语义为
+#   「压缩摘要 limit」, 不是门槛, 也不是 loop 的触发阈值。仅订正注释, 零逻辑变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - DRY 收敛(北京老陈令): _maybe_compact_injected_history 与 _assemble_anchor_delta 两处
+#   重复的 int(ctx × start_limit_ratio) 算式抽为模块级 start_compress_summary_threshold(ctx), 唯一真源;
+#   两处调用改为该函数, 同时删掉两处各自的 START_LIMIT_RATIO 局部导入(已由函数内单点持有)。零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 公用函数收口(北京老陈令): start_compress_summary_threshold 迁 app/services/agent/agent_utils.py
+#   (agent 层公用函数统一入口, 同批并入原 token_estimate.estimate_tokens 并删除该文件); 本模块改顶部 import,
+#   两处调用不变, 零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 压缩前超窗前置裁剪(北京老陈令): _compact_injected_history 进压缩前先判 conv 是否超
+#   agent_utils.conv_threshold(ctx)(窗口×调节系数), 超则阶梯四级循环裁到 trim_conv_threshold(ctx)(trim 门限)
+#   以内再调压缩, 保证压缩请求本身不撞窗; 未超判定线不裁直接压缩(零变化)。阶梯裁算法归 compaction 域
+#   (compaction.assembler.shrink_to_budget, 复用 find_tail_start / prune_tool_output_keeping_tail /
+#   remove_dangling_tool_calls / truncate_oversized_message), 本模块只管门限判定与日志。
+#   摘要失败降级同步简化: 直接注入已收缩的 _hist_for_summary, 删掉原 split_history_window + 二次清零。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 增量路补窗口闸 + 体积口径统一(北京老陈令): _assemble_anchor_delta 调 chunked 摘要前
+#   补同一道门限(conv_threshold → shrink_to_budget 裁到 trim_conv_threshold), 原增量路无任何体积兜底;
+#   两条路的门限与裁剪统一改用 compaction.summary.estimate_feed_tokens(实际喂进去的体积)而非原文估算——
+#   tool 占历史体积九成以上且 feed 里每条截 2000 字, 用原文判必虚报→误触发→白丢早段轮次;
+#   判与裁同传 estimator, 防"按 feed 判、按原文裁"过裁。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 函数改名(北京老陈令): start_compress_summary_threshold → compress_summary_threshold,
+#   去掉 start 前缀(该口径=窗口×限制系数, 非 start 阶段专用, 其他调用方同样可用); 本模块 import 与两处调用、
+#   文档引用同步改名, 零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 三堂会审整改(北京老陈令): 老路/增量路两段约 35 行重复的"超判定线→阶梯裁到 trim 门限→
+#   失败降级"收口为 _shrink_before_summary(判定/裁剪/保尾同传 estimate_feed_tokens, 异常降级返回入参),
+#   两路各一行调用; 并补注"两把尺各管一段"(触发判定原文口径 vs 裁剪 feed 口径), 防后人误改成一致。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 上条"两条路门限统一用 feed"限定范围: 仅指 _shrink_before_summary 的窗口门限; 增量 B 门
+#   仍按原文口径 _estimate_tokens, 两把尺不同是设计, 勿统一。另: 增量路压缩率分母改用收缩前 delta(_pre_shrink_delta)。— 小欧-2026-10-31
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 摘要失败降级显式传 level="WARNING"(降级必须可见);
+#   同轮 2 处「开始调 LLM 生成摘要」进度行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
 职责(SRP): 仅承载「start 前置装配环节」全部业务——
-  - _inject_conversation_history: 注入会话历史(多轮对话上下文回填 message_builder)
-  - _maybe_compact_injected_history: 超窗判定(C4, 置 _needs_compact 标记)
-  - _compact_injected_history: C4 锚定摘要回填(超窗时一次性清洗注入历史)
-  - _build_start_contract: 契约构造(context_summary 快照 + StartStep 任务输入契约, 自 sse_events 迁入; P7 改产 StartStep)
-  - assemble_start_step: 唯一对外入口(注入历史 → 超窗判定 → 契约构造)
+  - _build_injected_history: 构建注入历史并存 agent._injected_history_msgs(不写 conversation_history)
+  - _maybe_compact_injected_history: 超窗判定(C4, 读 _injected_history_msgs, 置 _needs_compact 标记)
+  - _shrink_before_summary: 摘要前窗口闸(超判定线→阶梯裁到 trim 门限, 两条压缩路共用)
+  - _compact_injected_history: C4 锚定摘要生成(超窗时产出摘要文本, 不装配 conv)
+  - _build_start_contract: 契约构造(context_summary 快照 + StartStep, 自 sse_events 迁入)
+  - assemble_start_step: 唯一对外入口(async; 构建注入历史 → 判定 → 摘要 → 契约)
+linked 增量摘要总览(2026-10-14, 北京老陈定案): link 链不再每次全量重压历史, 只压"上次摘要之后新增的 delta",
+  常态零 LLM 调用。链路: orchestrator 注入锚点查询 → agent_runner._build_history_context 定加载范围(有锚点只取
+  delta) → 本模块 _assemble_anchor_delta 判定复用/增量压缩 → react_loop 注入(摘要+delta)并落库。
+  2026-10-29 北京老陈令: 本轮新摘要成功时注入件升级为「最后任务usermessage + 摘要 + 摘要源数组倒数5轮」,
+  复用锚点摘要/失败回退维持 [摘要]+delta, 无摘要维持全量(决策单点 _build_injected_msgs)。
+  契约: 摘要存"覆盖上界任务行"的 chat_tasks.task_summary 列(该行即下次锚点); 无锚点/失败一律走老路, 零退化。
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from app.logger import logger
+from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
+
+if TYPE_CHECKING:  # 2026-11-03 小欧 - 仅供注解解析: StartStep 实体在函数内局部导入防包级环, 注解引用此前是悬空名
+    from app.services.agent.steps import StartStep  # noqa: F401
+from app.logger import logger, log_and_print
+from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
+from app.services.agent.agent_utils import compress_summary_threshold  # 小欧-2026-10-31: 压缩摘要阈值唯一真源迁 agent_utils(agent 层公用函数收口)
+
+# 2026-10-26 小欧 - _start_summary 来源前缀: 让前端/日志一眼区分摘要来源
+#   往次摘要=复用锚点；本次摘要=本轮新压
+SUMMARY_PREFIX_PREVIOUS = "[往次摘要]: "
+SUMMARY_PREFIX_CURRENT = "[本次摘要]: "
 
 
-def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
-    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug(P0-1)，保留FC协议完整性
-    chendyg 2026-06-30: 修复重复user消息bug——previous_messages中最后一条user与init_history注入的task重复
-    小健 2026-08-17: 自 initialize_run_state 迁入 start_step(单一归属)
+def _strip_summary_labels(text: str) -> str:
+    """剥掉摘要正文开头的来源标签(可多层), 返回纯正文 — 小欧 2026-10-30
 
-    适用场景: start 装配第一步——把 context.previous_messages 回填 message_builder(多轮对话上下文)。
-    使用方法: 直接调用, 传 agent + context; context 无 previous_messages 则空转安全。
-    输入: agent 含 message_builder; context 含 previous_messages 历史消息列表。
-    输出: 无(内部调用 message_builder.inject_history 装载历史)。
-    前置条件: init_history 已装载(system + task); 最后一条 user 跳过(防与 task 重复)。
+    摘要落库时带来源标签("[本次摘要]: "), 读回锚点后再标"[往次摘要]: "就成了双层标签
+    (实测 "[往次摘要]: [本次摘要]: 正文"), 且该串还作为"已有摘要"喂给下一次压缩的 LLM。
+    标签是给人和日志看的装饰, 不属于正文, 故读写两侧统一过本函数归一。
     """
-    if not context or not isinstance(context, dict):
-        return
-    prev = context.get("previous_messages")
-    if not prev or not isinstance(prev, list):
-        return
-    last_user_idx = -1
-    for i in range(len(prev) - 1, -1, -1):
-        if prev[i].get("role") == "user":
-            last_user_idx = i
+    if not text:
+        return text
+    changed = True
+    while changed:
+        changed = False
+        for _p in (SUMMARY_PREFIX_PREVIOUS, SUMMARY_PREFIX_CURRENT):
+            if text.startswith(_p):
+                text = text[len(_p):]
+                changed = True
+    return text
+
+
+def _prefix_summary(summary: str, prefix: str) -> str:
+    """给摘要文本加来源前缀, 全文只留一个来源标签 — 小欧 2026-10-24 / 2026-10-30 归一"""
+    if not summary:
+        return summary
+    return prefix + _strip_summary_labels(summary)
+
+
+def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """提取新摘要注入附件: 摘要源数组的「末条 user + 尾部 _tail_n 个 FC 工具轮」— 小欧-2026-10-29
+
+    适用场景: 本轮新产生摘要(增量③/老路④)时, 除摘要外再注入"产生摘要的那份 conv 历史数组
+      的最后几轮 + 最后任务的 usermessage"(北京老陈令); 复用锚点摘要不走本函数。
+    使用方法: 传摘要源数组(增量=delta_msgs, 老路=_injected_history_msgs), 返回 {last_user, tail_rounds}。
+    输出: last_user=倒数第一条有内容的 user 消息(链式任务下即上一任务的任务输入);
+          tail_rounds=源数组倒数第 _tail_n 个 assistant(tool_calls) 起至末尾(含 tool 结果与末条 final answer)。
+    关联逻辑: 轮数 _tail_n 调 split_turn.resolve_protect_rounds() 取值(与运行时裁剪保护区同源单一真源,
+      默认 5); 轮次切分复用 find_recent_rounds_start(split_turn, DRY)——FC 配对天然不拆散; 聚合工具轮
+      不足 _tail_n 时返回起点=数组开头(整段即"最后几轮", 与需求一致); user 切片内重复照注不去重
+      (北京老陈确认, 保持简单直线)。切分原语异常时附件为空, 注入件退化为纯摘要(零退化)。
+    设计边界(三堂会审判定, 北京老陈令断案"系统路径整体最佳"): 注入件尾部轮为 3 键重载消息, 无 _summary,
+      对 use_tool_summary(换一行语义摘要)免疫属设计内——附件与摘要同源同批注入(摘要是从含尾部轮的源数组
+      压出来的), 即使后续运行中整轮裁掉这些尾部轮, 其语义仍由摘要承载, 保真无净损失; 因此不为它们加
+      "逐 tool 行查库回灌 _summary"的降级通道(数据管道加宽+逐轮查库, 低概率高成本, YAGNI)。
+    """
+    msgs = [m for m in (src_msgs or []) if isinstance(m, dict)]
+    if not msgs:
+        return {"last_user": None, "tail_rounds": []}
+    last_user = None
+    for m in reversed(msgs):
+        if m.get("role") == "user" and m.get("content"):
+            last_user = {"role": "user", "content": m["content"]}
             break
+    _tail_n = KEEP_RECENT_ROUNDS   # 解析失败兜底(常量与解析函数缺省同源, 非内联数)
+    try:
+        from app.services.agent.compaction.split_turn import find_recent_rounds_start, resolve_protect_rounds
+        _tail_n = resolve_protect_rounds()
+        _start = find_recent_rounds_start(msgs, _tail_n)
+    except Exception as e:  # noqa: BLE001 - 切分失败零退化: 附件只保留 user, 注入件= user+摘要
+        logger.warning(f"[start_step] 尾部{_tail_n}轮切分失败(注入退化为user+摘要): {type(e).__name__}: {e!r}")
+        return {"last_user": last_user, "tail_rounds": []}
+    return {"last_user": last_user, "tail_rounds": [dict(m) for m in msgs[_start:]]}
+
+
+def _build_summary_injection(summary: str, extras: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """新摘要注入件组装(顺序=北京老陈令): usermessage + 摘要 + 摘要源数组尾部 N 轮(_tail_n 由
+    split_turn.resolve_protect_rounds 解析, 缺省 5) — 小欧 2026-10-29
+
+    单一组装点(DRY): start_step 算 telemetry 事实数与 react_loop 装配注入共用同一份, 防两处口径分叉。
+    extras 为空/缺失时自动退化为纯摘要(零退化)。
+    """
+    extras = extras or {}
+    inj: List[Dict[str, Any]] = []
+    if extras.get("last_user"):
+        inj.append(extras["last_user"])                     # ① 最后任务的 usermessage
+    inj.append({"role": "assistant", "content": summary})   # ② 摘要(assistant 身份, 代表"之前发生的事")
+    inj += list(extras.get("tail_rounds") or [])            # ③ 摘要源数组尾部 N 轮
+    return inj
+
+
+def _apply_injection_facts(agent, summary: str, extras: Optional[Dict[str, Any]],
+                           source_msgs: List[Dict[str, Any]]) -> None:
+    """新摘要注入事实数落载具(条数/token/压缩率分母), 单一真源(DRY) — 小欧 2026-10-29
+
+    适用场景: 增量③/老路④ 新摘要成功时, 与 react_loop 注入件同源算数(北京老陈令口径),
+      防两处各写一份导致将来改口径漏一处。
+    输入: agent; summary=带来源前缀的摘要文本; extras=_extract_summary_tail 结果;
+          source_msgs=压缩率分母口径的源数组(增量=锚点摘要+delta, 老路=注入历史全量)。
+    输出: 无(写 _injected_effective_count / _injected_effective_tokens / _compressed_source_tokens)。
+    """
+    from app.services.agent.message_builder import MessageBuilder
+    _inj = _build_summary_injection(summary, extras)
+    agent._injected_effective_count = len(_inj)
+    agent._injected_effective_tokens = MessageBuilder._estimate_tokens(_inj)
+    agent._compressed_source_tokens = MessageBuilder._estimate_tokens(source_msgs)
+
+
+def _build_injected_msgs(agent) -> List[Dict[str, Any]]:
+    """装配段注入件决策(唯一真源) — 小欧 2026-10-29
+
+    适用场景: react_loop 装配 conv 时取注入消息; 测试复刻装配同样调用本函数(防两处逻辑分叉)。
+    规则(北京老陈令, 唯一触发条件=本轮新摘要成功):
+      ① 本轮新摘要(信号 _pending_chain_summary_cover is True) → usermessage + 摘要 + 源数组尾部 N 轮;
+      ② 复用锚点摘要/失败回退(信号 None) → 摘要 + delta 原文;
+      ③ 无摘要 → 全量注入历史(_injected_history_msgs)。
+    """
+    summary = getattr(agent, "_start_summary", "") or ""
+    if not summary:
+        return list(getattr(agent, "_injected_history_msgs", None) or [])
+    if getattr(agent, "_pending_chain_summary_cover", None) is True:
+        return _build_summary_injection(summary, getattr(agent, "_summary_tail_extras", None))
+    return [{"role": "assistant", "content": summary}] + list(
+        getattr(agent, "_injected_delta_msgs", None) or [])
+
+
+def _strip_history_msgs(prev: List[Dict[str, Any]], drop_last_user: bool = True) -> List[Dict[str, Any]]:
+    """把持久化原始消息剥成可喂 LLM 的规范消息(校验+剔除畸形, 不改业务语义) — 小欧 2026-10-14
+
+    适用场景: ① 全量注入历史构建(drop_last_user=True, 原行为); ② 增量摘要的 delta 段
+      (锚点之后新增那部分, drop_last_user=False) —— 剥离规则必须同源, 故抽本函数共用(DRY)。
+    使用方法: 传 previous_messages 原始列表(+是否丢末条 user), 返回规范消息列表。
+    规则: tool_calls 逐元素 isinstance 校验(非 dict 剥离, 防 provider 400)。
+
+    drop_last_user 语义(2026-10-14 三堂会审 P0 修复, 否则增量链断链):
+      - True(全量路径): 丢末条 user。原设计意图=防与本轮 task 重复, 全量加载上界已排除本轮
+        提问, 故末条 user 实为"上一轮提问", 沿用丢弃以保持与改造前 100% 一致。
+      - False(delta 路径): **必须保留**。delta 段同样不含本轮提问(同一下一上界), 其末条 user
+        是链内真实发生的提问; 若照丢, delta 被整段掏空 → 上一轮对话凭空消失(实测 T6/T7 复现)。 — 小欧-2026-10-14
+    """
+    if not prev or not isinstance(prev, list):
+        return []
+    skip_idx = -1
+    if drop_last_user:
+        for i in range(len(prev) - 1, -1, -1):
+            if prev[i].get("role") == "user":
+                skip_idx = i
+                break
     history_msgs = []
     for i, msg in enumerate(prev):
-        if i == last_user_idx:
+        if i == skip_idx:
             continue
         role = msg.get("role")
         if role == "tool":
             entry = {"role": "tool", "tool_call_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}
-            # M-04: FC协议需要name字段 — 小欧 2026-07-10
+            # FC协议需要name字段 — 小欧 2026-07-10
             name = msg.get("name")
             if name:
                 entry["name"] = name
@@ -104,87 +332,350 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
             history_msgs.append({"role": "user", "content": msg["content"]})
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
-    agent.message_builder.inject_history(history_msgs)
+    # 2026-10-30 小欧 - 修复(三堂会审发现, 实测复现): 上方剥离畸形 tool_calls 后, 其 tool 结果失去调用方
+    #   成孤儿; 原实现原样返回, 而注入历史全链路(全量/增量 delta)从不调用 remove_dangling_tool_calls
+    #   (唯一调用点在 trim 裁剪分支) → 孤儿直达 provider(实测注入件 tool 1 条, 有调用方 0 条)。
+    #   收口在本函数末尾统一剪孤儿(全量/delta 两路径同源, DRY), 顺带剪掉"有调用无结果"的残缺决策。
+    from app.services.agent.compaction.assembler import remove_dangling_tool_calls
+    return remove_dangling_tool_calls(history_msgs)
+
+
+def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
+    """构建注入历史并存到 agent._injected_history_msgs(不写 conversation_history) — 北京老陈 2026-10-07
+
+    适用场景: start 装配第一步——从 context.previous_messages 构建 history_msgs。
+    使用方法: 直接调用, 传 agent + context; context 无 previous_messages 则空转安全。
+    输入: agent; context 含 previous_messages 历史消息列表。
+    输出: 无(内部置 agent._injected_history_msgs)。
+    前置条件: 无。
+    关联逻辑: 剥离规则抽到 _strip_history_msgs(增量摘要 delta 段共用同一份, 2026-10-14);
+      合法输入输出与原实现 100% 一致。
+    """
+    prev = context.get("previous_messages") if isinstance(context, dict) else None
+    agent._injected_history_msgs = _strip_history_msgs(prev, drop_last_user=False)
 
 
 def _maybe_compact_injected_history(agent) -> None:
-    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
+    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 构建注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
 
-    适用场景: start 装配第二步——注入历史后立即判定是否超窗, 为 while 前 C4 摘要回填铺标记。
+    适用场景: start 装配第二步——构建注入历史后判定是否超窗, 为同函数内摘要生成铺标记。
     使用方法: 直接调用, 传 agent; 超窗置 agent._needs_compact=True(仅标记不触发 LLM)。
-    输入: agent 含 message_builder.conversation_history。
+    输入: agent 含 _injected_history_msgs(由 _build_injected_history 构建留存; 不读 conversation_history)。
     输出: 无(置 agent._needs_compact 布尔标记)。
-    前置条件: 注入历史已装载。
-    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 门限=运行时上下文窗口 × START_TRIGGER_RATIO(北京老陈 2026-08-17 定案, start 超窗=上下文×1/2)。
+    前置条件: _build_injected_history 已执行。
+    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 压缩摘要 limit=运行时上下文窗口 × 限制系数
+      (START_LIMIT_RATIO, 北京老陈 2026-08-17 定案, start 超窗=上下文×1/2; 限制系数≠调节系数, 后者服务 loop 裁剪)。
+    2026-10-31 小欧 口径说明(三堂会审整改, 防误改): 本函数用**原文**体积判"要不要压缩"(原文 vs 压缩摘要 limit),
+      与 _shrink_before_summary 的 **feed** 口径(实际喂进去的体积 vs 判定线)是两个不同问题、两把尺, 各管一段;
+      原文口径下本函数关心"历史真实有多大, 值不值得压", 压缩请求能否塞进去由那道闸负责 —— 不要"统一"成一致。— 小欧-2026-10-31
+    2026-10-07 北京老陈: 数据源由 conversation_history 改 _injected_history_msgs(判定口径=注入历史,
+      不含 system/task; init_history 已推迟到 react_loop 装配段, 此刻 conversation_history 为空)。
     """
     agent._needs_compact = False
     from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
         START_COMPACTION_ENABLED,
-        START_TRIGGER_RATIO,
     )
-    if not START_COMPACTION_ENABLED:
+    _start_enabled = bool(get_config().get('tuning.compaction.start_enabled', START_COMPACTION_ENABLED))  # 小欧 2026-09-23 compaction配置化
+    if not _start_enabled:
         return
     from app.services.agent.message_builder import MessageBuilder
-    history = agent.message_builder.conversation_history
+    # 2026-10-07 北京老陈: 判定改读 _injected_history_msgs(注入历史本体), 不读 conversation_history。
+    #   init_history 已推迟到压缩后装配, 此处 conversation_history 尚无 system/task 容器;
+    #   判定只关心"注入历史有多大", 故以 _injected_history_msgs 为准(与压缩输入同源, 零猜测)。
+    history = list(getattr(agent, "_injected_history_msgs", None) or [])
     if not history:
         return
-    # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
+    # 上下文窗口基准 = 运行时 context_length(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
     # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
     _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-    _threshold = int(_ctx * START_TRIGGER_RATIO)
+    # 2026-10-31 小欧 术语订正(北京老陈令): 阈值函数内取的是「限制系数」(limit ratio, 压缩摘要专用, 固定 0.5),
+    #   不是「调节系数」(调节系数=tuning.trim.trigger_ratio=0.9, 只服务 loop 裁剪)。
+    #   返回值的语义是「压缩摘要 limit」, 不是门槛, 也不是 loop 触发阈值。
+    _threshold = compress_summary_threshold(_ctx)   # 压缩摘要 limit(算式唯一真源=该函数)
     rough = MessageBuilder._estimate_tokens(history)
     if rough > _threshold:
         agent._needs_compact = True
-        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{START_TRIGGER_RATIO}), 置 _needs_compact")
+        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_threshold / _ctx:.4g}), 置 _needs_compact")
 
 
-async def _compact_injected_history(agent) -> None:
-    """C4 超窗锚定摘要回填(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
+async def _emit_summarizing(agent, scope: str, count: int) -> None:
+    """摘要调 LLM 前播一条 notice(kind=summarizing, phase=start) 给前端 —— 小欧 2026-10-19
 
-    适用场景: start 装配后、while 前一次性清洗注入的历史(超窗时)。
-    使用方法: 由 assemble 后置条件调用或 run_react_cycle while 前 await; 摘要回填 conversation_history。
-    输入: agent 含 message_builder.conversation_history。
-    输出: 无(超窗时以 assistant 摘要消息回填: system[:1] + 摘要 + 最新 task[-1:])。
-    前置条件: _maybe_compact_injected_history 已置 _needs_compact=True; 失败兜底原样保留零退化。
-    关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式。
+    背景与 tool_executor 的 installing 同源: 长耗时外部调用期间 SSE 无任何帧, 用户只见转圈,
+    与"卡死"无法区分。摘要动辄数十秒, 且发生在 start 阶段(用户刚发出消息, 期待最强)——
+    此处静默比装包更让人不安。
+
+    scope 取 '增量'/'全量', 区分两条路径: 增量=同链只压新增段(旧摘要作底), 全量=首轮压缩整段历史。
+    count 为本次送进 LLM 的条数, 供用户判断耗时量级。
+    """
+    await agent._step_emitter.emit_notice("summarizing", "start",
+                       f"生成摘要中({scope}{count}条)")
+
+
+def _shrink_before_summary(agent, messages: List[Dict[str, Any]],
+                           scope: str) -> List[Dict[str, Any]]:
+    """摘要前窗口闸: 超判定线则阶梯裁剪到 trim 门限(判/裁同一把尺) — 小欧 2026-10-31
+
+    适用场景: start 两条压缩路径(全量 _compact_injected_history / 增量 _assemble_anchor_delta)在调摘要
+      LLM 前统一过的同一道闸 —— 保证"压缩请求自己"不会先撞窗 400。
+    使用方法: 传 agent + 待压缩消息 + scope('全量'/'增量', 仅日志区分), 返回可安全送 LLM 的列表。
+    输入: agent(取 MAX_CONTEXT_TOKENS); messages 待压缩消息; scope 路径名。
+    输出: List —— 未超判定线返回入参本身(零拷贝, 行为与改造前一致); 超则返回阶梯裁剪后的新列表;
+          任何异常降级返回入参(裁剪是纯优化, 不得影响摘要主链)。
+    前置条件: messages 非空。
+    两种口径各管一段(防后人误改, 北京老陈令):
+      - 判"要不要压缩" = _maybe_compact_injected_history 的原文口径(原文体积 vs 压缩摘要 limit) —— 那一处
+        关心的是"历史真实有多大, 值不值得压", 用原文才对。
+      - 判"压缩请求塞不塞得进去" = 本函数 feed 口径(实际喂进去的体积 vs 判定线) —— 压缩时 tool 输出会被
+        截到 summary_feed_max_chars, 用原文判会虚报(实测 174 条样本虚报 325%)→ 误触发 → 白丢早段轮次。
+      故两处口径**不同是设计**; 但同一处内"判定/裁剪/保尾边界"必须同尺(estimator 三处同传)。
+    """
+    if not messages:
+        return messages
+    try:
+        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
+        from app.services.agent.agent_utils import conv_threshold, trim_conv_threshold
+        from app.services.agent.compaction.assembler import shrink_to_budget
+        from app.services.agent.compaction.summary import estimate_feed_tokens
+
+        _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
+        _ctx_threshold = conv_threshold(_ctx)       # 判定线: 窗口 × 调节系数
+        _cur = estimate_feed_tokens(messages)
+        if _cur <= _ctx_threshold:
+            logger.debug(f"[start_step] {scope}未超判定线({_cur} <= {_ctx_threshold}), 不裁直接压缩")
+            return messages
+        _target = trim_conv_threshold(_ctx)         # 目标线: trim 门限
+        logger.info(f"[start_step] {scope}超判定线({_cur} > {_ctx_threshold}), 阶梯裁剪到 trim 门限 {_target}")
+        out = shrink_to_budget(
+            messages, _target,
+            allow_prune=bool(get_config().get('tuning.compaction.summary_prune_tool_output',
+                                              SUMMARY_PRUNE_TOOL_OUTPUT)),
+            estimator=estimate_feed_tokens)
+        _after = estimate_feed_tokens(out)
+        if _after > _target:
+            logger.error(f"[start_step] {scope}阶梯裁剪后仍超 {_after} > {_target}, 放行并留证")
+        else:
+            logger.info(f"[start_step] {scope}阶梯裁剪完成: {_after} <= 目标 {_target}"
+                        f" (判定线 {_ctx_threshold})")
+        return out
+    except Exception as e:
+        # 裁剪是纯优化, 失败不得影响摘要主链(降级为原样喂)
+        logger.warning(f"[start_step] {scope}摘要前超窗裁剪失败, 降级为原样喂: {type(e).__name__}: {e!r}")
+        return messages
+
+
+async def _compact_injected_history(agent) -> str:
+    """C4 锚定摘要生成(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
+
+    适用场景: start 装配第三步——超窗时生成注入历史的锚定摘要。
+    使用方法: 由 assemble_start_step await 调用; 只生成摘要文本, 不装配 conversation_history。
+    输入: agent 含 _injected_history_msgs(注入历史本体, 由 _build_injected_history 留存)。
+    输出: str 摘要文本; 空串表示未产出(调用方按零退化装配原历史)。同时复位 _needs_compact。
+    前置条件: _maybe_compact_injected_history 已置 _needs_compact=True。
+    关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式;
+      摘要只归档 _injected_history_msgs(不含 system/task); await 前后各查一次取消(见编辑历史)。
+      2026-10-07 北京老陈: 摘要前对拷贝副本做降本处理(tool 结果截断/清零), 开关 tuning.compaction.summary_prune_tool_output;
+      原 _injected_history_msgs 不受影响 —— 摘要取消时调用方仍按原历史装配。
+      2026-10-31 小欧: 降本升级为「超判定线才阶梯裁剪到 trim 门限」, 摘要失败时直接注入已收缩副本
+      (不再二次裁剪, 亦不再回退全量原历史)。— 小欧-2026-10-31
+      2026-10-31 小欧: 判定与裁剪的体积口径改用 estimate_feed_tokens(实际喂进去的体积), 与 chunked 增量路
+      同源; 判与裁同传 estimator, 防"按 feed 判、按原文裁"过裁。— 小欧-2026-10-31
     """
     from app.services.agent.compaction.summary import generate_anchored_summary
 
-    history = agent.message_builder.conversation_history
-    if not history:
+    # 摘要只归档注入的历史(不含 system/task): 原实现把含末尾 task 的整条历史喂LLM, 模型当待执行指令
+    #   → 越权调工具(实测 glm-5.2 finish=tool_calls 并写文件)
+# 2026-10-07 北京老陈 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的;
+    #   编排=split_turn 两函数算边界 + prune_tool_output_keeping_tail 执行, 本模块零算法; 实测省 48890 tok(36%), 摘要 2048 字符/六段 6/6。
+    #   ⚠ 逐条浅拷贝: 清零原地改 dict, 直接传会污染 _injected_history_msgs(摘要失败时零退化要用)。
+    _src = getattr(agent, "_injected_history_msgs", None) or []
+    _hist_for_summary = [dict(m) for m in _src]
+    if not _hist_for_summary:
         agent._needs_compact = False
-        return
+        return ""
+    # 2026-10-31 小欧 超窗前置裁剪(北京老陈令): 进入压缩前先判 conv 是否超判定线(窗口×调节系数),
+    #   超了由 _shrink_before_summary 阶梯裁到 trim 门限(目标线)以内再压缩, 保证压缩请求本身不撞窗;
+    #   未超判定线保持原行为(不裁直接压缩, 零变化)。判定/裁剪/降级口径统一在该函数(增量路共用同一道闸)。
+    _hist_for_summary = _shrink_before_summary(agent, _hist_for_summary, "全量")
     try:
-        summary_text = await generate_anchored_summary(agent, history)
+        _task_id = getattr(agent, "task_id", None)
+        if _task_id:
+            from app.services.task.task_runtime import check_cancelled
+            if await check_cancelled(_task_id):
+                logger.info("[start_step] 摘要前检测到任务取消, 跳过摘要(调用方零退化装配原历史)")
+                agent._needs_compact = False
+                return ""
+        # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
+        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条", level="WARNING")
+        await _emit_summarizing(agent, "全量", len(_hist_for_summary))
+        summary_text = await generate_anchored_summary(agent, _hist_for_summary)
+        if _task_id and await check_cancelled(_task_id):
+            logger.info("[start_step] 摘要后检测到任务取消, 丢弃摘要结果(调用方零退化装配原历史)")
+            summary_text = ""
     except Exception as e:
-        logger.warning(f"[start_step] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
+        logger.warning(f"[start_step] 锚定摘要失败, 返回空(调用方零退化装配原历史): {type(e).__name__}: {e!r}")
         summary_text = ""
     if summary_text:
-        compacted = (
-            history[:1] + [{"role": "assistant", "content": summary_text}] + history[-1:]
-        )
-        # bug#2修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
-        # 最小守卫: 丢弃尾随无配对 assistant 的 tool 消息
-        while compacted and compacted[-1].get("role") == "tool":
-            compacted = compacted[:-1]
-        agent.message_builder.conversation_history = compacted
-        logger.debug(f"[start_step] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{len(compacted)})")
+        logger.info(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           f"摘要完成({len(summary_text)}字)")
+    else:
+        logger.info("[start_step] 锚定摘要未产出(非异常), 回退完整历史")
+        await agent._step_emitter.emit_notice("summarizing", "failed",
+                           "摘要失败，回退完整历史")
+        # 2026-10-31 小欧 失败降级改为复用已收缩历史(北京老陈令): 摘要前若已按阶梯裁到 trim 门限, 此处直接
+        #   注入该结果, 不再二次裁剪(原 split_history_window + prune_tool_output_keeping_tail 二次清零已删);
+        #   未超判定线时 _hist_for_summary 即原注入历史的副本, 注入它等价于原「回退完整历史」。
+        from app.services.agent.message_builder import MessageBuilder
+        agent._injected_history_msgs = _hist_for_summary
+        logger.info(f"[start_step] 摘要失败降级(复用已收缩历史): {len(_hist_for_summary)}条/"
+                    f"{MessageBuilder._estimate_tokens(_hist_for_summary)} tok")
+        log_and_print(f"[start_step] 摘要失败降级: 注入已收缩历史 {len(_hist_for_summary)} 条", level="WARNING")
     agent._needs_compact = False
+    return summary_text
+
+
+async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bool:
+    """linked 增量摘要装配(有锚点路径) —— 小欧 2026-10-14
+
+    适用场景: 同链上次已压过摘要(chat_tasks.task_summary 非空), 本次只把"锚点之后新增的 delta"
+      再压一次, 而非全量重压。零 LLM 常态: delta 未超阈值时直接复用旧摘要。
+    使用方法: 由 assemble_start_step 调用(命中锚点才调); 处理完置 agent._start_summary /
+      agent._injected_delta_msgs / agent._pending_chain_summary_cover。
+    输入: agent + context(含 chain_summary_anchor 锚点、chain_delta_messages 原始增量段)。
+    输出: bool —— True=锚点路径已处理完; False=装配失败(调用方按无锚点老路全量处理, 零退化)。
+    语义契约: 注入内容 = [摘要 assistant 消息] + delta 段(react_loop 装配);
+      即"摘要顶掉已压缩的老历史, 原文只保留新增部分", 每段原文至多被压一次, 保真度不低于全量重压。
+      2026-10-29 北京老陈令: 本轮产出新摘要时注入件=最后任务usermessage + 新摘要 + delta 段尾部 N 轮
+      (delta 整体不注入); 复用/失败回退仍为 [摘要] + delta。
+    关联逻辑: 压缩摘要 limit 与老路同尺(compress_summary_threshold(ctx), 北京老陈 2026-10-14 纠正: 不用
+      COMPACTION_BUFFER —— 它是"输出预留缓冲", 语义不符); 增量压缩复用 generate_chunked_summary;
+      失败(取消/异常/校验拒收)回退"旧锚点摘要 + 全量 delta", 比老路的全量历史更省, 链不断。 — 小欧-2026-10-14
+      2026-10-31 小欧: 调 chunked 摘要前补窗口闸(与老路同一把尺: estimate_feed_tokens 判 conv_threshold,
+      超则 shrink_to_budget 裁到 trim_conv_threshold), 裁后 delta_msgs 同步回 _injected_delta_msgs —— 失败
+      回退注入收缩副本; chunked 摘要本身只截单条 tool 到 2000 字、不拆批, 无此闸超窗即 400。— 小欧-2026-10-31
+    """
+    anchor = (context.get("chain_summary_anchor") if isinstance(context, dict) else None) or {}
+    # 2026-10-30 小欧: 锚点摘要先剥来源标签再当"纯正文"用(落库时带标签, 不清会层层叠加且污染
+    #   喂给 generate_chunked_summary 的"已有摘要"输入) — 小欧-2026-10-30
+    anchor_summary = _strip_summary_labels(anchor.get("summary") or "")
+    delta_raw = (context.get("chain_delta_messages") if isinstance(context, dict) else None) or []
+    if not anchor_summary:
+        return False   # 锚点无摘要(异常数据) → 老路
+    delta_msgs = _strip_history_msgs(delta_raw, drop_last_user=False)
+    agent._injected_delta_msgs = delta_msgs
+    agent._pending_chain_summary_cover = None   # 默认无处可落; 真产生新摘要时才填(react_loop 消费)
+    # 2026-10-26 小欧: 事实状态初始化 —— 4 条路径各自覆写, telemetry 纯观察不推断
+    #   _injected_effective_count: 本次实际注入条数([摘要] + delta 或 [新摘要] 或 len(history))
+    agent._injected_effective_count = 0
+    agent._injected_effective_tokens = 0
+    agent._summary_tail_extras = None   # 2026-10-29 北京老陈令: 新摘要注入附件默认无, 仅复用/老路不受影响
+    # 补偿: 无 delta 且锚点摘要可用 → 零 LLM 直接复用
+    if not delta_msgs:
+        agent._injected_effective_count = 1   # [摘要] 1 条
+        # 2026-10-26 小欧: 锚点路径 previous_messages 为空, _injected_context.estimated_tokens=0;
+        #   注入源=[摘要 assistant 消息], 此处算好真实 token 供 telemetry 压缩率计算
+        from app.services.agent.message_builder import MessageBuilder
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": agent._start_summary}])
+        logger.info(f"[start_step] 增量路径: delta 为空, 直接复用锚点摘要(anchor={anchor.get('task_id')})")
+        # 2026-10-26 小欧 三堂会审: 路径①补 notice(与路径②③④一致, 前端需感知摘要状态)
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           "复用锚点摘要(无增量)")
+        return True
+    try:
+        from app.services.agent.message_builder import MessageBuilder
+        from app.services.task.task_runtime import check_cancelled
+        _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
+        _threshold = compress_summary_threshold(_ctx)   # 压缩摘要 limit(与超窗判定同源, DRY)
+        _delta_tokens = MessageBuilder._estimate_tokens(delta_msgs)
+    except Exception as e:
+        logger.warning(f"[start_step] 增量路径阈值估算失败, 按超窗处理: {type(e).__name__}: {e!r}")
+        _delta_tokens, _threshold = 1, 0
+    if _delta_tokens < _threshold:
+        # B门(与老路同尺): delta 未超阈值 → 不调 LLM, 摘要直接复用(常态, 启动零等待)
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_count = 1 + len(delta_msgs)   # [摘要] + delta
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)}] + delta_msgs)
+        logger.info(
+            f"[start_step] 增量路径: delta {_delta_tokens}tok < 阈值 {_threshold}, 复用锚点摘要(零 LLM 调用)")
+        # 2026-10-25 小欧: 复用路径也发 notice(done), 前端需感知摘要状态 — 小欧-2026-10-25
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           "复用锚点摘要(增量未超阈值)")
+        return True
+    # 超阈值 → 只对 delta 做增量压缩(旧摘要作底), 生成后落"覆盖上界任务行"
+    logger.info(
+        f"[start_step] 增量路径: delta {_delta_tokens}tok ≥ 阈值 {_threshold}, 调 LLM 增量压缩"
+        f"(anchor={anchor.get('task_id')}, delta {len(delta_msgs)}条)")
+    # 2026-10-31 小欧 增量路窗口闸(北京老陈令): 与老路同一道闸(_shrink_before_summary) —— 按 feed 实际口径判
+    #   是否超判定线(窗口×调节系数), 超了阶梯裁到 trim 门限再调压缩; 否则 chunked 摘要请求本身无任何体积兜底
+    #   (它只把每条 tool 截到 2000 字, 不拆批), 超窗即 400。裁后同步 _injected_delta_msgs,
+    #   使失败回退注入的是收缩副本而非原样整段。— 小欧-2026-10-31
+    # 压缩率分母用收缩前 delta: shrink_to_budget 各级生成新列表、不改元素 dict, 原列表仍完整。— 小欧-2026-10-31
+    _pre_shrink_delta = delta_msgs
+    delta_msgs = _shrink_before_summary(agent, delta_msgs, "增量")
+    agent._injected_delta_msgs = delta_msgs
+    agent._compact_attempted = True
+    new_summary = ""
+    try:
+        from app.services.agent.compaction.summary import generate_chunked_summary
+        _task_id = getattr(agent, "task_id", None)
+        _cancelled = bool(_task_id) and await check_cancelled(_task_id)
+        if _cancelled:
+            logger.info("[start_step] 增量摘要前检测到取消, 跳过摘要(回退复用锚点摘要)")
+        else:
+            # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
+            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条", level="WARNING")
+            await _emit_summarizing(agent, "增量", len(delta_msgs))
+            new_summary = await generate_chunked_summary(agent, delta_msgs, anchor_summary)
+            if _task_id and await check_cancelled(_task_id):
+                logger.info("[start_step] 增量摘要后检测到取消, 丢弃结果(回退复用锚点摘要)")
+                new_summary = ""
+    except Exception as e:
+        logger.warning(
+            f"[start_step] 增量摘要失败, 回退复用锚点摘要: {type(e).__name__}: {e!r}")
+        new_summary = ""
+    if new_summary:
+        _pref = _prefix_summary(new_summary, SUMMARY_PREFIX_CURRENT)
+        agent._start_summary = _pref
+        agent._injected_delta_msgs = None  # delta 整体不单独注入(已压进 summary); 仅尾部 N 轮按新令作附件注入 — 2026-10-29
+        agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
+        # 2026-10-29 北京老陈令: 新摘要附加注入件 —— 产生摘要的那份 conv 数组(delta_msgs)的
+        #   最后任务usermessage + 尾部 N 轮; 组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
+        agent._summary_tail_extras = _extract_summary_tail(delta_msgs)
+        # 压缩率分母用收缩前 delta, 注入件/条数仍按收缩后实际值。— 小欧-2026-10-31
+        _apply_injection_facts(agent, _pref, agent._summary_tail_extras,
+                               [{"role": "assistant", "content": anchor_summary}] + _pre_shrink_delta)
+        logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           f"增量摘要完成({len(new_summary)}字)")
+    else:
+        # 失败回退: 旧锚点摘要 + 全量 delta(比老路的全量历史更省, 语义等价: 老历史已被摘要代表)
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_count = 1 + len(delta_msgs)   # [摘要] + delta
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)}] + delta_msgs)
+        logger.info("[start_step] 增量摘要未产出, 回退「锚点摘要 + 全量 delta」")
+        await agent._step_emitter.emit_notice("summarizing", "failed",
+                           "增量摘要失败，回退锚点")
+    return True
 
 
 def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["StartStep"]:
-    """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
+    """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
-    适用场景: start 装配第③步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
+    适用场景: start 装配第四步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
     构造 StartStep(type="start", step=0, content=context_summary); 自 sse_events 迁入(start 契约构造业务完整归此模块)。
     使用方法: 由 assemble_start_step 调用; previous_messages 用于快照 message_count/total_tokens。
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client(orchestrator 构造时注入, provider/model)
           + _start_meta(dict: user_input/session_id/context_link_mode/context_root_task_id/warning,
           orchestrator 注入); previous_messages 历史消息列表(空列表则快照 message_count=0)。
     输出: StartStep(type="start", step=0) —— 任务输入契约: 任务头部 + system_prompt + user_message(顶层) + context_summary。
-    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); step 固定 0(P2 弃用 next_step, 不再依赖轮数)。
-    依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(P4 解耦)。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④ / 10.1.8 S3/S4 / 10.4.4 P7。
+    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); step 固定 0(弃用 next_step, 不再依赖轮数)。
+    依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(解耦)。
+    设计文档: start契约设计章节。
     """
     from app.services.agent.steps import StartStep  # 局部导入防包级环
     from app.services.agent.message_builder import MessageBuilder
@@ -192,7 +683,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
     _meta = getattr(agent, "_start_meta", None)
     _ai = getattr(agent, "llm_client", None)
     if _ai is None or not isinstance(_meta, dict):
-        return None   # P7: 不再依赖 next_step(P2 弃用)，仅需 llm_client 供 provider/model;
+        return None   # 不再依赖 next_step(弃用)，仅需 llm_client 供 provider/model;
                       # 三堂会审复核(小欧 2026-08-18): 缺 _start_meta 或非 dict 亦旁路返回 None, 防下方 _meta.get AttributeError(回归修复)
     _prev = previous_messages or []
     context_summary = {
@@ -203,7 +694,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
         "total_tokens": MessageBuilder._estimate_tokens(_prev),
     }
     return StartStep(
-        step=0,                                   # P2: start 固定轮数 0（不再调 next_step）
+        step=0,                                   # start 固定轮数 0（不再调 next_step）
         context_summary=context_summary,          # content 承载 context_summary(10.1.2 <第2步>3)
         user_message=_meta.get("user_input") or "",   # user_input 顶层化(<第2步>4)
         task_id=getattr(agent, "task_id", None),
@@ -213,22 +704,44 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
     )
 
 
-def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
-    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
+async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
+    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
     适用场景: run_react_cycle 在 initialize_run_state 之后、while 之前调用一次, 完成 start 全部业务。
-    使用方法: 传 agent + context, 返回构造好的 StartStep(调用方 emit); 无 _start_meta 时返回 None。
-    业务顺序(不可乱): ① 注入会话历史 → ② 超窗判定(C4 置 _needs_compact) → ③ 构造任务输入契约 StartStep
-    (语境 summary 快照 + 任务输入契约); 超窗时由调用方在 while 前 await _compact_injected_history 回填。
+    使用方法: 传 agent + context, await 返回 StartStep(调用方 emit); 无 _start_meta 时返回 None。
+    业务顺序(不可乱): ① 构建注入历史 → ② 超窗判定(C4) → ③ 锚定摘要生成 → ④ 构造任务输入契约 StartStep
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client / _start_meta(orchestrator 注入的运行元数据);
           context 含 previous_messages(注入历史 + 快照 message_count/total_tokens)。
-    输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容)。
-    前置条件: initialize_run_state 已执行(agent.steps 已重置、init_history 已装载、_sys_prompt 已就绪)。
-    依赖方向: 只读 agent 属性 + context, 不 import chat 层(P4 解耦); 运行元数据由 orchestrator 注入 _start_meta。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④⑤ / 10.1.8 S3/S4/S5 / 10.4.4 P7。
+    输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容);
+          摘要文本挂 agent._start_summary(供调用方装配 conversation_history)。
+    前置条件: initialize_run_state 已执行(agent.steps 已重置、_sys_prompt 已就绪; init_history 不在此阶段)。
+    依赖方向: 只读 agent 属性 + context, 不 import chat 层(解耦); 运行元数据由 orchestrator 注入 _start_meta。
+    设计文档: start契约设计章节。
+    2026-10-07 北京老陈: 判定与摘要下沉回本函数, 置于契约构造之前; 因摘要需 await LLM, 本函数改 async。
     """
-    # ① 注入会话历史(任务输入装配第一步)
-    _inject_conversation_history(agent, context)
+    # ① 构建注入历史(只留存 agent._injected_history_msgs, 不写 conversation_history)
+    _build_injected_history(agent, context)
+    # ①' 有锚点走增量(只压 delta), 否则走老路②③。— 小欧 2026-10-14
+    _anchor_done = await _assemble_anchor_delta(agent, context)
+    if not _anchor_done:
+        # ② 超窗判定(C4, 读 _injected_history_msgs)
+        _maybe_compact_injected_history(agent)
+        # ③ 锚定摘要生成(超窗时; 结果挂 agent._start_summary 供调用方装配)
+        if getattr(agent, "_needs_compact", False):
+            # 2026-10-09  语义=确实调用了摘要生成(非"判定超窗"), 故置执行分支内,
+            #   供 telemetry 区分"未触发压缩"与"压缩失败"; 每轮清零已移至 initialize_run_state
+            agent._compact_attempted = True
+            agent._start_summary = _prefix_summary(await _compact_injected_history(agent), SUMMARY_PREFIX_CURRENT)
+            # 老路摘要同样落"上一个任务行"(下次锚点), 否则增量永无锚点。— 小欧 2026-10-14
+            if getattr(agent, "_start_summary", ""):
+                agent._pending_chain_summary_cover = True
+                # 2026-10-29 北京老陈令(唯一触发条件=新摘要成功): 老路新摘要附加注入件 ——
+                #   产生摘要的那份conv数组(_injected_history_msgs)的最后任务usermessage + 尾部 N 轮;
+                #   组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
+                agent._summary_tail_extras = _extract_summary_tail(
+                    getattr(agent, "_injected_history_msgs", None) or [])
+                _apply_injection_facts(agent, agent._start_summary, agent._summary_tail_extras,
+                                       getattr(agent, "_injected_history_msgs", None) or [])
     # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
     _tele = getattr(agent, "telemetry", None)
     if _tele is not None:
@@ -238,10 +751,7 @@ def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]
         _tele.set_injected_context({
             "message_count": len(_prev),
             "estimated_tokens": MessageBuilder._estimate_tokens(_prev),
-        })
-    # ② 超窗判定(C4, 注入后立即判定, 置 _needs_compact 供 while 前回填用)
-    _maybe_compact_injected_history(agent)
-
-    # ③ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
+          })
+    # ④ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
     _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
     return _build_start_contract(agent, _prev_msgs)

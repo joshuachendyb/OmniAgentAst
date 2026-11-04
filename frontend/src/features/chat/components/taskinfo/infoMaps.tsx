@@ -1,10 +1,27 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 自 TaskInfoBar 抽取状态映射常量+纯函数(DRY/SRP/OCP, 禁止backward 不兼容旧写法)
-//   职责: BADGE_MAP(P2-15 cancelled 区分) / CONTEXT_STATE_MAP(4态 P1-8) / EVENT_ICON_MAP(9事件 P1-5+新增)
-//   / mapStatus(纯函数) / formatToken(千分位 3.2) — 小欧-2026-09-08
+// 职责: BADGE_MAP(cancelled 区分) / CONTEXT_STATE_MAP(4态状态机) / EVENT_ICON_MAP(9事件+新增)
+// / mapStatus(纯函数) / formatTokenK(K/M 折算 3.2) — 小欧-2026-09-08
 // 编辑历史: 2026-09-17 小欧 - 新增5个事件图标: error/rejected/cancelled/heartbeat/final - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
-//   永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
+// 永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 恢复 heartbeat 事件图标(SyncOutlined)——心跳记录到事件列表(后端":ping" → ExecutionStep.heartbeat → processEvents) — 北京老陈驱动
+// 编辑历史: 2026-10-04 小欧 - 文档[6]: ContextState 增 historical 态(4态→5态), mapStatus 依 isLiveContext
+// 区分「历史任务无实时帧(设计如此)」与「真缺失」, empty 提示文案去内部变量名 frames — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - token 显示序改 P→C→T, 行内折 K/M; formatToken 去 "T " 前缀后无调用方已删(YAGNI)
+// 同日回退: historical 态与 mapStatus 的 isLiveContext 判据已撤, 改由卡片 isLiveContext 决定是否挂弹框
+// 编辑历史: 2026-10-04 小欧 - EVENT_ICON_MAP 新增 context_trimmed(历史对话裁剪, 北京老陈令), 复用 WarningOutlined
+
+// 编辑历史: 2026-10-07 小欧 - ContextSource 删 contextSummary: 上下文数据只认 history_context 帧(overview);
+// 原 fallback 到 start.content(contextSummary) 会让未压缩/未注入的任务显示错误上下文
+// 编辑历史: 2026-10-09 小欧[20] - ContextSource 复用帧类型; mapStatus 判据改 content; EVENT_ICON_MAP 加 context_compressed
+// 编辑历史: 2026-10-10 小欧[20] - 删 summary-only 态(4态→3态): 历史任务无 conv_context,
+// 单分组判据必然落进"有内容无计数", 自造的"摘要·无计数"漏进 UI。mapStatus 改双分组真值性
+// 编辑历史: 2026-10-25 小欧 - 通知信封图标映射: 新增 NOTICE_CONFIG(kind+phase → antd SVG), summarizing/installing 三态(start/done/failed)各配 Spin/Check/Warning 图标; EVENT_ICON_MAP.notice 保留为回退 — 小欧-2026-10-25
+// 编辑历史: 2026-10-26 小沈 - NOTICE_CONFIG新增extracting三态(start/done/failed), 复用Spin/Check/Warning图标 — 小沈-2026-10-26
+// 编辑历史: 2026-10-30 小欧 - NOTICE_CONFIG新增refs_ready_done/refs_ready_failed(引用处置汇总, 无start态) — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+// 编辑历史: 2026-11-01 小欧 - NOTICE_CONFIG 加 trimming_done(对话历史裁剪 notice, 后端 react_step 真裁剪帧发射): ScissorOutlined 剪刀图标, 时间线按 kind+phase 查表 — 小欧-2026-11-01
+
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -15,10 +32,15 @@ import {
   CloseCircleOutlined,
   CheckCircleOutlined,
   SyncOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
+// 2026-10-09 小欧[20]: ContextSource 改复用帧类型(DRY, 不手写平铺形状)
+import type { ContextOverviewFrame } from '@/types/sse';
+// 2026-10-10 小欧[20] 帧读侧真源挪 utils/contextFrame(services 层也要用, 不许 UI 反向被依赖)
+import { pickConv, pickInject } from '@/utils/contextFrame';
 
-// ---------- BADGE_MAP（P2-15：cancelled 与 idle 区分） ----------
+// ---------- BADGE_MAP（cancelled 与 idle 区分） ----------
 export interface BadgeEntry {
   status: 'default' | 'processing' | 'warning' | 'success' | 'error';
   text: string;
@@ -32,8 +54,8 @@ export const BADGE_MAP: Record<TaskBadge, BadgeEntry> = {
   cancelled: { status: 'error', text: '已取消' }, // 定案: 红点红字，区分 idle 灰
 };
 
-// ---------- CONTEXT_STATE_MAP（P1-8：4 态文案状态机） ----------
-export type ContextState = 'ok' | 'summary-only' | 'truncated' | 'empty';
+// ---------- CONTEXT_STATE_MAP（3 态文案状态机） ----------
+export type ContextState = 'ok' | 'truncated' | 'empty';
 export interface ContextStateEntry {
   text: string; // 数值区文案（ok 态由调用方传入 token，此处留空）
   tone: 'primary' | 'secondary' | 'warning' | 'tertiary';
@@ -42,12 +64,6 @@ export interface ContextStateEntry {
 }
 export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
   ok: { text: '', tone: 'primary', tooltip: '上下文正常' },
-  // 3.3 状态机: summary-only/empty 数值色 TERTIARY(标签级弱文字), 非 SECONDARY(3.3 表/7.3 用例一致)
-  'summary-only': {
-    text: '摘要·无计数',
-    tone: 'tertiary',
-    tooltip: '上下文概览尚无 token 计数',
-  },
   truncated: {
     text: '',
     tone: 'warning',
@@ -57,59 +73,90 @@ export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
   empty: {
     text: '–',
     tone: 'tertiary',
-    tooltip: '上下文缺失，检查 frames 数据链路',
+    tooltip: '未收到上下文信息',
   },
 };
 
-// ---------- mapStatus（纯函数：输入数据源 → 4 态，供测试直接断言 data-state） ----------
-// 输入形态对齐现状三数据源: overview 字符串 / overview 对象{summary,estimated_tokens,truncated} / frames.contextSummary
+// ---------- mapStatus（纯函数：输入数据源 → 3 态，供测试直接断言 data-state） ----------
+// 输入形态: overview 对象(来自 history_context 帧)
+// 2026-10-10 小欧[20]: 删 string 联合 —— 生产路径恒为 object|null(useTaskInfo 直传
+//   frames.contextOverview), string 联合是纯 phantom 且只有测试在喂, 属 backward 双写面必删。
 export interface ContextSource {
-  overview?:
-    | string
-    | {
-        summary?: string;
-        estimated_tokens?: number | null;
-        truncated?: boolean;
-      }
-    | null;
-  contextSummary?: string | null;
+  overview?: ContextOverviewFrame | null;
 }
 export const mapStatus = (src: ContextSource): ContextState => {
-  const o = src.overview;
-  const summary =
-    typeof o === 'string' ? o : (o?.summary ?? src.contextSummary ?? null);
-  const truncated =
-    typeof o === 'object' && o !== null ? o.truncated === true : false;
+  const o = src.overview ?? null;
+  const convCtx = pickConv(o);
+  const injectCtx = pickInject(o);
+  if (convCtx?.truncated === true) return 'truncated';
   const hasTokens =
-    typeof o === 'object' && o !== null && o.estimated_tokens != null;
-  if (truncated) return 'truncated';
-  if (summary) return hasTokens ? 'ok' : 'summary-only';
-  return 'empty';
+    typeof convCtx?.estimated_tokens === 'number' ||
+    typeof injectCtx?.injected_estimated_tokens === 'number';
+  // 判据=两段 key 有没有来; 不拿 content 当"有无数据"信号(它是帧级身份文案, 后端恒非空)
+  const hasFrame = !!convCtx || !!injectCtx;
+  return hasTokens || hasFrame ? 'ok' : 'empty';
 };
 
-// ---------- EVENT_ICON_MAP（3.4/P1-5：过程事件统一 antd SVG，禁 emoji） ----------
+// ---------- EVENT_ICON_MAP（过程事件统一 antd SVG，禁 emoji） ----------
 // 2026-09-17 小欧 会审V3(#2): 8类事件——heartbeat 非事件(后端心跳=SSE 协议层 ":ping" 服务器注释帧,
-//   对 JS EventSource 不可见, 永不解析为 ProcessEvent; 变更流不打 event 行, 已核实 stream_orchestrator) — 小欧-2026-09-17
+// 对 JS EventSource 不可见, 永不解析为 ProcessEvent; 变更流不打 event 行, 已核实 stream_orchestrator) — 小欧-2026-09-17
 export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
-  started: <PlayCircleOutlined />, // 现状 ▶️   → SVG（3.4 定案）
-  paused: <PauseCircleOutlined />, // 现状 ⏸️   → SVG
-  resumed: <PlayCircleOutlined />, // 现状 ▶️   → SVG
-  retrying: <ReloadOutlined />, // 现状 🔁   → SVG
+  started: <PlayCircleOutlined />, // 现状 ▶️ → SVG（3.4 定案）
+  paused: <PauseCircleOutlined />, // 现状 ⏸️ → SVG
+  resumed: <PlayCircleOutlined />, // 现状 ▶️ → SVG
+  retrying: <ReloadOutlined />, // 现状 🔁 → SVG
+  // 2026-10-25 小欧: 通知信封(事前/事后统一), 按 kind+phase 查表渲染
+  notice: <SyncOutlined spin />,
   error: <WarningOutlined />, // 2026-09-17 小欧: 错误事件 - 小欧-2026-09-17
   rejected: <StopOutlined />, // 2026-09-17 小欧: 拒绝事件 - 小欧-2026-09-17
   cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17
   final: <CheckCircleOutlined />, // 2026-09-17 小欧: 任务完成/失败 - 小欧-2026-09-17
   heartbeat: <SyncOutlined />, // 2026-09-19 小欧: 心跳事件 — 北京老陈驱动
+  // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令改名 context_trimmed, 与输出截断 truncated 区分), 复用警示图标
+  context_trimmed: <WarningOutlined />,
+  // 2026-10-09 北京老陈令[20]: 压缩事件图标, 与裁剪同级(压缩改变历史原貌, 值得警示)
+  context_compressed: <WarningOutlined />, // 需与 useTaskInfo ProcessEvent kind 同步
 };
 
-// ---------- formatToken（3.2：T 千分位，1234 → "T 1,234"；无值 → "–"） ----------
-// 先查后建结论: src/utils/ 无千分位工具(en-US toLocaleString 全库无命中), 新建
-export const formatToken = (n: number | null | undefined): string => {
-  if (n == null || Number.isNaN(n)) return '–';
-  return `T ${n.toLocaleString('en-US')}`;
+// ---------- NOTICE_CONFIG（通知信封 kind+phase 图标映射） ----------
+// 2026-10-25 小欧: 通知信封按 kind+phase 查表渲染, 与 EVENT_ICON_MAP 的 kind 级映射互补
+// 前端渲染时: 先查 NOTICE_CONFIG[`${kind}_${phase}`], 未命中则回退 EVENT_ICON_MAP['notice']
+export const NOTICE_CONFIG: Record<string, ReactNode> = {
+  // summarizing(摘要生成)
+  summarizing_start: <SyncOutlined spin />,
+  summarizing_done: <CheckCircleOutlined />,
+  summarizing_failed: <WarningOutlined />,
+  // installing(依赖安装)
+  installing_start: <SyncOutlined spin />,
+  installing_done: <CheckCircleOutlined />,
+  installing_failed: <WarningOutlined />,
+  // extracting(内容提取) — 小沈 2026-10-26
+  extracting_start: <SyncOutlined spin />,
+  extracting_done: <CheckCircleOutlined />,
+  extracting_failed: <WarningOutlined />,
+  // refs_ready(引用处置汇总) — 小欧 2026-10-30: 只发 done(进入本轮)/failed(全部不可用),
+  // 无 start(start 不进本轮链路, 且 start 会占住位置2 抢主任务提示)
+  refs_ready_done: <CheckCircleOutlined />,
+  refs_ready_failed: <WarningOutlined />,
+  // ws_inject(事项目录块超限省略) — 小欧 2026-10-31: 只发 done(本轮目录已装配、有省略),
+  // 语义非失败; 用警示图标与"成功进入"的 refs_ready_done 区分
+  ws_inject_done: <WarningOutlined />,
+  // trimming(对话历史裁剪) — 小欧-2026-11-01: 只发 done(瞬时动作, 无 start/failed 态;
+  // 空转/冷却不发射), 剪刀图标与"被替换成摘要"的 summarizing_done 区分
+  trimming_done: <ScissorOutlined />,
 };
 
-// ---------- 等宽数字共享样式（P2-16/3.6：耗时、事件时间均用） ----------
+// ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------
+// 先查后建: src/utils/ 无折算工具, 新建; 2026-10-04 小欧 由 ContextOverviewCard 私有 fmtApproxTokens 提升共用(DRY),
+// 原 formatToken(千分位) 因行内折 K、tooltip 用原始值而无调用方, 已删(YAGNI)
+export const formatTokenK = (n: number | null | undefined): string => {
+  if (n == null || Number.isNaN(n) || !Number.isFinite(n)) return '–';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+};
+
+// ---------- 等宽数字共享样式（耗时、事件时间均用） ----------
 export const TABULAR_NUMS: CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
 };

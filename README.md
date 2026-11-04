@@ -1,10 +1,8 @@
-# OmniAgentAs-desk
+﻿# OmniAgentAs-desk
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v1.0.1 | **更新时间**: 2026-09-19 14:55:00 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-19
-
----
+**系统版本**: v1.6.0 | **更新时间**: 2026-11-04 10:15 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-11-04（第九章重写：开发环境补充watchfiles双模式+同源SPA打包+Tauri桌面打包章节边界）
 
 ## 一、项目概述
 
@@ -12,7 +10,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| 工具函数 | 63 个，覆盖 file / shell / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer 共 10 类 |
+| 工具函数 | 63 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer 共 9 类 |
 | 推理引擎 | thought → action → observation 循环推理 |
 | Agent | 单一 UniversalAgent（BaseAgent 子类，配置驱动） |
 | AI Provider | 多模型适配：OpenCode、智谱AI、DeepSeek、Kimi 等 OpenAI 兼容 API |
@@ -27,26 +25,26 @@
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 后端 | Python / FastAPI / Uvicorn | 3.13 / ≥0.109.0 / ≥0.27.0 |
-| 前端 | React / TypeScript / Vite / Ant Design | 18 / 5 / — / 5 |
+| 前端 | React / TypeScript / Vite / Ant Design | 18 / 5 / 5 / 5 |
 | LLM 集成 | 多 Provider 适配层（OpenAI 兼容 API） | — |
-| 数据库 | SQLite 原生 `sqlite3`，5 个库：chat_history.db / operations.db / task_tracker.db / timers.db / monitoring.db | — |
+| 数据库 | SQLAlchemy + aiosqlite，SQLite 5 库：chat_history.db / operations.db / task_tracker.db / timers.db / monitoring.db | — |
 | 任务执行 | 请求内流式（SSE），`run_react_cycle` 单请求驱动，无独立任务队列/Redis | — |
 | 测试 | pytest / Vitest / Playwright | — |
 
 ### 2.2 架构总览
 
 ```
-前端（React + Vite）：ChatPage（会话主界面）/ Session / Settings
+前端（React + Vite）：ChatPage（会话主界面）/ History / Settings2
         │  SSE 流式 / REST
         ▼
 后端 API 薄壳层（FastAPI，单进程，无独立网关）
         │  api/v1：chat / task / execution / health / messages / sessions
-        │          config / tool / task-queries / metrics / token-usage
+        │          config / settings / models / tool / task-queries / metrics / token-usage
         ▼
-编排层（services/chat/stream_orchestrator → run_react_cycle）
+编排层（services/chat/stream_orchestrator → agent_runner → run_react_cycle）
         │
         ├── Agent：agent_runner → UniversalAgent + tool_loader
-        ├── Tool：tool_executor（统一执行入口），ToolRegistry 10 类 63 工具
+        ├── Tool：tool_executor（统一执行入口），ToolRegistry 9 类 63 工具
         └── LLM 客户端（app/llm，httpx 多 Provider）
         ▼
 安全层（app/safety）L0-L3：全局开关 → 安全级别 → 已知风险 → DB 事务编排
@@ -59,13 +57,13 @@
 ```
 ┌────────────────────────────── 前端入口 src/main.tsx ──────────────────────────────┐
 │                                                                                    │
-│  路由 (react-router): /login(Login) · /chat(ChatPage) · /settings(Settings)       │
+│  路由 (react-router): /(ChatPage) · /history(HistoryPage) · /settings2(Settings2)    │
 │                                                                                    │
 │  ┌─ pages/ChatPage.tsx ─────────────── 单业务页，编排以下三块 ────────────────┐   │
 │  │                                                                              │   │
 │  │  contexts/AppContext ───── 全局单 Context（会话/任务/授权/设置共享状态）     │   │
 │  │       │                                                                       │   │
-│  │  hooks/chat/useChatFacade ── 7 个核心 hook 聚合                              │   │
+│  │  features/chat/hooks/useChatFacade ── 7 个核心 hook 聚合                   │   │
 │  │       │    useChatState · useChatCallbacks · useChatSession · useChatStreaming │   │
 │  │       │    useChatPersistence · useChatSend · useChatTaskControl             │   │
 │  │       ▼                                                                       │   │
@@ -78,7 +76,7 @@
 │  │       REST: services/api/*.api.ts（chat/task/execution/config/session…）     │   │
 │  └──────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                    │
-│  features/settings（ProviderSettings/SecuritySettings/GlobalConfigArea 配置表单）  │
+│  features/settings2（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/   │
 │  能力底座: theme/tokens.ts 视觉令牌 · utils/stepStyles.ts 步骤样式 · lib/antd bridge │
 └────────────────────────────────────────────────────────────────────────────────────┘
                         │                │
@@ -94,13 +92,14 @@
 
 ### 2.3 依赖分层
 
-backend/app 采用六层单向依赖，上层只依赖下层，禁止反向、双向、环形：
+backend/app 采用分层单向依赖，禁止反向、双向、环形：
 
 ```
-api/v1 ──> services ──> safety ──> tools ──> utils / db / logger / config / constants
+api/v1 ──> services ──> tools ──> utils / db / logger / config / constants
+                       safety ──> tools（安全守卫被工具层调用，不反向依赖业务）
 ```
 
-由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制。
+由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制：api 不得引 tools/safety；tools 不得引 services/safety；safety 不得引 services。
 
 ### 2.4 与初始设计蓝图的差距
 
@@ -114,7 +113,7 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 | 权限 | 工具/文件路径级校验 | 用户级 RBAC | 保留工具级 |
 | 限流 | 仅 LLM 429 检测 | 请求级/IP 限流 | 未做请求级 |
 | 任务队列 | 无，请求内流式执行 | Celery + Redis | 未引入 Redis |
-| 缓存 | 无 | Redis | 未引入 |
+| 缓存 | 无 Redis；有内存级工具结果缓存（tuning.live_front.tool_cache_ttl）+ 会话缓存上限 | Redis | 未引入 Redis，内存缓存够用 |
 | 数据存储 | SQLite 5 库 | PostgreSQL + Redis + MinIO + ES | 单机 SQLite |
 
 以上取舍基于单机/单用户场景，属有意的范围收敛，而非技术债。
@@ -123,20 +122,19 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 
 ## 三、工具体系（63个）
 
-### 3.1 工具分类（10 类 63 工具）
+### 3.1 工具分类（9 类 63 工具）
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
-| FILE | 14 | 文件读写、搜索、编辑、归档、树、校验 |
-| SHELL | 1 | 命令查找（which） |
-| NETWORK | 5 | HTTP 请求、下载、网页抓取、网络诊断、搜索 |
-| SYSTEM | 4 | 系统计划任务、事件日志 |
-| DESKTOP | 11 | 窗口管理、截屏、剪贴板、键鼠、通知 |
-| DOCUMENT | 8 | PDF/Word/Excel/PPT 读写 |
-| DATAANALYSIS | 6 | SQL 查询/执行、图表生成、数据筛选/分析 |
-| FUNDAMENTAL | 5 | Shell 命令执行、系统信息、时间日期、通知、工具搜索 |
+| FILE | 11 | 读取、写入、编辑、搜索、复制移动删除重命名 |
+| NETWORK | 3 | HTTP请求、下载、端口探测 |
+| SYSTEM | 6 | 计划任务管理、事件日志、系统信息、命令查找 |
+| DESKTOP | 11 | 窗口管理、鼠标键盘控制、截屏、剪贴板 |
+| DOCUMENT | 11 | PDF/Word/Excel/PPT读写、压缩解压、媒体读取 |
+| DATAANALYSIS | 6 | SQL查询/执行、图表生成、数据筛选分析 |
+| FUNDAMENTAL | 6 | Shell执行、网页抓取、搜索工具、通知 |
 | WIN_REGISTRY | 3 | 注册表读/写/删 |
-| TIMER | 6 | 定时器设置/列出/清除、时间计算 |
+| TIMER | 6 | 定时器设置/清除/列出、时间计算 |
 | 合计 | 63 | |
 
 ### 3.2 工具注册架构
@@ -151,11 +149,11 @@ backend/app/tools/
 ├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
 ├── security/                # 安全守卫（path_safe_check / safety_result / temp_auth，非对外工具）
 ├── trust.py trust_db.py     # 工具信任管理（会话级信任 / 路径级精确撤销）
-├── file/ shell/ network/ system/ desktop/ document/
-├── dataanalysis/ fundamental/ win_registry/ timer/   # 10 个工具分类目录
+├── file/ network/ system/ desktop/ document/
+├── dataanalysis/ fundamental/ win_registry/ timer/   # 9 个工具分类目录
 └── {category}_schema.py     # Pydantic 参数模型（每个分类）
-   {category}_register.py    # 注册入口
-   {category}_tools.py       # 具体实现（按原子文件散落，如 file/ 下 read_text_file.py 等）
+   {category}_register.py    # 注册入口（tool_methods 字典显式注册）
+   └── {原子实现文件}.py     # 具体实现按原子文件散落（如 file/ 下 read_text_file.py 等，无 {category}_tools.py 大文件）
 ```
 > `tool_loader.py`（按 category 加载、per-agent 集合）位于 `backend/app/services/agent/tool_loader.py`。
 
@@ -179,7 +177,7 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 | L1 | 工具安全级别（safe / destructive / dangerous） |
 | L2 | 已知风险检测：路径越权 / 写入污染 / 代码注入 / 删除安全（delete_safety R1-R6） |
 | L3 | DB 事务编排：操作记录 → 状态追踪 → 备份 → 文件 hash → 审计（operations.db，支持回滚） |
-| hooks | 安全 hooks 协议（ContextVar 注入，NoOpHooks 兜底） |
+| hooks | 安全 hooks 协议（`safety/default_hooks.py` 默认转发壳） |
 
 ### 4.3 Agent 2.0（规划中）
 
@@ -195,28 +193,29 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 ## 五、项目结构
 
 ```
-OmniAgentAs-desk/
+OmniAgentAs-01/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
-│   │   ├── api/v1/             # API 薄壳路由（config/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
-│   │   ├── db/                 # 数据库（原生 sqlite3 连接：database.py / db_initializer.py / operation_queries.py）
+│   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
+│   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
-│   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/tool_safety_checker/default_hooks/models
-│   │   ├── tools/              # 工具函数（10分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
+│   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/path_tool_safety_checker/default_hooks/models
+│   │   ├── tools/              # 工具函数（9分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
 │   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
 │   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
 │   │   ├── services/
-│   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_loop(react_inference/react_dispatch/react_step) + tool_loader + handlers + steps + compaction）
+│   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_cycle + tool_loader + handlers + steps + compaction）
 │   │   │   ├── chat/           # 对话编排（stream_orchestrator 编排 + sse_events + storage + session/message_service + history_loader + migrate_steps）
 │   │   │   ├── lifecycle/      # 生命周期管理
-│   │   │   ├── model/          # 模型/配置解析（config_service + config_helpers）
+│   │   │   ├── model/          # 模型/配置解析（model_service + config_service + config_helpers）
 │   │   │   ├── prompts/        # 系统提示词适配
+│   │   │   ├── settings/       # 设置注册表（settings_registry + settings_service）
 │   │   │   ├── task/           # 任务追踪（TaskTracker + task_db/task_state/task_registry/task_runtime，暂停/取消/恢复 / hitl_confirmation）
 │   │   │   ├── tool/           # 工具门面（tool_facade）
 │   │   │   └── visualization/  # 可视化报告（mermaid/html/tree 等）
 │   │   └── utils/
 │   ├── config.yaml.example     # 配置模板（复制到 config/config.yaml 后填写）
-│   ├── e2etests/               # 端到端测试（P0/P1/P2 全链路）
+│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 67 + com-* 10 = 77 个）
 │   ├── logs/                   # 运行日志
 │   ├── migrations/             # DB 迁移
 │   ├── scripts/                # 辅助脚本
@@ -224,26 +223,26 @@ OmniAgentAs-desk/
 │   └── requirements.txt
 ├── frontend/                   # React + TypeScript 前端（Web App，非桌面/移动端）
 │   ├── src/
-│   │   ├── features/           # 特性域（chat 全链路 + settings 配置）
+│   │   ├── features/           # 特性域（chat 全链路 + settings2 配置管理）
 │   │   │   ├── chat/           # 聊天特性域（components/hooks/services/sseParser）
 │   │   │   │   ├── components/ #   layout(SessionLayout/TaskListPanel/SessionPanelRegistry)、
 │   │   │   │   │               #   right(RightViewer/PipelineRenderer)、taskinfo、topbar、ChatInput 等
 │   │   │   │   ├── hooks/      #   useChatPanels 面板组装 / 其余 chat hook
 │   │   │   │   └── services/   #   sseParser.ts（SSE 解析）
-│   │   │   └── settings/       # 设置特性域（ProviderSettings/SecuritySettings/GlobalConfigArea 等）
-│   │   ├── components/         # 通用 UI 组件（AuthorizationModal / TrustPanel / 布局等）
+│   │   │   └── settings2/      # 设置特性域（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件）
+│   │   ├── components/         # 通用 UI 组件（AuthorizationModal / 布局等；TrustPanel 在 features/chat/components/config/）
 │   │   ├── contexts/           # React Context（AppContext）
-│   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）；chat 聚合见 hooks/chat/useChatFacade
+│   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）；chat 聚合见 features/chat/hooks/useChatFacade
 │   │   ├── lib/                # 库桥接（antd bridge）
-│   │   ├── pages/              # 页面（ChatPage）
+│   │   ├── pages/              # 页面（ChatPage / HistoryPage / Settings2）
 │   │   ├── services/           # API 层（api/*.api.ts + error/handler）
 │   │   ├── theme/              # 视觉令牌（tokens.ts）
-│   │   ├── types/              # TS 类型定义
+│   │   ├── types/              # TS 类型定义（chat/sse/execution，如 types/chat.ts）
 │   │   ├── constants/          # 前端常量
 │   │   └── utils/              # 工具函数（time / stepStyles / sse 处理等）
 │   ├── src/tests/              # 前端单元测试（Vitest，git 忽略）
 │   ├── e2e_front_lib/          # 前端 E2E 基座（POM/常量/夹具，必从 ../../e2e_front_lib 引用）
-│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~07*.spec.ts + e2e.config/vite.e2e.config）
+│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~25*.spec.ts + e2e.config/vite.e2e.config）
 │   ├── scripts/                # 辅助脚本（CI/本地启动等）
 │   ├── tests/                  # 前端测试与性能测量脚本
 │   └── package.json
@@ -260,16 +259,17 @@ OmniAgentAs-desk/
 
 ## 六、前端功能特点
 
-> 前端为 React 18 + TypeScript + Vite + Ant Design 5 的单页应用，仅一个业务页面 `ChatPage.tsx`，其余为组件/hook 组合。以下为已落地且经代码核实的关键能力。
+> 前端为 React 18 + TypeScript + Vite + Ant Design 5 的单页应用，主业务页面 `ChatPage.tsx`，另有 `HistoryPage`（历史会话）和 `Settings2`（设置管理）页面。以下为已落地且经代码核实的关键能力。
 
 ### 6.1 页面与架构编排
 
 | 层 | 要点 |
 |----|------|
-| 唯一页面 | `ChatPage.tsx` 单页，聊天主流程全部在其内组合 |
-| 特性域 | `features/chat`（components/hooks/services/sseParser）+ `features/settings`（配置管理） |
+| 主业务页面 | `ChatPage.tsx` 单页，聊天主流程全部在其内组合 |
+| 其他页面 | `HistoryPage`（历史会话管理）/ `Settings2`（7 Tab 设置管理） |
+| 特性域 | `features/chat`（components/hooks/services/sseParser）+ `features/settings2`（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件） |
 | 全局状态 | 单 Context `AppContext`（安全 Context 已并入） |
-| Hook 编排 | `useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等 20+ 个 hook） |
+| Hook 编排 | `features/chat/hooks/useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有顶层 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等） |
 
 #### 6.1.1 界面布局图（SessionLayout 插槽化骨架 + useChatPanels 面板注册）
 
@@ -321,7 +321,7 @@ OmniAgentAs-desk/
 | paused / resumed / rejected / error | 任务暂停（含 HITL）、恢复、拒绝、异常 |
 | severity | paused 帧携带安全分级（safe/destructive/dangerous），前端据此渲染授权态 |
 
-前端解析统一在 `frontend/src/features/chat/services/sseParser.ts`，事件结构与 `types/chat.ts` 对齐。
+前端解析统一在 `frontend/src/features/chat/services/sseParser.ts`，事件结构与 `src/types/chat.ts` 对齐。
 
 ### 6.4 任务控制与断线重连
 
@@ -347,20 +347,24 @@ OmniAgentAs-desk/
 
 | 环节 | 实现 |
 |------|------|
-| 后端判定 | `tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
+| 后端判定 | `path_tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
 | 危险可见化 | 危险操作 → `hitl_gateway`/`safety_gate` 发 paused 帧 → 前端 `AuthorizationModal` 授权弹窗 + `ToolCallLine` 高亮边框（hitl-border） |
-| 安全配置 UI | `SecuritySettings.tsx` 表单（内容过滤/敏感词级别/命令白黑名单/危险二次确认/文件上限）——仅透传保存至 config.yaml；**执行判定真正消费的 security 键仅 enabled / hitl_timeout / auto_confirm_delay** |
+| 安全配置 UI | `Settings2` 安全 Tab（enabled/confirmDangerousOps/auto_confirm_delay/hitl_timeout）——仅透传保存至 config.yaml；**执行判定真正消费的 security 键仅 enabled / hitl_timeout / auto_confirm_delay** |
 | 信任会话 | TrustedTool 带 path 字段，路径级精确撤销 |
-| 401 统一登出 | axios 响应拦截清 localStorage + 跳 /login（client.ts） |
+| 401 统一登出 | axios 响应拦截清 localStorage + 跳 /（client.ts） |
 
 ### 6.7 模型/配置管理
 
 | 能力 | 实现 |
 |------|------|
-| 三态验证弹框 | success 绿✓ / warning 琥珀! / failed 红✕ + 自动回滚提示（Layout） |
-| 一键切换模型 | updateConfig 传 ai_model_ref 结构 → 失败后端回滚 + 刷新列表 |
-| Provider/Model CRUD | config.api.ts 端点（validate/models/full/provider/model/fix/open-folder/read） |
-| 配置运维台 | 配置文件路径展示、一键打开目录、在线查看、检测配置（GlobalConfigArea） |
+| 7 Tab 设置页 | Settings2 页面：通用/模型/安全/外观/系统/沙箱/调优 7 个 Tab，`SettingsGroup` 动态渲染 |
+| 模型选择器 | `ModelSelector` Provider/模型切换，`CurrentModelRefCard` 当前全局模型展示 |
+| Provider CRUD | `ProviderConfig` api_key/base_url/label/timeout/max_retries 配置 |
+| 模型参数管理 | `ModelParams` 五分支渲染 + `ParamOptionsModal` 参数模板管理弹窗 |
+| 模型切换弹窗 | `ModelSwitchModal` 独立切换弹框，DRY 唯一写链 `configApi.switchCurrentModel` |
+| 调优配置 | 33 个 tuning 键（LLM 语义/网络/并发/Agent/裁剪/压缩/流/任务/HITL/内容，9 子组），前端自动出现调优 Tab |
+| 配置运维台 | 配置文件路径展示、一键打开目录、在线查看、检测配置 |
+| Provider 动态参数 | `provider_param_types` 透传 + 白名单校验 + 动态落盘 |
 
 ### 6.8 历史会话
 
@@ -410,10 +414,10 @@ OmniAgentAs-desk/
 | 项 | 规则 |
 |----|------|
 | 文件名 | `OmniAgent.md`（固定，`project_context.py` 中 `CONTEXT_FILE = "OmniAgent.md"`） |
-| 位置 | **项目根目录** = `get_project_root()`（`app.project_root` 配置值） |
-| 未配置 `app.project_root` | 回退用户主目录 `Path.home()` |
-| 当前配置值 | `config/config.yaml:90` → `project_root: E:\test_dir`，即应为 `E:\test_dir\OmniAgent.md` |
-| 注入上限 | `PROJECT_CONTEXT_MAX_CHARS`（10000 字符，超限截断，`app/constants.py`） |
+| 位置 | **项目根目录** = `get_project_root()`（`workspace.project_root` 配置值） |
+| 未配置 `workspace.project_root` | 回退用户主目录 `Path.home()` |
+| 当前配置值 | `config/config.yaml` → `workspace.project_root: E:\test_dir`，即应为 `E:\test_dir\OmniAgent.md` |
+| 注入上限 | `tuning.content.project_context_max_chars`（10000 字符，超限截断；`app/constants.py` 仅保留 fallback 默认值） |
 | 用途 | 项目规则说明，LLM 执行任务时知晓项目约定 |
 
 > 说明：该文件为**可选的**项目规则注入，不存在时 `_get_project_context()` 返回空串（忽略），不影响系统正常运行。
@@ -422,13 +426,16 @@ OmniAgentAs-desk/
 
 | 配置节 | 作用 |
 |--------|------|
-| `ai` | AI 模型与 Provider（多厂商 OpenAI 兼容 API） |
-| `app` | 应用参数（迭代上限、项目根、授权目录、主题等） |
-| `logging` | 日志级别与轮转 |
-| `security` | 安全开关与过滤策略（L0） |
-| `tools` | 工具接口开关 |
-| `llm` | LLM 客户端补丁（自定义 API 地址覆盖） |
+| `ai` | AI 模型与 Provider（多厂商 OpenAI 兼容 API，含 model_ref 单源） |
+| `workspace` | 工作区（project_root、allowed_dirs） |
+| `agent` | Agent 参数（max_steps） |
+| `llm` | LLM 采样与上下文兜底（sampling 5 键、context_limit_default） |
+| `network` | 网络（cors_origins 跨域白名单，系统组展示） |
+| `app` | 应用参数（language、theme） |
+| `logging` | 日志级别与轮转（level、debug） |
+| `security` | 安全开关与 HITL（enabled、hitl_timeout、auto_confirm_delay、confirmDangerousOps） |
 | `sandbox` | 沙箱预检（工具执行前资源约束） |
+| `tuning` | 调优参数（33 键，9 子组：LLM 语义/网络/并发/Agent/裁剪/压缩/流任务/HITL/内容） |
 
 ### 7.3 `ai` — 模型与 Provider
 
@@ -436,8 +443,7 @@ OmniAgentAs-desk/
 
 | 键 | 说明 |
 |----|------|
-| `ai.provider` | 当前选中的 Provider 名（如 `opencode`） |
-| `ai.model` | 当前选中默认模型（Provider 切换后由 AI Provider 附加的 `model` 字段更新） |
+| `ai.model_ref` | 当前选中模型的引用（`{provider, model}` 字典结构，单源真相；切换不落盘改纯前端焦点） |
 
 每个 Provider 以键名（如 `opencode`、`qiniu`、`zhipuai`）作为一级键，可配置任意多个：
 
@@ -445,13 +451,12 @@ OmniAgentAs-desk/
 |----|------|
 | `api_base` | OpenAI 兼容 API 地址 |
 | `api_key` | API 密钥 |
+| `label` | Provider 显示名称（可编辑） |
 | `models` | 可用模型列表（字符串数组） |
 | `model_params` | 按模型的补充参数（见下方结构说明） |
-| `timeout` | 请求超时（秒），默认 60 |
+| `model_meta` | 按模型的元数据，含 `param_options` 参数模板选项（P1-P8 实现，前端 ParamOptionsModal 管理） |
+| `timeout` | 请求超时（秒），默认 60；0 为合法值（无超时） |
 | `max_retries` | 失败重试次数，默认 3 |
-| `max_tokens` | 单次生成最大 token 数 |
-| `temperature` | 采样温度，默认 0.7 |
-| `seed` | 随机种子（可复现生成） |
 
 `model_params` 为 **按模型名分组的 dict**，结构如下（解析逻辑见 `services/lifecycle/service.py::parse_model_params`）：
 
@@ -462,65 +467,139 @@ model_params:
     reasoning_effort: low    # 其它键整体作为 extra_body 透传（如推理强度），支持任意键
 ```
 
-### 7.4 `app` — 应用配置
+`model_meta.param_options` 为 **按模型名分组的参数模板选项**（P1-P8 实现，三层解析：model_meta.param_options > provider 级 param_options > 代码兜底），结构如下：
+
+```yaml
+model_meta:
+  glm-4.7-flash:
+    param_options:
+      reasoning_effort: [low, medium, high]   # 候选值列表，前端 ParamOptionsModal 管理
+```
+
+### 7.4 `workspace` + `agent` + `app` — 应用配置
+
+**`workspace`** — 工作区：
 
 | 键 | 说明 |
 |----|------|
-| `app.debug` | 调试模式（true/false）；true 时日志/文件落盘在 `backend/files/`+`backend/logs/`，false 落到用户级目录 |
+| `workspace.project_root` | 项目根 = tool 工作区；留空回退用户主目录 |
+| `workspace.allowed_dirs` | 项目根之外额外授权的工作目录列表 |
+
+**`agent`** — Agent 参数：
+
+| 键 | 说明 |
+|----|------|
+| `agent.max_steps` | 单任务最大对话轮数/循环门限（默认 10000，消费点 `react_loop`）；历史保留轮数已迁 `tuning.trim.max_rounds` |
+
+**`app`** — 应用外观：
+
+| 键 | 说明 |
+|----|------|
 | `app.language` | 界面语言（`zh-CN` / `en-US`） |
-| `app.theme` | 主题（`light` / `dark`） |
-| `app.max_rounds` | 对话历史保留的 FC 轮数上限（默认 100，消费点 `message_builder`） |
-| `app.max_steps` | Agent 单次任务最大迭代步数（默认 10000） |
-| `app.project_root` | 项目根 = tool 工作区；留空回退用户主目录 |
-| `app.allowed_dirs` | 项目根之外额外授权的工作目录列表；禁止指向代码库根或其父/子级（见下示例） |
-
-> ⚠️ **死配置键标注**（2026-09-19 三堂会审查证）：`config.yaml.example` 中保留的 `app.max_context_tokens` / `app.max_history_length` **当前后端已无任何消费方**——`max_context_tokens`（2026-08-17 已从 `config.py` 移除门限方法，上下文窗口改由 `ai.<provider>.model_params.<model>.context_limit` 权威）与 `max_history_length`（全库 grep 零引用）均不再生效，模板中可安全移除。
-
-`app.allowed_dirs` 为 YAML 列表格式示例：
-
-```yaml
-app:
-  allowed_dirs:
-    - D:\工作目录A
-    - D:\工作目录B
-```
+| `app.theme` | 主题（`light` / `dark`，只读） |
 
 ### 7.5 `logging` — 日志配置
 
 | 键 | 说明 |
 |----|------|
-| `logging.level` | 日志级别（DEBUG / INFO / WARNING / ERROR） |
-| `logging.max_file_size` | 单日志文件大小上限（字节） |
-| `logging.backup_count` | 轮转保留文件数 |
+| `logging.level` | 日志级别，一个值两种用法：后端控制台（黑窗口）只显示「等于该级别」的日志；日志文件按常规方式记录「该级别及以上」 |
+| `logging.debug` | 调试模式（true/false）；true 时日志强制 DEBUG（仅文件，控制台仍按 `logging.level` 精确显示）、日志/文件落盘在 `backend/files/`+`backend/logs/`，false 落到用户级目录 |
+| `logging.max_file_size` | 单日志文件大小上限（字节，需重启） |
+| `logging.backup_count` | 轮转保留文件数（需重启） |
 
 ### 7.6 `security` — 安全配置
+
+**准入控制（在设置页「外观」组展示，键名前缀仍为 `security.*`）**
+
+| 键 | 说明 |
+|----|------|
+| `security.access_token` | 访问口令。**只能在服务端本机设置**；白名单设备只是免口令登录，不能改口令 |
+| `security.access_token_allowlist` | 免口令 IP/CIDR 白名单，逗号或分号分隔。**白名单内等于无鉴权**（可读全部明文密钥），只应放可信网段 |
+
+**操作安全（在设置页「安全」组）**
 
 | 键 | 说明 |
 |----|------|
 | `security.enabled` | 全局安全开关（L0；false=关闭） |
-| `security.contentFilterEnabled` / `contentFilterLevel` | 输入内容敏感词过滤，级别 `low` / `medium` / `high` |
-| `security.whitelistEnabled` / `commandWhitelist` / `commandBlacklist` | Shell 命令白/黑名单（每行一个命令） |
 | `security.confirmDangerousOps` | 危险操作二次确认（HITL） |
-| `security.maxFileSize` | 最大文件操作大小（MB） |
 | `security.auto_confirm_delay` | 自动确认等待秒数 |
 | `security.hitl_timeout` | HITL 确认超时（秒） |
-| `security.strict_mode` | 严格模式（true/false） |
 
-> 2026-09-19 核实：**执行链路真正消费的 security 键仅 `enabled` / `hitl_timeout` / `auto_confirm_delay`**；`contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `confirmDangerousOps` / `maxFileSize` 当前仅透传保存至 config.yaml，尚未接入后端判定执行（详见 6.6 安全看护）。
+> 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。
 
-### 7.7 `tools` — 工具接口开关
+#### 7.6.1 请求方向（客户端 → 后端）：谁能免口令进（⚠️ 必读）
 
-| 键 | 说明 |
-|----|------|
-| `tools.execute_tool_enabled` | 直接调用工具执行接口的开关（默认 false）。后端 `/api/v1/tool/execute` 属测试辅助接口，生产默认关闭（消费点 `api/v1/tool_routes.py:_tool_execute_enabled`） |
+服务绑 `0.0.0.0` 是多机部署硬前提，因此**来源 IP 判定直接决定谁能免口令进**。后端只读 `request.client.host`，不自行解析 `X-Forwarded-For`（XFF 解析交由 uvicorn 的 `ProxyHeadersMiddleware`）。
 
-### 7.8 `llm` — LLM 客户端补丁
+| `--forwarded-allow-ips` | 含义 | 风险 |
+|---|---|---|
+| `127.0.0.1`（**默认**） | 只信任本机反代提交的 XFF | ✅ 安全。远程客户端伪造 XFF 改不了 `client.host` |
+| 具体 IP 列表 | 只信任这些反代 | ✅ 安全 |
+| `*` | **信任任意来源的 XFF** | ❌ **危险** |
 
-| 键 | 说明 |
-|----|------|
-| `llm.provider_urls` | 按 Provider 名覆盖 API 地址的 dict。client_sdk 取 API 地址时**配置优先**，其次硬编码默认（消费点 `llm/client_sdk.py:_default_base_url`）。示例：`llm: { provider_urls: { opencode: "https://example.com/v1" } }` |
+**`*` 的危害**：任何客户端发一个 `X-Forwarded-For: 127.0.0.1` 就能让 `request.client.host` 变成 `127.0.0.1` → 被判为本机 → **免口令访问全部接口**（含读取所有 Provider 明文密钥、修改/更换访问口令）。
 
-### 7.9 `sandbox` — 沙箱预检
+**本项目的三道防线**（`run_server.py` 已显式传参，不再依赖 uvicorn 隐式默认值）：
+
+1. **显式参数**：`run_server.py` 新增 `--forwarded-allow-ips`，默认 `127.0.0.1`，部署者能看见、能改对
+2. **启动告警**：传 `*` 时启动即打印醒目警告（不阻止启动，但让风险可见）
+3. **应用层 fail-closed**：`deps._forwarded_allow_ips_all()` 检测到注入值为 `*` 时，**取消回环豁免**（`_is_trusted_localhost` 恒 False），一律要求口令。因为此时应用层已无法区分"真回环"与"伪造的 127.0.0.1"，只能选择更严的一侧。
+
+> ⚠️ 已知边界：第 3 道防线依赖 `_forwarded_allow_ips` 模块变量，**只由 `run_server.py` 注入**。改用 `python -m uvicorn app.main:app --forwarded-allow-ips '*'` 等不经 `run_server.py` 的方式启动时注入不发生 → 应用层误判为"非 `*` 模式"而放行回环，伪造 XFF 即可免口令。应用启动时 `deps.warn_startup_checks()` 会对"未收到注入"打 WARNING 告警。
+>
+> 该检测的取舍：`*` 模式下**本机也无法设置/更换访问口令**（同一判据 `can_set_access_token`），首次部署需改用环境变量 `OMNIAGENT_ACCESS_TOKEN` 或配置文件 `security.access_token` 后重启。
+>
+> **正确做法**：确需在反代后运行时，只列该反代的 IP，例如 `--forwarded-allow-ips 192.168.1.10`；不要图省事填 `*`。且须经 `run_server.py` 启动。
+>
+> 本节只管**请求方向**（客户端 → 后端）的安全：谁能免口令进。经反代部署时响应方向另有硬要求 —— SSE 必须关闭代理缓冲，否则流式不下发 → 见 [7.6.2](#762-响应方向后端-客户端sse-必须关闭缓冲-必读)。
+
+#### 7.6.2 响应方向（后端 → 客户端）：SSE 必须关闭缓冲（⚠️ 必读）
+
+前端 REST 与 SSE 走**同一相对路径** `/api/v1`（`[75]` BUG-6 修复，见 `client.ts::getApiBaseUrl`）：未设 `VITE_API_BASE_URL` 时返回空串，由 **Vite proxy（开发）/ Nginx 反代（生产）** 转发到后端。生产静态托管不跑 Vite，必须由 Nginx 承担转发。
+
+**Nginx 默认会缓冲响应**，SSE 事件被攒在代理侧不下发，前端表现为「流式卡住不出字」或「消息成批一次跳出」。开发期用 Vite proxy 不会出现（自动 flush），**只在生产暴露**。
+
+```nginx
+location /api/ {
+    proxy_pass         http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+
+    # SSE 必需三项
+    proxy_set_header   Connection '';      # 保持长连接
+    proxy_buffering    off;               # 关闭响应缓冲（否则流式被攒住）
+    proxy_cache        off;
+
+    # 长耗时：SSE 断线重连/长任务
+    proxy_read_timeout 3600s;
+}
+```
+
+| 项 | 不配的后果 |
+|---|---|
+| `proxy_buffering off` | **流式消息不下发**（最常见故障） |
+| `Connection ''` + HTTP/1.1 | 连接被代理复用/断开，重连频繁 |
+| `proxy_read_timeout` | 默认 60s，长任务中途被切断 |
+
+> 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8000` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
+
+### 7.7 `tuning` — 调优参数（33 键，9 子组）
+
+| 子组 | 键前缀 | 数量 | 说明 |
+|------|--------|------|------|
+| LLM 语义参数 | `tuning.llm.` | 5 | tool_choice, stream_max_retries, response_fallback, response_retries, stream_options |
+| LLM 网络/超时/连接池 | `tuning.llm_net.` | 7 | read_timeout, connect_timeout, write_timeout, pool_timeout, max_connections, max_keepalive, stream_total_timeout |
+| 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_pool_max_per_type |
+| Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
+| 裁剪 | `tuning.trim.` | 3 | max_rounds, trigger_ratio, compaction_buffer |
+| 压缩 | `tuning.compaction.` | 4 | start_enabled, start_limit_ratio, summary_feed_max_chars, keep_tail |
+| 前后端之间的流/任务/缓存 | `tuning.live_front.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
+| 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
+| 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
+
+> `temperature`/`max_tokens` 等采样参数已迁顶层 `llm.sampling.*`（通用组）；`cors_origins` 已迁顶层 `network.cors_origins`（系统组）。
+> 调优参数消费方分散在 `base_service.py`（LLM 超时/重试）、`client_sdk.py`（连接池）、`stream_orchestrator.py`（心跳/任务超时）、`llm_call.py`（LLM 语义参数）、`shell_engine.py`（Shell 池槽位）、`message_builder.py`（裁剪/压缩）等 16 个文件中，从 `constants.py` 硬编码迁移至配置驱动。前端设置页自动出现「调优」Tab（9 子组分块渲染）。
+
+### 7.8 `sandbox` — 沙箱预检
 
 | 键 | 说明 |
 |----|------|
@@ -533,16 +612,22 @@ app:
 | `sandbox.default_timeout_sec` | 预检默认超时（秒） |
 | `sandbox.max_timeout_sec` | 预检硬上限（秒） |
 
-### 7.10 环境变量覆盖
+### 7.9 环境变量覆盖
 
 | 环境变量 | 覆盖项 |
 |----------|--------|
 | `{PROVIDER}_API_KEY`（如 `AGNES_API_KEY`） | `ai.<provider>.api_key` |
-| `AI_PROVIDER` | `ai.provider` |
+| `AI_PROVIDER` | `ai.model_ref.provider` |
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
+| `CORS_ORIGINS` | `network.cors_origins`（CORS 跨域，逗号分隔） |
+| `OMNIAGENT_ACCESS_TOKEN` | `security.access_token`（访问口令，优先于配置文件） |
+| `OMNIAGENT_ACCESS_TOKEN_ALLOWLIST` | `security.access_token_allowlist`（免口令白名单，逗号/分号分隔） |
+| `OMNIAGENT_REQUIRE_AUTH` | 设为 `0`/`false` 显式关闭鉴权（**仅本机开发/测试**，生产不得设置） |
+| `OMNIAGENT_ENABLE_API_DOCS` | 设为 `1` 开启 `/docs` `/redoc` `/openapi.json`（**默认关闭**，多机部署下别开） |
+| `FORWARDED_ALLOW_IPS` | uvicorn 信任哪些对端的 XFF。**默认 `127.0.0.1`；填 `*` 会导致回环豁免失效**（见 7.6.1） |
 
-### 7.11 修改生效方式
+### 7.10 修改生效方式
 
 保存 `config.yaml` 后立即生效，**无需重启**：`get_config()` 每次调用按文件 mtime 检测，文件变化自动重读，下一工具/LLM 调用即用新值。也可在前端设置页修改（写回 config.yaml 并自动重载）。
 
@@ -556,7 +641,7 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.8+） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.19） | `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
@@ -578,14 +663,15 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 ```
 backend/e2etests/
-├── 全链路E2E测试手册-小健-2026-05-23.md   # 总手册：用例/铁律/数据结构/标题命名
 ├── e2emodel/                              # 后端 E2E 公共库
 │   ├── e2e_helpers.py                     #  全部通用逻辑（计时/SSE解析/DB校验/日志检查/测试记录）
 │   ├── conftest.py                        #  pytest fixtures
 │   └── model-test_e2e_0*.py              #  四类 case 模板（A无工具/B单工具/C多步/D数据持久化）
-├── test_e2e_*.py                          # 实际 case（P0~P5 分级，当前 50+ 个）
+├── test_e2e_*.py                          # 实际 case（P0-P5/PAR/重连 ）+ com-* 
 └── reports/                               # 报告输出（按需生成）
 ```
+
+> 总手册《全链路E2E测试手册》已迁至 `doc-打包与E2E/`（见 8.1 配套文档表），本目录只留用例与公共库。
 
 **后端执行落盘**（`backend/` 下）：
 
@@ -605,10 +691,10 @@ frontend/
 │   ├── stream-diag.ts                    #  attachStreamDiag/printDiag/日志基线/run-on 检测
 │   ├── chat-page.ts                      #  ChatPage POM（六方法）
 │   └── normal-chat.ts                    #  普通会话封装（日常/天气/股票/目录分析等）
-└── e2e_case/                             # 前端 E2E 用例（fre2e_0*.spec.ts）
+└── e2e_case/                             # 前端 E2E 用例（fre2e_01~21*.spec.ts）
     ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8000，SSE 直连）
     ├── e2e.config.ts / vite.e2e.config.ts#  Playwright / vite 测试配置
-    └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化）
+    └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化/模型参数模板）
 ```
 
 **测试记录（日记）**（仓库根 `notes/`）：
@@ -616,7 +702,6 @@ frontend/
 | 目录/文件 | 内容 |
 |-----------|------|
 | `notes/测试记录-{test_id}-{日期}.md` | 每条 case 的测试记录（write_test_record 自动追加，见 8.8） |
-| `notes/.e2e_status/` | 运行状态标记（{test_id}.json，防重复/记挂起） |
 
 ### 8.3 库代码文件与核心功能
 
@@ -674,6 +759,61 @@ python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','e2etes
 | ① 代码错误/异常（最高优先级） | 日志 traceback/ERROR、SSE error 事件 → 有则立即停，走修复 |
 | ② 调用链分析 | 工具选择/顺序、LLM 调用次数是否合理，输出 `[CALL CHAIN]` |
 | ③ 参数正确性 | tool_params 中路径/关键词是否正确 |
+
+### 8.4.1 铁律：清场只按端口杀，严禁按进程名批量杀
+
+> 2026-10-05 小欧 新增（北京老陈裁定）。本节为**红线**，违反会连带杀死无关服务。
+
+**禁止**（按进程名批量杀）：
+
+```powershell
+# ❌ 严禁：会杀死本机所有 node 进程
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force
+# ❌ 严禁：会杀死本机所有 python 进程（含其他项目的解释器/服务）
+Get-Process -Name "python*" -ErrorAction SilentlyContinue | Stop-Process -Force
+# ❌ 严禁：等价批量杀
+taskkill /F /IM node.exe
+```
+
+**真实事故（2026-10-05 实测）**：清场时误用 `Stop-Process -Name "node"`，
+把三类进程一起杀掉——①前端 vite dev `:5173`；②E2E 后端代理 `:9000`；
+③**OpenCode 自身的 Web UI `:3080`（它也是 node 进程）**，导致 AI 会话界面弹出「网络链接失效」。
+现象极具迷惑性：vite 日志**无任何报错**、`vite-dev.err.log` 长度 0、进程数秒后凭空消失，
+看起来像「服务自己崩了」，实为被外部批量清场误杀。
+
+**正确做法（唯一允许的两种）**：
+
+```powershell
+# ✅ 方式一（推荐）：PowerShell 按端口精确杀，可重复执行、无竞态
+Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+
+# ✅ 方式二：先查 PID 再杀（需人工核对 PID 归属，勿复制粘贴盲用）
+netstat -ano | findstr :8000
+taskkill /F /PID <上一步确认的PID>
+```
+
+**本项目端口对照表**（清场时务必对号入座，勿按进程名猜）：
+
+| 端口 | 进程 | 能否杀 |
+|------|------|--------|
+| 5173 | 前端 vite dev（长驻页面服务） | 仅前端 E2E 断流 case 需要，且优先复用不杀 |
+| 8000 | 后端 uvicorn（`--reload` 双进程） | 可杀，须连父进程一起（见下方提醒） |
+| 9000 | E2E 后端代理 `api-proxy.ts` | 可杀，断流 case 专用手段 |
+| 3080 | **OpenCode Web UI（非本项目）** | **严禁杀** |
+
+**`--reload` 双进程提醒**：后端 `--reload` 会派生父子两进程，只杀监听 8000 的子进程，
+父进程会立刻拉起新的；须 `Get-NetTCPConnection -LocalPort 8000 -State Listen` 取全部
+`OwningProcess` 一并杀掉（上面的写法已含此能力），再 `Start-Sleep 3` 等端口释放。
+
+**代码侧已合规**：`frontend/e2e_front_lib/process.ts` 的 `killPort(port)` 走
+`Get-NetTCPConnection -LocalPort` 精确杀，**不按进程名**，无需改动；本节仅约束**手工命令**。
+
+**附：后台启动服务被工具链误杀的规避**（2026-10-05 实测）——用 AI 的 bash 工具
+`Start-Process` / `Win32_Process.Create` 拉起的长驻服务，其进程树挂在工具的 job object 内，
+工具调用结束会被 `ChildProcess.kill` 连带清理，表现为「启动成功、数秒后无声消失、日志零报错」。
+需长驻的 vite / uvicorn 应走**独立 PowerShell 窗口**（如 8.4 第 1 步）或**计划任务**
+（`schtasks /create` + `/run`，由 Task Scheduler 服务派生，完全脱离工具进程树）。
 
 ### 8.5 后端 E2E：case 编写（重点）
 
@@ -877,9 +1017,9 @@ npm run test:e2e      # 整组（先 lint + format）
 
 ---
 
-## 九、快速开始
+## 九、开发环境和打包同源及Tauri发布环境说明
 
-### 9.1 环境要求
+### 9.1 开发环境要求
 
 | 依赖 | 版本 | 说明 |
 |------|------|------|
@@ -889,43 +1029,201 @@ npm run test:e2e      # 整组（先 lint + format）
 
 > **虚拟环境建议**：Python 后端用虚拟环境隔离依赖，方便清理与复现（推荐）。
 
-### 9.2 安装与启动
+### 9.2 开发环境使用说明
 
 后端和前端需**同时运行**，开**两个命令行窗口**。
 
+---
+
 **窗口 1 — 后端**（`cd backend`）：
 
-```bash
-# 方式 A（推荐）：虚拟环境
-python -m venv .venv                        # 仅第一次
-.venv\Scripts\pip install -r requirements.txt  # 仅第一次
-.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+**方式一（推荐，日常开发）：watchfiles 热重载**
 
-# 方式 B：全局 Python
-pip install -r requirements.txt             # 仅第一次
-python -m uvicorn app.main:app --reload --port 8000
+```powershell
+# 双击 backend\start.bat，或
+powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1
 ```
 
-> 窗口 1 保持运行，不要关闭。
+内部调用：`watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`
+
+- watchfiles 盯 `app/` 目录，Python 文件改动后自动重启 `run_server.py`
+- 走 `run_server.py` 而非裸 `uvicorn`：后者不注入 `forwarded_allow_ips`，后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警
+- 监听 `0.0.0.0:8000`，仅暴露 API，不托管前端
+- API 文档默认关闭，设 `OMNIAGENT_ENABLE_API_DOCS=1` 环境变量可开启 `/docs`
+
+---
+
+**方式二（旧，别用）：uvicorn --reload**
+
+```powershell
+# 虚拟环境（推荐）
+python -m venv .venv                        # 仅第一次
+.venv\Scripts\pip install -r requirements.txt  # 仅第一次
+.venv\Scripts\python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+
+# 或全局 Python
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+```
+
+⚠️ **Windows 上此方式有严重 bug**：uvicorn 的 `restart()` 用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程，子进程收不到信号 → 父进程卡死在 `basereload.py:98 self.process.join()`。**从第一次保存文件起热重载永久失效**，改代码不再重载，Ctrl+C 也退不掉，只能 kill 进程。
+
+判定方式二是否已死：`py-spy dump --pid <父进程>`，栈停在 `basereload.py:98` 即死。
+
+> 另有辅助启动模式：`python run_server.py`（8500，模拟打包 exe 行为）和 `npm run preview`（4173，构建产物本地预览），详见第十章开发命令。
+
+---
 
 **窗口 2 — 前端**（`cd frontend`）：
 
-```bash
+```powershell
 npm install        # 仅第一次
 npm run dev
 ```
 
-> 窗口 2 保持运行，不要关闭。
+- 默认端口 **5173**，绑定 `0.0.0.0`（局域网可达）
+- `/api` 请求通过 Vite proxy 转发至后端 :8000，同源无 CORS 问题
+- Windows 下 Vite 使用 `usePolling` 轮询监听（`vite.config.ts`），解决 chokidar 长跑丢事件问题
+
+---
 
 **浏览器访问**：
 
 | 地址 | 说明 |
 |------|------|
-| http://localhost:5173 | 前端页面 |
-| http://127.0.0.1:8000 | 后端 API |
-| http://127.0.0.1:8000/docs | API 交互式文档 |
+| http://localhost:5173 | 前端页面（Vite HMR） |
+| http://127.0.0.1:8000/api/v1/health | 后端探活接口 |
+| http://127.0.0.1:8000/docs | API 交互式文档（需设 OMNIAGENT_ENABLE_API_DOCS=1） |
 
-### 9.3 可选依赖（二级工具）
+### 9.3 同源SPA打包
+
+将前后端打成一个独立 exe，单端口 8500 同时提供 API 和前端页面。
+
+---
+
+#### 9.3.1 前置条件
+
+- Python 3.13.11 安装于 `E:\Appsw\python31311\`
+- 已安装依赖：`pip install -r requirements.txt`
+- 已安装打包工具：`pip install pyinstaller platformdirs`
+- 补装 `jaraco.text` / `jaraco.functools`（缺失会导致 exe 启动失败）
+
+---
+
+#### 9.3.2 前端打包
+
+```powershell
+cd F:\OmniAgentAs-01\frontend
+npm run build        # tsc + vite build，约 1~2 分钟
+```
+
+产物：`frontend/dist/`（`index.html` + `assets/`，约 9 MB）。`dist/` 被 git 忽略，不入库。
+
+**后端地址烘焙（重要）**
+
+打包版 exe 前端静态托管在同端口 8500，API 走同源 `/api`，无需额外配置。
+若需与非打包后端（开发模式 :8000）联调测试，构建时指定：
+
+```powershell
+# 后端源码开发模式（端口 8000）
+$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
+npm run build
+
+# 后端打包版 exe（端口 8500）
+$env:VITE_API_BASE_URL="http://127.0.0.1:8500"
+npm run build
+```
+
+烘进 JS 后**不可再改**，换后端地址必须重打。
+
+---
+
+#### 9.3.3 后端打包
+
+```powershell
+cd F:\OmniAgentAs-01\backend
+E:\Appsw\python31311\python.exe -m pip install jaraco.text jaraco.functools
+E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec --noconfirm
+```
+
+产物：`backend/dist/OmniAgentBackend/`，包含：
+- `OmniAgentBackend.exe` ≈ 95 MB
+- `_internal/` ≈ 910 MB（依赖、源码）
+- `version.txt`、`config.yaml.example`、`OmniAgent.md`（启动时自动部署）
+
+spec 文件通过 `datas` 字段将 `frontend/dist/` 打包进 `_internal/web/`，exe 启动时由 `run_server.py` 自动解压到 exe 同级并挂载为静态目录。
+
+---
+
+#### 9.3.4 部署与升级
+
+**首次部署**：将打包产物整体拷贝到目标机器任意位置（如 `G:\Omni-AI`）：
+
+```powershell
+Copy-Item -Path "F:\OmniAgentAs-01\backend\dist\OmniAgentBackend\*" -Destination "G:\Omni-AI" -Recurse
+```
+
+首次启动：
+- 双击 `OmniAgentBackend.exe`，默认监听 `127.0.0.1:8500`
+- 浏览器访问 `http://127.0.0.1:8500`
+- 启动流程：自动部署必备文件 → 生成 `config/config.yaml`（若缺失）→ 挂载前端静态 → 启动 uvicorn
+
+**升级**：整目录覆盖拷贝即可，`config/config.yaml` 与数据文件（`~/.omniagent/`）保留。
+
+**多机反代场景**：通过 Nginx 反代到 `127.0.0.1:8500`，SSE 必须关闭缓冲：
+
+```nginx
+location /api/ {
+    proxy_pass         http://127.0.0.1:8500;
+    proxy_http_version 1.1;
+    proxy_set_header   Connection '';
+    proxy_buffering    off;
+    proxy_cache        off;
+    proxy_read_timeout 3600s;
+}
+```
+
+详见 `doc-打包与E2E/同源SPA打包与部署说明-小杨-2026-10-27.md`。
+
+---
+
+### 9.4 Tauri发布环境说明
+
+在 PyInstaller 同源 SPA 基础上，用 Tauri 包一层原生桌面壳，生成 `.msi` 安装程序。
+
+需额外安装：
+- Rust toolchain (≥1.77)
+- C 编译器（MSVC 或 MinGW-w64）
+- Tauri CLI：`cargo install tauri-cli --version '^2' --locked`
+
+```powershell
+# 1. 前端构建（同 9.3.2）
+cd F:\OmniAgentAs-01\frontend
+npm run build
+
+# 2. 后端打包（同 9.3.3）
+cd F:\OmniAgentAs-01\backend
+E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec --noconfirm
+
+# 3. 组装 sidecar 目录
+$src = "F:\OmniAgentAs-01\backend\dist\OmniAgentBackend"
+$dst = "F:\OmniAgentAs-01\desktop\src-tauri\sidecar"
+if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+Copy-Item $src $dst -Recurse
+
+# 4. 编译 Tauri 壳
+cd F:\OmniAgentAs-01\desktop
+cargo tauri build
+```
+
+产物：`desktop/src-tauri/target/release/bundle/msi/OmniAgentApp_x.x.x_x64_zh_CN.msi`
+
+**分发方式**：
+- **安装程序**：将 `.msi` 分发给用户，双击安装
+- **绿色版**：打包 `target/release/` 下 `OmniAgentApp.exe`、`sidecar/` 目录、`_internal/` 等，用户解压即用
+
+详细步骤见 `doc-打包与E2E/Tauri桌面打包与部署说明-小杨-2026-10-27.md`。
+
+### 9.5 可选依赖（二级工具）
 
 多数已含于 `requirements.txt`，如需单独安装：
 
@@ -944,11 +1242,12 @@ pip install mss imageio numpy
 
 | 命令 | 说明 |
 |------|------|
-| `python -m uvicorn app.main:app --reload` | 启动开发服务器 |
+| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`（或双击 `backend\start.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8000） |
+| `python run_server.py` | 模式 B：打包行为调试（模拟 exe，端口 8500） |
+| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000` | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
 | `pytest` | 运行全部测试 |
 | `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
-| `pytest --cov=app` | 测试并生成覆盖率 |
 | `pytest --runxfail` | 运行所有测试（含标记为 xfail 的） |
 | `pytest e2etests/test_e2e_p0_02_tool_call.py -v --runxfail` | 指定 E2E 测试运行（e2etests 目录） |
 
@@ -958,15 +1257,22 @@ pip install mss imageio numpy
 |------|------|
 | `npm run dev` | 启动开发服务器 |
 | `npm run build` | 生产构建（tsc + vite build） |
+| `npm run preview` | 预览生产构建 |
 | `npm run test` | 运行单元测试（Vitest） |
 | `npm run test:watch` | Vitest 监听模式 |
 | `npm run test:coverage` | 测试覆盖率 |
 | `npm run test:e2e` | Playwright E2E 测试（先跑 lint + format 检查） |
-| `npm run lint` | ESLint 检查 |
+| `npm run test:e2e:ui` | Playwright E2E 测试（UI 模式） |
+| `npm run test:e2e:debug` | Playwright E2E 测试（调试模式） |
+| `npm run lint` | ESLint 检查（src） |
+| `npm run lint:e2e` | ESLint 检查（e2e_case / e2e_front_lib） |
 | `npm run lint:fix` | 自动修复 ESLint 问题 |
+| `npm run typecheck` | 类型检查（src） |
+| `npm run typecheck:e2e` | 类型检查（e2e_case / e2e_front_lib） |
 | `npm run format` | Prettier 格式化全部 |
 | `npm run format:check` | Prettier 格式检查 |
-| `npm run check` | 提交前检查（lint + format:check） |
+| `npm run check` | 快速检查（lint + format:check） |
+| `npm run check:full` | 提交前检查（typecheck + typecheck:e2e + lint + lint:e2e + format:check） |
 
 ---
 
@@ -995,7 +1301,7 @@ pip install mss imageio numpy
 | 后端启动失败 | 检查 Python ≥ 3.11，端口8000是否被占用 |
 | 前端启动失败 | 检查 Node.js ≥ 18，清除 node_modules 后重装 |
 | API连接失败 | 检查 config/config.yaml 中的 API 密钥是否有效 |
-| 二级工具不可用 | 安装对应依赖库（见9.3节可选依赖） |
+| 二级工具不可用 | 安装对应依赖库（见9.5节可选依赖） |
 
 ---
 
@@ -1013,5 +1319,5 @@ pip install mss imageio numpy
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-09-19 17:00:53 | **版本**: v1.0.1
+| 最后更新 | 2026-11-04 10:15 |  |
 

@@ -7,6 +7,10 @@
 # 2026-08-05 - 小欧 - <searchtool-搜备用工具>: 逐类示例改为精简"备用工具类型"一行枚举(文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时), 与tool_retry_engine备用工具命名/register描述对齐
 # 2026-08-07 - 小欧 - <searchtool-搜备用工具>: 强化"一次搜多类型"引导,禁止分多次调用searchtool搜不同类型(实测LLM发7个并行searchtool,应合并为1个)
 # 2026-08-10 - 小欧 - _get_project_root_info() 扩展: 项目根之外一并注入授权目录(allowed_dirs), 让LLM知晓可合法操作目录(与Safety白名单一致); 未配置allowed_dirs时保持原样只给项目根, 功能零退化 — 北京老陈驱动
+# 2026-10-14 - 小欧 - 删死词"进程": 实测该词在BM25语料零命中(全库无"进程"字样), 属误导性关键词;
+#   且系统确无进程管理工具(SYSTEM仅event_log/create_task/delete_task/list_tasks/which/sysinfo),
+#   进程类需求用首轮已注入的bash(tasklist/taskkill)。删后7个非首轮分类仍全覆盖。
+# 2026-11-03 小欧 - tag 未闭合告警 WARNING→DEBUG: 正则启发式, 每次构建 prompt 必打且多为误报 — 小欧-2026-11-03
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -70,18 +74,20 @@ class PromptBuilder:
 
 
 <searchtool-搜备用工具>
-支持单类型和多类型备用工具搜索注入,可传入多类型关键词(如"文档 数据分析 网络")
-备用工具类型: 文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时
+增加可用精准工具范围
+(可用关键词与禁用词清单见 searchtool 的 query 参数 schema 说明, 此处不重复)
 
 
 """
 
     _TOOL_CALL_RULES_BASE = """
 【Office文件】
--禁用文本工具,不支持.doc.xls.ppt.odt.ods.odp.rtf
+-搜备用文档工具,用专有的文档读写tool
+-不支持.doc.xls.ppt.odt.ods.odp.rtf格式处理
 
 【媒体文件】
--禁用文本/office工具
+-搜备用媒体工具,使用专用的媒体读写tool
+
 
 """
 
@@ -93,7 +99,7 @@ class PromptBuilder:
         return self._TOOL_CALL_RULES_BASE + shell_section
 
     def _get_system_info(self) -> str:
-        """获取系统信息 — P0-2修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
+        """获取系统信息 — 修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
         system_info = get_system_prompt_string()
         logger.debug(f"[PromptBuilder] 系统信息长度: {len(system_info)}")
         return system_info
@@ -144,11 +150,11 @@ class PromptBuilder:
 
         result = "\n\n".join(parts)
 
-        # B-2修复 2026-06-25 小欧: 验证tag闭合
+        # 修复 2026-06-25 小欧: 验证tag闭合
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):
             if tag not in closed and tag not in ('角色','br','能力','铁规-任务处理','执行纪律','searchtool-搜备用工具'):
-                logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
+                logger.debug(f"[PromptBuilder] tag <{tag}> 可能未闭合")  # 2026-11-03 小欧: 正则启发式误报(每次构建 prompt 必打), 降 DEBUG
 
         return result

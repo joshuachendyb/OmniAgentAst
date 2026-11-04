@@ -6,6 +6,7 @@
 # 2026-07-25 - 小欧 - description去冗余: 移除12处必填/可选/默认重复描述
 # 2026-07-25 - 小欧 - description去冗余: task_name/command移除冗余示例(3处)
 # 2026-07-31 - 小欧 - EventLogInput.level移除Optional(与default="error"矛盾),description补充默认值说明
+# 2026-10-02 - 小欧 - 迁入 WhichInput(自 shell)、GetSystemInfoInput(自 fundamental)
 """
 SYSTEM Schema - 系统工具参数模型
 
@@ -21,11 +22,13 @@ SYSTEM Schema - 系统工具参数模型
 - 添加过于冗长的说明
 - 添加与参数无关的内容
 
-工具列表(4个):
+工具列表(6个):
 1. event_log - 获取系统事件日志
 2. create_task - 创建计划任务
 3. delete_task - 删除计划任务
 4. list_tasks - 列出计划任务
+5. which - 查找系统命令安装路径 (2026-10-02 自 SHELL 迁入)
+6. sysinfo - 获取系统信息     (2026-10-02 自 FUNDAMENTAL 迁入)
 """
 
 from pydantic import BaseModel, Field
@@ -95,10 +98,31 @@ class ListTasksInput(BaseModel):
     )
 
 
+# 2026-10-02 小欧 - 自 shell/shell_schema.py 原样迁入
+class WhichInput(BaseModel):
+    command: str = Field(
+        ..., description="要查找的命令名称"
+    )
+    all_paths: bool = Field(
+        default=False,
+        description="查找模式。False=返回第一个匹配路径(快速,shutil.which), True=返回全部匹配路径(完整列表,where/which -a)"
+    )
+
+
+# 2026-10-02 小欧 - 自 fundamental/fundamental_schema.py 原样迁入
+class GetSystemInfoInput(BaseModel):
+    info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
+        default="all",
+        description="系统信息类型:basic(基础)/cpu/内存/磁盘/网络/all(全部)"
+    )
+
+
 __all__ = [
 
     "EventLogInput",
     "CreateTaskInput",
     "DeleteTaskInput",
     "ListTasksInput",
+    "WhichInput",          # 2026-10-02 小欧 - 随 which 迁入
+    "GetSystemInfoInput",  # 2026-10-02 小欧 - 随 sysinfo 迁入
 ]

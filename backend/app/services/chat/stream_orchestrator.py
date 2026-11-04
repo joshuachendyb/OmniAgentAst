@@ -1,148 +1,267 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-13 - 小欧 - 新建: A7 聊天流编排器(方案4.7.3步骤1)。从 api/v1/chat/openai.py 一次性全迁编排逻辑
+# 2026-08-13 - 小欧 - 新建: 聊天流编排器(方案4.7.3步骤1)。从 api/v1/chat/openai.py 一次性全迁编排逻辑
 #   (chat_stream generate 主体 / _stream_with_control / StreamState / generate_task_id / validate_chat_config /
 #   _agent_tasks / step_start), 仅改导入归属, 业务逻辑一字不改(禁止 backward, 无兼容 shim)。依赖路径以真实代码为准:
 #   create_stream_buffer/get_stream_buffer 取 app.services.task.task_state, task_cancel_check* 取 app.services.task.task_runtime。
 #   orchestrator 不依赖 api/v1 的 DTO(API 层解包 ChatRequest 后传原始参数)。
-# 2026-08-13 - 小沈 - BUG-32修复(三堂会审): except Exception 块内 cancel bg_task, 避免后台 agent 继续运行但前端收到错误的
+# 2026-08-13 - 小沈 - 修复(): except Exception 块内 cancel bg_task, 避免后台 agent 继续运行但前端收到错误的
 #   状态不一致; bg_task 预初始化 None 防 NameError; cancel 后 run_agent_in_background 的 finally 仍执行 DB 保存(已产出结果不丢失)
-# 2026-08-13 - 小沈 - P4 agent→chat反向引用回调解耦: agent_runner 删除对 chat 模块的直接 import,
+# 2026-08-13 - 小沈 - agent→chat反向引用回调解耦: agent_runner 删除对 chat 模块的直接 import,
 #   持久化回调(allocate_and_insert_message/append_execution_step/finalize_message/save_execution_steps_to_db/
 #   _load_previous_messages/_log_task_end)由本编排器构造 db_ops SimpleNamespace 注入 run_agent_in_background,
 #   依赖方向变为 chat→agent 单向。6个属性与原 agent_runner 直接 import 的6个chat函数一一对应,KISS-DIRECT。
 # 2026-08-14 - 小欧 - 改名名实相符引用同步: handlers.py→sse_events.py, stream.py→stream_reader.py(4处import更新, 行为不变)
-# 2026-08-16 - 小欧 - S1/S2(10.1.4⑤⑥/10.1.7②): db_ops 扩展9属性(insert_task/update_task/insert_token 任务级读写),
+# 2026-08-16 - 小欧 - db_ops 扩展9属性(insert_task/update_task/insert_token 任务级读写),
 #   白名单 context_link_mode + 链根计算注入 load_previous 闭包; load_previous 补传上界 upper_message_id=_user_msg_id;
-#   agent 创建后 INSERT chat_tasks 任务行(provider/model 取 agent.llm_client); S2 model_override 编排层覆盖
-# 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): 取消 orchestrator 旁路(step_start 调用+函数删除), start 构造/emit 移入
-#   react_cycle(initialize_run_state 后、while 前, 占 step 0); P4 注入模式: agent._start_step_factory 闭包捕获
+#   agent 创建后 INSERT chat_tasks 任务行(provider/model 取 agent.llm_client); model_override 编排层覆盖
+# 2026-08-16 - 小欧 - 取消 orchestrator 旁路(step_start 调用+函数删除), start 构造/emit 移入
+#   react_cycle(initialize_run_state 后、while 前, 占 step 0); 注入模式: agent._start_step_factory 闭包捕获
 #   chat 层装配数据(send_start_step/next_step/链字段/warning), react_cycle 内注入 system_prompt/context_summary 调用,
 #   agent 层不 import chat 层; start 落库走 agent_runner 事件流(不再 execution_steps 双写)
-# 2026-08-16 - 小欧 - S4 修正(三堂会审/老陈驱动): 删 _model_warning 提前 return 终态分支——S4 后 start 由 react_cycle
+# 2026-08-16 - 小欧 - 修正(/): 删 _model_warning 提前 return 终态分支——取消旁路后 start 由 react_cycle
 #   emit(带 warning 字段), 该分支会不发 start 直接 failed(config_error), 与 start 进 steps 设计冲突(退化);
 #   warning 仅作 start 提示字段下传(不终止任务), 同步删 FinalStep/format_agent_sse 死 import
-# 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
-#   A1: line55 模块级统一 `from app.db import db`, 消除原 line245 裸引用 db 的 NameError(chat_tasks 永不建行)。
-#   E2: line168-178 track(_user_message_ids) 内存 dict 重启即丢时, 从 DB 兜底取本会话最后一条 user 消息 id 作
+# 2026-08-17 - 小健 - ( 11 bug 复核3遍):
+#   模块级统一 `from app.db import db`, 消除裸引用 db 的 NameError(chat_tasks 永不建行)。
+#   track(_user_message_ids) 内存 dict 重启即丢时, 从 DB 兜底取本会话最后一条 user 消息 id 作
 #       linked 续聊 upper 上界(防链外/全部消息进上下文)。
-#   AE: 覆盖共享单例 ai_service.model 前保存原值 _orig_model, finally 统一还原(消除单例持久污染/并发会话串 model);
+#       覆盖共享单例 ai_service.model 前保存原值 _orig_model, finally 统一还原(消除单例持久污染/并发会话串 model);
 #       _orig_model 预初始化 None 防无覆盖/取消时 NameError(边修 AE 时补该缺陷)。
 # 测试: tests/test_s2_s4_review_bugs.py 16 passed, 相关4文件 52 passed。
-# 2026-08-17 - 小健 - 必备日志补齐(老陈驱动): AE finally 还原单例 model 打 logger.info(并发审计点);
-#   E2 DB 兜底恢复 upper 打 logger.info(诊断 track 缺失)。均仅落文件不刷 console。
-# 2026-08-17 - 小健 - start 业务过程收敛(老陈驱动): 闭包 _start_step_factory 只做 P4 捕获传参,
+# 2026-08-17 - 小健 - 必备日志补齐(): finally 还原单例 model 打 logger.info(并发审计点);
+#   DB 兜底恢复 upper 打 logger.info(诊断 track 缺失)。均仅落文件不刷 console。
+# 2026-08-17 - 小健 - start 业务过程收敛(): 闭包 _start_step_factory 只做参数捕获传参,
 #   context_summary 计算与 StartStep 构造收拢到 sse_events.build_start_step(单一归属); 删本文件 MessageBuilder 死 import
-# 2026-08-17 - 小健 - start 业务彻底单归属(老陈驱动, 三思三省): 契约构造逻辑自 sse_events 迁入 start_step 模块,
+# 2026-08-17 - 小健 - start 业务彻底单归属(三思三省): 契约构造逻辑自 sse_events 迁入 start_step 模块,
 #   本文件不再承载任何 start 业务——删除 _start_step_factory 闭包与 build_start_step/send_start_step import,
 #   改将运行元数据 dict 注入 agent._start_meta(ai_service/task_id/next_step/user_input/session_id/链字段/warning),
-#   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配(chat 层退化为纯数据捕获, P4 方向不变)
-# 2026-08-17 - 小健 - 最合理核查(老陈追问): _start_meta 删除 ai_service 键(DRY, 与 agent.llm_client 同对象),
+#   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配(chat 层退化为纯数据捕获, 注入方向不变)
+# 2026-08-17 - 小健 - 最合理核查(追问): _start_meta 删除 ai_service 键(DRY, 与 agent.llm_client 同对象),
 #   仅保留 agent 拿不到的 chat 数据; start_step 直接读 agent.llm_client.provider/model — 小健 2026-08-17
-# 2026-08-17 - 小健 - 全系统DRY扫描收敛(老陈指示按10大规范): _start_meta 再删 task_id 键(task_id 由 agent.task_id
+# 2026-08-17 - 小健 - 全系统DRY扫描收敛(指示按): _start_meta 再删 task_id 键(task_id 由 agent.task_id
 #   权威持有, base_agent:59, 构造时注入); 仅保留 react_cycle 拿不到的必需运行数据(next_step/session_id/user_input/
 #   链字段/warning); 与 ai_service 删除同属真冗余收敛(单一归属, 不退化) — 小健 2026-08-17
-# 2026-08-17 - 小健 - 编排分区分号注释(老陈要求按编排步骤注清逻辑): chat_stream_orchestrator 增 ①~⑪ 分区分号
+# 2026-08-17 - 小健 - 编排分区分号注释(要求按编排步骤注清逻辑): chat_stream_orchestrator 增 ~ 分区分号
 #   注释头(输入校验/取全局服务/算链根/建基元/取续聊边界/建agent/db_ops组装/_start_meta注入/后台任务/流式转发/
 #   异常收尾); 仅加注释不改逻辑, 标明编排对象与依赖顺序 — 小健 2026-08-17
-# 2026-08-17 - 小健 - 三堂会审深挖(北京老陈): task_cancel_check_and_yield 已删死参数, 调用点同步收敛,
+# 2026-08-17 - 小健 - 深挖(): task_cancel_check_and_yield 已删死参数, 调用点同步收敛,
 #   不再白算 state.current_content 传入 — 小健 2026-08-17
-# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 删 next_step = create_step_counter() 赋值; _start_meta 删 next_step 键;
+# 2026-08-18 - 小欧 - 弃用 next_step: 删 next_step = create_step_counter() 赋值; _start_meta 删 next_step 键;
 #   run_agent_in_background 去 next_step 传参; _stream_with_control 签名/调用去 next_step; 删 create_step_counter import
-# 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.2+9.4+9.6+9.9): db_ops.append_step加usage参数、
+# 2026-08-19 - 小欧 - v2.0核心数据模型重构: db_ops.append_step加usage参数、
 #   allocate_and_insert加user_message_id、insert_task加ai_message_id=None(agent_runner分配后回填)、
 #   insert_task后回填chat_messages.task_id(改动7)、_db_ops注入user_msg_id(供agent_runner回填chat_user_message)
-# 2026-08-20 - 小欧 - 11.1 token 四层同构: 两 db_ops lambda(insert_task/update_task)改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 会话级首调用回退 task 累计
-# 2026-08-20 - 小欧 - 11.1 修复: db_ops.update_task_accumulation/update_session_accumulation 闭包已绑 task_id/session_id, 原 agent_runner 又经 kwargs 重传致 Python "got multiple values" TypeError 被 except 吞掉→累计永不入DB; 去掉闭包绑定, 改由调用方经 **kw 传入(单一归属, KISS)
-# 2026-08-21 - 小欧 - 12.2-Q3/C4(按文档[1]12.2 diff设计落地): ①Q3-D1 :83 导入追加 query_task_accumulation +
-#   db_ops 命名空间新增 query_task_acc 条目(终态快照从权威累计列派生); ②C4-D1 编排⑨ eager 分配 assistant 行
+# 2026-08-20 - 小欧 - token 四层同构: 两 db_ops lambda(insert_task/update_task)改用 storage.query_task/session_accumulation 读真实累计(去重 parse_json), 与 react_cycle 同源基线; 会话级首调用回退 task 累计
+# 2026-08-20 - 小欧 - 修复: db_ops.update_task_accumulation/update_session_accumulation 闭包已绑 task_id/session_id, 原 agent_runner 又经 kwargs 重传致 Python "got multiple values" TypeError 被 except 吞掉→累计永不入DB; 去掉闭包绑定, 改由调用方经 **kw 传入(单一归属, KISS)
+# 2026-08-21 - 小欧 - 终态累计与 eager 分配(按既定 diff 设计落地): 导入追加 query_task_accumulation +
+#   db_ops 命名空间新增 query_task_acc 条目(终态快照从权威累计列派生); 编排 eager 分配 assistant 行
 #   (allocate_and_insert_message)+创建时即 UPDATE chat_tasks.ai_message_id, _ai_message_id 经 run_agent_in_background
-#   新参注入; ③C4 连带清理——db_ops 删 allocate_and_insert 条目(唯一消费点 agent_runner 惰性分支已随 C4-D3 删除)、
+#   新参注入; 连带清理——db_ops 删 allocate_and_insert 条目(唯一消费点 agent_runner 惰性分支已随同批删除)、
 #   删 save_steps 条目及 :87 save_execution_steps_to_db 导入(grep 证实仅服务该条目;    sse_events 函数本体保留)
-# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 两处定: ①chat_messages 只写铁律: 编排⑥ _load_previous_messages 调用点改读
-#     fetch_session_user_message_pairs(经 chat_user_message+chat_tasks 重建历史, 不读 chat_messages); ②L2 sessionModel 结构化: 读 get_session_model
+# 2026-08-22 - 小欧 - 2026-08-22 两处定: chat_messages 只写铁律: 编排 _load_previous_messages 调用点改读
+#     fetch_session_user_message_pairs(经 chat_user_message+chat_tasks 重建历史, 不读 chat_messages); L2 sessionModel 结构化: 读 get_session_model
 #     覆盖 ai_service.provider+model(替原单 model_override), finally 双还原 provider+model(防单例污染)
-# 2026-08-22 - 小欧 - 三堂会审复核整改(北京老陈 2026-08-22): 编排⑥消费点调用名由残留的 get_session_model_override 修正为 get_session_model(2026-08-22 改名后 import 已改、唯独调用点漏改, 此前任一会话请求必 NameError 崩溃, P0 修复); 因 get_session_model 现返回 SessionModelOverride(非 dict), 消费点改属性访问(.model/.provider, 去 .get/下标); 同步修正 line92 import 注释标明改名
-# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.3/6.5/6.8: 全链 ModelRef 归一——validate_chat_config 响应
+# 2026-08-22 - 小欧 - (2026-08-22): 编排消费点调用名由残留的 get_session_model_override 修正为 get_session_model(2026-08-22 改名后 import 已改、唯独调用点漏改, 此前任一会话请求必 NameError 崩溃, 严重修复); 因 get_session_model 现返回 SessionModelOverride(非 dict), 消费点改属性访问(.model/.provider, 去 .get/下标); 同步修正 line92 import 注释标明改名
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25: 全链 ModelRef 归一——validate_chat_config 响应
 #   provider/model 键归一 model_ref 结构; _orig_model/_orig_provider 双变量 → _orig_llm_model 单 ModelRef
-#   原子覆盖/还原(KISS: 消除半覆盖中间态); [TASK_START] 日志 F8 属性迁移; insert_task/token_usage_insert
+#   原子覆盖/还原(KISS: 消除半覆盖中间态); [TASK_START] 日志属性迁移; insert_task/token_usage_insert
 #   闭包改传 task_model=agent.llm_client.llm_model(ModelRef), display_name 不再拼装落库(设计要求2)
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
+# 2026-08-23 - 小欧 - L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
 #   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
-# 2026-08-23 - 小欧 - 修复P3-2: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
-# 2026-08-23 - 小欧 - 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): W6 镜像写点
+# 2026-08-23 - 小欧 - 修复: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
+# 2026-08-23 - 小欧 - 锚迁移("chat_messages 写保留当空气"): 镜像写点
 #   (user 消息回填 task_id 的 UPDATE chat_messages)加 TODO 删除注释; :278 _user_msg_id 注释修正为
 #   "chat_user_message.id 原生自增权威锚"(原"与chat_messages.id一对一"口径随锚迁移过时)
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.3 D1/11.8.7.1 D7/11.9 P5): 编排⑨事务内
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施: 编排事务内
 #   allocate_and_insert_message 之后调 create_task_writer 建 A/B 双文件+header 并挂载 agent.file_persist
-#   (局部导入 file_persist/time_utils, #11 必需); model 取 agent.llm_client.llm_model(ModelRef dump);
+#   (局部导入 file_persist/time_utils, 必需); model 取 agent.llm_client.llm_model(ModelRef dump);
 #   同事务 UPDATE chat_tasks SET files_dir='files/{session_id}/{task_id}/'($dir 排查定位锚, 不重复落文件名)
-# 2026-08-24 - 小欧 - 后端卡死修复: 编排⑨事务内落库(insert_task/user消息回填/eager分配assistant+写chat_tasks.ai_message_id/files_dir)整体经 db.atxn 进子线程 offload 出事件循环,
+# 2026-08-24 - 小欧 - 后端卡死修复: 编排事务内落库(insert_task/user消息回填/eager分配assistant+写chat_tasks.ai_message_id/files_dir)整体经 db.atxn 进子线程 offload 出事件循环,
 #   loop 不再被同步写大blob+time.sleep锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用;
 #   create_task_writer(非DB文件写)移出事务块: 成功路径等价, 失败路径更稳(writer 创建失败不再连坐回滚任务落库事务, 任务行保留、file_persist 缺失由 getattr 守卫兜底)
-# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): 编排③链根查询/编排⑤DB兜底user_msg_id/编排⑥sessionModel读取 三处同步 db.get_conn
+# 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): 编排链根查询/编排DB兜底user_msg_id/编排sessionModel读取 三处同步 db.get_conn
 #   改经 db.atxn 进子线程 offload 出事件循环(复用既有薄壳, 行为等价), 请求编排期 loop 零同步 DB I/O
-# 2026-08-24 - 小欧 - 目录前导(北京老陈裁定): chat_tasks.files_dir 落库锚同步改为 files/Sion_{session_id}/Task_{task_id}/,
+# 2026-08-24 - 小欧 - 目录前导(): chat_tasks.files_dir 落库锚同步改为 files/Sion_{session_id}/Task_{task_id}/,
 #   与 TaskFileWriter 物理目录经 file_persist 前缀常量同源拼装(DRY), 排查定位链不断; 旧目录不迁移(禁止backward)
-# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W6镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
+# 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除镜像写点(_setup_task_db内UPDATE chat_messages SET task_id), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 删除finalize_message的import与db_ops.finalize=传参(随finalize_message整删, 终态由append_execution_step/chat_tasks承载)
-# 2026-08-28 小欧 - yield日志审计: 编排①输入校验失败/编排②启动前已取消 两处 yield 前补 logger(warning/info), 覆盖7个无日志yield(KISS); 三堂会审无逻辑修正
-# 2026-08-29 - 小沈 - 修复#5(彻底快照): 病根为 sessionModel 覆盖直接改进程单例 llm_model(全局副作用, 还原时序竞态致断连误模/跨会话串模)。改为构造本会话独立 LLM 客户端快照(ai_service.snapshot), 后台任务/流均用快照, 单例恒为全局默认不再被污染, 根除两类退化; run_agent_in_background finally 关闭快照释放连接池
-# 2026-09-01 - 小欧 - [TASK_START]日志修复(北京老陈驱动): 原在会话覆盖快照生效(编排⑥)之前用 ai_service.llm_model(全局默认)打印, 且 model 字段显示全局而非实际生效模型, 误导排查(如本次会话覆盖 deepseek-v4-flash 生效, 日志却显 agnes)。移至覆盖快照生效后用 agent.llm_client.llm_model(实际生效客户端)打印
-# 2026-09-01 - 小欧 - L2 会话级切跨 provider 模型修复(北京老陈驱动, 503/AgnesAI_error): 编排⑥覆盖生效块
+# 2026-08-28 小欧 - yield日志审计: 编排输入校验失败/编排启动前已取消 两处 yield 前补 logger(warning/info), 覆盖7个无日志yield(KISS); 无逻辑修正
+# 2026-08-29 - 小沈 - 修复(彻底快照): 病根为 sessionModel 覆盖直接改进程单例 llm_model(全局副作用, 还原时序竞态致断连误模/跨会话串模)。改为构造本会话独立 LLM 客户端快照(ai_service.snapshot), 后台任务/流均用快照, 单例恒为全局默认不再被污染, 根除两类退化; run_agent_in_background finally 关闭快照释放连接池
+# 2026-09-01 - 小欧 - [TASK_START]日志修复: 原在会话覆盖快照生效(编排)之前用 ai_service.llm_model(全局默认)打印, 且 model 字段显示全局而非实际生效模型, 误导排查(如本次会话覆盖 deepseek-v4-flash 生效, 日志却显 agnes)。移至覆盖快照生效后用 agent.llm_client.llm_model(实际生效客户端)打印
+# 2026-09-01 - 小欧 - L2 会话级切跨 provider 模型修复( 503/AgnesAI_error): 编排覆盖生效块
 #   按目标 provider+model 从 config.yaml 查 api_base/api_key(经 get_ai_config_resolver().get_service_config)+
 #   model_params(复用 service.parse_model_params, DRY 唯一权威): 此前仅传 provider/model, 快照沿用全局
 #   agnes 的 api_base/api_key/model_params→切 sensenova 仍 503。api_base 必须用目标 provider 的而非 _ov.api_base;
 #   并入 snapshot(api_key/extra_body_params/context_limit 三参); 同步 agent._task_llm_model 为生效快照模型,
 #   使 react_cycle/telemetry 日志显示真实生效模型(消除显 agnes 盲点); api_key 后端查配置, 不落库不出前端
-# 2026-09-02 小欧 三堂会审task005-BUG-004修复: 配置查找失败显式置空(_pv_cfg/_pv_key/_pv_ebp/_pv_ctx),
+# 2026-09-02 小欧  配置查找失败显式置空(_pv_cfg/_pv_key/_pv_ebp/_pv_ctx),
 #   原仅warning无置空, 虽初始化为None但显式表达降级意图, 日志补"放弃会话模型覆盖"便于排查
-# 2026-09-02 - 小欧 - P10跨provider降级修复(北京老陈驱动「问题报告P10验证」): 配置查找失败(_pv_cfg is None
+# 2026-09-02 - 小欧 - 跨provider降级修复: 配置查找失败(_pv_cfg is None
 #   且目标provider≠全局)时跳过覆盖, 全链用全局默认模型(不以目标provider名+全局api_base错配快照致401/503);
-#   规避报告_flag方案冗余, 以_pv_cfg判空直判, 仅改降级分支不改成功路径, 三堂会审通过(合规/合理/关联逻辑零退化)
-# 2026-09-05 - 小健 - [7]8.6 一拆三: 消费转发 stream_reader(原 stream_reader.py 行257-284)整份并入本模块
+#   规避报告_flag方案冗余, 以_pv_cfg判空直判, 仅改降级分支不改成功路径, 通过(合规/合理/关联逻辑零退化)
+# 2026-09-05 - 小健 - 一拆三: 消费转发 stream_reader(原 stream_reader.py 行257-284)整份并入本模块
 #   (逐字复制零改动, 作为模块级函数, import format_agent_sse); _load_previous_messages 改指 history_loader,
 #   _log_task_end 改指 agent_telemetry; 删 stream_reader.py 空壳不留垫片(禁backward)
-# 2026-09-08 - 小欧 - 方案一心跳修订(北京老陈 2026-09-08 裁定, 三堂会审3轮):
-#   [P1吞事件] 心跳原 yield ": ping" 无换行尾 → 与下一条 data: 事件粘连成一行, 前端 split('\n') 后整行
+# 2026-09-08 - 小欧 - 方案一心跳修订(3轮):
+#   [吞事件] 心跳原 yield ": ping" 无换行尾 → 与下一条 data: 事件粘连成一行, 前端 split('\n') 后整行
 #    前缀非 'data: '(sseParser.ts:113 return) → 心跳后的第一个业务事件被整行丢弃(可能 final → 前端卡终态);
 #    改 yield ": ping\n" 心跳独立成行(SSE 注释行标准带换行)。
 #   [边界] 心跳周期原 60s 与前端 IDLE_TIMEOUT=60000 同时到期零余量, 网络/调度抖动下前端先判死致多余重连;
-#    timeout 60.0→25.0(老陈裁定 25s 与前端 60s 错开), 保证 60s 窗口内必收字节, 日志/注释文案同步。
+#    timeout 60.0→25.0( 25s 与前端 60s 错开), 保证 60s 窗口内必收字节, 日志/注释文案同步。
 #   log: 心跳仍走 logger.debug("[SSE] cond.wait 25s超时" task_id) — 高频心跳不升 info 防日志噪杂。 — 小欧-2026-09-08
-# 2026-09-08 - 小欧 - 心跳周期 25.0 抽常量化(北京老陈 2026-09-08 指令): timeout/日志/注释硬编码 25s 改引
-#   constants.py §6 HEARTBEAT_INTERVAL(常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系即"心跳先于前端判死"设计依据,
+# 2026-09-08 - 小欧 - 心跳周期 25.0 抽常量化( 2026-09-08 指令): timeout/日志/注释硬编码 25s 改引
+#   constants.py 的 HEARTBEAT_INTERVAL(常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系即"心跳先于前端判死"设计依据,
 #   变更须前端联动); 功能零变化, 消除裸魔法数。 — 小欧-2026-09-08
-# 2026-09-08 - 小欧 - 北京老陈指令(console可见性): 客户端断开"agent后台继续"(触发方案四断连取消链路)
+# 2026-09-08 - 小欧 - 指令(console可见性): 客户端断开"agent后台继续"(触发方案四断连取消链路)
 #   logger.info→log_and_print 双写, 后端命令行可见断开动作(task_id); 心跳 yield 仍保持 logger.debug
-#   (老陈"其他处不需双写,加log即可", 此处本就有debug日志) — 小欧-2026-09-08
-# 2026-09-08 - 小欧 - 北京老陈 2026-09-08 后续指令勘正: 心跳 yield ": ping\n" 必须双写+计数——
+#   ("其他处不需双写,加log即可", 此处本就有debug日志) 小欧-2026-09-08
+# 2026-09-08 - 小欧 - 2026-09-08 后续指令勘正: 心跳 yield ": ping\n" 必须双写+计数——
 #   原上一条(:118)按"心跳只需加log"保留 logger.debug 即属理解偏差, 本条目正式更改为
 #   logger.debug→log_and_print 双写(console 可见每次心跳+序号 heartbeat_seq), 高频克制: 25s 一次, 不刷屏。
 #   不得回改 debug, 不得删此条目(铁规: 编辑型禁删历史) — 小欧-2026-09-08
-# 2026-09-11 - 小欧 - 通用规则落地(method2, 北京老陈 2026-09-11 定案): SSE 转发层唯一咽喉点
+# 2026-09-11 - 小欧 - 通用规则落地(method2,  2026-09-11 定案): SSE 转发层唯一咽喉点
 #   (stream_reader L450 format_agent_sse, 实时/重连共用)按类型过滤"仅落库不入SSE"事件——
 #   thought 照常 publish 进 event_log(落库扫描/簿记/序号零改动), reader 转发时跳过;
 #   新增 _SSE_EXCLUDE_TYPES 集合(OCP: 未来同类仅落库事件只扩集合, reader 零改动);
-#   根因修复: 前端因 thought 双通道(实时SSE+历史回放DB)重复显示/裹挟(文档[26]问题一/二)
-# 2026-09-12 小欧 - X2 E2E-X2-01 竞态根因修复(方案[31] §5.4): 删除临时 [Diag] reader exit 诊断日志,
+#   根因修复: 前端因 thought 双通道(实时SSE+历史回放DB)重复显示/裹挟(问题一/二)
+# 2026-09-12 小欧 - 竞态根因修复: 删除临时 [Diag] reader exit 诊断日志,
 #   恢复 done 分支纯 return; 根因在 react_loop 内部过早 done.set()(详见 react_loop.py 编辑历史 2026-09-12),
 #   修复后 done 由 agent_runner finally 权威置位(所有事件含 final_stats 已发布), reader 排空即全量 — 小欧-2026-09-12
-# 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): stream_reader done 退出点补 logger.info(已转发offset/缓冲总长/
+# 2026-09-12 小欧 - 追踪关键日志(指令): stream_reader done 退出点补 logger.info(已转发offset/缓冲总长/
 #   末类型/含final_stats), 与 [Runner] final_stats 已发布 seq 比对即可判定"SSE 漏发终态"(offset 停在 fs seq 前)
 #   或"正常全量"(offset 越过 fs seq); 重连同语义 — 小欧-2026-09-12
-# 2026-09-12 小欧 - 白名单落地([29]§7.3, 北京老陈 2026-09-12 批准 TDD 实施): 黑名单 _SSE_EXCLUDE_TYPES 反转为
+# 2026-09-12 小欧 - 白名单落地(TDD,  2026-09-12 批准): 黑名单 _SSE_EXCLUDE_TYPES 反转为
 #   白名单 _SSE_FORWARD_TYPES(默认拦截结构性杜绝 thought 事故), 配套登记源 steps/__init__.py ALL_STEP_TYPES;
 #   过滤点 L481 反向判定 not in; 行为不变(白名单全集==当前转发全集=16实时+cancelled防御) — 小欧-2026-09-12
-# 2026-09-13 小欧 - [30]§8.2 TDD P2(行488-490): 删除持锁死分支(原 L479 async with buffer.cond 持锁期间生产者
-#   无法追加, 排空后复查 len 的 offset<len 分支恒 False 永不触发) 与 "# #30 fix:" 双井号噪声注释——
+# 2026-09-13 小欧 - TDD 修删(行488-490): 删除持锁死分支(原 L479 async with buffer.cond 持锁期间生产者
+#   无法追加, 排空后复查 len 的 offset<len 分支恒 False 永不触发) 与 "# fix:" 双井号噪声注释——
 #   消费不丢由 notify_all 唤醒保证, 删除零行为差异(死代码清理)
-# 2026-09-13 小欧 - 重连链路追踪补齐(北京老陈指令, 补点A/B): ①重连端点 chat_stream_reconnect_orchestrator
+# 2026-09-13 小欧 - 重连链路追踪补齐(指令, 补点A/B): 重连端点 chat_stream_reconnect_orchestrator
 #   补 logger.info/logger.warning(收到重连请求: task/after_seq/session/缓冲总长/含final_stats;
 #   任务不存在留 warning), 消除重连 zero-log——谁何时以 after_seq 发起重连、续传多少帧均可查;
-#   ②stream_reader done 退出日志追加 is_reconnect/起点seq/续传帧数, 首连(after_seq=0)与重连可区分,
+#   stream_reader done 退出日志追加 is_reconnect/起点seq/续传帧数, 首连(after_seq=0)与重连可区分,
 #   多 client 连同一 task 可分辨, 对账闭环(after_seq→续传帧数→已转发→含final_stats) — 小欧-2026-09-13
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": _SSE_FORWARD_TYPES 新增 "rejected", 删除 "user_rejected" - 小欧-2026-09-17
+# 2026-09-20 - 小欧 - 活跃任务注入机制编排接入(定案"机会"): 同会话已有活跃任务时, 新消息经
+#   inject_message_to_task 注入该任务 inbox(可多条), 待下一轮 LLM 调用前合并吸收; 无活跃任务正常新建。
+#   工具执行不被打断(安全底线); 注入失败(目标任务已终态)降级新建, 不丢消息。
+#   compliance: SRP(编排仅负责路由/注入, 数据层在 task_registry)/KISS-DIRECT
+# 2026-09-20 - 小欧 - 注入成功改用retrying类型(非error语义, 注入成功是正常业务路径)
+# 2026-09-20 - 小欧 - 占位注册方案落地(定案): register_task 改返占位tid(弃抛异常); 调用点接返回值——
+#   守卫命中(TOCTOU并发占位)则改道 inject_message_to_task 注入占位任务 + reclaim_memory_buffer 回收预建缓冲,
+#   注入失败(占位者恰终态)重试注册一次, 双极端抛错交外层兜底。竞态下消息不再悬空/丢失。
+#   compliance: 与B机制"注入不静默丢失"红线同哲学/KISS-DIRECT
+# 2026-09-20 - 小欧 - 修复(锁内yield死锁): stream_reader 重构为"锁内阶段只取待转发事件/心跳动作,
+#   绝不 yield; 锁外阶段统一 yield"——消除持 cond 锁期间 await/yield 阻塞生产者 append 的死锁窗口,
+#   白名单/心跳/重连/done 行为不变。compliance: SRP/KISS-DIRECT
+# 2026-09-22 小欧 - constants.py 配置化迁移：import HEARTBEAT_INTERVAL 改别名 + 心跳改读 tuning 配置
+# 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：心跳读取键路径同步(组名更准确)，
+#   读逻辑/默认值 _D_HEARTBEAT/心跳周期语义零改动 — 小欧-2026-09-24
+# 2026-09-25 小欧 - ConnectionScope统一流接线: get_service→get_scope(本代唯一所有者原子取 ai_service); register_task 删 ai_service 实参(两处); resolve_session_client 改传 scope, 恒返回快照(删 None 死分支)
+# 2026-09-25 小欧 - 修 scope 换代竞态(真实缺陷, 高): get_scope()(编排)与 resolve_session_client(编排)之间隔着
+#   8 个 await(落库取链/兜底取 user_message_id/查活跃任务/注入消息/注册任务/取消检查), 每个都是事件循环让出点;
+#   其间用户保存配置即换代 → 该 scope 被标记退休 → 随后 acquire_lease 抛 RuntimeError → 被本函数编排层
+#   except Exception 消化成 router_error「路由异常: ConnectionScope 已退休(换代/停机), 禁止新任务混入旧代」回给用户,
+#   即"换一次配置打死一个正在起步的新请求", 且泄露内部异常文案; 违反「新请求即新代」与「任务不中断」原则。
+#   修法: resolve 前就地复核 scope.is_released, 已退休则改取 get_scope()(仍是原子取本代唯一所有者, 不引双代)并记 INFO。
+#   为何不引入竞态: 复核与 acquire_lease 之间无任何 await, 事件循环单线程无处让出, 故不存在新的换代窗口。
+#   反证: 临时撤掉守卫后复现出上述 router_error, 装回即绿 — 小欧 2026-09-25
+# 2026-09-26 - 小欧 - 鉴权口令错误配套: 口令错误时抛 401 而非静默空流, 让前端能跳登录页。
+# 2026-09-26 (后修正) - 小欧 - 本文件头原称"SSE 补 ?access_token= 传递链"，经全仓 grep 核实该
+#   链路**零实现**（access_token 只存在于注释中），注释在撒谎故删。实际：前端全走
+#   fetch+ReadableStream 可带 Authorization 头（useSSE.ts:849），鉴权完整；原生 EventSource
+#   （不能自定义请求头）不受支持。
+# 2026-09-26 (后修正·二) - 小欧 - config_error 早退未清任务(最严重一条)：
+#   该早退位于 create_stream_buffer/register_task 之后、create_task 之前，原实现只 yield
+#   config_error 就 return ⇒ task_id 永久停留 running（cleanup_expired_tasks 明确排除 running）
+#   ⇒ 该会话后续每条消息都被 has_active_task_in_session 改道注入死任务，用户补完 key 重试仍
+#   卡死、只能重启后端。修法: 早退前 reclaim_stream_buffer + cleanup_task（与占位注册早退(:392)
+#   的差别是"本任务已注册成功"，彼时只回收缓冲、无任务可清）。
+# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复: 新增 _bind_task_id 注入成功即刻
+#   回填 chat_user_message.task_id(执行期归属, 原仅终态回填致执行期列表/历史查不到); _build_injected_ack
+#   type retrying→merged(重试语义误用) + 携带 merged_into_task_id + 加 task_id 形参; 两注入分支
+#   inject_message_to_task 传 _user_msg_id(随消息同行取真 uid) + bind + ack 传目标 task;
+#   _SSE_FORWARD_TYPES 加 "merged"(与 ALL_STEP_TYPES 双登记纪律)。降级语义扩展: 队列满/uid非法同样走新建。
+#   compliance: SRP/KISS-DIRECT/DRY/复用优先(复用 storage.bind_message_to_task 零新表)
+# 2026-09-28 20:18:31 小欧  F8: _bind_task_id 失败时增强日志(消息已入inbox, 终态回填将补绑) 小欧-2026-09-28
+# 2026-09-29 小欧 - P3: 两条建 buffer 路径统一注入 journal_sink；注入应答改经目标任务
+#   buffer.publish 先落 Journal 取 seq 再发 SSE（禁直 yield 绕过）；新增 journal_reader 兜底回放
+#   — 小欧 2026-09-29
+# 2026-09-29 20:42:06 小欧 - 拆 try 根治并发静默降级(SRP/KISS-DIRECT): 关键DB事务 _setup_task_db 移出 try,
+#   启用 atxn(retry_locked=3) 有限重试, 重试耗尽/非锁异常向上抛走 router_error 不再静默起跑(原 L595-596 吞异常
+#   致 ai_message_id=None 带病运行, 前端看似在跑而 DB 全空); 文件 writer 独立 try 仅告警, 原设计意图不变。
+#   — 小欧-2026-09-29
+# 2026-10-02 20:14 小欧 - 无 session_id 时改走 create_session(None) 建会话(原凭空造 UUID 撞外键致整流 500) 
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项8: 编排器废止逐请求 context_link_mode, 链根真源改为会话 link 开关;
+#    S3: 链根计算块下移至活跃任务注入判定之后; 关联审查风险1: 拆出 _history_root(装历史用根,
+#   无链根时为 None), 与落库用根区分, 避免无链根时误把自身 task_id 当根导致全量灌历史。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元5: link 改为随消息携带。函数签名增 link_enabled: Optional[bool];
+#   取 link 处改为「携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库」, 并把该值落库
+#   (经 db.atxn 调 storage.set_session_link_conn, 保持请求编排期 loop 零同步 DB I/O)。
+#   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
+#   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
+# 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
+# 2026-10-05 - 小欧 - 报告 P3: 两处 loop_watchdog.activate() 移入 try, 激活期异常带 task_id/session_id/stream_id 链根 warning, 杜绝静默失败。
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 插话开关取/落值收敛为 storage.resolve_session_interject(与 save_message 共用单一真源)
+# 2026-10-10 - 小欧 - [20]  取链内序号注入 _start_meta.context_link_index
+#   (第几个 link 任务, telemetry 只读不算); 查询失败降级为 0 不拖死任务(序号仅供前缀文案)。
+# 2026-10-14 小欧 - linked 增量摘要: db_ops 增 load_chain_summary 闭包 + load_previous 透传下界(缺省 None=老行为) — 小欧-2026-10-14
+# 2026-10-26 - 北京老陈 - 会话工作目录注入块定案(单层标签+文案重写):
+#   _append_ws_suffix 移除外层 <system-reminder>, 只留 <会话工作目录> 单层——本块语义是
+#   "目录告知"而非系统级指令, 双层标签叠加徒增 LLM 解析噪音; 文案重写为定案版
+#   "本次任务新增会话工作目录：{路径列表}\n要求你临时/中间文件优先写入会话工作目录.";
+#   修 f 前缀遗漏(原该行缺 f, "{lines}" 为字面量, 路径列表未注入, 测试断言落空);
+#   清 </会话工作目录> 前多余空行。测试同步(本仓库 tests/ 被 gitignore 不入库):
+#   test_injection_uses_both_tags → test_injection_uses_session_workspace_tag,
+#   断言改为不含 <system-reminder>; 23 passed。
+# 2026-11-03 小欧 - log_and_print 增 level 参数: 任务启动(user_input)与客户端断开两处显式传 level="WARNING"
+#   (任务起止必须可见), 均在大段日志拼装末行 — 小欧-2026-11-03
+#   同轮任务启动时间戳(INFO: 时间)与 [SSE] 心跳两行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
+
+# 2026-10-29 小欧 - 输入框引用读取权收归后端: 建 agent 后调 resolver.resolve_refs 读齐全部引用正文
+#   (并发4/超时5s/同path合并, 失败分类标记), 结果经 _start_meta["refs"] 注入 assemble_start_step;
+#   首发合计超拒绝线时发 refs_blocked 错误帧(不落库, 不启动后台任务) — 小欧-2026-10-29
+
+# 2026-10-30 小欧 - 取消改为任务级取消: bg_task 创建后 await set_agent_task(task_id, bg_task) 登记句柄,
+#   供 cancel_task 直接 cancel 该协程(flag/关连接打不断 TTFB 等待); 强引用仍由本层 _agent_tasks 持有。
+#   配套 R4: _stream_with_control 把 buffer 传入 task_cancel_check_and_yield, 已有真实终态时不再合成
+#   (原合成后 return 会截断真实 final 与其后 final_stats)。 — 小欧-2026-10-30
+
+# 2026-10-30 小欧 - 批2/批3 补齐: ①sanitize_refs 双返回, 越界/无 path 条目进回执;
+#   ②首发 resolve→budget→refs_notice→阻断/放行 全链接入; ③插话同口径(预算 5%), 回执与拒绝帧
+#   经目标任务 buffer publish 下发(新 POST 流前端只 readToEnd 不解析); ④_start_meta["refs"] 取裁决后结果。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 三堂会审收口: 首发/插话共用 refs.pipeline.prepare_refs(插话此前漏 resolver dropped,
+#   读不出的文件不进回执也不进点名); 点名文案统一 notice.describe_items; 插话带引用时调
+#   message_builder.ensure_file_ref_rules() 幂等补注格式约定; refs 相关 import 全上提模块级。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 引用进 loop 前可观测: 首发/插话各在 prepare_refs 之后 summarize_refs → report_refs
+#   (1 行汇总 log_and_print + ≤5 行明细 logger.info) → refs_ready notice(事件列表可见, 数字同源);
+#   删除原两处只在有回执时打点的 "[refs] first/interject resolved=..." info(成功路径零痕迹)。 — 小欧-2026-10-30
+
+# 2026-10-30 小欧 - [54]全链路重构: _load_ws_snapshot 解包四元组(path, prop, memo, is_default);
+#   _append_ws_suffix 拼标注(属性Tag+memo+默认标注+写工作区尾句), 首行明确"引导参考不改变可写性判定"。 — 小欧-2026-10-30
+
+# 2026-10-31 小欧 - 注入块文案定稿(用户确认): 删属性/memo/默认标注, 目录行纯路径;
+#   首行改为"本次任务新增会话工作目录", 尾行统一"会话工作目录"与标签语义一致;
+#   docstring 同步精简, 移除 ws_prop_label/WS_PROP_WRITE import。 — 小欧-2026-10-31
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 导入源改 app.constants(常量自 compaction_constants 迁入系统层,
+#   单一真源), 值与行为零变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 877 行首发兜底口径统一: or agent.message_builder.MAX_CONTEXT_TOKENS(绕行取构造默认)
+#   改 or DEFAULT_CONTEXT_LIMIT, 与 622 插话兜底同源同写法, 消 DRY/KISS-DIRECT 违反; 兜底同值零行为变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 注入装配单一化: 删 _append_ws_suffix, 目录块渲染迁
+#   agent/workspace_block.render_workspace_block; 首发改传干净 user_input, 插话改调
+#   message_builder.build_interject_text(与首发同源, 快照未变不重复注入) — 小欧-2026-10-31
+# 2026-10-31 小欧 - 目录块在编排层渲染一次, 汇总日志(report_ws_block)与
+#   超限轻提示(build_ws_notice, 复用 notice 信封)取同一份数字; 文本经 _start_meta.ws_block 交
+#   init_history 装配 —— 注入/日志/回执不再各算一遍 — 小欧-2026-10-31
+# 2026-11-02 - 小欧 - validate_chat_config 三级分级: 第5步凭证校验(api_key/api_base空白黄牌, 漏配key不再谎绿)+status/errors/warnings实装(顶栏胶囊承接) - 小欧-2026-11-02
+# 2026-11-03 - 小欧 - 输入校验失败两条(消息列表/内容为空) WARNING→DEBUG(请求体不合法) — 小欧-2026-11-03
+# 2026-11-04 - 小欧 - get_task_field 改从 task_state 直连真源(registry 不再再导出) — 小欧-2026-11-04
+# 2026-11-04 - 小欧 - bind_message_to_task 的 atxn 补 retry_locked=3: 每消息高频写, 5 会话并发实测撞锁
+#   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面 — 小欧-2026-11-04
+
+
+
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -153,29 +272,77 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional, AsyncGenerator, Dict, List
+from typing import Optional, AsyncGenerator
 
-from app.services import get_service
-from app.services.model.resolver import get_ai_config_resolver, resolve_session_client  # 8.7 外迁: 会话模型覆盖决议 — 小健 2026-09-05
+from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
+from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
+# 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
+from app.constants import DEFAULT_CONTEXT_LENGTH   # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
+from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
+# 回执 + 观测(汇总/日志/refs_ready notice, 两通道共用同一份数字) — 小欧 2026-10-30
+from app.services.refs.notice import (
+    build_notice,
+    build_refs_ready_notice,
+    create_refs_notice_event,
+    create_refs_ready_event,
+    describe_items,
+    report_refs,
+    summarize_refs,
+)
+from app.services.refs.pipeline import prepare_refs                        # 解析→裁决→回执汇集唯一流水线
+from app.services.model.resolver import (
+    ProviderKeyMissingError,
+    get_ai_config_resolver,
+    resolve_session_client,
+) # 会话模型覆盖决议 — 小健 2026-09-05
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
-from app.services.task.task_registry import register_task
+from app.services.task.task_registry import (
+    register_task,
+    set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
+    has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
+    inject_message_to_task,
+    cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
+)
+from app.services.task.task_state import get_task_field  # 2026-11-04 小欧: 直连真源(registry 不再再导出) — 小欧-2026-11-04
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
-from app.utils.sse_formatter import format_agent_sse  # 8.6 消费转发并回本模块(SSE格式化) — 小健 2026-09-05
+from app.utils.sse_formatter import format_agent_sse, format_sse_event  # format_sse_event: 目录块超限 notice 组帧 — 小欧-2026-10-31
 from app.services.agent.agent_runner import run_agent_in_background
+from app.services.agent.steps import ALL_STEP_TYPES  # SSE 转发表推导源(见 _SSE_FORWARD_TYPES)— 小欧 2026-10-03
 from app.services.agent.universal_agent import UniversalAgent
-from app.services.task.task_state import create_stream_buffer, get_stream_buffer
-from app.constants import HEARTBEAT_INTERVAL  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py §6) — 小欧 2026-09-08
+from app.services.chat.stream_event_journal import append as journal_append, read_after, get_persisted_task_status, is_producer_alive, PAGE_SIZE   # [63] 3.6.4 Journal 四口
+from app.services.task.task_state import create_task_stream_buffer, get_stream_buffer, reclaim_memory_buffer  # [63] 3.6.4 生产唯一入口 + 3.8 改名（回收语义不变）
+from app.constants import HEARTBEAT_INTERVAL as _D_HEARTBEAT  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py) — 小欧 2026-09-08
+from app.config import get_config
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
-from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
-from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # S1/S2 任务级读写(10.1.4/10.1.7②); get_session_model 已随 8.7 外迁 resolver 侧 — 小健 2026-09-05
-from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # 11.1 token 四层同构累计 — 小欧 2026-08-20
-from app.db import db  # 小健 2026-08-17 三堂会审-A1修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
-from app.services.chat.history_loader import _load_previous_messages  # 8.6 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
-from app.monitoring.agent_telemetry import _log_task_end  # 8.6 收尾日志归遥测(统计同类) — 小健 2026-09-05
+from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 追加权威累计查询 — 小欧 2026-08-21
+from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
+from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
+from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
+from app.services.chat.storage import resolve_session_interject     # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
+from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
+from app.services.chat.storage import count_chain_siblings  # 2026-10-09 小欧 - [20] link 序号 N 取数(第几个 link 任务)
+from app.db import db  # 小健 2026-08-17  模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
+from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
+from app.services.chat.storage import get_chain_summary_anchor  # 2026-10-14 小欧 - linked 增量摘要: 锚点取数(只读, 经闭包注入 agent) — 小欧-2026-10-14
+from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
+from app.session_workspace import (  # 会话 Workspace 任务级快照(中立层 ContextVar) — 小欧 2026-10-10
+    WorkspaceEntry,
+    WorkspaceSnapshot,
+    reset_current_session_workspaces,
+    set_current_session_workspaces,
+)
+# 2026-10-31 小欧 - 注入装配单一化: 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
+#   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
+from app.services.agent.message_builder import build_user_turn_text
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 目录块渲染/日志/提示三合一
+    build_ws_notice, render_workspace_block, report_ws_block,
+)
+from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
+from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
 
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
@@ -183,6 +350,40 @@ from app.monitoring.agent_telemetry import _log_task_end  # 8.6 收尾日志归�
 # 与 agent_runner._background_tasks 双重保险(后者 caller-agnostic): 本表在调用点持有引用,
 # done 时 discard 防内存泄漏 — 小欧 2026-07-13(自 openai.py 迁入)
 _agent_tasks: set = set()
+
+
+def build_merged_meta(task_id: str):
+    """注入应答(merged 事件)的唯一构造来源。产 dict 而非 SSE 串：调用方要先把 dict 送进
+    目标任务 buffer.publish 落 Journal 拿 seq，再由格式器统一序列化发出 — 小欧 2026-09-29"""
+    from app.services.agent.steps import MetaStep
+    return MetaStep(
+        step=0,
+        type="merged",
+        content="消息已并入当前执行中的任务，将在下一轮吸收",
+        merged_into_task_id=task_id,
+        wait_time=None,
+        severity="info",
+    )
+
+
+async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
+    """注入即绑执行期归属(设计文档[76] 6.6/5.2.2) 小欧 2026-09-28
+    task_id 原仅终态回填, 执行期注入消息 task_id 恒 NULL → 列表/历史执行期查不到。
+    任务已结束时 UPDATE 影响 0 行, 记 warning 不报错(消息仍在会话可见, 不丢数据)。
+    2026-09-28 20:15:00 小欧  F8: bind 失败时增强日志, 记录消息内容摘要便于排查。"""
+    if not user_message_id:
+        logger.warning(f"[注入] uid 缺失, 跳过 bind(task={task_id})")
+        return
+    try:
+        from app.services.chat.storage import bind_message_to_task
+        # 2026-11-04 小欧 - retry_locked=3: 每消息高频写, 并发会话实测撞锁, atxn 已有退避仅显式开启 — 小欧-2026-11-04
+        _ok = await db.atxn("chat", lambda c: bind_message_to_task(c, user_message_id, task_id), retry_locked=3)
+        if not _ok:
+            logger.warning(
+                f"[注入] bind 0行(task={task_id}, uid={user_message_id}): "
+                f"该行不存在, 或 task_id 已被绑定(非 NULL) — 两种成因, 均不影响消息可见")
+    except Exception as _e:
+        logger.warning(f"[注入] bind 异常(task={task_id}, uid={user_message_id}): {_e}. 消息已入inbox, 执行期task_id未绑, 终态回填将补绑")
 
 
 def generate_task_id() -> str:
@@ -193,35 +394,93 @@ def generate_task_id() -> str:
 async def validate_chat_config():
     """聊天配置校验 — 自 api/v1/chat/openai.py 迁入 orchestrator — 小欧 2026-08-13
     2026-08-22 小欧 归一报告v1.25 6.6: resolver.validate_config 返回 (is_valid, ModelRef, errors);
-    响应键 provider/model 归一为 model_ref 结构(方案B 前端随后端)"""
+    响应键 provider/model 归一为 model_ref 结构(方案B 前端随后端)
+    2026-11-02 小欧 - 三级分级: resolver 4元组(④models预警不判死)+第5步凭证校验(复用lifecycle权威, 解决漏配key胶囊仍绿);
+    status='success'/'warning'/'failed'"""
     from app.logger import logger
     try:
         resolver = get_ai_config_resolver()
-        is_valid, config_model, error_messages = resolver.validate_config()
+        is_valid, config_model, errors, warnings = resolver.validate_config()
+        # 第5步: 凭证校验(api_key/api_base 空白=预警不拦截, 无鉴权端点合法) — 复用设置页深校验同一权威
+        from app.services.lifecycle.validation import validate_credentials
+        cred_errors, cred_warnings = validate_credentials(
+            resolver.get_ai_config(), config_model.provider)
+        errors.extend(cred_errors)
+        warnings.extend(cred_warnings)
+        model_ref = {"provider": config_model.provider or "unknown",
+                     "model": config_model.model or ""}
         if not is_valid:
             return {
                 "valid": False,
-                "message": f"配置验证失败: {', '.join(error_messages)}",
-                "model_ref": {"provider": config_model.provider or "unknown",
-                              "model": config_model.model or ""},
+                "status": "failed",
+                "message": f"配置错误: {'; '.join(errors)}",
+                "model_ref": model_ref,
+                "errors": errors,
+                "warnings": warnings,
             }
+        # 文本派生, 允许 — 预警存在时如实告知"可用但有隐患"
+        message = (f"配置就绪: {config_model.provider} ({config_model.model})"
+                   if not warnings else
+                   f"配置可用，有 {len(warnings)} 项预警: {'; '.join(warnings)}")
         return {
             "valid": True,
-            "message": f"配置验证通过: {config_model.provider} ({config_model.model})",   # 文本派生, 允许
-            "model_ref": {"provider": config_model.provider, "model": config_model.model},
+            "status": "warning" if warnings else "success",
+            "message": message,
+            "model_ref": model_ref,
+            "errors": errors,
+            "warnings": warnings,
         }
     except Exception as e:
         logger.error(f"验证AI服务配置失败: {e}")
         return {
             "valid": False,
+            "status": "failed",
             "message": f"验证失败: {str(e)}",
             "model_ref": None,
+            "errors": [],
+            "warnings": [],
         }
+
+
+def _ensure_and_load_workspaces(conn, session_id: str) -> list[tuple[str, str, Optional[str], bool]]:
+    """进入会话·建立一条规则 —— 委托 `workspace_service.reconcile_session_workspaces`
+    （过滤唯一真源）。本函数只剩 atxn 回调壳。返回四元组 [(path, prop, memo, is_default)]。
+
+    ⚠ 必须是**同步 def**：本函数是 db.atxn 回调，在 to_thread worker 内执行，
+      atxn→_run_txn 只 return fn(conn)、**不会 await** —— 写成 async def 则 lambda
+      返回未 await 的协程对象，for 解包必抛
+      TypeError: 'coroutine' object is not iterable（每个任务启动即崩）。
+
+    BUG-1 根因订正：自写循环已删（脏行归一化无 try 会抛异常掀翻整个任务），
+    裁决收敛到 classify；`_build_default_workspace_dir` 下沉到 workspace_service
+   （它是 workspace 的事不是编排的事，倒挂 import 破分层）。"""
+    from app.services.chat.workspace_service import reconcile_session_workspaces
+    return reconcile_session_workspaces(conn, session_id)
+
+
+async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot], bool]:
+    """取本任务 workspace 快照(懒建+读库一体)。**失败一律降级为 (None, False), 绝不抛出**。
+
+    rows 现为 (path, workspace_property, memo, is_default) 四元组，
+    解包构造带三字段的 WorkspaceEntry。
+
+    retry_locked=2: atxn 默认 0(database.py:321 明示"不传即零重试"), 而 busy_timeout=500ms
+    + WAL 单写者下, 多会话并发起跑撞锁概率上升; 有限重试是本仓既有惯例。
+    返回 (快照, 是否成功) —— 调用方据此决定要不要 set ContextVar。"""
+    try:
+        rows = await db.atxn("chat", lambda c: _ensure_and_load_workspaces(c, session_id),
+                             retry_locked=2)
+        return WorkspaceSnapshot.build(
+            [WorkspaceEntry(path=p, workspace_property=r, memo=m, is_default=bool(d))
+             for p, r, m, d in rows]), True
+    except Exception as _wse:
+        logger.warning(f"[chat] workspace 快照构建失败, 本任务按无 workspace 兜底运行: {_wse}")
+        return None, False
 
 
 @dataclass
 class StreamState:
-    """流式状态 — 【修复P3-5】明确语义 — 北京老陈 2026-06-13(自 openai.py 迁入)"""
+    """流式状态 明确语义 2026-06-13(自 openai.py 迁入)"""
     llm_call_count: int = 0
     current_content: str = ""
     current_thought: str = ""  # 小欧 2026-07-16
@@ -235,67 +494,69 @@ class StreamState:
 async def chat_stream_orchestrator(
     messages: list,
     session_id: Optional[str] = None,
-    context_link_mode: Optional[str] = None,
+    link_enabled: Optional[bool] = None,   # 会话 link 开关值(随消息携带, None=沿用会话当前值)
+    allow_interject: Optional[bool] = None,   # 2026-10-06 小欧 - 文档[11]: 插话开关值(随消息携带, None=沿用会话当前值)
+    refs: Optional[list] = None,   # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用条目(当轮消费, 不入库)
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
     由 API 层解包 ChatRequest 后以 (messages, session_id) 调用；services 层不反向依赖 api/v1 DTO。
-    2026-08-16 - 小欧 - S1: 增 context_link_mode(任务上下文链, 10.1.4);
-      白名单校验(10.1.4⑧): 非法值/缺失一律按 independent, 防误灌历史(防退化)
+    2026-08-16 - 小欧 - 增 context_link_mode(任务上下文链);
+      白名单校验: 非法值/缺失一律按 independent, 防误灌历史(防退化)
+    2026-10-02 小欧 - 文档[4] 5.7 项8: context_link_mode 形参与白名单校验已废止（真源上移至会话 link 开关），
+      历史条目按"编辑历史禁删"保留不改。
+    2026-10-13 小欧 - 文档[28]: refs 随消息上行，仅透传到 agent._start_meta 供
+      message_builder 组装 LLM 消息时拼入；**不参与 user_input**（故入库/历史保持干净）。
     """
-    # ── 编排①输入校验(链模式白名单 + 消息非空) ———————————————————————————— 小健 2026-08-17
-    # 白名单校验(10.1.4⑧): {"linked","independent"} 之外的非法值按 independent 处理并记 warning
-    if context_link_mode not in ("linked", "independent"):
-        if context_link_mode is not None:
-            logger.warning(f"[chat] context_link_mode 非法值 '{context_link_mode}', 按 independent 处理")
-        context_link_mode = "independent"
+    # ── 编排输入校验(消息非空) ——————————————————————————————————————— 小健 2026-08-17
     if not messages:
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
-        logger.warning("[chat] 输入校验失败: 消息列表为空")
+        logger.debug("[chat] 输入校验失败: 消息列表为空")  # 2026-11-03 小欧: 请求体不合法, 降 DEBUG
         yield create_error_response(error_type="invalid_request", error_message="消息列表不能为空")
         return
+
+    # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 在**编排入口**一次性过滤越界 path，
+    #   判定复用 file_browse 的唯一入口（_resolve_within_root，含代码库根禁区）。
+    #   放这里而非 message_builder： 层次正确（本层 → app.file_browse 是同层横向依赖，
+    #   反向会让 agent 层依赖更外层）； 渲染期零 IO（原先每条 ref 都要 resolve 一次）。
+    #   2026-10-30 小欧 批2 序10: 双返回, 越界/无 path 条目汇入回执点名(不再静默丢失)。
+    _start_kept, _s_dropped = browse.sanitize_refs(refs)
     user_input = messages[-1].content or ""
     if not user_input.strip():
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
-        logger.warning("[chat] 输入校验失败: 消息内容为空")
+        logger.debug("[chat] 输入校验失败: 消息内容为空")  # 2026-11-03 小欧: 请求体不合法, 降 DEBUG
         yield create_error_response(error_type="invalid_request", error_message="消息内容不能为空")
         return
 
-    # ── 编排②取全局服务(LLM单例/model警告/task_id) ————————————————————————— 小健 2026-08-17
-    ai_service = get_service()
-    session_id = session_id or str(uuid.uuid4())
+    # ── 编排取全局服务(LLM单例/model警告/task_id) ———————————————————————— 小健 2026-08-17
+    scope = get_scope()            # 原子取本代唯一所有者(防换代窗口双代) — 小欧-2026-09-25
+    ai_service = scope.ai_service  # 同代单例(UniversalAgent 兜底/注入应答用) — 小欧-2026-09-25
+    journal_sink = journal_append                                  # [63] 3.6.4：与 3.6.3 append 同签名，生命周期与 scope 一致
+    session_id = session_id or create_session(None).session_id
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
     task_id = generate_task_id()
-    # ── 编排③算任务上下文链根(linked继承 / independent自为链根) ————————————————— 小健 2026-08-17
-    # S1 上下文链计算(10.1.4④⑧)：context_root_task_id
-    #   linked=续聊(需显式): 继承本会话最近一条成功任务的链根(曾续则沿链根); 无成功任务则=自身
-    #   independent=新任务(默认): =自身(从零自为链根)；cancelled/failed 不继承(防链到失败任务)
-    _context_root_task_id = task_id
-    if context_link_mode == "linked" and session_id:
-        _prev_chain = None
-        try:
-            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-            _prev_chain = await db.atxn("chat", lambda conn: get_previous_task_chain(conn, session_id))
-        except Exception as _e:
-            logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
-        if _prev_chain:
-            _context_root_task_id = _prev_chain["context_root_task_id"]
-    _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案4.7.3与A4对齐)
+    # 2026-10-03 小欧  S3: 链根计算下移到活跃任务注入判定之后(见下方编排)。
+    #   原位置在判定之前, 则注入失败降级新建时会把新任务并入活跃任务的组根。
+    _context_root_task_id = task_id      # 默认自为链根; link 开且查到链根时由下方覆盖 — 小欧 2026-10-03
+    _history_root = None              # 装历史用的根: 无真实链根时为 None(= 不装历史), 与落库用根区分
+    _link_on = False
+    _context_link_mode = "independent"
+    _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案设计对齐)
     set_session_id(session_id)
-    # ── 编排④建运行基元(步号计数器 + SSE流状态容器) ———————————————————————————— 小健 2026-08-17
-    # 2026-08-18 小欧 P2(§10.4.4): 删 next_step = create_step_counter()(step 统一 agent.llm_call_count 口径)
+    # ── 编排建运行基元(步号计数器 + SSE流状态容器) ——————————————————————————— 小健 2026-08-17
+    # 2026-08-18 小欧 弃用next_step: 删 next_step = create_step_counter()(step 统一 agent.llm_call_count 口径)
     execution_steps = []
     state = StreamState()
 
-    # ── 编排⑤取续聊历史边界(user_msg_id 上界, 服务重启DB兜底) ——————————————————— 小健 2026-08-17
+    # ── 编排取续聊历史边界(user_msg_id 上界, 服务重启DB兜底) —————————————————— 小健 2026-08-17
     _task_start_time = time.time()
     _user_msg_id = None
     try:
         _user_msg_id = get_user_message_id(session_id)
     except Exception:
         logger.warning(f"[chat] 获取user_message_id失败: session_id={session_id}")
-    # 小健 2026-08-17 三堂会审-E2修复: track 为内存 dict(重启即丢), 缺失时从 DB 兜底取本会话最后一条
+    # 小健 2026-08-17  track 为内存 dict(重启即丢), 缺失时从 DB 兜底取本会话最后一条
     #   user 消息 id 作为 linked 上界, 修复"服务重启后用第二任务续聊"时 upper=None 上界失效令链外/全部消息进上下文
     if not _user_msg_id and session_id:
         try:
@@ -307,12 +568,219 @@ async def chat_stream_orchestrator(
                 logger.info(f"[chat] E2 track缺失, DB兜底恢复upper: session={session_id}, user_msg_id={_user_msg_id}")
         except Exception as _eu:
             logger.warning(f"[chat] DB兜底取user消息id失败(session={session_id}): {_eu}")
-    log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}", level="WARNING")
 
-    bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
+    bg_task = None  # 修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
+    _session_client = None  # 快照预初始化: finally 交接守卫用(防 NameError) — 小欧-2026-09-25
+    _snapshot_handed_to_runner = False  # 交接标记: create_task 后置 True, finally 据此定归还方 — 小欧-2026-09-25
+    _ws_token = None  # workspace 快照 token 预初始化: 供 finally 判空(未注入时不还牌)
     try:
-        buffer = create_stream_buffer(task_id)
-        await register_task(task_id, ai_service)
+
+        # ── 会话 Workspace 快照(懒建 → 取快照 → 设 ContextVar) ——————————— 小欧 2026-10-10
+        #   位置必须在主 try 内: pre-try 段抛异常发生在首个 yield 之前, 上游 chat_routes 是裸
+        #   StreamingResponse 无兜底 → 整请求 500 且本 finally 不执行(ContextVar 泄漏)。
+        #   异常边界在 _load_ws_snapshot 内(失败降级为无 workspace, 不掀任务)。
+        #   ⚠ 不改写 user_input: 它在本函数有 7 个落点(落库 chat_tasks.user_input / 插话 /
+        #     运行日志), 改写即污染落库值与前端 POST 防双发的精确比对。注入块只在
+        #     交给 agent 的 last_message(真 prompt 入口)上叠加, user_input 保持用户原话。
+        _ws_snap, _ws_ok = await _load_ws_snapshot(session_id)
+        if _ws_ok:
+            _ws_token = set_current_session_workspaces(_ws_snap)
+
+        # 2026-09-20 小欧 活跃任务注入机制(定案): 同会话已有活跃任务时, 新消息注入该任务 inbox(可多条),
+        #   待其下一轮 LLM 调用前合并吸收; 无活跃任务时走正常新建任务。工具执行不被打断(安全底线)。 — 小欧-2026-09-20
+        # ── 插话开关: 落值 → 取生效值（携带值优先）→ 关态兜底 ──────────
+        #   位置必须在 has_active_task_in_session 之前：link_enabled 的落值块在注入之后，
+        #   照抄位置会让"刚打开开关的第一条消息"读不到新值 —— 小欧 2026-10-06
+        #   判定与落值同处一次执行, 读到即生效。
+        #   2026-10-08 小欧 - 文档[11] 3.4.5.2 DRY: 取值+落值收敛为 storage.resolve_session_interject
+        #   单一真源(与 save_message 共用); 读失败仍按关处理(fail-closed, 同 get_session_link)。
+        try:
+            _allow_interject = await db.atxn(
+                "chat", lambda conn: resolve_session_interject(conn, session_id, allow_interject)
+            )
+        except Exception as _e:
+            logger.warning(f"[interject] 读开关失败, 按关处理(fail-closed, 与 get_session_link 策略同款): {_e}")
+            _allow_interject = False
+
+        _active_tid = await has_active_task_in_session(session_id)
+        if _active_tid:
+            if not _allow_interject:
+                # 兜底(3.4.5.1 已拦下绝大多数): 生成器内无法抛 409, 只能以 SSE error 事件告知。
+                #   触发入口两种: 竞态(save_message 入库成功、会话在入库后被切为关态) ⟸ 此路径消息已在库;
+                #   绕过(直接 POST /chat/stream 而未经 /messages) ⟸ 此路径消息**未**入库。
+                #   两者都走同一帧文案; 前端按 3.5.9 处理: 仅提示(warning)+不回填草稿。
+                yield create_error_response(
+                    error_type="session_busy",
+                    error_message="任务执行中，插话开关未开启；请等待完成或先取消",  # 与 messages 409 detail、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
+                )
+                return
+            # 2026-10-30 小欧 A19(设计 6.2 序 11): 插话必须与首发同路带引用。
+            #   原实现只注入 user_input, 前端 postInterject 仍上行 refs → 插话引用全丢。
+            #   预算取**目标任务**生效模型的 context_length(运行中 agent 已持有); 插话档 5%
+            #   (超限即拒, 不降级)。解析/裁决失败与首发同语义显式阻断, 不静默吞引用。
+            #   2026-10-30 小欧 批2/3: 回执(refs_notice)与拒绝帧都经**目标任务缓冲**下发 ——
+            #   插话的新 POST 流前端只 readToEnd 不解析, 直 yield 用户收不到(载体纪律见 notice 模块)。
+            #   2026-10-30 小欧 批3: 与首发走同一流水线(prepare_refs) —— 原插话分支自己拼 notices
+            #   漏了 resolver 的 dropped, 读不出来的文件既不在回执里也不在"全部不可用"点名里。
+            _tgt_agent = await get_task_field(_active_tid, "agent")
+            _tgt_ctx = int(getattr(getattr(_tgt_agent, "llm_client", None),
+                                   "context_length", None) or DEFAULT_CONTEXT_LENGTH)
+            _ilimits = resolve_limits(_tgt_ctx, "interject")
+            _ifinal, _iall_notices = await prepare_refs(
+                _start_kept, limits=_ilimits, scope="interject", sanitized_dropped=_s_dropped)
+            _ibuf = get_stream_buffer(_active_tid)
+
+            async def _emit_to_target(payload: dict):
+                """回执帧下发: 目标缓冲在则 publish(经 Journal 落 seq 随目标任务流转),
+                已回收则打 persistence_degraded 标后返回直发副本(无 seq, 不抢目标任务序号)。"""
+                if _ibuf:
+                    await _ibuf.publish(payload)
+                    return None
+                payload["persistence_degraded"] = True
+                logger.warning(f"[Journal] 插话引用回执降级直发(目标任务缓冲已回收): target={_active_tid}")
+                return format_agent_sse(payload)
+
+            _isum = summarize_refs(_ifinal, _iall_notices)
+            if refs:
+                # 2026-10-30 小欧: 插话引用处置落日志(1 行汇总 + ≤5 行明细), 数字与下方 notice 同一份
+                report_refs("interject", _isum, _ifinal, _iall_notices)
+            _blocked = bool(refs) and not _ifinal
+            if _iall_notices:
+                # 部分不可用/被压缩: 只回执点名, 不中断任务(与首发同权, 4.8);
+                # 整批阻断属拒绝类, 回执强制 error 级(原分两条路径, 合并后按 _blocked 取级)
+                _frame = await _emit_to_target(
+                    build_notice("error" if _blocked else None, "interject", _iall_notices))
+                if _frame:
+                    yield _frame
+            if refs:
+                # 引用进入本轮(done)/全部不可用(failed): 经目标任务缓冲下发(新 POST 流前端只 readToEnd)
+                _frame = await _emit_to_target(build_refs_ready_notice("interject", _isum))
+                if _frame:
+                    yield _frame
+            if _blocked:
+                _names = describe_items(_iall_notices)
+                _frame = await _emit_to_target({
+                    "type": "error",
+                    "error_type": "refs_blocked",
+                    "error_message": f"引用全部不可用({_names}), 请移除后重发",
+                })
+                if _frame:
+                    yield _frame
+                return
+            if _ifinal and _tgt_agent is not None:
+                # 插话带引用: 目标任务 system 消息早已建好, 补注入"文件引用格式约定"(幂等, 已注入则跳过)
+                #   — 2026-10-30 小欧. 不补则模型看到引用正文却不知道 [[文件:...]] 输出约定。
+                _tgt_agent.message_builder.ensure_file_ref_rules()
+            # 2026-10-31 小欧 - 插话与首发共用同一装配函数, 目录块不再漏注;
+            #   快照取本次请求实时值(_ws_snap, 上面按 session 从 DB 取), 变更即生效 — 小欧-2026-10-31
+            # 2026-10-31 小欧 - 目录块在此渲染一次, 汇总日志/超限提示/装配共用同一份 — 小欧-2026-10-31
+            _ws_block = render_workspace_block(_ws_snap)
+            _builder = getattr(_tgt_agent, "message_builder", None)
+            if _builder is not None:
+                _inject_text, _ws_action = _builder.build_interject_text(
+                    user_input, _ifinal, _ws_block.text)
+            else:
+                # 目标任务 agent 已不可达(注册表回收): 无历史可判重, 直接全量装配
+                logger.warning(f"[chat] 插话取不到目标任务 agent, 目录块按无历史装配: target={_active_tid}")
+                _inject_text = build_user_turn_text(user_input, _ifinal, _ws_block.text)
+                _ws_action = "inject"
+            report_ws_block("interject", _ws_block, _ws_snap, _ws_action)
+            if _ws_block.skipped:
+                _frame = await _emit_to_target(build_ws_notice("interject", _ws_block))
+                if _frame:
+                    yield _frame
+            _injected_ok = await inject_message_to_task(
+                _active_tid, _inject_text, _user_msg_id)
+            if _injected_ok:
+                logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
+                await _bind_task_id(_active_tid, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28(设计文档[76] 6.6)
+                # 注入应答先落 Journal 再发 SSE：直 yield 绕过 publish 会让该帧不入库、
+                # 回放侧拿不到"消息已并入"。直发副本无 seq，不与目标任务流抢序号
+                _ack = build_merged_meta(_active_tid).to_dict()
+                _tgt_buf = get_stream_buffer(_active_tid)
+                if _tgt_buf:
+                    await _tgt_buf.publish(_ack)
+                else:
+                    # 目标任务缓冲已回收：降级直发并打标，否则这帧没入库却看不出来
+                    _ack["persistence_degraded"] = True
+                    logger.warning(f"[Journal] 注入应答降级直发(目标任务缓冲已回收): target={_active_tid}")
+                yield format_agent_sse(_ack)
+                return
+            # 注入失败(目标任务恰好终态/队列满/uid非法): 降级新建任务(下述正常路径), 不丢消息
+            logger.warning(f"[chat] 注入失败, 降级新建任务: session={session_id}, target={_active_tid}")
+
+        # ── 编排算任务上下文链根(会话 link 粘性开关) ——————————————————————— 小健 2026-08-17
+        # 2026-10-03 小欧  S3: 本块须位于活跃任务注入判定**之后** — 只有确定新建任务才需算链根。
+        # 上下文链计算：context_root_task_id
+        #   link 开(粘性，唯一真源 chat_sessions.link_enabled): 并入会话内最近一条任务所在组(任意状态口径)；
+        #     会话内无任何任务时 =自身(从零自为链根, 此时不装历史)
+        #   link 关: =自身(从零自为新组链根)
+        # 读真源走 conn 级读函数 get_session_link(storage 层), 并同样经 db.atxn offload 出事件循环 ——
+        #   本文件 :83-84 登记「请求编排期 loop 零同步 DB I/O」(2026-08-24 后端卡死事故修复结论)。
+        #   不复用 get_session_info: 它含 2 条 COUNT(*) GROUP BY 且同步取连接, 放进 async 生成器
+        #   等于每条消息在 loop 上同步跑 3 条 SQL, 且会话不存在时抛 HTTPException(分层越界)。
+        # 值随消息到达: 携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库, 并落库。
+        # 本块位于活跃任务注入判定之后 —— 注入/占位合并两条早退路径不生成任务, 不会走到这里改写会话真源。
+        # — 小欧 2026-10-03 文档[4] 5.7.14 单元5
+        if link_enabled is not None:
+            _link_on = link_enabled
+            try:
+                _rows = await db.atxn(
+                    "chat", lambda conn: set_session_link_conn(conn, session_id, link_enabled)
+                )
+                if _rows == 0:
+                    logger.warning(
+                        f"[chat] 落会话 link 开关命中0行(session={session_id}), 本条仍按携带值处理")
+            except Exception as _e:
+                logger.warning(
+                    f"[chat] 落会话 link 开关失败(session={session_id}), 本条仍按携带值处理: {_e}")
+        else:
+            try:
+                _link_on = await db.atxn("chat", lambda conn: get_session_link(conn, session_id))
+            except Exception as _e:
+                logger.warning(f"[chat] 读会话 link 开关失败(session={session_id}), 按关闭处理: {_e}")
+                _link_on = False   # 显式兜底, 不依赖上方 _link_on 初值 — 小欧 2026-10-03
+        _context_link_mode = "linked" if _link_on else "independent"
+        if _link_on:
+            try:
+                # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+                _prev_root = await db.atxn("chat", lambda conn: get_previous_task_chain(conn, session_id))
+            except Exception as _e:
+                logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
+            else:
+                if _prev_root:
+                    _context_root_task_id = _prev_root
+                    _history_root = _prev_root
+        # 2026-10-03 小欧 关联审查风险1: 无链根时 _history_root 保持 None(装历史早退),
+        #   不可沿用落库用的自身 task_id —— 该行此刻尚未 insert, 会致下界缺失而全量灌入会话旧消息。
+
+        buffer = create_task_stream_buffer(task_id, session_id, journal_sink)
+        # 占位注册方案(2026-09-20 小欧, 定案): register_task 不再抛异常, 守卫命中返回占位tid 
+        #   同会话活跃任务被并发请求抢先占位(TOCTOU窗口), 本消息改道注入占位任务, 不丢消息。
+        _reg_res = await register_task(task_id, session_id=session_id)  # 删 ai_service — 小欧-2026-09-25
+        if _reg_res:
+            logger.warning(f"[chat] B-3竞态守卫命中(session={session_id}, 占位={_reg_res}, 本task={task_id}作废), 改道注入")
+            _inj2 = await inject_message_to_task(_reg_res, user_input, _user_msg_id)
+            if _inj2:
+                reclaim_memory_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留；只清内存不删 Journal
+                await _bind_task_id(_reg_res, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28
+                # 占位改道注入：同前，应答先经目标任务 publish 落 Journal 再发
+                _ack2 = build_merged_meta(_reg_res).to_dict()
+                _tgt_buf2 = get_stream_buffer(_reg_res)
+                if _tgt_buf2:
+                    await _tgt_buf2.publish(_ack2)
+                else:
+                    _ack2["persistence_degraded"] = True   # 缓冲已回收，降级直发并打标
+                    logger.warning(f"[Journal] 占位改道应答降级直发(目标任务缓冲已回收): target={_reg_res}")
+                yield format_agent_sse(_ack2)
+                return
+            # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
+            logger.warning(f"[chat] B-3占位任务 {_reg_res} 已释出, 重试注册新建: session={session_id}")
+            _reg_retry = await register_task(task_id, session_id=session_id)  # 删 ai_service — 小欧-2026-09-25
+            if _reg_retry:
+                # 双极端(占位者再次抢先): 概率极低, 交给外层异常兜底(不再深挖, KISS)
+                raise RuntimeError(f"B-3 重试注册仍被占位: session={session_id}, 占位={_reg_retry}")
 
         is_cancelled, cancel_msg = await task_cancel_check(task_id)
         if is_cancelled:
@@ -321,100 +789,204 @@ async def chat_stream_orchestrator(
             yield cancel_msg
             return
 
-        # ── 编排⑥建 UniversalAgent + 会话sessionModel(先建才有 llm_client) ——— 小健 2026-08-17
+        # ── 编排建 UniversalAgent + 会话sessionModel(先建才有 llm_client) —— 小健 2026-08-17
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
-        # 8.7 会话模型覆盖决议外迁 resolver.resolve_session_client(纯搬迁, 逻辑零改动) — 小健 2026-09-05
-        #   无覆盖/无 session_id 返回 None, agent 维持全局默认; 有覆盖则换装独立客户端快照(单例不受污染)
-        _session_client = await resolve_session_client(ai_service, session_id)
-        if _session_client is not None:
-            agent.llm_client = _session_client
-            # S2 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
-            #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
-            agent._task_llm_model = getattr(_session_client, "llm_model", None)
+        # 会话模型覆盖决议外迁 resolver.resolve_session_client(纯搬迁, 逻辑零改动) — 小健 2026-09-05
+        #   小欧 2026-09-25: 改传 scope(lease 只从 scope.acquire_lease() 出); 恒返回任务私有快照
+        #   (无 None 死分支)——同 provider 快照接管本代 lease(agent 结束 close 归还), 跨 provider 独占新池
+        # 换代窗口守卫(小欧 2026-09-25): 取到的 scope 与本次 resolve 之间隔着 8 个 await
+        #   (落库/兜底/活跃任务/注册/取消检查), 期间用户点保存即换代 → 该 scope 已退休, 直接 acquire_lease
+        #   会抛 RuntimeError 并被上层 except Exception 当成"路由异常"回给用户, 等于"换一次配置打死一个
+        #   正在起步的请求", 违反「新请求即新代」与「任务不中断」原则。故 resolve 前就地复核:
+        #   已退休就改取当前代(仍是原子取本代唯一所有者, 不引双代)。
+        #   复核与 acquire_lease 之间无 await(事件循环单线程, 无处让出), 故不产生新的竞态窗口。
+        if scope.is_released:
+            logger.info(f"[chat] 换代窗口: scope 已退休, 改取当前代(task={task_id})")
+            scope = get_scope()
+        # 配置错误专属catch - 小欧 - 2026-09-26: 不让它掉进下方 :536 的 router_error 兜底 ——
+        #   配置问题与系统问题必须可分辨（用户看到"路由异常: xxx"无法判断该去设置页补 key）
+        try:
+            _session_client = await resolve_session_client(scope, session_id)
+        except ProviderKeyMissingError as _pk:
+            # 2026-09-26 - 小欧 - 专属 catch（不用通用 router_error 兜底）：配置问题须与系统问题可分辨。
+            #   早退前必清缓冲+任务：本处 register_task 已成功，清洗_expired_tasks 又排除 running，
+            #   不清则该任务永久占死本会话（后续消息全被改道注入死任务，用户永远等不到回复）。
+            #   与占位注册早退(:392) 不同：彼时本任务从未注册成功，故只回收缓冲、无任务可清。
+            logger.warning(
+                "[chat] 配置缺失，提前结束（任务已注销，缓冲已回收）: task=%s, session=%s, err=%s",
+                task_id, session_id, _pk,
+            )
+            reclaim_memory_buffer(task_id)
+            await cleanup_task(task_id)
+            yield create_error_response(
+                error_type="config_error",
+                error_message=str(_pk),
+            )
+            return
+        agent.llm_client = _session_client
+        # 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
+        #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
+        agent._task_llm_model = getattr(_session_client, "llm_model", None)
         # ── [TASK_START] 在会话覆盖快照生效后打印, 用 agent.llm_client(实际生效模型)非全局默认
         #    (修复: 原先打印 ai_service.llm_model 是全局默认且时机在覆盖前, 误导排查) — 小欧 2026-09-01
         log_and_print(
             f"[TASK_START] provider={agent.llm_client.llm_model.provider} model={agent.llm_client.llm_model.model} |\n "
             f"task_id={task_id} session_id={session_id} "
             f"user_message_id={_user_msg_id} |\n "
-            f"user_input={user_input}"
+            f"user_input={user_input}",
+            level="WARNING",
         )
-        # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
-        # P4: 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
-        #   10.1.7②-1 9属性(任务级读写扩展) — 小欧 2026-08-16
+        # ── 编排组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖  agent) —— 小健 2026-08-17
+        # 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
+        #   9属性(任务级读写扩展) — 小欧 2026-08-16
+        # 锚点查询经闭包注入 agent(不 import chat 层, 依赖 chat→agent 单向); 写回走 react_loop 单一出口。— 小欧 2026-10-14
+        async def _load_chain_summary():
+            """同链最近非空摘要锚点; 链根为空(link 关)或无摘要时返 None(调用方走老路)"""
+            if not _context_root_task_id:
+                return None
+            return await db.atxn("chat", lambda c: get_chain_summary_anchor(
+                c, context_root_task_id=_context_root_task_id, current_task_id=task_id))
+
         import types as _types
         _db_ops = _types.SimpleNamespace(
-            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚, 北京老陈 2026-08-23 锚迁移）— 小健 2026-08-19 P1-4
-            load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤(10.1.4⑤⑥)，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
-                sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
-                upper_message_id=_user_msg_id),
+            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚,  2026-08-23 锚迁移）— 小健 2026-08-19
+            load_previous=lambda sid, lower_message_id=None: _load_previous_messages(  # 任务上下文过滤，经闭包注入装历史用根+上界(_user_msg_id)
+                # 2026-10-14 小欧 - linked 增量摘要: 增可选 lower_message_id 透传(锚点后下界), 缺省 None=老行为 — 小欧-2026-10-14
+                sid, context_root_task_id=_history_root,
+                upper_message_id=_user_msg_id, lower_message_id=lower_message_id),
+            load_chain_summary=_load_chain_summary,  # 取同链最近非空摘要锚点(增量摘要起点), 无锚点返 None — 小欧-2026-10-14
             log_task_end=_log_task_end,
-            insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建 — 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) — 小欧 2026-08-22
+            insert_task=lambda c: insert_task(  # -1 chat_tasks 创建 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
                 ai_message_id=None,  # agent_runner 分配后回填 — 小欧 2026-08-19
-                user_input=user_input, context_link_mode=context_link_mode,
+                user_input=user_input, context_link_mode=_context_link_mode,
                 context_root_task_id=_context_root_task_id,
                 task_model=agent.llm_client.llm_model),
-            update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # ②-1 chat_tasks 终态
-            insert_token=lambda c, **kw: token_usage_insert(  # ②-3 共用 — 归一: task_model 传 ModelRef — 小欧 2026-08-22
+            update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # -1 chat_tasks 终态
+            insert_token=lambda c, **kw: token_usage_insert(  # -3 共用 归一: task_model 传 ModelRef 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id,
                 task_model=agent.llm_client.llm_model, **kw),
-            update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),  # 11.1 任务级token累计(去闭包双重绑定, 由调用方经**kw传task_id)
-            update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),  # 11.1 会话级token累计(去闭包双重绑定, 由调用方经**kw传session_id)
-            query_task_acc=lambda c, **kw: query_task_accumulation(c, **kw),  # 12.2-Q3/C3: 终态快照从权威累计列派生 — 小欧 2026-08-21
+            update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),  # 任务级token累计(去闭包双重绑定, 由调用方经**kw传task_id)
+            update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),  # 会话级token累计(去闭包双重绑定, 由调用方经**kw传session_id)
+            query_task_acc=lambda c, **kw: query_task_accumulation(c, **kw),  # 终态快照从权威累计列派生 — 小欧 2026-08-21
             user_msg_id=_user_msg_id,  # v2.0 改动2: 供agent_runner回填chat_user_message — 小欧 2026-08-19
         )
-        # ── 编排⑧注入 start 运行元数据(_start_meta, start_step 装配用) ———————— 小健 2026-08-17
-        # S4/S5(10.1.1③/10.1.7④): start 运行元数据注入 agent — 取消 orchestrator 旁路(step_start),
-        #   start 业务完整归 start_step 模块(chat 层仅 P4 捕获运行数据注入 agent._start_meta),
+        # ── 编排注入 start 运行元数据(_start_meta, start_step 装配用) ——————— 小健 2026-08-17
+        # start 运行元数据注入 agent — 取消 orchestrator 旁路(step_start),
+        #   start 业务完整归 start_step 模块(chat 层仅捕获运行数据注入 agent._start_meta),
         #   react_cycle 经 assemble_start_step 从 _start_meta 读齐装配, 不再有 chat 层 start 构造逻辑 — 小健 2026-08-17
         #   只注入 agent 拿不到的 chat 运行数据: task_id(agent.task_id 已持有)、provider/model(agent.llm_client
         #   已持有)、user_input? 见下——next_step/session_id/链字段/warning 为必需 (react_cycle 无权威源)
         #   2026-08-17 小健 收敛真冗余: task_id 由 agent.task_id 权威持有(base_agent:59), 不重复注入; 余键保留
+        # 2026-10-09  取链内序号(第几个 link 任务)供 _start_meta 注入([20] §5.2)。
+        #   口径与 query_chain_accumulation 同源; 闭包形态与相邻 db_ops 一致, 不用 partial(省 import)
+        # 2026-10-10 小欧: 查询失败不拖死任务(序号只影响前缀文案) —— 默认 0
+        _chain_sibling_count = 0
+        try:
+            _chain_sibling_count = await db.atxn(
+                "chat",
+                lambda conn: count_chain_siblings(
+                    conn,
+                    context_root_task_id=_context_root_task_id,
+                    current_task_id=task_id),
+            )
+        except Exception as _e:  # noqa: BLE001 - 序号仅供文案, 失败降级不阻断任务
+            logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
+        # ── 引用解析+体积裁决(设计 4.3/4.7): 建 agent 之后、_start_meta 注入之前 ─────
+        #   2026-10-30 小欧 A1: 运行时窗口取 agent.llm_client.context_length。
+        #   切小窗口模型时引用预算会被放大数倍。llm_client 是会话覆盖后的生效快照, 唯一真源。
+        #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断),
+        #   已收口到 services.refs.pipeline.prepare_refs(与插话共用同一顺序与实现)。
+        #   2026-10-31 小欧: 兜底或 DEFAULT_CONTEXT_LENGTH —— 与插话分支兜底同源同写法, 消
+        #   message_builder.MAX_CONTEXT_TOKENS 绕行取值(该构造默认值本就是同一数, KISS-DIRECT);
+        #   正常链路 llm_client.context_length 恒有值(parse_model_params 四级兜底), 本兜底仅防
+        #   llm_client 缺失边沿 —— 插话/首发两兜底单口径(DRY)。 — 小欧-2026-10-31
+        _ctx_limit = int(getattr(agent.llm_client, "context_length", None)
+                         or DEFAULT_CONTEXT_LENGTH)
+        _limits = resolve_limits(_ctx_limit, "first")
+        # 回执条目全链汇集: 读取失败/截断(resolver) + 压缩/拒绝(budget) + 越界/无 path(sanitize)。
+        #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
+        _final_refs, _notices = await prepare_refs(
+            _start_kept, limits=_limits, scope="first", sanitized_dropped=_s_dropped)
+        # 2026-10-30 小欧 引用进 loop 前可观测(北京老陈令): 汇总/日志/notice 共用一份数字。
+        #   原只在 _notices 非空时打一行 info(无 notices 的成功路径零痕迹, 查错无从下手),
+        #   现改为"有引用就留痕": 1 行汇总(控制台+文件) + ≤5 行明细(文件) + SSE notice。
+        _sum = summarize_refs(_final_refs, _notices)
+        if refs:
+            report_refs("first", _sum, _final_refs, _notices)
+        if _notices:
+            # 回执下发(有则发): 首发流是新建任务流, 前端 pump 直接消费, yield 即可见
+            yield create_refs_notice_event("first", _notices)
+        if refs:
+            # 引用进入本轮(done)/全部不可用(failed): 事件列表可见, 数字与日志汇总行同源
+            yield create_refs_ready_event("first", _sum)
+            if not _final_refs:
+                _names = describe_items(_notices)
+                yield create_error_response(error_type="refs_blocked",
+                                            error_message=f"引用全部不可用({_names}), 请移除后重发")
+                return
+        # 2026-10-31 小欧 - 目录块在编排层渲染一次(文本交 init_history 装配),
+        #   汇总日志与超限提示取同一份数字; 放在阻断判定之后 —— 请求被拒时不说"已注入" — 小欧-2026-10-31
+        _ws_block = render_workspace_block(_ws_snap)
+        report_ws_block("first", _ws_block, _ws_snap,
+                        "inject" if _ws_block.text else "skip_none")
+        if _ws_block.skipped:
+            yield format_sse_event("notice", 0, build_ws_notice("first", _ws_block))
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
-            "context_link_mode": context_link_mode,
+            "context_link_mode": _context_link_mode,
             "context_root_task_id": _context_root_task_id,
+            # 2026-10-09 小欧: link 序号 N(第几个 link 任务), telemetry 直接读不算(单一写点)
+            "context_link_index": _chain_sibling_count + 1,
             "warning": _model_warning,
+            # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用透传, 供 message_builder.init_history 拼入
+            #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
+            #   2026-10-30 小欧 批3: 已解析(读盘)+已裁决(budget), 此处只放行通过的条目。
+            "refs": _final_refs or [],
+            # 2026-10-31 小欧 - 目录块文本(已渲染)透传, 首发装配唯一样本 — 小欧-2026-10-31
+            "ws_block": _ws_block.text,
         }
-        # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
-        # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
+        # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
+        # -1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) 小欧 2026-08-16
         _ai_message_id = None
+        # 目录前导常量局部导入(2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
+        from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
+        # -1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
+        #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
+        #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
+        def _setup_task_db(conn):
+            _db_ops.insert_task(conn)
+            # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
+            # 镜像写点(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
+            # eager分配assistant行+创建时即写chat_tasks.ai_message_id —
+            #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
+            #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
+            _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
+            conn.execute(
+                "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
+                (_aid, task_id),
+            )
+            # 落库 $dir 引用(2026-08-23): 物理目录 = files/Sion_{session_id}/Task_{task_id}/,
+            #   前导 2026-08-24 , 与 TaskFileWriter._dir 同源常量拼装),
+            #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
+            conn.execute(
+                "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
+                (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
+            )
+            return _aid
+        # 关键DB事务不再被 try 吞(小欧 2026-09-29 SRP/KISS-DIRECT): 任务行+ai_message_id 是全链路落库地基,
+        #   建立失败却继续起跑 = 前端看着"在跑"而 chat_tasks/chat_task_steps 全空(2026-09-29 19:49 PAR-05 实锤)。
+        #   locked 由 atxn(retry_locked=3) 有限重试; 重试耗尽/非锁异常向上抛, 走下方编排 yield router_error
+        #   (失败显式可见), 杜绝静默降级(原 L595-596 吞异常致 ai_message_id=None 带病起跑, 埋 NOT NULL 崩点)。
+        _ai_message_id = await db.atxn("chat", _setup_task_db, retry_locked=3)
+        # 文件A/B 创建(header)——assistant 分配即建; 创建后挂载
+        #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 小欧 2026-08-23
+        #   非DB文件写, 与关键DB事务分离(SRP): 保持原"仅告警不连坐"设计意图 — writer 失败
+        #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
         try:
-            # 目录前导常量局部导入(北京老陈 2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
-            from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
-            # ②-1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
-            #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
-            #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
-            def _setup_task_db(conn):
-                _db_ops.insert_task(conn)
-                # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
-                # 镜像写点 W6(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
-                # 12.2-C4: eager分配assistant行+创建时即写chat_tasks.ai_message_id —
-                #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
-                #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
-                _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
-                conn.execute(
-                    "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
-                    (_aid, task_id),
-                )
-                # D7/#5(2026-08-23): 11.7.5-1 落库 $dir 引用(物理目录 = files/Sion_{session_id}/Task_{task_id}/,
-                #   前导 2026-08-24 北京老陈裁定, 与 TaskFileWriter._dir 同源常量拼装),
-                #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
-                conn.execute(
-                    "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
-                    (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
-                )
-                return _aid
-            _ai_message_id = await db.atxn("chat", _setup_task_db)
-            # 11.8-H1/D1: 文件A/B 创建(header)——assistant 分配即建(11.7.4-4); 创建后挂载
-            #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 11.9 P5 — 小欧 2026-08-23
-            #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
-            #   成功路径等价; 失败路径更稳——writer 创建失败不再连坐回滚任务落库事务(仅告警),
-            #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
             from app.file_persist import create_task_writer
-            from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
+            from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(修复: 顶层无该符号, 缺则 NameError 被吞降级无文件)
             _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
             agent.file_persist = create_task_writer(
                 session_id=session_id,
@@ -423,26 +995,32 @@ async def chat_stream_orchestrator(
                 start_time_iso=get_local_iso_timestamp(),
                 model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
             )
-        except Exception as _task_e:
-            logger.warning(f"[chat] chat_tasks INSERT/eager分配失败(task={task_id}): {_task_e}")
+        except Exception as _writer_e:
+            logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
+        # 2026-10-31 小欧 - 交干净 user_input, 注入块由 message_builder.init_history 统一装配 — 小欧-2026-10-31
         bg_task = asyncio.create_task(run_agent_in_background(
             agent, task_id, user_input, None, session_id, state, _task_start_time,
             db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
+        # 2026-10-30 小欧 - 登记 agent 协程句柄供取消直达: 取消必须能打断"响应头未到"(TTFB)的在飞等待,
+        #   flag/关连接都做不到, 只有 cancel() 能。句柄由本层 _agent_tasks 持强引用, 登记表只借引用。
+        await set_agent_task(task_id, bg_task)
+        # 交接完成: 快照关闭责任移交 runner finally, orchestrator 不再归还 — 小欧-2026-09-25
+        _snapshot_handed_to_runner = True
 
-        # ── 编排⑩流式转发(消费后台 agent 产出的 SSE → 转前端) ————————————————— 小健 2026-08-17
+        # ── 编排流式转发(消费后台 agent 产出的 SSE → 转前端) ———————————————— 小健 2026-08-17
         async for sse_chunk in _stream_with_control(buffer, task_id, session_id, execution_steps, state):
             yield sse_chunk
-    # ── 编排⑪异常/收尾(断连静默/异常取消后台/reset ContextVar) ———— 小健 2026-08-17; 小沈 2026-08-29 bug#5: 去 finally 还原单例副作用
+    # ── 编排异常/收尾(断连静默/异常取消后台/reset ContextVar) ——— 小健 2026-08-17; 小沈 2026-08-29 修复: 去 finally 还原单例副作用
     except asyncio.CancelledError:
-        # 客户端断开：静默返回，agent 后台继续 — 北京老陈 2026-07-12 小欧 2026-07-12
-        log_and_print(f"{time.strftime('%H:%M:%S')} [chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续")  # 2026-09-08 小欧: 双写(console可见断开动作) — 小欧-2026-09-08
+        # 客户端断开：静默返回，agent 后台继续 2026-07-12 小欧 2026-07-12
+        log_and_print(f"{time.strftime('%H:%M:%S')} [chat_stream_orchestrator] 客户端断开(task={task_id})，agent 后台继续", level="WARNING")  # 2026-09-08 小欧: 双写(console可见断开动作) — 小欧-2026-09-08
         return
     except Exception as e:
         logger.error(f"[chat_stream_orchestrator] Error: {e}", exc_info=True)
-        # BUG-32修复(三堂会审 小沈 2026-08-13): orchestrator 异常时 cancel bg_task, 避免后台继续运行但前端收到错误的状态不一致;
+        # 修复( 小沈 2026-08-13): orchestrator 异常时 cancel bg_task, 避免后台继续运行但前端收到错误的状态不一致;
         #   bg_task 已启动(若进入 try 块内), cancel 后 run_agent_in_background 的 finally 仍会执行 DB 保存(已产出结果不丢失)。
         try:
             if bg_task and not bg_task.done():
@@ -452,76 +1030,88 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat_stream_orchestrator] 取消 bg_task 失败: {_ce}")
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
+        if _session_client is not None and not _snapshot_handed_to_runner:
+            # 未交接 runner 的快照统一单点归还(lease 随之 release 归还本代池);
+            #   异常/断连/取消/create_task 失败等全部路径经此 finally, 不逐路径 close(DRY);
+            #   try/except 与 agent_runner 的关池同款: 独占池 aclose 抛错也不得吞掉根因/挡住 ContextVar reset — 小欧 2026-09-25
+            try:
+                await _session_client.close()
+            except Exception as _sce:
+                logger.warning(f"[chat] 未交接快照关闭失败(task={task_id}): {_sce}")
         _current_task_id.reset(_task_token)
+        if _ws_token is not None:                # 判空: 快照段没走到则不还牌
+            reset_current_session_workspaces(_ws_token)   # 必须传 token
 
 
-# ============================================================
-# SSE 转发通道路由表(白名单, 北京老陈 2026-09-12 复核定案; [29]§7.3.2 实施定稿) — 小欧-2026-09-12
-# event_log = 落库与 SSE 共源(生产端 publish 直写); stream_reader = 唯一转发咽喉点(实时/重连共用)。
-# 白名单语义: 仅下列类型被实时转发前端; 未登记类型一律不转发(默认拦截, 结构性杜绝 thought 事故)。
-# 纪律([29]§7.3.1): 新增任何 Step/事件类型必须·在此登记 + ·steps/__init__.py ALL_STEP_TYPES 登记源登记, 缺一不放行。
-# 全集来源: [29]§7.1.3(当前 HEAD 4bf3ea987 逐字面值实证)。
-# ============================================================
-_SSE_FORWARD_TYPES = frozenset({
-    # SSE + 落库
-    "start", "action", "observation", "final", "final_stats",
-    # 仅SSE(实时信号, 落库由 agent_runner 扫描分支处理)
-    "chunk", "thought-start",
-    "error", "usage", "paused", "resumed", "retrying",
-    "rejected", "stats", "context_overview", "truncated",
-    # 防御性保留: 当前无独立发射源, 若未来新增取消通知类可转发
-    "cancelled",
-})
+# SSE 转发白名单 — 小欧 2026-09-12
+# event_log = 落库与 SSE 共源; stream_reader = 唯一转发咽喉点(实时/重连共用)。
+# 未登记类型一律不转发(默认拦截, 防 thought 事故)。新增类型先在 ALL_STEP_TYPES 登记。
+# 2026-10-03 小欧 - 转发表改由 ALL_STEP_TYPES 推导(原 18 个字面量手工重复, 登记源增项会漏转发)
+_SSE_FORWARD_TYPES = frozenset(ALL_STEP_TYPES - {"thought"})
+assert "thought" not in _SSE_FORWARD_TYPES, "thought 仅落库, 不得进转发表(思维链外泄风险)"
 
 
 async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     """纯消费者：从事件缓冲按 seq 偏移读取并转发 SSE — 小欧 2026-07-12
 
     解决什么问题：SSE 只做"读缓冲→转发"，断线即返回、不碰 agent；
-    重连复用同一函数（传 after_seq 续传），避免重复事件。 — 北京老陈 2026-07-12
+    重连复用同一函数（传 after_seq 续传），避免重复事件。 2026-07-12
 
-    小健 2026-09-05 自 stream_reader.py 整份并入本模块(8.6 一拆三, 逐字复制零改动)
+    小健 2026-09-05 自 stream_reader.py 整份并入本模块(一拆三, 逐字复制零改动)
     """
     offset = after_seq
-    heartbeat_seq = 0  # 2026-09-08 小欧: 心跳计数器(北京老陈指令心跳双写+计数, 见编辑历史) — 小欧-2026-09-08
-    while True:
-        async with buffer.cond:
-            while offset < len(buffer.event_log):
-                # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
-                _ev = buffer.event_log[offset]
-                offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
-                if not _ev or _ev.get("type") not in _SSE_FORWARD_TYPES:
-                    continue  # 白名单: 未登记类型不转发(默认拦截); 落库扫描/event_log/重连均不受影响 — 小欧-2026-09-12
-                logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
-                yield format_agent_sse(_ev)
-            if buffer.done.is_set():
-                # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
-                #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
-                #   = 截断) 或"正常全量"(offset 越过 fs seq)。重连场景 offset 为续传起点, 同语义。
-                #   — 小欧-2026-09-12
-                _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
-                _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
-                logger.info(f"[SSE] reader退出(task={task_id}, is_reconnect={after_seq > 0}, 起点seq={after_seq}, "
-                            f"续传帧数={offset - after_seq}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
-                            f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-13 补点B: 首连/重连可区分, 对账闭环
-                return
-            # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
-            # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
-            try:
-                await asyncio.wait_for(buffer.cond.wait(), timeout=HEARTBEAT_INTERVAL)  # 心跳周期 HEARTBEAT_INTERVAL(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
-            except asyncio.TimeoutError:
-                heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08
-                log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {HEARTBEAT_INTERVAL}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
-                # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
-                #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
-                #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
-                #   刷新前端 IDLE_TIMEOUT=60000 空闲计时; 心跳 HEARTBEAT_INTERVAL 与前端 60s 错开(constants.py §6), 无同时到期竞态;
-                #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
-                #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
-                yield ": ping\n"
-                if buffer.done.is_set():
-                    return
-                continue
+    heartbeat_seq = 0  # 2026-09-08 小欧: 心跳计数器(指令心跳双写+计数, 见编辑历史) 小欧-2026-09-08
+    try:
+        loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 活跃reader注册, 心跳监管起点(首次调用启动看门狗线程)
+        while True:
+            loop_watchdog.beat()  # 治理观测§4.4(2026-10-04 小欧): 本轮可调度=事件循环活着; 停止调用即循环停摆, 看门狗自动dump留证
+            # 锁内阶段: 只取"待转发事件/心跳动作", 绝不 yield —— 2026-09-20 小欧 E-1修复:
+            #   原 549/574 行在 buffer.cond 锁内 yield, 挂起期间 producer(agent 侧) acquire 不到锁无法 publish,
+            #   事件被阻塞在写缓冲, 前端帧间断流/终态滞留; 现改为锁内扫描+推进 offset, 锁外统一 yield(单一出口, DRY)
+            _pending = None  # 待锁外 yield 的 SSE 字符串; None=无待发动作, 继续循环重检
+            async with buffer.cond:
+                while offset < len(buffer.event_log):
+                    # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
+                    _ev = buffer.event_log[offset]
+                    offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
+                    if _ev and _ev.get("type") in _SSE_FORWARD_TYPES:
+                        logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
+                        _pending = format_agent_sse(_ev)
+                        break
+                if _pending is None:
+                    if buffer.done.is_set():
+                        # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
+                        #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
+                        #   = 截断) 或"正常全量"(offset 越过 fs seq)。重连场景 offset 为续传起点, 同语义。
+                        #   — 小欧-2026-09-12
+                        _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
+                        _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
+                        logger.info(f"[SSE] reader退出(task={task_id}, is_reconnect={after_seq > 0}, 起点seq={after_seq}, "
+                                    f"续传帧数={offset - after_seq}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
+                                    f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-13 补点B: 首连/重连可区分, 对账闭环
+                        return
+                    # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
+                    # 加超时并循环重检done 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
+                    try:
+                        _hb = get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
+                        await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py, 与前端 IDLE_TIMEOUT=60s 错开)
+                    except asyncio.TimeoutError:
+                        heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(指令双写+计数) 小欧-2026-09-08
+                        log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发: ping 保活", level="WARNING")  # 2026-09-08 小欧: debug→双写(指令) 小欧-2026-09-08
+                        # 方案一 SSE keep-alive 心跳( 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
+                        #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
+                        #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
+                        #   刷新前端 IDLE_TIMEOUT=60000 空闲计时; 心跳 HEARTBEAT_INTERVAL 与前端 60s 错开(constants.py), 无同时到期竞态;
+                        #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
+                        #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
+                        if buffer.done.is_set():
+                            return
+                        _pending = ": ping\n"
+            # 锁外阶段: producer 不受阻塞, 统一在此 yield(转发事件/心跳两部分唯一出口) — 小欧 2026-09-20
+            if _pending is not None:
+                yield _pending
+    finally:
+        loop_watchdog.deactivate()  # 治理观测§4.4(2026-10-04 小欧): 含断连GeneratorExit路径, reader计数必须归零
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,
@@ -530,17 +1120,100 @@ async def _stream_with_control(buffer, task_id: str, session_id: str,
 
     首次请求(after_seq=0)与重连请求(after_seq=N)共用本函数，DRY。
     客户端断开时 CancelledError 向上传播，由 orchestrator 捕获。
-    2026-08-18 小欧 P2(§10.4.4): 删 next_step, task_pause/cancel_check 步号统一 _current_step(task_id)
+    2026-08-18 小欧 弃用next_step: task_pause/cancel_check 步号统一 _current_step(task_id)
     """
     async for sse_chunk in stream_reader(buffer, task_id, after_seq):
         async for pause_event in task_pause_check_and_yield(task_id):
             yield pause_event
         cancelled_sse = await task_cancel_check_and_yield(
-            task_id, execution_steps)
+            task_id, execution_steps, buffer)
         if cancelled_sse:
             yield cancelled_sse
             return
         yield sse_chunk
+
+
+_JOURNAL_ALIVE_WINDOW_SECONDS = 60     # 最近事件在此秒数内 → producer 判为存活（终止判据）
+_JOURNAL_POLL_FLOOR_SECONDS = 2.0      # 等待轮询下限，实际取 max(该值, 心跳周期配置)
+
+
+async def _journal_producer_alive(task_id: str, cursor: int) -> bool:
+    """判定 Journal 的 producer 是否还活着：新事件已出现，或最近写入仍在活跃窗口内。
+
+    3.7 第 5 步把"非终态"直接等同于"后端已重启"，但那只是必要条件：仍在跑、只是长时间无新事件
+    （慢思考/HITL 静默/工具长耗时）时也会误判。零 DDL 判据，委托 journal.is_producer_alive。
+    """
+    if await is_producer_alive(task_id, int(_JOURNAL_ALIVE_WINDOW_SECONDS)):
+        return True
+    rows, _term, _owner = await read_after(task_id, cursor, limit=1)   # 窗口外再确认是否已有新事件
+    return bool(rows)
+
+async def journal_reader(task_id: str, session_id: str, after_seq: int) -> AsyncGenerator[str, None]:
+    """Journal 回放：内存优先链的兜底。与内存路径共用同一格式器与白名单（3.7 第 3 条）；按 PAGE_SIZE 分页循环
+
+    单循环单出口：页满继续翻页，页不满即"已追平"，随后走终态判定；producer 仍活着则发心跳继续等。
+    终止判据唯一 = is_producer_alive 的活窗（最近事件超 60s 未更新即判已死），不设第二套总预算，
+    避免"预算 < 活窗"自相矛盾而误杀健康慢任务（如 HITL 人工确认默认 120s 静默）。
+    """
+    try:
+        loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 重连reader同样纳管心跳监管
+        cursor = max(after_seq, 0)      # 负数钳到 0：否则 expected 初值为 -1，首帧 seq=0 被误报缺口
+        status = await get_persisted_task_status(task_id)          # 3.7 第 6 步：chat_tasks 权威，前置判存在性
+        if status is None:
+            # 任务行不存在：先判后放，绝不"先回放历史内容、再报任务不存在" — 小欧 2026-09-29
+            yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
+            return
+        if not session_id:
+            # 重连端点允许省略 session_id，归属无从校验；不静默放行，留痕可追 — 小欧 2026-09-29
+            logger.warning(f"[Journal] 重连未带 session_id，归属无法校验(task={task_id})")
+        owner_checked = False
+        while True:
+            loop_watchdog.beat()  # 治理观测§4.4(2026-10-04 小欧): 本轮可调度=事件循环活着; 停止调用即循环停摆, 看门狗自动dump留证
+            events, has_terminal, owner = await read_after(task_id, cursor, PAGE_SIZE)   # 显式传，与下方页满判定同一旋钮
+            if not owner_checked and owner and session_id and owner != session_id:
+                # 归属校验：事件行自带 session_id，与请求不符即拒（防知道 task_id 就能读他人会话流）
+                logger.warning(f"[Journal] 重连归属不符(task={task_id}, 请求session={session_id}, 归属session={owner})")
+                yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
+                return
+            owner_checked = True
+            if events:
+                expected = cursor
+                skipped = []
+                for seq, payload in events:      # seq = DB 列权威序号（整数、单调）；payload 形状不可信
+                    if seq != expected:                                # 3.7.1 缺口检测
+                        logger.warning(f"[Journal] seq 缺口 task={task_id} 期望={expected} 实际={seq}")
+                        yield create_error_response(error_type="persistence_gap",
+                                                    error_message=f"事件不连续，缺失 {expected}~{seq - 1}")
+                        expected = seq
+                    expected += 1
+                    if not isinstance(payload, dict) or payload.get("type") not in _SSE_FORWARD_TYPES:
+                        skipped.append(seq)     # 脏帧/仅内存信号：消费掉不转发，游标照常前进
+                        continue
+                    yield format_agent_sse(payload)                     # 3.7 第 3 条：禁止第二套格式器
+                if skipped:
+                    logger.warning(f"[Journal] task={task_id} 跳过 {len(skipped)} 个不可转发事件 seq={skipped[:10]}")
+                cursor = expected                                 # 列 seq 权威 → 游标只增不减，不会原地打转
+                if len(events) >= PAGE_SIZE:                      # 只按"页不满 = 读完"终止，不按帧数猜
+                    continue                                     # 页满 → 继续翻下一页
+            # 已追平（无新事件，或最后一页不满）：查权威终态决定怎么收尾
+            if has_terminal:                                     # 终态 seq 可能 < cursor（前端已收完并刷新追平），
+                return                                           # 此时回放已毕，正常收尾，不得误报"终态事件缺失"
+            if status in ("completed", "failed", "cancelled"):
+                yield create_error_response(error_type="task_state_incomplete",
+                                            error_message="任务终态事件缺失，禁止伪造完成")
+                return
+            if await _journal_producer_alive(task_id, cursor):
+                # 仍在跑、只是暂时无新事件（慢思考/HITL 静默/工具长耗时）：发心跳继续等，不误判已死
+                yield ": ping\n"        # 带换行，刷新前端 IDLE_TIMEOUT=60000 空闲计时
+                await asyncio.sleep(max(_JOURNAL_POLL_FLOOR_SECONDS,
+                                        get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)))
+                status = await get_persisted_task_status(task_id)   # 等待期间可能翻终态，下轮用新值判定
+                continue
+            yield create_error_response(error_type="task_interrupted",
+                                        error_message="任务未完成且后端已重启，请从历史继续")
+            return
+    finally:
+        loop_watchdog.deactivate()  # 治理观测§4.4(2026-10-04 小欧): 含断连GeneratorExit路径, reader计数必须归零
 
 
 async def chat_stream_reconnect_orchestrator(
@@ -549,8 +1222,11 @@ async def chat_stream_reconnect_orchestrator(
     """SSE 重连编排：读同一任务的流态缓冲，不启动新 agent — 自 openai.py 迁入 — 小欧 2026-08-13"""
     buffer = get_stream_buffer(task_id)
     if not buffer:
-        logger.warning(f"[SSE] 重连任务不存在(task={task_id}, after_seq={after_seq}, session={session_id or '-'})")  # 小欧-2026-09-13 重连追踪补点A
-        yield create_error_response(error_type="not_found", error_message="任务不存在或已结束")
+        # 内存未命中 → 改从 Journal 回放（结束超 300 秒、或后端重启后内存已丢）；
+        # 错误事件由 journal_reader 按其六种结局产出
+        logger.info(f"[Journal] 重连走回放兜底(task={task_id}, after_seq={after_seq}, session={session_id or '-'})")
+        async for chunk in journal_reader(task_id, session_id or "", after_seq):
+            yield chunk
         return
     logger.info(f"[SSE] 重连请求接收(task={task_id}, after_seq={after_seq}, session={session_id or '-'}, 缓冲总长={len(buffer.event_log or [])}, 含final_stats={any((e or {}).get('type') == 'final_stats' for e in (buffer.event_log or []))})")  # 小欧-2026-09-13 重连追踪补点A
     async for sse_chunk in _stream_with_control(

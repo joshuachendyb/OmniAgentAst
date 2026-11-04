@@ -1,23 +1,37 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-05 小健 新建(文档[6]5.1, 对应清单#1): ConfirmSpec + hitl_confirm + _resolve_trust_path/_desensitize/_resolve_timeouts
+# 2026-09-05 小健 新建: ConfirmSpec + hitl_confirm + _resolve_trust_path/_desensitize/_resolve_timeouts
 #   网关内部固定顺序 publish(paused)→wait→publish(resumed)→单点resolve收口; 复用hitl_confirmation三原语不重写等待/超时/取消
-# 2026-09-06 小欧 步骤2落盘(test_path1_step2_hitl_gateway.py T2红→绿): 落点handlers/hitl_gateway.py, 与调用方同目录(handlers→task单向依赖防环);
-#   会审minor修正: _resolve_timeouts mode非法值显式ValueError校验
-# 2026-09-06 小欧 POT-001优化(老陈核查定案): _resolve_trust_path standalone 曾用 for 显式循环——6键回落整体
-#   在问题A修复(文档[44]5.5)时随函数一并删除, hitl_confirm 直接调主链 extract_trust_path(KISS 无透传); 本条为历史留痕
-# 2026-09-16 小欧 缺陷还原(5.5伴随): _desensitize 回退同步 def(HttpRuntimeWarning: coroutine never awaited 探出,
+# 2026-09-06 小欧 落盘(测试红→绿): 落点handlers/hitl_gateway.py, 与调用方同目录(handlers→task单向依赖防环);
+#   minor修正: _resolve_timeouts mode非法值显式ValueError校验
+# 2026-09-06 小欧 优化: _resolve_trust_path standalone 曾用 for 显式循环——6键回落整体
+#   在问题修复时随函数一并删除, hitl_confirm 直接调主链 extract_trust_path(KISS 无透传); 本条为历史留痕
+# 2026-09-16 小欧 缺陷还原: _desensitize 回退同步 def(HttpRuntimeWarning: coroutine never awaited 探出,
 #   内部纯同步无await, async 声明致 MetaStep(params=coroutine)入队前失真; 与 HEAD def 原语义一致) — 小欧-2026-09-16
-# 2026-09-16 老陈 - 后端参数摘要[43]11.6-T4: 新增_summarize_params(主键path+长值截断80) + 组装行包裹_desensitize收口 - 老陈-2026-09-16
-# 2026-09-16 小欧 - 参数摘要单行化: smart_truncate_text截断文本含\n(head/tail原值换行+省略标记三行), 前端pre-wrap逐参数分行致"参数占多行+中间空一行"(仅见shell多行命令), 违反"每参数一行"定案契约; 截断结果re.sub换行压空格单行化(命中源, 治本) - 小欧-2026-09-16
-# 2026-09-16 小欧 - 截断方式改尾部截断(老陈定案): smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md:83), re.sub单行化保留 - 小欧-2026-09-16
-# 2026-09-16 小欧 - 截断阈值80→140(老陈定案): 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
+# 2026-09-16 老陈 - 后端参数摘要: 新增_summarize_params(主键path+长值截断80) + 组装行包裹_desensitize收口 - 老陈-2026-09-16
+# 2026-09-16 小欧 - 参数摘要单行化: smart_truncate_text截断文本含\n(head/tail原值换行+省略标记三行), 前端pre-wrap逐参数分行致"参数占多行+中间空一行"(仅见shell多行命令), 违反"每参数一行"契约; 截断结果re.sub换行压空格单行化(命中源, 治本) - 小欧-2026-09-16
+# 2026-09-16 小欧 - 截断方式改尾部截断: smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md), re.sub单行化保留 - 小欧-2026-09-16
+# 2026-09-16 小欧 - 截断阈值80→140: 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
 # 2026-09-18 小欧 - severity/safety_level字段对调: paused帧severity改载安全分级(safe/destructive/dangerous), safety_level改载固定常量"attention"; ConfirmSpec.safety_level同步重命名为severity - 小欧-2026-09-18
-# 2026-09-18 小欧 - 第7章实施([50]7.1): ConfirmSpec新增safety_level字段(问题来源分类: path_auth/shellparam/command_block/tool_delete/tool_execute/data_guard/unregistered/forbidden_zone);
+# 2026-09-18 小欧 - 归属分类实施: ConfirmSpec新增safety_level字段(问题来源分类: path_auth/shellparam/command_block/tool_delete/tool_execute/data_guard/unregistered/forbidden_zone);
 #   paused帧safety_level由固定"attention"改透传spec.safety_level, 支撑前端按问题类型差异化展示 - 小欧-2026-09-18
-# 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
+# 2026-09-18 小欧 - 去mode字段(KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
 #   bypass/真HITL身份全线只用布尔auto_confirm单字段(唯一真相源); _resolve_timeouts/resumed条件/mode推导随迁改读auto_confirm,
 #   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
+# 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
+# 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
+# 2026-10-14 小欧 - trust 改从 app.safety.trust 导入, 逻辑不动
+# 2026-10-18 小欧 - ConfirmSpec 字段正名: severity → trust_impact。原 severity 语义是"安全分级", 但它与 blocked/needs_confirm 重复编码、且前端从不读; 真正需要告诉用户的是"这次授权给你多大自由度"(目录根=整棵子树, 单文件=仅此路径), 语义正名为 trust_impact 并由授权范围真值源给出。paused 帧同步改键。注意本文件 resumed 帧用的 severity="info" 属事件分级(SSE 语义), 与之无关、保持不动。
+# 2026-10-18 - 小欧 - trust_impact 取值口径由两档改三档: 上一条按"授权范围大小"取(目录根=high/单文件=low), 但用户判断要不要勾"信任"
+#   真正关心的是"同意之后后果多大", 不是范围多大 —— 旧口径下"删一个文件"与"写一个文件"同为 low, 删的不可撤销性完全没体现。
+#   改按 safety_level 归类: DELETE_* → high(抹除不可撤销) / WRITE_* → medium(可覆写) / 命令级等其余 → low。
+#   与"是否需确认""授权范围大小"三者正交。ConfirmSpec 字段名、paused/resumed 帧键与传参链一律不动。
+# 2026-10-18 - 小欧 - 旧键残留修复: 本函数两处配置读口未随 security 分组迁移改名 ——
+#   security.hitl_timeout → security.hitl.timeout, security.auto_confirm_delay → security.hitl.auto_confirm_delay。
+#   改前 registry 只出后二键, 读方持前二键 → 恒读不到(恒走常量), HITL 确认超时与自动确认延迟两项设置实际失效。
+# 2026-10-18 小欧 - 注释精简冗余标注(去mode/截断方式/截断阈值三处, 技术说明与日期署名原样保留)。
+# 2026-10-19 小欧 - 删 _desensitize: HITL 弹窗参数改回原文。HITL(paused)属 SSE_ONLY 不落库不落盘,
+#   展示给输入该参数的本人, 无外泄面; 落盘出口(日志/落库)另经 redact_* 遮蔽。
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -35,35 +49,29 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    severity: str = ""           # 安全分级: safe / destructive / dangerous
+    trust_impact: str = ""       # 授权/信任影响面: high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余确认
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
     auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 
 
-def _desensitize(params) -> dict:
-    """纯同步脱敏(HITL限制: 无await原语; 调用处非同await上下文, 保持def而非async — 小欧-2026-09-16规范还原)"""
-    from app.tools.tool_constants import SENSITIVE_FIELDS      # 延迟import防环（真实位置，sandbox_gate行66同源 — 小健-2026-09-05）
-    return {k: v for k, v in (params or {}).items() if k not in SENSITIVE_FIELDS}
-
-
 def _summarize_params(tool_name: str, params: dict) -> dict:
     """HITL弹窗参数摘要: 主键(path类extract_trust_path权威)优先展示 + 长值truncate_text尾部截断(阈值140) + 截断结果单行化 — 小欧-2026-09-16
-    复现[43]11.6 T4设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
-    尾部截断(老陈定案): 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
+    参数摘要设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
+       尾部截断: 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
     单行化: 截断结果内换行(含四周空白)压成空格, 保证每个参数值恒为一行
-       (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"定案契约);
-    脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
-    from app.utils.text_utils import truncate_text          # 延迟import防环(与_desensitize同款; FUNCTIONS.md:83已登记) — 小欧-2026-09-16
-    from app.tools.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
+       (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"契约);
+    弹窗参数原文展示(用户本人数据); 落盘出口(日志/落库)另经 redact_* 遮蔽。"""
+    from app.utils.text_utils import truncate_text          # 延迟import防环(FUNCTIONS.md已登记) — 小欧-2026-09-16
+    from app.safety.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
     _all: dict = {k: v for k, v in (params or {}).items()}
-    _path = extract_trust_path(tool_name, params)          # 复用trust.py:69主键权威, 不重写
+    _path = extract_trust_path(tool_name, params)          # 复用trust.py主键权威, 不重写
     _out: dict = {}
     if _path:
         _out["path"] = _path
     for _k, _v in _all.items():
         if _k in ("path",) or _k in _out:
             continue                                        # path已由主键摘出, 防重复展示
-        if isinstance(_v, str) and len(_v) > 140:           # 长值→尾部截断防弹窗超高(复用公用函数, 老陈定案阈值140)
+        if isinstance(_v, str) and len(_v) > 140:           # 长值→尾部截断防弹窗超高(复用公用函数, 阈值140)
             _truncated, _f = truncate_text(_v, 140)         # text[:140]+\\n...[截断N字符] — 小欧-2026-09-16
             _out[_k] = re.sub(r"\s*\n\s*", " ", _truncated)  # 换行(含四周空白)压空格单行化 — 小欧-2026-09-16
         else:
@@ -74,34 +82,38 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
 async def _resolve_timeouts(auto_confirm):
     """返回 (backend_timeout, confirm_timeout) 二元组（调用处双解包 — 小健-2026-09-05）。
     点分扁平键（与三处同源，禁嵌套get("security")取法）+ 分auto_confirm公式：
-    auto_confirm=False(真HITL)→security.hitl_timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
-    auto_confirm=True(bypass)→security.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
+    auto_confirm=False(真HITL)→security.hitl.timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
+    auto_confirm=True(bypass)→security.hitl.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
      （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。
      2026-09-18 小欧: 参数mode字符串→auto_confirm布尔(去mode字段同批, 唯一真相源)。"""
     from app.config import get_config                            # 延迟import防环
-    from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT, BYPASS_AUTO_LEAD
+    from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, HITL_CONFIRM_LEAD as _D_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT as _D_MIN_TIMEOUT, BYPASS_AUTO_LEAD as _D_BYPASS_LEAD
     cfg = get_config()
     if not auto_confirm:
-        _bt = int(float(cfg.get("security.hitl_timeout", HITL_TIMEOUT)))
-        return _bt, max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
-    _bt = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD,
-              int(float(cfg.get("security.auto_confirm_delay", 10.0))))
-    return _bt, _bt - BYPASS_AUTO_LEAD
+        _bt = int(float(cfg.get("security.hitl.timeout", _D_HITL_TIMEOUT)))
+        _min = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
+        _lead = int(float(cfg.get("tuning.hitl.hitl_confirm_lead", _D_CONFIRM_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
+        return _bt, max(_min, _bt - _lead)
+    _min2 = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
+    _bypass = int(float(cfg.get("tuning.hitl.bypass_auto_lead", _D_BYPASS_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
+    _bt = max(_min2 + _bypass,
+              int(float(cfg.get("security.hitl.auto_confirm_delay", 10.0))))
+    return _bt, _bt - _bypass
 
 
 async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     """spec属性访问（与4.2同形）→verdict。网关内统一：超时计算/trust_path/脱敏/SUSPENDED→wait→EXECUTING。"""
     from app.services.task.hitl_confirmation import (            # 延迟import防环
         create_confirmation, wait_for_confirmation_result, resolve_confirmation)
-    from app.tools.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
+    from app.safety.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
     _path = spec.path or extract_trust_path(spec.tool_name, spec.params)
     confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
     _bt, _ct = await _resolve_timeouts(spec.auto_confirm)
     _auto = spec.auto_confirm
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
-        params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # [43]11.6-T4 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
-        severity=spec.severity,
+        params=_summarize_params(spec.tool_name, spec.params),  # 参数摘要(主键path优先+长值截断)防弹窗超高, 原文展示 — 小健-2026-09-16
+        trust_impact=spec.trust_impact,
         safety_level=spec.safety_level, trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")
@@ -109,7 +121,7 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     auth = await wait_for_confirmation_result(confirm_id, timeout=_bt)
     set_status(agent, AgentStatus.EXECUTING, "用户裁决完成")
     # 裁决统一收口：confirmed/expired/rejected 三路径共用一处注销，防无人裁决(超时/拒绝)时 confirm_id pending 泄漏；
-    #   重复 resolve 幂等仅告警，Bug-25"confirm_id 必收口"语义 — 老陈 2026-09-06 定案补入
+    #   重复 resolve 幂等仅告警，"confirm_id 必收口"语义 — 老陈 2026-09-06 补入
     try:
         await resolve_confirmation(confirm_id,
                                    confirmed=bool(auth.get("confirmed")),

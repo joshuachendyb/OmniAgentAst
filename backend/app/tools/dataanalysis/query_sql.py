@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - query_sql limit: schema暴露limit字段给LLM, 加范围校验
 # 2026-07-21 - 小欧 - Bug修: 删_format_table死代码; 多条SQL; 查询超时; if limit→is not None; 增量fetch
 # 2026-07-21 - 小欧 - Bug修: logger加到关键路径; str(sql)防非字符串; timeout→is not None; truncated标记; MySQL/PG增量fetch+超时已知限制
-# 2026-07-21 - 小欧 - 复核修复(Bug1-5): DRY重复truncated_reason→公共; connection_type/path改回if x:防空值; 先判断后append防截断误报
+# 2026-07-21 - 小欧 - 复核修复: DRY重复truncated_reason→公共; connection_type/path改回if x:防空值; 先判断后append防截断误报
 # 2026-07-21 - 小欧 - 入参即信任: 内部 limit 校验上界 OBS_MAX_DISPLAY_ITEMS→1000（同步 schema le=1000）
 # 2026-07-24 - 小欧 - 修复: WITH绕过只读检测(括号深度扫描CTE防WITH...UPDATE) + columns[:5]提取OBS常量
 # 2026-07-25 - 小欧 - 截断治理: str(sql)[:50](5处logger) → QUERY_SQL_INER_LOG_SQL 命名常量
@@ -11,6 +12,11 @@
 # 2026-07-31 - 小欧 - CRITICAL: WITH CTE体绕过只读检测修复。原代码跳过CTE括号体仅检查外层SELECT, 导致 `WITH malicious AS (DELETE FROM users) SELECT * FROM malicious` 通过检测。补充CTE体内容的DML/DDL关键字扫描 | py_compile ✓
 # 2026-07-31 - 小欧 - 只读安全增强(Bug②/⑤/⑲): PRAGMA写操作检测(赋值=或非只读白名单拒绝); 检测前剥离注释与字符串字面量(修复"-- SELECT"前导注释误拒、'a;b'字符串分号误判、SET note='WHERE'漏判); timeout None/<=0 防御
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(小欧): error summary 去 `{detail}`, success summary
+#   去行数/列预览, 统一 `查询{_target}，成功/失败`; 行数/列预览在 metrics 统计段呈现(通用渲染)
+# 2026-10-12 小欧 - tool_zh改短名词: 查询→查询SQL
+# 2026-10-14 小欧 - schema timeout 改秒: 默认 15 秒; _get_connection/Timer 毫秒边界处换算 — 小欧-2026-10-14
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -21,11 +27,11 @@ query_sql — 执行只读SQL查询
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import re  # 2026-07-31 小欧: CTE体写操作检测
 import sqlite3
-import threading
 import time as _time_mod
 from typing import Any, Dict, Optional, Literal  # 2026-07-31 小欧: 移除未使用 Union, List
 
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_SQL_EXEC, QUERY_SQL_OUTPARM_LIMIT_SQL, OBS_QUERY_SQL_PREVIEW_COLUMNS, QUERY_SQL_INER_LOG_SQL  # 2026-07-31 小欧: 移除未使用 OBS_MAX_DISPLAY_ITEMS
 from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
@@ -73,8 +79,8 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"查询{_target}，失败: {detail}",
-            "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql, "params": _act_params},
+            "summary": f"查询SQL{_target}，失败",
+            "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -84,9 +90,9 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if len(columns) > OBS_QUERY_SQL_PREVIEW_COLUMNS:
         col_text += "..."
     return {
-        "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
-        "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql, "params": _act_params},
-        "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"查询SQL{_target}，成功：{row_count}行，列：{col_text}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(查询SQL), 半角标点改全角 — 小欧-2026-10-14
+        "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": _preview_cols, "text": f"列: {col_text}"}},
         "truncated": truncated,
@@ -96,13 +102,20 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
 
 def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
               connection_string: Optional[str] = None, path: Optional[str] = None,
-              limit: int = 50, timeout: int = 15000) -> Dict[str, Any]:
+              limit: int = 50, timeout: int = 15) -> Dict[str, Any]:  # 2026-10-14 小欧 - schema 单位秒: 默认 15 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
     """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
     """
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(sqlite 文件路径, 仅传了才查)
+    if path:
+        ok, err = check_path_four_level(path, OpCategory.EXISTS)
+        if not ok:
+            duration_ms = 0
+            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=err, hint="请检查数据库文件路径", connection_type=connection_type, path=path)
+            return build_error(data={}, llm_data=llm_data)
 
     if not isinstance(sql, str) or not sql.strip():
         duration_ms = 0
@@ -116,19 +129,19 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     if limit < 1 or limit > 1000:
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [],
-                                               detail=f"limit必须在1~1000之间",
-                                               hint=f"请设置1到1000之间的limit值",
+                                               detail="limit必须在1~1000之间",
+                                               hint="请设置1到1000之间的limit值",
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
     # 2026-07-31 小欧: Bug⑲ timeout防御 — None回默认, <=0拒绝(防 threading.Timer(0) 立即触发 conn.interrupt)
     if timeout is None:
-        timeout = 15000
+        timeout = 15
     if timeout <= 0:
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [],
-                                               detail=f"timeout必须大于0(单位毫秒)",
-                                               hint=f"请设置正数timeout,建议15000",
+                                               detail="timeout必须大于0(单位秒)",
+                                               hint="请设置正数timeout,建议15",
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
@@ -208,7 +221,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
                                                    connection_type=connection_type, path=path, limit=limit, timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
 
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout)
+        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout * 1000)  # 2026-10-14 小欧 - 毫秒边界换算:_get_connection 内部毫秒口径不变, 入口秒→毫秒 — 小欧-2026-10-14
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             logger.warning("query_sql连接失败: error=%s, connection_type=%s", conn_error, connection_type)
@@ -236,8 +249,11 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         else:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            _timer = threading.Timer(timeout / 1000, conn.interrupt)
-            _timer.start()
+            # 2026-11-04 小欧 - 超时中断改 sqlite3 progress handler(零建线程): 原 threading.Timer.start() 属运行期
+            #   Thread.start, 与 CreateProcess 抢 loader lock(11:28 卡死同源); handler 在查询线程内被回调,
+            #   超时返回非 0 即中断, 异常类型与 conn.interrupt() 一致(sqlite3.OperationalError: interrupted)。
+            _deadline = _time_mod.monotonic() + timeout
+            conn.set_progress_handler(lambda: 1 if _time_mod.monotonic() > _deadline else 0, 1000)
             try:
                 cursor.execute(sql)
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
@@ -247,7 +263,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
                         break
                     results.append(dict(row))
             finally:
-                _timer.cancel()
+                conn.set_progress_handler(None, 0)
         if truncated:
             truncated_reason = f"已截断：结果超过{limit}行限制，仅返回前{limit}行"
 

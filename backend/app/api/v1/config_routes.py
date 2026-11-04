@@ -4,13 +4,13 @@
 # 2026-07-10 - 小欧 - 从 ai_config/ 复制, 仅改 import 路径
 # 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, clear_backup_paths 的 import 由 app.services.safety.operation_backup 改 app.safety.operation_backup(配合 api 禁 tools 守护规则)
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): update_config 业务编排迁入 services/model/config_service.py; 删除
-#   from app.safety.operation_backup import clear_backup_paths 越层 import(随 update_config 迁出, API→safety 越层消除,
+#   from app.safety.operation_backup_rollback import clear_backup_paths 越层 import(随 update_config 迁出, API→safety 越层消除,
 #   守护测试 api 规则可启用)。本文件保留其余 config 路由与 DTO。
 # 2026-08-13 - 小欧 - 三堂会审修复#6/#7/#8: #6 validate_config 谎报"配置已保存"改"配置校验通过(未保存)"
 #   (该端点仅校验不落盘, 原文案误导); #7 GET /config/full 返回明文 api_key 改 _mask_api_key 掩码
 #   (保留前3后2, 安全不泄露密钥); #8 update_provider 删除对全局 config['ai']['model'] 的改写
 #   (更新provider信息时不再悄悄切换当前全局模型, 防模型被意外替换)
-# 2026-08-13 - 小沈 - P3 CRUD全量下沉: 12个CRUD业务逻辑迁入 services/model/config_service.py,
+# 2026-08-13 - 小沈 - CRUD全量下沉: 12个CRUD业务逻辑迁入 services/model/config_service.py,
 #   本文件降为纯薄壳(路由+DTO+调service+返回), 与 sessions.py/messages.py 薄壳模式一致。
 #   DTO边界: API层负责DTO解包/构造响应, config_service 不 import api/v1/model_schemas。
 # 2026-08-13 - 小沈 - 三堂会审修复: ① validate_config 改传 request.provider(ConfigValidateRequest 无 model 字段,
@@ -19,8 +19,20 @@
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes.py → config_routes.py(实为配置API路由薄壳, /config/* /provider/*)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B: GET /config 落 DTO 改 ai_model_ref=data["ai_model_ref"]、
 #   GET /config/full 改 current_model_ref=result["current_model_ref"](后端 DTO 字段变更, 前端 api.ts 契约已同步改)
+# 2026-09-21 - 小欧 - 关于页功能: 新增 GET /config/version-file 只读端点(返回 {version_content})，version.txt
+#   全文读取落 services/model/config_service.read_version_file，供前端关于区"查看 version 文件全文"。
+# 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个老CRUD路由(前端零调用, 设置2版已走
+#   /models /providers model_routes)；同步删仅被其调用的 config_service 6函数与 config_schemas 死DTO — 小欧-2026-09-24
+# 2026-09-26 - 小欧 - 落地: PUT /config 收敛为**只写 ai_model_ref**
+#   ConfigUpdate 七字段砍到只剩 ai_model_ref（切全局模型的唯一必需项），其余 6 项功能已迁移或属安全隐患：
+#   ①provider_api_keys：能以空串擦除密钥（第二个能擦除密钥的入口）→ 字段删除，漏洞消失；
+#   ②⑤⑥ theme/language/max_steps/security 块：由 /settings PUT 与设置页各 Tab 承担，重复入口即分叉；
+#   ③④ project_root 等：写 workspace.project_root 有专用 handler 与备份恢复链路，PUT /config 不再旁路。
+#   为何端点本身保留：北京老陈裁定 configApi.switchCurrentModel（AppContext.tsx:266 切全局模型）仍走此端点，
+#   整条删除会打断该功能（功能退化，禁止）—— 故保留端点、只收窄可写字段（KISS-DIRECT，不新造第二个切模型端点）。
+#   连带 config_service.update_config 同步收敛 + FIELD_HANDLERS 只剩 ai_model_ref 一项 — 小欧 2026-09-26
 """
-config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
+config_routes — 配置API路由薄壳 (下沉后路由+DTO 调 config_service)
 
 小欧 2026-07-10
 """
@@ -30,32 +42,26 @@ from app.api.v1.config_schemas import (
     ConfigFixResponse,
     ConfigPathResponse,
     ConfigResponse,
+    # 2026-09-26 小欧 - ConfigUpdate 保留（收敛为只切模型），import 随之保留
     ConfigUpdate,
     ConfigValidateRequest,
     ConfigValidateResponse,
     FullConfigResponse,
-    ModelAddRequest,
     ModelInfo,
     ModelListResponse,
-    ProviderAddRequest,
     ProviderInfo,
-    ProviderUpdate,
     SecurityConfig,
 )
 from app.services.model.config_service import (
-    add_model as svc_add_model,
-    add_provider as svc_add_provider,
-    delete_model as svc_delete_model,
-    delete_provider as svc_delete_provider,
     fix_config as svc_fix_config,
     get_full_config as svc_get_full_config,
     get_model_list as svc_get_model_list,
     get_system_config_data,
     open_config_folder as svc_open_config_folder,
     read_config_file as svc_read_config_file,
+    read_version_file as svc_read_version_file,
+    # 2026-09-26 小欧 - update_config 保留（收敛为只切模型，内部只派发 ai_model_ref）
     update_config as update_config_service,
-    update_model as svc_update_model,
-    update_provider as svc_update_provider,
     validate_config as svc_validate_config,
 )
 from app.services.model.config_helpers import get_config_path, handle_config_errors
@@ -83,8 +89,28 @@ async def get_system_config():
     )
 
 
+# 2026-09-26 - 小欧 - PUT /config 端点**保留但收敛为只切模型**。
+#   原计划整条删除，实施时实测发现设计文档 11.2「前端零调用」结论不成立 ——
+#   configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）在调本端点，
+#   整条删除会导致切全局模型 404 失效（功能退化，违反"只能增强不能退化"红线）。故保留，但**只写 ai_model_ref**：
+#   ①provider_api_keys（第二个能擦除密钥的入口）已从 ConfigUpdate 删除 → 漏洞消失，本条为本次整改核心目标
+#   ②theme/language/max_steps/security/project_root 功能已全部迁移至 settings registry 对应项（设计文档 11.2 表），
+#     且其中 theme 早已是 registry 只读项（暗色入口已移除）——旧 handler 一并删除，不再有第二条写路径。
+#   保留全部 GET 端点（GET /config、/config/read、/config/full、/config/validate、/config/fix、/config/path 等）。 — 小欧-2026-09-26
 @router.put("/config")
-def update_config(config_update: ConfigUpdate):
+# 2026-09-26 - 小欧 - 修裸 500：本端点原先**未挂** @handle_config_errors（全文件其它端点都挂了），
+#   而 update_config_service 内部事务链（备份→改→校验→写→reload）任一步抛异常
+#   （含 filelock 超时、备份失败、YAML 不可写、reload 失败）都会直穿成框架默认 500，
+#   前端拿不到结构化 {success,message,errors}，且日志缺统一出处。挂上后与同文件其它端点一致。
+# 2026-09-26 - 小沈(三遍复核) - 修挂装饰器引入的**硬退化**：`handle_api_errors` 的 wrapper 是
+#   `async def` 且体内 `return await func(...)`（app/utils/response_utils.py:50-52），它只能包 **async** 端点。
+#   本函数原先是同步 `def`，挂上装饰器后 wrapper 执行 `await <dict>` → TypeError
+#   "object dict can't be used in 'await' expression" → 被 except Exception 兜成 500
+#   ⇒ PUT /config 100% 失败（实测复现，顶栏「切换全局模型」全链断）。
+#   修法：改回 `async def`（与同文件其它被装饰端点一致），业务函数 update_config_service 本身是同步的，
+#   照原样 return 即可，不改任何业务逻辑。
+@handle_config_errors("更新配置")
+async def update_config(config_update: ConfigUpdate):
     return update_config_service(config_update)
 
 
@@ -122,42 +148,6 @@ async def get_full_config():
     )
 
 
-@router.delete("/config/provider/{provider_name}")
-@handle_config_errors("删除Provider")
-async def delete_provider(provider_name: str):
-    return svc_delete_provider(provider_name)
-
-
-@router.delete("/config/provider/{provider_name}/model/{model_name}")
-@handle_config_errors("删除模型")
-async def delete_model(provider_name: str, model_name: str):
-    return svc_delete_model(provider_name, model_name)
-
-
-@router.put("/config/provider/{provider_name}/model/{old_model_name}")
-@handle_config_errors("更新模型")
-async def update_model(provider_name: str, old_model_name: str, data: ModelAddRequest):
-    return svc_update_model(provider_name, old_model_name, data)
-
-
-@router.put("/config/provider/{provider_name}")
-@handle_config_errors("更新Provider")
-async def update_provider(provider_name: str, data: ProviderUpdate):
-    return svc_update_provider(provider_name, data)
-
-
-@router.post("/config/provider")
-@handle_config_errors("添加Provider")
-async def add_provider(data: ProviderAddRequest):
-    return svc_add_provider(data)
-
-
-@router.post("/config/provider/{provider_name}/model")
-@handle_config_errors("添加模型")
-async def add_model(provider_name: str, data: ModelAddRequest):
-    return svc_add_model(provider_name, data)
-
-
 @router.post("/config/fix", response_model=ConfigFixResponse)
 @handle_config_errors("配置修复")
 async def fix_config():
@@ -180,6 +170,13 @@ async def get_config_path_endpoint():
 @handle_config_errors("读取配置文件")
 async def read_config_file():
     return svc_read_config_file()
+
+
+@router.get("/config/version-file")
+@handle_config_errors("读取版本文件")
+async def read_version_file():
+    # 2026-09-21 小欧 关于页"查看 version 文件全文"：返回 version.txt 全文
+    return svc_read_version_file()
 
 
 @router.post("/config/open-folder")

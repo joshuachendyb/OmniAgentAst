@@ -9,6 +9,7 @@ tool_cache_manager — 工具缓存管理
 # 编辑历史:
 # 2026-08-05 小欧 patch_search_desc默认已注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再列为默认注入(需要时经searchtool动态注入)
 # 2026-08-05 小欧 修复BUG A(DRY): unloaded计算删除硬编码默认分类{FUNDAMENTAL,FILE}, 改由_loaded_categories全权决定, 消除与_INITIAL_CATEGORIES重复定义失配隐患
+# 2026-10-02 小欧 patch_search_desc的unloaded叠加"该分类确有实现"条件: 零工具分类(SHELL消亡后)若进searchtool描述, LLM搜索无果、搜3次触发熔断FAILED
 
 from app.tools.tool_types import ToolCategory
 from app.tools.registry import tool_registry
@@ -20,7 +21,7 @@ def get_openai_tools(agent) -> list:
     """获取已注入分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache
     注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
 
-    P0-4修复 2026-06-23 小欧: revert P0-3改为注入整个tool类,通过_loaded_categories承载
+    修复 2026-06-23 小欧: revert 改为注入整个tool类,通过_loaded_categories承载
     Batch2e: 使用agent._searchtool_desc_override副本,不修改全局ts_meta — 小欧 2026-06-25
     """
     cached = agent._tool_cache.get()
@@ -41,13 +42,13 @@ def get_openai_tools(agent) -> list:
 
 
 def invalidate_tool_cache(agent):
-    """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
+    """清除工具缓存,工具注册/注销后调用"""
     agent._tool_cache.invalidate()
 
 
 def _get_original_search_desc() -> str:
     """获取 searchtool 的原始描述（不带已注入的"当前未加载分类"后缀）— 小欧 2026-06-23
-    P0-1修复: 严禁重复追加,每次重新拼装
+    修复: 严禁重复追加,每次重新拼装
     """
     ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
@@ -70,10 +71,10 @@ def patch_search_desc(agent):
     - KISS-DIRECT: 逻辑直线，无中间文件，每次从原始描述重新拼装
     - 动态生成: 每次根据 agent._loaded_categories 实时计算
     
-    【P0-1修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
+    【修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
     【2026-06-18 小健】删除 tool_categories.json，改为直接从 registry 获取
     【方案A修复 2026-06-23 小健】移除工具名列表，只列出分类名，避免LLM直接调用未注入工具
-    【Bug15修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
+    【修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
     """
 
     # 未加载分类 = 全集 - 已加载(_loaded_categories 由 init_tools/load_category 单一权威维护)
@@ -82,6 +83,7 @@ def patch_search_desc(agent):
     unloaded = [
         cat for cat in ToolCategory
         if cat not in agent._loaded_categories
+        and tool_registry.get_implementations_by_category(cat)
     ]
     
     if not unloaded:

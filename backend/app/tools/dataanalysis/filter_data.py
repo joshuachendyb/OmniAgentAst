@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - 入参即信任: top_n/max_rows 加 ge=1,le=1000 校验
 # 2026-07-24 - 小欧 - str(conditions)[:200] → FILTER_DATA_OUTPARM_LIMIT_CONDITIONS(魔数→命名常量)
@@ -7,10 +8,15 @@
 # 2026-07-25 - 小欧 - Bug修: head(top_n)截断加 truncated=True/truncated_reason, _load_data_to_df 加 TODO 大文件安全网注释
 # 2026-07-25 - 小欧 - em dash替换为ascii连字符- (欧阳建议，消除SyntaxError嫌疑)
 # 2026-07-26 - 小欧 - 加nrows=100000硬安全网防OOM+before变量在else分支正确定义(欧阳报告问题2/3修复)
-# 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(老陈方向)
+# 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(方向)
 # 2026-07-26 - 小欧 - OOD重构:数据加载_load_data_to_df抽取至data_loader.load_data_to_df公用函数(analyze_data/filter_data共享)
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(小欧): error summary 去 `{detail}`, success summary
+#   去筛选行数, 统一 `筛选数据{_target}，成功/失败`; 两数在 metrics 统计段呈现(通用渲染)
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(数据文件与 data 互斥, 传 path 才查 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: 删 _check_module("pandas") 死守卫 — 本模块顶层已 import pandas,
+#   缺库在导入期即 ImportError, 该检查永真不可达; 同文件 _check_module 导入一并移除
 """
 filter_data  按条件筛选/过滤数据
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -25,7 +31,8 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_fc_helper import _check_module, _serialize_rows
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
+from app.tools.tool_fc_helper import _serialize_rows  # 2026-10-20 小欧 - 删 _check_module: 顶层已导入pandas, 检查为死守卫
 from app.tools.dataanalysis.data_loader import load_data_to_df, validate_top_n
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_FILTER_INVALID, FILTER_DATA_OUTPARM_LIMIT_CONDITIONS
@@ -48,16 +55,16 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
     _target = path or "数据集"
     if exec_code == "error":
         return {
-            "summary": f"筛选数据{_target}，失败: {detail}",
-            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
-            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
+            "summary": f"筛选数据{_target}，失败",
+            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"筛选数据{_target}，成功: 从{original_count}行筛选出{filtered_count}行",
-        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
-        "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"筛选数据{_target}，成功：{original_count}行筛出{filtered_count}行",  # 2026-10-14 小欧 - summary 统一口径: 成功补结果量(与 message 同源, 原 summary 裸"成功"无数字) — 小欧-2026-10-14
+        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{original_count}行筛出{filtered_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"original_count": {"value": original_count, "text": f"{original_count}行"}, "filtered_count": {"value": filtered_count, "text": f"{filtered_count}行"}},
     }
@@ -133,10 +140,16 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
-    if not _check_module("pandas"):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", path=file_path, data=data)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(数据文件, 与 data 互斥故此处才查)
+    if file_path:
+        ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
+        if not ok:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=err, hint="请检查数据文件路径", path=file_path)
+            return build_error(data={}, llm_data=llm_data)
+    # 2026-10-20 小欧 - FIX: 本模块顶层已 `import pandas as pd`(缺库在导入期即失败),
+    #   此处 `_check_module("pandas")` 是永真的死守卫(实际极大值情况是 ImportError 而非此分支),
+    #   按死代码治理原则删除; analyze_data 无顶层导入, 其检查保留 — 小欧-2026-10-20
 
     try:
         if file_path:
@@ -199,7 +212,7 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
         # - 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #5 rows
+        # branch:  rows
         # trigger: "rows" in data - rows 是 List[list|dict]
         # handler: _format_rows(data["rows"], data.get("columns"))
         # file:    observation_formatter.py:140-142

@@ -1,5 +1,17 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-09-25 - 小欧 - 记录口径: 支持运行中换模型(只改 helper, 不改任何 case 代码):
+#   【病根】记录里 model 行原是 `ORDER BY rowid DESC LIMIT 1` 只取该 session 最后一条任务, 两处失真:
+#     ①[70] 支持运行中切换模型后, 只记最后一个模型, 前面任务实际用的模型被静默丢弃;
+#     ②同 session 被复用(多轮 / case 重跑)时, 会把上一次运行的模型记成本次结果。
+#   【改法】①record_test_baseline 增记模块级 _RUN_START_TS(ISO+微秒, 与 created_at 同格式);
+#     ②write_test_record 按 created_at >= _RUN_START_TS 框定"本次运行", 全取后按时间序连续去重成时间线;
+#     ③模型三级回退(每任务): sessionModel → token_usage.task_model → 行内 provider/model/display_name;
+#     ④跨模型/多任务时追加 1.1 任务×模型明细表; 单任务格式与旧版逐字一致, 不撑大既有 76 个 case 记录;
+#     ⑤未调 baseline 的 case 退回原"最后一条"口径, 行为不变, 绝不劣化。
+#   【实测依据】created_at=ISO+微秒(空格/无微秒的 strftime 会致 'T'>' ' 把当天全卷进时间窗, 故对齐格式);
+#     provider/model/display_name 列 88% 为空, 故回退链必须保留 token_usage.task_model(实测有值);
+#     record_test_baseline 仅 32 个 case(P2~P5)调用, 故对未调用者必须回老口径而非全量(避免恶化失真②)。
 # 2026-08-12 - 小欧 - COM_03记录误判修复: write_test_record按error_type区分可恢复/不可恢复错误
 #   【病根】LLM幻觉调用未注册工具write被SafetyChecker blocked拦截, action_handler发ErrorStep(error_type=blocked)
 #          进SSE流致has_error=True; 但blocked/user_rejected属可恢复错误(拒绝≠失败, 与react_cycle._RECOVERABLE_ERRORS
@@ -76,6 +88,25 @@
 # 2026-08-26 - 小欧 - model 结构信息空值修复(com-test 02/03实证): write_test_record中_sid原仅在`if dpi is None:`分支内赋值;
 #   单测传dpi=[](非None)使分支不执行→_sid未绑定→UnboundLocalError被except吞掉→session_id取不到→model结构信息(取chat_tasks.sessionModel)恒显"-";
 #   改法: 把`_sid = result.get("session_id","")`移到`if dpi is None:`外无条件赋值
+# 2026-09-24 - 小欧 - 超时保护记录缺口修复(4处): ①_flush_pending_records 不再静默吞异常, 空壳
+#   (result无session_id且无events, send_chat挂死被强杀)转"超时中止(FALLBACK)"占位记录(带error_info),
+#   写失败打stderr可见; ②register_pending_record 幂等: 同test_id后注册覆盖先注册, 与remove对齐;
+#   ③新增 _sync_pending_result(result): send_chat 返回即回填完整result到唯一空壳pending,
+#   集中覆盖全部单会话E2E case(免逐case脚本手改); ④send_chat 返回前调用 _sync_pending_result
+#   —— 防 send_chat 后验证阶段超时丢完整数据 — 小欧-2026-09-24
+# 2026-09-24 - 小欧 - 新增READ_TOOLS常量(北京老陈指示归一helper): 读类工具名唯一源{read,read,readmedia},
+#   ling-3.0实调read而非read致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量(DRY),
+#   供SSE断言与verify_db_tool_usage(expect_any_tools=READ_TOOLS)共用 — 小欧-2026-09-24
+# 2026-09-26 - 小欧 - [72]第九章(9.6-3) 落地: 全库统一注入访问口令, 12 个用例零改动
+#   后端给 12 个 router 挂了统一 token 鉴权(/health 豁免)后, 本文件所有 HTTP 调用(注册回归用例的
+#   同步客户端、GET 类校验、SSE 流)不带口令会**集体 401**。按 9.6-3"统一在 helper 注入、不逐个用例改"
+#   的要求, 在此单点收口: 新增 auth_headers() 供同步客户端与 SSE 头部共用, 口令取环境变量
+#   OMNIAGENT_ACCESS_TOKEN(与后端同一份来源, 不在用例里硬编码, 免口令一换全库用例失效);
+#   后端显式关闭鉴权(OMNIAGENT_REQUIRE_AUTH=0)时返回空 dict, 用例代码零分支(KISS-DIRECT)。
+#   连带: SSE 流式请求头与普通 GET 校验头统一走 auth_headers(), 不再两处各拼一遍(DRY) — 小欧-2026-09-26
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14.4 必改: send_chat 增可选形参 link_enabled 并入 POST /chat/stream
+#   payload, 以覆盖"会话 link 开关值随消息携带"这条新链路(默认 None=不携带, 后端沿用会话现值,
+#   故其余 76 个 case 行为不变) — 小欧-2026-10-03
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -152,7 +183,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple  # 2026-09-29 小欧: inject_rows 注解用 Tuple — 小欧-2026-09-29
 
 import httpx
 
@@ -164,12 +195,23 @@ _pending_records: List[Dict[str, Any]] = []
 
 
 def _flush_pending_records():
-    """进程退出时写入所有未完成的测试记录"""
+    """进程退出时写入所有未完成的测试记录
+    # 2026-09-24 小欧 修复: 不再静默吞异常; 空壳(result无session_id且无events, send_chat挂死被强杀)
+    #   也写'超时中止'占位记录(带error_info标记), 保证测试记录不缺失; 写失败打印stderr可见 — 小欧-2026-09-24"""
     for rec in _pending_records:
         try:
+            _res = rec.get("result") or {}
+            if not _res.get("session_id") and not _res.get("events"):
+                import sys as _sys
+                _tmp = dict(rec)
+                _tmp["error_info"] = (rec.get("error_info") or "") + \
+                    "[超时保护] send_chat 等待期间进程被截断, 数据未回收, 按超时中止记录(FALLBACK)"
+                _sys.stderr.write(f"[超时保护] 空壳记录转为超时中止: {rec.get('test_id')}\n")
+                rec = _tmp
             write_test_record(**rec)
-        except Exception:
-            pass
+        except Exception as _e:
+            import sys as _sys
+            _sys.stderr.write(f"[超时保护] 写记录失败 {rec.get('test_id')}: {type(_e).__name__}: {_e}\n")
     _pending_records.clear()
 
 
@@ -203,7 +245,9 @@ def register_pending_record(
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
 ):
-    """注册一个待写入的测试记录（超时保护）"""
+    """注册一个待写入的测试记录（超时保护）
+    # 2026-09-24 小欧 幂等: 同test_id后注册覆盖先注册(send_chat返回后重注册完整数据), 与remove_pending_record语义对齐 — 小欧-2026-09-24"""
+    _pending_records[:] = [r for r in _pending_records if r.get("test_id") != test_id]
     _pending_records.append({
         "test_id": test_id,
         "test_name": test_name,
@@ -233,19 +277,89 @@ API_PREFIX = "/api/v1"
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
+# 读类工具名唯一源(DRY): SSE has_read断言 + verify_db_tool_usage(expect_any_tools) 共用
+# 2026-10-02 小欧 - readtext→read 改名 + FUNDAMENTAL 侧 read 别名删除后去重(原为 {"readtext","read","readmedia"})
+READ_TOOLS = {"read", "readmedia"}
+
+# [72]第九章(9.6-3) - 小欧 - 2026-09-26: E2E 统一注入访问口令。
+#   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
+#   **全部 76 个后端 E2E 会 100% 401 失败**。按 9.6-3 的要求"统一在 HTTP 调用封装处注入，
+#   不逐个用例改" —— 故在此提供 AUTH_HEADERS 单一来源，各用例的 httpx 调用带上它即可。
+#   token 来源优先级: 环境变量 OMNIAGENT_ACCESS_TOKEN（与后端同一份，保证前后端一致）
+#     → 回落读后端配置文件 security.access_token（自动化场景无需额外导出环境变量）。
+#   后端未启用鉴权（OMNIAGENT_REQUIRE_AUTH=0）时，本 header 存在也无害（后端不校验）。
+import os as _os
+
+
+def _resolve_e2e_token() -> str:
+    """取 E2E 用的访问口令：环境变量优先，回落后端配置文件 security.access_token。"""
+    env_tok = (_os.environ.get("OMNIAGENT_ACCESS_TOKEN") or "").strip()
+    if env_tok:
+        return env_tok
+    try:
+        cfg_path = Path.home() / ".omniagent" / "config.yaml"
+        if cfg_path.exists():
+            import yaml as _yaml
+            data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            return str((data.get("security") or {}).get("api_token") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+# 统一鉴权头（供各用例的 httpx 调用使用：headers={**AUTH_HEADERS}）
+AUTH_HEADERS: dict = {}
+_E2E_TOKEN = _resolve_e2e_token()
+if _E2E_TOKEN:
+    AUTH_HEADERS["Authorization"] = f"Bearer {_E2E_TOKEN}"
+# 2026-09-26 小欧 - [72]第九章: token 缺失时给出显式提醒（否则 76 个用例集体 401，
+#   报错信息会指向"未授权"而非"测试环境没配口令"，排查成本高）
+# 2026-09-26 - 小欧 - [72]三堂会审后修正（修收集期崩溃）：
+#   原此处写 `_sys.stderr` —— 但 `_sys` 只是本文件两函数内的局部别名，模块级不存在。
+#   本块在模块顶层执行，import 本 helper 的 7 个 test_p9_*.py 在收集期全部 NameError 中断。
+#   改用模块顶层已有的 `import sys`（:179）。一字之差，教训记下。
+if not _E2E_TOKEN and (_os.environ.get("OMNIAGENT_REQUIRE_AUTH") or "1") not in ("0", "false"):
+    sys.stderr.write(
+        "[E2E][第九章] 未取到访问口令：E2E 请求将不带 Authorization，"
+        "若后端已启用 token 鉴权则全部用例会 401。"
+        "请设置环境变量 OMNIAGENT_ACCESS_TOKEN 或在 config.yaml 配 security.access_token。\n"
+    )
 
 
 # ─── 后端检查 ────────────────────────────────────────────────
 
 def ensure_backend_ready() -> bool:
-    """检查后端是否已就绪 -- 小健 2026-06-14"""
+    """检查后端是否已就绪 -- 小健 2026-06-14
+
+    [72]第九章(9.6-3) - 小欧 - 2026-09-26 增补: 就绪探测除 socket 外，另用 `/health`（**豁免鉴权**）
+    实测一次真实 HTTP 往返，确保后端不仅端口在听、且能正常应答。
+    口令本身不在此处校验（首个真实业务请求才会带 token 触发 401），
+    但 token 缺失会在导入 AUTH_HEADERS 时已显式提醒（见模块常量区）。
+    """
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)
         sock.connect(("127.0.0.1", 8000))
         sock.close()
-        return True
     except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{BASE_URL}{API_PREFIX}/health", timeout=5) as resp:
+            return resp.status == 200
+    except Exception as exc:
+        # 小欧 2026-09-29 修正 fail-open → fail-closed（此前此处 return True 是 30 分钟挂死的直接放大器）
+        #   事故链: 后端僵死(端口仍在听, 但 HTTP 不应答) → socket 探活通过 → /health 抛异常 →
+        #         旧码 return True 放行 → 用例继续 → 真实 LLM 调用永久挂起 →
+        #         2026-09-29 全量单测在 33% 挂死 30 分钟, test_p9_03 停在 asyncio select 无法自愈。
+        #   这里必须 fail-closed: 探活失败 = 后端不可用, 立即让用例失败退出(秒级),
+        #   远优于放行后挂死半小时(静默挂死会让人误判为"测试慢")。
+        #   代价: 若后端未部署 /health 路由, 会误杀用例 —— 但本项目 health 路由是既有事实,
+        #   且 /health 豁免鉴权, 不依赖 token; 误杀风险可接受, 挂死风险不可接受。
+        print(f"[E2E][探活失败] {BASE_URL}{API_PREFIX}/health 无响应: {exc!r}\n"
+              f"       端口在听但 HTTP 不应答 = 后端僵死(疑似 uvicorn 卡在同步阻塞或 reload 卡死)。\n"
+              f"       请重启后端: Stop-Process 占用 8000 的进程, 再按手册 6.1 启动。\n"
+              f"       判为不可用 -> 本用例立即失败(不再挂死)。")
         return False
 
 
@@ -285,7 +399,21 @@ def record_test_baseline() -> Dict[str, Any]:
         baseline["log_file_size"] = log_file.stat().st_size
         baseline["log_file"] = str(log_file)
 
+    # 2026-09-25 小欧 - 记录本次运行起始时刻, 供 write_test_record 框定"本次运行"任务范围:
+    #   必须与 chat_tasks.created_at 同格式(ISO8601+微秒, 如 2026-09-25T21:33:55.326798)。
+    #   格式一旦不一致, SQL 字符串比较会错位(如 'T' > ' ' 把当天全部记录卷进时间窗) → 时间线失真。
+    #   实测 2026-06-18 旧版 env 检查在此值缺失时只做一次性 env 快照, 此处仅新增记时, 不改任何返回结构。
+    global _RUN_START_TS
+    _RUN_START_TS = datetime.now().isoformat(timespec="microseconds")
+
     return baseline
+
+
+# 本次运行起始时刻(ISO8601 微秒, 与 chat_tasks.created_at 同格式) — 小欧 2026-09-25
+#   由 record_test_baseline() 写入(手册步骤1), 供 write_test_record 框定"本次运行"的任务范围。
+#   仅 32 个 case(P2~P5)调用 baseline, 未调用的 case 此值保持 None → write_test_record 走原"最后一条"口径,
+#   行为与旧版逐字一致, 绝不劣化; 调用过的 case 才能获得"运行时切换模型"的时间线。
+_RUN_START_TS: Optional[str] = None
 
 
 # ─── 步骤1+3.4: 响应质量验证 (verify_response_quality) ─────────
@@ -352,7 +480,8 @@ async def create_session() -> Optional[str]:
     """创建session(POST /sessions) -- 小健 2026-06-14"""
     url = f"{BASE_URL}{API_PREFIX}/sessions"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={})
+        # [72]第九章(9.6-3): 统一注入访问口令（后端 12 个 router 已挂 token 鉴权）
+        resp = await client.post(url, json={}, headers=AUTH_HEADERS)
         if resp.status_code == 200:
             return resp.json().get("session_id")
     return None
@@ -363,19 +492,135 @@ async def save_user_message(session_id: str, content: str) -> Optional[int]:
     url = f"{BASE_URL}{API_PREFIX}/sessions/{session_id}/messages"
     payload = {"role": "user", "content": content}
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json=payload)
+        # [72]第九章(9.6-3): 统一注入访问口令
+        resp = await client.post(url, json=payload, headers=AUTH_HEADERS)
         if resp.status_code == 200:
             return resp.json().get("message_id")
     return None
 
 
+# ─── 断线重连 E2E 专用: SSE 读半截后主动断开 / 断点续传 ──
+# 2026-09-27 小欧 - [72]第九章(9.6-3) 收口: test_e2e_30/31 此前各自实现这两个封装并
+#   自建 httpx.AsyncClient（不带 AUTH_HEADERS，靠本机回环豁免才过）。统一收口到此，
+#   断线逻辑与鉴权注入同处一地（DRY），两个 case 改为调用。
+
+def _sse_line_to_event(line: str) -> Optional[Dict[str, Any]]:
+    """SSE 行 → 事件 dict；非 data 行/坏 JSON 返回 None。"""
+    if not line.startswith("data: "):
+        return None
+    try:
+        return json.loads(line[6:])
+    except json.JSONDecodeError:
+        return None
+
+
+async def open_chat_stream_partial(
+    session_id: str, user_input: str, cutoff: int, api_prefix: str = "",
+    stop_on_type: Optional[str] = None,
+) -> tuple:
+    """POST /chat/stream 只读 cutoff 个事件后主动断开（模拟真实断线）。
+
+    返回 (task_id, events, last_seq)；last_seq 为断开时最后一个事件的 seq（续传断点，-1=无事件）。
+
+    stop_on_type=None: 纯按帧数 cutoff 断开。
+    stop_on_type="observation": 读到首个该类型事件即断开（cutoff 退化为防挂死上限）。
+      2026-09-30 小欧 新增: 按帧数断开会断在 start/chunk 这类前导噪声里, 此时任务还没
+      走到任何工具调用, DB 里 execution_steps 为 0, "步骤不丢"无从验证。按业务帧断
+      (action=工具调用 / observation=工具结果)才能造出"已产生步骤"的在飞任务。
+    """
+    prefix = api_prefix or API_PREFIX
+    url = f"{BASE_URL}{prefix}/chat/stream"
+    payload = {
+        "messages": [{"role": "user", "content": user_input}],
+        "stream": True,
+        "session_id": session_id,
+    }
+    events: List[Dict[str, Any]] = []
+    task_id = None
+    async with httpx.AsyncClient(timeout=None, headers=AUTH_HEADERS) as client:
+        async with client.stream("POST", url, json=payload) as resp:
+            async for line in resp.aiter_lines():
+                ev = _sse_line_to_event(line)
+                if ev is None:
+                    continue
+                if not task_id and ev.get("type") == "start" and ev.get("task_id"):
+                    task_id = ev["task_id"]
+                events.append(ev)
+                if stop_on_type is not None and ev.get("type") == stop_on_type:
+                    break
+                if len(events) >= cutoff:
+                    break
+            await resp.aclose()   # 立即关底层连接，服务端感知客户端断开
+    last_seq = max(
+        (e["seq"] for e in events if isinstance(e.get("seq"), int)),
+        default=events[-1].get("seq", 0) if events else -1,
+    )
+    return task_id, events, last_seq
+
+
+async def resume_chat_stream(
+    task_id: str, session_id: str, after_seq: int, usage_cutoff: Optional[int] = None,
+) -> tuple:
+    """GET /chat/stream/{task_id}?after_seq=N 断点续传一段。
+
+    usage_cutoff=None: 读到流自然结束；=N: 收到第 N 个 usage 事件后主动断开（模拟二次掉线）。
+    返回 (events, last_seq, finished)：finished=True 仅表示读到流自然结束。
+
+    2026-09-30 小欧 - 修 last_seq 取值错误: 原实现取 events[-1].get("seq", 0), 即
+      **最后一帧**的 seq。但流末尾的终止帧(done / final_stats / error)**不带 seq**,
+      于是 last_seq 恒为 0 —— 而 last_seq 的语义是"本次读到的最大 seq", 也是下一次
+      续传的 after_seq 断点, 恒 0 会让断点续传从 0 重放。改为取最大 seq(无带 seq 帧时
+      回落到 after_seq-1, 即"本段无新增")。实测证据: E2E-33 回放 52 帧而 last_seq=0。
+    """
+    url = f"{BASE_URL}{API_PREFIX}/chat/stream/{task_id}"
+    events: List[Dict[str, Any]] = []
+    usage_count = 0
+    finished = False
+    async with httpx.AsyncClient(timeout=None, headers=AUTH_HEADERS) as client:
+        async with client.stream(
+            "GET", url, params={"session_id": session_id, "after_seq": after_seq}
+        ) as resp:
+            async for line in resp.aiter_lines():
+                ev = _sse_line_to_event(line)
+                if ev is None:
+                    continue
+                events.append(ev)
+                if usage_cutoff is not None and ev.get("type") == "usage":
+                    usage_count += 1
+                    if usage_count >= usage_cutoff:
+                        await resp.aclose()   # 二次主动断线
+                        break
+            else:
+                finished = True   # for 正常结束 = 流自然结束(读到 done)
+    last_seq = max(
+        (e["seq"] for e in events if isinstance(e.get("seq"), int)),
+        default=after_seq - 1,
+    )
+    return events, last_seq, finished
+
+
 # ─── 步骤2+3: 发送用户请求 + SSE事件解析 (send_chat) ─────────
+
+
+def _sync_pending_result(result):
+    """send_chat 返回后回填完整 result 到待写记录 — 集中式超时保护, 覆盖全部单会话 E2E case
+    # 2026-09-24 小欧 新增: 待写记录中恰有1条空壳(result无session_id)时回填完整 result;
+    #   多条/无则不猜(YAGNI), 免逐case脚本手改 — 小欧-2026-09-24"""
+    if not result or not result.get("session_id"):
+        return
+    _cands = [r for r in _pending_records
+              if r.get("test_id") and not (r.get("result") or {}).get("session_id")]
+    if len(_cands) == 1:
+        _cands[0]["result"] = result
+
 
 async def send_chat(
     user_input: str,
     session_id: Optional[str] = None,
     timeout_seconds: int = 180,
     partial_result: Optional[Dict[str, Any]] = None,
+    link_enabled: Optional[bool] = None,
+    allow_interject: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """手册步骤2+3: 发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
@@ -383,8 +628,14 @@ async def send_chat(
       - wall clock计时: start_time/end_time写入result，供write_test_record直接取
       - SSE流接收: httpx timeout=None，由pytest.ini的timeout统一管理
       - 事件解析: 组装events/tool_calls/response_text等结构化数据
-      模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
+    模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
     -- 小健 2026-06-14
+    link_enabled: 会话link开关值随消息携带(文档[4] 5.7.14); None=不携带, 后端沿用会话现值
+    -- 小欧 2026-10-03
+    allow_interject: 会话插话开关值随消息携带(文档[11] 3.4.3/3.4.4); None=不携带, 后端沿用会话现值。
+    插话场景(同会话已有活跃任务时继续发消息)**必须显式传 True** —— 新会话默认关(决策 2),
+    关态下第2条起会被 save_message 落库前 409 拒绝(决策 11), 不传即失败。
+    -- 小欧 2026-10-07
     """
     if not session_id:
         session_id = await create_session()
@@ -399,6 +650,10 @@ async def send_chat(
         "stream": True,
         "session_id": session_id,
     }
+    if link_enabled is not None:
+        payload["link_enabled"] = link_enabled  # 随消息携带会话link开关(文档[4] 5.7.14) — 小欧 2026-10-03
+    if allow_interject is not None:
+        payload["allow_interject"] = allow_interject  # 插话开关随消息携带(文档[11] 3.4.3/3.4.4) — 小欧 2026-10-07
 
     start_time = time.monotonic()
     wall_start = datetime.now()
@@ -424,7 +679,8 @@ async def send_chat(
     try:
         async with httpx.AsyncClient(timeout=None) as client:
             try:
-                async with client.stream("POST", chat_url, json=payload) as resp:
+                # [72]第九章(9.6-3): 统一注入访问口令（SSE 流式请求同样需鉴权）
+                async with client.stream("POST", chat_url, json=payload, headers=AUTH_HEADERS) as resp:
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
                             continue
@@ -553,7 +809,7 @@ async def start_chat_stream_async(
     async def _stream_reader():
         try:
             async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream("POST", chat_url, json=payload) as resp:
+                async with client.stream("POST", chat_url, json=payload, headers=AUTH_HEADERS) as resp:  # [72]第九章(9.6-3): 统一注入访问口令
                     try:
                         async for line in resp.aiter_lines():
                             if line.startswith("data: "):
@@ -622,7 +878,8 @@ def _api_get(path: str, params: Optional[Dict] = None, timeout: int = 10) -> Opt
     if params:
         url += "?" + urllib.parse.urlencode(params)
     try:
-        req = urllib.request.Request(url)
+        # [72]第九章(9.6-3): 统一注入访问口令（同步 GET 亦需鉴权）
+        req = urllib.request.Request(url, headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
@@ -634,7 +891,8 @@ def _api_delete(path: str) -> bool:
     import urllib.request
     url = f"{BASE_URL}{API_PREFIX}{path}"
     try:
-        req = urllib.request.Request(url, method="DELETE")
+        # [72]第九章(9.6-3): 统一注入访问口令
+        req = urllib.request.Request(url, method="DELETE", headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status < 400
     except Exception:
@@ -643,7 +901,7 @@ def _api_delete(path: str) -> bool:
 
 # ─── 步骤7: DB记录完整性验证 (check_db) ────────────────────────
 
-def check_db(session_id: str) -> Dict[str, Any]:
+def check_db(session_id: str, task_id: Optional[str] = None) -> Dict[str, Any]:
     """手册步骤7: 检查数据库记录完整性(通过后端API) -- 小健 2026-06-14
 
     验证项:
@@ -708,45 +966,178 @@ def check_db(session_id: str) -> Dict[str, Any]:
             result["has_assistant_message"] = any(m.get("response") or m.get("task_id") for m in user_msgs)
             result["message_order_correct"] = True  # chat_user_message 按 created_at 升序，天然有序
 
-            # 取最后一个有 execution_steps 的任务步骤
-            for _um in reversed(user_msgs):
-                _task_id = _um.get("task_id")
-                if _task_id:
-                    _steps_data = _api_get(f"/chat/execution/task/{_task_id}/steps", timeout=30)
-                    if _steps_data and _steps_data.get("steps"):
-                        steps = _steps_data["steps"]
-                        result["execution_steps"] = steps
-                        result["execution_steps_count"] = len(steps)
+            # 步骤取数 — 小欧 2026-10-01: 精确锁定单一任务, 绝不跨任务回退
+            #   原实现从后往前找"第一个有非空 steps 的任务"并 break: 本任务 steps 为空
+            #   (未落库/被打断)时回退到上一个已完成任务, 校验对象错位 —— 与前端
+            #   RightViewer C3 跨任务降级同一缺陷模式(解 [1] F2)。
+            #   实时落库后"本任务 steps 为空"本身就是问题, 必须暴露而非用别的任务掩盖。
+            _target_tid = task_id or (user_msgs[-1].get("task_id") if user_msgs else None)
+            result["execution_steps_task_id"] = _target_tid
+            if _target_tid:
+                _steps_data = _api_get(f"/chat/execution/task/{_target_tid}/steps", timeout=30)
+                steps = (_steps_data or {}).get("steps") or []
+                result["execution_steps"] = steps
+                result["execution_steps_count"] = len(steps)
 
-                        for si, step in enumerate(steps):
-                            step_type = step.get("type", "")
-                            if _is_action_step(step):
-                                _entries = _action_entries(step)
-                                if not _entries:
-                                    result["step_field_issues"].append(
-                                        f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
-                                    )
-                                for _ei, _en in enumerate(_entries):
-                                    if not _en.get("tool_name"):
-                                        result["step_field_issues"].append(
-                                            f"step[{si}]#{_ei}: tool_name empty(MUST)"
-                                        )
-                                    _tp = _en.get("tool_params")
-                                    if not isinstance(_tp, dict):
-                                        result["step_field_issues"].append(
-                                            f"step[{si}]#{_ei}: tool_params非dict(MUST)"
-                                        )
-                            elif step_type == "observation":
-                                if not step.get("tool_result"):
-                                    result["step_field_issues"].append(
-                                        f"step[{si}]: tool_result empty(MUST)"
-                                    )
-                        break  # 取到步骤即退出
+                for si, step in enumerate(steps):
+                    step_type = step.get("type", "")
+                    if _is_action_step(step):
+                        _entries = _action_entries(step)
+                        if not _entries:
+                            result["step_field_issues"].append(
+                                f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
+                            )
+                        for _ei, _en in enumerate(_entries):
+                            if not _en.get("tool_name"):
+                                result["step_field_issues"].append(
+                                    f"step[{si}]#{_ei}: tool_name empty(MUST)"
+                                )
+                            _tp = _en.get("tool_params")
+                            if not isinstance(_tp, dict):
+                                result["step_field_issues"].append(
+                                    f"step[{si}]#{_ei}: tool_params非dict(MUST)"
+                                )
+                    elif step_type == "observation":
+                        if not step.get("tool_result"):
+                            result["step_field_issues"].append(
+                                f"step[{si}]: tool_result empty(MUST)"
+                            )
 
     except Exception as e:
         result["errors"].append(f"API query error: {e}")
 
+    # 2026-09-24 小欧 超时保护集中注入: send_chat 返回即回填完整 result 到唯一空壳 pending,
+    # 防 send_chat 后验证阶段超时丢完整数据(与各case脚本 send_chat 后手动补注册等价) — 小欧-2026-09-24
+    _sync_pending_result(result)
     return result
+
+
+# ─── 行级用户消息读取(2026-09-29 小欧 新增) ──────────────────────────
+
+def get_user_message_rows(session_id: str, timeout: int = 30) -> List[Dict[str, Any]]:
+    """取 chat_user_message 行级数据(含每行 task_id / response / content) — 小欧 2026-09-29
+
+    新增原因: check_db 只回传聚合结论(messages_count / has_assistant_message 等), 拿不到行级
+    task_id, 而注入类用例必须逐行验证"绑定到哪个任务"(如 bind_message_to_task 的效果)。
+    只新增不改 check_db 契约, 避免已有 76 个用例受影响。
+
+    返回 [] 表示会话无消息或接口不可达(调用方须显式判空, 禁把空列表当"无注入")。
+    """
+    _data = _api_get(f"/sessions/{session_id}/user_messages", timeout=timeout)
+    if not _data:
+        return []
+    _msgs = _data.get("messages") or []
+    return [m for m in _msgs if isinstance(m, dict)]
+
+
+# ─── 活跃任务注入(INJ)共享断言组 ─────────────────────────────
+# 2026-09-29 小欧: INJ-01/02/03 三个 case 的注入断言逐字重复(取 task_id / 校验 merged 应答 /
+#   比对目标任务 / 行级绑定 / 锚不漂 / LLM 吸收证据), 全部收口到本模块 —— case 只留"发消息+编排",
+#   换 case 或改判据只改这一处(DRY/SRP/KISS-DIRECT, 禁 backward: 纯新增函数不改既有契约)。
+
+
+def extract_task_id(result: Dict[str, Any]) -> Optional[str]:
+    """从 send_chat 结果的 events 里取本任务 task_id(取 start 事件的 task_id) — 小欧 2026-09-29
+
+    注意: send_chat 返回 dict **无 task_id 键**, 只能从 events 推导。
+    """
+    for ev in result.get("events") or []:
+        if isinstance(ev, dict) and ev.get("type") == "start" and ev.get("task_id"):
+            return ev["task_id"]
+    return None
+
+
+def assert_injection_ack(res: Dict[str, Any], label: str) -> str:
+    """校验一次注入应答符合契约, 返回 merged_into_task_id 供后续比对目标任务 — 小欧 2026-09-29
+
+    覆盖: 有事件 / type=merged / 注入文案 / merged_into_task_id 非空 / 无 error / 未新开任务(无 start)。
+    """
+    types = [e.get("type") for e in (res.get("events") or [])]
+    print(f"[INJ] {label} type序列={types}, 耗时={res.get('total_time_ms', 0) / 1000.0:.2f}s")
+    assert res.get("events"), f"{label} 无任何 SSE 事件(MUST)"
+    ev = res["events"][0]
+    assert ev.get("type") == "merged", (
+        f"{label} 首事件应为 merged(注入应答), 实际 {ev.get('type')!r} — "
+        "若为 start 说明目标任务已结束(未命中活跃态), 场景未复现")
+    assert "已并入当前执行中的任务" in str(ev.get("content", "")), \
+        f"{label} 注入文案缺失(MUST): {ev.get('content')!r}"
+    tid = ev.get("merged_into_task_id")
+    assert tid, f"{label} merged 缺 merged_into_task_id(MUST): {ev!r}"
+    assert not res.get("has_error"), f"{label} 不应有 error(MUST): {res.get('error_events')}"
+    assert "start" not in types, f"{label} 注入不应新开任务, 事件序列={types}(MUST)"
+    return tid
+
+
+def assert_merged_point_to(acked_tids: List[Optional[str]], first_tid: Optional[str],
+                           labels: Optional[List[str]] = None) -> None:
+    """所有注入应答的 merged_into_task_id 必须等于目标任务 — 小欧 2026-09-29(仅判非空是弱断言)"""
+    assert first_tid, "未能从第一条 events 的 start 事件取到 task_id"
+    _labels = labels or [f"第{i + 2}条" for i in range(len(acked_tids))]
+    for _lbl, _t in zip(_labels, acked_tids):
+        assert _t == first_tid, f"{_lbl} merged_into_task_id 应等于 {first_tid}, 实际 {_t!r}"
+
+
+def assert_injected_rows_bound(rows: List[Dict[str, Any]], user_msg_ids: List[int],
+                              first_tid: str, labels: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """校验每条注入消息行都已绑定到目标任务(锁 bind_message_to_task) — 小欧 2026-09-29
+
+    同时返回这些注入行(供锚校验复用)。**不**校验首条行 task_id: 有注入时锚在最后一条注入行,
+    终态只 UPDATE 锚那一行, 首条行 task_id 恒 NULL(update_user_message_final 语义), 断言它会假红。
+    """
+    _by_id = {r.get("id"): r for r in rows}
+    _labels = labels or [f"第{i + 2}条" for i in range(len(user_msg_ids))]
+    _out = []
+    for _lbl, _uid in zip(_labels, user_msg_ids):
+        _r = _by_id.get(_uid)
+        assert _r is not None, f"找不到{_lbl}注入行(id={_uid}), 实际行 id={list(_by_id)}"
+        assert _r.get("task_id") == first_tid, \
+            f"{_lbl}注入行应绑定 {first_tid}, 实际 {_r.get('task_id')!r}"
+        _out.append(_r)
+    return _out
+
+
+def assert_injection_anchor_not_drifted(first_row: Dict[str, Any],
+                                        last_injected_row: Dict[str, Any]) -> None:
+    """锚不被覆盖(设计[76] 6.15 场景2③) — 小欧 2026-09-29
+
+    锚取本次 drain 最后一条 uid → 答案落在最后一条注入行; 首条行不应持有 response。
+    首条持有即说明锚漂到旧首轮消息。
+    """
+    assert first_row is not None, "找不到首条消息行"
+    assert not str(first_row.get("response") or ""), (
+        "首条行不应持有 response —— 答案应落在最后一条注入行(锚取最后一条 uid), "
+        "首条持有即锚漂到旧首轮消息")
+    assert str(last_injected_row.get("response") or ""), \
+        "最后一条注入行应持有 assistant 答案(锚取最后一条 uid)"
+
+
+def injection_llm_evidence(response: str, keywords: List[str]) -> Dict[str, Any]:
+    """LLM 是否真吸收注入内容 —— 只作证据记录, **不做断言** — 小欧 2026-09-29
+
+    依赖 LLM 是否照做, 非注入机制本身, 硬断言会 flaky(设计[76]: 机制测机制)。
+    """
+    _ev = {f"含{kw}": kw in (response or "") for kw in keywords}
+    _ev["答案字数"] = len(response or "")
+    return _ev
+
+
+def _fetch_injected_messages(session_id: Optional[str]) -> List[str]:
+    """取本会话的注入消息集(= /tasks 的 merged_inputs) — 小欧 2026-09-29 供记录表自推导
+
+    merged_inputs 即后端 list_session_tasks 按 task_id 归集的注入行内容(已排除任务登记首条),
+    正是"本轮插入了哪几条"的权威数据源; 非注入用例返回空。
+    """
+    if not session_id:
+        return []
+    _d = _api_get(f"/sessions/{session_id}/tasks")
+    if not _d or not isinstance(_d, dict):
+        return []
+    _out: List[str] = []
+    for _t in (_d.get("tasks") or []):
+        for _m in (_t.get("merged_inputs") or []):
+            if isinstance(_m, str) and _m:
+                _out.append(_m)
+    return _out
 
 
 # ─── 安全错误过滤 ────────────────────────────────────────────
@@ -758,7 +1149,7 @@ SAFETY_KEYWORDS = [
     "Permission denied", "DB operation failed",
     "NoneType", "Errno 13", "ERR_SQL_EXEC",
     "UNIQUE constraint", "拒绝访问", "WinError 5", "WinError 32",
-    "readtext failed", "unable to open database",
+    "read failed", "unable to open database",
 ]
 
 
@@ -887,7 +1278,7 @@ def _step_brief(step: Any, limit: int = 40) -> str:
     t = step.get("type", "")
     if t == "start":
         return _cut(step.get("user_message"))
-    if t == "context_overview":
+    if t == "history_context":  # 2026-10-04 小欧: 帧改名 context_overview→history_context(不改则此栏恒空, 证据链静默归零)
         return f"消息{step.get('message_count', 0)}条/≈{step.get('estimated_tokens', 0)}tok(估算)" + ("/已裁剪" if step.get("truncated") else "")
     if t == "stats":
         # 2026-08-22 小欧 补展示retry_count(仅非零追加): stats落库字段=llm_call_count/duration/
@@ -928,7 +1319,7 @@ def _step_brief(step: Any, limit: int = 40) -> str:
 
 
 def verify_consistency(
-    result: Dict[str, Any], session_id: str
+    result: Dict[str, Any], session_id: str, task_id: Optional[str] = None
 ) -> List[str]:
     """手册步骤8: 验证SSE事件与DB记录的一致性 -- 小健 2026-06-14
 
@@ -940,7 +1331,7 @@ def verify_consistency(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     if db["errors"]:
         issues.extend(db["errors"])
         return issues
@@ -1029,6 +1420,7 @@ def verify_consistency(
 def verify_db_prompt_consistency(
     session_id: str,
     user_msg_id: Optional[int] = None,
+    task_id: Optional[str] = None,
 ) -> List[str]:
     """验证DB execution_steps与Prompt日志«步骤产出»严格一致性 -- 小健 2026-06-24
 
@@ -1043,7 +1435,7 @@ def verify_db_prompt_consistency(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     db_steps = db.get("execution_steps", [])
     if not db_steps:
         issues.append("DB无执行步骤数据")
@@ -1195,6 +1587,7 @@ def verify_db_prompt_consistency(
 
 def verify_db_steps_data_completeness(
     session_id: str,
+    task_id: Optional[str] = None,
 ) -> List[str]:
     """验证DB执行步骤数据完整性 -- 小健 2026-06-24
 
@@ -1207,7 +1600,7 @@ def verify_db_steps_data_completeness(
     """
     issues: List[str] = []
     
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     db_steps = db.get("execution_steps", [])
     
     if not db_steps:
@@ -1245,7 +1638,7 @@ def verify_db_steps_data_completeness(
 # ─── 步骤9: 步骤合理性验证 (verify_steps) ──────────────────────
 
 def verify_steps(
-    result: Dict[str, Any], session_id: str
+    result: Dict[str, Any], session_id: str, task_id: Optional[str] = None
 ) -> List[str]:
     """手册步骤9: 验证步骤合理性 -- 小健 2026-06-14
 
@@ -1256,7 +1649,7 @@ def verify_steps(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     if not db["session_exists"] or not db["execution_steps"]:
         return issues
 
@@ -1502,7 +1895,9 @@ def print_report(
     db_valid = mark if db_check.get("is_valid") else "[WARN]"
     db_order = mark if db_check.get("message_order_correct") else "[WARN]"
     db_msg = mark if db_check.get("has_assistant_message") else "[FAIL]"
-    db_step = mark if db_check.get("execution_steps_count", 0) > 0 else "[WARN]"
+    # 2026-10-01 小欧: 逐步落库后 0 行是硬失败, 与 passed 判定(无豁免)同口径,
+    #   原降级为 [WARN] 会造成"判定 FAIL 但表格标 WARN"的自相矛盾(解 [1] F3)。
+    db_step = mark if db_check.get("execution_steps_count", 0) > 0 else "[FAIL]"
     db_field = mark if len(db_check.get("step_field_issues", [])) == 0 else "[FAIL]"
 
     sse_ok = mark if len(consistency_issues) == 0 else "[FAIL]"
@@ -1650,6 +2045,14 @@ def verify_test_record_exists(test_id: str) -> bool:
     return exists
 
 
+# 2026-09-30 小欧 - "任务未正常结束"语义的 error_type(打断在飞任务的用例预期见到这些)
+#   task_state_incomplete: 回放时任务已被收尾成终态, 但 Journal 无 final 帧,
+#                         后端拒绝伪造完成(「任务终态事件缺失，禁止伪造完成」)如实报错;
+#   task_interrupted:     收尾残行的终态错误标记。
+#   二者都是"如实报错"而非故障, 故在 interrupted_by_design 场景算预期; 其他 error_type 一律照实 FAIL。
+_INTERRUPT_ERROR_TYPES = frozenset({"task_state_incomplete", "task_interrupted"})
+
+
 def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
     """主动验证 token_usage 真实落库(消除"日志无ERROR即PASS"盲区) — 小欧 2026-08-23
     原 write_test_record 的 passed 仅依赖日志ERROR扫描; 若 token_usage_insert 静默失败(不打ERROR),
@@ -1677,6 +2080,60 @@ def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
     return issues
 
 
+def injected_context_frames(events):
+    """从 events 逐帧取出跨任务注入量与成品状态文字, 返回 [dict, ...]。
+
+    每项: {"injected_message_count": int, "injected_estimated_tokens": int, "content_link_mode": str}
+      injected_message_count  注入的连续对话条数
+      injected_estimated_tokens  注入的估算 token
+      content_link_mode  后端给的**成品身份文字**(如"第1个link任务, 连续任务,注入历史上下文")。
+               2026-10-10 小欧: 顶层 content 已拆两组 —— 本项取 inject 组这一个。压缩率文字另在
+               compressed 字段, 两者同属「历史上下文」段右侧同行显示。
+
+    2026-10-10 小欧: 帧结构改双分组嵌套(conv_context/inject_context), 扁平 injected_message_count /
+    injected_estimated_tokens 键**已删除**。旧读法 ev.get("injected_message_count") 恒返回 None
+    → 注入量恒 0 → 测试记录第1节"跨任务注入上下文"恒显"无(本任务单轮/无历史注入)"(记录失真)。
+    真库实测 P9-08 首帧实为 20条/11100tok, 记录却写"无"。
+    禁 backward: 只认 history_context 帧的 inject_context 分组, 不回落扁平键。
+    2026-10-10 小欧 同理不回落顶层 content —— 只读 inject_context.content_link_mode。
+
+    单一真源(SRP/DRY): 写记录取峰值、各用例逐任务明细取首帧, 全部走本函数, 杜绝同一读帧逻辑
+    在两处各写一遍、改一处漏另一处(该缺陷已实际发生过: e2e_helpers 与 test_p9_08 各写一份)。
+    """
+    out = []
+    for ev in events or []:
+        if isinstance(ev, dict) and ev.get("type") == "history_context":
+            grp = ev.get("inject_context") or {}
+            out.append({
+                "injected_message_count": grp.get("injected_message_count") or 0,
+                "injected_estimated_tokens": grp.get("injected_estimated_tokens") or 0,
+                "content_link_mode": grp.get("content_link_mode") or "",
+            })
+    return out
+
+
+def format_injected_context(events):
+    """渲染测试记录第1节"跨任务注入上下文"那一行 —— **只取首帧**(2026-10-10 北京老陈裁定)。
+
+    只认首帧: 一个任务一条 history_context 首帧, 它就是"本任务装入了多少历史"的权威快照。
+    取峰值(遍历全部帧求最大)已废除: 峰值反映的是"本次运行里最大的那次", 与本行语义
+    (本任务装入量)不是一回事, 多任务连发时会把别的任务的注入量记到本任务头上, 属张冠李戴。
+
+    帧的成品身份文字(inject_context.content_link_mode, 如"第1个link任务, 连续任务,注入历史上下文")
+    一并带出: 它与压缩率文字同属「历史上下文」段右侧, 只记条数/token 会把这段关键信息丢掉。
+
+    无帧或首帧无注入时沿用文案"无(本任务单轮/无历史注入)"。
+    """
+    frames = injected_context_frames(events)
+    if not frames:
+        return "无(本任务单轮/无历史注入)"
+    f = frames[0]
+    n, tok = f["injected_message_count"], f["injected_estimated_tokens"]
+    if not (n or tok):
+        return "无(本任务单轮/无历史注入)"
+    return "消息{}条/≈{}tok(估算); {}".format(n, tok, f["content_link_mode"] or "-")
+
+
 def write_test_record(
     test_id: str,
     test_name: str,
@@ -1692,6 +2149,7 @@ def write_test_record(
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
     test_title: Optional[str] = None,
+    interrupted_by_design: bool = False,
 ) -> Optional[Path]:
     """手册步骤6+11: 写入测试记录文件 + 输出[CALL CHAIN]+[RECORD OK] -- 小健 2026-06-18
 
@@ -1713,6 +2171,12 @@ def write_test_record(
     v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
     v2.2增强: 新的PASS/FAIL判断标准 - final=通过, 任何error=失败, DB-Prompt严格对比
     v2.3增强: 计时统一由核心脚本处理，case脚本不传start_time -- 小欧 2026-07-03
+    v2.4增强: interrupted_by_design —— 供"故意打断任务"的用例(如后端重启打断在飞任务)声明
+      本用例的预期终态就是"无 final 事件"。默认 False, 行为与 v2.3 完全一致。
+      2026-09-30 小欧: v2.2 的"没有final事件 → 直接判FAILED"对这类用例是误判 ——
+        任务被重启打断本就永远不会有 final 帧, 记录却落 FAILED, 与 pytest 真实 PASSED 相矛盾,
+        会误导人工复核。开启后: 跳过该条启发式(仍保留"用例自身断言失败即 FAILED"),
+        并把 DB-Prompt 口径改为"无步骤属预期", 同时在记录里显式打印声明, 不掩盖任何真问题。
     -- 小健 2026-06-24
     """
     if test_title:
@@ -1777,14 +2241,20 @@ def write_test_record(
         if _fatal_error or _final_outcome in ("failed", "cancelled"):
             passed = False
 
-    else:
+    elif not interrupted_by_design:
         # 没有final事件，失败
+        # 2026-09-30 小欧: interrupted_by_design=True 时跳过本条 —— 该用例就是故意打断任务的,
+        #   "无final事件"是预期终态而非失败信号(用例自身的断言才是判据, 失败仍会 passed=False)
         passed = False
-    
+
     # DB-Prompt一致性FAIL则整体FAILED
+    # 2026-10-01 小欧: 撤销"被打断任务 steps 无行"豁免(解 [1] F1)。
+    #   原豁免前提是"step 只在终态落库", 故被打断任务必然 0 行 —— 而该前提本身是缺陷
+    #   (storage.py:3/374/380 设计明写"运行期逐步落库"), 已于 2026-10-01 修为逐步落库。
+    #   修复后被打断任务已执行部分必有行, 0 行即真实缺陷, 不得放行, 否则测试反向固化缺陷。
     if passed and dpi is not None and len(dpi) > 0:
         passed = False
-    
+
     # 日志中有ERROR或traceback则失败
     if passed:
         if len(log_check.get("errors", [])) > 0:
@@ -1792,10 +2262,14 @@ def write_test_record(
         if len(log_check.get("tracebacks", [])) > 0:
             passed = False
     # 2026-08-23 小欧: 主动核查 token_usage 落库(消除"日志无ERROR即PASS"盲区)
+    # 2026-10-01 小欧: 同上撤销行数豁免 —— token_usage 明细已改实时落库(解 [1] A10),
+    #   被打断任务已完成的 LLM 轮必有明细行; 仅"核查异常"类(查询本身失败)可放行。
     if passed:
         _tu_sid = result.get("session_id", "")
         if _tu_sid:
             _tu_issues = verify_token_usage(_tu_sid, result.get("llm_call_count", 0))
+            if interrupted_by_design:
+                _tu_issues = [i for i in _tu_issues if "核查异常" in i]
             if _tu_issues:
                 passed = False
     tool_calls = result.get("tool_calls", [])
@@ -1810,7 +2284,8 @@ def write_test_record(
         sid = result.get("session_id", "")
         if sid:
             try:
-                fb = check_db(sid)
+                # 2026-10-01 小欧: 补 task_id(解 [1] F2 透传链), 理由同上
+                fb = check_db(sid, result.get("task_id"))
                 if fb.get("session_exists"):
                     db = fb
             except Exception:
@@ -1822,7 +2297,9 @@ def write_test_record(
         _umid = result.get("user_msg_id")
         if _sid:
             try:
-                dpi = verify_db_prompt_consistency(_sid, _umid)
+                # 2026-10-01 小欧: 补 task_id(解 [1] F2 透传链)——不传则回落"最后一条消息的任务",
+                #   多轮会话(par_01 同会话两任务)校验对象会错位。
+                dpi = verify_db_prompt_consistency(_sid, _umid, result.get("task_id"))
             except Exception:
                 dpi = []
 
@@ -1844,41 +2321,90 @@ def write_test_record(
     lines.append("---")
     lines.append("")
 
-    # model 结构信息(小欧 2026-08-23): 归一后模型身份=ModelRef JSON, 取自 chat_tasks.sessionModel(回退 token_usage.task_model)
+    # -- 2026-09-25 小欧 重写: 模型身份改为"本次运行时间窗内的全部任务"口径(修两个记录失真):
+    #   病根(旧实现 ORDER BY rowid DESC LIMIT 1 只取该 session 最后一条任务):
+    #     ①[70] 支持运行中切换模型后, 只记最后一个模型, 前面任务实际用的模型被静默丢弃;
+    #     ②同 session 被复用(多轮对话 / case 重跑)时, 会把上一次运行的模型记成本次结果。
+    #   实现要点(全部实测核实, 不靠假设):
+    #     · 时间窗: record_test_baseline() 写入 _RUN_START_TS(与 created_at 同 ISO+微秒), created_at >= 窗线。
+    #       仅 32 个 case 调用 baseline, 其余(case 未调)保持 None → 直接退"最后一条", 行为与旧版完全一致。
+    #     · 模型回退链(每行任务): sessionModel(快照身份, 实测空率为0) → token_usage.task_model(同任务, 实测有值)
+    #       → 行内 provider/model/display_name(实测 88% 为空, 仅作最后兜底)。原版"token_usage 回退"予以保留。
+    #     · 输出: 单一模型时格式与旧版逐字一致(不改动既有 76 个 case 的记录版式); 跨模型才追加切换标记+明细表。
     _model_info = "-"
+    _task_model_rows: List[tuple] = []
     try:
         if _sid:
             _mc = sqlite3.connect(str(DB_PATH))
             _mc.row_factory = sqlite3.Row
-            _mr = _mc.execute(
-                "SELECT sessionModel FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
-                (_sid,)).fetchone()
-            _mj = None
-            if _mr and _mr["sessionModel"]:
-                _mj = json.loads(_mr["sessionModel"])
-            else:
-                _mt = _mc.execute(
-                    "SELECT task_model FROM token_usage WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
-                    (_sid,)).fetchone()
-                if _mt and _mt["task_model"]:
-                    _mj = json.loads(_mt["task_model"])
+            _rows = _mc.execute(
+                "SELECT task_id, created_at, sessionModel, provider, model, display_name"
+                " FROM chat_tasks WHERE session_id=?"
+                + (" AND created_at >= ?" if _RUN_START_TS else "")
+                + " ORDER BY rowid ASC, created_at ASC",
+                ((_sid, _RUN_START_TS) if _RUN_START_TS else (_sid,)),
+            ).fetchall()
+            if not _rows:
+                # 范围内无任务(未调 baseline)→ 与原版等价: 会话内最后一条
+                _rows = _mc.execute(
+                    "SELECT task_id, created_at, sessionModel, provider, model, display_name"
+                    " FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1", (_sid,)).fetchall()
+            _model_of_task: Dict[str, Optional[Dict[str, str]]] = {}
+            _timeline = []
+            for _r_ in _rows:
+                _mj = None
+                if _r_["sessionModel"]:
+                    try:
+                        _mj = json.loads(_r_["sessionModel"])
+                    except (TypeError, ValueError):
+                        _mj = None
+                if not _mj:
+                    try:
+                        _mr2 = _mc.execute(
+                            "SELECT task_model FROM token_usage WHERE task_id=? ORDER BY rowid DESC LIMIT 1",
+                            (_r_["task_id"],)).fetchone()
+                        if _mr2 and _mr2["task_model"]:
+                            _mj = json.loads(_mr2["task_model"])
+                    except (TypeError, ValueError):
+                        _mj = None
+                if not _mj and _r_["model"]:
+                    _mj = {"provider": _r_["provider"], "model": _r_["model"],
+                           "display_name": _r_["display_name"]}
+                if not _mj or not _mj.get("model"):
+                    continue
+                _one = (str(_mj.get("provider") or "-"), str(_mj.get("model")),
+                        str(_mj.get("display_name") or "-"))
+                _model_of_task[str(_r_["task_id"])] = _one
+                if not _timeline or _timeline[-1] != _one:      # 连续去重: 只留切换点, 不逐任务重复
+                    _timeline.append(_one)
             _mc.close()
-            if _mj:
-                _model_info = (f"provider={_mj.get('provider')}, model={_mj.get('model')}, "
-                               f"display_name={_mj.get('display_name')}")
+            if _timeline:
+                _head = _timeline[0]
+                _model_info = (f"provider={_head[0]}, model={_head[1]}, display_name={_head[2]}")
+                if len(_timeline) > 1 or (_rows and len(_rows) > 1):
+                    # 多次任务/跨模型时, 把"本次运行内每任务真实模型"留作明细, 由下方表格给出
+                    _task_model_rows = [
+                        (str(r["task_id"] or "-"), str(r["created_at"] or "-"),
+                         _model_of_task.get(str(r["task_id"]), ("-", "-", "-"))[0],
+                         _model_of_task.get(str(r["task_id"]), ("-", "-", "-"))[1])
+                        for r in _rows
+                    ]
+                if len(_timeline) > 1:
+                    _switched = " → ".join(f"{p}/{m}" for p, m, _ in _timeline)
+                    _model_info += (f" [运行中切换过模型: 共{len(_timeline)}个版本, {_switched}"
+                                    f"; 下表按任务逐条列出]")
     except Exception:
         _model_info = "-"
 
-    # 跨任务注入上下文(小欧 2026-08-23): 取自 context_overview 事件的 injected_message_count/injected_estimated_tokens,
-    # 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
-    _inj_info = "无(本任务单轮/无历史注入)"
-    for _ev in result.get("events", []):
-        if isinstance(_ev, dict) and _ev.get("type") == "context_overview":
-            _inj_n = _ev.get("injected_message_count", 0) or 0
-            _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
-            if _inj_n or _inj_tok:
-                _inj_info = f"消息{_inj_n}条/≈{_inj_tok}tok(估算)"
-            break
+    # 跨任务注入上下文(小欧 2026-08-23): 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
+    # 2026-10-03 北京老陈指正 + 小欧 修: 原实现取 events 里**第一个**帧就 break, 只对"单轮 case"成立。
+    #   同会话连续发送多个任务时(如 E2E-P9-08 连发5个任务), 首帧来自首个任务(新会话首条消息, 注入必然为0),
+    #   该字段恒显示"无(本任务单轮/无历史注入)" —— 而后续任务确实有注入, 属记录失真。
+    #   改为遍历全部帧取**最大值**(峰值注入体量), 单轮 case 只有一个事件, 取最大值等价于原取值。
+    # 2026-10-10 小欧: 取值统一走 injected_context_frames(单一真源), 本函数不再自带读帧循环。
+    #   原内联读法读扁平键 injected_message_count, 帧改双分组嵌套后该键已删 → 恒 None → 峰值恒 0,
+    #   记录恒显"无"(真库实测 P9-08 首帧实为 20条/11100tok, 记录却写"无")。
+    _inj_info = format_injected_context(result.get("events"))
 
     # 第1节：测试基本信息
     lines.append("## 1 测试基本信息")
@@ -1888,6 +2414,18 @@ def write_test_record(
     lines.append(f"| 测试编号 | {test_id} |")
     lines.append(f"| 任务描述 | {test_name} |")
     lines.append(f"| 用户命令 | `{user_input}` |")
+    # 2026-09-29 小欧 注入场景行(插几条/追加几行), 紧跟用户命令。
+    #   **自推导, case 零改动**: 注入消息集就是 /sessions/{id}/tasks 的 merged_inputs
+    #   (后端 list_session_tasks 按 task_id 归集注入行、已排除任务登记首条), 直接取即可;
+    #   非注入用例该字段为空 → 整块不渲染, 既有 76 用例输出零变化。
+    _injected = _fetch_injected_messages(result.get("session_id") or db.get("session_id"))
+    if _injected:
+        _n = len(_injected)
+        lines.append(f"| 注入消息数 | {_n} 条: {' / '.join(_injected)} |")
+        lines.append(
+            f"| 注入落库行数 | chat_user_message 追加 {_n} 行; "
+            f"会话共 {db.get('messages_count', '-')} 行(== 校验, 多一行即重复落库) |"
+        )
     lines.append(f"| 开始时间 | {start_str} |")
     lines.append(f"| 结束时间 | {end_str} |")
     lines.append(f"| 运行耗时 | {test_elapsed:.1f}秒 |")
@@ -1904,6 +2442,16 @@ def write_test_record(
         _usage_cell = "-"
     lines.append(f"| Token使用(prompt/completion/total) | {_usage_cell} |")
     lines.append(f"| model 结构信息 | {_model_info} |")
+    if _task_model_rows:
+        # 2026-09-25 小欧: 本次运行内"每任务×真实模型"明细(仅在同 session 含多条任务时输出, 单任务不撑大版式);
+        #   配合上方 model 行, 解决 [70] 运行时切换模型后"记录里只剩最后一个模型"的失真。
+        lines.append("")
+        lines.append("### 1.1 本次运行的任务 × 模型明细")
+        lines.append("")
+        lines.append("| # | task_id | 创建时间 | provider | model |")
+        lines.append("|----|---------|----------|----------|-------|")
+        for _i, (_tid, _ts, _p, _m) in enumerate(_task_model_rows, 1):
+            lines.append(f"| {_i} | `{_tid}` | {_ts} | {_p} | {_m} |")
     lines.append(f"| 跨任务注入上下文 | {_inj_info} |")
     lines.append(f"| 逻辑步数 | {len(logical_events)} |")
     lines.append(f"| 不重复步骤号数 | {unique_step_nums} |")
@@ -2024,7 +2572,10 @@ def write_test_record(
         #   仅SSE实时信号)不补。对齐法: 落库步骤随emit同步落库,SSE到达序=落库序,顺序遍历events遇落库
         #   类型即按位消耗db_steps; 对齐守卫: events中落库类型事件数≠len(db_steps)(如断连缺帧)时
         #   位置推断不可靠, 退化为"落库表全量在前+SSE行尾部追加", 宁可乱序不错位 - 小欧 2026-08-22
-        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying")
+        #   2026-09-28 小欧 [76] 10轮会审 D-13: 补 "merged" — 该类型在 steps/__init__.py 归"仅SSE不落库"组,
+        #   漏登记会被 _n_db_ev 当成落库事件计数 → 与 len(db_steps) 不等 → 步骤表顺序退化为
+        #   "落库全量在前+SSE尾部追加"(宁可乱序不错位)。即 5.4 双登记纪律的第三个登记点。
+        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying", "merged")
         _SSE_SKIP = {"chunk", "thought_start"}
         _rows: List[Any] = []  # 元素二元组: ("db", 落库step) / ("sse", SSE事件)
         _n_db_ev = sum(
@@ -2164,6 +2715,11 @@ def write_test_record(
     db_prompt_issues = dpi if dpi is not None else (extra or {}).get("DbPromptIssues", [])
     db_prompt_ok = len(db_prompt_issues) == 0
     db_prompt_detail = f"{len(db_prompt_issues)}个问题" if db_prompt_issues else "PASS"
+    # 2026-09-30 小欧: 与上面的 passed 判定同口径 —— 故意打断的任务"DB无执行步骤数据"是预期,
+    #   不该在表格里显示成 FAIL(否则与"测试结果 PASSED"自相矛盾)。其余问题照旧算问题。
+    # 2026-10-01 小欧: 撤销"本用例故意打断任务故无步骤"显示豁免(解 [1] F1)——
+    #   step 已改运行期逐步落库, 被打断任务已执行部分必有行, 0 行是真实缺陷不得显示 PASS。
+    #   与上面的 passed 判定保持同口径, 避免"表格 PASSED 但列 FAIL"的自相矛盾。
 
     # 第6节：验证结果
     lines.append("## 6 验证结果")
@@ -2171,7 +2727,11 @@ def write_test_record(
     lines.append("| 验证项 | 结果 | 说明 |")
     lines.append("|--------|------|------|")
     stream_end_type = assert_stream_ended(result)
-    lines.append(f"| 流结束 | {stream_end_type} | - |")
+    # 2026-09-30 小欧: 故意打断任务的用例, error帧/无回复/无步骤都是预期, 标注清楚避免误读为失败
+    _ibd_note = " [本用例故意打断任务, 无final/无回复属预期]" if interrupted_by_design else ""
+    if interrupted_by_design:
+        lines.append(f"| 任务终态声明 | PASS | 故意打断在飞任务, 预期无final事件{_ibd_note} |")
+    lines.append(f"| 流结束 | {stream_end_type} |{_ibd_note} |")
     # 2026-08-12 小欧 COM_03误判修复: error事件区分可恢复(blocked/user_rejected,拒绝≠失败)/不可恢复
     _recoverable_errors = [
         f"step={_e.get('step')}({_e.get('error_type','')})"
@@ -2179,8 +2739,21 @@ def write_test_record(
         if _e.get("type") == "error" and _e.get("error_type", "") in _RECOVERABLE_ERROR_TYPES
     ]
     _fatal_error_desc = "不可恢复error事件" if _fatal_error else ("无error事件" if not _recoverable_errors else f"仅可恢复拒绝事件({';'.join(_recoverable_errors)})")
-    lines.append(f"| 是否有error事件 | {'FAIL' if _fatal_error else 'PASS'} | {_fatal_error_desc} |")
-    lines.append(f"| 回复内容 | {'FAIL' if not resp or resp_has_error else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''} |")
+    # 2026-09-30 小欧: 打断场景下只把"任务未正常结束"语义的error帧算预期, 换成别的error仍照实FAIL。
+    #   实测两种(均无 seq, 是回放时合成的终止帧, 不入 Journal):
+    #     task_state_incomplete「任务终态事件缺失，禁止伪造完成」—— 回放时任务已被收尾成终态,
+    #       但 Journal 里没有 final 帧, 后端拒绝伪造完成, 如实报错;
+    #     task_interrupted —— 收尾残行的终态错误标记。
+    _ibd_expected_err = interrupted_by_design and all(
+        _e.get("error_type") in _INTERRUPT_ERROR_TYPES
+        for _e in result.get("events", [])
+        if _e.get("type") == "error" and _e.get("error_type", "") not in _RECOVERABLE_ERROR_TYPES
+    )
+    if _ibd_expected_err:
+        _fatal_error_desc = "仅任务未正常结束的终止帧(task_state_incomplete/task_interrupted, 属预期)"
+    lines.append(f"| 是否有error事件 | {'FAIL' if (_fatal_error and not _ibd_expected_err) else 'PASS'} | {_fatal_error_desc} |")
+    _resp_fail = (not resp or resp_has_error) and not interrupted_by_design
+    lines.append(f"| 回复内容 | {'FAIL' if _resp_fail else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''}{_ibd_note} |")
     lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
     lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
     lines.append(f"| DB-Prompt日志一致性 | {'PASS' if db_prompt_ok else 'FAIL'} | {db_prompt_detail} |")
@@ -2193,6 +2766,9 @@ def write_test_record(
     
     # DB-Prompt日志不一致详情
     if db_prompt_issues:
+        # 2026-10-01 小欧: 撤销"已按预期放行"文案(解 [1] F1)——步骤改逐步落库后,
+        #   被打断任务已执行部分必有行, 0 行是真实缺陷; 上表已判 FAIL, 此处不得再称"预期放行",
+        #   否则正文与表格自相矛盾。条目照实列出, 不隐藏。
         lines.append("### DB-Prompt日志不一致详情")
         lines.append("")
         for i, issue in enumerate(db_prompt_issues):
@@ -2253,12 +2829,8 @@ def write_test_record(
             lines.append(f"- {iss}")
         lines.append("")
 
-    if db_prompt_issues:
-        lines.append("### DB-Prompt日志不一致详情")
-        lines.append("")
-        for iss in db_prompt_issues:
-            lines.append(f"- {iss}")
-        lines.append("")
+    # 2026-09-30 小欧: 此处原有第二段 "### DB-Prompt日志不一致详情"(破折号格式), 与上方
+    #   第6节内那段(编号格式)内容完全相同 → 记录里会出现两个同名小节重复罗列。已删除, DRY。
 
     # 第7节：三方一致性对比（DB/应用日志/Prompt日志）
     lines.append("## 7 三方一致性（DB/应用日志/Prompt日志）")
@@ -2295,7 +2867,20 @@ def write_test_record(
         for k, v in extra.items():
             if k == "DbPromptIssues":
                 continue
-            lines.append(f"- {k}: {v}")
+            # 2026-10-03 小欧: list/dict 原先走 f"- {k}: {v}" 被 str() 压成一整行,
+            #   元素一多(多轮任务的轮次明细、逐条断言清单)就长到无法人工复核 ——
+            #   P9-08 五轮明细+8条断言共13项, 单行渲染等于没记录。改为按元素分行。
+            #   标量分支保持原样, 不影响既有 case(如 P9-04 的 "LLM calls": 2)。
+            if isinstance(v, (list, tuple)):
+                lines.append(f"- **{k}**:")
+                for _item in v:
+                    lines.append(f"  - {_item}")
+            elif isinstance(v, dict):
+                lines.append(f"- **{k}**:")
+                for _k2, _v2 in v.items():
+                    lines.append(f"  - {_k2}: {_v2}")
+            else:
+                lines.append(f"- {k}: {v}")
         lines.append("")
 
     lines.append("---")

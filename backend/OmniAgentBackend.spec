@@ -1,20 +1,46 @@
 # -*- mode: python ; coding: utf-8 -*-
 # ============================================================================
-# OmniAgentAst 后端 exe 打包 spec(onedir, 带控制台) — 小欧 2026-09-19(北京老陈驱动)
+# OmniAgentAst 后端 exe 打包 spec(onedir, 无控制台) — 小欧 2026-10-24
 # 构建: cd backend; E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec
-# 构建后收尾(必需, onedir禁止datas目标".."只能拷):
-#   copy ..\version.txt dist\OmniAgentBackend\
-#   copy config.yaml.example dist\OmniAgentBackend\
-# 产物: backend/dist/OmniAgentBackend/OmniAgentBackend.exe(绿色目录, 拷走即用)
-#   exe旁自带: version.txt / config.yaml.example / config/ / logs(运行生成)
+# 产物: backend/dist/OmniAgentBackend/OmniAgentBackend.exe + _internal/(onedir 绿色目录, 拷走即用)
+#   说明: version.txt/config.yaml.example/OmniAgent.md 经 datas "." 目标进 _internal/ 根部,
+#   exe 启动时 _deploy_resources() 自动复制到 exe 同级; 拷走前无需手动补任何根文件 — 小欧 2026-11-04(删多余收尾说明)
 # 注意: playwright浏览器需用户机另装(playwright install chromium);
 #   tesseract/pycorrector模型等外部依赖行为与源码运行一致, 不随包走。
+#   无控制台模式: 日志落 dist/OmniAgentBackend/logs/app_YYYY-MM-DD.log, 可通过该文件查日志。
 # ============================================================================
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
 
 BACKEND = Path(SPECPATH)
 REPO = BACKEND.parent
+
+# app/tools/registry.py 用变量式__import__动态加载分类模块, modulegraph静态分析收不全 →
+# 工具独占依赖必须显式整包收集, 否则打包版启动只注册部分分类(实测7/9, 缺network/document) — 小欧 2026-10-11
+_datas, _binaries, _hiddenimports = [], [], []
+for _pkg in ("html2text", "reportlab", "openpyxl", "docx", "fitz", "pdfplumber", "pandas", "psutil",
+             "pywin32", "win32gui", "pythoncom", "pywintypes", "pyautogui", "mss",
+             "pyperclip", "pptx", "win10toast",
+             # JS/TS 语法校验 — 小欧 2026-10-12: 含 native .pyd, 不显式收集则打包版 ImportError
+             #   (syntax_validator 已做软降级, 但主路径 tree-sitter 会整体失效只剩 node 兜底)
+             "tree_sitter", "tree_sitter_javascript", "tree_sitter_typescript"):
+    try:
+        _d, _b, _h = collect_all(_pkg)
+        _datas += _d
+        _binaries += _b
+        _hiddenimports += _h
+    except Exception:  # 构建机未安装的包跳过, 不阻断打包
+        pass
+
+# 懒加载导入的模块静态分析扫不到(httpx/httpcore 在 LLM 服务内函数内 import), 必须显式收子模块
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+for _pkg in ("httpx", "httpcore", "anyio", "h11", "certifi", "sniffio", "idna", "win10toast"):
+    try:
+        _hiddenimports += collect_submodules(_pkg)
+        _datas += collect_data_files(_pkg)
+    except Exception:
+        pass
 
 # app/系命名空间包(无__init__.py), collect_all/modulegraph收不全 →
 # 业务源码整树以源码形式拷入_internal/app, 由launcher置sys.path后按普通源码导入 — 小欧 2026-09-19
@@ -24,14 +50,21 @@ app_tree = Tree(
     excludes=["__pycache__", "*.pyc"],
 )
 
+# 前端 dist → _internal/web/（双击exe完整应用）— 小欧 2026-10-27
+# 需先 npm run build 生成 frontend/dist/，否则不打包(目录缺失时跳过);
+#   挂载判据在 main.py(_STATIC_MOUNTED/_missing_web): 打包态缺 assets/index.html 启动即 error 喊出, 开发态没 dist 静默 API-only — 小欧 2026-11-01
+_frontend_dist = REPO / "frontend" / "dist"
+_frontend_datas = [(str(_frontend_dist), "web")] if _frontend_dist.is_dir() else []
+
 a = Analysis(
     [str(BACKEND / "run_server.py")],
     pathex=[str(BACKEND)],
-    binaries=[],
+    binaries=_binaries,
     datas=[
         (str(REPO / "version.txt"), "."),
         (str(BACKEND / "config.yaml.example"), "."),
-    ],
+        (str(REPO / "OmniAgent.md"), "."),  # 项目规则文件 — 小欧 2026-10-24
+    ] + _frontend_datas + _datas,
     hiddenimports=[
         "aiosqlite",
         "sqlalchemy.dialects.sqlite.aiosqlite",
@@ -47,10 +80,13 @@ a = Analysis(
         "uvicorn.lifespan.off",
         "jinja2",
         "platformdirs",  # setuptools/pkg_resources运行时rthook依赖(构建机原缺失已补装) — 小欧 2026-09-19
-    ],
+    ] + _hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
+    # 注意: 不可全局排除 pkg_resources —— win10toast 运行时真实依赖它;
+    #   构建机原缺 jaraco.text/jaraco.functools 导致 pyi_rth_pkgres 钩子启动即崩,
+    #   已于构建机补装该依赖而非排除包 — 小欧 2026-10-11
     excludes=[],
     noarchive=False,
     optimize=0,

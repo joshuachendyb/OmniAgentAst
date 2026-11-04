@@ -1,16 +1,51 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷1边沿修复)
+# 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷边沿修复)
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 # 2026-08-17 - 小健 - DEFAULT_CONTEXT_LIMIT(262144) 迁 app.services.agent.compaction_constants; create_service_instance 局部导入引用, 取值顺序不变(配置 model_params.context_limit 优先, 否则默认兜底)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.6: 全链 ModelRef 归一——get_resolver_and_config 返回
 #   resolved_model(ModelRef); _current_provider 单值态升级 _current_model_ref 结构态(缓存判定整体比较);
 #   create_service_instance 构造 BaseAIService 改传 llm_model=ModelRef(api_base 由 provider_config 纳入,
-#   设计要求3); get_service_for_model 入参归一 model_ref: ModelRef — 调用点已随改(F8 无兼容 shim)
+#   设计要求3); get_service_for_model 入参归一 model_ref: ModelRef — 调用点已随改(无兼容 shim)
 # 2026-09-01 - 小欧 - DRY 归一: 新增 parse_model_params(provider_config, model)->(extra_body_params, context_limit)
 #   唯一权威解析 model_params; create_service_instance 与 stream_orchestrator(L2 跨 provider 快照)同用,
 #   消除 create_service_instance 内联 model_params 解析双份漂移
+# 2026-09-20 - 小欧 - 无条件快照共享连接池落地: get_service 单例首次建池后惰性触发
+#   _ensure_client + 暴露 _shared_client(httpx.AsyncClient 连接池引用)供 resolver 快照构造期注入;
+#   快照经 create_llm_client(shared_client=...) 建独立 LLMClient 复用连接池(非 LLMClient 对象)。
+#   compliance: DRY(复用原 _ensure_client 路径)/KISS-DIRECT
+# 2026-09-20 - 小欧 - 两处竞态修复: _ensure_client 失败时回滚半初始化实例防缓存; get_service_for_model 加 _instance_lock 防竞态
+# 2026-09-22 - 小欧 - create_service_instance 改传 timeout=None/max_retries=None
+#   （源 provider_config.get 去默认值，None=未设 → BaseAIService 内部三层回落 tuning>常量；原来写死
+#    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费）
+# 2026-09-23 - 小欧 - LLM补充采样参数: ①create_service_instance 三参 None 透传(top_p/frequency_penalty/presence_penalty, 仿 max_tokens 写法); ②temperature 去 float(...,0.7) 恒非 None 改可 None(死键复活); ③parse_model_params pop 缺省改读 llm.context_limit_default 全局兜底
+# 2026-09-25 小欧 - ConnectionScope连接池统一所有者: ①新增 _scope/_retired_scopes 全局与 _attach_scope/_retire_scope/get_scope/get_retired_scopes(不变式: _instance 非None⟹_scope 非None); ②get_service/get_service_for_model 建池改经 _attach_scope(删 _ensure_client+裸暴露 _shared_client 反射点); ③reset_instance/cleanup_old_instance/set_instance 换代改走 _retire_scope(release_owner 归还, 绝不关旧池)
+# 2026-09-25 小欧 - v1.12 实施收尾(修剪枝真实缺陷 + 补可观测性 + 日志准确性):
+#   ①修剪枝(真实缺陷): 退役代剪枝原先只挂在 _retire_scope(换代事件)上, 导致"最后一次换代之后才归零"的代
+#     永久滞留 _retired_scopes(池已关但 scope/service/llm_sdk 对象不释放), 与本文件自述"即时清出…防无界增长"矛盾;
+#     修法: 剪枝规则收敛为 _prune_retired() 单一权威(DRY), _retire_scope 与 get_retired_scopes() 读取路径各过一遍
+#     (归零动作发生在 lease 归还侧, 本模块当时无从得知, 但读取时一定知道);
+#   ②补可观测性: _attach_scope 建代(含 client 标识)/_retire_scope 退代(含退休时 ref=活动任务数与退役表规模)/
+#     reset_instance 换代触发(退休旧代模型)/_prune_retired 剪枝(仅数量)四段串成完整换代链;
+#     建代回滚 WARNING、get_service 失败与 get_scope 失败 ERROR(此前裸抛无现场, 换代链断裂无从复盘);
+#   ③修日志准确性: 原"换代触发(cleanup_old_instance): 旧 -> 新"的旧侧在热重载路径下恒为 <none>
+#     (_current_model_ref 早被 reset_instance 清空, 字段无效且误导), 真实旧代身份改由 reset_instance 承担
+#     (唯一能在清空前取到它的位置); cleanup_old_instance 的"建新代"行与 _attach_scope"建代"重复, 已删;
+#   ④新增 _ref_str() 供三处换代日志统一格式化 model_ref(None 安全), 避免各写各的 — 小欧 2026-09-25
+# 2026-10-26 - 小欧 - create_service_instance 增 max_tokens 上限：从 model_meta 读 max_output_length，
+#   与用户设置值取较小值（用户未设则用模型上限，模型未设则用全局默认）；
+#   提取 _resolve_max_tokens 独立函数（SRP/SLAP）— 小欧-2026-10-26
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 局部导入源改 app.constants(常量自 compaction_constants 迁入系统层,
+#   单一真源), 取值顺序不变(配置 model_params.context_limit 优先, 否则 llm.context_limit_default, 最终本常量兜底) — 小欧-2026-10-31
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 局部导入上提至模块顶部(与 stream_orchestrator:264 风格统一,
+#   KISS-DIRECT 无函数内藏 import); app/constants 纯叶子模块无循环导入风险, 零行为变化 — 小欧-2026-10-31
+# 2026-11-01 小欧 - 键名统一: context_limit → context_length(厂商通用名, 与 model_meta 同名同义),
+#   常量 DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH; parse_model_params 取值顺序补一层
+#   model_meta.context_length(厂商声明), 使模型库勾选保存的窗口真正生效 — 小欧-2026-11-01
+# 2026-11-01 13:30 小欧 - parse_model_params 增窗口来源留痕(ctx_source)打一行 [窗口] 日志, 会话当场核对运行时窗口值 — 小欧-2026-11-01
+# 2026-11-01 19:28 小欧 - max_tokens 单写入口: parse_model_params 增第三出口 user_max_tokens(不随 extra_body 出网);
+#   _resolve_max_tokens 收为 min(provider级/模型级用户值/厂商声明) 唯一算法, provider 级配置必须生效 — 小欧-2026-11-01
 """
 service — 服务创建与获取
 
@@ -18,19 +53,100 @@ service — 服务创建与获取
 小沈 2026-06-17
 """
 
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List  # List: _retired_scopes — 小欧-2026-09-25
 import threading
 
 from app.logger import setup_logger
 from app.llm import BaseAIService
 from app.db.models.chat_models import ModelRef
 from app.services.lifecycle.lifecycle import close_instance_sync
+from app.services.lifecycle.connection_scope import ConnectionScope  # 唯一所有者 — 小欧-2026-09-25
+from app.config import get_config  # 新增 — 小欧 2026-09-23
+from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
 
 logger = setup_logger(__name__)
 
 _instance: Optional[BaseAIService] = None
 _current_model_ref: Optional[ModelRef] = None   # 归一: 结构态替代原 _current_provider 单值态 — 小欧 2026-08-22
 _instance_lock = threading.Lock()
+_scope: Optional[ConnectionScope] = None   # 当前代唯一所有者; 不变式: _instance 非None ⟹ _scope 非None — 小欧-2026-09-25
+_retired_scopes: List[ConnectionScope] = []   # 已退休代(供 shutdown drain); 归零即清防无界增长 — 小欧-2026-09-25
+
+
+def _ref_str(model_ref: Optional[ModelRef]) -> str:
+    """换代日志用 model_ref 一行式(provider/model, None 安全) — 小欧-2026-09-25"""
+    if model_ref is None:
+        return "<none>"
+    return f"{model_ref.provider}/{model_ref.model}"
+
+
+def _attach_scope(instance: BaseAIService) -> None:
+    """新代 scope 诞生收口: 建池+所有权移交成功后才挂载, 失败 _scope 不落位(防半初始化) — 小欧 2026-09-25"""
+    global _scope
+    scope = ConnectionScope(instance)
+    scope.ensure_pool()
+    _scope = scope
+    # 小欧-2026-09-25: 建代日志(换代链权威起点·新代诞生的唯一一条); 日志审查后此处并入 client 标识,
+    #   原 ConnectionScope.ensure_pool 的"新代建池"行因与本行重复已删
+    logger.info(
+        f"[AIServiceFactory] 建代: scope={id(scope):#x}, client={id(scope._owner_lease.client):#x}, "
+        f"model={_ref_str(instance.llm_model)}"
+    )
+
+
+def _prune_retired() -> None:
+    """剪掉已归零的退休代(池已关, 无需再 drain); 保留 ref>0 的在役退休代 — 剪枝唯一权威(DRY)。
+    小欧-2026-09-25 修复: 剪枝原先只在 _retire_scope(换代事件)里跑, 导致"最后一次换代之后才归零"的代会
+    永久滞留 _retired_scopes(池已关但 scope/service/llm_sdk 对象不释放), 与本行自述目的相悖。
+    归零事件发生在 lease 归还侧(本模块无从得知), 故在**消费方读取时**也过一遍, 保证列表恒为"仍需 drain 的代"。"""
+    global _retired_scopes
+    before = len(_retired_scopes)
+    _retired_scopes = [s for s in _retired_scopes if s.ref_count > 0]
+    # 小欧-2026-09-25 日志审查: 剩余代清单原以 hex id 列表打印, 判定过度具体(运维无意义且长度不定)并删,
+    #   只保留数量; 需要定位具体代时看 退代/收口完成 两行的 scope id
+    if len(_retired_scopes) != before:
+        logger.info(
+            f"[AIServiceFactory] 退役表剪枝: {before} -> {len(_retired_scopes)} (已归零代清出)"
+        )
+
+
+def _retire_scope() -> None:
+    """换代退休收口: 归还当前代 owner 引用(活动任务 lease 撑池, 归零自动关) + 移入退休表供 shutdown drain。
+    绝不主动关池(关旧池必然误伤活动任务) — 小欧 2026-09-25"""
+    global _scope, _retired_scopes
+    if _scope is None:
+        return
+    _scope.release_owner()
+    _retired_scopes.append(_scope)
+    # 小欧-2026-09-25: 补退代日志(退休时代次 + 退休瞬间活动任务数, 换代复盘的核心现场)
+    logger.info(
+        f"[AIServiceFactory] 退代: scope={id(_scope):#x}, model={_ref_str(_scope.ai_service.llm_model)}, "
+        f"退休时 ref={_scope.ref_count}, 退役表={len(_retired_scopes)}"
+    )
+    # 已归零的退休代即时清出(仍>0 的在役退休代保留), 防长驻进程列表无界增长 — 小欧 2026-09-25
+    _prune_retired()   # 小欧-2026-09-25: 剪枝规则收敛到 _prune_retired 单一权威(DRY)
+    _scope = None
+
+
+def get_scope() -> ConnectionScope:   # v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
+    """取当前代 ConnectionScope(共享池唯一所有者); 无则经 get_service 惰性创建新代 — 小欧 2026-09-25"""
+    if _scope is None:
+        get_service()
+    if _scope is None:
+        # 小欧-2026-09-25: 补失败日志(get_service 返回后仍无 scope = 建代链断裂, 此前裸抛无现场)
+        logger.error(
+            f"[AIServiceFactory] get_scope 失败: get_service 返回后 _scope 仍为 None"
+            f"(instance={'有' if _instance is not None else '无'}, 退役表={len(_retired_scopes)})"
+        )
+        raise RuntimeError("ConnectionScope 未初始化(get_service 未创建 scope)")
+    return _scope
+
+
+def get_retired_scopes() -> List[ConnectionScope]:   # v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
+    """仍需 drain 的退休代(list 拷贝, 供 lifecycle.shutdown 逐个 drain)。
+    小欧-2026-09-25 修复: 读取时先过一遍剪枝, 免得把早已归零(池已关)的代也交给 shutdown 空 drain"""
+    _prune_retired()
+    return list(_retired_scopes)
 
 
 def get_resolver_and_config():
@@ -60,7 +176,11 @@ def cleanup_old_instance(new_model_ref: Optional[ModelRef] = None) -> None:
     2026-08-22 归一: 参数改 new_model_ref: Optional[ModelRef] — 小欧"""
     global _instance, _current_model_ref
     old_instance = _instance
-    _instance = None
+    # 小欧-2026-09-25 日志审查: 此处原有一条"建新代(cleanup_old_instance): model=X", 判定与
+    #   _attach_scope 的"建代"重复(同一事件、同一 model, 且"建代"还多带 scope/client 标识), 已删。
+    #   "退的是哪个模型"由 reset_instance 的换代触发行唯一承担(唯一能在 _current_model_ref 被清空前取到它的地方)
+    _instance = None   # 先清实例再退休: 锁外漏读窗口只可能拿到旧 scope(安全), 永不见半初始化 — 小欧-2026-09-25
+    _retire_scope()    # 换代: 归还旧代 owner(活动任务撑池), 绝不关旧池 — 小欧-2026-09-25
     _current_model_ref = new_model_ref
     close_instance_sync(old_instance)
 
@@ -79,46 +199,116 @@ def get_provider_config(ai_config: dict, final_provider: str) -> dict:
     return provider_config
 
 
-def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int]:
-    """解析 provider 配置的 model_params → (extra_body_params, context_limit)
-    复用优先/DRY 归一(小欧 2026-09-01): 原逻辑双份嵌在 create_service_instance(本文件) 与
-    stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
-    行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底),
-    余量作 extra_body_params(无则 None)。与历史行为完全一致(仅去重, 不改逻辑)。"""
-    from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
-    model_params = (provider_config or {}).get("model_params", {}) or {}
+def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict], int, Optional[int]]:
+    """解析 provider 配置的 model_params[目标model] → (extra_body_params, context_length, user_max_tokens)。
+    DRY 归一: 收敛为唯一权威, 与 stream_orchestrator(L2 快照)共用, 杜绝双份漂移 — 小欧 2026-09-01
+    逐键 pop 严禁随 extra_body 出网: context_length→窗口, max_tokens→输出上限(交 _resolve_max_tokens 取小) — 小欧 2026-11-01
+    窗口四级: 用户 model_params > model_meta 厂商声明 > llm.context_length_default > DEFAULT_CONTEXT_LENGTH 兜底;
+      补 model_meta 层使模型库勾选保存的窗口生效(此前存而不用) — 小欧 2026-11-01
+    """
+    provider_config = provider_config or {}
+    model_params = provider_config.get("model_params", {}) or {}
     specific_params = dict(model_params.get(model, {})) if model_params else {}
-    context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
-    return (specific_params or None), context_limit
+    # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23
+    # 2026-11-01 小欧 - 键名 context_limit → context_length(与 model_meta 同名); 必须 pop, 否则随 extra_body 出网多数厂商 400
+    context_length = specific_params.pop("context_length", None)
+    ctx_source = "user" if context_length is not None else ""
+    if context_length is None:
+        meta_block = provider_config.get("model_meta") or {}
+        model_meta = meta_block.get(model) if isinstance(meta_block, dict) else None
+        if isinstance(model_meta, dict):
+            context_length = model_meta.get("context_length")
+            if context_length is not None:
+                ctx_source = "meta"
+    if context_length is None:
+        context_length = get_config().get("llm.context_length_default", DEFAULT_CONTEXT_LENGTH)
+        ctx_source = "global"
+        if context_length is None:
+            context_length = DEFAULT_CONTEXT_LENGTH
+            ctx_source = "constant"
+    # 2026-11-01 小欧 - 窗口来源留痕日志: 任何真实会话当场可核对生效窗口是用户设的/厂商声明的/兜底来的
+    logger.info(f"[窗口] model={model} context_length={context_length} source={ctx_source}")
+    # 2026-10-10 小欧 enable_thinking 移进 chat_template_kwargs(provider 期望的位置) — 小欧-2026-10-10
+    enable_thinking = specific_params.pop("enable_thinking", None)
+    if enable_thinking is not None:
+        specific_params.setdefault("chat_template_kwargs", {})["enable_thinking"] = enable_thinking
+    user_max_tokens = specific_params.pop("max_tokens", None)  # 第三出口, 严禁随 extra_body 出网 — 小欧-2026-11-01
+    return (specific_params or None), context_length, user_max_tokens
 
 
-def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
+def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
+    """端点定位唯一权威(DRY 归一) — 小欧 2026-09-26
+    优先级: 调用方显式端点 model_ref.api_base > 目标 provider 配置端点 provider_config["api_base"] > 空。
+    空即空, 交 client_sdk 抛 400「请到设置页填写完整地址」—— 严禁兜底任何境外/他人地址(北京老陈 2026-09-26 指示)。
+    两级来源都是**目标 provider 自己**的地址(get_service:267 取 config_model.provider 配置;
+    get_service_for_model:352 取 model_ref.provider 配置), 故本优先级链**永不产出他人/境外地址**,
+    与 resolver.py:272-280「跨 provider 不用别人的地址」隔离语义一致。"""
+    return (model_ref.api_base or "").strip() or (provider_config.get("api_base") or "").strip()
+
+
+def _resolve_max_tokens(provider_config: dict, model: str,
+                        user_max_tokens: Optional[int] = None) -> Optional[int]:
+    """输出上限唯一算法: min(ai.{pv}.max_tokens, model_params 用户值, max_output_length 厂商声明),
+    配置了必须生效(北京老陈 2026-11-01); 全缺→None 回落全局 llm.sampling.max_tokens — 小欧-2026-11-01"""
+    meta_block = provider_config.get("model_meta")
+    model_meta = meta_block.get(model) if isinstance(meta_block, dict) else None
+    declared = model_meta.get("max_output_length") if isinstance(model_meta, dict) else None
+    provider_cap = provider_config.get("max_tokens")
+    present = [(src, v) for src, v in
+               (("provider", provider_cap), ("user", user_max_tokens), ("meta", declared))
+               if v is not None]
+    source, value = min(present, key=lambda sv: sv[1]) if present else ("none", None)
+    logger.info(f"[输出上限] model={model} max_tokens={value} source={source}")  # 来源留痕, 与[窗口]同款 — 小欧-2026-11-01
+    return value
+
+
+def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseAIService:
     """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传;
     小健 2026-08-17 DEFAULT_CONTEXT_LIMIT 迁 agent.compaction_constants;
     2026-08-22 小欧 归一报告v1.25 6.6: BaseAIService 构造改传 llm_model=ModelRef(provider+model+api_base),
-    api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY)"""
-    extra_body_params, context_limit = parse_model_params(provider_config, final_model)
+    api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY);
+    2026-09-26 小欧 签名收归 ModelRef(禁散参数拆解, KISS-DIRECT)+api_base 解析收归 _resolve_api_base(DRY)"""
+    extra_body_params, context_length, user_max_tokens = parse_model_params(provider_config, model_ref.model)
+    max_tokens = _resolve_max_tokens(provider_config, model_ref.model, user_max_tokens)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
-        llm_model=ModelRef(
-            provider=final_provider,
-            model=final_model,
-            api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
-        ),
-        timeout=provider_config.get("timeout", 30),
-        max_tokens=provider_config.get("max_tokens"),
-        temperature=float(provider_config.get("temperature", 0.7)),
+        # 【编辑历史 — 最新在下】
+        # 2026-09-26 - 小欧 - 修「openai.com 兜底使 client_sdk 新增的 400 在主路径不可达」（三遍核实确认成立）：
+        #     client_sdk 那边已刻意删掉 _default_base_url/_DEFAULT_URLS 兜底并改为
+        #   「URL 为空 → raise HTTPException(400)『请到设置页填写完整地址』」，
+        #   理由写得很清楚：静默兜底会把远程 provider 打到本机、绕过中转直连官方计费。
+        #   但本函数是**聊天主路径**的 instance 构造入口，api_base 在这里被强行兜成非空 ⇒
+        #   那条 400 在主路径**永远不可达**（新加的防护形同虚设）。
+        #   真实危害（三遍核实复现）：任一 provider 漏配/误清 api_base 时，请求不会报错，
+        #   而是被**静默发往 api.openai.com** —— 用户的第三方 key 连同请求体一起送给 OpenAI，
+        #   既泄密又记到别人的账上，且用户完全看不到任何提示。
+        #   修法：不再兜底，空就是空，交由 client_sdk 那条 400 明确报错（单一真相源，不两处各判一次）。
+        #   —— 编辑：小欧 2026-09-26
+        # 2026-09-26 - 小欧 - 关联逻辑修复(删兜底后暴露的三处真缺陷, 全部由 test_get_service_for_model_attaches_scope 400 暴露):
+        #   原在此**新建** ModelRef(provider=, model=, api_base=) 三字段重列, ① 丢 display_name(调用方别名被静默吞掉);
+        #   ② 丢 model_ref.api_base(显式端点被静默吞掉 —— D19 删兜底后地址彻底蒸发, 正是该测试 400 的根因);
+        #   ③ 字段清单与 SessionModelOverride 定义重复, 加字段必漏(违反 DRY/单一真相源)。
+        #   改法: model_copy 只覆写解析出的 api_base, 其余字段(provider/model/display_name)原样保留, 不再重列字段
+        #   —— 新增 ModelRef 字段自动继承, 无需改本行; api_base 优先级收归 _resolve_api_base(唯一权威)。
+        llm_model=model_ref.model_copy(update={"api_base": _resolve_api_base(model_ref, provider_config)}),
+        timeout=provider_config.get("timeout"),  # None=未设，BaseAIService 回落到 tuning>常量 — 小欧
+        max_retries=provider_config.get("max_retries"),  # None=未设，BaseAIService 回落到 tuning>常量3 — 小欧
+        max_tokens=max_tokens,  # 与模型 max_output_length 取较小值 — 小欧-2026-10-26
+        temperature=provider_config.get("temperature"),  # ✅ v1.8 死键复活：去 float(...,0.7)恒非 None，改可 None — 小欧 2026-09-23
+        top_p=provider_config.get("top_p"),  # 新增 — 小欧 2026-09-23
+        frequency_penalty=provider_config.get("frequency_penalty"),  # 新增 — 小欧 2026-09-23
+        presence_penalty=provider_config.get("presence_penalty"),  # 新增 — 小欧 2026-09-23
         seed=provider_config.get("seed", None),
         extra_body_params=extra_body_params,
-        context_limit=context_limit,
+        context_length=context_length,
     )
 
 
 def get_service() -> BaseAIService:
     """获取服务实例 — 小沈 2026-06-08
-    P2-09修复: 删除未使用的config_path
-    【修复P1-1 2026-06-09 小沈】threading.Lock保护多线程安全
-    【修复P-2026-07-22 小欧】异常时清除 _model_warning 防止残留到下一请求
+    修复: 删除未使用的config_path
+    【修复 2026-06-09 小沈】threading.Lock保护多线程安全
+    【修复 2026-07-22 小欧】异常时清除 _model_warning 防止残留到下一请求
     【2026-08-22 小欧】归一: 拆包变量随 get_resolver_and_config 新返回值同步(config_model: ModelRef)
     """
     global _instance, _current_model_ref
@@ -140,9 +330,29 @@ def get_service() -> BaseAIService:
 
             provider_config = get_provider_config(ai_config, config_model.provider)
 
-            _instance = create_service_instance(provider_config, config_model.provider, config_model.model)
+            # 新代 scope 诞生(小欧 2026-09-25): 建池 + LLMClient 所有权移交(relinquish) + 挂载三事一处,
+            #   取代 2026-09-20 C1 的 _ensure_client + 裸暴露 _shared_client 属性——反射摸私有消亡,
+            #   池/计数/关闭唯一归属 ConnectionScope(创建环节); 先 attach 后落位保不变式
+            _new_instance = create_service_instance(provider_config, config_model)
+            try:
+                _attach_scope(_new_instance)
+            except Exception:
+                # 建池/挂载失败时回滚(小欧 2026-09-20), 防半初始化实例被缓存 — 维持该语义
+                # 小欧-2026-09-25: 补 rollback 日志(建代失败=换代链断点; 无此日志则只见"每请求都失败"而无因)
+                logger.warning(
+                    f"[AIServiceFactory] 建代回滚(挂载失败, 已清 _current_model_ref 防半初始化缓存): "
+                    f"model={_ref_str(config_model)}", exc_info=True
+                )
+                _current_model_ref = None
+                raise
+            _instance = _new_instance
     except:
         # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
+        # 小欧-2026-09-25: 补失败日志(此前裸 except 只丢 warning 不留因, 校验/换代/建池失败全部静默上抛)
+        logger.error(
+            f"[AIServiceFactory] get_service 失败(向上抛, 调用方将失败): model={_ref_str(config_model)}",
+            exc_info=True,
+        )
         resolver.pop_model_warning()
         raise
 
@@ -151,34 +361,58 @@ def get_service() -> BaseAIService:
 
 def reset_instance():
     """重置实例 — 小沈 2026-06-08
-    P1-07修复: 公开reset方法,替代直接操作私有变量
-    【修复P1-1 2026-06-09 小沈】threading.Lock保护
+    修复: 公开reset方法,替代直接操作私有变量
+    【修复 2026-06-09 小沈】threading.Lock保护
     【2026-08-22 小欧】归一: _current_model_ref 结构态
     """
     global _instance, _current_model_ref
     with _instance_lock:
         old = _instance
+        old_ref = _current_model_ref   # 小欧-2026-09-25: 先留旧代身份再清空, 供下方日志如实报"退的是哪个模型"
         _instance = None
         _current_model_ref = None
+        _retire_scope()   # 换代新语义: 归还 owner 引用(任务撑池, 归零自动关), 绝不关旧池 — 小欧-2026-09-25
+        # 小欧-2026-09-25: 换代入口日志(此处是**唯一**能拿到真实旧模型的位置: _retire_scope 只拿到 scope,
+        #   旧模型身份在 _current_model_ref 被清空前就丢了; 与下方 退代(含退休时 ref)成对, 再与
+        #   config_helpers 紧邻其前那行"配置热重载触发: 生效模型=X"配成完整事实——"退的是哪一代 → 切成哪个"。
+        #   活动任务数不在此报, 由 退代 那行权威给出, 免得两处口径打架)
+        logger.info(
+            f"[AIServiceFactory] 换代触发(reset_instance): 退休旧代 model={_ref_str(old_ref)}"
+            f"({'有在役旧代' if old is not None else '无在役旧代, 新代待下次请求惰性创建'})"
+        )
     return old
 
 
 def set_instance(instance, model_ref: Optional[ModelRef] = None):
     """设置实例 — 小沈 2026-06-08
-    P1-07修复: 公开set方法,替代直接操作私有变量
-    【修复P1-1 2026-06-09 小沈】threading.Lock保护
+    修复: 公开set方法,替代直接操作私有变量
+    【修复 2026-06-09 小沈】threading.Lock保护
     【2026-08-22 小欧】归一: 参数 provider:str → model_ref: Optional[ModelRef]
     """
     global _instance, _current_model_ref
     with _instance_lock:
+        # DRY 说明: 下方"清位+retire"与 reset_instance 重复 3 行属**必要重复**——
+        #   本函数已持 _instance_lock, 而 threading.Lock 不可重入, 直接调 reset_instance 会死锁
+        #   (get_service_for_model 同样因并发竞态修复已注释"锁内不调 set_instance"同款理由)
+        _instance = None   # 先清位再换代(锁外漏读窗口安全) — 小欧-2026-09-25
+        _current_model_ref = None
+        _retire_scope()
+        if instance is not None:
+            _attach_scope(instance)   # 先 attach 后落位, 维持不变式 — 小欧-2026-09-25
         _instance = instance
         _current_model_ref = model_ref
 
 
 def get_service_for_model(model_ref: ModelRef):
     """获取指定模型的服务实例 — 小沈 2026-06-08
-    P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path
-    【2026-08-22 小欧】归一: 入参 (provider, model) → model_ref: ModelRef(F8 无兼容 shim, 调用点随改)
+    修复: 使用set_instance替代直接操作私有变量; 删除未使用的config_path
+    【2026-08-22 小欧】归一: 入参 (provider, model) → model_ref: ModelRef(无兼容 shim, 调用点随改)
+    并发竞态修复(小欧 2026-09-20): 整个操作加_instance_lock, 防并发竞态覆盖/丢失实例。
+    2026-09-26 小欧 修关联缺陷(暴露于 test_get_service_for_model_attaches_scope): 原
+      create_service_instance(provider_config, model_ref.provider, model_ref.model) 只传二元组,
+      把 model_ref.api_base 当场蒸发 ⇒ 该字段被静默吞掉(显式端点丢失, 与 resolver.py:139
+      「api_base 不在此读取, 由 provider_config 补齐」的本意冲突: 本函数**已有** ModelRef 却不用)。
+      改法: 传整个 model_ref, 端点解析收归 service._resolve_api_base(唯一权威)。
     """
     from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
@@ -186,15 +420,20 @@ def get_service_for_model(model_ref: ModelRef):
 
     provider_config = resolver.get_service_config(model_ref.provider, model_ref.model)
 
-    cleanup_old_instance(model_ref)
+    with _instance_lock:  # 加锁保护cleanup+create+set原子性
+        cleanup_old_instance(model_ref)
 
-    log_service_creation(model_ref.provider, model_ref.model)
+        log_service_creation(model_ref.provider, model_ref.model)
 
-    if not provider_config:
-        provider_config = {}
+        if not provider_config:
+            provider_config = {}
 
-    instance = create_service_instance(provider_config, model_ref.provider, model_ref.model)
-    set_instance(instance, model_ref)
+        instance = create_service_instance(provider_config, model_ref)
+        # 直接赋值(已在锁内), 不调set_instance(内部也加锁会死锁)
+        global _instance, _current_model_ref
+        _attach_scope(instance)   # 新代 scope 挂载(先 attach 后落位, 与 get_service 同构) — 小欧-2026-09-25
+        _instance = instance
+        _current_model_ref = model_ref
 
     return instance
 

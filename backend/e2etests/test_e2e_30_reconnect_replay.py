@@ -40,12 +40,10 @@ TEST_CASE_NAME = "SSE断线重连续传 - 后半场帧不重复 + 终态权威"
 USER_INPUT = "请先查看当前目录下有哪些文件, 然后把它们列成一个清单, 并说明每个文件的用途。"
 
 import asyncio
-import json
 import re
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
 
 from e2emodel.e2e_helpers import (
@@ -58,91 +56,29 @@ from e2emodel.e2e_helpers import (
     write_test_record,
     register_pending_record,
     remove_pending_record,
+    create_session,
+    save_user_message,
+    open_chat_stream_partial,
+    resume_chat_stream,
 )
 
 # 断点为"收到前 K 个 SSE 事件后主动断开连接"(模拟真实前端中途掉线)
 CUTOFF_EVENT_COUNT = 5
 
 
-def _sse_event(line: str):
-    """解析单行SSE, 返回事件dict; 心跳/注释行返回None — 小欧 2026-09-13"""
-    if not line.startswith("data: "):
-        return None
-    try:
-        return json.loads(line[6:])
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-
-async def _create_session() -> str:
-    url = f"{BASE_URL}{API_PREFIX}/sessions"
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={})
-        resp.raise_for_status()
-        return resp.json().get("session_id")
-
-
-async def _save_user_message(session_id: str, content: str) -> int:
-    url = f"{BASE_URL}{API_PREFIX}/sessions/{session_id}/messages"
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={"role": "user", "content": content})
-        resp.raise_for_status()
-        return resp.json().get("message_id")
-
-
 async def _open_stream_first_half(user_input: str, session_id: str, cutoff: int):
-    """POST /chat/stream 只读前cutoff个事件后主动断开(模拟真实断线)。
+    """读前 cutoff 个事件后主动断开(模拟真实断线)。实现已收口到 e2e_helpers 统一封装。
 
-    返回 (task_id, first_half_events, last_seq_after_cut):
-      - task_id: 从 start 事件取的 task_id
-      - first_half_events: 断开前已收到的全部事件
-      - last_seq_after_cut: 断开时最后一次收到的事件的 seq(断点)
-      — 小欧 2026-09-13
+    2026-09-27 小欧 - [72]第九章(9.6-3): 原先本文件自建 httpx.AsyncClient（不带 AUTH_HEADERS、
+      靠本机回环豁免才过），SSE 解析也自有一份。改调 helper，断线逻辑与鉴权注入同处一地（DRY）。
     """
-    url = f"{BASE_URL}{API_PREFIX}/chat/stream"
-    payload = {
-        "messages": [{"role": "user", "content": user_input}],
-        "stream": True,
-        "session_id": session_id,
-    }
-    events: list = []
-    task_id = None
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream("POST", url, json=payload) as resp:
-            async for line in resp.aiter_lines():
-                ev = _sse_event(line)
-                if ev is None:
-                    continue
-                ev_type = ev.get("type")
-                if not task_id and ev_type == "start" and ev.get("task_id"):
-                    task_id = ev["task_id"]
-                events.append(ev)
-                if len(events) >= cutoff:
-                    break  # 主动断开连接 = 模拟断线
-            # 立即关闭底层连接, 服务端感知客户端断开
-            await resp.aclose()
-    last_seq = events[-1].get("seq", 0) if events else -1
-    return task_id, events, last_seq
+    return await open_chat_stream_partial(session_id, user_input, cutoff)
 
 
 async def _reconnect_tail_stream(task_id: str, session_id: str, after_seq: int):
-    """GET /chat/stream/{task_id}?after_seq=N 断点续传, 收集断点之后全部事件直至流结束。
-
-    返回 (tail_events, log_lines):
-      - tail_events: 续传收到的全部事件(须全部 seq > after_seq)
-      — 小欧 2026-09-13
-    """
-    url = f"{BASE_URL}{API_PREFIX}/chat/stream/{task_id}"
-    tail_events: list = []
-    params = {"session_id": session_id, "after_seq": after_seq}
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream("GET", url, params=params) as resp:
-            async for line in resp.aiter_lines():
-                ev = _sse_event(line)
-                if ev is None:
-                    continue
-                tail_events.append(ev)
-    return tail_events
+    """断点续传收尾。同上，实现收口到 e2e_helpers.resume_chat_stream（取其 events 段）。"""
+    events, _last_seq, _finished = await resume_chat_stream(task_id, session_id, after_seq)
+    return events
 
 
 def _read_task_log_lines(task_id: str) -> str:
@@ -177,9 +113,9 @@ async def test_e2e_30_reconnect_replay():
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
 
         # ── ① 建会话 + 保存用户消息(模拟真实前端流程) ──
-        session_id = await _create_session()
+        session_id = await create_session()
         assert session_id, "创建session失败"
-        user_msg_id = await _save_user_message(session_id, USER_INPUT)
+        user_msg_id = await save_user_message(session_id, USER_INPUT)
         assert user_msg_id is not None, "保存用户消息失败(user_msg_id不得为空, 供DB-Prompt一致性匹配)"
 
         # ── ② POST 开流, 读到第CUTOFF个事件后主动断线 ──

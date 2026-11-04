@@ -1,67 +1,69 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: shell 输出超长截断改引用 tool_constants.SHELL_OUTPUT_MAX_CHARS(30000→20000), 功能零退化
-# 2026-07-20 - 小欧 - 门限治理(shell章6.4): 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制3.7); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
-# 2026-07-20 - 小欧 - 门限复查: data 仅 {stdout,stderr}(returncode/shell_type/duration_ms 归 llm_data); observation_formatter #11 不再重复渲染 meta(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型), 严禁 data 详情与 llm_data 段重复显示; #11 仅渲染 stdout/stderr 原始输出 + 两态截断说明
-# 2026-07-20 - 小欧 - 门限复查: cmd 分支补 3.4 硬安全网(与 powershell 分支 safe_read_file 对称): 新增 _safe_truncate_output 对 proc.communicate() 内存输出超 SHELL_OUTLIMIT_RAW_BYTES 仅保留头尾各半, 防下游 OOM/序列化膨胀
-# 2026-07-21 - 小欧 - #14 PS版本检测: _translate_powershell_operators 改为无条件执行（删 not _PWSH_CACHE[0] 条件）
-# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 _truncate_shell_field
+# 2026-07-20 - 小欧 - 门限治理: 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
+# 2026-07-20 - 小欧 - 门限复查: data 仅 {stdout,stderr}(returncode/shell_type/duration_ms 归 llm_data); observation_formatter 不再重复渲染 meta(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型), 严禁 data 详情与 llm_data 段重复显示; 仅渲染 stdout/stderr 原始输出 + 两态截断说明
+# 2026-07-20 - 小欧 - 门限复查: cmd 分支补硬安全网(与 powershell 分支 safe_read_file 对称): 新增 _safe_truncate_output 对 proc.communicate() 内存输出超 SHELL_OUTLIMIT_RAW_BYTES 仅保留头尾各半, 防下游 OOM/序列化膨胀
+# 2026-07-21 - 小欧 - PS版本检测: _translate_powershell_operators 改为无条件执行（删 not _PWSH_CACHE[0] 条件）
+# 2026-07-23 - 小欧 - 新增 _truncate_shell_field
 #         head-only+行边界截断(stdout=50000/stderr=20000);
 #         tool_constants 新增 SHELL_OUTLIMIT_STDOUT_MAX_CHARS
 #         /SHELL_OUTLIMIT_STDERR_MAX_CHARS;
-#         formatter #11 读 _truncated 标记;
+#         formatter 读 _truncated 标记;
 #         storage MAX_TOOL_RESULT_STR_LEN 提至100000;
-# 2026-07-23 - 小欧 - 北京老陈驱动BugFix: output_len 传原始截断前长度而非截断后长度(bug1), 避免 LLM 被误导
-# 2026-07-23 - 小欧 - 北京老陈驱动: 删 _safe_truncate_output(10MB 字节截断多余), 改直接 _decode_bytes_safe; 删 SHELL_OUTLIMIT_RAW_BYTES import; tool 层仅保留 _truncate_shell_field 50K/20K 唯一输出截断
-# 2026-07-23 - 小欧 - #5 ERR_SHELL_EXEC 退出码释义映射: stderr/stdout全空时返回"退出码127(命令未找到)"等释义, 非纯数字
-# 2026-07-24 - 小欧 - 北京老陈驱动BugFix:
+# 2026-07-23 - 小欧 - BugFix: output_len 传原始截断前长度而非截断后长度, 避免 LLM 被误导
+# 2026-07-23 - 小欧 - 删 _safe_truncate_output(10MB 字节截断多余), 改直接 _decode_bytes_safe; 删 SHELL_OUTLIMIT_RAW_BYTES import; tool 层仅保留 _truncate_shell_field 50K/20K 唯一输出截断
+# 2026-07-23 - 小欧 - ERR_SHELL_EXEC 退出码释义映射: stderr/stdout全空时返回"退出码127(命令未找到)"等释义, 非纯数字
+# 2026-07-24 - 小欧 - BugFix:
 #         _build_execute_shell_command_llm_data 重构:
-#         问题: ① error分支summary直接嵌入完整_detail(可达20K stderr全文)
-#             → LLM观察中"观察:"行与"✖ 错误:"行重复大段内容
-#         ② warning分支hint硬编码为""，timeout的详细hint被静默丢失
-#         ③ 三分支(提前返回)每次各自拼接param+调_build，代码冗余
+#         问题: error分支summary直接嵌入完整_detail(可达20K stderr全文)
+#             → LLM观察中"观察:"行与"错误:"行重复大段内容
+#             warning分支hint硬编码为""，timeout的详细hint被静默丢失
+#             三分支(提前返回)每次各自拼接param+调_build，代码冗余
 #         修复:
-#         ① 删stdout_preview/stderr_preview两个参数(YAGNI，截断不在函数内做)
-#         ② error分支summary改为从_detail取第一行截断60字符(不再嵌入完整detail)
-#         ③ error分支status.detail从stderr_preview[:200]改为_detail(完整detail)
-#         ④ warning分支status.hint从""改为透传hint参数(timeout hint不再丢失)
-#         ⑤ shell() phase5三分支合并为统一_exec_code+_detail+_hint变量+单次_build调用
-#         ⑥ timeout用ERR_SHELL_TIMEOUT错误码+full detail(含超时秒数)
-#         ⑦ stderr warning用_stderr_orig_len(截断前长度)替代stderr_str[:200]预览
-#         ⑧ error用完整stderr_str/stdout_str(截断后全文)替代stderr_str[:200]预览
+#             删stdout_preview/stderr_preview两个参数(YAGNI，截断不在函数内做)
+#             error分支summary改为从_detail取第一行截断60字符(不再嵌入完整detail)
+#             error分支status.detail从stderr_preview[:200]改为_detail(完整detail)
+#             warning分支status.hint从""改为透传hint参数(timeout hint不再丢失)
+#             shell() phase5三分支合并为统一_exec_code+_detail+_hint变量+单次_build调用
+#             timeout用ERR_SHELL_TIMEOUT错误码+full detail(含超时秒数)
+#             stderr warning用_stderr_orig_len(截断前长度)替代stderr_str[:200]预览
+#             error用完整stderr_str/stdout_str(截断后全文)替代stderr_str[:200]预览
+
 
 # 2026-07-25 - 小欧 - 截断治理: cmd_short签名移至末尾(不破坏positional传参, 保持向后兼容); main函数入口构造cmd_short + 8处传参cmd_short=cmd_short;  45行cmd_short内部fallback保留
-# 2026-07-25 - 小欧 - 三堂会审修复bug×5:
-#         ① fallback硬编码command[:35]/[-15:]/[:50]→改用EXECUTE_SHELL_OUTPARM_LIMIT_CMD常量
-#         ② main缩写条件len>50→>_cmd_limit（防常量改后阈值不同步）
-#         ③ tail=15硬编码→模块级_SHELL_CMD_TAIL常量
-#         ④ head从原50(=命令总预览)修复为35(=50-15), 恢复35+15=50原内容预算(原main错误改为50+15=65超预算)
-#         ⑤ build函数cmd_short删fallback+加assert强制传参(禁止backward: 保留默认值""因Python参数顺序约束, assert拦截不传参旧调用)
+# 2026-07-25 - 小欧 - 修复bug×5:
+#         fallback硬编码command[:35]/[-15:]/[:50]→改用EXECUTE_SHELL_OUTPARM_LIMIT_CMD常量
+#         main缩写条件len>50→>_cmd_limit（防常量改后阈值不同步）
+#         tail=15硬编码→模块级_SHELL_CMD_TAIL常量
+#         head从原50(=命令总预览)修复为35(=50-15), 恢复35+15=50原内容预算(原main错误改为50+15=65超预算)
+#         build函数cmd_short删fallback+加assert强制传参(禁止backward: 保留默认值""因Python参数顺序约束, assert拦截不传参旧调用)
 # 2026-07-25 - 小欧 - summary去stderr关联: error分支summary不再嵌_err_summary, summary纯摘要不拖detail; 删truncate_summary import
 # 2026-07-25 - 小欧 - cmd_short改keyword-only强制传参: 删`=""`默认值+`*,`分隔, Python解释器级别强制传参(禁止backward彻底贯彻); 删assert因不再需要
-# 2026-07-26 - 小沈 - 欧阳报告: 新增_auto_fix_powershell_syntax自动修复块内.Property→$_.Property(阶段1.5)
+# 2026-07-26 - 小沈 - 报告: 新增_auto_fix_powershell_syntax自动修复块内.Property→$_.Property
 # 2026-07-27 - 小欧 - CMD增强: _resolve_safe_cwd安全回退+tempdir保底; CMD分支poll loop代替communicate阻塞; taskkill /T /F杀进程树; 阶段标注【PS专属|CMD专属|通用】; _auto_fix_cmd_syntax修复$env:VAR→%VAR%; _sanitize_env过滤API key泄露子进程
-# 2026-07-27 - 小欧 - Bugfix×5: _close_if_blocks嵌套花括号深度计数; warning分支detail字段逻辑取反; bat_path加引号防空格; _PWSH_CACHE死代码删除; 阶段1.5重复执行消除
+# 2026-07-27 - 小欧 - Bugfix×5: _close_if_blocks嵌套花括号深度计数; warning分支detail字段逻辑取反; bat_path加引号防空格; _PWSH_CACHE死代码删除; 重复执行消除
 # 2026-07-27 - 小欧 - 重构: _sanitize_env常量提为模块级; cwd不存在改报错为自动回退; PS分支engine.exec传env=_sanitize_env()
-# 2026-07-28 - 小欧 - 欧阳task005一轮修复4bug: BUG-03截断前存_stderr_for_diag; BUG-05删command死参数; BUG-06删_PWSH_CACHE死代码; BUG-07删cwd回退外层重复日志
-# 2026-07-28 - 小欧 - 欧阳task005二轮修复4bug: BUG-02 CMD超时改立即杀进程; BUG-04深度计数简化为存在性检查; BUG-08良性stderr白名单扩展; BUG-09 safety检查传shell_type
+# 2026-07-28 - 小欧 - task005一轮修复4bug: 截断前存_stderr_for_diag; 删command死参数; 删_PWSH_CACHE死代码; 删cwd回退外层重复日志
+# 2026-07-28 - 小欧 - task005二轮修复4bug: CMD超时改立即杀进程; 深度计数简化为存在性检查; 良性stderr白名单扩展; safety检查传shell_type
 # 2026-07-28 - 小欧 - 抽取 _kill_and_read_output 消除CMD超时两处重复代码
 #         _close_if_blocks 改用深度计数+引号感知, 避免字符串内}误判
 #         _cmd_powershell_mismatch_hint 补充英文匹配, 兼容非中文系统
 # 2026-07-28 - 小欧 - shell_type名称改为ps7/ps5/cmd/bash; 默认ps7; 新增bash执行分支+_find_bash; 新增_auto_fix_bash_syntax;
-#         _cmd_powershell_mismatch_hint→_shell_mismatch_hint全面覆盖4种shell; 路由4路分支; 语法修复4路; ps7不翻译&&(BUG#2)
-# 2026-07-28 - 北京老陈 - 三堂会审重构shell()参数流:
-#         ①shell_type早归一化(校验后即设ps7,消灭全文9处or""/or"ps7"冗余+2处is None冗余)
-#         ②cmd变量改名stripped_command+processed_command消除与shell_type="cmd"的语义混淆
-#         ③null字节检查_build调用补全缺失的shell_type/err_code/detail三参(P0修复)
-#         ④语法修复/执行/安全检查/后处理统一使用processed_command
-#         ⑤预处理错误路径保留command,处理后路径统一用processed_command
+#         _cmd_powershell_mismatch_hint→_shell_mismatch_hint全面覆盖4种shell; 路由4路分支; 语法修复4路; ps7不翻译&&
+# 2026-07-28 - 小欧 - 重构shell()参数流:
+#         shell_type早归一化(校验后即设ps7,消灭全文9处or""/or"ps7"冗余+2处is None冗余)
+#         cmd变量改名stripped_command+processed_command消除与shell_type="cmd"的语义混淆
+#         null字节检查_build调用补全缺失的shell_type/err_code/detail三参(修复)
+#         语法修复/执行/安全检查/后处理统一使用processed_command
+#         预处理错误路径保留command,处理后路径统一用processed_command
 # 2026-07-29 - 小沈 - type加入CMD检测模式(\btype\b, CMD type=文件内容,bash type=命令类型); 修复遗留regex转义损坏(Format-Table行引号前多反斜杠)
-# 2026-07-30 - 小欧 - 新增bash特征自动路由(阶段1.4): _looks_like_bash检测Linux命令→自动切换到Git Bash
-#        +路径分隔符\→/转换+python3→python; 三堂会审修复: L649语法错误(\\\\n? not here),
+# 2026-07-30 - 小欧 - 新增bash特征自动路由: _looks_like_bash检测Linux命令→自动切换到Git Bash
+#        +路径分隔符\→/转换+python3→python; 修复: L649语法错误,
 #        DRY合并bash_keywords/path_indicators进bash_patterns
-# 2026-07-30 - 小欧 - 重排阶段编号: 1.5→1.1, 1.6→1.2, 1.7→1.3, 1.8→1.4, 补齐1.1-1.4窟窿
-# 2026-07-30 - 小欧 - 三路检测增强(阶段1.5):
+# 2026-07-30 - 小欧 - 重排阶段编号: 旧1.5→1.1, 旧1.6→1.2, 旧1.7→1.3, 旧1.8→1.4, 补齐窟窿
+# 2026-07-30 - 小欧 - 三路检测增强:
 #        +新增_looks_like_ps: 9模式PowerShell检测(Verb-Noun/$env/$global/function/$_/[Type]::/Write-/Out-/Format-)
 #        +新增_looks_like_cmd: 19模式CMD检测(%VAR%/for/where/wmic/reg/attrib/tasklist/taskkill等)
 #        +三路路由逻辑: PS→CMD→Bash, CMD→Bash→PS, Bash→CMD→PS
@@ -70,74 +72,90 @@
 #        +更新bash_patterns: python3→python+ls/wc
 #        +通用预处理stage1.0a: python3→python(防止重复转换)
 #        +三路检测切换时logger.warning日志输出(PS→CMD/PS→Bash/CMD→Bash/CMD→PS/Bash→CMD/Bash→PS)
-# 2026-08-06 - 小欧 - 最优重构stage结构(对照设计方案v3.3三堂会审):
-#        ①三路检测从ps7/ps5执行分支内(旧阶段1.5死代码, cmd/bash初始类型不生效)
+# 2026-08-06 - 小欧 - 最优重构stage结构:
+#        三路检测从ps7/ps5执行分支内(旧阶段1.5死代码, cmd/bash初始类型不生效)
 #         提至stage 1.1全局统一(所有shell_type生效), 先路由后校正杜绝做错方向
-#        ②删除旧bash-only路由(旧阶段1.4), 三路检测完整覆盖, 不再"追加elif"(禁止backward/OCP)
-#        ③python3→python收敛至stage 1.0a一处(DRY), 移除_auto_fix_bash_syntax内重复
-#        ④PS语法校正保留(优于文档: {.Property→$_.Property}精准+LLM高频错, 收益>风险)
-#        ⑤三路检测日志logger.warning→logger.info(路由是正常操作非异常)
+#        删除旧bash-only路由(旧阶段1.4), 三路检测完整覆盖, 不再"追加elif"(禁止backward/OCP)
+#        python3→python收敛至stage 1.0a一处(DRY), 移除_auto_fix_bash_syntax内重复
+#        PS语法校正保留(优于文档: {.Property→$_.Property}精准+LLM高频错, 收益>风险)
+#        三路检测日志logger.warning→logger.info(路由是正常操作非异常)
 # 2026-08-06 - 小欧 - 注释清晰化: stage 总览改用清晰列表(1.0/1.0a/1.1/1.2/2/3/4); 清理重复的`#stage`草案残片; _auto_fix_bash_syntax docstring精简(拆出python3注), 无逻辑改动
-# 2026-08-06 - 小欧 - 三堂会审实证BugFix×4:
-#        Bug5: _looks_like_cmd `\btype\b`过宽(bash/python type误判)→改`type`后带文件路径才判CMD
-#        Bug6: _looks_like_ps Verb-Noun `\b[a-z]+-[a-z]+\b`过宽(foo-bar/project-x误判PS)
+# 2026-08-06 - 小欧 - 实证BugFix×4:
+#        修复: _looks_like_cmd `\btype\b`过宽(bash/python type误判)→改`type`后带文件路径才判CMD
+#        修复: _looks_like_ps Verb-Noun `\b[a-z]+-[a-z]+\b`过宽(foo-bar/project-x误判PS)
 #             →收敛为已知cmdlet动词前缀+Test-*确切cmdlet
-#        Bug7: stage 1.0a 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
-#        Bug8: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
+#        修复: stage 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
+#        修复: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
 #       修复后实证复验: test-case/echo "pip3"/echo "python is cool"不再误判; Test-Path/get-process/正常bash命令保留
-# 2026-08-06 - 小欧 - v2.7三堂会审BugFix: PS分支 shell_pool.acquire() 补传 env=_sanitize_env()(原acquire启动走os.environ含API key泄漏给子进程, exec时传的env因进程存活被_ensure_alive忽略) — 与shell_engine.py acquire加env参数配套
-# 2026-08-06 - 小欧 - 卡死场景日志补齐: C10(C11)分支超时/管道阻塞事件加[卡死C#]warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py C1-C14标注联动
-# 2026-08-06 - 小健 - v2.9打猎修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
-# 2026-08-06 - 小健/小欧 - v2.10打猎Bug#6(C11): _kill_and_read_output taskkill失败后裸proc.kill()兜底无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py v2.10 Bug#5/#7打猎联动
-# 2026-08-06 - 小欧 - 卡死C13根因修复(北京老陈21:53:36报告): ps7原生&&虽合法, 但`&&/||后接赋值语句`(如
+# 2026-08-06 - 小欧 - BugFix: PS分支 shell_pool.acquire() 补传 env=_sanitize_env()(原acquire启动走os.environ含API key泄漏给子进程, exec时传的env因进程存活被_ensure_alive忽略) — 与shell_engine.py acquire加env参数配套
+# 2026-08-06 - 小欧 - 卡死场景日志补齐: 超时/管道阻塞事件加warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py标注联动
+# 2026-08-06 - 小健 - 修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
+# 2026-08-06 - 小健/小欧 - 修复: _kill_and_read_output taskkill失败后裸proc.kill()无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py联动
+# 2026-08-06 - 小欧 - 假超时根因修复: ps7原生&&虽合法, 但`&&/||后接赋值语句`(如
 #        `cd X && $env:PYTHONIOENCODING='utf-8'`)是PS7语法错误(ParserError), LLM高频生成 → ps1解析失败
-#        → 命令从未执行 → 假超时(C8/C14杀进程) → C12 stderr残留ParserError → 池中留死实例 → 下次复用
-#        探活失败C13(pid=None)。修复: 新增_fix_ps7_assignment_operators(引号感知检测&&/||后接$变量=赋值,
+#        → 命令从未执行 → 假超时(杀进程) → stderr残留ParserError → 池中留死实例 → 下次复用
+#        探活失败(pid=None)。修复: 新增_fix_ps7_assignment_operators(引号感知检测&&/||后接$变量=赋值,
 #        命中才复用_translate_powershell_operators翻译, 普通&&/||保持ps7原生不动), ps7分支集成; ps5分支不变。
-# 2026-08-06 - 小欧 - 三路检测Bash误判修复(北京老陈22:02报告): `python "E:\test_dir\backup_integrity_check.py"`(ps7合法命令)
+# 2026-08-06 - 小欧 - 三路检测Bash误判修复: `python "E:\test_dir\backup_integrity_check.py"`(ps7合法命令)
 #        被_looks_like_bash判为bash(唯一命中`(?:^|[;&|])\s*python\b`) → 路由bash → _auto_fix_bash_syntax路径\→/转换(误)。
-#        病根: 裸`python`是跨平台命令(Windows ps7/ps5/cmd同样合法), 绝非bash独有特征。修复: python判bash
+#        根因: 裸`python`是跨平台命令(Windows ps7/ps5/cmd同样合法), 绝非bash独有特征。修复: python判bash
 #        收敛为仅当后跟Linux风格路径(/|./|~/), 即`python(?=\s+(?:\.?/|~/))`; python3(Linux独有解释器)保持判bash。
-#        实证: 病根命令不再判bash留ps7; `python /tmp/x.py`/`python ./x.py`/`python3 /tmp/x.py`(经stage 1.0a转python)仍判bash。
-# 2026-08-07 - 小欧 - 卡死日志三问五处修复(与shell_engine.py联动, 三堂会审定稿):
-#        R0: CMD poll loop大输出死锁根治 — 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→与poll互锁至超时杀树
+#        实证: 该命令不再判bash留ps7; `python /tmp/x.py`/`python ./x.py`/`python3 /tmp/x.py`(经stage 1.0a转python)仍判bash。
+# 2026-08-07 - 小欧 - 卡死日志三问五处修复(与shell_engine.py联动):
+#        CMD poll loop大输出死锁根治 — 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→与poll互锁至超时杀树
 #            且仅读回4096残存; 改非阻塞读管道(os.set_blocking(False))+自适应退避(有数据立即读/无数据指数退避上限50ms),
 #            实验铁证200KB 0.1s完整读取vs原15s超时丢4096字节; communicate仅作有界收尾读清残余
-#        R1: Format-Table正则扩展覆盖Format-List/Format-Wide根治C12 stderr残留(当日C12日志触发命令正是
+#        Format-Table正则扩展覆盖Format-List/Format-Wide根治stderr残留(日志触发命令正是
 #            `Get-Service | Format-List *`/`Get-ItemProperty | Format-List *`, 不受原Format-Table保护)
-#        R2: systeminfo移出CMD特征(第4类命令列表+_looks_like_cmd正则)改走PS7根治C10表象
-# 2026-08-07 - 小欧 - 三堂会审8.8复核: R0非阻塞read语义None/b''均安全无bug(熟读3遍+边界实测),
+#        systeminfo移出CMD特征(第4类命令列表+_looks_like_cmd正则)改走PS7
+# 2026-08-07 - 小欧 - 复核: 非阻塞read语义None/b''均安全无bug(熟读3遍+边界实测),
 #        systeminfo三路入口均正常无退化(走PS7后无错误无卡死), 五处修改综合判定全部通过
-# 2026-08-07 - 小欧 - G2普遍性根治(B6) C12管道层根治: R1枚举式保护(Format-Table/List/Wide命令名)有别名盲区
-#        (fl/ft/fw漏网), 已由shell_engine.py _exec_locked ps_cmd B6管道层根治取代(命令名盲区全覆盖),
-#        此处移除R1枚举保护, 单一根治点(KISS/DRY), 管道末端统一Out-String等效解决80列截断 — 与shell_engine.py联动
-# 2026-08-07 - 小欧 - P08优化(北京老陈驱动 task001): 超时提示文案引导脚本化 — 复杂Python先写.py脚本文件执行(规避单行引号转义)+增大timeout(上限600); _detail已含实际超时值故hint不重复默认值 | py_compile ✓
-# 2026-08-08 - 小欧 - task007修正A落地(良性stderr误判为error, 实证150例→131/17/2):
-#        病根: error分支(returncode≠0)未过滤良性stderr, 任务成功但stderr带DeprecationWarning/Using CPU/MERG/notice等
+# 2026-08-07 - 小欧 - 普遍性根治 管道层根治: Format-Table/List/Wide枚举式保护有别名盲区
+#        (fl/ft/fw漏网), 已由shell_engine.py _exec_locked ps_cmd管道层根治取代(命令名盲区全覆盖),
+#        此处移除枚举保护, 单一根治点(KISS/DRY), 管道末端统一Out-String等效解决80列截断 — 与shell_engine.py联动
+# 2026-08-07 - 小欧 - 优化: 超时提示文案引导脚本化 — 复杂Python先写.py脚本文件执行(规避单行引号转义)+增大timeout(上限600); _detail已含实际超时值故hint不重复默认值 | py_compile | ok
+# 2026-08-08 - 小欧 - 修正A落地(良性stderr误判为error, 实证150例→131/17/2):
+#        根因: error分支(returncode≠0)未过滤良性stderr, 任务成功但stderr带DeprecationWarning/Using CPU/MERG/notice等
 #        良性提示(且进程非零退出)被误报ERR_SHELL_EXEC, 实测ocr_recognition.py 1146字符detail 100%良性仍报error
 #        修复: error分支改双字段三分支判别(实证回归error=131/warning=17/保守error=2):
-#          ① stderr/stdout含真实错误信号(_REAL_ERROR_MARKERS词边界正则)→error(保留原detail+前缀识别)
-#          ② 无真实错误信号但stdout有产出(_has_output strip非空)→warning降级, detail保留产出前80字符
-#          ③ 无产出(仅pip notice/无输出)→保守error防掩盖
+#          stderr/stdout含真实错误信号(_REAL_ERROR_MARKERS词边界正则)→error(保留原detail+前缀识别)
+#          无真实错误信号但stdout有产出(_has_output strip非空)→warning降级, detail保留产出前80字符
+#          无产出(仅pip notice/无输出)→保守error防掩盖
 #        新增纯函数: _REAL_ERROR_MARKERS(35项词边界正则, ERROR用(?<!no )防"no error"误伤)/_contains_real_error/_has_output
 #        关联: 原「未找到/语法/权限」前缀识别保留复用, _hint/_shell_mismatch_hint不变, 成功/超时分支未动
-#        验证: py_compile✓ 新增37用例全过(含真实命令三分支+markers覆盖) 既有shell测试106+103全过 150案例回归131/17/2
-# 2026-08-09 - 小欧 - 修正A收尾三审(P1/P2, 见doc-8月优化修复代码三堂会审报告v1.1):
-#        P1: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
-#        P2: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(	\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
-#        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法✓
-# 2026-08-09 - 小欧 - task005核查P1落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
+#        验证: py_compile | ok 新增37用例全过(含真实命令三分支+markers覆盖) 既有shell测试106+103全过 150案例回归131/17/2
+# 2026-08-09 - 小欧 - 修正A收尾三审(两处):
+#        第一处: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
+#        第二处: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
+#        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法 | ok
+# 2026-08-09 - 小欧 - task005核查落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
 #   \b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b (仅HRESULT失败段/NTSTATUS失败段)。
-#   病根: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
+#   根因: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
-# 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, get_current_task_id import 由 app.services.task.task_context 改 app.tools.context,
+# 2026-08-12 - 小欧 - task_id ContextVar 迁至 app.tools.context, get_current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动
+# 2026-10-05 - 小欧 - params存完整command(原存cmd_short缩写致LLM无法核对命令); cmd_short掐头去尾改掐中保尾150=头130+尾20(原式拼出不连续文本致LLM误认相邻内容), 标注「已截N字符」
+# 2026-10-05 - 小欧 - 报告: 更正"需用户确认"误导文案(本函数不发起确认); 明确 one-shot 仅性能路由非放行依据, 不调扫描是架构边界所致(禁 tools→safety), 残余面由白名单禁换行收窄。
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余: success summary 去 `退出码/输出字符`, warning summary 去 `_warn_msg`,
+#   统一 `执行Shell命令{cmd_short}，成功`; output_len/stderr_len 入 metrics 结构化承接(通用渲染)
+# 2026-10-09 - 小欧 - bash 超时hint改写: 原「增大timeout参数」属反向引导 — 实测(卡死事故复盘)LLM写了逐字符扫描52MB文本的脚本, timeout=300超时后采纳本hint提到600, 而同轮真正解决问题的是"重写算法"(改完37.5s跑完), 即加预算对性能问题无效且徒增5分钟等待。
+#   改为按「先诊断命令本身→再考虑调预算」排序: 查低效写法(逐字符循环/大文件全量扫描)优先优化算法; 写入.py脚本便于定位; 确认已排除性能问题后才考虑增大timeout(加前置条件); 与TOOL_TIMEOUT_HINTS中delete/write/edit/readmedia已正确写法(分批/减小范围)对齐。
+# 2026-11-03 小欧 - cwd 不存在回退上级/临时目录两处 WARNING→INFO(有兜底) — 小欧-2026-11-03
+# 2026-11-04 小欧 - 删未使用的 PersistentShell(死导入, 测试均直接从 shell_engine 导入) — 小欧-2026-11-04
+# 2026-11-04 小欧 - _kill_and_read_output 树杀改 kill_process_tree(app.utils.proc_utils): 删 taskkill 子进程与其
+#   proc.kill 兜底分支(psutil 枚举后代 + TerminateProcess 根进程, 零 CreateProcess); 后续 wait/读残存语义不变 — 小欧-2026-11-04
+# 2026-11-04 小欧 - 四处 Popen.communicate 全部改 app.utils.proc_io.drain_until_exit/drain_after_exit(非阻塞读, 零建线程):
+#   communicate 每次起 1~3 条 _readerthread, 新线程 bootstrap 抢 loader lock 与 CreateProcess 互锁 = 11:28 卡死真凶;
+#   cmd 分支内联 poll+非阻塞读收编为同一 helper(DRY), 超时仍走 _kill_and_read_output 收残存 — 小欧-2026-11-04
+# 2026-11-04 小欧 - 红队 P21 修复: drain_until_exit 增 truncated 回传(进程已退出但孙进程持管道), 工具层追加
+#   可见提示并置 data._truncated —— 有界等待不得变成静默丢输出 — 小欧-2026-11-04
 """
-S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
+S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
 ╔══════════════════════════════════════════════════════════════════╗
-║                Shell 工具编码链路分析与修复全景                     ║
-║                   2026-07-07 北京老陈驱动检查                       ║
+║                Shell 工具编码链路与修复全景                         ║
+║                   2026-07-07 小欧 检查                              ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 ┌──────────────┐
@@ -150,8 +168,8 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
        │   │   │
        │   │   ├── [入] stdin.write(cmd.encode("utf-8"))
        │   │   │   │   PS5.1 `-Command -` stdin
-       │   │   │   │   ⚡ 实测: 不加BOM PS5.1自动识别UTF-8 ✅
-       │   │   │   │   ⚡ 加BOM反而静默失败 ❌ (不修)
+       │   │   │   │   实测: 不加BOM PS5.1自动识别UTF-8
+       │   │   │   │   加BOM反而静默失败 (不修)
        │   │   │   │
        │   │   ├── [子进程] env={PYTHONIOENCODING=utf-8, PYTHONUTF8=1}
        │   │   │   │   2026-07-07 小欧 修复
@@ -183,7 +201,7 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
        │   │   PYTHONUTF8=1: open()默认用UTF-8避免gbk误读
        │   │
        │   └── [出] proc.communicate() → _decode_bytes_safe()
-       │       utf-8优先(gbk回退, latin-1兜底)
+       │       utf-8优先(gbk回退, latin-1回退)
        │       Python子进程(PYTHONIOENCODING)输出UTF-8直接命中
        │
        └── shell_type="bash" ────────────────────────────────────
@@ -207,14 +225,14 @@ S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026
 └────────────────────────────────────────────────────────────────┘
 
 
-【v2 改造】
+【改造】
   - ps7/ps5 分支改用 PersistentShell 持久引擎
   - 删除 run_in_background / _background_shells / shell_session
   - 保留 build3 + llm_data 体系不变
 
-铁规1: helper 函数不碰 build3，只在 shell() 主函数包装
-铁规2: 工具返回原始 data，前端截断在前端 yield 层
-铁规3: 计时仅在 shell() 主函数
+约定1: helper 函数不碰 build3，只在 shell() 主函数包装
+约定2: 工具返回原始 data，前端截断在前端 yield 层
+约定3: 计时仅在 shell() 主函数
 """
 # 小欧 - 2026-07-15: 新增success_codes参数+退出码判断改为`==0 or in`追加式,0永远成功
 import locale
@@ -229,9 +247,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
-from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
-from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
+from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
+from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16: 中风险层独立
+from app.tools.context import get_current_task_id  # ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
+from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入)
+from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
+from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
+from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -281,8 +303,10 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return result
 
 
-# ── cmd_short 缩写常量（头部字数 = 总预算 - 尾部保留） ──
-_SHELL_CMD_TAIL = 15
+# ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
+# 2026-10-05 小欧: 尾15→20、预算50→150(头自动130) — 小欧 2026-10-05
+# 2026-10-05 小欧 总预算150→130: 头变为110(尾20不变) — 小欧 2026-10-05
+_SHELL_CMD_TAIL = 20
 _SHELL_CMD_HEAD = EXECUTE_SHELL_OUTPARM_LIMIT_CMD - _SHELL_CMD_TAIL
 
 # ═══════════════════════════════════════════════════════
@@ -299,13 +323,13 @@ def _resolve_safe_cwd(cwd: str) -> str:
     parent = os.path.dirname(cwd) if cwd else ""
     while parent:
         if os.path.isdir(parent):
-            logger.warning(f"[Shell] cwd不存在, 回退: {cwd} → {parent}")
+            logger.info(f"[Shell] cwd不存在, 回退: {cwd} → {parent}")  # 2026-11-03 小欧: 有兜底, 降 INFO
             return parent
         next_parent = os.path.dirname(parent)
         if next_parent == parent:
             break
         parent = next_parent
-    logger.warning(f"[Shell] cwd不存在且无可用上级目录, 回退临时目录: {cwd} → {tempfile.gettempdir()}")
+    logger.info(f"[Shell] cwd不存在且无可用上级目录, 回退临时目录: {cwd} → {tempfile.gettempdir()}")  # 2026-11-03 小欧: 有兜底, 降 INFO
     return tempfile.gettempdir()
 
 
@@ -382,7 +406,7 @@ def _fix_ps7_assignment_operators(command: str) -> str:
 
     背景: ps7 原生支持 &&, 但 `cmd && $env:X='...'` 是 PS7 语法错误(ParserError) — LLM 高频生成
     `cd X && $env:PYTHONIOENCODING='utf-8'; python ...` → ps1 解析失败 → 命令从未执行 → 假超时
-    (C8/C14 杀进程) → C12 stderr 残留 ParserError → 池中留死实例 → 下次复用探活失败(C13, pid=None)。
+    (杀进程) → stderr 残留 ParserError → 池中留死实例 → 下次复用探活失败(pid=None)。
     修复: 引号感知检测 &&/|| 后紧跟 `$变量=`, 命中才调用翻译器(与 ps5 同路径), 不命中原样返回(ps7 原生 && 保留)。
     仅匹配赋值场景, 不匹配 `cmd && python x.py` 等合法 ps7 用法, 避免过度翻译。— 小欧 2026-08-06
     """
@@ -498,7 +522,7 @@ def _close_if_blocks(s: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════
-#  >重定向 UTF-8 转换（来自北京老陈 2026-06-30）
+#  >重定向 UTF-8 转换（2026-06-30）
 # ═══════════════════════════════════════════════════════
 
 def _convert_redirect_to_utf8(command: str, cwd: Optional[str] = None) -> None:
@@ -553,7 +577,8 @@ def _build_execute_shell_command_llm_data(
     """execute_shell_command 的 llm_data 构建函数
     cmd_short: 命令预览（由调用者构造传入）"""
     logger.debug(f"[Shell] _build llm: cmd_len={len(command)}, exec_code={exec_code}, rc={returncode}")
-    _act_params = {"command": cmd_short}
+    # 2026-10-05 小欧: params存完整command(原存cmd_short缩写致LLM无法核对命令) — 小欧 2026-10-05
+    _act_params = {"command": command}
     if shell_type:
         _act_params["shell_type"] = shell_type
     if timeout:
@@ -564,31 +589,35 @@ def _build_execute_shell_command_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"执行Shell命令{cmd_short}，失败",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
-            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
+            "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     if exec_code == "warning":
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
+        # 2026-10-05 小欧 - 单通道去冗余: summary 不再嵌 _warn_msg, 统一 `执行Shell命令{cmd_short}，成功`;
+        #   stderr 长度入 metrics 结构化承接, _warn_msg 仍由 detail 承载(⚠ 警告行)
         return {
-            "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
+            "summary": f"执行Shell命令{cmd_short}，部分成功：{_warn_msg}",  # 2026-10-14 小欧 - summary 统一口径: 去",提示说明", 警告信息保留 — 小欧-2026-10-14
+            "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
+            "status": {"exec_code": "warning", "message": "成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
-            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
+            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "stderr_len": {"value": stderr_len, "text": f"stderr {stderr_len}字符"}},
         }
+    # 2026-10-05 小欧 - 单通道去数字化: summary 去 `退出码{returncode}，输出{output_len}字符`,
+    #   统一 `执行Shell命令{cmd_short}，成功`; 两数在 metrics 统计段呈现(通用渲染)
     return {
-        "summary": f"执行Shell命令{cmd_short}，成功: 退出码{returncode}，输出{output_len}字符",
-        "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
-        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"执行Shell命令{cmd_short}，成功",
+        "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
+        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "output_len": {"value": output_len, "text": f"输出{output_len}字符"}},
     }
 
 
 def _fix_encoding(text: str) -> str:
-    """编码修复：检测并修复中文乱码 — 小沈 2026-07-08  — 北京老陈 2026-07-09 修复:去掉CJK双通道检测(会产生误报)"""
+    """编码修复：检测并修复中文乱码 — 小沈 2026-07-08 — 2026-07-09 修复:去掉CJK双通道检测(会产生误报)"""
     if not text:
         return text
     try:
@@ -604,12 +633,12 @@ def _fix_encoding(text: str) -> str:
 
 
 # 注意: OBS_SHELL_MAX_ROWS×OBS_SHELL_MAX_ROW_CHARS=200K
-#       展示上限, tool截断50K目前保守对齐,
-#       试用后再视需调整(北京老陈 2026-07-23)
+#       展示上限, tool截断10K(stdout)/2K(stderr)保守对齐,
+#       试用后再视需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)
 def _truncate_shell_field(text: str, max_chars: int) -> tuple[str, bool]:
     """shell 工具输出截断(head-only+行边界): 超 max_chars 保留文首至最近行尾, 末尾追加截断说明 — 小欧 2026-07-23
     注意: OBS_SHELL_MAX_ROWS(200)×OBS_SHELL_MAX_ROW_CHARS(1000)=200K 是formatter展示上限;
-          tool截断50K(stdout)/20K(stderr)为存储保护值, 低于展示上限; 试用后按需调整(北京老陈 2026-07-23)"""
+          tool截断10K(stdout)/2K(stderr)为存储保护值, 低于展示上限; 试用后按需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)"""
     if len(text) <= max_chars:
         return text, False
     cut = text[:max_chars].rfind('\n')
@@ -653,7 +682,7 @@ _REAL_ERROR_MARKERS = (
     r"\bArgument list too long\b", r"\bNo package found\b",
     # Windows / 注册表
     r"(?<!no )\bERROR\b", r"\bCannot find\b", r"\b无法找到\b",
-    # 2026-08-09 - 小欧 - task005核查P1: 0x[0-9a-fA-F]{8} 过宽(任意8位hex误匹配哈希/内存地址/颜色值),
+    # 2026-08-09 - 小欧 - task005核查: 0x[0-9a-fA-F]{8} 过宽(任意8位hex误匹配哈希/内存地址/颜色值),
     #   收紧为仅HRESULT失败段 0x8XXXXXXX 与 NTSTATUS失败段 0xCXXXXXXX (实测 0x80070005/0xC0000022 命中,
     #   0x1a2b3c4d/0xFF0000FF/0x000002A1... 不命中); 前缀白名单(8004/8007/C000列表)会漏 0x80004005(E_FAIL)
     #   等真实错误码, 故用段匹配替代白名单 — 小欧 2026-08-09
@@ -662,8 +691,8 @@ _REAL_ERROR_MARKERS = (
     r"不是内部或外部命令", r"不是可运行的程序", r"无法将.*项识别为",
     # PowerShell cmdlet 报错动词 — 小欧 2026-08-09 收紧: cmdlet 名后须紧跟冒号(真实错误消息行首格式)
     # 原为"纯词边界(bare cmdlet 名)", 正常输出仅含 cmdlet 名会被误判 error; 收紧为 "名 : " 后仅命中真实报错。
-    # 2026-08-09 - 小欧 - 收尾三审: ①Add-Type 亦属 cmdlet 一并收紧(原遗漏于异常类型组);
-    #   ②\s* 含换行可跨行误命中, 统一改 [ \t]* 仅匹配同行内空白(ASCII冒号为PS错误分隔符, 全角不适用)。
+    # 2026-08-09 - 小欧 - 收尾三审: Add-Type 亦属 cmdlet 一并收紧(原遗漏于异常类型组);
+    #   \s* 含换行可跨行误命中, 统一改 [ \t]* 仅匹配同行内空白(ASCII冒号为PS错误分隔符, 全角不适用)。
     r"\bInvalidOperation\b", r"\bMethodInvocationException\b",
     r"\bAdd-Type\b[ \t]*:", r"\bGet-ChildItem\b[ \t]*:", r"\bForEach-Object\b[ \t]*:",
     r"\bGet-CimInstance\b[ \t]*:", r"\bNew-Object\b[ \t]*:", r"\bSort-Object\b[ \t]*:",
@@ -776,31 +805,17 @@ def _find_bash() -> Optional[str]:
 # ═══════════════════════════════════════════════════════
 
 def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
-    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 — [卡死场景C11] 小欧 2026-08-06"""
-    try:
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-            capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
-        )
-    except Exception as e:
-        logger.warning(f"[卡死C11] taskkill异常 → proc.kill()兜底 (pid={proc.pid}): {e}")
-        try:
-            proc.kill()   # v2.10 BugFix(小健 2026-08-06): 兜底kill本身可能抛(进程已死/句柄失效), 必须受保护, 否则异常冒泡中断残存读取
-        except Exception as ke:
-            logger.warning(f"[卡死C11] proc.kill()兜底也失败(进程可能已死/句柄失效), 直接读残存 (pid={proc.pid}): {ke}")
+    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 / 2026-08-06
+
+    2026-11-04 小欧: 树杀改走 kill_process_tree(psutil+proc.kill), 不再起 taskkill 子进程 ——
+    CreateProcessW 持 loader lock 与 Thread.start() 互锁是 shell 卡死根因, 超时路径必须零建进程。"""
+    kill_process_tree(proc)
     try:
         proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
     except Exception as e:
         logger.warning(f"[卡死C11] 等退出超时/异常 → 读残存继续 (pid={proc.pid}): {e}")
-    try:
-        stdout_b = proc.stdout.read() if proc.stdout else b""
-    except Exception:
-        stdout_b = b""
-    try:
-        stderr_b = proc.stderr.read() if proc.stderr else b""
-    except Exception:
-        stderr_b = b""
-    return stdout_b, stderr_b
+    # 2026-11-04 小欧: 残存读取改非阻塞有界(零建线程); 原 proc.stdout.read() 在孙进程持写端时会永久阻塞
+    return drain_after_exit(proc, wait=SUBPROCESS_TIMEOUT_SHORT)
 
 
 # ═══════════════════════════════════════════════════════
@@ -841,7 +856,7 @@ def _looks_like_bash(command: str) -> bool:
         r'(?:^|[;&|])\s*python(?=\s+(?:\.?/|~/))',  # python+Linux风格路径(/|./|~/): 裸python是跨平台命令(Windows ps7同样合法), 仅当带Linux风格路径才判bash — 小欧 2026-08-06 BugFix
         r'(?:^|[;&|])\s*python3\b',      # python3(Linux独有解释器, Windows无python3可执行) — 小欧 2026-08-06
         r'(?:^|[;&|])\s*python\s3\b',    # python 3 (space)
-        r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 Bug6修正
+        r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 修复
         r'\bapt\b',               # apt
         r'\bapt-get\b',           # apt-get
         r'\bconda\b',             # conda
@@ -855,7 +870,7 @@ def _looks_like_bash(command: str) -> bool:
         r'\bcmake\b',             # cmake命令
         r'\brm\s+-rf\b',          # rm -rf
         r'\bmv\s+.*\.\.\b',       # mv ./to/../
-        # ── v2.0新增: ls/wc（CMD用dir/find /c替代，bash独有） ── 小欧 2026-07-30
+        # ── 新增: ls/wc（CMD用dir/find /c替代，bash独有） ── 小欧 2026-07-30
         r'\bls\b',                # ls -la（CMD用dir）
         r'\bwc\b',                # wc -l（CMD用find /c）
     ]
@@ -894,7 +909,7 @@ def _looks_like_ps(command: str) -> bool:
 
     # PowerShell特有命令（Windows PowerShell语法）— 正则匹配灵活覆盖各种变体
     ps_patterns = [
-        # Verb-Noun cmdlet: 只匹配PowerShell已知动词前缀, 避免误判普通连字符命名(如project-x/hello-world) — 小欧 2026-08-06 Bug6修复
+        # Verb-Noun cmdlet: 只匹配PowerShell已知动词前缀, 避免误判普通连字符命名(如project-x/hello-world) — 小欧 2026-08-06 修复
         r'\b(?:get|set|new|add|remove|select|write|read|start|stop|restart|invoke|convert|copy|move|format|clear|output|enter|exit|wait|prompt|show|hide|ping|trace|assert|join|sort|group)-[a-z]{2,}\b',
         r'\btest-(?:path|connection|json|netconnection|service|webrequest|modulemanifest)\b',  # Test-*确切cmdlet(避免test-case误判) — 小欧 2026-08-06
         r'\$env:\w+',                   # PS环境变量: $env:PATH, $env:USERPROFILE
@@ -921,7 +936,7 @@ def _looks_like_cmd(command: str) -> bool:
     - Windows特有环境变量: %PATH%, %TEMP%等（CMD才有的变量引用语法）
     - CMD特有循环语法: for %i in, for /f %i in
     - CMD特有命令: where, wmic, reg query/add/delete/import/export, attrib, tasklist, taskkill, msieexec, diskpart, bcdedit, echo %var, set var=value, pushd/popd, assoc/ftype, findstr
-      (注: systeminfo 已于 2026-08-07 移出CMD特征, 改走PS7引擎 — 小欧 三堂会审定稿)
+      (注: systeminfo 已于 2026-08-07 移出CMD特征, 改走PS7引擎 — 小欧)
     - CMD特有入口点: cmd.exe /c
     - CMD特有文件操作: copy, del, rd
     
@@ -953,7 +968,7 @@ def _looks_like_cmd(command: str) -> bool:
         r'\bset\s+\w+=',              # 变量定义: set MYVAR=value
         r'\bpushd\b\|\bpopd\b',       # 目录栈操作
         r'\bassoc\b\|\bftype\b',       # 文件关联: assoc, ftype
-        r'\btype\s+\S+[.\/\\]\S+',     # 文件内容显示(CMD type=cat; 仅当带文件路径时判CMD, 避免bash/python type误判) — 小沈 2026-07-29, 小欧 2026-08-06 Bug5修复
+        r'\btype\s+\S+[.\/\\]\S+',     # 文件内容显示(CMD type=cat; 仅当带文件路径时判CMD, 避免bash/python type误判) — 小沈 2026-07-29, 小欧 2026-08-06 修复
         r'\bfindstr\b',                # 字符串搜索
         r'\bcmd\.exe\b',               # CMD入口点
         r'\b(copy|del|rd)\b',          # 文件操作
@@ -989,10 +1004,18 @@ def shell(
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1【通用】: 参数校验 ──
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "shell")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "bash")
     t0 = _time_mod.perf_counter()
     _cmd_limit = EXECUTE_SHELL_OUTPARM_LIMIT_CMD
-    cmd_short = (command[:_SHELL_CMD_HEAD] + "..." + command[-_SHELL_CMD_TAIL:]) if command and len(command) > _cmd_limit else (command[:_cmd_limit] if command else "(空命令)")
+    # 2026-10-05 小欧: 掐中保尾替代掐头去尾(原式拼出不连续文本致LLM误认相邻内容) — 小欧 2026-10-05
+    if command and len(command) > _cmd_limit:
+        cmd_short = (
+            command[:_SHELL_CMD_HEAD]
+            + f"…(已截{len(command) - _cmd_limit}字符) "
+            + command[-_SHELL_CMD_TAIL:]
+        )
+    else:
+        cmd_short = command or "(空命令)"
 
     if not timeout_valid:
         llm = _build_execute_shell_command_llm_data("error", 0, command, -1,
@@ -1012,7 +1035,7 @@ def shell(
     stripped_command = command.strip() if command else ""
     processed_command = stripped_command
     
-    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复(Bug7) ──
+    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复 ──
     #  python3 → python（引号感知，仅替换引号外的python3；复用shell_engine._replace_python3_safe，DRY）
     processed_command, _python3_cnt = _replace_python3_safe(processed_command)
 
@@ -1045,7 +1068,7 @@ def shell(
     #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash登录shell，三路无嵌套检测）
     #   stage 4    后处理
     #
-    # ── 阶段 1.1【通用】: 三路类型检测 + 路由 ── 小欧 2026-07-29 v2.0; 2026-08-06 位置修正 ──
+    # ── 阶段 1.1【通用】: 三路类型检测 + 路由 ── 小欧 2026-07-29; 2026-08-06 位置修正 ──
     #  以LLM选的shell_type为"第一猜测"，匹配则直接执行；不匹配则尝试其他类型。
     #  路由只改shell_type，不做语法校正（交由 stage 1.2）；"都不像"保持原type让LLM承担。
     if shell_type in ("ps7", "ps5"):
@@ -1095,33 +1118,66 @@ def shell(
             processed_command = _fixed
 
     # ── 阶段 2【通用】: 安全检查 ──
-    safety = check_shell_command_risk(processed_command, shell_type, protected_pids=shell_pool.get_all_pids())
+    # 2026-10-16: 危险层与中风险层已独立, 两层都查取最严(危险层优先)。
+    #   protected_pids 形参已删 — 自杀检查归 app/safety/shell_process_guard.py.check_shell_self_kill,
+    #   在 path_tool_safety_checker.check_before_execute 里先于本层执行, 故此处不再重复判定。
+    safety = check_shell_danger_command(processed_command, shell_type) or \
+        check_shell_risk_command(processed_command, shell_type)
     if safety:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         if safety.blocked:
             llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                 shell_type, ERR_SHELL_INJECTION, safety.message,
-                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截", cmd_short=cmd_short)
+                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截，可缩小操作范围后重试", cmd_short=cmd_short)  # 2026-10-14 小欧 - hint 修事实复述: 原只说"被拦截"(detail 已讲规则), 补换策略 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm)
-        if safety.requires_confirmation:
-            logger.warning(f"[Shell] 中风险命令已放行（需用户确认）: {safety.message}")
+        if safety.needs_confirm:
+            logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     try:
-        if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
-            # BUG#2修复: ps5需要翻译&&→;if($?){cmd2}; ps7原生支持&&无需翻译 — 小欧 2026-07-28
-            # v2.11 BugFix(小欧 2026-08-06): ps7 `&& $env:X='utf-8'`是PS7语法错误(ParserError)导致命令
-            # 从未执行→假超时(C8/C14)→连锁C13; 仅此赋值场景复用翻译器兜底, 其余&&保持ps7原生 — 小欧 2026-08-06
+        task_id = get_current_task_id()
+        truncated = False      # 管道被孙进程持有导致的有界截断(必须回传为 _truncated) — 2026-11-04 小欧
+        # 治理层2(2026-10-04 小欧): 出池=无池实例+白名单, 全过走一次性进程; 仅执行路由, 扫描定序属沙箱闸。
+        _one_shot = (
+            shell_type in ("ps7", "ps5")
+            and not shell_pool.has_session(task_id, shell_type)
+            and is_shell_readonly_whitelisted(processed_command)
+        )
+        pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") if _one_shot else None
+        if pwsh_exe:
+            # 治理层2(2026-10-04 小欧): 同解释器一次性子进程, 结构复用bash分支(进程退出判定+硬超时)。
+            proc = subprocess.Popen(
+                [pwsh_exe, "-NoProfile", "-Command", processed_command],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                cwd=cwd, env=_sanitize_env(),
+            )
+            # 2026-11-04 小欧: communicate → 零线程轮询读(communicate 每调必起 _readerthread, 与 CreateProcess 互锁)
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            if truncated:
+                stderr_b += TRUNCATED_NOTE
+            if timed_out:
+                logger.warning(f"[卡死C10] PS只读一次性命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
+                _tail_out, _tail_err = _kill_and_read_output(proc)
+                stdout_b += _tail_out
+                stderr_b += _tail_err
+            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
+            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
+            returncode = proc.returncode if proc.returncode is not None else -1
+
+        elif shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
+            # ps5需要翻译&&→;if($?){cmd2}; ps7原生支持&&无需翻译 — 小欧 2026-07-28
+            # (小欧 2026-08-06): ps7 `&& $env:X='utf-8'`是PS7语法错误(ParserError)导致命令
+            # 从未执行→假超时→连锁失败; 仅此赋值场景复用翻译器, 其余&&保持ps7原生 — 小欧 2026-08-06
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)
             else:
                 processed_command = _fix_ps7_assignment_operators(processed_command)
-            # [卡死C12] 2026-08-07 小欧: R1枚举式保护(Format-Table/List/Wide)已由shell_engine.py
-            # _exec_locked 的 B6 管道层根治取代(命令名盲区fl/ft/fw全部覆盖), 此处移除, 单一根治点(KISS)
-            # (B6管道末端统一| Out-String -Width 4096, 等效解决80列截断, 比命令层追加更彻底) — 小欧 2026-08-07
+            # 2026-08-07 小欧: 枚举式保护(Format-Table/List/Wide)已由shell_engine.py
+            # _exec_locked 的管道层根治取代(命令名盲区fl/ft/fw全部覆盖), 此处移除, 单一根治点(KISS)
+            # (管道末端统一| Out-String -Width 4096, 等效解决80列截断, 比命令层追加更彻底) — 小欧 2026-08-07
 
             task_id = get_current_task_id()
-            # v2.7 BugFix(小欧 2026-08-06): acquire 传入 _sanitize_env(), 修复持久进程启动时
+            # (小欧 2026-08-06): acquire 传入 _sanitize_env(), 修复持久进程启动时
             # 直接 copy os.environ(含 API key) 泄漏给子进程的问题(此前仅 exec 时传 env, 进程存活时被忽略)。
             engine = shell_pool.acquire(task_id, shell_type, workdir=cwd, env=_sanitize_env())
             try:
@@ -1148,56 +1204,17 @@ def shell(
                 proc = subprocess.Popen(
                     f'"{bat_path}"', shell=True, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
-                timed_out = False
-                try:
-                    # [卡死场景C10-v2] poll loop + 非阻塞读管道(防大输出写满缓冲死锁)
-                    # + 防start /b子进程持管道挂满communicate — 小欧 2026-08-07 三堂会审定稿
-                    # 实验铁证: 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→
-                    # 与poll互锁至超时杀树且仅读回4096残存; 自适应读+递增退避则0.1s完整读取
-                    _deadline = _time_mod.time() + timeout
-                    _drain_out: list = []
-                    _drain_err: list = []
-                    if proc.stdout:
-                        os.set_blocking(proc.stdout.fileno(), False)  # Windows管道支持非阻塞
-                    if proc.stderr:
-                        os.set_blocking(proc.stderr.fileno(), False)
-                    _poll_sleep = 0.001
-                    while _time_mod.time() < _deadline and proc.poll() is None:
-                        _read_any = False
-                        for _stream, _buf in ((proc.stdout, _drain_out), (proc.stderr, _drain_err)):
-                            if _stream is None:
-                                continue
-                            try:
-                                while True:  # 一次读到空, 减少空轮询
-                                    _chunk = _stream.read(65536)
-                                    if not _chunk:
-                                        break
-                                    _buf.append(_chunk)
-                                    _read_any = True
-                            except (BlockingIOError, OSError):
-                                pass
-                        if _read_any:  # 有数据立即再读, 防子进程再次写满阻塞
-                            _poll_sleep = 0.001
-                        else:  # 无数据指数退避, 上限50ms防忙轮询
-                            _poll_sleep = min(_poll_sleep * 2, 0.05)
-                        _time_mod.sleep(min(_poll_sleep, max(0, _deadline - _time_mod.time())))
-                    if proc.poll() is None:
-                        timed_out = True
-                        logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
-                        stdout_b, stderr_b = _kill_and_read_output(proc)
-                    else:
-                        # [卡死场景C11] communicate有界收尾: 读清进程退出后残余管道 — 小欧 2026-08-06/08-07
-                        _tail_out, _tail_err = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
-                        if _tail_out:
-                            _drain_out.append(_tail_out)
-                        if _tail_err:
-                            _drain_err.append(_tail_err)
-                        stdout_b = b"".join(_drain_out)
-                        stderr_b = b"".join(_drain_err)
-                except subprocess.TimeoutExpired:
-                    timed_out = True
-                    logger.warning(f"[卡死C10] CMD communicate超时 → 杀进程树+读残存 (cmd={cmd_short})")
-                    stdout_b, stderr_b = _kill_and_read_output(proc)
+                # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
+                # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
+                # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
+                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+                if truncated:
+                    stderr_b += TRUNCATED_NOTE
+                if timed_out:
+                    logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
+                    _tail_out, _tail_err = _kill_and_read_output(proc)
+                    stdout_b += _tail_out
+                    stderr_b += _tail_err
             finally:
                 try:
                     os.unlink(bat_path)
@@ -1221,20 +1238,21 @@ def shell(
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=child_env,
             )
-            timed_out = False
-            try:
-                # [卡死场景C10] bash分支: communicate有界timeout, 超时→_kill_and_read_output(杀进程树+读残存) — 小欧 2026-08-06
-                stdout_b, stderr_b = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
+            # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            if truncated:
+                stderr_b += TRUNCATED_NOTE
+            if timed_out:
                 logger.warning(f"[卡死C10] Bash命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
-                stdout_b, stderr_b = _kill_and_read_output(proc)
+                _tail_out, _tail_err = _kill_and_read_output(proc)
+                stdout_b += _tail_out
+                stderr_b += _tail_err
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
 
         # ── 阶段 4【通用】: 后处理(UTF-8 编码修复) ──
-        # 小欧 2026-07-20: 依 3.7 铁律删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(50K/20K) — 2026-07-23 小欧更新
+        # 小欧 2026-07-20: 依规则删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(50K/20K) — 2026-07-23 小欧更新
         if returncode == 0 and '>' in command:
             _convert_redirect_to_utf8(command, cwd)
 
@@ -1248,7 +1266,7 @@ def shell(
         data: Dict[str, Any] = {
             "stdout": stdout_str, "stderr": stderr_str,
         }
-        if stdout_trunc or stderr_trunc:
+        if stdout_trunc or stderr_trunc or truncated:
             data["_truncated"] = True
 
         # ── 阶段 5【通用】: 构建 llm_data（截断已由阶段4.5统一处理，此处只判定状态+构建detail+调1次）
@@ -1266,10 +1284,12 @@ def shell(
             _exec_code = "warning"
             _err_code = ERR_SHELL_TIMEOUT
             _detail = f"命令执行超时({timeout}秒)"
-            # 引导脚本化+增大超时 — 小欧 2026-08-07
-            _hint = ("命令执行超时，建议: "
-                     "1. 复杂代码请先写入相应的代码脚本文件再执行(规避单行引号转义) "
-                     "2. 增大timeout参数(上限600) 3. 分步执行")
+            # 2026-10-09 - 小欧 - hint改写: 把「优化命令」提到首位, 「调大timeout」降为末位且加前置条件
+            #   (原「增大timeout」属反向引导, 实测LLM因此把timeout 300→600而算法问题未解; 详见文件头编辑历史)
+            _hint = ("命令执行超时,通常说明命令本身执行过慢, 而非时间不够。建议: "
+                     "1. 检查命令逻辑是否存在低效写法(如逐字符循环 / 大文件全量扫描), 优先优化算法 "
+                     "2. 复杂逻辑请先写入 .py 脚本再执行, 便于定位与优化 "
+                     "3. 确认已排除性能问题后, 再考虑增大 timeout 参数(上限600)")
         elif returncode == 0 or returncode in (success_codes or []):
             stderr_clean = stderr_str.strip()
             if stderr_clean:

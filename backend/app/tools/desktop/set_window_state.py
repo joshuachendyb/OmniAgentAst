@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 【2026-06-22 小健】从window_info.py拆出为独立文件
@@ -11,19 +13,22 @@ set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 # 2026-07-30 - 小欧 - #16:msg_fmt死代码改为_; #18:修正多余冒号"为:{→为{"
 # 2026-07-30 - 小欧 - 删除未使用的Optional import
 # 2026-07-30 - 小欧 - _WINDOW_ACTIONS删除未使用的第三元素(原msg_fmt字符串);解构由func,args,_→func,args
-# 2026-07-31 - 小欧 - 三堂会审修复B8:window_title校验失败分支action传""丢失操作名,改传action
-# 2026-07-31 - 小欧 - 三堂会审修复B32:移除未使用的List import
-# 2026-08-05 - 小欧 - 三堂会审修复#1: ShowWindow/SetWindowPos返回值未检查失败假成功→topmost/unpin检查SetWindowPos返回, maximize/minimize/restore用IsZoomed/IsIconic验证目标状态(ShowWindow返回值不可靠)
-# 2026-08-05 - 小欧 - 三堂会审复核#1: restore验证由并查IsZoomed+IsIconic改只查not IsIconic(最小化前若处于最大化,restore会恢复为最大化,IsZoomed=True是正确结果,原判断产生假失败)
+# 2026-07-31 - 小欧 - 修复B8:window_title校验失败分支action传""丢失操作名,改传action
+# 2026-07-31 - 小欧 - 修复B32:移除未使用的List import
+# 2026-08-05 - 小欧 - 修复#1: ShowWindow/SetWindowPos返回值未检查失败假成功→topmost/unpin检查SetWindowPos返回, maximize/minimize/restore用IsZoomed/IsIconic验证目标状态(ShowWindow返回值不可靠)
+# 2026-08-05 - 小欧 - 复核#1: restore验证由并查IsZoomed+IsIconic改只查not IsIconic(最小化前若处于最大化,restore会恢复为最大化,IsZoomed=True是正确结果,原判断产生假失败)
 # 2026-08-09 - 小欧 - 修复COM05 E2E暴露bug: 当前pywin32 build的win32gui缺失IsZoomed属性, maximize验证改GetWindowPlacement检测SW_SHOWMAXIMIZED(IsIconic仍存在,minimize/restore不受影响)
+# 2026-10-12 小欧 - tool_zh改短名词: 窗口状态→设窗口状态
 
 import time as _time_mod
 from typing import Any, Dict
 
 from app.logger import logger
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
-from app.tools.validate.file_path_checker import validate_str_param
+
+from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: IsZoomed 缺失的公用替代
 from app.tools.desktop.window_info import (
     check_win32_platform, find_windows_by_title, _win32gui, _win32con,
 )
@@ -51,8 +56,7 @@ def _window_state_reached(hwnd: int, action: str) -> bool:
     SetWindowPos 类操作(topmost/unpin)返回 bool 可靠, 由调用方直接检查返回值。
     """
     if action == "maximize":
-        # 2026-08-09 小欧: 当前pywin32 build的win32gui缺失IsZoomed属性(实测hasattr=False), 改用GetWindowPlacement检测SW_SHOWMAXIMIZED
-        return bool(_win32gui.GetWindowPlacement(hwnd)[1] == _win32con.SW_SHOWMAXIMIZED)
+        return _ops.is_zoomed(hwnd)   # 2026-10-19 小欧: 判定收归 window_ops 单一真源
     if action == "minimize":
         return bool(_win32gui.IsIconic(hwnd))
     if action == "restore":
@@ -69,20 +73,20 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
         _act_params["window_title"] = window_title
     if exec_code == "error":
         return {
-            "summary": f"窗口操作{action}失败:窗口标题为 {window_title}",
-            "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": _act_params},
-            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
+            "summary": f"设窗口状态{action}，失败：窗口标题为{window_title}",
+            "action": {"tool": "set_window_state", "tool_zh": "设窗口状态", "params": _act_params},
+            "status": {"exec_code": "error", "message": f"{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
-    summary = f"窗口操作{action}完成: 窗口标题为{window_title}"
+    summary = f"设窗口状态{action}，成功：窗口标题为{window_title}"  # 2026-10-14 小欧 - summary 统一口径: 完成改成功, 动词用 tool_zh — 小欧-2026-10-14
     metrics = {}
     if matched_count > 1:
-        summary += f": 匹配{matched_count}个窗口"
+        summary += f"，匹配{matched_count}个窗口"
         metrics["matched"] = {"value": matched_count, "text": f"{matched_count}个"}
     return {
         "summary": summary,
-        "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": _act_params},
-        "status": {"exec_code": "success", "message": f"窗口操作{action}成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "set_window_state", "tool_zh": "设窗口状态", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"{action}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
 
@@ -132,7 +136,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
             ok = _window_state_reached(hwnd, action)
         if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_SET_STATE, hint=f"窗口操作{action}未生效,可能窗口已关闭或状态未变化,请重试")
+            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_SET_STATE, hint=f"窗口操作{action}未生效，可能窗口已关闭或状态未变化，可先调用 window_info 确认窗口状态")  # 2026-10-14 小欧 - hint 修无效重试: 同样操作再试大概率同样无果; window_info 真名已核实 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

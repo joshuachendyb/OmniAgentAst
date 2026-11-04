@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - 修复#5 删除 threading.RLock()+@_synchronized(asyncio单线程下是死重, KISS/YAGNI); 修复#2+#8 终态不可变(首终态为准, terminal→terminal 忽略不翻转, 杜绝ValueError崩溃与终态误标)
+# 2026-11-03 - 小欧 - 忽略终态翻转日志 WARNING→INFO(竞态守卫已安全忽略, 非故障) — 小欧-2026-11-03
+# 2026-11-04 - 小欧 - 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
 """
 status_table — Agent状态集中管理
 
@@ -11,8 +13,7 @@ chendyg 2026-07-01
 """
 
 from enum import Enum
-from typing import Optional
-from app.logger import logger
+from app.logger import logger  # 2026-11-04 小欧: 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
 from app.logger.prompt_logger import get_prompt_logger
 
 
@@ -106,7 +107,7 @@ def set_status(agent, new_status: AgentStatus, reason: str = ""):
     # ① 杜绝"已完成/失败任务被取消→误标cancelled"等终态翻转(#2);
     # ② 避免非法转换 ValueError 在主路径崩溃(#8), 改为安全忽略。— 北京老陈 2026-07-18
     if old_status in _TERMINAL_STATUSES and new_status in _TERMINAL_STATUSES:
-        logger.warning(f"[Agent] 忽略终态翻转: {old_status} → {new_status} (终态不可变, 保持 {old_status})")
+        logger.info(f"[Agent] 忽略终态翻转: {old_status} → {new_status} (终态不可变, 保持 {old_status})")  # 2026-11-03 小欧: 竞态守卫已安全忽略, 降 INFO
         return
     if not _validate_transition(old_status, new_status):
         raise ValueError(f"非法转换: {old_status} → {new_status}")

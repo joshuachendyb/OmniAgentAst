@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪 refactor:
 #   safe_data 排除 original_size 和
@@ -15,10 +16,10 @@
 #                    简化_compress_sync中冗余的isinstance分支,两个raise合并为一个
 # 2026-07-29 - 小欧 - 超时反馈增强:删前从result抢救已压缩文件数/大小,计算进度%,
 #                     hint给出3条降级建议(增大timeout/排除大文件/分批压缩),metrics带进度数据
-# 2026-08-05 - 小欧 - BUG-1修复: observation_formatter #18 触发字段由"compression_ratio"改为"compression_level"
+# 2026-08-05 - 小欧 - 修复: observation_formatter 触发字段由"compression_ratio"改为"compression_level"
 #    【病根】safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 致 #18 分支永不触发, 压缩观测格式化成死代码
 #    【解决】仅改触发字段为 data 恒在且 compress 独有的 compression_level, 保持去噪不复原大文件列表/ratio, 分支恢复工作
-# 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): BUG-2 后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
+# 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): 修正后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
 #    compress 保险丝恒=630 或 max(LLM值,600)+30, 恒晚于内部 _cf_deadline; 旧行按规范保留为历史记录
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
@@ -26,19 +27,21 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
+# 2026-08-13 - 小欧 - 修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
 #   ZipFile/AESZipFile/tarfile.open 目标长路径; zf.write/tf.add 源文件长路径; _get_total_size_sync 各 stat 长路径;
 #   主函数 os.path.exists(dest)/dst.parent.mkdir/dst.stat/dst.exists/dst.unlink 长路径;
 #   深嵌套源目录不再 WinError 206; arcname 归档名保持相对不变
-# 2026-08-13 - 小欧 - 三堂会审修复#17: 通配分支仅glob判空, 不走validate_path系统目录校验, C:\Windows\*.txt可在工具层绕过拦截
+# 2026-08-13 - 小欧 - 修复#17: 通配分支仅glob判空, 不走validate_path系统目录校验, C:\Windows\*.txt可在工具层绕过拦截
 #   【病根】L305-309通配分支只查匹配非空, 未做validate_not_system_path(非通配分支L313有完整校验), 工具层/Safety层双重拒约定在通配源处纵深减弱
 #   【改法】通配命中后逐条validate_path(OpCategory.EXISTS, m), 任一命中系统目录即返回拦截错误, hint"通配命中路径被系统目录拦截"; 与非通配分支口径一致
-# 2026-08-13 - 小欧 - 三堂会审修复#18: 通配跨多顶层目录时arcname计算抛ValueError
+# 2026-08-13 - 小欧 - 修复#18: 通配跨多顶层目录时arcname计算抛ValueError
 #   【病根】原base_dir=Path(matched_paths[0]).parent(仅取首匹配父目录), 第二个及以上匹配目录的项 relative_to(base_dir) 不在其下抛ValueError, 多目录通配静默失败
 #   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的既有结论)。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
 """
 F8: compress_files — 压缩文件
 
@@ -64,10 +67,10 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import OpCategory, check_path_four_level, to_win_long_path  # 2026-10-17 小欧: 路径四级合法性总入口 + 长路径化 — 小欧 2026-08-13
+from app.utils.path_utils import path_has_extra_drive, path_has_reserved_name  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.logger import logger
@@ -95,17 +98,17 @@ def _build_compress_files_llm_data(
     _code = err_code or ERR_FILE_COMPRESS_FAILED
     if exec_code == "error":
         return {
-            "summary": f"压缩{source}，失败",
-            "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
-            "status": {"exec_code": "error", "message": "压缩失败", "code": _code, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
+            "summary": f"压缩文件{source}，失败",
+            "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": _code, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
-        "summary": f"压缩{source}，成功: {file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",
-        "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
-        "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"压缩文件{source}，成功：{file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh, 成功后置 — 小欧-2026-10-14
+        "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功：{file_count}个文件，压缩率{ratio:.1%}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "file_count": {"value": file_count, "text": f"{file_count}个文件"},
@@ -271,6 +274,17 @@ async def compress(
 ) -> Dict[str, Any]:
     """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest — 小欧 2026-07-29 新增timeout参数"""
     t0 = time.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
+        return build_error(data={}, llm_data=llm_data)
+    ok, err = check_path_four_level(dest, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查压缩输出路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
+        return build_error(data={}, llm_data=llm_data)
     # timeout校验 — 小欧 2026-07-29
     to_valid, to_err, _ = validate_timeout(timeout, "compress")
     if not to_valid:
@@ -281,28 +295,21 @@ async def compress(
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 
-    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.WRITE, dest)
-    if not is_valid:
-        duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
-        return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 目标合法性由路径安全层唯一检查, 工具只执行
     if not overwrite and os.path.exists(to_win_long_path(Path(dest))):  # #5长路径 — 小欧 2026-08-13
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在: {dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在：{dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail="没有活跃的任务,请先开始一个任务", hint="请先开始一个任务", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail="没有活跃的任务", hint="请先开始一个任务", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     if format not in ("zip", "tar", "tar.gz", "tar.bz2"):
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"不支持的压缩格式：{format}", hint="支持zip/tar/tar.gz/tar.bz2", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     src = Path(path)
@@ -313,27 +320,21 @@ async def compress(
             _matched = glob.glob(path)
             if not _matched:
                 duration_ms = int((time.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配: {path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配：{path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
-            # 通配命中后逐条校验系统目录(validate_path含validate_not_system_path硬拦), 与非通配分支口径一致 — 小欧 2026-08-13 #17
+            # 2026-10-16 小欧 - tool去检查化·派生归tool: 通配展开是运行时派生, safety 不可见,
+            #   由执行方在派生点做格式检查(utils 纯函数); 权限继承 pattern 参数的既有结论
             for _m in _matched:
-                is_valid, err, _ = validate_path(OpCategory.EXISTS, _m)
-                if not is_valid:
+                _mr = path_has_extra_drive(_m) or path_has_reserved_name(_m)
+                if _mr:
                     duration_ms = int((time.perf_counter() - t0) * 1000)
-                    llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径被拦截: {_m}: {err}", hint="通配命中路径被系统目录拦截", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+                    llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径非法：{_m}：{_mr}", hint="通配命中路径格式非法", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                     return build_error(data={}, llm_data=llm_data)
-        else:
-            # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
-            # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-            is_valid, err, _ = validate_path(OpCategory.EXISTS, path)
-            if not is_valid:
-                duration_ms = int((time.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径是否存在", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
-                return build_error(data={}, llm_data=llm_data)
+            # 2026-10-16 小欧 - tool去检查化: 非通配源合法性由路径安全层唯一检查, 工具只执行
 
         os.makedirs(to_win_long_path(dst.parent), exist_ok=True)  # #5长路径 — 小欧 2026-08-13
 
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.COMPRESS,
             source_path=src, destination_path=dst,
@@ -406,7 +407,7 @@ async def compress(
                     user_destination=dest, user_format=format, user_overwrite=overwrite,
                     user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
                 )
-                llm_data["summary"] = f"压缩{path}，失败: 压缩超时({timeout}秒)，不完整文件已删除"
+                llm_data["summary"] = f"压缩文件{path}，失败：压缩超时({timeout}秒)，不完整文件已删除"
                 llm_data["status"]["hint"] = _hint
                 llm_data["metrics"] = {
                     "file_count": {"value": _done_files, "text": f"{_done_files}个文件"},
@@ -434,7 +435,7 @@ async def compress(
             # file:    observation_formatter.py:193-194
             # ------------------------------------------------------------------------------
             return build_success(data=safe_data, llm_data=llm_data)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"压缩失败,源路径: {path}", hint="请检查源路径和目标路径是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"源路径：{path}", hint="请检查源路径和目标路径是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 
     except Exception as e:

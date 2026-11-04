@@ -1,11 +1,11 @@
 @echo off
 title OmniAgent Backend (E2E)
 echo ========================================
-echo  姝ｅ湪鍚姩鍚庣鏈嶅姟 (E2E娴嬭瘯涓撶敤)
-echo  璇峰嬁鍏抽棴姝ょ獥鍙ｏ紝娴嬭瘯瀹屾垚鍚庢寜 Ctrl+C 鍋滄
+echo  正在启动后端服务 (E2E测试专用)
+echo  请勿关闭此窗口，测试完成后按 Ctrl+C 停止
 echo ========================================
-cd /d G:\OmniAgentAs-desk\backend
+cd /d "%~dp0"
 set LOG_LEVEL=WARNING
-E:\Appsw\python31311\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir app
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0start_dev.ps1"
 echo.
 pause

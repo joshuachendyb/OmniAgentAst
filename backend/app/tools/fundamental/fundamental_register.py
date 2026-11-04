@@ -1,20 +1,28 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 归组调整: sysinfo 整体迁出本模块(实现/schema/依赖/描述/示例/注册项均已移至 system_register), 回归 SYSTEM — 小欧-2026-10-02
+# 2026-10-02 - 小欧 - 注册名归位: read 别名工具删除(与 FILE 侧 read 改名后的 read 重复), 6处注册项+2处 import 同步清理
+# 2026-10-02 - 小欧 - 注册名归位: shell 改名 bash 并删 bash 别名(8处注册项+docstring+__all__), needs_confirmation 收敛为 == "bash"; 实现函数名 shell 不动
+# 2026-10-18 - 小欧 - bash 挂 confirm_fn/op_param: 确认文案改由工具产(命令语义只有 shell 知道),
+#   原先 shell_command_confirm / shell_read_confirm 两类弹窗正文为空, 用户不知在确认什么。
 """
 FUNDAMENTAL Register — 基础工具注册点
 
 【2026-06-18 小欧】从 meta/ 迁入, 匹配 ToolCategory.FUNDAMENTAL
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
-【2026-07-28 北京老陈】timeadd/timediff/calendar 迁至 TIMER 分类; shell 从 SHELL 迁入
+【2026-07-28 】timeadd/timediff/calendar 迁至 TIMER 分类; shell 从 SHELL 迁入
 【2026-07-30 小沈】searchtool examp加"时间 定时"用例,补全7类备用工具
 【2026-08-05 小欧】searchtool描述说明多分类关键词一次搜索即注入多个分类整类工具; 无命中提示换词重搜不注入
 【2026-08-07 小欧】searchtool examples精简为4条(2多类型+2单类型), 引导"一次搜索多个类型"并保留单类型用法
+【2026-09-24 】方案1: 注册bash别名工具(impl=shell), 根治opencodeZen GATE_STUBS假tool问题
+【2026-10-02 小欧】read 别名工具删除: FILE 侧 readtext 已改名 read, 二者同功能重复注册; 归一后默认注入 19→18
+【2026-10-02 小欧】shell 改名 bash 并删除 bash 别名: 二者同功能重复注册, 保留短名 bash; 默认注入 18→17
 
 5个工具:
 - searchtool — BM25全文检索搜索工具
 - timenow — 获取当前时间
-- sysinfo — 获取系统信息 (从SYSTEM迁入)
 - notify — 发送系统通知 (从DESKTOP迁入)
-- shell — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入)
+- bash — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入, 2026-10-02 由 shell 改名)
 """
 
 from app.tools.registry import tool_registry
@@ -25,8 +33,7 @@ from app.logger import logger
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "searchtool": [],  # 使用内置库
     "timenow": [],  # 使用内置库
-    "shell": [],  # 使用内置库
-    "sysinfo": ["psutil"],  # 从SYSTEM迁入
+    "bash": [],  # 使用内置库
     "notify": ["win10toast"],
 }
 
@@ -35,23 +42,21 @@ from app.tools.fundamental.fundamental_schema import (
     TimeNowInput,
     ShellInput,
     SendNotificationInput,
-    GetSystemInfoInput,
 )
 from app.tools.fundamental.tool_search import searchtool
 from app.tools.fundamental.time_now import timenow
 from app.tools.fundamental.execute_shell_command import shell
-from app.tools.fundamental.get_system_info import sysinfo
 from app.tools.fundamental.send_notification import notify
+# 方案1: bash别名工具复用本模块 ShellInput/shell 2026-09-24
 
 
-# 【描述规范】2026-07-20 北京老陈 — 工具描述(本 FUNDAMENTAL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
+# 【描述规范】2026-07-20 工具描述(本 FUNDAMENTAL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "searchtool": """搜索备用工具。按工具名称和类型关键词检索,支持一次搜索多个类型(如'网络 文档 时间'),命中几个分类就自动注入几个分类的整类工具;结果最多返回10个工具;无命中时提示更换关键词重搜,不注入分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
-    "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
-    "sysinfo": """获取系统信息,包括操作系统、CPU、内存、磁盘和网络。适用场景:需要诊断系统问题(CPU高、内存不足、磁盘满)、了解硬件规格时使用。""",
+    "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
 }
 
@@ -65,20 +70,11 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
     "timenow": [
         {},
     ],
-    "shell": [
+    "bash": [
         {"command": "dir", "timeout": 10},
         {"command": "python --version", "shell_type": "ps7", "timeout": 10},
         {"command": "ls -la", "shell_type": "bash", "timeout": 10},
         {"command": "Get-ChildItem", "shell_type": "ps5", "timeout": 10},
-    ],
-    "sysinfo": [
-        {},
-        {"info_type": "all"},
-        {"info_type": "basic"},
-        {"info_type": "cpu"},
-        {"info_type": "memory"},
-        {"info_type": "disk"},
-        {"info_type": "network"},
     ],
     "notify": [
         {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻"},
@@ -89,25 +85,35 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
 }
 
 
+def _shell_confirm_text(params: dict) -> tuple:
+    """bash 弹窗文案 — 小欧 2026-10-18
+
+    返回 (None, 文案)。None = 判定沿用 needs_confirmation(本工具恒 True),
+    本函数只负责说明这条命令会做什么 —— 命令语义只有 shell 工具知道。
+    """
+    cmd = (params.get("command") or "").strip()
+    return None, ("待执行 Shell 命令。\n"
+                  f"命令: {cmd[:200]}\n"
+                  f"说明: 该命令含需人工确认的操作(执行后可能影响系统状态或目标文件)。")
+
+
 def _register_fundamental_tools():
     """注册5个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
     CONFIRMATION_MAP = {
-        "shell": {"write": True},
+        "bash": {"write": True},
     }
-    
+
     tool_methods = {
         "searchtool": searchtool,
         "timenow": timenow,
-        "shell": shell,
-        "sysinfo": sysinfo,
+        "bash": shell,
         "notify": notify,
     }
 
     TOOL_INPUT_MODELS = {
         "searchtool": ToolSearchInput,
         "timenow": TimeNowInput,
-        "shell": ShellInput,
-        "sysinfo": GetSystemInfoInput,
+        "bash": ShellInput,
         "notify": SendNotificationInput,
     }
 
@@ -124,7 +130,12 @@ def _register_fundamental_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "shell"),
+            # 2026-10-20 小欧: bash 确认完全交危险/中风险/路径三线按命令内容裁定(HIGH拦/MEDIUM弹/
+            #   路径三线弹, 各层自带文案), 工具级不再恒 True —— 恒 True 曾使全链放行的白名单命令
+            #   (建目录/查系统信息等)也无条件弹窗, 无值守场景每窗 120s 超时致任务挂死。confirm_fn
+            #   保留作弹窗文案供给者(有层弹窗时取谁弹谁), 判定权不在此处。
+            confirm_fn=_shell_confirm_text if name == "bash" else None,
+            op_param="command" if name == "bash" else None,
             action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )
@@ -136,6 +147,5 @@ __all__ = [
     "searchtool",
     "timenow",
     "shell",
-    "sysinfo",
     "notify",
 ]

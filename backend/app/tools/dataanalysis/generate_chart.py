@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-24 - 小欧 - 2处 data[:200] → GENERATE_CHART_OUTPARM_LIMIT_DATA(魔数→命名常量)
 # 2026-07-26 - 小欧 - OOD重构:文件路径读取改用load_data_to_df统一数据加载(analyze_data/filter_data共享),删内联pd.read_csv/read_excel(DRY+安全校验)
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
-# 2026-07-26 - 小沈 - BugFix #6: file_path_checker两行import合并为一行
+# 2026-07-26 - 小沈 - 修复: file_path_checker两行import合并为一行
 # 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(图表文件)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(输出目标用 WRITE)
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -25,17 +28,12 @@ from typing import Dict, Any, Optional, Union, Literal
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.utils.path_utils import validate_path_for_write, get_output_dir  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层; 2026-10-26 小沈 - 输出目录改用公用 get_output_dir
 from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
 from app.tools.dataanalysis.data_loader import load_data_to_df
-
-
-def _get_output_dir() -> str:
-    """获取项目输出目录 — 优先从配置读取project_root，子目录output — 小欧 2026-07-09"""
-    from app.config import get_config
-    return os.path.join(get_config().get_project_root(), "output")
 
 
 def _validate_chart_data(chart_data: dict) -> dict:
@@ -66,8 +64,8 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     _target = dest or chart_type
     if exec_code == "error":
         return {
-            "summary": f"生成图表{_target}，失败: {detail}",
-            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
+            "summary": f"生成图表{_target}，失败：{detail}",
+            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
             "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": hint if hint else "请检查数据和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -76,9 +74,9 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     if file_size:
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
-        "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
-        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
-        "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"生成图表{_target}，成功：{chart_type}，已保存为{dest}",  # 2026-10-14 小欧 - summary 统一口径: 半角冒号改全角 — 小欧-2026-10-14
+        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{chart_type}已保存", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": metrics,
     }
@@ -116,14 +114,16 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
                    y_label: Optional[str] = None, dest: Optional[str] = None) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(输出目标用 WRITE)
     if dest:
-        # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
-        if not is_valid:
+        ok, err = check_path_four_level(dest, OpCategory.WRITE)
+        if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, dest=dest, detail=err, hint="请检查输出路径", data=data)
             return build_error(data={}, llm_data=llm_data)
+    if dest:
+        # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查, 此处仅业务警告(大文件覆盖)
+        _, _, warn = validate_path_for_write(dest)
         if warn:
             logger.warning(f"[generate_chart] {warn}")
 
@@ -209,7 +209,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         if dest is None:
             timestamp = timestamp_for_filename()
-            dest = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
+            dest = os.path.join(get_output_dir(), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()

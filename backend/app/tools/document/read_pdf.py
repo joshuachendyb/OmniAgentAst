@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页治理 feat:
 #   1. 新增 _parse_pdf_pages() 解析器
@@ -9,18 +10,21 @@
 #   5. fitz 文本改为按页拆分(\n\n)
 #   6. 更新 formatter 路由注释
 #   7. 超出页数时拼接截断提示语
-# 2026-07-21 - 小欧 - 修复BUG-001:
+# 2026-07-21 - 小欧 - 修复:
 #   1. _process_page 表格从 list 改为
 #     dict 含 page+rows 双字段
 #   2. 恢复 paginate 按页过滤正确性
 #     (修复因缺page字段致AttributeError)
 # 2026-07-21 - 小欧 - 默认值+字节安全双治理: READ_PDF_OUTLIMIT_DEFAULT_PAGES=200 作为未传参时的默认读取页数, READ_PDF_INPUT_MAX_BYTES=50MB 作为硬安全字节上限
-# 2026-07-23 - 小欧 - 三堂会审5bug修复(配套删input门): 删READ_PDF_INPUT_MAX_BYTES import+input门块
+# 2026-07-23 - 小欧 - 5bug修复(配套删input门): 删READ_PDF_INPUT_MAX_BYTES import+input门块
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
-# 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖
+# 2026-07-26 - 小沈 - 修复: path参数不覆盖
 # 2026-07-31 - 小欧 - Bug⑦修复: _is_garbled_text 仅统计 \ufffd 替换字符, 不再统计普通'?'(正文合法问号占比高时误触发fitz后备); Bug⑮修复: _extract_with_fitz 返回按页对齐文本列表, 防页内含空行 split("\n\n") 页码错位 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取PDF→读PDF
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 D1: read_pdf — 读取PDF文档
 
@@ -39,6 +43,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_READ_PDF, READ_PDF_OUTLIMIT_DEFAULT_PAGES
 from app.utils.text_utils import truncate_summary
 
@@ -132,9 +137,9 @@ def _build_read_pdf_llm_data(
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取PDF{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "summary": f"读PDF{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
+            "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -144,11 +149,11 @@ def _build_read_pdf_llm_data(
         parts.append(f"{table_count}项表格")
     if image_count:
         parts.append(f"{image_count}张图片")
-    summary_str = f"读取PDF{file_path}，成功: " + "，".join(parts)
+    summary_str = f"读PDF{file_path}，成功：" + "，".join(parts)  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读PDF) — 小欧-2026-10-14
     return {
         "summary": summary_str,
-        "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
-        "status": {"exec_code": "success", "message": "读取PDF成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
+        "status": {"exec_code": "success", "message": "成功：" + "，".join(parts), "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "page_count": {"value": page_count, "text": f"{page_count}页"},
@@ -191,6 +196,12 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
     2026-07-21 默认值+字节安全双治理(小欧): READ_PDF_OUTLIMIT_DEFAULT_PAGES=200 作为未传参时的默认读取页数, READ_PDF_INPUT_MAX_BYTES=50MB 作为硬安全字节上限"""
     t0 = _time_mod.perf_counter()
     file_path = path
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查 — 小欧 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_document_tool(path)
@@ -201,7 +212,7 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
         elif suggested_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "文件类型不匹配,请使用正确的文档格式"
+            _hint = "请检查文件路径是否存在及是否为PDF格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"(谈类型是错的) — 小欧-2026-10-14
         llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 
@@ -291,7 +302,7 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
         if fitz_used:
             hint = "pdfplumber提取中文乱码,已使用PyMuPDF后备提取"
         elif _is_garbled_text(full_text):
-            hint = "该PDF文档的中文文本在创建时已丢失编码信息,无法通过文本提取恢复,建议使用OCR工具"
+            hint = "该PDF文档的中文文本在创建时已丢失编码信息，文本提取无法恢复"  # 2026-10-14 小欧 - 修谎报: OCR 工具不存在, 点名即误导; 无动作可给, 只陈述事实 — 小欧-2026-10-14
         if truncated_hint:
             hint = (hint + "; " if hint else "") + truncated_hint
         llm_data = _build_read_pdf_llm_data(

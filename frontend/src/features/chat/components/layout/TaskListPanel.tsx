@@ -1,21 +1,44 @@
+// 编辑历史: 2026-10-06 小欧 - MarkdownSlot 上移中立层后改指 @/components/markdown/MarkdownSlot(原 ../pipeline/MarkdownSlot), 内容未改。 — 小欧-2026-10-06
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 // 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
-// 编辑历史: 2026-08-27 小欧 - 三堂会审P0-5: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
-// 编辑历史: 2026-08-28 小欧 - ③A/a1: 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
-// 编辑历史: 2026-08-28 小欧 - ③B/b1: 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
+// 编辑历史: 2026-08-27 小欧 - 复核修复: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
+// 编辑历史: 2026-08-28 小欧 - 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
+// 编辑历史: 2026-08-28 小欧 - 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被滚动容器隐藏修复(北京老陈反馈)。监听latestTaskId变化→scrollIntoView(block:'nearest')将最新任务带进可视区; 仅新任务诞生时触发, 可视区内不动, 不打断用户上翻历史 - 小欧-2026-09-01
-// 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(三堂会审: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - task005会审P8修复(北京老陈定案): scrollIntoView 包 requestAnimationFrame——确保 React 提交 DOM(ref挂载)后视口就绪再滚动, 消除 latestTaskId 变化与 render 同批处理时 ref 未更新仍试图滚动的竞态; 不改触发条件/block, 行为不进反退 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TL-01 rAF保存ID+卸载cancel防泄漏 — 小欧-2026-09-02
+// 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(复核: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
+// 编辑历史: 2026-09-02 小欧 - task005修复(北京老陈定案): scrollIntoView 包 requestAnimationFrame——确保 React 提交 DOM(ref挂载)后视口就绪再滚动, 消除 latestTaskId 变化与 render 同批处理时 ref 未更新仍试图滚动的竞态; 不改触发条件/block, 行为不进反退 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - rAF保存ID+卸载cancel防泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): ①选中态背景#e6f4ff+左侧3px蓝线+微圆角; ②回复区域背景#fafafa+左边框2px; ③元信息行(时间/模型/状态)置顶; ④间距优化: 内边距8→10px, 项间距4→2px; ⑤放弃序号标签(视觉噪音)和Tooltip方案(遮挡凌乱) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 新增复制按钮(北京老陈定案): 用户输入和回复区域右上角分别添加复制按钮, hover时显示, 点击复制对应文本, message.success提示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 修复formatTime导入缺失(formatTime is not defined) + message.success/error改用showSuccess/handleError(lint规范) + t.response非空断言(TS2345) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 模型标签条件显示provider前缀: rightOpen=true(右侧展开)只显示model, rightOpen=false(右侧折叠)显示provider/model - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 步数标签改轮次标签: total_steps→llm_call_count, "步"→"轮", 与TaskInfoBar一致; 模型/轮次标签颜色TERTIARY(#999)→PRIMARY(#595959)提亮 - 小欧-2026-09-09
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged_inputs折叠块(默认收起,展开看全文) — 小欧-2026-09-28
+// 编辑历史: 2026-09-30 小欧 - 修复: 状态标签按后端 status 字段正确映射
+//   (completed→已完成/executing→执行中/paused→已暂停/failed→失败/cancelled→已取消)，
+//   原实现`t.status==='failed'?'失败':'成功'`把 executing/paused/cancelled 全标成"成功" — 小欧-2026-09-30
+// 编辑历史: 2026-10-03 小欧 - 新增上下文链接链号徽标 —— 按
+//   context_root_task_id 归链(升序首遇链根递增), 仅链长>1 才编号与渲染(判据合一, 消断号), 配色改
+//   Colors.INFO 达 WCAG AA; 并纠正下方头注释"类型徽标(context_link_mode)"之过时描述(本文件该字段零使用) — 小欧-2026-10-03
+// 编辑历史: 2026-10-03 小欧 - 视觉修正: 链号徽标背景 #e6f4ff 与激活行背景(#e6f4ff)撞色, 激活行上徽标底色融入行背景丢分层
+//   → 徽标背景改 #f5f5f5 与同行轮次标签一致, 字色保留 Colors.INFO(#096dd9 on #f5f5f5 ≈ 4.9:1, 达 WCAG AA) — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - 左列 task 卡 response 接 Markdown: 传 renderExpanded 使展开态排版、折叠态维持原首2行纯文本;
+//   恒 markdown=true 不受设置开关控制(仅受折叠开关控制) — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 追加注入消息逐条独立成块(原先 marginTop:4 共用一条竖线, 多条连成一串无间隔)
+// 编辑历史: 2026-10-21 小杨 - 新增推荐行与引用台账行（可选，缺省不渲染）：
+//   推荐=本轮被工具动过 ≥2 次且可预览的文件；台账=本任务引用过的文件（现场重读恢复，不存旧快照）；
+//   键口径改与后端一致（绝对→相对 root、反斜杠→正斜杠），否则推荐恒空 — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 推荐只收文本预览；台账按 taskId 精确取，删最新批次兜底 — 小杨-2026-10-21
+// 编辑历史: 2026-10-23 小欧 - 推荐行 Tag 改显 r.path 全路径：与足迹面板口径一致（同源三处：树●/足迹/推荐），
+//   推荐行无目录上下文，同名不同目录文件靠文件名无法区分 — 小欧-2026-10-23
+// 编辑历史: 2026-10-28 小欧 - 插话并入滚动定位+自动展开(方案A, 北京老陈反馈): 监听 task_merged 事件, 插话并入现有任务时
+//   滚动到该任务并自动展开其追加块(上方滚动守卫只认 latestTaskId 变化, 并入不产生新任务→条纹丝不动), 见 L231 区块 — 小欧-2026-10-28
+// 编辑历史: 2026-10-30 小欧 - 引用提示统一走 quoteWithToast(成功/超限/读取失败三分支唯一实现); 成功不弹
+//   (随后直接导航, 原页 toast 无意义), 失败由它统一点名(含"超上限", 原实现漏该分支误报"读取失败") — 小欧-2026-10-30
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
- * 【小欧 2026-08-26 8.2】时间+类型徽标(context_link_mode)+状态+耗时；
+ * 【小欧 2026-08-26 8.2】时间+状态徽标+耗时(原注释称"类型徽标(context_link_mode)"，该字段本文件零使用、实际从未渲染);
  * 当前任务高亮、点击联动右侧查看区（7.5）；不展示 token（4.5.1 三分归位）。
  *
  * 【小欧 2026-09-01 方案C】新任务在数组末尾+左列滚动容器→被隐藏。依赖外部 latestTaskRef
@@ -29,24 +52,58 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Empty, Skeleton, Typography } from 'antd';
-import { CopyOutlined } from '@ant-design/icons';
+import { Empty, Skeleton, Tag, Typography } from 'antd';
+import {
+  CopyOutlined,
+  CaretDownOutlined,
+  FileOutlined,
+  PaperClipOutlined,
+} from '@ant-design/icons';
+import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
+// 2026-10-22 小欧 - 路径判据收敛到 utils/projectPath（唯一真源）
+import { toRelativePath } from '@/utils/projectPath';
+
 import type { SessionTaskItem } from '../../../../services/api/task.api';
+import type { ExecutionStep } from '@/types/execution';
 import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
 import { showSuccess, handleError } from '@/services/error/handler';
+// 2026-10-21 小杨 - 推荐行 + 引用台账行
+import { chatStreamStore } from '../../streams/chatStreamStore';
+// 2026-10-22 小欧 - 引用入口统一（选区走 quoteSelection，与文件页口径一致）
+import { quoteWithToast } from '@/features/refs/quoteToast';
+import { labelOf } from '@/features/refs/identity';
+import { useRecentFiles } from '@/hooks/useRecentFiles';
+import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
+// 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): 展开态渲染器, 恒开不受设置开关控制
+//   (用户明示"task 下的 mark 显示不受设置的开关的控制") —— 直接传 markdown={true} 绕过 MD_IMPL 之外的开关
+import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
+
+// 2026-09-30 小欧 - 左列任务状态标签——按后端 status 枚举正确显示。
+//   DB 合法值: completing→completed/executing/paused/failed/cancelled（db_initializer 默认 'executing'）
+const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
+  completed: { name: '已完成', color: Colors.TEXT.TERTIARY },
+  executing: { name: '执行中', color: Colors.PRIMARY },
+  paused: { name: '已暂停', color: Colors.WARNING },
+  failed: { name: '失败', color: '#ff4d4f' },
+  cancelled: { name: '已取消', color: Colors.TEXT.TERTIARY },
+};
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
   activeTaskId: string | null;
   onSelect: (taskId: string) => void;
   loading?: boolean;
-  // 2026-09-01 小欧 方案C: 最新任务锚点(后端latest_task_id) + 挂到最新任务项的ref(滚动定位用)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
-  // 2026-09-09 小欧: 右侧展开状态, 折叠时模型标签显示provider前缀
   rightOpen?: boolean;
+  // 2026-10-21 小杨 - 新增两项（可选，缺省即不渲染这两行）
+  /** 会话 id（取 recent-files 与引用台账） */
+  sessionId?: string | null;
+  /** 本轮 steps（计算「被工具动过 ≥2 次」） */
+  steps?: ExecutionStep[];
 }
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
@@ -57,7 +114,73 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   latestTaskId = null,
   latestTaskRef,
   rightOpen = true,
+  // 2026-10-21 小杨 - 推荐行 + 引用台账行
+  sessionId = null,
+  steps = [],
 }) => {
+  // 2026-10-21 小杨 - 跳转输入框
+  //   ⚠ 用 useOptionalNavigate：TaskListPanel 的既有单测**直接渲染本组件（无 Router 上下文）**，
+  //   直接用 useNavigate 会抛 "useNavigate() may be used only in the context of a <Router>" → 整块崩。
+  const navigate = useOptionalNavigate();
+  // 2026-10-21 小杨 - 数据源与规则
+  //   ① roundHits = 本轮 steps 里工具动过的 path 计数（tools[].params.path）
+  //   ② 推荐 = 被动过 ≥2 次 且 preview 可预览 的文件，取最近 3 条（与足迹面板同一数据源，走共享 hook）
+  const { files: recentFiles } = useRecentFiles(sessionId);
+  // 2026-10-21 小杨 - 修复（高危）：**键口径必须与后端一致**
+  //   roundHits 原用 tool.params.path 原样值（Windows 上多为 "F:\proj\a.py" 或 "backend\a.py"），
+  //   而 recentFiles[].path 是后端归一后的**相对 posix 路径** → 键对不上 → roundHits 恒 miss
+  //   → recommend 恒为空 → **推荐行永远不渲染**（功能未交付）。
+  //   现用与后端同口径的归一（绝对→相对 root、反斜杠→正斜杠）后再计数。
+  const projectRoot = useProjectRoot();
+  const roundHits = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of steps) {
+      if (s.type !== 'action') continue;
+      for (const tool of s.tools ?? []) {
+        const raw = tool.params?.path;
+        if (typeof raw !== 'string' || !raw) continue;
+        const p = toRelativePath(raw, projectRoot);
+        if (!p) continue;
+        m.set(p, (m.get(p) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [steps, projectRoot]);
+  const recommend = React.useMemo(
+    () =>
+      recentFiles
+        .filter(
+          (x) => (roundHits.get(x.path) ?? 0) >= 2 && x.preview === 'text'
+        )
+        .slice(0, 3),
+    [recentFiles, roundHits]
+  );
+  /** 引用台账：按任务精确取（store 侧 transient 列表，不入库；start 帧已绑定真实 taskId）— 小杨-2026-10-21 */
+  const ledgerForTask = React.useCallback(
+    (taskId: string) => {
+      if (!sessionId) return [];
+      return chatStreamStore.getSentRefLedger(sessionId, taskId);
+    },
+    [sessionId]
+  );
+  /** 台账恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
+  const quoteAfterReread = React.useCallback(
+    async (path: string, lineRange?: { start: number; end: number }) => {
+      // 2026-10-22 小欧 - 引用入口统一；恢复的是引用意图，不是旧快照 → 现场重读
+      // 2026-10-30 小欧: 提示统一走 quoteWithToast; 成功不弹(随后直接导航, 原页 toast 无意义),
+      //   失败由它统一点名(含"超上限", 原实现漏该分支误报"读取失败")
+      const r = await quoteWithToast(path, lineRange, {
+        label: labelOf(path),
+        successText: '',
+      });
+      if (r.ok) navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
+    },
+    [navigate, sessionId]
+  );
+  /** 推荐行只对"最新 1 条任务"显示（下一任务开始即移除上一条的推荐行） */
+  const isLatestTaskId = (taskId: string) =>
+    !latestTaskId || taskId === latestTaskId;
+
   // 2026-09-09 小欧 复制按钮: 点击复制文本到剪贴板, 显示成功提示
   const handleCopy = useCallback(
     async (text: string, type: '问题' | '回复') => {
@@ -75,6 +198,19 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   const internalRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = latestTaskRef ?? internalRef;
 
+  // 2026-09-28 小欧: 追加注入消息折叠块展开状态(每任务独立)
+  const [expandedTasks, setExpandedTasks] = React.useState<Set<string>>(
+    new Set()
+  );
+  const toggleExpanded = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
   // 2026-09-01 小欧 方案C: 新任务诞生(latestTaskId变化)且不在可视区时, 滚动带进视野; 可视区内不动不打扰
   const prevLatestIdRef = useRef<string | null>(null);
   const rafIdRef = useRef<number | null>(null);
@@ -82,7 +218,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     if (!latestTaskId) return;
     if (prevLatestIdRef.current === latestTaskId) return; // 非新任务, 不滚动
     prevLatestIdRef.current = latestTaskId;
-    // 2026-09-02 小欧 task005会审P8(北京老陈定案): rAF 确保React提交DOM(ref挂载)后滚动, 消 latestTaskId 与 render 同批处理时 ref 未更新竞态 — 小欧 2026-09-02
+    // 2026-09-02 小欧 task005修复(北京老陈定案): rAF 确保React提交DOM(ref挂载)后滚动, 消 latestTaskId 与 render 同批处理时 ref 未更新竞态 — 小欧 2026-09-02
     rafIdRef.current = requestAnimationFrame(() => {
       // scrollIntoView 沿祖先滚动链自动定位到最近滚动容器(SessionLayout左列overflowY:auto), 无需改布局骨架
       anchorRef.current?.scrollIntoView({ block: 'nearest' });
@@ -90,6 +226,33 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
+  }, [latestTaskId, anchorRef]);
+
+  // 2026-10-28 小欧 - 插话并入滚动定位+自动展开(方案A, 北京老陈反馈):
+  //   插话并入现有任务不产生新任务 → latestTaskId 不变 → 上方滚动守卫(非新任务不滚动)拦截 → 滚动条纹丝不动。
+  //   改监听 useChatCallbacks.onMerged 派发的 task_merged 事件(精确信号, 唯一在插话并入瞬间触发,
+  //   非历史加载/会话切换), 事件 detail.taskId = 被并入的目标任务; 触发后滚动到该任务并自动展开其追加块,
+  //   使用户即时看到插话内容(默认收起 → 展开并入的追加输入)。复用 rAF + scrollIntoView(nearest) 机制。
+  useEffect(() => {
+    const onTaskMerged = (e: Event) => {
+      const taskId = (e as CustomEvent<{ taskId: string | null }>).detail
+        ?.taskId;
+      const targetId = taskId ?? latestTaskId;
+      if (!targetId) return;
+      // 自动展开该任务追加块(插话内容即时可见)
+      setExpandedTasks((prev) => {
+        if (prev.has(targetId)) return prev;
+        const next = new Set(prev);
+        next.add(targetId);
+        return next;
+      });
+      // 滚动到最新任务锚点(anchorRef 挂在 isLatest 任务项); nearest 已在可视区则不动, 不打扰上翻
+      requestAnimationFrame(() => {
+        anchorRef.current?.scrollIntoView({ block: 'nearest' });
+      });
+    };
+    window.addEventListener('task_merged', onTaskMerged);
+    return () => window.removeEventListener('task_merged', onTaskMerged);
   }, [latestTaskId, anchorRef]);
   if (loading && tasks.length === 0) {
     return (
@@ -111,13 +274,30 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       />
     );
   }
+
+  // 上下文链接分组——按 t.context_root_task_id 归链(缺省=自身, 独立任务自成链),
+  //   升序(旧→新)首次遇到链根即分配组号。5.10.5: 只对链长>1 的根编号, 否则独立任务也占号,
+  //   用户会看到"链2"却无"链1"(空洞); 渲染判据同步改为"无组号不渲染", 与分配判据合一(单一判据)。
+  const chainSizeOf = new Map<string, number>();
+  for (const t of tasks) {
+    const root = t.context_root_task_id ?? t.task_id;
+    chainSizeOf.set(root, (chainSizeOf.get(root) ?? 0) + 1);
+  }
+  const groupNoOf = new Map<string, number>();
+  for (const t of tasks) {
+    const root = t.context_root_task_id ?? t.task_id;
+    if ((chainSizeOf.get(root) ?? 0) > 1 && !groupNoOf.has(root)) {
+      groupNoOf.set(root, groupNoOf.size + 1);
+    }
+  }
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
         gap: 2, // 2026-09-09 小欧 优化: 项间距4→2px，紧凑但不拥挤
-        padding: '4px 0',
+        padding: '2px 0', // 2026-10-27 小欧 v1.1: 4px→2px，更紧凑
       }}
     >
       {tasks.map((t) => {
@@ -140,7 +320,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               }
             }}
             style={{
-              padding: '10px 12px', // 2026-09-09 小欧 优化: 内边距8→10px/12px，呼吸感适中
+              padding: '8px 10px', // 2026-10-27 小欧 v1.1: 10px/12px→8px/10px，更紧凑
               cursor: 'pointer',
               backgroundColor: active ? '#e6f4ff' : 'transparent', // 2026-09-09 小欧 优化: 选中态浅蓝背景
               borderLeft: active
@@ -158,8 +338,8 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                marginBottom: 6, // 与问题区域间距
+                gap: 6, // 2026-10-27 小欧 v1.1: 8→6，更紧凑
+                marginBottom: 4, // 2026-10-27 小欧 v1.1: 6→4，更紧凑
                 flexWrap: 'wrap', // 窄屏时换行
               }}
             >
@@ -185,19 +365,47 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               )}
 
               {/* 状态标签 */}
-              <span
-                style={{
-                  fontSize: 11,
-                  color:
-                    t.status === 'failed' ? '#ff4d4f' : Colors.TEXT.TERTIARY,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                }}
-              >
-                <span style={{ fontSize: 6 }}>●</span>
-                {t.status === 'failed' ? '失败' : '成功'}
-              </span>
+              {/* 2026-09-30 小欧 - 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
+              {(() => {
+                const st = TASK_STATUS_LABEL[t.status];
+                return (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: st ? st.color : Colors.TEXT.TERTIARY,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                    }}
+                  >
+                    <span style={{ fontSize: 6 }}>●</span>
+                    {st ? st.name : t.status}
+                  </span>
+                );
+              })()}
+
+              {/* 上下文链接链号徽标(仅链长>1时显示, 独立任务不成链不贴标) */}
+              {(() => {
+                const root = t.context_root_task_id ?? t.task_id;
+                const groupNo = groupNoOf.get(root);
+                if (groupNo === undefined) return null; // 独立任务不成链, 不贴标
+                return (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      // 2026-10-03 小欧 视觉修正: 原背景 #e6f4ff 与激活行背景同色(#e6f4ff),
+                      // 激活行上徽标底色与行背景融为一体、丢了分层感 → 改与同行轮次标签一致 #f5f5f5,
+                      // 字色仍用 Colors.INFO(#096dd9) 强调"链"语义; 对比度 #096dd9 on #f5f5f5 ≈ 4.9:1 达 WCAG AA
+                      color: Colors.INFO,
+                      backgroundColor: '#f5f5f5',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                    }}
+                  >
+                    链{groupNo}
+                  </span>
+                );
+              })()}
 
               {/* 轮次标签（显示LLM调用轮次） */}
               {t.llm_call_count > 0 && (
@@ -242,6 +450,49 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               </div>
             )}
 
+            {/* 2026-09-28 小欧: 追加注入消息 — 语义属输入侧, 故置于问题区与回复区之间;
+                默认收起(不撑条目高度), 展开看全文。 */}
+            {t.merged_inputs && t.merged_inputs.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpanded(t.task_id);
+                  }}
+                  aria-expanded={expandedTasks.has(t.task_id)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 12,
+                    color: Colors.TEXT.TERTIARY,
+                  }}
+                >
+                  <CaretDownOutlined
+                    rotate={expandedTasks.has(t.task_id) ? 180 : 0}
+                  />{' '}
+                  ↳ 追加 {t.merged_inputs.length} 条
+                </button>
+                {expandedTasks.has(t.task_id) &&
+                  t.merged_inputs.map((m, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        // 2026-10-08 小欧 - 逐条独立成块, 多条不连成串
+                        marginTop: 6,
+                        padding: '4px 8px',
+                        backgroundColor: '#fafafa',
+                        borderLeft: '2px solid #d9d9d9',
+                        borderRadius: '0 3px 3px 0',
+                      }}
+                    >
+                      <CollapsibleText text={m} />
+                    </div>
+                  ))}
+              </div>
+            )}
+
             {/* 回复区域 */}
             {t.response && (
               <div
@@ -263,7 +514,15 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     wordBreak: 'break-word',
                   }}
                 >
-                  <CollapsibleText text={t.response} />
+                  {/* 2026-10-05 小欧 北京老陈指令: response 展开态按 Markdown 渲染, 折叠态维持原首2行纯文本。
+                      renderExpanded 只在"已展开"时被 CollapsibleText 调用(不传则原样显示全文),
+                      故折叠表现与改动前逐字一致; markdown 恒 true —— 本处不受「思考排版」设置开关控制。 */}
+                  <CollapsibleText
+                    text={t.response}
+                    renderExpanded={(expandedText) => (
+                      <MarkdownSlot text={expandedText} markdown />
+                    )}
+                  />
                 </div>
                 {/* 2026-09-09 小欧 复制按钮: 回复区域右上角, hover时显示 */}
                 <button
@@ -276,6 +535,54 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 >
                   <CopyOutlined />
                 </button>
+              </div>
+            )}
+
+            {/* 2026-10-21 小杨 - 本轮引用过的文件两行能力
+                ① 追问推荐：本轮被工具动过 ≥2 次且可预览的文件（取最近 3 条）
+                ② 引用台账：本任务引用过的文件（现场重读恢复，不存旧快照） */}
+            {sessionId && isLatestTaskId(t.task_id) && recommend.length > 0 && (
+              <div
+                style={{
+                  color: Colors.TEXT.SECONDARY,
+                  fontSize: chatTokens.fontSM,
+                  marginTop: 4,
+                }}
+              >
+                <PaperClipOutlined style={{ marginRight: 4 }} />{' '}
+                本轮涉及的文件，点击作为引用继续追问：
+                {recommend.map((r) => (
+                  <Tag
+                    key={r.path}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void quoteAfterReread(r.path);
+                    }}
+                  >
+                    {r.path}
+                  </Tag>
+                ))}
+              </div>
+            )}
+            {sessionId && ledgerForTask(t.task_id).length > 0 && (
+              <div style={{ fontSize: chatTokens.fontSM, marginTop: 2 }}>
+                ↩ 本轮引用：
+                {ledgerForTask(t.task_id).map((e) => (
+                  <Tag
+                    key={e.path + e.ts}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      void quoteAfterReread(e.path, e.lineRange);
+                    }}
+                  >
+                    <FileOutlined style={{ marginRight: 4 }} /> {e.label}
+                    {e.lineRange
+                      ? ` L${e.lineRange.start}-${e.lineRange.end}`
+                      : ''}
+                  </Tag>
+                ))}
               </div>
             )}
           </div>

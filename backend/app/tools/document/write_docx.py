@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-05 - 小欧 - 加hint参数
@@ -8,6 +9,10 @@
 # 2026-07-31 - 小欧 - Bug⑯修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"数字开头散文被误当编号列表并剥数字 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入": builder 增 not_written, 仅写前检查点置位;
+#   summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词: 写入Word→写WORD
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
 """
 D5: write_docx — 写入Word文档
 
@@ -25,9 +30,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.tools.tool_constants import ERR_WRITE_DOCX
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
@@ -105,24 +111,28 @@ def _build_write_docx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", detail: str = "", user_title: str = "",
     hint: str = "", para_count: int = 0, char_count: int = 0,
-    table_count: int = 0,
+    table_count: int = 0, not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_title:
         _act_params["title"] = user_title
     if exec_code == "error":
+        # 2026-10-12 小欧 - not_written 补"文件未写入"事实: 原反馈只给失败与错因,
+        #   未言明磁盘状态, LLM 会误以为旧文件仍在而改走 edit/覆盖等其它路径。仅写前检查点置该标记
+        #   (写期异常可能部分落盘, 不置, 避免误报)。与 write_text_file 语法阻断同口径。
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入Word {file_path}，失败: {detail}",
-            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "summary": f"写WORD{file_path}，失败：{_detail}",
+            "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_DOCX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
-        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"写WORD{file_path}，成功：{para_count}段，{char_count}字符",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写WORD), 半角逗号改全角 — 小欧-2026-10-14
+        "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{para_count}段, {char_count}字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},
@@ -142,24 +152,30 @@ def write_docx(
 ) -> Dict[str, Any]:
     """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=err, user_title=title or "", hint="请检查输出路径", not_written=True)
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     if content is not None:
         cs_error, _ = check_content_safety(content, "docx")
         if cs_error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数")
+            llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数", not_written=True)
             return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail="python-docx库未安装", user_title=title or "", hint="请安装python-docx库")
+        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail="python-docx库未安装", user_title=title or "", hint="请安装python-docx库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:

@@ -3,9 +3,9 @@
 操作手册对照:
   用例: E2E-P0-03
   用户输入: "读取E:\test_dir\test.txt的内容，然后告诉我里面写了什么"
-  预期过程: 先调readtext，再回复内容
-  通过标准: 调用了readtext；回复中包含文件内容；DB有2条steps
-  失败标准: 未调用readtext；回复中无文件内容
+  预期过程: 先调read，再回复内容
+  通过标准: 调用了read；回复中包含文件内容；DB有2条steps
+  失败标准: 未调用read；回复中无文件内容
 
  铁律:
    1. 一个用例一个脚本，写完跑通再写下一个
@@ -17,6 +17,7 @@
 -- 小健 2026-06-14
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
 -- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
+-- 更新: 2026-09-24 19:36:11 - 小欧 - 归一helper: 本地read_tools字面量改import e2e_helpers.READ_TOOLS(DRY, 北京老陈拍板全部归一)
 """
 
 from datetime import datetime
@@ -29,6 +30,7 @@ from e2emodel.e2e_helpers import (
     print_report, write_test_record,
     assert_stream_ended, register_pending_record, filter_safety_errors,
     verify_db_tool_usage,
+    READ_TOOLS,
 )
 
 TEST_FILE = Path("E:/test_dir/test.txt")
@@ -67,7 +69,8 @@ async def test_e2e_p0_03_multi_step_reasoning():
         if result["has_error"]:
             pass
 
-        read_tools = {"readtext", "readmedia"}
+        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/read/readmedia(DRY)
+        read_tools = READ_TOOLS
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(MUST P0-03), actual: {tool_names}"
 

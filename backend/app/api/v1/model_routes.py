@@ -1,0 +1,377 @@
+# -*- coding: utf-8 -*-
+"""模型管理路由薄壳。
+
+编辑历史:
+  2026-09-20 - 小沈 - 新建：/models /providers CRUD（5.2 模型管理接口）
+   2026-09-21 - 小欧 - 对齐设计文档 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
+   2026-09-24 - 小欧 - 禁止backward死代码清理: 删未使用的 ModelAddRequest/ProviderInfo/ProviderUpdate import
+     （本文件实际用 ModelCreateRequest/ModelUpdateRequest/ProviderConfigUpdate/ProviderAddRequest）— 小欧-2026-09-24
+   2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复：①M13 add_provider 透传 req.models 列表与
+     req.max_retries（旧实现丢弃，DTO 有字段借而不传，前端无法创建多模型 Provider/设置重试）；
+     ②S7 ProviderConfigUpdate 补 label 字段并交由 update_provider_config 落盘（旧实现 provider
+     label 创建后永不可改）
+   2026-09-21 - 小欧 - 建议报告 P18: PUT/DELETE /models/{provider}/{model} 路由 model 参数改 :path 转换器——
+     FastAPI 单段 path 参数对模型名含 '/'（真实 z-ai/glm-4.7, moonshotai/kimi-k2）先解码再分断必然 404，
+     改贪婪吞余段后含斜杠模型名可更新/删除
+   2026-09-22 - 小欧 - param_options 读写链落地: ModelCreateRequest/ModelUpdateRequest 各加
+     param_options: Optional[Dict[str,List[str]]]=None（Pydantic 不声明即丢字段，老前端不送也不报错）；
+     POST /models 路由 add_model 调用透传 req.param_options（5 位置参→7 位置参，防 param_options 形参
+     永远拿 None 静默丢）。PUT 路由无需改——model_dump(exclude_none=True) 自动含 param_options。
+   2026-09-22 - 小欧 - ProviderConfigUpdate 补 max_retries: Optional[int]=None：
+     前端 ProviderConfig.tsx 实际发送 max_retries 而 DTO 原只有 retry_times 别名，Pydantic v2
+     extra='ignore' 丢弃未声明字段 → model_dump 不产 max_retries → 落不了盘；补声明后
+     前端发的 max_retries 直连 key_map，不再依赖隐式绕过（BY-06 红条件验证）。
+   2026-09-22 - 小欧 - import 补 ConfigDict + ProviderConfigUpdate 加
+      model_config = ConfigDict(extra='allow')——动态字段（rate_limit 等 param_types 元数据驱动）
+      放行（静态字段仍强类型），后端白名单拒注入在 model_service.update_provider_config。
+   2026-09-24 - 小欧 - 参数删除键级通道：ModelUpdateRequest 加 remove_params: Optional[List[str]]=None
+      （前端②参数行 × 删除按钮经 PUT /models 送键名列表，update_model 白名单放行并先删后 merge；
+      不声明则 Pydantic 丢字段，老前端不送不报错）— 小欧-2026-09-24
+   2026-09-24 - 小欧 - 模型库：新增 RemoteModelItem/RemoteModelsResponse/ProviderModelsReplaceRequest
+      DTO + GET /providers/{name}/remote-models + PUT /providers/{name}/models 两 endpoint
+      （远程拉取走后端代理绕 CORS，替换式写入 models 列表）— 小欧-2026-09-24
+   2026-09-26 - 小欧 - 落地: 新增 POST /providers/{name}/test-connection 端点 + TestConnectionRequest DTO
+      ①复用 svc.fetch_remote_models(name, probe_key=...) 的探测能力, 不新造第二套探测逻辑(DRY/KISS-DIRECT);
+      ②用 POST body 而非 GET query 传待测 key —— GET query 会进 uvicorn access log, 服务器日志将留下明文 key,
+        违反设计"待测 key 严禁落盘、严禁进日志"的硬要求;
+      ③DTO extra='forbid' 拒绝未知字段, 杜绝任意键注入(与既有 DTO 白名单口径一致);
+      ④返回 category(ok/key_invalid/endpoint_unsupported/network_error) 供前端分流"地址问题"与"key 问题"两套文案 — 小欧-2026-09-26
+   2026-09-26 - 小欧 - 落地: 新增 GET /providers/{name}/api-key 明文查看端点
+      ①必须记审计日志: provider 名 + 来源 IP(request.client.host), 读密钥属敏感操作须可追溯;
+         env 接管被拒时**同样留痕**(谁在探查 env 接管的密钥也要可查);
+      ②env 接管一律拒绝返回明文(400): env 优先消费, YAML 里那个不是生效值, 给出即假象
+         (与"静默回落"同类陷阱), 文案明确指出真实来源 {NAME}_API_KEY;
+      ③上线硬依赖 token 鉴权 —— 无鉴权时局域网任何客户端可直接调走全部明文密钥(见 12.6 依赖表);
+      ④新增 _client_ip 辅助(取 request.client.host, 无 request 时返回 unknown 不抛) — 小欧-2026-09-26
+   2026-09-29 - 小欧 - 消除死 DTO 漂移(北京老陈指令)：两 DTO 此前定义了却从未挂路由且字段与现实
+     漂移(缺 status_code/category、只有 id/owned_by)，前端因此只能靠字符串猜免费。现与解析层 8 字段
+     对齐并挂 response_model；错型在解析层归一而非把 DTO 退化成 Any。未改写回契约 — 小欧 2026-09-29
+  2026-10-03 - 小欧 - RemoteModelItem 增 free/stability（AMD 实测下发，此前被静默丢弃）— 小欧 2026-10-03
+  2026-10-05 22:16:38 - 小欧 - RemoteModelItem 增 4 字段对齐解析层(北京老陈指令)：max_output_length/
+   input_modalities/output_modalities/supported_features。SenseNova 实抓 9 模型 16 字段，此前 11 个被
+   静默丢弃；其中输出上限与上下文量级常差 8~16 倍、output_modalities 区分图像生成与对话模型，
+   不下发即选型无据。modalities 为对齐 architecture 同名子键而设（厂商层级差异已在 service 归一，
+   此处只承接归一结果）；字段口径与既有 10 项一致：Optional/默认空容器、错型在解析层归一 — 小欧 2026-10-05
+  2026-10-10 - 小欧 - 新增 ZenithFree 双路验证三条路由（北京老陈指令）：POST /providers/{name}/zen-verify
+    触发验证 + GET /zen-verify/reports 列历史报告 + GET /zen-verify/report 读报告内容。三条同族，
+    业务全在 zen_verify 服务模块，路由层只做转发（不新造第二套逻辑，DRY/KISS-DIRECT）；读报告
+    路由按报告名取文件，经服务层路径校验拦截目录穿越。原行内注释已按规矩上提归并至本板块底部
+   2026-10-11 07:33:47 - 小欧 - RemoteModelItem 增 publish_time(zenmux 真发布时间, created 全假不可用; 不下发则 None, 与 free/stability 同政策; 字段内联已记 2026-10-10) — 小欧 2026-10-11
+   2026-10-11 - 小欧 - RemoteModelItem 增 effort_levels/effort_default(DeepSeek 实测下发, 此前被静默丢弃; 非 DeepSeek 不返回 → 空列表/None; 北京老陈令两个都加) — 小欧 2026-10-11
+   2026-10-26 18:45:00 - 小欧 - ProviderModelSelection 增 max_output_length（与 context_length 同策略：Optional[int]，空值不发送；解析层已归一，此处只承接）。前端 replaceModels 同步扩展。
+   2026-11-01 小欧 - 键名统一(北京老陈指令: 同类问题一轮改完, 不留别名):
+      ①ProviderConfigUpdate 字段 base_url → api_base（与 yaml 真源同名），删 retry_times 只留 max_retries；
+      ②ModelCreateRequest/ModelUpdateRequest 字段 default_params → model_params（与 yaml 真源同名）；
+      ③_get_models 下发键 default_params → model_params，并补下发 context_length（原只透 max_output_length，
+        前端②参数区拿不到厂商声明窗口，导致库保存的值既不下发也无编辑面）。
+      旧名不留兼容分支（项目铁律禁止 backward）— 小欧-2026-11-01
+    """
+import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.api.v1.config_schemas import (
+    ProviderAddRequest,
+)
+from app.logger import logger  # 明文查看审计日志
+from app.services.model.config_helpers import handle_config_errors
+from app.services.model import model_service as svc
+from app.services.model import zen_verify as zen_verify_svc
+# 2026-09-26 - 小欧 - 三堂会审后修正(DRY): 审计用来源 IP 复用 deps._client_ip（唯一权威），
+#   不在本文件另写一份。本文件原先自带的 _client_ip 与 deps 版是"同一逻辑两份实现"，
+#   且语义还不一致（deps 版曾懂 TRUST_PROXY_HEADERS/X-Forwarded-For，本版不懂），
+#   审计日志的 IP 口径会随调用点不同而漂移。现统一 + `or "unknown"` 保底（审计行不写空值）。
+#   2026-09-26 二次修正 - 小欧: deps._client_ip 已删除 TRUST_PROXY_HEADERS 与自解析 XFF
+#   （只读 request.client.host，代理信任交回 uvicorn），两端口径现已完全一致。
+from app.api.v1.deps import _client_ip as _audit_ip
+
+
+router = APIRouter()
+
+
+class ModelCreateRequest(BaseModel):
+    provider: str = Field(...)
+    model: str = Field(...)
+    label: str = Field("")
+    # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名, 消翻译层) - 小欧-2026-11-01
+    model_params: Dict[str, Any] = Field(default_factory=dict)
+    range: Dict[str, Any] = Field(default_factory=dict)
+    capabilities: List[str] = Field(default_factory=list)
+    param_options: Optional[Dict[str, List[str]]] = Field(default=None)
+
+
+class ModelUpdateRequest(BaseModel):
+    label: Optional[str] = Field(default=None)
+    model_params: Optional[Dict[str, Any]] = Field(default=None)
+    range: Optional[Dict[str, Any]] = Field(default=None)
+    capabilities: Optional[List[str]] = Field(default=None)
+    param_options: Optional[Dict[str, List[str]]] = Field(default=None)
+    # 2026-09-24 小欧 - 参数键级删除：送键名列表，update_model 先从 model_params/range/param_options 删键再 merge — 小欧-2026-09-24
+    remove_params: Optional[List[str]] = Field(default=None)
+
+
+class ProviderConfigUpdate(BaseModel):
+    """Provider 配置更新 DTO — 2026-09-22 小欧 补 max_retries。
+    2026-11-01 小欧 - 键名统一: 删 base_url 别名(统一 api_base) 与 retry_times 别名(统一 max_retries)；
+      原注释记录的「DTO 只有 retry_times、前端发 max_retries」双名问题至此消除 - 小欧-2026-11-01
+    extra='allow'：静态字段仍强类型，动态字段（param_types 元数据驱动）
+    放行——违背"前端零改代码"初衷的每个新参数无需改 DTO；后端白名单见 update_provider_config。"""
+    model_config = ConfigDict(extra='allow')
+    label: Optional[str] = Field(default=None, description="Provider 显示名")
+    # 契约文档化 - 小欧 - 2026-09-26: api_key 三态契约写进字段说明，避免调用方误用。
+    #   三态（后端已实现并做实为唯一权威，见 model_service.update_provider_config）：
+    #     ①字段不出现 / None  = 不修改（跳过，不写）
+    #     ②"" 或纯空白        = 不修改（跳过，不写）—— 与界面"留空=保持原值"对齐
+    #     ③非空字符串         = 设置（先 strip 再落盘）
+    #     ④clear=true         = 清空（显式写空串，唯一允许清空的途径）
+    #   另：clear=true 与非空 api_key **互斥**，同传返回 400。
+    #   ⑤api_base 空/纯空白  = 错误状态，返回 400（与 api_key 三态方向相反）。
+    api_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "API Key 三态: 不传/None/空串/纯空白=不修改; 非空=设置(自动 strip); "
+            "清空须用 clear=true(与 api_key 互斥, 同传 400)。空串不再擦除已保存的 key"
+        ),
+    )
+    api_base: Optional[str] = Field(
+        default=None,
+        description="API 地址。**必填语义**: 空/纯空白返回 400(错误状态，不可保存) —— 与 api_key 的'空=不修改'方向相反",
+    )
+    timeout: Optional[int] = Field(default=None)
+    max_retries: Optional[int] = Field(default=None)
+    clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
+
+
+class RemoteModelItem(BaseModel):
+    """远端单个模型的展示元数据 — 小欧 2026-09-29
+
+    此前只有 id/owned_by 且从未挂路由(死 DTO)，service 下发的 pricing/context_length 等无契约。
+    容器声明 Dict/List[str] 而非 Any：解析层已就地归一，此处可如实声明类型。
+    """
+    id: str
+    owned_by: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    # 实测 OpenRouter 460 项全有值(min 4095 / max 2,000,000)；None 仅防御个别 provider 缺该字段 — 小欧 2026-09-29
+    context_length: Optional[int] = None
+    # 2026-10-05 22:16:38 - 小欧 - 增补（SenseNova 实抓后补，此前静默丢弃）。与 context_length 常差 8~16 倍
+    #   （实测 glm-5.2 输出 131072 / 上下文 1048576），缺此项会让用户误判单次输出上限。None = 该厂商不下发。
+    max_output_length: Optional[int] = None
+    # 子键 prompt/completion/缓存读写/web_search，值为每 token 单价字符串；
+    # 免费判据 prompt=completion=0 — 小欧 2026-09-29
+    pricing: Dict[str, Any] = Field(default_factory=dict)
+    # 子键 input_modalities/output_modalities/modality/instruct_type/tokenizer；
+    # 实测 input_modalities 仅 5 种：text(460 全覆盖)/image(292)/file(182)/video(85)/audio(44) — 小欧 2026-09-29
+    architecture: Dict[str, Any] = Field(default_factory=dict)
+    # 2026-10-05 22:16:38 - 小欧 - 增补 modalities（对齐 architecture 同名子键，消除"前端只知 architecture 一处"的分裂）。
+    #   厂商层级不一：SenseNova 顶层下发，OpenRouter 嵌在 architecture 里，service 层已归一到本字段。
+    #   选模型必需：output_modalities=image 才是图像生成模型（SenseNova u1/u1.5），text 则是对话模型。
+    input_modalities: List[str] = Field(default_factory=list)
+    output_modalities: List[str] = Field(default_factory=list)
+    # 实测 26 种；有筛选价值的是 tools(392)/structured_outputs(377)/reasoning(328) — 小欧 2026-09-29
+    # 厂商命名不统一：OpenRouter/AMD 为 supported_parameters，SenseNova 为 supported_sampling_parameters，
+    #   service 层已按别名链合并入本字段（前端零改动）。
+    supported_parameters: List[str] = Field(default_factory=list)
+    # 2026-10-05 22:16:38 - 小欧 - 增补 supported_features（与 sampling 参数不同语义，故分列）：
+    #   实测 values 为 tools/json_mode/reasoning，直接决定能否挂工具调用。
+    supported_features: List[str] = Field(default_factory=list)
+    # 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD provider 不返回 → None。
+    #   free 是「是否落在每日免费额度内零计费」的记账标记，不等于要花钱。
+    #   【如实告知】stability 现无消费方（YAGNI 违规已知并被接受，北京老陈 2026-10-03 决定保留）。
+    free: Optional[bool] = None
+    stability: Optional[str] = None
+    # 2026-10-10 小欧 - 增 publish_time（zenmux 真发布时间，如 2026-09-03；created 全假不可用）。
+    #   非 zenmux provider 不返回 → None（与 free/stability 同政策）。
+    publish_time: Optional[str] = None
+    # 2026-10-11 小欧 - 增 effort_levels/effort_default（DeepSeek 实测下发，此前被静默丢弃）：
+    #   effort.supported_levels（如 low/high/max）是推理强度档位，effort.default_level 是默认值；
+    #   非 DeepSeek provider 不返回 → 空列表/None（与 free/stability/publish_time 同政策）。
+    #   北京老陈令：两个都加。
+    effort_levels: List[str] = Field(default_factory=list)
+    effort_default: Optional[str] = None
+
+
+class RemoteModelsResponse(BaseModel):
+    """拉取远程模型列表的响应 — 小欧 2026-09-29
+
+    status_code/category 是 2026-09-26 起的既有契约(原 DTO 漏掉导致漂移)，
+    category 取值 ok/key_invalid/endpoint_unsupported/network_error。
+    message 仅失败分支下发(成功分支无此键)，故 Optional。
+    """
+    ok: bool
+    provider: str
+    models: List[RemoteModelItem]
+    count: int
+    configured: List[str]
+    current_model: Optional[str] = None
+    message: Optional[str] = None
+    status_code: Optional[int] = None
+    category: str
+
+
+class ProviderModelSelection(BaseModel):
+    """单灯保留模型名 + 顺手持久化的静态元数据（北京老陈 2026-10-05 指令：上下文/输入模态要落配置）"""
+    id: str
+    context_length: Optional[int] = None
+    max_output_length: Optional[int] = None
+    input_modalities: Optional[List[str]] = None
+    output_modalities: Optional[List[str]] = None
+    supported_parameters: Optional[List[str]] = None
+    supported_features: Optional[List[str]] = None
+
+
+class ProviderModelsReplaceRequest(BaseModel):
+    models: List[ProviderModelSelection]
+
+
+class TestConnectionRequest(BaseModel):
+    """测试连接请求体（可选带待测 key）。
+
+    用 POST body 而非 GET query 传 key：GET 的 query 会进 uvicorn access log
+    （服务器日志里会留下明文 key），违反设计"待测 key 严禁落盘、严禁进日志"的硬要求。
+    """
+    model_config = ConfigDict(extra='forbid')
+    api_key: Optional[str] = Field(
+        default=None,
+        description="待测 key（可空=用已保存值）。仅本次探测用，不落盘、不进日志、不回传。",
+    )
+
+
+@router.get("/models")
+@handle_config_errors("获取模型列表")
+async def get_models():
+    return svc.get_models()
+
+
+@router.post("/models")
+@handle_config_errors("添加模型")
+async def add_model(req: ModelCreateRequest):
+    return svc.add_model(req.provider, req.model, req.label,
+                         req.model_params, req.range, req.capabilities,
+                         req.param_options)
+
+
+@router.put("/models/{provider}/{model:path}")
+@handle_config_errors("修改模型")
+async def update_model(provider: str, model: str, req: ModelUpdateRequest):
+    # 2026-09-21 小欧 修正：模型名可含 '/'（真实 z-ai/glm-4.7、moonshotai/kimi-k2），
+    # FastAPI 单段 path 参数遇 '/' 先解码再分断必然 404，改 path 转换器贪婪吞余段。
+    return svc.update_model(provider, model, req.model_dump(exclude_none=True))
+
+
+@router.delete("/models/{provider}/{model:path}")
+@handle_config_errors("删除模型")
+async def delete_model(provider: str, model: str):
+    # 2026-09-21 小欧 修 P18：同 update_model，path 转换器支持含 '/' 模型名删除。
+    return svc.delete_model(provider, model)
+
+
+@router.get("/providers")
+@handle_config_errors("获取 Provider 列表")
+async def get_providers():
+    return svc.get_providers()
+
+
+@router.post("/providers")
+@handle_config_errors("添加 Provider")
+async def add_provider(req: ProviderAddRequest):
+    return svc.add_provider(req.name, req.label or req.name, req.api_base,
+                            req.api_key, req.model, req.timeout,
+                            models=req.models, max_retries=req.max_retries)
+
+
+@router.put("/providers/{name}")
+@handle_config_errors("修改 Provider 配置")
+async def update_provider(name: str, req: ProviderConfigUpdate):
+    return svc.update_provider_config(name, req.model_dump(exclude_none=True))
+
+
+@router.delete("/providers/{name}")
+@handle_config_errors("删除 Provider")
+async def delete_provider(name: str):
+    return svc.delete_provider(name)
+
+
+@router.get("/providers/{name}/remote-models", response_model=RemoteModelsResponse)
+@handle_config_errors("获取远程模型列表")
+async def get_remote_models(name: str):
+    return await svc.fetch_remote_models(name)
+
+
+@router.get("/providers/{name}/api-key")
+@handle_config_errors("查看 Provider 密钥明文")
+async def get_provider_api_key_plain(name: str, request: Request):
+    """返回**已保存**的 api_key 明文（供"眼睛"切换查看）。
+
+    三条硬约束（设计 12.5 / 12.6）：
+      ①**必须记审计日志**：provider 名 + 时间戳 + 来源 IP（request.client.host）—— 读密钥属敏感操作。
+      ②**env 接管时一律拒绝返回明文**：env 优先消费(config.py _apply_env_overrides)，YAML 里那个可能
+         **不是生效值**，给用户看是假象（与"静默回落"同类陷阱）。文案明确指出真实来源。
+      ③**上线硬依赖 token 鉴权**：无鉴权时局域网任何客户端可直接调走全部明文密钥，
+         故鉴权落地前本接口不得对外暴露（见 12.6 依赖表）。
+    """
+    # 2026-09-26 - 小欧 - 三堂会审后修正·二(分层): 经 service 公开函数取数，
+    #   不再直调 svc._raw_ai()/svc._provider_names() 私有函数（破坏封装，见 model_service 文件头）。
+    entry = svc.get_provider_raw_entry(name)
+    env_name = f"{name.upper()}_API_KEY"
+    env_val = os.environ.get(env_name)
+    if env_val:
+        # 审计：拒绝也要留痕（谁在探查 env 接管的密钥）
+        logger.info(
+            f"[audit] 查看明文被拒(provider={name}, env={env_name}, ip={_audit_ip(request) or 'unknown'})"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"该 provider 由 {env_name} 环境变量接管，密钥不在配置文件中，无法查看明文"
+                f"（配置里的值不是生效值，给出即假象）"
+            ),
+        )
+    # 2026-09-26 - 小欧 - 三堂会审后修正: strip 后再判 configured/返回。
+    #   YAML 手误写了纯空白 key（"   "）时，原 `str(... or "")` 非空 → configured=True，
+    #   还把空白串当"明文"返回（失真）。与掩码侧 is_blank_secret 口径对齐：空白=未配置。
+    plain = str(entry.get("api_key") or "").strip()
+    # 审计日志：读密钥属敏感操作，必须可追溯（provider + 时间戳 + 来源 IP）
+    logger.info(f"[audit] 查看 Provider 密钥明文(provider={name}, ip={_audit_ip(request) or 'unknown'})")
+    return {"provider": name, "api_key": plain, "configured": bool(plain)}
+
+
+@router.post("/providers/{name}/test-connection", response_model=RemoteModelsResponse)
+@handle_config_errors("测试 Provider 连接")
+async def test_provider_connection(name: str, req: TestConnectionRequest):
+    """复用 fetch_remote_models 的探测能力（DRY，不新造第二套探测逻辑）。
+
+    返回 category 供前端分流文案：ok / key_invalid / endpoint_unsupported / network_error。
+    """
+    return await svc.fetch_remote_models(name, probe_key=req.api_key)
+
+
+@router.put("/providers/{name}/models")
+@handle_config_errors("替换 Provider 模型列表")
+async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
+    return svc.replace_provider_models(name, [m.model_dump() for m in req.models])
+
+
+# ── ZenithFree 双路验证（北京老陈 2026-10-10）──────────────────────────
+
+
+@router.post("/providers/{name}/zen-verify")
+@handle_config_errors("ZenithFree 验证")
+async def zen_verify(name: str):
+    """双路验证远端最新免费模型(zen_gate 外部库 vs opencodeZenAdapter)，结果落 txt"""
+    return await zen_verify_svc.verify_provider_zen(name)
+
+
+@router.get("/zen-verify/reports")
+@handle_config_errors("列验证报告")
+async def zen_verify_reports():
+    """列历史验证报告(时间倒序)"""
+    return zen_verify_svc.list_reports()
+
+
+@router.get("/zen-verify/report")
+@handle_config_errors("读验证报告")
+async def zen_verify_report(name: str):
+    """读指定验证报告内容"""
+    return zen_verify_svc.read_report(name)

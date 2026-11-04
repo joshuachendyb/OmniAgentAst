@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 小欧 #5 fix: _needs_migration final分支补response字段
+# 2026-07-18 小欧 修复: _needs_migration final分支补response字段
 # 2026-08-19 小欧 v2.0: chat_messages.execution_steps 列随冻结废弃删除, migrate_execution_steps_status
 #   加"列存在"守卫(PRAGMA table_info 判断), 新库无此列直接跳过, 防触发时报 no such column
 # 2026-08-19 小欧 v2.0结构迁移: 新增 migrate_v2_chat_restructure, 复用 schema_migrations 登记机制,
@@ -16,12 +16,15 @@
 #    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
 # 2026-08-27 小欧 阶段3(chat_messages表退役): migrate_execution_steps_status 新增"表存在"守卫(_table_exists), 表已DROP则跳过迁移, 防 PRAGMA table_info(chat_messages) 表不存在时报 no such table
 # 2026-08-27 小欧 阶段3(chat_messages表退役)清理: 整删migrate_execution_steps_status死函数(全backend无调用方)及其MIGRATION_NAME常量、migrate_v2_chat_restructure块5/6/7(chat_messages双列/回灌chat_user_message/chat_task_steps, 表已DROP永跳过)死分支; scripts/migrate_utc_to_local.py与migrate_time_format.py(硬编码引用已退役chat_messages列)删除; 系统对该表零残留运行代码引用
-# 2026-07-18 小欧 #5 fix: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成(恢复docstring改写时误删的第二板块同条记录, 禁止删除历史)
+# 2026-07-18 小欧 修复: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成(恢复docstring改写时误删的第二板块同条记录, 禁止删除历史)
 # 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled; 规则#4 旧取消FinalStep 改原地补 outcome=cancelled(不再重建 type=cancelled dict, 保字段不丢)
 # 2026-09-07 小欧 4.4.1旧case清零(北京老陈裁定删死代码): 删 _needs_migration/_migrate_one_step/_confirm_id_of 三死函数及 typing/json_utils/storage 死导入(驱动 migrate_execution_steps_status 已于 2026-08-27 删除, 零调用方); 旧取消行改写另立新一次性行迁移 migrate_cancelled_rows_to_final 承接
 # 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled;
 #   规则#4 旧取消 FinalStep 改原地补 outcome=cancelled(不再重建 type=cancelled dict, 保字段不丢);
 #   模块 docstring 目标表示同步; _needs_migration 检测条件不变(两类旧标记仍需迁移, 仅目标表示变)
+# 2026-09-28 小欧 新增 migrate_purge_injected_dupes(设计文档[76] 5.3 存量注入副本一次性清理,
+#   schema_migrations 登记防重跑, db_initializer 于 v2 迁移后调用);
+#   同日三堂会审修条件②: NOT IN→NOT EXISTS(该列可空, NOT IN 含 NULL 删 0 行失效) — 小欧-2026-09-28
 """
 migrate_steps — 数据迁移
 
@@ -209,4 +212,54 @@ def migrate_cancelled_rows_to_final(get_conn) -> bool:
         _mark_migration_applied(conn, CANCELLED_ROWS_MIGRATION_NAME)
     logger.info(f"[migrate] {CANCELLED_ROWS_MIGRATION_NAME} 完成, 改写 {_n} 行")
     logger.info(f"[启动耗时] migrate_cancelled_rows_to_final: {_time.time()-_t0:.3f}s")
+    return True
+
+
+PURGE_INJECTED_DUPES_NAME = "migrate_purge_injected_dupes"
+
+
+def migrate_purge_injected_dupes(get_conn) -> bool:
+    """存量注入消息副本一次性清理 — 小欧 2026-09-28 设计文档[76] 5.3(北京老陈定案: 老数据直接删)
+
+    背景: 修复前 _absorb_inbox 双重落库产生注入消息副本行(task_id=NULL), 且 9-20 属性名
+    不匹配致锚回填/D-1 从未生效, 这些行既无 task_id 归属又无 chat_tasks 配对 → 新 fetch
+    精确 JOIN(按 cum.task_id)与 merged_inputs 单一路由均查不到, 留着即"查无此消息"的脏数据。
+    一次性删干净后查询只走单一路由, 不做兼容兜底。
+
+    删除条件(三条全中才删, 防误删正常消息):
+      ① task_id IS NULL                     — 未归属(正常首轮消息终态必回填 task_id)
+      ② NOT EXISTS 登记行(user_message_id=本行 id) — 非任何任务登记首条
+         (2026-09-28 小欧 三堂会审: 原 NOT IN 是 NULL 陷阱 — 该列可空, NOT IN 含 NULL 恒
+          UNKNOWN → 删 0 行失效; 改 NULL 安全等价写法)
+      ③ 同会话存在更小 id 的相同 content 行          — 是重复落库副本(原消息仍在, 不丢用户输入)
+    误删防护: 用户主动重复发同内容且已建任务的, 后者在 chat_tasks.user_message_id 里(②排除)。
+
+    幂等: 删过即无匹配行; schema_migrations 登记后跳过。表缺失(新库)登记跳过。
+    返值: 本次实际执行 True; 已登记/无表跳过 False。
+    """
+    import time as _time
+    _t0 = _time.time()
+    with get_conn("chat") as conn:
+        if _is_migration_applied(conn, PURGE_INJECTED_DUPES_NAME):
+            logger.info(f"[migrate] {PURGE_INJECTED_DUPES_NAME} 已执行过, 跳过")
+            return False
+        if not _table_exists(conn, "chat_user_message"):
+            logger.info(f"[migrate] {PURGE_INJECTED_DUPES_NAME} 无 chat_user_message, 登记跳过")
+            _mark_migration_applied(conn, PURGE_INJECTED_DUPES_NAME)
+            return False
+        _cur = conn.execute(
+            """DELETE FROM chat_user_message
+               WHERE task_id IS NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM chat_tasks ct
+                     WHERE ct.user_message_id = chat_user_message.id)
+                 AND EXISTS (
+                     SELECT 1 FROM chat_user_message b
+                     WHERE b.session_id = chat_user_message.session_id
+                       AND b.content = chat_user_message.content
+                       AND b.id < chat_user_message.id)""")
+        _n = _cur.rowcount
+        _mark_migration_applied(conn, PURGE_INJECTED_DUPES_NAME)
+    logger.info(f"[migrate] {PURGE_INJECTED_DUPES_NAME} 完成, 清理注入副本 {_n} 行")
+    logger.info(f"[启动耗时] migrate_purge_injected_dupes: {_time.time()-_t0:.3f}s")
     return True

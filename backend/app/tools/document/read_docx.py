@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页 feat:
 #   1. read_docx 增加 offset/limit/tail 参数
@@ -8,11 +9,14 @@
 #   5. 支持 warning 状态(exec_code/detail/hint)
 # 2026-07-21 - 小欧 - 入参即信任: _build_read_docx_llm_data 加 user_limit 参数, 入 action.params, 支撑 formatter 动态调行数上限
 # 2026-07-21 - 小欧 - 文件大小安全检测: 入口加 READ_DOCX_INPUT_MAX_BYTES 字节检查，超限拒读防OOM
-# 2026-07-23 - 小欧 - 三堂会审5bug修复: outlimit len(text)截断后求值+删死import os as _os_mod
+# 2026-07-23 - 小欧 - 5bug修复: outlimit len(text)截断后求值+删死import os as _os_mod
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 确认READ_DOCX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式); 删doc_path多余变量(KISS-DIRECT)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取Word→读WORD
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 D2: read_docx — 读取Word文档
 
@@ -31,6 +35,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_READ_DOCX, READ_DOCX_OUTLIMIT_CHARS
 from app.tools.toolhelper.line_pager import select_lines
 from app.utils.text_utils import truncate_summary
@@ -45,15 +50,15 @@ def _build_read_docx_llm_data(
 ) -> Dict[str, Any]:
     """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary
     2026-07-21 入参即信任: 补 user_limit 写入 action.params — 小欧"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_limit is not None:
         _act_params["limit"] = user_limit
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "summary": f"读WORD{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
+            "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -66,11 +71,11 @@ def _build_read_docx_llm_data(
     parts.append(f"{text_len}字符")
     if table_count:
         parts.append(f"{table_count}项表格")
-    summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
+    summary_str = f"读WORD{file_path}，成功：" + "，".join(parts)  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读WORD) — 小欧-2026-10-14
     return {
         "summary": summary_str,
-        "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
-        "status": {"exec_code": exec_code, "message": "读取Word成功" if exec_code == "success" else "读取Word有警告", "code": "", "detail": detail, "hint": hint},
+        "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
+        "status": {"exec_code": exec_code, "message": ("成功：" if exec_code == "success" else "有警告：") + "，".join(parts), "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},
@@ -89,6 +94,12 @@ def read_docx(
     """读取Word(.docx)文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-24 移除.doc死代码(pandoc转换)"""
     t0 = _time_mod.perf_counter()
     file_path = path
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查 — 小欧 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_document_tool(path)
@@ -99,7 +110,7 @@ def read_docx(
         elif suggested_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "文件类型不匹配,请使用正确的文档格式"
+            _hint = "请检查文件路径是否存在及是否为Word格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"(谈类型是错的) — 小欧-2026-10-14
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 
@@ -108,14 +119,14 @@ def read_docx(
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail="python-docx库未安装", hint="请安装python-docx库")
         return build_error(data={}, llm_data=llm_data)
 
-    # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 readtext 的 offset/limit/tail 语义)
+    # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 read 的 offset/limit/tail 语义)
     if limit is not None and (limit < 1 or limit > 1000):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间,传入值: {limit}", hint="limit参数必须设置在1-1000之间")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间，传入值：{limit}", hint="limit参数必须设置在1-1000之间")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and tail < 1:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1,传入值: {tail}", hint="tail参数不能小于1")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1，传入值：{tail}", hint="tail参数不能小于1")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and (offset is not None or limit is not None):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -124,11 +135,11 @@ def read_docx(
     if offset is not None:
         if offset < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1,当前值: {offset}", hint="offset行号从1开始")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1，当前值：{offset}", hint="offset行号从1开始")
             return build_error(data={}, llm_data=llm_data)
         if limit is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数,当前offset={offset}", hint="请提供limit参数配合offset")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="请提供limit参数配合offset")
             return build_error(data={}, llm_data=llm_data)
 
     try:

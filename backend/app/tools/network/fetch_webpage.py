@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
 # 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
@@ -12,8 +13,8 @@
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: fetch_webpage 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-07-29 - 小欧 - fetchpage URL验证增强: 添加url is None强制防御, 排除对抗测试test_adversarial_batch*.py对None URL的故意利用, 修复或清除对抗测试always_fail/capture_wait_for抛异常对traceback统计影响
 # 2026-07-29 - 小欧 - 反爬增强(方案A+B): A-新增_build_browser_headers()完整浏览器头(sec-ch-ua/sec-fetch-*+br+image/avif), B-403优先降级Jina Reader再cf-mitigated, 解决知乎/CSDN等403问题
-# 2026-08-06 - 小欧 - 核查7/31未实现项[08]修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
-# 2026-08-06 - 小欧 - 三堂会审修复: BUG-5 url=None时summary传空串""代替None
+# 2026-08-06 - 小欧 - 核查未实现项修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
+# 2026-08-06 - 小欧 - 三堂会审修复: url=None时summary传空串""代替None
 # 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
 # 2026-08-13 - 小欧 - 三堂会审修复#11: cf_resp分支(L697)字符切片`:N`与流式分支字节截断口径不一(UTF-8多字节字符下字符≠字节)
 #   【病根】FETCHPAGE_OUTLIMIT_BODY_BYTES=2MB是字节预算, 但cf_resp.text为str, `:N`按字符切, 多字节页面可超字节预算且与L716-723字节流截断行为不一致
@@ -21,6 +22,21 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#32: js_render成功后L728仍重判_needs_browser可能二次Playwright渲染
 #   【病根】SPA空壳自检(原L726-728)对静态GET产物设计, 但js_render成功时html_content已是渲染产物, 无条件重判会对已渲染产物再渲染一次(浪费+可能发散)
 #   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取网页→读网页
+# 2026-10-20 15:22 小欧 - FIX: prompt 死参数生效化(原实现只把 prompt 塞进展示元数据, schema 承诺的
+#   "指定时精准提取"从未落地, 恒回完整内容)。新增 _extract_by_prompt: 取全局AI服务快照(snapshot),
+#   以 system(提取助手规则)+user(提取指令+正文, 正文经 smart_truncate_text 限 6 万字符预算)双消息
+#   交 LLM 精简提取, 外层 wait_for 限时 min(timeout,60)s 下限 30s; 成功 → 返回提取结果;
+#   任何失败(无AI配置/异常/LLM报错/空输出) → 恒降级返回完整内容不报错。提取注记经 builder 的
+#   detail 口径进 summary(原 success 分支 detail 传了但硬编码 "" 未消费, 一并修复) | py_compile ✓
+# 2026-10-20 15:45 小欧 - 北京老陈令重构: _extract_by_prompt 弃 snapshot()/svc.request() 直连方案(越层+旁路),
+#   改走 tool_executor 注入的 _current_text_task 回调(get_current_text_task 消费, A1 hooks 同款 ContextVar
+#   管道), 回调闭包内部即压缩摘要同源公用函数 call_llm_text_task(callTextForTask 适配钩子 + FC兜底
+#   call_llm_with_fallback 双通道) — 与 start 压缩完全同一调LLM方法, 任何 provider/model 通用;
+#   未注入(直调工具/无agent)或失败恒降级返完整原文, 三处调用点(:712/:750/:833)接口零变化
+# 2026-10-26 小沈 - Jina优先重构+save_to落盘+notice消息(LLM提取前/后通知)+LLM timeout精确计算(P1:remaining<10s降级、min(remaining,120));
+#   BUG修复:save_text_to_file None/空content拒绝、路径穿越(has_path_traversal)、write None处理;
+#   schema:extract_format描述加MD守护、timeout默认30→60 | py_compile+118回归测试全过
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -50,7 +66,8 @@ try:
 except ImportError:
     _TRAFILATURA = None
 
-from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
+from app.tools.context import get_current_text_task, get_current_notice_callback  # 纯文本任务LLM回调 + notice回调(tool_executor注入) — 小欧 2026-10-20 / 小沈 2026-10-26
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
@@ -58,6 +75,8 @@ from app.tools.validate.timeout_validator import validate_timeout
 
 from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.logger import logger
+from app.utils.text_utils import smart_truncate_text
+from app.tools.toolhelper.tool_utils import save_text_to_file
 from app.tools.tool_constants import TOOL_BROWSER_UA, FETCHPAGE_OUTLIMIT_BODY_BYTES, FETCHPAGE_INPUT_MAX_CONTENT_LENGTH, FETCH_WEBPAGE_OUTPARM_LIMIT_DESC
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
@@ -74,6 +93,9 @@ _VOID_ELEMENTS = frozenset({
     "area", "base", "br", "col", "embed", "hr", "img",
     "input", "link", "meta", "param", "source", "track", "wbr",
 })
+
+# prompt 提取的正文预算(字符) — 防巨页全文直灌 LLM 爆上下文(保留头尾省略中间) — 小欧 2026-10-20
+FETCHPAGE_PROMPT_EXTRACT_BUDGET = 60_000
 
 
 def _match_attrs(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
@@ -438,33 +460,39 @@ def _build_fetch_webpage_llm_data(
         _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
-            "summary": f"获取{url}网页，失败",
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
-            "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
+            "summary": f"读网页{url}，失败",
+            "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
-        base_msg = f"获取网页{url}内容，成功但有警告"
+        base_msg = f"读网页{url}，成功但有警告"
         if mime_type:
-            base_msg = f"获取{url}资源，成功但有警告: {mime_type}，HTTP {status_code}"
+            base_msg = f"读网页{url}，成功但有警告：{mime_type}，HTTP {status_code}"
         return {
             "summary": base_msg,
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
-            "status": {"exec_code": "warning", "message": "获取网页完成但有警告", "code": "", "detail": detail, "hint": hint},
+            "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
+            "status": {"exec_code": "warning", "message": "完成但有警告", "code": "", "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}} if status_code else {},
         }
     if mime_type:
-        summary = f"获取{url}资源，成功: {mime_type}，HTTP {status_code}"
+        summary = f"读网页{url}，成功：{mime_type}，HTTP {status_code}"
+        message = f"成功:{mime_type}，HTTP {status_code}"
     else:
-        summary = f"获取网页{url}内容成功: {extract_format}格式，HTTP {status_code}"
+        summary = f"读网页{url}，成功：{extract_format}格式，HTTP {status_code}"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读网页) — 小欧-2026-10-14
+        message = f"成功:{extract_format}格式，HTTP {status_code}"
     if truncated:
         summary += "（内容有部分截断）"
+    # 2026-10-20 小欧 - FIX: success 分支原硬编码 detail="" 把 detail 丢弃, 注记(Jina兜底/prompt提取)无法呈现;
+    #   现并入 summary/status.detail(空 detail 行为不变) — 小欧-2026-10-20
+    if detail:
+        summary += f"（{detail}）"
     return {
         "summary": summary,
-        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
+        "status": {"exec_code": "success", "message": message, "code": "", "detail": detail, "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
     }
@@ -482,6 +510,82 @@ def _extract_html_content(html_content: str, extract_format: str) -> Tuple[str, 
     else:
         content = _html_to_markdown(html_content)
     return content, False
+
+
+async def _extract_by_prompt(content: str, prompt: str, timeout: int, t0: float = 0.0) -> Tuple[Optional[str], str]:
+    """prompt 指令 LLM 精准提取(压缩摘要同源通道, 入口注入) — 小欧 2026-10-20
+    2026-10-26 小沈 问题4: 加 t0 参数, LLM提取用总timeout剩余(原独立30-60s计时, 抓取耗时长时LLM可能超总timeout)
+    输入: content 全文 / prompt 提取指令 / timeout 总上限(秒) / t0 开始时间戳(perf_counter)。
+    输出: (提取文本, 注记detail); 提取文本 None = 提取失败 → 调用方降级使用完整原文。
+    通道: tool_executor 注入的 _current_text_task 回调(闭包内部即压缩摘要公用函数
+    call_llm_text_task — callTextForTask 适配钩子 + call_llm_with_fallback 兜底,
+    任何 provider/model 通用); 未连接(直接调工具/无agent)或任何失败恒降级, 绝不因提取失败让工具报错。"""
+    if not content or not prompt or not prompt.strip():
+        return None, ""
+    _extractor = get_current_text_task()
+    if _extractor is None:
+        logger.warning("[fetchpage] prompt提取降级: 无可用LLM通道(入口未注入回调) — 小欧 2026-10-20")
+        return None, "未连接LLM通道,已降级返回完整内容"
+    # 2026-10-26 小沈 问题4: LLM提取用总timeout剩余, 避免抓取耗时长时LLM超总timeout
+    # 2026-10-26 小沈: 三堂会审P1修复 — LLM timeout 永远 ≤ 剩余时间; 剩余<10s直接降级不调LLM
+    if t0 > 0:
+        _elapsed = _time_mod.perf_counter() - t0
+        _remaining = float(timeout) - _elapsed
+    else:
+        _remaining = float(timeout)
+    if _remaining < 10.0:
+        logger.warning(f"[fetchpage] prompt提取降级: 剩余时间{_remaining:.1f}s不足(总timeout={timeout}s)")
+        return None, f"剩余时间{_remaining:.1f}s不足,跳过LLM提取"
+    _llm_timeout = min(_remaining, 120.0)
+    # 2026-10-26 小沈 三堂会审: system prompt 补禁围栏/禁前缀后缀/截断处理/保持结构化;
+    #   user prompt 截断提示改判断式(原固定拼接"中间有省略"在未截断时误导LLM)
+    # 2026-10-26 小沈 - notice消息: LLM提取前发start, 成功后发done, 失败发failed(同 installing/summarizing 模式)
+    _notice_cb = get_current_notice_callback()
+    if _notice_cb:
+        await _notice_cb("extracting", "start", "按指令提取内容中...")
+    _truncated = len(content) > FETCHPAGE_PROMPT_EXTRACT_BUDGET
+    _header = "网页内容(因长度限制已截断, 保留头尾):" if _truncated else "网页内容:"
+    try:
+        text = (await asyncio.wait_for(
+            _extractor([
+                {"role": "system", "content": (
+                    "你是网页内容提取助手。任务: 从给定的网页内容中, 严格按提取指令提取相关信息。\n"
+                    "输出规则(必须严格遵守):\n"
+                    "1. 只输出提取结果本身, 以 markdown 格式输出\n"
+                    "2. 禁止任何前缀/后缀/解释/寒暄(如\"以下是提取结果:\"\"提取完成\"\"好的\")\n"
+                    "3. 禁止用代码块围栏(```)包裹整个输出\n"
+                    "4. 保持原文的结构化信息(表格/列表/代码块)原样提取, 不重组不改写\n"
+                    "5. 网页内容可能因长度限制被截断(保留头尾、省略中间), 基于已有内容提取, 不得编造未出现的信息\n"
+                    "6. 内容截断导致关键信息缺失时, 在输出末尾加一行: [网页内容已截断, 以上为现有部分]\n"
+                    "7. 提取的信息与指令完全无关时, 仅输出: 未找到与指令相关的内容\n"
+                    "8. 不要复述指令本身, 直接输出提取结果"
+                )},
+                {"role": "user", "content": (
+                    f"提取指令: {prompt.strip()}\n\n"
+                    f"{_header}\n"
+                    f"{smart_truncate_text(content, FETCHPAGE_PROMPT_EXTRACT_BUDGET)}"
+                )},
+            ]),
+            timeout=_llm_timeout,
+        ) or "").strip()
+        if not text:   # call_llm_text_task 失败/错误响应约定返空串, 视作提取失败 — 小欧 2026-10-20
+            logger.warning("[fetchpage] prompt提取降级: LLM返回空(明细见通道日志)")
+            if _notice_cb:
+                await _notice_cb("extracting", "failed", "提取失败,返回完整内容")
+            return None, "按prompt提取失败,已降级返回完整内容"
+        if _notice_cb:
+            await _notice_cb("extracting", "done", "内容提取完成")
+        return text, "已按prompt完成内容提取"
+    except asyncio.TimeoutError:
+        logger.warning(f"[fetchpage] prompt提取超时降级: LLM耗时超{_llm_timeout:.0f}s")
+        if _notice_cb:
+            await _notice_cb("extracting", "failed", "提取超时,返回完整内容")
+        return None, "按prompt提取超时,已降级返回完整内容"
+    except Exception as e:
+        logger.warning(f"[fetchpage] prompt提取异常降级: {type(e).__name__}: {e}")
+        if _notice_cb:
+            await _notice_cb("extracting", "failed", f"提取失败:{type(e).__name__}")
+        return None, "按prompt提取失败,已降级返回完整内容"
 
 
 def _build_media_result(url: str, mime: str, raw_bytes: bytes) -> Dict[str, Any]:
@@ -578,6 +682,9 @@ async def _fetch_via_external_reader(url: str, timeout: int) -> Optional[str]:
     return None
 
 
+# save_text_to_file 已抽取至 app/tools/toolhelper/tool_utils.py 公用函数 — 小沈 2026-10-26
+
+
 def _build_browser_headers() -> Dict[str, str]:
     """完整浏览器HTTP头(含sec-ch-ua/sec-fetch-*),模拟真实Chrome请求 — 小欧 2026-07-29"""
     return {
@@ -602,8 +709,10 @@ async def fetchpage(
     js_render: bool = False,
     timeout: int = 30,
     proxy: Optional[str] = None,
+    save_to: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-20 去除 max_tokens(正文零截断, 截断收口于 OBS_FETCHPAGE)"""
+    """获取网页内容 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-20 去除 max_tokens(正文零截断, 截断收口于 OBS_FETCHPAGE)
+    2026-10-26 小沈: format=markdown时Jina优先; save_to指定时自动落盘"""
     if url is None:
         llm_data = _build_fetch_webpage_llm_data("error", 0, "", extract_format, err_code=ERR_INVALID_URL, detail="URL不能为空", hint="请提供要获取的网页URL", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
         return build_error(data={}, llm_data=llm_data)
@@ -642,6 +751,39 @@ async def fetchpage(
 
         headers = _build_browser_headers()
 
+        # 2026-10-26 小沈 问题1-8重构: format=markdown且js_render=False时Jina优先
+        #   Jina直接出MD+绕反爬, 成功则不调LLM(prompt不执行); 失败降级httpx静态+本地库
+        if extract_format == "markdown" and not js_render:
+            _jina_md = await _fetch_via_external_reader(url, timeout)
+            if _jina_md and len(_jina_md) >= 200:
+                # 问题6: Jina返回走_clean_markdown_content统一质量
+                extracted_content = _clean_markdown_content(_jina_md)
+                _detail = "内容来自Jina Reader"
+                # 用户定案: Jina成功不调LLM, prompt不执行
+                if prompt:
+                    _detail += ";prompt因Jina成功未执行"
+                # 问题8: save_to落盘(走write工具完整安全链路)
+                _saved_path = ""
+                if save_to:
+                    _save_note, _saved_path = await save_text_to_file(save_to, extracted_content)
+                    if _save_note:
+                        _detail += f";{_save_note}"
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                content_len = len(extracted_content)
+                _result_data = {"content": extracted_content}
+                if content_len >= 100:
+                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                    if _saved_path:
+                        with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
+                    return build_success(data=_result_data, llm_data=llm_data)
+                # Jina成功但内容短 → warning
+                _warn_data = {} if content_len < 30 else _result_data
+                llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, 200, False, detail=_detail, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                if _saved_path:
+                    with_artifact_file(llm_data, _saved_path)
+                return build_warning(data=_warn_data, llm_data=llm_data)
+            # Jina失败 → 继续走下方httpx静态抓取(降级)
+
         playwright_result = None
         js_render_ok = False
         if js_render:
@@ -651,8 +793,25 @@ async def fetchpage(
             # 浏览器渲染失败, 先尝试外部API兜底(Jina Reader) — 小欧 2026-07-17
             external_md = await _fetch_via_external_reader(url, timeout)
             if external_md and len(external_md) >= 200:
+                # 2026-10-20 小欧 - prompt 提取接入(Jina兜底路径): 成功用提取结果, 失败降级原文
+                # 2026-10-26 小沈 - 三堂会审P0: 补t0+save_to+with_artifact_file(原路径三重缺口)
+                _ext, _note = await _extract_by_prompt(external_md, prompt, timeout, t0)
+                if _ext is not None:
+                    external_md = _ext
+                _saved_path = ""
+                if save_to:
+                    _save_note, _saved_path = await save_text_to_file(save_to, external_md)
+                else:
+                    _save_note = ""
+                _detail = "内容来自外部API(Jina Reader)兜底"
+                if _note:
+                    _detail += f"；{_note}"
+                if _save_note:
+                    _detail += f"；{_save_note}"
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail="内容来自外部API(Jina Reader)兜底", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                if _saved_path:
+                    with_artifact_file(llm_data, _saved_path)
                 return build_success(data={"content": external_md}, llm_data=llm_data)
             logger.warning(f"js_render渲染失败, 外部API兜底失败, 回落静态抓取: {playwright_result.get('detail')}")
             # 不return, 继续下方静态抓取
@@ -685,8 +844,13 @@ async def fetchpage(
                         # [L1] 403 → 优先Jina Reader降级(免费第三方API,绕Cloudflare反爬) — 小欧 2026-07-29
                         _jina_md = await _fetch_via_external_reader(url, timeout)
                         if _jina_md and len(_jina_md) >= 200:
+                            # 2026-10-20 小欧 - prompt 提取接入(403→Jina降级路径): 成功用提取结果, 失败降级原文
+                            # 2026-10-26 小沈 - BUG-2修复: 加t0用总timeout剩余
+                            _ext, _note = await _extract_by_prompt(_jina_md, prompt, timeout, t0)
+                            if _ext is not None:
+                                _jina_md = _ext
                             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail="内容来自Jina Reader降级(绕过反爬)", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=("内容来自Jina Reader降级(绕过反爬)" + ("；" + _note if _note else "")), prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
                             return build_success(data={"content": _jina_md}, llm_data=llm_data)
                         # [L2] Jina失败→尝试cf-mitigated UA降级 — 小欧 2026-07-29
                         if resp.headers.get("cf-mitigated") == "challenge":
@@ -761,27 +925,63 @@ async def fetchpage(
 
         # =============================================================================
         # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
-        # summary 示例: "成功获取网页内容(markdown格式, HTTP 200，已截断)"
+        # summary 示例: "读网页http://x，成功：markdown格式，HTTP 200（内容有部分截断）"
         # — 小欧 2026-07-06
         # =============================================================================
-        result_data = {
-            "content": extracted_content,
-        }
+        # 2026-10-26 小沈 问题1-7重构: prompt提取接入(主路径), 修吞注记+逻辑倒挂+降级截断
+        #   问题4: _extract_by_prompt加t0, LLM提取用总timeout剩余
+        _ext, _note = await _extract_by_prompt(extracted_content, prompt, timeout, t0)
+        # 问题1+2: 无论成功失败都保留注记(原降级时_note被吞, LLM不知提取失败)
+        _detail_note = _note or ""
+        _llm_extract_ok = _ext is not None
+        if _llm_extract_ok:
+            extracted_content = _ext
+        else:
+            # 问题5: 降级时原文可能超6万字爆LLM上下文, 主动截断(原靠OBS兜底)
+            if len(extracted_content) > FETCHPAGE_PROMPT_EXTRACT_BUDGET:
+                extracted_content = smart_truncate_text(extracted_content, FETCHPAGE_PROMPT_EXTRACT_BUDGET)
+                if _detail_note:
+                    _detail_note += f"(原文已截断至{FETCHPAGE_PROMPT_EXTRACT_BUDGET}字符)"
 
+        # 问题8: save_to落盘(走write工具完整安全链路)
+        _save_detail = ""
+        _saved_path = ""
+        if save_to:
+            _save_detail, _saved_path = await save_text_to_file(save_to, extracted_content)
+
+        result_data = {"content": extracted_content}
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        # 内容<100字走warning，<30字data置空 — 小沈 2026-07-08
         content_len = len(extracted_content)
-        if content_len >= 100:
+
+        # 问题3+7: LLM提取成功恒success(短结果是正常的, 如"未找到与指令相关的内容"不应走warning)
+        if _llm_extract_ok:
+            _detail = _detail_note or "已按prompt完成内容提取"
+            if _save_detail:
+                _detail += f";{_save_detail}"
             # ---- observation_formatter route -------------------------------------------
             # branch: #2 raw str
             # trigger: "content" in data and isinstance(data["content"], str)
             # handler: inline — 直接返回 data["content"], OBS_MAX_STRING_LENGTH 截断
             # file:    observation_formatter.py:117-122
             # ------------------------------------------------------------------------------
-            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            if _saved_path:
+                with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
+            return build_success(data=result_data, llm_data=llm_data)
+
+        # 非LLM提取路径(无prompt或降级): 原 content_len 判断
+        if content_len >= 100:
+            _detail = _detail_note
+            if _save_detail:
+                _detail = (_detail + ";" + _save_detail) if _detail else _save_detail
+            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            if _saved_path:
+                with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
             return build_success(data=result_data, llm_data=llm_data)
         result_data = {} if content_len < 30 else result_data
-        llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, status_code, truncated, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, status_code, truncated, detail=_detail_note, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        if _saved_path:
+            with_artifact_file(llm_data, _saved_path)
         return build_warning(data=result_data, llm_data=llm_data)
 
     except (httpx.TimeoutException, asyncio.TimeoutError):

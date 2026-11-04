@@ -9,6 +9,21 @@
 # 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): 删除 get_max_context_tokens 方法(唯一调用方 base_agent:68 已改默认构造, 且其值被 agent_runner 覆盖无实际作用); 上下文窗口基准收敛为 compaction_constants.DEFAULT_CONTEXT_LIMIT(配置优先)
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 # 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
+# 2026-09-21 小欧 - v4.20 单源收敛: _apply_env_overrides 的 AI_PROVIDER 注入由扁平 ai.provider 改为结构化 ai.model_ref.provider（唯一源）
+# 2026-09-21 小欧 - 配置路径单源化 — 顶层 get_config_path() 尊重 OMNIAGENT_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
+#   与 Config 实例 env 路径双源分裂，设置页改的不是实际运行配置）; Config._get_config_path 删除自身 env 分支改调顶层（DRY 唯一源）
+# 2026-09-21 小欧 - 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
+#   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
+# 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
+# 2026-09-27 小欧 - ①新增 env_flag()：布尔型 env 统一按"假值列表"({空,0,false})判定，替代各处手搓的
+#   真值列表 in ("1","true","True")（语义相反且 TRUE/yes/on 会失效）。deps 的 OMNIAGENT_REQUIRE_AUTH
+#   故意未并入 —— 安全核心路径，改动风险大于 DRY 收益。②get_max_steps 源头归一 None/非数字/0，
+#   调用处不再各写兜底；归一复用 app.utils.type_utils.to_int_or（该模块无依赖，故本文件可安全 import）。
+# 2026-09-27 小欧 - security 段 env 注入的手写键名清单改为 ENV_INJECTED_KEYS 常量 +
+#   _inject_registry_env 统一遍历；与 registry.env_inject 的一致性由 _build_index 启动自检保证
+#   （原手写清单在同日键改名时漏改 → env 值注入旧键，页面读新键得 None，显示与生效脱节）
+# 2026-11-03 小欧 - 键名名副其实: logging.level → logging.file_level, LOG_LEVEL env 注入同步改键 — 小欧-2026-11-03
+# 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可): 键回到单键 logging.level, LOG_LEVEL env 注入同步 — 小欧-2026-11-03
 
 import functools
 import os
@@ -17,6 +32,7 @@ import yaml
 from collections import OrderedDict
 from typing import Dict, Any, Optional
 from pathlib import Path
+from app.utils.type_utils import to_int_or
 @functools.lru_cache(maxsize=1)
 def _make_safe_loader() -> type:
     """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
@@ -31,6 +47,35 @@ def _make_safe_loader() -> type:
         _construct_ordered_dict,
     )
     return _Loader
+
+
+def env_nonempty(name: str) -> bool:
+    """返回环境变量是否非空且非纯空白 — 2026-09-21 小欧：env 覆盖语义统一单点"""
+    v = os.environ.get(name)
+    return bool(v and v.strip())
+
+
+# 需注入内存配置的 env 键（让页面显示值=实际生效值）。
+#   放本模块而非 registry：get_config() 在 app.logger 导入期间就被调用，本模块不能反向依赖
+#   app.services（否则 logger→config→services→db→logger 循环）。一致性由 registry 自检兜底。
+ENV_INJECTED_KEYS: Dict[str, str] = {
+    "security.access_token": "OMNIAGENT_ACCESS_TOKEN",
+    "security.access_token_allowlist": "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
+}
+
+
+def env_flag(name: str, default: str = "0") -> bool:
+    """布尔型环境变量：值在 {空, 0, false}（忽略大小写）视为关，其余视为开。
+
+    2026-09-27 小欧 - 抽成单点：此前各处手搓 `in ("1","true","True")` 真值列表，与 deps 的
+    `not in ("0","false","False")` 语义相反，且 `TRUE`/`yes`/`on` 会失效。
+    统一为假值列表（凡不是显式关闭就算开）。
+
+    注：`deps.verify_token` 里的 `OMNIAGENT_REQUIRE_AUTH` 判定故意未并入 —— 那是安全核心路径
+    （默认 "1"=开），统一它须写成 `env_flag(REQUIRE_AUTH_ENV, default="1")` 并跑通鉴权全部护栏测试。
+    """
+    return (os.environ.get(name) or default).strip().lower() not in ("", "0", "false")
+
 
 class Config:
     """配置管理类"""
@@ -83,10 +128,7 @@ class Config:
         self._config_mtime = config_path.stat().st_mtime
     
     def _get_config_path(self) -> Path:
-        """获取配置文件路径"""
-        env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
-        if env_path:
-            return Path(env_path)
+        """获取配置文件路径 — 2026-09-21 小欧：收敛掉自身 env 分支，统一走顶层 get_config_path(DRY 单源)"""
         return Path(get_config_path())
     
     def _apply_env_overrides(self):
@@ -101,20 +143,45 @@ class Config:
             if env_value:
                 provider_config['api_key'] = env_value
         
-        if os.getenv('AI_PROVIDER'):
-            ai_config['provider'] = os.getenv('AI_PROVIDER')
+        # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
+        # 2026-09-21 小欧: env_nonempty 排除纯空白覆写
+        _env_provider = os.getenv('AI_PROVIDER')
+        if env_nonempty('AI_PROVIDER'):
+            _ref = ai_config.get('model_ref')
+            if not isinstance(_ref, dict):
+                _ref = {}
+                ai_config['model_ref'] = _ref
+            _ref['provider'] = _env_provider
         
-        # 日志级别
+        # 日志级别(单键 logging.level, 撤销 file_level/console_level 双键 — 北京老陈令 2026-11-03)
         logging_config = self._config_data.get('logging', {})
-        if os.getenv('LOG_LEVEL'):
+        if env_nonempty('LOG_LEVEL'):
             logging_config['level'] = os.getenv('LOG_LEVEL')
+
+        # security 段注入改为按 ENV_INJECTED_KEYS 驱动（键名不再散落两处）
+        self._inject_registry_env()
+
+    def _inject_registry_env(self) -> None:
+        """按 ENV_INJECTED_KEYS 注入 env 值。漏改键名时由 registry 启动自检拒启，不会静默脱节。"""
+        for key, env_name in ENV_INJECTED_KEYS.items():
+            if not env_nonempty(env_name):
+                continue
+            parts = key.split(".")
+            node = self._config_data
+            for part in parts[:-1]:
+                child = node.get(part)
+                if not isinstance(child, dict):
+                    child = {}
+                    node[part] = child
+                node = child
+            node[parts[-1]] = os.getenv(env_name)
     
     def get(self, key: str, default: Any = None) -> Any:
         """
         获取配置项
         
         Args:
-            key: 配置键,支持点号分隔(如 'ai.provider')
+            key: 配置键,支持点号分隔(如 'ai.model_ref')
             default: 默认值
             
         Returns:
@@ -133,56 +200,65 @@ class Config:
     
 
     def get_max_rounds(self, default: int = 100) -> int:
-        """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08"""
-        return self.get('app.max_rounds', default)
+        """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08
+        2026-09-21 小欧 v4.20 键名按域收敛: app.max_rounds → agent.max_rounds
+        2026-09-23 小欧 trim配置化: agent.max_rounds → tuning.trim.max_rounds（调优·裁剪分块）"""
+        return self.get('tuning.trim.max_rounds', default)
 
     def get_max_steps(self, default: int = 10000) -> int:
-        """
-        获取max_steps配置 - 统一入口
+        """获取max_steps配置 - 统一入口
 
         Args:
             default: 默认值
 
         Returns:
-            max_steps值
+            max_steps值（int）
+
+        2026-09-27 小欧 - 源头归一 None/非数字/0：yaml 写 `agent.max_steps:`（空值）、手写成
+        "10000"（带引号）或 0 时，`self.get` 原样返回 → 下游 int 字段 500 或拿到非法 0。
+        在此归一，调用处就无需各写一套兜底（DRY）。0 是非法值（registry range 下界为 1）。
+        2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps
         """
-        return self.get('app.max_steps', default)
+        steps = to_int_or(self.get('agent.max_steps'), default)
+        return steps if steps > 0 else default
 
     def get_project_root(self) -> str:
         """获取项目根目录配置 — 小欧 2026-08-10 ①改兜底
+        2026-09-21 小欧 v4.20 键名按域收敛: app.project_root → workspace.project_root
 
-        项目根=tool工作区: 配置 `app.project_root` 优先;
+        项目根=tool工作区: 配置 `workspace.project_root` 优先;
         未配置(空) → 用户主目录 `Path.home()`(不再用代码位置当项目根)。
         代码库根另行由 `get_code_root()` 提供(定位 config/version.txt 等程序资源)。
         """
-        root = self.get('app.project_root', '')
+        root = self.get('workspace.project_root', '')
         if root:
             return root
         return str(Path.home())
 
     def get_allowed_dirs(self) -> list:
         """获取授权目录列表(可多个) — 小欧 2026-08-10 ⑩新增
+        2026-09-21 小欧 v4.20 键名按域收敛: app.allowed_dirs → workspace.allowed_dirs
 
-        除项目根外, tool 额外授权访问的工作目录, 配置 `app.allowed_dirs`(列表)。
+        除项目根外, tool 额外授权访问的工作目录, 配置 `workspace.allowed_dirs`(列表)。
         项目根天然在授权内, 无需重复列入。
         边界约束: 任一授权目录指向代码库根或其父/子级 → 抛 ValueError 拒绝加载
         (与⑦ tool禁区冲突, 防止授权目录变相开放代码库)。
         """
-        raw = self.get('app.allowed_dirs', None)
+        raw = self.get('workspace.allowed_dirs', None)
         if not raw:
             return []
         if not isinstance(raw, list):
-            raise ValueError("app.allowed_dirs 必须是列表(list)")
+            raise ValueError("workspace.allowed_dirs 必须是列表(list)")
         result = []
         code_root = Path(_get_code_root()).resolve()
         for item in raw:
             if not isinstance(item, str) or not item.strip():
-                raise ValueError(f"app.allowed_dirs 含非法条目: {item!r}, 必须是非空字符串路径")
+                raise ValueError(f"workspace.allowed_dirs 含非法条目: {item!r}, 必须是非空字符串路径")
             d = Path(item).resolve()
             if d == code_root:
-                raise ValueError(f"app.allowed_dirs 禁止指向代码库根: {item}")
+                raise ValueError(f"workspace.allowed_dirs 禁止指向代码库根: {item}")
             if code_root in d.parents or d in code_root.parents:
-                raise ValueError(f"app.allowed_dirs 禁止指向代码库根的父/子级: {item}")
+                raise ValueError(f"workspace.allowed_dirs 禁止指向代码库根的父/子级: {item}")
             result.append(str(d))
         return result
 
@@ -252,7 +328,11 @@ def get_code_root() -> str:
 
 
 def get_config_path(filename: str = "config.yaml") -> str:
-    """统一配置路径获取 — 代码库根下 config 目录(非项目根) — 小欧 2026-08-10 ④内部改调"""
+    """统一配置路径获取 — 尊重 OMNIAGENT_CONFIG_PATH(环境变量指定则用之)，否则代码库根 config 目录
+    — 小欧 2026-08-10 ④内部改调; 2026-09-21 小欧 补 env 分支(与 Config 实例单源一致)"""
+    env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
+    if env_path:
+        return str(Path(env_path))
     return str(_get_code_root() / "config" / filename)
 
 

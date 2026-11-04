@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - 入参即信任: _build_event_log_llm_data 加 user_max_events 参数, 入 action.params, 支撑 formatter 动态调行数上限
 # 2026-07-31 - 小欧 - 超时错误提示优化: 补充超时 hint 文本, user_max_events 参数传递到错误响应
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取→读日志
 """
 event_log — 获取系统事件日志
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -15,14 +17,14 @@ import platform
 import subprocess
 import time as _time_mod
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
     ERR_SHELL_COMMAND_NOT_FOUND,
-    ERR_SHELL_TIMEOUT,
     ERR_SYSTEM_EVENT_LOG,
     ERR_SYSTEM_TIMEOUT,
 )
@@ -39,19 +41,19 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     if user_max_events is not None:
         _act_params["max_events"] = user_max_events
     if exec_code == "error":
-        err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
+        err_summary = f"读日志{log_name}，失败" + (f"：{detail}" if detail else "")
         return {
             "summary": err_summary,
-            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+            "action": {"tool": "event_log", "tool_zh": "读日志", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else f"获取事件日志{log_name}，失败", "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": hint if hint else "请检查日志名称、级别和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    summary_text = f"获取事件{log_name}日志，成功,说明信息: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
+    summary_text = f"读日志{log_name}，成功：{event_count}条事件" if event_count > 0 else f"读日志{log_name}，成功：指定时间范围内无匹配事件"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读日志), 去"说明信息/提示说明" — 小欧-2026-10-14
     return {
         "summary": summary_text,
-        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "event_log", "tool_zh": "读日志", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{event_count}条事件", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
     }
@@ -73,7 +75,7 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
         xpath_query = " and ".join(query_parts)
 
         cmd = ["wevtutil", "qe", log_name, f"/q:*[System[{xpath_query}]]", "/c:%d" % max_events, "/rd:true", "/f:text"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
@@ -129,7 +131,7 @@ def _get_linux_event_log(log_name: str, max_events: int, level: str,
         since_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
 
         cmd = ["journalctl", f"--since={since_str}", f"--priority={journal_level}", f"--lines={max_events}", "--no-pager", "-o", "json"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
@@ -181,7 +183,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             if error_code == ERR_SYSTEM_TIMEOUT:
                 timeout_sec = TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"])
                 llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="查询超时，请检查事件日志查询条件或增大时间范围", user_max_events=max_events)
-                llm_data["summary"] = f"获取事件{log_name}日志，失败: 超时({timeout_sec}秒)"
+                llm_data["summary"] = f"读日志{log_name}，失败：超时({timeout_sec}秒)"
             else:
                 llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别", user_max_events=max_events)
             return build_error(data={}, llm_data=llm_data)
@@ -199,7 +201,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常,请检查系统状态")
+        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常，请检查日志名称及事件日志服务状态")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么, 点名输入+服务 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

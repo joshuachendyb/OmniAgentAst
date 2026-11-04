@@ -15,17 +15,30 @@
     "test:e2e:debug": "npm run check && playwright test --debug",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "lint:e2e": "eslint e2e_case e2e_front_lib src/tests/support --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run lint && npm run format:check"
+    "check": "npm run lint && npm run format:check",
+    "check:full": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run lint:e2e && npm run format:check",
+    "arch:check": "node scripts/arch-check.mjs",
+    "arch:check:strict": "node scripts/arch-check.mjs --strict"
   },
   "dependencies": {
     "antd": "^5.12.0",
     "axios": "^1.6.0",
     "dayjs": "^1.11.19",
+    "get-east-asian-width": "^1.7.0",
+    "highlight.js": "^11.12.0",
+    "mermaid": "^12.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.13.0"
+    "react-markdown": "^9.1.0",
+    "react-router-dom": "^7.13.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^2.0.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@bit-ocean/auto-import": "^0.0.54",
@@ -33,6 +46,8 @@
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.2",
+    "@types/hast": "^3.0.5",
+    "@types/node": "^20.19.43",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@typescript-eslint/eslint-plugin": "^7.18.0",

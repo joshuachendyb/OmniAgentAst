@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 读取行数上限改引用 tool_constants.XLSX_MAX_ROWS(原硬编码10000), 功能零退化
 # 2026-07-20 - 小欧 - 章15 门限治理:
@@ -14,18 +15,24 @@
 # 2026-07-21 - 小欧 - 字节安全治理: 移除行数限制(INER_READ_XLSX_MAX_ROWS), 
 #    改为入口字节大小检查(READ_XLSX_INPUT_MAX_BYTES=20MB)防OOM; 
 #    内部函数默认max_rows=1000000(安全兜底不再触发truncated)
-# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 Tool 层输出截断
+# 2026-07-23 - 小欧 - 新增 Tool 层输出截断
 #    rows 超 XLSX_OUTLIMIT_ROWS_MAX=1000 截断 + data.truncated=True
 #    单格str超 XLSX_OUTLIMIT_CELL_CHARS=500 尾部截断
 #    截断后缀包含原文长度: f"...(截断:原文N字符)"
 #    row_count 同步更新, 使 llm_data.summary 与实际 data 一致
-#     formatter #25 已读 truncated 字段, 自动显示 "⚠ 已截断"
-# 2026-07-23 - 小欧 - 北京老陈驱动BugFix: 多 sheet 也 apply 行+格截断(bug4); 新增 truncated_reason 具体原因(bug5)
+#     formatter  已读 truncated 字段, 自动显示 "⚠ 已截断"
+# 2026-07-23 - 小欧 - 输出截断第二轮增强: 多 sheet 也 apply 行+格截断; 新增 truncated_reason 具体原因
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 删 READ_XLSX_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
-# 2026-07-26 - 小沈 - BugFix #2/#9: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); #3: path参数不覆盖
+# 2026-07-26 - 小沈 - 修复: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); path参数不覆盖
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取Excel→读EXCEL
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: _read_csv_stdlib_inner 的 rows/headers 初化移入编码尝试循环内——
+#   原在循环外, 长文件前次编码读入的部分行在 UnicodeDecodeError 换编码重读时不被清空,
+#   下次尝试叠加造成数据重复(实测3000行文件读出5499行/2498条重复)
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -45,6 +52,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import (
     ERR_DOC_READ_XLSX,
     XLSX_OUTLIMIT_ROWS_MAX, XLSX_OUTLIMIT_CELL_CHARS,
@@ -59,24 +67,24 @@ def _build_read_xlsx_llm_data(
 ) -> Dict[str, Any]:
     """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
-        _act_params = {"file_path": file_path}
+        _act_params = {"path": file_path}
         if user_sheet_name:
             _act_params["sheet_name"] = user_sheet_name
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取Excel{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "summary": f"读EXCEL{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
+            "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     return {
-        "summary": f"读取Excel{file_path}，成功: {row_count}行，{sheet_count}个工作表",
-        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
-        "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"读EXCEL{file_path}，成功：{row_count}行，{sheet_count}个工作表",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读EXCEL) — 小欧-2026-10-14
+        "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行，{sheet_count}个工作表", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "row_count": {"value": row_count, "text": f"{row_count}行"},
@@ -103,7 +111,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 1000000, sheet_name: Option
     try:
         sheet_names = wb.sheetnames
         if sheet_name and sheet_name not in sheet_names:
-            return {"error_detail": f"工作表不存在: {sheet_name}", "hint": f"工作表 {sheet_name} 不存在,请确认工作表名称是否正确", "params": {"file_path": str(file_path), "sheet_name": sheet_name}}
+            return {"error_detail": f"工作表不存在：{sheet_name}", "hint": f"工作表 {sheet_name} 不存在，请确认工作表名称是否正确", "params": {"path": str(file_path), "sheet_name": sheet_name}}
         target_sheets = [sheet_name] if sheet_name else sheet_names
 
         all_sheets_data = []
@@ -145,11 +153,14 @@ def _read_csv_stdlib_inner(
     OOM自然抛出被except捕获(同dataanalysis OOD模式) — 小沈 2026-07-26"""
     path = Path(file_path)
 
-    rows = []
-    headers = []
     encodings_to_try = [encoding, "gbk", "gb2312", "latin-1"] if encoding == "utf-8" else [encoding, "utf-8", "latin-1"]
     read_ok = False
     for enc in encodings_to_try:
+        # 2026-10-20 小欧 - FIX: rows/headers 初始化原在循环外, 前次编码读入的部分内容
+        #   (长文件途中才解码失败)在 `continue` 换编码重读时不被清空, 下次尝试叠加上去
+        #   造成数据重复(实测 3000 行文件读出 5499 行/2498 条重复); 重试必须整体重置 — 小欧-2026-10-20
+        rows = []
+        headers = []
         try:
             with open(path, "r", encoding=enc, newline="") as f:
                 reader = csv.reader(f, delimiter=delimiter)
@@ -169,7 +180,7 @@ def _read_csv_stdlib_inner(
         except UnicodeDecodeError:
             continue
     if not read_ok:
-        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取,请确认文件编码格式", "params": {"file_path": str(file_path), "encodings_tried": encodings_to_try}}
+        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取，请确认文件编码格式", "params": {"path": str(file_path), "encodings_tried": encodings_to_try}}
 
     return {"headers": headers, "rows": rows, "row_count": len(rows)}
 
@@ -185,6 +196,12 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     _p = Path(path)
     suffix = _p.suffix.lower()
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail=err, hint="请检查文件路径", user_sheet_name=sheet_name)
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查（.csv由本工具处理，跳过检查） — 小欧 2026-06-24
     if suffix != ".csv":
@@ -197,7 +214,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
             elif suggested_tool == "":
                 _hint = "请检查文件路径和文件名是否正确"
             else:
-                _hint = "文件类型不匹配,请使用.xlsx或.csv格式"
+                _hint = "请检查文件路径是否存在，表格请使用.xlsx或.csv格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"; csv 支持属实, 换策略保留 — 小欧-2026-10-14
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=_sn, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
@@ -232,7 +249,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         # ── Tool 层输出截断 — 小欧 2026-07-23 — 小欧 2026-07-23 BugFix: 多 sheet 截断+truncated_reason
         # 行数截断: 超 XLSX_OUTLIMIT_ROWS_MAX 截断 + data.truncated=True
         # 单格字符串截断: 超 XLSX_OUTLIMIT_CELL_CHARS 尾部加 "...(截断:原文N字符)"
-        # formatter #25 读 data.truncated 自动显示 "⚠ 已截断"
+        # formatter  读 data.truncated 自动显示 "⚠ 已截断"
         # 注意: row_count 同步更新, 使 llm_data.summary 与实际 data 一致
         _tool_trunc = False
         _trunc_rows = False
@@ -284,10 +301,10 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #25 read_xlsx 专属(单sheet/CSV headers+rows) / #21 scalar fallback(多sheet)
+        # branch:  read_xlsx 专属(单sheet/CSV headers+rows) /  scalar fallback(多sheet)
         # trigger: action.tool=="read_xlsx" 且 "headers" in data and "rows" in data
-        # handler: _format_xlsx_result(data, llm_data) — 专属 #25 全量展示(无显示域行/列截断, read_xlsx 无offset分页); 两态说明仅反映 Tool 层 truncated
-        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows, 走 #21 fallback
+        # handler: _format_xlsx_result(data, llm_data) — 专属  全量展示(无显示域行/列截断, read_xlsx 无offset分页); 两态说明仅反映 Tool 层 truncated
+        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows, 走  fallback
         # file:    observation_formatter.py
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)

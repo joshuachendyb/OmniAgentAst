@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-07 - 小欧 - 文件由 param_alias_mapper.py 重命名为 tools_alias_mapper.py(名实相符: 既有工具名别名也有参数别名); import处同步更新(registry/tool_retry_engine/action_handler/test)
+# 2026-11-04 - 小欧 - edit 增 model→mode 键名别名(日志实证: session 12b317fe 一次 6 条 edit 全废, LLM 把 mode 写成 model)
 # 2026-07-20 - 小欧 - 删 output_mode 参数别名映射: grep 已去除 output_mode 参数(默认即 content 模式), 该别名失效, 删除死映射避免误导
 # 2026-07-28 - 小欧 - BUG#19: "value":"value"是恒等映射(输入=输出无转换), 空转别名删除
-# 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
+# 2026-08-07 - 小欧 - 新增TOOL_NAME_ALIASES工具名别名映射+normalize_tool_name: LLM常生成变体名(write_text等), 映射到注册名(write), 防"工具未注册"误拦截(com-test 03暴露)
 # 2026-08-09 - 小欧 - write_xlsx 参数别名 append→append_mode: LLM 常按布尔语义传 append, 实际实现/SCHEMA参数为 append_mode(2026-08-07 P04优化), 无映射会因未知参数被忽略导致追加失效
-# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writefile/readfile 幻觉名→writetext/readtext: sensenova-flash-lite 将写/读文本工具幻觉为 writefile, 因未注册被安全检查拦截(工具未注册)致 P5-07 任务空转防循环失败; get_tool 归一化后走注册名正常执行, execute_tools 内扩展名纠正再兜底
-# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writeetext/readetext/editetext(多一个e的拼写幻觉)→writetext/readtext/edittext: sensenova-flash-lite 将 writetext 幻觉为 writeetext, 因未注册被拦截致 COM-08 任务尾部空转防循环失败(与 writefile 同源, 拼写变异变体)
-# 2026-08-22 - 小欧 - TOOL_NAME_ALIASES 新增裸名 write/read/edit→writetext/readtext/edittext: COM-05b 实证 LLM 三轮幻觉调用裸名"write"(最自然通用名), 因不在别名表被拦截, 同名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后若扩展名为 .docx/.pdf 等仍由 execute_tools 扩展名预检二次路由, 无歧义风险
-# 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→writetext: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 writetext 正常执行(与 writefile/writeetext 同源修复)
+# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writefile/readfile 幻觉名→write/read: sensenova-flash-lite 将写/读文本工具幻觉为 writefile, 因未注册被安全检查拦截(工具未注册)致任务空转防循环失败; get_tool 归一化后走注册名正常执行, execute_tools 内扩展名纠正再兜底
+# 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writeetext/readetext/editetext(多一个e的拼写幻觉)→write/read/edit: sensenova-flash-lite 将 write 幻觉为 writeetext, 因未注册被拦截致任务尾部空转防循环失败(与 writefile 同源, 拼写变异变体)
+# 2026-08-22 - 小欧 - TOOL_NAME_ALIASES 新增裸名 write/read/edit→write/read/edit: 实证 LLM 三轮幻觉调用裸名"write"(最自然通用名), 因不在别名表被拦截, 同名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后若扩展名为 .docx/.pdf 等仍由 execute_tools 扩展名预检二次路由, 无歧义风险
+# 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→write: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 write 正常执行(与 writefile/writeetext 同源修复)
+# 2026-10-02 - 小欧 - 注册名归位: PARAM_ALIASES 键 shell→bash; TOOL_NAME_ALIASES "bash"→"shell" 反转为 "shell"→"bash"(旧名降级为幻觉名兜底)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -28,26 +30,28 @@ from app.logger import logger
 
 PARAM_ALIASES = {
     # 路径参数统一为path后,旧规范名(file_path/dir_path/search_dir)降级为别名 — 小欧 2026-07-11
-    "readtext": {
+    "read": {
+        "file_path": "path",
+        "filepath": "path",
+        "filePath": "path",  # 驼峰兜底: opencodeZen旧GATE_STUB曾用filePath — 北京老陈 2026-09-24
+        "file": "path",
+        "filename": "path",
+        "file_name": "path",
+    },
+    "write": {
         "file_path": "path",
         "filepath": "path",
         "file": "path",
         "filename": "path",
         "file_name": "path",
     },
-    "writetext": {
+    "edit": {
         "file_path": "path",
         "filepath": "path",
         "file": "path",
         "filename": "path",
         "file_name": "path",
-    },
-    "edittext": {
-        "file_path": "path",
-        "filepath": "path",
-        "file": "path",
-        "filename": "path",
-        "file_name": "path",
+        "model": "mode",  # 键名混淆实证: session 12b317fe 6连发全废(model:"once"), 语义唯一指向mode — 2026-11-04 小欧
     },
     "readmedia": {
         "file_path": "path",
@@ -157,7 +161,7 @@ PARAM_ALIASES = {
         "new_name": "dest",
         "destination": "dest",
     },
-    "shell": {
+    "bash": {
         "workdir": "cwd",
         "work_dir": "cwd",
         "working_directory": "cwd",
@@ -336,24 +340,25 @@ PARAM_VALUE_ALIASES = {
 # 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
 # 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
 TOOL_NAME_ALIASES = {
-    "write_content": "writetext",  # LLM幻觉名→writetext - 小欧 2026-08-26
-    "write_text": "writetext",
-    "read_text": "readtext",
-    "edit_text": "edittext",
-    "write_text_file": "writetext",
-    "read_text_file": "readtext",
-    "edit_text_file": "edittext",
-    "writefile": "writetext",
-    "readfile": "readtext",
-    "write": "writetext",
-    "read": "readtext",
-    "edit": "edittext",
-    "writeetext": "writetext",
-    "readetext": "readtext",
-    "editetext": "edittext",
+    "write_content": "write",  # LLM幻觉名→write - 小欧 2026-08-26
+    "write_text": "write",
+    "read_text": "read",
+    "edit_text": "edit",
+    "write_text_file": "write",
+    "read_text_file": "read",
+    "edit_text_file": "edit",
+    "writefile": "write",
+    "readfile": "read",
+    "readtext": "read",  # 2026-10-02 小欧 - 注册名已改 read/write/edit, 旧名降级为幻觉名兜底
+    "writetext": "write",
+    "edittext": "edit",
+    "writeetext": "write",
+    "readetext": "read",
+    "editetext": "edit",
     "list_directory": "listdir",
     "http_get": "httpget",
     "http_request": "httpget",
+    "shell": "bash",  # 2026-10-02 小欧 - 注册名已改 bash, 旧名 shell 降级为幻觉名兜底
 }
 
 

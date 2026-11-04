@@ -3,71 +3,376 @@
 # 1. 复制此文件到 config/config.yaml
 # 2. 填入您的API密钥
 # 3. config.yaml 已被Git忽略，不会提交到仓库
+#
+# 编辑历史:
+#   2026-09-21 - 小欧 - 键名按域收敛重排：app.debug/max_rounds/max_steps/project_root/allowed_dirs
+#                       分域归 workspace/agent/logging；删白/黑名单4键与死配置（contentFilter/strict_mode/maxFileSize）；
+#                       补行安全漏斗说明注释
+#   2026-09-21 - 小欧 - 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
+#   2026-09-22 - 小欧 - 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
+#   2026-09-22 - 小欧 - 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
+#   2026-09-23 - 小欧 - LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_length_default）
+#   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
+#   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
+#   2026-09-23 - 小欧 - 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
+#   2026-09-23 - 小欧 - 连接相关注释重写: provider timeout/max_retries 补优先级注释(高于tuning.llm_net/stream_max_retries) + tuning llm 3键/concurrency 2键/heartbeat/cors 全部改为「阶段+后果+分工」语义对齐 settings_registry notice - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组剩余注释全量重写: llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组注释去开发术语: 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
+#   2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(新名更准确，原名与 tuning.llm.stream_* 易混且非 LLM body 流式)；块下 4 键路径/值/注释措辞不变，仅块名改 — 小欧-2026-09-24
+#   2026-10-18 小欧 - security 段按子命名空间重组:
+#     system.confirm_dangerous_ops            保存设置的二次确认(仅 UX, 与后端拦截无关)
+#     hitl.enabled                            是否走人工确认链路(危险防护不受其影响)
+#     hitl.auto_confirm_delay / .timeout      自动确认倒计时秒数 / 人工确认最长等待秒数
+#     hitl.shell_readonly_prefixes            只读免确认白名单(留空=用内置名单)
+#     trust.ttl_days                          会话信任天数
+#     原先 hitl_enabled / confirmDangerousOps / hitl_timeout 平铺写法作废, 读取端已全部改嵌套取值, 不保留旧键。
+#   2026-10-18 小欧 - 补 hitl.shell_readonly_prefixes: 原为代码内硬编码, 收紧须发版; 留空即回退内置名单。
+#   2026-10-25 小欧 - tuning.trim 3 键→5 键: 加 keep_recent_rounds=5(裁剪时最近 N 个 FC 工具步不裁, 5-20)、
+#     tools_token_reserve=30000(tools schema 输入 token 预留, 防裁完仍超窗 400); 与 settings_registry 同批注册。
+#   2026-11-01 小欧 - 键名统一: ai.{p}.model_params/model_meta 内的 context_limit → context_length、
+#     llm.context_limit_default → llm.context_length_default（与运行时真源同名，旧名作废不保留别名）— 小欧-2026-11-01
+#   2026-10-25 23:09 小欧 - tuning.trim.trigger_ratio 0.75→0.9: 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径; 与 settings_registry 同批改。
+#   2026-11-01 小欧 - ai 域新增 kilo Provider 块: 免费网关(实测 /models 拉 384 模型与 :free/0 价调用均免
+#     key, 付费需自填 key); 与真实 config.yaml 同步接入 — 小欧-2026-11-01
+#   2026-11-01 09:25 小欧 - kilo 块补 5 个 free 模型 + 全量 model_meta(镜像真配置模型库保存实况:
+#     cohere/north-mini-code:free、kilo-auto/free、nvidia/nemotron-3.5-super-vl:free、
+#     openrouter/free、reflection/beam-free) — 小欧-2026-11-01
+#
+#
+# 严禁事项 — 小欧 2026-09-21
+#   禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
+#   禁止复制网上模板带入 openai/gpt 垃圾配置（占位 api_key=sk-new-key 之类一律不准出现）
+#     命令安全由 path_safe_check/tools/security 代码内实现（路径校验才是关键）
 
 ai:
-  # ✅ 顶层配置（全局）
-  model: kimi-k2.5-free
-  provider: opencode  # ✅ 当前Provider
+  # 顶层配置（全局）— 唯一源 ai.model_ref（单源收敛，删扁平 provider/model）
+  # 2026-10-11 小欧 - provider 块与 models 列表按运行配置 1:1 镜像（键名大小写原样：
+  #   ZenFree/DeepSeek/Z_AI/Discoversh；api_key 一律占位符，真 key 只进 config/config.yaml；
+  #   timeout/max_retries 取运行值原样；空 models 表示尚未拉取，配好 key 后到模型库拉取）。
+  model_ref: {provider: agnes, model: agnes-3.0-flash}
 
-  # ✅ Provider配置（多个）
-  opencode:
-    api_base: https://opencode.ai/zen/v1
-    api_key: sk_xxx...
+  # Provider配置（多个）
+  # timeout/max_retries 优先级高于全局 tuning.llm_net.read_timeout / tuning.llm.stream_max_retries — 小欧-2026-09-23
+  agnes:
+    api_base: https://api.agnes-ai.cn/v1
+    api_key: sk-xxx...
     models:
-      - minimax-m2.5-free
-      - kimi-k2.5-free
+      - agnes-2.5-flash
+      - agnes-2.5-pro
+      - agnes-3.0-flash
+      - agnes-image-2.1-flash
+      - agnes-video-2.5
+      - agnes-video-2.5-flash
     timeout: 120
+    max_retries: 3
+
+  sensenova:
+    api_base: https://token.sensenova.cn/v1
+    api_key: sk-xxx...
+    models:
+      - deepseek-v4-flash
+      - glm-5.2
+      - sensenova-6.8-flash-lite
+      - kimi-k3
+    timeout: 200
+    max_retries: 3
+
+  ZenFree:
+    api_base: https://opencode.ai/zen/v1
+    api_key: public
+    models:
+      - big-pickle
+      - longcat-2.5-preview-free
+      - mimo-v2.6-flash-free
+      - muse-spark-1.2-contributor-free
+      - muse-spark-1.3-contributor-free
+      - space-bunny-free
+      - step-5-preview-free
+    timeout: 151
+    max_retries: 4
+
+  qiniu:
+    api_base: https://api.qnaigc.com/v1
+    api_key: sk-xxx...
+    models:
+      - deepseek-r1
+      - deepseek-v3.1
+      - minimax/minimax-m2.5
+      - moonshotai/kimi-k2
+      - moonshotai/kimi-k2.5
+      - z-ai/glm-4.5-air-free
+    timeout: 90
+    max_retries: 3
+
+  zhipuai:
+    api_base: https://open.bigmodel.cn/api/paas/v4/
+    api_key: sk-xxx...
+    models:
+      - glm-4.5
+      - glm-4.5-air
+      - glm-5.3
+    timeout: 90
+    max_retries: 3
+
+  Discoversh:
+    api_base: https://discovery-api.intern-ai.org.cn/v1
+    api_key: sk-xxx...
+    models:
+      - Agents-A1
+      - Atria-Dawn-Preview
+    timeout: 120
+    max_retries: 3
+
+  openrouter:
+    api_base: https://openrouter.ai/api/v1
+    api_key: sk-xxx...
+    models: []  # 尚未拉取：配好 key 后到模型库「获取模型列表」
+    timeout: 60
+    max_retries: 3
+
+  amdapi:
+    api_base: https://developer.amd.com.cn/radeon/api/v1
+    api_key: sk-xxx...
+    models: []  # 尚未拉取：配好 key 后到模型库「获取模型列表」
+    timeout: 60
+    max_retries: 3
 
   longcat:
     api_base: https://api.longcat.chat/openai/v1
-    api_key: ak_xxx...
+    api_key: sk-xxx...
     models:
-      - LongCat-Flash-Thinking
-    timeout: 120
+      - LongCat-2.0
+      - LongCat-2.5-Preview
+    timeout: 60
+    max_retries: 3
 
-  zhipuai:
-    api_base: https://test.com
-    api_key: test123
+  zenmux:
+    api_base: https://zenmux.ai/api/v1
+    api_key: sk-xxx...
+    models:
+      - atria-asi/atria-dawn-preview
+      - dots-studio/dots3-note-prev
+      - z-ai/glm-4.7-flash-free
+    timeout: 60
+    max_retries: 3
+  # 模型参数当前值（运行时透传 extra_body/context_length）：写法是在对应模型下挂 model_params，
+  #   key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）；
+  #   设置页「+ 添加参数」勾选预设后保存即按此形状写入 — 小欧-2026-10-11
+
+  Z_AI:
+    api_base: https://api.z.ai/api/paas/v4
+    api_key: sk-xxx...
+    models:
+      - glm-5.3-flash
+    timeout: 60
+    max_retries: 3
+
+  DeepSeek:
+    api_base: https://api.deepseek.com/v1
+    api_key: sk-xxx...
+    models:
+      - deepseek-flash
+      - deepseek-v4-pro
+    timeout: 60
+    max_retries: 3
+
+  moonshot:
+    api_base: https://api.moonshot.cn/v1
+    api_key: sk-xxx...
+    models:
+      - kimi-k2.6
+      - kimi-k3
+    timeout: 60
+    max_retries: 3
+
+  minimax:
+    api_base: https://api.minimax.cn/v1
+    api_key: sk-xxx...
+    models:
+      - MiniMax-M2.7
+      - MiniMax-M3
+    timeout: 60
+    max_retries: 3
+
+  # kilo.ai 免费网关 — 小欧-2026-11-01：/models 拉取与 :free/0 价模型调用均免 key（实测 384 模型），
+  # 付费模型调用才需填 api_key；api_key 留空即免 key 使用（免费面已可用），models 空表=到模型库拉取勾选。
+  # 以下 models/model_meta 镜像自真实 config.yaml（2026-11-01 模型库保存实况）
+  kilo:
+    api_base: https://ai-gateway.kilo.ai/api/v1
+    api_key: ''
+    timeout: 120
     max_retries: 3
     models:
-      - glm-4.7-flash
-      - cogview-3-flash
-    timeout: 90
+      - cohere/north-mini-code:free
+      - kilo-auto/free
+      - nvidia/nemotron-3.5-super-vl:free
+      - openrouter/free
+      - reflection/beam-free
+    model_meta:
+      cohere/north-mini-code:free:
+        context_length: 256000
+        max_output_length: 64000
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - frequency_penalty
+          - include_reasoning
+          - max_tokens
+          - presence_penalty
+          - reasoning
+          - seed
+          - stop
+          - temperature
+          - tool_choice
+          - tools
+          - top_k
+          - top_p
+        supported_features: []
+      kilo-auto/free:
+        context_length: 256000
+        max_output_length: 32768
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - max_tokens
+          - temperature
+          - tools
+          - reasoning
+          - include_reasoning
+        supported_features: []
+      nvidia/nemotron-3.5-super-vl:free:
+        context_length: 1000000
+        max_output_length: 131072
+        input_modalities:
+          - text
+          - image
+          - video
+        output_modalities:
+          - text
+        supported_parameters:
+          - include_reasoning
+          - max_tokens
+          - reasoning
+          - response_format
+          - seed
+          - structured_outputs
+          - temperature
+          - tool_choice
+          - tools
+          - top_p
+        supported_features: []
+      openrouter/free:
+        context_length: 200000
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+        supported_parameters:
+          - frequency_penalty
+          - include_reasoning
+          - logprobs
+          - max_completion_tokens
+          - max_tokens
+          - min_p
+          - presence_penalty
+          - reasoning
+          - reasoning_effort
+          - repetition_penalty
+          - response_format
+          - seed
+          - stop
+          - structured_outputs
+          - temperature
+          - tool_choice
+          - tools
+          - top_k
+          - top_logprobs
+          - top_p
+        supported_features: []
+      reflection/beam-free:
+        context_length: 1048576
+        max_output_length: 131072
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_parameters:
+          - max_tokens
+          - temperature
+          - tools
+          - reasoning
+          - include_reasoning
+        supported_features: []
 
-# 应用配置
+# 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
-  debug: true
   language: zh-CN
-  max_context_tokens: 200000
-  max_history_length: 10
-  max_rounds: 100
-  max_steps: 10000
+  theme: light
+
+# 前端(step)渲染显示配置 — 小欧 2026-10-05 定两个独立开关，默认皆开
+#   step_render.thoughtMarkdown = 「思考排版」: thought 块正文是否按 Markdown 语法渲染
+#       (标题/粗体/列表/代码; 关掉则按纯文本实时显示)
+#   step_render.reasoningVisible = 「推理内容」: reasoning 块每段的折叠初值
+#       (开=每段进来就展开; 关=每段进来只留标题行, 点标题行的箭头可单独展开/收起)
+#   step_render.contentRender = 「Content渲染」: 步骤内容(content)渲染开关
+#       (开=正常渲染步骤内容; 关=隐藏步骤内容)
+#   step_render.diffRender = 「Diff渲染」: Diff渲染开关
+#       (开=显示代码变更对比; 关=隐藏Diff视图)
+# 四个开关互不干涉: 各自控制独立渲染维度 — 小欧-2026-10-26
+appearance:
+  step_render:
+    thoughtMarkdown: true
+    reasoningVisible: true
+    contentRender: true
+    diffRender: true
+
+# 工作区配置（项目根=tool工作区; 未配置(空)时缺省=用户主目录 — 小欧 2026-08-10）
+workspace:
   project_root: ""  # 项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①
   # 授权目录列表(可多个): tool 在项目根之外额外授权访问的工作目录。
   # 格式: YAML 列表, 每行一个绝对路径, 以 "- " 开头(不是逗号/分号分隔字符串), 例如:
   #   allowed_dirs:
   #     - D:\工作目录A
   #     - D:\工作目录B
-  # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与⑦tool禁区冲突) — 小欧 2026-08-10 ⑩
+  # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与 tool 禁区冲突) — 小欧 2026-08-10
   allowed_dirs: []
-  theme: light
+
+# Agent 循环配置
+agent:
+  max_steps: 10000
+
+# 日志配置
+logging:
+  debug: true                # 调试模式(全局开关): true→日志强制DEBUG+调试接口开放+文件落backend/files; false→按level阈值
+  level: WARNING             # 日志级别(单键两用法): 控制台只显示「== 该级别」的行, 日志文件按常规阈值记「>= 该级别」; 调debug=true时文件强制DEBUG(控制台不受影响) — 2026-11-03 小欧
+  max_file_size: 10485760    # 单日志文件大小上限（字节）
+  backup_count: 5            # 轮转保留文件数
 
 # 安全配置
-# 2026-09-03 小欧: 新增 auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120) 两个可配置计时键
+# 2026-10-03 小欧: auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120)
+# 2026-10-18 小欧 - 开关键名随子命名空间跟定: security.enabled → security.hitl.enabled。
+#   该项只决定是否弹窗请用户确认(人工确认链路);
+#   危险防护(磁盘根/项目根/系统目录删除硬底线、系统保护进程、危险命令)无条件生效, 不受本项影响。
 security:
-  auto_confirm_delay: 10
-  hitl_timeout: 120
-  commandBlacklist: ''
-  commandWhitelist: ''
-  confirmDangerousOps: true
-  contentFilterEnabled: true
-  contentFilterLevel: medium
-  enabled: false
-  maxFileSize: 100
-  strict_mode: false
-  whitelistEnabled: false
+  system:
+    confirm_dangerous_ops: true      # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
+  hitl:
+    enabled: true                     # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)
+    auto_confirm_delay: 10            # 自动确认弹窗倒计时(秒), 到时没人点就自动放行
+    timeout: 120                      # 人工确认弹窗最长等待(秒), 超时按弹窗设定处理方式收尾
+    shell_readonly_prefixes: ""    # 留空=用内置只读免确认名单; 填则覆盖(每行或逗号分隔)
+  trust:
+    ttl_days: 90          # 会话信任("信任此操作")的有效天数, 到期自动失效
+  # shell_readonly_prefixes 刻意**不写进模板**: 键一旦存在(哪怕值为空), 设置页就会显示该原始值
+  # 而非内置默认 → 用户看到空框, 反而"看不见"这份免确认清单。要改请在设置页「安全」组改,
+  # 或手写该键(逗号/换行分隔一个前缀); 留空/缺键一律回退内置 30 条默认清单。
 
-# 【新增】沙箱预检配置节（与 config.yaml 同步, 2026-08-25 小欧）
+# 沙箱预检配置节（2026-08-25 小欧；total开关逃生门）
 sandbox:
   enabled: true                    # 总开关(逃生门): false=完全关闭预检, 行为与实施前一致
   backend: "job_object"            # 后端选择键(预留扩展位): 当前唯一实现 job_object
@@ -78,8 +383,89 @@ sandbox:
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
 
-# 日志配置
-logging:
-  level: INFO                  # DEBUG, INFO, WARNING, ERROR
-  max_file_size: 10485760      # 单日志文件大小上限（字节）
-  backup_count: 5              # 轮转保留文件数
+# ============ 顶层 llm 域（模型无关通用，UI=设置→通用） ============
+llm:
+  sampling:                   # A类 采样/生成控制（5 键）
+    temperature: 0.7          # 采样温度：0=完全确定性，1=默认随机性，2=最高随机性
+    max_tokens: 16384         # 单次 LLM 调用最大输出 token 数，超长截断
+    top_p: 1.0                # 核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选
+    frequency_penalty: 0      # 正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用
+    presence_penalty: 0       # 正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用
+    reasoning_effort: low     # 全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high).默认low
+  context_length_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
+
+# 调优配置（前端「调优」Tab 展示；9子组33键，network 已迁顶层）— 小欧-2026-09-23
+tuning:
+  # LLM 语义参数（5 键）— 注释 2026-09-23 去开发术语重写，对齐 registry notice — 小欧-2026-09-23
+  llm:
+    tool_choice: auto              # auto=正常调工具; none=禁用工具只回文字(排查工具问题用)
+    stream_max_retries: 3          # 断线/超时自动重发最多再试N次;0=不重试。与下面分工:本管没收到,下面管内容坏
+    response_fallback: true        # 工具一直失败重试用完后,自动改成不调工具直接写文字再试;关=直接报错
+    response_retries: 2            # 空回复/坏内容自动重试最多N次;配额完/限流/请求写错不走这里
+    stream_options:
+      include_usage: true          # 回答结束附带本次token消耗;关则统计页显示0
+
+  # LLM 网络/超时/连接池（7 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  llm_net:
+    read_timeout: 150              # 两次收到回字最大间隔(非总时长):超时判连接断。与总时长分工:本管间隔
+    connect_timeout: 30.0          # 连上模型服务器最大等待:连不上/DNS失败超时报错
+    write_timeout: 10.0            # 把问题发出去的最大等待:请求大/上行慢时用到
+    pool_timeout: 10.0             # 连接用满时等空位最久多久:等到接着发,等不到报错
+    max_connections: 10            # 同时最多几条请求:超出排队(排多久看pool_timeout)
+    max_keepalive: 5               # 空闲保留连接条数供复用;0=用完即断
+    stream_total_timeout: 500      # 单次回答从头到尾总时长上限,到点强制掐断(与间隔超时分工:本管总长)
+
+  # 并发配额（2 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  concurrency:
+    soft_pool_wait_timeout: 30.0   # 排队最多等N秒,超时不排了照样放行(防任务卡死)
+    shell_pool_max_per_type: 8     # 同任务同种终端最多开几个常驻会话,满了要等
+
+  # Agent 循环参数（1 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  agent:
+    max_chunks_without_promote: 50 # 一直吐零碎字却不给完整回答,累计N次判卡死强制结束(防白烧配额)
+
+  # 裁剪（3 键，每轮循环自动执行）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  # 裁剪（5 键，loop 每轮评估）— 小欧-2026-10-25
+  trim:
+    max_rounds: 100                # 历史轮数上限, 超出即触发裁剪
+    trigger_ratio: 0.8             # 裁剪入口阈值=budget_base×系数(一次方); 裁剪出口队列预算=budget_base×系数²(二次方); 预算=window-compaction_buffer-tools_token_reserve
+    compaction_buffer: 20000       # 增量触发阈值, 亦从裁剪预算中扣除
+    keep_recent_rounds: 5          # 裁剪时最近 N 个 FC 工具步不参与裁剪, 范围 5-20
+    tools_token_reserve: 30000     # tools schema 占用输入 token, 从裁剪预算扣除防超窗 400
+
+  # 压缩（4 键，开局超容时压成摘要）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  compaction:
+    start_enabled: true            # 开局旧对话太长时先压成摘要再干活;关=不压直接硬删
+    start_limit_ratio: 0.5         # 压缩摘要限制系数(0.5=占容量一半就压);只管开局这一次
+    summary_feed_max_chars: 2000   # 压摘要前单条工具结果超N字先砍;防超长撑爆
+    keep_tail: 1                   # 压完摘要再原样留最近几条;0=全压不留原话
+
+  # 连接保活/任务清理/缓存/事件流水保留（5 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  # 组名 stream_task→live_front — 小欧-2026-09-24
+  live_front:
+    heartbeat_interval: 25.0       # 没新内容时隔N秒发"我还活着"防页面误判断线;须明显小于60秒断线判定
+    task_timeout_hours: 1          # 做完的任务保留N小时后自动清出列表(在跑的不受影响)
+    tool_cache_ttl: 300            # 同工具同参数N秒内直接给上次结果不重跑;小=新鲜慢,大=快但可能过期
+    max_cache_size: 1000           # 内部小缓存最多存多少条,超了丢最久没用的;一般不用动
+    journal_retention_days: 7      # 事件流水保留N天;只清已终态任务,在跑的任务永不删 — 小欧-2026-09-29
+
+  # 人工确认（4 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  hitl:
+    hitl_confirm_lead: 10          # 确认弹窗倒计时比后端实际超时提前N秒归零,先看到提示不凭空消失
+    bypass_auto_lead: 2            # 自动放行弹窗倒计时提前N秒归零,页面先收好后端再放行
+    hitl_min_confirm_timeout: 3    # 倒计时至少显示N秒,防弹窗一闪来不及点
+    max_pending_confirmations: 100 # 同时排队等确认最多N条,超了新的直接拒(防弹窗洪水)
+
+  # 内容截断（3 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  content:
+    project_context_max_chars: 10000  # 项目规则文件每次带给模型最多N字,超长不带
+    action_log_result_max_chars: 5000 # 工具结果写进对话最多留N字,超长截断(防大文件撑爆)
+    temp_history_char_limit: 50000    # 压缩时临时副本最多N字,超了硬截断(防爆保险)
+
+# 网络（1 键，顶层 network 域，系统组显示）— 小欧-2026-09-23 键名去 tuning 前缀
+network:
+  cors_origins: "http://localhost:2000,http://127.0.0.1:2000"  # 仅跨域部署时生效; 打包版同源运行无需配置
+
+# 系统：对话历史保留（设置页 系统 tab）— 小欧-2026-11-03
+system:
+  chat_retention_days: 0         # 对话历史保留N天;0=关闭(默认,不删用户历史),>0 启动时清理超期会话(级联tasks/steps/events)

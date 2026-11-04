@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 query_calendar — 节日/日期查询
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -8,6 +9,7 @@ query_calendar — 节日/日期查询
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 日历查询→查日历
 
 import time as _time_mod
 from datetime import datetime
@@ -41,18 +43,18 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
         act_params["year"] = user_year
     if exec_code == "error":
         return {
-            "summary": f"日历查询:\"{user_name}\"，失败" if user_name else "日历查询失败",
-            "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str or user_name, "params": act_params},
-            "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
+            "summary": f"查日历\"{user_name}\"，失败" if user_name else "查日历，失败",
+            "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     hol_str = f"，{holiday_name}" if holiday_name else ""
     type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
-        "summary": f"日历查询成功:{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
-        "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": act_params},
-        "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
+        "summary": f"查日历，成功：{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(查日历), 成功后置 — 小欧-2026-10-14
+        "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
+        "status": {"exec_code": "success", "message": f"完成:{date_str} {weekday_cn}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

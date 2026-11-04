@@ -1,13 +1,15 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 timer_list — 列出所有定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
 编辑历史:
 # 2026-07-24 - 小欧 - timers[:5] → TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
-# 2026-08-05 - 小欧 - Bug3: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
-# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
+# 2026-08-05 - 小欧 - 修复: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP), 与 writer(timer_set/timer_clear)保持读写同库一致性 — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出定时器→列定时器
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -26,23 +28,23 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
     """timer_list的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": "获取定时器列表失败",
-            "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
+            "summary": "列定时器，失败",
+            "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取定时器列表成功: 共{count}个",
-        "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
-        "status": {"exec_code": "success", "message": "获取定时器列表成功", "code": "", "detail": "", "hint": ""},
+        "summary": f"列定时器，成功：共{count}个",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列定时器) — 小欧-2026-10-14
+        "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
+        "status": {"exec_code": "success", "message": f"成功:共{count}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"count": {"value": count, "text": f"{count}个"}},
     }
 
 
 async def timer_list() -> Dict[str, Any]:
-    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-10 async+锁 C-07"""
+    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-10 async+锁"""
     t0 = _time_mod.perf_counter()
     try:
         async with _timer_lock:
@@ -71,7 +73,7 @@ async def timer_list() -> Dict[str, Any]:
                         })
         except Exception:
             pass
-        # 内存与DB数据合并后统一按触发时间排序，保证整体有序 — 小欧 2026-08-05 Bug3
+        # 内存与DB数据合并后统一按触发时间排序，保证整体有序 — 小欧 2026-08-05
         timers.sort(key=lambda x: x.get("trigger_at", ""))
         # data 返回完整列表(含新建定时器,不被预览限制截断); 预览限制仅用于 metrics 的 timer_id 预览 — 小欧 2026-08-05
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
