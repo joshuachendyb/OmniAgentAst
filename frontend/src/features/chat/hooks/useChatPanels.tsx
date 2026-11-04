@@ -3,9 +3,9 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-C/D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
-//   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
-//   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
+//   liveErrorText(位置2 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
+//   liveErrorText 传参(error 唯一位置收口, 防右栏+位置2双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
 //   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
@@ -21,16 +21,36 @@
 //   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - S13: 从chatStreaming解构executionStepsRef透传RightViewer(final到达时快照用) - 小欧-2026-09-10
-// 编辑历史: 2026-09-12 小欧 - P1-1三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
-// 编辑历史: 2026-09-14 小欧 [36]改动点③(方案A, 北京老陈批准): RightViewer 透传删 receiving={isReceiving}
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
+// 编辑历史: 2026-09-14 小欧 改动点③(方案A, 北京老陈批准): RightViewer 透传删 receiving={isReceiving}
 //   (props 已删接收变量; TaskInfoBar 的 receiving 语义保留, isCurrentLive 改纯函数判定) — 小欧-2026-09-14
-// 编辑历史: 2026-09-14 小欧 [36]删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
+// 编辑历史: 2026-09-14 小欧 删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
 //   秒表启停改由 frames 权威信号(startInfo 非空 && finalStats 空=执行走廊)驱动, 本处透传 receiving 一并删除;
 //   连接级 isReceiving 只保留 ChatInput(L278)消费 — 小欧-2026-09-14
-// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+// 编辑历史: 2026-09-15 小欧 - (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - TopbarStats 包 span 加 marginLeft:12, 标题与任务数间距加大到约20px(5字符留白) — 小沈-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.10: ChatInput 的 chatLink 改受控 — 从 chatState 解构 linkEnabled
+//   透传, opts 新增 onToggleLink 透传; handleSendWithMode 改名 handleSend 并把第二参改 linkEnabled: boolean — 小欧-2026-10-03
+// 编辑历史: 2026-10-06 小欧 - 取消终态兜底需读 store 快照(getSnapshot 不建条目, 安全),
+//   ChatInput/聊天流状态透传 storeStatus 给 TaskInfoBar。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-10 小欧[20]  - TaskInfoBar 加 key 随任务身份:
+//   瞬态 UI 态(事件/上下文浮层 open、秒表 startRef)必须随任务切换归零, 原无 key 不重挂载致旧浮层挂在新任务上
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5: 从 chatState 解构 sessionWorkspaces/setSessionWorkspaces 透传 ChatInput
+//   (徽标数随目录列表变, 故 useMemo 依赖数组同步纳入, 漏=徽标不刷新) — 小欧-2026-10-10
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskInfoBar 透传 taskId=activeTaskId ?? serverTaskId(与组件 key 同源, 不新造标识); 历史态误回填由 TaskInfoBar 内 if (detail) return 承担 — 小欧-2026-10-11
+// 编辑历史: 2026-10-21 小杨 - 挂文件足迹面板（rightBottom 折叠区）+ 透传推荐行/引用台账两项（可选） — 小杨-2026-10-21
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: ModelPickerSlot 删透传 sessionTitle(不再需要) - 小欧-2026-10-24
+// 编辑历史: 2026-10-30 小欧 - RightViewer/TaskInfoBar 的 storeStatus 统一改读 chatStreaming.status(局部变量):
+//   ①两处原内联 chatStreamStore.getSnapshot(status) 且未入 useMemo 依赖, status 变化而其余依赖不变时不重算,
+//   取消兜底永远看不到新状态; ②顺带删 chatStreamStore 直接导入(本文件不再直读 store)。
+//   RightViewer 新增传 storeStatus: 取消终态帧未送达时右栏徽标兜底, 不再只有 taskinfo 有。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 18:42:49 小欧 - 会话目录移出本 memo(解构/透传/依赖三处删净, 依赖 53→52 项):
+//   原路径把目录列表塞进这个组装 7 个面板的巨型 useMemo, 任一项变化都会让整个数组重建、7 个面板
+//   全部重新 render(right.viewer 的 RightViewer 最重), 而保存动作正落在流式出帧最密的一刻。
+//   面板只消费一个徽标数字, 该数字改由 ChatInput 内部订阅 workspaceStore 得到 — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -41,15 +61,20 @@ import ModelPicker from '../components/ModelPicker';
 import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
+// 2026-10-21 小杨 - 文件足迹面板
+import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
-import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧 P1-1: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
+// 2026-10-30 小欧 - 删 chatStreamStore 直接导入: storeStatus 改由 chatStreaming.status 传入(同一快照,
+//   且已入 useMemo 依赖), 本文件不再直读 store。
+import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
   SessionTaskItem,
 } from '../../../services/api/task.api';
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
-import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位置2数据源对象形态 — 小欧-2026-09-08
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import type { UseChatFacadeReturn } from './useChatFacade';
 
 interface UseChatPanelsOptions {
@@ -57,7 +82,7 @@ interface UseChatPanelsOptions {
   chatStreaming: UseChatFacadeReturn['chatStreaming'];
   chatTaskControl: UseChatFacadeReturn['chatTaskControl'];
   chatSend: UseChatFacadeReturn['chatSend'];
-  liveError: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态) — 小欧-2026-09-08
+  liveError: LiveError | null; // 小欧 2026-09-02+09-08: 位置2 error 实时源(LiveError 对象形态) — 小欧-2026-09-08
   authorizationPending: AuthorizationRequest | null;
   // 2026-09-06 小欧 B1: 「已放行」短时高亮工具名(确认后 2s)→RightViewer highlightToolName 合源 — 小欧-2026-09-06
   recentConfirmedTool?: string | null;
@@ -70,7 +95,7 @@ interface UseChatPanelsOptions {
   total: number;
   tasksLoading: boolean;
   refreshTasks: () => void;
-  // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+  // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
   //   updateTaskResponse 由 ChatPage 解构自 useSessionTasks 传入, 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
   updateTaskResponse: (taskId: string, response: string) => void;
   effective: EffectiveModel | null;
@@ -78,15 +103,16 @@ interface UseChatPanelsOptions {
   activeTaskId: string | null;
   selectedDetail: TaskDetail | null;
   handleSelectTask: (id: string) => void;
-  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token (TokenLayer复用 P1-1) — 小欧-2026-09-12
-  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(改3字段, TokenLayer复用 P1-1) — 小欧-2026-09-12
+  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token (TokenLayer复用) — 小欧-2026-09-12
+  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(改3字段, TokenLayer复用) — 小欧-2026-09-12
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
-  handleSendWithMode: (
-    content: string,
-    mode?: 'linked' | 'independent'
-  ) => void;
+  handleSend: (content: string, opts: SendOpts) => void;
+  // 会话级 link 开关写回(由 ChatPage 注入, 纯本地态不发请求)
+  onToggleLink: (enabled: boolean) => void;
+  allowInterject: boolean; // 2026-10-07 小欧 三堂会审补: 透传给 ChatInput
+  onToggleInterject: (enabled: boolean) => void;
   // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
@@ -110,7 +136,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     total,
     tasksLoading,
     refreshTasks,
-    updateTaskResponse, // 2026-09-15 小欧 [33]第七章: 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
+    updateTaskResponse, // 2026-09-15 小欧: 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
     effective,
     sessionTimes,
     activeTaskId,
@@ -121,7 +147,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     handleNewSession,
     handleEditingStart,
     handleEditingCancel,
-    handleSendWithMode,
+    handleSend,
+    onToggleLink,
+    allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: 透传给 ChatInput
+    onToggleInterject,
     latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
     latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
     rightOpen, // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
@@ -141,6 +170,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     setSessionVersion,
     sessionModelOverride,
     setSessionModelOverride,
+    linkEnabled,
+    // allowInterject/onToggleInterject 同组透传, 见上(opts 解构) — 2026-10-07 小欧 - 文档[11] 3.5.4
     loading,
     isPaused,
   } = chatState;
@@ -152,7 +183,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
+    // 2026-10-30 小欧 - 会话流状态提为局部变量(唯一读取点): 原 TaskInfoBar 内联 getSnapshot 只读一次却
+    //   不在 useMemo 依赖里, status 变化而其余依赖不变时面板不重算 → 取消兜底永远看不到新状态。
+    status: streamStatus,
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
 
@@ -239,6 +273,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             latestTaskId={latestTaskId}
             latestTaskRef={latestTaskRef}
             rightOpen={rightOpen}
+            // 2026-10-21 小杨 - 新增两项透传（可选，缺省即不渲染那两行）
+            sessionId={sessionId}
+            steps={executionSteps}
           />
         ),
         defaultVisible: true,
@@ -258,12 +295,14 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
               authorizationPending?.toolName ?? recentConfirmedTool ?? null
             }
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
+            // 2026-10-30 小欧 - 与下方 TaskInfoBar 同源(chatStreaming.status): 取消终态帧未送达时右栏 badge 兜底
+            storeStatus={streamStatus}
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
-            waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
+            waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
             chainTokens={chainTokens}
-            // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+            // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
             //   历史任务加载 steps 后写 final.response 到左侧(替代原 onSettledRefresh 从 DB 拉 chat_tasks.response) — 小欧-2026-09-15
             updateTaskResponse={updateTaskResponse}
           />
@@ -271,15 +310,38 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         defaultVisible: true,
       },
       {
+        // 2026-10-21 小杨 - 文件足迹面板注册（加功能不动骨架）
+        // 2026-10-21 小杨 - 改挂 rightBottom（右栏下方折叠区）
+        //   —— 放 right 会与主面板 RightViewer 争位/并列成 tab；折叠区常驻可见且不抢主位。
+        //   persistVisible:false：全仓无面板显隐写入方，声明持久化会造成"永不可见"的误判。
+        slot: 'rightBottom',
+        key: 'fileTrail',
+        title: '文件足迹', // 面板标题（折叠区头部显示）
+        component: <FileTrailPanel sessionId={sessionId} />,
+        defaultVisible: true,
+      },
+      {
         slot: 'taskinfo',
         key: 'taskinfo.bar',
         component: (
           <TaskInfoBar
+            // 2026-10-10 小欧[20] 审计 B7: key 随任务身份 —— 瞬态 UI 态(事件/上下文浮层 open、秒表
+            //   startRef)必须随任务切换归零, 原无 key 不重挂载致旧浮层挂在新任务上
+            key={activeTaskId ?? serverTaskId ?? 'taskinfo-bar'}
             steps={executionSteps}
             frames={metaFrames}
             detail={selectedDetail}
             sessionId={sessionId}
-            liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
+            liveError={liveError} // 小欧 2026-09-02+09-08: 位置2 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
+            // 2026-10-06 22:52 小欧 - 取消终态兜底：store 已确认的终态透给徽标派生
+            //   （终态帧未送达时靠它脱离"执行中"）。取快照不建条目，故不会凭空造会话。
+            // 2026-10-30 小欧 - 改读 chatStreaming.status 局部变量(同源快照, 已入 useMemo 依赖)
+            storeStatus={streamStatus}
+            // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填端点需 task_id,
+            //   取值与上方 key 同源(activeTaskId ?? serverTaskId), 不新造任务标识状态。
+            //   历史态误回填的防护在 TaskInfoBar 内(effect 首行 `if (detail) return`):
+            //   看历史任务时 detail 非空, steps 又是实时数组(可能残留别的任务), 两害皆由此挡。
+            taskId={activeTaskId ?? serverTaskId ?? null}
           />
         ),
         defaultVisible: true,
@@ -293,13 +355,19 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             loading={loading}
             isReceiving={isReceiving}
             isPaused={isPaused}
-            onSend={handleSendWithMode}
+            onSend={handleSend}
             onCancel={handleCancel}
             onTogglePause={handleTogglePause}
+            linkEnabled={linkEnabled}
+            onToggleLink={onToggleLink}
+            allowInterject={allowInterject}
+            onToggleInterject={onToggleInterject}
+            // 2026-10-30 18:42:49 小欧 - 会话目录不再经此处透传：ChatInput 内部直接订阅
+            //   workspaceStore（只取 list.length），本 memo 依赖不再含目录数据，
+            //   一次目录保存不再让右栏 RightViewer 等 7 个面板连带重算。
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
-                sessionTitle={sessionTitle}
                 sessionVersion={sessionVersion}
                 sessionModelOverride={sessionModelOverride}
                 setSessionModelOverride={setSessionModelOverride}
@@ -344,20 +412,26 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
-      waitClock, // 2026-09-17 小欧 [46]第五章: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
+      waitClock, // 2026-09-17 小欧 实施: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
+      streamStatus, // 2026-10-30 小欧 - 取消终态兜底依赖(漏=status 变化面板不重算, 兜底永不生效)
       selectedDetail,
       loading,
       isPaused,
-      handleSendWithMode,
+      handleSend,
+      onToggleLink,
+      linkEnabled,
+      allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatInput 渲染依赖(漏=开关值变后面板不刷新)
+      onToggleInterject,
       handleCancel,
       handleTogglePause,
       liveError,
       authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
       recentConfirmedTool,
       refreshTasks,
-      updateTaskResponse, // 2026-09-15 小欧 [33]第七章: RightViewer 透传写 final.response — 小欧-2026-09-15
+      updateTaskResponse, // 2026-09-15 小欧: RightViewer 透传写 final.response — 小欧-2026-09-15
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
+      rightOpen, // 2026-09-30 小欧 [81]v1.4-H1: TaskListPanel 模型标签按 rightOpen 派生(折叠显 provider 前缀), 不入依赖则开合不重算
     ]
   );
 }

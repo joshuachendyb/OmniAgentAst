@@ -1,0 +1,1155 @@
+// 编辑历史: 2026-10-21 小杨 - 新建文件管理页：工具条 + 树 + 预览 + 深链定位；
+//   页级兜底（root 失败 → Result + 重试）、工具条刷新（树 + 足迹 + 预览共用一次点击）、
+//   足迹数据改用共享 hook useRecentFiles（树 / 足迹面板 / 推荐三处同源同型）— 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：树三态合为状态机、展开集合唯一真源、定位输入自持状态、
+//     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 — 小杨-2026-10-21
+//   2026-10-21 小欧 - ① 消费后端扫描标志（truncated/incomplete_depth/skipped/skipped_cycles）：
+//     原先三标志全丢，目录被截断而用户毫不知情 → 树上方如实提示（每条一行、可折行、保留条数）；
+//   ② 摘掉工具条「设为会话工作目录」死按钮（无 onClick 的骨架，点了没反应）— 小欧-2026-10-21
+//   2026-10-21 小欧 - 树请求竞态防护（I7）：替换型请求（整树刷新）走 AbortController 取消上一轮，
+//     合并型请求（补拉子树）按键序号丢弃过期响应（不同键并发合法，不能一 abort 了之）— 小欧-2026-10-21
+//   2026-10-21 小欧 - J3「设为会话工作目录」实现：树右键菜单入口 + 先 GET 后 PATCH（全量覆盖语义），
+//     相对→绝对路径走 utils/projectPath.ts，422 的 workspace_rejected 逐条呈现 — 小欧-2026-10-21
+// 2026-10-22 小杨 - 深链路径归一（Windows 反斜杠与 ./ 前缀），否则按 posix 拆分定位必失败 — 小杨-2026-10-22
+// 2026-10-22 小欧 - 深链/定位命中后树滚动到定位行（reveal 信号 → FilesTree 提交后 effect 自滚，
+//   竞态根治）+ 窄屏深链目标是文件时自动切预览 Tab（与树点击对齐）— 小欧-2026-10-22
+// 2026-10-22 小欧 - writtenSet（改写类 ops 判定，树标 ✎）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook（useFilesTree / useFileSelection），
+//   页面退化为布局壳；mergeKids / buildScanNotices 上提 utils/fileTree — 小欧-2026-10-22
+//   2026-10-22 小欧 - onInsertRef 与 refSelectedFiles 各抄一遍「readFile→pushRef」
+//     抽为 readAndPush 管道；顺带修 pushRef 未 await 的真缺陷（fire-and-forward 导致批量 ok 计数
+//     早于投递完成→勾选残留、异常变 unhandled rejection）。失败文案仍归调用方（批量要能定位
+//     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 外部文件预览：ext=1 深链（chip 外部链接）/ 定位框根外绝对路径 → 直开外部
+//   只读预览；判据 isExternalAbsPath（盘符绝对且归一到不了根内，根内绝对先归一走树定位）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 阻断缺陷修复：external 态只有置值无清零 → 先开外部再点树内文件时
+//   FilePreview 停在上一份外部文件（点树像没反应）。深链与树点击两个出口收口为 selectTreeFile
+//   （先清外部态再选中），判定只写一处 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 工具条目录可见性增强：只读浏览旁加「目录: [路径]」，路径名高亮
+//   （跨页引用时一眼看到当前项目根在哪，与「当前会话」标签共同交代引用去向）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 深链入口归一：path 可为正文原文（盘符绝对或相对）。根外绝对 → 外部只读预览；
+//   根内绝对 → 归一为相对后树定位；根未取回先等。目录命中只定位（右侧预览不动）— 小欧-2026-10-23
+// 2026-10-23 小欧 - 深链未命中提示收口为 PathNotFoundPane（右侧预览区内），linkErr 改存 {path} 结构化；
+//   目录扫描提示（scanNotices）从树顶移到工具条「多选引用」行内 — 小欧-2026-10-23
+// 2026-10-23 小欧 - 外部目录树：fetchExternalTree 后端端点 + __ext__ 合成根挂主树顶兄弟位，
+//   loadExternalDir/openExternalDir/handleLoadDir 懒加载管道，treeNodes 子节点 key 递归加 __ext__/ 前缀
+//   （selectTreeFile/handleLoadDir 据此识别外部文件，原未加前缀→外部文件走根内 readFile→路径不存在）；
+//   openExternalDir 命中目录时顺带展开第一层子目录 — 小欧-2026-10-23
+// 2026-10-23 小欧 - isDirPath 复用 projectPath 单点（selectTreeFile + handleLoadDir 两处内联正则替换）— 小欧-2026-10-23
+// 2026-10-23 小欧 - readAndPush 外部文件改调 readExternalFile（原调 readFile 走根内 API→路径不存在）；
+//   externalBase 去尾分隔符防双斜杠（selectTreeFile + handleLoadDir 两处）；
+//   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
+// 2026-10-24 小欧 - 外部目录深层懒加载路径修复：loadExternalDir 懒加载子目录时后端返回的 key
+//   相对于被请求子目录（如 models），原 mergeKids 直接挂入导致 key 丢失中间目录（如 backend/app/db/）
+//   → 第 5 级及以下文件预览路径拼接错误（F:\OmniAgentAs-01/models/chat_models.py 而非
+//   F:\OmniAgentAs-01/backend/app/db/models/chat_models.py）。现用 prefixKeys 重定位为外部根相对路径。
+//   同时 treeNodes 的 prefixKids 内联函数改用 prefixKeys 共用（DRY）。— 小欧-2026-10-24
+// 2026-10-24 小欧 - 路径分隔符统一：externalBase 是 Windows 反斜杠（F:\x），后端 key 是 posix
+//   正斜杠（backend/app/db/...），原直接拼出 F:\x/y/z 混合路径。新增 joinAbsPath 工具函数统一
+//   转为 Windows 风格（F:\x\y\z），selectTreeFile/readAndPush/handleLoadDir 三处收敛调用。— 小欧-2026-10-24
+// 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): MIN_LEFT_W 280→200, MAX_LEFT_W 600→360
+//   (拖拽范围更合理, 与主侧边栏展开宽度 200 对齐) — 小欧-2026-10-27
+// 2026-10-28 小欧 - ext=1 深链降级(北京老陈令): chip(FileRefChip/PathLink/FilePathLink)渲染时用
+//   useProjectRoot 模块级缓存判 isExternal, 当缓存持过期旧根(项目根切换后未失效/失效时序窗口内
+//   snapshot 保留旧根)时, 新根内的绝对路径被误判为"外部" → 生成 ext=1 外部深链。Files 页用最新根
+//   判定该路径在根内 → ext=1 与 isExternal=false 矛盾 → setLinkErr("不认识的路径")。
+//   修复: ext=1 分支, isExternal=false(路径在当前根内)时不 setLinkErr, 降级走下面的
+//   isDriveAbsPath→toRelativePath→openPath 树定位。一处修复覆盖所有 chip 来源(正文/参数区/统计块/
+//   文件足迹, 均在 Files 页入口收敛)。复用既有树定位管道(DRY), 不引入新机制(YAGNI)。— 小欧-2026-10-28
+// 2026-10-29 小欧 - 深链入口 isInternal 判据收敛：删 state.source === 'chat' 半边。全仓唯一写入方
+//   FileRefChip 已只传 { internal: true }（source 半边由 resolveChipUrl 死参数一并删除），此判据
+//   恒 false 成死代码；保留会使后续读码者误以为站内跳转有两条并行标记来源。— 小欧-2026-10-29
+
+// 2026-10-29 小欧 - 读取权收归后端: readAndPush 删外部/根内分叉改调 probeRef(轻量探 size/mtime);
+//   pushRef 删 content 传参加 mtime(入队只存标识) — 小欧-2026-10-29
+// 2026-10-30 小欧 A12/A7: 删剩余死参(_content/kind), 更正"content/size 覆盖项"的过时说明;
+//   pushRef/readAndPush 改返回 boolean, 超限走统一文案且批量不再把"被拒"计成成功 — 小欧-2026-10-30
+// 2026-10-30 小欧 - 引用提示统一走 quoteWithToast(成功/超限/读取失败三分支唯一实现): 原实现漏 too_many 分支,
+//   超上限被报成"读取失败", 用户会去检查一个根本没坏的文件 — 小欧-2026-10-30
+
+// 2026-10-30 小欧 - [54]全链路重构: 「设为会话工作目录」PATCH 全量覆盖必须携带既有三字段
+//   (path/workspace_property/memo), 防属性/备注被清空; 读回时按 path 匹配旧值回填。 — 小欧-2026-10-30
+// 2026-11-02 小欧 - 取根收敛到唯一入口 fetchProjectRoot：本页 loadRoot 不再自己 fileApi.fetchRoot，
+//   全前端只许一套取根方法（根内被判根外的结构性成因之一就是多套根并存）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 深链入口判据统一：路径判定只调 resolvePathTarget，删 ext=1 与 isExternal 两套
+//   分支（同一个「根外」写两遍且目录/窄屏口径不一致）；ext=1 只作生成端标记，归属一律看
+//   target.isExternal / target.isDir；internal 分支不再单写一遍 openPath（清外部态后与普通深链
+//   同一管道）；删 decodePathParam 二次解码（useSearchParams 已解一次）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 判据集中化收尾：joinAbsPath 改从 utils/projectPath 引入；外部引用文件名改用
+//   baseName（原内联 split(/[\\/]/).pop()）— 小欧-2026-11-02
+// 2026-11-02 小欧 - 末轮三堂会审：深链 effect 的「绝对路径等根」改读 target.pending（原重写一遍
+//   isDriveAbsPath && !projectRoot，与解析函数内同一判据重复）；openExternalDir 去掉重复的
+//   setLinkErr(null)（唯一调用方 openExternalTarget 已写，两处同写同一状态）— 小欧-2026-11-02
+
+/**
+ * /files —— 文件管理页（项目根目录浏览 + 文本查看）
+ *
+ * 只读边界：本页面**不提供任何写操作**，工具条常驻「只读浏览」标签。
+ * 2026-10-22 小杨 - 订正上一条「设为会话工作目录入口下线」的**错误说明**：
+ *   该入口**保留**（树右键菜单 → 先 GET 后 PATCH 全量覆盖），后端确有会话工作目录能力
+ *   （session_workspace 快照 + 会话 workspaces 接口），并非死入口；
+ *   本页仍不写任何文件 —— 设工作目录只改「Agent 可访问范围」，不落盘。
+ */
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import {
+  Alert,
+  Button,
+  ConfigProvider,
+  Empty,
+  Grid,
+  Input,
+  Result,
+  Spin,
+  Tabs,
+  Tag,
+} from 'antd';
+import { LockOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { fileApi, type FileNode } from '@/services/api/file.api';
+import { sessionApi } from '@/services/api/session.api';
+// 2026-11-02 小欧 - 路径判定/取根各只剩一个入口（resolvePathTarget / fetchProjectRoot）— 小欧-2026-11-02
+import {
+  baseName,
+  joinAbsPath,
+  resolvePathTarget,
+  samePath,
+  toAbsolutePath,
+} from '@/utils/projectPath';
+// 2026-11-02 小欧 - 取根统一走唯一入口 fetchProjectRoot（文件页不再自己拉 /files/root） — 小欧-2026-11-02
+import { fetchProjectRoot } from '@/hooks/useProjectRoot';
+import { FilesTree } from '@/features/files/components/FilesTree';
+import { FilePreview } from '@/features/files/components/FilePreview';
+import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard';
+// 2026-10-23 小欧 - 外部目录挂树：合成根 __ext__ + mergeKids 合并外部子层 — 小欧-2026-10-23
+import { mergeKids, prefixKeys } from '@/utils/fileTree';
+// 2026-10-22 小欧 - 引用能力上提共享域；
+//   v1.4（修 D5）：正文已在调用方读好时仍只把 size 传给 quote*，正文由后端读（不传 content）。
+//   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
+// 2026-10-30 小欧: 引用改调 quoteWithToast(提示三分支唯一实现), quote* 与 refLimitText 不再直接用
+import { quoteWithToast } from '@/features/refs/quoteToast';
+// 2026-10-30 小欧(D4): probeRef import 删除——readAndPush 不再预探, 单探收敛 quoteFile 内部
+import { composerRefStore } from '@/features/refs/store';
+import { useRecentFiles } from '@/hooks/useRecentFiles';
+// 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
+import { isMutatedByOps } from '@/utils/fileOps';
+import { readStoredSessionId } from '@/utils/sessionStorage';
+import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import { Spacing, Colors } from '@/utils/stepStyles';
+import { chatTokens } from '@/theme/tokens';
+// 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
+//   设置页设计令牌——控件高 28/圆角 4（taskTokens 推导与依据见 settingsTokens 注释）
+import {
+  SETTINGS_CONTROL_HEIGHT,
+  SETTINGS_RADIUS,
+} from '@/theme/settingsTokens';
+
+// 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook
+import { useFilesTree } from '@/features/files/hooks/useFilesTree';
+import { useFileSelection } from '@/features/files/hooks/useFileSelection';
+
+// 2026-10-27 小欧 - 侧边栏宽度优化: MIN_LEFT_W 280→200, MAX_LEFT_W 600→360(拖拽范围更合理)
+const MIN_LEFT_W = 200;
+const MAX_LEFT_W = 360;
+// 2026-10-23 小欧 - 外部目录树合成根 key（项目根树与外部树各一个顶层根，__ext__ 为外部分组）— 小欧-2026-10-23
+const EXT_KEY = '__ext__';
+
+/** 2026-10-21 小杨 - 控件规格统一：设置页同款常量（控件高 28 / 圆角 4）
+ *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算 */
+const PAGE_THEME = {
+  token: {
+    controlHeight: SETTINGS_CONTROL_HEIGHT,
+    controlHeightSM: SETTINGS_CONTROL_HEIGHT,
+    borderRadius: SETTINGS_RADIUS,
+    borderRadiusSM: SETTINGS_RADIUS,
+  },
+} as const;
+
+/** 定位输入（自带草稿与错误态）：输入过程只重绘本组件，不惊动树/预览 */
+const LocateBox: React.FC<{
+  onLocate: (rel: string) => Promise<boolean>;
+}> = ({ onLocate }) => {
+  const [value, setValue] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <>
+      <Input
+        placeholder="定位路径（回车）"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (err) setErr(null);
+        }}
+        onPressEnter={() => {
+          const rel = value.trim();
+          if (!rel) return;
+          void onLocate(rel).then((ok) =>
+            setErr(ok ? null : `未找到「${rel}」`)
+          );
+        }}
+        style={{ width: 200 }}
+        aria-label="定位路径"
+      />
+      {err && (
+        <span
+          role="alert"
+          style={{ color: Colors.WARNING, fontSize: chatTokens.fontSM }}
+        >
+          {err}
+        </span>
+      )}
+    </>
+  );
+};
+
+/** 左右分栏（宽度状态内聚）：拖拽只重绘本组件，树/预览 element 引用不变 → React 跳过其子树 */
+const SplitPane: React.FC<{
+  left: React.ReactNode;
+  right: React.ReactNode;
+}> = ({ left, right }) => {
+  const [leftW, setLeftW] = useState(320);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = leftW;
+    const move = (ev: MouseEvent) =>
+      setLeftW(
+        Math.min(MAX_LEFT_W, Math.max(MIN_LEFT_W, w0 + ev.clientX - x0))
+      );
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      cleanupRef.current = null;
+    };
+    cleanupRef.current = up;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 0,
+        alignItems: 'stretch',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          width: leftW,
+          minWidth: MIN_LEFT_W,
+          maxWidth: MAX_LEFT_W,
+          overflow: 'auto',
+          paddingRight: Spacing.SM,
+        }}
+      >
+        {left}
+      </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整目录宽度"
+        aria-valuenow={leftW}
+        aria-valuemin={MIN_LEFT_W}
+        aria-valuemax={MAX_LEFT_W}
+        tabIndex={0}
+        className="files-splitter"
+        onMouseDown={startDrag}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setLeftW((w) => Math.max(MIN_LEFT_W, w - 16));
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setLeftW((w) => Math.min(MAX_LEFT_W, w + 16));
+          }
+        }}
+        style={{
+          width: 6,
+          cursor: 'col-resize',
+          flexShrink: 0,
+          borderRadius: 3,
+        }}
+      />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+          paddingLeft: Spacing.SM,
+        }}
+      >
+        {right}
+      </div>
+    </div>
+  );
+};
+
+const FilesPage: React.FC = () => {
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+  // 2026-11-02 小欧 - 删两处死代码：locationState（(nav as any) ? undefined : undefined 的空壳）
+  //   与模块级 navState —— 后者与深链 effect 内局部 state 读取重复，且从未被引用 — 小欧-2026-11-02
+  const { md } = Grid.useBreakpoint(); // antd 5.12 未从 'antd' 顶层导出 useBreakpoint，走 Grid 命名空间
+  const isNarrow = md === false;
+
+  const [projectRoot, setProjectRoot] = useState('');
+  const [rootErr, setRootErr] = useState<string | null>(null);
+  /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连） */
+  const [linkErr, setLinkErr] = useState<{ path: string } | null>(null);
+  /**
+   * 2026-10-22 小欧 - 滚动定位信号：openPath 命中后递增，FilesTree 在提交后的
+   *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
+   */
+  const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
+  // 2026-10-22 小欧 - 订阅 store 队列计数（替代 collectedKeys 双真源）
+  const refCount = useSyncExternalStore(
+    composerRefStore.subscribe,
+    composerRefStore.getSnapshot,
+    composerRefStore.getSnapshot
+  );
+
+  // 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook
+  const {
+    tree,
+    loadedKeys,
+    setLoadedKeys,
+    expandedKeys,
+    setExpandedKeys,
+    scanNotices,
+    treeReady,
+    treeLoading,
+    treeErr,
+    loadTree,
+    loadDir,
+    patchNodes,
+    expandToPath,
+  } = useFilesTree();
+  const {
+    selected,
+    setSelected,
+    multiFiles,
+    setMultiFiles,
+    lineRange,
+    setLineRange,
+    narrowTab,
+    setNarrowTab,
+  } = useFileSelection();
+
+  /** 外部文件（项目根外）绝对路径：ext=1 深链 / 定位框绝对路径 → 直开外部只读预览 — 小欧-2026-10-22 */
+  const [externalPath, setExternalPath] = useState<string | null>(null);
+
+  /**
+   * 2026-10-23 小欧 - 外部目录树状态（D2 根外目录落地）：
+   * ext=1 目录深链进入时 fetchExternalTree 拉该目录子树，合成根节点 `__ext__` 插主树顶；
+   * 点其下文件 → externalPath = externalBase + node.key 走外部只读预览；
+   * 展开其下子目录 → onLoadDir 识别 `__ext__` 前缀 key 走 fetchExternalTree 补拉。
+   */
+  const [externalBase, setExternalBase] = useState<string | null>(null);
+  const [externalNodes, setExternalNodes] = useState<FileNode[]>([]);
+  const externalSeqRef = useRef<Map<string, number>>(new Map());
+
+  const refreshPreviewRef = useRef<(() => void) | null>(null);
+
+  const sessionId = useMemo(() => readStoredSessionId(), []);
+  /** 足迹标记：共享 hook（树 / 足迹面板 / 推荐三处同源同型） */
+  const { files: recentFiles, reload: reloadRecent } =
+    useRecentFiles(sessionId);
+  const recentSet = useMemo(
+    () => new Set(recentFiles.map((f) => f.path)),
+    [recentFiles]
+  );
+  /**
+   * 2026-10-22 小欧 - 被**改写**过的文件（ops 含改写类工具）
+   *   与 recentSet（●=动过）分开：读只标 ●，写标 ●+✎。
+   */
+  const writtenSet = useMemo(
+    () =>
+      new Set(
+        recentFiles.filter((f) => isMutatedByOps(f.ops)).map((f) => f.path)
+      ),
+    [recentFiles]
+  );
+
+  /** 外部目录树懒加载：按绝对路径拉子层，key 为相对外部根的 posix — 小欧-2026-10-23
+   *  2026-10-23 小欧 - absDir 作参数传入（不依赖闭包 externalBase，修 openExternalDir
+   *    setExternalBase 后立即调用时闭包仍是旧值的时序 bug）；relKey 传 '.'=整树赋值，否则 merge。
+   *  2026-10-24 小欧 - 懒加载子目录时，后端返回的 key 相对于被请求子目录（如 models），
+   *    需要 prefixKeys(r.nodes, relKey) 拼成外部根相对路径（如 backend/app/db/models），
+   *    否则 mergeKids 挂入后 key 丢失中间目录 → 第 5 级及以下文件预览路径拼接错误。— 小欧-2026-10-24 */
+  const loadExternalDir = useCallback(
+    async (absDir: string, relKey?: string): Promise<FileNode[] | null> => {
+      const seq = (externalSeqRef.current.get(absDir) ?? 0) + 1;
+      externalSeqRef.current.set(absDir, seq);
+      try {
+        const r = await fileApi.fetchExternalTree(absDir, { maxDepth: 3 });
+        if (externalSeqRef.current.get(absDir) !== seq) return null;
+        setExternalNodes((prev) => {
+          if (!relKey || relKey === '.') return r.nodes;
+          return mergeKids(prev, relKey, prefixKeys(r.nodes, relKey));
+        });
+        return r.nodes;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  /**
+   * 2026-10-23 小欧 - 打开外部目录（ext=1 深链 / 定位框）：拉子树 + 合成 __ext__ 根插主树顶，
+   *   右侧预览不动（目录只定位不预览）；命中目录时再展开第一层子目录。— 小欧-2026-10-23
+   */
+  const openExternalDir = useCallback(
+    async (absDir: string): Promise<void> => {
+      setExternalBase(absDir);
+      setExpandedKeys((prev) =>
+        prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
+      );
+      const kids = await loadExternalDir(absDir, '.');
+      if (kids) {
+        const firstLayerDirKeys = kids
+          .filter((k) => k.type === 'dir')
+          .map((k) => `${EXT_KEY}/${k.key}`);
+        setLoadedKeys((prev) =>
+          prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
+        );
+        setExpandedKeys((prev) => {
+          const next = new Set(prev);
+          next.add(EXT_KEY);
+          for (const k of firstLayerDirKeys) next.add(k);
+          return Array.from(next);
+        });
+      }
+      if (isNarrow) setNarrowTab('preview');
+    },
+    [loadExternalDir, isNarrow, setExpandedKeys, setLoadedKeys, setNarrowTab]
+  );
+
+  /**
+   * 2026-10-23 小欧 - 主树 + 外部分组（__ext__）合并为单一 nodes 给 FilesTree：
+   *   外部目录 ext=1 深链进来时拉一次 fetchExternalTree，挂成主树顶兄弟根（带「根外」标识）。
+   *   其子层懒加载走 onLoadDir 的 __ext__ 前缀分支。— 小欧-2026-10-23
+   */
+  const treeNodes = useMemo<FileNode[]>(() => {
+    if (!externalBase) return tree;
+    // 2026-10-23 小欧 - 子节点 key 递归加 __ext__/ 前缀：selectTreeFile/handleLoadDir
+    //   据此识别外部文件。原未加前缀 → 外部文件走根内 readFile → "路径不存在"。
+    //   嵌套子目录的 key 也需前缀（__ext__/sub/...），否则懒加载找不到父节点。— 小欧-2026-10-23
+    // 2026-10-24 小欧 - 改用 prefixKeys 共用函数（DRY：原 prefixKids 与 prefixKeys 逻辑完全一致）
+    const extRoot: FileNode = {
+      key: EXT_KEY,
+      name: externalBase,
+      type: 'dir',
+      size: null,
+      mtime: '',
+      preview: 'none',
+      children: prefixKeys(externalNodes, EXT_KEY),
+      incomplete_child: false,
+    };
+    return [extRoot, ...tree];
+  }, [tree, externalBase, externalNodes]);
+
+  /** 页级兜底 —— root 拉不到 → 整页 Result + 重试（不静默空页） */
+  const loadRoot = useCallback(async () => {
+    setRootErr(null);
+    // 2026-11-02 小欧 - 取根统一走 fetchProjectRoot（唯一入口，实时不缓存），不再自己调 fileApi.fetchRoot — 小欧-2026-11-02
+    const root = await fetchProjectRoot();
+    setProjectRoot(root);
+    if (!root) {
+      // 2026-10-21 小杨 - 用户口吻（原「请检查 workspace.project_root 配置」是开发者语言）
+      setRootErr('项目根目录不存在或不可访问，请检查「工作目录」设置后重试。');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRoot();
+  }, [loadRoot]);
+
+  /**
+   * 2026-10-23 小欧 - onLoadDir 统一入口：__ext__ 前缀 key 走外部树补拉（fetchExternalTree），
+   *   其余走项目根树补拉（loadDir）。合成根 __ext__ 自身点展开时拉外部根首层。
+   *   2026-10-23 小欧 - 补 externalBase 依赖：absDir 由外部根拼出，依赖缺失时外部根
+   *   变化后回调仍持旧闭包值。— 小欧-2026-10-23
+   */
+  const handleLoadDir = useCallback(
+    async (key: string): Promise<FileNode[] | null> => {
+      if (key === EXT_KEY)
+        return externalBase ? loadExternalDir(externalBase, '.') : null;
+      if (key.startsWith(`${EXT_KEY}/`)) {
+        const relKey = key.slice(EXT_KEY.length + 1);
+        return externalBase
+          ? loadExternalDir(joinAbsPath(externalBase, relKey), relKey)
+          : null;
+      }
+      return loadDir(key);
+    },
+    [loadDir, loadExternalDir, externalBase]
+  );
+
+  /**
+   * 选中树内文件：必须同时**退出外部预览态**。
+   * 2026-10-22 小欧 - 修复阻断缺陷：先开外部文件再点树内文件时 external 仍非空 →
+   *   FilePreview 停在外部分支（node effect 被 external 挡回、external.path 未变不重载）
+   *   → 右侧永远显示上一份外部文件，点树像没反应。深链与树点击两个出口共用此处，
+   *   清外部态只写一次（DRY，避免两处各写一行漏一处）。— 小欧-2026-10-22
+   */
+  const selectTreeFile = useCallback(
+    (n: FileNode, line?: { start: number; end: number } | null) => {
+      // 2026-10-23 小欧 - 外部目录（__ext__ 前缀）文件：拼绝对路径走外部只读预览，
+      //   保留 externalBase，不清外部态（树内文件才清 externalPath）— 小欧-2026-10-23
+      if (n.key.startsWith(`${EXT_KEY}/`) && externalBase) {
+        const relInExt = n.key.slice(EXT_KEY.length + 1);
+        setExternalPath(joinAbsPath(externalBase, relInExt));
+        setSelected(null);
+        setLineRange(line ?? null);
+        setLinkErr(null);
+        if (isNarrow) setNarrowTab('preview');
+        return;
+      }
+      setExternalPath(null);
+      setSelected(n);
+      setLineRange(line ?? null);
+      // 2026-10-23 小欧 - 用户重新选中文件即退出「未找到」态，避免旧提示压住正常预览 — 小欧-2026-10-23
+      setLinkErr(null);
+      // 2026-10-22 小欧 - 窄屏切预览 Tab：否则打开文件后仍停在"文件"Tab，用户以为没反应
+      if (isNarrow) setNarrowTab('preview');
+    },
+    [
+      isNarrow,
+      setExternalPath,
+      setSelected,
+      setLineRange,
+      setNarrowTab,
+      setLinkErr,
+      externalBase,
+    ]
+  );
+
+  /**
+   * 统一的"打开一个路径"入口（2026-10-21 小杨 - 收口改造）
+   *
+   *   之前有 4 条各自半截的路径（深链 / 定位框 / 树点击 / 外部 chip），彼此不同步：
+   *   定位框甚至**返回值被丢弃**（点了没反应）。
+   *   现在统一为一条：定位（展开目录）→ 选中 → 高亮行 → 焦点落到内容。
+   *   返回是否命中，调用方据此给"未找到"提示。
+   */
+  const openPath = useCallback(
+    async (
+      rel: string,
+      line?: { start: number; end: number } | null
+    ): Promise<boolean> => {
+      const hit = await expandToPath(rel);
+      if (!hit) return false;
+      // 2026-10-22 小欧 - 滚动定位改信号式（reveal state → FilesTree 提交后 effect 自滚）：
+      //   原单次 rAF 与 React 提交存在竞态（rAF 先跑时行未挂载 → querySelector 为 null 静默跳过，
+      //   实测 5 次仅 1 次成功）；effect 在提交后必然执行，行必然存在，竞态消除 — 小欧-2026-10-22
+      setReveal((prev) => ({ key: hit.key, n: (prev?.n ?? 0) + 1 }));
+      if (hit.type === 'dir') {
+        // 目录：只展开定位（左侧树已展开到该目录），右侧保持上一份内容
+        // 2026-10-21 小杨 - 修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
+        return true;
+      }
+      selectTreeFile(hit, line);
+      return true;
+    },
+    // 2026-10-22 小欧 - selectTreeFile 收口了 setSelected/setLineRange/setNarrowTab（身份稳定）
+    [expandToPath, selectTreeFile, setReveal]
+  );
+
+  /**
+   * 根外目标统一出口（定位框与深链入口共用）：
+   *   目录 → 挂外部树（只定位不预览，不清 externalPath 以保持上一份预览）；
+   *   文件 → 外部只读预览（带行号、窄屏切预览 Tab）；两者都清「未找到」提示。
+   * 2026-11-02 小欧 - 原定位框与深链入口各写一遍这段外部处理，任一处改动漏另一处即口径漂移 — 小欧-2026-11-02
+   */
+  const openExternalTarget = useCallback(
+    (
+      raw: string,
+      isDir: boolean,
+      lineRange: { start: number; end: number } | null
+    ): void => {
+      if (isDir) {
+        void openExternalDir(raw);
+      } else {
+        setExternalPath(raw);
+        setLineRange(lineRange);
+        if (isNarrow) setNarrowTab('preview');
+      }
+      setLinkErr(null);
+    },
+    [
+      isNarrow,
+      openExternalDir,
+      setExternalPath,
+      setLineRange,
+      setNarrowTab,
+      setLinkErr,
+    ]
+  );
+
+  /**
+   * 定位框统一入口（2026-10-23 小欧 - 根外目录也开放）：
+   * 根外盘符绝对路径：目录 → 挂外部树（openExternalDir），文件 → 外部只读预览；
+   * 根内/相对 → 树内定位。— 小欧-2026-10-23
+   */
+  const openPathOrExternal = useCallback(
+    async (input: string): Promise<boolean> => {
+      const raw = input.trim();
+      if (!raw) return false;
+      // 2026-11-02 小欧 - 内外/目录/相对全部来自唯一路径解析函数 resolvePathTarget — 小欧-2026-11-02
+      const t = resolvePathTarget(raw, projectRoot);
+      if (t.isExternal) {
+        openExternalTarget(raw, t.isDir, null);
+        return true;
+      }
+      if (!t.linked || !t.rel) return false;
+      return openPath(t.rel);
+    },
+    [openExternalTarget, openPath, projectRoot]
+  );
+
+  /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
+  useEffect(() => {
+    // 2026-11-02 小欧 - 去 any：只读 internal 一个字段，按实际形状声明即可（不再用 any 逃逸类型）— 小欧-2026-11-02
+    const histState = window.history.state as {
+      usr?: { internal?: boolean } | null;
+      internal?: boolean;
+    } | null;
+    const state = histState?.usr || histState || null;
+    // 2026-10-29 小欧 - 站内跳转唯一标记是 internal: true（source 标记已删，勿再引入并行判据）— 小欧-2026-10-29
+    const isInternal = state?.internal === true;
+    const rawPath = params.get('path');
+    if (!rawPath) return;
+    const line = params.get('line');
+    // 2026-10-22 小杨 - 行号深链既支持"起-止"也支持单行"10"：
+    //   只认区间时，用户手敲 ?line=10 会被静默忽略（点了没反应）— 小杨-2026-10-22
+    const m = line ? /^(\d+)(?:-(\d+))?$/.exec(line) : null;
+    const lineRange = m
+      ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : Number(m[1]) }
+      : null;
+    // 2026-10-22 小欧 - 外部文件（ext=1）：path 是盘符绝对路径，直开外部只读预览，
+    //   不走树定位（外部文件不在项目根树内，expandToPath 必失败）。— 小欧-2026-10-22
+    // 2026-10-23 小欧 - ext=1 目录（尾分隔符）改挂外部树：fetchExternalTree 拉子层 + 合成 __ext__ 根，
+    //   右侧预览不动；ext=1 文件维持 setExternalPath 外部只读预览。— 小欧-2026-10-23
+    // 2026-11-02 小欧 - 内外/目录/相对全部来自唯一路径解析函数（本页不再自判）— 小欧-2026-11-02
+    const target = resolvePathTarget(rawPath, projectRoot, { lineRange });
+    // 2026-11-02 小欧 - 外部路径只有一个处理口（原 ext=1 分支与下方 isExternal 分支重复，
+    //   且 ext=1 目录/文件与普通深链口径不一致）：目录挂外部树、文件直开外部只读预览。
+    //   ext=1 只是生成端标记，归属一律以 target.isExternal 为准 — 小欧-2026-11-02
+    if (target.isExternal) {
+      openExternalTarget(rawPath, target.isDir, lineRange);
+      return;
+    }
+    // 2026-10-28 小欧 - 带 ext=1 但路径在当前根内（chip 用过期根误判成外部）：不 setLinkErr，
+    //   穿透到下方树定位管道，如实说明而不是另造失败面 — 小欧-2026-10-28
+    // 2026-11-02 小欧 - 等根守卫：归属未定（盘符绝对 + 根未回）由解析结果的 pending 给出，
+    //   本页不再自己重写一遍「绝对路径需要根」的判据 — 小欧-2026-11-02
+    if (target.pending) return;
+    // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
+    //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
+    //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
+    //   现在等 treeReady 后再展开。
+    if (!treeReady) return;
+    const rel = target.rel;
+    if (!rel) {
+      setLinkErr({ path: rawPath });
+      setNarrowTab('preview');
+      return;
+    }
+    // 2026-10-28 小欧 - 站内聊天跳转（internal=true）先清外部态：否则 FilePreview 停在外部分支
+    //   （node effect 被 external 挡回、external.path 未变不重载），点树内文件像没反应 — 小欧-2026-10-28
+    // 2026-11-02 小欧 - internal 与普通深链共用下面同一段定位管道（原各写一遍 openPath + 失败提示）— 小欧-2026-11-02
+    if (isInternal) setExternalPath(null);
+    void (async () => {
+      const ok = await openPath(rel, lineRange);
+      if (!ok) {
+        // 页内留痕（不只弹一下 toast）：否则用户以为"点了没反应"
+        setLinkErr({ path: rel });
+        setNarrowTab('preview');
+      } else {
+        setLinkErr(null);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, treeReady, projectRoot]);
+
+  /**
+   * J3：把目录设为当前会话的工作目录（Agent 产物落点）。
+   *
+   * 两条后端契约约束：PATCH 是全量覆盖（须先读后写）；路径必须绝对（后端硬拒相对路径）。
+   * 422 的 workspace_rejected 逐条如实呈现。
+   */
+  const setWorkspace = useCallback(
+    async (dir: FileNode) => {
+      if (!sessionId) {
+        showMessage(
+          ErrorType.WARNING,
+          '尚无会话：请先在事项页发起一次对话，再设置事项目录。'
+        );
+        return;
+      }
+      const abs = toAbsolutePath(dir.key, projectRoot);
+      if (!abs) {
+        showMessage(ErrorType.WARNING, '该路径无法定位到项目根，未设置。');
+        return;
+      }
+      try {
+        const cur = await sessionApi.getWorkspaces(sessionId);
+        const items = cur.workspaces.map((w) => ({
+          path: w.path,
+          workspace_property: w.workspace_property || 'read_write',
+          memo: w.memo || null,
+        }));
+        if (items.some((p) => samePath(p.path, abs))) {
+          showSuccess(`「${dir.name}」已是事项目录`);
+          return;
+        }
+        await sessionApi.patchWorkspaces(sessionId, [
+          ...items,
+          { path: abs, workspace_property: 'read_write', memo: null },
+        ]);
+        showSuccess(`已设为事项目录：${dir.name}`);
+      } catch (e: unknown) {
+        // 422 信封：{success:false, error:{workspace_rejected:[{path,reason}]}}（全局异常处理器包装）
+        const rejected =
+          (
+            e as {
+              response?: {
+                data?: { error?: { workspace_rejected?: unknown } };
+              };
+            }
+          )?.response?.data?.error?.workspace_rejected ?? [];
+        const items = rejected as { path: string; reason: string }[];
+        if (items.length) {
+          items.forEach((x) =>
+            showMessage(ErrorType.WORKSPACE_REJECTED, `${x.path}：${x.reason}`)
+          );
+        } else {
+          throw e; // 非 422 业务错交全局 handler
+        }
+      }
+    },
+    [projectRoot, sessionId]
+  );
+
+  /**
+   * 三途径统一 push（引用到对话 / 树右键引用 / 引用选区 —— 产物等价）
+   *
+   * 2026-10-21 小杨 - 设计模型变更（就地收集）：
+   *   原实现每次引用都 `nav` 到会话页 → 用户读/挑多个文件时被反复踢出工作现场，
+   *   且**无法批量**（引 3 个文件 = 3 次离开 + 3 次返回，阅读位置全丢）。
+   *   现改为**就地收集**：只入 store + 计数，页面不动；用户点「去对话」时一次带走。
+   */
+  /**
+   * 2026-10-22 小欧 - 引用入口统一到 features/refs；
+   *   「已收集」不再由页面自记账（双真源）→ 直接读 store 队列计数；
+   *   enqueueRef 已收为域内私有（不 export）→ 正文已在手时走 quote* 的 size 覆盖项。
+   * 2026-10-30 小欧 A12/A7: 删死参 `_content`(正文由后端读) 与 `kind`(quote* 按入口固定);
+   *   返回 boolean 供批量统计, 超限不再静默(A7)。
+   */
+  const pushRef = useCallback(
+    async (
+      label: string,
+      path: string,
+      size?: number,
+      range?: { start: number; end: number }
+    ): Promise<boolean> => {
+      const r = await quoteWithToast(path, range, {
+        label,
+        size,
+        // 文件页停在原地(不导航), 成功文案与"到对话"版区分开 — 2026-10-30 小欧
+        successText: `已引用「${label}」`,
+      });
+      return r.ok;
+    },
+    []
+  );
+
+  /**
+   * 读盘 → 投递引用（数据管道，唯一实现）。
+   * 2026-10-22 小欧 - 原 onInsertRef 与 refSelectedFiles 各抄一遍
+   *   「readFile → pushRef」，且对 async pushRef **不 await**（fire-and-forget → 批量场景
+   *   ok 计数早于投递完成、异常变 unhandled rejection）。抽管道后必须 await（不 await 即
+   *   主动固化该缺陷）。**失败文案仍归调用方**：批量要能定位到具体哪个文件，单发不带名。
+   *   —— 抽的是数据管道，保留的是场景语义（KISS-DIRECT）。— 小欧-2026-10-22
+   *   2026-10-23 小欧 - 外部文件（__ext__/ 前缀）走 readExternalFile，ref path 存绝对路径 — 小欧-2026-10-23
+   */
+  const readAndPush = useCallback(
+    async (n: FileNode): Promise<boolean> => {
+      // 2026-10-30 小欧(D4): 删预探——readAndPush 不再 probeRef, 单探收敛到 quoteFile 内部
+      //   (原实现预探 + quoteFile 内部又探 = 每次引用 2 次 IO, 且预探 mtime 经 pushRef→quoteFile
+      //   无接收位成死参); quoteFile 内部 probeRef 一次取 size/mtime, 失败仍入队"未校验"(4.11)。
+      const path =
+        n.key.startsWith('__ext__/') && externalBase
+          ? joinAbsPath(externalBase, n.key.slice('__ext__/'.length))
+          : n.key;
+      return pushRef(n.name, path); // 正文由后端读, 单探收敛 quoteFile 内部
+    },
+    [pushRef, externalBase]
+  );
+
+  /** 去对话：此时才导航，ChatInput 挂载即消费 store 里的引用 */
+  const goChat = useCallback(() => {
+    nav(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
+  }, [nav, sessionId]);
+
+  /** 清空本次收集（同时清 store —— 否则"清空"只清了界面，引用仍会被带入对话） */
+  const clearCollected = useCallback(() => {
+    composerRefStore.clear();
+  }, []);
+
+  /** 引用所选（批量）：逐个读正文 → 就地收集；全部成功才清空勾选 */
+  const refSelectedFiles = useCallback(async () => {
+    const ok: string[] = [];
+    await Promise.all(
+      multiFiles.map(async (n) => {
+        try {
+          if (await readAndPush(n)) ok.push(n.key);
+        } catch {
+          showMessage(ErrorType.FILE_READ, `无法读取「${n.name}」，未引用`);
+        }
+      })
+    );
+    if (ok.length === multiFiles.length) setMultiFiles([]);
+    // 2026-10-22 小欧 - 补 setMultiFiles 依赖（setState 身份稳定，补入无副作用）
+  }, [multiFiles, readAndPush, setMultiFiles]);
+
+  /** 工具条刷新：树 + 足迹 + 预览共用一次点击 */
+  const refreshAll = useCallback(() => {
+    void loadTree();
+    void reloadRecent();
+    refreshPreviewRef.current?.();
+  }, [loadTree, reloadRecent]);
+
+  /**
+   * 树 / 预览两个**内容单元**（2026-10-21 小杨 - 单一真源）
+   *   窄屏作为 Tabs 的 children（单一真源）；宽屏左右分栏。原实现 Tabs 的 children 是 null、
+   *   真实内容在 Tabs 外用 display:none 切换 → 标签条与内容区分离，Tab 面板是空壳。
+   */
+  const treePane = treeErr ? (
+    <Alert
+      type="warning"
+      showIcon
+      message={treeErr}
+      action={
+        <Button size="small" onClick={() => void loadTree()}>
+          重试
+        </Button>
+      }
+    />
+  ) : treeLoading ? (
+    /* 三态严格分离：加载中=Spin / 空=Empty / 错=Alert（加载中显示"目录为空"会让用户判定仓库是空的） */
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: Spacing.SM,
+        padding: Spacing.LG,
+        color: Colors.TEXT.SECONDARY,
+      }}
+    >
+      <Spin />
+      <span>正在加载目录…</span>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {/* 2026-10-23 小欧 - 目录加载提示（scanNotices）已移至工具条「多选引用」提示之后同一行，
+            不再占用树顶空间 — 小欧-2026-10-23 */}
+        <FilesTree
+          nodes={treeNodes}
+          activeKey={selected?.key ?? ''}
+          reveal={reveal}
+          checkedKeys={multiFiles.map((n) => n.key)}
+          recentSet={recentSet}
+          writtenSet={writtenSet} // 2026-10-22 小欧
+          expandedKeys={expandedKeys}
+          onExpandedKeys={setExpandedKeys}
+          loadedKeys={loadedKeys}
+          onLoadedKeys={setLoadedKeys}
+          onSelectFile={selectTreeFile}
+          onSelectFiles={setMultiFiles}
+          externalBase={externalBase}
+          onInsertRef={(n) => {
+            void (async () => {
+              try {
+                await readAndPush(n);
+              } catch {
+                // 失败必须可感知（原实现静默吞掉 → 用户不知为何）
+                showMessage(ErrorType.FILE_READ, '无法读取该文件，未能引用');
+              }
+            })();
+          }}
+          onSetWorkspace={(d) => {
+            void setWorkspace(d);
+          }}
+          onPatchNodes={patchNodes}
+          onLoadDir={handleLoadDir}
+        />
+      </div>
+    </div>
+  );
+
+  /**
+   * 2026-10-23 小欧 - 深链未命中提示收口 PreviewNoticeCard（预览区整块提示统一规格）：
+   *   标题 + 路径块 + 说明 + 底部操作，路径在目录分隔符后可换行，文件名不硬切。
+   *   点「知道了」或重新选中文件即退出该态。— 小欧-2026-10-23
+   */
+  const linkErrPane = linkErr ? (
+    <PreviewNoticeCard
+      kind="notfound"
+      path={linkErr.path}
+      onDismiss={() => setLinkErr(null)}
+    />
+  ) : null;
+
+  const previewPane =
+    linkErrPane ??
+    (tree.length === 0 && !treeErr && !treeLoading ? (
+      <Empty description="目录为空" />
+    ) : (
+      <FilePreview
+        node={selected}
+        external={externalPath ? { path: externalPath } : undefined}
+        lineRange={lineRange}
+        refreshRef={refreshPreviewRef}
+        onSendFile={(_, node, size) => pushRef(node.name, node.key, size)}
+        onSendSelection={(_, node, range, size) =>
+          pushRef(
+            `${node.name} L${range.start}-${range.end}`,
+            node.key,
+            size,
+            range
+          )
+        }
+        onSendExternal={(_, absPath, size) =>
+          pushRef(baseName(absPath) || absPath, absPath, size)
+        }
+        // 2026-10-23 小欧 - 外部文件选区引用（与根内选区同能力，走 pushRef(..., range)）— 小欧-2026-10-23
+        onSendExternalSelection={(_, absPath, range, size) =>
+          pushRef(
+            `${baseName(absPath) || absPath} L${range.start}-${range.end}`,
+            absPath,
+            size,
+            range
+          )
+        }
+      />
+    ));
+
+  if (rootErr) {
+    return (
+      <ConfigProvider theme={PAGE_THEME}>
+        <Result
+          status="error"
+          title="工作目录不可用"
+          subTitle={rootErr}
+          extra={<Button onClick={() => void loadRoot()}>重试</Button>}
+        />
+      </ConfigProvider>
+    );
+  }
+
+  return (
+    <ConfigProvider theme={PAGE_THEME}>
+      <div
+        style={{
+          padding: Spacing.MD,
+          // 2026-10-21 小杨 - 根改为**flex column + 撑满视口**
+          //   原中间区 height:calc(100vh-140px) 是手算 —— 收集条一出现就溢出视口 40px。
+          //   现在：工具条/收集条 flexShrink:0，中间区 flex:1 → 多一条内容，树/预览自动让位。
+          display: 'flex',
+          flexDirection: 'column',
+          // 2026-10-21 小杨 - 底部空白修复：calc(100vh-100px) 的 100 是拍脑袋
+          //   （真实 chrome=Header43+Content padding10≈53px），改 height:100% 由
+          //   Layout Content(flex:1+minHeight:0) 给准高度，贴合到底不空截。
+          height: '100%',
+          // 2026-10-21 小杨 - 修复：height:100% + padding 在 content-box 下多出
+          //   上下各 8px，整页比可用高度高 16px（底部被裁）；border-box 让 padding 计入高度
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+        }}
+      >
+        {/* 工具条 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap', // 2026-10-21 小杨 - 6 元素一行，1280 以下换行而非溢出
+            gap: Spacing.SM,
+            marginBottom: Spacing.MD,
+            flexShrink: 0,
+          }}
+        >
+          {/* 2026-10-21 小杨 - 工具条重排：
+            左=只读标识（图标替代 emoji）｜中=根路径（**截断+tooltip**，不再挤压控件）｜右=操作组
+            并新增「当前会话」可见性 —— 跨页引用时用户必须知道引用会进哪个会话。 */}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              color: Colors.TEXT.SECONDARY,
+            }}
+            title="本页只读，不会修改任何文件"
+          >
+            <LockOutlined style={{ fontSize: 12 }} />
+            只读浏览
+          </span>
+          <span style={{ color: Colors.TEXT.SECONDARY }}>
+            目录: [
+            <span
+              title={projectRoot || '读取中…'}
+              style={{
+                color: Colors.PRIMARY,
+                maxWidth: 260,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {projectRoot || '读取中…'}
+            </span>
+            ]
+          </span>
+          {sessionId ? (
+            <Tag
+              color="default"
+              style={{ marginInlineEnd: 0 }}
+              // 2026-10-21 小杨 - **不显示 UUID 前 8 位**（不可辨识，等于没有信息）
+              //   完整会话 id 放 tooltip（需要核对时仍可核对）
+              title={`引用会加入会话 ${sessionId}`}
+            >
+              当前会话
+            </Tag>
+          ) : (
+            <Tag
+              color="warning"
+              style={{ marginInlineEnd: 0 }}
+              title="尚无会话：引用会加入新会话"
+            >
+              新会话
+            </Tag>
+          )}
+          {/* 2026-10-21 小杨 - 手势提示**常驻**（勾选前也要看得见）
+            勾选数不重复念 ——「引用所选 N 个」按钮本身已携带数量 */}
+          <span
+            style={{
+              color: Colors.TEXT.SECONDARY,
+              fontSize: chatTokens.fontSM,
+            }}
+          >
+            多选引用：Ctrl+ 逐个 / Shift+ 连选
+          </span>
+          {/* 2026-10-23 小欧 - 目录扫描提示随工具条行内排布（挂「多选引用」之后，不另起独立提示块） — 小欧-2026-10-23 */}
+          {scanNotices.length > 0 && (
+            <span
+              role="status"
+              style={{
+                color: Colors.WARNING,
+                fontSize: chatTokens.fontSM,
+                lineHeight: 1.5,
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+              }}
+            >
+              {scanNotices.join('')}
+            </span>
+          )}
+          {multiFiles.length > 0 && (
+            <>
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => void refSelectedFiles()}
+              >
+                引用所选 {multiFiles.length} 个
+              </Button>
+              <Button
+                size="small"
+                type="text"
+                onClick={() => setMultiFiles([])}
+              >
+                取消
+              </Button>
+            </>
+          )}
+          <span style={{ flex: 1 }} />
+          <LocateBox onLocate={openPathOrExternal} />
+          <Button onClick={refreshAll} title="重新加载目录与足迹">
+            重新加载
+          </Button>
+        </div>
+
+        {/* 2026-10-21 小杨 - 就地收集：收集条常驻显示"已引用多少 + 何时送走"
+          —— 引用不再立刻跳页，用户需要一个明确的"我攒了几个、去哪送"的落点。 */}
+        {refCount > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: Spacing.SM,
+              marginBottom: Spacing.SM,
+              padding: `${Spacing.XS}px ${Spacing.MD}px`,
+              flexShrink: 0, // 2026-10-21 小杨 - flex 根布局下不被压缩
+              background: Colors.BG.WARNING_LIGHT,
+              border: `1px solid ${Colors.BORDER.LIGHT}`,
+              borderRadius: 4,
+            }}
+          >
+            <PaperClipOutlined style={{ color: Colors.WARNING }} />
+            <span style={{ color: Colors.TEXT.STRONG }}>
+              已引用 {refCount} 个文件
+            </span>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>
+              已收集随时可用：从这里离开（含直接进会话页）引用都会带上，发送前可再编辑
+            </span>
+            <span style={{ flex: 1 }} />
+            <Button size="small" onClick={clearCollected}>
+              清空
+            </Button>
+            <Button size="small" type="primary" onClick={goChat}>
+              去对话
+            </Button>
+          </div>
+        )}
+
+        {isNarrow ? (
+          <Tabs
+            size="small"
+            activeKey={narrowTab}
+            onChange={(k) => setNarrowTab(k as 'tree' | 'preview')}
+            items={[
+              { key: 'tree', label: '文件', children: treePane },
+              { key: 'preview', label: '预览', children: previewPane },
+            ]}
+            style={{ flex: 1, minWidth: 0, minHeight: 0 }}
+          />
+        ) : (
+          <SplitPane left={treePane} right={previewPane} />
+        )}
+      </div>
+    </ConfigProvider>
+  );
+};
+
+export default FilesPage;

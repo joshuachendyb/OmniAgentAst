@@ -1,16 +1,16 @@
 // 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删后端自动保存死代码/抽pickMsg/终态清executionSteps
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#1/2/3/4/5/6/7/8: 取消事件识别/暂停ref同步/末条非assistant回写/thought回落/暂停分块保留
 // 编辑历史: 2026-08-28 小强 - hooks修复#9: onComplete依赖数组补executionStepsRef/streamingStepsRef(闭包陈旧)
 // 编辑历史: 2026-08-28 小强 - hooks修复#10: onResumed缓冲区回放改为单次setMessages原子合并(防批处理乱序)
 // 编辑历史: 2026-08-28 小强 - hooks修复#11: 删onComplete后端保存空分支+else warn(YAGNI, 后端已自动落库)
-// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 修复: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: isCancelEvent 窄化为 type=final+outcome=cancelled(删 type=cancelled
 //   分支)/isStreaming 终态条件同步移除 cancelled/取消日志文案对齐新契约 — 小欧-2026-09-07
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.3(北京老陈裁定回归总原则): onError 分道——errorObj.from_backend===true
-//   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(P2红字),
-//   不等下发 loading/计时(计时不停) — P3 由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+//   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(红字),
+//   不等下发 loading/计时(计时不停) — 页面级错误显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - A1修复(356步残留类累积根治): onStep入口任务内指纹去重(type|step|preview|content前64),
 //   拦截 SSE 重复行/重连GET重放导致的同一执行轮事件重复 append; preview 与 canonical 因 preview 位不同不误杀,
 //   chunk 逐块 content 不同不误杀; onComplete/onError 终态 clear Set 供下任务重新计数 — 小欧-2026-09-09
@@ -25,7 +25,7 @@
 //   final.outcome=failed / final.error_type 有值——失败任务优先展示 final.response('任务执行失败')并置 isError 错误态,
 //   不再把 responseBuffer 全程累积的思考草稿(实证 4333字 = 五轮流式chunk: 1737+169+447+668+1312)当"完整回复"正常展示;
 //   与 sseParser final 分支 outcome/error_type/error_message 透传配套, 正常/cancelled 终态不受影响 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - bug-2修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
+// 编辑历史: 2026-09-09 小欧 - 修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
 //   批处理旧态(不含 final step), 导致 PipelineRenderer 缺数据; 改为优先取 executionStepsFromSSE(sseParser 传入的完整
 //   ref 含 final), 与 sseParser final 分支 :499-500 更新 ref + :520 读 ref + :522 传参配套 — 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - 阶段一零风险清障: ①S1 删streamingStepsRef解构+清空+依赖数组(133/528/539/576/664/680);
@@ -53,9 +53,23 @@
 //   原 hasThoughtContent 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"的历史错逻辑(老陈指正
 //   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
-// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.2): onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
+// 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-18 小欧 - 设计稿实施: onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 5.4④/6.14 实施回填): 新增 onMerged 回调(接口+实现+返回值三处),
+//   消费端=提示条(showInfo 复用)+task_merged 事件桥交 useTaskSelection 高亮左侧目标任务 — 小欧-2026-09-28
 // 编辑历史: 2026-09-19 小欧: onComplete终态非failed时通过onSuccessRef调最新回调清liveError, 解闭包陈旧(streaming不在deps) — 北京老陈驱动
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.15 HITL 单源化: 删 onAuthorizationRequired 整个回调
+//   (接口字段 + useCallback 实现 + 其 window CustomEvent 派发) —— 授权数据源归位为
+//   sseParser paused帧 → storeHandlers.onAuthorizationRequired → Store.pendingAuthorization
+//   → useAuthorization 快照 effect(5.15 上块)。window 派发端双删之一(另一处 sseParser.ts
+//   authorization_resumed 兜底派发), 防双源复活导致弹窗重复触发 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 切会话复位会话级 ref；onResumed 依赖改稳定 ref；返回值 memo 化
+// 编辑历史: 2026-10-05 小欧 - 占位'🤔 AI 正在思考...' 两处改空串(文档[9] §5.10); 连带修 hooks-chat-send-bug.test.ts:87 孤儿断言假绿(谓词写死旧文案恒不匹配, 改与文案解耦) — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11]: onMerged 删 showInfo 提示条(左栏已承担回显), 改调 pageCallbacks.onTasksChanged 刷左栏
+// 编辑历史: 2026-10-30 小欧 R7-1: 请求级终止错误(refs_blocked/invalid_request/config_error/router_error)
+//   到达时复位 loading —— 这类错误后端 yield 后直接 return, 永不会有 final, 而 from_backend 分支
+//   原先只清 refs 就 return, loading 恒 true → 发送钮永久禁用; 复位动作抽 resetLoadingState 单点
+//   (与 session_busy 分支、尾部清理三处共用) — 小欧-2026-10-30
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -74,13 +88,25 @@
  * @version 1.0.0
  * @since 2026-04-21
  */
+// 编辑历史: 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
 
-import { useCallback, useRef } from 'react'; // 2026-09-09 小欧 A1: 加useRef(任务内指纹去重Set) — 小欧-2026-09-09
+import { useCallback, useRef, useEffect, useMemo } from 'react'; // 2026-09-09 小欧 A1: 加useRef(任务内指纹去重Set) — 小欧-2026-09-09
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
 import { handleSSEError } from '@/services/error/handler';
 import { logAIComplete, logAIError } from '../../../utils/logStyles';
+
+/**
+ * 请求级终止错误 —— 后端 yield 该帧后直接 return，不建任务、不发 final。
+ * 2026-10-30 小欧 R7-1: 与 transport 的 REQUEST_TERMINAL_ERRORS 同集合（两个消费端各判各的终态）。
+ */
+const BACKEND_TERMINAL_ERRORS = new Set([
+  'refs_blocked',
+  'invalid_request',
+  'config_error',
+  'router_error',
+]);
 
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '@/types/sse';
@@ -99,21 +125,15 @@ export interface UseChatCallbacksReturn {
   onError: (error: string | SSEError) => void;
   onPaused: () => void;
   onResumed: () => void;
+  // 2026-09-28 小欧: 注入应答回调(参数=被并入的任务id), 设计[76] 6.14 消费端 —
+  //   不进 liveMeta 错误位, 仅提示条 + 高亮左侧目标任务 — 小欧-2026-09-28
+  onMerged: (mergedIntoTaskId: string | null) => void;
   onRetry: (message: string, waitTime?: number) => void;
-  // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError等上层状态 — 北京老陈驱动
-  onSuccess?: () => void;
-  onAuthorizationRequired: (data: {
-    confirm_id: string;
-    tool_name: string;
-    params: Record<string, unknown>;
-    content?: string;
-    safety_level: string;
-    // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段(与 sseParser 下发契约一致), 防改代码时缺字段不自知
-    trust_path?: string | null;
-    auto_confirm?: boolean;
-    confirm_timeout?: number;
-    backend_timeout?: number;
-  }) => void;
+  // 2026-09-30 小欧 - 删返回值里的 onSuccess（ISP）：它是页面级 UI 回调、非 SSE 流事件，
+  //   且这份回吐全仓零消费。现由入参 pageCallbacks 注入、内部 onComplete 时直接调用。
+  // [63] 5.15 v1.29：onAuthorizationRequired 字段删除——HITL 单源化：
+  //   sseParser → storeHandlers.onAuthorizationRequired → Store.pendingAuthorization
+  //   → useAuthorization 快照 effect（本 window 派发端双删之一，防双源复活）
 }
 
 /**
@@ -147,7 +167,15 @@ export const useChatCallbacks = (
   state: UseChatStateReturn,
   streaming?: {
     setIsReceiving: (receiving: boolean) => void;
-    onSuccess?: () => void; // 2026-09-19 小欧: 任务成功完成回调(终态非failed) — 北京老陈驱动
+  },
+  // 2026-09-30 小欧 - 页面级回调从流对象里独立出来（ISP + SRP）：
+  //   onSuccess 是"页面清 liveError"的 UI 回调，不是 SSE 流事件；原先搭在 streaming 对象上
+  //   注入、且还从返回值回吐一份（而返回值里这份全仓零消费），使流事件接口每加一个页面回调
+  //   就得改一次。现改为独立命名参数，与流对象职责分清。
+  pageCallbacks?: {
+    onSuccess?: () => void; // 任务成功完成（终态非 failed）— 北京老陈驱动
+    // 2026-10-08 小欧 - 文档[11]: 插话并入后重取左栏(「追加N条」由 list_session_tasks.merged_inputs 供给)
+    onTasksChanged?: () => void;
   }
 ): UseChatCallbacksReturn => {
   // 解构状态
@@ -184,9 +212,23 @@ export const useChatCallbacks = (
   //   仅当最后一个来源恢复才解除暂停; 单恢复不再误灭其他来源的暂停
   const pauseCountRef = useRef(0);
 
-  // 2026-09-19 小欧: onSuccessRef 持有最新回调引用, 解 onComplete 闭包陈旧(streaming 不在 deps) — 北京老陈驱动
-  const onSuccessRef = useRef<(() => void) | undefined>(streaming?.onSuccess);
-  onSuccessRef.current = streaming?.onSuccess;
+  // 2026-09-30 小欧 - 单取 streaming 成员以稳定 deps 身份（挂整个对象则每 render 重订订阅）
+  const streamingSetIsReceiving = streaming?.setIsReceiving;
+
+  // 2026-09-30 小欧 - 复位会话级 ref：Store 已按 sessionId 隔离，但这些视图 ref 是全局单例且
+  //   四条切换入口无一复位 → 跨会话污染（同指纹 step 被误判重丢弃致缺步、pauseCount 残留致
+  //   B 永久暂停、指纹 Set 无界增长）。由本 hook 自清而非暴露给 facade（ISP/YAGNI，更内聚）。
+  useEffect(() => {
+    onStepFingerprintRef.current.clear();
+    pauseCountRef.current = 0;
+  }, [state.sessionId]);
+
+  // 2026-09-19 小欧: onSuccessRef 持有最新回调引用, 解 onComplete 闭包陈旧 — 北京老陈驱动
+  // 2026-09-30 小欧 - 来源改为独立的 pageCallbacks（不再搭 streaming 对象，见入参注释）
+  const onSuccessRef = useRef<(() => void) | undefined>(
+    pageCallbacks?.onSuccess
+  );
+  onSuccessRef.current = pageCallbacks?.onSuccess;
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
@@ -205,7 +247,7 @@ export const useChatCallbacks = (
       onStepFingerprintRef.current.add(fingerprint);
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
       // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 取消心跳/收尾单一由 final+outcome=cancelled 承担
-      // 2026-09-15 小欧 [41]v1.3: F3复位点唯一化 — 收到取消终态帧处复位闸
+      // 2026-09-15 小欧 v1.3: 复位点唯一化 — 收到取消终态帧处复位闸
       const isCancelEvent =
         step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
@@ -259,13 +301,11 @@ export const useChatCallbacks = (
             role: 'assistant',
             content:
               step.type === 'final'
-                ? (step.response as string) ||
-                  (step.content as string) ||
-                  '🤔 AI 正在思考...'
+                ? (step.response as string) || (step.content as string) || '' // 2026-10-05 小欧 - 原 '🤔 AI 正在思考...': 思考态已由思考行承担(§5.5), 重复占位刷屏 — 小欧-2026-10-05
                 : step.content ||
                   (step.type === 'error'
                     ? step.error_message || '执行出错'
-                    : '🤔 AI 正在思考...'),
+                    : ''), // 2026-10-05 小欧 - 同上; 空串也覆盖 final 帧占位(承接 §5.9 前置) — 小欧-2026-10-05
             timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
             executionSteps: [step], // 直接使用当前step
             isStreaming: step.type !== 'error' && step.type !== 'final',
@@ -463,7 +503,7 @@ export const useChatCallbacks = (
           // 【修改 2026-06-09 小沈】直接使用message中的executionSteps，删除三源合并逻辑
           // 2026-08-27 小欧 修复#6: 优先用服务端最终 fullResponse(含暂停期间缓冲分块), 避免暂停分块因 streamingContentRef 未累积而丢失
           const finalContent = finalResponse || streamingContentRef.current;
-          // 2026-09-09 小欧 bug-2修复: sseParser final分支在调onComplete前已将final step追加到ref(:499-500),
+          // 2026-09-09 小欧 修复: sseParser final分支在调onComplete前已将final step追加到ref(:499-500),
           //   并作为executionStepsFromSSE(:520)传入; 此处优先用它(含final), 防React批处理prev旧态覆盖
           const finalSteps =
             executionStepsFromSSE &&
@@ -574,8 +614,20 @@ export const useChatCallbacks = (
         return o.error_message || o.message || '未知错误';
       };
 
-      // 2026-09-08 小欧 6.3.3 分道: 后端业务错误(from_backend=true)只进P3——不弹窗/不替换消息/不进缓冲/不停计时,
-      //   仅清三refs准备下一轮(最终终态由随后 final 承担); P3 显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+      // 2026-10-30 小欧 R7-1: 收尾三件套单点(loading/计时器/重试态)—— 请求级终止、session_busy、
+      //   尾部清理三处口径一致, 原先各写一遍容易漏(实测 from_backend 早退就漏了 loading)。
+      const resetLoadingState = () => {
+        setLoading(false);
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+        setWaitTime(0);
+        setIsRetrying(false);
+      };
+
+      // 2026-09-08 小欧 分道: 后端业务错误(from_backend=true)只进页面级错误提示——不弹窗/不替换消息/不进缓冲/不停计时,
+      //   仅清三refs准备下一轮(最终终态由随后 final 承担); 页面级错误显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
       if (errorObj.from_backend === true) {
         console.info(
           '[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)'
@@ -585,6 +637,11 @@ export const useChatCallbacks = (
         // A1(2026-09-09 小欧): from_backend 错误后会话终止, 同步清空任务内指纹Set——查漏补洞:
         //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
         onStepFingerprintRef.current.clear();
+        // 2026-10-30 小欧 R7-1: 请求级终止错误是本轮结论(后端已 return, 不会再有 final),
+        //   必须在此复位 loading —— 原实现一路 return, 发送钮永久禁用。
+        if (BACKEND_TERMINAL_ERRORS.has(errorObj.error_type)) {
+          resetLoadingState();
+        }
         return;
       }
 
@@ -600,6 +657,28 @@ export const useChatCallbacks = (
           waitTimerRef.current = null;
         }
         onStepFingerprintRef.current.clear();
+      }
+
+      // 2026-10-07 小欧 - 文档[11] 3.5.9: 兜底路径 session_busy(竞态/绕过, 消息已入库):
+      //   仅提示(WARNING, 复用 ERROR_CONFIG_MAP 兜底文案), 不替换 assistant 消息/不弹 critical/不回填草稿。
+      if (errorObj.error_type === 'session_busy') {
+        handleSSEError(errorObj, {
+          reconnectAttempts: 0,
+          maxRetries: 0,
+          onReconnect: undefined,
+        });
+        setMessages((prev) =>
+          prev.filter(
+            (m) => !(m.role === 'assistant' && m.isStreaming === true)
+          )
+        );
+        // 2026-10-07 小欧 三省补: 本分支提前 return 会跳过 onError 尾部"清理状态"块(原 :694-709)。
+        //   该 SSE 流后端已 return 关闭, 不补清理则 loading 恒 true → 发送钮永久禁用。
+        //   2026-10-30 小欧 R7-1: 清理动作收口为 resetLoadingState(与请求级终止/尾部同一实现)。
+        resetLoadingState();
+        streamingContentRef.current = '';
+        onStepFingerprintRef.current.clear();
+        return;
       }
 
       console.error('🔴 [onError] SSE 流式错误:', errorObj);
@@ -669,13 +748,7 @@ export const useChatCallbacks = (
       });
 
       // 清理状态
-      setLoading(false);
-      if (waitTimerRef.current) {
-        clearInterval(waitTimerRef.current);
-        waitTimerRef.current = null;
-      }
-      setWaitTime(0);
-      setIsRetrying(false);
+      resetLoadingState();
 
       // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
       logAIError(pickMsg(errorObj)); // 2026-08-27 小欧 三堂会审: 统一取错误消息
@@ -738,7 +811,7 @@ export const useChatCallbacks = (
       }
     }
 
-    // 编辑历史: 2026-08-28 小欧 - BUG10修复: onResumed改用单次setMessages原子合并(防批处理乱序)
+    // 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
     if (hasReplayable) {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
@@ -800,19 +873,40 @@ export const useChatCallbacks = (
     //   无回放内容说明流已终态(isStreaming=false)或空暂停, 不应重置 isReceiving）
     //   小欧 2026-09-10 [A9]: final 到达暂停期间 → onComplete 设 isStreaming=false →
     //   onResumed 不应将已结束的流重新标记为接收中
-    if (hasReplayable && streaming?.setIsReceiving) {
-      streaming.setIsReceiving(true);
+    if (hasReplayable && streamingSetIsReceiving) {
+      streamingSetIsReceiving(true);
     }
   }, [
     setMessages,
     setIsPaused,
     onError,
-    streaming,
+    // 2026-09-30 小欧 - 2-6：deps 由 `streaming`（整个对象，每 render 新身份）收窄为
+    //   `streamingSetIsReceiving`（onResumed 唯一实际用到的成员）。
+    //   病根：streaming 对象身份每 render 变 → onResumed 每 render 变 → useChatStreaming 解构出的
+    //   onResumed 每 render 变 → dispatchStreamEvent 每 render 变 → useChatStreamSession 的
+    //   useEffect([sessionId, onEvent]) **每 render 退订+重订**（Set add/delete + releasedAt 归零），
+    //   并使下游以 dispatchStreamEvent 为依赖的 memo 永久失效——F① 删透传换来的 memo 稳定性
+    //   在下半链路被完全抵消（性能债，非丢帧：React 18 同 commit 内 cleanup+setup 同步完成）。
+    streamingSetIsReceiving,
     displayBufferRef,
     isPausedRef,
     streamingContentRef,
     pauseCountRef,
   ]);
+
+  // ==================== onMerged回调 ====================
+
+  // 2026-10-08 小欧 - 文档[11]: 删提示条(左栏「追加N条」已承担回显, 且该条恒同文案必被
+  //   handler.ts:814 30s 去重吞掉)。刷新左栏: merged 帧到达即插话已被并入, 不刷则左栏停旧快照。
+  const onMerged = useCallback(
+    (mergedIntoTaskId: string | null) => {
+      window.dispatchEvent(
+        new CustomEvent('task_merged', { detail: { taskId: mergedIntoTaskId } })
+      );
+      pageCallbacks?.onTasksChanged?.();
+    },
+    [pageCallbacks?.onTasksChanged]
+  );
 
   // ==================== onRetry回调 ====================
 
@@ -830,37 +924,35 @@ export const useChatCallbacks = (
 
   // ==================== 返回值 ====================
 
-  // 【v3.4新增 2026-06-09 小沈】授权请求回调
-  const onAuthorizationRequired = useCallback(
-    (data: {
-      confirm_id: string;
-      tool_name: string;
-      params: Record<string, unknown>;
-      content?: string;
-      safety_level: string;
-      // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段, 全量透传 trust/计时字段保弹窗正确渲染
-      trust_path?: string | null;
-      auto_confirm?: boolean;
-      confirm_timeout?: number;
-      backend_timeout?: number;
-    }) => {
-      // 触发授权弹窗（通过自定义事件通知NewChatContainer）
-      window.dispatchEvent(
-        new CustomEvent('authorization_required', { detail: data })
-      );
-    },
-    []
-  );
+  // [63] 5.15 v1.29：授权请求派发端删除——HITL 单源化：sseParser → storeHandlers.onAuthorizationRequired
+  //   → Store.pendingAuthorization → useAuthorization 快照 effect（5.15 上块）。
+  //   window 派发双删（本处 + sseParser.ts authorization_resumed 兜底派发）
 
-  return {
-    onStep,
-    onChunk,
-    onComplete,
-    onError,
-    onPaused,
-    onResumed,
-    onRetry,
-    onAuthorizationRequired, // 【v3.4新增】
-    onSuccess: onSuccessRef.current, // 2026-09-19 小欧: 通过 ref 取最新回调(解闭包陈旧) — 北京老陈驱动
-  };
+  // 2026-09-30 小欧 - 返回值 memo 化：原先是裸对象字面量，每 render 都是新身份
+  //   → 下游 useChatFacade 的 chatCallbacksWithError（deps 含 chatCallbacks）随之每 render 重建
+  //   → onError → dispatchStreamEvent → Store 事件订阅每 render 退订重订，
+  //   即 P2-6 想消除的"订阅抖动"原封不动换了源头。
+  // 2026-09-30 小欧 - 删 onSuccess 及其 deps（ISP）：页面级回调不再混进流事件返回接口。
+  return useMemo(
+    () => ({
+      onStep,
+      onChunk,
+      onComplete,
+      onError,
+      onPaused,
+      onResumed,
+      onMerged, // 2026-09-28 小欧: 注入应答回调(设计[76] 6.14 实施回填) — 小欧-2026-09-28
+      onRetry,
+    }),
+    [
+      onStep,
+      onChunk,
+      onComplete,
+      onError,
+      onPaused,
+      onResumed,
+      onMerged,
+      onRetry,
+    ]
+  );
 };

@@ -1,4 +1,1852 @@
-﻿v1.0.2
+v1.6.2
+发布时间: 2026-11-04 12:51:03 - 小欧-2026-11-04
+## v1.6.1汇总 变更汇总(3个commit: docs3) - 小欧-2026-11-04
+[2026-11-04 12:51:03 小欧] 范围=v1.6.1以来全部commit(3个); 说明=①shell卡死根治文档第二阶段v2.0追加(loader lock互锁根因+修改⑤~⑧+三零判据+红队52例+两阶段关系); ②三堂会审校验修正(第一阶段代码示例标注已过时+第七章统计表修正+第十九章"保留"标注修正)。注: 纯文档修订 → PATCH v1.6.2
+### 1.6.2.1 shell卡死根治文档追加
+[第二阶段v2.0] docs 37150b9b4 [9]shell卡死根治 追加第二阶段v2.0(loader lock互锁根因+修改⑤~⑧+三零判据+红队52例+两阶段关系) - 小欧-2026-11-04
+### 1.6.2.2 三堂会审校验修正
+[校验修正] docs 4d685e2a4 [9]shell卡死根治 三堂会审校验修正(第一阶段代码示例标注已过时+第七章统计表修正+第十九章"保留"标注修正) - 小欧-2026-11-04
+v1.6.1
+发布时间: 2026-11-04 12:24:58 - 小欧-2026-11-04
+## v1.6.0汇总 变更汇总(16个commit: fix2/refactor1/docs13) - 小欧-2026-11-04
+[2026-11-04 12:24:58 小欧] 范围=v1.6.0以来全部commit(16个); 说明=①shell 卡死根治第二阶段(承 v1.6.0 的"卸同步 exec"): 零线程读管道 proc_io 取代 Popen.communicate 的 _readerthread、ppid 映射 BFS 零建进程树杀 proc_utils、常驻线程池 workers(运行期零 Thread.start)、可强制回收租约闸门 spawn_gate(RLock→Lease+看门狗)、启动期预热 ps7/ps5+anyio 40+各池建满、/health 暴露 runtime_thread_starts/gate_timeouts/forced_reclaims 三零判据; ②run_server 启动端口占用预检; ③README/附件设计/部署说明 13 篇文档修订。注: 无新增功能面, 纯稳定性与文档 → PATCH v1.6.1
+### 1.6.1.1 shell 卡死根治(零线程读 + 可回收租约)
+[红队6缺陷修复] fix af5a25aab proc_io+proc_utils+spawn_gate 零线程读管道/ppid树杀/可回收租约 根治Windows shell卡死(红队6缺陷) - 小欧 2026-11-04
+[第一阶段重构] refactor 4705b12ff shell_engine+utils 根治Windows创建进程×建线程loader lock互锁(常驻线程池+零子进程树杀+全局闸门) - 小欧 2026-11-04
+### 1.6.1.2 启动期预检
+[端口占用预检] fix 15829daf5 run_server.py 启动端口预检(占用则打印PID/进程名/路径+PS与CMD双命令+换端口建议, 不再白跑1.7s初始化后报10048) - 小欧 2026-11-04
+### 1.6.1.3 文档修订(13篇)
+[README目录与E2E数量] docs 557dd7840 README 修正项目结构目录名及E2E测试数量 - 小欧 2026-11-04
+[README工具分类终版] docs 55d01d2d7 README工具分类最终修正-FILE11/DOCUMENT11(含extract/compress/readmedia) - 小欧 2026-11-04
+[README网络与基础类] docs f71fbe2c4 README工具分类修正-NETWORK3/FUNDAMENTAL6(searchweb/fetchpage已迁回) - 小欧 2026-11-04
+[README E2E数量] docs 035e58ea9 README E2E测试数量修正62→67 - 小欧 2026-11-04
+[README工具数量] docs ecb3308c9 README工具分类数量修正-FILE14/NETWORK5/DOCUMENT8/FUNDAMENTAL4 - 小欧 2026-11-04
+[部署说明端口条目] docs 4054e4102 同源SPA打包与部署说明 端口占用条目改写为预检新行为+修正部署包结构(version.txt等落_internal) - 小欧 2026-11-04
+[附件一致性v4] docs b2583c7d8 [12]附件功能 全文一致性检查修复v4(类型词典归一/补VIDEO白名单/diff锚对齐) - 小欧 2026-11-04
+[部署包结构] docs b79742658 同源SPA打包与部署说明 修正onedir部署包结构(资源落_internal) - 小欧 2026-11-04
+[附件阶段轴] docs 84f8116fd [12]附件功能 阶段轴改为附件类型S0-S4 - 小欧 2026-11-04
+[README全量更新] docs 6797d7d34 README全量更新v1.6.0-第九章watchfiles双模式+打包章节边界 - 小欧 2026-11-04
+[README第九章] docs f4658a6f9 README 第九章开发环境补充watchfiles双模式+第九章重写打包章节边界 - 小欧 2026-11-04
+[附件设计清单] docs ca1a9ae59 [12]附件功能S0-S5完整实施设计与代码清单 - 小欧 2026-11-04
+[附件设计v9对账] docs ff822ef82 [56]附件设计文档 v9 代码对账修订 - 小欧 2026-11-04
+v1.6.0
+更新时间: 2026-11-04 07:59:16 - 小欧-2026-11-04
+## v1.5.6以来 变更汇总(18个commit: fix8/feat3/refactor2/docs3/perf1/test1) - 小欧-2026-11-04
+[2026-11-04 07:59:16 小欧] 范围=v1.5.6以来全部commit(18个); 主线=shell卡死根治成批落地(shell_engine同步exec移出事件循环改to_thread卸载+完成信号改async事件免临时文件轮询+常驻池锁拆任务级,loop_watchdog双证据判据,tool_retry_engine配套)+database is locked批修复(chat高频写点persist/stream_event_journal/message_service/stream_orchestrator均补retry_locked=3)+启动期预热loop默认线程池根除非shell工具运行期Thread.start循环+健康端点组装抽build_health_response同源与出口网卡IP改UDP选路首选+logger单键logging.level收口与客户端原因日志A/B类分档归位+task再导出链归位与死导入清零(6处)+补缺失导入2处(原NameError)+工具调用规则改搜索专用工具+并发任务全量显示与状态词表收口三store+spawn_bg统一后台任务生成口+rate_limit自愈性日志ERROR降WARNING+E2E用例归位通用组; 注:含3个feat(spawn_bg并发任务全量显示工具规则)+8个fix(shell卡死根治/撞锁批修复/健康端点/导入清零等)+perf2个(启动预热线程池/线程池根除),属shell卡死与并发撞锁两大稳定性隐患成批根治,按MINOR记v1.6.0
+### 1.6.0.1 shell卡死根治（核心）
+[shell卡死全链根治] fix 9ca74175b shell_engine,tool_retry_engine,loop_watchdog 根治shell卡死导致全站僵死(同步exec卸载to_thread+完成信号改async事件免临时文件轮询+常驻池锁拆任务级) - 小欧 2026-11-04
+[shell卡死原理说明] docs a3803e422 [9]shell卡死根治-修改逻辑与方法原理 - 小欧 2026-11-04
+### 1.6.0.2 database is locked批修复
+[高频写点防撞锁] fix 41ec9f19b stream_event_journal,message_service,stream_orchestrator chat高频写点补retry_locked=3防并发撞锁 - 小欧 2026-11-04
+[persist防撞锁] fix fe9925942 storage persist_http_request补retry_locked=3防database is locked - 小欧 2026-11-04
+### 1.6.0.3 性能与线程池根治
+[启动预热线程池] perf 68b72c7bc main 启动期预热loop默认线程池根除非shell同步工具运行期循环线程懒建Thread.start(R1) - 小欧 2026-11-04
+### 1.6.0.4 健康端点与日志收口
+[health组装抽同源] fix 4ccbaf648 health.py 组装抽build_health_response(裸/health与/v1同源)+出口网卡IP改UDP选路首选 - 小欧 2026-11-04
+[logger单键收口] refactor 6c451b934 logger 单键logging.level(控制台精确档/文件阈值)+客户端原因日志A类DEBUG/B类INFO归位 - 小欧 2026-11-04
+[rate_limit日志降级] fix 51feb3d63 llm_response_builder rate_limit自愈性限速日志ERROR降WARNING(L1L2可恢复,对齐llm_call降级先例) - 小欧 2026-11-04
+### 1.6.0.5 代码治理与导入清零
+[再导出链归位] fix 3a5b56859 task再导出链归位(门面直连task_state)+6处死导入清零(F类)+read_path_check/operation_backup_rollback补缺失导入(原NameError) - 小欧 2026-11-04
+[开发期静态检查依赖] chore 0e47e8fbb requirements-dev.txt 新增开发期静态检查依赖(ruff/vulture,零依赖安装不碰httpx锁) - 小欧 2026-11-04
+[三堂会审修复] fix c6b9f51d9 三堂会审修复2处违规(useChatSend.ts缩进KISS-DIRECT+settings_registry.py注释归位) - 小欧 2026-11-03
+### 1.6.0.6 前端并发任务与后台任务统一口
+[并发任务全量显示] feat 8e92b3ece runningTasksStore+foregroundSessionStore+chatStreamStore 并发任务全量显示与状态词表收口 - 小欧 2026-11-03
+[spawn_bg统一生成口] feat 1b67f2e5f background_tasks.py 新增spawn_bg统一后台任务生成口(强引用防GC+done自摘) - 小欧 2026-11-03
+[工具规则改搜索专用] feat 7c4ee3a17 system_prompts 工具调用规则改为搜索专用工具 - 北京老陈 2026-11-04
+### 1.6.0.7 测试用例归位
+[E2E用例归位通用组] test bb5469a37 fre2e_11_settings_comprehensive.spec.ts logging.level 85/86 用例随配置归位通用组 - 小欧 2026-11-04
+[SettingsGroup注释订正] docs 4bb1c03d4 SettingsGroup 系统组现状注释更正(实际5小节13项,无app.*故系统参数小节不渲染) - 小欧 2026-11-04
+v1.5.6
+更新时间: 2026-11-03 11:03:58 - 小欧-2026-11-03
+## v1.5.5以来 变更汇总(7个commit: fix1/perf1/docs5) - 小欧-2026-11-03
+[2026-11-03 11:03:58 小欧] 范围=v1.5.5以来全部commit(7个); 主线=后端卡死根治(monitoring落盘fire-and-forget: persist_http_request改async走db.atxn子线程池+_record_response_metrics改async+create_task调度, 响应路径零同步IO)+owner-scoped isSendingRef(记录所属会话id, A的finally不误清B)+monitoring retention task_tool_metrics删除顺序修正(先取超期task_id再删)+今日14源文件编辑历史条目合规修复(补缺失/归位, 修乱插import前与注释块中间); 注:fix/perf2个(后端卡死根治+发送闩锁防误清+retention顺序), 属后端稳定与数据治理成批落地, 按MINOR记v1.5.6
+### 1.5.6.1 后端卡死根治与monitoring保留期（11-03）
+[落盘fire-and-forget] perf+fix e16b0304c monitoring/middleware.py+storage.py persist_http_request改async(db.atxn子线程池)+_record_response_metrics改async+create_task调度, 响应路径零同步IO - 小欧 2026-11-03
+[retention顺序修正] fix e1e37768f monitoring/storage.py task_tool_metrics删除顺序: 先取超期task_id再删(避免task_metrics先删子查询为空漏删) - 小欧 2026-11-03
+### 1.5.6.2 发送防重与跨会话闩锁（11-03）
+[owner-scoped发送闩锁] perf+fix e16b0304c useChatSend.ts owner-scoped isSendingRef记录所属会话id, A的finally不误清B - 小欧 2026-11-03
+### 1.5.6.3 编辑历史合规与文档（11-03）
+[编辑历史归位] docs 881431873+b27e1125d 今日14个源文件编辑历史条目补缺失/归位(修乱插import前/注释块中间), 纯注释零逻辑变更 - 小欧 2026-11-03
+[治理说明] docs 72b7f2b2b+665ea9417 [5]后端卡死治理处理说明+补充附录A-H - 小欧 2026-11-03
+[状态指示说明] docs e9f2ca229 [7]顶栏状态指示功能说明分析 - 小欧 2026-11-03
+v1.5.5
+更新时间: 2026-11-03 09:30:00 - 小欧-2026-11-03
+## v1.5.4以来 变更汇总(46个commit: feat8/fix19/refactor13/docs5/chore1) - 小欧-2026-11-03
+[2026-11-03 09:30:00 小欧] 范围=v1.5.4以来全部commit(46个); 主线=顶栏三胶囊体系(配置状态/服务存活/流状态)+PillShell外壳收口消除DRY违规+等待计时器三层解耦(waitTiming口径/clockStopwatch表盘/waitTimerText数码)+流状态联动(TitleStreamIcon 8档转速)+health.py增诊断字段(host/server_ip/pid/uptime_s/loop_lag_ms)+server_ip剔除环回与UDP兜底+心跳上限60→25与前后端错开关系+ChatInput引用清空提前+切会话闩锁复位+FilePreview Tooltip API迁移+[4]研究报告v1.9; 注:feat8个(顶栏三胶囊+流状态灯+圈圈联动+health诊断字段+start_dev.ps1+ConfigStatusPill),属顶栏信息展示体系成批落地,按PATCH记v1.5.5
+### 1.5.5.1 顶栏配置状态胶囊与Layout SRP拆分（11-02）
+[配置状态胶囊] feat dc5c4cfc6 ConfigStatusPill顶栏配置状态胶囊重设计(Layout SRP拆分+验证死链全删+validate五步三级分级+凭证校验补位+切模型状态随刷) - 小欧 2026-11-02
+[模型选择框宽度] fix f20bc18cf Layout/index.tsx,ModelPicker.tsx 模型选择框宽度各归常量+弹层自适应popupMatchSelectWidth=false - 小欧 2026-11-02
+### 1.5.5.2 顶栏服务状态胶囊与health诊断字段（11-02~11-03）
+[health增字段] feat d5a7ff530+cdb63c359 health.py 增host/server_ip/pid/uptime_s/loop_lag_ms 供顶栏区分重启/网络慢/事件循环卡死 - 小欧 2026-11-02
+[服务胶囊] feat 74fd527a9 Layout 顶栏新增ServiceStatusPill服务状态胶囊并重做两胶囊Tooltip视觉 - 小欧 2026-11-02
+[Tip静默重检] fix e1151aea7 ServiceStatusPill 打开Tip即静默重检 消除挂载快照空值 - 小欧 2026-11-02
+[耗时格式] fix 4e3f0fefc+2971da7ea+929d3e7ea ServiceStatusPill 耗时改时:分:秒.毫秒→改毫秒+消除耗时与存活时长重复观感+响应行改名 - 小欧 2026-11-02
+[Tip分组十行] feat 8f627eaaf ServiceStatusPill Tip分组十行 补循环延迟/应答时刻/数据库/运行时长 - 小欧 2026-11-02
+[探活收口] refactor 4e9e701dd health.api.ts 探活收口probeAlive删network.ts 超时阈值单一来源并修探活弹toast与版本被清空 - 小欧 2026-11-02
+[server_ip修复] fix 897f0e212 health.py server_ip 剔除环回与链路本地地址并补UDP选路兜底 - 小欧 2026-11-03
+[删浮层流组] refactor a22718495 ServiceStatusPill 删浮层SSE流组(与流状态胶囊同源重复) - 小欧 2026-11-03
+### 1.5.5.3 顶栏流状态灯与心跳错开关系（11-02）
+[流状态灯] feat 70cfb07b8 StreamStatusPill/useStreamPulse 顶栏SSE流状态灯(只读store聚合) - 小欧 2026-11-02
+[心跳上限] fix f81c2c030+4c738297c settings_registry/constants 心跳周期配置上限60→30→25(前端30s阈值须留5s余量) - 小欧 2026-11-02
+[判据三线分离] fix 11dddb029+82463b607+fa82bbf88 useStreamPulse/chatStreamStore/backupTypes 判据三线分离(业务帧=产出/心跳=连接/末字节=判死) - 小欧 2026-11-02
+[流静默橘红] fix 1b2ff6617+ef750d8a0 StreamStatusPill流静默改橘红+流进行中改绿点(覆盖antd processing色) - 小欧 2026-11-02
+[删不可达档] refactor faf909e8b useStreamPulse 删除不可达的已连接档 - 小欧 2026-11-02
+[语义色单一真源] refactor 3de18baf2 StreamStatusPill/PillTip/ServiceStatusPill/tone/streamPillRows/index.css 语义色单一真源+数据行唯一实现 - 小欧 2026-11-02
+### 1.5.5.4 PillShell外壳收口与三胶囊DRY违规修复（11-03）
+[外壳收口] refactor 4a68d1e29 PillShell/ConfigStatusPill/ServiceStatusPill/StreamStatusPill 三胶囊外壳收口(浮层卡片/容器栅格/hover/光标单点定义) - 小欧 2026-11-03
+[块高齐平] fix 009b488c8 PillShell 胶囊hover块高72→24与顶栏控件齐平 - 小欧 2026-11-03
+### 1.5.5.5 流状态联动与标签统一（11-03）
+[圈圈联动] feat 0f618200d TitleStreamIcon 顶栏圈圈8档转速联动流状态+多流挑选改业务帧优先 - 小欧 2026-11-03
+[圈圈块级] fix b49d3cf47 index.css 顶栏标题圈圈改块级去掉64px行高strut - 小欧 2026-11-03
+[标签统一] refactor 85f54e9ec StreamStatusPill 流状态标签统一3字(无任务/流持续/待确认) - 小欧 2026-11-03
+### 1.5.5.6 等待计时器三层解耦（11-03）
+[解耦重分层] refactor d1a3533dd clockStopwatch+WaitingIcons+ThinkingStream+ToolCallLine+HeaderWaitClock 等待计时器解耦重分层 - 小欧 2026-11-03
+[文字数码] refactor 221d9c181 waitTiming+waitTimerText+clockStopwatch 步骤级计时改文字数码(口径抽waitTiming单一真源) - 小欧 2026-11-03
+### 1.5.5.7 其他修复（11-02~11-03）
+[页面统一] refactor 10fb37b63+cf84750fa+58f7f8df3 ChatPage/LoginPage 五页形态统一+ref赋值改effect+删过期注释 - 小欧 2026-11-02
+[注释摘要化] docs 51faa4dda Layout/AppContext等注释摘要化与令牌说明修正 - 小欧 2026-11-02
+[面板修复] refactor 5391bde71+9f650cc4b SessionWorkspacePanel读失败透传+sessions删死类_SessionCreate - 小欧 2026-11-02
+[start_dev] feat 01c2c8595+docs dd2cf4812+68906b77f start_dev.ps1 watchfiles开发启动器+AGENTS.md后端启动方式 - 小欧 2026-11-02
+[FilePreview] fix f39df40c3 FilePreview 路径Tooltip弃用overlayInnerStyle改styles.body - 小欧 2026-11-03
+[ChatInput] fix ea00565cb ChatInput R4-1引用清空提前到提交瞬间与草稿同刻 - 小欧 2026-11-03
+[闩锁复位] fix c1b200dc0 useChatStreaming+useChatSend 切会话复位loading与发送防重闩锁 - 小欧 2026-11-03
+[字体栈DRY] fix 87c3a0f94 index.css .wait-timer-text字体栈改引--font-mono单一真相源 - 小欧 2026-11-03
+### 1.5.5.8 文档（11-02~11-03）
+[研究报告] docs 9474209cb+7deac18e9+e32f693e8 [4]服务端信息前端展示研究分析报告 v1.8→v1.9+reload失效分析报告 - 小欧 2026-11-02~03
+[reload报告] docs 60dfd2429 deleted(清理) - 小欧 2026-11-02
+v1.5.4
+更新时间: 2026-11-02 17:30:37 - 小欧-2026-11-02
+
+v1.5.4
+更新时间: 2026-11-02 17:30:37 - 小欧-2026-11-02
+## v1.5.3以来 变更汇总(32个commit: docs12/fix11/refactor6/feat2/style1) - 小欧-2026-11-02
+[2026-11-02 17:30:37 小欧] 范围=v1.5.3以来全部commit(32个); 主线=main.py静态托管与SPA兜底定案(11-01多轮收敛)+模型参数显示链路(context_length/max_tokens三层取min/max_output_length只读行)+路径到链接链路收敛为单一判据单一实现(projectPath/PathLink/FileRefChip/useProjectRoot)+事项工作区面板UI优化(422草稿恢复/GET纯读/恢复条常驻)+前端常驻启停脚本根治连坐杀进程树+研究报告[1][3][4]多篇修订(v1.7新增[4]任务状态对齐DB六态); 注:feat仅2个(启停脚本+面板UI优化)且均为局部功能,按PATCH记v1.5.4
+### 1.5.4.1 main.py 静态托管定案与SPA兜底收紧（11-01）
+[SPA兜底判据收紧] fix 0eebda564 main.py SPA兜底判据收紧is_file+root与catchall入口防御404 - 小欧 2026-11-01
+[assets挂载守卫] fix 4d6254fca main.py assets挂载守卫 StaticFiles启动期防御半截dist - 小欧 2026-11-01
+[静态判据单一真源] fix b26254abd main.py 前端静态判据收成单一真源_frontend_ready - 小欧 2026-11-01
+[静态托管多轮收敛] refactor 744aa4eaa+7b035e4d4+aecfe8980+6d097340a main.py 静态托管四轮收敛(开发态不预判目录/判决按环境分离/打包只验assets逐项验证) - 小欧 2026-11-01
+[注释订正] docs bec3037b6+4fce82742 main.py,OmniAgentBackend.spec 注释订正与编辑历史压行(三堂会审发现2处) - 小欧 2026-11-01
+### 1.5.4.2 模型参数显示链路（11-01）
+[参数键名一次改净] fix 2041496ad model_service.py+useSettings.ts 模型参数键名一次改净(context_limit→context_length 等)+上下文窗口四层取值与②参数区可编辑 - 小欧 2026-11-01
+[max_tokens单写入口] fix 40480e0ae service.py,resolver.py,main.py,settings_registry.py,modelUtils.ts max_tokens单写入口三层取min+同provider换模型重解析inherit_missing=False+静态托管收进打包态+标签改最大输出Token - 小欧 2026-11-01
+[max_output_length只读行] fix fc9466d11 modelUtils.ts,useSettings.ts,ModelParams.ts 参数区补显示厂商声明max_output_length(只读行,四通道同源) - 小欧 2026-11-01
+[链路分析报告] docs 94b66c8b8 [2]模型参数显示链路分析报告 v2.6.1(模型参数显示链路分析与十轮三堂会审结论) - 小欧 2026-11-01
+### 1.5.4.3 路径到链接链路收敛为单一判据单一实现（11-02）
+[链路单一判据收敛] refactor 3470a9237 projectPath.ts+PathLink.tsx+useProjectRoot.ts 路径到链接链路收敛为单一判据单一实现(resolvePathTarget唯一解析+PathLink唯一UI+fetchProjectRoot唯一取根+点击口径唯一+判据10处复用+7套重复实现删除+接口契约5项修正+功能退化8项修复) - 小欧 2026-11-02
+[恢复无Router兜底] fix 1951a286a PathLink.tsx 恢复无Router兜底(已链接恒出链接+整页跳,goFresh点击口径单点) - 小欧 2026-11-02
+[正文规矩定案] fix c16f20580+123d27119 projectPath.ts 正文规矩定案(相对路径末段必带扩展名才转链接,相对目录一律纯文本;盘符单段无尾无扩展名按目录出chip,NOTAIL放宽+根自身不转守卫) - 小欧 2026-11-02
+[chip识别只增不减] fix 3272bc2c5 FileRefChip.tsx 正文chip识别只增不减(exec前向循环防吞后续token+盘符锚切段+段内末锚裁决+带空格目录首次可识别) - 小欧 2026-11-01
+[路径链路文档] docs adc03c7bd+74aa2d1eb [3]前端-正文-工具参数-文件足迹 当前实现说明v1.6+路径链路v1.7(唯一判据/唯一点击/接口契约/真实阻塞与边界6条) - 小欧 2026-11-02
+### 1.5.4.4 事项工作区面板UI优化与注释清理（11-02）
+[优化方案重写] docs f5b2bd09b+fc6aa47ae [1]事项工作区面板UI优化方案 v4.1§七实施代码清单+全文重写v5.1(信息架构减法/两行网格/422草稿恢复/只读区两行常驻) - 小欧 2026-11-01
+[panel UI落地] feat ceb2bfd91 SessionWorkspacePanel 事项工作区面板UI优化(路径完整折行不裁剪/只读区两行常驻/422草稿恢复/GET即清不可用行/pruned计数/删PROP_COLORS死代码) - 小欧 2026-11-02
+[GET纯读+收口] fix a150492be sessions.py,workspace_service.py,SessionWorkspacePanel.tsx,session.api.ts,wsProp.ts,chat.ts GET默认纯读+prune显式清库/新增_judge_path收口判据/rowcount诚实计数/路径键统一wsPathKey/恢复条常驻/属性持久化下沉 - 小欧 2026-11-02
+[注释清理] refactor d3878d227 sessions.py,workspace_service.py,session.api.ts,chat.ts 注释与编辑历史清理(去文档号/章节号/决策号/评审字样,超长注释块压缩不超2行) - 小欧 2026-11-02
+### 1.5.4.5 前端常驻启停脚本升级tag规则文档（11-02）
+[前端启停脚本] feat ab1e19196 start_frontend.ps1,stop_frontend.ps1,start_frontend.bat,stop_frontend.bat,.gitignore 前端常驻启停脚本(独立隐藏控制台+就绪轮询+双链路健康校验+pid落盘),根治关窗口连坐杀进程树 - 小欧 2026-11-02
+[公用函数铁规] docs e4e051559+f02a1ef04 AGENTS.md 公用函数规范新增前端共享函数条目(FUNCTIONS_FRONT.md清单先查后建)+注释与编辑历史铁规收紧 - 小欧 2026-11-02
+[prettier格式归一] style c3e74e922 PathLink/ModelParams/modelUtils 补 prettier 格式化(1951a286a遗留,仅格式无逻辑变更) - 小欧 2026-11-02
+### 1.5.4.6 [4]服务端信息前端展示研究报告（11-02）
+[研究报告三轮修订] docs 7c3021f45+24940d7cf+b787c5526 [4]服务端信息前端展示研究分析报告 v1.5→v1.6→v1.7(顶栏综合健康灯/侧边任务监控菜单页/第九章完整可实施代码;v1.7订正任务状态对齐task_db六态success无completed+error真列名+metrics空态与近1小时口径+自检清单补4条) - 小欧 2026-11-02
+v1.5.3
+更新时间: 2026-11-01 11:10:21 - 小欧-2026-11-01
+## v1.5.2以来 变更汇总(35个commit: fix11/docs9/refactor8/feat5/chore2) - 小欧-2026-11-01
+[2026-11-01 11:10:21 小欧] 范围=v1.5.2以来全部commit(35个); 主线=会话工作区目录四元组化重构[54]+start压缩摘要与loop裁剪[62]+引用链路预算与体积限制[63]+注入装配与目录块+设置面板settings2与Provider密钥+模型服务kilo网关接入与文件引用chip识别+性能稳定性; 注:含5个feat(四元组化重构/五级阶梯压缩/注入装配单一化/目录块注入/摘要模板七段重构),用户裁定按PATCH记v1.5.3
+### 1.5.3.1 会话工作区目录四元组化重构（[54]）
+[一致性核查v17] docs 94c462d7c [54]会话工作区目录 一致性核查v17(行号刷新/§H改为store架构增量/删backward兼容与YAGNI函数/新增§九10大规范审查) - 小欧 2026-10-30
+[四元组化全链路重构] feat 9407a95d9 [54]会话工作区目录全链路四元组化重构(workspace_property/memo/is_default三标注字段DB→Service→Snapshot→Prompt→API→前端全链一致+reconcile始终创建默认工作区+属性归一化唯一源+面板草稿升级行内编辑) - 小欧 2026-10-30
+[三堂会审整改修正] refactor 558d7d8e2 [54]三堂会审整改修正(B定案+注入文案+存量迁移+前端统一) - 小欧 2026-10-31
+[压缩术语注释订正] refactor 6d0138c54 start_step START_TRIGGER_RATIO改名START_LIMIT_RATIO+压缩术语注释订正(0.5=限制系数/0.9=调节系数,零逻辑变更) - 小欧 2026-10-31
+[魔法数字清账] refactor 1e07aaea3 constants DEFAULT_CONTEXT_LIMIT迁app/constants单一真源+settings_registry默认值消魔法数字+首插话兜底口径统一 - 小欧 2026-10-31
+[公用函数收口] refactor 3da72b884 agent_utils,type_utils 压缩裁剪阈值预算与嵌套取值防御收口公用函数 - 小欧 2026-10-31
+[CHARS_PER_TOKEN迁址+实测标定] refactor 9055f04e6 agent_utils,compaction_constants,message_builder,refs/limits CHARS_PER_TOKEN迁址agent_utils与估算函数同址并改实测值1.86(2483次真实调用标定,原2.25低估21%)+新增conv_threshold判定线统一口径 - 小欧 2026-10-31
+### 1.5.3.2 start压缩摘要与loop裁剪（[62]）
+[五级阶梯压缩] feat 33d328b9c compaction 新增shrink_to_budget五级阶梯(截单条/远段tool保首500/截tool_call参数/丢远轮)+summary抽_build_feed并新增estimate_feed_tokens+prune清空加_compressed守卫 - 小欧 2026-10-31
+[压缩前超窗闸门] fix 2255d15a2 start_step 压缩摘要前超窗闸门: 老路与增量路统一feed口径判定(estimate_feed_tokens)+超判定线阶梯裁到trim门限+失败回退注入收缩副本 - 小欧 2026-10-31
+[保尾同尺+参数截断迁址] refactor 2d19aac16 split_turn,assembler,start_step,message_builder 保尾同尺+摘要前闸门收口+参数截断原语迁址+_args_raw - 小欧 2026-10-31
+[tool_call截断合法JSON] fix 43fe28f1f client_sdk.py,split_turn.py tool_call截断后arguments必须为合法JSON+无user边界按当前轮保4000+wire层arguments/content归一 - 小欧 2026-10-31
+[真问题整改] fix 9cd7677e5 assembler/split_turn/summary/start_step start压缩摘要与loop裁剪 真问题整改(日志分列/空continue/口径边界/压缩率分母) - 小欧 2026-10-31
+[62 技术逻辑流程分析] docs 8def40465 [62]start压缩摘要与loop裁剪 技术逻辑流程分析与10大规范核查 - 小欧 2026-10-31
+[62 5.2只留真问题+整改记录] docs 95f65dfef [62]start压缩摘要与loop裁剪 5.2只留真问题+5.6整改记录 - 小欧 2026-10-31
+[摘要模板七段重构] feat 54f9c9375 summary_prompt.py 压缩摘要模板七段重构(Goal改Previous Task Goal/Key Decisions改Task Plan and Decisions/新增Important Context段,北京老陈亲定顺序,校验器_SUMMARY_SECTIONS与收尾指令四处联动,描述全英文分工防串义) - 小欧 2026-11-01
+[loop裁剪notice可见性] fix 3e9c8a174 react_step.py+infoMaps.tsx loop裁剪notice可见性补齐(真裁才发射/trimming done不占位置2/token数读遥测真源/与summarizing信封对齐,遥测口径不动) - 小欧 2026-11-01
+### 1.5.3.3 引用链路预算与体积限制（[63]）
+[预算比例集中到常量域] refactor 9e186b093 refs/limits+constants 引用预算比例默认值集中到常量域 + [63]引用体积限制与截断总结文档 - 小欧 2026-10-31
+### 1.5.3.4 注入装配与目录块（workspace_block/orchestrator）
+[注入装配单一化] feat 18350edde workspace_block+message_builder 注入装配单一化(引用块/目录块前置+插话三态) + [61]落码记录 - 小欧 2026-10-31
+[目录块注入汇总日志与超限提示] feat c83a6ee71 workspace_block+orchestrator 目录块注入汇总日志与超限提示(5.6/D4) + [61]10.6补齐记录 - 小欧 2026-10-31
+[61 注释与实现对齐] docs a2d540c88 workspace_block+orchestrator+[61] 注释与实现对齐(渲染权归编排层) - 小欧 2026-10-31
+[taskinfo注释位序号订正] docs 81867aec2 taskinfo注释 动态状态位序号订正为位置2(原写第4位为旧布局) - 小欧 2026-10-31
+[注释清除文档号与章节号引用] docs 0d9de1382 workspace_block+orchestrator+message_builder 注释清除文档号与章节号引用 - 小欧 2026-10-31
+[注释清除文档号/章节号/用例号与行号] docs d5d4769ea message_builder+react_loop+react_step 注释清除文档号/章节号/用例号与行号引用(仅改注释) - 小欧 2026-10-31
+### 1.5.3.5 设置面板settings2与Provider密钥
+[api_key留空即不发Authorization头] fix c2b6230f6 provider_adapter+resolver+validation api_key 留空即不发送 Authorization 头且不再拦死 - 小欧 2026-10-31
+[密钥状态贴两态橙签] fix c511713ef settings2 密钥状态贴两态橙签+Tab组级脏点+底栏分工说明行+条件按钮常显 - 小欧 2026-11-01
+[放弃修改全域扩权+removedDrafts快照回显] fix b4b72f7ab settings2 放弃修改全域扩权+removedDrafts快照回显+灰钮常显Tip收紧+R1R2会审对称清理 - 小欧 2026-11-01
+[模型信封收口+mtime守卫] fix df0045f72 settings2 模型信封收口+Provider保存mtime守卫补齐+后端删键meta清理None意向机制 - 小欧 2026-11-01
+### 1.5.3.6 模型服务kilo网关+文件引用chip+性能稳定性
+[kilo输出上限top_provider提取兜底] fix c33ab4e28 model_service.py kilo输出上限top_provider提取兜底(第三优先级,既有厂商零影响)+config.yaml.example接入kilo免费网关块(5模型+全量meta镜像) - 小欧 2026-11-01
+[FileRefChip正文空格容差识别] fix cdd87e22a FileRefChip.tsx 正文chip空格容差识别(盘符绝对run圈界碑+首击扩展名锚截断+锚后残余放回+中文引符界碑+行内代码整段全匹配,严格分支优先级不动零退化) - 小欧 2026-11-01
+[Files+History prettier格式归一] refactor 3d53ad092 Files+History prettier格式归一零语义(既有漂移历史欠账清零,check:full全门禁绿) - 小欧 2026-11-01
+[read_text_file offset单独给读到文件尾] fix b3baf8c44 read_text_file offset单独给=读到文件尾, 输出闸门覆盖无上界窗口 - 小欧 2026-10-30
+### 1.5.3.7 版本记录清理与收尾
+[v1.5.3汇总登记] docs ca50091ef version.txt v1.5.3汇总(3个commit: feat1/fix1/docs1) - 小欧 2026-10-30
+[v1.5.4汇总登记] docs 76c8f0bab version.txt v1.5.4汇总(1个commit: refactor1) - 小欧 2026-10-31
+[清理v1.5.4汇总块] chore 758576624 清理version.txt v1.5.4汇总块(用户不要求自动打tag) - 小欧 2026-10-31
+[清理v1.5.3汇总块] chore 92ef078a1 清理version.txt v1.5.3汇总块(tag已删,重新打tag) - 小欧 2026-10-31
+v1.5.2
+更新时间: 2026-10-30 20:57:33 - 小欧-2026-10-30
+## v1.5.1以来 变更汇总(73个commit: fix25/feat12/refactor7/docs26/perf1/test1/chore1) - 小欧-2026-10-30
+[2026-10-30 20:57:33 小欧] 范围=v1.5.1以来全部commit(73个); 主线=输入框引用全链路[57]实施与三堂会审整改(读取权收归后端+chip5态+refs_notice回执+体积裁决)+取消链路[59]根治(任务级取消+终态防重+start阶段摘要压缩不生效)+前端提示与后端响应超时[58](Toast日志补URL耗时请求ID+慢只读端点放宽120s+请求耗时诊断+每响应X-Request-Id)+消息压缩裁剪与摘要注入件(魔法数字清账+队列幸存者语义替换+_summary stash通电+新摘要注入件升级)+会话工作区目录[54]重构(弹窗关闭与保存解耦+独立store单一真源+术语统一化)+性能稳定性(409门先判活跃任务+loop_watchdog双证据+save_message落库移出事件循环+atxn专用事务池); 注:含12个feat(引用链路/取消/超时诊断等新能力),用户裁定按PATCH记v1.5.2
+### 1.5.2.1 输入框引用全链路（[57] 实施与三堂会审整改）
+[读取权收归后端批1实施] feat 7ff850f05 refs 输入框引用读取权收归后端批1实施 - 小欧 2026-10-30
+[批2/批3前端接线] feat 4ffa9575e refs 批2/批3 前端接线 chip5态+refNoticeStore+refs_notice解析+台账重建 - 小欧 2026-10-30
+[引用进loop前可观测+estimate_tokens DRY收口] feat f6513fc74 refs 引用进loop前可观测+estimate_tokens DRY收口 — summarize_refs/report_refs/refs_ready notice三通道同源+prune._released_tokens与budget._tokens_of合并公共函数+插话回执分支合并+位4notice done精确清除kind - 小欧 2026-10-30
+[引用全链路三堂会审整改] refactor 83ae01595 refs 引用全链路三堂会审整改 — limits比例钳制+resolver异常映射+同path去重前移+新增budget/clip/notice/render子模块+前端联动 - 小欧 2026-10-30
+[后端引用链路三堂会审整改] refactor 03c1fa277 refs 后端引用链路三堂会审整改(流水线收口/行数唯一口径/回执完备) - 小欧 2026-10-30
+[前端引用链路三堂会审整改] refactor 9fb32e424 refs 前端引用链路三堂会审整改(wire投影收口/提示唯一实现/chip色调) - 小欧 2026-10-30
+[第1批差异整改] fix 9175f9827 refs第1批差异整改(D4 Files去双探pushRef去mtime死参、D3 quote删死try-catch、D5 ChatInput@限流前置占位前、D6 probeRef失败reason细分) - 小欧 2026-10-30
+[区间引用补体积复核] fix 79485c82e refs-resolver 区间引用补体积复核与truncated回执 - 小欧 2026-10-30
+[上限真源改已入队快照] fix 10018a32f refs-store 上限真源改已入队快照、新增台账重建通道 - 小欧 2026-10-30
+[预检按id合并] fix 8db9906d9 chat-input 预检按id合并、阻断后草稿保留、请求级错误终止流 - 小欧 2026-10-30
+[probeRef独立60s上限] fix 9b0f69280 probeRef 加独立60s上限并细分失败reason - 小欧 2026-10-30
+[FilePreview 6处读文件传silent] fix 66d4e3e57 FilePreview 6处读文件传silent由局部setErr与showMessage呈现 - 小欧 2026-10-30
+[@搜索失败改页面自提示] fix b77a39c50 ChatInput @搜索失败改页面自提示(配合searchFiles静默) - 小欧 2026-10-30
+[57 升版v2.4 第五章重写为详细设计] docs 8d959c4eb [57]输入框引用全链路 升版v2.4 第五章重写为详细设计(北京老陈令):原缺陷→方案对照降为4.12并入第四章;新增第五章=后端代码清单B1~B12+后端每文件一小节5.2.1~5.2.12(含新增代码与diff,真实可落盘)+前端代码清单F1~F11+前端每文件一小节5.4.1~5.4.11(含新增代码与diff) - 小欧 2026-10-29
+[57 升版v2.5 三轮三堂会审修复] docs 4c0397900 [57]输入框引用全链路 升版v2.5 三轮三堂会审修复(阻断5+建议7直接落盘修正) - 小欧 2026-10-29
+[57 第3章5处证据按代码核实修正] docs 1b6783228 [57]输入框引用全链路 第3章5处证据按代码核实修正(B1去MAX_REFS/D3截断窗口径/3处行号) - 小欧 2026-10-30
+[57 第4章设计审查整改] docs 0cde4b5b8 [57]输入框引用全链路 第4章设计审查整改(R1插话载体/R2去wire mtime/R3stat端点/R4级别聚合/R5拒绝线收敛/R6 clear推迟/R7同批交付/R8登记归属) - 小欧 2026-10-30
+[57 第5章详细设计审查整改] docs bd5cfeb04 [57]输入框引用全链路 第5章详细设计审查整改(sanitize双返回/notices level单一裁决/B档摘录分块/stat端点5.2.13/chip回执链refNoticeStore/R6台账恢复/refresh.ts删除/updated消费找回) - 小欧 2026-10-30
+[57 第6章实施顺序审查整改] docs 21855e17c [57]输入框引用全链路 第6章实施顺序审查整改(批1补stat端点+B11前置件+Files页+ChatInput闸门/store.push布尔提前/批2先改sanitize双返回/桥接口径补budget与notice/依赖图回滚口径更正) - 小欧 2026-10-30
+[57 第1批实施审计整改] docs af08ae46d [57] 第1批实施审计整改(D1 REF_*真源校正app.constants/B11+5.2.2+5.2.3+5.2.11同步、D4 F11/5.4.11 readAndPush单探去预探) - 小欧 2026-10-30
+[57 v3.1批2/批3全量落盘对账] docs 298dfb80e [57] v3.1 批2/批3全量落盘对账 6.1~6.3状态改已落 实码同步 - 小欧 2026-10-30
+[refs补零逻辑编辑历史] docs 230bf0333 refs 补零逻辑编辑历史(批2/批3 已落地改动) - 小欧 2026-10-30
+[引用链路真实场景缺陷猎手报告] docs 5984540a0 refs 引用链路真实场景缺陷猎手报告(批2/批3落盘对账) - 小欧 2026-10-30
+[60 引用链路真实场景缺陷猎手报告 编号化改名] docs 4811a7fbd [60]引用链路真实场景缺陷猎手报告 文件编号化改名 - 小欧 2026-10-30
+### 1.5.2.2 取消链路（[59]）
+[取消升级任务级] fix a70dfe1f0 task_runtime 取消升级任务级(agent协程cancel) 终态防重与取消幂等 - 小欧 2026-10-30
+[取消等帧不再自断通道] fix d9dcded99 chatStreamStore 取消等帧不再自断通道 终态帧放行与徽标兜底 - 小欧 2026-10-30
+[取消start阶段摘要压缩不生效+暂停超时卡死修复] fix 8e6515328 react_loop 取消在start阶段摘要压缩不生效及暂停超时卡死修复 - 小欧 2026-10-30
+[重试/FC降级阶段取消不产cancelled final step] fix 745bf98eb llm_call 重试/FC降级阶段取消不产cancelled final step修复 - 小欧 2026-10-30
+[取消链路prettier换行] refactor 074024cf5 useChatTaskControl 取消链路顺带prettier换行 零逻辑 - 小欧 2026-10-30
+[59 取消链路文档升级v1.2] docs e3c5ab2d8 [59]取消链路文档升级v1.2 补可取消性矩阵与三处收尾缺陷修复 - 小欧 2026-10-30
+### 1.5.2.3 前端提示与后端响应超时（[58]）
+[Toast日志补URL耗时请求ID] feat aa7978605 handler Toast日志补URL耗时请求ID并透传覆盖文案 - 小欧 2026-10-30
+[慢只读端点放宽120s并静默] feat cd0367b02 file_api 慢只读端点放宽120s并对有局部反馈的端点静默 - 小欧 2026-10-30
+[慢只读端点放宽120s+外部读补signal] feat 49f53c56a file_api 慢只读端点放宽120s 静默有局部反馈的端点 外部读补signal - 小欧 2026-10-30
+[请求耗时诊断+连接层单次重试] feat 8d266160d client 补请求耗时诊断与超时探活文案+静默与连接层单次重试 - 小欧 2026-10-30
+[请求耗时诊断+重试沿用首次起点] feat 175bfffdc client 补请求耗时诊断与超时探活文案 重试沿用首次起点 - 小欧 2026-10-30
+[每响应回X-Request-Id+slow日志] feat a1bb0003c main 每响应回X-Request-Id并对超3s请求落slow日志 - 小欧 2026-10-30
+[58 调查报告全文三堂会审修正35项] docs 48a276ced [58]前端提示-后端响应超时请重试-产生条件与优化调查报告 全文三堂会审就地修正35项 - 小欧 2026-10-30
+[58 新增调查报告v1.1] docs 5b91f25ab [58]前端提示-后端响应超时请重试-产生条件与优化调查报告 新增调查报告v1.1 - 小欧 2026-10-30
+[58 第六章13项落地同步v1.3+第七章v1.4] docs 231e231f7 [58]前端提示-后端响应超时 第六章13项落地同步v1.3+新增第七章错误定位与系统级优化v1.4 - 小欧 2026-10-30
+[58 调查报告更新至v1.6] docs 456c47fb8 [58]前端提示-后端响应超时 调查报告更新至v1.6 - 小欧 2026-10-30
+[58 7.7补真实后端启动与落库实测7项] docs 59d500426 [58] 7.7补真实后端启动与落库实测7项 明确仍未验证5项 - 小欧 2026-10-30
+[58 补记ChatInput成对文件 计数改12文件] docs 36d3b0b79 [58]前端提示 补记ChatInput成对文件 计数改12文件并按基线重算行数 - 小欧 2026-10-30
+[handler清除注释文档号章节号] docs d1e3dca30 handler 清除注释中的文档号与章节号 - 小欧 2026-10-30
+[database清除注释文档号章节号] docs 251e38aab database 清除注释中的文档号与章节号 - 小欧 2026-10-30
+### 1.5.2.4 消息压缩/裁剪与摘要注入件
+[_summary stash通电] feat e4069b3db observation_builder _summary stash通电(北京老陈令) 工具层llm_data.summary经add_tool_result第三参stash为tool消息独立字段_summary(生产端唯一真实调用点接线),compaction.use_tool_summary与get_last_tool_summary(死循环纠偏摘要)由此读到语义摘要; 发送前prepare_messages_for_llm剥离(_COMPACTION_TEMP_KEYS)不进LLM wire; 异常分支无llm_data置空串安全 - 小欧 2026-10-29
+[新摘要注入件升级] feat 13eff797f start_step,react_loop,initialize_run_state 新摘要注入件升级(北京老陈令) 本轮新摘要成功时注入件由纯摘要升级为「最后任务usermessage+摘要+摘要源数组倒数5轮」(SUMMARY_TAIL_ROUNDS=5,切分复用find_recent_rounds_start,FC配对不拆散,切分失败退化为user+摘要零退化); 注入决策收口start_step._build_injected_msgs单一真源(react_loop直取,删除本地拼接分支),telemetry事实数与注入件同源算数(_apply_injection_facts) - 小欧 2026-10-29
+[三堂会审修复: 撤销trim语义替换接线+isinstance守卫] fix 9673accf5 message_builder,observation_builder,start_step,react_loop 三堂会审修复: 撤销trim语义替换接线(实测工具_summary仅状态行,长观察正文被换成一行状态行致本轮信息灭失)+observation_builder补llm_data isinstance守卫(非dict时AttributeError炸整轮观察) - 小欧 2026-10-30
+[队列幸存者语义替换] fix bd20b61e2 message_builder,prune,compaction_constants 队列幸存者语义替换三堂会审修复(北京老陈令) 新换条数对比swap前旗数只计本轮+幻影守卫(无裁剪且零新换保留原历史直接返回)+未裁剪分支不跑remove_dangling_tool_calls+swap增最小长度门槛USE_SUMMARY_MIN_CHARS=300+use_tool_summary增_raw保长守卫+修正_estimate_tokens注释2.5→2.25 - 小欧 2026-10-29
+[三堂会审收尾] fix 88182fd2a message_builder,compaction 三堂会审收尾(_raw收口单点、纠偏摘要改content优先、三态默认值对齐) - 小欧 2026-10-30
+[二轮审查三处真实缺陷] fix 83596e145 start_step,message_builder 二轮审查三处真实缺陷(注入孤儿tool/摘要标签叠加/裁剪过度) - 小欧 2026-10-30
+[魔法数字清账] refactor 6fd9eebb9 message_builder,prune,split_turn,compaction_constants,start_step 魔法数字清账(北京老陈令) ①_extract_summary_tail兜底_n=5写死改KEEP_RECENT_ROUNDS; ②resolve_protect_rounds夹取5/20迁PROTECT_ROUNDS_MIN/MAX; ③prune六权重迁VALUE_WEIGHT_*+截长[:120]迁TOOL_SUMMARY_HEAD_CHARS; ④纠偏预览截长200迁TOOL_SUMMARY_PREVIEW_CHARS+trim下限5迁TRIM_MIN_MESSAGES+兜底_max_rounds*2+5迁TRIM_CEILING_*; ⑤split_turn docstring公式订正TAIL_TOKEN_*; 零行为变化,py_compile五文件通过,终版回归11项全绿 - 小欧 2026-10-29
+[取消跟踪本地测试用例] test 5308ec236 test_inject_compact_pipeline 取消跟踪本地测试用例, 本地文件保留 - 小欧 2026-10-29
+### 1.5.2.5 会话工作区目录（[54] 重构）
+[会话工作区目录全链路重构] refactor d320eb10a session 会话工作区目录全链路重构 弹窗关闭与保存解耦+独立store单一真源+代际守卫+盲写防护(loadState三态/dirtyRef)+目录移出巨型面板memo - 小欧 2026-10-30
+[术语统一化UI文案] refactor 027ce7af2 术语统一化 UI文案 会话工作区→事项工作区/会话工作区目录→事项目录(面板标题+SubmitBar入口+FilesTree右键+Files三处toast) - 小欧 2026-10-30
+[54 行号刷新v14+术语口径升级v15] docs 8f24fb368 [54]会话工作区目录 行号刷新(v14)+术语口径升级v15(技术词会话≡日常用语事项matter/UI会话工作区→事项工作区/会话工作区目录→事项目录/新变量get_matter_default_workspace/技术层保留会话工作区) - 小欧 2026-10-30
+[54 结构去重+代码清单移入3.6/3.7] docs 7e0f3995a [54]会话工作区目录 结构去重+代码清单移入3.6/3.7+is_default消费方补全(方案D定稿) - 小欧 2026-10-29
+### 1.5.2.6 性能与稳定性
+[409门先判活跃任务] perf 833731279 message_service 409门先判活跃任务再读插话开关 省热路径DB往返 - 小欧 2026-10-30
+[心跳协程异常续跑] fix 7a1f90614 loop_watchdog 心跳协程异常续跑避免判据静默失效 - 小欧 2026-10-30
+[停摆判据改双证据] fix 98c2b36e5 loop_watchdog 停摆判据改双证据reader beat+loop心跳 消除背压误dump - 小欧 2026-10-30
+[计时中间件改纯ASGI] fix 3794bbaec main 计时中间件改纯ASGI并保证异常穿出必落error日志 - 小欧 2026-10-30
+[save_message落库移出事件循环] fix 4373f4e89 message_service save_message落库移出事件循环并拆两段事务 - 小欧 2026-10-30
+[atxn改投专用事务池] fix 591dd9761 database atxn改投专用事务池并copy_context 与工具池隔离 - 小欧 2026-10-30
+[resume链补catch降级idle] fix 048401c1b useChatInit resume链补catch降级idle 避免半初始化与未处理拒绝 - 小欧 2026-10-30
+[refresh补catch收口] fix 6afd04bb8 useSessionTasks refresh补catch收口 失败保留上次列表 - 小欧 2026-10-30
+[PipelineRenderer尾部窗口+taskKey复位] fix b7ae389ed PipelineRenderer 尾部窗口+taskKey复位 根治完成瞬间答复段消失 - 小欧 2026-10-30
+[listTasks置静默] feat 9615c8965 task_api listTasks置静默 后台轮询失败不弹全局toast - 小欧 2026-10-30
+[E2E手册第四章章节号纠错] fix 296c6183a 全链路E2E测试手册 第四章章节号纠错(P5子节4.5.1~3改为4.6.1~3,P7/P8顺延4.8/4.9,消除4.7重号与缺4.9),AGENTS/README版本号同步v2.19 - 小欧 2026-10-29
+[start_e2e.bat硬编码旧路径改相对] fix 271b7adb5 start_e2e.bat 硬编码旧路径 G:\OmniAgentAs-desk 改为相对路径 cd /d %~dp0,随仓库位置自适应 - 小欧 2026-10-29
+[E2E手册两份分叉副本合并为唯一正本] docs 2779c59a2 全链路E2E测试手册 两份分叉副本合并为唯一正本(回填6.1.1按端口杀铁律+保留第十章PAR专项),删除backend/e2etests副本,6处引用与可执行路径统一改指doc-打包与E2E及F:\OmniAgentAs-01 - 小欧 2026-10-29
+[同源SPA部署说明补记部署目录] docs e553d4051 同源SPA打包与部署说明 补记本机实际部署目录G:\OmniAgent-SPA(升版V1.0.1) - 小欧 2026-10-30
+[llm_call补记重试/FC降级取消修复编辑历史] docs 4de3060a3 llm_call 补记重试/FC降级取消修复编辑历史 - 小欧 2026-10-30
+[sseParser.ts tool_result契约注释订正] docs c297a3e7b sseParser.ts tool_result契约注释订正补raw_data字段(后端2026-10-13新增原始data,edit的diff即raw_data.diff,原注释仅列4字段与后端契约不符) - 小欧 2026-10-30
+[gitignore忽略根目录测试动态输出] chore 14802bcdc gitignore 忽略根目录测试动态输出 _*.txt(vitest/pytest 生成 _after*/_suite* 进程占用不入库) - 小欧 2026-10-30
+v1.5.1
+更新时间: 2026-10-29 10:15:02 - 小欧-2026-10-29
+## v1.5.0以来 变更汇总(28个commit: fix6/feat1/refactor2/docs17/Merge1) - 小欧-2026-10-29
+[2026-10-29 10:15:02 小欧] 范围=v1.5.0以来全部commit(28个); 主线=TaskInfoBar事件浮层宽度拆分与文本折行+TitleBlock窄右栏token不可见与实时终态token兜底+useSessionTasks终态回复消失根治+清空api_key输入框残留/死锁四Bug根治+重试事件文案统一(L1/L2同走_format_retry_payload消双错误)+访问日志噪音过滤(UvicornAccessFilter挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+前端全量prettier格式化+文件深链死参数清理+设计文档[54][56]定稿+[57]登记及升版v2.2(读取权收归后端+三堂会审整改+补分批口径+W1/W2/W3转已裁定)+删除文档索引(用户裁定无用,目录入口废弃); 注:含1个feat(噪音过滤),按MINOR记v1.5.1
+### 1.5.1.1 TaskInfoBar事件浮层宽度拆分+文本折行
+[位2与事件浮层宽度拆分] fix eff3146f1 位2与事件浮层原共用LIVE_META_MAX_W,拆为两个独立常量:LIVE_META_MAX_W=20汉字宽(240px)位2截断专用(EllipsisTip+ellipsis);EVENT_CARD_W=40汉字宽(480px)事件浮层宽度专用(原220→350→480);事件时间轴文本nowrap+ellipsis改折行显示(whiteSpace:normal+wordBreak:break-word),长文本折行完整可见不再省略 - 小欧 2026-10-29
+### 1.5.1.2 TitleBlock窄右栏token不可见+实时终态token兜底
+[窄右栏token不可见] fix 31ee38daf 原整行flex nowrap容器380px/内容576px时token段197px仅33px可见;内容包flexWrap:'wrap'组+箭头移出组外flexShrink:0;删三处固定宽span间隔符 - 小欧 2026-10-28
+[实时终态token兜底] fix 31ee38daf 后端X2终态短信号只发五键token被剥离,final未带token时取本会话usage帧的任务累计(metaFrames.taskAccumulated与TaskInfoBar同源),同一条final校验(引用相等或timestamp+step),历史任务REST另建对象永不命中 - 小欧 2026-10-28
+[useSessionTasks终态回复消失] fix 31ee38daf refresh原无条件清空response,onSuccess+final_stats两次refresh均在updateTaskResponse之后→刚写入的final.response被抹掉;改按taskId保留已写入值(finalResponsesRef);final.response为空时取SSE chunk正文兜底(liveTaskAnswer,只认本会话当前任务+终态,排除is_reasoning) - 小欧 2026-10-28
+### 1.5.1.3 清空api_key输入框残留/死锁四Bug根治
+[displayValue回填] fix 178c5cffa Bug1:configured=false时displayValue恒空,不再回填旧masked(原:value=''时displayValue=masked,旧掩码串回填导致残留) - 小欧 2026-10-29
+[清空时序窗口] fix 178c5cffa Bug2:SettingsPage清空成功后立即本地更新providerConfig(configured=false,masked=''),不等reloadProviderCache异步返回(原:异步期间masked仍为旧值) - 小欧 2026-10-29
+[focused复位+只读锁] fix cb3d34492 Bug3:configured=false时不复位focused且恒可编辑(原:value=''时setFocused(false)+displayReadOnly=!focused→输入框变只读死锁) - 小欧 2026-10-29
+[明文态清空死锁] fix cb3d34492 Bug4:明文态(revealed=true)下点清空api_key,configured变false但revealed/plainKey未复位→旧明文残留+只读+眼睛按钮消失死锁;补effect强制退出明文态(清plainKey+revealed+定时器) - 小欧 2026-10-29
+[注释补记] fix 93087532b SecretRevealInput三Bug→四Bug注释补记; 删过期20字截断注释 - 小欧 2026-10-29
+### 1.5.1.4 重试事件文案统一
+[L1/L2统一] fix 323777b7a+9d22400fa llm_call.py L1/L2重试文案统一走_format_retry_payload([调用]/[响应]标签)+核心类名末尾(原为错误:[类名]msg类名在前)+消双错误(HTTP拆码+非HTTP中文映射); 429文案去HTTP前缀; core.py StreamChunk新增retry_wait/retry_error_type字段(默认None零行为变化); base_service.py L1重试透传新字段 - 小欧 2026-10-29
+### 1.5.1.5 访问日志噪音过滤
+[噪音过滤] feat 323777b7a shared_handler.py UvicornAccessFilter噪音过滤(5精确+3正则,挂logger级,幂等安装)+args索引修正(args[2]非args[1]); main.py startup_event挂载噪音过滤器(探活+状态刷新高频轮询) - 小欧 2026-10-29
+### 1.5.1.6 快照丢provider定制值根治
+[snapshot扩展] fix 9d22400fa base_service.py snapshot增全量参数(max_retries/timeout/max_tokens/temperature/top_p/frequency_penalty/presence_penalty/seed)+inherit_missing; _inherit静态方法收敛10处同模式三元(DRY): flag=True沿用self(兼容零退化), flag=False用new未配回落默认; extra_body_params/context_limit统一走_inherit - 小欧 2026-10-29
+[跨provider补传] fix 9d22400fa resolver.py 跨provider快照补传全量参数(max_retries/timeout/max_tokens经_resolve_max_tokens等)+inherit_missing=_same_pv; 8处(_pv_cfg or {}).get()收敛为一次_cfg=_pv_cfg or {}(KISS) - 小欧 2026-10-29
+### 1.5.1.7 TaskInfoBar重排与防悬空
+[位置重排] fix 323777b7a+93087532b TaskInfoBar.tsx 上下文+占窗率从中组迁至右组(位号调整); 占窗率DOT移入条件块防null悬空; 事件浮层宽度350px→480px - 小欧 2026-10-29
+### 1.5.1.8 代码治理与文档
+[prettier格式化] refactor 01e94d5aa frontend全量prettier格式化(补HEAD基线欠账) - 小欧 2026-10-29
+[死参数清理] refactor d955860ab fileDeepLink/FileRefChip/Files删chip跳转死参数source与死判据 - 小欧 2026-10-29
+[设计文档54] docs ba074f428+21c54fe62 [54]会话工作区目录合并[55]为单一重构文档-role改名workspace_property+术语收口会话工作区+创建时机定稿+兜底read_write;清理为非设计方案(删三堂会审/归档说明/决策记录/版本流水账/文档号注释)+修4处设计矛盾 - 小欧 2026-10-28
+[设计文档56] docs a3b7e8aff [56]附件与上下文物件设计文档v7定稿,新增[55]默认会话工作区创建逻辑分析与建议 - 小欧 2026-10-28
+[文档57] docs ad8591a1a+159380486+7812fac39+105ac6e18+f6671f0ba 文档索引v1.2补登[47]~[56](v1.1后新增未登记10份)+登记[57]输入框引用全链路-缺陷分析与设计重构方案(10项缺陷+体积闸门设计,读取权收归后端)+索引v1.3同步[57]升版v1.2+[57]升版v2.0(三堂会审整改:修11处自相矛盾+6处与实码不符,结构单线重排)+[57]升版v2.1(补分批口径:回执接入批次/第1批sanitize_refs保持现签名)+[57]升版v2.2(W1/W2/W3转已裁定,删2.4待确认节)+删除文档索引(用户裁定无用,目录入口废弃) - 小欧 2026-10-29
+
+v1.5.0
+更新时间: 2026-10-28 21:46:39 - 小欧-2026-10-28
+
+v1.5.0
+更新时间: 2026-10-28 21:46:39 - 小欧-2026-10-28
+## v1.4.9以来 变更汇总(39个commit: feat8/fix14/refactor3/perf2/docs9/审计修复1/Revert1/test1) - 小欧-2026-10-28
+[2026-10-28 21:46:39 小欧] 范围=v1.4.9以来全部commit(39个); 主线=任务统计右侧栏概览优化(StaticStatsBlock 5碎片节→2大语义组/修数据重复/截断一致/去开始结束+去魔法数字令牌化)+SplitPane分割面板系列(v1.1~v1.7 可拖动/持久化/双击重置/横向溢出根治/CLS弹动根治)+站内文件引用深链(FileRefChip内部渲染/别针引用入口/项目根解析)+打包部署(双击exe完整应用serve SPA/Tauri/同源SPA)+性能优化(message_service P1消除N+1/PipelineRenderer P2懒渲染)+沙箱安全与限流(lexer/shell_path_check放行/沙箱拦截截断/LLM 429二级判据)+插话滚动定位+文档规范(OmniAgent.md头条铁规/设计文档[49][52][54][55][56]); 注:含8个feat(双击exe打包部署/SplitPane可拖动/文件深链/插话滚动定位等新能力),按MINOR记v1.5.0
+### 1.5.1 任务统计右侧栏概览优化
+[StaticStatsBlock展开区域优化] refactor c9820e17d 5碎片节→2大语义组(任务元信息=基本信息+Token/执行结果=工具汇总+产出物)+修数据重复(删事件行同显total_steps/token任务级重复并入usage)+截断一致(工具调用链参数slice(0,80)硬截改EllipsisTip宽度省略)+去开始/结束(用户令)+grid 4列→2列+token K/M单位+工具汇总flex换行chip - 小欧 2026-10-28
+[StaticStatsBlock去魔法数字] refactor 49e86094c 展开区数字字面量全部令牌化/常量化(复用Spacing.LG/Radius.SM/BorderWidth.THIN/THICK既有令牌+8个模块级局部常量LABEL_COL_W/ARROW_SIZE/CHIP_RADIUS/CHAIN_ROW_GAP/SEQ_COL_W/PARAM_MAX_W/ART_INDEX_W/ERR_PAD_Y),纯样式零逻辑改动视觉零变化 - 小欧 2026-10-28
+[title-block正名] fix 3b08ca773 任务统计→概览+修复token显示测试 - 小欧 2026-10-28
+[补交测试] test 12f80f5fc title-block测试文件(被.gitignore误忽略,强制添加) - 小欧 2026-10-28
+[InputCore令牌化补记] fix(doc) 5d8c76265 补齐InputCore maxRows=3+令牌化变更的编辑历史与JSDoc一致性 - 小欧 2026-10-28
+### 1.5.2 SplitPane分割面板系列
+[可拖动分割面板] feat 4e65b0cdf SessionLayout v1.7 会话页可拖动分割面板-支持拖动调整左右宽度,默认左侧1/3 - 小欧 2026-10-28
+[左侧菜单栏宽度] feat 3b6fd8d10 SplitPane v1.1 优化左侧菜单栏宽度-根据rightOpen状态调整默认宽度 - 小欧 2026-10-28
+[持久化+双击重置] feat 9a6b9a357 split-pane v1.2 加localStorage持久化+配置常量化+双击重置 - 小欧 2026-10-28
+[文档v1.1] docs 8d7c1ca53 (49) v1.1 更新文档-添加宽度优化详细说明 - 小欧 2026-10-28
+[双击语义] fix aa51b2369 SplitPane双击语义v1.4→v1.5(设为新默认+Shift双击返回出厂默认)+Bug分析与默认值管理设计文档 - 小欧 2026-10-27
+[8个真实Bug] fix f7c784146 SplitPane v1.6修复8个真实Bug(Bug-2/3/5/8/13/15)+Bug分析文档更新 - 小欧 2026-10-27
+[晃动根治] fix 256d9ba21 SplitPane根治展开/收起右栏晃动4项功能退化(补width/flex过渡动画+收起态固定48px按钮条+拖动中禁用过渡) - 小欧 2026-10-28
+[撤回过渡方案] Revert 8cd7b8ea5 撤回"SplitPane根治展开/收起右栏晃动4项功能退化" - 小欧 2026-10-28
+[CLS弹动根治] fix bde04d5cd SplitPane左面板补scrollbarGutter:stable根治fail/cancel时左侧task区域CLS弹动(滚动条出现/消失→内容宽跳变) - 小欧 2026-10-28
+[横向溢出根治] fix afabbfbb5 SplitPane根容器/右面板+SessionLayout中部行补min-width:0+overflow:hidden根治横向溢出失控(flex auto min-size被长内容撑破→ResizeObserver正反馈);同步撤回48px/过渡方案并修正对应4条测试case - 小欧 2026-10-28
+[右栏CLS根治] fix f9dccaf71 SessionLayout右栏scrollbar-gutter:stable根治展开任务统计致CLS(滚动条出现→右栏宽度突变+晃动);SplitPane注释正名概览→任务统计 - 小欧 2026-10-28
+[审计修复] 审计修复 b96548845 SplitPane组件+取消测试代码跟踪 - 小欧 2026-10-28
+### 1.5.3 站内文件引用深链
+[文件引用深链] feat 47b755dda 站内聊天文件引用深链走内部渲染优先用项目根解析-FileRefChip交互承接外层span+QuoteButton隔离pointerEvents;resolveChipUrl增source标记(chat/url分流);Files页internal跳转优先项目根树定位不被外部目录状态覆盖 - 小欧 2026-10-28
+[别针引用入口] feat 4d42fafd8 chip/路径链接增别针引用入口+设计文档v5定稿 - 小欧 2026-10-28
+[时序窗口误判] feat bb873f6b9 chip点击用最新项目根治时序窗口误判+设计文档v4 - 小欧 2026-10-28
+### 1.5.4 打包部署
+[双击exe完整应用] feat 797fd7112 双击exe完整应用-后端serve前端SPA(main.py+spec) - 小欧 2026-10-28
+[Tauri打包部署] docs bc912cf78 新增Tauri桌面打包与部署说明文档 - 小杨 2026-10-27
+[同源SPA打包] docs 045eccdd2 新增同源SPA打包与部署说明文档 - 小杨 2026-10-27
+[cors_origins说明] docs 9dce96bb3 cors_origins notice改为'仅跨域部署时生效;打包版同源运行无需配置' - 小杨 2026-10-27
+### 1.5.5 性能优化
+[N+1消除] perf 70770532c message_service+storage P1消除N+1批量加载步骤(load_execution_steps_batch) - 小欧 2026-10-27
+[懒渲染优化] perf 034555165 PipelineRenderer P2前端懒渲染优化(useLazyRender渐进式分批渲染+useMemo派生值) - 小欧 2026-10-28
+### 1.5.6 沙箱安全与限流
+[解析失败放行] fix 9c2617fdf lexer/shell_path_check解析失败都放行 - 小欧 2026-10-28
+[沙箱拦截截断] fix 388c36df2 沙箱危险型拦截rejected content去[:140]字符截断-原按140字符硬切致140英文仅占约70汉字宽剩空白且原因>140字符时全文永久丢失,改去[:140]仅保留split去stderr英文tail,全文进前端由TaskInfoBar事件列表CSS ellipsis按显示宽度省略;denied_list仍用完整blocked_reason喂LLM自纠 - 小欧 2026-10-28
+[事件列表截断] fix 80032f85d TaskInfoBar位2动态状态+事件列表文本截断改显示宽度省略-原按20字符slice截断致20英文仅占约一半显示宽剩空白,改CSS text-overflow:ellipsis按真实渲染宽度截断;位2宽屏maxWidth=20*FontSize.SECONDARY≈240px窄屏200px;删briefMeta/LIVE_META_TEXT_MAX/未用Tooltip import - 小欧 2026-10-28
+[编辑历史位置] fix 585653a49 编辑历史位置修正-新编辑历史移到代码头部板块最下边(严禁中间插入),代码内联注释精简为简短就近说明;涉及sandbox_gate.py+TaskInfoBar.tsx - 小欧 2026-10-28
+[LLM 429二级判据] fix df009df4c LLM 429限流二级判据细分(QUOTA_EXCEEDED打死不可重试/RATE_LIMIT缓刑可重试)修正限流误报配额用尽+指数退避封顶120±20%抖动+L1/L2统一RETRY_BACKOFF_CAP常量 - 小欧 2026-10-28
+[shell输出截断] refactor 76167cf8a shell工具输出截断调整stdout 50K→10K,stderr 20K→2K+注释订正 - 小欧 2026-10-28
+[窄菜单文字截断] fix b670913b9 修复窄菜单文字截断+清理死代码注释/导入 - 小欧 2026-10-28
+### 1.5.7 插话与任务流
+[插话滚动定位] feat 5e35ddf2f 插话并入滚动定位+自动展开(task_merged事件驱动TaskListPanel)&onSuccess补refreshTasks兜底(根治final_stats帧丢失竞态致左栏卡executing);补齐两文件头部编辑历史登记 - 小欧 2026-10-28
+### 1.5.8 文档与规范
+[头条铁规更新] docs a782716c7 OmniAgent.md补打tag规则(version.txt版本汇总+升级tag)/代码编辑禁令(严禁脚本操作代码编辑致编码错误)/注释编辑历史规范(技术术语逻辑信息,禁文档号bug序号,最新编辑历史板块最下边)/提交标题格式(type:代码名 desc - 签名-日期,禁commit测试case) - 小欧 2026-10-28
+[设计文档54/55] docs 620470cb6 [54]会话事务空间目录读写分区与备注全链路设计实施v8定稿(实施代码改写为完整真实代码+各层真实行号标注+新增§十一代码清单23项);[55]默认会话工作区创建逻辑分析与建议v3定稿(方案D完整代码+§五代码清单6项);reconcile消除伪代码省略号补全禁区清库/缺目录mkdir/重读重判 - 小欧 2026-10-28
+[设计文档56] docs 467d0a187 [56]附件与上下文物件设计文档v7定稿,新增[55]默认会话工作区创建逻辑分析与建议 - 小欧 2026-10-28
+[设计文档52] docs 7dfa9db6a [52]PipelineRenderer前端懒渲染优化问题分析报告(10处问题汇总+优化策略方案) - 小欧 2026-10-28
+[设计文档49修正] docs c17c1c3df [49]v1.3修正rightOpen描述-经用户确认为非需求,文档同步实际行为 - 小欧 2026-10-27
+
+v1.4.9
+更新时间: 2026-10-27 08:21:45 - 小欧-2026-10-27
+## v1.4.8以来 变更汇总(22个commit: feat5/fix6/refactor7/其他4) - 小欧-2026-10-27
+[2026-10-27 08:21:45 小欧] 范围=v1.4.8以来全部commit(22个); 主线=会话压缩重构(trim_history 轮次级滑动/摘要降级/prune清零工具输出)+日志级别热重载(改debug/level免重启)+uvicorn日志非阻塞化(访问日志去镜像防刷屏)+打包部署完善(run_server日志配置)+安全确认链(TrustInfoBar卡死预警/信任状态动态接入)+前端UI调整(SubmitActions按钮组回迁/tooltip双重显示修复/执行中插话提示)+doc[48] 任务统计右侧栏视觉配套(PILL胶囊色/标题栏hover+focus/子标题色条降级)+summary/start_step摘要前缀清理; 注:本批为既有体系内缺陷修复与治理收口,无MAJOR级架构变更,对外契约零新增,按PATCH记v1.4.9
+### 1.4.41 会话压缩重构与摘要降级
+[trim_history轮次滑动] refactor f2b2fb317 轮次级滑动重构:调compaction find_tail_start/align_turn+find_recent_rounds_start,删旧分桶裁剪3方法;触发线改预算口径budget_base×ratio(单源DRY删重复_budget);CHARS_PER_TOKEN 2.5→2.25(10真实会话标定加权均值2.363);TRIM_TRIGGER_RATIO 0.75→0.9;删CompactionTrigger死代码(公式与trim_history分叉);trim 5键配置化 - 小欧 2026-10-25
+[trim系数通知] refactor 0948ba953 明确入口/出口用法(一次方/二次方);TRIM_TRIGGER_RATIO 0.9→0.8调小更早触发 - 小欧 2026-10-26
+[摘要降级接split] fix 70635d408 摘要失败降级接split_history_window+prune清零旧tool输出(远清近留);trim_history预算预留tools定义防撞窗400(北京老陈令) - 小欧 2026-10-25
+[summary段标记放宽] fix d8965526a 段标记校验放宽双重校验(去冒号子串+正则容忍##/段名:/段名:**三形式),修Agents-A1摘要被误弃致超窗400(北京老陈令) - 小欧 2026-10-25
+[摘要前缀清理] fix fe6e41bfa+e25977da1 summary+start_step 摘要前缀清理和锚点注入逻辑精简;删除过期doc月度实施文件 - 小欧 2026-10-27
+### 1.4.42 日志级别热重载与uvicorn日志非阻塞化
+[热重载] feat 07fc304f7 main.py+shared_handler.py+config.py 日志级别热重载:LogConfig改读get_config实时值(删导入期类属性快照)+_managed_loggers登记表+refresh_log_levels幂等重刷+main起10s周期watcher(config.yaml改debug/level免重启生效) - 小欧 2026-10-25
+[登记表DRY化] refactor fbf738034 shared_handler.py 去掉_managed_loggers自维护登记表(与logging.loggerDict重复违DRY),refresh_log_levels改按app./uvicorn前缀遍历全局loggerDict - 小欧 2026-10-25
+[会审修补] fix 743e24aee shared_handler.py+config.py 会审修补:refresh_log_levels补formatter刷新(debug切换后lineno字段与模式脱节)+get_log_level双重get_config收敛为单次cfg局部变量 - 小欧 2026-10-25
+[访问日志去镜像] fix 1fe774176 shared_handler.py+run_server.py uvicorn三logger去掉ConsoleMirrorHandler只保留文件handler落盘,访问日志高频刷屏且无排障价值,控制台只留log_and_print与应用WARNING以上 - 小欧 2026-10-25
+[截断阈值统一] fix 9df6c90b6 shared_handler.py 截断阈值100/120收敛为单一_CONSOLE_MAX_MSG=500,修101~120字符消息触发截断但截不到却显示负数提示(截断-9字符)致uvicorn访问日志高频刷屏 - 小欧 2026-10-25
+### 1.4.43 安全确认链与卡死预警
+[卡死预警] fix 982fd81c6 TaskInfoBar 卡死预警接入位2动态状态+事件浮层收窄 - 小沈 2026-10-26
+[执行中提示归一] fix e6b75eb2f chat 执行中提示归一——判据 isReceiving→sendBlocked + 文案原样搬移 + 删双提示并存 - 小欧 2026-10-26
+### 1.4.44 前端UI调整
+[SubmitActions回迁] feat SubmitActions按钮组由输入框内右下角回迁SubmitBar行右端+钮高34→24+间距6→1+minRows1→2 - 小欧 2026-10-25
+[tooltip修复] fix Layout移除左侧菜单item的title属性修tooltip双重显示 - 小欧 2026-10-25
+[执行中插话提示] feat 执行中追加橘红色插话提示 - 小欧 2026-10-25
+### 1.4.45 doc[48] 任务统计右侧栏视觉配套
+[PILL胶囊色] feat 61624b38f stepStyles.ts 新增 PILL_SUCCESS(#237804)/PILL_ERROR(#a8071a)/PILL_CANCELLED(#595959)三态专用色; 原SUCCESS/ERROR/BORDER.STRONG配白字对比度2.27/3.27/1.84:1全不达标AA(4.5:1),取AntD深一档green-8/red-8+TEXT.PRIMARY灰实测5.59/7.75/7.00:1均达AA; 新增非改值隔离语义 - 小欧 2026-10-27
+[标题栏交互] index.css 新增 .title-block-header:hover(#f0f0f0)+.title-block-header:focus-visible(2px #0c6aec, outline-offset:-1px); 原TitleBlock整行role=button+tabIndex=0无hover无焦点反馈,键盘用户不可定位当前所在行 - 小欧 2026-10-27
+[子标题色条降级] StaticStatsBlock.tsx sectionTitleStyle borderLeft PRIMARY→BORDER.STRONG; 主标题蓝条后子标题若同色则层级倒挂,降级浅灰条后主标题(蓝条+14px+600)>子标题(灰条+12px+500)层级清晰 - 小欧 2026-10-27
+[空格修复] TitleBlock.tsx token计数「总计:X[tok]」修正为「总计:X [tok]」 - 小欧 2026-10-27
+[接口透传] RightViewer.tsx StatBlock 传入 startTimestamp={frames?.startTimestamp} - 小欧 2026-10-27
+### 1.4.46 其他修复
+[SSE断连修复] fix 11651343c grep_file_content+tool_constants+chatStreamTransport SSE断连修复(grep matched截断+5处断开路径持续连接)+输出宽度优化(shell/httpget/read/docx/pptx收窄) - 小欧 2026-10-26
+[持久化模型修复] fix bf5c8d3b7 持久化模型 max_output_length 截断 max_tokens 修复 - 小欧 2026-10-26
+[appearance开关] feat effd1630a appearance 新增 contentRender/diffRender 两个渲染开关配置参数(默认皆开) - 小欧 2026-10-26
+[会话工作目录注入] refactor 337df3630 会话工作目录注入块定案:单层标签+文案重写(去外层system-reminder),修f前缀遗漏{lines}字面量bug,清多余空行 - 北京老陈 2026-10-26
+[fetch_webpage完善] feat cdfc90ed4 fetch_webpage notice回调注入+Jina优先+save_to落盘+timeout精确+BUG修复 - 小沈 2026-10-26
+[path_utils DRY] refactor 9674272b5 path_utils has_path_traversal+get_output_dir DRY+save_text_to_file抽取+BUG修复 - 小沈 2026-10-26
+[agent_telemetry对齐] feat 42895952b agent_telemetry.py history_context顶层content+浮层顶部行,摘要模板对齐opencode - 小沈 2026-10-26
+[TaskInfoBar notice双渲染] feat dbeff38fc TaskInfoBar notice双渲染+位4全清+extracting图标 - 小沈 2026-10-26
+[TitleBlock v1.6三堂会审] feat 1312dd985 TitleBlock v1.6 三堂会审 - DRY 提取 InlineText 组件 + 修复注释错误 + 补充编辑历史 - 小欧 2026-10-27
+
+v1.4.8
+更新时间: 2026-10-25 15:44:33 - 小欧-2026-10-25
+## v1.4.7以来 变更汇总(41个commit: fix14/feat1/refactor5/docs13/其他2) - 小欧-2026-10-25
+[2026-10-25 15:44:33 小欧] 范围=v1.4.7以来全部commit(41个); 主线=taskinfo事件时间轴文案压缩(≤15汉字,后端生成完整串+前端13字截断+rejected去拼接)+注入压缩流程3处修复(注入顺序/摘要冗余消除/交错序)+通知信封协议(installing/summarizing合并为notice统一事前事后)+信任管理设计文档[47]第3版全章重写+打包部署(uvicorn日志非阻塞化+资源自动部署)+前端UI调整(SubmitActions按钮组回迁/tooltip双重显示修复/执行中插话提示)
+
+### 1.4.34 taskinfo文案压缩(≤15汉字)
+[后端文案] summarizing/installing/retrying/error/rejected notice文案去冗余词压缩到≤15汉字; rejected后端生成完整串(含工具名+原因) — 小欧 2026-10-25
+[前端去拼接] useTaskInfo rejected case去掉_label·工具名拼接, 直接用后端content; 删REJECT_LABEL_MAP导入 — 小欧 2026-10-25
+[13字截断] TaskInfoBar事件时间轴text统一13字截断(slice(0,13)+'…'), 动态err/notice防撑爆布局 — 小欧 2026-10-25
+
+### 1.4.35 注入压缩流程3处修复
+[注入顺序] react_loop原两次inject_history把delta插summary前面(顺序错), 合并为一次summary在前delta在后 — 小欧 2026-10-25
+[摘要冗余消除] start_step delta压缩进summary后置_injected_delta_msgs=None阻止重复注入 — 小欧 2026-10-25
+[交错序] message_builder _rebuild_and_validate原把前序user全堆FC对前(交错丢失), 改按original_order合并排序保交错 — 小欧 2026-10-25
+
+### 1.4.36 通知信封协议(notice统一)
+[信封收敛] agent_telemetry installing/summarizing合并为notice(type=notice, kind+phase分派); emit_notice补log_and_print; 增量摘要复用路径补发notice(done) — 小欧 2026-10-25
+
+### 1.4.37 信任管理设计文档[47]第3版
+[全章重写] §三需求分析(数据表/页面/导入)+§四UI设计(5触点全景+13张示意图)+§五后端详细设计(5.1-5.15落本地代码行号)+5.16复查订正8处+§5.7代码块订正 — 小欧 2026-10-23~24
+
+### 1.4.38 打包部署与工程
+[uvicorn日志非阻塞化] log_config=None+setup_uvicorn_loggers治打包版stdout阻塞卡死事件循环 — 小欧 2026-10-25
+[资源自动部署] run_server.py _deploy_resources按mtime判定刷新+spec加OmniAgent.md datas — 小欧 2026-10-24
+[手册修正] 前端/后端打包手册路径修正+tree_sitter补录 — 小欧 2026-10-24
+
+### 1.4.39 前端UI调整
+[SubmitActions] 按钮组由输入框内右下角回迁SubmitBar行右端+钮高34→24+间距6→1+minRows1→2 — 小欧 2026-10-25
+[tooltip修复] Layout移除左侧菜单item的title属性修tooltip双重显示 — 小欧 2026-10-25
+[执行中插话提示] 执行中追加橘红色插话提示 — 小欧 2026-10-25
+
+### 1.4.40 其他修复
+[路径分隔符] 路径分隔符混用+深层懒加载路径丢失修复 — 小欧 2026-10-24
+[死循环纠偏] react_inference死循环纠偏加工具返回summary+FileTrailPanel改SPA导航 — 小欧 2026-10-24
+[session.api] SRP拆分updateSession为updateSessionTitle+updateSessionModel消耦合 — 小欧 2026-10-24
+[reasoning_effort] 移除全局兜底minimal档仅留low/medium/high — 小欧 2026-10-24
+
+v1.4.7
+更新时间: 2026-10-23 22:24:07 - 小欧-2026-10-23
+## v1.4.6以来 变更汇总(18个commit: feat8/docs4/fix1/refactor1/style1/chore1/docs-cleanup1) - 小欧-2026-10-23
+[2026-10-23 22:24:07 小欧] 范围=v1.4.6以来全部commit(18个); 主线=文件外部只读预览全链路(外部文件chip可点→定位框直读→外部目录树挂主树__ext__兄弟根)+参数区与产出物路径可点化(根外文件外部预览/根外目录挂外部树/目录类工具按目录渲染)+路径展示三处增强(全路径不截断/目录可见性高亮/预览标题截断与tip)+信任管理详细设计文档v3修订+工程清理(文档序号重编+repair-code快照目录整体删除)
+
+### 1.4.29 文件外部只读预览全链路
+[全链路落码] 外部文件引用从"只能看文本不能打开"变为可点外部只读预览: 后端定位框直读外部文件、前端chip可点击、链路测试齐备 — 小欧 2026-10-23
+[后端目录保真] quote 侧与 file.api 的 recent_files 保留真实目录路径: 目录不再被归成文件形态处理, 避免目录深链落到文件预览 — 小欧 2026-10-23
+[深链补尾] 目录深链统一补尾分隔符并展开外部目录第一层: 尾分隔符是前端 isDirPath 区分目录与文件的唯一判据 — 小欧 2026-10-23
+
+### 1.4.30 参数区与产出物路径可点化
+[根外文件] 参数区与产出物路径支持根外盘符绝对路径: 走 ext=1 外部只读预览深链, 不再拦死为纯文本 — 小欧 2026-10-23
+[根外目录] 根外目录(尾分隔符)同样可点挂外部树 __ext__ 兄弟根, 参数区与产出物两处同一口径 — 小欧 2026-10-23
+[提示统一] 深链未命中时在右侧预览区给提示卡(不再空白); 目录扫描提示移入工具条行内, 三类预览提示文案统一 — 小欧 2026-10-23
+[目录类工具] listdir/tree/find 的路径参数按目录渲染: isDirToolPath 单一判定(键集合沿用 PATH_KEYS 覆盖后端别名键) + 外部目录深链补尾分隔符 + 根自身不放行(防把项目根当外部根挂树); 数据层与 step/DB 零接触 — 小欧 2026-10-23
+
+### 1.4.31 外部目录树与足迹
+[外部树挂载] 外部目录树挂为主树 __ext__ 兄弟根, 外部文件右键引用/复制与目录图标区分, 修 slice 偏移 — 小欧 2026-10-23
+[全路径展示] 足迹与推荐列表行内改显全路径, 不截断折行 — 小欧 2026-10-23
+[标题与tip] 预览标题按 10 汉字宽截断, tip 单行自适应包裹, 复制路径提示统一样式 — 小欧 2026-10-23
+[目录可见性] 工具条补目录可见性(目录:[路径]高亮)与多选引用提示 — 小欧 2026-10-23
+
+### 1.4.32 信任管理详细设计文档v3
+[需求章] 新增第2章需求要求说明(8节)并修正三列布局口径 — 小欧 2026-10-23
+[结构修正] 头部概述段移至 §1.1 表格后, 保留章节标题位置, 删除误伤的档位查询行 — 小欧 2026-10-23
+[口径收敛] 清理五域残留改为三域, 保留 A→B 导入, 补 move/copy 双模式 — 小欧 2026-10-23
+
+### 1.4.33 工程清理
+[文档序号] 文档序号重编: 消除重号、无号手册编号、内部编号错位修正, 取号规则改一号一文并同步跨目录活跃引用 — 小欧 2026-10-22
+[快照目录] repair-code 整体删除: 714 个跟踪文件 + 606 个未跟踪测试日志, 8 月修复代码快照已无用不再引用 — 小欧 2026-10-23
+
+v1.4.6
+更新时间: 2026-10-22 21:01:22 - 小欧-2026-10-22
+## v1.4.5以来 变更汇总(3个commit: feat1/style2) - 小欧-2026-10-22
+[2026-10-22 21:01:22 小欧] 范围=v1.4.5以来全部commit(3个); 主线=文件引用域四项增强落码(引用台账落盘与响应式/产出物路径可点化/树上读过与被改写双标记/足迹请求失败不缓存空)+三堂会审十轮整改(样式顺序修正/注释编号合规/编辑历史补齐/依赖补齐)
+
+### 1.4.27 引用域四项增强落码
+[台账落盘] 引用台账入SessionSnapshot并随StreamBackup落盘: EMPTY_SNAPSHOT/bump/SNAPSHOT_KEYS/toBackupOf/restore 五处补齐, 老备份显式给空数组(避免展开式恢复把缺字段带入后 .filter 抛错); 台账类型迁 backupTypes 单一真源, chatStreamStore 侧 re-export 保持 import 路径不断 — 小欧 2026-10-22
+[产出物可点化] 新建 components/FilePathLink.tsx: 路径判界复用 utils/projectPath、深链拼装复用 utils/fileDeepLink, 根外/形态非法/未取到根一律退化为纯文本不造假链接; 产出物列表路径由死文本改可点深链(原先须手抄路径去找) — 小欧 2026-10-22
+[树双标记] 新建 utils/fileOps.ts: MUTATING_FILE_OPS 收 12 个改写类工具(与后端 FILE_OPERATION_TOOLS 同源, 读类不入表) + isMutatedByOps; 树行读过标●、被改写过额外标✎(区分"读过"与"我的文件被覆盖") — 小欧 2026-10-22
+[足迹失败不缓存空] useRecentFiles 请求失败不再 cache.set 空数组: 只删本次在途项(防误删 reload 新请求), 下次请求自动重试; 原实现一次网络抖动即致足迹面板与树上●集体空态至手动刷新 — 小欧 2026-10-22
+[上下文包判空] 引用 chip 点击判 path 非空: 上下文包无单一路径(path=''), 原实现拼空路径深链点了跳空白页, 现空路径仅作展示 — 小欧 2026-10-22
+
+### 1.4.28 三堂会审十轮整改
+[样式修正] FilePathLink 样式 spread 顺序反(纯文本态灰色覆盖链接态主色蓝, 链接呈灰色), 改为 plainStyle 先展开 — 小欧 2026-10-22
+[注释合规] 清理注释中的文档号/章节号与会审裁定流程词(AGENTS.md 禁插文档号章节号与评审裁定序号), 仅留技术说明 — 小欧 2026-10-22
+[编辑历史] 4 个改动文件补头部编辑历史条目(chatStreamStore/chatStreamPersistence/useRecentFiles/ChatInput), 插在板块最下边 — 小欧 2026-10-22
+[依赖补齐] Files 页两处 useCallback 补 setState 依赖(树状态机 hook 化后 eslint 报缺依赖), lint 回到 21 条基线 — 小欧 2026-10-22
+[格式统一] 清理涉及文件统一 prettier(行尾与排版), 格式校验全过 — 小欧 2026-10-22
+
+v1.4.5
+更新时间: 2026-10-22 19:38:24 - 小欧-2026-10-22
+## v1.4.4以来 变更汇总(28个commit: fix12/refactor6/docs4/feat2/revert1/chore1/test1/style1) - 小欧-2026-10-22
+[2026-10-22 19:38:24 小欧] 范围=v1.4.4以来全部commit(28个); 主线: 前端文件域与引用域KISS化重构落地(R1-R7)+架构守卫arch-check上线与红线取证闭环+路径可点化(裸路径/行内代码识别)+框线图对齐三处修正+会话融合增强与KISS重构设计文档+新增fre2e_22/23全链路覆盖+注释与编辑历史合规整改
+
+### 1.4.20 前端文件域引用域KISS化重构落地(R1-R7)
+[R3域归位] 引用域归一: composerRefStore从chat/streams搬到features/refs/store.ts, 删旧文件改全部import, 交叉守卫G1c归零 - 小欧 2026-10-22
+[R1共享hook] 新建useComposerRefs: ChatInput的7处setRefs全改为hook方法(remove/removeWhere/clear/add/setAll), 状态只经hook进出 - 小欧 2026-10-22
+[R2统一入口] 新建features/refs/quote.ts: quoteFile/quoteSelection/quotePack统一"读盘+组装+入队", 返回{ok,reason}不弹提示(成功失败文案都归调用方); 文件页/足迹面板/任务卡三个调用点改走quote*, 删quoteFileForPreview/quoteAsPack/quoteFromRef/quoteLedgerEntry及3份近似实现 - 小欧 2026-10-22
+[R4双真源] refCount的"键集合"双真源删除: 改useSyncExternalStore订阅composerRefStore.getSnapshot()为唯一真源, 引用状态不再双份维护 - 小欧 2026-10-22
+[R5判据收敛] TaskListPanel删自写的normalizeRelPath(20行), 路径判据收敛到utils/projectPath的toRelativePath唯一真源 - 小欧 2026-10-22
+[R6纯函数] 发送前校验抽纯函数: 新建features/refs/refresh.ts(sliceByLineRange+refreshRefs), ChatInput的46行内联校验替换为await refreshRefs(refs); 失效引用阻断发送(引用可被外部改动后仍照发), 保真不重复切片 - 小欧 2026-10-22
+[R7树状态机] 新建features/files/hooks/useFilesTree(树状态机+expandToPath)与useFileSelection(selected/multiFiles/lineRange/narrowTab); mergeKids/buildScanNotices上提utils/fileTree.ts; 页面层收到编排职责(树加载/展开/选中/预览)交出, 保留openPath与JSX编排层 - 小欧 2026-10-22
+[G-4闸门] 序号闸门抽纯函数withSeqGate: 序号判据与Map读写合并, fetchGated为唯一实现, loadDir/expandToPath改走它, claimDir失去全部消费者被删(改口径不再"改A漏B") - 小欧 2026-10-22
+[管道] readAndPush抽出"读盘→投递引用"唯一管道; 顺带修pushRef未await真缺陷(原fire-and-forget导致批量ok计数早于投递完成、异常变unhandled rejection); 失败文案仍归调用方(批量要能定位到具体哪个文件, 单发不带名) - 小欧 2026-10-22
+
+### 1.4.21 架构守卫arch-check上线与红线取证闭环
+[上线] 新建scripts/arch-check.mjs: G1a(files不引refs非store)/G1b(G3)/G1c(files不直调composerRefStore)/G2(引用入口唯一)/G3(utils/components不直调store)/G3b(file-ref只在FileRefChip)/G4(禁止重造轮子,先查FUNCTIONS.md)七条规则; --strict违规exit 1可接CI门禁; import type与features/refs豁免; 接package.json arch:check/arch:check:strict - 小欧 2026-10-22
+[红线取证] 7条守卫全部具备实证: G1c/G2/G4靠真实重构7→0自然证明, G1a/G1b/G3/G3b靠临时取证文件注入→strict 4处违规exit 1→删净→0处exit 0闭环 - 小欧 2026-10-22
+[漏检修复] 红线取证反查出G1a/G1b/G1c对相对路径导入整类漏检: 本仓import风格相对../占398处vs别名@/占114处, 原正则只匹配features/字面段, 文件页深引features/refs的相对写法判0处(守卫失效比正则写错更隐蔽); 加resolveSpec归一化(@/别名+./../归一成src相对路径, 目录导入补/index), 两写法均命中, 364文件真代码零误报 - 小欧 2026-10-22
+
+### 1.4.22 路径可点化与前端体验
+[裸路径识别] 文件引用预处理增裸路径识别: 答复/思考里Agent直接写的相对路径或项目根内绝对路径也转成/file-ref链接; URL/markdown链接/围栏/行内代码一律原样; 判据复用utils/projectPath不另立一套; 可转路径须末段字母开头扩展名+拒@/#开头(npm包名、锚点不转) - 小欧 2026-10-22
+[行内代码] 行内代码整段就是一个路径时也转链接(Agent普遍把产物路径写成E:\...); 夹带其他文字的行内代码仍原样, 避免把示例改成可点链接 - 小欧 2026-10-22
+[展示收口] chip文字直接显示完整绝对路径并删除tip; 链接构造两份(裸路径/行内代码)抽toFileRefMarkdown单一真源; chip拼展示文案抽displayPathOf; 删死参数label(职责归一) - 小欧 2026-10-22
+[深链增强] 行号深链既支持"起-止"也支持单行"10": 只认区间时用户手敲?line=10会被静默忽略(点了没反应); 深链树滚动定位改信号(reveal→提交后effect)+窄屏切预览Tab - 小杨/小欧 2026-10-22
+[体验收口] 发送钮常驻置灰(pending不再可点)+树右键菜单不误关+深链单值行号加载后续内容如实提示; 字体栈收敛; prettier格式化收口 - 小欧/小沈 2026-10-22
+
+### 1.4.23 框线图对齐三处修正
+[三处] asciiArt框边定位修正: 上下边宽容差对齐、natural统一裁尾、右边界两相位认领; 抽rightCapOf收敛右边界cap; Ambiguous宽度选项说明更正; 热路径分配优化 - 小沈 2026-10-22
+[性能] MarkdownSlot框线图归一化改deferred节流: 避免渲染热路径上反复全量归一化 - 小沈 2026-10-22
+[卫生] 删除临时调试文件(_app-font-check/_dbg-run/_dbg/_regress-check) - 小沈 2026-10-22
+
+### 1.4.24 会话融合增强与KISS重构设计文档
+[新增] 新增[42]会话融合增强优化设计与[43]前端架构优化-文件域引用域KISS化重构设计两份文档, 含执行序表与before/after对照 - 小欧 2026-10-22
+[修订] [43]文档三堂会审修订6缺陷+深链定位拆分, 出v1.4与v1.5两版 - 小欧 2026-10-22
+[索引] 新增10月文档索引, 记录执行序状态与门禁达成情况 - 小欧 2026-10-22
+
+### 1.4.25 E2E覆盖与工程卫生
+[新增] 新增fre2e_22文件页深链(19例)与fre2e_23聊天路径可点(2例): 21例全绿零skip零retry; fre2e_22覆盖树竞态闸门/深链展开(含Windows反斜杠与中文路径)/行号切片/37MB超大文件截断/引用投递管道, fre2e_23走真实LLM+真实工具 - 小沈 2026-10-22
+[E2E加固] printDiag统一为DiagBundle对象+ensureDevServer加HTTP200就绪校验(原先只判端口在监听≠服务活着) - 小沈 2026-10-22
+[用例修正] fre2e_01_reconnect_ui裸URL改显式newSession: 避免自动加载残留会话致sendBlocked超时(用例只用于发现问题, 不固化错误系统逻辑) - 小欧 2026-10-22
+[合规] 注释违规修正(清除"三堂会审"等过期裁定字符)+编辑历史补充+字体度量脚本与tsconfig收录 - 小沈 2026-10-22
+
+### 1.4.26 后端安全层范围门(同日撤回, 净零变更)
+[提出又撤回] 曾把path_tool_safety_checker的范围门改为只闸路径三线并恢复工具级确认(追出全量单测18 failed/复验8596 passed); 随后同日撤回, 恢复J3原设计: 本层只做路径安全权限判定, 非路径工具整体放行, 工具级needs_confirmation不在本层分流 - 小欧 2026-10-22
+
+v1.4.4
+更新时间: 2026-10-22 01:29:05 - 小欧-2026-10-22
+## v1.4.3以来 变更汇总(11个commit: feat2/fix2/perf1/docs6) - 小欧-2026-10-22
+[2026-10-22 01:29:05 小欧] 范围=v1.4.3以来全部commit(11个); 主线: 信任模式文档四轮收口+文件管理 J3 会话工作目录与路径工具收口+文件读写内存闸门与路径感知渲染+file_browse 扫描提示透出与树扫描提速+文件引用发送前重读校验+注释与编辑历史合规整改
+
+### 1.4.15 信任模式文档四轮收口
+[显示结构] 信任页显示结构按归属主序收口: 会话列一个会话一条带、任务列一个任务链一条带, 带从上到下依次排列、带内按路径分行, 无条目的会话链不显示带(沿用既有带概念不另起名); 覆盖关系统一表述为"作用范围包含", 流程C与文案表同步落点口径 - 小欧 2026-10-21
+[术语收口] 丢弃上一版"只能横向移动的带"概念(字面不成立且与已有分组轴撞名), 统一改为 组/会话组/任务组, 分组轴改名"视图分组"; 明确信任条目可在各组之间任意挪动 - 小欧 2026-10-21
+[条目显示] 一个信任条目核心信息只三件: 动作+组+域(组与域由位置隐含, 卡上不重复显示), 卡片高收至 48-64px, 路径只显末段、全路径进 Tooltip, 同路径多动作合并为一枚动作徽标组; 移动端单列流无位置参照, 故域与归属名必须显示 - 小欧 2026-10-21
+[合并纠错] 修正信任条目合并错误: 一条信任一张卡不合并(主体=动作+路径, 读写同路径是两条独立授权、各占一张卡, 合并则撤销粒度与可读性同时被破坏); 核心信息改为动作+路径+域, 组名不重复显示 - 小欧 2026-10-21
+
+### 1.4.16 文件引用发送前重读校验与台账按任务绑定
+[发送前校验] 发送前重读引用并按选区切片校验, 失效引用阻断发送(引用可被外部改动后仍照发) - 小杨 2026-10-21
+[台账绑定] 引用台账改由 start→taskId 绑定, 移除空 taskId 与"最新批次"兜底(兜底会把引用错记到别的任务) - 小杨 2026-10-21
+[图片过滤] 图片引用过滤, @ 补全边界收紧, transport 剥离 pending/invalid 状态; useComposerRefs 合并进 ChatInput 并删除原文件(职责归一) - 小杨 2026-10-21
+
+### 1.4.17 file_browse 扫描提示透出与足迹自动刷新
+[扫描标志] 后端已算的 truncated/incomplete_depth/skipped/skipped_cycles 原先全丢(用户以为看到的是完整目录), 现于树上方如实提示, 几段拼成一行且含条数 - 小欧 2026-10-21
+[跳过分类] skipped(真读不到/越界/坏链接)与 skipped_cycles(链接绕回已展开目录被防环拦下)原混在一个计数里, 提示"无法读取"属误导(实测 104 条全是环), 现分两类 - 小欧 2026-10-21
+[足迹刷新] 足迹面板订阅会话快照, 步骤数变化即重取(去掉 600ms), 原先数据停在挂载时刻 - 小欧 2026-10-21
+[死入口摘除] 摘掉工具条"设为会话工作目录"死按钮(无 onClick 的骨架)、树右键 disabled、prop 与空实现一并摘除; "暂不支持预览"文案不再引导用户去不存在的功能 - 小欧 2026-10-21
+
+### 1.4.18 Files J3 会话工作目录与路径工具收口
+[J3入口] 树右键菜单加回「设为会话工作目录」(仅目录节点), 先 GET 后 PATCH(全量覆盖语义); 相对→绝对走 utils/projectPath.ts, 422 的 workspace_rejected 逐条呈现 - 小欧 2026-10-21
+[竞态防护] 树请求竞态防护: 替换型请求(整树刷新)走 AbortController 取消上一轮, 旧响应不得覆盖新状态 - 小欧 2026-10-21
+[准入口径] 后端会话目录准入只有一条: 不能落在禁区·系统档(forbidden_system, 非法路径/异常也兜底到该档 fail-closed); forbidden_non_system(代码目录/允许根/启动目录)一律放行 —— 原实现 `if scope:` 把写线矩阵里的 CONFIRM 档也当 DENY, 常见配置整单 422, 会话目录根本设不上; 宽根规则(家目录/盘根放大删除范围)保留 - 小欧 2026-10-21
+[行数口径] read 的 total_lines 改 _count_lines: 末尾换行不产生新行(编辑器口径), 原式 count("\n")+1 让 "a\r\nb\r\n" 算 3 行 → 行号指到不存在的空行, 且与前端行号列不一致 - 小欧 2026-10-21
+
+### 1.4.19 file_browse 树扫描提速
+[后缀短路] BINARY_EXTS 明确二进制格式按后缀零 IO 判定(.pdf/.docx/.zip/.pyc/.woff2 等, 实测前 2 万项里占实探量 1/4); .map/.tsbuildinfo/.plist/.in/.lock 等补进文本后缀表; 剩余需实探的走 _probe_pool 批量并发探测(线程数固定 8) —— 树扫描耗时大头是类型探测(8.9 万节点单次 7.16s, 其中 8KB 实探约 7.5s, scandir 遍历本身仅约 1s), 本次提速**不加任何节点限制** - 小欧 2026-10-21
+
+### 1.4.20 文件读写内存闸门与路径感知渲染
+[内存闸门] read_text_file/write_text_file 加 READ_INPUT_MAX_BYTES 5MiB / WRITE_INPUT_MAX_BYTES 10MiB 闸门, 防几百 MB 文件 OOM; 两类截断原因并存且互不覆盖 - 小欧 2026-10-21
+[行号区间] 文件读取支持行号区间翻页, loaded_size 按原始字节计, 行数末尾换行不增行 - 小欧 2026-10-21
+[扫描提速] 目录树扫描提速: 响应开 GZip level1, 20MB 响应 4~5s → 0.09s - 小欧 2026-10-21
+[路径感知] 前端新增路径感知渲染: 路径 chip / PathAwareJson / asciiArt / 路径参数编解码; 深链参数补 encodePathParam(补编括号, 防 markdown 链接被 ')' 截断)与 decodePathParam(非法百分号编码解码为 null, 调用方退化为纯文本而不抛 URIError) - 小欧 2026-10-21
+
+### 1.4.21 文件管理设计方案 v5.18
+[口径收口] 文件管理设计方案升 v5.18: J3 落地与口径收口(1 文件 45 增 38 删) - 小欧 2026-10-21
+
+### 1.4.22 注释与编辑历史合规整改
+[注释合规] 清除 ParamsPanel/ParamsTree/MarkdownText/MarkdownBody 注释中的文档号/章节号/编号/会审裁定表述(改为纯技术说明), 补本轮编辑历史(头部板块最下边追加 2026-10-22 条目, 日期+署名+修改目的与逻辑); 功能性改动(路径链接统一/嵌套 JSON 路径可点/深链健壮)已随 78f515245 落盘, 本次无代码行为变更 - 小欧 2026-10-22
+
+v1.4.3
+更新时间: 2026-10-21 20:43:13 - 小欧-2026-10-21
+## v1.4.2以来 变更汇总(3个commit: docs3) - 小欧-2026-10-21
+[2026-10-21 20:43:13 小欧] 范围=v1.4.2以来全部commit(3个); 主线: 信任模式文档[41]三堂会审整改(后端判定/撤销/迁移/层界/端点)+拖拽设计纠偏(落点单一语义)+文件管理注释与编辑历史合规整改扩面
+
+### 1.4.12 信任模式文档三堂会审整改
+[命中判定] 命中补归属过滤(会话域按 owner_session_id、任务域按 owner_root_task_id、global 不过滤; 缺此项即跨会话/跨链越权豁免); 路径比较改按路径分量(_path_covers), 不用字符串前缀(兄弟目录如 D:\proj\src2 会被 D:\proj\src 误命中); 覆盖者查询补 scope+归属过滤并删自相矛盾条件 - 小欧 2026-10-21
+[撤销口径] 撤销按"同一主体"(同 action ＋ 同归一登记范围)跨工具一并删, 与放行口径对称(否则只删一行、同范围其它工具行仍免弹); 单条撤销以按 id 为唯一正确粒度; 新增 DELETE /trust/{id} 端点(端点 11 增至 12) - 小欧 2026-10-21
+[存量迁移] 单条 INSERT…SELECT 无法按行映射工具→动作档位(具名参数只给全表一个值), 改 Python 逐行迁移: 读旧行→action_of_tool 映射→path 按 trust_scope_path 归一→expires_at/created_at 原样沿用→目标键已存在则跳过(幂等) - 小欧 2026-10-21
+[落库域真源] 落库域改以服务端与 confirm_id 绑定的下发值为准(前端回传仅作一致性校验, 不一致则拒绝并按会话列回落, fail-closed); HITL 出参补下发 trust_domain(前端不推算) - 小欧 2026-10-21
+[层界与真源] effective_trust_mode 由 services 落回安全层 app/safety/trust_db.py(safety 不得 import services); 新行 created_at 归一为本次变更时刻, 沿用的是 creator_* 与 expires_at(不续期); insert_trust 的 expires_at 改三态(未指定/永不过期/指定时刻), 修"永不过期被改写成 TTL" - 小欧 2026-10-21
+[前端清单对齐] 信任清单客户端真源在 task.api.ts 的 trustApi(不在 session.api.ts); GlobalTrustPanel.tsx 现网不存在(不作整文件作废); 补 Layout/index.tsx 与 App.tsx 两个落点; 断点统一到全局基建 useInfoBreakpoint(1280/960/768), 删除自造的 1024px - 小欧 2026-10-21
+[跨章同步] 端点数/覆盖矩阵/字段表/实施顺序表/易错点/文案表逐项对齐; 改域确认强度统一为"一律直接执行不弹确认"(删残留的确认提升/确认降级文案) - 小欧 2026-10-21
+
+### 1.4.13 信任模式文档拖拽设计纠偏
+[落点单一语义] 拖拽语义由"横向=改域/纵向=改归属/斜向=两者兼改"三分法改为**落点=(列, 带)** 单一模型: 列=落在哪个域(全局/会话/任务), 带=归谁所有(全局列无带; 会话列的带=会话; 任务列的带=任务链); 去掉"斜向"第三语义(数据模型中无对应物), 三域之间自由拖动 - 小欧 2026-10-21
+[目标区域] 会话列的会话、任务列的任务即各自目标区域; 落点映射: 全局列→global/无归属, 会话列某会话带→session+该会话, 任务列某链带→task+该链, 带0→未来域/无归属 - 小欧 2026-10-21
+[覆盖与冗余] 覆盖关系改为"同归属内比宽窄", 换带即互不覆盖; 冗余两档仅在同一归属对象内成立(跨归属不构成冗余) - 小欧 2026-10-21
+[同步面] 骨架图/图10/图11/图13 重画; 需求条目 R19、决策 D-19/D-21/R21/R25、关键结论 ③'/③''、§3.2.5.4/5.6/5.7/5.8/5.9、§3.3 文案表、验收项 G12~G16 与 G28~G45、后端落点口径与端点 body、前端 useTrustDrag 注释同步; 并补上缺失的开围栏(旧版图1 未闭合致其后整段渲染错乱) - 小欧 2026-10-21
+
+### 1.4.14 注释与编辑历史合规整改扩面
+[注释合规] 清理今日新增代码里的文档号/章节号/需求编号与会审裁定类表述(改为纯技术说明); 补齐各文件头部编辑历史; 历史条目一律保留不删(41 个今日改动文件) - 小杨 2026-10-21
+
+v1.4.2
+更新时间: 2026-10-21 18:43:49 - 小杨-2026-10-21
+## v1.4.1以来 变更汇总(9个commit: feat2/fix3/docs4) - 小杨-2026-10-21
+[2026-10-21 18:43:49 小杨] 范围=v1.4.1以来全部commit(9个); 主线: 文件管理链路缺陷修复(预览探测/目录环/节点预算/深链展开/多选语义/预览视觉)+注释与编辑历史合规整改+前端代码高亮换 highlight.js+信任模式文档两轮定稿
+
+### 1.4.7 文件管理后端缺陷修复
+[预览探测] 文本实探改传 de.path 绝对路径(原传 Path(de.name) 相对进程 CWD, Dockerfile/LICENSE 等无后缀文件恒判不可预览); 目录不参与实探(带 .md 后缀的目录曾被当可预览文本, 输入框 @ 补全会把目录当候选); 带 BOM 的 UTF-16/UTF-32 文本按文本判定(首字节含 NUL 曾被误判二进制 415); 解码后含 NUL 的伪文本按二进制拒绝 - 小杨 2026-10-21
+[遍历安全] 目录环按 realpath+normcase 去重(junction/符号链接绕回祖先曾无限递归出 loop/loop/loop); 子级节点额度扣除目录自身占用(整树产出不再超 max_nodes); 文件当树改报 INVALID_PATH(原返回 200 空树); 不可读目录计入 skipped - 小杨 2026-10-21
+[错误契约与时间字段] UNSUPPORTED_TYPE 文案与实际口径对齐(原写"仅支持 .txt/.md 与图片", 实际已放开为可解码文本+图片); recent-files 时间字段由 last_seen_at 改名 mtime(值一直是文件系统 mtime, 旧名让前端误当"最近访问时间") - 小杨 2026-10-21
+[列目录工具] tree.py 加目录节点数与扫描条目数双闸门(超限置 truncated 并在摘要标注); 目录计数只统计实际入树的目录; mtime 排序改最近修改优先(原升序最旧在前, 与工具契约相反) - 小杨 2026-10-21
+
+### 1.4.8 文件管理前端交互与视觉
+[状态收敛] 树三态合为单一状态机(原 treeLoading/treeReady/treeErr 三布尔可组合出非法态); 展开集合改受控(原先树内与页面各持一份, 深链/定位只改页面 state 致树纹丝不动); 多选集与预览集分离(Ctrl 首次点选不再夹带未勾选的预览文件); 首次 Shift 无锚点以当前预览文件为锚 - 小杨 2026-10-21
+[交互与性能] 定位输入自持状态(输入不再触发整页重渲染); 分栏宽度内聚(拖拽不重绘树/预览); 主题常量上提模块级(避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算); 根容器改 border-box(消 16px 溢出) - 小杨 2026-10-21
+[视觉与可达性] 树行状态色落 CSS(补 hover 与 focus-visible, 行内 inline 背景曾压掉 hover); 分隔条常驻 1px 中线(原 transparent 在浅底上完全不可见, 找不到拖拽点); 展开空目录补"（空目录）"弱提示; 预览刷新改"重载+一次性提示"(原过期横幅与自动重载自相矛盾); 图片补工具栏与本轮字节数; 空文件 0 行且不渲染行号; 行号列横向滚动时粘左; 引用体量统一为字节(原用字符数) - 小杨 2026-10-21
+
+### 1.4.9 代码高亮与预览增强
+[高亮引擎] 前端代码高亮由 prismjs 换 highlight.js(prism 语言组件裸全局注册在 vite 链路时序失效, 实测不亮), class 着色映射集中 index.css 一处; 删 hljs 不存在的 toml 语言(.toml 后缀走 ini 近似兜底) - 小杨 2026-10-21
+[预览增强] 文本模式行号列(右对齐 ch 自适应列宽/灰弱禁复制, 选区复制不含号); md 美显复用系统唯一 markdown 渲染入口 + 文本/美显切换 - 小杨 2026-10-21
+
+### 1.4.10 信任模式文档定稿
+[docs41] 未来对象集域 session_future/task_future 正式入基线(34 处改动); 确认强度全面放开(改域不弹确认框, 直接执行 + toast); 图13 重画 + 移动端定稿 + 删除风险节 + 历史压缩 - 小欧 2026-10-21
+
+### 1.4.11 注释与编辑历史合规整改
+[注释合规] 清理今日新增代码里的文档号/章节号/需求编号与会审裁定类表述(改为纯技术说明); 补齐各文件头部编辑历史(browse_service/errors/tree/file.api/FileTrailPanel/index.css); 历史条目一律保留不删 - 小杨 2026-10-21
+
+v1.4.1
+更新时间: 2026-10-21 14:15:56 - 小杨-2026-10-21
+## v1.4.0以来 变更汇总(9个commit: feat2/perf1/docs6) - 小杨-2026-10-21
+[2026-10-21 14:15:56 小杨] 范围=v1.4.0以来全部commit(9个); 主线: 文件管理页重构([28]树/预览/批量勾选/控件规范)+后端文件树单遍扫描+文本内容实探闸+gzip+聊天域引用接收与tooltip收敛+doc[41]v1.67~v1.71六条
+
+### 1.4.1 文件管理页重构([28]落地)
+[自写递归树] FilesTree 弃 antd Tree 全量重写: block流递归渲染(无switcher列)+目录点击展开/收起+懒加载短路(children已有/loadedKeys直接记不再网取)+Ctrl逐个/Shift扁平序区间批量勾选(只收文件)+自绘fixed右键菜单(插入引用/设为会话工作目录/复制路径)+选中态深灰#4b4b4b+白字(原BG.TERTIARY太浅看不清, 北京老陈拍板) - 小杨 2026-10-21
+[预览布局] 按钮**前置**行数+时间垫后(引用N tok/复制路径/182行·mtime灰弱文本, 北京老陈两轮拍板顺序)+引用按钮浅蓝底#e6f4ff(主动作标识)+pre撤拍脑袋calc(100vh-320px)限高改flex:1吃满右栏剩余高度(底部大空白根治)+右栏改flex column - 小杨 2026-10-21
+[文本实探扩面] /files/read 后端预览与读类型闸: 已知后缀零IO短路+未知后缀/无后缀文件(Dockerfile/LICENSE)首8KB查NUL实探, /files/read 端撤"后缀白名单"闸改同NUL实探(代码/.py/.ts/无后缀全部可预览可读; 二进制拒绝语义保持) - 小杨 2026-10-21
+[控件规格] Files 页套设置页同款 ConfigProvider: 复用 SETTINGS_CONTROL_HEIGHT=28/SETTINGS_RADIUS=4 令牌(DRY零新常量), controlHeightSM同压28(页内24/32两档参差根除)/borderRadiusSM=4(定位框6px圆角根除, 北京老陈"全系统规范"拍板) - 小杨 2026-10-21
+[页面高度链] Files 根撤calc(100vh-100px)拍脑袋改height:100%由Layout Content(flex:1+minHeight:0)给准高度, 页面底部不再空截 - 小杨 2026-10-21
+
+### 1.4.2 后端性能与闸门
+[树单遍] app/tools/file/tree.py 重写: 单遍os.scandir同步建树+统计(fc/dc/bytes一次成, 删_count_tree_fs二次扫描)+follow_symlinks=False+仅symlink目录realtime查环, 全仓depth10实测776ms/57120节点(原2.4s+) - 小杨 2026-10-21
+[realpath热点] browse_service._scan_dir 逐条realpath越界检查改仅对de.is_symlink()做(搞成E:\test_dir树扫描挂死111s的元凶, py-spy实锤) - 小杨 2026-10-21
+[max_nodes] /files/tree max_nodes 去 le 闸(仅ge=1, 北京老陈令"不许加限制"), MAX_TREE_NODES 5000→100000/MAX_TREE_DEPTH 5→10; 前端file.api.ts maxDepth=5首屏+depth10补拉(childfetch)并 maxNodes=100000 - 小杨 2026-10-21
+[gzip] main.py 挂 GZipMiddleware(minimum_size=2048): depth5HTTP实测3440KB→213KB/467ms - 小杨 2026-10-21
+
+### 1.4.3 聊天域落地与tooltip收敛
+[引用接收] ChatInput/InputCore/SessionLayout/SessionPanelRegistry/useChatPanels/composerRefStore 接收集群(itwTokens并入InputCore后删atTokens)+FileTrailPanel引用列表 - 小杨 2026-10-21
+[双tooltip收敛] Layout侧栏(知识库/Logo/移动菜单钮/对话与任务)/MetricItem/SubmitActions 剥antd Tooltip浮泡只留原生title方框提示(北京老陈拍板"只留方框") - 小杨 2026-10-21
+
+### 1.4.4 docs([41]信任模式 v1.67→v1.71 六条)
+2de5092cf(v1.71 跨章口径收口DDL的scope取值一致) / daa692646(v1.70 第六七章前端逐diff与实施顺序) / fedf0c8b2(v1.69 第4章补4.0后端代码清单) / 474eeddb0(v1.68 第四五章后端逐diff与实施顺序) / 107ef9409(v1.67 第4至7章按新骨架重置) / b15302aeb(v1.66 §2.9与§4.A关系澄清) - 小欧 2026-10-21
+v1.4.0
+更新时间: 2026-10-20 18:13:20 - 小欧-2026-10-20
+## v1.3.3以来 变更汇总(18个commit: fix4/feat3/docs6/refactor5) - 小欧-2026-10-20
+[2026-10-20 18:13:20 小欧] 范围=v1.3.3以来全部commit(共18个); 主线: 历史裁剪按FC原子单元保证assistant恒先于tool(修并行tool_calls乱序致上游400) + 预算跳过回归修复(超预算单元整组跳过不再丢全部历史) + 安全范围门下沉checker注册后自守(safety_gate删名单门/precheck自守, 归线判定收口单一层) + 通用纯文本调用call_llm_text_task宿主自压缩摘要迁至llm_call + tool_executor经_current_text_task注入回调 + fetchpage prompt提取改走注入通道 + 安全模块12项独立开关落地 + path_dir_lists目录名单统一重构 + 安全Tab三类名单改读path_dir_lists + 设置页新增路径工具四类名单只读展示 + 发送停止暂停钮移入输入框右下角方形图标化与底部留白压缩 + SessionLayout折叠钮去独占行 + search_web域名过滤失效修复 + 配置项新增 + [41]信任模式v1.6→v1.11(1.4/二章审查+三章后端审计落地) + [40]v2.2 + notes目录维护/清空 + AuthorizationModal确认等级键对齐; 注: 本批为既有体系内的缺陷修复与治理收口(无MAJOR级架构变更、对外契约零新增), 用户明确指令按MINOR记v1.4.0。
+
+### 1.4.1 历史裁剪400修复与预算回归
+[FC原子单元裁剪] message_builder._trim_to_budget重写: 复用fc_message_types.fc_atomic_units按FC原子单元(assistant(tool_calls)+其tool响应)从新到旧预算收集, 组内升序展开保证assistant恒在tool之前(原反向逐条+扁平reverse在N≥2并行tool_calls时首个tool落到assistant前, 触发上游"tool result's tool id not found"400) + _trim_fc_pairs增顺序合法性判定(assistant声明位置<tool响应位置, 乱序对双侧剔除兜底) + fc_atomic_units由prune私有实现迁至协议层(解prune↔message_builder循环导入) - 小欧 2026-10-20
+[预算跳过回归] _trim_to_budget超预算即break改continue: 原break在最新一轮超大+紧预算时返回空致LLM丢失全部FC历史(fuzz 17%场景, 生产复现12轮+300000字符结果+10万预算→保留0条), 改后超预算单元整组跳过继续试更早单元(单元原子性保证不留半对) - 小欧 2026-10-20
+
+### 1.4.2 安全范围门下沉
+[范围门下沉checker] path_tool_safety_checker._check_before_execute在注册判定之后新增范围门(tool_meta.name∉PATH_TOOLS→pass_result放行, 用注册规范名判收别名) + safety_gate删循环入口名单门(if _cn not in PATH_TOOLS: continue) + path_precheck同步自守(非PATH_TOOLS不判文件路径, 注册表键不当文件路径校验) + safety_gate/path_precheck编辑历史与docstring同步; 行为: registry_write/create_task等非路径工具经检查器后立即放行, 直调入口与Agent入口同口径 - 小欧 2026-10-20
+
+### 1.4.3 通用纯文本调用与工具执行注入
+[纯文本调用归位] llm_call.py新增call_llm_text_task宿主(纯文本请求+自压缩摘要), summary.py私有_extract_response_content升格为公用(仅改名不改逻辑) + tool_executor经_current_text_task注入LLM回调(替代get_service().snapshot()直连, 规避tools→app.services越层) + fetch_webpage prompt提取改走注入通道(降级语义不变) + FUNCTIONS.md新立§3.7登记 - 小欧 2026-10-20
+
+### 1.4.4 安全开关与目录名单
+[12项独立开关] safety_switch.py+path_dir_lists.py+path_legality_router.py+path_tool_safety_checker.py+settings_registry.py 安全模块12项独立开关按第五章落地(危险命令/中风险/路径授权/shell路径确认/目录名单/写删确认等) - 小欧 2026-10-20
+[目录名单统一] path_dir_lists目录名单统一重构(构建点唯一, 作用域ContextVar嵌套复用) + 安全Tab三类名单改读path_dir_lists + settings_registry对接 - 小欧 2026-10-20
+
+### 1.4.5 前端与配置
+[设置页名单展示] settings_registry.py + [41] 设置页新增路径工具四类名单只读展示(read/write/delete/dual, 取值同源tool_constants, 不可写) - 小欧 2026-10-20
+[发送区改造] ChatInput+SubmitBar+SubmitActions+InputCore+ChatPage+Layout 发送停止暂停钮移入输入框右下角方形图标化(aria-label命名, 空输入发送钮置灰与提交门同源emptyDraft) + 底部留白压缩(合计18→6px) + 发送钮e2e改role定位 - 小欧 2026-10-20
+[折叠钮修复] SessionLayout 展开态折叠钮去独占行(改右栏容器relative+钮absolute悬浮右上zIndex10白底防文字穿透) - 小欧 2026-10-20
+[域名过滤修复] search_web.py+fetch_webpage.py 域名过滤str逐字符比对失效改_coerce_domain_list归一+host边界匹配 + fetchpage新增_extract_by_prompt(限时降级不报错) - 小欧 2026-10-20
+[配置项新增] 增加新的配置项目 - 小欧 2026-10-20
+
+### 1.4.6 文档与其他
+[[41]信任模式] v1.6一致性整改10项 → v1.9裁剪400修复与范围门下沉 → v1.10后端代码清单与设计审计 → v1.11 1.4/二章12项审查+三章后端审计9项落地(D-11回落effective_trust_mode/导入并入B清单/3.A diff可直接apply) - 小欧 2026-10-20
+[[40]安全开关方案] v2.2 追加落地后安全处理流程与配置读取使用点位置图 - 小欧 2026-10-19
+[notes维护/清空] E2E测试记录目录维护后整体清空(21件) - 小欧 2026-10-20
+[等级键对齐] AuthorizationModal 确认等级键对齐后端 SafetyLevel - 小欧 2026-10-20
+
+v1.3.3
+更新时间: 2026-10-20 06:21:11 - 小欧-2026-10-20
+## v1.3.2以来 变更汇总(22个commit: fix11/feat4/docs4/refactor3) - 小欧-2026-10-20
+[2026-10-20 06:21:11 小欧] 范围=v1.3.2以来全部commit(共22个); 主线: 安全确认链治理(confirm_fn工具自产确认文案与execute_sql逐条判定 + bash确认分支回退 + 信任让位恢复同组拒绝记忆清位 + 超时拒绝反馈修复) + 路径与shell解析安全收尾(四级入口迁移 + 门前初查去存在性 + 路径动作全动作取最严 + 高危删除解析不出目标改放行 + lexer跨段变量表) + 工具依赖治理(锁定包护栏/pip串行锁/缺库三处暴露点过滤/运行期惰性自愈) + 敏感参数落盘收口与冲突检测路径判据修复 + 摘要播报前端链路补齐 + 全量回归11失败清零(8559passed+0failed, P9-03转PASS) + [40]安全模块配置开关方案v1.0~v2.1; 注: 本批为既有体系内的缺陷修复与治理收口(无MAJOR级架构变更、对外契约零新增)，按PATCH记v1.3.3。
+
+### 1.3.19 安全确认链与弹窗文案治理
+[确认文案产地] tool_types.py 新增confirm_fn/op_param两字段(工具自产确认文案与操作标识参数, 安全层不硬编码工具名) + execute_sql确认粒度由一刀切改逐条判定(DROP/TRUNCATE/ALTER/DELETE无WHERE才确认) + bash与路径授权文案改分行(做什么/对什么/后果/时效) + safety_gate五处文案统一(超时按auth_path分流, 拒绝附被拒操作摘要) — 小欧 2026-10-19
+[超时拒绝反馈] safety_gate.py 超时拒绝反馈改记已构造原因(原引用作用域内未定义的_tp, 超时分支触发即NameError) + 注释规范补充严禁冗长不明晰 — 小欧 2026-10-19
+[新建库DDL] execute_sql.py 支持新建库 + DDL确认按破坏性收窄(仅DROP/TRUNCATE/ALTER/RENAME弹窗) — 小欧 2026-10-19
+
+### 1.3.20 路径与 shell 解析安全收尾
+[四级入口迁移] path_utils.py+32个工具文件 路径检查四级入口迁移(check_path_five_level→check_path_four_level, 删enforce_zone形参) + 删除硬底线归位delete_file自持 + 149处违规注释清理(裁定来源/会审字样/文档章节号/bug编号, SA编号改实际模块名) — 小欧 2026-10-18
+[门前初查] path_precheck.py+safety_gate.py 门前初查去存在性(只判格式, 存在性交各工具执行期自检) + 注释措辞订正 — 小欧 2026-10-19
+[动作取最严] shell_path_check.py+dual_path_check.py 路径动作全动作取最严(under-block: 删源授权不再挡住系统目标写的硬拦) — 小欧 2026-10-19
+[高危删除放行] shell_path_check.py 高危删除解析不出目标由硬拦改放行(静态解析器不完善是既定事实, 把能否解析当安全边界会持续误杀; 本分支只记日志不产生控制流) + lexer补跨段变量表(build_var_map/substitute_vars, 整条建表逐段代入, 只收纯字面量赋值防猜值把删除指向错目标) — 小欧 2026-10-19
+[解析与工具修正] shell_parse/lexer.py 撤销UNC裸路径抽取(网络类不纳入覆盖) + delete_file.py 删除硬底线兜底改按任务上下文判定(无任务上下文才兜底) + tree.py 非目录入参如实报错(修文件路径静默产出伪目录) — 小欧 2026-10-19
+[注释禁令] AGENTS.md 注释禁令补入裁定来源字样(同文档号/章节号/bug序号属过期无意义字符) — 小欧 2026-10-18
+
+### 1.3.21 工具依赖治理
+[依赖治理] dependency.py+registry.py 工具依赖治理(检查结论接入工具列表入口, 缺库工具不再进LLM试调才知不可用) + 锁定包护栏(LOCKED_PACKAGES经pip约束文件防传递依赖顶升httpx) + 纯检查与安装分离 + 缺库工具三处暴露点统一过滤(to_openai_tools/generate_param_reminder/BM25索引) + 运行期惰性自愈(to_thread卸载+冷却) + 装包进度MetaStep播报 — 小欧 2026-10-19
+[边界修正] dependency.py+tool_response.py+tool_executor.py 依赖子系统三处边界修正(每项三重复核) + pip全局串行锁(_PIP_LOCK置于两出入口, 实测6线程并发压降) + 批量失败逐个降级 + install_missing补装pre_install + normalize_dep回落pip_package + 版本约束显式告警 + 播报文案补工具名与空缺 — 小欧 2026-10-19
+
+### 1.3.22 敏感参数与冲突检测
+[落盘收口] secret_utils.py+storage.py+prompt_logger.py 敏感参数落盘收口 — 小欧 2026-10-19
+[身份键] conflict_detector.py _db_key身份键补缺省端口与大小写归一(防同库写操作漏并组并行误判) — 小欧 2026-10-19
+[路径判据] conflict_detector.py+secret_utils.py 冲突检测改按别名规范化路径库身份判定(修并行误判) + 敏感参数脱敏统一为redact_sensitive_params(修连接串明文入日志/SSE/DB) — 小欧 2026-10-19
+
+### 1.3.23 摘要播报前端链路
+[链路补齐] start_step.py+前端5文件 补齐摘要进度播报前端链路(并发提交只带走execution/stepFilter/sseParser三处, 其余5处被还原致summarizing帧虽归meta却无switch分支而静默丢失不进任务信息条) + useTaskInfo补case+infoMaps补图 + chat.ts三处联合类型+stepStyles补StepMeta + start_step编辑历史 — 小欧 2026-10-19
+
+### 1.3.24 全量回归 11 失败清零
+[5文件修复] path_tool_safety_checker.py(safety_gate信任让位按refusal_key恢复同组拒绝记忆pop + bash分支回退硬return False且confirm_fn返None留文案交分档分支) + extract_archive.py(目标检查改解析后out_dir, 除dest缺省raw None必判空误拦) + search_files.py(find根校验EXISTS转LIST_DIR, 除文件当目录空匹配误报成功) + storage.py(列表超大告警error降warning与字符串支对称, 除E2E日志判定误报); 全量8559passed+0failed, P9-03 E2E转PASS — 小欧 2026-10-20
+[窗口修复] window_resize.py 最大化窗口判定改走window_ops(win32gui.IsZoomed在当前pywin32不存在致AttributeError) + window_focus前台切换走四级尝试轮询(AttachThreadInput经实测排除) + 四文档4处违规注释精简 — 小欧 2026-10-19
+
+### 1.3.25 文档同步
+[40]安全模块配置开关与配置项扩展方案: v1.0(删除system.shell_risk_block, 中风险shell归hitl.shell_path_confirm管辖 + 禁区开关语义改写 + 补out_of_scope条目) → v2.0(start_step摘要播报+前端三处同步) → v2.1(使用地点收敛到最早分支点) — 小欧 2026-10-19
+
+v1.3.2
+更新时间: 2026-10-18 22:10:03 - 小欧-2026-10-18
+## v1.3.1以来 变更汇总(26个commit: docs9/refactor10/fix6/feat1) - 小欧-2026-10-18
+[2026-10-18 22:10:03 小欧] 范围=v1.3.1以来全部commit(共26个); 主线: 安全模块配置命名空间嵌套迁移(security.system./security.hitl./security.trust.三组前缀)与安全开关正名hitl_enabled + SafetyResult契约回迁安全层与safety_level单源化(确认/硬拦两互斥命名空间) + 路径安全层归一前置与四表分派重构(删check_tool_paths) + shell解析/过程模块SRP拆分 + HITL开关使用点收敛为入口单点读与旧键残留修复 + [39]/[38]/[40]文档同步; 注: 本批为已有体系内的契约收敛与命名/结构归一(对外契约零新增、无MAJOR/MINOR级新功能)，按PATCH记v1.3.2。
+
+### 1.3.13 安全配置命名空间嵌套迁移与安全开关正名
+[配置可见可改] settings_registry.py 安全配置项可见可改: hitl_enabled 默认值三方统一为true, trust_ttl_days 补注册, 只读免确认白名单接入配置面 — 小欧 2026-10-18
+[嵌套迁移] 键名按域嵌套: security.hitl.enabled / security.system.confirm_dangerous_ops / security.trust.ttl_days(替代扁平的 security.hitl_enabled 等); config_service.py DEFAULT_SECURITY 对齐嵌套命名空间 + hitl.enabled 默认值改 true — 小欧 2026-10-18
+[正名与旁路] 安全开关正名 hitl_enabled(safety_result.py 及8文件注释同步清理); path_tool_safety_checker.py 中风险命令补旁路判定(原 return 于确认分流之前, 致 hitl.enabled=false 时 net stop 等仍弹窗, 只置 auto_confirm、blocked 与沙箱预检不变) — 小欧 2026-10-18
+
+### 1.3.14 SafetyResult 契约回迁与 safety_level 单源化
+[契约回迁] SafetyResult 契约自 app/tools/tool_types.py 回迁 app/safety/safety_result.py(生产者全在安全层, 契约随生产者走, 免工具层模块迁就安全语义) — 小欧 2026-10-18
+[字段改名] severity→safety_level / requires_confirmation→needs_confirm 全链路17文件同步(判定层文案/分类归一) — 小欧 2026-10-18
+[单源化] safety_level 取值单源化 SafetyLevel StrEnum: 确认命名空间13项(needs_confirm=True, 唯一有消费者, 进HITL弹窗) + 硬拦命名空间4项(blocked=True, 仅诊断留痕), 两空间互斥命名、前缀即区分; 放行结果一律不带标签(无确认无拦截无分类) — 小欧 2026-10-18
+[历史] c19e0597d 补齐 safety_level 单源化批次各文件编辑历史(17文件) — 小欧 2026-10-18
+
+### 1.3.15 路径安全层归一前置与四表分派重构
+[归一前置] path_legality_router 路径安全层归一前置 + 四表分派重构: 删 check_tool_paths / 去安全层参数名归一 / 单线口直取 path-dest / 补路径名契约注释 — 小欧 2026-10-18
+[结构调整] safety/ 路径判定链路与 shell 解析结构调整(safety链路 + tool_facade + session_workspace + tool_constants 同步) — 小欧 2026-10-18
+
+### 1.3.16 shell 解析/过程模块 SRP 拆分
+[解析包] 新增 shell_parse 命令解析包(lexer / action / parse_read|write|delete|move / shell_action)供 shell_path_check 引用 — 小欧 2026-10-18
+[SRP拆分] shell_command_process SRP拆分: 下沉为 shell_readonly(只读白名单) / shell_tool_classify(工具分类), 五处调用点迁移无旧名残留 — 小欧 2026-10-18
+[动词下沉] 三壳动词表与文本原子下沉(新增 verb_table / shell_text_atoms / shell_sandbox_tables, 动词表正则构建单一真源) — 小欧 2026-10-18
+
+### 1.3.17 HITL 开关使用点收敛与旧键残留修复
+[使用点收敛] path_tool_safety_checker.py hitl.enabled 使用点收敛为入口单点读 + 确认产地收尾抽 _settle_confirm 单源 + 确认路径日志降级 logger 不上控制台 + 头注开关表述订正至覆盖三处确认产地 — 小欧 2026-10-18
+[旧键残留] 修复 hitl_confirmation.py / hitl_gateway.py / config_helpers.py: security.hitl_timeout / security.auto_confirm_delay 读口未随分组迁移改名, registry 只出嵌套键致恒读不到走常量(过期清理判据与确认超时不再同源) — 小欧 2026-10-18
+
+### 1.3.18 文档与测试同步
+[文档] [39]HITL实施方案 v1.8~v1.11 全量对齐本地已落码; [38]L2/L3安全检查链重构方案 §14现态图订正; AGENTS.md 铁规条目调整(打tag条目移至文末/新增注释禁插文档号章节号/三堂会审细化为合规-合理-关联审查); doc-10月优化/[40] 新增安全模块配置开关与配置项扩展方案 — 小欧 2026-10-18
+[测试] settings2-model-free.test.ts 文件头注释语法由 # 改 //(ts 文件用 Python 注释符致解析失败; 仅语法修正, 未增删任何测试用例) — 小欧 2026-10-18
+
+v1.3.1
+更新时间: 2026-10-18 06:03:54 - 小欧-2026-10-18
+## v1.3.0以来 变更汇总(40个commit: docs20/refactor13/feat5/fix2) - 小欧-2026-10-18
+[2026-10-18 06:03:54 小欧] 范围=v1.3.0以来全部commit(共40个); 主线: 路径安全分层与删线判定集中化([37]设计方案第九~十一章 + [38]L2/L3安全检查链重构方案) + 路径判定单一真源收口(path_utils.check_path_five_level五级总入口) + 27个带path工具全量接入五级检查 + 删线判定集中化与三线封装口对称化 + 模块正名与死代码清理 + [36]shell目录操作权限; 注: 本批为已有体系内的判定收口与调用方全量接入(对外契约零新增、无MAJOR级架构变更)，北京老陈2026-10-18裁定按PATCH记v1.3.1并令直接打tag不提交
+
+### 1.3.8 [37]路径安全分层·路径判定单一真源收口
+[真源收口] path_utils.py 收口为路径判定唯一真源: check_path_syntax_and_exists(拼写+存在性/文件目录类型)与check_preconditions(路径穿越)自safety/path_check_common.py迁入，OpCategory同步迁入；safety/__init__.py与path_check_common.__all__取消check_preconditions转出，杜绝跨层重导出 — 小欧 2026-10-18
+[五级总入口] 新增check_path_five_level为tool层专用编排: ①空值②拼写③存在性/类型④穿越⑤禁区，前四级恒生效、第⑤级禁区判定受实时logging.debug门控(与delete同口径)，禁区名单仍只存safety真源；准入按北京老陈B方案裁定接受app.utils→app.safety.path_classify_category依赖 — 小欧 2026-10-18
+[空值原子] 新增reject_reason_empty_path为唯一空值真源: 原validate_path_layers12/_layers12_check三层判空收敛为一处，三线(read/write/delete_path_check)与SA1一律先过空值原子再进判定，根治Path("")归一化为cwd；validate_str_param保留原三档专属文案不归并(职责不同) — 小欧 2026-10-18
+[fail-closed] check_path_syntax_and_exists内置try，非法类型(None/int/dict)判失败给出原因而非崩栈(R1闭环)；_syntax_exists_check为该函数私有实现体，旧名零残留(禁backward) — 小欧 2026-10-18
+[SA1白名单] path_1st_legality_check.py SA1未注册判定收口(resolve_registered_tool唯一真源)+PATH_TOOLS白名单门取代registry_*前缀豁免，删SA3/SA5重复判定与tool_unavailable死分支；SA1补路径参数三态校验(显式传None/非str不再静默跳过，类型判定单一真源归validate_path_layers12) — 小欧 2026-10-17
+
+### 1.3.9 27个带path工具全量接入五级检查总入口
+[文件工具] find/listdir/grep/tree/read/readmedia接EXISTS；write目标接WRITE；edit被改源文件接EXISTS；delete接EXISTS且传allow_missing=True(删除幂等语义归位，不再借用force兼容旧调用方) — 小欧 2026-10-18
+[双路径工具] move/copy源EXISTS目标WRITE；extract/compress源EXISTS目标WRITE(经核实两者dest为os.path.abspath真实路径，判定正确)；rename只判源EXISTS —— dest语义是"新文件名"非路径(只取Path(dest).name后落src.parent)，判之会把相对名realpath成cwd误命中代码目录，三堂会审抓出该退化后改为只判源 — 小欧 2026-10-18
+[文档工具] read_docx/read_pdf/read_pptx/read_xlsx源接EXISTS；write_docx/write_pdf/write_pptx/write_xlsx输出接WRITE；四个写工具原有with_artifact_file/build_warning导入经核对与HEAD一致未被覆盖 — 小欧 2026-10-18
+[数据工具] query_sql/execute_sql/get_db_schema的可选sqlite路径接EXISTS(未传路径则跳过，与各自参数语义一致)；analyze_data/filter_data的path与data互斥，传path时接EXISTS；generate_chart输出dest接WRITE(空值即默认目录，属Optional设计非缺陷) — 小欧 2026-10-18
+[其他工具] download指定dest时接WRITE；screen_capture指定dest时接WRITE；registry_read/write/delete的path实为HKEY_*注册表键，按SA1显式豁免不套文件路径检查 — 小欧 2026-10-18
+[builder修正] 三堂会审抓出builder必填参数漏传并修复: query_sql补row_count/columns，execute_sql补affected_rows(否则运行期TypeError) — 小欧 2026-10-18
+[回归] 30个带path工具×正常/空值/禁区三场景实调验证: 正常路径无退化、空值全拦、代码目录及其子级对EXISTS/WRITE全拦；目标回归293 passed零失败 — 小欧 2026-10-18
+
+### 1.3.10 删线判定集中化与三线封装口对称化
+[delete硬底线] 2026-10-16按分层原则删除的tools层权限硬底线，2026-10-17经北京老陈裁定恢复_guard_forbidden_delete并接入logging.debug门，恢复"删除不可绕过硬底线"底线；同时并调delete_safety.check_delete_risk(R6/HITL仍归SA3/SA6) — 小欧 2026-10-17
+[删线集中化] delete_path_check新增check_delete_permission封装口，SA1/SA5拆分(path_precheck/path_legality_router)，path_utils第5级改调_guard_forbidden_delete；按裁定三复核订正[37]十/十一章(系统层收guard，tool层不动)+订正_level_by_tool归属与trust_impact置位口径 — 小欧 2026-10-18
+[三线对称] read/write/delete三线权限封装口归一化: check_read_permission/check_write_permission与check_delete_permission对称，均出SafetyResult；端到端视角总表订正+三堂会审死代码清理 — 小欧 2026-10-18
+[语义正名] [37]severity语义用错正名为trust_impact(授权影响面)+新增9.7危险等级，与blocked/requires_confirmation重复不再单列；HITL临时授权提示语义缺失补齐(第九章全局落点分析)；reason_code废两步落地改一步到位复用safety_level分类字段；澄清零新增边界(对外契约零新增/后端SafetyResult内部补safety_level成员)；新增第十章(§1-8删线集中化)与第十一章(§9 trust_impact正名)实施清单与逐文件diff — 小欧 2026-10-17
+
+### 1.3.11 模块正名与死代码清理
+[模块正名] path_tool_safety_checker改名与符号正名(ToolSafetyChecker→PathToolSafetyChecker、get_tool_safety_checker→get_path_tool_safety_checker)全量引用同步；path_classify_category模块正名+PATH_ACTION_KINDS四表分立；app/safety/__init__.py删零消费方死re-export(validate_path_for_read)；path_env.py删"操作记录型"冗余注释；copy_file.py执行诚实性P0 — 小欧 2026-10-16~18
+[守护] 新增tests/test_path_five_level_guard.py守护测试12用例: 四函数互不调用(老陈10-17裁定)+空值文案单源+30工具接入防漏+代码区禁旧名残留+空路径与禁区必拦+删除幂等语义；经两次反向注入验证有效(漏接与自带判空均被抓出并指明违规函数)。按铁规"严令禁止commit任何测试case代码"不提交，tests/亦被.gitignore:17忽略 — 小欧 2026-10-18
+[事故修复] test_move_deep_v2::test_move_empty_source传path=""致Path("")归一化为cwd(=backend)，move把整个backend搬进临时目录，致app(432文件)+e2etests(90文件)全灭；空值原子落地后该根因消除，已git archive HEAD完整恢复 — 小欧 2026-10-17
+
+### 1.3.12 [36]shell目录操作权限与shell链路重构
+[danger/risk拆分] shell_danger_command.py第七章danger/risk物理拆分+主链三级串联+删降级+severity改risk+堵删根开洞；shell_command_guard.py整文件下沉+自杀检查归并shell_process_guard.py；shell_process_guard+tool_safety_checker杀+HIGH归位无条件防线/确认回二元组；补Remove-ItemProperty写意图/mv源走删线(洞1洞2) — 小欧 2026-10-16
+[文档] [36]shell-目录操作权限-控制 6.4安全检查流程图订正(模块改名path_precheck/path_legality_router/dual_path_check+SA1~SA8落点标注+代码标识统一"文件名.py:符号"并去行号)；第五章三堂会审自查+函数化拆分+定名shell_command_process+10处缺陷修订+实码核查九条；[37]§10.4权威图更新为最新流程、[36]§6.4冻结并指向，README/FUNCTIONS/path_decision同步订正 — 小欧 2026-10-16~17
+[新增文档] 新增[31]插件一体包与MCP支持设计方案+notes/E2E测试记录；[38]L2/L3安全检查链重构方案补命名对齐/多余代码标志/第九章实施步骤与顺序(v1.7~v1.8) — 小欧 2026-10-17
+[铁规] AGENTS.md与测试用例铁规表述精简并在测试文件头部加标注 — 小欧 2026-10-16
+
+v1.3.0
+更新时间: 2026-10-16 06:57:21 - 小欧-2026-10-16
+## v1.2.5以来 变更汇总(193个commit: docs77/feat52/refactor19/fix43/style1/未分类1) - 小欧-2026-10-16
+[2026-10-16 06:57:21 小欧] 范围=v1.2.5以来全部commit(共193个); 主线: 安全信任体系重构([33]信任授权设计更新+三线validate改名+信任TTL落库+SA门禁补齐，safety骨架正名，工具层收编解除对系统层依赖) + 读写删三线路径分离([35]576行拆三线+validate_path彻底删除+系统目录单源判定消除跨层结论相反) + [28]文件管理Agent融合工作台(J1~J5后端+会话refs透传+新4.4前端详细设计+TDD顺序+前端验收+三遍核查) + observation与summary/message全类口径归一(hint修谎+tool_zh短名词+message去前缀) + [29]参数区UI优化(v1.6-v2.13全轮核查+双视图+浮层居中) + 前端交互(ChatInput输入历史/结果视图递归折叠/linked增量摘要); 注: 本批含52条feat按铁规应属MINOR，北京老陈2026-10-16裁定按MINOR记v1.3.0; MINOR bump v1.2.5→v1.3.0(北京老陈2026-10-16令打tag)
+
+### 1.3.1 [33]信任授权与安全重构(设计更新+TDD实施)
+[信任设计] [33]信任授权设计五章+新旧逻辑图+实施步骤全量更新，[32]降级为取证底稿；第四章重写为一文件一节并逐行号实测校准，十遍审查修7处违规；第五章改真实diff(临时目录实改导出56个hunk，5.22标注已实施)；P2/P3/P4三批次按TDD实施完成(步7-12/14-15/16-20)，6.4进度同步更新 — 小欧 2026-10-14
+[骨架正名] safety骨架正名+guard改名+新增门禁与模块检查；三线validate改validate_read/write/delete，path_scope改path_env；app/safety四件(path_safe_check+temp_auth+trust+trust_db)升回系统层；app工具层收编解除对系统层依赖(P1六步)，架构守护红5项全清 — 小欧 2026-10-14
+[信任TTL] 会话信任TTL落列/写入/校验/清理/周期调度，会话信任加task_id字段可追溯(UPSERT记最后一次)；trust_db过期信任可复活修复+清理索引可用+safety_gate SLAP拆分；第九章归属重划收窄为写删安全策略级 — 小欧 2026-10-15
+[门禁补齐] safety_gate SA1门前初查路径合法性(省信任预查与SA3弹窗)；SA1-SA7执行流程图补工具层合法性校验位置；safety_gate未获授权报错补具体路径；组键同源+ConfirmSpec透传auth_path+拒绝记忆bypass守卫+别名归一；bypass未确认即终止补_bypass_confirmed守卫；tool_safety_checker补豁免早返不把无动作结果强标dangerous — 小欧 2026-10-16
+[目录归属] 会话快照迁中立层解safety→tools越层；path_guard classify_forbidden_path迁入正名+path_safe_check消号；is_protected_root_itself收口会话快照取数；tool_routes跟随系统结构回传SafetyResult；tool_facade补SA7沙箱预检+SA6带守卫授权 — 小欧 2026-10-15
+
+### 1.3.2 [35]读写删三线分离与路径单源
+[三线分离] path_safe_check.py 576行拆三线，迁出validate_path与禁区判定并修连带断链；path_check_entry阶段一路经检查三线分离新增8个模块；multi_path_check真分开源目标各归其线+PATH_ACTION_KINDS改名；shell_path_check自multi_path_check拆出shell通道validate_shell独立；清除向后兼容套壳validate_path彻底删除、调用点全量迁移 — 小欧 2026-10-15
+[单源判定] 系统目录判定单源归一(消除跨层结论相反)；文档/文件工具消费系统保护目录单源判定；path_utils单源判定context补workspace；tool_constants文档[35]阶段三新增TOOL_ACTION_KINDS动作档位声明表消除运行时if链；operation_backup_rollback备份与回滚合并到一文件 — 小欧 2026-10-15
+[设计同步] [35]设计方案v1.3-v1.9(去向对照表/待决议删除/模块正名/一致性修订/实码同步三线入口定名)；三线注释指针同步classify_forbidden_path正名；path_env清改名残留；第5章核查订正+行尾损坏修复 — 小欧 2026-10-15
+
+### 1.3.3 [28]文件管理Agent融合工作台(设计v1.0-v4.9)
+[后端落地] 文件浏览J1~J5后端+会话refs透传+语法校验修正；browse_service 601行(边界唯一入口+_scan_dir唯一扫描+ETag304+recent-files聚合)；ChatRef模型+model_dump透传+sanitize_refs越界过滤+条件注入；单文件123通过/10跳过 — 小欧 2026-10-13
+[设计演进] v3.3升格J1~J5闭环；v3.4删跳过目录/黑名单/上限/闸门改独立顶层包；v3.5-v3.8五次通读+对齐后端实现；v4.0前端设计对齐实际代码修6处不符；v4.1批判审查删S8/I10/E2补I3/T1/I9/K1/J3细则；v4.2-v4.7(refs时机/删卡片区/删模板/去裸编号/编号速查表)；v4.8全文十遍核查修22处矛盾 — 小欧 2026-10-13
+[实施手册化] 删版本历史表+5.7测试节(北京老陈裁定测试细节不进设计)；新4.4前端详细设计(4.4.0-16按文件给代码，含composerRefStore订阅契约/useInputDraft托管/FileRefChip预处理)；4.5改TDD顺序(先红后绿P0-P4)+4.6改前端验收(A门禁/B1-B9/C回归/D演练)；4.3三遍核查(M2论据更正/4.3.5旧口径/补search)+13行号漂移+4.5删后端重编号；十遍互查修正(4.4.0错位/B9补项/根目录打架/裸message/vi.fn) — 小欧 2026-10-14
+
+### 1.3.4 [29]参数区UI优化(v1.6-v2.13)
+[双视图] ParamsTree+ParamsPanel展开区JSON树+浮层双视图+浮层参数按钮+摘要折行；ParamsPanel参数分类重排6具名类+补树闭合括号与根箭头配色；结果视图透传raw_data+标题nowrap+尺寸令牌加宽；tool_result增raw_data纯增量字段(替换致回放空白的教训) — 小欧 2026-10-13
+[浮层居中] 工具行参数浮层改视口居中，FloatingEntry新增centered可选prop+index.css定位类(关箭头/关zoom/覆盖内联坐标)；浮层纵向居中补antd外壳26px；修点浮层连带展开工具行JSON树；撤销下划线私有键过滤+补非dict防御+空态显summary — 小欧 2026-10-14
+[文档核查] v1.6-v2.7全轮核查(D-8撤回/D-9/D-10/D-11/八轮14处/九轮10处)；v2.12-v2.13注释订正+编码损坏清零+结尾签名补齐 — 小欧 2026-10-14
+
+### 1.3.5 observation与summary/message口径归一
+[observation] observation_content.py内容投影与句子渲染；句子中文全量映射+布尔肯定否定；63工具取参明细表(v2.0)；tool_zh 50工具改短名词+content句子中文名；observation子行改读content行tool_zh+message合读；35截断+去重+shell_type回显；去重收尾+三堂会审5修复 — 小欧 2026-10-12
+[message去前缀] FILE/DOCUMENT/FUNDAMENTAL/NETWORK/DATAANALYSIS/DESKTOP/SYSTEM/TIMER/WIN_REGISTRY各组message去tool_zh前缀、成功分支带结果值、content合读通顺 — 小欧 2026-10-12
+[summary归一] 九类summary统一口径(动词用tool_zh成功后置，信息不减；DATAANALYSIS危险SQL回滚谎报成功改警告) — 小欧 2026-10-14
+[hint修谎] 九类hint修谎报/空话/复述(不存在工具名/错方向/OCR不存在/延迟限制改给行动/未生效改查状态)；DOCUMENT detail/message半角标点改全角；下载建目录失败hint按errno精确映射；shell拦截hint补换策略 — 小欧 2026-10-14
+
+### 1.3.6 前端交互与结果视图
+[输入] ChatInput输入历史(草稿持久化+最近提交)；草稿换localStorage+执行中可编辑不可发送(B+C)；焦点归还+翻动游标复位；useInputDraft修草稿跨会话泄漏+连续翻动失效 — 小欧 2026-10-13
+[结果视图] tree/listdir专用渲染+文件区文案；递归折叠NestedRows(三标签记忆+一次性迁移清旧残留)；tool_search搜桌面零召回修复+schema补关键词清单；linked增量摘要(锚点复用零LLM常态)；C4摘要结构校验防坏结构注入；首帧thought-start带task_id提前开门 — 小欧 2026-10-14
+
+### 1.3.7 工程配套
+[打包] 后端打包手册v2.0全文通读版；打包双开三件套(端口常量+依赖冻结提示+示例providers)；打包版补动态依赖+frozen跳过版本核对；client统一/api/v1前缀修复打包版全站404；config示例CORS端口改2000；OmniAgent.md入库 — 小欧 2026-10-11
+[语法校验] 沙箱组语法检测总开关+7语言独立开关(判定单点在校验器)；增TOML/XML/JS/TS tree-sitter主路径+node--check兜底；阻断改告警照常落盘；edit校验对象改write_content；五个写入类失败反馈补文件未写入磁盘 — 小欧-2026-10-12
+[模型与杂项] ModelLibraryTab ZenFree改名+effort类型；model_service effort透传Moonshot归并；provider键名改ZenFree+回落告警去歧义；HITL弹窗确认作废不关窗(rejected补confirm_id)；确认超时文案改未获授权；DB工具timeout改秒；security_docs docstring改raw消SyntaxWarning；BOM/换行符治理(write_*去BOM/read-write回LF/FUNCTIONS断行重建)；system_prompts搜备用工具提示词文案(北京老陈) — 小欧 2026-10-14
+v1.2.5
+更新时间: 2026-10-11 11:54:18 - 小欧
+## v1.2.5 事件列表快照+HTL弹框统一+设置页归一(33 个 commit)
+[范围=v1.2.4 之后到 HEAD; 本次为 PATCH(功能落地+视觉统一+修缺, 无 MAJOR/MINOR 变更)]
+
+### 1.2.5 新增 · 事件列表快照持久化与历史回放(小欧, 北京老陈令)
+[内容] 任务收到 final 帧时前端把事件列表(processEvents, 排除 heartbeat)POST 回填
+chat_tasks.process_events 新列; 历史回放经 detail 通道读回直接渲染, 不重跑派生。
+后端零类型判断/零条数限制(送什么存什么); 前端取消 20 条上限(多了浮层滚动)。
+[提交] 606df71cc(后端列+端点) 3b11b1a81(前端回填+回放) 868dd19d1(rejected 入流)
+047730d5a([10]事件报文协议) 5bcbfdc9e([10]事件表设计)
+
+### 1.2.5 优化 · HTL 授权弹框视觉统一(小欧, 北京老陈令)
+[内容] 标题短化(安全确认请求→需要你确认, bypass 17字→5字+Tag 承载原因);
+标题行单一轴线(图标内联+标题左+Tag+环右); 倒计时文案并入底轴消除断裂;
+按钮不等宽(拒绝窄/允许宽); 计时钟 60→44, 秒数去重, confirmTimeout=0 不渲染环;
+危险确认列具体变更+后果(分组+定宽标签+双向说明)。
+[提交] 09549f1d8 916c95da6 c32bda115
+
+### 1.2.5 优化 · 设置页视觉密度统一与弹窗归一(小欧, 北京老陈令)
+[内容] 控件 28px/圆角 4px/开关 40x18; SettingsModal 标准壳 + 8 弹窗迁移
+(ModalSection 分区/CodeChip 键名/壳级高度上限); 标签左对齐三竖线;
+清空 api_key 二次确认; Provider 输入框加长 + 地址 hover 看全长;
+ModelModals 名称并排 + 底部加模型 + 留白收紧。
+[提交] 1a0d4a680 be54e2125 290a1a49e fca6b3592 d28ba9009 a717cf4dd 07183537a ab77e98b4
+
+### 1.2.5 新增 · 会话目录面板与会话卡片目录行(小欧)
+[内容] SessionWorkspacePanel 落地(只读授权目录 + 422 移除被拒条目);
+sessions.py GET 顺带 project_root + allowed_dirs 只读;
+历史会话卡片加会话事务目录独立行(只取 workspaces, 0 个不显, 多个截断+Tooltip)。
+[提交] cc5ed8fa6 c3e668707 d9e009312 205f47433
+
+### 1.2.5 修复 · 模型中央别名表与 publish_time 对齐(小欧)
+[内容] 中央别名表收敛厂商键名漂移(_KEY_ALIASES/_canon_item, _first_alias 退役);
+RemoteModelItem + 前端对齐 publish_time(真发布时间, created 全假不可用)。
+[提交] 83110d3f2 c9b66124f
+
+### 1.2.5 文档 · 编辑历史归位与设计实施(小欧)
+[内容] sseParser/SettingsGroup 等 19 文件编辑历史归位; [16]升v3.7/v3.10;
+本次 24 文件头条目补齐; 安全策略说明弹框文档卡片化 + .doc-body 排版 + 表线加深。
+[提交] 8834c8e3d 8e9172a46 6111dd667 202e31ce3 bd8b172e4 2fa382341 d509a05ab
+fd05cc0ee 2cbb8371e d7c40a346 86c371209 e233ba07f
+
+v1.2.4
+更新时间: 2026-10-10 13:25:50 - 小欧
+## v1.2.4 会话使用目录落地+shell猎杀+history双分组(55 个 commit)
+[范围=v1.2.3 之后到 HEAD; 本次为 PATCH(功能落地+修缺，无 MAJOR/MINOR 变更)]
+
+### 1.2.4 新增 · 会话使用目录落地与收敛(小欧)
+[内容] chat_session_workspaces 表只装"会话使用的目录"(授权归全局 config)；
+过滤收敛到 classify 单一真源，reconcile 为进入会话唯一真源；
+is_dir 拒文件、上限前置、COALESCE、宽根 fail-closed、GET 过滤、
+保大小写+NOCASE(含迁移)、快照去嵌套。概念见[24]v1.3，实施见[16]v3.0。
+[提交] a4422cf9c(后端9文件) 0c8511348(文档[16]v3.0/[23]v2.1/[24]v1.3)
+86127cd66(文档消重[10]/[18]/[16]补[13][25][26])
+
+### 1.2.4 新增 · reasoning-only 空转防御 + callTextForTask(小欧)
+[内容] 空转检测到即注 user 警告+原始 user 信息，删回灌与重复警告；
+adapter 新增纯文本任务定制调用钩子(zen 覆写带门禁，summary 先问适配器)。
+[提交] 79dc06ad0 916655848([21]) c971350df([22]) 2bdaa18eb
+
+### 1.2.4 修复 · shell 安全猎杀与重试收敛(小欧)
+[内容] 杀进程绕过全修、三壳并集修规则缺口、静态判定并回一处；
+timeout 不再重试、保险丝公式重写、CLEANUP 超时 15→10。
+[提交] 3e640d244 8495a4356 0ad90a36e c7aa4e1ae 1cb07fff3 edd557b01 a3bad197b
+
+### 1.2.4 重构 · history_context 双分组(小欧)
+[内容] conv/inject 双分解，读侧唯一真源收紧，telemetry 一帧一函数；
+压缩事件字段重设计 v3.0；前端单卡双段。
+[提交] 0951ece48 c539a030f([20]) 4d4261ffc a87e8fc9b c6917ebf8
+4be55633a 4b4d9d37f d58ca13aa
+
+### 1.2.4 新增 · 模型库 thinking 参数与 Zen 验证(小欧，北京老陈指令)
+[内容] 通用兜底参数区新增 thinking 两项(三层合并)；添加模型弹窗四优化；
+ZenithFree 双路验证服务+三路由+前端对比弹框；下线保留机制废止。
+[提交] 508c31b58 4af7be33d 6094b66a1 c4b54f079 6e4bca45e 2af4d7e89 91cd870d1
+
+### 1.2.4 文档 · [15][16][18] 设计实施与 E2E 同步(小欧)
+[内容] [16]v1.1→v1.4 评审修洞、v2.0 概念订正；[15]同步收敛；
+[18]续跑设计收敛(W1~W5)；e2e_helpers 注入帧；doc 编号理顺。
+[提交] 0a0aad9e3 4f12f5715 66e0af334 e26a63628 1e74da1c5 0afaf051b
+36a0aae4d 6929e2877 5812eb20b 3111b3254 cee0fb159 c7e88a426 a0f2d2567
+d7496cc39 5b9fdb0ad a69808d1d f73f999d4
+
+### 1.2.4 其他 · 前端体验与测试降噪(小欧)
+[内容] waiting 图标尺寸唯一化；ModelLibrary 列头折行；终端六道关图；
+DirectoryAccessNote 重取文案；vitest 低频用例降噪；prettier 产物忽略。
+[提交] 20b0bf359 0819ac629 b21675de8 e284e9f8e f456c1197 417a39073
+f8063374b acaba5252
+
+v1.2.3
+更新时间: 2026-10-08 19:13:03 - 小欧
+## v1.2.3 历史会话切换失效根治(删重复loading锁只留代际守卫)+历史卡片版式重做与角标补齐(13 个 commit)
+[范围=v1.2.2 之后到 HEAD; 本次为 PATCH(修缺陷+体验修正, 无 MAJOR/MINOR 变更)]
+
+### 1.2.3 修复 · 历史会话「进不去」根治(结构性: 减锁)
+[根因] loading 锁(isLoadingHistoryRef, 2026-03-13 引入作"防重复调用")与代际守卫
+  (generationRef, 2026-09-29 引入)职责重复且互斥。React StrictMode 双调用下: 取到数据的
+  那次被判过期作废、该干活的那次被锁早退拦下 → 会话状态永不落地。实测 DB 有 41 任务/43 消息,
+  页面显示"新会话/任务数0/正文空", 控制台仅一条 "⏭️ 正在加载中", 成功日志零出现。
+  病根属"只加不减": 2026-09-29 加第二道保险时未收口已有的第一道(小欧认账)。
+[修复] 删 loading 锁全部 14 处(接口字段/解构/场景1与场景3早退+上锁/4 处释放/releasedLock),
+  只留代际守卫承担唯一正确性职责 — 提交 a4655b757
+[修复] 递归重试 return initializeSession 改 return await(不加则外层 finally 会在递归仍
+  加载时提前熄灭 loading 指示器, 属净退化) — 提交 a4655b757
+[修复] finally 指示器复位改无条件单一出口(无锁可释放) — 提交 a4655b757
+[清理] 删 retryCount/setRetryCount(写而不读镜像, 真读一直是 sessionRetryRef) — 提交 a4655b757
+[清理] 删 onRenderStart/onRenderEnd(唯一写位 isRenderingMessages 生产零读取, 删后成空壳,
+  按 2026-09-30 删 onMessageListLoadingStart 同例整链删) — 提交 a4655b757
+[清理] 删死旗 sessionJumpLoading/isRenderingMessages(state+类型+返回+facade deps) — 提交 a4655b757
+[结果] 守卫由 2 个降为 1 个; 「必须记得释放」的点由 4 处降为 0; 净减 101 行; 后端零改动
+[验证] grep 8 项零命中 / tsc EXIT=0 / eslint 0 error / 受影响 Vitest 5 文件 58 passed
+  (含 4 次递归断言不变) / 真实浏览器 12 场景全过(裸URL小大会话/刷新/双向快切/同会话连刷/
+  历史入口x2/404清参/最近会话/指示器消失/输入框可用), "⏭️" 日志由 100% 必现降为 0
+
+### 1.2.3 修复 · 历史卡片版式与跳转入口(北京老陈逐条定案, 零新增状态变量)
+[修复] 标题从卡片中间移到左上角、与右上角勾选框同一行、左对齐, 行下加 1px 分割线,
+  且标题可点进入会话(点标题是最自然入口, 此前毫无反应) — 提交 73367c826
+[修复] 更新时间靠左、创建时间靠右合并为同一行 — 提交 73367c826
+[修复] 「继续/删除」操作行压扁: 卡片高度 200+ → 137px — 提交 73367c826
+[修复] 中间保留消息数 + 原状态角标(运行中/已暂停/重连中) — 提交 73367c826
+[重构] 四行改为 body 内自排版, 弃用 antd extra/actions(截图实证: extra 在 head 行与 body
+  标题不同行会多出空带; styles.actions 压不动 actions>li 自身 padding) — 提交 73367c826
+[修复] 跳转入口收敛为「继续」+「标题」两处, 不给 Card 挂整卡 onClick(实测整卡 onClick 会让
+  "点勾选框"连带跳进会话: click 先于 change 冒泡, 靠 onChange 的 stopPropagation 拦不住) — 提交 73367c826
+[修复] 状态角标 TAG 表补 retrying→「重试中」(gold): StreamStatus 活跃态 4 个而原表仅 3 个,
+  retrying 查不到 t 为 undefined 直接 return null, 角标静默消失 — 提交 73367c826
+[结果] 零新增状态变量(复用既有 handleResume 与 is_valid); is_valid 判定提为 renderItem 内
+  局部常量 invalid 供四处复用(DRY); 后端零改动
+[验证] prettier 通过 / tsc EXIT=0 / eslint EXIT=0 / 真实浏览器 6 项跳转入口全对(标题跳、继续跳、
+  空白不跳、勾选只勾选不跳、删除只弹框不跳、无效会话不跳且 not-allowed); 版式实测左对齐Δ<40px、
+  勾选框靠右、标题与勾选框Δy=1.5px、更新/创建同行且创建靠右; 真实 sleep 150 任务截图验证
+  「运行中」角标与顶部活跃条同步显示
+
+### 1.2.3 测试 · 历史会话端到端(真实 LLM, 写入真库, 已获授权)
+[测试] 北京老陈指定会话 234c29c8 进旧会话发消息 → 任务 1→2、消息 4→5、updated_at
+  07:11:52→18:42:39、该会话在历史列表由第 19 位升到第 1 位 → 证实"消息续写进该会话且
+  随即升为最新"(文档[19] 第5章三条排序依据端到端成立) — 提交 5cc9be511
+
+### 1.2.3 文档
+[文档] doc-10月优化/[19]历史会话切换失效-根因分析与修复方案 v1.0→v1.9(9 个版本全部保留):
+  第三章按"减锁"主线重写(3.4 病根 git 时间线取证+认账 / 3.5 逐处 diff 21 处 / 3.6 剩余
+  机制清单 / 3.7 后续两坨) — 提交 1ea4064b3
+[文档] [19] 第 6 章收敛为唯一方法(减锁), 原 A/B/C 并列与第 7 章并入 6.1; 6.2 改为被否方案
+  留档防重犯; 6.3 新增全局选择判据三问 — 提交 5cc9be511
+[文档] [19] v1.9: 修正第十章小节误编号(11.x→10.1~10.9) / 5.1 由"未实测"改写为实测通过 /
+  新增 10.6 端到端实测 / 10.7 卡片改造实录(含本轮两个自身错误记录) / 10.8 角标取值核对 /
+  10.9 产品限制 — 提交 5cc9be511
+[文档] doc-10月优化/[15] 会话事务workspace 第四章(后端12小节)+第五章(前端19小节)逐文件
+  代码 diff 实施说明 / 落库链路实读修正 / 编号理顺 — 提交 aca3b3ff2/8f1927035/6e3b1aca5/d7fb03a92/32684bd2e
+[文档] doc-10月优化/[18] 任务暂停态持久化设计与实施方案(暂停态纯内存实证) — 提交 7deb886a8
+[文档] doc-10月优化/[17] 启动start及历史注入链路分析 — 提交 ca8704e15
+[文档] doc-10月优化/[16] compaction 能力盘点与沙箱杀进程防护 E2E 验证实录 — 提交 fd81b760e
+
+### 1.2.3 其他
+[修复] monitoring/taskinfo 上下文卡片四处误导修复 + 老库 DDL 幂等补列 — 提交 d2e0ced31
+
+### 1.2.3 已知限制与遗留(如实记录, 非本次引入)
+[限制] 历史页活跃角标只读内存 store(chatStreamStore), 不查后端: SPA 内跳转显示,
+  F5 整页刷新后不显示, 尽管后端任务仍 executing。改为查后端属独立需求, 本次未做。
+[遗留] 多会话 Tab / 主页面会话下拉菜单未实现(属文档[63] 第七章), 本次范围外。
+[遗留] doc-10月优化/[15] 尚有一处未提交改动; backend/summary_out.txt 为既存未跟踪文件。
+v1.2.2
+更新时间: 2026-10-08 11:24:45 - 小欧
+## v1.2.2 插话开关死锁闭环+发送门归一/单飞+左栏回显自动刷+全链路E2E(26 个 commit)
+[范围=v1.2.1 之后到 HEAD; feat/interject-switch 已合入 optimize-1.0.2(d468b4fd3), 无冲突, 分支已删, worktree 已移除]
+
+### 1.2.2 修复 · 插话开关死锁闭环 + 发送门归一 + 插话单飞
+[修复] save_message 携带值先落库再判 409(原值在 orchestrator 才落, 409 门读会话旧值 → 插话第一条必被拒, 开关永远打不开) — 提交 772aae71b
+[修复] 取值+落值收敛 storage.resolve_session_interject(编排器与 save_message 共用 单一真源) — 提交 772aae71b
+[修复] 消息落库随携带 allow_interject=true + MessageCreate 补字段 — 提交 ed258dc27
+[修复] 发送门判据归一为 utils/sendGate 单一真源(原 ChatInput 与 useChatSend 两处分叉)— 提交 ed258dc27
+[修复] 插话在飞单飞(resetSendFlags 统一复位, 防网络失败/超限早退卡死) — 提交 ed258dc27
+[修复] 插话执行中第二发此前 100% 被挡死且会误伤运行中任务(独立路径 postInterject/interjectSend, isSendingRef 按 isInterject 分流) — 提交 cd8ff4996
+[修复] stream_orchestrator 落值块两处 atxn 补 try/except(读 fail-closed/写 fail-open)— 提交 506b3c367
+[重构] 追加注入消息逐条独立成块(原 marginTop:4 共用一条竖线, 多条连成一串无间距) — 提交 813f36da8
+
+### 1.2.2 特性 · 插话回显左栏自动刷新 + 注入应答帧 toast 下线
+[特性] onMerged 删 showInfo toast(30s 去重吞可见性; 设计[76] 6.13 无 toast 位)— 提交 4e48be4d1
+[特性] 插话被后端并入后左栏自动重取任务列表(onTasksChanged→refreshTasksRef), 「追加N条」回显实时可见 — 提交 4e48be4d1
+
+### 1.2.2 测试 · 插话全链路 E2E fre2e_21
+[测试] tests/e2e_case/fre2e_21_interject.spec.ts 新增(关态锁输入/开态连插3条真入库/左栏下挂回显/toast 下线)+ 独立 playwright/vite config — 提交 a56adabfa/c8ad4044e
+[测试] test_inject_compact_pipeline start 注入/压缩链路 7 环节逐环节验证 — 提交 0059f469d/a13d16284
+[测试] e2e_helpers+inj 三例补插话开关 allow_interject — 提交 ca3518a34
+[测试] 插话开关后端 6 文件+前端 20 文件落码(§3.5 全链路 state 真源/对象参数透传/吞点/SendOpts/持久化11处/UI门+SESSION_BUSY+onError 兜底) — 提交 feb7d29ba/b2c3b0fe5
+
+### 1.2.2 压缩/start 主链重构+贪心反推进
+[特性] compaction/start_step C4 锚定摘要前降本接入+保尾保留+旧轮清零 — 提交 dcd65dd8e/e9ccb9693/babe6a0bf/bdb77b9b8
+[重构] start_step/react_loop/agent_runner start 主链重构+锚定摘要 C4 接入 — 提交 e9ccb9693
+[修复] safety/sandbox 杀进程防护四阶(预检不再真跑+保护盾接入 JobObject 双限流)+ base_service/llm_call/astream 三处系统代码更新 — 提交 3bffa5f3e/53df3e446
+
+### 1.2.2 图标/上下文概览/文档
+[重构] PipelineRenderer/ThinkingStream/WaitingIcons 推理图标改 SSE 时序驱动+空 chunk 守卫; stepStyles/GearIcon/DropletIcon 图标列几何齐整 — 提交 952a02e4d/324cb3e2c
+[特性] ContextOverviewCard/TaskInfoBar/infoMaps 上下文概览单一数据源; FUNCTIONS.md 补 v4.9 — 提交 e9ccb9693/927a53a9d
+[文档] 文档[11] 第四章三堂会审修订 / 文档[15] 会话事务 workspace 设计实施状态快照+硬约束13条+W1-W7 批次+验收10项 — 提交 826b35995/fb1fb69b4
+
+v1.2.1
+更新时间: 2026-10-07 17:39:32 - 小欧-2026-10-07
+## v1.2.1 会话插话开关与安全Tab块2落地+取消/刷新/模型库等修复(56个commit: docs16/fix25/feat8/refactor2/test4/chore2)
+[范围=v1.2.0之后HEAD(共56个commit); 主线=①文档[11]第三章会话级插话开关设计经七轮审查定稿(设计侧, 代码零改动) ②安全Tab块2分类表+两个说明弹框从后端datafile取文案真源 ③取消终态/刷新模型选择器/模型库厂商字段等一批真缺陷修复; 方法论教训=审计基准必须取自代码(机械grep全量同构落点成矩阵), 禁用"按文档自身清单逐节核"(v1.9~v1.14连续六轮漏项的根因)]
+
+### 1.2.1 文档[11] 第三章 会话级插话开关(设计定稿, 代码零改动)
+[新增] 会话插话开关完整设计: 现状分析(MAX_SESSIONS=32只是前端内存水位/同会话串行在前端输入门不在后端) + registry放不下会话级开关的订正 + 决策台账1~20 + 后端6文件diff + 前端18文件同构链路diff(只改导入路径与字段名不重写逻辑) + 五批次实施计划 - 提交 2016e72a4
+[修正] 安全Tab块2改分类表页面直出+两个独立弹框(后端datafile三个md随app整树打包), 分类表字号走PRIMARY令牌, mermaid配色走项目令牌并放宽wrappingWidth - 提交 e8d8501d0
+[新增] 一致性复查修8项 + mermaid落定 + ASCII纯文本版恢复 + 守护测试增至9条 + 验证门扩至10项 + safety_gate路径修正 - 提交 77df5ff92
+[修正] 第一至五章一致性核查: 决策引用5→24/示例目录名取前3字/决策36并入29/决策15措辞回写/验收8→9项 - 提交 368920ed2
+[修正] 台账补决策39(落值三态null/[]/列表, 否则"删空目录"被当null静默失效)、决策40(物理目录生命周期+前缀守卫防误删用户目录)、决策41(添加已有目录必须校验存在性); §4.4补FK ON DELETE CASCADE(原缺, 删会话留孤儿行且session_id复用会复活旧目录) - 提交 ab821b9a9/ca35a21aa
+[修正] 第三轮三省三思(矛盾6+遗漏8+违规2, 全部落码到diff非仅记录): 决策13加作用域限定/台账messages.py:51三处残留订正为message_service.save_message/3.5.9落点定位useChatCallbacks:579 onError并纠正"兜底路径与主路径同一套动作"的错(兜底消息已入库故只提示不回填草稿)/补useChatSend的classifyError import与两处接口/补useChatStreaming的sendMessage实现:421/补chatStreamStore五处(原稿只给2处且行号全偏)/补useChatPersistence十处含正文说"两条都要带"却漏掉的:422/补useChatSession第4处复位:688; 3.5.9分支提前return补6行清理(跳过onError尾部清理块致loading恒真发送钮卡死) - 提交 c9aea3c2d
+[修正] P0漏链修复: useChatStreaming:530 executeSend内部catch吞掉saveMessage的409(非404走handleError continueOnError不rethrow, 随后照常建占位并开流), 致决策20的rethrow永不到达"退回输入框"第二次空转且消息未入库却空开一圈SSE; 修法=加SESSION_BUSY分支(撤回乐观气泡+throw) - 提交 d8b3b32a5
+[新增] §3.6同构覆盖矩阵(机械grep全仓link_enabled得后端8文件+前端18文件+E2E helper逐处落点, 附可复现扫描命令, 覆盖可证); 矩阵查出补:580第二个sendMessage调用点 + e2e_helpers.py:622 send_chat形参(本地改不提交); 通道核实(create_error_response→data.type="error"→sseParser:707→onError, 与3.5.9同通道) - 提交 1c355da47
+[修正] 决策31改判(北京老陈): 会话目录注入由system prompt改为拼接到本任务user消息尾部(user尾部当前回合注意力更强), 且仅在目录列表非空时追加; W2/W4批次同步 - 提交 dd0d23c9e
+[新增] 文档[14] 注入压缩误调用工具与前端静默显示问题分析(新建并删除[13]) - 提交 946868381
+
+### 1.2.1 安全Tab 块2 与说明文案真源(后端datafile + 前端中立层)
+[新增] security_docs.py + settings_routes.py + app/datafile 三个md: policy弹框1五组22条/flow弹框2含mermaid八步表/classification块2页面直出4类5行; 5个占位符后端插值取用户真实路径, 前端零字符串逻辑; 新增GET /api/v1/settings/security-docs(刻意不并入/settings, 那条返可配置项的值混一起前端分不清哪个能改); 单文件缺失降级一行提示不抛异常; FUNCTIONS.md登记 - 提交 014889830
+[新增] DirectoryAccessNote.tsx + SettingsGroup.tsx + settings.api.ts 块2: sectionOf加security组归人工确认一块, items.map后追加DirectoryAccessNote(纯说明无配置项不进registry); settings.api加SecurityDocsResponse+getSecurityDocs(不并入getAll); 分类表走fixedTable防auto布局下超长单元格独占宽度把窄列压成竖排; 加载失败保留两按钮只降级表格区, Modal常驻保退出动画 - 提交 3e9f279be
+[重构] markdown四件套上移中立层: CopyButton/MarkdownBody/MarkdownSlot/MarkdownText由features/chat/components/pipeline上移到components/markdown(解除settings2→chat跨feature反向依赖); 新增MermaidBlock(动态import懒加载+securityLevel=strict+initialize收成模块级单例+失败降级原文pre); 表格拆MdTable支持fixedTable仅分类表用; 装mermaid ^12.1.0 - 提交 f0264d854
+[修正] 三堂会审4项: 加载失败不再三选一只剩Alert(那样分类表和两按钮全消失=功能没了), 改按钮恒在只降级表格区; Modal改常驻用openKey控制; POPUPS删冗余mdKey; 删外层无效color/fontSize死代码 - 提交 5db873ec3
+[修正] 图三件事(北京老陈实测): 配色/字号全走项目Colors/FontSize令牌, 线色取TEXT.SECONDARY(用BORDER.VERTICAL实测渲成#e8e8e8比节点填充还浅不可见), flowchart加wrappingWidth:220; index.css去掉max-height/overflow(双滚动条); MdTable加fontSize参数分类表传PRIMARY聊天侧零变化 - 提交 04ee67f30
+[修正] security_docs三堂会审: 分类表路径去内联反引号(13个code把路径列撑成灰底碎块)+禁区路径统一不带反引号; path_decision异常兜底分支改挂在入口虚线旁注(原先ERR无入边被mermaid提到最前语义误导); 三个md加统一格式编辑历史注释 - 提交 877bc2c4d
+[修正] tool_constants.py + path_safe_check.py Windows禁用路径去硬编码盘符(改存与盘符无关相对段+运行时前置拼接, 去掉.replace(C:)字符串替换——旧写法漏写盘符前缀会被startswith守卫静默放过即真漏拦); _SYSTEM_PROTECTED提为模块常量(原先每次调用重建frozenset) - 提交 bc8fa66df
+[新增] trust_db.py 目录信任跨工具生效(老陈裁定B替原per-tool隔离): WHERE放宽为session_id=? AND (tool_name=? OR path IS NOT NULL), path=None的无路径工具仍只命中本工具通配行shell等不受误放行 - 提交 66fcea66f
+[修正] trust_db.py + storage.py 三堂会审(删与docstring重复的判定注释块, 文档补B语义下撤销粒度(tool_name,path)≠放行粒度(path)提示) - 提交 e9761d9ca
+[修正] trust_db.py + trust.py + storage.py 信任登记粒度由叶子文件改为所在目录(北京老陈实测信任4次仍反复弹窗根因) - 提交 ce769d866
+
+### 1.2.1 前端会话/流真缺陷修复
+[修正] 取消后UI无反应(点中断后永久执行中+连接疑似中断) - 提交 e60a58dfe
+[修正] 取消终态帧未送达兜底(北京老陈实测点中断UI无反应): 武装取消等帧看门狗(幂等不叠定时器), 终态由final步outcome决定不再恒写completed, 看门狗超时兜底以DB权威为准落终态并释放流资源, 终态帧到达即撤看门狗 - 提交 be903a477
+[修正] RightViewer.tsx 取消后右栏永久蒙一层白纱(Spin loading卡死) - 提交 c402ccd6f
+[修正] 刷新后模型选择器误显示跟随全局(根因STORAGE_KEY四写入点各写各字段全漏sessionModel; 同linkEnabled 2026-10-03同型事故): 按DRY收口schema新增ChatCacheState+buildChatCacheState/parseChatCacheState单一来源, 四写入点+三读取点全改走; 并修sessionVersion硬编码1导致恢复后必撞409 - 提交 68b5bf6d8
+[修正] useChatSession+useChatState+useChatInit+useChatPersistence 三堂会审6项(||吞版本0改??; 删applySessionState越界写currentSessionIdRef(SLAP违规)并在setter内同步ref; setMessages wrapper内联写messagesRef替代useEffect单向同步; 恢复loadSession返回值被void丢弃; 签名对称空串防御; 补全sessionVersion透传) - 提交 12b3bb0e1
+[新增] SubmitBar.tsx + AttachmentArea.tsx 附件区暂缓期改显示+置灰占位(北京老陈指令, 上传仍暂缓) - 提交 b45274d7d
+[修正] AboutFiles.tsx 查看文件弹框行号与内容整体错位(行号栏whiteSpace:pre不折行vs正文pre-wrap折行, 长行起行号全下偏) - 提交 120f1a071
+[修正] handler.ts axios超时消息人话化(把timeout of 60000ms exceeded这类完整英文改写为后端响应超时请重试, 不改根本只修展示) - 提交 06c778c44
+[新增] CopyButton.tsx 围栏代码块复制按钮(PreBlock与MarkdownBody两处复用消除DRY重复; 申明订正此前"已加复制按钮"为误报未落盘, 本次才真实加入) - 提交 16c7c3e7b
+
+### 1.2.1 工具 summary/文案治理与后端修复
+[修正] write/move/rename/shell的summary单通道去数字化与metrics补齐 - 提交 3ca31f08f
+[修正] read_text_file的summary去total_lines与total_lines改走metrics统计段 - 提交 818c20ffe
+[修正] execute_sql/filter_data/query_sql的summary单通道去数字化与去detail - 提交 95ceb9da8
+[修正] edit_text_file的summary带增减行数与metrics补added/removed - 提交 1227303eb
+[修正] read_text_file的summary/message信息顺序整改(用户参数前置于读取量) - 提交 438c0528c
+[修正] message_builder.py wire推理字段去冲突(B3空转后必400根因修复) - 提交 8077b3c1a
+[修正] compaction摘要/start_step/history_loader三处系统代码更新 - 提交 1a87c28cc
+[修正] prompt日志5项核查缺陷修复(P0-01时序/P1-02双传/P3-06无降级/P3-07 None崩/P3-08轮次口径) - 提交 9fcb61ba5
+[修正] base_service.py 取消导致的L1退避倒退修复(退避sleep不可中断且循环内不查_cancelled, 取消后agent空转3+9+27+81直至SSE断104): 增_cancel_event唤醒信号, 两处sleep改wait_for可中断等待, retry循环顶部与except入口先短路_cancelled - 提交 8219bf1c7
+[修正] 落库队列消费者死亡即时止损 + TaskFileWriter入队工厂化 - 提交 6163b439a
+[修正] db/storage/logger/shell_engine 与E2E测试记录批量提交 - 提交 42294babb
+[修正] shell的cmd_short总预算150改130(头变110) - 提交 0e446b88c
+
+### 1.2.1 模型库与其他功能
+[新增] model_service.py + ModelLibraryTab.tsx 模型库厂商字段适配(SenseNova实抓后改): 解析层此前白名单逐字段提取, 厂商同义键命名与层级不统一致11个字段被静默丢弃; 按北京老陈指令不写per-provider定制(8家api_base实测均为OpenAI兼容), 改单点归一(_first_alias别名链+合成查找视图); 增下发max_output_length(缺此项误判单次输出上限)/input_modalities/output_modalities/supported_features; fetch_remote_models三级取key后key空白时pop掉Authorization畸形头; 补FUNCTIONS.md漏登记3条与行号漂移 - 提交 52a0e98a4
+[新增] ModelLibraryTab.tsx + model.api.ts + History/index.tsx + chatStreamStore.ts 模型库能力列+保存落配置+在跑指示器+布局对齐 - 提交 fbbabf60e
+[新增] query_sql.py summary补row_count与col_text - 提交 ffa2fc087
+[修正] docs: README.md + E2E测试手册两个文档更新 - 提交 e962e69c8
+[修正] docs[10] observation关键字段信息承载分配统一规范v1.7 - 提交 477ccbf05
+[修正] docs[10]方案v1.1实施后校正(登记与v1.0设计的5处差异+1处设计缺陷: §2.2注入点人工阅读数出6处, 机械全量扫描实为9处; 方法论教训=统计调用点禁用人工阅读数) - 提交 d86b14451
+[修正] docs: SaveBar/SettingsPage/AuthorizationModal 安全开关文案同步为HTL人工开关; settings_registry调优/安全四标签与notice更正 - 提交 8e2522ccf/84aff38f3
+
+### 1.2.1 测试与工程治理
+[新增] fre2e_20_security_block2.spec.ts 安全Tab块2全链路浏览器实测; 合并原6个临时诊断脚本为一个符合fre2e_NN规范的case - 提交 d59460d9c
+[新增] fre2e_20 增2条回归断言: 分类表字号须14px(设置页正文档), 目录列表列不得残留内联code(内联code的背景+圆角会把该列撑成灰底碎块, 实测13个) - 提交 4e4f3a0a5
+[新增] e2e par_02 concurrent tools + .codegraph 提交(北京老陈强制指令, 违反AGENTS.md铁规: 测试case不入库) - 提交 b9c406447
+[新增] par_02与conftest测试更新(北京老陈明确指令提交) - 提交 f4297fc53
+[清理] test_remote_models_free_fields.py 去除git跟踪(该文件被git add -f强制提交, 绕过.gitignore两条规则; 本次git rm --cached去跟踪文件保留本地; 已确认.gitignore:17 tests/现接管该文件) - 提交 5687dd9d5
+
+v1.2.0
+更新时间: 2026-10-05 16:23:00 - 小欧-2026-10-05
+## v1.2.0 思考段Markdown排版+推理内容折叠两个独立开关(22个commit: feat8/fix4/refactor1/chore4/docs5)
+[范围=v1.1.7之后HEAD(共22个commit); 主线=设置页加两个独立bool开关控制思考段渲染, 默认皆开, 顺序推理内容在前; 实现第4章按参考代码落地, 三堂会审3遍挖出参考代码自带缺陷3项已修; 遗留=左列response接排版首帧纯文本(React.lazy Suspense fallback)与展开后14px偏松(未加compact档)]
+
+### 1.2.0 后端开关(2个设置项)
+[新增] settings_registry.py+config.yaml.example appearance组加两个独立bool开关(北京老陈裁定: 思考排版=thought段Markdown渲染/推理内容=reasoning段折叠初值, 默认皆true, 顺序推理内容在前) - 提交 73d11e19f
+
+### 1.2.0 前端设置读取与广播链路
+[新增] settingsEvents.ts 事件名上移constants中立层(解除settings2→chat跨feature反向依赖); useStepRenderPrefs.ts 建hook(唯一真源=后端YAML只读getGroup('appearance'), 无localStorage无第二真源); SettingsGroup.tsx appearance组加step渲染控制分节; useSettings.ts saveKeys成功派发omni-settings-saved - 提交 a4118d772
+[新增] useDisclosure.ts 公用折叠hook(CollapsibleText与ThinkingStream去重, 5处调用零回归) - 提交 593c2b8ee
+
+### 1.2.0 推理内容(reasoning段)可折叠
+[新增] ThinkingStream.tsx 标题行[思考点图标]+"推理内容..."+箭头, 每段独立折叠(收起态只显标题行不显正文); WaitingIcons/index.tsx 新增ReasoningIcon; index.css 图标动画; PipelineRenderer.tsx 下传defaultExpanded; 段带step不跨step拼段(老陈裁定两态+标题行排在等待绿圈上一行且等待期先出现) - 提交 593c2b8ee
+[修正] 段key去掉文本切片(原key带前16字, 流式每收一个chunk即换key致组件卸载重建, 用户刚点开的折叠态被弹回表现为"点了没反应") - 提交 593c2b8ee
+
+### 1.2.0 思考排版(Markdown)渲染
+[新增] MarkdownText.tsx 按文档[9]第4章参考代码落地(装react-markdown@9.1.0+remark-gfm@4.0.1+remark-breaks@2.0.2+rehype-sanitize@6.0.0+dev@types/hast@3.0.5; 含findUnclosedFenceTail未闭合围栏切分+20个组件映射+SANITIZE_SCHEMA补code[className]与input) - 提交 e8f0de10c
+[修正] P1真缺陷(参考代码自带): code靠className猜"是否围栏"+pre被覆盖成<>{children}</>, 而react-markdown v9 info string为空时hast无className → 无语言围栏整段退化成行内code(pre数=0/块级样式全丢); 按语义归位pre管块级容器code管行内样式, 不加依赖不加插件不留分支 - 提交 e8f0de10c
+[修正] P2 闭围栏长度未校验(4反引号开/3反引号闭误判闭合) → 按CommonMark补"闭围栏长度>=开围栏" - 提交 e8f0de10c
+[修正] P3 wordBreak:break-word与overflow:auto语义抵消(折行后永不出滚动条) → 老陈裁定二选一取横向滚动, wordBreak显式写normal不依赖继承 - 提交 e8f0de10c
+[修正] P4 `2*3*4`渲染成2斜体3斜体4 **不修**: CommonMark标准行为, 实测误伤面仅紧凑乘法(长*宽/*.ts/src/**/*.tsx/a * b * c 全部安全), 旧自研版正则属非标准hack - 提交 e8f0de10c
+[新增] MarkdownSlot.tsx 思考排版开关统一入口(抽lazy+Suspense+纯文本fallback唯一入口, TextStream与ResponseStream共用杜绝同段逻辑写两遍; 两处lazy同模块经打包器去重, 实测生产构建仍只产一份163KB独立chunk) - 提交 ecb2924a1
+[新增] 思考段与答复段共用「思考排版」开关(老陈裁定不分开关: 答复段也是thought text; 实测定位"开关开了不起作用"真因=答复段走ResponseStream的CollapsibleText纯文本strong=0/ul=0) - 提交 ecb2924a1
+[修正] 答复段markdown=true全量渲染不折叠 / markdown=false保留原CollapsibleText长文折叠零退化(删折叠会连关闭开关的老路径一起删掉) - 提交 6c1367555
+[新增] CollapsibleText.tsx 加可选renderExpanded(展开态渲染由调用方注入; 折叠态与其余4处调用零变化) - 提交 6c1367555
+[新增] TaskListPanel.tsx 左列task卡response接Markdown(传renderExpanded且markdown恒true, 受折叠开关控制不受设置开关控制; 同文件user_input与追加注入两处不动) - 提交 6c1367555
+[新增] MarkdownBody.tsx 零依赖手写正则版(6类格式子集)与MarkdownText并存, 由MarkdownSlot内MD_IMPL变量0/1切换(改一个数字即切换, 调用方零改动) - 提交 f6480daa8
+[修正] MarkdownText代码块容器按老陈裁定方案A改四边整框(1px#d9d9d9+圆角4+浅底#fafafa, 删原左边线避免叠双线) - 提交 f6480daa8
+[修正] MD_IMPL用`0 as 0|1`断言而非`const x: 0|1 = 0`(后者被TS按初始化值窄化成字面量, 另一分支===1直接报TS2367, 改切换数字即编译不过) - 提交 f6480daa8
+
+### 1.2.0 三堂会审修复(2轮)
+[修正] useStepRenderPrefs读取失败改为沿用上次成功值(原置全关且不重试, 而收起=内容不可见, 一次网络抖动致思考内容静默消失); 删ready残留; 统一手动折叠与设置默认值三处相反注释为单一语义 - 提交 fdfe7154d
+[修正] PipelineRenderer段key改下标+步号双因子(修切任务折叠态与打字机进度跨任务串味); 撤ready门控(致首帧reasoning正文整段不渲染并打破既有测试waiting-segment-442.test.tsx:195); 等待段传text=空格不传cursor(去多余▍与误打CURSOR T) - 提交 4db6a347c
+[修正] MarkdownBody剥标记加闭合校验与长度守卫(裸*/**与半闭合不再整行消失); 词边界字符类补CJK(中文_测试_不再被吃); 未闭合围栏降级纯文本(不再闪空pre且不吞后续正文) - 提交 5d4fbc076
+[修正] 问题报告6真问题修复(P1/P3/P6/P7/N1/N2) - 提交 8005381df
+
+### 1.2.0 清理与重构
+[重构] useChatStreaming.ts+useChatCallbacks.ts 3处消息占位'🤔 AI 正在思考...'归零(message.content前端零渲染消费属死数据; 思考态视觉已由reasoning标题行承载, 空串不留空白气泡, 不断流时由final帧走真实内容替换) - 提交 7307049a6
+[清理] _legacy/markdown.tsx(2026-04小强件, LaTeX早已被注释禁用故renderContent仅包一层span原样返回, 从诞生起即无任何Markdown渲染能力; 全仓零引用) 与其后的恢复/移动/改名/删除共5个chore提交 - 提交 44aa7c35e/39d67fe7d/3fa7d05b9/da4d13b02
+[修正] stepStyles.ts FontFamily.MONO注释订正(原指向已删的MarkdownBody, 改为MarkdownText) - 提交 e8f0de10c
+
+### 1.2.0 文档
+[新增] doc-10月优化/[9]thought思考段Markdown渲染优化-方案设计-小欧-2026-10-05.md 首版+实施现状(升v3.6~v3.9, 补记实施结果与偏离登记: §3.3补第9条闭围栏长度用例/§3.4长内容折叠整节撤回因thought长度不定/§5.15偏离登记) - 提交 a80422b5d/b3e4704a5/d80a07e3e
+[整理] 3个html演示文件从doc-9月优化移至frontend/scripts; 前端后端接口契约说明-小欧-2026-09-22.txt移入doc-打包与E2E - 提交 e73db7e29/838eea0e6
+
+### 1.2.0 未做与遗留(待办)
+[遗留] 左列task卡response展开后首帧是Suspense fallback纯文本, 加载完才变排版(React.lazy分块所致, 第二次起秒变)
+[遗留] 左列展开后正文14px而原为12px, 观感偏松; 未加compact档(需MarkdownText加档位)
+[遗留] 思考排版开关关闭时, 「推理内容」收起态下整个思考期无任何活动指示(仅绿圈转)
+[遗留] final帧reasoning改走折叠后, 关态下历史回放的推理内容默认不可见(改前恒可见)
+[遗留] useStepRenderPrefs无缓存: 同页N个PipelineRenderer各发一次getGroup请求
+[遗留] MarkdownText打字机×未闭合标记的结构性突变; pre未重置wordBreak致横向滚动失效
+[遗留] FontFamily.MONO存量5处未统一; 文档文档[9]第5步的fre2e_13/fre2e_14 spec在本仓不存在(悬空名, E2E未跑)
+
+v1.1.7
+更新时间: 2026-10-05 08:30:50 - 小欧-2026-10-05
+## v1.1.7 shell卡死治理+observation契约收敛+taskinfo改版+action.target清理(35个commit: feat4/fix3/refactor8/test2/docs15/perf1) - 小欧-2026-10-05
+[2026-10-05 08:30:50 小欧] 范围=v1.1.6→HEAD(共35个commit)。四条主线:①shell卡死治理(shell_engine实例池有界化/只读白名单单一权威迁出safety层/loop_watchdog事件循环心跳看门狗/AGENTS.md新增取证小节);②observation契约收敛(sseParser+execution删6处死派生字段、observation_builder删llm_data_text、66个工具删action.target、observation_formatter改从params派生处理对象);③taskinfo信息带改版(token链序P/C/T、折K/M、tooltip原始值、占窗率、帧类型context_overview改名history_context、CHARS_PER_TOKEN 1.8→2.5);④文档入库([1]系统架构全景解析V1.0.2/[7]shell卡死治理方案/[8]observation工具结果显示问题)。
+
+### 1.1.7 shell卡死治理(三层实施)
+[修复] shell_engine.py+execute_shell_command.py+tool_retry_engine.py 实例池有界化根治卡死(同步exec跑在事件循环里挂死→全服务僵死) - 提交 518686d1a
+[重构] shell_readonly.py+executor.py 只读白名单单一权威迁出safety层; FAST_CHANNEL_FORBIDDEN补4类命令替换载体堵白名单绕过 - 提交 16a3de345/435742c7e
+[新增] loop_watchdog.py+stream_orchestrator.py+agent_runner.py 事件循环心跳看门狗接线 - 提交 5b3f79d7d
+[文档] AGENTS.md 新增Shell卡死取证小节(py-spy dump全PID定位+8000端口重启命令); [7]shell卡死治理方案新建并修订至v1.2 - 提交 e62d5d561/6d5777c8f
+
+### 1.1.7 observation契约收敛(删死字段+action.target清理)
+[重构] sseParser+chat.ts+execution.ts+ToolResultRenderer+PipelineRenderer+ToolCallLine 删6处死派生字段(execution_result/execution_status/tool_params/parallel_results/observation/return_direct)+content兜底链收敛为只认tool_result+删ObservationData/ObservationMessage旧契约类型 - 提交 3b8630519
+[重构] observation_builder.py+react_step.py+history_loader.py+handle_action.py+display_utils.py 删llm_data_text字段(前端零引用+回放兜底实测0/2306不可达) - 提交 ad32a7777
+[重构] renderers/删5个零生产引用死文件+stepConstants/markdown/stepContentUtils删3个零import死代码文件+ToolResultRenderer删形状分派统一generic - 提交 61ed58963/f17143584/d26f2a15e
+[重构] tools/ 66个工具文件删action.target(params承载目标)+文件头标注; agent/ observation_formatter+react_step 适配action.target删除(改从params派生处理对象) - 提交 8033881ed/f97ec2083
+[新增] ToolCallLine展开区改结论区(亮蓝五角星+完整摘要+metrics标签,不显示data_text与契约字段)+子行删硬截/摘要只取llm_data.summary/参数每键一行且超5项折叠+GenericResultRenderer下线 - 提交 29b0ba2c3
+
+### 1.1.7 taskinfo信息带改版+帧类型改名history_context
+[新增] TaskInfoBar等11文件 taskinfo改版: token两项链序改P/C/T且P加粗、行内折K/M、tooltip原始值不折行、无数据显示–、G3轮步拆两段、分隔点统一•、新增占窗率=本轮P/窗口、断点门统一isNarrow - 提交 ad0b1c3c0
+[新增] TaskInfoBar等7文件 截断事件+计数胶囊+注入字段显出: history_context帧仅truncated时入steps、事件标签加antdBadge计数胶囊、卡片显出跨任务注入三字段、新增Colors.ACCENT_ORANGE令牌 - 提交 4e4847fe2
+[重构] react_step.py+steps/__init__.py+agent_telemetry.py usage帧新增context_window且帧类型context_overview改名history_context - 提交 88334809f
+[修复] compaction_constants.py+message_builder.py+prune.py CHARS_PER_TOKEN 4→1.8→2.5(中文低估2-4倍;实测1000汉字≈1900token) - 提交 871fbe015/1730a51f4
+[修复] db_initializer.py+steps/__init__.py 新增帧类型改名一次性迁移_migrate_step_type_context_rename(旧step_json行context_overview→history_context) - 提交 ace0269e5
+
+### 1.1.7 文档入库
+- [1]系统架构全景解析及能力详解说明V1.0.2入库(基于git tag v1.0.2代码取证) - 提交 71c0e0610
+- [6]taskinfo历史上下文卡片优化补记今日改动 - 提交 70571f502
+- [7]shell卡死治理方案+[8]observation工具结果显示问题章节合并精简+字段删除方案+全文对齐清理后现状 - 提交 937644a94/99e55e533/289889bda/a9b3efbbe/2c0ec896c
+- FUNCTIONS.md+[7]shell卡死治理方案1.14白名单登记+实施diff同步 - 提交 5bcc3688a
+- notes/ 9份E2E测试记录归档后删除 - 提交 3749173d5/24439fbe7/72a0b0769/018f136c1
+
+---
+v1.1.6
+更新时间: 2026-10-04 05:14:02 - 小欧-2026-10-04
+## v1.1.6 link随消息携带全链路落地+taskinfo卡片优化(43个commit: feat8/fix7/refactor3/test10/docs13/style2) - 小欧-2026-10-04
+[2026-10-04 05:14:02 小欧] 范围=v1.1.5→全部commit(共43个)。四条主线:①会话级 link 开关由「独立 PATCH 端点」推翻为「值随消息携带」全链路落地(后端5文件+前端19文件);②taskinfo「历史上下文」卡片优化(修P0:摘要键读错致卡片恒显"–");③前端 E2E 14~19 全绿并新增 link 分组用例;④远端模型元数据补free/stability 与免费判据收口纯函数。
+
+### 1.1.6 P0修复: context_overview 摘要键读错致卡片恒显"–"(真帧零覆盖暴露)
+[问题] 后端 MetaStep 唯一权威文本字段是 content(steps/base.py:80-88), 帧里从无 summary 键; 前端 sseParser.ts:521 读 rawData.summary → 摘要恒空 → infoMaps.mapStatus 的 `??` 不穿透空串(第二条死路: `?? contextSummary` 同样被打死, sseParser.ts:412 写入的 start 帧摘要被屏蔽) → 状态恒 empty → taskinfo 卡片恒显"–"/"上下文缺失"。流再健康也如此, 且全库零真帧覆盖(所有测试用 mock 造 build_context_overview 返回值, 把 telemetry 字典的键误当帧的键), 故长期未暴露
+[修复] sseParser 摘要键 summary→content(前后端同批交付, 不留 `?? content` 回退分支, 禁 backward)+补收 injected 两键(后端一直在发, 此前丢弃); sse.ts/execution.ts 平行类型对齐; 新增真帧契约测试(Red门, 改前必红且红因正确) - 小欧-2026-10-04, 提交 08f921339
+[关联] 文档[6] 三堂会审(合规/合理/关联3独立代理+本人实读复核18条)撤回4项: A3快照移位是no-op(_maybe_compact只置标志, 真压缩在 react_loop.py:164)、message_count改口径会制造count/token不同源、链组短号与 TaskListPanel groupNoOf 口径不可对齐、content回退属backward
+
+### 1.1.6 taskinfo 历史上下文卡片重构 + 历史任务态拆分
+[问题] 卡片是 TaskInfoBar 内 78 行内联 IIFE(4派生量+整块JSX+FloatingEntry配置混层); 底部恒显一行状态提示, ok 态显示"正常"是纯噪声, empty 态提示"上下文缺失，检查 frames 数据链路"把排查方向带偏(实际最常见成因是 useTaskInfo.ts:169 历史任务按设计恒置空), 且 frames 是内部变量名对用户为黑话
+[修复] 抽出 ContextOverviewCard 组件(SRP/SLAP), 卡片收敛为「装入 N 条 · 约 X.XK」+「最近: 摘要(默认3行折叠可展开)」(北京老陈 2026-09-09 令"摘要不截断"落为可展开见全文); ContextState 4态→5态新增 historical(经 useTaskInfo 的 isLiveContext 透出, 该分支本身即真源不另立判断); 删冗余状态提示仅留 truncated 警示 - 小欧-2026-10-04, 提交 6674190f0
+
+### 1.1.6 link 写入口收敛为唯一通道(废止 PATCH)
+[问题] 北京老陈定案"切换开关发到后端只能和消息一起发出, 严禁独立去影响后端的任何东西"; 原 PATCH /sessions/{id}/link + set_session_link 前端零调用, 属零消费死端点(YAGNI); SessionResponse.link_enabled 与 messages 端点构成同真源两个读出口(DRY隐患)
+[修复] 删 PATCH 端点 + set_session_link 函数 + SessionResponse.link_enabled 及两处 SELECT; set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位); 编排器落值加 rowcount 判定留痕。判据纪律: 生产代码质量由自身判据裁决, 不得以"已有 case 断言"保留死代码 - 小欧-2026-10-03, 提交 c10c0e35c
+
+### 1.1.6 link 随消息携带落地(前端19文件+后端5文件)
+[修复] 前端 contextLinkMode/mode 改名 linkEnabled 继续透传(4层9处→3层3处, 不删参数); 链号徽标(TaskListPanel 按 context_root_task_id 归链, 仅链长>1 编号, Colors.INFO 达 WCAG AA); 持久化三写入点补齐 + 本地优先(修勾选后不发再刷新丢失); 后端 ChatRequest 增 link_enabled + 路由关键字透传 + storage 新增 conn 级写 - 小欧-2026-10-03, 提交 d72fe596a/d73ac92cd
+[修复] chatStreamTransport resume 续传建连成功即置 isReceiving(此前续传路从不置接收态, 切路由回来后帧在流但"停止"钮永不出现, fre2e_15 红线) - 小欧-2026-10-03, 提交 9197506c3
+[修复] main.py _t4con 笔误改回 _t_recon(同批新增 _t4 串扰致误改, 读写一致故功能未坏) - 小欧-2026-10-03, 提交 e5f29cddd
+
+### 1.1.6 前端 E2E 14~19 全绿 + 新增 link 分组用例
+[修复] fre2e_15 切页≠停止红线由红转绿(真 bug 已修); fre2e_16 首跑20s窗口撞后端静默期假红, 重跑绿; fre2e_18 任务B由八大部分采矿长文(实测616秒, 终态等待不够)改为三步文件链后 3.3 分钟通过; 新建 fre2e_19_link_grouping(10任务 link 组合: 单点/2连/3连/开跟在关后并入关组, 断言徽标+魔数+链根+真源读回), 其中修正自身两处错误: 分组模型(开≠自成新链, 开=并入上一任务所在组)、取 taskId 走 UI 选中态有竞态改走 DB 权威 - 小欧-2026-10-03, 提交 c80fe68e1/7ec3d50f6/6ddcd4e3e
+
+### 1.1.6 远端模型元数据补 free/stability 与免费判据收口
+[修复] model_service 透传 free/stability(AMD Radeon Cloud 实测下发, 此前被解析层静默丢弃); 免费判定由 pricing 单判据扩为 free字段/-free|:free尾巴/pricing双0 三判据 OR 收口纯函数层(切勿 includes('-free'): 实测 OpenRouter 460 个命中 0 且会误伤 free-tier); 模型库增"添加 Provider"入口 + 修 ModelModals 未挂载(model_library Tab 不调 renderModelTab, 置 open 无人渲染); 添加 Provider 弹窗三处修(api_key 补 autoComplete=new-password 防 Chrome 密码管理器把已存口令写进 config.yaml) - 小欧-2026-10-03, 提交 93bad733d/8508a1890/235c10e1c
+
+### 1.1.6 其他
+- journal_steps_reconcile 启动期对账(Journal③ vs chat_task_steps②, 只告警不自动补) + telemetry 步骤类型集合按语义二分去重 - 提交 3ca9fd37d/37a56b0c4
+- 编辑历史合规整改(chat_models 旧行归位块尾/message_service 新史拆独立行/orchestrator 历史移块尾/agent_runner 换行恢复 CRLF+补历史行) - 提交 dee20e606
+- 事故复盘: git stash 误 pop 致 5 个后端文件冲突(根因: 链式命令中 push 空操作而 pop 命中他人 stash; 6条护栏已落 notes, AGENTS.md 按老陈要求未改) - 提交 9dd82414d
+- prettier 格式补账 5 文件(今日早些提交带入的不合规, 致 check:full 不可过) - 提交 5ed797176/eb25f797c
+- react_step.py 正名 context_overview 发射节奏注释(原称"每次必发", 实受 if 门控: 首轮/裁剪轮/每5轮) - 提交 687615412
+
+---
+v1.1.5
+更新时间: 2026-10-02 15:00:28 - 小欧-2026-10-02
+## v1.1.5 工具注册名归位与strict报错修复(20个commit: feat1/fix2/refactor7/test3/docs6/chore1) - 小欧-2026-10-02
+[2026-10-02 15:00:28 小欧] 范围=v1.1.4起全部commit(共20个)。主线四件事:[1]工具注册名归位与改短(shell→bash、readtext→read、writetext→write、edittext→edit、which+sysinfo归system、extract/compress/readmedia归document、searchweb/fetchpage归fundamental), 分类10→9, 初始加载21→19; [2]searchtool BM25索引追加category使按分类名可召回+描述同步; [3]strict默认值True→False解除opencodeZen必报400(全仓29模型/7provider无一需strict, additionalProperties校验自2026-06-17起从未生效, 日志确认报错文案全仓唯一1种); [4]前端渲染器/安全判定/sandbox/E2E用例跟随注册名同步。
+
+### 1.1.5 strict默认值False解除opencodeZen 400
+[代码] tool_description.py: strict=True→False; 全仓核实29模型/7provider无一需strict; 其余provider本就收原样schema, 仅opencodeZen由全挂变为可用; 验收opencodeZen big-pickle基本正常400消失, 提交5043d3428
+[文档] strict报错分析文档升v4.4: 第八章回写实测结论+第七章裁定落实(B降级/C采纳/V2不跑/自由map保持A档), 提交9763eaa97
+
+### 1.1.5 searchtool按分类名可召回
+[代码] tool_search.py _build_bm25索引文本追加category; 31组查询改前/改后排序比对, 能力词类首位零倒置, 分类名类由空变有; fundamental_schema.py描述同步; 提交723841bcc
+
+### 1.1.5 工具归组与注册名归位
+[重构] SHELL分类消亡(which+sysinfo迁system), extract/compress/readmedia归document, searchweb/fetchpage归fundamental(分类10→9); 注册名shell→bash、readtext→read、writetext→write、edittext→edit, 别名表与参数归一同步; validate timeout_validator表键跟随改名+入口归一; 前端渲染器/安全判定/sandbox/E2E跟随同步
+[测试] E2E用例跟随注册名同步(shell→bash断言归位、read/write/edit)
+[文档] 系统新增能力说明v3.1、工具名单化方案v1.5改写为实施方案、10月优化+打包E2E目录5份文档入库
+
+### 1.1.5 工程杂项
+[chore] gitignore补backend/e2etests/output忽略规则(防E2E产物入库)
+
+v1.1.4
+更新时间: 2026-10-01 23:59:47 - 小欧-2026-10-01
+## v1.1.3以来 变更汇总(38个commit: fix14/test8/docs8/refactor1/style6/chore1) - 小欧-2026-10-01
+[2026-10-01 23:59:47 小欧] 范围=v1.1.3以来全部commit(共38个); 主线: [1]刷新后显示其他任务结果全链路修复(A/B/E/D组落码+文档v1.0~v1.6)、[79]会话流常驻架构SSE单源化(删useSSE 779行)、[81]三堂会审缺陷实施、数据与配置隔离铁律、计时冻结根因修复、Prettier门禁91→0
+
+### 1.1.4 计时冻结根因修复(本轮核心)
+[计时] chatStreamStore.ts clearSteps 补 metaFrames 任务边界重置(1行根治): metaFrames 是任务级帧状态却按会话级存于 ChatStreamSession、仅 ensureSession 首次创建时初始化一次, 全仓无任何清空点 —— 上个任务 finalStats 残留使次任务 TaskInfoBar taskFinished=!!frames.finalStats 恒真, 秒表 setInterval 从不启动, shownElapsed 回退 useTaskInfo 的 frames.finalStats?.duration(优先级高于 stats.duration, 故后端 stats 正常递增亦被挡), 表现为「第二个任务计时全程不动」; 首任务正常因 metaFrames 初始为空
+[计时] 该行同时根治三个消费方: TaskInfoBar秒表 / useTaskInfo live-detail分支 / RightViewer hasFinalStats 判在飞; 停止路径 stop() 不调 clearSteps 故终态耗时显示不受影响
+[文档] [1]全文精简重写升v1.6(1153行压至300行, 60+条编号清单按A~G七组浓缩为一张表, 保留v1.0~v1.5完整版本历史不删), 新增第七章计时冻结与格式门禁修复、第六章帧数与步数口径对照表(帧=含chunk的细粒度事件/步=只统计业务事件, 实测25步对应5333帧)
+[文档] 记录未修真缺陷: storage.py reconcile_orphaned_tasks 判据 start_time < boot_iso 分不清「上个进程遗留僵尸」与「当前在飞任务」, --reload 下第二实例启动即误标 status 为 failed/task_interrupted 且任务真跑完无逻辑改回 completed, 前端 findLiveTask 靠 status=='executing' 找在飞任务故产品会挂不回任务; 根治需加 boot_id/owner_pid 列, 临时规避为 E2E 用无 --reload 的单实例后端
+
+### 1.1.4 Prettier 门禁清零
+[格式] .prettierignore 扩充15项非源码排除(backup备份档案 / playwright-report与e2e_case/output运行产物 / .pytest_cache / .auth-state登录态 / src/tests/fixtures契约数据 / scripts工具页 / *.md) —— 对这些「格式化」是制造噪声
+[格式] 逐个 Prettier 格式化75个文件: 生产28 + 测试41 + e2e6, 每个都跑 eslint; 生产28个中27个为纯LF真排版问题、chatStreamStore.ts 兼有EOL混杂(原CRLF481/LF525)已统一为LF; 逐文件核查注释零丢失 + tsc前后0错误
+[格式] 改动类型分布: 缩进对齐196行(56%)/尾逗号77行(22%)/括号换行32行(9%)/其他表达式换行27行(7.7%)/注释行重排15行(4.3%); 根因为 printWidth=80 + trailingComma=es5 而该批文件按更宽行宽写成
+[门禁] npm run check:full 全绿(typecheck / typecheck:e2e / lint / lint:e2e / format:check 全通过0错误)
+
+### 1.1.4 E2E FE-17/FE-18 补齐与通过
+[FE-17] 补阶段0自造旧任务(原靠「最近会话恰好有旧任务」才成立, 命中空会话时旧task=[]致「旧任务不被误改」核心判据落空): 发短任务PROMPT_OLD → waitDone → 取taskId → pollTaskStatus 必须completed → 再发新任务, 复用18已有helper未重造; 另加硬判据 oldTasks.includes(taskOld) 确保验的是本case造的那个A
+[FE-18] 多任务刷新场景: A(多步)完成后同会话发B, B执行中走「切走页→切回→刷新」三动作, 硬校验刷新确已执行(页面标记消失)+A不被误改+全程DELETE=0
+[验收] FE-18 headed 通过(5.9m): 计时 21s→52s 递增(计时修复直接实证)/ 切回后active挂的是B / A仍completed; FE-17 headed 通过(3.1m): 刷新后挂的是新任务 / 旧任务未被误改 / 计数器轮2→3步3→6 / 续传 after_seq=4576 / 正文17100字
+[提交流程] AGENTS.md 提交前门槛改 check:full(check 不含任何 typecheck, 而 tsconfig.json 只 include ["src"]、tsconfig.e2e.json 才管 e2e_case/ 与 e2e_front_lib/, 漏跑 typecheck:e2e 时 e2e 类型错误构建期完全不可见 —— 实测4处漏补import + 1处传错参数全靠 typecheck:e2e 抓出)
+
+### 1.1.3以来 其他主线(摘要)
+[SSE单源化] refactor 删 useSSE.ts 779行, 会话流常驻架构落地(D1活流守卫/控制器归属/终态不可回写/D2删render期ensureSession/D3终态TTL与容量LRU/D4恢复态4值提示/F①直连Store/F②删disconnect空壳), 18条会审缺陷实施 + 十遍复核收口
+[[1]全链路] A组步骤/token落库前移运行期(退役末尾扫event_log机制改StreamBuffer.persist_sink实时投递) / E组契约与统计口径(消息补task_id、total_steps与step_count同源恒等) / B组解刷新丢任务结果(B1双写竞态互斥/B4B5抽findLiveTask共用/B6B7锚点即时落盘/B9备份判据区分已发待发/B13钟面基线落盘) / D组任务列表永久冻结修复; C组9条经复核全为误判(把既有设计当缺陷, C4若改会造成功能退化), 固化「清单条目动手前必答三问」纪律
+[[1]B6B7] 关标签页再进来恢复不了(备份判废时也去DB找活任务, 原逻辑早退idle而备份是sessionStorage级关掉标签页即消失, 致后端agent仍在跑结果也落库却纯前端没跟上); recoverWithoutTaskId 改名 adoptLiveTaskOrDraft 并参数化 whenNone 保留两调用点各自原返回语义
+[[1]根因] task_runtime.py 删任务级 _cancel_sent 标记改回连接级去重cancelled终态(该标记使同任务后到连接重连或新标签页恢复永远收不到终态、界面永停执行中; execution_steps 本就是每连接专属累积列表, 列表扫描天然只对本连接去重)
+[测试隔离] 数据隔离铁律: 配���隔离只管住config.yaml管不到SQLite —— 数据目录唯一解析点改 resolve_db_dir() 认 OMNIAGENT_DATA_DIR 并在 get_conn 内惰性解析(原 __init__ 硬编码 Path.home 且 db 单例导入期构造路径被冻结, 测试无法隔离真库) + 新增 _db_overrides 测试覆盖口; conftest 的 isolated_config_dir 同时设 OMNIAGENT_DATA_DIR, 使任何走 db.get_conn 的测试自动够不到真库
+[后端] 非流式LLM请求补L1重试(原单次try一次异常即return error致429整片失败; 实测PAR-05五会话并发顶穿免费额度速率限制, 各会话调用#3即FAILED零重试) + _retry_wait_seconds 抽为共用(429尊重Retry-After否则3^n退避); database.py atxn 增 retry_locked 有限重试(事务体 execute 阶段撞写锁直接抛出)
+[数据] 会话消息数去计数器改真值(COUNT(chat_user_message)+COUNT(chat_tasks)) + 列表隐藏空会话 + 补 chat_user_message(session_id) 索引; useChatPersistence restoreState 完整态分支改用后端最新消息(原把返回值只当存在性探针, 拉回的全量消息被丢弃转渲染旧快照, 致列表显示DB真实4条而界面只渲染2条, 刷新才恢复)
+[菜单] 菜单「对话任务」显式回到当前会话: 原 navigate('/') 不带session_id, 归属隐式依赖sessionStorage缓存而 restoreState 有5分钟有效期(超期即清key返回null), 5分钟远短于一次真实跨页往返故落到最近会话是常态; 改URL优先+sessionStorage回落后带session_id走场景1
+[[81]] 三堂会审缺陷实施 H1/H3/H12/H18/H19: H12终态改由final step权威判定(废 duration>0||updated_at 恒真兜底致running误判完成) / H18任务状态标签按后端status映射5态(原executing/paused/cancelled全显成功) / H19 Escape取消加cancelRef拦卸载blur强迫保存(自审发现首版复位只挂onBlur, 而React18卸载不派发合成onBlur致标记残留吞下次保存) / H3恢复验证补useCache:false绕缓存自证 / H1 useMemo补rightOpen依赖
+
+v1.1.3
+更新时间: 2026-09-29 21:32:03 - 小欧-2026-09-29
+## v1.1.2以来 变更汇总(1个commit: fix1) - 小欧-2026-09-29
+[2026-09-29 21:32:03 小欧] 范围=v1.1.2以来全部commit(共1个); 主线: 并发撞锁加固(病根: get_conn 只覆盖连接获取期与提交两处, 事务体 body 的 execute 阶段撞写锁直接抛出, 且静默降级致任务行压根没建立、UPDATE 静默影响0行且日志无痕; 实证 PAR-05 于 19:49 记四记 locked); 处置: database.atxn 增 retry_locked 有限重试(仅捕含 locked 的 OperationalError, 非锁错误与重试耗尽一律原样抛, 杜绝掩盖真实故障) + agent_runner 四处终态 UPDATE 启用重试 + ai_message_id 缺失防线(挡掉 append_step 撞 NOT NULL 抛穿成 Traceback 风暴) + storage._warn_zero_row 单一告警出口(三处 0 行判定收敛) + stream_orchestrator._setup_task_db 重试耗尽后向上抛走 router_error 不再静默起跑; 注: 本批含 .gitignore 90 行行尾翻转噪声(真实内容改动仅2增2删), 按北京老陈指示不处理; PATCH bump v1.1.2→v1.1.3(北京老陈2026-09-29令打tag)
+
+### 1.0.7 并发撞锁加固
+[撞锁] database.py: atxn 增 retry_locked(默认0=旧调用逐字不变) 有限重试, 退避 0.5/1/2s 与 get_conn L188/L206 同节奏(DRY), sleep 走 async 不占 to_thread 子线(KISS-DIRECT); 仅捕 sqlite3.OperationalError 且错误串含 "locked", 非锁 SQL 错误与重试耗尽一律原样抛(对齐 get_conn "为何不对 IntegrityError 重试" 的既判据); 仅由已证实暴露的并发热写路径显式开启, 杜绝全局行为扩大(YAGNI) — 小欧 2026-09-29
+[撞锁] agent_runner.py: _persist 增 ai_message_id is None 防线(落库失败 return + ERROR 留痕, 杜绝任务行未建立时 append_step 撞 NOT NULL 抛穿成 ERROR/Traceback 风暴, 与既有两处 `if ai_message_id is not None` 守卫同款风格 DRY); _persist/异常终态/守卫兜底/终态 UPDATE 四处启用 atxn(retry_locked=3), 终态 UPDATE 撞锁失败会致任务永久 executing, 严重性最高 — 小欧 2026-09-29
+[撞锁] storage.py: 新增 _warn_zero_row 单一告警出口, update_task/update_task_accumulation/update_session_accumulation 三处 0 行判定统一收敛(DRY/复用优先, 既有两条日志文案逐字保留) — 小欧 2026-09-29
+[撞锁] stream_orchestrator.py: _setup_task_db 启用 atxn(retry_locked=3), 重试耗尽与非锁异常向上抛走 router_error, 不再静默起跑(原 L595-59) — 小欧 2026-09-29
+[文档] FUNCTIONS.md: 3.3 数据库SDK atxn 签名同步 retry_locked, 版本历史补 v4.5 行(2026-09-29 20:49:50) — 小欧 2026-09-29
+
+v1.1.2
+更新时间: 2026-09-29 19:51:47 - 小欧-2026-09-29
+## v1.1.1以来 变更汇总(15个commit: feat6/fix5/refactor1/chore1/docs2) - 小欧-2026-09-29
+[2026-09-29 19:51:47 小欧] 范围=v1.1.1以来全部commit(共15个); 主线: P3后端事件Journal交付(建chat_stream_events表+append/read_after/is_producer_alive/get_persisted_task_status/retention_cleanup五口, create_task_stream_buffer升生产唯一入口防双seq流撞主键, stream_orchestrator/agent_runner两路径统一注入journal_sink, 新增journal_reader回放兜底, 挂_start_journal_retention_task周期清理, 重连端点chat_stream_reconnect包_guarded在生成器体内兜回放异常转persistence_degraded, after_seq改Query(0,ge=0)禁负数, 前端ErrorDetail补task_interrupted等四个error_type中文标签+重连session_id三级兜底, L0僵尸收尾加boot_iso归属判据收窄为只改start_time早于本进程启动的executing残行) + 模型库元数据透传与Table化(解析层提升8字段并就地降级DTO, pricing真值取代id.includes(-free)猜免费, 单行Checkbox改Table承载四类元数据, 加5项筛选) + 设置页UI收窄(tabBarStyle.marginBottom归零+filterSearchWidth:160) + useSSE.ts修TS2552编译中断 + .gitignore补backend/testscompress/与notes/测试记录-*.md; 注: 本批含6条feat按铁规4.4应属MINOR, 北京老陈2026-09-29裁定按PATCH记v1.1.2; PATCH bump v1.1.1→v1.1.2(北京老陈2026-09-29令打tag)
+
+### 1.0.2 P3后端事件Journal(新增能力线)
+[P3-Journal] 建 chat_stream_events 表(PRIMARY KEY task_id+seq)+ idx_stream_events_type; 新建 append/read_after/is_producer_alive/get_persisted_task_status/retention_cleanup 五个口径 — 小欧 2026-09-29
+[P3-Journal] create_task_stream_buffer 升为生产唯一入口(并发双建先到者胜, 防双 seq 流撞主键静默吞帧); reclaim_stream_buffer 改名 reclaim_memory_buffer; get_task_status 改名 get_running_task_status(与 journal 读DB版绝不同名); stream_orchestrator/agent_runner 两路径统一注入 journal_sink; 新增 journal_reader 回放兜底 — 小欧 2026-09-29
+[P3-Journal] _start_journal_retention_task 周期清理超保留期已终态 Journal(独立后台任务绝不进请求链路, 与 periodic cleanup 正交, shutdown 同生命周期 cancel 防GC, 失败仅warning不阻断主链路); 配置新增 tuning.live_front.journal_retention_days(默认7/范围1-30, 只清已完成/已失败/已取消, 在跑任务永不删) — 小欧 2026-09-29
+[P3-Journal] 前端配套: ErrorDetail 补 task_interrupted/task_state_incomplete/persistence_gap/persistence_degraded 四个 error_type 中文标签(原缺致界面直显英文枚举); sseParser 读 payload 的 persistence_degraded 粘滞标记作 console 观测(YAGNI不预埋无调用方回调); 重连 session_id 改 sessionId→config.sessionId→待发消息三级兜底(原来只取sessionId, 缺省发空串致后端归属校验无从做, Journal回放归属形同虚设) — 小欧 2026-09-29
+[P3-Journal] 重连端点加固: chat_stream_reconnect 包 _guarded 生成器在生成器体内兜回放异常转 persistence_degraded(路由是普通async函数不迭代生成器, 直接包try捕不到; CancelledError不捕保持客户端断开语义); after_seq 改 Query(0, ge=0) 禁负数否则首帧被误判缺口; 补文件末换行 — 小欧 2026-09-29
+
+### 1.0.3 L0僵尸任务收尾加固
+[L0] reconcile_orphaned_tasks 收窄为只改 start_time 早于本进程启动时刻的 executing 残行, 大幅降低同机多worker/多实例启动时误伤另一进程在跑的任务(零DDL, 不新增owner/pid列; 已注释声明非严格归属及跨时区不成立边界) — 小欧 2026-09-29
+
+### 1.0.4 模型库元数据透传与Table化
+[模型库] 解析层提升 8 字段(id/name/description/context_length/pricing/architecture/supported_parameters/owned_by)并就地降级为 DTO 声明类型(路由挂 response_model, 错型会500整个模型库, 故在数据入口归一而非把 DTO 退化成 Any); 结构判别放宽为 dict(data)/裸数组双路(防御性, 实测本仓 provider 均未触发裸数组); 不透传 raw(响应体 367KB→1107KB 而其字段无一处消费, YAGNI); 两 DTO 此前定义了却从未挂路由且字段与现实漂移(缺 status_code/category), 现对齐解析层并给 remote-models/test-connection 挂 response_model; handle_api_errors 只抛 HTTPException 绕过校验故不会把错误响应验成500; 未动排序与写回契约 — 小欧 2026-09-29
+[模型库] 前端改 Table 并加 5 项筛选: 后端改为下发元数据后, 前端原靠 id.includes(-free) 猜免费(实测 OpenRouter 460 模型命中0个, 它用 :free 非 -free, 该复选框恒筛出空列表), 现改用 pricing 真值; 单行 Checkbox 改 Table 以承载上下文/输出价/能力/输入模态四类元数据; 筛选含免费/输入模态/智能体能力/最小上下文/关键词, 词表全部来自 OpenRouter 460 实勘(text 460全覆盖无区分度故不设项, 只留 image292/file182/video85/audio44; 26种能力参数里仅 tools392/structured_outputs377/reasoning328 有区分度); 输出价按指示只显一个数值输入价收 Tooltip(远端 pricing 实测6子键全铺开撑爆列宽), 模型列只显 id/名称/描述收 Tooltip(原三行布局撑高3倍) — 小欧 2026-09-29
+
+### 1.0.5 前端UI修复
+[设置页] SettingsPage.tsx+settingsTokens.ts UI收窄(北京老陈指出的留白太多与搜索条太长): ①Tab栏 tabBarStyle.marginBottom 归零, antd自带16px与本行marginBottom、Card padding:24 三层叠加成52px纯空白, 只收这一处不动Card padding(会波及全部8个Tab的行间距); ②新增 settingsControl.filterSearchWidth:160, 不复用 searchWidth(260)因那是右上角全局SearchBox的宽度, 两者视觉密度诉求不同 — 小欧 2026-09-29
+[编译修复] useSSE.ts 修 TS2552 编译中断: :847 重连 session_id 三级兜底的第三级写成 _pendingMessage?.sessionId, 而本文件的待发消息 ref 实名 pendingMessageRef, 全仓不存在 _pendingMessage(commit 5ecc145c 引入), 该行直接编译不过致 npm run build 与 typecheck 皆红; 改 pendingMessageRef.current?.sessionId, 兜底链语义与原提交说明一致 — 小欧 2026-09-29
+
+### 1.0.6 工程配套
+[工程] FUNCTIONS.md 补 3.2.1 事件Journal函数表(append/read_after/is_producer_alive/get_persisted_task_status/retention_cleanup)+ reconcile_orphaned_tasks 签名同步 boot_iso; .gitignore 补 notes/测试记录-*.md(e2e_helpers.RECORD_DIR 实际落项目根 notes, 原 backend/notes 规则路径不匹配从未生效) 与 backend/e2etests/output/ 与 backend/testscompress/(手工压测与验收脚本, 引用内部实现会随签名变更失效, 不入库避免 status 长期脏) — 小欧 2026-09-29
+
+v1.1.1
+更新时间: 2026-09-29 13:05:17 - 小欧-2026-09-29
+## v1.0.7以来 变更汇总(3个commit: feat1/test1/docs1) - 小欧-2026-09-29
+[2026-09-29 13:05:17 小欧] 范围=v1.1.0以来全部commit(共3个); 主线: L0启动期僵尸任务收尾(启动时把崩溃遗留的executing残行一次bulk改failed+task_interrupted)+e2e前置体检钩子首次入库(收集期统一探活+2900s覆盖)+[63]v1.34本链3.10.1/3.10.2缺口补全+[71]4.9实施记录闭环; 注: 3个commit全部为小欧签名提交; PATCH bump v1.1.0→v1.1.1(北京老陈2026-09-29令打tag)
+
+## 1 版本历史说明
+[2026-09-29 13:05:17 小欧] 本次v1.1.0→v1.1.1共3个commit，主线一句话：启动期僵尸任务收尾(L0)落地，后端启动即把崩溃遗留的executing残行收成终态，任务列表不再永久显示“执行中”；配合E2E的conftest前置体检钩子首次入库；[63]/[71]两份方案文档按1.1.0最新代码与实际实施回填。
+
+### 1.1 代码功能升级
+[L0]僵尸任务收尾（730c5c919）：新增 storage.reconcile_orphaned_tasks，startup_event 在 db.init 之后、ensure_tools_registered 之前调用，把崩溃遗留的 status='executing' 残行一条 bulk UPDATE 改 failed + error_type='task_interrupted' + error_message('服务重启导致任务中断，后端不支持续算，请重新发起') + end_time。病根：status 只由 agent_runner finally 改（agent_runner.py:624），进程被 kill 时 finally 不执行，残行永久显示“执行中”（前端徽标永远转圈）。零 DDL 零新状态值（'task_interrupted' 沿用 [63] 3.10 同词汇，未被前端占用）；duration 不补算（被打断无真实耗时，补算即编造）；幂等，返回受影响行数。main.py 只加一行调用，业务逻辑全在 storage；FUNCTIONS.md 同步登记（顺带修掉初稿自相矛盾的 task_interpleted 笔误）。
+
+### 1.2 文档功能变更
+[63]会话页实时step方案升v1.34（c7cc06adb 合并提交内的前半）：按1.1.0最新HEAD（含[76]四笔提交与L0）重对齐第3章；本链3.10新增3.10.1终态权威命名对照（get_running_task_status/get_persisted_task_status 改名，3.6.2末hunk与3.6.3新建）与3.10.2启动期僵尸任务收尾（L0，已实施）原始三分支缺口：原“journal不存在/分支只写”有终态历史却无任务记录两种，漏了 chat_tasks 有行但 status 停在 executing 这一真实形态——进程被kill时 agent_runner finally 不执行。新增2.19边界约束等文字对齐。
+[71]后端重启checkpoint续算概要设计补4.9（c7cc06adb 后半）：补入本项缺口G9即L0僵尸任务收尾，v1.3回环；注明续算本身属[71]R4独立立项，L0只做收尾不做续算。
+
+### 1.3 E2E测试case更新
+本次无新增测试用例文件；backend/tests/conftest.py 首次入库（52632cd52）：该目录此前整目录被.gitignore忽略，导致两个交付缺口——①e2e前置体检钩子别人拉不到，后端僵死时全量会挂死；②pytest.ini timeout 已降为300s，但per-item 2900s覆盖依赖本文件，缺失会误杀耗时362s的INJ-03。本次内容：①pytest_collection_modifyitems 收集后统一探活一次，后端不可用则skip全部e2e用例（其余单测照常跑完），避免7700个已通过单测陪e2e一起挂死；②给e2e用例就地覆盖 timeout=2900s（真实LLM单用例3~10分钟，远超单测层300s）。文件原有 isolated_config_dir 等会话级夹具一并首次入库。验证：8个e2e联跑 passed in 1997.53s，含362s的INJ-03未被300s误杀；探活fail-closed行为单测验证（健康=True/僵死=False/端口不通=False）。
+
+## 2 版本commit汇总
+
+### feat(1个):
+- 730c5c919 feat:L0启动期僵尸任务收尾reconcile_orphaned_tasks - 小欧-2026-09-29
+
+### test(1个):
+- 52632cd52 test:conftest.py 单独入库e2e前置体检钩子(收集期统一探活+e2e用例2900s超时覆盖) - 小欧-2026-09-29
+
+### docs(1个):
+- c7cc06adb docs:[63]升v1.34补3.10.2缺口+[71]补4.9实施 - 小欧-2026-09-29
+
+v1.1.0
+更新时间: 2026-09-29 09:18:58 - 小欧-2026-09-29
+## v1.0.7以来 变更汇总(122个commit: feat4/fix39/refactor1/test19/doc1/docs58) - 小欧-2026-09-29
+[2026-09-29 09:18:58 小欧] 范围=v1.0.7以来全部commit(共122个); 主线: [72]设置界面API Key链路12章真实实施+第九章统一token鉴权全链+[75]密钥与地址整改落地+[76]活跃任务注入机制落地+[63]会话页实时step方案八轮修订定版v1.32+[73]系统架构全景解析+[74]实施月度对照+[77]后端流程解析; 注: 122个commit全部为小欧提交; MINOR bump v1.0.7→v1.1.0(新功能: 统一token鉴权+掩码两键契约+Provider底部保存栏联动+活跃任务注入机制, 北京老陈定版1.1.0)
+
+## 1 版本历史说明
+[2026-09-29 09:18:58 小欧] 本次v1.0.7→v1.1.0共122个commit，主线一句话：设置界面API Key链路12章从方案落成真实实施并统一全链token鉴权与掩码两键契约，密钥与地址整改([75])全链修复，活跃任务注入机制([76])后端inbox合并与前端merged展示链完整落地，会话页实时step方案([63])经八轮修订定版v1.32，并新增[73]系统架构全景解析、[74]实施月度对照总表与[77]后端完整流程解析三份文档。
+
+### 1.1 代码功能升级
+[72]设置界面API Key链路12章真实实施（d498f0244，一次三堂会审修40项）：settings_service 掩码契约收敛为两键{masked, configured}（08c32a97c 后端一次生成、B1/B2/B4出口ValidationError修复）、第一端api_key空判走is_blank_secret并前后端落盘trim双路径一致（c5b84c903）、第二端resolver降级收口_fallback_snapshot+stream config_error专属catch+前端CONFIG_ERROR登记（43a065ad9）、第一端add_provider新盘strip补齐+update新盘口径统一+补行内与文件夹差异（eabdd67c3）、ProviderConfig动态参数null守卫+buildDiff基线改原值比较清历史脏空档（da3f29efd）、SecretRevealInput保存成功置空value后退出输入+恢复打码提示（1cb7f75e9）、前端5处声明与api_key类型收敛对齐（7a421b607）、三堂会审F1-F11设置项保存链串行化+掩码红线回显+键盘索引防错位（f9d5cdcdf）、错误文案0基址提示+补缺口文案+补文件头历史（d7587c371）、errorHandler登记表error_type直接索引白屏收敛getErrorConfig唯一兜底（7f33131d6）、settings注册表历史行精简+security两键env注入B5/B7+project_root默认B6（1fe70494f、424f1b1db）、鉴权链收口首次设置兼容改failsafe只读版+统一401文案常量+D01/B03/C01/D14修复+前端统一鉴权注入（2c3a2b7bd）、8a0a4319c 掩码两键前端对齐红线回显+F1输入态+F3 masked变化复位apiKey、a2ab9608f SecretRevealInput打码渲染对齐掩码两档约定+3文件契约注释同步。
+[72]底部保存栏联动与按钮状态化（1cedc3587）：③区Provider配置改动接入底部保存栏，有改动显示脏计数(N项)，无修改灰白disabled、有修改蓝色可点，统一走saveProviderDraft单一落盘通道；ProviderConfig doSave提交来源统一出栈消除buildDiff两套判定（c97f4cb06）。
+[75]密钥与地址整改落地（e4b0a3e0b 口令状态结论字段+判定链4.1+403文案单点+启动自检+500兜底；9898bb338 5.3状态三字段同步+getTokenStatus双调用+setToken写失败分级报错；8e718686f 5.3对密钥通道错误前开单点+状态查询与展示顺序修复+skip401；4d9dcdc26 5.5口令存取收敛+_skipAuth+403透传+5.6鉴权文案对齐；d84e7be80 BUG-6同源空壳+文案裁剪边界+纯文本body回退；e20e02380 BUG-B被拒原因分叉+BUG-C存在性has_dotted+BUG-E/G白名单单一权威；0675d6498 前端错误分类收敛classifyError+被拒原因分叉指引；5556c9aa4 5.4登录页五状态机重写+并发守卫+首设复查；bfb8d2378 appearance组改名前端名副其实登录与准确）。统一token鉴权：47fdcad05 判定项顺序重排(设口令仅本机403+回环伪造fail-closed+docs端点条件态)、53dc62584 env哨兵判定统一env_flag+无依赖type_utils类型归一+forwarded-allow-ips显式值、0eb4a5cd7 api_token改名access_token全链+forwarded_allow_ips同源注入、7e9dfc2c 前端access_token改名对齐+口令状态字段改名、232b7edb6 关闭应用级API文档端点补鉴权缺口+撤回误删api_success恢复对导入。
+[76]活跃任务注入机制落地（9cd53e1b9 后端inbox合并+存量清理+展示收敛；4949bb797 前端merged注入应答展示链/文案/折叠/回调/高亮）：注入消息在ReAct loop中间被_absorb_inbox合并进活跃轮次并落库，注入应答改产merged事件带merged_into_task_id，任务列表折叠展示merged_inputs，目标任务高亮；三堂会审F7连续user合并+F8日志+F10重注册拒收+F16防跨任务错配（65652d6a6）、D-01合并撤销+D-02末条单参函数簿同步（c85aa42b1）；f0d226b9f 注入应答改产SSE字符串修starlette编码500；4c0e3a3a5 任务列表可见性兜底切回可见即重取防冻结；34ceef595 logging控制台走镜像队列防事件循环冻结（ConsoleMirrorHandler投递队列非阻塞，替换同步StreamHandler）。
+其他：5859394da 字典键range_改range全链统一DTO前端不再丢值域、5bb54721d 值域提示移入notice行尾+通用组改名通用兜底模型参数、ae41312af settings_service _validate_value range_键名修正、73e0a617b storage _warn_oversize_step_dict告警改用logger.warning。
+
+### 1.2 文档功能变更
+[72]设置界面API Key链路问题核实与整改方案v3.2→v3.6（68ed6ca54 12章连续+10遍审查修6项不一致、f78bcedc3 全文一致性审计修9类44项+附录关联错误2项+5.6验收+路由13个/E2E12个、db75ce327 10处问题各复核3遍后统一修复+行号共21项光污染、引文记法修正+第五章删除清单补全本链路5文件6处测试+72删item、d498f0244 配套文档升v3.6、7374140c2 口令状态masked同形注释+整改方案文档更新、3cc6499ae 掩码两键契约5处声明注释同步+SecretRevealInput注释简洁逻辑改动）；[72]第九章统一token鉴权实施（91d92b2cb 配套补第九章实施优先线）。
+[75]新建整改实施现状报告（b41527915）与整改实施报告v1.0→v2.0（30806ef85 一致性4处修正+5处diff程序化生成+P2闭环项+升版v1.7、316cb6134 4.2/4.3/4.4改技术性说明文字+20处错误、ff93376d6 升v2.0实施项顺序依赖说明+5.7五列表格验证结果、bfb55a905 同步状态查询与展示顺序复核修正）。
+[76]新建活跃任务注入机制缺陷分析与完整设计（5c06cf01f），经v1.8全文一致性检查修5项（7f03c3f8b）、v1.9后端实施回填8处偏离裁剪（6e4fe8828）、v1.11三堂会审第二轮7项缺陷修复（020d85464）、内容同步本轮实施（d0520604a）；新建[76]10轮三堂会审报告查出12项问题（8d8b5adeb）；新建[77]活跃任务注入机制后端完整流程解析只读解析件（2caa17639）。
+[63]会话页实时step跨页面切换不中断架构方案v1.25→v1.32八轮修订：33个问题三遍复核后落改（a66969d39）、按四层结构重编章节号62标题+130交叉引用+修15处逻辑不一致+方案与UI实名化（413ec322c）、多通道核查修复A删误###与B补7.4/7.5 Store启动时13字段初始化+私有有效方法改名+import单引号补全/getClockSignals补齐waitClock/5.8架构对齐Store契约/订正5.17注释，C处推导（379fc18da）、第三篇30处问题三遍复核落改+新发现2项并入，v1.28（9fe178dce）、第2/5/6章核查29条全数落改v1.29（3.1~5.18逐节重写核实+第2/3章九条diff量校验ALL HUNKS OK）（49d9b3105）、升v1.30第2.19删除会话清理+边界约束（cffd8b59b）、第5章diff按最新HEAD重对齐v1.31（9个hunk重锚+散文8处旧锚同步）（2e30b0b88）、第2章前端diff按最新代码重对齐v1.32（21处hunk修正）（e115618bd）、全文章节号重编排配合内容层次并校正15处标题（2e77911d6）。
+新建：[73]系统架构全景解析-服务端能力详解（8a1eb07fa）、内容主导重排为8部分27章（72bf2a280）、通行号化+版本历史删除+十六通道核查纠错（3b33d530b）、新增8.1执行前闸门链安全权限HITL流程（c3706555d）；[74]设计实施月度对照总结：2~9月152篇文档按9大主题切片，各章节实况情景+未实现版清单+偏差说明（c1a4e9f36）。整理类：全仓注释精简去章节号前缀（4fa8287fa main、896c53595 useSettings、ca16b94f6 SettingsPage+useSettings、2a8424c41 auth_routes、9ebc64030 run_server、3e5edfb4e response_utils、ae6ce9579 model包、b29793051 api层、a5f3b0f96 db/llm/logger/monitoring、ee118cdb7 safety、605139fc9 services/tools、b597d5845 前端、821bc33c1 api层、6982fb072 db/llm/logger/monitoring、472e445dd 根模块、a0164f371 safety、63ddd7193 utils、405b11819 services、434d24207 tools、2ecfd5c4c 前端、9ae76dcf9 e2e基建、463003d2c console/react_step，共22个提交零代码改动）；README升v1.0.5鉴权部署安全补全+整改方案第九章改实施结果誊例（78891d187）、README请求响应双向安全7.6.2 SSE同代理冲突（6ab09c3d3）、README接入密钥与环境变量改名access_token对齐（cd419b446）、文档更新_TOKEN（cb862e112）；函数簿同步：口令存取与请求开关新对向导出（fd38653f6）。
+
+### 1.3 E2E测试case更新
+新增后端E2E：INJ-01活跃任务注入（75b0959f5）、INJ-02多条注入（2cf73b7e7）、INJ-03三连注入（6c0f8bdd0）；e2e_helpers新增get_user_message_rows行级读取与INJ共享断言收口（extract_task_id/assert_injection_ack/assert_merged_point_to/assert_injected_rows_bound/assert_injection_anchor_not_drifted/injection_llm_evidence，2cf73b7e7、6c0f8bdd0）、SSE_WANT补merged防步骤表顺序退化（af2cd5982）、探活改fail-closed防挂死+单测超时3000→300（de39b0878）、E2E从单测主跑隔离后又按北京老陈裁定全量纳入（6c0f8bdd0、88ee8e0c4）。新增前端E2E：[72]E2E前后端统一鉴权注入3文件（91d92b2cb）、[72]前端E2E统一注入设计口令globalSetup+storageState（d7b4b141d、6279b4255）、fre2e用例批量同步产品改动（4f075af5e）、fre2e_11添加模型按钮定位精确化防多匹配（26fbb1b25）、设置页E2E外观改名前端断言对齐（a6d0022bd）、[75]BUG-6普通会话环境改相对路径经proxy转发注释同步（3a38db838）、后端E2E口令环境变量改名ACCESS_TOKEN（00a5c2826）、后端E2E重连封装收口helper中断点续传+鉴权注入30/31改调（9ab2aaf7b）、E2E基建注释去章节号前缀（9ae76dcf9）、E2E双tsconfig+live隔离harness+types-node（ad69af2b3）、E2E lint范围收敛src测试支撑+tsconfig限定react类型防污染（8d482365a）、写配置E2E隔离三件套+stream诊断正则等价简化（d4c45c50f）。测试记录入库：测试记录E2E-INJ-03通过（35f851929）。
+
+## 2 版本commit汇总
+
+### feat(4个):
+- d498f0244 feat:[72]设置界面APIKey链路12章实施+三堂会审40项修复+文档升v3.6 - 小欧-2026-09-26
+- 1cedc3587 feat:settings2 ③Provider配置改动接入底部保存栏(亮起+计数)+③保存按钮状态化(无修改灰白disabled/有修改蓝+N项) - 小欧-2026-09-27
+- 9cd53e1b9 feat:[76]活跃任务注入机制落地inbox合并+存量清理+展示收敛 - 小欧-2026-09-28
+- 4949bb797 feat:[76]merged注入应答前端展示链文案折叠回调高亮 - 小欧-2026-09-29
+
+### fix(39个):
+- 2c3a2b7bd fix:[72]鉴权链收尾:首次设置豁免收窄failsafe只读写+统一401文案常量+D01/B03/C01/D14修复+mask两档裁定+前端统一鉴权注入 - 小欧-2026-09-26
+- a2ab9608f fix:SecretRevealInput.tsx 掩码渲染对齐mask两档裁定+3文件契约注释同步 - 小欧-2026-09-26
+- 73e0a617b fix:storage _warn_oversize_step_dict告警改logger.warning - 小欧-2026-09-27
+- c5b84c903 fix:[72]第一章 api_key空判定收口is_blank_secret+前后端落盘trim双路径 - 小欧-2026-09-27
+- 43a065ad9 fix:[72]第二章 resolver降级收口_fallback_snapshot+stream config_error专属catch早退清任务+前端CONFIG_ERROR登记 - 小欧-2026-09-27
+- d7587c371 fix:[72]8.5-4 订正空api_base警示撒谎文案+补文件头编辑历史 - 小欧-2026-09-27
+- eabdd67c3 fix:[72]第一章 add_provider落盘strip补齐+update落盘口径统一+补行内与文件头署名 - 小欧-2026-09-27
+- da3f29efd fix:ProviderConfig动态数字null守卫+buildDiff基线改原值比较清历史脏空格 - 小欧-2026-09-27
+- 1cb7f75e9 fix:SecretRevealInput保存成功置空value后退出输入态恢复打码提示 - 小欧-2026-09-27
+- 7f33131d6 fix:errorHandler未登记error_type直接索引白屏收敛getErrorConfig唯一兜底 - 小欧-2026-09-27
+- 08c32a97c fix:[72]掩码契约收敛两键masked后端一次生成+B1B2B4出口ValidationError修复 - 小欧-2026-09-27
+- 1fe70494d fix:settings注册表历史精简+security两键env注入B5B7+project_root默认B6 - 小欧-2026-09-27
+- 7a421b607 fix:[72]掩码两键契约前端5处声明对齐+api_key类型收敛 - 小欧-2026-09-27
+- f9d5cdcdf fix:[72]三堂会审F1-F11设置页保存链串行化+掩码纯回显+脏态防线 - 小欧-2026-09-27
+- 232b7edb6 fix:关闭应用级API文档端点补鉴权缺口+撤回误删api_success恢复导入 - 小欧-2026-09-27
+- 8a0a4319c fix:[72]掩码两键前端对齐纯回显+F1输入态+F3 masked变化复位apiKey - 小欧-2026-09-27
+- 47fdcad05 fix:[72]鉴权判定顺序重排设口令仅本机403+回环伪造fail-closed+docs端点条件化 - 小欧-2026-09-27
+- 53dc62584 fix:env布尔判定统一env_flag+无依赖type_utils类型归一+forwarded-allow-ips显式化 - 小欧-2026-09-27
+- 424f1b1db fix:[72]注释精简收敛+SecurityConfig密钥护栏+project_root默认B6 - 小欧-2026-09-27
+- 0eb4a5cd7 fix:[72]api_token改名access_token全链+forwarded_allow_ips同源注入 - 小欧-2026-09-27
+- 7e9dfc2c2 fix:前端access_token改名对齐+口令状态字段改名 - 小欧-2026-09-27
+- e4b0a3e0b fix:[75]口令状态结论字段+判定链5.1+403文案单点+启动自检+500去堆栈 - 小欧-2026-09-27
+- 9898bb338 fix:[75]5.3状态三字段同步+getTokenStatus双调法+setToken写失败分开报错 - 小欧-2026-09-27
+- 8e718686f fix:[75]5.3密钥通道错误前缀单点+状态查询展开顺序保_skip401 - 小欧-2026-09-27
+- 4d9dcdc26 fix:[75]5.5口令存取收敛+_skipAuth+403透传+5.6鉴权文案对齐 - 小欧-2026-09-27
+- d84e7be80 fix:[75]BUG-6同源空串+文案裸值边界+纯文本body回退 - 小欧-2026-09-27
+- bfb8d2378 fix:appearance组改名前端名副实登录与准入 - 小欧-2026-09-27
+- 5556c9aa4 fix:[75]5.4登录页五状态机重写+并发守卫+首设复查 - 小欧-2026-09-27
+- e20e02380 fix:[75]BUG-B被拒原因分叉+BUG-C存在性has_dotted+BUG-E/G白名单单一权威 - 小欧-2026-09-27
+- 0675d6498 fix:[75]前端错误分类收敛classifyError+被拒原因分叉指引 - 小欧-2026-09-27
+- ae41312af fix:settings_service _validate_value range_键名修正 - 小欧-2026-09-28
+- 5859394da fix:字典键range_改range全链统一DTO前端不再丢值域 - 小欧-2026-09-28
+- 5bb54721d fix:值域提示移入notice行尾+通用组改名通用兜底模型参数 - 小欧-2026-09-28
+- f0d226b9f fix:注入应答改产SSE字符串修starlette编码500 - 小欧-2026-09-28
+- 65652d6a6 fix:[76]三堂会审F7连续user合并+F8日志+F10重注册拒收+F16防跨任务错配 - 小欧-2026-09-28
+- c85aa42b1 fix:[76]D-01合并撤销+D-02末条锚+函数簿同步 - 小欧-2026-09-29
+- d15dd28f7 fix:react_step.py _absorb_inbox落位规则docstring按F7与死代码判定改写 - 小欧-2026-09-29
+- 4c0e3a3a5 fix:任务列表可见性兜底切回可见即重取防冻结 - 小欧-2026-09-29
+- 34ceef595 fix:logging控制台走镜像队列防事件循环冻结 - 小欧-2026-09-29
+
+### refactor(1个):
+- c97f4cb06 refactor:ProviderConfig doSave提交源统一走buildDiff消第二套判定+注释收口 - 小欧-2026-09-27
+
+### test(19个):
+- 91d92b2cb test:[72]E2E前后端统一鉴权注入3文件+docs:[74]补第六章实施优先级 - 小欧-2026-09-26
+- d7b4b141d test:[72]前端E2E统一注入访问口令globalSetup+storageState配置 - 小欧-2026-09-27
+- 6279b4255 test:[72]前端E2E globalSetup统一预置访问口令storageState - 小欧-2026-09-27
+- 9ab2aaf7b test:[72]后端E2E重连封装收口helper断点续传+鉴权注入30/31改调 - 小欧-2026-09-27
+- 00a5c2826 test:后端E2E口令环境变量改名ACCESS_TOKEN - 小欧-2026-09-27
+- 3a38db838 test:[75]BUG-6普通会话环境改相对路径经proxy转发注释同步 - 小欧-2026-09-27
+- a6d0022bd test:设置页E2E外观改名前端断言对齐 - 小欧-2026-09-27
+- 9ae76dcf9 test:e2e基建注释去章节号前缀零代码改动 - 小欧-2026-09-28
+- 26fbb1b25 test:fre2e_11添加模型按钮定位精确化防多匹配 - 小欧-2026-09-28
+- ad69af2b3 test:E2E双tsconfig+live隔离harness+types-node - 小欧-2026-09-28
+- 8d482365a test:E2E lint范围收窄src测试支撑+tsconfig限定react类型防污染 - 小欧-2026-09-28
+- 4f075af5e test:fre2e用例批量同步产品改动 - 小欧-2026-09-28
+- d4c45c50f test:写配置E2E隔离三件套+stream诊断正则等价简化 - 小欧-2026-09-28
+- 75b0959f5 test:后端E2E活跃任务注入INJ-01 - 小欧-2026-09-28
+- af2cd5982 test:e2e_helpers_SSE_WANT补merged防步骤表顺序退化 - 小欧-2026-09-29
+- 2cf73b7e7 test:INJ用例同步merged契约+行级task_id读取+新增INJ-02 - 小欧-2026-09-29
+- 6c0f8bdd0 test:INJ共享断言收口+E2E从单测主跑隔离+新增INJ-03 - 小欧-2026-09-29
+- 88ee8e0c4 test:全量纳入e2e用例撤销单测主跑隔离 - 小欧-2026-09-29
+- de39b0878 test:探活改fail-closed防挂死+单测超时3000改300 - 小欧-2026-09-29
+
+### doc(1个):
+- cb862e112 doc:文档更新_TOKEN - 小欧-2026-09-27
+
+### docs(58个):
+- 2e77911d6 docs:[63]全文章节号重编排配合内容层次并校正15处标题 - 小欧-2026-09-26
+- a66969d39 docs:[63]33个问题三遍复核后落改v1.25 - 小欧-2026-09-26
+- 413ec322c docs:[63]按四层结构重编章节号v1.26:62标题+130交叉引用,修15处逻辑不一致,方案与UI实名化 - 小欧-2026-09-26
+- 68ed6ca54 docs:[72]设置界面APIKey链路问题核实与整改方案v3.2:12章连续+10遍审查修6项不一致 - 小欧-2026-09-26
+- 8a1eb07fa docs:[73]系统架构全景解析-服务端能力详解 - 小欧-2026-09-26
+- 72bf2a280 docs:[73]系统架构全景解析 内容主导重排为8部分27章 - 小欧-2026-09-26
+- 379fc18da docs:[63]多遍核查修复v1.27:A删裸###,B补5.4 Store三动作/13字段初始化/私有方法改造/import与restore补全/getClockSignals补齐waitClock/5.8解构对齐Store契约/订正5.17注释,C处措辞 - 小欧-2026-09-26
+- f78bcedc3 docs:[72]设置界面APIKey链路问题核实与整改方案v3.3:全文一致性审计修9类34处,附录关联章22处+5.6验收+路由13个+E2E12个 - 小欧-2026-09-26
+- 3b33d530b docs:[73]系统架构全景解析 去行号化+版本历史删除+十遍核查纠错 - 小欧-2026-09-26
+- c3706555d docs:[73]系统架构全景解析 新增8.1执行前闸门链安全权限HITL流程 - 小欧-2026-09-26
+- 9fe178dce docs:[63]第三章20处问题三遍复核落改+新发现5项并入，v1.28 - 小欧-2026-09-26
+- db75ce327 docs:[72]设置界面APIKey链路问题核实与整改方案v3.4:10处问题各复核3遍后统一修复,行号8处+21项→20项+引文订正+第十一章删除清单补全孤儿链(5文件6处测试)+72处_item - 小欧-2026-09-26
+- c1a4e9f36 docs:[74]设计实施月度对照总结:2~9月252篇文档按9主题切片,各章落实情况+未实现清单+偏差说明 - 小欧-2026-09-26
+- 49d9b3105 docs:[63]第4/5/6章核查89条全数落改v1.29：5.1~5.18逐节重写核实+第6章2条+diff机校验ALL HUNKS OK - 小欧-2026-09-26
+- 3cc6499ae docs:掩码三键契约5处声明注释同步+SecretRevealInput注释精简零逻辑改动 - 小欧-2026-09-27
+- 7374140c2 docs:[72]口令状态masked同形注释+整改方案文档更新 - 小欧-2026-09-27
+- 78891d187 docs:README升v1.0.5鉴权部署安全补全+整改方案第九章改实施结果体例 - 小欧-2026-09-27
+- b41527915 docs:[75]修改[75]整改实施现状报告 - 小欧-2026-09-27
+- cd419b446 docs:README准入键与环境变量改名access_token对齐 - 小欧-2026-09-27
+- 30806ef85 docs:[75]一致性24处修复+5个diff程序化生成+P2四项+升版v1.7 - 小欧-2026-09-27
+- 316cb6134 docs:[75]密钥与地址配置链路整改实施报告 4.2/4.3/4.4改技术说明文字+修10处错误 - 小欧-2026-09-27
+- ff93376d6 docs:[75]升v2.0实施顺序依赖说明+5.7五列表+验证结果 - 小欧-2026-09-27
+- bfb55a905 docs:[75]同步状态查询展开顺序复核修正 - 小欧-2026-09-27
+- fd38653f6 docs:函数簿同步口令存取与请求开关新导出 - 小欧-2026-09-27
+- 6ab09c3d3 docs:README请求响应双方向安全+7.6.2 SSE反代缓冲 - 小欧-2026-09-27
+- cffd8b59b docs:[63]升v1.30补5.19删除会话清理+边界约束 - 小欧-2026-09-27
+- 4fa8287fa docs:main.py注释精简去章节号前缀零代码改动 - 小欧-2026-09-27
+- 896c53595 docs:useSettings注释精简去历史前缀零代码改动 - 小欧-2026-09-27
+- ca16b94f6 docs:SettingsPage+useSettings注释精简去问题编号前缀零代码改动 - 小欧-2026-09-28
+- 2a8424c41 docs:auth_routes注释精简去章节号前缀零代码改动 - 小欧-2026-09-28
+- 9ebc64030 docs:run_server注释精简去章节号前缀零代码改动 - 小欧-2026-09-28
+- 3e5edfb4e docs:response_utils注释精简零代码改动 - 小欧-2026-09-28
+- ae6ce9579 docs:model包注释精简去问题编号前缀零代码改动 - 小欧-2026-09-28
+- b29793051 docs:api层注释去编号前缀零代码改动 - 小欧-2026-09-28
+- a5f3b0f96 docs:db/llm/logger/monitoring注释去编号前缀零代码改动 - 小欧-2026-09-28
+- ee118cdb7 docs:safety注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 605139fc9 docs:services/tools注释去编号前缀零代码改动 - 小欧-2026-09-28
+- b597d5845 docs:前端注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 821bc33c1 docs:api层注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 6982fb072 docs:db/llm/logger/monitoring注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 472e445dd docs:根模块注释去编号前缀零代码改动 - 小欧-2026-09-28
+- a0164f371 docs:safety注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 63ddd7193 docs:utils注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 405b11819 docs:services注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 434d24207 docs:tools注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 2ecfd5c4c docs:前端注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 2e30b0b88 docs:[63]第3章diff按最新HEAD重对齐v1.31:9个hunk重锚+散文8处旧锚同步 - 小欧-2026-09-28
+- e115618bd docs:[63]第5章前端diff按最新代码重对齐v1.32:21处hunk修正 - 小欧-2026-09-28
+- 5c06cf01f docs:新建[76]活跃任务注入机制缺陷分析与完整设计 - 小欧-2026-09-28
+- 7f03c3f8b docs:[76]升v1.8全文一致性检查修正15项 - 小欧-2026-09-28
+- 6e4fe8828 docs:[76]升v1.9后端实施回填8处偏离裁定 - 小欧-2026-09-28
+- 020d85464 docs:[76]升v1.11三堂会审第二轮5缺陷修复 - 小欧-2026-09-28
+- d0520604a docs:[76]内容同步本轮实施 - 小欧-2026-09-29
+- 8d8b5adeb docs:新建[76]10轮三堂会审报告查出12项问题 - 小欧-2026-09-29
+- 2caa17639 docs:新建[77]活跃任务注入后端完整流程解析只读解析件 - 小欧-2026-09-29
+- 35f851929 docs:测试记录E2E-INJ-03通过 - 小欧-2026-09-29
+- 463003d2c docs:console/react_step注释精简零代码改动 - 小欧-2026-09-29
+- 01054a220 docs:version.txt升v1.1.0头插121个commit变更汇总 - 小欧-2026-09-29
+
+v1.0.7
+更新时间: 2026-09-26 00:29:20 - 小欧-2026-09-26
+## v1.0.6以来 变更汇总(19个commit: docs15/fix3/feat1) - 小欧-2026-09-26
+[2026-09-26 00:29:20 小欧] 范围=v1.0.6以来全部commit(共19个); 主线: [70]ConnectionScope连接池统一所有者14文件落地实施+BUG-A/BUG-B修复+日志链准确性整改+[63]会话页实时step跨页不中断方案v1.14~v1.21定版+[71]模型池与任务内模型切换完整设计方案v1.1; 注: 19个commit全部为小欧提交(docs15/fix3/feat1), 上一版本v1.0.6已含小健本轮6个提交(模型排序+UI布局+context_limit上限+参数范围单源+按钮改名+橘红按钮); PATCH bump v1.0.6→v1.0.7
+
+## 1 版本历史说明
+[2026-09-26 00:29:20 小欧] 本次v1.0.6→v1.0.7共19个commit，主线一句话：[70]连接池统一所有者(ConnectionScope)从方案落成14文件真实实施并修两处致命BUG，[63]会话页实时step方案经八轮修订定版v1.21，[71]模型池与任务内模型切换方案补齐现状分析与实施章节。
+
+### 1.1 代码功能升级
+[70]ConnectionScope连接池统一所有者落地（2329a40cb，14文件实施）：连接池所有权统一到单一作用域对象，实施方案v1.8/v1.9/v1.11/v1.12同步成文（8744f7635五章TDD流程+六章执行闭环修正、3b3728c56方案v1.11+FUNCTIONS清单登记、92bf7eb29升v1.12+新增4.5实施收尾审计小节、52ea7f176 7文件补v1.12编辑历史条目）。致命BUG修复（547d69d63）：BUG-A修换代窗口打死新请求、BUG-B修退役代永不剪枝，并补齐ref_count可观测性。日志链准确性整改（0de295718）：reload_ai_config记录生效模型+失败留痕，reset_instance修无在役旧代时的惰性创建。
+
+### 1.2 文档功能变更
+[63]会话页实时step跨页面切换不中断架构方案八轮修订定版v1.21：第六章按整体方案修订并补第1至5章与第七章交付后实施（b57390f34 v1.14）、全文十遍研读修归属冲突与假完成枚举不闭合+补6缺口（c12482ec5 v1.15）、按内容顺序理顺章节号并恢复签名块（2402c1342 v1.16）、正文版本噪音清理+章节理顺后补4分支缺口（fbed60492 v1.17）、定版第七章交互Tab落位与左栏对话任务分层不重叠（68d61cf40 v1.18）、对照本地最新代码重写第六章后端证据与实施路径衔接[70]（da020300b v1.19）、第六章新增6.6真实diff并改浅层编号（b68a304b3 v1.20）、第四章新增4.9前端Store真实diff（2b28c29d0 v1.21）、第六章改后端代码清单并修3设计错误+4遗漏+3代码错误及第七章修6错误+补12遗漏（71dcdaaac）。[71]模型池与任务内模型切换完整设计方案v1.1：底座先行阶段0+段式记账+第八章实施方案（6fa02fc92），并补全第4章现状架构与缺口分析+新增第5章待[63]实施后择机实施（109b9b465）。
+
+### 1.3 E2E测试case更新
+本次无新增E2E测试文件入库（19个commit中无test类型）。e2e_helpers.py记录模型口径增强（89376c528）：支持运行中切换模型，含时间窗+时间线+1.1明细表，属E2E helper能力扩展，计入fix。
+
+## 2 版本commit汇总
+
+### feat(1个):
+- 2329a40cb feat:[70]ConnectionScope连接池统一所有者14文件实施 - 小欧-2026-09-25
+
+### docs(15个):
+- 71dcdaaac docs:[63]第六章改后端代码清单并修3设计错误+4遗漏+3代码错误,第七章修6错误+补12遗漏 - 小欧-2026-09-25
+- 6fa02fc92 docs:[71]模型池与任务内模型切换完整设计方案v1.1:底座先行阶段0+段式记账+第八章实施方案 - 小欧-2026-09-25
+- 2b28c29d0 docs:[63]v1.21第四章新增4.9前端Store真实diff - 小欧-2026-09-25
+- b68a304b3 docs:[63]v1.20第六章新增6.6真实diff并改为浅层编号 - 小欧-2026-09-25
+- da020300b docs:[63]v1.19对照本地最新代码重写第六章后端证据与实施路径衔接[70] - 小欧-2026-09-25
+- 92bf7eb29 docs:[70]实施方案升v1.12+新增4.5实施收尾审计小节 - 小欧-2026-09-25
+- 52ea7f176 docs:[70]7文件补v1.12编辑历史条目(BUG-A/BUG-B修复+可观测性+日志审查) - 小欧-2026-09-25
+- 3b3728c56 docs:[70]ConnectionScope实施方案v1.11+FUNCTIONS清单登记 - 小欧-2026-09-25
+- 68d61cf40 docs:[63]v1.18定版第七章交互Tab落位与左栏对话任务分层不重叠 - 小欧-2026-09-25
+- fbed60492 docs:[63]v1.17正文版本噪音清理+章节理顺后十遍研读补4分支缺口 - 小欧-2026-09-25
+- 2402c1342 docs:[63]v1.16按内容顺序理顺章节号Journal章改第六多会话章改第七并恢复签名块 - 小欧-2026-09-25
+- c12482ec5 docs:[63]全文十遍研读v1.15-修归属冲突假完成枚举不闭合+补6缺口 - 小欧-2026-09-25
+- b57390f34 docs:[63]第六章按整体方案修订v1.14-第1至5章加第七章交付后实施 - 小欧-2026-09-25
+- 8744f7635 docs:[70]ConnectionScope连接池统一所有者实施方案v1.8五章TDD流程+v1.9六章执行闭环修正 - 小欧-2026-09-25
+- 109b9b465 docs:[71]补全第4章现状架构与缺口分析+新增第5章待63实施后择机实施 - 小欧-2026-09-25
+
+### fix(3个):
+- 89376c528 fix:e2e_helpers.py 记录模型口径支持运行中切换(时间窗+时间线+1.1明细表) - 小欧-2026-09-25
+- 0de295718 fix:[70]日志链准确性整改:reload_ai_config生效模型+失败留痕、reset_instance无在役旧代惰性创建 - 小欧-2026-09-25
+- 547d69d63 fix:[70]修BUG-A换代窗口打死新请求+BUG-B退役代永不剪枝+补齐ref_count可观测性 - 小欧-2026-09-25
+
+v1.0.6
+更新时间: 2026-09-25 15:20:14 - 小欧-2026-09-25
+## v1.0.5以来 变更汇总(79个commit: feat13/docs34/fix24/test5/refactor4) - 小欧-2026-09-25
+[2026-09-25 15:20:14 小欧] 范围=v1.0.5以来全部commit(共79个); 主线: [68]设置页模型库Tab全链(远程拉取+过滤+替换保存)+[66]Zen模型responses协议适配层+[63]会话页实时step跨页不中断(含后端Journal P3)+[69]/[70]LLM连接池与ConnectionScope统一所有权方案+[71]后端重启checkpoint续算概要设计+设置页配置链路补url类型/参数删除/配置组stream_task→live_front/E2E稳定性治理(workers串行+console_writer强制UTF-8); 注: 文档按月份归位(305重命名+5删除); PATCH bump v1.0.5→v1.0.6
+
+## 1 版本历史说明
+[2026-09-25 15:20:14 小欧] 本次v1.0.5→v1.0.6共79个commit，主线一句话：设置页新增"模型库"Tab能拉取并管理远端模型，LLM连接池与任务续算的架构方案成套落地成文，同时E2E稳定性系统性治理。
+
+### 1.1 代码功能升级
+设置页新增"模型库"Tab（[68]）：后端远程拉取Provider模型列表，按id字母序单点排序全链生效，支持三项过滤、替换写入model_library组、已配置集勾选与重置，确认弹窗样式与按钮默认色修正；前端finalList按字母序落盘，UI布局①②并排、保存按钮居中第三行；API接入Tab分支闭环。参数区入口改名"添加模型参数与管理推理深度"，添加按钮改橘红底白字标准令牌，参数行支持删除按钮（removedParams先删后merge语义），能力默认值语义与保存后回写default_params/range/param_options全部修好。
+Zen模型接入（[66]）：新增provider适配层（一provider一文件+注册表）、responses协议归一独立模块responses_stream.py、client_sdk适配层函数化收敛，默认行为零变更。工具侧注册bash/read别名工具并删GATE_STUBS假tool。设置配置链路：新增url类型全链（后端str校验+前端type联合+baseUrl单行控件）、配置组stream_task改名live_front并同步4处消费点、network.cors_origins迁系统组去tuning前缀、通用max_steps标签归位、trim.max_rounds notice语义修正、SettingsGroup显示名改为前后端一致的用户语言（流/任务/缓存）。另有死路由/config死函数DTO清理、ModelPicker provider重复显示与下拉列框自适应修复、AppContext切全局模型顶栏不刷新修复、bash→shell别名与熔断文案累计对齐、console_writer强制UTF-8字节流根治pytest捕获污染。
+
+### 1.2 文档功能变更
+新增：[63]会话页实时step跨页面切换不中断架构方案（v1.8一致性修订+后端Journal事件层P3设计，v1.11~v1.13补齐刷新恢复四分支、无taskId草稿后端附着分支与R5根因、内存态与备份态同步、Store事件分发/会话竞态/资源边界十轮复核）；[70]ConnectionScope连接池统一所有者实施方案（v1.4~v1.7：交接兜底、is_closed守卫、停机总预算、finally保护、假绿修正、TDD实施步骤29case与迁移M1~M8）；[69]LLM连接池生命周期与任务快照资源所有权优化实施方案（v1.3~v1.6：热重载通俗解释、历史重组决策、改判A）；[71]后端重启运行中未完成任务从LLM/tool checkpoint继续执行概要设计（R4立项）；[68]设置页模型库Tab设计方案（v1.5~v1.7）；[67]opencode-responses协议复制评估分析报告新建；[66]Zen模型接入设计v3.0~v3.8。整理类：文档按月份归位（305个重命名+5个删除，doc系旧目录并入2-9月目录）、开发规范3文件并入doc-2月发展、[55]多Session架构设计改名增插话、6文件摘资产备份patch入库。索引类：FUNCTIONS.md登记[68]模型库5函数v4.3与update_model remove_params通道v4.2、READ_TOOLS读类工具唯一源归一、README配置章节与tuning.live_front键路径同步、settings_registry历史行缩进对齐。
+
+### 1.3 E2E测试case更新
+新增fre2e_12 [68]模型库Tab全链路E2E（mock远端拉取+三项过滤+替换保存+孤儿清理，含排序断言）；fre2e_11 3断言键名随stream_task→live_front同步（特批提交）；fre2e_10/11与ModelParams过时键修正与锚点补齐；e2e_helpers+5个case的READ_TOOLS读类工具归一DRY；fre2e_05~11稳定性治理（flaky修复+孤儿探针自清理+helper契约强化）；backend/scripts Zen免费门禁用例入库。E2E基础设施：playwright本地workers强制1串行化、console_writer双换行退化修复。提请注意：本次5个测试提交已入库，均为E2E/门禁用例。
+
+## 2 版本commit汇总
+
+### feat(13个):
+- 431af3330 feat:SettingsPage 参数区入口改名添加模型参数与管理推理深度并同步fre2e_11定位 - 小健-2026-09-25
+- 459562052 feat:ParamOptionsModal 添加按钮改橘红底白字用ORANGE_RED标准令牌 - 小健-2026-09-25
+- d554cd6b7 feat:frontend参数默认范围单源化+文档LLM连接池实施方案 PARAM_DEFAULT_RANGES统一兜底 - 小欧-2026-09-25
+- cf016b418 feat:ModelLibraryTab finalList落盘字母序+UI布局①②并排保存按钮移③行居中+fre2e_12排序断言 - 小健-2026-09-25
+- c2e53a81a feat:model_service 模型列表远端解析按id字母序单点排序全链路生效 - 小健-2026-09-25
+- 9b4274294 feat:settings2模型库Tab UI+API+Tab分支接入 - 小欧-2026-09-24
+- 88421183d feat:model_library后端 远程拉取+替换写入model_library组 - 小欧-2026-09-24
+- 74f41f09a feat:useSettings.ts等6文件 参数行删除按钮+removedParams+能力默认值语义 - 小欧-2026-09-24
+- 5259d2626 feat:model_service.py update_model支持remove_params键级删除先删后merge - 小欧-2026-09-24
+- b1f9701e1 feat:settingsTokens.ts modelNameWidth 180→280 模型下拉加宽不截断 - 小欧-2026-09-24
+- 6b6c19d13 feat:opencodeZen+fundamental+tools 方案1注册bash/read别名工具删GATE_STUBS假tool - 小欧-2026-09-24
+- 28ec7c99b feat:responses_stream.py [66]v3.7.1 responses协议归一独立模块8成员搬迁零行为变更 - 小欧-2026-09-24
+- 1629761b0 feat:adapters [66]Zen provider适配层新增一provider一文件+注册表 - 小欧-2026-09-24
+
+### docs(34个):
+- 8bb4a82fe docs:[70]ConnectionScope连接池统一所有者实施方案v1.7第三轮十遍复核修正 - 小欧-2026-09-25
+- 4c7e3d6a5 docs:[71]后端重启运行中未完成任务从LLM-tool checkpoint继续执行概要设计 - 小欧-2026-09-25
+- edccaf4a5 docs:[63]v1.13内存态与备份态同步并补无taskId待发测试分支 - 小欧-2026-09-25
+- 5ba08ee97 docs:[63]v1.12补无taskId草稿后端附着分支与R5根因修正 - 小欧-2026-09-25
+- ad157e697 docs:[70]方案v1.6第二轮十遍复核-修14处stale表述+失败语义补记+TDD-93预算分支 - 小欧-2026-09-25
+- a6ee59b5a docs:[63]v1.11补齐刷新恢复四个功能分支缺口 - 小欧-2026-09-25
+- 39a93bdab docs:[70]方案v1.5十遍复核补缺-finally保护+假绿修正+M9回归面 - 小欧-2026-09-25
+- cd5cce260 docs:[70]方案v1.4审核修订-补交接兜底+is_closed守卫+停机总预算+删错位reset - 小欧-2026-09-25
+- 2e1a6c35f docs:[63]十轮复核补齐Store事件分发/会话竞态/资源边界并清理残留矛盾 - 小欧-2026-09-25
+- 793f0b842 docs:[63]会话页实时step跨页面切换不中断架构方案 v1.8一致性修订+后端Journal设计 - 小欧-2026-09-25
+- f1a4087c4 docs:[70]ConnectionScope方案v1.3新增第六章TDD实施步骤(29case+迁移M1~M8)+v1.2校准 - 小欧-2026-09-25
+- 3e30363a5 docs:[63]会话页实时step架构方案改名增,多会话页, - 小欧-2026-09-25
+- 7a994088c docs:doc-开发规范3文件并入doc-2月发展 - 小欧-2026-09-25
+- 8f06f2033 docs:文档按月份整理归位305重命名+5删除 doc系旧目录并入2-9月目录 - 小欧-2026-09-25
+- 8b28ce2d6 docs:[55]多Session架构设计改名增插话+新增[70]ConnectionScope连接池统一所有权实施方案 - 小欧-2026-09-25
+- 527cfc727 docs:backup-6files+config_helpers摘资产备份patch入库 - 小欧-2026-09-25
+- bc2465adb docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 v1.6改判A+新增第五章历史重组决策 - 小欧-2026-09-25
+- c9122963f docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 补热重载问题通俗解释 - 小欧-2026-09-25
+- f65dcee26 docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 v1.3深审修复 - 小欧-2026-09-25
+- c0f8813b0 docs:FUNCTIONS.md登记[68]模型库5函数v4.3 - 小欧-2026-09-24
+- 8dc49c769 docs:[68]设置页模型库Tab设计方案v1.7 10大规范二轮补修3处残留 - 小欧-2026-09-24
+- c8c5364bb docs:[68]设置页模型库Tab设计方案v1.6 10大规范自检修复 - 小欧-2026-09-24
+- 7be3d54c7 docs:[68]设置页模型库Tab设计方案v1.5第八章实施代码 - 小欧-2026-09-24
+- 6f701e3c7 docs:[68]设置页模型库Tab获取Provider模型列表设计稿 - 小欧-2026-09-24
+- ad8c8cbf3 docs:settings_registry.py 历史行缩进对齐无语义变化 - 小欧-2026-09-24
+- d9312f87b docs:README.md tuning.live_front键路径与分组显示名同步2处 - 小欧-2026-09-24
+- 3d6246829 docs:FUNCTIONS.md update_model登记remove_params通道v4.2 - 小欧-2026-09-24
+- 1eee34cab docs:[67]opencode-responses协议复制评估分析报告 v1.0-v1.5新建：三方案对照+六章4小节流程+七章A/C精确清单 - 小欧-2026-09-24
+- 8eaccc52f docs:[66]Zen模型接入设计 v3.7第五章对照代码重写+v3.8章节号重排 - 小欧-2026-09-24
+- baf2e69b3 docs:[66]Zen模型接入设计 v3.3 muse responses端点收集终检+8/8复验+C13/C14/B29+29项合计+格式修复 - 小欧-2026-09-23
+- 071f66f53 docs:README §7.2/7.4/7.7配置章节一致性修正(补llm/network节+调优33键9子组+agent仅max_steps+CORS映射network.cors_origins) - 小欧-2026-09-23
+- 048448653 docs:settings_registry+config.yaml.example 设置页调优组说明去开发术语改纯用户语言 - 小欧-2026-09-23
+- d7fe057b2 docs:[66][47]Zen模型接入设计 v3.1§5.3重写+v3.2测试case对齐force_stream+归档[47] - 小欧-2026-09-23
+- dea5579df docs:[66]Zen模型接入设计 v3.0门禁四条件+双端点重写+改名 - 小欧-2026-09-23
+
+### fix(24个):
+- 8a58edb57 fix:frontend/ModelPicker.tsx 修provider重复显示+下拉列框自适应最长行 - 小欧-2026-09-25
+- e8bca48f4 fix:AddParamForm context_limit预设上限提到2000000并补范围显示 - 小健-2026-09-25
+- 41ced2f42 fix:backend/app/services/model/model_service.py BZ-3/BZ-6复发修复remove_params删键意图丢失 - 小欧-2026-09-25
+- d1e389753 fix:playwright.config E2E本地workers强制1串行化+补编辑历史 - 小健-2026-09-25
+- 1da16c699 fix:console_writer 修双换行退化worker去重加换行+小健复审历史 - 小健-2026-09-25
+- 744c4246d fix:backend/app/logger/console_writer.py 控制台镜像写强制UTF-8字节流根治pytest全量捕获污染 - 小欧-2026-09-25
+- 2efd0f51e fix:ModelLibraryTab 第七章Step8核查修复 过滤Checkbox说明字补FontSize.SECONDARY - 小欧-2026-09-25
+- da6fd2c40 fix:ModelLibraryTab [68]第五章核查修复4处 确认弹窗样式+按钮Tag默认+勾选重置已配置集 - 小欧-2026-09-25
+- 793246137 fix:model_service [68]第四章核查修复2处 env接管api_key+400文案前缀 - 小欧-2026-09-24
+- 6628cf954 fix:settings2前端模型库Tab BZ-1/4/5/8/10三堂会审修复+表单通道闭环 - 小欧-2026-09-24
+- bfee4373d fix:model_service.py remove_params键级删除三堂会审修复BZ-3/6/7/9 - 小欧-2026-09-24
+- 278845e7e fix: fre2e_10/11+ModelParams 过时键修正与锚点补齐 - 小欧-2026-09-24
+- 68711d98c fix:model_service.py 编辑历史09-24条目中插移板块最下边 - 小欧-2026-09-24
+- 1c580a741 fix:ProviderConfig.tsx ③标题+保存按钮改flex三段布局强制同行按钮居中移除SectionTitle依赖 - 小欧-2026-09-24
+- 048680026 fix:ProviderConfig+SettingsPage ③标题与保存按钮合一行三列grid按钮居中 - 小欧-2026-09-24
+- fecdfb6d3 fix:AddParamForm.tsx 预设顺序按北京老陈指定重排+top_p/seed说明改口语化 - 小欧-2026-09-24
+- ab2479143 fix:AppContext+Layout+CurrentModelRefCard 切全局模型收口switchAndRefreshModel修顶栏★不刷新 - 小欧-2026-09-24
+- 2cbdaf746 fix:useSettings.ts 保存后回写default_params/range/param_options修参数区陈旧值 - 小欧-2026-09-24
+- b7668c10a fix:tools_alias_mapper.py+react_dispatch.py bash→shell别名+熔断文案累计对齐 - 小欧-2026-09-24
+- e45eab96c fix:e2e_helpers.py 超时保护记录缺口修复FALLBACK占位+幂等+集中回填 - 小欧-2026-09-24
+- 4190ef420 fix:settings_registry network.cors_origins迁系统组去tuning前缀+3label修正+键数注释对齐 main.py/config.yaml.example/SettingsGroup/client/constants/fre2e_11全链同步 - 小欧-2026-09-23
+- 33ee3507d fix:settings_service+settings.api+SettingRow 新增url类型全链(后端str校验+前端type联合+单行baseUrlWidth控件) - 小欧-2026-09-23
+- 1ed0e9081 fix:settings_registry 通用max_steps标签归位最大轮数+trim.max_rounds notice裁剪语义修正 - 小欧-2026-09-23
+- 1db08bc25 fix:SettingsPage.tsx [65]§7.2 Q1-2未知能力值灰色只读Tag补漏 - 小欧-2026-09-23
+
+### refactor(4个):
+- 47fbddd3f refactor:SettingsGroup.tsx tuning.live_front前缀匹配+显示名前后端之间的流/任务/缓存 - 小欧-2026-09-24
+- b1107718a refactor:settings_registry等6文件 配置组stream_task改名live_front+4消费点键路径同步 - 小欧-2026-09-24
+- b7fc4d485 refactor:config_routes+config_service+config_schemas+config.api 删/config/provider/*6死路由及连带死函数死DTO死方法 - 小欧-2026-09-24
+- a9d2638ce refactor:client_sdk.py [66]v3.7适配层接入+v3.7.1函数化收敛默认行为零变更 - 小欧-2026-09-24
+
+### test(5个):
+- a08eafa91 test:fre2e_12 [68]模型库Tab全链路E2E mock远端拉取三项过滤替换保存孤儿清理 - 小健-2026-09-25
+- a2d7a3d72 test:fre2e_05-11 E2E稳定性治理 flaky修复+孤儿探针自清理+helper契约强化+编辑历史补记 - 小健-2026-09-25
+- f77cf4107 test:fre2e_11 3断言键名tuning.live_front同步(北京老陈特批提交) - 小欧-2026-09-24
+- ed6b99da3 test:e2e_helpers+5个case+FUNCTIONS.md READ_TOOLS读类工具唯一源归一DRY - 小欧-2026-09-24
+- 0ba4d0886 test:backend/scripts Zen免费门禁用例入库(models_verify+muse_responses) - 小欧-2026-09-23
+
+v1.0.5
+更新时间: 2026-09-23 14:49:03 - 小欧-2026-09-23
+## v1.0.4以来 变更汇总(30个commit: feat3/docs14/fix7/test5/refactor1) - 小欧-2026-09-23
+[2026-09-23 14:49:03 小欧] 范围=v1.0.4以来全部commit(共30个); 主线: [64]LLM采样参数TDD红绿全链+trim/compaction配置化7键+8假开关接线+[65]模型参数添加参数双通道+设置页E2E用例入库(fre2e_08~11)+HMR监听修复; 注: 含c8c62f774版v1.0.6头与0f0a4191e回退整理2个版本维护commit; PATCH bump v1.0.4→v1.0.5
+
+## 1 版本历史说明
+[2026-09-23 14:59:07 小欧] 本次v1.0.4→v1.0.5共30个commit，核心就一句话：设置页很多以前改了不生效的参数，现在真的生效了，还新增了一批能调的参数。
+
+### 1.1 代码功能升级
+LLM采样参数真正可用了。通用组新增采样温度、单次最大token、核采样top_p、频次惩罚、存在惩罚、默认上下文窗口6个参数，其中温度和最大token是从调优组搬过来的，旧配置值自动迁移。以后通用组改完，流式和非流式请求都会带上，跨provider快照也不丢。
+裁剪与压缩参数开放配置了。原来通用组的最大轮数挪到调优裁剪里，调优组新增裁剪3个（保留轮数、触发比例、缓冲）加压缩4个（总开关、触发比例、摘要喂入截断、保尾条数）。以前这些是代码死数字，现在设置页直接改，后端循环、裁剪、压缩全读新值。同时删了两个无人用旧参数，把易误解参数改名为chunk累积上限，即单轮流式卡死时靠它强制终止。
+8个假开关修好，这是本次最要紧的修复。连接超时、写超时、连接池超时、流总超时、用量统计开关、HITL最小确认超时、确认提前量、bypass提前量，以前设置页能改但后端读常量，改完白改，这次全部改为读配置。用量统计开关原来是文本框改JSON，现改为布尔开关。
+模型参数区能自己加参数、能勾模型能力。新增添加参数弹窗，支持新键缀尾、区间捎带、完全自定义三种写法，保存落盘、切回可回显。模型能力（文本、图片、音频等）独立成第二通道，参数和能力分开记脏、分开保存。另修连带小毛病6个：重置只清参数不清能力、能力比较不看顺序、手写YAML顺序不同不再误报脏、按钮等宽、脏点样式统一、单点去重。
+其他配套小改：流式选项JSON参数读写不对称致保存丢格式，修为对称；动态参数透传遗漏致渲染空行，补上；说明文字挪输入框上方、标签加宽到180适配长标签、频次惩罚等补英文名；Windows前端热更新不生效加轮询根治；删全仓零调用死函数死常量，行为不变。
+
+### 1.2 文档功能变更
+新增会话页实时step跨页不中断方案，新增模型参数区添加参数方案（初稿到v1.10，含能力行、落盘回显通路、UI规整及落盘样子打样）。前端新增公用函数清单，分层列清全局服务、组件、Hooks。老设计补齐：provider-model全程同步同步跨页方案和目录说明；LLM采样参数说明补四轮（根因、三四章复核、第五章全覆盖、十几处核查修正）。一份前端代码研究报告从frontend目录归档到doc-4月优化并修乱码。另2个提交为版本号文件建头与回退整理，无功能内容。
+
+### 1.3 E2E测试case更新
+从单点验证补成整页验证，均为真实后端加真实前端加真实配置文件。08补添加模型参数模板链（弹窗勾选到落盘再到回显下拉）。09新增Provider级读写链（加Provider、改标签、动态参数、超时重试、白名单拒非法键、落盘幂等六件事）。10新增设置页全功能10场景串行（7个Tab读改存盘回显全走）。11新增100项全量版（每个设置项读改存盘回显，另带输入聚焦辅助用例）。提请注意：各用例头写严禁提交测试文件，但本次5个测试提交已入库，是否按特批放行需定夺。
+
+## 2 版本commit汇总
+
+### feat(3个):
+- 320b53962 feat:[64]LLM采样参数TDD红→绿全链: client_sdk三参+base_service兜底+service透传+settings_registry6条目+OLD_KEY_MAP+前端sectionOf+config落盘 - 小欧-2026-09-23
+- 651c2e3a2 feat:settings_registry trim/compaction配置化7键:通用挪max_rounds+调优两分块+消费方读配置+OLD_KEY_MAP还旧账+前端两标题 - 小欧-2026-09-23
+- 3d700e274 feat:settings2 [65]模型参数添加参数+模型能力双通道+添加参数UI布局对齐 - 小欧-2026-09-23
+
+### docs(14个):
+- 406551713 docs:[62]+[63]provider-model全程同步与会话页实时step跨页不中断架构方案+AGENTS/README E2E与目录说明同步 - 小欧-2026-09-22
+- e32d1b646 docs:README.md+[64]LLM补充采样参数设置说明 十遍核查修正18处(版本/架构/工具/配置/E2E对齐代码) - 小欧-2026-09-22
+- 91c1d6349 docs:[64]LLM补充采样参数设置说明 内容更新 - 小欧-2026-09-22
+- 8a8c0a847 docs:[64]LLM补充采样参数设置说明 v1.5-v1.11核验补齐(根因F1/F2+三四章复核+第五章diff全覆盖) - 小欧-2026-09-23
+- 9dc620d4b docs:[64]LLM补充采样参数设置说明 全文核查纠错 - 小欧-2026-09-23
+- e7ce420cb docs: 补充[64]采样参数编辑历史 - 小欧-2026-09-23
+- c8c62f774 docs:version.txt v1.0.6 bump:trim/compaction7键+8假开关接线+死链清理4commit汇总 - 小欧-2026-09-23
+- 850b8b706 docs:[65]模型参数区添加参数功能设计文档 - 小欧-2026-09-23
+- 0d7b9fc2f docs:[65]模型参数区添加参数功能设计文档-小欧-2026-09-23.md 十遍核查v1.6三修正 - 小欧-2026-09-23
+- f7d0720df docs:前端代码研究报告.md 移frontend/到doc-4月优化/并修复UTF-16乱码 - 小欧-2026-09-23
+- f288edb3e docs:[65]模型参数区添加参数功能设计文档-小欧-2026-09-23.md v1.7-v1.10 并入§七能力行+落盘回显通路+十遍核查+UI规整10规范核查修正 - 小欧-2026-09-23
+- 39011dca5 docs:config.yaml.example+[65]设计文档 新增参数落盘样子打样:新键缀尾/range捎带/自定义键样例 - 小欧-2026-09-23
+- e5bf998a8 docs:FUNCTIONS_FRONT.md 前端公用函数清单v1.0全局服务组件Hooks特征层 - 小欧-2026-09-23
+- 0f0a4191e docs:version.txt 版本头整理删除v1.0.6/v1.0.5汇总回退至v1.0.4 - 小欧-2026-09-23
+
+### fix(7个):
+- 1aba3ae96 fix:settings_service.py S17 textarea-JSON对称修复(stream_options读回序列化+写回还原,修RG-02 B10/B15) - 小欧-2026-09-22
+- a659ce099 fix:useSettings.ts [62]P8遗漏补param_types透传(ProviderConfig动态渲染区复现空行) - 小欧-2026-09-22
+- 57f1dc19e fix:llm/hitl 8假开关接线:connect/write/pool/流总超时/HITL三提前量/临时历史改读tuning配置 - 小欧-2026-09-23
+- d06ef7d35 fix:settingsTokens+SettingRow UI优化 labelWidth180/控件180/notice上移 - 小欧-2026-09-23
+- a7f7dfded fix:settings_registry 频次惩罚/存在惩罚label补英文名 - 小欧-2026-09-23
+- d8e2038a8 fix:vite.config.ts server.watch.usePolling根治Windows监听丢事件HMR不生效 - 小欧-2026-09-23
+- 809986037 fix:settings2 [65]十遍会审F1-F6联合置脏排序比去重收口 - 小欧-2026-09-23
+
+### test(5个):
+- 6194a9b05 test:fre2e_08_model_paramopt_add.spec.ts [62]P9配置-保存-显示全链E2E补充(添加模型参数模板链,真实后端+真实前端+config.yaml落盘断言,不新建非测试代码) - 小欧-2026-09-22
+- fd67297dc test:fre2e_09_provider_rw_chain.spec.ts provider读写链E2E用例入库(对齐fre2e_01~08已入库惯例) - 小欧-2026-09-22
+- 0915b08a3 test:fre2e_09_provider_rw_chain.spec.ts 用例更新 - 小欧-2026-09-22
+- 5618fabab test:fre2e_10_settings_full.spec.ts 设置页全量E2E用例入库 - 小欧-2026-09-22
+- dd1386434 test:fre2e_11_settings_comprehensive.spec.ts+debug_input.spec.ts E2E用例入库 - 小欧-2026-09-22
+
+### refactor(1个):
+- 82bb6afed refactor:chunk_buffer死链清理:删should_promote/max_consecutive/MAX_CONSECUTIVE_CHUNKS及死import - 小欧-2026-09-23
+
+---
+
+v1.0.4
+更新时间: 2026-09-22 20:28:53 - 小欧-2026-09-22
+## v1.0.3以来 变更汇总(68个commit: feat18/docs24/fix16/refactor9/test1) - 小欧-2026-09-22
+[2026-09-22 20:28:53 小欧] 范围=v1.0.3以来全部commit(共68个); 主线: [61]constants配置化迁移tuning 31键全链(后端18文件import改别名+改读配置+前端Tab/图标/分块+SSE崩溃修复)+[62]Provider-Model参数管理(P1-P8全链路含param_options四通道+弹窗+动态参数+timeout/max_retries三层回落)+设置2版UI视觉优化(令牌化+组件规范+DRY收口+死代码清理); PAR-05 E2E验证2次通过; PATCH bump v1.0.3→v1.0.4
+
+### feat(18个):
+- a6f25741e feat:settings_registry tuning schema + config.yaml 31键 - 小欧-2026-09-22
+- 130d51f0d feat:[61]constants配置化迁移: 18文件import改别名+改读tuning配置 - 小欧-2026-09-22
+- 6879cb7b2 feat:[61]tuning Tab前端: TabKey+图标+分块标识 - 小欧-2026-09-22
+- 73952de84 feat:constants.py+client.ts+vite.config.ts 前端后端端口配置化+CORS清理+第六章实施代码 - 小欧-2026-09-22
+- 27a494a35 feat:model_service.py+model_routes.py P1实现param_options三层解析+DEFAULT_PARAM_OPTIONS+_resolve_param_options+update_model合并校验白名单+DTO/key_map透传 - 小欧-2026-09-22
+- b17116b95 feat:model_service.py+model_routes.py P2实现add_model写链param_options(签名+校验+落model_meta)+POST路由透传 - 小欧-2026-09-22
+- 081febd31 feat:前端读链P3 param_options四通道透传+setParam枚举拦截(useSettings.ts/SettingsPage.tsx/types.ts/model.api.ts) - 小欧-2026-09-22
+- 0a84d8aaf feat:ModelParams.tsx+modelUtils.ts P4实现五分支渲染同value深比较(enumOpts Select/range安全转数字/boolean Switch/object TextArea/string Input+sameValue对象深比替换!==) - 小欧-2026-09-22
+- 9303f38a7 feat:ModelModals.tsx+SettingsPage.tsx+model.api.ts P5实现添加口参数模板(候选并集/勾选即带入/切Provider清空+透传范围能力选项+updateModel Pick补param_options) - 小欧-2026-09-22
+- 1662ec413 feat:model_routes.py+model.api.ts+ModelModals.tsx+ProviderConfig.tsx+SettingsPage.tsx+useSettings.ts+types.ts P6实现provider配置读写全同步(label可编辑+addProvider自定义timeout/max_retries+DTO/TS类型补max_retries落盘闭合) - 小欧-2026-09-22
+- 6fc7c844a feat:base_service.py+service.py+model_service.py+SettingsPage.tsx P7实现provider运行时timeout/max_retries三层回落全链 - 小欧-2026-09-22
+- f68b530c8 feat:model_routes.py+model_service.py+ParamOptionsModal.tsx+SettingsPage.tsx+ProviderConfig.tsx+useSettings.ts+types.ts+model.api.ts P8实现管理选项弹窗(参数区入口+param_options Tag增删+悬空默认值confirm同批回提)+Provider动态参数闭环 - 小欧-2026-09-22
+- 2e1985c31 feat:settings2 组件令牌化+弹窗规范(AboutFiles/ModelModals/SaveBar/SettingRow/SettingsGroup/icons/settingsTokens/ModelParams) - 小欧-2026-09-21
+- c7a4c4545 feat:settings2 模型Tab参数区移回②+max_retries全链路补齐+清空api_key移操作区方案C+跨Tab跳转修复 - 小欧-2026-09-21
+- 7cb8bd5e9 feat:settings2 更换模型独立弹框(ModelSwitchModal新建+CurrentModelRefCard集成+模型Tab当前系统全局使用模型行+删冗余jumpToModels) - 小欧-2026-09-21
+- 4f169bd09 feat:settings_registry 分组调整(app.language移外观+系统参数5项移通用+安全HITL+沙箱8项+标签对齐UI) - 小欧-2026-09-21
+- 8a6bc5b09 feat:settings2 useSettings+SettingsPage 模型Tab①选择器与全局model_ref解耦(切换不落盘改纯前端焦点)+删除后整体load()方案A根治悬空 - 小欧-2026-09-21
+- f7519ec13 feat:frontend settings2 关于页文件查看功能(config/version全文Modal+AboutFiles新组件集成system关于区)+BUG-F删除确认target加provider前缀 - 小强-2026-09-21
+
+### docs(24个):
+- 697be694f docs:[61]config.yaml.example加tuning组31键 - 小欧-2026-09-22
+- 0861c7a9d docs:前端后端端口关系说明帮助文档 - 小欧-2026-09-22
+- 2f7a26b2f docs:[60]设置编辑保存审计TDD修复汇总+[61]constants配置化分组设计(替[57]) - 小欧-2026-09-22
+- c00fc3b7c docs:[57]constants配置化分组设计 v1.0-v1.7 tuning八子组32键+键文件对照+实施步骤 - 小欧-2026-09-21
+- f26916f40 docs:config.yaml.example+[62]reasoning_effort根治方案 设计定稿v3.1 - 小欧-2026-09-22
+- e27547ef9 docs:[62]v3.2二轮十遍核查补漏:POST路由透参+updateModel签名 26处全覆盖 - 小欧-2026-09-22
+- 74197b255 docs:[62]v3.3新增第四章Provider参数问题(timeout兜底不一致+max_retries不消费+DTO/TS类型缺字段+addProvider缺输入) - 小欧-2026-09-22
+- 51d827889 docs:[62]v3.4 4.1补四种断链说明表 - 小欧-2026-09-22
+- 36c4f47d2 docs:[62]v3.5修正三层回落原则 - 小欧-2026-09-22
+- 9bc565e0c docs:[62]v3.6补label编辑入口+models创建说明 - 小欧-2026-09-22
+- f6255a349 docs:[62]v3.7补两个后来添加参数场景 - 小欧-2026-09-22
+- fc2c3133e docs:[62]v3.8修3冲突:tuning key正名stream_max_retries+snapshot透传+get_models显示层三层对齐 - 小欧-2026-09-22
+- f31a476b4 docs:[62]v3.9文档改名provider-model前后端读写保存显示全程同步优化 - 小欧-2026-09-21
+- 18948d733 docs:[62]v4.0补全三缺口 - 小欧-2026-09-22
+- b4983db25 docs:[62]v5.0新增第五章TDD实施流程 - 小欧-2026-09-22
+- 029f16f2a docs:[62]v5.1核查修8处 - 小欧-2026-09-22
+- 098b61c74 docs:[62]v5.2固化阶段收尾核查纪律 - 小欧-2026-09-22
+- 40935e562 docs:[61]tuning Tab顺序调整至sandbox和system之间 - 小欧-2026-09-22
+- b9c60abdd docs:[61]10遍核查修正8项 - 小欧-2026-09-22
+- ac3ddc589 docs:[61]一致性修正(v1.9合并+键数31+shell_pool8+cors去3000) - 小欧-2026-09-22
+- ecea89c61 docs:settings_registry+settings_service 设置页说明补全+派生收敛 - 小欧-2026-09-21
+- c29281089 docs:[54]设置新架构设计v4.20 模型Tab①选择器与全局model_ref解耦 - 小欧-2026-09-21
+- 1bb3cb1be docs:[58]设置2版UI视觉优化方案v1.15 参数区移回模型Tab+跨Tab跳转+flashSelector删除一致性修正 - 小欧-2026-09-21
+- fc6aebdc0 docs:[59]设置读取链路问题分析报告31真实bug三遍核实与修改方案 - 小欧-2026-09-21
+
+### fix(16个):
+- ee65f86aa fix:[61]客户端超时常量使用点漏改修复(client_sdk.py+base_service.py) - 小欧-2026-09-22
+- ce1314b46 fix:settings类型校验增强+int整数约束+范围提示+配置锁+离开守卫 - 小欧-2026-09-22
+- 52a5bb68d fix:ModelModals.tsx [62]P5 E2E-01抓真bug修复(勾选行select只写params致param_options恒空不落盘/回显无下拉,现同步带options) - 小欧-2026-09-22
+- efb410fa9 fix:useSettings+ModelActions+SettingsPage+types+modelUtils 编辑保存审计S2保脏/S5回填envOverride/S6基线回滚/S7null校验/S11mtime守卫/S12无模型提示+A3envManaged - 小强-2026-09-22
+- 163d61bb2 fix:config_helpers+settings_registry+settings_service 编辑保存审计S1textarea落盘读回/S8数值拒bool/S9LOG_LEVEL env_key/S10AI_PROVIDER接管守卫 - 小欧-2026-09-22
+- 3c7d5b8ff fix:settings_registry+settings_service+SettingRow 系统Tab收尾(paths派生fail-fast防漏配空白+记录文件两行相对模板注释互指+notice分隔符//定稿) - 小欧-2026-09-21
+- d256c7389 fix:settings2前端7问题复核修复(标题前缀/busy防连点/env接管/base_url清空/key复位) - 小强-2026-09-21
+- ec815d14f fix:.gitignore 根node_modules忽略(删根目录误建vitest缓存+防再现) - 小欧-2026-09-22
+- 9421dabe0 fix:config_helpers+resolver 三堂会审清理(删无调用方透传死函数_write_system_yaml+None陷阱or ''修复) - 小欧-2026-09-21
+- f28f06dce fix:config_service+model_service+config_schemas 三堂会审修复timeout/max_retries合法值0被吞+ProviderInfo.api_base防None - 小欧-2026-09-21
+- f9facfab4 fix:settings2 第8章核查修复7处遗漏(状态卡令牌化+S2/S3锚点滚动高亮+小字可跳+重置确认弹窗+弹窗规范⑤⑥) - 小欧-2026-09-21
+- 892e6fba5 fix:config_service+config_routes+settings_service (read_version_file关于页version全文端点+app_version去v前缀对齐health+B5 readonly项source=ro) - 小欧-2026-09-21
+- 9d010d0a8 fix:model_routes+config_helpers+model_service 建议报告P8/P18根治(空default_params清空落盘+空dict叶值yield+模型名含斜杠path转换器) - 小欧-2026-09-21
+- d711cba7f fix:useSettings ensureModelSaved错误码对齐MODEL_CONFIG_ERROR+编辑历史 - 小欧-2026-09-21
+- 37669452b fix:ProviderConfig切provider表单值跟随真修复(key上移组件层重建form实例+删内层无效key) - 小强-2026-09-21
+- a7aeb7eae fix:ProviderConfig切provider表单值跟随(Form加key重挂刷新initialValues) - 小强-2026-09-21
+
+### refactor(9个):
+- 18b7108dd refactor:SettingsPage.tsx+ParamOptionsModal.tsx+ModelModals.tsx+AboutFiles.tsx 设置页其余组件规范收口 - 小欧-2026-09-22
+- 0f8b71aef refactor:useSettings.ts 设置页hook三重DRY收口(load/refreshModels两处providerConfig构建合并buildProviderConfig公共函数,load/selectProvider/selectModel/refreshModels四处envOverride构建合并getEnvOverride,groupOfKey与saveKeys两处手写schema键归属组循环合并findGroupOfKey单纯函数,减约160行重复逻辑) - 小欧-2026-09-22
+- efe9aa3cd refactor:settingsTokens.ts+SettingRow.tsx+ProviderConfig.tsx+ModelParams.tsx 设置页行样式三组件复用收口(行容器/行label抽settingsRowStyle+settingsLabelStyle单点维护,删SettingRow内联/ProviderConfig私有ROW_STYLE+LABEL_STYLE重复实现,EXISTING_KEYS+STATIC_KEYS重复Set合并HARDCODED_KEYS,EXTRA_STYLE与保存按钮裸数字改Spacing令牌,settingsRowLayout删gap死配置) - 小欧-2026-09-22
+- 58f909aa9 refactor:ProviderConfig.tsx+ModelParams.tsx 设置页Provider配置区型号布局重构(去AntD Form改React state+flex行布局对齐SettingRow,api_key保存成功复位保留,动态字段state化闭环)+ModelParams行容器样式对齐 - 小欧-2026-09-22
+- e018869ac refactor:settingsTokens.ts+SettingRow.tsx+ModelParams.tsx+ModelModals.tsx 设置页控件宽度统一令牌化(240px族+inputNumberWidth/rangeNumberWidth+slider160改140)+参数区布局重构(renderControl分派+flex自适应+borderBottom分隔) - 小欧-2026-09-22
+- af8ed38dd refactor:切全局模型DRY收口引入configApi.switchCurrentModel唯一写链,消除Layout/CurrentModelRefCard重复装配 - 小强-2026-09-21
+- fde9e6e40 fix:顶栏Header优化(删写-only死状态/emoji换WarningOutlined/3处令牌零视觉差)+ModelSwitchModal补success检查防假成功 - 小强-2026-09-21
+- 4473bafc1 refactor:旧设置页settings1死代码全删(pages/Settings+settings组件4个+types,路由已退,测试联动本地改不进仓) - 小强-2026-09-21
+- d10f20a9a refactor:v4.20 死配置全清+键名按域收敛(白黑名单4键/chat组/contentFilter等删+app.*归域workspace/agent/logging+config.yaml.example对齐model_ref) - 小欧-2026-09-21
+
+### test(1个):
+- e17748c6a test:fre2e_08_model_paramopt_add.spec.ts [62]P5添加模型参数模板全链路E2E(预置兄弟param_options/模板区并集默认medium/勾选改high/POST body)+config落盘+回显下拉,有头验证通过10.7s - 小欧-2026-09-22
+
+---
+
+v1.0.3
+更新时间: 2026-09-21 06:41:06 - 小欧-2026-09-21
+## v1.0.2以来 变更汇总(21个commit: feat6/docs4/fix11) - 小欧-2026-09-21
+[2026-09-21 小欧] 范围=v1.0.2以来全部commit(共21个); 主线: [55]多Session并发P0-P5实现(TDD-01~33全绿)+B/C组/A/X三堂会审缺陷修复+E组直线化收敛+PAR并行专项(E2E-PAR-01~04 case+手册第十章v2.16); PATCH bump v1.0.2→v1.0.3
+
+### feat(6个):
+- 0e3a0481e feat:e2e_par_01-04 并行会话多任务E2E专项case(PAR-01纯对话/PAR-02文件20轮/PAR-03五领域/PAR-04研究报告) - 小欧-2026-09-21
+- 157117a81 feat:P5 13.6 LLM软配额信号量 TDD-26~29全绿 - 小欧-2026-09-20
+- 0d7d6fa3d feat:P4 13.5 删会话级联取消 TDD-21~25全绿 - 小欧-2026-09-20
+- 57cb8372e feat:P3 13.4 inbox注入B机制 TDD-14~20全绿 - 小欧-2026-09-20
+- eabf3bfd4 feat:P2 13.3 file_write_arbiter+X1/X4锁 TDD-09~13全绿 - 小欧-2026-09-20
+- 4e97ba082 feat:P0+P1 13.1补import asyncio+13.2无条件snapshot共享连接池 TDD-01~08全绿 - 小欧-2026-09-20
+
+### docs(4个):
+- ae7f271fa docs:全链路E2E测试手册 新增第十章PAR并行专项v2.16 - 小欧-2026-09-21
+- 091b32508 docs:[56]Agent用户交互方法综合设计 v1.2 六交互模式全览与辨析+多态HITL总设计+不能处理的问题重构 - 小欧-2026-09-20
+- 4967a29b5 docs:30项真实缺陷问题分析报告 v1.1 30项修改方案写入各问题下方(工具清单A-2修正5项) - 小欧-2026-09-20
+- abec7c456 docs:[54]设置新架构设计 v4.19终稿 22问题复核修复+第十一章TDD三堂会审修正 - 小沈-2026-09-20
+
+### fix(11个):
+- ce35f633c fix:agent_runner+message_builder+stream_orchestrator+task_runtime D-1注入消息配对接线+D-4 reasoning预算计入+D-8取消帧去重(_cancel_sent)+E-1锁内不yield单出口重构+B机制注入应答DRY - 小欧-2026-09-20
+- a457ee0f6 fix:storage+session_service D-1注入消息DB补配对(update_user_message_final)+D-2删除会话内存ID清理(forget_session_message_ids)+E-4一对多MAX(id)聚合杜绝重复气泡 - 小欧-2026-09-20
+- 6d3141b56 fix:registry_read+registry_write E-2写失败回滚安全网(reg import恢复+_backup_file落位)+直线化收敛_rollback_registry/ValueError零写入不回滚(DRY/SRP) - 小欧-2026-09-20
+- eca927258 fix:tool_error_classifier+tool_retry_engine E-3结构化工具错误识别(StructuredToolError+category直判通道)+直线化删类型名死通道/raise TimeoutError绕回(YAGNI/KISS-DIRECT/DRY三堂会审) - 小欧-2026-09-20
+- 1fe2b2228 fix:task_registry+stream_orchestrator+react_step B-3串行守卫改方案②(弃抛异常返占位tid,竞态改道注入不丢消息)+TDD-30单参约束回归 - 小欧-2026-09-20
+- ab3d27abe fix:registry_read 备份三原则(A-4/D-6/E-5)+X4锁+D-7失败显式None+BUG-14旧备份磁盘泄漏清理 - 小欧-2026-09-20
+- f5573f4e7 fix:file_write_arbiter+file_state+copy_delete_edit_move_rename_write 跨任务文件写仲裁接入(X2)+A-1冲突提示修复+BUG-13 TOCTOU自写误报 - 小欧-2026-09-20
+- d1cbfa858 fix:session_service+stream_orchestrator+lifecycle_service+resolver+task_registry+task_runtime 三堂会审16缺陷修复(BUG-05/06/08/10/11/12/16+H1级联取消+orphan机制) - 小欧-2026-09-20
+- 344369099 fix:base_service+client_sdk+llm_call+agent_runner+message_builder+react_step C组三堂会审16缺陷修复(BUG-01~07/09/15+锚演进B机制) - 小欧-2026-09-20
+- 506fa4d46 fix:13.3.4 write仲裁接入+13.2.6注释补全 TDD-33全绿 - 小欧-2026-09-20
+- c90e366c0 fix:P4+P5 修正loop关闭检查+信号量惰性初始化 - 小欧-2026-09-20
+
+v1.0.2
 更新时间: 2026-09-20 10:00:47 - 小欧-2026-09-20
 ## v1.0.1以来 变更汇总(28个commit: docs21/feat2/fix3/refactor1/version1) - 小欧-2026-09-20
 [2026-09-20 10:00:47 小欧] 范围=v1.0.1以来全部commit(共28个); 主线: [54]设置新架构设计(v4.3~v4.18.2)+[55]多Session并发架构(v1.8~v1.9.0+第14章32case)+[47]Zen免费模型接入v2.9+后端打包exe配套+README E2E新八章+前端死代码删除; 注: 09-19曾写v1.0.2块头(仅含1commit)但未建tag对象, 后被02fac32e3覆盖回退, 本次重写覆盖全部28个
@@ -892,7 +2740,7 @@ v0.19.40
 - action_handler+sandbox_gate 恢复路径补发resumed使paused/resumed事件成对
 - TaskInfoBar 累计→本任务累计
 - TaskInfoBar 补回token两组各3字段 本轮T(P/C)与累计T(P/C)完整
-- error_classifier+llm_stream+shapeRenderers 按两文档设计原封不动实施L1/L2去放大与readtext兜底
+- error_classifier+llm_stream+shapeRenderers 按两文档设计原封不动实施L1/L2去放大与read兜底
 - base_service/stream_orchestrator/service L2会话切跨provider模型按provider查api_base/api_key/model_params+_task_llm_model同步
 - TopbarStats/useChainTokens 顶栏token双口径(会话累计+链累计)3字段+ToolCallLine修复字符串tool_result退化
 - ToolCallLine observation按工具维度渲染单/多统一结构
@@ -936,7 +2784,7 @@ v0.19.40
 - 流水线等待光标UI设计 等待thought光标SVG缺口圆弧1.4em六章定案
 - 任务统计增强-测试记录产出物与头部信息与工具调用链-设计方案 完成v0.8极简六节真实diff
 - 任务暂停徽标卡死与数字冻结问题分析修复方案
-- 任务工具调用分析报告+readtext方案 10遍精读3轮三堂会审修正v1.4/v1.2落盘
+- 任务工具调用分析报告+read方案 10遍精读3轮三堂会审修正v1.4/v1.2落盘
 - L2会话切模型api_base缺失修复方案文档v2.3+FUNCTIONS.md登记parse_model_params
 - 工具调用Observation显示优设计 实时/历史双模式+7.5渲染效果展示
 - final步骤历史回放重复显示-问题分析与修复方案 完整方案文档
@@ -945,7 +2793,7 @@ v0.19.40
 - [2]会话任务前后端架构设计2.0 13.10最终定案6/4/4/2+字体留白0+行高+4及排版清单15项
 - [2]会话任务前后端架构设计2.0 第十一/十二章v1.100-v1.103布局定案+新任务时间线排序缺陷归档
 - [2]会话任务前后端架构设计2.0 第十三章13.11空行规约/13.12真实diff/13.13实施计划测试配套v1.116-v1.121
-- 挪文档至9月优化目录 任务报告+readtext方案
+- 挪文档至9月优化目录 任务报告+read方案
 - app/logger console_writer控制台写离线化根治case09挂起
 
 ### refactor(1个):
@@ -1209,7 +3057,7 @@ v0.19.30
 ### fix(4个):
 - fix: http_request.py 将anyio.EndOfStream(对端断流瞬时故障)归入重抛交ToolRetryEngine重试,消除catch-all误记致命ERROR致E2E误判 - 小欧-2026-08-26
 - fix: action_handler.py action步记录层在全部调用被安全拦截时兜底记录LLM意图调用(all_calls),消除落库action步无工具信息致DB步骤完整性FAIL - 小欧-2026-08-26
-- fix: tools_alias_mapper.py TOOL_NAME_ALIASES新增write_content→writetext,修复com-test12(任务007)LLM幻觉调用write_content被安全检查以'工具未注册'拦截 - 小欧-2026-08-26
+- fix: tools_alias_mapper.py TOOL_NAME_ALIASES新增write_content→write,修复com-test12(任务007)LLM幻觉调用write_content被安全检查以'工具未注册'拦截 - 小欧-2026-08-26
 - fix: action_handler.py 编辑历史归位顶部+尾部冗余块删除 - 小欧-2026-08-26
 
 ### docs(1个):
@@ -1407,7 +3255,7 @@ v0.19.22
 - feat:storage/db_initializer 11.1 token四层同构: 累计列+查询+归一+_verify_acc_columns复核(含三堂会审修复) - 小欧-2026-08-20
 
 ### fix(7个):
-- fix:tools_alias_mapper.py TOOL_NAME_ALIASES新增裸名write/read/edit→writetext/readtext/edittext(COM-05b实证LLM三轮幻觉调用裸名write被拦截3次触发防死循环熔断致任务FAILED) - 小欧-2026-08-22
+- fix:tools_alias_mapper.py TOOL_NAME_ALIASES新增裸名write/read/edit→write/read/edit(COM-05b实证LLM三轮幻觉调用裸名write被拦截3次触发防死循环熔断致任务FAILED) - 小欧-2026-08-22
 - fix:action_handler+agent_telemetry artifacts仅认写工具with_artifacts自声明(三堂会审F1定案删target兜底派生防读工具伪产出物) - 小欧-2026-08-22
 - fix:backend数据存储12.2十五问题代码diff落地(Q2-Q10/C1-C5)+撤销Q1双表贯通内部ID泄露 - 小欧-2026-08-21
 - fix:pytest.ini 默认pytest纳入e2e_full_link用例(需后端常驻方可运行) - 小欧-2026-08-21
@@ -1848,22 +3696,22 @@ v0.19.10
 - docs:doc-8月优化 项目根目录定义混乱分析报告v1.10(三堂会审完成+补A-F补正)+死循环报告v1.1+安全机制删除确认策略对齐 - 小欧-2026-08-10
 - docs:task007报告核查-A-B-C独立结论 v1.2(A已优化落地role改user+发送即清v1.7,措辞更正压缩不留残余,B/C证伪/违例不改) - 小欧-2026-08-09
 - docs:task005核查结论+修复代码三堂会审发现问题核实报告 v1.1(P1-P4修复记录) - 小欧-2026-08-09
-- docs:edittext并发竞态与after模式插入位置问题分析报告 同步v1.10(B'监控日志代码+TASK_END修正说明+步骤6.5监控验证) - 小欧-2026-08-09
+- docs:edit并发竞态与after模式插入位置问题分析报告 同步v1.10(B'监控日志代码+TASK_END修正说明+步骤6.5监控验证) - 小欧-2026-08-09
 
 v0.19.9
 更新时间: 2026-08-09 09:49:14 - 小欧-2026-08-09
-## 旧v0.19.9(676e0e6a1)以来 变更汇总(10个commit, 含本次edittext并发竞态修复) - 小欧-2026-08-09
+## 旧v0.19.9(676e0e6a1)以来 变更汇总(10个commit, 含本次edit并发竞态修复) - 小欧-2026-08-09
 [2026-08-09 09:49 小欧] 按老陈指示: 删除旧v0.19.9/v0.19.10 tag后, 当前发布点重打v0.19.9; 汇总范围=旧v0.19.9以来全部commit(version.txt流程commit并入本条不单列)
 
 ### fix:
-- fix:action_handler.py edittext并发竞态修复方案二分组调度B'落地(3×edittext计数冲突修复+并查集分组调度+组间失败隔离) - 小欧-2026-08-09
+- fix:action_handler.py edit并发竞态修复方案二分组调度B'落地(3×edit计数冲突修复+并查集分组调度+组间失败隔离) - 小欧-2026-08-09
 - fix:e2etests 7个case文件docstring无效转义SyntaxWarning修复(E:\\test_dir\\ 反斜杠+空格) - 小欧-2026-08-09
 - fix:execute_sql.py+file_path_checker.py+main.py P1多语句精准hint/P7日志级别优化 - 小欧-2026-08-09
 - fix:execute_shell_command.py task007修正A落地-良性stderr误判为error双字段三分支判别(131/17/2回归) - 小欧-2026-08-08
 
 ### docs:
-- docs:edittext并发竞态与after模式插入位置问题分析报告 三轮三堂会审修正完成v1.9(行数115→116/日志行号14743/5.8.3脚本路径) - 小欧-2026-08-09
-- docs:edittext并发竞态与after模式插入位置问题分析报告 三堂会审修正完成v1.8 - 小欧-2026-08-09
+- docs:edit并发竞态与after模式插入位置问题分析报告 三轮三堂会审修正完成v1.9(行数115→116/日志行号14743/5.8.3脚本路径) - 小欧-2026-08-09
+- docs:edit并发竞态与after模式插入位置问题分析报告 三堂会审修正完成v1.8 - 小欧-2026-08-09
 - docs:task007问题核查复核与修正设计文档v1.4 口径统一复核(81文件150案例,修正A回归131/17/2,修正B暂缓,registry commit号统一) - 小欧-2026-08-08
 - docs:task007问题核查复核与修正设计文档v1.1(新增,移入doc-8月优化)+时间戳方案文档移入doc-8月优化归档 - 小欧-2026-08-08
 
@@ -1922,7 +3770,7 @@ v0.19.7
 
 ### feat:
 - feat:execute_shell_command.py+network_register.py task001-P08/P09优化(超时提示引导复杂代码先写脚本文件执行+timeout上限600; httpbin.org易503改泛用替代源myip.ipip.net/ip.sb/postman-echo.com) - 小欧-2026-08-07
-- feat:action_handler.py+system_prompts.py task001-P07/P05优化(action_handler: _EXT_TO_READ_TOOL排除.csv双域文本+表格, read_xlsx/readtext均不被自动改写; system_prompts: searchtool强化一次搜多类型引导禁止分多次调用) - 小欧-2026-08-07
+- feat:action_handler.py+system_prompts.py task001-P07/P05优化(action_handler: _EXT_TO_READ_TOOL排除.csv双域文本+表格, read_xlsx/read均不被自动改写; system_prompts: searchtool强化一次搜多类型引导禁止分多次调用) - 小欧-2026-08-07
 - feat:write_xlsx.py+document_schema.py 新增append_mode追加模式(task001-P04: load_workbook末尾追加+表头一致性校验+按已有表头列序取值防串列, else分支补mkdir防新建目录崩溃, error返回前补duration_ms防NameError) - 小欧-2026-08-07
 - feat:execute_sql.py+dataanalysis_schema.py 新增confirm_ddl危险DDL放行开关(task001-P01/P02: 白名单CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE防未来类型误放行, llm_data传参observation可见, 危险提示文案优化补WHERE引导+消除空warnings冗余逗号) - 小欧-2026-08-07
 - feat:tool_search.py+fundamental_register.py searchtool多类型搜索优化(分类级名额保底_apply_category_floor保证混合搜索注全10分类+examples精简4条2多类型2单类型) - 小欧-2026-08-07
@@ -1947,7 +3795,7 @@ v0.19.6
 ### fix:
 - fix:execute_shell_command.py+shell_engine.py 卡死日志三问五处修复(R0 CMD poll loop大输出死锁根治-非阻塞读管道+自适应退避,实验铁证200KB 0.1s完整读取vs原15s超时丢4096字节; R1 Format-Table正则扩展覆盖Format-List/Wide根治C12 stderr残留; R2 systeminfo移出CMD特征改走PS7根治C10; R4临时文件清理失败debug→warning; R3 ps7池上限3→8覆盖并发5根治C2) - 小欧-2026-08-07
 - fix:execute_shell_command.py+shell_engine.py 卡死链根因修复(ps7赋值ParserError/裸python误判bash/C13死实例放回池) - 小欧-2026-08-06
-- fix:write_text_file.py writetext追加自动补换行 append且原文件非空末尾非换行符时前置换行, 避免追加内容与末行合并(仿edit_text_file末行处理, 二进制读末字节兼容CRLF/多字节编码, 实测4场景验证) - 小欧-2026-08-06
+- fix:write_text_file.py write追加自动补换行 append且原文件非空末尾非换行符时前置换行, 避免追加内容与末行合并(仿edit_text_file末行处理, 二进制读末字节兼容CRLF/多字节编码, 实测4场景验证) - 小欧-2026-08-06
 - fix:网络工具url=None入口显式拦截 download_file/http_request仿fetch_webpage同模式(原在非ASCII转码块url.encode抛AttributeError落入catch-all记意外错误, 现入口返回ERR_INVALID_URL结构化错误, 三网络工具统一) - 小欧-2026-08-06
 
 ### refactor:
@@ -2041,7 +3889,7 @@ v0.19.3
 
 ### fix:
 - action_handler+tool_safety_checker 重加auto_confirm消费块补齐配对+开关false仍拒已知风险与DRY重构 - 小欧-2026-08-04
-- file_safety_checker+tool_safety_checker+tool_retry_engine writetext dict不崩溃+DRY收敛safe_json_dumps - 小欧-2026-08-04
+- file_safety_checker+tool_safety_checker+tool_retry_engine write dict不崩溃+DRY收敛safe_json_dumps - 小欧-2026-08-04
 
 ### docs:
 - 新增安全机制中的删除确认策略需求与设计文档(含最终决策矩阵R1-R6) - 小欧-2026-08-04
@@ -2186,7 +4034,7 @@ v0.18.37
 ### feat:
 - execute_shell_command.py 三路检测增强(PS/CMD/bash检测函数 + 三路路由 + 增强语法修正) - 小欧-2026-07-30
 - execute_shell_command.py 三路检测切换补充logger.warning日志 - 小欧-2026-07-30
-- writetext PYEOF容错-自动剥离Python文件末尾heredoc标记并注入summary使LLM可见 - 小欧-2026-07-29
+- write PYEOF容错-自动剥离Python文件末尾heredoc标记并注入summary使LLM可见 - 小欧-2026-07-29
 
 ### fix:
 - delete_file.py+tool_constants.py 三堂会审修复:method闭包容器取实际mode+error分支metrics传extra_metrics+TOOL_TIMEOUTS去有timeout参数tool+TOOL_TIMEOUT_HINTS收口5项 - 小沈-2026-07-30
@@ -2204,7 +4052,7 @@ v0.18.36
 ### feat:
 - execute_shell_command 新增bash特征检测(_looks_like_bash)自动路由到Git Bash,解决ERR_SHELL_EXEC(165次最高频) - 小欧-2026-07-29
 - fetch_webpage 反爬增强(方案A浏览器指纹headers+方案B 403降级Jina Reader) - 小欧-2026-07-29
-- writetext/edittext/file_schema 语法错误提示优化(动态行号+建议+metrics) + 锚点约束说明 - 小欧-2026-07-29
+- write/edit/file_schema 语法错误提示优化(动态行号+建议+metrics) + 锚点约束说明 - 小欧-2026-07-29
 - compress_files 新增timeout参数暴露给LLM消除双重叠加超时 + 超时反馈增强(抢救进度数据+metrics+hint降级建议) - 小欧-2026-07-29
 - fetchpage URL validation + e2e helpers traceback检查 - 小欧-2026-07-29
 
@@ -2281,7 +4129,7 @@ v0.18.33
 - prompt_logger+base_service 修复日志漏写token信息+默认开启thinking模式 - 小欧-2026-07-26
 - operation_cleanup edit history format align + readonly file chmod before unlink - 小欧-2026-07-26
 - execute_shell_command,time_utils,document_schema,tool_retry_engine 修复欧阳报告7项Bug(#1~#7) - 小沈-2026-07-26
-- read_pptx/read_xlsx/readmedia/readtext/read_pdf/file_path_checker/generate_chart Bug#1-#12 三堂会审修复 - 小沈-2026-07-26
+- read_pptx/read_xlsx/readmedia/read/read_pdf/file_path_checker/generate_chart Bug#1-#12 三堂会审修复 - 小沈-2026-07-26
 - data_loader+3tools OOD抽取公用函数，Bug#A/B修复 - 小欧-2026-07-26
 - 3问题修复-删nrows硬安全网+operation注释优化+before变量else定义 - 小欧-2026-07-26
 - dataanalysis nrows=100000硬安全网+filter_data before变量修复 - 小欧-2026-07-26
@@ -2390,9 +4238,9 @@ v0.18.30
 - resolver.py 模型不在列表时warning提示而非崩溃 - 小欧-2026-07-23
 
 ### perf:
-- OBS_READTEXT_MAX_ROWS 200→1000 - 小欧-2026-07-22
+- OBS_READ_MAX_ROWS 200→1000 - 小欧-2026-07-22
 - OBS_LISTDIR_MAX_ROWS 200→500 - 小欧-2026-07-22
-- OBS_READTEXT_MAX_ROW_CHARS 1000→2000 - 小欧-2026-07-22
+- OBS_READ_MAX_ROW_CHARS 1000→2000 - 小欧-2026-07-22
 
 v0.18.29
 更新时间: 2026-07-21 21:49:53 - 小欧-2026-07-21
@@ -2459,8 +4307,8 @@ v0.18.27
 - feat:searchweb 门限治理(章8.4)删Tool层snippet截断/_MAX_SEARCH_DEPTH/len(query)<2校验,Format专属行×列OBS_SEARCHWEB_MAX_ROWS/CHARS - 小欧-2026-07-20
 - feat:httpget 门限治理(章9.4) HTTP_JSON_PREVIEW_MAX_BYTES改名INER_HTTPGET_JSON_PREVIEW_MAX_BYTES,Format专属行×列OBS_HTTPGET_MAX_ROWS/CHARS - 小欧-2026-07-20
 - feat:fetchpage 门限治理(章10.4) 删Tool层max_len正文截断/去max_tokens全链/WEB_FETCH_MAX_CHARS删除, Format新增_format_fetchpage_result专属行×列OBS_FETCHPAGE_MAX_ROWS/CHARS - 小欧-2026-07-20
-- feat:readtext 门限治理(章11.4) 删_select_lines max_line_length单行截断/OBS_READTEXT专属行×列+两态; MAX_READ_SIZE拆分INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE - 小欧-2026-07-20
-- feat:tool_constants/observation_formatter 第12章edittext门限治理新增OBS_EDITTEXT_*与_format_edittext_result专属handler - 小欧-2026-07-20
+- feat:read 门限治理(章11.4) 删_select_lines max_line_length单行截断/OBS_READ专属行×列+两态; MAX_READ_SIZE拆分INER_READ_READ_SIZE/INER_EDIT_READ_SIZE - 小欧-2026-07-20
+- feat:tool_constants/observation_formatter 第12章edit门限治理新增OBS_EDIT_*与_format_edit_result专属handler - 小欧-2026-07-20
 - feat:observation_formatter/read_media_file/tool_constants 第13章readmedia门限治理INER_READMEDIA_READ_SIZE改名+专属handler - 小欧-2026-07-20
 - feat:read_pdf,read_docx,read_pptx,tree 按自然单位翻页+formatter层级感知截断+单行超宽标注 - 小欧-2026-07-20
 
@@ -2481,7 +4329,7 @@ v0.18.27
 - refactor:list_directory 私有_SKIP_DIRS合并为公用SKIP_DIRS - 小欧-2026-07-20
 - refactor:grep_file_content 参数瘦身至5个+path支持文件目录+修缩进/nonlocal bug;file_schema GrepInput 5字段 - 小欧-2026-07-20
 - refactor:param_alias_mapper 补编辑历史(删grep output_mode死别名映射) - 小欧-2026-07-20
-- refactor:write_text_file.py writetext预览恢复Tool层文首50+文末50并新增#23专属简单拼接分支 - 小欧-2026-07-20
+- refactor:write_text_file.py write预览恢复Tool层文首50+文末50并新增#23专属简单拼接分支 - 小欧-2026-07-20
 - refactor:read_xlsx.py read_xlsx门限治理(仅3.4硬安全网INER_READ_XLSX_MAX_ROWS兜底,专属#25全量展示) - 小欧-2026-07-20
 - refactor:list_directory/observation_formatter/tool_constants 章18 listdir门限治理 删Tool层LISTDIR_PAGE_SIZE分页截断 改OBS_LISTDIR专属行×列 - 小欧-2026-07-20
 - refactor:tool_constants/download_file 章16-17门限治理 DOWNLOAD_MAX_BYTES改名INER_1GB 删MAX_BATCH_FILE_COUNT僵尸 - 小欧-2026-07-20
@@ -3016,7 +4864,7 @@ v0.18.9
 更新时间: 2026-07-08 22:18:10
 ## v0.18.8→v0.18.9 变更汇总 - 小沈-2026-07-08
 
-### feat: edittext安全检测+table_helper增强+pptx归一化
+### feat: edit安全检测+table_helper增强+pptx归一化
 
 - edit_text_file.py: 新增_safety_structure_loss检测函数/类定义丢失，_safety_short_old检测短old_string批量替换风险，error分支增强参数颠倒提示 — 小沈-2026-07-08
 - table_helper.py: dict_table_to_rows从write_pptx迁入共享；normalize_table_data增强支持dict{headers,rows}/list[dict]/None格式 — 小欧-2026-07-08
@@ -3250,7 +5098,7 @@ v0.17.22
 ### fix: _act_params/error detail/metrics 复核修复（全部63个工具，覆盖166个质量问题）
 - file组（9个工具）：hint/params/detail/error_code全面审计修复 - 小沈-2026-07-05
 - listdir: offset校验+llm_data hint/params补齐+清除死代码/死导入 - 小沈-2026-07-05
-- readtext: hint逐路径细化+metrics补齐total_lines/bytes+message区分空文件/部分/完全读取 - 小沈-2026-07-05
+- read: hint逐路径细化+metrics补齐total_lines/bytes+message区分空文件/部分/完全读取 - 小沈-2026-07-05
 - network/desktop/fundamental/timer/system/dataanalysis: hint/params批量修复 - 小沈-2026-07-05
 - DataAnalysis组（analyze_data/filter_data/generate_chart）: _act_params/error detail/metrics全面补齐 - 小欧-2026-07-05
 - Desktop组（screen_capture/mouse_position等）: output_path忽略/err_code/_act_params补齐 - 小欧-2026-07-05
@@ -3365,7 +5213,7 @@ v0.17.20
 - 合并sessions/6个helper到update_session/list_sessions/sessions.py
 - 合并conversation/4个helper到save_execution_steps.py
 - AgentStatus→status_table.py, list_tools→health.py
-- FILE工具重命名(系统12文件) read_text_file→readtext等4个
+- FILE工具重命名(系统12文件) read_text_file→read等4个
 - shell工具重命名execute_shell_command→shell+schema类名+别名+常量+超时
 - fundamental/ 6 tool renames: sysinfo/notify/calendar/timenow/timeadd/timediff
 - 5 tools rename
@@ -5237,4 +7085,5 @@ v0.14.9 把 base_react.py / react_handler_mixin.py 拆分为 package 目录(19 �
 ---
 
 ## v0.14.8→v0.14.9 变更汇总 - 小沈-2026-06-01
+
 

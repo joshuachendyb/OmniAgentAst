@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离保存/离开拦截/快捷键生命周期至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: executionStepsRef改从chatStreaming取(useSSE单一真源, 25/34/58行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.10.3(a): beforeunload 写入点补 linkEnabled(与 useChatPersistence.saveState 写同一 STORAGE_KEY, 漏此字段会把带值版本覆盖成不带, 刷新丢勾选) — 小欧-2026-10-03
 import { useCallback, useEffect } from 'react';
 import { useBeforeUnload } from '../../../hooks/useBeforeUnload';
 import { saveChatState } from '../../../utils/sessionStorage';
@@ -49,6 +50,15 @@ export function useChatLifecycle(opts: { chatFacade: UseChatFacadeReturn }): {
       scrollPosition: 0,
       isPaused: chatState.isPaused,
       isReceiving: chatStreaming.isReceiving,
+      // 2026-10-03 小欧 - 文档[4] 5.10.3(a): 本写入点与 useChatPersistence.saveState 写同一个
+      //   STORAGE_KEY, 漏此字段会在 beforeunload 时把带 linkEnabled 的版本覆盖成不带 -> 刷新丢勾选。
+      linkEnabled: chatState.linkEnabled,
+      allowInterject: chatState.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: beforeunload 写入点(漏=把带开关版本覆盖成不带)
+      // 2026-10-05 小欧 - 补 sessionModel/sessionVersion(同型第三次: 本写入点漏字段会让刷新后
+      //   模型选择器误显示"跟随全局"。linkEnabled 2026-10-03 已在此踩过一次, 字段清单本该同步,
+      //   现字段形状统一由 chatHistory.ChatCacheState 收口, 不再靠人工同步)
+      sessionModel: chatState.sessionModelOverride,
+      sessionVersion: chatState.sessionVersion,
     };
 
     // 2026-08-27 小欧 三堂会审: 会话状态保存下沉至 saveChatState
@@ -58,8 +68,13 @@ export function useChatLifecycle(opts: { chatFacade: UseChatFacadeReturn }): {
     chatState.sessionId,
     chatState.sessionTitle,
     chatState.isPaused,
+    chatState.linkEnabled,
+    chatState.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: useEffect 依赖(漏依赖=写过期值)
     chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: deps 同步改源
     chatState.messagesRef,
+    // 2026-10-05 小欧 - 新增两依赖: 缓存内容随之变化, 漏依赖会写进过期值(与上方字段同步补)
+    chatState.sessionModelOverride,
+    chatState.sessionVersion,
   ]);
 
   // 使用useBeforeUnload Hook统一管理

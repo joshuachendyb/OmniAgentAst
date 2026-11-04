@@ -1,4 +1,4 @@
-// 前端视图态判定纯函数：[36]前端3接收实时变量冗余收敛（方案A，北京老陈批准）
+// 前端视图态判定纯函数：接收实时变量冗余收敛（方案A，北京老陈批准）
 // 用途：RightViewer.isCurrentLive / PipelineRenderer.taskActive 判定逻辑提纯（SLAP），供渲染层消费与单测直测
 // 作者：小欧  日期：2026-09-14
 import type { TaskBadge } from '../features/chat/hooks/useTaskInfo';
@@ -7,7 +7,7 @@ import type { TaskBadge } from '../features/chat/hooks/useTaskInfo';
  * taskActive —— 任务活跃/等待圈显示判定（改动点④：删 streaming 条件）
  * highlightToolName 非空（HITL 确认高亮保活）或 badge 为 running/paused（实时/挂起保活）即真；
  * 唯一差异窗口 = startinfo 未到且无业务步骤（旧 streaming=true 窗口无 waiting 段/action-waiting 段，
- * 无 UI 载体），已由 C4 单测锁定（[36]§5.4-C）。
+ * 无 UI 载体），已由单测锁定。
  * 作者：小欧  日期：2026-09-14
  */
 export function computeTaskActive(
@@ -33,7 +33,7 @@ export interface ComputeIsCurrentLiveArgs {
 /**
  * isCurrentLive —— 右侧栏是否展示实时任务（改动点③：删 receiving 条件）
  * match(activeTaskId→serverTaskId) 且 !hasFinal 且（有业务步骤 或 badge running/paused）即 true；
- * 删 receiving 后公证语义：startinfo 未到+无业务步骤窗口不再误判 live（[36]§3.3 双覆盖推出，B4 锁定）。
+ * 删 receiving 后公证语义：startinfo 未到+无业务步骤窗口不再误判 live（双覆盖推出，单测锁定）。
  * 作者：小欧  日期：2026-09-14
  */
 export function computeIsCurrentLive({

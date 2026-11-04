@@ -1,0 +1,189 @@
+// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.1 StreamBackup / SessionSnapshot / StreamEvent 类型单一来源(5.4 内存态与 5.2 备份态同源) — 小欧-2026-09-29 21:37:55
+//   增补1: 2026-09-29 21:37:55 小欧 - StreamEvent 增 'merged' kind(sseParser.ts:153/:947 onMerged 真实回调，
+//   设计[76] 6.14 活跃任务注入应答)：[63] 5.1 原稿 8 项缺此项，5.3 接线将无载荷可投、注入提示条永不触发 — 小欧-2026-09-29 21:37:55
+//   增补2: 2026-09-29 21:37:55 小欧 - complete 载荷 meta 由 unknown 改 string|SSEMetadata，
+//   对齐 useChatCallbacks.ts:97-101 真实 onComplete 签名，消除分发侧断言 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-01 小欧 - 解 [1] B13：SessionSnapshot 增可选 lastBizTs/lastDataTime 并随备份落盘。
+//   二者原只在内存 session 上、备份不含，刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs
+//   （见 makeClockView），致刷新后等待期升档计时基线丢失（长时间无业务帧不再升档）。缺失时按 0 处理，
+//   与 ensureSession 初值一致，向后无害 — 小欧-2026-10-01
+// [63] 5.1：StreamBackup / SessionSnapshot / StreamEvent 唯一定义处（5.4 内存态与 5.2 备份态同源）
+// 编辑历史: 2026-10-03 小欧 - StreamBackup lastContextLinkMode 改名 linkEnabled: boolean
+//   (保留持久化, 非删除) — 小欧-2026-10-03
+// 2026-10-22 小欧 - SentRefLedgerEntry 类型自 chatStreamStore 迁入（备份类型单一真源），
+//   sentRefLedger 入 SessionSnapshot → 随 StreamBackup 落盘 + bump 响应式通知 — 小欧-2026-10-22
+import type { ExecutionStep } from '@/types/execution';
+// 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
+//   ① TaskMetaFrames 重复 import 两次（文档 v1.29 修订时追加未删旧行）；② SSEError 使用却未 import。
+//   组件层 AuthorizationRequest 类型刻意不入类型源（归一化留在 useAuthorization 消费侧，见 5.15）。
+import type { SSEError, SSEMetadata, TaskMetaFrames } from '@/types/sse';
+
+/** HITL 授权请求原始载荷：sseParser handlers.onAuthorizationRequired 的 detail 原样入 Store；
+ *  归一化（auto_confirm 四态/parseTimeout）与 camel 映射留在 useAuthorization 消费侧（复用既有 helper，5.15） */
+export interface PendingAuthorizationPayload {
+  confirm_id: string;
+  tool_name: string;
+  params?: Record<string, unknown>;
+  content?: string;
+  safety_level?: string;
+  /** 授权影响面(后端 SafetyLevel 分档给出): high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余 */
+  trust_impact?: 'high' | 'medium' | 'low';
+  trust_path?: string | null;
+  auto_confirm?: boolean | string | number;
+  confirm_timeout?: number | string;
+  backend_timeout?: number | string;
+}
+
+export type StreamStatus =
+  | 'idle'
+  | 'active'
+  | 'paused'
+  | 'retrying'
+  | 'recovering'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+/** 连接恢复态: 快照与顶栏聚合共用同一联合, 禁止再写内联字面量 — 2026-11-02 小欧 */
+export type ReconnectStatus = 'idle' | 'connecting' | 'reconnecting' | 'failed';
+
+export type ResumeResult =
+  | 'terminal'
+  | 'pending_draft'
+  | 'recovering'
+  | 'not_found'
+  | 'polling'
+  | 'aborted'
+  | 'failed'
+  | 'idle'
+  | 'task_interrupted'
+  | 'task_state_incomplete'
+  | 'gap'
+  | 'degraded';
+
+/**
+ * 引用台账条目
+ *
+ * ⚠ **只存路径不存正文**：正文当轮即弃，路径长期有效；
+ *   点台账 chip 时现场重读文件 —— 恢复的是"引用意图"，不是旧快照。
+ *
+ * 2026-10-22 小欧 - 类型自 chatStreamStore 迁入本文件（备份类型单一真源），
+ *   迁入后随 SessionSnapshot → StreamBackup 一并落盘，恢复侧展开式零改动。
+ */
+export interface SentRefLedgerEntry {
+  label: string;
+  path: string;
+  lineRange?: { start: number; end: number };
+  taskId: string;
+  ts: number;
+}
+
+export interface SessionSnapshot {
+  serverTaskId: string | null;
+  lastSeq: number; // event_log 已处理偏移，初始 -1
+  executionSteps: ExecutionStep[];
+  currentResponse: string;
+  metaFrames: TaskMetaFrames;
+  usageAccum: { prompt: number; completion: number; total: number };
+  isReceiving: boolean;
+  isConnected: boolean;
+  status: StreamStatus;
+  /** v1.29：raw 形态（见上方类型定义），归一化在消费侧 */
+  pendingAuthorization: PendingAuthorizationPayload | null;
+  reconnectStatus: ReconnectStatus;
+  /**
+   * 2026-09-29 22:47:10 小欧（[63] 5.4 防退化修复）：最近一次心跳时间戳。
+   * 5.4 原稿未把它列入快照，bump() 因 11 个快照键全等而早退不通知 → useSyncExternalStore
+   * 不重渲 → 等待期 ClockStopwatch 永不刷新（[46] 第五章 5.4.3 心跳微闪驱动源失效）。
+   * 心跳是"UI 需要跟着动"的状态，故入快照：心跳到达即 bump revision + 通知订阅者。
+   */
+  heartbeatTs: number;
+  /**
+   * 引用台账：本会话引用过的文件清单（只存路径）。
+   *
+   * 2026-10-22 小欧 - 入快照有两作用 ——
+   *   ① **响应式**：pushSentRefs 后 bump 能比较出变化 → 订阅者重渲染
+   *      （原先台账不在快照内，变化不触发通知，"↩ 本轮引用"行可能不出现）；
+   *   ② **可落盘**：StreamBackup extends SessionSnapshot，入快照即随备份落盘，
+   *      刷新/崩溃后由 restore() 的展开式自动回填。
+   */
+  sentRefLedger: SentRefLedgerEntry[];
+}
+
+// v1.29 修：原 payload 为 ExecutionStep|string|Record 宽联合——消费方（5.8 分发）按 kind 读 payload
+//   立即类型断裂，只能 as 断言（违类型安全）。改判别联合：kind → payload 联动窄化。
+interface StreamEventBase {
+  seq: number;
+  taskId: string | null;
+  sessionId: string;
+  revision: number;
+  occurredAt: number;
+}
+export type StreamEvent =
+  | (StreamEventBase & {
+      kind: 'step';
+      payload: { step: ExecutionStep; isReasoning?: boolean };
+    })
+  | (StreamEventBase & {
+      kind: 'chunk';
+      payload: { chunk: string; isReasoning?: boolean };
+    })
+  | (StreamEventBase & {
+      kind: 'complete';
+      // 2026-09-29 小欧：meta 对齐真实 onComplete 签名（useChatCallbacks.ts:97-101
+      //   `metadata?: string | SSEMetadata`）；原稿写 unknown 会迫使分发侧断言，违类型安全
+      payload: {
+        full: string;
+        meta?: string | SSEMetadata;
+        steps?: ExecutionStep[];
+      };
+    })
+  | (StreamEventBase & { kind: 'error'; payload: SSEError | string })
+  | (StreamEventBase & { kind: 'paused'; payload: { confirmId?: string } })
+  | (StreamEventBase & { kind: 'resumed'; payload: { confirmId?: string } })
+  | (StreamEventBase & {
+      kind: 'retry';
+      payload: { message: string; waitTime?: number };
+    })
+  | (StreamEventBase & {
+      kind: 'rejected';
+      payload: {
+        step: number;
+        message: string;
+        tool_name?: string;
+        reject_type: string;
+      };
+    })
+  // 2026-09-29 小欧：[63] 5.1 原稿缺 'merged' kind，但 sseParser.ts:153/:947 已有 onMerged 回调
+  //   （设计[76] 6.14 活跃任务注入应答 2026-09-28 落地）。缺则 5.3 接线无载荷可投，
+  //   注入提示条/目标高亮永不触发（功能退化）——按真实回调签名补齐。
+  | (StreamEventBase & {
+      kind: 'merged';
+      payload: { mergedIntoTaskId: string | null };
+    });
+
+export interface StreamBackup extends Omit<
+  SessionSnapshot,
+  'serverTaskId' | 'executionSteps' | 'reconnectStatus'
+> {
+  version: 2;
+  revision: number;
+  sessionId: string;
+  taskId: string | null;
+  steps: ExecutionStep[];
+  hitlWaitingKeys: string[];
+  pendingMessage: {
+    clientMessageId: string;
+    content: string;
+    state: 'queued' | 'sent';
+  } | null;
+  linkEnabled: boolean;
+  allowInterject: boolean; // 2026-10-07 小欧 - 随备份落盘/恢复(重连回放前提)
+  updatedAt: number;
+  // 2026-10-01 小欧 [1] B13: 钟面静默升档基线落盘。lastBizTs/lastDataTime 原只在内存 session 上，
+  //   备份不含二者 → 刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs
+  //   (见 makeClockView), 致刷新后等待期升档计时基线丢失(长时间无业务帧不再升档)。
+  //   缺失时按 0 处理, 与 ensureSession 初值一致, 向后无害。
+  lastBizTs?: number;
+  lastDataTime?: number;
+}

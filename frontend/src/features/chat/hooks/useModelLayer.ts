@@ -1,9 +1,10 @@
 // 编辑历史: 2026-08-26 小欧 - 8.13 实施: 模型三层继承selector L1/L2, L3暂缓预留(5.1/5.2)
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: 删sessionTitle入参, saveL2改调updateSessionModel(只发sessionModel+version), 消除"切模型"被迫传标题的耦合 - 小欧-2026-10-24
 /**
  * useModelLayer - 模型三层继承前端 selector（L1 全局 / L2 会话级 / L3 暂缓）
  *
  * 【小欧 2026-08-26 8.13】5.1/5.2：生效模型 = L2(sessionModelOverride) ?? L1(current_model_ref)；
- * 来源徽标 source 标注层级。L2 写库走既有 sessionApi.updateSession(..., sessionModel)
+ * 来源徽标 source 标注层级。L2 写库走 sessionApi.updateSessionModel(..., sessionModel)
  * （api.ts 已支持，见 2026-08-22 归一更新），ModelPicker 弹框确认后调用 saveL2()。
  * L3 任务级覆盖按 5.4 定案暂缓，本 hook 预留 overrideL3 入参位但不实现。
  *
@@ -26,18 +27,12 @@ export interface EffectiveModel {
 
 export const useModelLayer = (options: {
   sessionId: string | null;
-  sessionTitle: string;
   sessionVersion: number;
   setSessionVersion: (v: number) => void;
-  sessionModelOverride?: SessionModelOverride | null; // 2026-08-27 小欧 修复#2: 外部L2覆盖(来自useChatSession)驱动l2, 修复L2死代码
+  sessionModelOverride?: SessionModelOverride | null;
 }) => {
-  const {
-    sessionId,
-    sessionTitle,
-    sessionVersion,
-    setSessionVersion,
-    sessionModelOverride,
-  } = options;
+  const { sessionId, sessionVersion, setSessionVersion, sessionModelOverride } =
+    options;
   const [l1, setL1] = useState<SessionModelOverride | null>(null);
   const [l2, setL2] = useState<SessionModelOverride | null>(null);
 
@@ -65,17 +60,17 @@ export const useModelLayer = (options: {
   const saveL2 = useCallback(
     async (next: SessionModelOverride | null) => {
       if (!sessionId) return;
-      // 显式传 null = 清除覆盖 = 跟随全局（api.ts updateSession 既有契约）
-      const resp = await sessionApi.updateSession(
+      // 显式传 null = 清除覆盖 = 跟随全局（api.ts updateSessionModel 既有契约）
+      // 2026-10-24 小欧 - SRP拆分: 只发 sessionModel+version, 不发标题(长标题触发422的根因)
+      const resp = await sessionApi.updateSessionModel(
         sessionId,
-        sessionTitle,
-        sessionVersion,
-        next
+        next,
+        sessionVersion
       );
       setL2(next);
       if (resp.version) setSessionVersion(resp.version);
     },
-    [sessionId, sessionTitle, sessionVersion, setSessionVersion]
+    [sessionId, sessionVersion, setSessionVersion]
   );
 
   return { effective, l1, l2, saveL2, setL2 };

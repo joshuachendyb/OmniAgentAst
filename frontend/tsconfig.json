@@ -17,6 +17,12 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    // 2026-09-28 小欧 - 显式限定 types:["react","react-dom"]。
+    // 不设时 tsc 会自动纳入 node_modules/@types 下**全部**包，2026-09-28 装 @types/node 后
+    // Node 的 setTimeout 返回类型 Timeout 覆盖了 DOM 的 number → src 里 5 处
+    // `let t: number = setTimeout(...)` 集体报 TS2322（产品代码本无错，是类型环境被污染）。
+    // 浏览器侧代码只需 react/react-dom 的类型；node 类型由 tsconfig.e2e.json 单独引入。
+    "types": ["react", "react-dom"],
     // ⚠️ 警告：禁止删除 baseUrl 和 paths！@/ 别名被所有 renderers 使用，删除会导致全前端 500 错误（历史教训 2026-05-23）
     "baseUrl": ".",
     "paths": {

@@ -1,14 +1,26 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 发送逻辑对齐CommandPanel/TaskType/contextLink
+// 编辑历史: 2026-08-27 小欧 - 修复: 删pendingMessageIdRef(回滚靠userMessage.id)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
 // 编辑历史: 2026-08-28 小强 - hooks修复#12: 防重由loading state改isSendingRef(useRef同步), 消除双击竞态
 // 编辑历史: 2026-08-29 小强 - 修复#20: 超长/网络失败early-return前复位isSendingRef, 避免绕过finally永久卡死发送 - 小强-2026-08-29
 // 编辑历史: 2026-09-13 小欧 - 会话标题截断50→10(北京老陈复查, 30仍显冗长): 待界面查看效果 - 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 生成端取消标题截断,创建会话存全量标题(截断只发生在显示端ChatHeader SESSION_TITLE_DISPLAY_MAX=10) - 小欧-2026-09-13
-// 编辑历史: 2026-09-15 小欧 [41]v1.3 - F4'复位点迁址 + async回滚(北京老陈裁定): ①finally不再无条件setLoading(false)
+// 编辑历史: 2026-09-15 小欧 v1.3 - 复位点迁址 + async回滚(方案调整): ①finally不再无条件setLoading(false)
 //   (loading复位职责归SSE终态: 正常完成→onFinal(:510)/error→onError(:655)/取消→resetUiFlags(:126)——根治
 //   "任务执行中finally提前掐loading → 停止/暂停按钮消失"病根) ②catch分支显式兜底setLoading(false)
 //   (取消失败/网络失败/发送异常路径不依赖SSE终态, 防loading永久为true卡"思考中") — 小欧-2026-09-15
+// 编辑历史: 2026-09-30 14:30 小欧 - 自动建会话也上抛写 URL（原只 setSessionId，刷新后地址栏无 id）；删零读取的三入参
+// 编辑历史: 2026-10-03 小欧 - 第二参 contextLinkMode 改名 linkEnabled: boolean
+//   (值随消息落库, 见 5.7.14), 继续透传至 chatStreamStore; 建会话逻辑(:142-157)不动 — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 插话判据改用 sendGate; 补插话在飞单飞(早退路径统一 resetSendFlags, 防永久卡死)
+// 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（首连与插话两条路径都传 refs，正文不承载引用内容）；
+//   发送成功后记引用台账（只存路径不存正文；插话不记） — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 台账改由 chatStreamStore 在 start 帧按真实 taskId 落账（插话不记） — 小杨-2026-10-21
+// 编辑历史: 2026-11-03 09:10:00 小欧 - 切会话复位发送防重标记: 标记跨整条 SSE, 在 A 跑任务时切到 B,
+//   B 的发送被静默丢弃(按钮已解灰却发不出去) — 小欧-2026-11-03
+
+// 编辑历史: 2026-11-03 17:40:00 小欧 - 三堂会审修复: line 205 ownerForCleanup 缩进 6→10 空格(与 if 块内 line 204 对齐, KISS-DIRECT 合规) — 小欧-2026-11-03
+
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -24,22 +36,26 @@
  * @version 1.0.0
  * @since 2026-04-23
  */
-
-import { useCallback, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重)
-import { handleError, ErrorType } from '@/services/error/handler';
-import { checkNetworkConnection } from '../../../utils/network';
+import { useCallback, useEffect, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重); 2026-11-03 小欧: 加useEffect(切会话复位防重标记)
+import {
+  handleError,
+  classifyError,
+  ErrorType,
+} from '@/services/error/handler'; // 2026-10-07 小欧 - classifyError 供 SESSION_BUSY 分支
+import { probeAlive } from '../../../services/api/health.api';
 import { showNetworkError } from '../../../utils/chatMessages';
 import { sessionApi } from '../../../services/api/session.api';
-import { API_BASE_URL } from '../../../services/api/client';
 import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
+import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - refs 载荷类型
+import { isInterjectRoute } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 
 interface UseChatSendOptions {
   // 状态
-  loading: boolean;
+  // 2026-09-30 小欧 - 删 loading/messages/waitTime 三入参：声明并全量传入却函数体零读取，
+  //   属假接口面（每加一处调用方都要跟着传三个没人用的值）
   sessionId: string | null;
-  messages: Message[];
-  waitTime: number;
   // 设置方法
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -48,18 +64,24 @@ interface UseChatSendOptions {
   // Refs
   waitTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   currentSessionIdRef: React.MutableRefObject<string | null>;
+  // 2026-10-07 小欧 - 供 handleSend 判"执行中插话"(仅此处读, 不新建 ref 副本)
+  isReceiving: boolean;
   // 发送方法
-  executeSend: (
+  executeSend: (userMessage: Message, opts: SendOpts) => Promise<void>;
+  // 2026-10-07 小欧 - 插话发送(执行中追加输入)——与 executeSend 分流,
+  //   因 executeSend 的 isSendingRef 防双发与"新任务编排副作用"都不适用于插话(会破坏运行中任务)。
+  interjectSend: (
     userMessage: Message,
-    contextLinkMode?: 'linked' | 'independent'
+    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 插话带引用
   ) => Promise<void>;
+  // 2026-09-30 小欧 - URL 写入的唯一出口（与 useChatSession 同一注入形状）：
+  //   自动建会话原先只 setSessionId 不写 URL，导致该会话 id 从不进地址栏，刷新后退回
+  //   "最近会话"猜测，且与 handleNewSessionInternal 的写 URL 行为不一致（写入口未收口）。
+  onUrlSessionChange?: (sessionId: string | null) => void;
 }
 
 interface UseChatSendReturn {
-  handleSend: (
-    messageContent: string,
-    contextLinkMode?: 'linked' | 'independent'
-  ) => Promise<void>;
+  handleSend: (messageContent: string, opts: SendOpts) => Promise<void>;
 }
 
 /**
@@ -67,7 +89,6 @@ interface UseChatSendReturn {
  */
 export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const {
-    loading: _loading, // 2026-08-28 小强: 保留接口兼容, 实际用isSendingRef防重
     sessionId,
     setLoading,
     setSessionId,
@@ -75,21 +96,61 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
     setWaitTime,
     waitTimerRef,
     currentSessionIdRef,
+    isReceiving, // 2026-10-07 小欧 - 插话判定入参
     executeSend,
+    interjectSend,
+    onUrlSessionChange,
   } = options;
 
-  // 2026-08-27 小欧 三堂会审: 回滚改靠userMessage.id, 删pendingMessageIdRef
+  // 2026-08-27 小欧 - 回滚改靠userMessage.id, 删pendingMessageIdRef
   // 2026-08-28 小强 修复#12: useRef同步防重, 消除Boolean state异步绕过竞态
   const isSendingRef = useRef(false);
+  // 2026-10-08 小欧 - 插话在飞单飞。isSendingRef 不可复用(它 finally 要等整条 SSE 跑完, 会把插话永久挡死)
+  const isInterjectingRef = useRef(false);
+  // 2026-11-03 小欧 - 所属会话 id（owner-scoped 防重）：A 任务在跑时切 B 并发送，B 的 finally 才清 guard，
+  //   A 的 finally 因 sendingSessionRef 已被 B 覆盖而不误清；auto-create 后更新为新建会话 id。 — 小欧-2026-11-03
+  const sendingSessionRef = useRef<string | null>(null);
+
+  // 2026-11-03 小欧 - 会话切换复位防重标记（北京老陈报告：任务在跑时点"新建会话"，新会话发送钮解灰后
+  //   仍发不出去）。病根：防重标记的生命周期覆盖整条 SSE（handleSend 的 await 直到流结束），在 A 跑任务
+  //   时切到 B，标记仍为 true → B 的 handleSend 在首行守卫处静默 return。此处只复位本页标记，不动 A 的
+  //   在飞请求（旧会话回切仍由 Store 的 isReceiving/isProcessing 把关）。
+  //   prev===null 不复位：那是"首发消息自动建会话"（null→新 id），本次发送正在进行，复位会放过重复提交。 — 小欧-2026-11-03
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== null) {
+      isSendingRef.current = false;
+      sendingSessionRef.current = null;
+      isInterjectingRef.current = false;
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const handleSend = useCallback(
     async (
       messageContent: string,
-      contextLinkMode?: 'linked' | 'independent'
+      { linkEnabled, allowInterject, refs }: SendOpts
     ) => {
-      // 1. 基础验证
-      if (!messageContent.trim() || isSendingRef.current) return;
-      isSendingRef.current = true;
+      // 2026-10-07 小欧 - 插话判定（执行中 + 开关开 = 追加输入, 非新任务）
+      const isInterject = isInterjectRoute(isReceiving, allowInterject);
+      // 2026-10-08 小欧 - 早退路径统一复位标记(isSendingRef/isInterjectingRef 二者其一)
+      const resetSendFlags = () => {
+        if (isInterject) isInterjectingRef.current = false;
+        else isSendingRef.current = false;
+      };
+      // 1. 基础验证（插话不受 isSendingRef 约束, 也不占用该标记）
+      if (!messageContent.trim()) return;
+      if (!isInterject) {
+        // 2026-11-03 小欧 - owner-scoped 防重：只当"同一会话的发送仍在飞"才挡；
+        //   A 跑任务时切 B 并发送，sendingSessionRef(A) !== sessionId(B) → 不挡，B 可发。
+        if (isSendingRef.current && sendingSessionRef.current === sessionId) return;
+        isSendingRef.current = true;
+        sendingSessionRef.current = sessionId; // 初始 owner（auto-create 前为 null，创建后更新）
+      } else if (isInterjectingRef.current) {
+        return; // 2026-10-08 小欧 - 插话在飞, 拒重复提交
+      } else {
+        isInterjectingRef.current = true;
+      }
 
       // 2. 消息长度验证
       if (messageContent.trim().length > 5000) {
@@ -97,31 +158,28 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           message: '消息过长，请精简到5000字符以内',
           error_type: ErrorType.CONTENT_TOO_LONG,
         });
-        isSendingRef.current = false; // 2026-08-29 小强 修复#20: early-return前复位防重标记, 避免绕过finally永久卡死
+        resetSendFlags(); // 2026-10-08 小欧 - 早退须复位标记, 否则插话永久卡死(同 isSendingRef 当年那处病根)
         return;
       }
 
       // 3. 设置加载状态
       setLoading(true);
 
-      // 4. 网络连接检查
-      try {
-        const isNetworkOK = await checkNetworkConnection(API_BASE_URL);
-        if (!isNetworkOK) {
-          console.error('[handleSend] 网络连接异常');
-          showNetworkError();
-          setLoading(false);
-          // 停止等待计时器
-          if (waitTimerRef.current) {
-            clearInterval(waitTimerRef.current);
-            waitTimerRef.current = null;
-          }
-          setWaitTime(0);
-          isSendingRef.current = false; // 2026-08-29 小强 修复#20: 网络失败early-return前复位防重标记
-          return;
+      // 4. 后端存活预检 — 2026-11-02 小欧: 改调 probeAlive, 与超时归因/顶栏胶囊同一实现同一5s阈值;
+      //    probeAlive 内部吞异常返回 boolean, 故原 try/catch 为死代码已删
+      const backendAlive = await probeAlive();
+      if (!backendAlive) {
+        console.error('[handleSend] 后端探活失败');
+        showNetworkError();
+        setLoading(false);
+        // 停止等待计时器
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
         }
-      } catch (error) {
-        console.warn('[handleSend] 网络检查异常:', error);
+        setWaitTime(0);
+        resetSendFlags(); // 2026-10-08 小欧 - 网络失败早退同样须复位标记(否则插话永久卡死)
+        return;
       }
 
       // 5. 创建用户消息（乐观更新）
@@ -135,6 +193,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       setMessages((prev) => [...prev, userMessage]);
       logUserSend(userMessage.content);
 
+      let ownerForCleanup: string | null = sessionId;
       try {
         // 7. 创建会话（如果需要）
         let currentSessionId = sessionId;
@@ -145,12 +204,26 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           currentSessionId = newSession.session_id;
           setSessionId(currentSessionId);
           currentSessionIdRef.current = currentSessionId;
+          if (!isInterject) sendingSessionRef.current = currentSessionId; // auto-create后更新owner
+          if (!isInterject) ownerForCleanup = currentSessionId;
+          // 2026-09-30 小欧 - 自动建会话同样要把 id 写进 URL（经唯一写入口上抛），
+          //   否则刷新后地址栏无 session_id，只能回退到"最近会话"猜测
+          onUrlSessionChange?.(currentSessionId);
         } else {
           currentSessionIdRef.current = currentSessionId;
         }
 
         // 8. 发送消息
-        await executeSend(userMessage, contextLinkMode);
+        // 2026-10-07 小欧 - 插话走独立投递路径(不建 assistant 占位/不清 steps/
+        //   不重置取消态——executeSend 的新任务编排副作用会破坏正在跑的任务)。
+        if (isInterject) {
+          // 2026-10-21 小杨 - 插话**也带 refs**
+          //   （漏传 = 插话丢引用：正文里的 @token 已被剥掉，而正文又没上行 → Agent 收不到任何材料）
+          await interjectSend(userMessage, refs);
+        } else {
+          // 2026-10-21 小杨 - refs 随消息上行（正文走 refs，不进 content）
+          await executeSend(userMessage, { linkEnabled, allowInterject, refs });
+        }
 
         // 9. 发送成功，不需要额外操作（用户消息已在列表中）
       } catch (error) {
@@ -163,26 +236,45 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
               : msg
           )
         );
-        // 2026-08-27 小欧 修复#9: 清理 executeSend 抛错残留的 isStreaming 占位 assistant 消息(幽灵消息), 避免会话卡"思考中"
-        setMessages((prev) =>
-          prev.filter(
-            (msg) => !(msg.role === 'assistant' && msg.isStreaming === true)
-          )
-        );
-        // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: send失败时兜底重置loading（finally不再无条件重置）
-        setLoading(false);
+        // 2026-10-07 小欧 - 以下三段是"新任务流"的失败清理,
+        //   插话失败时**必须跳过**——它们会误伤正在跑的任务(删它的流式占位/清它的 loading 与等待计时器)。
+        if (!isInterject) {
+          // 2026-08-27 小欧 修复#9: 清理 executeSend 抛错残留的 isStreaming 占位 assistant 消息(幽灵消息), 避免会话卡"思考中"
+          setMessages((prev) =>
+            prev.filter(
+              (msg) => !(msg.role === 'assistant' && msg.isStreaming === true)
+            )
+          );
+          // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: send失败时兜底重置loading（finally不再无条件重置）
+          setLoading(false);
+        }
+        // 2026-10-07 小欧 - 复核补: SESSION_BUSY 分支先撤回乐观消息再上抛。
+        //   方案是"退回输入框"(消息不应留气泡), 但本函数已把该条标 failed 留在列表、
+        //   ChatInput 回填 draft 后会形成"失败气泡 + 输入框草稿"双份。不撤回即与决策 13 矛盾。
+        if (classifyError(error) === ErrorType.SESSION_BUSY) {
+          setMessages((prev) =>
+            prev.filter((msg) => msg.id !== userMessage.id)
+          );
+          handleError(error, { source: 'api' }); // 先按既有流程弹提示
+          throw error; // 再上抛, 触发 ChatInput draft 回填
+        }
         handleError(error, { source: 'api' });
       } finally {
-        // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: 删除finally中无条件setLoading(false)
+        // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: 删finally中无条件setLoading(false)
         // loading重置职责归SSE终态回调：正常完成→onFinal(:510)、错误→onError(:655)、取消→resetUiFlags(:126)
         // finally只负责清理防重标记和计时器
-        isSendingRef.current = false; // 2026-08-28 小强 修复#12: 重置防重标记
-        // 停止等待计时器
-        if (waitTimerRef.current) {
-          clearInterval(waitTimerRef.current);
-          waitTimerRef.current = null;
+        // 2026-10-07 小欧 - 插话不碰这些(计时器属运行中任务, 清它=把等待钟面打没)
+        if (!isInterject) {
+          if (sendingSessionRef.current === ownerForCleanup) { isSendingRef.current = false; sendingSessionRef.current = null; }
+          // 停止等待计时器
+          if (waitTimerRef.current) {
+            clearInterval(waitTimerRef.current);
+            waitTimerRef.current = null;
+          }
+          setWaitTime(0);
+        } else {
+          isInterjectingRef.current = false; // 2026-10-08 小欧 - 插话在飞标记复位
         }
-        setWaitTime(0);
       }
     },
     [
@@ -194,6 +286,9 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       waitTimerRef,
       currentSessionIdRef,
       executeSend,
+      interjectSend, // 2026-10-07 小欧 - 插话分流目标
+      isReceiving, // 2026-10-07 小欧 - 插话判定读它(漏依赖=判定用过期值)
+      onUrlSessionChange,
     ]
   );
 

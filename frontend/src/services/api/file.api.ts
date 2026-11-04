@@ -1,0 +1,281 @@
+// 编辑历史: 2026-10-21 小杨 - 新建文件浏览 API（6 端点 + 图片 blob），同 session.api 范式；
+//   recent-files 后端实码返回包装对象 {session_id, files[]}，此处按真源解包 .files
+//   （照裸数组写会 "items.filter is not a function"）— 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：RecentFile 的时间字段由 last_seen_at 改名为 mtime（后端值一直是
+//     文件系统 mtime，旧名会让前端误当"最近访问时间"）— 小杨-2026-10-21
+//   2026-10-21 小欧 - TreeResponse 增 skipped_cycles：环检测计数与"读不了"分列
+//     （后端原先混在一个 skipped 里，提示说成"无法读取"是误导）— 小欧-2026-10-21
+//   2026-10-21 小欧 - fetchTree 位置参数改选项对象 {maxDepth,maxNodes,signal}：
+//     传 signal 免填空位；signal 交 axios 取消在途请求（I7 竞态防护）— 小欧-2026-10-21
+// 2026-10-22 小欧 - 增 readExternalFile：读项目根外文本文件（/files/external/read，只读）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 增 fetchExternalTree：列项目根外目录树（/files/external/tree，只读；
+//   响应多带 external_root 供前端识别外部树，节点 key 为相对该外部根的 posix 路径）— 小欧-2026-10-23
+
+// 2026-10-29 小欧 - 增 statFile：GET /files/stat 轻端点(只取存在/size/mtime, 不读正文),
+//   供发送前预检(存在性/mtime 本地比对"内容已更新") — 小欧-2026-10-29
+// 2026-10-30 小欧 - 慢读端点统一放宽到 HEAVY_READ_TIMEOUT_MS(120s):
+//   fetchTree/readFile/readExternalFile/fetchExternalTree —— 这四类天生可能慢(网络盘/大仓/2MB 正文)
+// 2026-10-30 小欧 - _silent 分两种: fetchTree/searchFiles 由端点自己置(页面另有局部提示);
+//   readFile/readExternalFile 由调用方传 silent(只有调用方知道自己有没有局部反馈)
+
+/**
+ * 文件浏览 API（只读浏览项目根目录）
+ *
+ * 契约真源 = 后端 `backend/app/file_browse/`：
+ * - 路径参数一律"相对项目根"的 posix 路径（后端只接受相对路径，绝对路径/UNC/`..` 一律 400）
+ * - 错误信封取 `error.code`（全局 http_exception_handler 包装后的形状，非 detail.code）
+ */
+import api, {
+  getAccessToken,
+  API_BASE_URL,
+  HEAVY_READ_TIMEOUT_MS,
+} from './client'; // api 只有默认导出（session.api.ts 同款），具名解构必红
+// 2026-10-30 小欧 - _silent 走类型载体, 避免字面量多属性报错
+import type { ApiRequestConfig } from './client';
+
+export interface FileNode {
+  key: string;
+  name: string;
+  type: 'dir' | 'file';
+  size: number | null;
+  mtime: string;
+  preview: 'text' | 'image' | 'none';
+  children?: FileNode[] | null;
+  incomplete_child?: boolean;
+}
+
+export interface TreeResponse {
+  path: string;
+  project_root: string;
+  nodes: FileNode[];
+  truncated: boolean; // 节点数触顶
+  incomplete_depth: boolean; // 深度到顶（前端据此补拉）
+  skipped: number; // 本次扫描跳过的坏条目数（读不了/越界/坏链接）
+  skipped_cycles: number; // 环检测拦下的条目数（链接绕回已展开目录）
+}
+
+/** 外部目录树（项目根外）：与 TreeResponse 同形状，多带 external_root — 小欧-2026-10-23 */
+export interface ExternalTreeResponse extends TreeResponse {
+  /** 该外部树的绝对根（盘符路径），前端据此把节点 key（相对 posix）拼成绝对路径走 readExternalFile */
+  external_root: string;
+}
+
+export interface ReadResponse {
+  path: string;
+  name: string;
+  content: string;
+  encoding: string;
+  size: number;
+  total_lines: number;
+  /** 文件最近修改时间（与 tree 的 mtime 同口径字符串），刷新判重用 */
+  mtime: string;
+  /** 2026-10-21 小欧 - 超大文件被截断（后端只读前 2MB，不报错）→ 如实告知 */
+  truncated?: boolean;
+  /** 文件真实字节数（truncated 时与 content 的字节数不同） */
+  total_size?: number;
+  /** 本次实际读到的字节数（截断时 < total_size） */
+  loaded_size?: number;
+  /** 2026-10-21 小欧 - 行号区间读时的区间信息（前端据此续读下一段） */
+  start_line?: number;
+  end_line?: number;
+  returned_lines?: number;
+  /** 本次实际返回的行数（截断路径下 = 段内行数） */
+  loaded_lines?: number;
+}
+
+/** 2026-10-30 小欧 - /files/stat 预检响应：只回存在性/mtime/size，不读正文 */
+export interface StatResponse {
+  ok: boolean;
+  size?: number;
+  mtime?: string;
+  /** ok=false 时的失败原因(missing/unsupported) */
+  reason?: string;
+}
+
+export interface SearchHit {
+  path: string;
+  name: string;
+  type: string;
+  preview: string;
+  dir: string;
+}
+
+export interface SearchResponse {
+  keyword: string;
+  results: SearchHit[];
+  scanned: number;
+  hit_limit: boolean;
+  scanned_cap: boolean;
+}
+
+export interface RecentFile {
+  path: string;
+  name: string;
+  type?: 'file' | 'dir';
+  preview: string;
+  /** 文件最后修改时间（后端 mtime；原字段名 last_seen_at 语义错位） */
+  mtime: string;
+  /** 路径曾出现在会话足迹中但当前已删除 */
+  deleted?: boolean;
+  /** 该文件在最近窗口内被哪些工具动过（后端注册名，字母序） */
+  ops: string[];
+}
+
+/** 后端 recent-files 的真实返回是包装对象（file_routes.py:77-82），不是裸数组 */
+export interface RecentFilesResponse {
+  session_id: string;
+  files: RecentFile[];
+}
+
+export interface RootResponse {
+  project_root: string;
+  allowed_dirs: string[];
+  code_root_blocked: boolean;
+}
+
+/** 图片未变化（304）：调用方据此保留旧 objectURL，不视为失败 */
+export class ImageUnchanged extends Error {
+  constructor() {
+    super('image unchanged');
+  }
+}
+
+const need = (v: string, what: string) => {
+  if (!v || !v.trim()) throw new Error(`${what}不能为空`);
+};
+
+export const fileApi = {
+  fetchRoot: async (): Promise<RootResponse> =>
+    (await api.get<RootResponse>('/files/root')).data,
+
+  fetchTree: async (
+    path = '',
+    /**
+     * 2026-10-21 小杨 - 首屏 5 层；深层目录由 Files 页按需 maxDepth:10 补拉
+     * 2026-10-21 小欧 - 位置参数改选项对象（原三位置参数传 signal 只能填空位）；
+     *   signal 交 axios 取消在途请求（I7）
+     */
+    opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
+  ): Promise<TreeResponse> => {
+    const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
+    // 2026-10-30 小欧 - 页面自己给「目录加载失败」局部提示(useFilesTree:83-86),
+    //   全局 toast 属重复且更含糊, 故本请求静默
+    const cfg: ApiRequestConfig = {
+      params: { path, max_depth: maxDepth, max_nodes: maxNodes },
+      signal,
+      _silent: true,
+      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 天生慢读, 60s→120s
+    };
+    return (await api.get<TreeResponse>('/files/tree', cfg)).data;
+  },
+
+  readFile: async (
+    path: string,
+    cfg?: {
+      signal?: AbortSignal;
+      offset?: number;
+      limit?: number;
+      /** 调用方自己已有局部错误反馈时才置 true（先有反馈，再关全局） — 小欧 2026-10-30 */
+      silent?: boolean;
+    }
+  ): Promise<ReadResponse> => {
+    need(path, '文件路径');
+    const { signal, offset, limit, silent } = cfg ?? {};
+    // 2026-10-30 小欧 - 静默权交回调用方 ——
+    //   FilePreview 有 setErr/showMessage(局部可见) → 传 silent; probeRef 的失败**没有任何**
+    //   可见反馈(chip 的"未校验"只存在于注释, 无渲染代码) → 不传, 保留全局 toast。
+    //   只靠端点级一刀切无法区分这些调用方, 只有调用方知道自己有没有局部反馈。
+    const reqCfg: ApiRequestConfig = {
+      params: { path, offset, limit },
+      signal,
+      _silent: silent,
+      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 2MB 级正文读取，同属慢读
+    };
+    return (await api.get<ReadResponse>('/files/read', reqCfg)).data;
+  },
+
+  /** 读项目根外的文本文件（只读；外部文件链接直开预览）— 小欧-2026-10-22 */
+  readExternalFile: async (
+    absPath: string,
+    cfg?: {
+      offset?: number;
+      limit?: number;
+      silent?: boolean;
+      /** 调用方自设取消(如探引用要独立超时, 不跟随本端点的 120s) — 小欧 2026-10-30 */
+      signal?: AbortSignal;
+    }
+  ): Promise<ReadResponse> => {
+    need(absPath, '文件路径');
+    const { offset, limit, silent, signal } = cfg ?? {};
+    // 2026-10-30 小欧 - 静默权同 readFile 交调用方;
+    //   超时与 readFile 对齐 —— 外部盘/网络盘只会更慢, 没道理反而更紧
+    const reqCfg: ApiRequestConfig = {
+      params: { path: absPath, offset, limit },
+      signal,
+      _silent: silent,
+      timeout: HEAVY_READ_TIMEOUT_MS,
+    };
+    return (await api.get<ReadResponse>('/files/external/read', reqCfg)).data;
+  },
+
+  /** 2026-10-30 小欧 - 引用预检：存在性/mtime/size，O(1) 不读正文(precheckRefs 唯一数据源)
+   *   本端点**保持不静默** —— 唯一调用方是用户点发送时的 precheckRefs,
+   *   属明确用户动作且调用链没有局部错误提示, 超时/失败必须让用户看到(否则表现为"点了发送没反应")。 */
+  statFile: async (path: string): Promise<StatResponse> => {
+    need(path, '文件路径');
+    return (await api.get<StatResponse>('/files/stat', { params: { path } }))
+      .data;
+  },
+
+  /** 列项目根外的目录树（只读；外部目录挂左侧树展开时用）— 小欧-2026-10-23 */
+  fetchExternalTree: async (
+    absPath: string,
+    opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
+  ): Promise<ExternalTreeResponse> => {
+    need(absPath, '目录路径');
+    const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
+    return (
+      await api.get<ExternalTreeResponse>('/files/external/tree', {
+        params: { path: absPath, max_depth: maxDepth, max_nodes: maxNodes },
+        signal,
+        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 外部目录树同 fetchTree
+      })
+    ).data;
+  },
+
+  /**
+   * 输入框 `@` 补全数据源。
+   * 候选过滤（只留可读文本）在调用方做 —— 与后端 `_preview_of()` 的 `text` 判定对齐，
+   * 前端不自立规则。
+   */
+  searchFiles: async (q: string, limit = 20): Promise<SearchResponse> => {
+    // 2026-10-30 小欧 - 唯一调用方 ChatInput 在 catch 里自提示，全局 toast 与其重复且文案无关
+    const cfg: ApiRequestConfig = {
+      params: { q, limit },
+      _silent: true,
+    };
+    return (await api.get<SearchResponse>('/files/search', cfg)).data;
+  },
+
+  fetchRecentFiles: async (sessionId: string): Promise<RecentFile[]> => {
+    need(sessionId, '会话ID');
+    // 后端返回 {session_id, files[]} —— 必须解包 .files
+    const res = await api.get<RecentFilesResponse>('/files/recent-files', {
+      params: { session_id: sessionId },
+    });
+    return res.data.files ?? [];
+  },
+
+  loadImageBlob: async (path: string): Promise<Blob> => {
+    need(path, '文件路径');
+    // 不能裸 `<img src=API_URL>`：带不了 header 必 401。故 fetch + blob + objectURL。
+    const token = getAccessToken(); // 与 authHeaders 同源；无口令即不带头（勿拼出 "Bearer null" 发出去）
+    const res = await fetch(
+      `${API_BASE_URL}/files/raw?path=${encodeURIComponent(path)}`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+    );
+    if (res.status === 304) throw new ImageUnchanged(); // res.ok 对 304 为 false，漏判=误报失败
+    if (!res.ok) throw new Error(`图片加载失败 (${res.status})`);
+    return res.blob();
+  },
+};

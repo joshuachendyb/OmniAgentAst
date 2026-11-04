@@ -1,10 +1,30 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string|null→SessionModelOverride|null
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 统一状态管理对接NewChatContainer(8.x 状态重构)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 统一状态管理对接NewChatContainer(状态重构)
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef定义+类型声明+返回值透传(146/258/360);
 //   阶段二S2提前实施: executionStepsRef保留(useChatStreaming透传useSSE的ref, 此处ref作备用/兼容) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): 删executionStepsRef定义+类型声明+返回值透传(useSSE唯一真源,
 //   useChatStreaming不再从state解构, 无任何消费者); 删废弃类型导入ExecutionStep, warning清零 — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.13 核实: executionStepsRef 已归 Store 推导视图(5.4 getExecutionStepsRef)，
+//   本文件 S2 已清、grep 零代码残留；useSSE 已删(5.6)，本文件仅留历史消息与 UI 态 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.3: 会话相关状态区新增 linkEnabled/setLinkEnabled(类型/state/返回 3 处),
+//   作为后端 chat_sessions.link_enabled 的前端镜像, 与会话同生命周期; 组件不再自持开关 — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - 修复 issues 2/3(DRY/Slop):
+//   ① messagesRef/currentSessionIdRef 的写回从 useEffect 改为 setState 内联写 ref(消除窗口期);
+//   ② 删除 applySessionState 越界写 currentSessionIdRef(原违反 SLAP);
+//   ③ 删除 messagesRef 的单向 useEffect 同步, 改用 setMessages wrapper 保证一致性 — 小欧-2026-10-05
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.3: 新增 sessionWorkspaces/setSessionWorkspaces(会话使用目录列表, 类型/useState/返回三处,
+//   照 linkEnabled 同款; 无 dirty 无暂存, PATCH 即时生效, 徽标=本列表长度现算)
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 减锁与死状态清理(删 34 行):
+//   ① Refs 删 isLoadingHistoryRef(loading 锁, 与代际守卫职责重复且互斥);
+//   ② UI 态删 retryCount/setRetryCount(写而不读镜像, 真读在 useChatSession 的 sessionRetryRef);
+//   ③ UI 态删 sessionJumpLoading/setSessionJumpLoading 与 isRenderingMessages/setIsRenderingMessages
+//      (生产零读取的死旗); isMessageListLoading 有真实消费者(useChatFacade showWaitTime)故保留;
+//   ④ 类型 / useState 定义 / 返回对象三处同步删净, 不留兼容层 — 小欧-2026-10-08
+// 编辑历史: 2026-10-30 18:42:49 小欧 - 会话使用目录移出本 state(类型/useState/返回三处删净):
+//   改由 features/chat/services/sessionWorkspaceStore 单向持有(徽标 useSyncExternalStore 订阅,
+//   面板经 store 提交)。原实现让一次保存就使 useChatPanels 的巨型 memo 失效, 7 个面板连带重算,
+//   恰撞流式出帧最密的时刻 —— 故不留在 session 状态里 — 小欧-2026-10-30
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -24,7 +44,7 @@
  * @since 2026-04-21
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 
 // ============================================================================
@@ -82,6 +102,13 @@ export interface UseChatStateReturn {
   setSessionModelOverride: React.Dispatch<
     React.SetStateAction<SessionModelOverride | null>
   >;
+  linkEnabled: boolean;
+  setLinkEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  allowInterject: boolean; // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
+  setAllowInterject: React.Dispatch<React.SetStateAction<boolean>>;
+  // 2026-10-30 18:42:49 小欧 - 会话使用目录已移出本 state：改由 services/sessionWorkspaceStore
+  //   单向持有（徽标 useSyncExternalStore 订阅、面板经 store 提交）。原字段让一次保存就使
+  //   useChatPanels 巨型 memo 失效并重算 7 个面板，恰撞流式出帧最密的时刻。
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -103,17 +130,9 @@ export interface UseChatStateReturn {
   saveStatus: SaveStatus;
   setSaveStatus: React.Dispatch<React.SetStateAction<SaveStatus>>;
 
-  // 会话跳转加载状态
-  sessionJumpLoading: boolean;
-  setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
-
   // 消息列表加载状态
   isMessageListLoading: boolean;
   setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
-
-  // 重试计数
-  retryCount: Record<string, number>;
-  setRetryCount: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 
   // 保存标题状态
   isSavingTitle: boolean;
@@ -122,10 +141,6 @@ export interface UseChatStateReturn {
   // 最后保存时间
   lastSaveTime: number;
   setLastSaveTime: React.Dispatch<React.SetStateAction<number>>;
-
-  // 渲染大量消息时的loading状态
-  isRenderingMessages: boolean;
-  setIsRenderingMessages: React.Dispatch<React.SetStateAction<boolean>>;
 
   // ==================== Refs ====================
 
@@ -153,9 +168,6 @@ export interface UseChatStateReturn {
   // 滚动相关Refs
   userScrolledUpRef: React.MutableRefObject<boolean>;
   lastScrollTimeRef: React.MutableRefObject<number>;
-
-  // 加载状态Refs
-  isLoadingHistoryRef: React.MutableRefObject<boolean>;
 
   // 日志标记Refs
   logFlagsRef: React.MutableRefObject<LogFlags>;
@@ -185,7 +197,7 @@ export const useChatState = (): UseChatStateReturn => {
   // ==================== 状态定义 ====================
 
   // 消息相关状态
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessagesState] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
   // 等待时间状态
@@ -198,12 +210,14 @@ export const useChatState = (): UseChatStateReturn => {
   const [isPaused, setIsPaused] = useState(false);
 
   // 会话相关状态
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionIdState] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [sessionVersion, setSessionVersion] = useState<number>(1);
   const [titleLocked, setTitleLocked] = useState<boolean>(false);
   const [sessionModelOverride, setSessionModelOverride] =
     useState<SessionModelOverride | null>(null);
+  const [linkEnabled, setLinkEnabled] = useState<boolean>(false);
+  const [allowInterject, setAllowInterject] = useState<boolean>(false); // 2026-10-06 小欧 - 文档[11] 3.5:
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -219,23 +233,14 @@ export const useChatState = (): UseChatStateReturn => {
   // 保存状态
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
-  // 会话跳转加载状态
-  const [sessionJumpLoading, setSessionJumpLoading] = useState(false);
-
   // 消息列表加载状态
   const [isMessageListLoading, setIsMessageListLoading] = useState(true);
-
-  // 重试计数
-  const [retryCount, setRetryCount] = useState<Record<string, number>>({});
 
   // 保存标题状态
   const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   // 最后保存时间
   const [lastSaveTime, setLastSaveTime] = useState<number>(0);
-
-  // 渲染大量消息时的loading状态
-  const [isRenderingMessages, setIsRenderingMessages] = useState(false);
 
   // ==================== Refs定义 ====================
 
@@ -264,9 +269,6 @@ export const useChatState = (): UseChatStateReturn => {
   const userScrolledUpRef = useRef(false);
   const lastScrollTimeRef = useRef(0);
 
-  // 加载状态Refs
-  const isLoadingHistoryRef = useRef(false);
-
   // 日志标记Refs
   const logFlagsRef = useRef<LogFlags>({
     chunkFirstDone: false,
@@ -280,15 +282,39 @@ export const useChatState = (): UseChatStateReturn => {
 
   // ==================== 状态同步 ====================
 
-  // 同步messages到messagesRef
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  // 2026-10-05 小欧 - 修复 issue 2/3(DRY/Slop):
+  //   将 messagesRef/currentSessionIdRef 的同步从 useEffect 改为在 setter 中内联写 ref，
+  //   保证 ref 与 state 严格同步，消除"state 已变但 ref 未更新"窗口。— 小欧-2026-10-05
 
-  // 同步sessionId到currentSessionIdRef
-  useEffect(() => {
-    currentSessionIdRef.current = sessionId;
-  }, [sessionId]);
+  // messagesRef 同步写(仅在 setMessages 触发时发生)
+  const setMessages = useCallback(
+    (updater: React.SetStateAction<Message[]>) => {
+      setMessagesState((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (prev: Message[]) => Message[])(prev)
+            : updater;
+        messagesRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
+  // currentSessionIdRef 同步写(仅在 setSessionId 触发时发生)
+  const setSessionId = useCallback(
+    (updater: React.SetStateAction<string | null>) => {
+      setSessionIdState((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (prev: string | null) => string | null)(prev)
+            : updater;
+        currentSessionIdRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
 
   // 同步isPaused到isPausedRef
   useEffect(() => {
@@ -324,6 +350,11 @@ export const useChatState = (): UseChatStateReturn => {
     setTitleLocked,
     sessionModelOverride,
     setSessionModelOverride,
+    linkEnabled,
+    setLinkEnabled,
+    allowInterject,
+    setAllowInterject, // 2026-10-06 小欧 - 文档[11] 3.5: 与 linkEnabled/setLinkEnabled 同组返回
+
     editingTitle,
     setEditingTitle,
     titleInput,
@@ -336,18 +367,12 @@ export const useChatState = (): UseChatStateReturn => {
     setIsInitialized,
     saveStatus,
     setSaveStatus,
-    sessionJumpLoading,
-    setSessionJumpLoading,
     isMessageListLoading,
     setIsMessageListLoading,
-    retryCount,
-    setRetryCount,
     isSavingTitle,
     setIsSavingTitle,
     lastSaveTime,
     setLastSaveTime,
-    isRenderingMessages,
-    setIsRenderingMessages,
 
     // Refs
     waitTimerRef,
@@ -362,7 +387,6 @@ export const useChatState = (): UseChatStateReturn => {
 
     userScrolledUpRef,
     lastScrollTimeRef,
-    isLoadingHistoryRef,
     logFlagsRef,
     hasReceivedCancelEventRef,
     cancelInProgressRef,

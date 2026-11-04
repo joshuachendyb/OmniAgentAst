@@ -1,6 +1,23 @@
+// 编辑历史: 2026-10-01 小欧 - ApiMessage 增可选 task_id(后端 MessageResponse 配对任务ID): 此前消息只带
+//   execution_steps 无归属, 消费方无法判断步骤属于哪个任务(跨任务混显的契约层根因); 同时删 saveExecutionSteps
+// 编辑历史: 2026-10-03 小欧 - GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源, 随会话加载下发);
+//   getSessionMessages 映射处补值(缺省 false); 不新增 setSessionLink(值随消息落库, 按 YAGNI 不引入) — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - saveMessage 入参加 allow_interject(开关随消息携带)
+// 编辑历史: 2026-10-10 小欧 - 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段)
+//   + patchWorkspaces(全量覆盖写, [] = 清空)
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: updateSession拆为updateSessionTitle(只改标题)+updateSessionModel(只改模型), 消除"改标题"与"切模型"耦合(长标题触发422根因) - 小欧-2026-10-24
+
+// 编辑历史: 2026-10-30 小欧 - 全链路重构: patchWorkspaces 入参改对象数组
+//   ({path, workspace_property, memo}[]), 不再收 string[]; GET 响应含四字段。 — 小欧-2026-10-30
+
+// 编辑历史: 2026-11-02 小欧 - getWorkspaces 增可选 prune(默认纯读): 仅面板打开时清不可用行,
+//   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
+// 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
+//   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
+
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
-import type { SessionModelOverride } from '@/types/chat';
+import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
 
 export interface Session {
   session_id: string;
@@ -22,6 +39,21 @@ export interface SessionListResponse {
   sessions: Session[];
 }
 
+/** 跨会话在跑任务的一行(后端 chat_tasks 权威口径) — 小欧-2026-11-03
+ *  status 是 DB 词表(executing/paused/completed...), 消费前必须经 chatStreamStore.toStreamStatus 归一。 */
+export interface RunningTask {
+  task_id: string;
+  session_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunningTasksResponse {
+  total: number;
+  tasks: RunningTask[];
+}
+
 export interface ApiMessage {
   id: number;
   session_id: string;
@@ -32,6 +64,9 @@ export interface ApiMessage {
   display_name?: string;
   is_reasoning?: boolean;
   thought?: string;
+  // 2026-10-01 小欧 - 后端 MessageResponse 新增该字段(配对任务ID): 此前消息只带 execution_steps 无归属,
+  //   跨任务降级会把别的任务步骤当本任务显示 — 小欧-2026-10-01
+  task_id?: string | null;
 }
 
 export interface GetSessionMessagesResponse {
@@ -42,6 +77,8 @@ export interface GetSessionMessagesResponse {
   title_updated_at: string | null;
   version?: number;
   sessionModel?: SessionModelOverride | null;
+  link_enabled: boolean; // 会话 link 开关真源, 随会话加载主路径下发(唯一读取点)
+  allow_interject: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关真源(同 link_enabled, 唯一读取点)
   messages: ApiMessage[];
 }
 
@@ -126,6 +163,8 @@ export const sessionApi = {
       title_source: response.data.title_source ?? 'auto',
       title_updated_at: response.data.title_updated_at ?? null,
       version: response.data.version ?? 1,
+      link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
+      allow_interject: response.data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,
         thought:
@@ -158,6 +197,7 @@ export const sessionApi = {
       browser?: string;
       device?: string;
       network?: string;
+      allow_interject?: boolean; // 2026-10-08 小欧 - 文档[11] 3.4.5.2: 开关随消息携带, 不带则 None=沿用会话值
     }
   ): Promise<{
     success: boolean;
@@ -172,29 +212,8 @@ export const sessionApi = {
     return response.data;
   },
 
-  saveExecutionSteps: async (
-    sessionId: string,
-    executionSteps: unknown[],
-    content?: string,
-    replyUserMessageId?: number
-  ): Promise<{
-    success: boolean;
-    message_id?: number;
-    is_new_message?: boolean;
-  }> => {
-    const response = await api.post<{
-      success: boolean;
-      message_id?: number;
-      is_new_message?: boolean;
-    }>(`/sessions/${sessionId}/execution_steps`, {
-      execution_steps: executionSteps,
-      ...(content !== undefined && { content }),
-      ...(replyUserMessageId !== undefined && {
-        reply_to_message_id: replyUserMessageId,
-      }),
-    });
-    return response.data;
-  },
+  // 2026-10-01 小欧 - 原 saveExecutionSteps 删除: 全仓零调用, 后端端点已下线(实现自 2026-08-27 起
+  //   不写任何步骤); 留着会 POST 到不存在的端点, 步骤一律由 SSE 实时 + 运行期逐步落库 — 小欧-2026-10-01
 
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
     const response = await api.delete<{ success: boolean }>(
@@ -203,20 +222,35 @@ export const sessionApi = {
     return response.data;
   },
 
-  updateSession: async (
+  // 编辑历史: 2026-10-24 小欧 - SRP拆分: 原 updateSession 把"改标题"与"切会话模型"耦合在一个函数,
+  //   title 必传致 ModelPicker 被迫传标题, 长标题触发后端 422; 拆为 updateSessionTitle + updateSessionModel
+  updateSessionTitle: async (
     sessionId: string,
     title: string,
-    version: number,
-    sessionModel?: SessionModelOverride | null
+    version: number
   ): Promise<UpdateSessionResponse> => {
     const body: Record<string, unknown> = {
       title,
       version,
       updated_by: 'user',
     };
-    if (sessionModel !== undefined) {
-      body.sessionModel = sessionModel;
-    }
+    const response = await api.put<UpdateSessionResponse>(
+      `/sessions/${sessionId}`,
+      body
+    );
+    return response.data;
+  },
+
+  updateSessionModel: async (
+    sessionId: string,
+    sessionModel: SessionModelOverride | null,
+    version: number
+  ): Promise<UpdateSessionResponse> => {
+    const body: Record<string, unknown> = {
+      version,
+      updated_by: 'user',
+      sessionModel,
+    };
     const response = await api.put<UpdateSessionResponse>(
       `/sessions/${sessionId}`,
       body
@@ -254,6 +288,64 @@ export const sessionApi = {
       throw new Error('请求URL过长，请减少会话数量');
     }
     const response = await api.get<BatchTitleResponse>(url);
+    return response.data;
+  },
+
+  // 2026-11-03 小欧 - 跨会话在跑任务(历史页角标/顶栏浮层的后端权威来源): 只读、一条 SQL。
+  //   调用方只在挂载/窗口聚焦/列表重载时各调一次, 不做轮询 — 小欧-2026-11-03
+  listRunningTasks: async (): Promise<RunningTasksResponse> => {
+    const response = await api.get<RunningTasksResponse>(
+      '/sessions/tasks/running'
+    );
+    return response.data;
+  },
+
+  // 2026-11-03 小欧 - 单任务状态轻量读口(前端退订后每 60s 后台复核专用): 只读单行,
+  //   替代拉整会话任务正文的 /sessions/{id}/tasks; task 为 null 表示该任务行不存在(=已结束, 常态非异常)
+  getTaskStatus: async (taskId: string): Promise<RunningTask | null> => {
+    const response = await api.get<{ task: RunningTask | null }>(
+      `/sessions/tasks/${encodeURIComponent(taskId)}`
+    );
+    return response.data.task;
+  },
+
+  // 2026-11-02 小欧 - 会话目录读口: prune=true 才清库(面板主动请求), 默认纯读零副作用;
+  //   响应含 project_root/allowed_dirs 只读字段, 只展示永不进 PATCH
+  getWorkspaces: async (
+    sessionId: string,
+    prune?: boolean
+  ): Promise<WorkspacesResponse> => {
+    if (!sessionId || !sessionId.trim()) {
+      throw new Error('会话ID不能为空');
+    }
+    const response = await api.get<WorkspacesResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/workspaces`,
+      prune ? { params: { prune: true } } : undefined
+    );
+    return response.data;
+  },
+
+  // 2026-10-30 18:36:36 小欧 - 会话目录写口: body 即全量覆盖写([] = 清空), 命中禁区整单 422
+  //   (detail 落 error.workspace_rejected); 超时收窄 20s(后台提交, 未答由 store 对账拉回库真值) — 小欧-2026-10-30
+  patchWorkspaces: async (
+    sessionId: string,
+    sessionWorkspaces: {
+      path: string;
+      workspace_property?: string;
+      memo?: string | null;
+    }[]
+  ): Promise<{ success: boolean; session_id: string }> => {
+    if (!sessionId || !sessionId.trim()) {
+      throw new Error('会话ID不能为空');
+    }
+    if (!Array.isArray(sessionWorkspaces)) {
+      throw new Error('目录列表必须是数组');
+    }
+    const response = await api.patch<{ success: boolean; session_id: string }>(
+      `/sessions/${encodeURIComponent(sessionId)}/workspaces`,
+      { session_workspaces: sessionWorkspaces },
+      { timeout: 20_000 }
+    );
     return response.data;
   },
 };

@@ -1,29 +1,29 @@
-// 编辑历史: 2026-04-11 小强 - 创建统一错误处理中心(errorHandler)
-// 编辑历史: 2026-08-27 小欧 - 修复#9/#36/#37: formatTime复用/formatError重试死循环/重试递归改Math.pow
-// 编辑历史: 2026-08-27 小欧 - 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED, 不再错失可重试语义
-// 编辑历史: 2026-08-27 小欧 - 修复BUG2: classifyError中timeout分支前置于network, "网络连接超时"正确归REQUEST_TIMEOUT
-// 编辑历史: 2026-08-27 小欧 - 修复BUG3: classifyError兼容顶层err.status(非仅response.status)
-// 编辑历史: 2026-08-27 小欧 - 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归BACKEND_ERROR避免过度归类
-// 编辑历史: 2026-08-27 小欧 - 修复BUG9: isSilentError补美式"Canceled"(大小写不敏感)
-// 编辑历史: 2026-08-27 小欧 - 修复BUG10: classifyError支持字符串型错误
-// 编辑历史: 2026-08-27 小欧 - 修复Bug15: handleError/handleApiError展示原始error.message, 不丢调试信息
-// 编辑历史: 2026-08-27 小欧 - 修复Bug5/Bug6/Bug13/Bug14: handleSSEError无onReconnect不误导; 空文案不弹; handleApiError补齐回传fallbackMode/deleteMessage
-// 编辑历史: 2026-08-28 小欧 - 修复review-bugs#1: 新增 extractErrorMessage, handleError/handleApiError 兼容 axios response.data.detail/error.detail 等后端具体文案, 不再丢失后端 detail
-// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#1: extractErrorMessage优先级倒置——response.data.detail/message优先于e.message, 数组detail用JSON.stringify兜底 - 小沈-2026-08-28
-// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#2: retryWithBackoff改async/await, 成功后停止递归, 加计数器防无限 - 小沈-2026-08-28
-// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例; showMessage增onClick点击消失 - 小欧-2026-08-28
-// 编辑历史: 2026-09-08 小欧 - 提示文案防裸值加固+实证打点(北京老陈驱动「xx 60000」裸数字 toast):
-//   ①新增 sanitizeDisplayMessage: showMessage 透传上弹窗前过滤纯数字/非字符串/空白/undefined/null/[object Object] 等
-//     垃圾值, 一律回退 ERROR_CONFIG_MAP[errorType] 固定中文文案, 杜绝 UI 裸弹 60000 之类数字(后端原始报文不受影响,
-//     console 仍完整可查);
-//   ②showMessage 弹前加 console.info("[Toast] errorType: 文案") 打点, 供复现时反查 60000 来源字段 — 小欧-2026-09-08
-// 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
-//   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
+// 编辑历史（按日合并，只留结论）:
+// 2026-04-11 小强 - 创建统一错误处理中心
+// 2026-08-27 小欧 - formatTime 复用 / formatError 重试死循环改 Math.pow；storage 归可重试、quota 单列
+//   QUOTA_EXCEEDED；timeout 分支前置于 network；classifyError 兼容顶层 err.status 与字符串型错误；
+//   404 仅当 url 含 sessions 才归 SESSION_NOT_FOUND；isSilentError 补 "Canceled"；错误展示保留
+//   原始 message。handleSSEError 无 onReconnect 不误导、空文案不弹
+// 2026-08-28 小欧/小沈 - 新增 extractErrorMessage 及其优先级（后端 detail/message 优先于 error.message）；
+//   retryWithBackoff 改 async/await + 计数器防无限递归；静态 message 改走 antdApp.getMessage() 上下文实例
+// 2026-09-08 小欧 - sanitizeDisplayMessage 过滤纯数字/占位垃圾值（防 "xx 60000" 裸数字 toast），
+//   回退该 errorType 的固定中文文案；console 仍留完整报文
+// 2026-09-09 小欧 - extractErrorMessage 入参改 Record<string, unknown>（消除 any 与裸断言）
+// 2026-09-20 小强 - 新增设置/模型域三错误类型与固定文案
+// 2026-09-21 小欧 - 去重键由 errorType 改为 errorType+最终文案（同类不同因不再互相吞）
+// 2026-09-27 小欧 - ERROR_CONFIG_MAP 直接索引无 fallback 致白屏，收敛为唯一兜底口 getErrorConfig()；
+//   AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
+// 2026-09-29 21:37:55 小欧 - getErrorConfig 加 export 供 [63] 5.3 传输层复用（唯一兜底口，不重建同义表）——
+//   原 useSSE 本地那份 ERROR_CONFIG_MAP 副本随 hook 删除，改由传输层直引本处（DRY：唯一同义表）— 小欧-2026-09-29 21:37:55
+// 2026-10-05 小欧 - 超时文案人话化(C方案, 老陈裁定): axios默认超时消息"timeout of 60000ms exceeded"
+//   是完整英文句, 不被sanitize纯数字拦, 直接弹给用户看不懂 —— 在sanitizeDisplayMessage内将其
+//   及同类超时文案改写成"后端响应超时，请重试"。不修根本根因(axios超时仍是超时), 只解决展示 — 小欧-2026-10-05
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.7: 新增 ErrorType.WORKSPACE_REJECTED + ERROR_CONFIG_MAP 条目(severity=warning)
+//   + classifyError 显式提取分支(422 信封体里无 error_type，自映射走不到，须按 error.workspace_rejected 特征识别)
+// 编辑历史: 2026-10-21 小杨 - 新增 ErrorType.FILE_READ（文件/引用正文读取失败）+ 错误配置表对应条目 — 小杨-2026-10-21
+// 编辑历史: 2026-10-30 小欧 - RequestDiagnostics 诊断上下文与 handleApiError 的 message/diag 透传，补 URL/耗时/请求ID 日志
 /**
- * 统一错误处理中心 - errorHandler.ts
- *
- * 功能：集中管理所有前端错误的分类、提示风格、重试逻辑、错误去重
- * 设计文档：前端错误统一处理中心设计-小强-2026-0411.md (v1.4)
+ * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
  * @author 小强
  * @version 1.0.0
@@ -76,6 +76,12 @@ export enum ErrorType {
 
   // 业务错误
   SESSION_CONFLICT = 'session_conflict',
+  // 2026-10-06 小欧 - 文档[11] 决策 19: 会话有活跃任务且插话开关关 → 后端 message_service.save_message 落库前 409。
+  //   必与 SESSION_CONFLICT(版本冲突)分开: 后者"请刷新页面重试"对本场景是错误引导。
+  SESSION_BUSY = 'session_busy',
+  // 2026-10-30 小欧 A8: 引用全部不可用(后端编排早退 error_type=refs_blocked)。
+  //   必须登记, 否则 getErrorConfig 取不到 → toast 落到 UNKNOWN「发生未知错误」。
+  REFS_BLOCKED = 'refs_blocked',
   SESSION_NOT_FOUND = 'session_not_found',
   VERSION_CONFLICT = 'version_conflict',
   CONTENT_TOO_LONG = 'content_too_long',
@@ -88,6 +94,9 @@ export enum ErrorType {
   // 操作错误
   SAVE_FAILED = 'save_failed',
   LOAD_FAILED = 'load_failed',
+  SETTINGS_SCHEMA_FAILED = 'settings_schema_failed', // 2026-09-20 小强 - 设置 Schema 拉取失败
+  SETTINGS_SAVE_FAILED = 'settings_save_failed', // 2026-09-20 小强 - 设置保存失败
+  MODEL_MANAGEMENT_FAILED = 'model_management_failed', // 2026-09-20 小强 - 模型管理 CRUD 失败
   SEND_FAILED = 'send_failed',
   USER_MESSAGE_SAVE_FAILED = 'user_message_save_failed',
 
@@ -117,7 +126,9 @@ export enum ErrorType {
   REQUEST_ABORT = 'request_abort',
   COMPONENT_UNMOUNTED = 'component_unmounted',
 
-  // Settings页面错误
+  // Settings 页面错误。CONFIG_ERROR 对应后端 resolver 的 ProviderKeyMissingError
+  // （error_type="config_error"）；现仅走对话流渲染层，此处补同义项防将来改走 toast 时无配置。
+  CONFIG_ERROR = 'config_error',
   PROVIDER_CONFIG_ERROR = 'provider_config_error',
   MODEL_CONFIG_ERROR = 'model_config_error',
   ADD_PROVIDER_FAILED = 'add_provider_failed',
@@ -146,6 +157,18 @@ export enum ErrorType {
   // 通用提示类型（非错误）
   WARNING = 'warning',
   INFO = 'info',
+
+  // 会话目录被拒
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增：PATCH /sessions/{id}/workspaces 命中禁区
+  //   整单 422，detail 为 {workspace_rejected: [{path, reason}]}。
+  //   ⚠ 该响应体里没有 error_type 字段，classifyError 必须走显式提取分支（见下）
+  WORKSPACE_REJECTED = 'workspace_rejected',
+
+  // 2026-10-21 小杨 - 新增（文件浏览页面）：
+  //   FILE_READ —— 文件/引用正文读取失败（文件页刷新、足迹面板引用、推荐行现场重读共用）
+  FILE_READ = 'file_read',
+  //   COPY_FAILED —— 复制到剪贴板失败（非安全上下文 / 权限被拒；须可感知，不静默）
+  COPY_FAILED = 'copy_failed',
 }
 
 // ============================================
@@ -248,14 +271,18 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    message: 'API Key无效，请检查配置',
+    // 原文案「API Key无效」是张冠李戴 —— 访问令牌与 provider 的 API Key 无关，
+    // 用户输错访问口令却被指去检查 LLM 服务商密钥配置，方向完全错误
+    message: '访问口令无效，请重新输入',
     severity: 'critical',
   },
   [ErrorType.AUTH_403]: {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    message: '权限不足，请检查配置',
+    // 改为兜底措辞。403 的精确引导来自后端 detail（如「只能在服务端本机进行」），
+    // 调用方优先透传原话，本条仅在后端未给文案时兜底
+    message: '此操作不被允许，请按提示处理',
     severity: 'critical',
   },
 
@@ -265,6 +292,22 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     maxRetries: 0,
     retryDelay: 0,
     message: '会话冲突，请刷新页面重试',
+    severity: 'warning',
+  },
+  [ErrorType.SESSION_BUSY]: {
+    retryable: false, // 2026-10-07 小欧 - 文档[11] 3.5.8(决策 19): 非瞬时故障(需等任务结束或先取消), 自动重试无意义
+    maxRetries: 0,
+    retryDelay: 0,
+    // 2026-10-07 小欧: 本 message 仅兜底; 真源是后端 detail/error_message(handleError 经 extractErrorMessage 已优先使用)。改文案须三处同步。
+    message: '任务执行中，插话开关未开启；请等待完成或先取消',
+    severity: 'warning', // 非 critical: 这是"现在不方便"而非"故障"
+  },
+  [ErrorType.REFS_BLOCKED]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    // 真源是后端 error_message(点名哪几条不可用, handleSSEError 已透传); 本 message 仅兜底
+    message: '引用不可用，请移除后重发',
     severity: 'warning',
   },
   [ErrorType.SESSION_NOT_FOUND]: {
@@ -318,6 +361,27 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     maxRetries: 3,
     retryDelay: 1000,
     message: '保存失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.SETTINGS_SCHEMA_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '设置结构加载失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.SETTINGS_SAVE_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '设置保存失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.MODEL_MANAGEMENT_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '模型管理操作失败，请重试',
     severity: 'warning',
   },
   [ErrorType.LOAD_FAILED]: {
@@ -462,6 +526,14 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
   },
 
   // Settings页面错误
+  // 与 ErrorDetail.ERROR_TYPE_LABELS 的 config_error 同义（同一后端 error_type 的两个消费面）
+  [ErrorType.CONFIG_ERROR]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '配置错误，请检查配置（例：目标 Provider 未配置 API Key）',
+    severity: 'critical',
+  },
   [ErrorType.PROVIDER_CONFIG_ERROR]: {
     retryable: false,
     maxRetries: 0,
@@ -607,6 +679,19 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     severity: 'warning',
   },
 
+  // 会话目录被拒
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增
+  //   severity=warning：用户可自行纠正的校验问题，不是 critical
+  [ErrorType.WORKSPACE_REJECTED]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '目录被拒绝',
+    description:
+      '被拒路径与原因见 error.workspace_rejected（Panel 内逐条展示）',
+    severity: 'warning',
+  },
+
   // 通用提示类型（非错误）
   [ErrorType.WARNING]: {
     retryable: false,
@@ -622,7 +707,40 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     message: '',
     severity: 'info',
   },
+  // 2026-10-21 小杨 - 新增错误类型**必须同时**登记枚举与本配置表
+  //   （只加枚举不加配置 → getErrorConfig 取不到 → showMessage 静默不弹，比不写更坏）
+  [ErrorType.FILE_READ]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '文件读取失败',
+    severity: 'warning',
+  },
+  [ErrorType.COPY_FAILED]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '复制失败',
+    severity: 'warning',
+  },
 };
+
+/**
+ * 取错误配置（唯一兜底口）。未登记/空/null 一律降级为 UNKNOWN：
+ * classifyError 会把后端 error_type 原样返回，直接索引会因缺键而 config.silent 抛 TypeError 白屏。
+ * case: errorhandler-unknown-type.test.ts
+ * 2026-09-29 小欧: 改为 export — [63] 5.3 传输层需按 classifyError 结果查可重试性（原 useSSE 本地
+ *   ERROR_CONFIG_MAP 副本随 hook 删除），复用本唯一兜底口避免重建同义表（DRY，且直索引有白屏前科）
+ *   — 小欧-2026-09-29 21:37:55
+ */
+export function getErrorConfig(
+  errorType: ErrorType | string | undefined | null
+) {
+  return (
+    ERROR_CONFIG_MAP[errorType as ErrorType] ??
+    ERROR_CONFIG_MAP[ErrorType.UNKNOWN]
+  );
+}
 
 // ============================================
 // 错误去重机制 - 30秒内不重复提示
@@ -632,19 +750,19 @@ const ERROR_DEDUP_WINDOW = 30000;
 const recentErrors = new Map<string, number>();
 
 /**
- * 判断错误是否应该显示（30秒去重）
- * @param errorType 错误类型
+ * 判断错误是否应该显示（30秒去重，键="类型:文案"，同类型不同原因不互相吞）
+ * @param key 去重键（errorType 或 "errorType:文案"）
  * @returns 是否应该显示
  */
-export function shouldShowError(errorType: ErrorType): boolean {
+export function shouldShowError(key: string): boolean {
   const now = Date.now();
-  const lastShowTime = recentErrors.get(errorType);
+  const lastShowTime = recentErrors.get(key);
 
   if (lastShowTime && now - lastShowTime < ERROR_DEDUP_WINDOW) {
     return false;
   }
 
-  recentErrors.set(errorType, now);
+  recentErrors.set(key, now);
   return true;
 }
 
@@ -689,7 +807,7 @@ export function isSilentError(error: unknown): boolean {
     return true;
   }
 
-  // 2026-08-27 小欧 修复BUG9: 补美式"Canceled", 统一大小写不敏感匹配
+  // 2026-08-27 小欧 修复: 补美式"Canceled", 统一大小写不敏感匹配
   const silentMsg = err.message?.toLowerCase() ?? '';
   if (silentMsg.includes('canceled') || silentMsg.includes('cancelled')) {
     return true;
@@ -709,36 +827,52 @@ export function isSilentError(error: unknown): boolean {
 // 统一显示函数
 // ============================================
 
-// 2026-09-08 小欧 提示文案防裸值过滤(北京老陈驱动「xx 60000」裸数字 toast 实证加固):
-//   上游透传的 message 可能是纯数字(如后端毫秒值 60000)或垃圾占位值, 直接上弹窗用户无法理解且易误判为 Bug。
-//   非字符串/空白/纯数字/占位垃圾值一律返回 undefined → showMessage 回退该 errorType 的固定中文文案。
-//   真实报文排查仍走 console 完整 error 对象, 本过滤只防 UI 文案错乱, 不丢任何调试信息。 — 小欧-2026-09-08
+// 提示文案防裸值：纯数字（如后端毫秒值 60000）与占位垃圾值（undefined/null/[object Object]）
+// 直上弹窗用户无法理解，返回 undefined 让 showMessage 回退该 errorType 的固定文案。
+// 完整报文仍走 console，调试信息不丢。
+//
+// 已知边界：过滤不区分来源，后端 detail 本身为纯数字时（如 "0"）精确信息同样被丢弃。
+// 代码层无信号可区分噪声与有效值，根治方式为后端 detail 不返回裸数字。
 const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim();
   if (!t) return undefined;
+  // 2026-10-05 小欧 C方案: axios实例timeout(默认60s)超时消息渲染为人话; 完整报文仍由 console.info([Toast])留存
+  if (/timeout\s*of\s*[\d.]+\s*ms\s*exceeded/i.test(t))
+    return '后端响应超时，请重试';
+  if (/^\s*timeout\s+exceeded\s*$/i.test(t)) return '后端响应超时，请重试';
   if (/^-?\d+(\.\d+)?$/.test(t)) return undefined; // 纯数字(含负数/小数), 如 "60000"
   if (/^[0-9,.\s]+$/.test(t)) return undefined; // 纯数字字符集(防千分位 "60,000"), 排除科学记数/字母
   if (/^(undefined|null|nan|\[object object\])$/i.test(t)) return undefined;
   return raw;
 };
 
+// 2026-10-30 小欧 - 诊断上下文接口(供 client.ts describeRequest 返回)
+/**
+ * 一次失败请求的可诊断上下文 — 小欧 2026-10-30
+ * 为什么需要: 原 [Toast] 日志只有「类型: 文案」, 出事无法回答
+ *   "哪个接口、等了多久、请求有没有到后端"; 补上 URL/耗时/请求ID 才能与后端 [slow] 日志对账。
+ */
+export interface RequestDiagnostics {
+  url?: string;
+  elapsedMs?: number;
+  requestId?: string;
+}
+
 /**
  * 统一显示错误/警告/成功提示
  * @param errorType 错误类型
  * @param customMessage 可选的自定义消息
+ * @param diag 可选诊断上下文(URL/耗时/请求ID), 只进 console
  */
 export function showMessage(
   errorType: ErrorType,
-  customMessage?: string
+  customMessage?: string,
+  diag?: RequestDiagnostics
 ): void {
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   if (config.silent) {
-    return;
-  }
-
-  if (!shouldShowError(errorType)) {
     return;
   }
 
@@ -746,10 +880,19 @@ export function showMessage(
   const displayMessage =
     sanitizeDisplayMessage(customMessage) || config.message;
 
-  // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
-  console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);
+  // 修复: 去重检查移到文案定稿后, 键=类型+文案(原仅类型, 会吞掉同类型不同原因)
+  if (!shouldShowError(`${errorType}:${displayMessage ?? ''}`)) {
+    return;
+  }
 
-  // 2026-08-27 小欧 修复Bug6: 空文案(如RETRY_WARNING)不弹空toast
+  // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
+  // 2026-10-30 小欧 - 补 URL/耗时/请求ID, 与后端 [slow] 日志对账
+  const _diagTxt = diag
+    ? ` | ${diag.url ?? '-'} ${diag.elapsedMs ?? '-'}ms req=${diag.requestId ?? '-'}`
+    : '';
+  console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}${_diagTxt}`);
+
+  // 2026-08-27 小欧 修复: 空文案(如RETRY_WARNING)不弹空toast
   if (!displayMessage) {
     return;
   }
@@ -795,23 +938,39 @@ export function showSuccess(msg: string = '操作成功'): void {
   });
 }
 
-// 2026-08-28 小欧 修复review-bugs#1: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
+// 2026-08-28 小欧 修复: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
 // 2026-08-28 小沈 修复优先级: response.data.detail/message优先于e.message(后端精确文案优先), 数组detail用JSON.stringify
-function extractErrorMessage(error: unknown): string | undefined {
+// 2026-09-27 小欧 根因修复：改为 export。调用方（如 SettingRow）此前直接取 e.message，
+//   拿到的是 axios 造的英文 "Request failed with status code 403"，后端 detail 被丢弃。
+export function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;
   if (error == null) return undefined;
   const e = error as Record<string, unknown>;
   const resp = e.response;
   if (resp && typeof resp === 'object') {
-    const data = (resp as Record<string, unknown>).data as
-      | Record<string, unknown>
-      | undefined;
+    const raw = (resp as Record<string, unknown>).data;
+    if (typeof raw === 'string' && raw) return raw; // 纯文本 body（如 403 Forbidden 文本）
+    const data = raw as Record<string, unknown> | undefined;
     if (data && typeof data === 'object') {
       if (data.detail !== undefined && data.detail !== null) {
         if (Array.isArray(data.detail)) return JSON.stringify(data.detail);
         if (typeof data.detail === 'string' && data.detail) return data.detail;
       }
       if (typeof data.message === 'string' && data.message) return data.message;
+      // 2026-10-21 小欧 - 本项目后端的错误信封是 {success:false, error:{code,message}, status_code, timestamp}
+      //   （全局 http_exception_handler 把 detail 放进 **error** 键）→ 上面两条都不命中，
+      //   只能落到 axios 造的英文 "Request failed with status code 413"（用户看不懂）。
+      //   故补这条：优先取业务信封里的中文 message。
+      const errObj = data.error as Record<string, unknown> | undefined;
+      if (typeof data.error === 'string' && data.error) return data.error;
+      if (
+        errObj &&
+        typeof errObj === 'object' &&
+        typeof errObj.message === 'string' &&
+        errObj.message
+      ) {
+        return errObj.message;
+      }
     }
   }
   if (typeof e.message === 'string' && e.message) return e.message;
@@ -834,7 +993,7 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.UNKNOWN;
   }
 
-  // 2026-08-27 小欧 修复Bug10: 支持字符串型错误(无.message属性)
+  // 2026-08-27 小欧 修复: 支持字符串型错误(无.message属性)
   const err = (typeof error === 'string' ? { message: error } : error) as {
     name?: string;
     message?: string;
@@ -855,7 +1014,7 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.COMPONENT_UNMOUNTED;
   }
 
-  // 2026-08-27 小欧 修复Bug3: 兼容顶层err.status(非仅response.status, fetch类错误常放顶层)
+  // 2026-08-27 小欧 修复: 兼容顶层err.status(非仅response.status, fetch类错误常放顶层)
   const status = err.response?.status ?? err.status;
   if (status) {
     switch (status) {
@@ -864,12 +1023,17 @@ export function classifyError(error: unknown): ErrorType {
       case 403:
         return ErrorType.AUTH_403;
       case 404:
-        // 2026-08-27 小欧 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归通用后端错误避免过度归类
+        // 2026-08-27 小欧 修复: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归通用后端错误避免过度归类
         if (err.response?.config?.url?.includes('sessions')) {
           return ErrorType.SESSION_NOT_FOUND;
         }
         return ErrorType.BACKEND_ERROR;
       case 409:
+        // 2026-10-06 小欧 - 文档[11] 决策 19: 按 URL 细分, 防版本冲突与插话拒发共用一个错误类型。
+        //   做法同构既有 404 先例(404 仅当 url 含 sessions 才归 SESSION_NOT_FOUND)。
+        if (err.response?.config?.url?.includes('/messages')) {
+          return ErrorType.SESSION_BUSY;
+        }
         return ErrorType.SESSION_CONFLICT;
       case 429:
         return ErrorType.RATE_LIMIT_429;
@@ -896,7 +1060,7 @@ export function classifyError(error: unknown): ErrorType {
     ) {
       return ErrorType.CONNECTION_RESET;
     }
-    // 2026-08-27 小欧 修复BUG2: timeout优先于network, "网络连接超时"正确归REQUEST_TIMEOUT
+    // 2026-08-27 小欧 修复: timeout优先于network, "网络连接超时"正确归REQUEST_TIMEOUT
     if (msg.includes('timeout') || msg.includes('超时')) {
       return ErrorType.REQUEST_TIMEOUT;
     }
@@ -910,7 +1074,7 @@ export function classifyError(error: unknown): ErrorType {
     ) {
       return ErrorType.NETWORK_ERROR;
     }
-    // 2026-08-27 小欧 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED
+    // 2026-08-27 小欧 修复: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED
     if (msg.includes('storage') || msg.includes('存储')) {
       return ErrorType.STORAGE_ERROR;
     }
@@ -933,6 +1097,17 @@ export function classifyError(error: unknown): ErrorType {
       case 'server':
         return ErrorType.SERVER_500;
     }
+  }
+
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增：422 workspace_rejected 显式提取
+  //   ⚠ 该响应体是 {success:false, error:{workspace_rejected:[...]}}，**没有 error_type 字段**，
+  //     故上面的自映射永远走不到，必须按特征字段识别。
+  //   主流程在 SessionWorkspacePanel 内直接读并自动清除被拒条目，本分支是全局兜底。
+  if (
+    (err as { response?: { data?: { error?: Record<string, unknown> } } })
+      ?.response?.data?.error?.workspace_rejected
+  ) {
+    return ErrorType.WORKSPACE_REJECTED;
   }
 
   if (err.code === 'ECONNABORTED') {
@@ -962,7 +1137,7 @@ export interface ErrorContext {
   source?: 'api' | 'sse' | 'manual';
   onRetry?: () => void;
   continueOnError?: boolean;
-  // 2026-08-27 小欧 修复review-bugs#1: 调用方自定义文案优先于原始error.message透传
+  // 2026-08-27 小欧 修复: 调用方自定义文案优先于原始error.message透传
   message?: string;
 }
 
@@ -1004,12 +1179,12 @@ export function handleError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
-  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息(空则回退config.message)
-  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
+  // 2026-08-27 小欧 修复: 展示原始error.message, 不丢调试信息(空则回退config.message)
+  // 2026-08-28 小欧 修复: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
   const rawMsg = extractErrorMessage(error);
-  // 2026-08-27 小欧 修复review-bugs#1: context.message 优先透传, 其次原始error.message, 确保调用方自定义文案不丢失
+  // 2026-08-27 小欧 修复: context.message 优先透传, 其次原始error.message, 确保调用方自定义文案不丢失
   const customMsg =
     (typeof context.message === 'string' && context.message) ||
     (typeof rawMsg === 'string' ? rawMsg : undefined);
@@ -1059,6 +1234,10 @@ export function handleApiError(
   options?: {
     onRetry?: () => void;
     showError?: boolean;
+    /** 覆盖上屏文案(超时探活后按探测结果选一句, 探活文案表) — 小欧 2026-10-30 */
+    message?: string;
+    /** 可诊断上下文, 只进 console — 小欧 2026-10-30 */
+    diag?: RequestDiagnostics;
   }
 ): ActionResult {
   if (isSilentError(error)) {
@@ -1066,15 +1245,21 @@ export function handleApiError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
-  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息
-  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail
+  // 2026-08-27 小欧 修复: 展示原始error.message, 不丢调试信息
+  // 2026-08-28 小欧 修复: 改用 extractErrorMessage, 兼容 axios response.data.detail
   const rawMsg = extractErrorMessage(error);
   if (options?.showError !== false) {
     ErrorHandlerSelf.showMessage(
       errorType,
-      typeof rawMsg === 'string' ? rawMsg : undefined
+      // 显式覆盖 > 后端原文 > 不传(回退该类型的固定文案)
+      typeof options?.message === 'string'
+        ? options.message
+        : typeof rawMsg === 'string'
+          ? rawMsg
+          : undefined,
+      options?.diag
     );
   }
 
@@ -1132,13 +1317,13 @@ export function handleSSEError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   const maxRetries = context.maxRetries ?? config.maxRetries;
   const canRetry = config.retryable && context.reconnectAttempts < maxRetries;
 
   if (canRetry) {
-    // 2026-08-27 小欧 修复Bug5: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
+    // 2026-08-27 小欧 修复: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
     if (context.onReconnect) {
       const retryMessage = `正在重试 (${context.reconnectAttempts + 1}/${maxRetries})...`;
       getMessage().warning(retryMessage);
@@ -1154,7 +1339,11 @@ export function handleSSEError(
     return { handled: true, errorType };
   }
 
-  ErrorHandlerSelf.showMessage(errorType);
+  // 2026-10-30 小欧 A8: 后端 error_message 才是明细真源(如 refs_blocked 点名哪几条不可用)。
+  //   原实现只 showMessage(type) → toast 只能取配置兜底文案, 后端明细只在 assistant 气泡里出现。
+  //   透传后 toast 与气泡同一句话; 未带该字段的错误不受影响(showMessage 回落配置文案)。
+  const _detail = (error as { error_message?: string } | null)?.error_message;
+  ErrorHandlerSelf.showMessage(errorType, _detail);
 
   return {
     handled: true,

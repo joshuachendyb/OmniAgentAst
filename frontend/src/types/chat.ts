@@ -2,16 +2,32 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口; HistoryLoadResult model_override→sessionModel
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: SessionModelOverride 补 api_base
 // 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 修复: 新增ModelListItem接口(模型列表项结构)
+// 编辑历史: 2026-08-27 小欧 - 8.6: ExecutionStep导入改从./execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StatusValue/StatusMessage的cancelled分支与isStatusMessage的cancelled判断(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-10-03 小欧 - HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
+//   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
+// 编辑历史: 2026-10-10 小欧 - /: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
+// 编辑历史: 2026-10-21 小杨 - 新增 ChatRefPayload（引用条目随消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
+// 编辑历史: 2026-10-25 小欧 - 通知信封收敛: StatusValue/StatusMessage 统一 'installing'/'summarizing' → 'notice'
+//   isStatusMessage 守卫同步更新 — 小欧-2026-10-25
+
+// 编辑历史: 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRefPayload 删 content 字段
+//   (前端不再上行正文, wire 只带标识; 正文由后端 resolver 读盘拼装) — 小欧-2026-10-29
+
+// 编辑历史: 2026-10-30 小欧 - 全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
+//   (标注类, 不参与安全判定; 前端只读展示) — 小欧-2026-10-30
+
+// 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里不再回传不可用行, UI 无需表达该状态);
+//   WorkspacesResponse 删 unusable、增 pruned(仅 prune=true 时非 0) — 小欧-2026-11-02
+
 /**
  * 流式API响应类型定义
  *
  * 用于定义ReAct流式API返回的8种消息类型
- * 与后端第9章设计文档完全对应
+ * 与后端设计文档完全对应
  *
  * @author 小新
  * @version 1.0.0
@@ -20,9 +36,7 @@
 
 import type { ExecutionStep } from './execution';
 
-// ============================================================
-// 消息类型定义（8种）
-// ============================================================
+// ==================== 消息类型定义（8种） ====================
 
 /**
  * start类型 - 任务开始
@@ -81,60 +95,12 @@ export interface ActionMessage {
 }
 
 /**
- * Observation数据结构
- * 【Phase 2 2026-06-22 小欧】observation改为llm_data+tool_result+other_data三字段
+ * 2026-10-04 小欧  死契约清理(禁 backward, 不留兼容壳): 删 ObservationData 与 ObservationMessage ——
+ *   二者描述的是后端 08-18 之前的旧 observation 消息契约(parallel_results/tool_params/return_direct/
+ *   execution_status 等键后端从不下发), 全仓零生产消费(仅本文件 StreamMessage 联合成员 + 一个无人调用的
+ *   类型守卫 isObservationMessage); 现行契约由 sseParser 解析进 ExecutionStep, 载体是 tool_result 数组。
+ *   同时删 isObservationMessage 守卫与其在 StreamMessage 中的联合成员 — 小欧-2026-10-04
  */
-export interface ObservationData {
-  llm_data?: Record<string, unknown>; // 完整llm_data（含summary/action/status/duration_ms/metrics）
-  tool_result?: unknown; // 完整data（工具返回的业务数据）
-  other_data?: {
-    // 控制字段
-    return_direct?: boolean;
-    warning?: string;
-    attachment?: unknown;
-    retry_count?: number;
-    [key: string]: unknown;
-  };
-  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
-  parallel_results?: Array<{
-    tool_name: string;
-    tool_params: Record<string, unknown>;
-    llm_data: Record<string, unknown>;
-    tool_result: unknown;
-    other_data: Record<string, unknown>;
-  }>;
-  // 兼容旧格式字段（Phase 1遗留，可选）
-  summary?: string;
-  tool_name?: string;
-  tool_params?: Record<string, unknown>;
-  return_direct?: boolean;
-  execution_status?: string;
-  error_message?: string;
-  warning?: string;
-  next_actions?: Array<{
-    tool: string;
-    description: string;
-    when?: string;
-    params?: Record<string, unknown>;
-  }>;
-  attachment?: unknown;
-}
-
-/**
- * observation类型 - 工具执行完成提示
- * 发送时机：ReAct第3阶段，工具执行完成后
- * 【2026-05-22 小沈】observation改为JSON对象（第13章设计方案）
- * 【向后兼容】保留content字段，但优先使用observation.summary
- */
-export interface ObservationMessage {
-  type: 'observation';
-  step: number;
-  timestamp: number;
-  observation: ObservationData; // observation JSON对象
-  code?: string; // 状态码（SUCCESS/ERROR/WARNING）
-  content?: string; // 【废弃】保留向后兼容，使用observation.summary
-  tool_name?: string; // 【废弃】保留向后兼容，使用observation.tool_name
-}
 
 /**
  * chunk类型 - 流式内容片段
@@ -184,15 +150,15 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'paused' | 'resumed' | 'retrying';
+export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'notice';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
  * 发送时机：状态变化时（取消/暂停/恢复/重试）
- * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
+ * 【2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
-  type: 'paused' | 'retrying' | 'resumed';
+  type: 'paused' | 'retrying' | 'resumed' | 'notice';
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -202,9 +168,7 @@ export interface StatusMessage {
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
 }
 
-// ============================================================
-// 联合类型
-// ============================================================
+// ==================== 联合类型 ====================
 
 /**
  * 流式消息联合类型 - 所有可能的响应类型
@@ -214,15 +178,12 @@ export type StreamMessage =
   | StartInfoMessage
   | ThoughtMessage
   | ActionMessage
-  | ObservationMessage
   | ChunkMessage
   | FinalMessage
   | ErrorMessage
   | StatusMessage;
 
-// ============================================================
-// 辅助类型
-// ============================================================
+// ==================== 辅助类型 ====================
 
 /**
  * 检查是否为指定类型
@@ -249,11 +210,7 @@ export function isActionMessage(msg: StreamMessage): msg is ActionMessage {
   return msg.type === 'action';
 }
 
-export function isObservationMessage(
-  msg: StreamMessage
-): msg is ObservationMessage {
-  return msg.type === 'observation';
-}
+// 2026-10-04 小欧: 删 isObservationMessage 守卫(随 ObservationMessage 一起下线, 全仓零调用) — 小欧-2026-10-04
 
 export function isChunkMessage(msg: StreamMessage): msg is ChunkMessage {
   return msg.type === 'chunk';
@@ -269,13 +226,14 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
   return (
-    msg.type === 'paused' || msg.type === 'retrying' || msg.type === 'resumed'
+    msg.type === 'paused' ||
+    msg.type === 'retrying' ||
+    msg.type === 'resumed' ||
+    msg.type === 'notice'
   );
 }
 
-// ============================================================
-// 聊天相关类型
-// ============================================================
+// ==================== 聊天相关类型 ====================
 
 /**
  * 聊天消息（用户发送的消息）
@@ -296,7 +254,28 @@ export interface ChatRequest {
   model?: string;
   task_id?: string;
   session_id?: string;
-  context_link_mode?: 'linked' | 'independent'; // 默认 independent（后端 ChatRequest 同名默认）
+  // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
+  link_enabled?: boolean;
+  allow_interject?: boolean; // 2026-10-06 小欧 - 请求体随消息携带(后端唯一写入口)
+  // 2026-10-21 小杨 - 引用条目随消息同批上行（搭便车，不单独上传）。
+  //   后端 models.py 的 ChatRef 与本类型一一对应；正文当轮即弃，不入库。
+  refs?: ChatRefPayload[];
+}
+
+/**
+ * 输入框引用条目（前端 → 后端随消息上行的引用载荷）
+ * 2026-10-21 小杨 - 新建
+ *
+ * 语义：kind=file 整文件引用 / kind=selection 行区间引用。
+ * ⚠ `content` 已删除：读取权收归后端，wire 只承载标识（path/lineRange），正文由后端按标识读盘
+ *   （见 2.3-8）。path 才是长期有效信息（Agent 日后可凭 path 重读）。
+ */
+export interface ChatRefPayload {
+  kind: 'file' | 'selection';
+  label: string;
+  path: string;
+  size?: number;
+  lineRange?: { start: number; end: number } | null;
 }
 
 /**
@@ -316,9 +295,7 @@ export interface TaskControlResponse {
   message: string;
 }
 
-// ============================================================
-// NewChatContainer 专用类型 - 小新 2026-03-13
-// ============================================================
+// ============ NewChatContainer 专用类型 - 小新 2026-03-13 ============
 
 /**
  * 聊天消息（扩展）
@@ -331,7 +308,7 @@ export interface Message extends ChatMessage {
   thought?: string; // 小欧 2026-07-16 LLM推理过程
   isStreaming?: boolean;
   isError?: boolean;
-  // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识
+  // 【小沈修复2026-04-23】添加发送状态，用于显示发送失败标识
   sendStatus?: 'sending' | 'sent' | 'failed';
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段
@@ -363,7 +340,7 @@ export interface SessionModelOverride {
   display_name?: string;
 }
 
-// 2026-08-27 小欧 三堂会审: 模型列表项结构, 与后端/config/models返回对齐
+// 2026-08-27 小欧 : 模型列表项结构, 与后端/config/models返回对齐
 export interface ModelListItem {
   provider: string;
   model: string;
@@ -380,4 +357,48 @@ export interface HistoryLoadResult {
   version?: number;
   title_locked?: boolean;
   sessionModel?: SessionModelOverride | null;
+  // 会话级 link 开关镜像(后端真源, 随会话加载下发)
+  linkEnabled?: boolean;
+  allowInterject?: boolean; // 2026-10-06 小欧 - 历史读取结果镜像
+}
+
+/**
+ * 发送选项（对象参数: 两个相邻 boolean 位置参数 TS 拦不住错位；
+ * 集中单点定义，消费方 import，不散在各处写字面量（DRY）。
+ */
+export interface SendOpts {
+  linkEnabled: boolean;
+  allowInterject: boolean;
+  /**
+   * 2026-10-21 小杨 - 本轮引用条目（当轮有效，不入库）。
+   * 未传或空数组 = 无引用（body 不带 refs 键，零退化）。
+   */
+  refs?: ChatRefPayload[];
+}
+
+/**
+ * 会话使用的目录（后端 chat_session_workspaces 表）— 2026-10-10 小欧 新增
+ * ⚠ 不进 SendOpts：前端不携带目录列表，只调独立 GET/PATCH 端点
+ */
+export interface WorkspaceEntry {
+  path: string;
+  /** 工作区属性文字标签（read_only/read_write/write/自定义），默认 read_write */
+  workspace_property?: string;
+  /** 目录备注说明，null/undefined = 无备注 */
+  memo?: string | null;
+  /** 是否本会话默认工作区（后端 reconcile 维护，前端只读） */
+  is_default?: boolean;
+}
+
+/**
+ * GET /sessions/{id}/workspaces 响应 — 2026-10-10 小欧
+ * project_root/allowed_dirs 为只读字段，只展示不提交
+ */
+export interface WorkspacesResponse {
+  session_id: string;
+  workspaces: WorkspaceEntry[];
+  /** 仅 prune=true 时清理的不可用行数（>0 一次性提示；不落常驻 UI）— 2026-11-02 小欧 */
+  pruned: number;
+  project_root: string;
+  allowed_dirs: string[];
 }

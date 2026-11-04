@@ -1,4 +1,13 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: SSE流式状态管理改造(8.4/8.6 事件分发/暂停续传)
+// 编辑历史: 2026-09-30 10:44:56 小欧 - sendMessage/clearSteps 改直连 chatStreamStore
+//   （桥接透传成员已删，北京老陈授权按可靠性标准裁定）— 小欧-2026-09-30 10:44:56：
+//   §sendMessage 不再经 useChatStreamSession 透传，useCallback 内部直连
+//     chatStreamStore.sendMessage(customSessionId ?? sessionId, content, linkEnabled)，
+//     依赖数组 remove 桥接透传身份，改 module 级稳定引用 + sessionId（memo 更简）；
+//   §clearSteps 由"桥接解构"改为本文件 useCallback 直连 chatStreamStore.clearSteps(sessionId)，
+//     对外签名 () => void 与 UseChatStreamingReturn 接口一致（矛盾 D 消费面签名不变）；
+//   §调用链收敛为「useChatStreaming→store」直线，与本项目既有直连惯例同构
+//     （useChatInit:81 / useChatTaskControl:162 / useChatSession:568-569）。
+// 编辑历史: 2026-08-26 小欧 - 参与改造: SSE流式状态管理改造(事件分发/暂停续传)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H1修复: executeSend内sendMessage加await闭合SSE发送Promise, 防拒绝变unhandled rejection/占位消息永久悬挂
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#10: disconnect参数语义纠偏(force->manualDisconnect, stopServer->clearStorage)
@@ -26,9 +35,25 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useSSE删除第12参externalExecutionStepsRef(唯一真源独立useRef),
 //   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
-// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F5代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 6.14 实施回填): callbacks 解构加 onMerged 并透传 useSSE(中层原漏, 链路断) - 小欧-2026-09-28
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.8: useSSE 删除(5.6)改订阅 Store(useChatStreamSession);
+//   9 具名回调收敛为 StreamEvent 单入口分发(授权改 pendingAuthorization 快照驱动, 见 5.15);
+//   删 disconnectWithParams(唯一生产消费者 useChatTaskControl 5.14 改走 Store.stop)与 setIsReceiving 注入;
+//   config.baseURL/token 首连消费移交 setTransportConfig(5.3, 应用初始化一次性注入) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 删 deniedSteps 改由 deniedEntries 派生（两套口径致误判全拒）；切会话复位会话级 ref
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.12: sendMessage/executeSend 形参改名 linkEnabled: boolean
+//   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: interjectSend 落库携带 allow_interject=true(否则插话第一条被 409)
+// 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（refs 与消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
+// 编辑历史: 2026-10-30 小欧 - 对外契约补 status(Store 快照原值只读透传): 取消终态帧未送达时, TaskInfoBar/
+//   RightViewer 的徽标兜底需要 store 终态判据; 原 useChatPanels 内联 getSnapshot 且未入 useMemo 依赖,
+//   status 变化面板不重算(兜底永不生效)。本 hook 已是该快照的消费方, 补透传比消费方二次直读 store 更直。 — 小欧-2026-10-30
+// 编辑历史: 2026-11-03 09:10:00 小欧 - 切会话补复位页面级 loading 闩锁: 任务在 A 跑时切到新会话,
+//   终态回调随订阅解绑 → onComplete 永不执行 → loading 恒 true(发送钮永久置灰/停止暂停常驻) — 小欧-2026-11-03
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -49,15 +74,27 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback, useState, useEffect } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条 — 小欧-2026-09-06
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条; 2026-11-03 小欧: 加 useRef(切会话复位 loading 闩锁)
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
-import { useSSE } from '@/hooks/useSSE';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - refs 载荷类型
+// [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
+import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
+import type {
+  StreamEvent,
+  StreamStatus,
+} from '@/features/chat/streams/backupTypes';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
-import { handleError } from '@/services/error/handler';
+import {
+  handleError,
+  classifyError,
+  ErrorType,
+} from '@/services/error/handler'; // 2026-10-07 小欧 - 文档[11] 3.5.4: classifyError 供 :530 SESSION_BUSY 吞点
 
 // 2026-09-06 小欧 B2(6.4A, 北京老陈裁定): 被拒工具点名条 sessionStorage 备份 key——
 //   与 useSSE.ts:43 `sse_execution_steps_backup`(steps 备份)平行命名, 本会话内刷新/重看恢复点名灰字 — 小欧-2026-09-06
@@ -79,9 +116,12 @@ export interface SSEConfig {
  * useChatStreaming Hook返回值
  */
 export interface UseChatStreamingReturn {
-  // 流式接收状态
+  // 流式接收状态（[63] 5.8：状态宿主已移交 Store，本层只读快照，不再暴露 setter）
   isReceiving: boolean;
-  setIsReceiving: (receiving: boolean) => void;
+
+  // 2026-10-30 小欧 - 会话流状态(Store 快照原值): 取消终态帧未送达时, 徽标/兜底需要它做权威判据。
+  //   只读透传, 与 isReceiving 同源同层, 不新造状态。
+  status: StreamStatus;
 
   // 执行步骤
   executionSteps: ExecutionStep[];
@@ -92,14 +132,9 @@ export interface UseChatStreamingReturn {
   // SSE操作
   sendMessage: (
     content: string,
-    sessionId?: string,
-    contextLinkMode?: 'linked' | 'independent'
+    opts: SendOpts,
+    sessionId?: string
   ) => Promise<void>;
-  disconnect: (
-    stopServer?: boolean,
-    force?: boolean,
-    callback?: () => void
-  ) => void; // 2026-08-27 小欧 修复#10: 签名语义 force->manualDisconnect, stopServer->clearStorage
   clearSteps: () => void;
 
   // 服务器任务ID
@@ -117,7 +152,8 @@ export interface UseChatStreamingReturn {
   //   user_rejected(独立事件, reason=content) + blocked/timeout(error 通道, reason=error_message) 两路 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<
     number,
-    Array<{ tool: string; reason: string; reject_type?: string }>
+    // 2026-09-30 小欧 - tool/reason 转**可选**：无名条目也要入表（保证计数），显示侧由渲染层过滤。
+    Array<{ tool?: string; reason?: string; reject_type?: string }>
   >;
 
   // Refs - 用于累积流式内容（供外部访问）
@@ -126,9 +162,17 @@ export interface UseChatStreamingReturn {
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
-  executeSend: (userMessage: Message) => Promise<void>;
+  executeSend: (userMessage: Message, opts: SendOpts) => Promise<void>;
 
-  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送（执行中追加一条输入；插话必然是开态, 故无需 opts）
+  //   与 executeSend 的分工(SRP)：executeSend = 新建任务流(含清 steps/建占位/重置取消态等"新任务"编排)；
+  //   本方法 = 投递一条输入给运行中任务，**刻意不做**上述任何一项(做了会破坏正在跑的任务显示与状态)。
+  interjectSend: (
+    userMessage: Message,
+    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 插话带引用
+  ) => Promise<void>;
+
+  // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
 }
 
@@ -147,15 +191,24 @@ export interface UseChatStreamingReturn {
  *
  * @param state - useChatState返回的状态对象
  * @param callbacks - useChatCallbacks返回的回调函数
- * @param config - SSE配置（baseURL, sessionId）
+ * @param _config - SSE配置（[63] 5.8：baseURL/token 首连消费已移交 setTransportConfig，
+ *   本层不再读取；形参保留以免改动 facade 调用形状）
  * @returns SSE相关状态和操作
  */
 export const useChatStreaming = (
   state: UseChatStateReturn,
   callbacks: UseChatCallbacksReturn,
-  config: SSEConfig
+  _config: SSEConfig
 ): UseChatStreamingReturn => {
-  const { sessionId, setSessionId, cancelInProgressRef } = state;
+  const {
+    sessionId,
+    setSessionId,
+    cancelInProgressRef,
+    isPausedRef,
+    displayBufferRef,
+    hasReceivedCancelEventRef,
+    logFlagsRef,
+  } = state;
   const {
     onStep,
     onChunk,
@@ -163,43 +216,41 @@ export const useChatStreaming = (
     onError,
     onPaused,
     onResumed,
+    onMerged, // 2026-09-28 小欧: 注入应答回调透传(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
-    onAuthorizationRequired,
   } = callbacks;
 
-  // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): 拒绝(user_rejected独立事件)/拦截(blocked)/超时(timeout) 的
-  //   工具执行轮 step 计数聚合(Map: step→denied计数), 供流水线"齿轮停转/灰字"整批计数判定;
-  //   error 事件仍不进 executionSteps(8.4.5 收敛), 仅在此按 step 记计数——聚合复用三 deny 型
-  //   与后端 safety_gate/sandbox_gate 发射点同集合 — 小欧-2026-09-06
-  const [deniedSteps, setDeniedSteps] = useState<ReadonlyMap<number, number>>(
-    new Map()
-  );
   // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool,reason}] 按工具去重),
   //   供 ToolCallLine 对被拒工具显橘红灰字点名单 — 小欧-2026-09-06
+  //
+  // 2026-09-30 小欧 - 删独立 deniedSteps state 改由 deniedEntries 派生：原两套计数口径致
+  //   `deniedCount >= candidateCount` 量纲不一致（同一工具拒 2 次即误判"全部拒绝"而提前停齿轮）
   const [deniedEntries, setDeniedEntries] = useState<
     ReadonlyMap<
       number,
-      Array<{ tool: string; reason: string; reject_type?: string }>
+      Array<{ tool?: string; reason?: string; reject_type?: string }>
     >
   >(new Map());
+  // 派生视图：每 step 的"被拒条目数" = 被拒的不同工具数（与 candidateCount 同量纲）
+  const deniedSteps = useMemo<ReadonlyMap<number, number>>(
+    () =>
+      new Map(Array.from(deniedEntries, ([step, list]) => [step, list.length])),
+    [deniedEntries]
+  );
   const markDenied = useCallback(
     (step: number, tool?: string, reason?: string, reject_type?: string) => {
       if (typeof step === 'number' && step >= 0) {
-        setDeniedSteps((prev) => {
+        // 2026-09-30 小欧 - 无条件建条目，删掉 `if (tool && reason)` 护栏。
+        //   病根：沿用护栏时 tool 缺失不建条目 → 派生计数丢失 → 齿轮不停（功能退化）；
+        //   "tool 缺失也必须计数"是已裁定硬需求。无名工具不显示于点名条，由渲染侧过滤，
+        //   但必须计入 —— 二者分层职责。
+        setDeniedEntries((prev) => {
           const next = new Map(prev);
-          next.set(step, (next.get(step) ?? 0) + 1);
+          const existing = next.get(step) ?? [];
+          if (tool && existing.some((e) => e.tool === tool)) return prev; // 同一 tool 不重复入列
+          next.set(step, [...existing, { tool, reason, reject_type }]);
           return next;
         });
-        // 2026-09-06 小欧 B2(6.4): tool 有名才聚点名条(拒绝事件带 tool_name 是灰字链路前提), 按工具去重 — 小欧-2026-09-06
-        if (tool && reason) {
-          setDeniedEntries((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(step) ?? [];
-            if (!existing.some((e) => e.tool === tool))
-              next.set(step, [...existing, { tool, reason, reject_type }]);
-            return next;
-          });
-        }
       }
     },
     []
@@ -220,7 +271,11 @@ export const useChatStreaming = (
               parsed as Array<
                 [
                   number,
-                  Array<{ tool: string; reason: string; reject_type?: string }>,
+                  Array<{
+                    tool?: string;
+                    reason?: string;
+                    reject_type?: string;
+                  }>,
                 ]
               >
             )
@@ -269,35 +324,69 @@ export const useChatStreaming = (
     [markDenied]
   );
 
-  // 使用useSSE Hook
-  // 小欧 2026-09-10 S2收尾(方案A): useSSE 唯一真源，此处从 useSSE 解构 executionStepsRef
+  // [63] 5.8 v1.29：原 9 具名回调参数收敛为 StreamEvent 单入口分发（kind→payload 按 5.1 判别联合窄化）；
+  //   授权不走事件——由 pendingAuthorization 快照驱动（5.15），故 onAuthorizationRequired 已从回调链移除
+  const dispatchStreamEvent = useCallback(
+    (ev: StreamEvent) => {
+      switch (ev.kind) {
+        case 'step':
+          onStep(ev.payload.step);
+          break;
+        case 'chunk':
+          onChunk(ev.payload.chunk, ev.payload.isReasoning);
+          break;
+        case 'complete':
+          onComplete(ev.payload.full, ev.payload.meta, ev.payload.steps);
+          break;
+        case 'error':
+          onError(ev.payload);
+          break;
+        case 'paused':
+          // 2026-09-29 小欧：真实 onPaused/onResumed 均为零参（useChatCallbacks.ts:103-104），
+          //   confirmId 的 HITL 归属由 Store hitlWaitingKeys 承载（5.3 onPaused/onResumed 内部）
+          onPaused();
+          break;
+        case 'resumed':
+          onResumed();
+          break;
+        case 'retry':
+          onRetry(ev.payload.message, ev.payload.waitTime);
+          break;
+        case 'rejected':
+          handleRejected(ev.payload);
+          break;
+        case 'merged':
+          // 2026-09-29 小欧：[76] 6.14 注入应答事件（5.3 storeHandlers 接线），漏则提示条/高亮永不触发
+          onMerged(ev.payload.mergedIntoTaskId);
+          break;
+      }
+    },
+    [
+      onStep,
+      onChunk,
+      onComplete,
+      onError,
+      onPaused,
+      onResumed,
+      onRetry,
+      onMerged,
+      handleRejected,
+    ]
+  );
+
+  // 使用 Store 订阅桥接
+  // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 唯一真源在 Store，此处从 5.5 透出的推导视图取
+  // 2026-09-30 小欧 - 本 hook 改直连 chatStreamStore，桥接触敛为纯订阅（理由见 useChatStreamSession.ts 文件头编辑历史）
   const {
     isReceiving,
-    setIsReceiving,
+    status, // 2026-10-30 小欧 - 取消终态兜底判据(只读快照透传)
     executionSteps,
-    executionStepsRef, // 小欧 2026-09-10 S2: 从 useSSE 取（useSSE 唯一真源）
+    executionStepsRef, // 推导视图（5.4 getExecutionStepsRef），非第二真源
     currentResponse,
-    sendMessage: sendStreamMessage,
-    disconnect,
-    clearSteps,
     serverTaskId,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
-  } = useSSE(
-    {
-      baseURL: config.baseURL,
-      sessionId: sessionId || 'default-session',
-    },
-    onStep,
-    onChunk,
-    onComplete,
-    onError,
-    onPaused,
-    onResumed,
-    onRetry,
-    onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
-    handleRejected // 小欧 2026-09-17 会审V3: 原 onDenied 位传 undefined 占位已删(YAGNI 零消费者), 统一拒绝回调直传 — 小欧-2026-09-17
-  );
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
+  } = useChatStreamSession(sessionId, dispatchStreamEvent);
 
   // 从state中获取Refs
   const {
@@ -309,21 +398,81 @@ export const useChatStreaming = (
   } = state;
 
   // 【小强 2026-04-22】从state解构需要的setters
-  const { setLoading, setWaitTime, setIsRetrying, setMessages } = state;
+  const { setLoading, setWaitTime, setIsRetrying, setMessages, setIsPaused } =
+    state;
+
+  // 2026-11-03 小欧 - 上一次的 sessionId（区分"真切换"与"首发自动建会话"），供下方 loading 复位判据 — 小欧-2026-11-03
+  const prevSessionIdRef = useRef<string | null>(null);
+
+  // 2026-09-30 小欧 - 会话切换时复位**会话级** ref（与 useChatCallbacks 内同名 effect 配对，
+  //   两组各在其所有者内复位，不跨层、不扩 facade 接口面）。
+  //   病根：Store 已按 sessionId 严格隔离，但这批视图 ref 是全局单例、四条切换入口无一复位
+  //   → 跨会话污染。最重实证：A 取消中（cancelInProgressRef=true）→ 切 B → B 的取消被
+  //   useChatTaskControl 守卫直接 return → B 的取消按钮永久失效。
+  //   只清会话相关：userScrolledUpRef / messagesEndRef / messagesCountRef 属视图级全局，
+  //   跨会话应保留滚动位置，一并清会引入新退化。
+  useEffect(() => {
+    cancelInProgressRef.current = false;
+    hasReceivedCancelEventRef.current = false;
+    isPausedRef.current = false;
+    // 2026-09-30 小欧 - 补 state 侧配对：isPausedRef 是写侧、isPaused state 是读侧，
+    //   useChatState 的同步 effect deps 是 [isPaused]，state 未变则不同步 → 只清 ref 会
+    //   造成 ref=false / state=true 分裂（下游按 state 读，仍以为在暂停）。
+    setIsPaused(false);
+    // 2026-09-30 小欧 - 补清等待计时器：A 会话等待中的 interval 切到 B 后仍在跑，
+    //   持续 setWaitTime 污染 B 的等待秒数（原复位清单漏了它）。
+    if (waitTimerRef.current !== null) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    displayBufferRef.current = [];
+    streamingContentRef.current = '';
+    replyUserMessageIdRef.current = null;
+    // 日志标志归零（chunkFirstDone / showSteps*Done）：跨会话残留会让新会话首块 chunk 不再打点、
+    // 或步骤显示判断被上一会话的"已打点"状态污染（LogFlags 三字段全为一次性闸门）。
+    logFlagsRef.current = {
+      chunkFirstDone: false,
+      showStepsFalseDone: false,
+      showStepsTrueDone: false,
+    };
+    // 2026-11-03 小欧 - 复位页面级 loading 闩锁（北京老陈报告：任务在跑时点"新建会话"，新会话发送钮
+    //   永久置灰、停止/暂停常驻，旧流结束后仍不解锁）。病根：loading 仅由 onComplete 单点清，而订阅
+    //   随 sessionId 走 —— 切走后旧流终态回调不再执行，闩锁永不释放。此处只解本页闩锁，不动 Store 中
+    //   旧会话的流（回切旧会话时仍由该会话 isReceiving 显示停止/暂停）。prev===null 不清：那是
+    //   "首发消息自动建会话"（null→新 id），任务刚起步，清了会把在跑任务的发送门解锁。 — 小欧-2026-11-03
+    if (prevSessionIdRef.current !== null) {
+      setLoading(false);
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [
+    sessionId,
+    cancelInProgressRef,
+    hasReceivedCancelEventRef,
+    isPausedRef,
+    displayBufferRef,
+    streamingContentRef,
+    replyUserMessageIdRef,
+    logFlagsRef,
+    waitTimerRef,
+    setIsPaused,
+    setLoading,
+  ]);
 
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
-    async (
-      content: string,
-      customSessionId?: string,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => {
+    async (content: string, opts: SendOpts, customSessionId?: string) => {
+      // 2026-10-21 小杨 - refs 随消息同批上行
+      //   ⚠ 不在形参里解构（{ linkEnabled, allowInterject, refs }: SendOpts 单行过长会被 prettier
+      //   拆成独立行，而 cancel-root-fix-f1-f5 的源码守卫用**括号配平**扫描 executeSend 函数体 ——
+      //   独立的解构行会先减一格致其提前 break（守卫误报）。故解构放函数体首行（同行配平）。
+      const { linkEnabled, allowInterject, refs } = opts;
       try {
         // 清理之前的流式内容
         streamingContentRef.current = '';
 
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
-        setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
+        // 2026-09-30 小欧 - **删除** setDeniedSteps(new Map()) —— deniedSteps 已降级为
+        //   deniedEntries 的派生视图，清唯一真源即自动清零，无需第二处同步（消除漏改点）。
         setDeniedEntries(new Map()); // 2026-09-06 小欧 B2(6.4): 新任务同步清空被拒工具点名条 — 小欧-2026-09-06
         // 2026-09-06 小欧 B2(6.4A): 新任务删独立键, 防带旧会话/旧任务点名残留 — 小欧-2026-09-06
         sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
@@ -331,11 +480,14 @@ export const useChatStreaming = (
           `${DENIED_STORAGE_KEY}_${customSessionId ?? sessionId}`
         );
 
-        // 调用useSSE的sendMessage
-        return await sendStreamMessage(
+        // 调用 Store 的 sendMessage（内部先落盘 queued 再 POST）——
+        // 2026-09-30 小欧 直连 chatStreamStore，不再经桥接透传（签名保持 customSessionId 优先）
+        await chatStreamStore.sendMessage(
+          customSessionId ?? sessionId ?? '',
           content,
-          customSessionId,
-          contextLinkMode
+          linkEnabled,
+          allowInterject, // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照供 transport 直读
+          refs // 2026-10-21 小杨 - 引用随消息同批上行
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -343,44 +495,29 @@ export const useChatStreaming = (
       }
     },
     [
-      sendStreamMessage,
+      sessionId, // 2026-09-30 小欧 直连后替换原桥接透传身份依赖
       streamingContentRef,
 
-      executionStepsRef,
-      sessionId, // 2026-09-06 小欧 B2(6.4A): 删独立键依赖, 防陈旧会话闭包 — 小欧-2026-09-06
+      executionStepsRef, // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
     ]
   );
 
-  // 【小沈 2026-04-22】中断任务函数
-  // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
-  // 2026-08-27 小欧 修复#10: 底层 useSSE.disconnect 签名为 (manualDisconnect, clearStorage, onDisconnect)。
-  //   force 控制 manualDisconnect(禁止自动重连), stopServer 控制 clearStorage; 此前 force 被误当 clearStorage 传入, 语义反转。
-  // 编辑历史: 2026-08-28 小欧 - BUG14b修复: disconnect参数用局部变量避免字面量匹配翻转语义
-  const disconnectWithParams = useCallback(
-    (stopServer?: boolean, force?: boolean, callback?: () => void) => {
-      const manualDisconnect = force ?? false;
-      const clearStorage = stopServer ?? true;
-      disconnect(manualDisconnect, clearStorage, callback);
-      // 2026-09-06 小欧 B2(6.4A): 清 storage 时同步删被拒点名条独立键(与 steps 备份同清), 防陈旧残留 — 小欧-2026-09-06
-      if (clearStorage) {
-        sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
-      }
-      // 清理流式状态
-      streamingContentRef.current = '';
-
-      executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
-    },
-    [disconnect, streamingContentRef, executionStepsRef, sessionId] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
+  // 2026-09-30 小欧 - clearSteps 改直连 chatStreamStore（原经桥接透传）。
+  //   签名 () => void 与对外契约一致（UseChatStreamingReturn.clearSteps 不变）。
+  //   引用随 sessionId 稳定：sessionId 是父级字符串，变化即换绑定，与 executeSend 同源。
+  const clearSteps = useCallback(
+    () => chatStreamStore.clearSteps(sessionId ?? ''),
+    [sessionId]
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   // 迁移自：NewChatContainer.tsx 的 executeStreamSend 函数
   const executeSend = useCallback(
-    async (
-      userMessage: Message,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => {
-      // 2026-09-15 小欧 [41]v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
+    async (userMessage: Message, opts: SendOpts) => {
+      // 同上：不在形参里解构（prettier 会把超长的解构形参拆成独立行，
+      //   而源码守卫 cancel-root-fix-f1-f5 用括号配平扫描函数体 → 独立解构行会致其提前 break）
+      const { linkEnabled, allowInterject, refs } = opts;
+      // 2026-09-15 小欧 v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
       // 1. 启动等待计时器
@@ -453,6 +590,13 @@ export const useChatStreaming = (
             );
             currentSessionIdRef.current = null;
             setSessionId(null);
+          } else if (classifyError(error) === ErrorType.SESSION_BUSY) {
+            // 2026-10-07 小欧 - 文档[11] 决策 11/13/20: 关态拒插话(消息未入库)。
+            //   必须在此中止本次发送: ①撤回乐观 user 气泡 ②上抛, 让 useChatSend:174 的
+            //   SESSION_BUSY 分支激活 ChatInput 草稿回填(决策 13)。
+            //   不上抛则继续往下建占位并开 SSE —— 消息不入库却空转一圈, 提示还弹两次。
+            setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+            throw error;
           } else {
             const result = handleError(error, {
               source: 'api',
@@ -478,7 +622,11 @@ export const useChatStreaming = (
       const assistantMessage: Message = {
         id: assistantId,
         role: 'assistant',
-        content: '🤔 AI 正在思考...',
+        // 2026-10-05 小欧 - 占位符归零(文档[9] §5.9): 思考态由 "思考中…" 思考行提供
+        //   (ThinkingStream 思考行, §5.5), 消息级占位不再重复展示; 空串也覆盖 final 帧
+        //   真实内容替换路径(见 useChatCallbacks.ts:311), 两种情形的占位都消失, 不再刷屏
+        //   无信息占位(此前 isStreaming=true, 提示用户有 assistant 消息位 + 光标等待图标, 属死视觉) — 小欧-2026-10-05
+        content: '',
         timestamp: new Date(),
         executionSteps: [],
         isStreaming: true,
@@ -490,8 +638,8 @@ export const useChatStreaming = (
       // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
       await sendMessage(
         userMessage.content,
-        currentSessionIdRef.current ?? sessionId ?? undefined,
-        contextLinkMode
+        { linkEnabled, allowInterject, refs }, // 2026-10-21 小杨 - refs 随消息上行
+        currentSessionIdRef.current ?? sessionId ?? undefined
       );
     },
     [
@@ -509,24 +657,58 @@ export const useChatStreaming = (
     ]
   );
 
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送实现
+  //   刻意只做两件事: ①落库(经 saveMessage, 后端 409 门在此生效, 决策 11) ②投递 inbox。
+  //   刻意不做(做了即破坏运行中任务): clearSteps / setDeniedEntries / DENIED 键清理 /
+  //   cancelInProgressRef 复位 / 等待计时器 / assistant 占位 / isProcessing 与 abortController 改动。
+  const interjectSend = useCallback(
+    async (userMessage: Message, refs?: ChatRefPayload[]) => {
+      const sid = currentSessionIdRef.current ?? sessionId ?? undefined;
+      if (!sid) {
+        throw new Error('插话失败：会话 id 缺失');
+      }
+      // 1. 落库(409 门在 save_message 落库前; 抛错即由 useChatSend 的 SESSION_BUSY 分支接管草稿回填)
+      //   2026-10-08 小欧 - 文档[11] 3.4.5.2: 必须携带 allow_interject=true,
+      //   后端按携带值落会话开关后再判 409; 不带则读到旧值(false)→ 插话第一条被拒
+      const clientInfo = getClientInfo();
+      const saveResult = await sessionApi.saveMessage(sid, {
+        role: 'user',
+        content: userMessage.content,
+        allow_interject: true,
+        client_os: clientInfo.client_os,
+        browser: clientInfo.browser,
+        device: clientInfo.device,
+        network: clientInfo.network,
+      });
+      const backendId = saveResult?.message_id;
+      if (backendId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage.id ? { ...m, id: String(backendId) } : m
+          )
+        );
+        replyUserMessageIdRef.current = backendId;
+      }
+      // 2. 投递(独立路径: 不掐断运行中流, 不改流状态机)
+      // 2026-10-21 小杨 - 插话也带 refs（漏传 = 插话丢引用）
+      await chatStreamStore.interjectMessage(sid, userMessage.content, refs);
+    },
+    [sessionId, setMessages, currentSessionIdRef, replyUserMessageIdRef]
+  );
+
   return {
     // 流式状态
     isReceiving,
-    setIsReceiving:
-      setIsReceiving ||
-      ((_: boolean) => {
-        /* no-op */
-      }),
+    status, // 2026-10-30 小欧 - 会话流状态透传(useTaskInfo 取消兜底)
     executionSteps,
     currentResponse,
 
     // SSE操作
     sendMessage,
-    disconnect: disconnectWithParams,
     clearSteps,
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号透传 — 小欧-2026-09-17
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合, 供流水线停齿轮 — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条集合, 供 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
 
@@ -537,5 +719,6 @@ export const useChatStreaming = (
 
     // 【小强 2026-04-22】executeSend
     executeSend,
+    interjectSend, // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送(供 useChatSend 分流)
   };
 };

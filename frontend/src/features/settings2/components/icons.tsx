@@ -1,0 +1,94 @@
+// 编辑历史: 2026-09-20 小强 - 新建：SettingIcon 唯一图标出口 + DirtyDot + EnvTag；全部 antd SVG，禁止 emoji（7.9.4）
+// 2026-09-21 小欧 - 实施：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色
+// 2026-09-21 小欧 - 全文核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为文档明确规格保留（设计文档 v1.12 铁规）
+// 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
+// 2026-09-21 小欧 - 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
+// 2026-09-24 小欧 - 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
+// 2026-11-01 小欧 - 新增 TabDirtyDot（Tab 组级脏点，北京老陈批准主案）：沿用 DirtyDot 的 6px 圆点规格，
+//   亮=ORANGE_RED（功能色，与行级 PRIMARY 点区分层级）；不带文字——组级只报方位，计数归保存按钮 — 小欧-2026-11-01
+import React from 'react';
+import {
+  ApiOutlined,
+  BgColorsOutlined,
+  CloudDownloadOutlined,
+  CodeOutlined,
+  CopyOutlined,
+  DesktopOutlined,
+  GlobalOutlined,
+  SafetyOutlined,
+  SlidersOutlined,
+} from '@ant-design/icons';
+import { Tag } from 'antd';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import type { TabKey } from '../types';
+
+// 2026-09-21 小欧 - 定案：Tab 图标 fontSize=14（文档明确规格，不随 Tabs 主题缩放，Tabs 集成）
+const TAB_ICON_STYLE: React.CSSProperties = {
+  fontSize: 14,
+};
+
+// 2026-09-22 小欧 - tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined
+export const SettingIcon: Record<TabKey, React.ReactNode> = {
+  general: <GlobalOutlined style={TAB_ICON_STYLE} />,
+  model: <ApiOutlined style={TAB_ICON_STYLE} />,
+  security: <SafetyOutlined style={TAB_ICON_STYLE} />,
+  appearance: <BgColorsOutlined style={TAB_ICON_STYLE} />,
+  system: <DesktopOutlined style={TAB_ICON_STYLE} />,
+  sandbox: <CodeOutlined style={TAB_ICON_STYLE} />,
+  tuning: <SlidersOutlined style={TAB_ICON_STYLE} />,
+  model_library: <CloudDownloadOutlined style={TAB_ICON_STYLE} />,
+};
+
+/** 已修改角标：6px 实心圆点 + 12px 次文（7.9.2，不用 emoji）。 */
+export const DirtyDot: React.FC = () => (
+  <span
+    style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.XS }}
+  >
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: Colors.PRIMARY,
+        display: 'inline-block',
+      }}
+    />
+    <span
+      style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+    >
+      已修改
+    </span>
+  </span>
+);
+
+/** Tab 组级脏点（2026-11-01 小欧）：常显占位圆点——亮=该组有未保存修改，灭=透明占位，
+ *  Tab 行零跳变；间距（marginLeft）做在自身，占位态一并保留，label 侧零感知。 */
+export const TabDirtyDot: React.FC<{ on: boolean }> = ({ on }) => (
+  <span
+    style={{
+      width: 6,
+      height: 6,
+      marginLeft: Spacing.XS,
+      borderRadius: '50%',
+      background: on ? Colors.ORANGE_RED : 'transparent',
+      display: 'inline-block',
+    }}
+  />
+);
+
+/** env 接管标注（9.2.3）。 */
+export const EnvTag: React.FC = () => (
+  <Tag color="orange" style={{ marginLeft: Spacing.MD }}>
+    来自环境变量
+  </Tag>
+);
+
+/** 默认值(未落盘)标注 — 2026-09-21 小欧（后端缺省 source='default'，与显式写入 yaml 区分） */
+export const DefaultTag: React.FC = () => (
+  <Tag style={{ marginLeft: Spacing.MD }}>默认值(未保存)</Tag>
+);
+
+/** 只读复制按钮图标（7.7/7.9.4）。 */
+export const CopyIcon: React.FC = () => (
+  <CopyOutlined style={{ fontSize: FontSize.PRIMARY }} />
+);

@@ -1,17 +1,39 @@
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
-// 2026-08-27 小欧 - 三堂会审: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与第九章调色板不一致)
-// 2026-08-27 小欧 - 三堂会审: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
+// 编辑历史: 2026-08-27 小欧 - 8.6: 抽resolveScheme复用取色; hexToRgba提模块级; 删isDarkMode/darkModeColors死代码
+// 2026-08-27 小欧: Colors.WARNING 收敛至 AntD5 默认警告色 #faad14(原 #d97706 旧琥珀色, 与设计文档调色板不一致)
+// 2026-08-27 小欧: 删全部死代码(colorSchemes/resolveScheme/hexToRgba/mergeStyles/ColorScheme接口/import React), 仅留6令牌+类型(YAGNI/KISS/禁止backward)
 // 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
-// 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
-// 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
+// 2026-08-28 小沈 - 修复: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
+// 2026-08-28 小欧 - v1.3: Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发; FontSize.SECONDARY 13→12 废13档统一14/12二档 - 小欧-2026-08-28
 // 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
-// 编辑历史: 2026-09-09 小欧 - P1-6: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
-// 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(title段独立+折叠区复合兜底): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
-// 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
+// 编辑历史: 2026-09-09 小欧 - 修复: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
+// 编辑历史: 2026-09-11 小欧 - M3b/M3c(title段独立+折叠区复合兜底): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 修复: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
-// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S5/S6: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 第一阶段: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
+// 编辑历史: 2026-10-04 小欧 - Colors.BORDER 新增 ACCENT=#69b1ff(antd blue-3): taskinfo 信息带分隔点色。
+//   选型: 绿=成功语义(与 completed 徽标撞义, 失败任务也显绿点会误导)、主蓝#1677ff 过抢(hover 强调色),
+//   淡蓝保品牌色相且与状态色不冲突, #fafafa 底上可见又不抢内容
+// 编辑历史: 2026-10-04 小欧 - 新增 ACCENT_ORANGE=#d4380d: 事件计数胶囊底色(橘底白字, 白字对比约4.8:1达AA;
+//   亮橘 #fa8c16 配白字仅 2.4:1 弃用)
+// 编辑历史: 2026-10-05 小欧 - 新增 FontFamily.MONO 令牌: 代码文本字体栈此前散落 5 处
+//   (Markdown 渲染器 / ToolCallLine 2 处 / AboutFiles CODE_FONT / StaticStatsBlock 2 处 / SecretRevealInput),
+//   两种字形并存违 DRY。**本次仅新增令牌并改 MarkdownText 一处**, 存量 5 处尚未收敛(改动面超出本次
+//   范围, 需单独一轮统一), 故此处不作"已统一"表述, 避免注释失真 — 小欧-2026-10-05
+//   v3.7 小欧 订正: 原注释写的 MarkdownBody 已随"按文档第4章实施"删除, 消费端改为 MarkdownText.tsx — 小欧-2026-10-05
+// 编辑历史: 2026-10-13 小欧 - 文档[29]§3.4.3/D-4: 新增**尺寸**令牌组 Size(只管尺寸不管颜色, 严禁新增颜色令牌, 全部复用既有 Colors.*):
+//   PARAMS_PANEL_MAX_H=240(巨型值/树节点展开体限高) / PARAMS_PANEL_MAX_W=720(面板上限, 2026-10-13 23:20 由 640 加宽)
+//   / PARAMS_PANEL_MIN_W=460(窄屏下限, 同日由 320 抬高; 头部标题 nowrap + 三标签所需)
+//   / PARAMS_PANEL_BODY_MAX_H=480(面板内容区限高)。命名沿用既有「名+量纲」风格(BorderWidth/FontSize/Radius) — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 23:20 小欧 - 浮层面板尺寸令牌随标题 nowrap + Segmented 增至 3 项而调整:
+//   PARAMS_PANEL_MAX_W 640→720(三标签头部留白)、PARAMS_PANEL_MIN_W 320→460(标题 nowrap 所需下限);
+//   min-width 须由调用侧写成 min(460, 100vw-32) 而非固定 460(CSS min-width 优先于 max-width, 见 ToolCallLine);
+//   文件头概述行仍写旧的 640/320, 本次审计更正 — 小欧-2026-10-13
+// 编辑历史: 2026-10-22 小欧 - FontFamily.MONO 字体栈换 Sarasa Mono SC 栈首(框线/CJK 宽度与
+//   asciiArt.ts 列宽模型对齐); 仓内 5 处硬编码字体栈收敛到本令牌(AboutFiles/StaticStatsBlock 2处/
+//   SecretRevealInput/FilePreview) — 小欧-2026-10-22
+// 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -37,13 +59,14 @@ export type StepType =
   | 'usage'
   | 'stats'
   | 'final_stats'
-  | 'context_overview'
+  | 'history_context' // 2026-10-04 小欧: 原 context_overview, 改名(与后端/前端帧类型同步)
   | 'truncated'
   | 'final'
   | 'error'
   | 'paused'
   | 'resumed'
   | 'retrying'
+  | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一)
   | 'observation'
   | 'action'
   | 'chunk'
@@ -71,6 +94,33 @@ export const FontSize = {
   EMOJI: 14, // 表情符号大小
 } as const;
 
+// 等宽字体族(代码/路径/技术文本) —— 2026-10-05 小欧 新增:
+//   仓内曾有 5 处各写各的字体栈(两种字形并存), 本令牌作为收敛目标。
+//   2026-10-22 小欧 - 收敛完成: 5 处硬编码(MarkdownText 之外的 AboutFiles / StaticStatsBlock 2 处 /
+//   SecretRevealInput / FilePreview)已全部改引本令牌; 新增代码文本一律引用本令牌。 — 小欧-2026-10-22
+export const FontFamily = {
+  // 2026-10-22 小欧 - 字体栈换 **Sarasa Mono SC 栈首**:
+  //   旧栈(Consolas 优先)实测: 框线 1.000 / ▶ 1.567(Consolas 无此字形→回退 CJK 字形)/ CJK 1.819 格
+  //   → ▶ 把右边框顶歪、CJK 按 2 格算却实占 1.819 格 → 汉字行边框残差累积。
+  //   Sarasa 实测: 框线 1 格 / 几何符号·箭头 2 格 / CJK 恰好 2 格 → 与 asciiArt.ts 的列宽模型完全一致,
+  //   边框像素级齐(拉丁 0.5em = 1 格, 全角 1.0em = 2 格)。
+  //   ⚠ 栈首必须是 Sarasa: 落到 Cascadia/Consolas 时 CJK 与几何符号宽度都与模型对不上。
+  //   ⚠ 全应用等宽拉丁字形随之由 Consolas 变为 Sarasa(Iosevka 系) —— 产品级观感变更。
+  //   2026-10-22 小欧 - **栈内容下沉到 CSS 变量** --font-mono(index.css 的 :root):
+  //   CSS 侧(.doc-body code 等)无法 import TS 令牌, 以前只能各写一套字体栈(两处真相源, 必漂移);
+  //   现两侧同引 var(--font-mono) → 改一处即全应用生效(DRY)。
+  //   2026-10-22 小欧 - 存量硬编码字体栈已全部收敛到本令牌(AboutFiles / StaticStatsBlock 2 处 /
+  //   SecretRevealInput / FilePreview / SettingsModal / InputHistoryPanel / ZenVerifyModal /
+  //   MermaidBlock); 原注释里"ToolCallLine 2 处"已失效(该文件现无硬编码字体栈)。 — 小欧-2026-10-22
+  MONO: 'var(--font-mono, monospace)',
+} as const;
+
+/**
+ * 等宽文本行高比(代码块/文件预览统一) —— 2026-10-22 小欧 新增:
+ *   │ 等框线字符的墨迹高只有 1.12–1.17em, 行高大于该值时行间留缝 → 框线竖线断成**虚线**
+ *   (12px 字继承 18px 行高 = 1.5 时必断)。取 1.1 两端都留余量, 竖线连成实线。
+ */
+export const MonoLineHeight = 1.1;
 // 字重规范
 export const FontWeight = {
   BOLD: 600, // 标题、重要标签
@@ -87,6 +137,8 @@ export const Spacing = {
   MD: 8, // 中间距
   LG: 12, // 大间距
   XL: 16, // 超大间距
+  // 2026-11-02 小欧 - XXL=20: Layout顶栏左右距/NavContent底条宽态左右距收口(原硬码20) — 小欧-2026-11-02
+  XXL: 20, // 特大间距（顶栏/底条横向留白）
 } as const;
 
 // 2026-08-30 小欧 北京老陈最新定案(字体留白全0 + 行高=字号+4): 流水线段距单点——
@@ -105,8 +157,22 @@ export const BorderWidth = {
 // 圆角常量 - 小强 2026-05-22
 export const Radius = {
   SM: 4, // 小圆角
-  DEFAULT: 6, // 默认圆角
+  DEFAULT: 6, // 中圆角
   LG: 8, // 大圆角
+  // 2026-11-02 小欧 - CONTAINER=12: Layout内容区大容器圆角收口(原硬码12) — 小欧-2026-11-02
+  CONTAINER: 12, // 大容器圆角
+} as const;
+
+// 2026-10-07 小欧 - step 行首图标统一规格(解决"犬牙交错": 盒子不等宽/图形内缩/gap 不一致 三重叠加):
+//   BOX: 所有行首图标盒子边长恒定, 各图标图形描边外缘正好等于 BOX(消除 viewBox 内缩差异),
+//        使多个图标的左边缘、视觉宽度、垂直中心落在同一条竖线上;
+//   STROKE: 统一描边宽, 避免同一图标列里粗细不一。
+//   用法: 图标组件 size 默认取 Icon.BOX, strokeWidth 取 Icon.STROKE;
+//        图形需"填满盒子"时, 让描边外缘 = viewBox 边界(即 rect 起点 = STROKE/2, 终点 = viewBox - STROKE/2)。
+//   注意: 子行状态标记(DropletIcon, 已缩进一级)不属行首图标, 保持小一号 — 小欧-2026-10-07
+export const Icon = {
+  BOX: 16, // 盒子边长(与正文 FontSize.SECONDARY 同级)
+  STROKE: 2, // 统一描边宽
 } as const;
 
 // 颜色常量 - 语义化功能色 + 文字/背景/边框中性色
@@ -118,6 +184,8 @@ export const Colors = {
     TERTIARY: '#999999', // 辅助文字 - 浅灰
     WEAK: '#888888', // 弱文字 - 空态/斜体
     STRONG: '#333333', // 强文字 - 文件名/重点（替代硬码#333/#262626）
+    // 2026-11-02 小欧 - MUTED=#666: Layout顶栏"用户"名/弹窗辅助说明灰收口(原6处散落#666), 与SECONDARY(#8c8c8c)不同值保原视觉零差 — 小欧-2026-11-02
+    MUTED: '#666',
   },
   // 背景颜色（3种浅色）
   BG: {
@@ -126,6 +194,8 @@ export const Colors = {
     TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
     LIGHT: '#fafafa', // 浅背景（别名）
     WARNING_LIGHT: '#fffbe6', // 警告浅底（高亮背景，替 rgba）
+    // 2026-11-02 小欧 - HOVER=#f0f0f0: Layout底部版本信息hover底收口(与BORDER.LIGHT同值, BG/BORDER各自组内语义不混用) — 小欧-2026-11-02
+    HOVER: '#f0f0f0',
   },
   // 边框颜色（3种浅色）
   BORDER: {
@@ -133,24 +203,62 @@ export const Colors = {
     VERTICAL: '#e8e8e8', // 垂直左线（Pipeline/通用嵌套统一）
     DEFAULT: '#d9d9d9', // 中边框（通用嵌套旧值，逐步收敛至 VERTICAL）
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
+    // 2026-10-04 小欧: 信息带内分隔点色(antd blue-3)。选淡蓝而非绿/主蓝的理由:
+    //   绿=成功状态(与徽标 completed 撞义, 失败任务也显绿点→误导), 主蓝 #1677ff 过抢(hover 强调色);
+    //   淡蓝保品牌色相且与状态色不冲突。#fafafa 底上对比度约1.9:1, 纯装饰可接受 — 小欧 2026-10-04
+    ACCENT: '#69b1ff',
   },
   // 功能颜色（6种）
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
-  ERROR_BG: '#fff1f0', // 错误浅底(错误警示条背景, [40]第一阶段S6令牌化) — 小欧-2026-09-15
-  ERROR_BORDER: '#ffa39e', // 错误浅框(错误警示条边框, [40]第一阶段S6令牌化) — 小欧-2026-09-15
-  FOLD_COLLAPSED: '#4096ff', // 主折叠箭头-收起态蓝(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
-  FOLD_EXPANDED: '#ff4d94', // 主折叠箭头-展开态粉(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
-  WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, P1-6 定案 3.7)
+  // 2026-11-02 小欧 - 错误**文字**专用色 #a8071a: 原 #ff4d4f 在 #fff1f0 上仅 3.0:1(不达 AA),
+  //   红-8 为 7.1:1 / 白底 7.8:1; ERROR 仍作边框与图标色 — 小欧-2026-11-02
+  ERROR_TEXT: '#a8071a',
+
+  // 2026-10-27 小欧 - PILL_* 三态胶囊专用色(doc[48] N1): 原 SUCCESS/ERROR/BORDER.STRONG 配白字
+  //   实测对比度 2.27/3.27/1.84:1, 全不达 WCAG AA 4.5:1(cancelled 灰底白字几乎不可读)。
+  //   取 AntD 深一档(green-8/red-8) + TEXT.PRIMARY 灰, 实测 5.59/7.75/7.00:1 均达 AA。
+  //   **新增而非改值**: SUCCESS/ERROR 是全站功能色(状态点/边框/图标/警示条), 改值会波及所有引用处;
+  //   胶囊是独立视觉语言(彩底白字), 专用令牌隔离语义 — 小欧-2026-10-27
+  PILL_SUCCESS: '#237804', // 胶囊 completed 底(green-8, 白字 5.59:1)
+  PILL_ERROR: '#a8071a', // 胶囊 failed 底(red-8, 白字 7.75:1)
+  PILL_CANCELLED: '#595959', // 胶囊 cancelled 底(=TEXT.PRIMARY, 白字 7.00:1)
+
+  ERROR_BG: '#fff1f0', // 错误浅底(错误警示条背景, 第一阶段令牌化) — 小欧-2026-09-15
+  ERROR_BORDER: '#ffa39e', // 错误浅框(错误警示条边框, 第一阶段令牌化) — 小欧-2026-09-15
+  FOLD_COLLAPSED: '#4096ff', // 主折叠箭头-收起态蓝(2026-09-13定案, 第一阶段令牌化) — 小欧-2026-09-15
+  FOLD_EXPANDED: '#ff4d94', // 主折叠箭头-展开态粉(2026-09-13定案, 第一阶段令牌化) — 小欧-2026-09-15
+  WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
   ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06
+  // 2026-10-04 小欧 - 事件计数胶囊底色(北京老陈令: 橘底白字, 对比要强烈): 取 AntD volcano-7 而非 WAIT_ACTION #fa8c16,
+  //   因后者配白字仅 2.4:1 远低于 AA, 本色配白字约 4.8:1 达 AA 且醒目不惊炸 — 小欧 2026-10-04
+  ACCENT_ORANGE: '#d4380d',
   WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
+  WARNING_BORDER: '#ffd591', // 警告浅框(与 ERROR_BORDER 对称, 登录页警示框令牌化) — 小欧-2026-11-02
+} as const;
+
+// 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
+export const Size = {
+  PARAMS_PANEL_MAX_H: 240, // 巨型值 / JSON 树节点展开体限高（每层各自承担，DC-15）
+  // 2026-10-13 23:20 小欧 - 640 → 720: 浮层 Segmented 由 2 项(分组|规格表)增至 3 项(+结果)后,
+  //   头部固定元素(图标 + 标题 + Segmented + 复制 + ✕)总需求变宽; 标题已改 whiteSpace:nowrap
+  //   (北京老陈: 不许换行不许折行), 宽度不足只会被迫折行 —— 故在此加宽, 而非让标题让步。
+  PARAMS_PANEL_MAX_W: 720, // 浮层面板最大宽(甲规格表两列对照需宽; 720 为三标签头部留白)
+  // 2026-10-13 23:20 小欧 - 320 → 460: 头部标题改 whiteSpace:nowrap 后(图标+标题+3项Segmented+复制+✕),
+  //   320px 装不下会被迫折行或溢出卡片。460 是实测所需宽度(标题 ~141 + Segmented ~130 + 其余 ~80)。
+  //   ⚠️ 必须写成 min(460, 100vw-32) 而非固定 460: CSS 中 min-width **优先于** max-width,
+  //   固定 460 会在 <492px 视口下撑破视口(此坑见 [29] v2.4 第⑩项)。
+  PARAMS_PANEL_MIN_W: 460, // 浮层面板最小宽(标题 nowrap 所需下限; 窄屏由 min() 收敛到视口内)
+  PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
+  // 2026-11-02 小欧 - HEADER_HEIGHT=43: 顶栏Header/LayoutSkeleton/NavContent Logo区三处同值43收口(纵向对齐三方, 改一处全联动) — 小欧-2026-11-02
+  HEADER_HEIGHT: 43, // 顶栏高度(三文件对齐锚点)
 } as const;
 
 // ==================== 步骤配置 ====================
-// 2026-08-27 小欧 三堂会审: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
+// 2026-08-27 小欧: 已移除全部死代码(colorSchemes/getStep*/resolveScheme/hexToRgba/mergeStyles 等),
 // 仅 stepStyles.test.ts 引用, src(renderers) 只用上方 6 个令牌与类型(YAGNI/KISS/禁止backward)
 
 // 2026-08-27 小欧 修复step-6: 最小 stepMeta 映射(仅 label/priority/layout), 供下方 getStep* 使用;
@@ -181,8 +289,9 @@ const stepMeta: Record<StepType, StepMeta> = {
     priority: 'secondary',
     layout: 'inline',
   },
-  context_overview: {
-    label: '📑 上下文概览',
+  history_context: {
+    // 2026-10-04 小欧: 键名随帧类型改名; label 同步正名为"历史上下文"(北京老陈令)
+    label: '📑 历史上下文',
     priority: 'secondary',
     layout: 'inline',
   },
@@ -192,6 +301,7 @@ const stepMeta: Record<StepType, StepMeta> = {
   paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
+  notice: { label: '📢 通知', priority: 'secondary', layout: 'inline' },
   observation: {
     label: '📋 观察',
     priority: 'secondary',

@@ -7,10 +7,56 @@
 /* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
    .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
 /* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]3.9 浮层入口热区样式落盘(hover 规格 2 + 展开态 rotate + :focus-visible)(见 6.5.1) — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1: .taskinfo-entry:hover 注入 --taskinfo-entry-active(PRIMARY 蓝),
+ *   供 MetricItem 数值/图标 var() 消费 → 上下文概览任意 tone 数值 hover 统一变 PRIMARY(3.1.3), 无分支无 !important — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.5 三堂会审裁定(北京老陈拍板): 删 .taskinfo-token-inner 死 CSS
+ *   (省略唯一真源=EllipsisTip 组件, CSS 层再省略=双机制打架 DRY/SRP 违; 断点矩阵收窄走"明细进浮层"不硬截断;
+ *   基础行恒短无溢出场景 YAGNI; .taskinfo-bar 已 flex-wrap 换行兜底)。.taskinfo-token 语义澄清=第一行左组(令牌/信息位) — 小欧-2026-09-09 */
 /* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
 /* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
+/* 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(恒一行): 信息带已恒定1行(P0-3), 其余信息全收弹框;
+ *   浮层入口热区 min-height 32→20 与 .taskinfo-token 对齐, 整条压回一行高度(原32撑高成"像2行") — 小欧-2026-09-15 */
 /* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
 /* 编辑历史: 2026-09-18 小欧 - 居中修复(北京老陈驱动): .waiting-cursor/.action-waiting-cursor 1.4em 盒子 baseline 对齐致等待圈上浮如上标，改 vertical-align:middle 与文字中线对齐(尺寸/动画/颜色不动) — 小欧-2026-09-18 */
+/* 编辑历史: 2026-10-05 小欧 - ReasoningIcon(=EyeIcon 眼睛, step 页面"推理内容..."折叠行前置图标) 动画 + .reasoning-icon-dim 两态 + prefers-reduced-motion;
+   三堂会审: dim 类原无组件挂载(死规则)致裁定两态零落地, 现由 ReasoningIcon 按 dim 挂载; 订正"CSS变量"误导注释 — 小欧-2026-10-05 */
+/* 编辑历史: 2026-10-06 小欧 - 新增 .mermaid-block svg 自适应容器: mermaid 按原始尺寸出 svg,
+   宽图会溢出被截, 限宽 + 等比缩高保证整张图完整可见(安全Tab 弹框2「读写判定流程」用)。
+   同块去掉限高与内部滚动(图区再套一层滚动条会与 Modal body 的滚动重复=双滚动条),
+   纵向滚动交给 Modal body 统一承担。 — 小欧-2026-10-06 */
+/* 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式(只作用安全Tab说明弹框的 markdown 渲染: h2 章节分隔/ol 条目间距/code 浅蓝底+品牌色左线/strong 深色; 只依赖结构标签 h2/ol/ul/code/p/strong, 零文本假设, 后端文案改动不失效) - 小欧-2026-10-11 */
+/* 编辑历史: 2026-10-11 11:03:03 小欧 - 北京老陈令「表线要看得见」: .doc-body th/td 边框 #f0f0f0→#d9d9d9(!important 覆盖 MarkdownText 内联样式, 仅安全Tab作用域, 不影响全局 markdown 表格) - 小欧-2026-10-11 */
+/* 编辑历史: 2026-10-13 小欧 - 文档[29]§2.5 V8(解决 B3「参数区无任何交互反馈」): 新增 .params-clickable,
+   供参数区三处可点元素共用(树节点行 / 浮层巨型值折叠行 / 面板 ✕ 关闭) —— 一处规则不写三遍(DRY);
+   反馈规格与 .taskinfo-entry 字面对齐(#f0f0f0 底 + 2px #1677ff outline), 沿用既有色值不新增颜色令牌(DC-19);
+   走 CSS 而非 React onMouseEnter state, hover 零重渲染(KISS-DIRECT) - 小欧-2026-10-13 */
+/* 编辑历史: 2026-10-14 小欧 - 新增 .popover-viewport-centered(浮层纵向居中, 北京老陈裁定):
+ *   仅接管纵向(top:50% + translateY(-50%)), 横向故意不接管, 交回 rc-trigger 按 placement 锚在按钮旁。
+ *   需 !important 压过 rc-trigger 的内联坐标; bottom:auto 隔离其可能写的 bottom 分支(useAlign offsetB)。
+ *   依赖 body 不滚动 + FloatingEntry 已关 zoom 动效 — 小欧-2026-10-14 */
+/* 编辑历史: 2026-10-21 小杨 - 新增文件树交互态样式 .files-tree-row(多选深灰/预览浅蓝/hover 与 focus-visible)
+ *   与 .files-splitter(常驻 1px 中线, 原 transparent 在浅底上完全不可见, 找不到拖拽点) — 小杨-2026-10-21 */
+/* 编辑历史: 2026-10-22 小欧 - 新增 CSS 变量 --font-mono: **等宽字体栈的唯一真相源**。
+ *   背景: 栈首 Sarasa Mono SC(拉丁 0.5em = 1 格 / 全角 1.0em = 2 格)才能让"CJK 恰好 2 格",
+ *   框线图的边框才能像素级闭合(Cascadia 1.707 格 / Consolas 1.819 格 → 汉字行边框残差)。
+ *   本变量供 .doc-body code 等 CSS 侧消费; TS 侧由 utils/stepStyles.ts 的 FontFamily.MONO
+ *   引用 var(--font-mono, monospace) → 两侧同一份栈, 改一处即全应用生效(DRY) — 小欧-2026-10-22 */
+/* 编辑历史: 2026-11-02 小欧 - 顶栏流状态灯"流进行中": .stream-pill-ok 覆盖 antd processing 点底色/光环为绿(#52c41a 同 Colors.SUCCESS), 保留呼吸动画 — 小欧-2026-11-02 */
+/* 编辑历史: 2026-11-03 06:22:32 小欧 - .title-spin-icon inline-block→block: 顶栏标题圈圈与 OmniAgentAst. 中心线差 4.25px(偏高),
+ *   因 inline-block 在父 span 内成行盒, 撑起 .ant-layout-header 继承的 64px 行高 strut 后按基线落位; 改块级后行盒消失, 尺寸/动画/图形零改动 — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-03 06:40:41 小欧 - 标题圈圈联动流状态: 新增 8 档 spin-<phase> 修饰类(停/1.6s/1s/3s/0.8s/6s),
+ *   仅"流静默/流中断"两档让位告警色, 另加 reduced-motion 停转; 品牌三色其余全程不变 — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-03 小欧 - 步骤级计时文字数码(WaitTimerText): 新增 .wait-timer-text(无描边底色框, 同色淡底绿/黄/橙红/灰四档,
+ *   tabular-nums 等宽读数, 挂步骤标题行右端/工具首行右端) + 字体栈改引 --font-mono(单一真源) — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-03 12:31:30 小欧 - 标题圈圈补第 9 档 .title-spin-icon.spin-detached(3s 慢转): 连接已释放但后端任务仍在跑,
+ *   无帧可收, 与"流持续(1s)"常态区分; 上方档位说明"8 档"同步订正为"9 档" — 小欧-2026-11-03 */
+:root {
+  --font-mono:
+    'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
+    monospace;
+}
+
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -104,19 +150,31 @@
 }
 
 /* 等待光标（2026-09-02 小欧 · 北京老陈定案：SVG 缺口圆弧=↻ 视觉，stroke-width 精确控粗，
-   高亮绿，逆时针转圈 1s，尺寸 1.4em≈20px；无 margin/padding——首 chunk 到达由本符号
-   让出的位置被内容覆盖接管，禁止常驻） */
+   高亮绿，逆时针转圈 1s；无 margin/padding——首 chunk 到达由本符号
+   让出的位置被内容覆盖接管，禁止常驻）
+
+   2026-10-08 小欧 尺寸统一(Icon.BOX=16px, 北京老陈令"统一完成后再看效果再微调"):
+     病根 — 尺寸曾三处并存且机制互相冲突: ①SVG width="1.4em" 与本文件 .waiting-cursor svg
+     的 width:1.4em 重复两处(CSS 类选择器赢 SVG 表现属性, 改一处漏一处, 09-03 那次
+     1.4em→1em 就只改了 CSS 留下 SVG 里的 1.4em); ②ToolWaitingIcon 的 SVG 根本没有
+     width 属性, 尺寸只靠本文件 .tool-waiting-cursor svg(与①相反方向); ③ActionWaitingIcon
+     反过来 CSS 不设尺寸只设 display, 全靠 SVG 自己的 1.4em。四个图标三套机制。
+     实测(Playwright 离屏渲染, 父字号14px): 绿27.67px / 橙21.50px / 蓝19.59px / 方块16px,
+     跨 11.7px, 与 stepStyles.ts:130 定的"多图标落在同一条竖线上"直接冲突。
+     改法 — 尺寸真源唯一化到 SVG 属性(WaitingIcons/index.tsx 四组件统一 size=Icon.BOX),
+     本文件只留 SVG 属性管不了的(display/vertical-align/animation), 尺寸规则全删。
+     em 是相对单位会随父字号漂移(实测父14→27.67, 父12→23.72), 故一律不用。 */
 .waiting-cursor {
   display: inline-block;
-  /* 2026-09-18 小欧 - 居中修复: 1.4em 盒子 baseline 对齐致图标上浮如上标，改 middle 与文字中线对齐(尺寸/动画不动) — 小欧-2026-09-18 */
+  /* 2026-09-18 小欧 - 居中修复: 盒子 baseline 对齐致图标上浮如上标，改 middle 与文字中线对齐 — 小欧-2026-09-18 */
   vertical-align: middle;
   animation: waiting-spin 1s linear infinite;
 }
+/* 2026-10-08 小欧: 删 .waiting-cursor svg { width/height } —— 尺寸归 SVG 属性 Icon.BOX */
 .waiting-cursor svg {
   display: block;
-  width: 1.4em;
-  height: 1.4em;
 }
+
 @keyframes waiting-spin {
   from {
     transform: rotate(0deg);
@@ -131,22 +189,62 @@
   vertical-align: baseline;
   animation: waiting-spin 1s linear infinite;
 }
+/* 2026-10-08 小欧: 删 width/height(原 1.1em) —— 尺寸归 SVG 属性 Icon.BOX, 消除"SVG无width靠CSS给"的反向依赖 */
 .tool-waiting-cursor svg {
   display: block;
-  /* 2026-09-08 小欧 - 图标换型(北京老陈令): 尺寸1em→1.1em(≈15px), 与loader弧段视觉更协调 — 小欧-2026-09-08 */
-  width: 1.1em;
-  height: 1.1em;
 }
 
 /* 2026-09-08 小欧 - 标题图标(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader, 复用waiting-spin逆时针1s常转, 尺寸20px — 小欧-2026-09-08 */
+/* 2026-11-03 06:22:32 小欧 - 圈圈改块级(display:block): 原 inline-block 在父 span 内生成行盒,
+   把 .ant-layout-header 继承的 64px 行高当 strut(行盒撑高 64), 图标按基线落位 → 视觉中心 17px, 比文字中线 21.25px 偏高 4.25px;
+   块级后父 span 无行盒, 高度回到 20px, 由 Header 的 align-items:center 居中到 21.5px。尺寸/动画/图形不变 — 小欧-2026-11-03 */
 .title-spin-icon {
-  display: inline-block;
+  display: block;
   animation: waiting-spin 1s linear infinite;
 }
 .title-spin-icon svg {
   display: block;
   width: 20px;
   height: 20px;
+}
+
+/* 2026-11-03 06:40:41 小欧 - 圈圈联动流状态(9 档, 类名 spin-<phase> 由 TitleStreamIcon 直挂):
+   节奏=转速(视觉真源全在本块), 文字/颜色/秒数仍归流状态胶囊, 一处一个通道。
+   spin-running 故意不写规则: 基础 1s 即"流进行中"; 缺类只回落 1s, 不会渲染错乱 — 小欧-2026-11-03 */
+.title-spin-icon.spin-idle,
+.title-spin-icon.spin-waiting,
+.title-spin-icon.spin-down {
+  animation-play-state: paused; /* 停 = 空闲 / 等人工确认 / 已断开, 不再假装在忙 */
+}
+.title-spin-icon.spin-connecting {
+  animation-duration: 1.6s;
+}
+.title-spin-icon.spin-stalled {
+  animation-duration: 3s; /* 慢下来 = 业务帧停了, 后端在思考或跑工具 */
+}
+.title-spin-icon.spin-reconnecting {
+  animation-duration: 0.8s; /* 比常态更快 = 在抢救 */
+}
+.title-spin-icon.spin-silent {
+  animation-duration: 6s; /* 濒死: 连心跳都没了, 只剩一丝气 */
+}
+/* 2026-11-03 12:31:30 小欧 - 第 9 档 detached(顶栏"运行中"): 连接已释放但后端任务还在跑,
+   没有帧可收 → 慢转表示"在跑但本页不接收", 与流持续的 1s 常态区分 — 小欧-2026-11-03 */
+.title-spin-icon.spin-detached {
+  animation-duration: 3s;
+}
+/* 只有"濒死/已断"两档让位告警色(品牌三色其余全程不动), 色值与 Colors.ORANGE_RED / Colors.ERROR 同值 — 2026-11-03 小欧 */
+.title-spin-icon.spin-silent svg path {
+  stroke: #fa541c;
+}
+.title-spin-icon.spin-down svg path {
+  stroke: #ff4d4f;
+}
+/* 尊重减少动效: 图标停转, 状态仍可从弧色与流胶囊读到(颜色不依赖动画) — 2026-11-03 小欧 */
+@media (prefers-reduced-motion: reduce) {
+  .title-spin-icon {
+    animation: none;
+  }
 }
 
 /* 2026-09-15 小欧 - 左侧Logo图形化(北京老陈令选title-icon-compare 70号斜向波浪): 
@@ -195,9 +293,12 @@
 }
 .action-waiting-cursor {
   display: inline-block;
-  /* 2026-09-18 小欧 - 居中修复(北京老陈驱动): 蓝色波纹光标跟文字后呈上标状，根因 1.4em 盒子 baseline 对齐，改 middle 与文字中线对齐(尺寸/波纹动画不动) — 小欧-2026-09-18 */
+  /* 2026-09-18 小欧 - 居中修复(北京老陈驱动): 蓝色波纹光标跟文字后呈上标状，根因盒子 baseline 对齐，改 middle 与文字中线对齐(波纹动画不动) — 小欧-2026-09-18 */
   vertical-align: middle;
 }
+/* 2026-10-08 小欧: 本规则原本就只设 display(尺寸全靠 SVG 自己的 width="1.4em")——
+   与 .waiting-cursor 的"CSS 给尺寸"方向相反, 是四图标三套机制之一。
+   现尺寸统一由 SVG 属性 Icon.BOX 给, 本规则与另两个保持一致, 只管 display。 */
 .action-waiting-cursor svg {
   display: block;
 }
@@ -213,25 +314,17 @@
   animation-delay: 0.9s;
 }
 
-/* 编辑历史: 2026-09-09 小欧 - [16]3.9 浮层入口热区样式落盘(hover 规格 2 + 展开态 rotate + :focus-visible)(见 6.5.1) — 小欧-2026-09-09 */
-/* 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1: .taskinfo-entry:hover 注入 --taskinfo-entry-active(PRIMARY 蓝),
- *   供 MetricItem 数值/图标 var() 消费 → G6 任意 tone 数值 hover 统一变 PRIMARY(3.1.3), 无分支无 !important — 小欧-2026-09-09 */
-/* 编辑历史: 2026-09-09 小欧 - [16]v4.5 三堂会审裁定(北京老陈拍板): 删 .taskinfo-token-inner 死 CSS
- *   (省略唯一真源=EllipsisTip 组件, CSS 层再省略=双机制打架 DRY/SRP 违; 断点矩阵收窄走"明细进浮层"不硬截断;
- *   G5 基础行恒短无溢出场景 YAGNI; .taskinfo-bar 已 flex-wrap 换行兜底)。.taskinfo-token 语义澄清=第一行左组(G1~G4) — 小欧-2026-09-09 */
-/* 外层容器允许换行（G5 Token 区最小宽度不为 0，断点矩阵兜底） */
+/* 外层容器允许换行（Token 区最小宽度不为 0，断点矩阵兜底） */
 .taskinfo-bar {
   display: flex;
   flex-wrap: wrap;
   row-gap: 4px;
 }
-/* 第一行左组（G1~G4 信息位）：min-height 保高 ≥20px 不与中组错位 */
+/* 第一行左组（令牌/信息位）：min-height 保高 ≥20px 不与中组错位 */
 .taskinfo-token {
   min-width: 0;
   min-height: 20px;
 }
-/* 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(恒一行): 信息带已恒定1行(P0-3), 其余信息全收弹框;
- *   浮层入口热区 min-height 32→20 与 .taskinfo-token 对齐, 整条压回一行高度(原32撑高成"像2行") — 小欧-2026-09-15 */
 /* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
 .taskinfo-entry {
   display: inline-flex;
@@ -250,7 +343,7 @@
 .taskinfo-entry:hover {
   background: #f0f0f0;
   color: #1677ff;
-  --taskinfo-entry-active: #1677ff; /* #1: 注入数值 hover 色(3.1.3 G6) */
+  --taskinfo-entry-active: #1677ff; /* #1: 注入数值 hover 色(3.1.3 上下文概览) */
 }
 .taskinfo-entry[data-open='true'] svg {
   transform: rotate(180deg);
@@ -259,6 +352,52 @@
 .taskinfo-entry:focus-visible {
   outline: 2px solid #1677ff;
   outline-offset: 2px;
+}
+
+/* 2026-10-13 小欧 - 文档[29]§2.5 V8(解决 B3「参数区无任何交互反馈」): 本功能内**可点元素**的
+   hover / 键盘焦点反馈, 三处共用(树节点行 / 浮层巨型值折叠行 / 面板 ✕ 关闭), 一处规则不重复三遍(DRY)。
+   反馈规格与 .taskinfo-entry 字面对齐(#f0f0f0 底 + 2px #1677ff outline), 沿用既有色值不新增颜色令牌(DC-19);
+   走 CSS 而非 React 事件 state, hover 零重渲染(KISS-DIRECT)。 */
+.params-clickable {
+  border-radius: 4px; /* = Radius.SM */
+}
+.params-clickable:hover {
+  background: #f0f0f0;
+}
+.params-clickable:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -1px; /* 负内缩, 紧贴元素边框, 不影响布局 */
+}
+
+/* 2026-10-27 小欧 - 文档[48] N3/N4: 任务统计标题栏可点行 hover / 键盘焦点反馈。
+   原 TitleBlock 整行 role=button+tabIndex=0 却两者皆无——系统内 4 处同类可点元素
+   (.taskinfo-entry / .params-clickable / .task-list-item / .files-tree-row) 均已实现, 唯独此缺失;
+   键盘用户 Tab 进入时焦点不可见, 无法定位当前所在行。
+   规格与上方字面对齐(hover #f0f0f0 / focus-visible 2px #1677ff), 沿用既有色值不新增颜色令牌(DC-19)。
+   **不加 border-radius**: 标题栏是通栏元素(自带 borderTop 通栏分割线), 圆角背景会与通栏分割线不齐;
+   .params-clickable 是块内元素故有 4px 圆角, 此处形态不同故不加。
+   outline-offset 取 -1px 负内缩(同 .params-clickable), 避免整行 outline 外溢撑破右栏布局。 */
+.title-block-header:hover {
+  background: #f0f0f0;
+}
+.title-block-header:focus-visible {
+  outline: 2px solid #0c6aec;
+  outline-offset: -1px;
+}
+
+/* 2026-10-13 小欧 - 浮层纵向居中(北京老陈裁定)。调用方两处: 工具行参数浮层(bottomRight, 右缘贴按钮)
+   + 上下文概览浮层(bottomLeft, 左缘贴按钮)。
+   横向**故意不接管**: 不写 left/translateX, 让 rc-trigger 的内联坐标继续按 placement 横向锚定。
+   前提: body 不滚动(根 div height:100% + overflow:hidden), 故文档坐标 == 视口坐标。
+   依赖 FloatingEntry 已关 zoom 动效, 否则其 transform 会覆盖本规则。 */
+.popover-viewport-centered.ant-popover {
+  position: fixed !important;
+  top: 50% !important;
+  /* 保险: rc-trigger 的 useAlign 会按 placement 选写 top **或** bottom(bottomRight 走 bottom 分支,
+     见 useAlign.js:494 offsetB)。若它写了内联 bottom, 与我压的 top 同时生效会让元素被上下双向拉伸。
+     归零强制只用 top 一条轴, 与 rc-trigger 选哪条轴无关。 */
+  bottom: auto !important;
+  transform: translateY(-50%) !important;
 }
 
 /* 2026-09-17 小欧 - 心跳等待感知微型钟面([46]第四章定案):
@@ -290,4 +429,363 @@
   transform-origin: center;
   transform-box: fill-box;
   animation: clock-beat 0.6s ease-out 1;
+}
+/* 2026-11-03 07:52:00 小欧 - 顶栏实例(line-height:1 收敛时钟盒高, 否则继承 .ant-layout-header 的 64px
+   行高把钟面撑高; 只作用于顶栏, 步骤级钟面盒高不变) — 小欧-2026-11-03 */
+.header-wait-clock {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+/* 2026-11-03 08:12:00 小欧 - 步骤级计时改文字数码皮(waitTimerText): 纯数码 + 同色淡底框(无描边),
+   尺寸固定(等宽数字 + min-width)防标题行随秒数抖动 — 小欧-2026-11-03 */
+.wait-timer-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 34px;
+  padding: 0 6px;
+  border-radius: 6px;
+  /* 2026-11-03 09:18:00 小欧 - 硬编码栈是唯一漏网处, 改引 --font-mono(唯一真相源):
+     Windows 上 ui-monospace 落浏览器默认等宽, 与全应用等宽字形两套; 数码只吃 tabular-nums — 小欧-2026-11-03 */
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+/* ReasoningIcon — step 页面"推理内容..."折叠行的前置图标
+   本段图标可换(备用件常驻, 改 ReasoningIcon 别名取值即可): 眼睛(EyeIcon) / 信号柱(SignalBarsIcon) /
+   太阳(SunIcon) / 对向双球(ApproachDotsIcon) / 方框旋转(SpinSquareIcon, 当前) — 换图标时同步改下方类名与 @keyframes
+   何时转/何时停: 由组件 animating prop 决定(北京老陈裁定: 与展开/收起解耦, 只跟 thought-start→chunk), 本段只管"怎么转"
+   颜色令牌来自 WaitingIcons/index.tsx 的 Colors.*(禁硬编码)
+   唯一真源=此 CSS 动画节奏 + WaitingIcons 的 ReasoningIcon 消费 — 小欧-2026-10-05
+   编辑历史: 2026-10-07 小欧 - 全部备用图标动画零删除(备用件常驻); 更正块头"恒亮恒转/dim 两态"(已由 animating prop 取代) — 小欧-2026-10-07 */
+@keyframes beampulse {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+.reasoning-beam1,
+.reasoning-beam2,
+.reasoning-beam3 {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: beampulse 1.8s ease-out infinite;
+}
+.reasoning-beam2 {
+  animation-delay: 0.6s;
+}
+.reasoning-beam3 {
+  animation-delay: 1.2s;
+}
+/* 2026-10-07 小欧 - 删 .reasoning-icon-dim 两态规则(EyeIcon 删 dim prop 后零引用):
+   北京老陈裁定动画与展开/收起解耦后, 暗/亮两态不再需要 — 小欧-2026-10-07 */
+/* 无障碍降级: 系统开启"减少动态效果"时停全部扩散动画(保留静态眼睛可读性) */
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-beam1,
+  .reasoning-beam2,
+  .reasoning-beam3 {
+    animation: none;
+  }
+}
+
+/* 2026-10-07 小欧 - 备用图标动画(北京老陈令备用常驻, 想用即改 ReasoningIcon 别名取值):
+   信号柱(43号)/太阳(58号)/对向双球(65号)/方框旋转(13号), 四者节奏全在 CSS,
+   组件只挂 class 不内联样式; 颜色令牌来自 WaitingIcons 的 Colors.*(禁硬编码) — 小欧-2026-10-07
+ 2026-10-07 小欧 - 更正"零消费方"(方框旋转经 ReasoningIcon 已在用); .icon-spin1 改按 animating 挂载(不挂即静止), 规则本身零改动 — 小欧-2026-10-07 */
+@keyframes barsgrow {
+  0%,
+  100% {
+    transform: scaleY(0.15);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.bars-grow1,
+.bars-grow2,
+.bars-grow3,
+.bars-grow4 {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: barsgrow 1.6s ease-in-out infinite;
+}
+.bars-grow2 {
+  animation-delay: 0.2s;
+}
+.bars-grow3 {
+  animation-delay: 0.4s;
+}
+.bars-grow4 {
+  animation-delay: 0.6s;
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.icon-spin1 {
+  animation: icon-spin 1s linear infinite;
+}
+.icon-spin15 {
+  animation: icon-spin 1.5s linear infinite;
+}
+
+@keyframes dots-meeta {
+  0%,
+  100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(22px);
+  }
+}
+@keyframes dots-meetb {
+  0%,
+  100% {
+    transform: translateX(22px);
+  }
+  50% {
+    transform: translateX(0px);
+  }
+}
+.dots-meetA {
+  animation: dots-meeta 2s ease-in-out infinite;
+}
+.dots-meetB {
+  animation: dots-meetb 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars-grow1,
+  .bars-grow2,
+  .bars-grow3,
+  .bars-grow4,
+  .icon-spin1,
+  .icon-spin15,
+  .dots-meetA,
+  .dots-meetB {
+    animation: none;
+  }
+}
+
+/* 决策依据见文件头部 2026-10-06 编辑历史（为何限宽+等比缩高、为何去掉限高与内部滚动） */
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   编辑历史: 2026-10-11 小欧 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式。
+   只作用于安全Tab 两个说明弹框(安全策略说明/读写判定流程)的 Markdown 渲染结果,
+   不影响全局 MarkdownText(thought/答复/任务列表共用)。
+
+   ⚠️ 铁律: 只依赖 markdown **结构标签**(h2/ol/ul/code/p/strong), 零文本假设 ——
+      后端 .md 改措辞/增删条目/改代码名, 样式都跟着结构走, 不会失效(北京老陈 2026-10-11)。
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* 章节标题(一、二、三): 与正文拉开层级, 底部细分隔线便于扫读跳转 */
+.doc-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  line-height: 26px;
+}
+.doc-body h2:first-child {
+  margin-top: 0;
+}
+
+/* 三级标题: 比 h2 小一档, 保持层级 */
+.doc-body h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333333;
+  margin: 16px 0 8px;
+  line-height: 22px;
+}
+
+/* 段落: 行高与间距给呼吸感(原默认偏挤) */
+.doc-body p {
+  line-height: 1.7;
+  margin: 8px 0;
+  color: #595959;
+}
+
+/* 有序列表: 条目间距 + 行高, 密集规则可读 */
+.doc-body ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.doc-body ol > li {
+  line-height: 1.7;
+  margin: 10px 0;
+  padding-left: 4px;
+  color: #595959;
+}
+
+/* 无序列表(子项): 缩进 + 圆点, 与有序列表区分层级 */
+.doc-body ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.doc-body ul > li {
+  line-height: 1.6;
+  margin: 6px 0;
+  color: #595959;
+}
+
+/* 行内代码: 浅蓝底 + 左侧品牌色竖线 + 等宽字体, 技术术语从正文里跳出来 */
+.doc-body code {
+  /* 2026-10-22 小欧 - 字体栈改引 CSS 变量 --font-mono(与 TS 侧 FontFamily.MONO 同一份栈, 避免两处各写一套) */
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  background: #e6f4ff;
+  color: #1677ff;
+  border-left: 2px solid #69b1ff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+/* 加粗: 关键动作结论(直接执行/直接拒绝/转 HITL)从文字中跳出来 */
+.doc-body strong {
+  font-weight: 600;
+  color: #262626;
+}
+
+/* 2026-10-11 小欧 北京老陈令「表线要看得见」: 表格边框从几乎不可见的 #f0f0f0
+   加深到 #d9d9d9。MarkdownText 的 th/td 是内联样式, CSS 类优先级不够, 故用 !important。
+   仅作用于 .doc-body(安全Tab弹框), 不影响全局 markdown 表格。 — 小欧-2026-10-11 */
+.doc-body th,
+.doc-body td {
+  border: 1px solid #d9d9d9 !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   highlight.js 着色映射 - 2026-10-21 小杨
+   文件预览代码高亮(hljs 只产 class, 颜色在此集中一处)；
+   色系对齐 antd 主题/stepStyles 令牌：#1677ff=Colors.PRIMARY 同源,
+   #52c41a=Colors.SUCCESS 同源, #AD6800=Colors.WARNING 同源；
+   不载 hljs 自带主题 css, 全系统视觉一致性(北京老陈三堂会审口径)
+   ════════════════════════════════════════════════════════════════════ */
+.hljs-keyword,
+.hljs-selector-tag {
+  color: #1677ff;
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-meta .hljs-string {
+  color: #389e0d;
+}
+.hljs-number,
+.hljs-literal {
+  color: #d46b08;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #999999;
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: #6a3fc0;
+}
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-built_in {
+  color: #c41d7f;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-name {
+  color: #096dd9;
+}
+.hljs-symbol,
+.hljs-bullet,
+.hljs-meta {
+  color: #434343;
+}
+.hljs-subst,
+.hljs-punctuation {
+  color: inherit;
+}
+
+/* 2026-10-21 小杨 - 文件树行状态色落 CSS（行内 inline 背景会压掉 :hover）：
+   checked=多选深灰，active=预览浅蓝，hover 在未选中时变浅灰/浅蓝加深 */
+.files-tree-row {
+  border-left: 2px solid transparent;
+}
+.files-tree-row:hover {
+  background: #f0f0f0;
+}
+.files-tree-row[data-active='1'] {
+  background: #e6f4ff;
+  border-left-color: #1677ff;
+}
+.files-tree-row[data-active='1']:hover {
+  background: #d6e9ff;
+}
+.files-tree-row[data-checked='1'] {
+  background: #4b4b4b;
+  border-left-color: #4b4b4b;
+  color: #fff;
+}
+.files-tree-row[data-checked='1']:hover {
+  background: #4b4b4b;
+}
+.files-tree-row:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -2px;
+}
+/* 2026-10-21 小杨 - 分隔条：原 transparent 在浅底上完全不可见（找不到拖拽点），
+   常态画 1px 中线，hover/focus 变实心灰 */
+.files-splitter {
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    #e5e7eb 2px,
+    #e5e7eb 3px,
+    transparent 3px
+  );
+}
+.files-splitter:hover,
+.files-splitter:focus-visible {
+  background: #d9d9d9;
+  outline: none;
+}
+
+/* 2026-11-02 小欧 - "流进行中"绿点: 底色/光环改绿(#52c41a 同 Colors.SUCCESS), 保留 antd 呼吸动画;
+ *   选择器 4 类压过 antd 的 3 类, 不依赖样式注入顺序 — 小欧-2026-11-02 */
+.stream-pill-ok .ant-badge.ant-badge-status .ant-badge-status-processing {
+  background: #52c41a;
+}
+.stream-pill-ok
+  .ant-badge.ant-badge-status
+  .ant-badge-status-processing::after {
+  border-color: #52c41a;
 }

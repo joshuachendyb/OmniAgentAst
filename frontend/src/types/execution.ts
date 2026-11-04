@@ -1,11 +1,18 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 从utils/sse.ts抽ExecutionStep至此, 断 chat→sse→api→chat 类型环(sse↔api循环)
 // 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 增 preview?: boolean(仅SSE齿轮先行预览行标记,
-//   刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
+// 刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
-// 编辑历史: 2026-09-12 小欧 - P0-5三堂会审修复: artifacts补tool_name?字段(与FinalStatsFrame(sse.ts)对齐后端4字段契约tool_name/name/path/type) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P1-4/P1-5三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: artifacts补tool_name?字段(与FinalStatsFrame(sse.ts)对齐后端4字段契约tool_name/name/path/type) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
 // 编辑历史: 2026-09-17 小欧 会审V3(#14): ExecutionStep.type 成员补 'rejected'(统一拒绝事件契约, SSE协议真实存在, 当前不落库/不入执行步骤流, 类型防御) — 小欧-2026-09-17
-// 编辑历史: 2026-09-19 小欧: ExecutionStep.type 加 'heartbeat'(心跳记录到事件列表) — 北京老陈驱动
+// 编辑历史: 2026-09-19 小欧: ExecutionStep.type 加 'heartbeat'(心跳记录到事件列表) — 驱动
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计遗漏回填): ExecutionStep.type 补 'merged'
+// (后端 ALL_STEP_TYPES/_SSE_FORWARD_TYPES 已注册, 解析层靠 as 断言掩盖类型缺口 = 吞错, 本次补真源) — 小欧-2026-09-28
+// 编辑历史: 2026-10-04 小欧 - context_overview 字段块补两个 injected 键, 与 sse.ts 的
+// ContextOverviewFrame 对齐(两处长期分裂, 本次只对齐不合并) — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - 增 truncated?: boolean(仅 history_context 帧有效, 与 type='truncated' 的输出截断帧无关):
+// 供 useTaskInfo 从 steps 派生"历史对话已裁剪"事件
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: ExecutionStep 补 reject_type?: string(拒绝归因 safety/user/timeout/sandbox, 供 useTaskInfo 生成事件文案前缀); type 成员 'rejected' 本就存在(2026-09-17), 本次只补归因字段 — 小欧-2026-10-11
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -13,13 +20,24 @@
  *
  * 【重要】type 取值与后端一致，详见 utils/sse.ts 内分类说明。
  */
+// 编辑历史: 2026-10-08 小欧 - history_context 字段块: 删 injected_ratio, 改 compressed + compress_saved_pct
+// (同 sse.ts 的 ContextOverviewFrame, 后端 build_context_overview 为唯一真源, 两处声明须同步)
+// 编辑历史: 2026-10-09 小欧 - ExecutionStep 历史字段同步双分组嵌套; truncated 留顶层(入 steps 门控标记, 与帧内语义不同)
+// 2026-10-09 小欧: 引 ConvContextFrame/InjectContextFrame(DRY, 不各写一套); sse.ts 零 import 无循环依赖
+// 编辑历史: 2026-10-10 小欧 - 结构定稿, ExecutionStep 只保留 conv_context/
+// inject_context 双分组, 不携带任何旧扁平字段(禁止backward)
+// 编辑历史: 2026-10-25 小欧 - 通知信封收敛: type 成员 'installing'/'summarizing' 统一为 'notice';
+//   新增 notice_kind/notice_phase 可选字段, 供 useTaskInfo 按 kind+phase 查表渲染 — 小欧-2026-10-25
+// 编辑历史: 2026-10-30 小欧 - notice_kind 注释补 refs_ready(引用处置汇总), 与后端 NOTICE_KINDS 同步 — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - notice_kind 注释补 ws_inject(事项目录块超限省略), 与后端 NOTICE_KINDS 同步 — 小欧-2026-10-31
+import type { ConvContextFrame, InjectContextFrame } from './sse';
 
 export interface ExecutionStep {
   // === 通用字段 ===
   // 【小欧 2026-08-26 8.4】①'动作类型名'全链替换为'action'（后端 ActionStep.TYPE 已改，
-  //   禁止 backward，见 4.9.2.9）；②新增 MetaStep 类事件 type：
-  //   thought-start/usage/stats/final_stats/context_overview/truncated/startinfo
-  //   （数据源仍是一条 executionSteps 不拆流，渲染入口按 7.10 分流）
+  // 禁止 backward，见 4.9.2.9）；②新增 MetaStep 类事件 type：
+  // thought-start/usage/stats/final_stats/history_context/truncated/startinfo
+  // （数据源仍是一条 executionSteps 不拆流，渲染入口按 7.10 分流）
   type:
     | 'thought'
     | 'action'
@@ -33,15 +51,27 @@ export interface ExecutionStep {
     | 'usage'
     | 'stats'
     | 'final_stats'
-    | 'context_overview'
+    | 'history_context' // 2026-10-04 小欧: 原 context_overview, 改名(装入历史对话水位, 非当前轮概览)
     | 'truncated'
     | 'paused'
     | 'resumed'
     | 'retrying'
+    | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派
     | 'rejected'
-    | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 北京老陈驱动
-  //   且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
+    | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
+    | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动
+  // 且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
+  // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 改为**真实数据源**——
+  //   sseParser 已把该帧 push 进 executionSteps, 故上方"不入步骤流"注释自本次起失效。
+  //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
+  reject_type?: string;
+  // 2026-10-25 小欧: 通知信封字段(type='notice' 时有效)
+  notice_kind?: string; // 通知种类: summarizing/installing/extracting/refs_ready/ws_inject/trimming
+  notice_phase?: 'start' | 'done' | 'failed'; // 阶段: start(事前)/done(成功)/failed(失败)
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
+  // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：
+  //   后端 content_items 对象数组，与 content 同源同序；前端现阶段只透传保存 — 小欧-2026-10-12
+  contentItems?: Array<Record<string, unknown>>;
 
   // 【6-03-09】添加task_id字段，用于分页请求
   task_id?: string; // 任务ID，用于分页请求
@@ -62,16 +92,16 @@ export interface ExecutionStep {
 
   step?: number;
   thought?: string;
-  observation?: unknown; // ObservationData对象或字符串
+  // 2026-10-04 小欧 死字段清理: 删 observation?(sseParser:911 唯一写点, 读的是后端不存在的 rawData.observation, 恒''且零消费) — 小欧-2026-10-04
   // 【小欧 2026-08-26 4.9.3】observation 新字段：工具结果数组，优先于 content/summary 读取
   tool_result?: unknown;
   result?: string;
-  // 2026-09-12 小欧 P1-4: 删 code 死字段(只写不读, sseParser:721赋值无人消费; execution_status(L65)含同语义) — 小欧-2026-09-12
+  // 2026-09-12 小欧: 删 code 死字段(只写不读, sseParser:721赋值无人消费; execution_status(L65)含同语义) — 小欧-2026-09-12
 
   // === 【小新重构】type=action 新字段（与thought类型共用tool_name/tool_params）===
-  execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
+  // 2026-10-04 小欧 死字段清理: 删 execution_status/execution_result(前端自造派生字段, 写点唯一且
+  // execution_result 的渲染兜底永不可达, 全仓零消费; execution_status 写点在 observation 分支, 零读取) — 小欧-2026-10-04
   summary?: string; // 执行摘要（新）
-  execution_result?: Record<string, unknown> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number; // 执行耗时 【新增2026-04-15】
   action_retry_count?: number; // 重试次数（新）
 
@@ -95,19 +125,11 @@ export interface ExecutionStep {
   outcome?: 'completed' | 'failed' | 'cancelled'; // 终态类型：完成/失败/取消
   error_type?: string; // 失败时的错误类型
   error_message?: string; // 失败/取消时的错误信息
-  // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, 前端补解析该字段(后端FinalStep.to_dict恒输出) — 小欧-2026-09-11
+  // 2026-09-11 小欧 定案: cancelled终态渲染第二行✕取消来源, 前端补解析该字段(后端FinalStep.to_dict恒输出) — 小欧-2026-09-11
   cancel_source?: string; // 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error)
 
-  // === type=observation 字段 【新增2026-04-15】===
-  return_direct?: boolean; // 是否直接返回
-  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
-  parallel_results?: Array<{
-    tool_name: string;
-    tool_params: Record<string, unknown>;
-    llm_data: Record<string, unknown>;
-    tool_result: unknown;
-    other_data: Record<string, unknown>;
-  }>;
+  // 2026-10-04 小欧 死字段清理: 删 return_direct/parallel_results(前端自造派生字段,
+  // 写点唯一、读的是后端 other_data/rawData 里不存在的键, 全仓零消费) — 小欧-2026-10-04
 
   // === 思考过程与正式内容区分字段（统一使用 is_reasoning snake_case）===
   is_reasoning?: boolean; // 是否为思考过程（true=思考过程，false=正式内容）
@@ -115,7 +137,7 @@ export interface ExecutionStep {
 
   // === 错误/中断字段 ===
   // 【三堂会审修复 2026-08-23 小欧】error_message/error_type 原在此重复声明(:153/:154 已定义),
-  //   TS2300 Duplicate identifier 致 tsc --noEmit 失败, 删重复保留终态声明处单一权威定义
+  // TS2300 Duplicate identifier 致 tsc --noEmit 失败, 删重复保留终态声明处单一权威定义
   message?: string; // interrupted 类型的中断信息
 
   // 【小新修复 2026-03-14】error类型完整字段（避免使用 as any）
@@ -141,7 +163,7 @@ export interface ExecutionStep {
     params?: Record<string, unknown>;
   }>;
   // 【小欧 2026-09-06 方案C观察点1/2根治】preview 仅SSE齿轮先行预览行标记(后端 preview=True):
-  //   拦截/拒绝的 action 本就不落库, 刷新恢复时剔除 preview 行与 DB 回放语义一致 — 小欧-2026-09-06
+  // 拦截/拒绝的 action 本就不落库, 刷新恢复时剔除 preview 行与 DB 回放语义一致 — 小欧-2026-09-06
   preview?: boolean;
 
   // === 【小欧 2026-08-26 8.4/8.6】MetaStep 扩展字段（旧任务 null 须 ?. 防空）===
@@ -179,19 +201,22 @@ export interface ExecutionStep {
   duration?: number; // 秒
   // final_stats 终态统计
   tool_stats?: Record<string, number>;
-  // 2026-09-12 小欧 P0-5三堂会审修复: artifacts 补 tool_name? —— 与 FinalStatsFrame(sse.ts:34) 对齐后端 4 字段契约
-  //   (tool_name/name/path/type, 见 handle_action.py 11.6.2); 原 3 字段缺 tool_name 与 sse.ts 契约分裂 — 小欧-2026-09-12
+  // 2026-09-12 小欧 三堂会审修复: artifacts 补 tool_name? —— 与 FinalStatsFrame(sse.ts:34) 对齐后端 4 字段契约
+  // (tool_name/name/path/type, 见 handle_action.py 11.6.2); 原 3 字段缺 tool_name 与 sse.ts 契约分裂 — 小欧-2026-09-12
   artifacts?: Array<{
     tool_name?: string;
     name: string;
     path: string;
     type: string;
   }> | null;
-  // 2026-09-12 小欧 P1-5: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
-  // context_overview
-  message_count?: number;
-  estimated_tokens?: number;
-  injected_ratio?: number;
+  // 2026-09-12 小欧: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
+  // 2026-10-09: 与 sse.ts 的 ContextOverviewFrame 同步(双分组嵌套, 两处长期分裂本次一并改)
+  // 2026-10-10 小欧[20]: 允许 null —— pickConv/pickInject 帧缺失时返回 null, 如实表达"该段没来",
+  //   不用 ?? undefined 转一道(转了就是第二次形状猜测, 与定稿真源不符)
+  conv_context?: ConvContextFrame | null;
+  inject_context?: InjectContextFrame | null;
+  // 2026-10-09 小欧: truncated 保留顶层 —— "该帧因裁剪而入 steps"门控标记(sseParser push 时写), 与帧内 conv_context.truncated 语义不同
+  truncated?: boolean;
 
   // === 前端额外字段 ===
   timestamp: number; // 前端生成的时间戳

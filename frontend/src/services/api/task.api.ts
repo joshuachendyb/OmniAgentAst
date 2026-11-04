@@ -1,7 +1,17 @@
 // 编辑历史: 2026-08-30 小欧 - adaptTaskDetail修复: ①accumulated_usage为null时回退读task_accumulated_tokens(每轮即时落库更可靠); ②tool_stats过滤tool_name为null的条目; TaskDetail新增task_accumulated_tokens字段
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: TaskArtifact补tool_name(4字段对齐artifacts)、TaskDetail补provider/model/created_at/updated_at、adaptTaskDetail透传四字段 - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.5⑤/⑤⑥): TrustedTool增path字段、getTrust映射path(null=工具级)、revokeTrust增可选path登录?path=精确撤销(tool,path) — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(定案): TrustedTool增path字段、getTrust映射path(null=工具级)、revokeTrust增可选path登录?path=精确撤销(tool,path) — 小欧-2026-09-02
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计): SessionTaskItem加merged_inputs字段 — 小欧-2026-09-28
+// 编辑历史: 2026-10-03 小欧 - SessionTaskItem 补 context_root_task_id(后端 5.7.4 已返回),
+//   作为 TaskListPanel 组号徽标的唯一分组键; context_link_mode 保留(列仍在返回, 供快照展示, 非分组键) — 小欧-2026-10-03
+// 编辑历史: 2026-10-10 小欧 (- TaskDetail 加 history_context_first
+//   (历史任务回显首帧); 其类型复用 ContextOverviewFrame 单一真源, 禁在本文件手写窄类型副本(禁 backward)
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskDetail 补 process_events(事件列表快照条目本体, 类型复用 useTaskInfo.ProcessEvent 单一真源, 内联 import() 避 api→hooks 反向依赖); adaptTaskDetail 同款透传(Array.isArray 守卫, 存量 null 兜底); executionApi 新增 saveTaskProcessEvents(POST /chat/execution/task/{id}/process-events, 失败只 reject 不抛业务链) — 小欧-2026-10-11
+// 编辑历史: 2026-10-30 小欧 - 现场证据(北京老陈): 任务运行期间前端每 5s 轮询 listTasks,
+//   用户没做任何操作却弹「后端响应超时，请重试」; 后台轮询不是用户动作(他不知道、也无法"重试"),
+//   故本端点置 _silent 不弹全局 toast, 失败由各调用方自行收口自愈 — 小欧-2026-10-30
 import api from './client';
+import type { ApiRequestConfig } from './client';
 
 // ============================================================
 // 【小新重构2026-03-09】ReAct任务控制API
@@ -79,6 +89,8 @@ export const taskControlApi = {
 export interface SessionTaskItem {
   task_id: string;
   user_input: string;
+  /** 2026-09-28 小欧: 本任务吸收的追加注入消息(loop 中用户又发的消息) */
+  merged_inputs?: string[];
   response?: string;
   status: string;
   duration: number | null;
@@ -89,12 +101,14 @@ export interface SessionTaskItem {
   created_at: string;
   updated_at: string;
   context_link_mode?: 'linked' | 'independent';
+  // 本任务所属对话组根任务ID(后端已返回)。TaskListPanel 组号徽标的唯一分组键(落库恒非空)。
+  context_root_task_id?: string;
 }
 
 export interface SessionTasksResponse {
   tasks: SessionTaskItem[];
   total: number;
-  // 2026-08-30 小欧 设计文档[2]12.6 v1.103: B1 最新任务显式锚点(排序一义后顶栏/默认选中/链token锚点统一消费)
+  // 2026-08-30 小欧 设计文档 v1.103: 最新任务显式锚点(排序一义后顶栏/默认选中/链token锚点统一消费)
   latest_task_id: string | null;
 }
 
@@ -131,6 +145,15 @@ export interface TaskDetail {
   model: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // 2026-10-10 小欧: 首帧 history_context(历史任务回显历史上下文用, 后端详情接口直给)
+  //   类型复用 ContextOverviewFrame(单一真源), 禁在本文件手写窄类型副本(禁 backward)
+  history_context_first?: import('@/types/sse').ContextOverviewFrame | null;
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 事件列表快照条目本体
+  //   {kind, text, time}。类型复用 useTaskInfo 的 ProcessEvent(单一真源, 禁手写副本);
+  //   用内联 import() 避免 api→hooks 反向依赖(同 history_context_first 写法)。
+  process_events?:
+    | import('@/features/chat/hooks/useTaskInfo').ProcessEvent[]
+    | null;
 }
 
 export function adaptTaskDetail(raw: {
@@ -190,12 +213,26 @@ export function adaptTaskDetail(raw: {
     model: (t.model as string | null) ?? null,
     created_at: (t.created_at as string | null) ?? null,
     updated_at: (t.updated_at as string | null) ?? null,
+    // 2026-10-10 小欧: 后端直给, 无则 null(无首帧走空, 卡片如实显示空)
+    history_context_first:
+      (t.history_context_first as TaskDetail['history_context_first']) ?? null,
+    // 2026-10-11 小欧 北京老陈令: 事件列表快照(final 时前端回填, 存条目本体{kind,text,time})。
+    //   存量行为 null, 前端兜底空数组后与改动前一致 — 小欧-2026-10-11
+    process_events: Array.isArray(t.process_events)
+      ? (t.process_events as TaskDetail['process_events'])
+      : null,
   };
 }
 
 export const sessionTaskApi = {
-  listTasks: (sessionId: string): Promise<SessionTasksResponse> =>
-    api.get(`/sessions/${sessionId}/tasks`).then((r) => r.data),
+  // 2026-10-30 小欧 - 补第三类: 「无用户动作的后台轮询」不该弹"请重试"。
+  //   本端点是唯一后台轮询入口(observeByPolling 每 5s / useSessionTasks.refresh / findLiveTask),
+  //   超时属"后端忙"的瞬时表现, 下次触发自愈; 弹窗只会让用户以为系统出故障。
+  //   静默 ≠ 无痕迹: client.ts 的 [SlowReq] 与 logIfSlow 照旧打 URL+耗时, 取证不丢。
+  listTasks: (sessionId: string): Promise<SessionTasksResponse> => {
+    const cfg: ApiRequestConfig = { _silent: true };
+    return api.get(`/sessions/${sessionId}/tasks`, cfg).then((r) => r.data);
+  },
 };
 
 export const executionApi = {
@@ -207,6 +244,16 @@ export const executionApi = {
     taskId: string
   ): Promise<{ task_id: string; steps: unknown[]; count: number }> =>
     api.get(`/chat/execution/task/${taskId}/steps`).then((r) => r.data),
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填事件列表快照。
+  //   数据源是 useTaskInfo 产出的 processEvents(浮层显示的那份), 排除 heartbeat 已在调用方 filter 完成,
+  //   本方法**不做条数限制**(后端仅留 10000 兜底防灌爆)。失败只 reject 不抛给调用方业务链路。
+  saveTaskProcessEvents: (
+    taskId: string,
+    events: import('@/features/chat/hooks/useTaskInfo').ProcessEvent[]
+  ): Promise<{ success: boolean; count: number }> =>
+    api
+      .post(`/chat/execution/task/${taskId}/process-events`, { events })
+      .then((r) => r.data),
 };
 
 export interface TrustedTool {

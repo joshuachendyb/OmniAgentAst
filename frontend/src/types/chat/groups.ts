@@ -1,4 +1,7 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: StreamingGroupRefs接口删streamingStepsRef字段(104行) — 小欧-2026-09-10
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 同步删净已从 useChatState 移除的字段(不留兼容层):
+//   UIGroupRefs 删 isLoadingHistoryRef; UIGroupState 删 sessionJumpLoading / isRenderingMessages / retryCount;
+//   UIGroupReturn 删 setSessionJumpLoading / setIsRenderingMessages / setRetryCount — 小欧-2026-10-08
 /**
  * 状态分组类型定义
  *
@@ -115,11 +118,10 @@ export type StreamingGroupReturn = StreamingGroupState &
     setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
     setWaitTime: React.Dispatch<React.SetStateAction<number>>;
     sendMessage: (content: string, sessionId?: string) => Promise<void>;
-    disconnect: (
-      stopServer?: boolean,
-      force?: boolean,
-      callback?: () => void
-    ) => void;
+    // [79] F② 2026-09-30 小欧：**删除** `disconnect`（原 3 参 `stopServer/force/callback`）。
+    //   `StreamingGroupReturn` 为死类型：全仓零 import、零构造点（`base-layer-sse-bugs.test.tsx:3`
+    //   仅在注释里提到本文件名，非类型引用）。其 disconnect 语义早已被 [63] 5.14 的
+    //   `chatStreamStore.stop()` 取代，保留即 6.5「无兼容空壳」意义上的僵尸签名。
     clearSteps: () => void;
     executeSend: (userMessage: Message) => Promise<void>;
   };
@@ -132,10 +134,7 @@ export interface UIGroupState {
   useStream: boolean;
   isInitialized: boolean;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
-  sessionJumpLoading: boolean;
   isMessageListLoading: boolean;
-  isRenderingMessages: boolean;
-  retryCount: Record<string, number>;
   isSavingTitle: boolean;
   lastSaveTime: number;
 }
@@ -143,7 +142,6 @@ export interface UIGroupState {
 export interface UIGroupRefs {
   userScrolledUpRef: React.MutableRefObject<boolean>;
   lastScrollTimeRef: React.MutableRefObject<number>;
-  isLoadingHistoryRef: React.MutableRefObject<boolean>;
   logFlagsRef: React.MutableRefObject<{
     chunkFirstDone: boolean;
     showStepsFalseDone: boolean;
@@ -158,10 +156,7 @@ export type UIGroupReturn = UIGroupState &
     setSaveStatus: React.Dispatch<
       React.SetStateAction<'idle' | 'saving' | 'saved' | 'error'>
     >;
-    setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
     setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsRenderingMessages: React.Dispatch<React.SetStateAction<boolean>>;
-    setRetryCount: React.Dispatch<React.SetStateAction<Record<string, number>>>;
     setIsSavingTitle: React.Dispatch<React.SetStateAction<boolean>>;
     setLastSaveTime: React.Dispatch<React.SetStateAction<number>>;
   };
