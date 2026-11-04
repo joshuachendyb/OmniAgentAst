@@ -8,6 +8,9 @@
 # 注意: playwright浏览器需用户机另装(playwright install chromium);
 #   tesseract/pycorrector模型等外部依赖行为与源码运行一致, 不随包走。
 #   无控制台模式: 日志落 dist/OmniAgentBackend/logs/app_YYYY-MM-DD.log, 可通过该文件查日志。
+# 编辑历史:
+#   2026-11-04 小欧 - 打包后处理增加"用户使用说明"环节: doc-打包与E2E 下最新一份
+#     OmniAgent智能助手(SPA版)使用说明*.md 复制为 dist 根 OmniAgent使用说明.md(exe 同级)
 # ============================================================================
 import sys
 from pathlib import Path
@@ -122,3 +125,17 @@ coll = COLLECT(
     upx_exclude=[],
     name="OmniAgentBackend",
 )
+
+# 打包后处理: 用户使用说明放到 exe 同级, 包内固定名 OmniAgent使用说明.md — 小欧-2026-11-04
+# 源文档 doc-打包与E2E/OmniAgent智能助手(SPA版)使用说明-<签名>-<日期>.md, 取最新一份, 改名固定不带日期:
+#   升级覆盖同名文件, 部署目录不积累历史版本; 文档缺失只告警不阻断打包。
+import shutil as _shutil
+
+_doc_dir = REPO / "doc-打包与E2E"
+_docs = sorted(_doc_dir.glob("OmniAgent智能助手(SPA版)使用说明*.md"), key=lambda p: p.stat().st_mtime)
+if _docs:
+    _doc_dst = Path(DISTPATH) / "OmniAgentBackend" / "OmniAgent使用说明.md"
+    _shutil.copy2(_docs[-1], _doc_dst)
+    print(f"[post-build] 使用说明 -> {_doc_dst}  (源 {_docs[-1].name})")
+else:
+    print(f"[post-build] 警告: {_doc_dir} 下未找到使用说明, 包内不含 OmniAgent使用说明.md")

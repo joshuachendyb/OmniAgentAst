@@ -9,6 +9,7 @@
 #     不再 rmtree 整目录后再 copytree —— 先删后建若复制中断会留残缺目录, 程序直接起不来。
 #     部署前按 exe 路径比对探测目标进程是否在跑, 在跑则只提示(PS+CMD 两套命令)后退出,
 #     不自动杀进程: 占用者可能正在跑任务, 自动杀等于丢数据。
+#     部署时一并同步 dist 根的 OmniAgent使用说明.md(exe 同级), 与打包后处理环节配套。
 # ============================================================================
 import argparse
 import shutil
@@ -59,10 +60,12 @@ def _hint_running(target: Path, pids: List[int]) -> None:
 
 
 def _deploy(target: Path, dist: Path) -> None:
-    """执行部署: 覆盖 exe + 合并 _internal — 小欧 2026-11-04"""
+    """执行部署: 覆盖 exe + 合并 _internal + 同步 exe 同级说明文档 — 小欧 2026-11-04"""
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(dist / EXE_NAME, target / EXE_NAME)
     shutil.copytree(dist / '_internal', target / '_internal', dirs_exist_ok=True)
+    for doc in dist.glob('OmniAgent使用说明*.md'):
+        shutil.copy2(doc, target / doc.name)
 
 
 def _report(target: Path, dist: Path) -> None:
@@ -78,6 +81,7 @@ def _report(target: Path, dist: Path) -> None:
     print(f'assets 文件数  : {len(list(assets.iterdir())) if assets.is_dir() else 0}')
     print(f'exe 大小 MB   : {exe.stat().st_size / 1024 / 1024:.1f}')
     print(f'config.yaml   : {(target / "config" / "config.yaml").exists()} (升级时应保留)')
+    print(f'OmniAgent使用说明.md : {(target / "OmniAgent使用说明.md").exists()} (与 exe 同级)')
     ver = internal / 'version.txt'
     if ver.exists():
         print(f'包内版本      : {ver.read_text(encoding="utf-8").splitlines()[0]}')
