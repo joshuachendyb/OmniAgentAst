@@ -193,7 +193,7 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 ## 五、项目结构
 
 ```
-OmniAgentAs-desk/
+OmniAgentAs-01/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
 │   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
@@ -215,7 +215,7 @@ OmniAgentAs-desk/
 │   │   │   └── visualization/  # 可视化报告（mermaid/html/tree 等）
 │   │   └── utils/
 │   ├── config.yaml.example     # 配置模板（复制到 config/config.yaml 后填写）
-│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 67 + com-* 14 = 76 个）
+│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 67 + com-* 10 = 77 个）
 │   ├── logs/                   # 运行日志
 │   ├── migrations/             # DB 迁移
 │   ├── scripts/                # 辅助脚本
@@ -242,7 +242,7 @@ OmniAgentAs-desk/
 │   │   └── utils/              # 工具函数（time / stepStyles / sse 处理等）
 │   ├── src/tests/              # 前端单元测试（Vitest，git 忽略）
 │   ├── e2e_front_lib/          # 前端 E2E 基座（POM/常量/夹具，必从 ../../e2e_front_lib 引用）
-│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~08*.spec.ts + e2e.config/vite.e2e.config）
+│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~25*.spec.ts + e2e.config/vite.e2e.config）
 │   ├── scripts/                # 辅助脚本（CI/本地启动等）
 │   ├── tests/                  # 前端测试与性能测量脚本
 │   └── package.json
@@ -1017,9 +1017,9 @@ npm run test:e2e      # 整组（先 lint + format）
 
 ---
 
-## 九、快速开始
+## 九、开发环境和打包同源及Tauri发布环境说明
 
-### 9.1 环境要求
+### 9.1 开发环境要求
 
 | 依赖 | 版本 | 说明 |
 |------|------|------|
@@ -1029,7 +1029,7 @@ npm run test:e2e      # 整组（先 lint + format）
 
 > **虚拟环境建议**：Python 后端用虚拟环境隔离依赖，方便清理与复现（推荐）。
 
-### 9.2 安装与启动
+### 9.2 开发环境使用说明
 
 后端和前端需**同时运行**，开**两个命令行窗口**。
 
@@ -1094,7 +1094,7 @@ npm run dev
 | http://127.0.0.1:8000/api/v1/health | 后端探活接口 |
 | http://127.0.0.1:8000/docs | API 交互式文档（需设 OMNIAGENT_ENABLE_API_DOCS=1） |
 
-### 9.3 同源 SPA 打包（PyInstaller onedir）
+### 9.3 同源SPA打包
 
 将前后端打成一个独立 exe，单端口 8500 同时提供 API 和前端页面。
 
@@ -1186,7 +1186,7 @@ location /api/ {
 
 ---
 
-### 9.4 Tauri 桌面打包（可选）
+### 9.4 Tauri发布环境说明
 
 在 PyInstaller 同源 SPA 基础上，用 Tauri 包一层原生桌面壳，生成 `.msi` 安装程序。
 
@@ -1301,7 +1301,7 @@ pip install mss imageio numpy
 | 后端启动失败 | 检查 Python ≥ 3.11，端口8000是否被占用 |
 | 前端启动失败 | 检查 Node.js ≥ 18，清除 node_modules 后重装 |
 | API连接失败 | 检查 config/config.yaml 中的 API 密钥是否有效 |
-| 二级工具不可用 | 安装对应依赖库（见9.3节可选依赖） |
+| 二级工具不可用 | 安装对应依赖库（见9.5节可选依赖） |
 
 ---
 
