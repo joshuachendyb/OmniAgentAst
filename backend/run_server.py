@@ -1,7 +1,7 @@
 # ============================================================================
 # exe打包启动入口 — PyInstaller Analysis 入口, uvicorn 编程式启动(无--reload)
 # 创建: 2026-09-19 小欧 - 后端打包exe(北京老陈驱动)
-# 用法: run_server.exe [--host 127.0.0.1] [--port 8000] [--forwarded-allow-ips 127.0.0.1]
+# 用法: run_server.exe [--host 127.0.0.1] [--port 8000] [--forwarded-allow-ips 127.0.0.1] [--no-wait]
 #   程序自身资源(version.txt/config/config.yaml/logs/)定位exe所在目录,
 #   首次启动若 config/config.yaml 缺失则由 config.yaml.example 复制生成。
 #
@@ -46,6 +46,9 @@
 #     PID/进程名/路径 + 两条出路(本程序已在运行→直接浏览器用; 否则给清理命令/换端口)。
 #     不自动杀进程: 占用者可能是无关程序或在跑任务的本程序实例, 自动杀等于误杀/丢数据。
 #     — 小欧-2026-11-04
+#   2026-11-04 小欧 - 新增 _wait_before_close + --no-wait: 占用提示后窗口驻留 30 秒再退出
+#     (原 sys.exit 立即退, 双击启动时控制台一闪而过, 提示根本来不及看), 按任意键可提前关;
+#     stdio 被重定向(脚本/自动化调用)不等待, 免得卡住调用方, --no-wait 可强制跳过。 — 小欧-2026-11-04
 # ============================================================================
 import argparse
 import shutil
@@ -126,18 +129,18 @@ def _explain_port_busy(host: str, port: int) -> None:
         print("  占用者: 未识别(可能权限不足, 或被系统进程占用)", flush=True)
 
     if is_self:
-        print(f"\n  ✅ 判断: 本程序已经在运行, 不用再开一个 —— 浏览器直接访问:", flush=True)
+        print("\n  ✅ 判断: 本程序已经在运行, 不用再开一个 —— 浏览器直接访问:", flush=True)
         print(f"     👉 http://{shown_host}:{port}", flush=True)
         print("\n  只有确认要重启时才需要结束它:", flush=True)
     else:
         print("\n  要用本程序, 先清理占用者(或换个端口):", flush=True)
 
     if pid:
-        print(f"\n  ① 结束占用进程", flush=True)
+        print("\n  ① 结束占用进程", flush=True)
         print(f"     PowerShell:  Stop-Process -Id {pid} -Force", flush=True)
         print(f"     CMD:         taskkill /F /PID {pid}", flush=True)
     else:
-        print(f"\n  ① 查出是谁占的", flush=True)
+        print("\n  ① 查出是谁占的", flush=True)
         print(f"     PowerShell:  Get-NetTCPConnection -LocalPort {port} -State Listen", flush=True)
         print(f"                  Get-NetTCPConnection -LocalPort {port} -State Listen"
               f" | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}", flush=True)
@@ -145,9 +148,37 @@ def _explain_port_busy(host: str, port: int) -> None:
         print(f"                  for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port}"
               f" ^| findstr LISTENING') do taskkill /F /PID %a", flush=True)
     print("  ② 再双击本程序", flush=True)
-    print(f"\n  不想清理也可以直接换端口启动(两种命令行相同):", flush=True)
+    print("\n  不想清理也可以直接换端口启动(两种命令行相同):", flush=True)
     print(f"     OmniAgentBackend.exe --port {port + 1}", flush=True)
     print(f"{rule}\n", flush=True)
+
+
+def _wait_before_close(seconds: int = 30) -> None:
+    """端口占用提示后驻留 N 秒再退出, 防双击启动时窗口一闪而过看不清提示 — 小欧 2026-11-04
+
+    有控制台时按任意键立即关闭; stdio 被重定向(脚本/自动化调用)不等待, 免得卡住调用方。
+    """
+    import time
+
+    if not sys.stdin or not sys.stdin.isatty():
+        return
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
+
+    print(f"  本窗口保留 {seconds} 秒后自动关闭 (按任意键立即关闭)...", flush=True)
+    deadline = time.monotonic() + seconds
+    while True:
+        left = int(round(deadline - time.monotonic()))
+        if left <= 0:
+            break
+        print(f"\r  剩余 {left:2d} 秒 ", end="", flush=True)
+        if msvcrt is not None and msvcrt.kbhit():
+            msvcrt.getch()
+            break
+        time.sleep(0.2)
+    print(f"\r{' ' * 24}\r", end="", flush=True)
 
 
 def _exe_dir() -> Path:
@@ -230,6 +261,9 @@ def main() -> None:
         "--forwarded-allow-ips", default="127.0.0.1,::1",
         help="可信反向代理 IP（逗号分隔，含 IPv6）。默认只信任本机。"
              "非可信反代环境请勿改动，填 * 会信任任意来源（危险）。")
+    parser.add_argument(
+        "--no-wait", action="store_true",
+        help="端口被占用时打印提示后立即退出, 不等 30 秒(供脚本/自动化调用)")
     args = parser.parse_args()
 
     if args.forwarded_allow_ips.strip() == "*":
@@ -241,6 +275,8 @@ def main() -> None:
     # 端口预检: 被占则说明是谁占的并给出出路后退出, 不进入 _deploy_resources/app.main 初始化 — 小欧 2026-11-04
     if _port_busy(args.host, args.port):
         _explain_port_busy(args.host, args.port)
+        if not args.no_wait:
+            _wait_before_close()
         sys.exit(1)
 
     base = _exe_dir()
