@@ -1,4 +1,4 @@
-# OmniAgentAs-desk
+﻿# OmniAgentAs-desk
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
@@ -1036,39 +1036,197 @@ npm run test:e2e      # 整组（先 lint + format）
 
 后端和前端需**同时运行**，开**两个命令行窗口**。
 
+---
+
 **窗口 1 — 后端**（`cd backend`）：
 
-```bash
-# 方式 A（推荐）：虚拟环境
-python -m venv .venv                        # 仅第一次
-.venv\Scripts\pip install -r requirements.txt  # 仅第一次
-.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+**方式一（推荐，日常开发）：watchfiles 热重载**
 
-# 方式 B：全局 Python
-pip install -r requirements.txt             # 仅第一次
-python -m uvicorn app.main:app --reload --port 8000
+```powershell
+# 双击 backend\start.bat，或
+powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1
 ```
 
-> 窗口 1 保持运行，不要关闭。
+内部调用：`watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`
+
+- watchfiles 盯 `app/` 目录，Python 文件改动后自动重启 `run_server.py`
+- 走 `run_server.py` 而非裸 `uvicorn`：后者不注入 `forwarded_allow_ips`，后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警
+- 监听 `0.0.0.0:8000`，仅暴露 API，不托管前端
+- API 文档默认关闭，设 `OMNIAGENT_ENABLE_API_DOCS=1` 环境变量可开启 `/docs`
+
+---
+
+**方式二（旧，别用）：uvicorn --reload**
+
+```powershell
+# 虚拟环境（推荐）
+python -m venv .venv                        # 仅第一次
+.venv\Scripts\pip install -r requirements.txt  # 仅第一次
+.venv\Scripts\python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+
+# 或全局 Python
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+```
+
+⚠️ **Windows 上此方式有严重 bug**：uvicorn 的 `restart()` 用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程，子进程收不到信号 → 父进程卡死在 `basereload.py:98 self.process.join()`。**从第一次保存文件起热重载永久失效**，改代码不再重载，Ctrl+C 也退不掉，只能 kill 进程。
+
+判定方式二是否已死：`py-spy dump --pid <父进程>`，栈停在 `basereload.py:98` 即死。
+
+> 另有辅助启动模式：`python run_server.py`（8500，模拟打包 exe 行为）和 `npm run preview`（4173，构建产物本地预览），详见第十章开发命令。
+
+---
 
 **窗口 2 — 前端**（`cd frontend`）：
 
-```bash
+```powershell
 npm install        # 仅第一次
 npm run dev
 ```
 
-> 窗口 2 保持运行，不要关闭。
+- 默认端口 **5173**，绑定 `0.0.0.0`（局域网可达）
+- `/api` 请求通过 Vite proxy 转发至后端 :8000，同源无 CORS 问题
+- Windows 下 Vite 使用 `usePolling` 轮询监听（`vite.config.ts`），解决 chokidar 长跑丢事件问题
+
+---
 
 **浏览器访问**：
 
 | 地址 | 说明 |
 |------|------|
-| http://localhost:5173 | 前端页面 |
-| http://127.0.0.1:8000 | 后端 API |
-| http://127.0.0.1:8000/docs | API 交互式文档 |
+| http://localhost:5173 | 前端页面（Vite HMR） |
+| http://127.0.0.1:8000/api/v1/health | 后端探活接口 |
+| http://127.0.0.1:8000/docs | API 交互式文档（需设 OMNIAGENT_ENABLE_API_DOCS=1） |
 
-### 9.3 可选依赖（二级工具）
+### 9.3 同源 SPA 打包（PyInstaller onedir）
+
+将前后端打成一个独立 exe，单端口 8500 同时提供 API 和前端页面。
+
+---
+
+#### 9.3.1 前置条件
+
+- Python 3.13.11 安装于 `E:\Appsw\python31311\`
+- 已安装依赖：`pip install -r requirements.txt`
+- 已安装打包工具：`pip install pyinstaller platformdirs`
+- 补装 `jaraco.text` / `jaraco.functools`（缺失会导致 exe 启动失败）
+
+---
+
+#### 9.3.2 前端打包
+
+```powershell
+cd F:\OmniAgentAs-01\frontend
+npm run build        # tsc + vite build，约 1~2 分钟
+```
+
+产物：`frontend/dist/`（`index.html` + `assets/`，约 9 MB）。`dist/` 被 git 忽略，不入库。
+
+**后端地址烘焙（重要）**
+
+打包版 exe 前端静态托管在同端口 8500，API 走同源 `/api`，无需额外配置。
+若需与非打包后端（开发模式 :8000）联调测试，构建时指定：
+
+```powershell
+# 后端源码开发模式（端口 8000）
+$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
+npm run build
+
+# 后端打包版 exe（端口 8500）
+$env:VITE_API_BASE_URL="http://127.0.0.1:8500"
+npm run build
+```
+
+烘进 JS 后**不可再改**，换后端地址必须重打。
+
+---
+
+#### 9.3.3 后端打包
+
+```powershell
+cd F:\OmniAgentAs-01\backend
+E:\Appsw\python31311\python.exe -m pip install jaraco.text jaraco.functools
+E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec --noconfirm
+```
+
+产物：`backend/dist/OmniAgentBackend/`，包含：
+- `OmniAgentBackend.exe` ≈ 95 MB
+- `_internal/` ≈ 910 MB（依赖、源码）
+- `version.txt`、`config.yaml.example`、`OmniAgent.md`（启动时自动部署）
+
+spec 文件通过 `datas` 字段将 `frontend/dist/` 打包进 `_internal/web/`，exe 启动时由 `run_server.py` 自动解压到 exe 同级并挂载为静态目录。
+
+---
+
+#### 9.3.4 部署与升级
+
+**首次部署**：将打包产物整体拷贝到目标机器任意位置（如 `G:\Omni-AI`）：
+
+```powershell
+Copy-Item -Path "F:\OmniAgentAs-01\backend\dist\OmniAgentBackend\*" -Destination "G:\Omni-AI" -Recurse
+```
+
+首次启动：
+- 双击 `OmniAgentBackend.exe`，默认监听 `127.0.0.1:8500`
+- 浏览器访问 `http://127.0.0.1:8500`
+- 启动流程：自动部署必备文件 → 生成 `config/config.yaml`（若缺失）→ 挂载前端静态 → 启动 uvicorn
+
+**升级**：整目录覆盖拷贝即可，`config/config.yaml` 与数据文件（`~/.omniagent/`）保留。
+
+**多机反代场景**：通过 Nginx 反代到 `127.0.0.1:8500`，SSE 必须关闭缓冲：
+
+```nginx
+location /api/ {
+    proxy_pass         http://127.0.0.1:8500;
+    proxy_http_version 1.1;
+    proxy_set_header   Connection '';
+    proxy_buffering    off;
+    proxy_cache        off;
+    proxy_read_timeout 3600s;
+}
+```
+
+详见 `doc-打包与E2E/同源SPA打包与部署说明-小杨-2026-10-27.md`。
+
+---
+
+### 9.4 Tauri 桌面打包（可选）
+
+在 PyInstaller 同源 SPA 基础上，用 Tauri 包一层原生桌面壳，生成 `.msi` 安装程序。
+
+需额外安装：
+- Rust toolchain (≥1.77)
+- C 编译器（MSVC 或 MinGW-w64）
+- Tauri CLI：`cargo install tauri-cli --version '^2' --locked`
+
+```powershell
+# 1. 前端构建（同 9.3.2）
+cd F:\OmniAgentAs-01\frontend
+npm run build
+
+# 2. 后端打包（同 9.3.3）
+cd F:\OmniAgentAs-01\backend
+E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec --noconfirm
+
+# 3. 组装 sidecar 目录
+$src = "F:\OmniAgentAs-01\backend\dist\OmniAgentBackend"
+$dst = "F:\OmniAgentAs-01\desktop\src-tauri\sidecar"
+if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+Copy-Item $src $dst -Recurse
+
+# 4. 编译 Tauri 壳
+cd F:\OmniAgentAs-01\desktop
+cargo tauri build
+```
+
+产物：`desktop/src-tauri/target/release/bundle/msi/OmniAgentApp_x.x.x_x64_zh_CN.msi`
+
+**分发方式**：
+- **安装程序**：将 `.msi` 分发给用户，双击安装
+- **绿色版**：打包 `target/release/` 下 `OmniAgentApp.exe`、`sidecar/` 目录、`_internal/` 等，用户解压即用
+
+详细步骤见 `doc-打包与E2E/Tauri桌面打包与部署说明-小杨-2026-10-27.md`。
+
+### 9.5 可选依赖（二级工具）
 
 多数已含于 `requirements.txt`，如需单独安装：
 
@@ -1087,7 +1245,9 @@ pip install mss imageio numpy
 
 | 命令 | 说明 |
 |------|------|
-| `python -m uvicorn app.main:app --reload` | 启动开发服务器 |
+| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`（或双击 `backend\start.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8000） |
+| `python run_server.py` | 模式 B：打包行为调试（模拟 exe，端口 8500） |
+| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000` | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
 | `pytest` | 运行全部测试 |
 | `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
@@ -1162,5 +1322,5 @@ pip install mss imageio numpy
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-10-11 11:58:05 | **版本**: v1.2.5
+| 最后更新 | 2026-11-04 10:10 |  |
 
