@@ -2,12 +2,9 @@
 # ============================================================================
 # OmniAgentAst 后端 exe 打包 spec(onedir, 无控制台) — 小欧 2026-10-24
 # 构建: cd backend; E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec
-# 构建后收尾(必需, onedir禁止datas目标".."只能拷):
-#   copy ..\version.txt dist\OmniAgentBackend\
-#   copy config.yaml.example dist\OmniAgentBackend\
-#   copy ..\OmniAgent.md dist\OmniAgentBackend\   # 项目规则文件; 缺失时运行期会自动建空文件
-# 产物: backend/dist/OmniAgentBackend/OmniAgentBackend.exe(绿色目录, 拷走即用)
-#   exe旁自带: version.txt / config.yaml.example / config/ / logs(运行生成)
+# 产物: backend/dist/OmniAgentBackend/OmniAgentBackend.exe + _internal/(onedir 绿色目录, 拷走即用)
+#   说明: version.txt/config.yaml.example/OmniAgent.md 经 datas "." 目标进 _internal/ 根部,
+#   exe 启动时 _deploy_resources() 自动复制到 exe 同级; 拷走前无需手动补任何根文件 — 小欧 2026-11-04(删多余收尾说明)
 # 注意: playwright浏览器需用户机另装(playwright install chromium);
 #   tesseract/pycorrector模型等外部依赖行为与源码运行一致, 不随包走。
 #   无控制台模式: 日志落 dist/OmniAgentBackend/logs/app_YYYY-MM-DD.log, 可通过该文件查日志。
