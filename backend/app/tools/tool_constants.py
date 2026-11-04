@@ -68,6 +68,8 @@
 # 2026-10-18 - 小欧 - 北京老陈(归类错误修复): generate_chart 自 WRITE_PATH_TOOLS 移入 DUAL_PATH_TOOLS, DUAL_ACTION_PARAMS 补 {"data":"read","dest":"write"}。理由: generate_chart 一调用带 data(数据源)+dest(出图)两路径, 属双动作, 误归 write 致 data(内联JSON串)被写线当路径送审误弹授权; 单线只应承载单路径。WRITE_PATH_TOOLS 10→9, DUAL_PATH_TOOLS 5→6。
 # 2026-10-19 - 小欧 - 新增 ERR_MISSING_DEPENDENCY: 与"工具未注册/参数非法"区分, LLM 据此判断该装库还是换工具。
 #   本文件只放常量, 构造函数 build_missing_dep_error 住 tool_response.py 与 build_error/build_warning 同居。
+# 2026-11-04 小欧 - SUBPROCESS_TIMEOUT_SHORT 注释去掉 taskkill 字样(树杀已改 psutil+proc.kill, 不建进程);
+#   配置派生值(如 shell 并发上限)不进本文件: 常量模块保持纯数据, 由 tool_retry_engine/shell_engine 各自按配置计算 — 小欧-2026-11-04
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -161,7 +163,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 保险丝超时（ToolRetryEngi
 # ============================================================
 
 SUBPROCESS_TIMEOUT_DEFAULT: int = 10    # 【tool 级】使用对象: 通用 subprocess 执行超时, 如 where/which 命令查找
-SUBPROCESS_TIMEOUT_SHORT: int = 5       # 【tool 级】使用对象: 短时 subprocess(taskkill 进程树清理、kill 后等待退出)
+SUBPROCESS_TIMEOUT_SHORT: int = 5       # 【tool 级】使用对象: 短时 subprocess(kill 后等待退出确认)
 SUBPROCESS_TIMEOUT_VERY_SHORT: int = 3  # 【tool 级】使用对象: 极短 subprocess(process wait)
 SUBPROCESS_TIMEOUT_LONG: int = 60       # 【tool 级】使用对象: 长时 subprocess(文档转换等耗时操作)
 
@@ -451,7 +453,7 @@ QINGMING_DATES: dict[int, tuple[int, int]] = {  # 【tool 级】使用对象: �
     2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
 }
 
-from app.constants import SUPPORTED_ALGORITHMS  # 迁入 constants.py, 此处 re-export — 小沈 2026-08-13
+from app.constants import SUPPORTED_ALGORITHMS  # noqa: F401  迁入 constants.py, 此处 re-export — 小沈 2026-08-13
 
 # ============================================================
 # 🕐 11. 工具重试配置(从 tool_config.py 迁移 + HTTP 可重试状态码归并) — 【工具层】

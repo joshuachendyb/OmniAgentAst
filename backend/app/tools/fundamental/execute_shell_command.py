@@ -143,6 +143,8 @@
 #   改为按「先诊断命令本身→再考虑调预算」排序: 查低效写法(逐字符循环/大文件全量扫描)优先优化算法; 写入.py脚本便于定位; 确认已排除性能问题后才考虑增大timeout(加前置条件); 与TOOL_TIMEOUT_HINTS中delete/write/edit/readmedia已正确写法(分批/减小范围)对齐。
 # 2026-11-03 小欧 - cwd 不存在回退上级/临时目录两处 WARNING→INFO(有兜底) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 PersistentShell(死导入, 测试均直接从 shell_engine 导入) — 小欧-2026-11-04
+# 2026-11-04 小欧 - _kill_and_read_output 树杀改 kill_process_tree(app.utils.proc_utils): 删 taskkill 子进程与其
+#   proc.kill 兜底分支(psutil 枚举后代 + TerminateProcess 根进程, 零 CreateProcess); 后续 wait/读残存语义不变 — 小欧-2026-11-04
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -243,7 +245,8 @@ from app.tools.file.file_encoding import get_file_encoding
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16: 中风险层独立
 from app.tools.context import get_current_task_id  # ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
-from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入) — 小欧-2026-11-04
+from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入)
+from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
 from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
@@ -796,18 +799,11 @@ def _find_bash() -> Optional[str]:
 # ═══════════════════════════════════════════════════════
 
 def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
-    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 / 2026-08-06"""
-    try:
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-            capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
-        )
-    except Exception as e:
-        logger.warning(f"[卡死C11] taskkill异常 → proc.kill()兜底 (pid={proc.pid}): {e}")
-        try:
-            proc.kill()   # (小健 2026-08-06): kill本身可能抛(进程已死/句柄失效), 必须受保护, 否则异常冒泡中断残存读取
-        except Exception as ke:
-            logger.warning(f"[卡死C11] proc.kill()兜底也失败(进程可能已死/句柄失效), 直接读残存 (pid={proc.pid}): {ke}")
+    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 / 2026-08-06
+
+    2026-11-04 小欧: 树杀改走 kill_process_tree(psutil+proc.kill), 不再起 taskkill 子进程 ——
+    CreateProcessW 持 loader lock 与 Thread.start() 互锁是 shell 卡死根因, 超时路径必须零建进程。"""
+    kill_process_tree(proc)
     try:
         proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
     except Exception as e:

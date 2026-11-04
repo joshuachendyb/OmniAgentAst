@@ -26,6 +26,8 @@
 # 2026-11-03 小欧 - 组装逻辑抽 build_health_response(host) 共用: main.py 新增裸 /health 别名(外部探针如
 #   opencode-cli 每30s打 /health)同源一份真 JSON(DRY); 别名须早于打包态 spa_fallback catch-all 注册 — 小欧-2026-11-03
 # 2026-11-03 小欧 - _server_lan_ip 取序反转: UDP 选路(真实出口网卡)提首选、hostname 解析降兜底, 原序在多网卡机器上易先命中虚拟适配器 — 小欧-2026-11-03
+# 2026-11-04 小欧 - 新增 spawn 字段(闸门指标): 运行期 thread_start 数、等锁超限次数、CreateProcess 最长持锁,
+#   把"正在接近卡死"变成可观测/可告警, 不必等全站僵死再 py-spy — 小欧-2026-11-04
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -45,6 +47,7 @@ from app.db import db
 from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.utils.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
 
 router = APIRouter()
 
@@ -105,6 +108,7 @@ class HealthResponse(BaseModel):
     pid: int = 0  # 2026-11-02 小欧 - 进程号, 卡死时直接对应 py-spy dump --pid
     uptime_s: float = 0.0  # 2026-11-02 小欧 - 进程已存活秒数(重启即归零, 与 pid 变化互相印证)
     loop_lag_ms: float = 0.0  # 2026-11-02 小欧 - 事件循环调度延迟点采样, 区分网络慢与循环被占死
+    spawn: dict = {}  # 2026-11-04 小欧 - 闸门指标: runtime_thread_starts 应为0, gate_timeouts/popen_max_ms 暴露卡死前兆
 
 class EchoRequest(BaseModel):
     message: str
@@ -135,6 +139,7 @@ async def build_health_response(host: str) -> HealthResponse:
         # 2026-11-02 小欧 - 存活时长与循环延迟: 顶栏胶囊据此区分"重启过/网络慢/事件循环被占死"
         uptime_s=round(time.monotonic() - _STARTED_AT, 3),
         loop_lag_ms=await _loop_lag_ms(),
+        spawn=spawn_snapshot(),
     )
 
 @router.get("/health", response_model=HealthResponse)

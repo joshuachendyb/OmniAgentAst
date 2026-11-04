@@ -69,6 +69,9 @@
 # 2026-11-03 21:30 小欧 - 四处后台任务 create_task→spawn_bg(强引用防 GC 收口, shutdown 仍按引用 cancel) — 小欧-2026-11-03
 # 2026-11-04 小欧 - R1(三堂会审残留): startup 预热 loop 默认线程池(新增 threading/ThreadPoolExecutor import),
 #   非 shell 同步工具 asyncio.to_thread 运行期不再在事件循环线程懒建 Thread.start(同 shell 卡死病灶另一半) — 小欧-2026-11-04
+# 2026-11-04 小欧 - shell 卡死根治(启动期): startup 最早处 install_spawn_gate()(CreateProcess × Thread.start 闸门,
+#   有界等待+快速失败); 串行预热 ps7/ps5 可执行体(prewarm_shell_binaries, 首次 CreateProcessW 移出请求路径);
+#   启动收尾 mark_runtime_started()(此后 Thread.start 计入 /health.runtime_thread_starts, 应为 0) — 小欧-2026-11-04
 import sys
 import asyncio
 import time
@@ -95,7 +98,9 @@ from starlette.datastructures import MutableHeaders  # 2026-10-30 小欧: 纯 AS
 import traceback
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: 后台任务统一存引用防 GC(与 middleware 同源)
+from app.utils.spawn_gate import install_spawn_gate, mark_runtime_started  # 2026-11-04 小欧: 进程×线程创建闸门
 from app.tools import ensure_tools_registered
+from app.tools.fundamental.shell_engine import prewarm_shell_binaries  # 启动期预热 ps7/ps5 — 2026-11-04 小欧
 from app.config import get_config, get_code_root, env_flag
 from pathlib import Path
 import os
@@ -455,7 +460,7 @@ _log_watcher_ref: Optional[asyncio.Task] = None  # 同 _cleanup_task_ref 模式,
 
 def _prewarm_loop_default_executor() -> None:
     """启动期预热 loop 默认线程池: 阻塞任务逐个逼建满 worker, Thread.start 全部发生在启动期循环线程。
-    非 shell 同步工具经 asyncio.to_thread 走此池, 运行期不再热路径懒建线程(同 _ShellWorkerPool 病灶另一半)。— 小欧 2026-11-04"""
+    非 shell 同步工具经 asyncio.to_thread 走此池, 运行期不再热路径懒建线程(与 shell 执行器同一病因)。— 小欧 2026-11-04"""
     _n = min(32, (os.process_cpu_count() or 1) + 4)   # 与 CPython 默认 executor 的 max_workers 同式, 容量语义不变
     _block = threading.Event()
     _ex = ThreadPoolExecutor(max_workers=_n, thread_name_prefix="tool-sync")
@@ -478,8 +483,15 @@ async def startup_event():
     # 2026-11-03 小欧 - 删函数内 `import time as _time`(模块级已有 import time, 重复导入违反 DRY):
     #   本函数内 13 处调用同步改回 time.* — 小欧-2026-11-03
     _t0 = time.time()
+    # 2026-11-04 小欧 - 进程×线程创建闸门: 必须在任何运行期并发开始前装好(有界等待, 超限快速失败)
+    install_spawn_gate()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
+    # 2026-11-04 小欧 - 预热 ps7/ps5 可执行体: 首次 CreateProcessW(Defender 扫描)挪到启动期,
+    #   请求路径不再冷启动; 必须在预热线程池之前串行跑完, 不与任何 Thread.start 并发。
+    _t_shell = time.time()
+    prewarm_shell_binaries()
+    logger.info(f"[启动耗时] prewarm_shell_binaries: {time.time()-_t_shell:.3f}s")
     # 2026-11-04 小欧 - R1: 预热线程池必须在任何后台任务/请求动用 executor 前建满
     _prewarm_loop_default_executor()
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
@@ -534,6 +546,8 @@ async def startup_event():
     warn_startup_checks()
     logger.info(f"[启动耗时] warn_startup_checks: {time.time()-_t3:.3f}s")
     logger.info(f"[启动耗时] startup_event 合计: {time.time()-_t0:.3f}s")
+    # 启动期结束: 之后任何 Thread.start 都计入 runtime_thread_starts(/health 暴露), 应为 0 — 2026-11-04 小欧
+    mark_runtime_started()
     from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()

@@ -105,6 +105,27 @@
 #     冷启动~1.5s 必须落在 _start 内(否则占用调用方 timeout, timeout=1 会反复重建);
 #     该路径原本也走 _exec, 线程创建点已由 ① 根除, 故无新增风险。
 #   验证: 池/引擎测试全绿, acquire 复用探活由秒级降至微秒级, 就绪语义与旧实现一致。
+# 2026-11-04 小欧 - 根治"超时清理链自身成为死锁点"(8500 打包环境事故复盘):
+#   现象: 3 次命令超时后, 3 个 shell executor 线程永久报废、7 个 pwsh 成孤儿(父进程已退出),
+#         "清理链完成/超守卫/线程异常"三类日志一条都没有 —— 清理链压根没跑完; 应用随后整体僵死须人工杀进程。
+#   根因: Windows 上 CreateProcessW 调用期持 loader lock 且不释放 GIL, Thread.start() 等 loader lock 无超时
+#         → 二者并发即永久互锁(实证 pyspy/hang_20261104_0115: MainThread 卡 Thread.start, 看门狗卡 Popen.__init__)。
+#         而超时路径恰好同时做这两件事: _cleanup_guard_start() 建清理线程 + _kill_tree() 起 taskkill/powershell。
+#   修法: ① 清理链改投常驻线程(app.utils.serial_worker), 运行期零 Thread.start();
+#         ② _kill_tree/_kill_fallback/_kill_descendants 删 taskkill 与 powershell 子进程, 改 psutil(Win32 API)+proc.kill();
+#         ③ 新增 prewarm_shell_binaries(), 把首次 CreateProcessW 挪到启动期, 不在用户命令路径上冷启动。
+#   2026-11-04 小欧 - 收口最后一处运行期建线程: _StdinWriter 的线程改由导入期预建的
+#         _StdinWriterPool 租借(池耗尽才兜底新建, 且必须过 spawn_gate 闸门);
+#         spawn_gate 全局串行化 Thread.start × CreateProcessW, 覆盖所有调用点(不靠逐点记忆)。
+#   2026-11-04 小欧 - 分层收口: 树杀/后代清杀移入 app.utils.proc_utils(通用进程层);
+#         线程池统一为 app.utils.workers.WorkerPool / ThreadLeasePool(取代 serial_worker + 两处私有池);
+#         闸门改有界等待+快速失败(无限等待=僵死, 只是换个位置), 指标经 /health 暴露;
+#         即: 本文件只留 shell 协议与生命周期, 不再持有通用进程/线程原语。
+#         历史条目中的 taskkill/Thread.join/serial_worker/_kill_fallback/_kill_descendants/
+#         _StdinWriterPool/_ShellWorkerPool 均属已删实现, 保留为变更轨迹, 勿据其理解现状。
+#   2026-11-04 小欧 - 复核修正: _CLEANUP_POOL 1→3(单 worker 挂起即永久失效, 清理能力静默丧失);
+#         _StdinWriter 删池耗尽兜底新建线程(兜底本身即运行期 Thread.start) → 池满判损坏;
+#         删生产零调用的 _cleanup_guarded(死代码), 调用方统一 start + await 两段式。
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -141,6 +162,7 @@ PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-0
 import atexit
 import contextlib
 import locale
+import concurrent.futures
 import os
 import queue
 import shutil
@@ -154,6 +176,9 @@ from typing import Any, Dict, List, Optional
 
 from app.logger import logger, log_recovered  # ② 已自愈档 — 小欧 2026-10-06
 from app.tools.tool_constants import SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT_SHORT
+from app.config import get_config  # 池容量按 tuning 配置计算(配置派生值留在使用方) — 2026-11-04 小欧
+from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 通用进程树清杀移出本文件(分层)
+from app.utils.workers import ThreadLeasePool, WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -168,7 +193,7 @@ from app.tools.tool_constants import SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT
 #   C4  多行命令经stdin→PS解析器卡死等待输入
 #       → _exec_locked: ps_cmd写.ps1文件 + 只喂一句【单行】dot-source
 #   C5  向已死进程写stdin→管道阻塞
-#       → 实例级常驻写线程 _StdinWriter(队列+Event有界等待) + 写前poll探活; 超时=写线程卡住→判死重建 — 2026-11-04 小欧
+#       → 实例级写通道 _StdinWriter(池 worker + 队列 + Event 有界等待) + 写前poll探活; 超时=写线程卡住→判死重建 — 2026-11-04 小欧
 #   C6  锁内阻塞操作→拖死全池
 #       → acquire evict_to_close / release close / cleanup close 全部移出池锁
 #   C7  池锁↔实例锁交叉死锁
@@ -180,7 +205,7 @@ from app.tools.tool_constants import SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT
 #   C10 子进程持管道→communicate挂满(仅cmd/bash分支)
 #       → execute_shell_command.py: cmd poll-loop代替communicate; bash捕获TimeoutExpired→_kill_and_read_output
 #   C11 kill/wait自身阻塞
-#       → _kill_tree/_close/proc.wait/taskkill 全部带SUBPROCESS_TIMEOUT_SHORT有界
+#       → _kill_tree 零建进程(psutil 枚举后代 + proc.kill) + _poll_pid_exit 二次确认, _close/proc.wait 有界
 #   C12 临时文件/句柄泄漏→耗尽资源
 #       → _TempFiles上下文finally unlink + _close显式关闭stderr句柄
 #   C13 acquire Phase2与cleanup并发竞态
@@ -206,32 +231,57 @@ _UNLINK_RETRY_DELAY = 0.05      # unlink重试间隔(秒)：50ms×3≈150ms, 覆
 _CLEANUP_GUARD_TIMEOUT = 10     # [M1] 清理链守护线程join超时(秒): M6守卫线程清理的最长等待+探针观测阈值 — 小欧 2026-09-19
                                  # 2026-10-09 - 小欧 - 15→10(北京老陈裁定「清理阀门为10」):
                                  #   清理链实测 349.7ms, 但本值是"OS级挂起时的设计上限", 不可用实测值替代设计阈值定档。
-                                 #   10s 仍覆盖 taskkill(SUBPROCESS_TIMEOUT_SHORT=5) + _poll_pid_exit 二次确认(5) + unlink重试0.15s。
+                                 #   10s 仍覆盖 _poll_pid_exit 二次确认(SUBPROCESS_TIMEOUT_SHORT=5)+unlink重试0.15s。
+                                 #   2026-11-04 小欧: taskkill 已删(改 psutil+proc.kill, 不建进程), 该预算更宽裕。
                                  #   ★ 与保险丝的关系(必须同步, 否则改一破一):
                                  #     tool_retry_engine.INSURANCE_BUFFER = 15 > 本值 10,
                                  #     ⇒ bash 超时后保险丝恒晚于 _await_cleanup_guard 返回, 绝不截断补清理(:731-733)。
                                  #   若日后有人把本值调到 >15, 必须同步上调 INSURANCE_BUFFER, 否则临时文件将残留。
 _LOCK_WAIT_GUARD = 10        # 实例锁等待护栏(秒): 等锁上限=_LOCK_WAIT_GUARD+命令timeout, 超时返回_ERROR_LOCK_BUSY — 治理层3 小欧 2026-10-04
 _STDIN_WRITE_TIMEOUT = 5     # stdin写入上限(秒): 超时=存活不读(管道背压/半死) → M6守卫清理+重启 — 治理层3 小欧 2026-10-04
+_STDIN_POOL_SIZE = max(32, int(get_config().get("tuning.concurrency.shell_pool_max_per_type", 8)) * 4)  # stdin写线程池: 与执行器同键同式, 不再写死32 — 2026-11-04 小欧
+_STDIN_POOL_LEASE_TIMEOUT = 5  # 租借写线程上限(秒): 池满/全卡住 ⇒ 判写通道损坏, 有界失败 — 2026-11-04 小欧
 _ERROR_LOCK_BUSY = {"stdout": "", "stderr": "shell instance lock busy", "exit_code": -1}   # 等锁超时明确失败,dict模式同:188 — 治理层3 小欧 2026-10-04
 
+# 超时清理链常驻 worker: 运行期只投递, 零 Thread.start(Thread.start × CreateProcessW 会互锁)
+# 3 个而非 1: proc.kill 可能 OS 级挂住, 单 worker 卡死即永久失效 → 清理能力静默丧失
+_CLEANUP_POOL = WorkerPool(3, "shell-cleanup")
+
+
+def prewarm_shell_binaries() -> None:
+    """启动期预热 ps7/ps5: 把首次 CreateProcessW(Defender 扫描/loader lock 长窗口)挪出请求路径。
+    串行各跑一次 `-NoProfile -Command exit`; 有界(_READY_PROBE_TIMEOUT), 失败仅告警不阻断启动。"""
+    for shell_type, exe in (("ps7", "pwsh.exe"), ("ps5", "powershell.exe")):
+        path = shutil.which(exe)
+        if not path:
+            logger.warning(f"[Shell预热] {shell_type}({exe}) 未找到, 跳过")
+            continue
+        t0 = time.monotonic()
+        try:
+            subprocess.run([path, "-NoProfile", "-Command", "exit"],
+                           capture_output=True, timeout=_READY_PROBE_TIMEOUT)
+            logger.info(f"[Shell预热] {shell_type} 完成 ({time.monotonic() - t0:.0f}ms)")
+        except Exception as e:
+            logger.warning(f"[Shell预热] {shell_type} 失败(不影响启动): {e}")
+
 # ═══════════════════════════════════════════════════════
-#  _StdinWriter — 实例级常驻 stdin 写线程
+#  _StdinWriter — 实例级 stdin 写通道(worker 来自启动期预建租约池)
 # ═══════════════════════════════════════════════════════
 
 class _StdinWriter:
-    """实例级常驻 stdin 写线程：命令路径零线程创建，写操作有界等待 — 2026-11-04 小欧
+    """实例级 stdin 写通道: 线程来自启动期预建池, 写操作有界等待 — 2026-11-04 小欧
 
     【为什么必须常驻】原 _exec_locked 每条命令 new 一个临时写线程并 join；
     事故取证(2026-11-04)显示 Thread.start() 在 Windows 线程入口偶发停顿：
     新线程 CPU=0 且 threading.Event._started 从未置位，主线程永久卡在
     threading.Thread.start() 内 → 该 executor worker 再也回不来 → 超时重试逐个烧掉
     默认 executor → getaddrinfo 也排不上 → 事件循环整体僵死。
-    改为实例级常驻单线程后，线程创建从"每命令一次"降为"每实例一次"，
-    命令路径只剩 queue.put + Event.wait(timeout)，不存在任何线程创建点。
+    【当前形态】worker 由 ThreadLeasePool 在导入期建好并租借, 运行期零 Thread.start;
+    命令路径只剩 queue.put + Event.wait(timeout)。池耗尽 ⇒ 写通道判损坏(有界失败),
+    不再兜底新建线程 —— 兜底本身就是运行期 Thread.start, 与"运行期零建线程"自相矛盾。
 
     【有界语义】写线程卡在 stdin.write(管道背压/进程半死)时，调用方 wait 超时即返回，
-    由 _exec_locked 判死并走 M6 守卫清理+重建；写线程本身 daemon，随实例销毁自生自灭。
+    由 _exec_locked 判死并走守卫清理+重建；卡住的 worker 不返回即永久占用该租约槽位(不自愈)。
     """
 
     _SENTINEL = object()
@@ -240,10 +290,14 @@ class _StdinWriter:
         self._stdin = stdin
         self._q: "queue.Queue" = queue.Queue()
         self._broken = False
-        self._thread = threading.Thread(target=self._run, daemon=True, name=name)
-        self._thread.start()
+        if not _STDIN_POOL.lease(self._serve, _STDIN_POOL_LEASE_TIMEOUT):
+            # 池耗尽 = 已有 N 个写线程全卡死: 判写通道损坏, 由 _probe/守卫走判死重建。
+            # 不兜底新建线程: 那等于运行期 Thread.start, 正是本类要消除的对象。
+            self._broken = True
+            logger.error(f"[Shell] stdin 写线程池耗尽({_STDIN_POOL_SIZE} 全忙/卡住) → 写通道判损坏 {name}")
 
-    def _run(self):
+    def _serve(self):
+        """服务本 writer 直到收到退出哨兵(池 worker 复用入口) — 2026-11-04 小欧"""
         while True:
             item = self._q.get()
             if item is _StdinWriter._SENTINEL:
@@ -270,13 +324,16 @@ class _StdinWriter:
         return box[0] if box else None
 
     def healthy(self) -> bool:
-        """写通道健康 = 未损坏 且 写线程仍存活(仅查状态，不做任何阻塞操作)。"""
-        return (not self._broken) and self._thread.is_alive()
+        """写通道健康 = 未标记损坏(仅查状态, 不做任何阻塞操作)。"""
+        return not self._broken
 
     def stop(self):
-        """投递退出哨兵(不 join)：线程空闲时立即退出，卡在 write 时随实例销毁自灭。"""
+        """投递退出哨兵(不 join)：_serve 收到即返回并归还池 worker；卡在 write 时永久占用该槽位(不自愈)。"""
         self._broken = True
         self._q.put(_StdinWriter._SENTINEL)
+
+
+_STDIN_POOL = ThreadLeasePool(_STDIN_POOL_SIZE, "shell-stdin")
 
 
 # ═══════════════════════════════════════════════════════
@@ -364,11 +421,11 @@ def _poll_for_file(path: str, timeout: int) -> bool:
 
 def _poll_pid_exit(proc: Optional["subprocess.Popen"], timeout: int, interval: float = 0.1) -> bool:
     """有界轮询确认进程已退出：替代裸 `proc.wait(timeout)` 的二次确认。
-    背景: taskkill/proc.wait 可能在 Windows 内核级原语上静默挂起(无异常无返回) → 本轮询
+    背景: proc.kill/proc.wait 可能在 Windows 内核级原语上静默挂起(无异常无返回) → 本轮询
     poll() 为纯查询不阻塞, 超 timeout 秒即返回 False, 绝不永久阻塞 — 小欧 2026-09-19
     修复(小欧 2026-09-19) poll() 抛异常(句柄失效/ProcessLookupError/OSError)必须本地化:
     poll 异常=进程状态未知 → 立即返回 False(未确认退出), 让上层 kill 兜底(宁可多杀也不假死);
-    绝不把底层异常透传给 daemon 清理线程/二次确认层(否则线程静默死亡→孤儿, 见另一缺陷)."""
+    绝不把底层异常透传给清理 worker/二次确认层(否则误判为清理链异常, 触发多余兜底重杀)."""
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -725,16 +782,16 @@ class PersistentShell:
                 return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
 
             # [卡死场景C8/C14] 有界兜底: 命令超时(含半死/死循环/锁被hold) → 守卫清理, 返回timeout(非永久阻塞) — 小欧 2026-08-06
-            # [M6 重写 小欧 2026-09-19] 同线程 try/finally 无法拦截 OS 级挂起 → 清理整体移入独立 daemon 线程:
+            # [M6 重写 小欧 2026-09-19] 同线程 try/finally 无法拦截 OS 级挂起 → 清理整体移入后台执行:
             #   主线程快照 _proc 并立即置 _proc=None/_alive=False(防假活回流到池, 配合 release 判活/满足 M8 契约)
-            #   → 清理在后台线程执行(taskkill/二次确认) → 主线程仅 join(timeout=_CLEANUP_GUARD_TIMEOUT), 超时即放行.
+            #   → 清理投常驻 worker(psutil 树杀+二次确认) → 主线程仅做有界等待(≤_CLEANUP_GUARD_TIMEOUT), 超时即放行.
             if not _poll_for_file(paths.code, timeout):
                 logger.warning(f"[卡死C8/C14] 命令超时{timeout}s未出结果(半死/死循环/锁被hold) → 守卫清理, 返回timeout(非永久阻塞)")
                 # [守卫拆分 小欧 2026-09-19] 原 _cleanup_guarded() 持锁 join(≤15s) → 阻塞其他调用方;
                 # 现仅启动守卫(start, 微秒级), join/兜底由 _exec 在锁外调 _await_cleanup_guard 完成.
                 # [命令级文件时序 小欧 2026-09-19] 进程未死时 _TempFiles.finally 的 _safe_unlink 必失败(句柄占用)
                 # → 将本次 6 个命令级临时文件登记进 ctx, await(join 后进程必死) 再补清理
-                self._cleanup_guard_start()            # 锁内微秒级: 快照+置None+daemon启动+stderr回收
+                self._cleanup_guard_start()            # 锁内微秒级: 快照+置None+投递常驻清理 worker+stderr回收
                 if self._guard_ctx is not None:
                     self._guard_ctx["temp_files"] = [paths.out, paths.err, paths.code, paths.cwd, paths.ps1, paths.cmd]
                 return dict(_ERROR_TIMEOUT)
@@ -763,51 +820,34 @@ class PersistentShell:
 
     # ── 清理 ────────────────────────────────────
 
-    def _cleanup_guarded(self):
-        """[M6] 清理链 daemon 线程守卫(A): 即使 _kill_tree/_close 被 OS 级挂起, 上层也绝不超期等待 — 小欧 2026-09-19
-        背景: 同线程内 try/finally 无法拦截内核级挂起的 taskkill/proc.kill/proc.wait →
-              必须把清理整体移到独立线程, 主线程只做有界等待(join timeout), 超时即放行, 锁立即释放。
-        时序:
-          ① 主线程: 快照 _proc → 立即 _proc=None/_alive=False(不等清理完成)——满足 release 判活(M8),
-             假活实例在池内已不可见, 杜绝回流复用
-          ② daemon 线程: 对快照复调 _kill_tree(proc 参数, 见 M3)——taskkill 异常兜底 + 二次确认全在其中,
-             全程不触碰 self._proc, 与主线程/后续 release 无状态竞态; 进一步 OS 挂起则 daemon 继续自生自灭(不阻塞任何人)
-          ③ 主线程: 仅 join(timeout=_CLEANUP_GUARD_TIMEOUT), 超时即逝不当道; 探针记录耗时并留痕(可观测)
-        [守卫拆分 小欧 2026-09-19] 原实现持锁 join(≤15s), 违反"锁立即释放"承诺(实测阻塞第二线程3s) →
-        拆两段: _cleanup_guard_start(锁内,微秒级) 与 _await_cleanup_guard(锁外,join+兜底+观测);
-        本方法=start+await 组合, 供外部/测试直接调用保持语义完整。
-        """
-        self._cleanup_guard_start()
-        self._await_cleanup_guard()
-
     def _cleanup_guard_start(self):
-        """[守卫拆分 小欧 2026-09-19] 守卫启动段(锁内, 微秒级): 快照→置None/alive→spawn daemon→discard_stderr.
-        不 join、不观测、立即返回 → 锁持有时长从 ≤15s 降至微秒级, 满足『超时即逝/锁立即释放』契约;
-        观测与异常兜底全部移到 _await_cleanup_guard(锁外) 执行."""
+        """[守卫拆分 小欧 2026-09-19] 守卫启动段(锁内, 微秒级): 快照→置None/alive→投递常驻清理 worker→discard_stderr.
+        不等待、不观测、立即返回 → 锁持有时长从 ≤15s 降至微秒级, 满足『超时即逝/锁立即释放』契约;
+        观测与异常兜底全部移到 _await_cleanup_guard(锁外) 执行.
+        [2026-11-04 小欧] 清理动作改投 _CLEANUP_POOL(导入期建好的常驻线程), 本段不再 Thread.start()。"""
         ctx = {}
         ctx["proc"] = self._proc                        # 快照后方可置 None
         ctx["pid"] = getattr(self._proc, 'pid', None)
         self._proc = None
         self._alive = False
-        self._discard_stdin()                           # 写线程随实例销毁(投哨兵, 不 join) — 2026-11-04 小欧
+        self._discard_stdin()                           # 投哨兵归还池 worker(不 join) — 2026-11-04 小欧
 
-        err_box: list = []                              # [异常兜底 小欧 2026-09-19] daemon线程异常通信(闭包列表)
-        def _worker():
+        def _job_fn():
+            # 复用 M3 _kill_tree(传快照): 决不触碰 self._proc — 小欧 2026-09-19
             proc_to_kill = ctx["proc"]
-            if proc_to_kill is not None:
-                try:
-                    # 复用 M3 _kill_tree(传快照): taskkill 异常兜底 + 二次确认 一条路, 决不触碰 self._proc — 小欧 2026-09-19
-                    self._kill_tree(proc_to_kill)
-                except Exception as e:
-                    # [异常兜底 小欧 2026-09-19] daemon 线程异常(如 _poll_pid_exit 内 poll 抛或意外路径)必须留痕,
-                    # 否则线程静默死亡 → is_alive()=False 被误判为"清理链完成"(假成功) + 孤儿进程无人再杀
-                    err_box.append(e)
-                    logger.error(f"[BUG-2] 清理线程异常(pid={ctx['pid']}): {e} — 待主线程有界兜底")
+            if proc_to_kill is None:
+                return
+            try:
+                self._kill_tree(proc_to_kill)
+            except Exception as e:
+                # [异常兜底 小欧 2026-09-19] 清理异常必须留痕, 否则静默死亡被误判为"清理链完成"(假成功)
+                logger.error(f"[BUG-2] 清理线程异常(pid={ctx['pid']}): {e} — 待主线程有界兜底")
+                raise                   # 回填给 Job, 供 _await_cleanup_guard 走兜底分支
 
-        ctx["err_box"] = err_box
         ctx["start"] = time.monotonic()                 # [M6] perf 探针 t0
-        ctx["thread"] = threading.Thread(target=_worker, name="shell-cleanup-guard", daemon=True)
-        ctx["thread"].start()
+        # [常驻线程 2026-11-04 小欧] 原 threading.Thread(...).start() 在 Windows 上等 loader lock 且无超时,
+        #   与 CreateProcessW 并发即永久互锁(8500 事故: 3 次超时烧掉 3 个 executor 槽) → 改投常驻 worker。
+        ctx["job"] = _CLEANUP_POOL.submit(_job_fn)
         # [超时分支回收 小欧 2026-09-19] 超时后 stderr 句柄+临时文件回收(契约: 清理完全保留).
         # [时序修正 小欧 2026-09-19] 进程未死前 unlink 必失败(句柄仍被持有) → defer_unlink:
         # 仅关句柄+状态回收, unlink 延后到 await(join 后进程必死) 执行.
@@ -816,16 +856,19 @@ class PersistentShell:
         self._guard_ctx = ctx
 
     def _await_cleanup_guard(self):
-        """[守卫拆分 小欧 2026-09-19] 守卫等待/观测/兜底段(锁外): join(≤守卫阈值) + 三分支判定 + 线程异常兜底.
-        运行在锁外 → 长等待与兜底不再阻塞任何 acquire/exec 调用方, 锁立即释放契约成立."""
+        """[守卫拆分 小欧 2026-09-19] 守卫等待/观测/兜底段(锁外): 有界等待(≤守卫阈值) + 三分支判定 + 异常兜底.
+        运行在锁外 → 长等待与兜底不再阻塞任何 acquire/exec 调用方, 锁立即释放契约成立.
+        [2026-11-04 小欧] 等待对象由 Thread.join 改为常驻 worker 的 Future(同为有界), 语义三态不变。"""
         ctx = self._guard_ctx or {}
         self._guard_ctx = None
-        t = ctx.get("thread")
-        if t is None:
+        job = ctx.get("job")
+        if job is None:
             return
         pid = ctx.get("pid")
-        err_box = ctx.get("err_box", [])
-        t.join(timeout=_CLEANUP_GUARD_TIMEOUT)
+        # concurrent.futures.wait 而非 fut.result(timeout): 后者抛的 TimeoutError 与任务自身抛的
+        # TimeoutError 同类型, 无法区分"等待超时"与"任务内超时" → 用 not_done 显式判定。
+        _, not_done = concurrent.futures.wait([job], timeout=_CLEANUP_GUARD_TIMEOUT)
+        err = None if not_done else job.exception()
         _elapsed = time.monotonic() - ctx.get("start", time.monotonic())
         # [时序修正 小欧 2026-09-19] join 后进程已死(或兜底已杀) → OS 释放文件句柄 → 延迟 unlink 成功率高
         sp = ctx.get("stderr_path")
@@ -835,9 +878,9 @@ class PersistentShell:
         for tf in ctx.get("temp_files", []):
             if os.path.exists(tf):
                 _safe_unlink(tf)
-        if t.is_alive():
+        if not_done:
             logger.error(f"[卡死C8/C14] 清理链超守卫阈值{_CLEANUP_GUARD_TIMEOUT}s仍在清理(OS级挂起) → 已放行, 后台线程继续 (pid={pid})")
-        elif err_box:
+        elif err is not None:
             # [异常兜底 小欧 2026-09-19] daemon 线程异常死亡 → 不再假报"清理链完成";
             # 异常场景证明 _kill_tree 可返回(非 OS 挂死) → 主线程有界兜底重试一次(≤10s)
             # 2026-10-09 - 小欧 - 边界留痕(北京老陈裁定 BUFFER=15/守卫=10 后新增, 只标注不改逻辑):
@@ -846,7 +889,7 @@ class PersistentShell:
             #   触发前提极苛刻: 守卫线程先耗满 10s 且恰好抛异常。实测清理链 349.7ms, 属理论边界非现实路径。
             #   不改动的理由: 兜底本身是"清理进程残留"的最后一道, 削它换保险丝对齐属本末倒置;
             #   且此路径下进程残留有 release/GC 兜底(:749 已留痕)。若日后见到相关误报再议。
-            logger.error(f"[卡死C8/C14] 清理线程异常死亡(pid={pid}) → 主线程有界兜底清理一次 (err={err_box[0]!r})")
+            logger.error(f"[卡死C8/C14] 清理线程异常死亡(pid={pid}) → 主线程有界兜底清理一次 (err={err!r})")
             try:
                 self._kill_tree(ctx["proc"])
                 logger.warning(f"[卡死C8/C14] 兜底清理重试完成 → 进程树已清 (pid={pid})")
@@ -856,86 +899,17 @@ class PersistentShell:
             logger.warning(f"[卡死C8/C14] 清理链完成, 耗时={_elapsed * 1000:.1f}ms (pid={pid})")
 
     def _kill_tree(self, proc: Optional["subprocess.Popen"] = None):
-        # [卡死场景C11] taskkill 自带 timeout 有界, 防自身阻塞 — 小欧 2026-08-06
-        # [M3 重构 小欧 2026-09-19] proc 参数: M6 守卫线程传入快照(此刻 self._proc 已被主线程置 None),
-        #   默认为 self._proc; 常规路径行为不变.
-        proc = proc if proc is not None else self._proc
-        if proc is None or proc.poll() is not None:
-            return
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
-            )
-        except Exception as e:
-            # [卡死C11] taskkill 异常 → 立即 kill 兜底(保留既有行为, 不退化) — 小欧 2026-09-19
-            # [树杀兜底升级 小欧 2026-09-19] 兜底升级: 有界重试 taskkill /T(恢复树杀语义) + 根kill + 后代枚举清杀,
-            #   杜绝"root 被杀而子树残留孤儿"(proc.kill() 只杀根, 不杀 /T 树)
-            logger.warning(f"[卡死C11] taskkill异常 → 树杀兜底 (pid={proc.pid}): {e}")
-            try:
-                self._kill_fallback(proc)
-            except Exception as fe:
-                logger.warning(f"[卡死C11] 树杀兜底异常(pid={proc.pid}): {fe}")
-            return                                                  # 异常路径不二次确认(已由 kill 兜底)
-        # [M3] 二次确认(B): taskkill "成功返回" ≠ 进程树已亡 → 轮询 poll() 确认, 未亡则 kill 兜底 + 留痕 — 小欧 2026-09-19
-        if not _poll_pid_exit(proc, SUBPROCESS_TIMEOUT_SHORT):
-            logger.warning(f"[卡死C11] taskkill 后 {SUBPROCESS_TIMEOUT_SHORT}s 进程仍在(疑似假活) → 树杀兜底 (pid={proc.pid})")
-            try:
-                self._kill_fallback(proc)
-            except Exception as fe:
-                logger.warning(f"[卡死C11] 树杀兜底异常(pid={proc.pid}): {fe}")
+        """终止进程树并二次确认: 纯 psutil + proc.kill, 零子进程 — 2026-11-04 小欧
 
-    def _kill_fallback(self, proc):
-        """[树杀兜底升级 小欧 2026-09-19] taskkill 失败/假活时的树杀兜底(两处共用):
-        ①有界重试一次 taskkill /T /F(瞬时异常自愈,直接恢复树杀语义,多数情形无需枚举);
-        ②仍失败 → 根 kill + 后代枚举清杀(_kill_descendants, 防 root 死而子树残留孤儿).
-        全程有界: 每步 ≤ SUBPROCESS_TIMEOUT_SHORT(5s), 绝不阻塞清理链/守卫线程."""
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
-            )
-            if not _poll_pid_exit(proc, SUBPROCESS_TIMEOUT_SHORT):
-                # 重试 taskkill "成功返回" 却仍假活 → 根 kill + 后代清杀
-                raise RuntimeError(f"taskkill 重试后 {proc.pid} 仍在")
-            return                                                     # 重试成功 → 树已杀, 无需枚举
-        except Exception as e:
-            logger.warning(f"[卡死C11] 兜底 taskkill 重试仍失败(pid={proc.pid}): {e}")
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        # 根进程可能已死 → 后代树仍残留 → 单次进程表快照 BFS 清杀(幂等安全)
-        self._kill_descendants(getattr(proc, "pid", None))
-
-    def _kill_descendants(self, root_pid: Optional[int]):
-        """[树杀兜底升级 小欧 2026-09-19] 单次 Get-CimInstance 快照 → 父链 BFS 收集全部后代 → Stop-Process 强杀.
-        有界 ≤ SUBPROCESS_TIMEOUT_SHORT; 对已死 pid 静默; 防 pwsh→cmd→ping 这类子树孤儿泄漏."""
-        if not root_pid:
-            return
-        try:
-            ps_code = (
-                f"$root={root_pid};"
-                "$m=@{};"
-                "Get-CimInstance Win32_Process | ForEach-Object {"
-                "$m[$_.ProcessId]=$_.ParentProcessId};"
-                "$q=New-Object System.Collections.Queue;"
-                "$q.Enqueue($root);"
-                "$seen=@{};"
-                "while($q.Count -gt 0){"
-                "$p=$q.Dequeue();"
-                "foreach($c in @($m.Keys)){"
-                "if($m[$c] -eq $p -and -not $seen.ContainsKey($c)){"
-                "$seen[$c]=1;"
-                "Stop-Process -Id $c -Force -ErrorAction SilentlyContinue;"
-                "$q.Enqueue($c)}}}"
-            )
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_code],
-                capture_output=True, timeout=SUBPROCESS_TIMEOUT_SHORT,
-            )
-        except Exception as e:
-            logger.warning(f"[卡死C11] 后代枚举清杀异常(root={root_pid}): {e}")
+        CreateProcessW 持 loader lock 且不还 GIL, 与 Thread.start() 并发即永久互锁; 清理链只在
+        "已出事"时走, 再建进程等于往火里浇油。杀=kill_process_tree(通用层), 验=_poll_pid_exit(本层)。
+        【与旧实现的差异】旧 taskkill 失败有二级重试(外部进程特有失败模式); psutil 是直接 API,
+        失败即 OS 级挂起, 重试无意义 → 仅留痕, 由守卫与 /health 指标暴露。
+        """
+        target = proc if proc is not None else self._proc
+        kill_process_tree(target)
+        if target is not None and not _poll_pid_exit(target, SUBPROCESS_TIMEOUT_SHORT):
+            logger.warning(f"[卡死C11] kill 后 {SUBPROCESS_TIMEOUT_SHORT}s 进程仍在(OS级挂起) (pid={getattr(target, 'pid', None)})")
 
     def _discard_stderr(self, proc: Optional["subprocess.Popen"] = None, defer_unlink: bool = False):
         """[超时分支回收 小欧 2026-09-19] 回收 stderr 句柄与临时文件(单一路径, _close 与 M6 守卫超时分支共用).
@@ -977,7 +951,7 @@ class PersistentShell:
         """内部关闭, 不持锁。调用方尽量持有 self._lock（close()超时5s未获取到锁也会force-kill）。— [卡死场景C9/C11/C12] 小欧 2026-08-06"""
         if self._proc:
             try:
-                # [M5] 复用 _kill_tree(含 taskkill 二次确认, DRY 不重造); 原 kill+wait 段已删除 — 小欧 2026-09-19
+                # [M5] 复用 _kill_tree(树杀+二次确认, DRY 不重造); 原 kill+wait 段已删除 — 小欧 2026-09-19
                 self._kill_tree()
             except Exception as e:
                 logger.warning(f"[卡死C11] 关闭进程失败(pid={self._proc.pid}): {e}")
@@ -989,7 +963,7 @@ class PersistentShell:
         self._discard_stderr(self._proc)
 
     def _discard_stdin(self):
-        """回收 stdin 常驻写线程(幂等, 不 join) — 2026-11-04 小欧"""
+        """回收 stdin 写通道: 投哨兵释放租约(幂等, 不 join) — 2026-11-04 小欧"""
         w = self._stdin_writer
         self._stdin_writer = None
         if w is not None:
@@ -1245,8 +1219,7 @@ def get_pool_pids_snapshot() -> Optional[set]:
 # 2026-08-07 小欧 三堂会审定稿(R3): 3→8 — 当日日志实测同key并发达5(ps7池默认3放不下),
 # acquire排队超2s→ShellPoolBusyError; 8覆盖实测并发5并留余量(每实例约40MB内存, 8≈320MB可接受)
 # 2026-09-22 小欧 - v2.0：shell_pool 槽位改读 tuning 配置
-from app.config import get_config as _get_cfg
-shell_pool = ShellPoolManager(max_per_type=_get_cfg().get("tuning.concurrency.shell_pool_max_per_type", 8))
+shell_pool = ShellPoolManager(max_per_type=get_config().get("tuning.concurrency.shell_pool_max_per_type", 8))
 
 
 atexit.register(shell_pool.cleanup_all)

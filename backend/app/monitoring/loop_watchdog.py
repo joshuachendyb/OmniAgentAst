@@ -7,7 +7,8 @@
 #   全局"写阻塞计数"方案已否决: 一个僵死客户端会让看门狗对所有 reader 永久失效。
 # 2026-11-04 小欧 - dump 改有界执行(_run_bounded): subprocess.run 的 timeout 管不到 Popen.__init__,
 #   2026-11-04 卡死事故中 py-spy 卡在 CreateProcess 内 → 看门狗线程被永久占住, 现场全丢;
-#   现整个调用放一次性 daemon 线程 + 有界 join, 超时放弃并留痕。
+#   现整个调用投常驻 worker(_DUMP_POOL), 本线程只做有界等待, 超时放弃并留痕。
+#   2026-11-04 小欧 - _DUMP_POOL 1→3: py-spy 卡在 Popen 时单 worker 永久失效, 之后每次 dump 只能等超时。
 """
 loop_watchdog — 事件循环心跳看门狗
 
@@ -28,6 +29,7 @@ from typing import List
 
 from app.config import get_config
 from app.logger import logger
+from app.utils.workers import WorkerPool
 
 _lock = threading.Lock()
 _last_beat = 0.0            # 最近一次 reader beat 时间戳(锁保护)
@@ -40,6 +42,10 @@ _ticker_task = None         # 循环心跳任务强引用(防被 GC); None/已�
 
 _CHECK_INTERVAL = 10.0      # 巡检周期(秒)
 _LOOP_TICK_INTERVAL = 1.0   # 循环心跳周期(秒)
+
+# 取证命令常驻 worker: 原每次 dump 起线程, 与 py-spy 的 CreateProcessW 在 loader lock 上互锁
+# 3 个而非 1: py-spy 卡在 Popen 时单 worker 永久失效 → 之后每次 dump 都只能等超时
+_DUMP_POOL = WorkerPool(3, "watchdog-pyspy")
 
 
 def activate() -> None:
@@ -155,27 +161,20 @@ def _watch_loop() -> None:
             logger.warning(f"[观测] 看门狗巡检异常(线程不退出, 下轮继续): {type(_e).__name__}: {_e}")
 
 
-def _run_bounded(cmd: List[str], timeout: float):
+def _run_bounded(cmd: List[str], timeout: float) -> subprocess.CompletedProcess:
     """有界执行外部取证命令 — 2026-11-04 小欧
 
-    为什么不能用 subprocess.run(timeout=...): 它的 timeout 只在 Popen 构造成功后才生效,
-    而 2026-11-04 事故中 py-spy 正是卡在 Popen.__init__(CreateProcess) 内 —— 超时根本没开始,
-    看门狗线程被永久占住, 现场全丢(logs/pyspy 最新文件仍是 2026-10-29)。
-    改为: 整个调用放进一次性 daemon 线程, 主线程只做有界 join, 超时即放弃留痕。"""
-    box: list = []
-
-    def _worker():
-        try:
-            box.append(subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout,
-                encoding="utf-8", errors="replace"))
-        except Exception as _e:      # noqa: BLE001 - 取证失败不能打断看门狗
-            box.append(_e)
-
-    t = threading.Thread(target=_worker, daemon=True, name="watchdog-pyspy")
-    t.start()
-    t.join(timeout + 5)
-    return box[0] if box else None
+    subprocess.run 的 timeout 只在 Popen 构造成功后生效, 卡在 CreateProcess 时根本没开始计时;
+    故投递常驻 worker, 本线程只做有界等待, 超时抛 TimeoutError(命令仍在后台跑)。
+    """
+    fut = _DUMP_POOL.submit(lambda: subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout,
+        encoding="utf-8", errors="replace"))
+    try:
+        return fut.result(timeout=timeout + 5)
+    except TimeoutError:
+        fut.cancel()
+        raise
 
 
 def _dump_evidence(stale: float) -> None:
@@ -190,12 +189,13 @@ def _dump_evidence(stale: float) -> None:
     ts = time.strftime("%Y%m%d_%H%M%S")
     dumped = False
     for pid in pids:
-        r = _run_bounded([py_spy, "dump", "--pid", str(pid)], 30)
-        if r is None:
+        try:
+            r = _run_bounded([py_spy, "dump", "--pid", str(pid)], 30)
+        except TimeoutError:
             logger.warning(f"[观测] py-spy dump pid={pid} 超35s未返回(进程级挂起) → 手动: py-spy dump --pid {pid}")
             continue
-        if isinstance(r, Exception):
-            logger.warning(f"[观测] py-spy dump pid={pid}异常({r}) → 手动: py-spy dump --pid {pid}")
+        except Exception as e:
+            logger.warning(f"[观测] py-spy dump pid={pid}异常({e}) → 手动: py-spy dump --pid {pid}")
             continue
         if r.returncode != 0:
             logger.warning(f"[观测] py-spy dump pid={pid}失败(rc={r.returncode}): {(r.stderr or r.stdout or '')[:300]} → 手动: py-spy dump --pid {pid}")

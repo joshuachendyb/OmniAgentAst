@@ -77,6 +77,9 @@
 # 2026-10-09 - 小欧 - 保险丝公式重写(北京老陈裁定 BUFFER=15+timeout不重试): max(inner,CEILING=600)+30 恒630与max_retries脱钩, 退化为固定定时器丧失兜底意义(YAGNI), 且inner调大时兜底预算被正常执行吃掉; 改 inner×(max_retries+1)+BUFFER="整条重试链总闸", 恒>内层最坏总耗时不变式保持。实测bash75/compress315/httpget105/download195(原均630); 删INSURANCE_CEILING, 保留_get_schema_timeout_default(算inner的必要输入)。
 # 2026-10-09 - 小欧 - 修复bool timeout潜在缺陷(本次重写暴露非引入): isinstance(True,int)为真使timeout=True被当inner=1, 旧公式被CEILING=600掩盖, 新公式下暴露为compress保险丝16(应315)反小于内层超时会抢先截杀; 新增_is_positive_number显式排除bool, 走schema默认兜底, 正常int/float行为零变化。compliance: YAGNI/DRY/KISS-DIRECT
 # 2026-11-03 小欧 - [参数验证] 非法字段 WARNING→DEBUG(LLM 编参数属调用方错误) — 小欧-2026-11-03
+# 2026-11-04 小欧 - shell 卡死根治(执行器层): 删私有 _ShellWorkerPool 改 app.utils.workers.WorkerPool(同一实现,
+#   构造期建满 N 线程, 运行期 submit 只入队); 容量 _SHELL_EXECUTOR_MAX 按 tuning 配置在池构造处计算(不塞进
+#   tool_constants 纯常量表); 排队与执行共用单一 deadline(原各等 timeout, 最坏 2×timeout 撑破保险丝) — 小欧-2026-11-04
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -92,14 +95,12 @@ Author: 小沈 - 2026-05-27
 """
 
 import asyncio
-import concurrent.futures
 import inspect
-import queue
 import threading
 from typing import Any, Callable, Dict, Optional
 
-from app.config import get_config
 from app.logger import logger
+from app.config import get_config  # shell 执行器容量按 tuning 配置计算(配置派生值留在使用方) — 2026-11-04 小欧
 from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
 from app.tools.tool_constants import (
@@ -110,6 +111,7 @@ from app.tools.tool_constants import (
 from app.tools.tool_response import build_error
 from app.tools.tools_alias_mapper import normalize_params
 from app.tools.registry import tool_registry
+from app.utils.workers import WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现(取代各文件私有池)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
@@ -167,41 +169,10 @@ PROGRESSIVE_MAX = 300
 #      偶发故障不应污染后续正常请求(熔断器方案已否决: 一次偶发即长期禁用 shell, 得不偿失)。
 # ============================================================
 _SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execute_command"})
+# 执行器容量: 按 tuning 配置在本处计算(配置派生值不放进 tool_constants 的纯常量表) — 2026-11-04 小欧
 _SHELL_EXECUTOR_MAX = max(32, int(get_config().get("tuning.concurrency.shell_pool_max_per_type", 8)) * 4)
-_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)
-
-
-class _ShellWorkerPool:
-    """固定 N 个常驻 worker 的极简执行器：提交只入队, 运行期绝不创建线程 — 2026-11-04 小欧
-
-    为什么不用 ThreadPoolExecutor: 它的 worker 是懒创建的, 且 submit() 会在调用线程里
-    调 Thread.start(); 而 CPython 的 _idle_semaphore 短路让"导入期预热"无法保证建满。
-    本类在构造时把 N 个 daemon 线程一次性建好, submit() 只是 queue.put, 语义确定。
-    """
-
-    def __init__(self, n: int, name: str):
-        self._q: "queue.Queue" = queue.Queue()
-        for i in range(n):
-            threading.Thread(target=self._run, name=f"{name}-{i}", daemon=True).start()
-
-    def _run(self):
-        while True:
-            fn, fut = self._q.get()
-            # 排队期已被 asyncio 取消的任务直接丢弃; RUNNING 后 cancel() 无效, 结果照常回填
-            if not fut.set_running_or_notify_cancel():
-                continue
-            try:
-                fut.set_result(fn())
-            except BaseException as e:      # noqa: BLE001 - 必须回填给等待方, 否则协程永久悬挂
-                fut.set_exception(e)
-
-    def submit(self, fn) -> concurrent.futures.Future:
-        fut: concurrent.futures.Future = concurrent.futures.Future()
-        self._q.put((fn, fut))
-        return fut
-
-
-_SHELL_EXECUTOR = _ShellWorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
+_SHELL_EXECUTOR = WorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
+_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 与池容量同源, 不再各写一份
 
 # ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)
@@ -274,22 +245,23 @@ class ToolRetryEngine:
                                          timeout: float) -> Any:
         """shell 专用执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
 
-        排队上限复用保险丝预算(timeout): 拿不到空闲 worker 说明前序 shell 调用卡死未归还,
-        此时明确失败(分类器归 TIMEOUT, 走既有重试/回退语义), 而不是无限排队或去摸 exec。"""
+        单一 deadline: 排队与执行共享同一个 timeout 预算。原实现排队等 timeout、执行再等
+        timeout, 实际最坏 2×timeout, 把"保险丝"这个外部上限撑破一倍 — 现排队只消耗剩余额度。"""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while not _SHELL_SLOTS.acquire(blocking=False):
-            if loop.time() >= deadline:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
                 raise TimeoutError(
                     f"shell 专用执行器无空闲 worker(前序 shell 调用卡死未归还), 等待{timeout:.0f}s → 明确失败")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(min(0.05, remaining))
         try:
             fut = _SHELL_EXECUTOR.submit(lambda: tool(**params))
         except BaseException:
             _SHELL_SLOTS.release()
             raise
         fut.add_done_callback(lambda _f: _SHELL_SLOTS.release())
-        return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
+        return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
     
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
