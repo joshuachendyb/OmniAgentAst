@@ -1,3 +1,12 @@
+v1.6.3
+发布时间: 2026-11-04 13:19:48 - 小欧-2026-11-04
+## v1.6.2汇总 变更汇总(3个commit: feat2/docs1, 另合并带入分支1540个commit) - 小欧-2026-11-04
+[2026-11-04 13:19:48 小欧] 范围=v1.6.2以来全部commit(3个); 说明=①optimize-1.0.2 分支合并进主干 master（合并前 master 停在 2026-09-20 的 89a67232a, 落后分支 1540 个提交, 含 shell 卡死根治 v1.6.1、启动端口预检、edit.model→mode 参数别名、13+篇文档）; ②合并手法=工作区落盘→快照 9c1fd4fa8→git merge, 未执行 checkout/reset/revert, 工作区 1678 个文件落地, 合并结果树 6a93ce90c 与分支树完全一致, 唯一冲突 frontend/src/pages/ChatPage/index.tsx 按分支版本解决; ③11月优化文档 [12]→[10] 编号修正。注: 合并+文档修订、无新增功能 → PATCH v1.6.3; 合并后 8000 /health 三零达标(loop_lag 1.02ms, runtime_thread_starts/gate_timeouts/forced_reclaims 均为 0); 已 push origin/master(89a67232a..e21b058bd, 1543 个提交)。
+### 1.6.3.1 分支合并到主干
+[接手快照] feat 9c1fd4fa8 master 接手另一会话合并半成品(checkout -m master中断残留)落盘 1678文件, 树对齐optimize-1.0.2内容(131前端旧版文件由后续merge更新) - 小欧-2026-11-04
+[分支合并] feat 96a20e74c master 合并optimize-1.0.2分支到主干(1540 commits: shell卡死根治v1.6.1 + edit.model->mode别名 + 11月文档) - 小欧-2026-11-04
+### 1.6.3.2 文档修订
+[编号修正] docs e21b058bd doc-11月优化 [12]->[10] 附件功能S0-S5设计文档编号修正(文件名与正文编号对齐,技术内容零改动) - 小欧-2026-11-04
 v1.6.2
 发布时间: 2026-11-04 12:51:03 - 小欧-2026-11-04
 ## v1.6.1汇总 变更汇总(3个commit: docs3) - 小欧-2026-11-04
