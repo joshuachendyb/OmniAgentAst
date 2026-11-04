@@ -72,6 +72,8 @@
 # 2026-11-04 小欧 - shell 卡死根治(启动期): startup 最早处 install_spawn_gate()(CreateProcess × Thread.start 闸门,
 #   有界等待+快速失败); 串行预热 ps7/ps5 可执行体(prewarm_shell_binaries, 首次 CreateProcessW 移出请求路径);
 #   启动收尾 mark_runtime_started()(此后 Thread.start 计入 /health.runtime_thread_starts, 应为 0) — 小欧-2026-11-04
+# 2026-11-04 小欧 - 线程源清零(第五版): anyio worker 池预热 40 + MAX_IDLE_TIME 10s→24h(同步端点原空闲即回收重建),
+#   db-txn/browse-probe 线程池建满(ThreadPoolExecutor 懒建即运行期 Thread.start); 与闸门可回收租约配套 — 小欧-2026-11-04
 import sys
 import asyncio
 import time
@@ -79,6 +81,7 @@ import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+import anyio  # 2026-11-04 小欧: anyio worker 池预热(同步端点承载), 消除运行期 Thread.start
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     # Windows PowerShell 5.1中文输出编码修复 — 小欧 2026-07-07
@@ -471,6 +474,44 @@ def _prewarm_loop_default_executor() -> None:
     logger.info(f"[启动耗时] 默认线程池预热: {_n} workers 已建满(tool-sync)")
 
 
+def _prewarm_executor_pool(ex: ThreadPoolExecutor, n: int, label: str) -> None:
+    """把 ThreadPoolExecutor 的 worker 提前建满: 懒建 = 运行期 Thread.start = 闸门热点 — 小欧 2026-11-04"""
+    _block = threading.Event()
+    for _ in range(n):
+        ex.submit(_block.wait, 10)
+    _block.set()
+    logger.info(f"[启动耗时] {label} 预热: {n} workers 已建满")
+
+
+async def _prewarm_anyio_workers() -> None:
+    """预热 anyio 工作线程池 + 取消 10s 空闲回收 — 小欧 2026-11-04
+
+    同步端点(file_routes 等 def 端点)由 anyio 线程池承载; 原 MAX_IDLE_TIME=10s, 空闲即回收、
+    下次请求重建 = 运行期 Thread.start, 与 CreateProcess 抢 loader lock(11:28 的 16 条 AnyIO 超时即此)。
+    """
+    try:
+        from anyio._backends._asyncio import WorkerThread
+    except Exception as e:              # anyio 换实现: 预热失效但绝不能拖垮启动
+        logger.error(f"[启动预热] anyio 内部结构不可用, 运行期仍可能建线程: {e}")
+        return
+    WorkerThread.MAX_IDLE_TIME = 86400   # 24h: 等价于"不回收", 线程常驻
+    _n = 40                              # anyio 默认 CapacityLimiter 上限
+    _base = threading.active_count()
+    _gate = threading.Event()
+
+    async def _hold() -> None:
+        await anyio.to_thread.run_sync(_gate.wait, 10)
+
+    _tasks = [asyncio.create_task(_hold()) for _ in range(_n)]
+    _t0 = time.monotonic()
+    while threading.active_count() < _base + _n and time.monotonic() - _t0 < 10:
+        await asyncio.sleep(0.02)
+    _gate.set()                          # 放行阻塞, worker 归还池
+    await asyncio.gather(*_tasks, return_exceptions=True)
+    logger.info(f"[启动耗时] anyio 预热: {threading.active_count() - _base} workers 新增, "
+                f"MAX_IDLE_TIME={WorkerThread.MAX_IDLE_TIME}s")
+
+
 def _start_log_level_watcher() -> None:
     """启动日志级别热重载后台任务 — 小欧 2026-10-25"""
     global _log_watcher_ref
@@ -494,6 +535,14 @@ async def startup_event():
     logger.info(f"[启动耗时] prewarm_shell_binaries: {time.time()-_t_shell:.3f}s")
     # 2026-11-04 小欧 - R1: 预热线程池必须在任何后台任务/请求动用 executor 前建满
     _prewarm_loop_default_executor()
+    # 2026-11-04 小欧 - 线程源清零: anyio 池长驻+预热(同步端点), db/probe 池建满(懒建=运行期 Thread.start)
+    await _prewarm_anyio_workers()
+    from app.monitoring.loop_watchdog import prewarm as prewarm_loop_watchdog
+    prewarm_loop_watchdog()   # 首个 SSE reader 原会在运行期建线程, 收口到启动期 — 小欧 2026-11-04
+    from app.db.database import _DB_TXN_POOL
+    _prewarm_executor_pool(_DB_TXN_POOL, _DB_TXN_POOL._max_workers, "db-txn")
+    from app.file_browse.browse_service import _probe_pool
+    _prewarm_executor_pool(_probe_pool, _probe_pool._max_workers, "browse-probe")
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
     # 只收尾"本进程启动之前创建"的行：防御性护栏，防有人误起第二个后端进程时误伤对方任务 — 小欧 2026-09-29
     _boot_iso = get_local_iso_timestamp()

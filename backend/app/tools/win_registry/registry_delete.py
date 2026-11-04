@@ -50,10 +50,11 @@ def _delete_registry_recursive(hkey, sub_key):
     主路径用系统 reg.exe 原子级递归删除(规避 winreg 父句柄枚举视图不刷新导致
     的嵌套子键死循环挂起, 详见 test_delete_nonempty_key_recursive_true_still_fails) — 小欧 2026-07-12
     """
-    import subprocess
+    import subprocess  # noqa: F401  (保留: 异常类型对上层可见)
+    from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
     full_key = f"{ROOT_KEY_MAP_REVERSE.get(hkey, 'HKEY_CURRENT_USER')}\\{sub_key}"
     try:
-        result = subprocess.run(
+        result = proc_run(
             ["reg", "delete", full_key, "/f"],
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT,
         )

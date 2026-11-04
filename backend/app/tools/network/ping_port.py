@@ -24,6 +24,8 @@ import platform
 import re
 import socket
 import subprocess
+
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import time as _time_mod
 from typing import Any, Dict, List, Literal, Optional
 
@@ -179,7 +181,7 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
     host = host.strip()
     cmd = _build_ping_cmd(host, count, timeout)
     try:
-        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=count * timeout + 10)
+        result = await asyncio.to_thread(proc_run, cmd, capture_output=True, text=True, timeout=count * timeout + 10)
         raw_output = result.stdout
     except subprocess.TimeoutExpired:
         return {"success": False, "error_detail": f"Ping超时({count * timeout + 10}秒)", "err_code": ERR_NETWORK_TIMEOUT, "params": {"host": host}}

@@ -17,14 +17,14 @@ import platform
 import subprocess
 import time as _time_mod
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
     ERR_SHELL_COMMAND_NOT_FOUND,
-    ERR_SHELL_TIMEOUT,
     ERR_SYSTEM_EVENT_LOG,
     ERR_SYSTEM_TIMEOUT,
 )
@@ -75,7 +75,7 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
         xpath_query = " and ".join(query_parts)
 
         cmd = ["wevtutil", "qe", log_name, f"/q:*[System[{xpath_query}]]", "/c:%d" % max_events, "/rd:true", "/f:text"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
@@ -131,7 +131,7 @@ def _get_linux_event_log(log_name: str, max_events: int, level: str,
         since_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
 
         cmd = ["journalctl", f"--since={since_str}", f"--priority={journal_level}", f"--lines={max_events}", "--no-pager", "-o", "json"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}

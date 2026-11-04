@@ -26,13 +26,12 @@ import configparser
 import csv
 import importlib
 import locale
-import io
 import json
-import os
 import re
-import shutil
 import sqlite3
 import subprocess
+
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -100,7 +99,7 @@ def _check_python_available() -> bool:
 def _check_node_available() -> bool:
     """检查Node.js是否可用 — 小沈 2026-05-17"""
     try:
-        result = subprocess.run(
+        result = proc_run(
             ["node", "--version"],
             capture_output=True,
             timeout=SUBPROCESS_TIMEOUT_SHORT,

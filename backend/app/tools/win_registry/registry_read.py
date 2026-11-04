@@ -27,7 +27,8 @@ registry_read — 读取Windows注册表键值
 
 import os
 import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
-import subprocess
+
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import tempfile
 import time as _time_mod
 import winreg
@@ -98,7 +99,7 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[s
 
     try:
         export_key = f"{root_key}\\{sub_key}"
-        result = subprocess.run(
+        result = proc_run(
             ["reg", "export", export_key, backup_file, "/y"],
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
         )
@@ -126,7 +127,7 @@ def _restore_registry_from_backup(backup_file: str) -> Optional[str]:
     if not backup_file or not os.path.exists(backup_file):
         return None
     try:
-        result = subprocess.run(
+        result = proc_run(
             ["reg", "import", backup_file],
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
         )

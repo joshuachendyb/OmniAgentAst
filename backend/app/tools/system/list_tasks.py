@@ -13,9 +13,10 @@ list_tasks — 列出Windows计划任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
@@ -30,7 +31,7 @@ from app.tools.tool_constants import (
 def _run_schtasks_query() -> str:
     """执行 schtasks /query /fo list /v,返回 stdout 文本 — 小沈 2026-05-25"""
     cmd = ["schtasks", "/query", "/fo", "list", "/v"]
-    result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+    result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
     if result.returncode != 0:
         raise RuntimeError(f"schtasks 执行失败: {result.stderr}")
     if not result.stdout:

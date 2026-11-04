@@ -9,6 +9,8 @@
 #   2026-11-04 卡死事故中 py-spy 卡在 CreateProcess 内 → 看门狗线程被永久占住, 现场全丢;
 #   现整个调用投常驻 worker(_DUMP_POOL), 本线程只做有界等待, 超时放弃并留痕。
 #   2026-11-04 小欧 - _DUMP_POOL 1→3: py-spy 卡在 Popen 时单 worker 永久失效, 之后每次 dump 只能等超时。
+# 2026-11-04 小欧 - 监测线程改启动期 prewarm(): 原首个 SSE reader 才 Thread.start, 运行期建线程与
+#   CreateProcess 抢 loader lock(实测 runtime_thread_starts=1 就出在这里), activate 收口为幂等调用 — 小欧-2026-11-04
 """
 loop_watchdog — 事件循环心跳看门狗
 
@@ -29,6 +31,7 @@ from typing import List
 
 from app.config import get_config
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.utils.workers import WorkerPool
 
 _lock = threading.Lock()
@@ -48,17 +51,25 @@ _LOOP_TICK_INTERVAL = 1.0   # 循环心跳周期(秒)
 _DUMP_POOL = WorkerPool(3, "watchdog-pyspy")
 
 
+def prewarm() -> None:
+    """启动期建好监测线程: 运行期 Thread.start 与 CreateProcess 抢 loader lock — 小欧 2026-11-04"""
+    global _started
+    with _lock:
+        if _started:
+            return
+        _started = True
+        threading.Thread(target=_watch_loop, daemon=True, name="loop-watchdog").start()
+
+
 def activate() -> None:
-    """reader 进入(有活跃SSE流才需要心跳监管); 首次调用启动监测线程 — 小欧 2026-10-04"""
-    global _active, _last_beat, _started
+    """reader 进入(有活跃SSE流才需要心跳监管); 监测线程由 prewarm 在启动期建好 — 小欧 2026-10-04"""
+    prewarm()          # 2026-11-04 小欧: 线程创建收口(幂等), 运行期不再 Thread.start
+    global _active, _last_beat
     with _lock:
         if _active <= 0:
             _last_beat = time.time()   # 三堂会审F3修复(2026-10-04 小欧): 0→1监管起点刷新 — 原仅首 ever 置初值,
                                        #   残留旧时间戳会让新reader起步瞬间stale超标 → 误dump; 活跃期activate不重置(防掩盖真停摆)
         _active += 1
-        if not _started:
-            _started = True
-            threading.Thread(target=_watch_loop, daemon=True, name="loop-watchdog").start()
     _ensure_ticker()
 
 
@@ -167,7 +178,7 @@ def _run_bounded(cmd: List[str], timeout: float) -> subprocess.CompletedProcess:
     subprocess.run 的 timeout 只在 Popen 构造成功后生效, 卡在 CreateProcess 时根本没开始计时;
     故投递常驻 worker, 本线程只做有界等待, 超时抛 TimeoutError(命令仍在后台跑)。
     """
-    fut = _DUMP_POOL.submit(lambda: subprocess.run(
+    fut = _DUMP_POOL.submit(lambda: proc_run(
         cmd, capture_output=True, text=True, timeout=timeout,
         encoding="utf-8", errors="replace"))
     try:

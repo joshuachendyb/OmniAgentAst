@@ -196,6 +196,50 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 
 ---
 
+### 1.18 进程 I/O 零线程读（proc_io.py）
+
+`Popen.communicate()` 每次调用起 1~3 条 `_readerthread`，Windows 上新线程 bootstrap 要 loader lock，与 `CreateProcessW` 并发即互锁（2026-11-04 shell 卡死事故根因）。本模块用"非阻塞 fd + 有界退避轮询"读管道，全程零建线程且可被超时硬中断。分工：只读/等退出，不杀；超时后由调用方 `kill_process_tree` 再 `drain_after_exit` 收残存（SRP）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `drain_until_exit` | 轮询读 stdout/stderr 直到"进程退出 + 管道 EOF"；`timeout=None` 等同不限时；进程已退出但管道被孙进程持有→有界静默 `IDLE_AFTER_EXIT` 后截断并置 `truncated` | proc: Popen, timeout: Optional[float] | (out: bytes, err: bytes, timed_out: bool, truncated: bool) |
+| `drain_after_exit` | 进程已结束/刚被杀后读残存输出（有界 wait） | proc: Popen, wait: float = 0.5 | (out: bytes, err: bytes) |
+| `run` | `subprocess.run` 的零线程等价（支持 timeout/cwd/env/shell/encoding/errors/text）；超时=杀进程树后抛 `TimeoutExpired`（携带已读输出）；截断时向 stderr 追加 `TRUNCATED_NOTE` | args, timeout, cwd, env, shell, encoding, errors, text, capture_output | CompletedProcess |
+| `TRUNCATED_NOTE` | 管道未 EOF 被有界截断时的可见提示（UTF-8 bytes），供工具层追加到 stderr 并置 `_truncated` | — | bytes |
+
+### 1.19 进程树清杀（proc_utils.py）
+
+零 `CreateProcess` 的树杀：psutil 按 **ppid 全量映射 + BFS** 枚举后代（不依赖根进程存活——根退出后 `Process(pid).children()` 抛 `NoSuchProcess`，而 Windows 父死子不重挂），随后 `TerminateProcess` 逐个击杀，先叶子后父。用于 shell/sandbox 超时清理链。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `kill_process_tree` | 幂等清杀整棵树；根已退出也继续清后代（防孤儿 ping/pwsh） | proc: Optional[Popen] | None |
+| `kill_pid_descendants` | 按 ppid 映射 BFS 枚举并清杀 root 的全部后代（先叶子后父） | root_pid: Optional[int] | None |
+
+### 1.20 常驻线程池（workers.py）
+
+启动期一次建满 daemon 线程，运行期只入队（`queue.put`），彻底消除"运行期 `Thread.start` × `CreateProcessW`"互锁。两类语义不合并：一次性任务用 `WorkerPool.submit`（有界等待 `future.result(timeout)`），长期服务用 `ThreadLeasePool.lease`（任务返回即归还，卡死则槽位永久损失、有界失败）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `WorkerPool(n, name)` | 构造期建满 n 条常驻 worker；`submit(fn)` 只入队 | n: int, name: str | WorkerPool |
+| `WorkerPool.submit` | 投递一次性任务，异常回填 future 且 worker 不死 | fn: Callable | concurrent.futures.Future |
+| `ThreadLeasePool(n, name)` | 构造期建满 n 条常驻 worker；`lease(fn, timeout)` 租一个 worker 长期执行 fn | n: int, name: str | ThreadLeasePool |
+| `ThreadLeasePool.lease` | 有界租借：池满/全卡住返回 False（调用方判损坏，绝不兜底新建线程） | fn: Callable[[], None], timeout: float | bool |
+
+### 1.21 进程/线程创建闸门（spawn_gate.py）
+
+`CreateProcessW` × `Thread.start` 的全局互斥闸门。旧实现用 RLock 包住无界等待，持锁方卡死即全站排队死；现为**可回收租约**：持有者带线程名/ident/起始时刻登记，看门狗每 0.5s 巡检，持锁超 `HOLD_LIMIT` 即强制回收并落盘全线程栈（落盘投常驻 worker，不阻塞巡检）。等锁侧有界，超限抛 `SpawnGateBusy`。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `install_spawn_gate` | 幂等安装：patch `Popen.__init__` 与 `Thread.start`，并先起看门狗 | — | None |
+| `mark_runtime_started` | 标记启动期结束，此后每次 `Thread.start` 计入 `runtime_thread_starts`（验收须为 0） | — | None |
+| `snapshot` | 运行指标：popen_calls/thread_start_calls/runtime_thread_starts/gate_timeouts/forced_reclaims/wait_max_ms/popen_max_ms/holder/runtime_samples/threads | — | dict |
+| `SpawnGateBusy` | 等锁超上限异常（含持有者诊断信息），供工具层快速失败 | — | RuntimeError |
+
+---
+
 ## 二、工具返回层（app/tools/）
 
 ### 2.1 工具返回构建（app/tools/tool_response.py）
@@ -679,6 +723,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.21 | 2026-11-04 12:19:56 | **新增 §1.18~§1.21（shell 卡死根治的四个公用层）**: ①`proc_io.py`（`drain_until_exit`/`drain_after_exit`/`run`/`TRUNCATED_NOTE`）零线程读管道取代 `communicate`；②`proc_utils.py`（`kill_process_tree`/`kill_pid_descendants`）零建进程树杀，ppid 映射 BFS 支持根已退出；③`workers.py`（`WorkerPool`/`ThreadLeasePool`）启动期建满、运行期零 `Thread.start`；④`spawn_gate.py`（`install_spawn_gate`/`mark_runtime_started`/`snapshot`/`SpawnGateBusy`）可回收租约 + 看门狗 | 小欧 |
 | v5.20 | 2026-11-01 14:40:00 | **键名统一**(北京老陈令: 一个概念一个名字, 不排期一次改净): ①1.x `parse_model_params` 返回值由 `context_limit` 更名 `context_length`, 取值顺序补 `model_meta.context_length` 层(model_params 用户值 > 厂商声明 > 全局默认 > 常量兜底), 常量 `DEFAULT_CONTEXT_LIMIT` → `DEFAULT_CONTEXT_LENGTH`；②10.3 `add_model`/`update_model` 形参与请求体 `default_params` → `model_params`, `_models_of` 下发键同改并补下发 `context_length`(模型库保存的窗口此前无读取面)；③10.3 `update_provider_config` 删 `base_url`/`retry_times` 别名, 只认 `api_base`/`max_retries`；④全局设置键 `llm.context_limit_default` → `llm.context_length_default` | 小欧 |
 | v5.17 | 2026-10-30 23:20:00 | **§3.6 `[54]` 三堂会审整改**(小欧): ①`_ws_apply` 不变量兜底——旧默认行被编辑/删除时默认标志继承给新列表首条(维持"默认工作区始终存在"系统不变量, 防 PATCH 后零默认行→下次建任务新建时间戳目录); ②`_backfill_ws_default` 存量库一次性回填——无 is_default=1 行的会话把最后一条置 1(防 342 个老会话下次建任务各建一个垃圾目录); ③`_verify_ws_columns` 启动期 fail-loud 复核三标注列(仿 `_verify_acc_columns` 先例, 防 `_ensure_column` 隐性失败致运行期 SELECT 隐性 OperationalError); ④新增常量 `MAX_WS_INJECT_CHARS=4096`——prompt 注入块总字符上限(防 64 目录×500 字符≈30KB 撑爆, 超限只保留前若干行+省略提示) | 小欧 |
 | v5.19 | 2026-10-31 15:52:00 | **§3.5 / §1.8 公用函数收口**(小欧, 北京老陈令): ①§3.5 登记 `compress_summary_threshold`(窗口×限制系数)/`trim_budget_base`(窗口-输出缓冲-tools预留)/`trim_conv_threshold`(基准×调节系数)/`trim_queue_budget`(基准×调节系数²), 四者均落 `services/agent/agent_utils.py`, 消费方 `start_step` 两处 / `message_builder._trim_signal`+`trim_history` / `refs.limits.budget_base_of` 全部改调, 生产侧零手写算式; `estimate_tokens` 宿主路径由 `token_estimate.py` 更正为 `agent_utils.py`; 同批删死属性 `MessageBuilder._tools_token_reserve`(该口径由 `trim_budget_base` 单点持有)。②§1.8 新登记 `to_dict_or`/`safe_sub_dict`(嵌套取值防御公用化), `observation_formatter._safe_llm_sub` 与 `toolhelper.tool_utils.save_text_to_file` 改调同一真源, 消除 `.get(k,{}).get(...)` 在值为 None/str 时的 AttributeError | 小欧 |

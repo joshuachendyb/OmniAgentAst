@@ -13,9 +13,9 @@ delete_task — 删除Windows计划任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS, SUBPROCESS_TIMEOUT_DEFAULT
 from app.tools.tool_constants import (
@@ -57,7 +57,7 @@ def delete_task(task_name: str) -> dict:
             return build_error(data={}, llm_data=llm_data)
 
         query_cmd = ["schtasks", "/query", "/tn", task_name]
-        query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
+        query_result = proc_run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
 
         if query_result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -65,7 +65,7 @@ def delete_task(task_name: str) -> dict:
             return build_error(data={}, llm_data=llm_data)
 
         cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

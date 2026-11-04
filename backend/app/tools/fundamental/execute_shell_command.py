@@ -145,6 +145,11 @@
 # 2026-11-04 小欧 - 删未使用的 PersistentShell(死导入, 测试均直接从 shell_engine 导入) — 小欧-2026-11-04
 # 2026-11-04 小欧 - _kill_and_read_output 树杀改 kill_process_tree(app.utils.proc_utils): 删 taskkill 子进程与其
 #   proc.kill 兜底分支(psutil 枚举后代 + TerminateProcess 根进程, 零 CreateProcess); 后续 wait/读残存语义不变 — 小欧-2026-11-04
+# 2026-11-04 小欧 - 四处 Popen.communicate 全部改 app.utils.proc_io.drain_until_exit/drain_after_exit(非阻塞读, 零建线程):
+#   communicate 每次起 1~3 条 _readerthread, 新线程 bootstrap 抢 loader lock 与 CreateProcess 互锁 = 11:28 卡死真凶;
+#   cmd 分支内联 poll+非阻塞读收编为同一 helper(DRY), 超时仍走 _kill_and_read_output 收残存 — 小欧-2026-11-04
+# 2026-11-04 小欧 - 红队 P21 修复: drain_until_exit 增 truncated 回传(进程已退出但孙进程持管道), 工具层追加
+#   可见提示并置 data._truncated —— 有界等待不得变成静默丢输出 — 小欧-2026-11-04
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -247,6 +252,7 @@ from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-
 from app.tools.context import get_current_task_id  # ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入)
 from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
+from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
 from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
@@ -808,15 +814,8 @@ def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
         proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
     except Exception as e:
         logger.warning(f"[卡死C11] 等退出超时/异常 → 读残存继续 (pid={proc.pid}): {e}")
-    try:
-        stdout_b = proc.stdout.read() if proc.stdout else b""
-    except Exception:
-        stdout_b = b""
-    try:
-        stderr_b = proc.stderr.read() if proc.stderr else b""
-    except Exception:
-        stderr_b = b""
-    return stdout_b, stderr_b
+    # 2026-11-04 小欧: 残存读取改非阻塞有界(零建线程); 原 proc.stdout.read() 在孙进程持写端时会永久阻塞
+    return drain_after_exit(proc, wait=SUBPROCESS_TIMEOUT_SHORT)
 
 
 # ═══════════════════════════════════════════════════════
@@ -1137,6 +1136,7 @@ def shell(
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     try:
         task_id = get_current_task_id()
+        truncated = False      # 管道被孙进程持有导致的有界截断(必须回传为 _truncated) — 2026-11-04 小欧
         # 治理层2(2026-10-04 小欧): 出池=无池实例+白名单, 全过走一次性进程; 仅执行路由, 扫描定序属沙箱闸。
         _one_shot = (
             shell_type in ("ps7", "ps5")
@@ -1145,19 +1145,21 @@ def shell(
         )
         pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") if _one_shot else None
         if pwsh_exe:
-            # 治理层2(2026-10-04 小欧): 同解释器一次性子进程, 结构复用bash分支(进程退出判定+communicate硬超时)。
+            # 治理层2(2026-10-04 小欧): 同解释器一次性子进程, 结构复用bash分支(进程退出判定+硬超时)。
             proc = subprocess.Popen(
                 [pwsh_exe, "-NoProfile", "-Command", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=_sanitize_env(),
             )
-            timed_out = False
-            try:
-                stdout_b, stderr_b = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
+            # 2026-11-04 小欧: communicate → 零线程轮询读(communicate 每调必起 _readerthread, 与 CreateProcess 互锁)
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            if truncated:
+                stderr_b += TRUNCATED_NOTE
+            if timed_out:
                 logger.warning(f"[卡死C10] PS只读一次性命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
-                stdout_b, stderr_b = _kill_and_read_output(proc)
+                _tail_out, _tail_err = _kill_and_read_output(proc)
+                stdout_b += _tail_out
+                stderr_b += _tail_err
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
@@ -1202,56 +1204,17 @@ def shell(
                 proc = subprocess.Popen(
                     f'"{bat_path}"', shell=True, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
-                timed_out = False
-                try:
-                    # poll loop + 非阻塞读管道(防大输出写满缓冲死锁)
-                    # + 防start /b子进程持管道挂满communicate — 小欧 2026-08-07
-                    # 实验铁证: 仅poll不读管道, 200KB输出写满管道缓冲→子进程write阻塞→
-                    # 与poll互锁至超时杀树且仅读回4096残存; 自适应读+递增退避则0.1s完整读取
-                    _deadline = _time_mod.time() + timeout
-                    _drain_out: list = []
-                    _drain_err: list = []
-                    if proc.stdout:
-                        os.set_blocking(proc.stdout.fileno(), False)  # Windows管道支持非阻塞
-                    if proc.stderr:
-                        os.set_blocking(proc.stderr.fileno(), False)
-                    _poll_sleep = 0.001
-                    while _time_mod.time() < _deadline and proc.poll() is None:
-                        _read_any = False
-                        for _stream, _buf in ((proc.stdout, _drain_out), (proc.stderr, _drain_err)):
-                            if _stream is None:
-                                continue
-                            try:
-                                while True:  # 一次读到空, 减少空轮询
-                                    _chunk = _stream.read(65536)
-                                    if not _chunk:
-                                        break
-                                    _buf.append(_chunk)
-                                    _read_any = True
-                            except (BlockingIOError, OSError):
-                                pass
-                        if _read_any:  # 有数据立即再读, 防子进程再次写满阻塞
-                            _poll_sleep = 0.001
-                        else:  # 无数据指数退避, 上限50ms防忙轮询
-                            _poll_sleep = min(_poll_sleep * 2, 0.05)
-                        _time_mod.sleep(min(_poll_sleep, max(0, _deadline - _time_mod.time())))
-                    if proc.poll() is None:
-                        timed_out = True
-                        logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
-                        stdout_b, stderr_b = _kill_and_read_output(proc)
-                    else:
-                        # communicate有界收尾: 读清进程退出后残余管道 — 小欧 2026-08-06/08-07
-                        _tail_out, _tail_err = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
-                        if _tail_out:
-                            _drain_out.append(_tail_out)
-                        if _tail_err:
-                            _drain_err.append(_tail_err)
-                        stdout_b = b"".join(_drain_out)
-                        stderr_b = b"".join(_drain_err)
-                except subprocess.TimeoutExpired:
-                    timed_out = True
-                    logger.warning(f"[卡死C10] CMD communicate超时 → 杀进程树+读残存 (cmd={cmd_short})")
-                    stdout_b, stderr_b = _kill_and_read_output(proc)
+                # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
+                # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
+                # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
+                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+                if truncated:
+                    stderr_b += TRUNCATED_NOTE
+                if timed_out:
+                    logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
+                    _tail_out, _tail_err = _kill_and_read_output(proc)
+                    stdout_b += _tail_out
+                    stderr_b += _tail_err
             finally:
                 try:
                     os.unlink(bat_path)
@@ -1275,14 +1238,15 @@ def shell(
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=child_env,
             )
-            timed_out = False
-            try:
-                # bash分支: communicate有界timeout, 超时→_kill_and_read_output(杀进程树+读残存) — 小欧 2026-08-06
-                stdout_b, stderr_b = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
+            # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            if truncated:
+                stderr_b += TRUNCATED_NOTE
+            if timed_out:
                 logger.warning(f"[卡死C10] Bash命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
-                stdout_b, stderr_b = _kill_and_read_output(proc)
+                _tail_out, _tail_err = _kill_and_read_output(proc)
+                stdout_b += _tail_out
+                stderr_b += _tail_err
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
@@ -1302,7 +1266,7 @@ def shell(
         data: Dict[str, Any] = {
             "stdout": stdout_str, "stderr": stderr_str,
         }
-        if stdout_trunc or stderr_trunc:
+        if stdout_trunc or stderr_trunc or truncated:
             data["_truncated"] = True
 
         # ── 阶段 5【通用】: 构建 llm_data（截断已由阶段4.5统一处理，此处只判定状态+构建detail+调1次）

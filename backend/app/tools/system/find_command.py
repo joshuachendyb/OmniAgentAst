@@ -13,10 +13,10 @@ S2: find_command — 查找系统命令路径
 
 import os
 import shutil
-import subprocess
 import time as _time_mod
 from typing import Any, Dict
 
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import (
     ERR_PARAMETER_EMPTY, ERR_SHELL_EXCEPTION, ERR_SHELL_FIND_COMMAND,
@@ -100,9 +100,9 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
             return build_warning(data={}, llm_data=llm_data)
         else:
             if os.name == 'nt':
-                result = subprocess.run(['where', command], capture_output=True, text=True, shell=False, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
+                result = proc_run(['where', command], capture_output=True, text=True, shell=False, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             else:
-                result = subprocess.run(['which', '-a', command], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
+                result = proc_run(['which', '-a', command], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]

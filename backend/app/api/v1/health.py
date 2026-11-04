@@ -28,6 +28,7 @@
 # 2026-11-03 小欧 - _server_lan_ip 取序反转: UDP 选路(真实出口网卡)提首选、hostname 解析降兜底, 原序在多网卡机器上易先命中虚拟适配器 — 小欧-2026-11-03
 # 2026-11-04 小欧 - 新增 spawn 字段(闸门指标): 运行期 thread_start 数、等锁超限次数、CreateProcess 最长持锁,
 #   把"正在接近卡死"变成可观测/可告警, 不必等全站僵死再 py-spy — 小欧-2026-11-04
+# 2026-11-04 小欧 - DB 探测加 2s 上限: 灾时(线程池/闸门被占)健康检查必须自己先活, 不能跟着一起挂 — 小欧-2026-11-04
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -123,7 +124,9 @@ async def build_health_response(host: str) -> HealthResponse:
     for db_name in ["chat", "operations", "task_tracker"]:
         try:
             # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24): 被动 /health 不再因 loop 被占而超时
-            await db.atxn(db_name, lambda conn: conn.execute("SELECT 1"))
+            # 2026-11-04 小欧 - 加 2s 上限: 线程池/闸门被占时健康检查自己先活, 拿不到 DB 就报 degraded
+            await asyncio.wait_for(
+                db.atxn(db_name, lambda conn: conn.execute("SELECT 1")), timeout=2.0)
         except Exception:
             logger.warning(f"[health] DB {db_name} 连接失败")
             db_status = "degraded"

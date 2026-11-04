@@ -16,8 +16,9 @@ Author: 小沈 - 2026-06-14
 import os
 import platform
 import shutil
-import subprocess
+
 from typing import Optional
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 
 from app.logger import logger
 from app.utils.time_utils import now_str
@@ -78,7 +79,7 @@ def get_powershell_version() -> str:
     if _POWERSHELL_VERSION is not None:
         return _POWERSHELL_VERSION
     try:
-        r = subprocess.run(
+        r = proc_run(
             ['powershell.exe', '-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
             capture_output=True, text=True, timeout=5
         )
@@ -98,7 +99,7 @@ def get_pwsh_version() -> str:
         _PWSH_VERSION = ""
         return _PWSH_VERSION
     try:
-        r = subprocess.run(
+        r = proc_run(
             [pwsh, '-NoLogo', '-Command', '$PSVersionTable.PSVersion.ToString()'],
             capture_output=True, text=True, timeout=5
         )

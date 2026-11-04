@@ -51,7 +51,7 @@
 
 import os  # node --check 兜底路径的临时文件清理 — 小欧 2026-10-12
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 # 扩展名 → 语言键(新增语言在此加一行, 零侵入) — 小欧 2026-07-21
 _CODE_EXT = {
@@ -216,7 +216,8 @@ def _ts_syntax_errors(content: str, lang) -> list:
 
 def _node_check_js(content: str, file_path: Optional[str] = None):
     """A方案兜底: node --check 校验 JS(仅做语法解析不执行) — 小欧 2026-10-12"""
-    import shutil, subprocess, tempfile
+    import shutil, tempfile
+    from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
     _node = shutil.which("node")
     if not _node:
         return None  # 无 Node → 跳过(等价放行)
@@ -225,8 +226,8 @@ def _node_check_js(content: str, file_path: Optional[str] = None):
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as _f:
             _f.write(content)
             _tmp = _f.name
-        _r = subprocess.run([_node, "--check", _tmp], capture_output=True, text=True,
-                            timeout=10, encoding="utf-8", errors="replace")
+        _r = proc_run([_node, "--check", _tmp], capture_output=True, text=True,
+                      timeout=10, encoding="utf-8", errors="replace")
         return (_r.returncode == 0), (_r.stderr or "").strip()
     except Exception:
         return None

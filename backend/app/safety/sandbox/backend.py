@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 # backend.py — 后端协议与唯一实现(真实实现, 非伪代码) — 小欧 2026-08-25
+# 2026-11-04 小欧 - communicate → proc_io.drain_until_exit/drain_after_exit(零建线程): communicate 的
+#   _readerthread 与 CreateProcess 抢 loader lock, 沙箱执行路径每次必踩 — 小欧-2026-11-04
+# 2026-11-04 小欧 - 红队 P21: 接 truncated 回传, 截断追加可见提示(不静默丢输出) — 小欧-2026-11-04
 import os
 import subprocess
 import tempfile
@@ -11,6 +14,7 @@ from typing import Optional, Protocol
 
 from app.logger import logger
 from app.safety.sandbox.job_object import SandboxJob
+from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 零线程读管道 — 2026-11-04 小欧
 
 _TAIL_CHARS = 4096   # stdout/stderr 尾部截断口径(PreCheckResult.stdout_tail 同款)
 
@@ -56,12 +60,17 @@ class JobObjectBackend:
             self._proc = subprocess.Popen(argv, cwd=str(workspace),
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self._job.assign(self._proc)               # 提权进程收编失败 → 上抛(R3 非静默)
-            out_b, err_b = self._proc.communicate(timeout=timeout_sec)
-        except subprocess.TimeoutExpired:
-            timed_out = True                            # 规则2 数据来源(N4)
-            logger.warning(f"[sandbox][backend] run 超时截断(timed_out), 触发 kill_tree 防失控: timeout={timeout_sec}s")
-            self.kill_tree()                            # 超时防失控第一道闸(4.1/M4)
-            out_b, err_b = self._proc.communicate()
+            # 2026-11-04 小欧: 零线程轮询读(原 communicate 每次起 _readerthread, 与 CreateProcess 抢 loader lock)
+            out_b, err_b, timed_out, truncated = drain_until_exit(self._proc, timeout_sec)
+            if truncated:
+                err_b += TRUNCATED_NOTE
+                logger.warning("[sandbox][backend] 管道未 EOF(孙进程持写端) → 已截断并标记")
+            if timed_out:
+                logger.warning(f"[sandbox][backend] run 超时截断(timed_out), 触发 kill_tree 防失控: timeout={timeout_sec}s")
+                self.kill_tree()                        # 超时防失控第一道闸(4.1/M4)
+                _tail_out, _tail_err = drain_after_exit(self._proc, 2.0)
+                out_b += _tail_out
+                err_b += _tail_err
         finally:
             script.unlink(missing_ok=True)              # 临时脚本即用即删(自我指涉攻击面最小化)
         decode = lambda b: (b or b"").decode("utf-8", errors="replace")[-_TAIL_CHARS:]
@@ -74,7 +83,7 @@ class JobObjectBackend:
 
     def kill_tree(self) -> None:
         if self._job is not None:
-            logger.info(f"[sandbox][backend] kill_tree 触发(清理契约/超时兜底)")
+            logger.info("[sandbox][backend] kill_tree 触发(清理契约/超时兜底)")
             self._job.kill_tree()
 
     def cleanup(self) -> None:

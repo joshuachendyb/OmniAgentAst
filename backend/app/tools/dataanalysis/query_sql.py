@@ -27,7 +27,6 @@ query_sql — 执行只读SQL查询
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import re  # 2026-07-31 小欧: CTE体写操作检测
 import sqlite3
-import threading
 import time as _time_mod
 from typing import Any, Dict, Optional, Literal  # 2026-07-31 小欧: 移除未使用 Union, List
 
@@ -130,8 +129,8 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     if limit < 1 or limit > 1000:
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [],
-                                               detail=f"limit必须在1~1000之间",
-                                               hint=f"请设置1到1000之间的limit值",
+                                               detail="limit必须在1~1000之间",
+                                               hint="请设置1到1000之间的limit值",
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
@@ -141,8 +140,8 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     if timeout <= 0:
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [],
-                                               detail=f"timeout必须大于0(单位秒)",
-                                               hint=f"请设置正数timeout,建议15",
+                                               detail="timeout必须大于0(单位秒)",
+                                               hint="请设置正数timeout,建议15",
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
@@ -250,8 +249,11 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         else:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            _timer = threading.Timer(timeout, conn.interrupt)  # 2026-10-14 小欧 - timeout 已是秒(原 timeout/1000 是毫秒口径残留) — 小欧-2026-10-14
-            _timer.start()
+            # 2026-11-04 小欧 - 超时中断改 sqlite3 progress handler(零建线程): 原 threading.Timer.start() 属运行期
+            #   Thread.start, 与 CreateProcess 抢 loader lock(11:28 卡死同源); handler 在查询线程内被回调,
+            #   超时返回非 0 即中断, 异常类型与 conn.interrupt() 一致(sqlite3.OperationalError: interrupted)。
+            _deadline = _time_mod.monotonic() + timeout
+            conn.set_progress_handler(lambda: 1 if _time_mod.monotonic() > _deadline else 0, 1000)
             try:
                 cursor.execute(sql)
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
@@ -261,7 +263,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
                         break
                     results.append(dict(row))
             finally:
-                _timer.cancel()
+                conn.set_progress_handler(None, 0)
         if truncated:
             truncated_reason = f"已截断：结果超过{limit}行限制，仅返回前{limit}行"
 

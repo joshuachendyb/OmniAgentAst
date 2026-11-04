@@ -178,6 +178,7 @@ from app.logger import logger, log_recovered  # ② 已自愈档 — 小欧 2026
 from app.tools.tool_constants import SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT_SHORT
 from app.config import get_config  # 池容量按 tuning 配置计算(配置派生值留在使用方) — 2026-11-04 小欧
 from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 通用进程树清杀移出本文件(分层)
+from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道(取代 subprocess.run 的 _readerthread)
 from app.utils.workers import ThreadLeasePool, WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现
 
 
@@ -258,8 +259,8 @@ def prewarm_shell_binaries() -> None:
             continue
         t0 = time.monotonic()
         try:
-            subprocess.run([path, "-NoProfile", "-Command", "exit"],
-                           capture_output=True, timeout=_READY_PROBE_TIMEOUT)
+            proc_run([path, "-NoProfile", "-Command", "exit"],
+                     capture_output=True, timeout=_READY_PROBE_TIMEOUT)
             logger.info(f"[Shell预热] {shell_type} 完成 ({time.monotonic() - t0:.0f}ms)")
         except Exception as e:
             logger.warning(f"[Shell预热] {shell_type} 失败(不影响启动): {e}")

@@ -13,9 +13,10 @@ create_task — 创建Windows计划任务
 import platform
 import subprocess
 import time as _time_mod
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from app.logger import logger
+from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
@@ -126,7 +127,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
             return build_error(data={}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(task_name, command, schedule, None, None, None, None, interval)
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+        result = proc_run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -158,7 +159,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint=f"创建任务异常，请检查任务名称和命令参数")  # 2026-10-14 小欧 - hint 修复述: 原只复述"异常+任务名"(detail 已有), 改点名两个输入 — 小欧-2026-10-14
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint="创建任务异常，请检查任务名称和命令参数")  # 2026-10-14 小欧 - hint 修复述: 原只复述"异常+任务名"(detail 已有), 改点名两个输入 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 
