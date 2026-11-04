@@ -1,3 +1,30 @@
+v1.6.0
+更新时间: 2026-11-04 07:59:16 - 小欧-2026-11-04
+## v1.5.6以来 变更汇总(18个commit: fix8/feat3/refactor2/docs3/perf1/test1) - 小欧-2026-11-04
+[2026-11-04 07:59:16 小欧] 范围=v1.5.6以来全部commit(18个); 主线=shell卡死根治成批落地(shell_engine同步exec移出事件循环改to_thread卸载+完成信号改async事件免临时文件轮询+常驻池锁拆任务级,loop_watchdog双证据判据,tool_retry_engine配套)+database is locked批修复(chat高频写点persist/stream_event_journal/message_service/stream_orchestrator均补retry_locked=3)+启动期预热loop默认线程池根除非shell工具运行期Thread.start循环+健康端点组装抽build_health_response同源与出口网卡IP改UDP选路首选+logger单键logging.level收口与客户端原因日志A/B类分档归位+task再导出链归位与死导入清零(6处)+补缺失导入2处(原NameError)+工具调用规则改搜索专用工具+并发任务全量显示与状态词表收口三store+spawn_bg统一后台任务生成口+rate_limit自愈性日志ERROR降WARNING+E2E用例归位通用组; 注:含3个feat(spawn_bg并发任务全量显示工具规则)+8个fix(shell卡死根治/撞锁批修复/健康端点/导入清零等)+perf2个(启动预热线程池/线程池根除),属shell卡死与并发撞锁两大稳定性隐患成批根治,按MINOR记v1.6.0
+### 1.6.0.1 shell卡死根治（核心）
+[shell卡死全链根治] fix 9ca74175b shell_engine,tool_retry_engine,loop_watchdog 根治shell卡死导致全站僵死(同步exec卸载to_thread+完成信号改async事件免临时文件轮询+常驻池锁拆任务级) - 小欧 2026-11-04
+[shell卡死原理说明] docs a3803e422 [9]shell卡死根治-修改逻辑与方法原理 - 小欧 2026-11-04
+### 1.6.0.2 database is locked批修复
+[高频写点防撞锁] fix 41ec9f19b stream_event_journal,message_service,stream_orchestrator chat高频写点补retry_locked=3防并发撞锁 - 小欧 2026-11-04
+[persist防撞锁] fix fe9925942 storage persist_http_request补retry_locked=3防database is locked - 小欧 2026-11-04
+### 1.6.0.3 性能与线程池根治
+[启动预热线程池] perf 68b72c7bc main 启动期预热loop默认线程池根除非shell同步工具运行期循环线程懒建Thread.start(R1) - 小欧 2026-11-04
+### 1.6.0.4 健康端点与日志收口
+[health组装抽同源] fix 4ccbaf648 health.py 组装抽build_health_response(裸/health与/v1同源)+出口网卡IP改UDP选路首选 - 小欧 2026-11-04
+[logger单键收口] refactor 6c451b934 logger 单键logging.level(控制台精确档/文件阈值)+客户端原因日志A类DEBUG/B类INFO归位 - 小欧 2026-11-04
+[rate_limit日志降级] fix 51feb3d63 llm_response_builder rate_limit自愈性限速日志ERROR降WARNING(L1L2可恢复,对齐llm_call降级先例) - 小欧 2026-11-04
+### 1.6.0.5 代码治理与导入清零
+[再导出链归位] fix 3a5b56859 task再导出链归位(门面直连task_state)+6处死导入清零(F类)+read_path_check/operation_backup_rollback补缺失导入(原NameError) - 小欧 2026-11-04
+[开发期静态检查依赖] chore 0e47e8fbb requirements-dev.txt 新增开发期静态检查依赖(ruff/vulture,零依赖安装不碰httpx锁) - 小欧 2026-11-04
+[三堂会审修复] fix c6b9f51d9 三堂会审修复2处违规(useChatSend.ts缩进KISS-DIRECT+settings_registry.py注释归位) - 小欧 2026-11-03
+### 1.6.0.6 前端并发任务与后台任务统一口
+[并发任务全量显示] feat 8e92b3ece runningTasksStore+foregroundSessionStore+chatStreamStore 并发任务全量显示与状态词表收口 - 小欧 2026-11-03
+[spawn_bg统一生成口] feat 1b67f2e5f background_tasks.py 新增spawn_bg统一后台任务生成口(强引用防GC+done自摘) - 小欧 2026-11-03
+[工具规则改搜索专用] feat 7c4ee3a17 system_prompts 工具调用规则改为搜索专用工具 - 北京老陈 2026-11-04
+### 1.6.0.7 测试用例归位
+[E2E用例归位通用组] test bb5469a37 fre2e_11_settings_comprehensive.spec.ts logging.level 85/86 用例随配置归位通用组 - 小欧 2026-11-04
+[SettingsGroup注释订正] docs 4bb1c03d4 SettingsGroup 系统组现状注释更正(实际5小节13项,无app.*故系统参数小节不渲染) - 小欧 2026-11-04
 v1.5.6
 更新时间: 2026-11-03 11:03:58 - 小欧-2026-11-03
 ## v1.5.5以来 变更汇总(7个commit: fix1/perf1/docs5) - 小欧-2026-11-03
