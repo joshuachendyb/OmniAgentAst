@@ -215,7 +215,7 @@ OmniAgentAs-desk/
 │   │   │   └── visualization/  # 可视化报告（mermaid/html/tree 等）
 │   │   └── utils/
 │   ├── config.yaml.example     # 配置模板（复制到 config/config.yaml 后填写）
-│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 62 + com-* 14 = 76 个）
+│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 67 + com-* 14 = 76 个）
 │   ├── logs/                   # 运行日志
 │   ├── migrations/             # DB 迁移
 │   ├── scripts/                # 辅助脚本
