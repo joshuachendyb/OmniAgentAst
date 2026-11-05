@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-"""errors.py — 错误信封（纯函数）。对齐: 4.7 错误模型 / 4.8.4 信封纪律。
+"""errors.py — 错误信封 + 网关异常型。对齐: 4.7 错误模型 / 4.8.4 信封纪律。
 
 编写人: 小欧    创建时间: 2026-11-05 08:31:00
+
+编辑历史:
+  2026-11-05 GatewayError 收归本文件(原 cli_manager.GateError, 语义与"闸门"无关) -- 小欧
 """
 from __future__ import annotations
 
@@ -12,6 +15,16 @@ RETRY_AFTER_CAP_S = 30.0
 # R4 计数只认这三类（7.2.2: 确定性错误 region/auth/model-not-found/context-too-long
 # 重启不解决, 不计失败）
 RESTARTABLE_TYPES = {"network", "timeout", "server"}
+
+
+class GatewayError(Exception):
+    """网关唯一异常型: 带 HTTP 状态码 + 错误类型, 由 gateway 转 4.8.4 信封。"""
+
+    def __init__(self, status, etype, message, detail="", retry_after_s=None):
+        super().__init__(message)
+        self.status, self.etype = status, etype
+        self.message, self.detail = message, detail
+        self.retry_after_s = retry_after_s
 
 
 def cap_retry_after(seconds):

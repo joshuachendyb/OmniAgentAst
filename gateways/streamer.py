@@ -11,12 +11,16 @@
     本文件只负责帧的形状与订阅骨架, 提交时机在 gateway._stream_text;
   - 事件情态语义归驱动 event_class()（方言）; 本文件只认 "content/reasoning/
     idle/error/ignore/http_error" 六种归一值。
+
+编辑历史:
+  2026-11-05 删死代码 sse_comment(全仓零调用); HEARTBEAT_S→WAIT_SLICE_S(实为等待切片, 不发 ping);
+             未接线的 15 s ": ping" 心跳仍按 4.5 挂账, 接线时再加 -- 小欧
 """
 from __future__ import annotations
 
 import json
 
-HEARTBEAT_S = 15          # ": ping" 周期（4.5; SSE 注释行宿主解析器跳过, 4.8.3）
+WAIT_SLICE_S = 15          # 等待事件的最长切片(4.5); ": ping" 心跳仍未接线, 见编辑历史
 FIRST_FRAME_S = 60        # 60 s 无任何 delta → 提交 504（4.5 / 7.6 流式首帧）
 SILENT_S = 180            # 已出字后长时间无新帧（7.6 流式静默）
 
@@ -24,11 +28,6 @@ SILENT_S = 180            # 已出字后长时间无新帧（7.6 流式静默）
 def sse(data):
     """一帧 SSE。data: 行 + 空行收尾（宿主只解析 data: 行, 4.8.3）。"""
     return "data: %s\n\n" % json.dumps(data, ensure_ascii=False)
-
-
-def sse_comment(text="ping"):
-    """以 : 开头的注释行（心跳）——宿主解析器直接跳过, 不产生任何 delta。"""
-    return ": %s\n\n" % text
 
 
 def first_frame():

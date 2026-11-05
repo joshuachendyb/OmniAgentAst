@@ -10,8 +10,11 @@
 "安全闸门先行"是实施排期第 0 步（9.6）, 不是上线后的加固项（3.7 定位）。
 
 编辑历史:
-  2026-11-05 向下翻译收口 mapping.build_prompt(messages,tools), usage 计量迁 fc; 思考段经 assistant_reasoning 透传 -- 小欧
-  2026-11-05 GateError 统一落日志(含 detail); 429 冷却由 _mapped_error 记账; 冷却只拦调模型 -- 小欧
+  2026-11-05 向下翻译收口 mapping.build_prompt(messages,tools), usage 计量迁 upward(原 fc); 思考段经 assistant_reasoning 透传 -- 小欧
+  2026-11-05 GatewayError(原名 GateError) 统一落日志(含 detail); 429 冷却由 _mapped_error 记账; 冷却只拦调模型 -- 小欧
+  2026-11-05 命名对齐: _plain_chat→_complete_once(非流式整包, 工具模式复用), _stream_tools→_replay_tools_as_sse(不流式),
+             _frames→_frame_of(返回单帧字符串), _model_guard→_check_model_exists, _gate→_gateway_error_response;
+             删本文件 DRV 副本(驱动唯一持有者 = _MANAGER.driver), fc.py→upward.py -- 小欧
 """
 from __future__ import annotations
 
@@ -30,17 +33,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import errors
 import mapping
-import fc
+import upward
 import streamer
-from driver import get_driver
-from cli_manager import (CliManager, GateError, PERMISSIONS, FROZEN,
+from cli_manager import (CliManager, SESSION_PERMISSIONS, FROZEN,
                          runtime_dir, preflight)
+from errors import GatewayError
 
 APP = FastAPI(title="opencli-gateway", version="1.0.0")
 
 _MAX_BODY_BYTES = 32 * 1024 * 1024        # 8.5 体积门: 请求体 ≤ 32 MB
-_MANAGER = None
-DRV = None                                # 驱动单例（与 cli_manager 共享同一实例）
+_MANAGER = None                           # 唯一持有者: 驱动实例在 _MANAGER.driver, 启动期装载
 
 
 def _load_config(path):
@@ -49,7 +51,6 @@ def _load_config(path):
 
 
 CFG = _load_config(os.path.join(runtime_dir(), "config.json"))
-DRV = get_driver(CFG)                     # import 期即装载; 名不合法在此早失败
 
 
 def _err(status, etype, message, detail="", retry_after_s=None):
@@ -59,18 +60,18 @@ def _err(status, etype, message, detail="", retry_after_s=None):
     return JSONResponse(body, status_code=code, headers=headers)
 
 
-def _gate(exc: GateError):
-    """GateError 唯一出口: 先落日志再出信封（原实现错误零日志, 429 冷却无从取证）— 小欧 2026-11-05"""
+def _gateway_error_response(exc: GatewayError):
+    """GatewayError 唯一出口: 先落日志再出信封（原实现错误零日志, 429 冷却无从取证）— 小欧 2026-11-05"""
     _log("ERR %d %s %s detail=%s"
          % (exc.status, exc.etype, exc.message, str(exc.detail or "-")[:300]))
     return _err(exc.status, exc.etype, exc.message, exc.detail, exc.retry_after_s)
 
 
 def _mapped_error(mapped):
-    """4.7 映射 dict → GateError; 429 free-limit 顺手记 R5 冷却（同步/流式共用）— 小欧 2026-11-05"""
+    """4.7 映射 dict → GatewayError; 429 free-limit 顺手记 R5 冷却（同步/流式共用）— 小欧 2026-11-05"""
     if mapped["status"] == 429:
         _MANAGER.note_cooldown(mapped["internal_cooldown_ms"])
-    return GateError(mapped["status"], mapped["type"], mapped["message"], mapped["detail"])
+    return GatewayError(mapped["status"], mapped["type"], mapped["message"], mapped["detail"])
 
 
 def _check_token(request):
@@ -121,7 +122,7 @@ def healthz():
     """/healthz: 聚合池状态、候选明细、冷却与退避（4.1）。免鉴权 → 绝不含密钥。"""
     snap = _MANAGER.health_snapshot()
     snap["version"] = "opencli-gateway 1.0.0"
-    snap["model_source"] = "opencli 通过 %s 驱动接入本地 CLI（免费层）" % DRV.name
+    snap["model_source"] = "opencli 通过 %s 驱动接入本地 CLI（免费层）" % _MANAGER.driver.name
     return snap
 
 
@@ -138,26 +139,26 @@ def list_models(request: Request):
         return denied                    # 401 只属于第一层（4.7 规则 1）
     try:
         inst = _MANAGER.acquire()
-    except GateError as exc:
-        return _gate(exc)
+    except GatewayError as exc:
+        return _gateway_error_response(exc)
     client = None
     try:
         inst.start()
         client = inst.http()
-        resp = client.get(DRV.path_models(), timeout=10)
+        resp = client.get(_MANAGER.driver.path_models(), timeout=10)
         if resp.status_code != 200:
-            raise GateError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
-        items, skipped = DRV.models_from(resp.json())
+        items, skipped = _MANAGER.driver.models_from(resp.json())
         if skipped:
             _log("WARN models: %d 项缺 id 被跳过（宿主会静默丢弃, 4.8.1 风险项）"
                  % skipped)
         return {"object": "list", "data": items}
-    except GateError as exc:
-        _MANAGER.record_failure(exc.etype)
-        return _gate(exc)
+    except GatewayError as exc:
+        _MANAGER.on_downstream_failure(exc.etype)
+        return _gateway_error_response(exc)
     except httpx.HTTPError as exc:    # FIX B 偏差记录（2026-11-05 小欧）: 传输层异常
-        _MANAGER.record_failure("network")              # （ConnectError 等）原样穿透
+        _MANAGER.on_downstream_failure("network")              # （ConnectError 等）原样穿透
         return _err(502, "network",                     # 成 500 裸 traceback, 违反
                     "下游连接级失败（连接/超时）", repr(exc)[:300])  # 4.8.4; 归一 502 network
     finally:
@@ -194,21 +195,21 @@ async def chat(request: Request):
     prompt, attachments = mapping.build_prompt(messages, tools)
 
     try:
-        _MANAGER.check_cooldown()         # R5: 只拦调模型; /v1/models 不耗额度, 不拦
+        _MANAGER.ensure_not_cooling()         # R5: 只拦调模型; /v1/models 不耗额度, 不拦
         inst = _MANAGER.acquire()         # 池满排队 / 队列满 429 gateway-busy
-    except GateError as exc:
-        return _gate(exc)
+    except GatewayError as exc:
+        return _gateway_error_response(exc)
     try:
         if payload.get("stream"):
             if tools:                     # 5.6: 起始标记可能在任意位置, SSE 无法回滚
-                return await _stream_tools(inst, payload, prompt, attachments, tools)
+                return await _replay_tools_as_sse(inst, payload, prompt, attachments, tools)
             return await _stream_text(inst, payload, prompt, attachments)
-        return await _plain_chat(inst, payload, prompt, attachments, tools)
-    except GateError as exc:
-        _MANAGER.record_failure(exc.etype)          # R4 计数; R5 冷却由内层记
-        return _gate(exc)
+        return await _complete_once(inst, payload, prompt, attachments, tools)
+    except GatewayError as exc:
+        _MANAGER.on_downstream_failure(exc.etype)          # R4 计数; R5 冷却由内层记
+        return _gateway_error_response(exc)
     except httpx.HTTPError as exc:    # FIX B 偏差记录（2026-11-05 小欧）: 提交前的
-        _MANAGER.record_failure("network")          # 传输层异常归一信封（4.7/4.8.4）
+        _MANAGER.on_downstream_failure("network")          # 传输层异常归一信封（4.7/4.8.4）
         return _err(502, "network", "下游连接级失败（连接/超时）", repr(exc)[:300])
     finally:
         _MANAGER.release(inst)
@@ -216,7 +217,8 @@ async def chat(request: Request):
 # 非流式整包（7.3 时序步骤 1–12; 注释内标步骤号）
 # ---------------------------------------------------------------------------
 
-async def _plain_chat(inst, payload, prompt, attachments, tools):
+async def _complete_once(inst, payload, prompt, attachments, tools):
+    """一次完整下游往返: (0,0)/(0,1) 直接返,(1,1) 由 _replay_tools_as_sse 复用它再切帧。"""
     model = str(payload.get("model") or "")
     client = None                      # FIX F: http() 必须晚于 start(), 见下注释
     rid = "req_" + uuid.uuid4().hex[:8]
@@ -231,48 +233,48 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
         # 原序 client 先建——实例冷启动后的首个请求 auth 为空 → 下游 401
         #（实测复现: 新进程首请求 100% 失败; 此前 /v1/models 先到才掩盖此缺陷）。
         client = inst.http()
-        err = await _model_guard(client, model)    # FIX K: 未知模型 → 404（见函数）
+        err = await _check_model_exists(client, model)    # FIX K: 未知模型 → 404（见函数）
         if err is not None:
             raise err
-        body = DRV.session_body(model, PERMISSIONS)    # 步骤 5（8.2 规则）
-        resp = client.post(DRV.path_create(), json=body, timeout=10)
+        body = _MANAGER.driver.session_body(model, SESSION_PERMISSIONS)    # 步骤 5（8.2 规则）
+        resp = client.post(_MANAGER.driver.path_create(), json=body, timeout=10)
         if resp.status_code >= 300:
-            raise GateError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
         sid = resp.json()["data"]["id"]   # 网关自建, 不复用不透传（7.2.8）
 
-        prompt_body = DRV.prompt_body(prompt, attachments)    # 步骤 6
-        resp = client.post(DRV.path_prompt(sid), json=prompt_body, timeout=30)
+        prompt_body = _MANAGER.driver.prompt_body(prompt, attachments)    # 步骤 6
+        resp = client.post(_MANAGER.driver.path_prompt(sid), json=prompt_body, timeout=30)
         if resp.status_code >= 300:
-            raise GateError(502, "server", "发消息失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "发消息失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
 
-        wait_path, wait_ok = DRV.path_wait(sid)          # 步骤 7: 阻塞式等待
+        wait_path, wait_ok = _MANAGER.driver.path_wait(sid)          # 步骤 7: 阻塞式等待
         resp = client.post(wait_path, timeout=900)       # 服务端阻塞直至空闲
         if resp.status_code not in wait_ok:
-            raise GateError(502, "server", "等待完成失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "等待完成失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
 
         # 步骤 8: 定向查询（7.3——由驱动给 path 与参数, 报文省 19%）
-        msg_path, msg_params = DRV.path_messages(sid)
+        msg_path, msg_params = _MANAGER.driver.path_messages(sid)
         resp = client.get(msg_path, params=msg_params, timeout=10)
         if resp.status_code >= 300:
-            raise GateError(502, "server", "取消息失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "取消息失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
         items = resp.json().get("data") or []
         assistant = items[0] if items else {}
         if assistant.get("error"):
-            raise _mapped_error(DRV.map_error(assistant["error"]))
+            raise _mapped_error(_MANAGER.driver.map_error(assistant["error"]))
 
-        content = DRV.assistant_content(assistant)
-        reasoning = DRV.assistant_reasoning(assistant)      # 思考段上翻（无则空串）
-        finish = DRV.finish_reason(assistant)
+        content = _MANAGER.driver.assistant_content(assistant)
+        reasoning = _MANAGER.driver.assistant_reasoning(assistant)      # 思考段上翻（无则空串）
+        finish = _MANAGER.driver.finish_reason(assistant)
         message, finish_reason = {"role": "assistant"}, finish
         if reasoning:
             message["reasoning_content"] = reasoning
 
         if tools:
-            parsed = fc.parse_calls(content, tools)     # 步骤 9 工具分支（5.3）
+            parsed = upward.parse_calls(content, tools)     # 步骤 9 工具分支（5.3）
             for warn in parsed["warns"]:                # 成功/降级都要写日志, 防静默
                 _log("WARN " + warn)
             if parsed["calls"]:
@@ -282,16 +284,16 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
             elif parsed["content"]:
                 message["content"] = parsed["content"]  # 协议失败降级为文本（5.5）
             else:
-                raise GateError(502, "server",
+                raise GatewayError(502, "server",
                                 "模型未按工具协议响应，请重试或更换模型",
                                 "calls=0 invalid=%d" % parsed["invalid"])
         else:
             if not content:                             # 空响应（5.5）
-                raise GateError(502, "server",
+                raise GatewayError(502, "server",
                                 "下游未返回内容（模型可能尝试了被禁用的内置工具）")
             message["content"] = content
 
-        usage = fc.usage_from_counts(DRV.token_counts(assistant))   # 4.6; 缺→null（向上翻译）
+        usage = upward.usage_from_counts(_MANAGER.driver.token_counts(assistant))   # 4.6; 缺→null（向上翻译）
         # FIX N: stream 值按请求实报（原为硬编码 0, 曾把流式排障带偏）
         _log("%s model=%s stream=%d out_chars=%d tool_calls=%d usage=%s elapsed=%.1fs"
              % (rid, model, 1 if payload.get("stream") else 0, len(content),
@@ -313,24 +315,24 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
 
 
 def _cleanup_session(client, sid):
-    """7.7 finally 三件事（同步版）: 中断兜底 + 删会话（失败仅 WARN 不阻断）。"""
+    """7.7 finally 两件事（同步版）: 中断兜底 + 删会话; 连接由调用方关（失败仅 WARN 不阻断）。"""
     if not sid:
         return
     try:
-        client.post(DRV.path_interrupt(sid), timeout=5)
+        client.post(_MANAGER.driver.path_interrupt(sid), timeout=5)
     except Exception:
         pass                            # 未在跑时 interrupt 报错属正常, 吞掉
     try:
-        client.delete(DRV.path_delete(sid), timeout=10)
+        client.delete(_MANAGER.driver.path_delete(sid), timeout=10)
     except Exception as exc:
         _log("WARN 删会话失败 sid=%s detail=%s（不阻断响应, 7.7）" % (sid, exc))
 # ---------------------------------------------------------------------------
 # 流式（4.5 延迟提交 + 7.4 转发表 + 5.6 工具模式整包）
 # ---------------------------------------------------------------------------
 
-async def _stream_tools(inst, payload, prompt, attachments, tools):
+async def _replay_tools_as_sse(inst, payload, prompt, attachments, tools):
     """(stream=1, tools) 象限: 整包解析后一次性发帧（5.6——不边流边判）。"""
-    base = await _plain_chat(inst, payload, prompt, attachments, tools)
+    base = await _complete_once(inst, payload, prompt, attachments, tools)
     if not isinstance(base, JSONResponse):
         return base                     # warm-up 失败 → 干净 HTTP 错误（延迟提交同样成立）
     data = json.loads(base.body.decode("utf-8"))
@@ -356,7 +358,7 @@ async def _stream_tools(inst, payload, prompt, attachments, tools):
     return _sse_response(gen())
 
 
-async def _model_guard(client, model):
+async def _check_model_exists(client, model):
     """FIX K 偏差记录（2026-11-05 小欧, 出处用例 C3 + 4.7 表）: 未知模型 →
     404 model-not-found 的本地判定。v6.8 假设下游对模型名报 404/no-route,
     实测 opencode v2.2.0 对未知模型静默给出空响应（错误映射无从触发, 实测
@@ -365,15 +367,15 @@ async def _model_guard(client, model):
     适配同步(In#st.http)/异步(aclient)两类客户端（D1 二跑实测 500 教训）。
     """
     if isinstance(client, httpx.AsyncClient):
-        resp = await client.get(DRV.path_models(), timeout=10)
+        resp = await client.get(_MANAGER.driver.path_models(), timeout=10)
     else:
-        resp = client.get(DRV.path_models(), timeout=10)
+        resp = client.get(_MANAGER.driver.path_models(), timeout=10)
     if resp.status_code != 200:
-        return GateError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
+        return GatewayError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
                          resp.text[:500])
-    items, _skipped = DRV.models_from(resp.json())
+    items, _skipped = _MANAGER.driver.models_from(resp.json())
     if str(model or "") not in {it["id"] for it in items}:
-        return GateError(404, "model-not-found",
+        return GatewayError(404, "model-not-found",
                          "模型 %r 不存在或未开放" % str(model or ""))
     return None
 
@@ -382,7 +384,7 @@ def _sse_response(gen):
     """流式响应的公共头（Cache-Control / X-Accel-Buffering, 4.8.3）。
 
     FIX G 偏差记录（2026-11-05 小欧）: 入参实为异步生成器对象（两处调用点
-    _stream_text(body())/_stream_tools(gen()) 均如此）, 原实现 gen() 会再调一次
+    _stream_text(body())/_replay_tools_as_sse(gen()) 均如此）, 原实现 gen() 会再调一次
     → TypeError 'async_generator' object is not callable（实测复现）。直接用对象。
     """
     return StreamingResponse(gen, media_type="text/event-stream",
@@ -394,10 +396,10 @@ def _classify(item):
     """事件 → 驱动归一类别; http_error 一并由驱动事件号之外的通用形状处理。"""
     if isinstance(item, dict) and item.get("kind") == "http_error":
         return {"kind": "http_error", "text": "", "status": item["status"]}
-    return DRV.event_class(item)
+    return _MANAGER.driver.event_class(item)
 
 
-def _frames(info, streamed=None):
+def _frame_of(info, streamed=None):
     """归一类别 → 0 或 1 个 SSE delta 帧（7.4 映射: content→delta.content 等）。
 
     FIX I 偏差记录（2026-11-05 小欧）: "final" 类（下游收尾全文事件, 出处
@@ -430,11 +432,11 @@ def _frames(info, streamed=None):
 
 
 def _error_of(info):
-    """可映射错误 → GateError（提交响应头前抛出 = 干净状态码）; 不可映射 → None。"""
+    """可映射错误 → GatewayError（提交响应头前抛出 = 干净状态码）; 不可映射 → None。"""
     if info["kind"] == "http_error":
-        return GateError(502, "network", "事件订阅失败 HTTP %d" % info["status"])
+        return GatewayError(502, "network", "事件订阅失败 HTTP %d" % info["status"])
     if info["kind"] == "error":
-        return _mapped_error(DRV.map_error(info["error"]))
+        return _mapped_error(_MANAGER.driver.map_error(info["error"]))
     return None
 async def _stream_text(inst, payload, prompt, attachments):
     """(stream=1, tools=0) 象限: 4.5 延迟提交状态机的落地点。
@@ -457,25 +459,25 @@ async def _stream_text(inst, payload, prompt, attachments):
             auth=_MANAGER.driver.auth(inst.password),
             timeout=httpx.Timeout(connect=10, read=60, write=30, pool=10),
             trust_env=False)              # 8.5: 网关自身 httpx 一律不走系统代理
-        err = await _model_guard(aclient, model)   # FIX K: 未知模型 → 404（提交前可改）
+        err = await _check_model_exists(aclient, model)   # FIX K: 未知模型 → 404（提交前可改）
         if err is not None:
             raise err
-        body = DRV.session_body(model, PERMISSIONS)
-        resp = await aclient.post(DRV.path_create(), json=body, timeout=10)
+        body = _MANAGER.driver.session_body(model, SESSION_PERMISSIONS)
+        resp = await aclient.post(_MANAGER.driver.path_create(), json=body, timeout=10)
         if resp.status_code >= 300:
-            raise GateError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
         sid = resp.json()["data"]["id"]
 
         # FIX E 偏差记录（2026-11-05 小欧, 出处 7.3 时序"订阅先行"）: 订阅必须先行于
         # 发消息。原序（建→发→订阅）会在发消息返回前丢掉全部 part 事件 → 流式无内容
         # 可转。iter_events 是惰性生成器, 此处置入即完成订阅排期。
-        events = streamer.iter_events(aclient, sid, DRV)
-        prompt_body = DRV.prompt_body(prompt, attachments)
-        resp = await aclient.post(DRV.path_prompt(sid), json=prompt_body,
+        events = streamer.iter_events(aclient, sid, _MANAGER.driver)
+        prompt_body = _MANAGER.driver.prompt_body(prompt, attachments)
+        resp = await aclient.post(_MANAGER.driver.path_prompt(sid), json=prompt_body,
                                   timeout=30)
         if resp.status_code >= 300:
-            raise GateError(502, "server", "发消息失败 HTTP %d" % resp.status_code,
+            raise GatewayError(502, "server", "发消息失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
 
         first = None
@@ -484,7 +486,7 @@ async def _stream_text(inst, payload, prompt, attachments):
         while first is None:
             remain = deadline - time.time()
             if remain <= 0:
-                raise GateError(504, "timeout", "模型响应超时（60 s 无首帧）")
+                raise GatewayError(504, "timeout", "模型响应超时（60 s 无首帧）")
             # FIX D 偏差记录（2026-11-05 小欧）: 原用 asyncio.wait_for(_next(events), …)
             # 超时会把 CancelledError 注进生成器内部 → 订阅被整体终止 → 下一次 _next
             # 立即 StopAsyncIteration（实测 502 "事件流提前关闭"）。改用 asyncio.wait:
@@ -492,24 +494,24 @@ async def _stream_text(inst, payload, prompt, attachments):
             if ev_task is None:
                 ev_task = asyncio.ensure_future(_next(events))
             done, _pend = await asyncio.wait({ev_task},
-                                             timeout=min(remain, streamer.HEARTBEAT_S))
+                                             timeout=min(remain, streamer.WAIT_SLICE_S))
             if not done:
                 continue                       # 暂无事件 → 继续等（订阅依然存活）
             try:
                 item = ev_task.result()        # StopAsyncIteration 在此浮出
             except StopAsyncIteration:
-                raise GateError(502, "network", "事件流提前关闭")
+                raise GatewayError(502, "network", "事件流提前关闭")
             ev_task = None
             info = _classify(item)
             err = _error_of(info)                        # execution.failed 等 → 干净码
             if err is not None:
                 raise err
-            frames = _frames(info, streamed)
+            frames = _frame_of(info, streamed)
             if frames:
                 first = frames
                 if info["kind"] in ("content", "final"):
                     out_chars += len(info.get("text") or "")
-    except GateError:
+    except GatewayError:
         await _aclose(events)
         if ev_task is not None and not ev_task.done():   # FIX D 守护: 弃任务前先取消
             ev_task.cancel()
@@ -529,7 +531,7 @@ async def _stream_text(inst, payload, prompt, attachments):
                 err = _error_of(info)
                 if err is not None:
                     raise err                            # 已提交后: 记录并收口（罕见）
-                frames = _frames(info, streamed)
+                frames = _frame_of(info, streamed)
                 if frames:
                     last_emit = time.time()
                     if info["kind"] in ("content", "final"):
@@ -538,10 +540,10 @@ async def _stream_text(inst, payload, prompt, attachments):
                 elif info["kind"] == "idle":
                     break                                # 会话空闲 → 取末消息补 usage
                 if time.time() - last_emit > streamer.SILENT_S:
-                    raise GateError(504, "timeout", "模型响应超时（180 s 无新帧）")
+                    raise GatewayError(504, "timeout", "模型响应超时（180 s 无新帧）")
             last = await _last_assistant(aclient, sid)
-            usage = fc.usage_from_counts(DRV.token_counts(last or {}))
-            finish = DRV.finish_reason(last or {}) or "stop"
+            usage = upward.usage_from_counts(_MANAGER.driver.token_counts(last or {}))
+            finish = _MANAGER.driver.finish_reason(last or {}) or "stop"
             yield streamer.final_frame(model, usage, finish)
             # FIX N: 纯文本流式此前整条链路无请求日志, 排障只能靠猜; 补齐一行。
             _log("%s model=%s stream=1 out_chars=%d tool_calls=0 usage=%s elapsed=%.1fs"
@@ -550,7 +552,7 @@ async def _stream_text(inst, payload, prompt, attachments):
                     if usage else "null", time.time() - started))
             inst.touch()                                 # 步骤 11: 重置任务窗口
         except httpx.HTTPError as exc:   # FIX B 偏差记录（2026-11-05 小欧）: 已提交
-            raise GateError(502, "network",      # 窗口内传输异常同样归一（4.7 规则 2）
+            raise GatewayError(502, "network",      # 窗口内传输异常同样归一（4.7 规则 2）
                             "下游连接中断/超时", repr(exc)[:200])
         finally:
             await _aclose(events)                        # 7.4 终止行: [DONE] 后即退订
@@ -577,17 +579,17 @@ async def _cleanup_session_async(aclient, sid):
     if not sid:
         return
     try:
-        await aclient.post(DRV.path_interrupt(sid), timeout=5)
+        await aclient.post(_MANAGER.driver.path_interrupt(sid), timeout=5)
     except Exception:
         pass
     try:
-        await aclient.delete(DRV.path_delete(sid), timeout=10)
+        await aclient.delete(_MANAGER.driver.path_delete(sid), timeout=10)
     except Exception as exc:
         _log("WARN 删会话失败 sid=%s detail=%s（不阻断响应, 7.7）" % (sid, exc))
 
 
 async def _last_assistant(aclient, sid):
-    msg_path, msg_params = DRV.path_messages(sid)
+    msg_path, msg_params = _MANAGER.driver.path_messages(sid)
     try:
         resp = await aclient.get(msg_path, params=msg_params, timeout=10)
         items = (resp.json().get("data") or []) if resp.status_code == 200 else []

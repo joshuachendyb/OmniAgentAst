@@ -4,10 +4,12 @@ r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点, 1
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
 对齐: 6.3.3–6.3.7（定位/准入/RPC）; 7.1/7.3/7.4（时序/定向查询/事件流）;
      4.2/4.6/4.8.2（模型/计量/finish）; 4.7（错误映射）; 8.4/8.6（隔离/脱敏）
-换第二案 = 新增 vendor\<案>\driver.py 实现 gateways\driver.py 的同名接口。
+换第二案 = 新增 vendor\<案>\driver.py, 实现 gateways\driver_api.py 的 DriverApi 钩子并导出 DRIVER_CLASS。
 
 编辑历史:
   2026-11-05 实现 assistant_reasoning: content[] 里 type=reasoning 或带 reasoning 字段的段拼文 -- 小欧
+  2026-11-05 实现类更名 Driver→OpenCodeDriver 并导出 DRIVER_CLASS(与接口 DriverApi 同名不再撞车);
+             报文构造改调 bodies.py 两个公有函数(原 opencode_client.py 仅剩的调用面) -- 小欧
 """
 from __future__ import annotations
 
@@ -18,12 +20,12 @@ import re
 import httpx
 
 try:                                  # vendor\opencode\ 为 namespace package;
-    from . import opencode_client as oc          # 兼容器: 同目录直跑时回退顶层导入
+    from . import bodies as oc                   # 兼容器: 同目录直跑时回退顶层导入
 except ImportError:
-    import opencode_client as oc      # （打包为插件目录 copy 时两者皆可, 9.5）
+    import bodies as oc               # （打包为插件目录 copy 时两者皆可, 9.5）
 
 NAME = "opencode"
-PROVIDER_ID = "opencode"
+PROVIDER_ID = oc.PROVIDER_ID          # 单一来源: 报文构造与驱动自报名同此一处
 VERSION_RE = re.compile(r"^opencode v?(\d+\.\d+\.\d+)")          # 实测: opencode v2.2.0
 PASSWORD_RE = re.compile(r"server password (\S+)")               # D17: 密码出自 stdout
 PASSWORD_MASK = "server password ***"                            # 8.6 脱敏替身
@@ -41,7 +43,7 @@ _AGENT_SPEC = {
 }
 
 
-class Driver:
+class OpenCodeDriver:
     name = NAME
     provider_id = PROVIDER_ID
     version_re = VERSION_RE
@@ -125,11 +127,11 @@ class Driver:
     # --- 会话与报文（7.3; 报文构造委托 vendor 纯函数, 使用纪律 1） ---------
 
     def session_body(self, model, permissions):
-        return oc._session_body(model, title="ask-%s" % model,
-                                agent=AGENT_NAME, permissions=permissions)
+        return oc.session_body(model, title="ask-%s" % model,
+                               agent=AGENT_NAME, permissions=permissions)
 
     def prompt_body(self, text, files):
-        return oc._prompt_body(text, files=files or None)
+        return oc.prompt_body(text, files=files or None)
 
     def path_create(self):
         return "/api/session"
@@ -294,6 +296,10 @@ class Driver:
             return dict(base, status=502, type="network", message="下游连接中断")
         return dict(base, status=502, type="server",
                     message="下游异常（debug 见 detail）")
+
+
+# 装载器约定: 每个 vendor\<名>\driver.py 必须导出 DRIVER_CLASS（driver_api.get_driver 实例化它）
+DRIVER_CLASS = OpenCodeDriver
 
 
 def config_root():

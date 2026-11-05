@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""fc.py — 向上翻译: 下游 CLI 回复 → 宿主 OpenAI tool_calls/文本/usage（纯函数）。
+"""upward.py — 向上翻译: 下游 CLI 回复 → 宿主 OpenAI tool_calls/文本/usage（纯函数）。
 
 编写人: 小欧    创建时间: 2026-11-05 08:31:00
 编辑历史:
@@ -8,6 +8,7 @@
   2026-11-05 14:40:16 组装序重排+协议文案重写+块内JSON容错抢救 -- 小欧
   2026-11-05 界符改回模型训练同形的 <tool_call>…</tool_call>; 老版本 </call_out> 残收尾与未闭合残块做容错+清理 -- 小欧
   2026-11-05 截断调用不再静默: 块内未闭合对象计入 protocol_invalid 并落 WARN -- 小欧
+  2026-11-05 更名 fc.py→upward.py: 本文件早不只做 function calling(还管 usage 计量与正文抽取), 与 mapping(向下)成对 -- 小欧
 """
 from __future__ import annotations
 

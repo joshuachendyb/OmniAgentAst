@@ -8,8 +8,8 @@ r"""cli_manager.py — 下游进程生命周期框架（通用层; 方言细节�
 
 职责覆盖（对应 9.6 实施步骤 0/3）:
   1. preflight()     启动前安全闸门: 回环 + token + deny * + 驱动可装载, 缺失拒绝启动（8.2/8.5）
-  2. init_driver()   装载驱动（config["driver"]）并注入运行时键（runtime_dir/frozen/machine_root）
-  3. admitted_exe()  三关准入: 版本可读 → 版本范围 → 能力探针（6.3.4）; 全失败抛 502
+  2. install_driver() 装载驱动（config["driver"]）并注入运行时键（runtime_dir/frozen/machine_root）
+  3. resolve_admitted_cli()  三关准入: 版本可读 → 版本范围 → 能力探针（6.3.4）; 全失败抛 502
   4. Instance        环境装配(8.4) → spawn → stdout 捕获密码(8.6) → 就绪判定(7.1.3)
   5. CliManager      实例池 + 队列 32 + R0–R6(7.2.2) + 重启风暴保护(7.2.4) + R5 冷却
                       + 启动时清掉上次强杀遗留的下游进程（7.2.7 池端口）
@@ -17,6 +17,9 @@ r"""cli_manager.py — 下游进程生命周期框架（通用层; 方言细节�
 编辑历史:
   2026-11-05 R5 冷却封顶 1 h（下游 retryAfterMs 实测虚高 14 h）; 启动清场; 端口漂移留痕 -- 小欧
   2026-11-05 冷却判定从 acquire 迁出为 check_cooldown（模型发现不拦）; netstat 改按字节收防 GBK 静默失败 -- 小欧
+  2026-11-05 命名对齐: GatewayError 迁 errors.py, record_failure→on_downstream_failure(实为重启),
+             check_cooldown→ensure_not_cooling(会抛), admitted_exe→resolve_admitted_cli, resolve_cli 内联,
+             init_driver→install_driver, PERMISSIONS→SESSION_PERMISSIONS -- 小欧
 """
 from __future__ import annotations
 
@@ -31,11 +34,11 @@ import time
 
 import httpx
 
-from driver import get_driver
-from errors import RESTARTABLE_TYPES
+from driver_api import get_driver
+from errors import GatewayError, RESTARTABLE_TYPES
 
 # 8.2 硬约束: deny * 必须在最前（下游按 findLast 生效, 后写覆盖先写）
-PERMISSIONS = [
+SESSION_PERMISSIONS = [
     {"action": "*", "resource": "*", "effect": "deny"},
     {"action": "read", "resource": "Z:/nope/*", "effect": "allow"},
 ]
@@ -59,10 +62,10 @@ def machine_root():
 
 SANDBOX_CWD = os.path.join(machine_root(), "sandbox")   # 空目录铁律（8.4 禁放文件）
 
-DRV = None          # 驱动单例; init_driver() 填充
+DRV = None          # 驱动单例; install_driver() 填充
 
 
-def init_driver(config):
+def install_driver(config):
     """装载驱动并注入通用侧运行时键; 驱动只能读这些键, 不 import 通用层。"""
     global DRV
     config["runtime_dir"] = runtime_dir()
@@ -70,16 +73,6 @@ def init_driver(config):
     config["machine_root"] = machine_root()
     DRV = get_driver(config)
     return DRV
-
-
-class GateError(Exception):
-    """下游异常到 HTTP 错误的唯一出口（gateway 捕获后走 errors.make_error 统一信封）。"""
-
-    def __init__(self, status, etype, message, detail="", retry_after_s=None):
-        super().__init__(message)
-        self.status, self.etype = status, etype
-        self.message, self.detail = message, detail
-        self.retry_after_s = retry_after_s
 
 
 def _is_loopback(host):
@@ -96,7 +89,7 @@ def preflight(config):
     problems = []
     driver_error = None
     try:
-        init_driver(config)
+        install_driver(config)
     except RuntimeError as exc:
         driver_error = str(exc)
     if driver_error is not None:
@@ -105,8 +98,8 @@ def preflight(config):
         problems.append("拒绝启动: 监听地址必须为 127.0.0.1（8.5 强制回环）")
     if not str(config.get("token") or "").strip():
         problems.append("拒绝启动: token 为空（须与宿主 api_key 一致，8.5）")
-    if not PERMISSIONS or PERMISSIONS[0].get("action") != "*" \
-            or PERMISSIONS[0].get("effect") != "deny":
+    if not SESSION_PERMISSIONS or SESSION_PERMISSIONS[0].get("action") != "*" \
+            or SESSION_PERMISSIONS[0].get("effect") != "deny":
         problems.append("拒绝启动: 权限规则缺少首条 deny *（8.2 硬约束）")
     if int(config.get("pool_size", 2)) < 1:
         problems.append("拒绝启动: pool_size 至少为 1")
@@ -118,11 +111,6 @@ def preflight(config):
 # ---------------------------------------------------------------------------
 # 定位候选（驱动 5 级）+ 三关准入（6.3.3–6.3.5）
 # ---------------------------------------------------------------------------
-
-def resolve_cli(config):
-    """候选解析 = 驱动的 5 级候选; 解析顺序与准入条件写死在 6.3.2 原则。"""
-    return DRV.cli_candidates(config)
-
 
 def _free_port_excluding(banned):
     """临时端口避开池段 [port_base, port_base+port_span-1]（6.3.4 探针端口纪律）。"""
@@ -152,7 +140,7 @@ def _pick_consecutive_ports(config):
     for start in range(base, base + span - size + 1):
         if not any(p in busy for p in range(start, start + size)):
             return list(range(start, start + size))
-    raise GateError(502, "network",
+    raise GatewayError(502, "network",
                     "%d–%d 内找不到 %d 个连续空闲端口，请检查端口占用"
                     % (base, base + span - 1, size))
 
@@ -342,14 +330,14 @@ def _probe(exe, config):
             pass
 
 
-def admitted_exe(config):
-    """三关准入闸口: 逐候选过 ①②③关, 通过即缓存; 全失败抛 502（6.3.5 禁止硬跑）。"""
+def resolve_admitted_cli(config):
+    """三关准入闸口: 逐驱动候选过 ①②③关, 通过即缓存; 全失败抛 502（6.3.5 禁止硬跑）。"""
     cached = config.get("_cli_ok")
     if cached and os.path.exists(cached):
         return cached
     config["candidates"] = []
     compatible = (config.get("cli") or {}).get("compatible", ">=2.2.0 <2.3.0")
-    for cand in resolve_cli(config):
+    for cand in DRV.cli_candidates(config):        # 驱动 5 级候选, 顺序写死在 6.3.2
         path = cand["path"]
         if os.path.dirname(path):
             exists = os.path.exists(path)
@@ -373,7 +361,7 @@ def admitted_exe(config):
         config["_cli_ok"] = path
         config["cli_version"] = version
         return path
-    raise GateError(502, "network",
+    raise GatewayError(502, "network",
                     "已探测 %d 个位置，均不合格（详见 /healthz）"
                     % len(config["candidates"]))
 # ---------------------------------------------------------------------------
@@ -415,7 +403,7 @@ class Instance:
             self.state = "starting"
         log_file = None
         try:
-            exe = admitted_exe(self.config)
+            exe = resolve_admitted_cli(self.config)
             logs_dir = os.path.join(runtime_dir(), "logs")
             os.makedirs(logs_dir, exist_ok=True)
             log_file = open(os.path.join(logs_dir, "cli-out.log"), "ab")
@@ -424,19 +412,19 @@ class Instance:
             self.log_file = log_file
             self.password = _read_password(self.proc, timeout=20, log_file=log_file)
             if not self.password:
-                raise GateError(502, "server", "网关内部错误（下游密码未捕获）",
+                raise GatewayError(502, "server", "网关内部错误（下游密码未捕获）",
                                 "stdout 20 s 内未出现驱动约定的密码行")
             self._wait_ready()                         # R0: 新进程天然零会话
             self.state, self.started_at = "ready", time.time()
             self.last_request_at, self.requests_done = time.time(), 0
-        except GateError:
+        except GatewayError:
             _terminate(self.proc)
             self._reset("stopped")
             raise
         except Exception as exc:
             _terminate(self.proc)
             self._reset("stopped")
-            raise GateError(502, "network", "下游启动失败", str(exc)) from exc
+            raise GatewayError(502, "network", "下游启动失败", str(exc)) from exc
 
     def _wait_ready(self):
         """就绪轮询骨架通用; 硬判点是驱动的 ready()（7.1.3 的落地核心）。"""
@@ -444,12 +432,12 @@ class Instance:
         deadline = time.time() + float(self.config["startup_timeout"])
         while time.time() < deadline:
             if self.proc is not None and self.proc.poll() is not None:
-                raise GateError(502, "server", "下游进程启动即退出",
+                raise GatewayError(502, "server", "下游进程启动即退出",
                                 "exit=%s" % self.proc.returncode)
             if DRV.ready(self.port, auth):
                 return
             time.sleep(0.25)
-        raise GateError(502, "network",
+        raise GatewayError(502, "network",
                         "下游启动超时（超过 %d s）" % int(self.config["startup_timeout"]))
 
     def touch(self):
@@ -513,7 +501,7 @@ class CliManager:
 
     def __init__(self, config):
         if DRV is None:
-            init_driver(config)
+            install_driver(config)
         self.driver = DRV
         self.config = config
         _reap_orphans(config)           # 先清上次强杀遗留的下游, 再定池端口
@@ -560,7 +548,7 @@ class CliManager:
         """取空闲实例; 池满排队（≤ queue_max=32）。
 
         gateway-busy: 网关自己的队全满, Retry-After 给短值（头 ≤30 s 纪律, 4.7）。
-        R5 冷却不在此判: 冷却是"调模型"的限制, 模型发现不耗额度（见 check_cooldown）。
+        R5 冷却不在此判: 冷却是"调模型"的限制, 模型发现不耗额度（见 ensure_not_cooling）。
         """
         with self.cond:
             while True:
@@ -569,7 +557,7 @@ class CliManager:
                         inst.state = "busy"
                         return inst
                 if self._waiting >= self.queue_max:
-                    raise GateError(429, "gateway-busy",
+                    raise GatewayError(429, "gateway-busy",
                                     "网关繁忙（排队已达 %d）" % self.queue_max,
                                     retry_after_s=5.0)
                 self._waiting += 1
@@ -584,11 +572,11 @@ class CliManager:
         with self.cond:
             self.cond.notify()
 
-    def check_cooldown(self):
-        """R5: 冷却窗口内拒绝调模型; 模型发现不耗额度, 不调本方法 — 小欧 2026-11-05"""
+    def ensure_not_cooling(self):
+        """R5: 冷却窗口内拒绝调模型（会抛, 不是查询）; 模型发现不耗额度, 不调本方法 — 小欧 2026-11-05"""
         remain = self.cooldown_until - time.time()
         if remain > 0:
-            raise GateError(429, "free-limit",
+            raise GatewayError(429, "free-limit",
                             "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain))
 
     def note_cooldown(self, ms):
@@ -603,8 +591,8 @@ class CliManager:
 
     # --- R4 + 重启风暴保护（7.2.2 / 7.2.4） --------------------------------
 
-    def record_failure(self, etype):
-        """连续下游类失败计数。仅 timeout/network/server 计; 其余确定性错误直接忽略。"""
+    def on_downstream_failure(self, etype):
+        """下游类失败时: 计数 + 停掉空闲实例走重启退避。仅 timeout/network/server 触发。"""
         if etype not in RESTARTABLE_TYPES:
             return
         cfg = self.config

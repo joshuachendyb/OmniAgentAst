@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-r"""driver.py — Driver 接口与装载器（通用层; 3.5 SPI 的代码化, 1.8 D25）。
+r"""driver_api.py — 驱动接口（Protocol）与装载器（通用层; 3.5 SPI 的代码化, 1.8 D25）。
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
-通用层只认本文件定义的名字; 换下游只换 vendor\<名>\driver.py 的实现。
+通用层只认本文件定义的名字; 换下游只加 vendor\<名>\driver.py 的实现（模块须导出 DRIVER_CLASS）。
 
 编辑历史:
   2026-11-05 接口补 assistant_reasoning(思考段拼文), 供网关非流式透传 reasoning_content -- 小欧
+  2026-11-05 更名 driver_api(原名 driver 与 vendor\<名>\driver.py 同名, 读码/搜栈分不清);
+             类 Driver→DriverApi; 装载器改读 module.DRIVER_CLASS 并按 Protocol 钩子装载期校验 -- 小欧
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import re
 from typing import Protocol
 
 
-class Driver(Protocol):
+class DriverApi(Protocol):
     """驱动接口。每个挂钩的规格出处见 9.1.5 的挂钩-出处表。"""
 
     name: str                      # 驱动名 == config["driver"] == vendor\<名>\（如 "opencode"）
@@ -68,17 +70,27 @@ class Driver(Protocol):
     #   → {"status","type","message","detail","internal_cooldown_ms"}（4.7 判读规则）
 
 
+# 装载期校验清单: 直接从 Protocol 派生（Protocol 新增钩子自动纳入, 不维护第二份名单）
+_REQUIRED = tuple(n for n, v in vars(DriverApi).items()
+                  if not n.startswith("_") and callable(v))
+_ATTRS = ("name", "provider_id", "version_re")
+
 _LOADED = {}
 
 
 def get_driver(config):
-    r"""按 config["driver"] 装载 vendor\<名>\driver.py; 全进程共享一枚实例。"""
+    r"""按 config["driver"] 装载 vendor\<名>\driver.py 的 DRIVER_CLASS; 全进程共享一枚实例。"""
     name = str(config.get("driver") or "opencode").strip()
     if not re.match(r"^[A-Za-z0-9_-]+$", name):       # 目录穿越天然不可能
         raise RuntimeError("拒绝启动: driver 名含非法字符（9.1.6 preflight）")
     if name not in _LOADED:
         module = importlib.import_module("vendor.%s.driver" % name)
-        _LOADED[name] = module.Driver()               # Driver 不给 name → 报错早失败
-        if _LOADED[name].name != name:
+        drv = module.DRIVER_CLASS()                   # 缺 DRIVER_CLASS → AttributeError 早失败
+        missing = [h for h in _REQUIRED if not callable(getattr(drv, h, None))]
+        missing += [a for a in _ATTRS if not hasattr(drv, a)]
+        if missing:                                   # 契约不再只写在注释里
+            raise RuntimeError("拒绝启动: 驱动 %s 缺挂钩 %s" % (name, ", ".join(missing)))
+        if drv.name != name:
             raise RuntimeError("拒绝启动: 驱动自报名≠config.driver")
+        _LOADED[name] = drv
     return _LOADED[name]

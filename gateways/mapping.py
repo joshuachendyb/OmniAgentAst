@@ -8,6 +8,8 @@
   2026-11-05 三堂会审整改: _as_text 拆为 _content_text/_collect, TAIL_PLAIN 删除, 段注释口径对齐 -- 小欧
   2026-11-05 14:40:16 组装序定为 1~5 段; 第 5 段输出格式重写成 8 条规则(内嵌界符举例) -- 小欧
   2026-11-05 界符改回训练同形 <tool_call>…</tool_call>; 解析侧容错 </call_out> 残收尾 -- 小欧
+  2026-11-05 命名对齐: _collect→_split_messages(它只干分桶), render_tool_list→_render_tool_list(仅本文件调用);
+             usage 计量所在文件更名 fc.py→upward.py -- 小欧
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ IGNORABLE_PARAMS = {              # 忽略并在首次出现时记 WARN 的采�
 
 # 协议界符（全仓唯一一套输出规格）: 与模型训练同形的 <tool_call>…</tool_call> — 小欧 2026-11-05
 # 容错: 老版本把收尾截断成 </call_out> 并泄漏到 UI, 解析侧 </call_out>/</toolcall>/</tool_calls>
-# 等残形一律认(fc.py), 输出仍只写 CALL_CLOSE。
+# 等残形一律认(upward.py), 输出仍只写 CALL_CLOSE。
 CALL_OPEN = "<tool_call>"
 CALL_CLOSE = "</tool_call>"
 BLOCK_RE = re.compile(re.escape(CALL_OPEN) + r"(.*?)(?:" + re.escape(CALL_CLOSE)
@@ -32,8 +34,8 @@ BLOCK_RE = re.compile(re.escape(CALL_OPEN) + r"(.*?)(?:" + re.escape(CALL_CLOSE)
 # 组装序（全 prompt 从头到尾只有这一套 1~5, 不再出现别的编号）:
 #   1 系统指令 → 2 工具清单 → 3 对话历史 → 4 本轮任务（最新 user 在第 3 段
 #   末尾压轴, 不另拆段） → 5 输出格式与行动提醒。
-# 【各段处理位置】1/3/4 段=本文件 _collect 的消息回放; 2 段=本文件
-#   render_tool_list; 5 段=本文件 _TAIL_TOOLS; 拼装点=本文件 build_prompt。 — 小欧 2026-11-05
+# 【各段处理位置】1/3/4 段=本文件 _split_messages 的消息回放; 2 段=本文件
+#   _render_tool_list; 5 段=本文件 _TAIL_TOOLS; 拼装点=本文件 build_prompt。 — 小欧 2026-11-05
 # 第 2、5 段文案集中在下面常量区, 增删文案只动常量, 组装直线不动。
 # ============================================================
 
@@ -90,7 +92,7 @@ def _render_tool(index, tool):
 
 
 # —— 第 2 段处理函数: 工具清单渲染入口（拼装点 build_prompt 第二元）— 小欧 2026-11-05 ——
-def render_tool_list(tools):
+def _render_tool_list(tools):
     """第 2 段渲染: 工具清单（文案只有 _SEC2_LEAD, 清单逐工具翻人话）— 小欧 2026-11-05"""
     named = [t for t in (tools or []) if ((t or {}).get("function") or {}).get("name")]
     tool_lines = []
@@ -134,7 +136,7 @@ def _render_calls(body, calls):
 
 
 # —— 第 1/3 段处理函数: 消息回放（1 段收 system 原文, 3 段回放各轮对话）— 小欧 2026-11-05 ——
-def _collect(messages, attachments):
+def _split_messages(messages, attachments):
     """宿主 messages → (第 1 段 system 原文列表, 第 3 段对话行列表)。"""
     sys_lines, conv = [], []
     for m in messages or []:
@@ -161,14 +163,14 @@ def build_prompt(messages, tools):
     tools 为空走纯文本: 只剩 1 系统指令 + 3/4 对话, 不追加任何尾句。
     """
     attachments = []
-    sys_lines, conv = _collect(messages, attachments)
+    sys_lines, conv = _split_messages(messages, attachments)
     sys_text = "\n".join(s for s in sys_lines if s)
     head = ("【系统指令】%s（严格遵守系统命令）" % sys_text) if sys_text else ""
     conv_text = "\n".join(conv)
     hist = ("[对话历史]\n" + conv_text) if conv_text else ""     # 第 3 段前导标识
     parts = (
         head,                               # 第 1 段 系统指令
-        render_tool_list(tools) if tools else "",   # 第 2 段 工具清单
+        _render_tool_list(tools) if tools else "",   # 第 2 段 工具清单
         hist,                               # 第 3 段 对话历史 + 第 4 段 本轮任务压轴
     )
     return "\n\n".join(p for p in parts if p) + (_TAIL_TOOLS if tools else ""), attachments
