@@ -112,8 +112,16 @@ def healthz():
 
 
 @APP.get("/v1/models")
-def list_models():
-    """模型发现（4.2 / 4.8.1）。占用实例 → R1 按需启动（cli=idle 不是错误）。"""
+def list_models(request: Request):
+    """模型发现（4.2 / 4.8.1）。占用实例 → R1 按需启动（cli=idle 不是错误）。
+
+    FIX J 偏差记录（2026-11-05 小欧, 出处 4.7 第一层 + 用例 A3/A4/B8）:
+    /v1/models 也必须过 Bearer token 门（拉模型返 401）——原实现只对 chat 校验,
+    无/错 token 对本端点均 200（实测复现）。
+    """
+    denied = _check_token(request)
+    if denied is not None:
+        return denied                    # 401 只属于第一层（4.7 规则 1）
     try:
         inst = _MANAGER.acquire()
     except GateError as exc:
@@ -209,6 +217,9 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
         # 原序 client 先建——实例冷启动后的首个请求 auth 为空 → 下游 401
         #（实测复现: 新进程首请求 100% 失败; 此前 /v1/models 先到才掩盖此缺陷）。
         client = inst.http()
+        err = await _model_guard(client, model)    # FIX K: 未知模型 → 404（见函数）
+        if err is not None:
+            raise err
         body = DRV.session_body(model, PERMISSIONS)    # 步骤 5（8.2 规则）
         resp = client.post(DRV.path_create(), json=body, timeout=10)
         if resp.status_code >= 300:
@@ -325,6 +336,28 @@ async def _stream_tools(inst, payload, prompt, attachments, tools):
     return _sse_response(gen())
 
 
+async def _model_guard(client, model):
+    """FIX K 偏差记录（2026-11-05 小欧, 出处用例 C3 + 4.7 表）: 未知模型 →
+    404 model-not-found 的本地判定。v6.8 假设下游对模型名报 404/no-route,
+    实测 opencode v2.2.0 对未知模型静默给出空响应（错误映射无从触发, 实测
+    落成 502 server"下游未返回内容"）。零方言实现: 复用驱动挂钩
+    path_models()+models_from() 本地比对一次（回环毫秒级）。
+    适配同步(In#st.http)/异步(aclient)两类客户端（D1 二跑实测 500 教训）。
+    """
+    if isinstance(client, httpx.AsyncClient):
+        resp = await client.get(DRV.path_models(), timeout=10)
+    else:
+        resp = client.get(DRV.path_models(), timeout=10)
+    if resp.status_code != 200:
+        return GateError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
+                         resp.text[:500])
+    items, _skipped = DRV.models_from(resp.json())
+    if str(model or "") not in {it["id"] for it in items}:
+        return GateError(404, "model-not-found",
+                         "模型 %r 不存在或未开放" % str(model or ""))
+    return None
+
+
 def _sse_response(gen):
     """流式响应的公共头（Cache-Control / X-Accel-Buffering, 4.8.3）。
 
@@ -394,6 +427,9 @@ async def _stream_text(inst, payload, prompt, attachments):
             auth=_MANAGER.driver.auth(inst.password),
             timeout=httpx.Timeout(connect=10, read=60, write=30, pool=10),
             trust_env=False)              # 8.5: 网关自身 httpx 一律不走系统代理
+        err = await _model_guard(aclient, model)   # FIX K: 未知模型 → 404（提交前可改）
+        if err is not None:
+            raise err
         body = DRV.session_body(model, PERMISSIONS)
         resp = await aclient.post(DRV.path_create(), json=body, timeout=10)
         if resp.status_code >= 300:
