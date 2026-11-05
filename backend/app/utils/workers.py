@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-11-04 - 小欧 - 新建: 统一常驻线程池(WorkerPool/ThreadLeasePool), 取代 serial_worker.py 与两处私有池实现
+# 2026-11-05 - 小欧 - 修复 submit/lease 丢 ContextVar: 常驻线程不继承调用方上下文, 改为提交时绑定 copy_context, 与 asyncio.to_thread 同语义
 """workers — 常驻线程池(运行期零 Thread.start) — 小欧 2026-11-04
 
 【为什么要有这个模块】Windows 上 `Thread.start()` 内部 `self._started.wait()` 无超时, 新线程
@@ -16,6 +17,8 @@ bootstrap 要拿 loader lock; 而 `CreateProcessW` 调用期持 loader lock 且�
 两者都只是 `queue.put` + 常驻线程, 不引入额外抽象(YAGNI)。
 """
 import concurrent.futures
+import contextvars
+import functools
 import queue
 import threading
 from typing import Any, Callable
@@ -52,7 +55,8 @@ class WorkerPool:
 
     def submit(self, fn: Callable[[], Any]) -> "concurrent.futures.Future":
         fut: "concurrent.futures.Future" = concurrent.futures.Future()
-        self._q.put((fn, fut))
+        # 2026-11-05 小欧 - 常驻线程不继承 ContextVar(task_id/session_id/hooks): 提交时绑定调用方上下文, 否则齐丢
+        self._q.put((functools.partial(contextvars.copy_context().run, fn), fut))
         return fut
 
 
@@ -85,5 +89,6 @@ class ThreadLeasePool:
         """租一个空闲 worker 执行 fn; 池满/全卡住 → 超时返回 False。"""
         if not self._idle.acquire(timeout=timeout):
             return False
-        self._jobs.put(fn)
+        # 2026-11-05 小欧 - 同 submit: 租约任务也在常驻线程里跑, 必须显式携带调用方 context
+        self._jobs.put(functools.partial(contextvars.copy_context().run, fn))
         return True

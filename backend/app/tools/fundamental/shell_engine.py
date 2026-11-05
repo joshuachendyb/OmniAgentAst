@@ -126,6 +126,8 @@
 #   2026-11-04 小欧 - 复核修正: _CLEANUP_POOL 1→3(单 worker 挂起即永久失效, 清理能力静默丧失);
 #         _StdinWriter 删池耗尽兜底新建线程(兜底本身即运行期 Thread.start) → 池满判损坏;
 #         删生产零调用的 _cleanup_guarded(死代码), 调用方统一 start + await 两段式。
+# 2026-11-05 小欧 - 池键坍缩哨兵: acquire 收到空 task_id 时告警一次(原静默把全进程 shell 挤进同一个
+#         (None, shell_type) 池), 并把 ShellPoolBusyError 文案写明"宿主并发限流", 防模型误判成文件权限问题。
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -980,6 +982,20 @@ class ShellPoolBusyError(RuntimeError):
     单一信号量硬限流(v2.8)：绝不临时创建绕过限流，绝不无限等待。调用方捕获转 build_error 返回。— 小欧 2026-08-06"""
 
 
+_EMPTY_TASK_ID_WARNED = False
+
+
+def _warn_empty_task_id() -> None:
+    """空 task_id 只告警一次: 池键退化为 (None, shell_type), 全进程共用同一组槽位 — 2026-11-05 小欧"""
+    global _EMPTY_TASK_ID_WARNED
+    if _EMPTY_TASK_ID_WARNED:
+        return
+    _EMPTY_TASK_ID_WARNED = True
+    logger.warning("[ShellPool] acquire 收到空 task_id: 池键退化为 (None, shell_type), "
+                   "全进程 shell 共用同一组并发槽位(跨任务互相挤占)。"
+                   "排查调用线程是否丢了 ContextVar(task_id): 走 WorkerPool 必须 copy_context")
+
+
 class ShellPoolManager:
     """Shell实例池管理器 — 按 (task_id, shell_type) 分池，任务隔离 + 同类型并行"""
 
@@ -1020,14 +1036,17 @@ class ShellPoolManager:
         锁序防死锁(C7): 先取池锁(Phase1) → 释放后再拿实例锁(Phase2), 从不嵌套持有两把锁
         """  # 小欧 2026-08-06 v2.8
         key = self._pool_key(task_id, shell_type)
+        if not task_id:      # 2026-11-05 小欧 - 池键坍缩哨兵: 空 task_id 会让全进程共用一个池, 并发即超时
+            _warn_empty_task_id()
         sem = self._sem[key]
         # [卡死场景C2] Phase0: 拿不到槽位 → 明确失败, 绝不temp绕过限流、绝不无限等待 — 小欧 2026-08-06
         # 有界等待: 同key并发排队最多 ACQUIRE_WAIT_TIMEOUT(2s), 超时抛ShellPoolBusyError → 调用方except转build_error(非卡死非500)
         if not sem.acquire(timeout=ACQUIRE_WAIT_TIMEOUT):
             logger.warning(f"[卡死C2] 池槽位耗尽, 同key并发排队超{ACQUIRE_WAIT_TIMEOUT}s → 明确失败(key={key}, 上限={self._max_per_type}), 拒temp绕过/无限等")
             raise ShellPoolBusyError(
-                f"[ShellPool] 同key并发槽位耗尽(key={key}, 上限={self._max_per_type}): "
-                f"等待{ACQUIRE_WAIT_TIMEOUT}s未获槽位, 请降低并发或稍后重试"
+                f"[ShellPool] 同任务并行 shell 超过上限({self._max_per_type} 个, key={key}): "
+                f"等待{ACQUIRE_WAIT_TIMEOUT}s 未获槽位。这是宿主并发限流, 不是文件权限问题; "
+                f"请减少同时发出的 shell 数量, 或改为串行重试"
             )
         max_attempts = self._max_per_type + 2   # 有界重试: 防 pwsh 不可用时无限循环 — 小欧 2026-08-06
         # v2.10 BugFix(小健 2026-08-06): owning_slot 追踪本 acquire 当前是否持槽。
