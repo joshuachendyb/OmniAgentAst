@@ -3,11 +3,15 @@
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
 对齐: 4.1 端点总表 / 4.2–4.8 契约 / 5.6 工具模式 / 8.5 自身防护 / 7.3 时序 /
-     3.5 SPI 硬边界（本文件不得出现下游路由字符串——grep `"/api/` 应为 0）
+     3.5 SPI 硬边界（本文件不得出现下游路由字符串: 除本行外 grep 下游路由前缀应为 0）
      / 9.6 步骤 0
 
 启动即走 preflight(): 回环 + token + deny * + 驱动可装载, 任一失败拒绝启动——
 "安全闸门先行"是实施排期第 0 步（9.6）, 不是上线后的加固项（3.7 定位）。
+
+编辑历史:
+  2026-11-05 向下翻译收口 mapping.build_prompt(messages,tools), usage 计量迁 fc; 思考段经 assistant_reasoning 透传 -- 小欧
+  2026-11-05 GateError 统一落日志(含 detail); 429 冷却由 _mapped_error 记账; 冷却只拦调模型 -- 小欧
 """
 from __future__ import annotations
 
@@ -56,7 +60,17 @@ def _err(status, etype, message, detail="", retry_after_s=None):
 
 
 def _gate(exc: GateError):
+    """GateError 唯一出口: 先落日志再出信封（原实现错误零日志, 429 冷却无从取证）— 小欧 2026-11-05"""
+    _log("ERR %d %s %s detail=%s"
+         % (exc.status, exc.etype, exc.message, str(exc.detail or "-")[:300]))
     return _err(exc.status, exc.etype, exc.message, exc.detail, exc.retry_after_s)
+
+
+def _mapped_error(mapped):
+    """4.7 映射 dict → GateError; 429 free-limit 顺手记 R5 冷却（同步/流式共用）— 小欧 2026-11-05"""
+    if mapped["status"] == 429:
+        _MANAGER.note_cooldown(mapped["internal_cooldown_ms"])
+    return GateError(mapped["status"], mapped["type"], mapped["message"], mapped["detail"])
 
 
 def _check_token(request):
@@ -175,12 +189,12 @@ async def chat(request: Request):
         _log("WARN " + warn)              # 采样参数忽略, 只 WARN 一次级（去重略）, 4.3
 
     tools = payload.get("tools") or []
-    packed = mapping.build_prompt(messages)
-    prompt = fc.build_prompt(packed["text"], tools) if tools \
-        else packed["text"] + mapping.TAIL_PLAIN
-    attachments = packed["attachments"]
+    # 向下翻译（mapping.py 唯一入口）: 工具模式 1系统→2工具清单→3对话(+4压轴)→5行动提醒;
+    # 纯文本 1系统→3/4对话（不追加任何尾句） — 小欧 2026-11-05
+    prompt, attachments = mapping.build_prompt(messages, tools)
 
     try:
+        _MANAGER.check_cooldown()         # R5: 只拦调模型; /v1/models 不耗额度, 不拦
         inst = _MANAGER.acquire()         # 池满排队 / 队列满 429 gateway-busy
     except GateError as exc:
         return _gate(exc)
@@ -248,28 +262,25 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
         items = resp.json().get("data") or []
         assistant = items[0] if items else {}
         if assistant.get("error"):
-            mapped = DRV.map_error(assistant["error"])
-            if mapped["status"] == 429:
-                _MANAGER.note_cooldown(mapped["internal_cooldown_ms"])
-                raise GateError(429, "free-limit", mapped["message"],
-                                mapped["detail"])        # 头值不给——4.7 规则 3
-            raise GateError(mapped["status"], mapped["type"], mapped["message"],
-                            mapped["detail"])
+            raise _mapped_error(DRV.map_error(assistant["error"]))
 
         content = DRV.assistant_content(assistant)
+        reasoning = DRV.assistant_reasoning(assistant)      # 思考段上翻（无则空串）
         finish = DRV.finish_reason(assistant)
         message, finish_reason = {"role": "assistant"}, finish
+        if reasoning:
+            message["reasoning_content"] = reasoning
 
         if tools:
             parsed = fc.parse_calls(content, tools)     # 步骤 9 工具分支（5.3）
+            for warn in parsed["warns"]:                # 成功/降级都要写日志, 防静默
+                _log("WARN " + warn)
             if parsed["calls"]:
                 message["content"] = parsed["content"]
                 message["tool_calls"] = parsed["calls"]
                 finish_reason = "tool_calls"            # 5.3 末行
             elif parsed["content"]:
                 message["content"] = parsed["content"]  # 协议失败降级为文本（5.5）
-                for warn in parsed["warns"]:
-                    _log("WARN " + warn)
             else:
                 raise GateError(502, "server",
                                 "模型未按工具协议响应，请重试或更换模型",
@@ -280,7 +291,7 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
                                 "下游未返回内容（模型可能尝试了被禁用的内置工具）")
             message["content"] = content
 
-        usage = mapping.usage_from_counts(DRV.token_counts(assistant))   # 4.6; 缺→null
+        usage = fc.usage_from_counts(DRV.token_counts(assistant))   # 4.6; 缺→null（向上翻译）
         # FIX N: stream 值按请求实报（原为硬编码 0, 曾把流式排障带偏）
         _log("%s model=%s stream=%d out_chars=%d tool_calls=%d usage=%s elapsed=%.1fs"
              % (rid, model, 1 if payload.get("stream") else 0, len(content),
@@ -332,6 +343,9 @@ async def _stream_tools(inst, payload, prompt, attachments, tools):
         msg = choice["message"]
         # FIX N（2026-11-05 小欧, 对齐 5.6）: 未解析出调用时按普通文本切帧
         # （200–400 字/帧）; 原实现整段一帧, 宿主 UI 只看到 0/1 个块。
+        # 思考段先于正文发（reasoning_content 帧）— 小欧 2026-11-05
+        if msg.get("reasoning_content"):
+            yield streamer.delta_frame(reasoning=msg["reasoning_content"])
         text = msg.get("content") or ""
         for i in range(0, len(text), 300):
             yield streamer.delta_frame(content=text[i:i + 300])
@@ -420,9 +434,7 @@ def _error_of(info):
     if info["kind"] == "http_error":
         return GateError(502, "network", "事件订阅失败 HTTP %d" % info["status"])
     if info["kind"] == "error":
-        mapped = DRV.map_error(info["error"])
-        return GateError(mapped["status"], mapped["type"], mapped["message"],
-                         mapped["detail"])
+        return _mapped_error(DRV.map_error(info["error"]))
     return None
 async def _stream_text(inst, payload, prompt, attachments):
     """(stream=1, tools=0) 象限: 4.5 延迟提交状态机的落地点。
@@ -528,7 +540,7 @@ async def _stream_text(inst, payload, prompt, attachments):
                 if time.time() - last_emit > streamer.SILENT_S:
                     raise GateError(504, "timeout", "模型响应超时（180 s 无新帧）")
             last = await _last_assistant(aclient, sid)
-            usage = mapping.usage_from_counts(DRV.token_counts(last or {}))
+            usage = fc.usage_from_counts(DRV.token_counts(last or {}))
             finish = DRV.finish_reason(last or {}) or "stop"
             yield streamer.final_frame(model, usage, finish)
             # FIX N: 纯文本流式此前整条链路无请求日志, 排障只能靠猜; 补齐一行。

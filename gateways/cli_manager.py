@@ -12,9 +12,15 @@ r"""cli_manager.py — 下游进程生命周期框架（通用层; 方言细节�
   3. admitted_exe()  三关准入: 版本可读 → 版本范围 → 能力探针（6.3.4）; 全失败抛 502
   4. Instance        环境装配(8.4) → spawn → stdout 捕获密码(8.6) → 就绪判定(7.1.3)
   5. CliManager      实例池 + 队列 32 + R0–R6(7.2.2) + 重启风暴保护(7.2.4) + R5 冷却
+                      + 启动时清掉上次强杀遗留的下游进程（7.2.7 池端口）
+
+编辑历史:
+  2026-11-05 R5 冷却封顶 1 h（下游 retryAfterMs 实测虚高 14 h）; 启动清场; 端口漂移留痕 -- 小欧
+  2026-11-05 冷却判定从 acquire 迁出为 check_cooldown（模型发现不拦）; netstat 改按字节收防 GBK 静默失败 -- 小欧
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
 import socket
@@ -35,6 +41,7 @@ PERMISSIONS = [
 ]
 
 FROZEN = bool(getattr(sys, "frozen", False))    # 打包版硬约束总开关（6.3.6）
+COOLDOWN_S = 3600        # 4.7 规则 3: free-limit 冷却按 1 h 记; 下游 retryAfterMs 实测虚高到 14 h, 只作上限判据
 
 
 def runtime_dir():
@@ -148,6 +155,63 @@ def _pick_consecutive_ports(config):
     raise GateError(502, "network",
                     "%d–%d 内找不到 %d 个连续空闲端口，请检查端口占用"
                     % (base, base + span - 1, size))
+
+
+def _listener_pids(ports):
+    """本机 TCP 监听 → {port: pid}; 只看传入端口（netstat 解析, 不引第三方依赖）— 小欧 2026-11-05"""
+    found = {}
+    try:
+        # netstat 在本机输出 GBK; text=True 解码失败会静默给 None 而不是抛错 — 按字节收
+        raw = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True,
+                             timeout=10, creationflags=0x08000000).stdout
+    except Exception:
+        return found
+    for line in raw.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[-2].upper() != "LISTENING":
+            continue
+        port = int(parts[1].rsplit(":", 1)[-1])
+        if port in ports:
+            found[port] = int(parts[-1])
+    return found
+
+
+def _image_name(pid):
+    """PID → 可执行文件全路径; 取不到给空串（ctypes, 不引 psutil/wmic）— 小欧 2026-11-05"""
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(0x1000, False, int(pid))    # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        buf, size = ctypes.create_unicode_buffer(1024), ctypes.c_uint(1024)
+        if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return buf.value
+        return ""
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _reap_orphans(config):
+    """启动清场: 网关被强杀会留下占池端口的下游 CLI, 不清则整池顺延且无告警
+    （2026-11-05 实测池端口漂到 8205）; 只杀镜像名匹配本驱动的进程 — 小欧 2026-11-05
+    """
+    if _listener_pids([int(config["port"])]):
+        return                         # 已有网关占用服务端口(重复启动): 不动它的下游, 交给绑定失败
+    base, span = int(config["port_base"]), int(config["port_span"])
+    names = set()
+    for cand in DRV.cli_candidates(config):
+        name = os.path.basename(str(cand.get("path") or "")).lower()
+        if name:
+            names.update((name, name + ".exe"))
+    for port, pid in _listener_pids(range(base, base + span)).items():
+        if os.path.basename(_image_name(pid)).lower() not in names:
+            print("[reap] 池端口 %d 被非下游进程占用 pid=%d, 本次整池顺延"
+                  % (port, pid), file=sys.stderr)      # 端口漂移必须留痕, 不静默
+            continue                       # 非本网关下游 → 绝不误杀
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                       capture_output=True, timeout=10, creationflags=0x08000000)
+        print("[reap] 清掉上次遗留的下游进程 port=%d pid=%d" % (port, pid),
+              file=sys.stderr)
 
 
 def _in_range(version, compatible):
@@ -452,6 +516,7 @@ class CliManager:
             init_driver(config)
         self.driver = DRV
         self.config = config
+        _reap_orphans(config)           # 先清上次强杀遗留的下游, 再定池端口
         self.instances = [Instance(i, port, config)
                           for i, port in enumerate(_pick_consecutive_ports(config))]
         self.queue_max = int(config["queue_max"])
@@ -492,16 +557,11 @@ class CliManager:
     # --- 池与队列（7.5 并发与背压 / R5 冷却） ------------------------------
 
     def acquire(self):
-        """取空闲实例; 池满排队（≤ queue_max=32）; 冷却窗口内快速失败 429。
+        """取空闲实例; 池满排队（≤ queue_max=32）。
 
-        - gateway-busy: 网关自己的队全满, Retry-After 给短值（头 ≤30 s 纪律, 4.7）;
-        - free-limit 冷却: 429 不带头值冷却（冷却约 1 h 只在内存, 4.7 规则 3）。
+        gateway-busy: 网关自己的队全满, Retry-After 给短值（头 ≤30 s 纪律, 4.7）。
+        R5 冷却不在此判: 冷却是"调模型"的限制, 模型发现不耗额度（见 check_cooldown）。
         """
-        now = time.time()
-        if now < self.cooldown_until:
-            remain = self.cooldown_until - now
-            raise GateError(429, "free-limit",
-                            "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain))
         with self.cond:
             while True:
                 for inst in self.instances:
@@ -524,9 +584,22 @@ class CliManager:
         with self.cond:
             self.cond.notify()
 
+    def check_cooldown(self):
+        """R5: 冷却窗口内拒绝调模型; 模型发现不耗额度, 不调本方法 — 小欧 2026-11-05"""
+        remain = self.cooldown_until - time.time()
+        if remain > 0:
+            raise GateError(429, "free-limit",
+                            "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain))
+
     def note_cooldown(self, ms):
-        """R5: 收到 429 free-limit → 内部冷却, 绝不重启（重启不改出口 IP, 7.2.2）。"""
-        self.cooldown_until = max(self.cooldown_until, time.time() + (ms or 0) / 1000.0)
+        """R5: 429 free-limit → 内部冷却, 绝不重启（重启不改出口 IP, 7.2.2）。
+
+        下游 retryAfterMs 采信但封顶 COOLDOWN_S; 无头值同样按 COOLDOWN_S 记
+        （2026-11-05 实测: 下游给 14 h, 额度早已恢复仍被本地冷却拦住）— 小欧 2026-11-05
+        """
+        secs = min((ms or 0) / 1000.0, COOLDOWN_S)
+        self.cooldown_until = max(self.cooldown_until,
+                                  time.time() + (secs if secs > 0 else COOLDOWN_S))
 
     # --- R4 + 重启风暴保护（7.2.2 / 7.2.4） --------------------------------
 

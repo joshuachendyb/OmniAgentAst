@@ -3,6 +3,9 @@ r"""driver.py — Driver 接口与装载器（通用层; 3.5 SPI 的代码化, 1
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
 通用层只认本文件定义的名字; 换下游只换 vendor\<名>\driver.py 的实现。
+
+编辑历史:
+  2026-11-05 接口补 assistant_reasoning(思考段拼文), 供网关非流式透传 reasoning_content -- 小欧
 """
 from __future__ import annotations
 
@@ -52,6 +55,8 @@ class Driver(Protocol):
     def event_class(self, payload): ...
     #   → {"kind": "content|reasoning|idle|error|ignore", "text": str, "error": obj}
     def assistant_content(self, message): ...
+    def assistant_reasoning(self, message): ...
+    #   → content[] 段数组里思考段拼文（无则 ""）；非流式 message.reasoning_content 用
     def token_counts(self, message): ...
     #   → {"input","written","cached","output","reasoning"} 或 None（4.6 算式入参）
     def finish_reason(self, message): ...  # → "stop" | "length" | ...

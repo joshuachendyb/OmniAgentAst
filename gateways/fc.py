@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-"""fc.py — 工具协议: 渲染进 prompt、解析调用块、按 Schema 转类型（纯函数）。
+"""fc.py — 向上翻译: 下游 CLI 回复 → 宿主 OpenAI tool_calls/文本/usage（纯函数）。
 
 编写人: 小欧    创建时间: 2026-11-05 08:31:00
-对齐: 5.2 注入协议 / 5.3 解析与类型转换 / 5.5 失败模式。
-
-要点:
-  - 协议头一字不改（5.2 原文; 实测 big-pickle 5/5 靠的就是这个形状, 5.4）;
-  - 参数清单用 JSON 而非嵌套 XML——JSON 保类型, 网关拿到的是 1 不是 "1"（5.2）;
-  - 解析容忍"块外说明文字"（5.3 要点 3: 正文与调用可并存）;
-  - 失败一律降级为文本（5.5 设计原则）, 只有空响应才由调用方判 502。
+编辑历史:
+  2026-11-05 小欧 - 按方向重排: 本文件收口全部向上翻译(调用块解析+类型转换+usage), 工具清单渲染与 1~5 段组装迁 mapping.py(向下)
+  2026-11-05 三堂会审整改: parse_calls 拆出 _one_block, _coerce_args 去冗余分支 -- 小欧
+  2026-11-05 14:40:16 组装序重排+协议文案重写+块内JSON容错抢救 -- 小欧
+  2026-11-05 界符改回模型训练同形的 <tool_call>…</tool_call>; 老版本 </call_out> 残收尾与未闭合残块做容错+清理 -- 小欧
+  2026-11-05 截断调用不再静默: 块内未闭合对象计入 protocol_invalid 并落 WARN -- 小欧
 """
 from __future__ import annotations
 
@@ -16,55 +15,36 @@ import json
 import re
 import uuid
 
-# 调用块界符（FIX L, 2026-11-05 小欧）。
-# 事故: 原界符 <tool_call> 与下游 opencode CLI 自带的文本工具解析器同名——模型输出
-# 的调用块被 CLI 抢先当成它的内置工具执行, 返回 "No tool named bash/grep/write",
-# 宿主永远拿不到调用, 表现为死循环读文件、从不落笔（见调试笔记第 6 条）。
-# 改用下游不识别的私有界符, 并保留旧界符解析做兼容。
-CALL_OPEN = "<<<OPENCLI_CALL>>>"
-CALL_CLOSE = "<<<END_OPENCLI_CALL>>>"
-BLOCK_RE = re.compile(re.escape(CALL_OPEN) + r"(.*?)" + re.escape(CALL_CLOSE), re.S)
-LEGACY_BLOCK_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
+from mapping import BLOCK_RE, CALL_OPEN    # 输出规格唯一定义在向下侧, 解析复用同一组 — 小欧 2026-11-05
 
-_PROTOCOL_HEADER = (
-    "【硬性约束，优先于其他一切要求】\n"
-    "你只能输出文字，不能执行命令、不能读写文件、不能调用任何内置工具。\n"
-    "需要外部信息时，只能用下面的「文本协议」表达调用意图，由外部系统代为执行。\n"
-)
+_FENCE_RE = re.compile(r"^[ \t]*```[^\n]*\n?|[ \t]*```[ \t]*$")   # 块内 JSON 被代码围栏包住
 
-_TAIL_TOOLS = ("\n\n需要外部信息时必须使用上文的文本协议；"
-               "不要使用任何其他调用格式（其他格式一律无效）。")
+# 复数包装（训练格式里多个调用包在 <tool_calls>…</tool_calls> 里）: 只剥包装壳, 不扩充单块规格
+# — 小欧 2026-11-05
+_WRAPPER_RE = re.compile(r"</?tool_calls\s*>", re.I)
 
 
-def render_tool_protocol(tools):
-    """tools 清单 → 协议头（5.2 格式逐行对齐）。
+def usage_from_counts(counts):
+    """驱动提供的原始计数 → OpenAI usage（缺失返回 None, 绝不填 0）。
 
-    每个工具: 编号 + 名称 + 描述 + 参数（json.dumps 保类型）。
+    prompt_tokens     = input + cached + written   （样例 125+7424+0 → 7549）
+    completion_tokens = output + reasoning         （样例 56+17 → 73）
+    计量字段的"名字与来源"是下游细节（驱动 token_counts 计）; "算式"是
+    上游计量事实（通用计）。下游把非缓存输入与缓存命中分开计量, 只取 input
+    会少报 98%——必须按算式相加。
     """
-    lines = [_PROTOCOL_HEADER.rstrip("\n"), "", "可用工具（仅下列，不得编造）："]
-    for i, tool in enumerate(tools or [], 1):
-        fn = tool.get("function") or {}
-        props = (fn.get("parameters") or {}).get("properties") or {}
-        desc = (fn.get("description") or "").strip() or "（无描述）"
-        lines.append("%d) %s —— %s" % (i, fn.get("name", ""), desc))
-        lines.append("   参数: %s" % json.dumps(props, ensure_ascii=False))
-    lines.append('调用格式（调用时只输出下面的块，块外不要有任何文字）：')
-    lines.append(CALL_OPEN + '{"name":"工具名","arguments":{参数名:值}}' + CALL_CLOSE)
-    return "\n".join(lines)
-
-
-def build_prompt(messages, tools):
-    """工具模式 prompt = 协议头 + 对话正文 + 工具模式尾部指令（4.3 尾部二选一）。
-
-    messages 已由 mapping.build_prompt 重拼; 这里补工具侧三件套。
-    tools 为空时调用方不应进入本函数（纯文本走 mapping.TAIL_PLAIN）。
-    """
-    base = messages if isinstance(messages, str) else str(messages or "")
-    return render_tool_protocol(tools) + "\n\n" + base + _TAIL_TOOLS
+    if not counts:
+        return None
+    prompt = int(counts["input"]) + int(counts["cached"]) + int(counts["written"])
+    completion = int(counts["output"]) + int(counts["reasoning"])
+    return {"prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "prompt_tokens_details": {"cached_tokens": int(counts["cached"])}}
 
 
 def _coerce(value, jtype):
-    """单值转类型; 失败保留原值交宿主校验（5.3: 宿主报 invalid_params, 模型可重试）。
+    """单值转类型; 失败保留原值交宿主校验（宿主报 invalid_params, 模型可重试）。
 
     boolean 的坑: bool("false") is True——必须显式按字面判。
     """
@@ -91,30 +71,168 @@ def _coerce_args(args, schema):
     for key, val in dict(args or {}).items():
         jtype = ((props.get(key) or {"type": ""}).get("type")) or ""
         if jtype in ("integer", "number", "boolean", "string"):
-            fixed = _coerce(val, jtype)
-            if fixed != val:
-                out[key] = fixed
-            else:
-                out[key] = val
-                if jtype in ("integer", "number"):
-                    warns.append("参数 %s 声明 %s 但值不可转（%r），保留原值交宿主校验"
-                                 % (key, jtype, val))
-        else:
-            out[key] = val
+            val = _coerce(val, jtype)
+        out[key] = val
+        if jtype in ("integer", "number") and not isinstance(val, (int, float)):
+            warns.append("参数 %s 声明 %s 但值不可转（%r），保留原值交宿主校验"
+                         % (key, jtype, val))
     return out, warns
 
 
-def parse_calls(answer, tools):
-    """模型输出 → {"calls", "content", "invalid", "warns"}（5.3 全流程）。
+def _brace_end(frag, start):
+    """从 start 处的 '{' 起做字符串感知配对。
 
-    五种失败形态的处置（5.5, 全部不抛错）:
-      不使用协议 / 无块    → calls=[] content=正文（调用方放行, 不报 502）
-      块内 JSON 非法       → 丢该块 + WARN + invalid
+    返回 (配对 '}' 的下标或 -1, 未闭合层数, 是否停在字符串内) — 小欧 2026-11-05
+    """
+    depth, in_str, esc = 0, False, False
+    for j in range(start, len(frag)):
+        ch = frag[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return j, 0, False
+    return -1, depth, in_str
+
+
+def _objects(fragment):
+    """抠出全部完整 JSON 对象 → (列表, 截断未闭合数); 截断的绝不执行但要计数 — 小欧 2026-11-05"""
+    frag = fragment or ""
+    out, pos, dropped = [], 0, 0
+    while True:
+        start = frag.find("{", pos)
+        if start < 0:
+            return out, dropped
+        end, _depth, _in_str = _brace_end(frag, start)
+        if end < 0:
+            dropped += 1                # 写了一半的调用: 丢掉, 但不能静默
+            pos = start + 1             # 跳过它的 '{', 后面完整对象照收
+            continue
+        try:
+            obj = json.loads(frag[start:end + 1])
+        except ValueError:
+            pos = start + 1             # 这段不是 JSON, 从下一个 { 再试
+            continue
+        if isinstance(obj, dict) and obj:
+            out.append(obj)
+        pos = end + 1
+
+
+def _loads_balanced(fragment):
+    """块内 JSON 容错抢救: 括号配对完整提取 + 截断修补 — 小欧 2026-11-05
+
+    步骤1字符串感知配对（引号内大括号不计深度）截取完整 JSON;
+    步骤2未配平时按扫描终态截断修补: 补右括号至未闭合层数, 停在字符串内补闭引号
+    （吸收宿主 json_utils 截断修补思想, 但按嵌套深度补齐——老实现只逐个试尾部）。
+    返回 dict 或 None。
+    """
+    frag = (fragment or "").strip()
+    start = frag.find("{")
+    if start < 0:
+        return None
+    end, depth, in_str = _brace_end(frag, start)
+    if end >= 0:
+        try:
+            obj = json.loads(frag[start:end + 1])
+            return obj if isinstance(obj, dict) and obj else None
+        except ValueError:
+            return None
+    # 未配平 = 写了一半: 补右括号至未闭合层数, 停在字符串内先补闭引号
+    base = frag[start:] + ('"' if in_str else "")
+    for pre in ("", '"', "]"):
+        for k in (depth, depth + 1):
+            try:
+                obj = json.loads(base + pre + "}" * k)
+                return obj if isinstance(obj, dict) and obj else None
+            except ValueError:
+                continue
+    return None
+
+
+def _flatten(objs):
+    """信封/原生形状摊平: {"tool_calls":[…]}、{"calls":[…]}、{"function":{…}} → 调用对象
+    — 小欧 2026-11-05
+    """
+    out = []
+    for obj in objs:
+        items = []
+        for key in ("tool_calls", "calls"):
+            if isinstance(obj.get(key), list):
+                items = [x for x in obj[key] if isinstance(x, dict)]
+                break
+        if items:
+            out.extend(_flatten(items))     # 信封可能还套信封
+            continue
+        if not obj.get("name") and isinstance(obj.get("function"), dict):
+            obj = obj["function"]           # 原生 tool_calls 形状: name/arguments 在 function 里
+        out.append(obj)
+    return out
+
+
+def _one_block(raw, known):
+    """单个调用块 → (calls, invalid 增量, warns); 块内允许多个工具连续排布。— 小欧 2026-11-05"""
+    warns = []
+    raw = _FENCE_RE.sub("", raw or "").strip()      # 兼容: 剥掉块内多余代码围栏
+    objs, dropped = _objects(raw)                   # 一个块塞多个 tool: 逐个收
+    if not objs:
+        obj = _loads_balanced(raw)                  # 括号配对先抢救再丢
+        if not obj:
+            return [], 1, ["调用块 JSON 非法，已丢弃（protocol_invalid 计数）"]
+        objs, dropped = [obj], 0                    # 抢救成功: 截断不算丢
+        warns.append("块内 JSON 非法，已按括号配对抢救成功")
+    calls, invalid = [], dropped
+    if dropped:
+        warns.append("块内 %d 处 JSON 未闭合，已丢弃（protocol_invalid 计数）" % dropped)
+    for obj in _flatten(objs):
+        name = obj.get("name")
+        if not name:
+            invalid += 1
+            warns.append("调用块缺 name，已丢弃")
+            continue
+        if name not in known:
+            invalid += 1
+            warns.append("调用工具名 %r 不在清单内，已丢弃（防编造工具）" % name)
+            continue
+        raw_args = obj.get("arguments")
+        if raw_args is None:
+            raw_args = {}                # 缺 arguments 视为空参, 交宿主校验必填
+        elif not isinstance(raw_args, dict):
+            invalid += 1
+            warns.append("arguments 不是对象（%s），已丢块" % type(raw_args).__name__)
+            continue
+        args, w = _coerce_args(raw_args, known[name])
+        warns.extend(w)
+        calls.append({"id": "call_" + uuid.uuid4().hex[:8],
+                      "type": "function",
+                      "function": {"name": name,
+                                   "arguments": json.dumps(args, ensure_ascii=False)}})
+    return calls, invalid, warns
+
+
+def parse_calls(answer, tools):
+    """模型输出 → {"calls", "content", "invalid", "warns"}。
+
+    失败形态一律不抛错:
+      不使用协议 / 无块    → calls=[] content=正文（调用方放行, 空响应才判 502）
+      块内 JSON 非法       → 先括号配对+截断抢救, 抢不回才丢, WARN + invalid
+      块内对象未闭合       → 完整的那几个照收, 截断的丢弃, WARN + invalid（绝不执行半截参数）
       name 编造            → 丢该块 + WARN + invalid
       类型转换失败         → 保原值 + WARN（交宿主校验）
       全部块失败但有正文    → 降级为纯文本
-      无块且无正文（空响应）→ content="", 调用方据此 502 server（5.5）
+      无块且无正文（空响应）→ content="", 调用方据此 502 server
     生成 tool_calls[]: id=call_<8hex>, function.arguments 必须是合法 JSON 字符串。
+    一个块里连续排多个工具时逐个提取成多条 tool_calls; <tool_calls> 复数包装只剥壳。
     """
     known = {}
     for tool in tools or []:
@@ -123,32 +241,25 @@ def parse_calls(answer, tools):
             known[fn["name"]] = fn.get("parameters") or {}
     calls, outs, invalid, warns = [], [], 0, []
     pos = 0
-    answer = answer or ""
-    # 新界符 + 旧界符都收（FIX L 兼容; 旧界符可能已被下游吞掉, 能到这里就更要认）
-    matches = sorted(list(BLOCK_RE.finditer(answer)) + list(LEGACY_BLOCK_RE.finditer(answer)),
-                     key=lambda m: m.start())
-    for m in matches:
+    answer = _WRAPPER_RE.sub("", answer or "")   # 剥掉 <tool_calls> 复数包装壳
+    for m in BLOCK_RE.finditer(answer):
         outs.append(answer[pos:m.start()].strip())
         pos = m.end()
-        try:
-            obj = json.loads(m.group(1).strip())
-            if not isinstance(obj, dict) or not obj.get("name"):
-                raise ValueError("missing name")
-        except ValueError:
-            invalid += 1
-            warns.append("调用块 JSON 非法，已丢弃（protocol_invalid 计数）")
-            continue
-        name = obj.get("name")
-        if name not in known:
-            invalid += 1
-            warns.append("调用工具名 %r 不在清单内，已丢弃（防编造工具）" % name)
-            continue
-        args, w = _coerce_args(obj.get("arguments") or {}, known[name])
+        found, bad, w = _one_block(m.group(1), known)
+        calls.extend(found)
+        invalid += bad
         warns.extend(w)
-        calls.append({"id": "call_" + uuid.uuid4().hex[:8],
-                      "type": "function",
-                      "function": {"name": name,
-                                   "arguments": json.dumps(args, ensure_ascii=False)}})
-    outs.append(answer[pos:].strip())
+    # 未闭合残块（老版本漏到 UI 的 <tool_call>{… 无收尾）: 先按截断抢救, 抢不回就整段丢弃,
+    # 绝不把界符原样透给宿主 UI — 小欧 2026-11-05
+    tail = answer[pos:]
+    cut = tail.find(CALL_OPEN)
+    if cut >= 0:
+        outs.append(tail[:cut].strip())
+        found, bad, w = _one_block(tail[cut + len(CALL_OPEN):], known)
+        calls.extend(found)
+        invalid += bad
+        warns.extend(w)
+    else:
+        outs.append(tail.strip())
     content = "\n".join(o for o in outs if o).strip()
     return {"calls": calls, "content": content, "invalid": invalid, "warns": warns}

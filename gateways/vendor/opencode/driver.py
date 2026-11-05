@@ -5,6 +5,9 @@ r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点, 1
 对齐: 6.3.3–6.3.7（定位/准入/RPC）; 7.1/7.3/7.4（时序/定向查询/事件流）;
      4.2/4.6/4.8.2（模型/计量/finish）; 4.7（错误映射）; 8.4/8.6（隔离/脱敏）
 换第二案 = 新增 vendor\<案>\driver.py 实现 gateways\driver.py 的同名接口。
+
+编辑历史:
+  2026-11-05 实现 assistant_reasoning: content[] 里 type=reasoning 或带 reasoning 字段的段拼文 -- 小欧
 """
 from __future__ import annotations
 
@@ -202,6 +205,15 @@ class Driver:
     def assistant_content(self, message):
         return "\n".join((part.get("text") or "") for part in
                          (message.get("content") or []) if part.get("type") == "text")
+
+    def assistant_reasoning(self, message):
+        """思考段拼文（content[] 里 reasoning 型段; 下游混在文字段时用 reasoning 字段兜底）— 小欧 2026-11-05"""
+        parts = []
+        for part in (message.get("content") or []):
+            ptype = str(part.get("type") or "")
+            if ptype == "reasoning" or part.get("reasoning"):
+                parts.append(part.get("reasoning") or part.get("text") or "")
+        return "\n".join(s for s in parts if s)
 
     def token_counts(self, message):
         tokens = message.get("tokens")
