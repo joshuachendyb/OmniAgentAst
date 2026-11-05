@@ -8,6 +8,7 @@ r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点）
   2026-11-05 实现 assistant_reasoning: content[] 里 reasoning 型段拼文 -- 小欧
   2026-11-05 实现类更名 OpenCodeDriver 并导出 DRIVER_CLASS; 报文构造改调 bodies.py 公有函数 -- 小欧
   2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
+  2026-11-05 400 分流: 仅 context 类归 context-too-long, 其余归 bad-request; released 非数值不再崩 -- 小欧
 """
 from __future__ import annotations
 
@@ -236,7 +237,7 @@ class OpenCodeDriver:
             items.append({
                 "id": mid,
                 "object": "model",
-                "created": int(released // 1000) if released else 0,
+                "created": int(released // 1000) if isinstance(released, (int, float)) and released else 0,
                 "owned_by": self.provider_id,
                 "name": item.get("name") or mid,
                 "context_length": limit.get("context"),
@@ -268,13 +269,16 @@ class OpenCodeDriver:
         if "no-route" in etype or status == 404:
             return dict(base, status=404, type="model-not-found",
                         message="模型不存在或未开放")
-        if "context" in etype or status == 400:
+        if "context" in etype.lower() or "context" in msg.lower():
             return dict(base, status=400, type="context-too-long",
                         message="上下文过长")
+        if status == 400:
+            return dict(base, status=400, type="bad-request",
+                        message="下游拒绝了该请求（参数或内容不被接受）")
         if status == 401 or "auth" in etype:
             # 下游 Basic 鉴权失败是网关内部问题, 包 502 而非透传 401 — 小欧 2026-11-05
             return dict(base, status=502, type="server",
-                        message="网关内部错误（下游鉴权失败），请查看 logs\\cli-out.log")
+                        message="网关内部错误（下游鉴权失败），请查看 logs 下 cli-out-i*.log")
         if "timeout" in etype or status == 504:
             return dict(base, status=504, type="timeout", message="模型响应超时")
         if "network" in etype or status in (502, 503):

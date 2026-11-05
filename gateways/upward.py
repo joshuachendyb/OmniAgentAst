@@ -11,6 +11,7 @@
   2026-11-05 更名 upward.py: 还管 usage 计量与正文抽取, 与 mapping(向下)成对 -- 小欧
   2026-11-05 复数壳内裸对象原被剥标记后当正文泄漏; 改壳内先按块解析再清标记 -- 小欧
   2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
+  2026-11-05 _coerce_args 对布尔型/非对象 properties 值不再崩(与 mapping 同一守卫口径) -- 小欧
 """
 from __future__ import annotations
 
@@ -62,9 +63,11 @@ def _coerce(value, jtype):
 def _coerce_args(args, schema):
     """按 tools[i].function.parameters 逐参数转类型。返回 (args, warns)。— 小欧 2026-11-05"""
     out, warns = {}, []
-    props = (schema or {}).get("properties") or {}
+    props = schema.get("properties") if isinstance(schema, dict) else None
+    props = props if isinstance(props, dict) else {}
     for key, val in dict(args or {}).items():
-        jtype = ((props.get(key) or {"type": ""}).get("type")) or ""
+        spec = props.get(key)
+        jtype = (spec.get("type") if isinstance(spec, dict) else "") or ""
         if jtype in ("integer", "number", "boolean", "string"):
             val = _coerce(val, jtype)
         out[key] = val

@@ -11,6 +11,7 @@
   2026-11-05 命名对齐: _collect→_split_messages, render_tool_list→_render_tool_list -- 小欧
   2026-11-05 三处形状防御: 消息项/工具项/function 非 dict 跳过, image_url 非对象按空 -- 小欧
   2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
+  2026-11-05 build_prompt 增第三元 warns: 远端图片被忽略时不再静默, 由调用方落 WARN -- 小欧
 """
 from __future__ import annotations
 
@@ -106,8 +107,8 @@ def _render_tool_list(tools):
 
 
 # —— 消息内容收口: content → 纯文本, data: 图片转附件（http(s) 不下载, 防 SSRF）——
-def _content_text(content, attachments):
-    """content → 文本: 字符串原样, 数组取 text 段, data: 图片追加进 attachments。— 小欧 2026-11-05"""
+def _content_text(content, attachments, warns):
+    """content → 文本: 字符串原样, 数组取 text 段, data: 图片进 attachments, 远端图片记 warn。— 小欧 2026-11-05"""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -123,6 +124,8 @@ def _content_text(content, attachments):
                 if url.startswith("data:"):
                     attachments.append({"uri": url,
                                         "name": "image-%d" % (len(attachments) + 1)})
+                elif url:
+                    warns.append("忽略远端图片（不下载, 防 SSRF）: %s" % url[:120])
         return "\n".join(p for p in parts if p)
     return "" if content is None else str(content)
 
@@ -137,14 +140,14 @@ def _render_calls(body, calls):
 
 
 # —— 消息回放: 1 段收 system 原文, 3 段回放各轮对话 ——
-def _split_messages(messages, attachments):
+def _split_messages(messages, attachments, warns):
     """宿主 messages → (第 1 段 system 原文列表, 第 3 段对话行列表)。— 小欧 2026-11-05"""
     sys_lines, conv = [], []
     for m in messages or []:
         if not isinstance(m, dict):
             continue                    # 坏形状跳过（入口已校验; 纯函数单独调用也不炸）
         role = m.get("role") or ""
-        body = _content_text(m.get("content"), attachments)
+        body = _content_text(m.get("content"), attachments, warns)
         if role == "system":
             sys_lines.append(body)
         elif role in ("tool", "function"):
@@ -159,10 +162,10 @@ def _split_messages(messages, attachments):
 
 # —— 全 prompt 拼装点（向下翻译唯一入口）——
 def build_prompt(messages, tools):
-    """向下翻译: 宿主 messages(+tools) → 下游单条 prompt; 返回 (prompt, attachments)。
-    tools 为空走纯文本(不追加尾句)。— 小欧 2026-11-05"""
-    attachments = []
-    sys_lines, conv = _split_messages(messages, attachments)
+    """向下翻译: 宿主 messages(+tools) → (prompt, attachments, warns)。
+    tools 为空走纯文本(不追加尾句); warns 收集被忽略的入参, 由调用方落日志。— 小欧 2026-11-05"""
+    attachments, warns = [], []
+    sys_lines, conv = _split_messages(messages, attachments, warns)
     sys_text = "\n".join(s for s in sys_lines if s)
     head = ("【系统指令】%s（严格遵守系统命令）" % sys_text) if sys_text else ""
     conv_text = "\n".join(conv)
@@ -172,4 +175,4 @@ def build_prompt(messages, tools):
         _render_tool_list(tools) if tools else "",   # 第 2 段 工具清单
         hist,                               # 第 3 段 对话历史 + 第 4 段 本轮任务压轴
     )
-    return "\n\n".join(p for p in parts if p) + (_TAIL_TOOLS if tools else ""), attachments
+    return "\n\n".join(p for p in parts if p) + (_TAIL_TOOLS if tools else ""), attachments, warns

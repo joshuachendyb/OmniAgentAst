@@ -16,10 +16,14 @@
   2026-11-05 read 超时抬到静默窗之上; 启动清运过期日志; ordinal 缺失按哨兵键去重 -- 小欧
   2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
   2026-11-05 运行期文案去节号: 413 体积上限、删会话失败 WARN -- 小欧
+  2026-11-05 预热失败全量收尾(取消取事件/退订/删会话/关连接); 流式异常统一落日志并计失败 -- 小欧
+  2026-11-05 失败重启传入出错实例; 会话 id 形状守卫; 429 带 Retry-After; 候选去路径; atexit 收尾 -- 小欧
 """
 from __future__ import annotations
 
 import asyncio
+import atexit
+import contextlib
 import hmac
 import json
 import os
@@ -36,7 +40,7 @@ import errors
 import mapping
 import upward
 import streamer
-from cli_manager import (CliManager, SESSION_PERMISSIONS, FROZEN,
+from cli_manager import (CliManager, SESSION_PERMISSIONS,
                          runtime_dir, preflight)
 from errors import GatewayError
 
@@ -112,10 +116,13 @@ def _shape_problem(payload):
 
 
 def _mapped_error(mapped):
-    """驱动映射 dict → GatewayError; 429 free-limit 顺手记内部冷却 — 小欧 2026-11-05"""
+    """驱动映射 dict → GatewayError; 429 free-limit 顺手记内部冷却并给短 Retry-After。— 小欧 2026-11-05"""
     if mapped["status"] == 429:
         _MANAGER.note_cooldown(mapped["internal_cooldown_ms"])
-    return GatewayError(mapped["status"], mapped["type"], mapped["message"], mapped["detail"])
+    retry_after_s = (mapped["internal_cooldown_ms"] / 1000.0
+                     if mapped["status"] == 429 else None)
+    return GatewayError(mapped["status"], mapped["type"], mapped["message"],
+                        mapped["detail"], retry_after_s)
 
 
 def _check_token(request):
@@ -174,10 +181,13 @@ def _boot():
     return manager
 
 
-@APP.on_event("shutdown")
 def _shutdown():
+    """网关退出 → 全部下游 terminate; 挂 atexit, --lifespan off 或不经 lifespan 时同样执行。— 小欧 2026-11-05"""
     if _MANAGER is not None:
-        _MANAGER.shutdown()              # 网关退出 → 全部下游 terminate — 小欧 2026-11-05
+        _MANAGER.shutdown()
+
+
+atexit.register(_shutdown)
 
 
 @APP.get("/healthz")
@@ -221,15 +231,17 @@ def list_models(request: Request):
         _MANAGER.note_success()          # 成功即清零失败计数 — 小欧 2026-11-05
         return {"object": "list", "data": items}
     except GatewayError as exc:
-        _MANAGER.on_downstream_failure(exc.etype)
+        _MANAGER.on_downstream_failure(exc.etype, inst)   # 出错实例必停, 不再跳过 busy — 小欧 2026-11-05
         return _gateway_error_response(exc)
     except httpx.HTTPError as exc:    # 传输层异常归一 502 network — 小欧 2026-11-05
-        _MANAGER.on_downstream_failure("network")              # 原样穿透会成 500 裸 traceback
+        _MANAGER.on_downstream_failure("network", inst)        # 原样穿透会成 500 裸 traceback
         return _err(502, "network", "下游连接级失败（连接/超时）", repr(exc)[:300])
     finally:
         if client is not None:
             client.close()
         _MANAGER.release(inst)
+
+
 @APP.post("/v1/chat/completions")
 async def chat(request: Request):
     """/v1/chat/completions。分流: stream × tools 四象限;
@@ -265,7 +277,9 @@ async def chat(request: Request):
     tools = payload.get("tools") or []
     # 向下翻译唯一入口: 工具模式 1系统→2工具清单→3对话(+4压轴)→5行动提醒;
     # 纯文本 1系统→3/4对话（不追加任何尾句）— 小欧 2026-11-05
-    prompt, attachments = mapping.build_prompt(messages, tools)
+    prompt, attachments, warns = mapping.build_prompt(messages, tools)
+    for warn in warns:                    # 远端图片等被忽略的入参必须留痕, 不许静默 — 小欧 2026-11-05
+        _log("WARN " + warn)
 
     try:
         _MANAGER.ensure_not_cooling()         # 只拦调模型; 模型发现不耗额度 — 小欧 2026-11-05
@@ -282,16 +296,17 @@ async def chat(request: Request):
             return resp
         return await _complete_once(inst, payload, prompt, attachments, tools)
     except GatewayError as exc:
-        await asyncio.to_thread(_MANAGER.on_downstream_failure, exc.etype)  # 计数达阈值会 stop 进程
+        await asyncio.to_thread(_MANAGER.on_downstream_failure, exc.etype, inst)
         return _gateway_error_response(exc)
     except httpx.HTTPError as exc:    # 提交前的传输层异常归一信封 — 小欧 2026-11-05
-        await asyncio.to_thread(_MANAGER.on_downstream_failure, "network")
+        await asyncio.to_thread(_MANAGER.on_downstream_failure, "network", inst)
         return _err(502, "network", "下游连接级失败（连接/超时）", repr(exc)[:300])
     finally:
         if not handed_off:
             _MANAGER.release(inst)
-# —— 非流式整包 ——
 
+
+# —— 非流式整包 ——
 async def _complete_once(inst, payload, prompt, attachments, tools):
     """一次完整下游往返: (0,0)/(0,1) 直接返, (1,1) 由 _replay_tools_as_sse 复用它再切帧。
     全异步: /wait 最长 900 s, 同步 httpx 会把事件循环整段挂住。— 小欧 2026-11-05"""
@@ -313,7 +328,7 @@ async def _complete_once(inst, payload, prompt, attachments, tools):
         if resp.status_code >= 300:
             raise GatewayError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
-        sid = resp.json()["data"]["id"]   # 网关自建会话, 不复用不透传 — 小欧 2026-11-05
+        sid = _session_id(resp, "建会话")   # 网关自建会话, 不复用不透传 — 小欧 2026-11-05
 
         prompt_body = _MANAGER.driver.prompt_body(prompt, attachments)
         resp = await client.post(_MANAGER.driver.path_prompt(sid), json=prompt_body,
@@ -388,8 +403,9 @@ async def _complete_once(inst, payload, prompt, attachments, tools):
         if client is not None:
             await _cleanup_session_async(client, sid)   # finally 必达 — 小欧 2026-11-05
             await client.aclose()
-# —— 流式（延迟提交 + 转发表 + 工具模式整包） ——
 
+
+# —— 流式（延迟提交 + 转发表 + 工具模式整包） ——
 async def _replay_tools_as_sse(inst, payload, prompt, attachments, tools):
     """(stream=1, tools) 象限: 整包解析后一次性发帧, 不边流边判。— 小欧 2026-11-05"""
     base = await _complete_once(inst, payload, prompt, attachments, tools)
@@ -417,6 +433,15 @@ async def _replay_tools_as_sse(inst, payload, prompt, attachments, tools):
     return _sse_response(gen())
 
 
+def _session_id(resp, what):
+    """下游响应形状守卫: 非 JSON 或缺 data.id 一律 502, 不让 KeyError 变成裸 500。— 小欧 2026-11-05"""
+    try:
+        return str(resp.json()["data"]["id"])
+    except (ValueError, KeyError, TypeError):
+        raise GatewayError(502, "server", "下游响应形状异常（%s）" % what,
+                           resp.text[:300]) from None
+
+
 async def _check_model_exists(client, model):
     """未知模型 → 404 model-not-found 的本地判定。
     下游对未知模型可能静默给空响应, 故用驱动 path_models+models_from 本地比对一次。— 小欧 2026-11-05"""
@@ -424,7 +449,11 @@ async def _check_model_exists(client, model):
     if resp.status_code != 200:
         return GatewayError(502, "server", "模型发现失败 HTTP %d" % resp.status_code,
                          resp.text[:500])
-    items, _skipped = _MANAGER.driver.models_from(resp.json())
+    try:
+        discovered = resp.json()
+    except ValueError:
+        return GatewayError(502, "server", "模型发现响应不是 JSON", resp.text[:300])
+    items, _skipped = _MANAGER.driver.models_from(discovered)
     if str(model or "") not in {it["id"] for it in items}:
         return GatewayError(404, "model-not-found",
                          "模型 %r 不存在或未开放" % str(model or ""))
@@ -501,6 +530,8 @@ def _error_of(info):
     if info["kind"] == "error":
         return _mapped_error(_MANAGER.driver.map_error(info["error"]))
     return None
+
+
 async def _stream_text(inst, payload, prompt, attachments):
     """(stream=1, tools=0) 象限: 延迟提交状态机。
     时序: 订阅先行 → 建会话 → 发消息 → 首帧前不提交头 → 首帧后提交 200 → 静默判据 → 末帧。— 小欧 2026-11-05"""
@@ -525,7 +556,7 @@ async def _stream_text(inst, payload, prompt, attachments):
         if resp.status_code >= 300:
             raise GatewayError(502, "server", "建会话失败 HTTP %d" % resp.status_code,
                             resp.text[:500])
-        sid = resp.json()["data"]["id"]
+        sid = _session_id(resp, "建会话")
 
         # 订阅必须先行于发消息: 建→发→订阅会丢掉全部 part 事件 → 流式无内容可转。
         # iter_events 是惰性生成器, 此处置入即完成订阅排期。— 小欧 2026-11-05
@@ -565,17 +596,14 @@ async def _stream_text(inst, payload, prompt, attachments):
                 first = frames
                 if info["kind"] in ("content", "final"):
                     out_chars += len(info.get("text") or "")
-    except GatewayError:
-        await _aclose(events)
-        if ev_task is not None and not ev_task.done():   # 弃任务前先取消 — 小欧 2026-11-05
-            ev_task.cancel()
-        if aclient is not None:          # client 已建过 → 就地清理会话与连接 — 小欧 2026-11-05
-            await _cleanup_session_async(aclient, sid)
-            await aclient.aclose()
-        raise                                            # 状态码在提交前可改
+    except (Exception, asyncio.CancelledError):
+        with contextlib.suppress(BaseException):     # 清理失败也要把原始异常抛给上层
+            await _abort_warmup(aclient, sid, events, ev_task)
+        raise                                        # 状态码在提交前可改
 
     async def body():
         nonlocal out_chars
+        fail = None
         try:
             yield streamer.first_frame()                 # 已过 warm-up: 首帧即提交 200 — 小欧 2026-11-05
             yield first
@@ -608,13 +636,25 @@ async def _stream_text(inst, payload, prompt, attachments):
                     if usage else "null", time.time() - started))
             inst.touch()                                 # 重置任务窗口 — 小欧 2026-11-05
             _MANAGER.note_success()                      # 成功收口 → 计数清零/退避复位 — 小欧 2026-11-05
+        except GatewayError as exc:      # 504 静默超时等: 已提交响应头, 只能记账收口
+            _log_error(exc, "（响应头已提交, 收口流）")
+            fail = exc
         except httpx.HTTPError as exc:   # 已提交响应头 → 只能记日志收口 — 小欧 2026-11-05
-            _log_error(GatewayError(502, "network", "下游连接中断/超时", repr(exc)[:200]),
-                       "（响应头已提交, 收口流）")
+            if isinstance(exc, httpx.TimeoutException):
+                fail = GatewayError(504, "timeout", "模型响应超时（流式读超时）",
+                                    repr(exc)[:200])
+            else:
+                fail = GatewayError(502, "network", "下游连接中断/超时", repr(exc)[:200])
+            _log_error(fail, "（响应头已提交, 收口流）")
         finally:
-            await _aclose(events)                        # [DONE] 后即退订 — 小欧 2026-11-05
-            await _cleanup_session_async(aclient, sid)
-            await aclient.aclose()
+            try:
+                await _aclose(events)                    # [DONE] 后即退订 — 小欧 2026-11-05
+                await _cleanup_session_async(aclient, sid)
+                await aclient.aclose()
+            finally:
+                if fail is not None:     # 先收完连接再计失败: 重启会杀进程, 免得删会话刷 WARN
+                    await asyncio.to_thread(_MANAGER.on_downstream_failure,
+                                            fail.etype, inst)
 
     return _sse_response(body(), on_close=lambda: _MANAGER.release(inst))
 
@@ -629,6 +669,20 @@ async def _aclose(agen):
             await agen.aclose()
         except Exception:
             pass
+
+
+async def _abort_warmup(aclient, sid, events, ev_task):
+    """预热失败收尾: 先取消在途取事件, 再退订 → 删会话 → 关连接; 收到取消也要走完。— 小欧 2026-11-05"""
+    if ev_task is not None and not ev_task.done():
+        ev_task.cancel()
+    if ev_task is not None:
+        # 等它真正结束, 否则 aclose 会撞"generator already running"
+        with contextlib.suppress(BaseException):
+            await ev_task
+    await _aclose(events)
+    if aclient is not None:
+        await _cleanup_session_async(aclient, sid)
+        await aclient.aclose()
 
 
 async def _cleanup_session_async(aclient, sid):

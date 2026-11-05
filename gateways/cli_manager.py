@@ -12,6 +12,8 @@ r"""cli_manager.py — 下游进程生命周期框架（方言细节全部经驱
   2026-11-05 启动失败路径补关日志句柄; 清扫线程加异常护栏; 准入缓存存绝对路径 -- 小欧
   2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
   2026-11-05 运行期文案与行内注释去节号: preflight 启动拒绝原因、探针/候选注释 -- 小欧
+  2026-11-05 重启按实例收口: 出错实例必停、空转不计重启; 停/取/释放同锁 + stopping 过渡防回收竞态 -- 小欧
+  2026-11-05 队列等待封顶 queue_wait_max_s; 下游日志按实例分文件并做 8 MB 轮转; 候选去绝对路径 -- 小欧
 """
 from __future__ import annotations
 
@@ -284,6 +286,18 @@ def _read_password(proc, timeout, log_file):
     return holder["password"]
 
 
+LOG_MAX_BYTES = 8 * 1024 * 1024        # 下游 stdout 日志单文件上限, 超限滚成 .1 — 小欧 2026-11-05
+
+
+def _rotate_log(path):
+    """单文件上限轮转: 超限把旧内容滚到 <path>.1（只留一份历史）, 失败不阻断启动。— 小欧 2026-11-05"""
+    try:
+        if os.path.getsize(path) >= LOG_MAX_BYTES:
+            os.replace(path, path + ".1")
+    except OSError:
+        pass
+
+
 def _probe(exe, config):
     """能力探针: 起服务 → stdout 捕获密码 → 驱动 ready() → 立即终止。
     探针端口避开池段, 进程不复用为服务进程, 返回 (ok, reason)。— 小欧 2026-11-05"""
@@ -291,7 +305,9 @@ def _probe(exe, config):
                        int(config["port_base"]) + int(config["port_span"])))
     port = _free_port_excluding(banned)
     os.makedirs(str(config.get("machine_root")), exist_ok=True)   # probe.log 落点先建
-    log_file = open(os.path.join(str(config.get("machine_root")), "probe.log"), "ab")
+    log_path = os.path.join(str(config.get("machine_root")), "probe.log")
+    _rotate_log(log_path)
+    log_file = open(log_path, "ab")
     proc = None
     try:
         proc = _spawn(exe, port, _env_for("probe"), SANDBOX_CWD, log_file)
@@ -351,7 +367,7 @@ def resolve_admitted_cli(config):
 
 class Instance:
     """池内一个实例 = 1 下游进程 + 1 端口 + 1 套按驱动隔离的数据目录。
-    状态机: stopped → starting → ready ⇄ busy → stopped。— 小欧 2026-11-05"""
+    状态机: stopped → starting → ready ⇄ busy → stopping → stopped。— 小欧 2026-11-05"""
 
     def __init__(self, index, port, config):
         self.index, self.port, self.config = index, port, config
@@ -379,7 +395,9 @@ class Instance:
             exe = resolve_admitted_cli(self.config)
             logs_dir = os.path.join(runtime_dir(), "logs")
             os.makedirs(logs_dir, exist_ok=True)
-            log_file = open(os.path.join(logs_dir, "cli-out.log"), "ab")
+            log_path = os.path.join(logs_dir, "cli-out-i%d.log" % self.index)
+            _rotate_log(log_path)                     # 按实例分文件: 归属可辨 + 可轮转
+            log_file = open(log_path, "ab")
             self.log_file = log_file                  # 先挂上: 失败路径靠 _close_log 必达
             env = _env_for("i%d" % self.index)         # 出生前装配, 隔离目录由驱动给 — 小欧 2026-11-05
             self.proc = _spawn(exe, self.port, env, SANDBOX_CWD, log_file)
@@ -420,15 +438,19 @@ class Instance:
         self.last_request_at = time.time()
         self.requests_done += 1
 
-    def stop(self):
-        """幂等停机（空闲/老化回收与停服共用）。busy 期间绝不调用。— 小欧 2026-11-05"""
+    def stop(self, force=False):
+        """幂等停机; busy 只有 force 才停。锁内先置 stopping, 终止期间绝不被 acquire 取走。— 小欧 2026-11-05"""
         with self.lock:
-            if self.state == "stopped":
-                return
+            if self.state in ("stopped", "stopping"):
+                return False
+            if self.state == "busy" and not force:
+                return False
+            self.state = "stopping"
         _terminate(self.proc)
         self.proc = None
         self._close_log()
         self._reset("stopped")
+        return True
 
     def _close_log(self):
         """关闭下游 stdout 日志句柄; 幂等（stop 与 start 失败路径共用）— 小欧 2026-11-05"""
@@ -518,6 +540,14 @@ class CliManager:
             except Exception as exc:      # 单轮异常不得杀线程, 否则清扫静默停摆 — 小欧 2026-11-05
                 print("[reaper] 本轮清扫异常, 已跳过: %r" % (exc,), file=sys.stderr)
 
+    def _stop_instance(self, inst, force=False):
+        """停实例并唤醒排队者: 只有 state 回到 stopped, 队列才看得到这份可用容量。— 小欧 2026-11-05"""
+        stopped = inst.stop(force=force)
+        if stopped:
+            with self.cond:
+                self.cond.notify_all()
+        return stopped
+
     def _reap_once(self):
         """单轮: 老化/请求数优先于空闲回收; busy 的实例一律跳过。— 小欧 2026-11-05"""
         cfg = self.config
@@ -527,40 +557,48 @@ class CliManager:
             if inst.state == "busy":
                 continue            # busy 绝不杀（停机只发生在 ready）— 小欧 2026-11-05
             if inst.is_stale(int(cfg["max_age_seconds"]), int(cfg["max_requests"])):
-                inst.stop()         # 老化/请求数超限 — 小欧 2026-11-05
+                self._stop_instance(inst)         # 老化/请求数超限 — 小欧 2026-11-05
             elif inst.is_idle_beyond(gap):
-                inst.stop()         # 空闲回收（窗口等停机）— 小欧 2026-11-05
+                self._stop_instance(inst)         # 空闲回收（窗口等停机）— 小欧 2026-11-05
 
     def shutdown(self):
         """网关退出: 全部实例 terminate（本模块是下游唯一责任人）。— 小欧 2026-11-05"""
         self.stop_flag = True
         for inst in self.instances:
-            inst.stop()
+            inst.stop(force=True)
 
     # --- 池与队列（并发与背压 / 冷却） ---
 
     def acquire(self):
-        """取空闲实例; 池满排队（≤ queue_max）。
-        队全满抛 gateway-busy, Retry-After 给短值; 冷却不在此判。— 小欧 2026-11-05"""
+        """取空闲实例; 池满排队（≤ queue_max）, 排满 queue_wait_max_s 抛 gateway-busy。— 小欧 2026-11-05"""
+        wait_max = float(self.config.get("queue_wait_max_s", 1800))
+        deadline = time.time() + wait_max
         with self.cond:
             while True:
                 for inst in self.instances:
-                    if inst.state in ("stopped", "ready"):
-                        inst.state = "busy"
-                        return inst
+                    with inst.lock:            # 与 stop() 的 busy 判定同锁: 不会取到正被回收的实例
+                        if inst.state in ("stopped", "ready"):
+                            inst.state = "busy"
+                            return inst
                 if self._waiting >= self.queue_max:
                     raise GatewayError(429, "gateway-busy",
                                     "网关繁忙（排队已达 %d）" % self.queue_max,
                                     retry_after_s=5.0)
+                remain = deadline - time.time()
+                if remain <= 0:                # 池长期不可用: 早拒比无限等待好, 宿主可按头重试
+                    raise GatewayError(429, "gateway-busy",
+                                    "网关繁忙（排队超过 %d s）" % int(wait_max),
+                                    retry_after_s=5.0)
                 self._waiting += 1
                 try:
-                    self.cond.wait(timeout=60)
+                    self.cond.wait(timeout=min(60.0, remain))
                 finally:
                     self._waiting -= 1
 
     def release(self, inst):
-        if inst.state == "busy":
-            inst.state = "ready"
+        with inst.lock:
+            if inst.state == "busy":
+                inst.state = "ready"
         with self.cond:
             self.cond.notify()
 
@@ -569,7 +607,8 @@ class CliManager:
         remain = self.cooldown_until - time.time()
         if remain > 0:
             raise GatewayError(429, "free-limit",
-                            "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain))
+                            "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain),
+                            retry_after_s=remain)
 
     def note_cooldown(self, ms):
         """429 free-limit → 内部冷却, 绝不重启（重启不改出口 IP）。
@@ -587,9 +626,9 @@ class CliManager:
             self.restarted_since_success = False
             self.backoff_level = 0
 
-    def on_downstream_failure(self, etype):
-        """连续 fail_threshold 次下游类失败才重启一次; 连续重启失败才升级退避。
-        单次抖动不重启, 退避窗口内不重启（计数保留）。— 小欧 2026-11-05"""
+    def on_downstream_failure(self, etype, inst=None):
+        """连续 fail_threshold 次下游类失败才重启: 出错实例必停, 其余只停空闲;
+        本轮一个都没停成功时不记账, 免得空转也推高退避。— 小欧 2026-11-05"""
         if etype not in RESTARTABLE_TYPES:
             return
         cfg = self.config
@@ -603,13 +642,16 @@ class CliManager:
         if not self.restart_lock.acquire(blocking=False):
             return                      # 单飞: 已有重启在途, 并发请求等它完成
         try:
-            failed = False
-            for inst in self.instances:
-                if inst.state != "busy":
-                    try:
-                        inst.stop()
-                    except Exception:
-                        failed = True
+            stopped_any, failed = False, False
+            for item in self.instances:
+                if item is not inst and item.state == "busy":
+                    continue            # 别的实例正在服务, 绝不杀; 出错实例的请求此刻已结束
+                try:
+                    stopped_any = self._stop_instance(item, force=item is inst) or stopped_any
+                except Exception:
+                    failed = True
+            if not stopped_any and not failed:
+                return                  # 空转: 不计一次重启, 失败计数与退避原样保留
             self.last_restart_at = time.time()
             if self.restarted_since_success or failed:
                 # 上次重启后仍无成功请求（或停止动作本身报错）→ 连续重启失败, 升级退避
@@ -647,7 +689,8 @@ class CliManager:
             "system_probe": self.config.get(
                 "system_probe_note",
                 "disabled(packaged)" if FROZEN else "allowed"),
-            "candidates": self.config.get("candidates", []),
+            "candidates": [{k: v for k, v in cand.items() if k != "path"}
+                           for cand in self.config.get("candidates", [])],
             "instances": [inst.snapshot() for inst in self.instances],
             "restart_backoff_s": round(self.restart_wait_remaining(), 1),
             "cooldown_remaining_s": max(0, int(self.cooldown_until - time.time())),
