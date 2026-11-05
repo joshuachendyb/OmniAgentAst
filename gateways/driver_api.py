@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-r"""driver_api.py — 驱动接口（Protocol）与装载器（通用层; 3.5 SPI 的代码化, 1.8 D25）。
+r"""driver_api.py — 驱动接口（Protocol）与装载器。
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
 通用层只认本文件定义的名字; 换下游只加 vendor\<名>\driver.py 的实现（模块须导出 DRIVER_CLASS）。
 
 编辑历史:
-  2026-11-05 接口补 assistant_reasoning(思考段拼文), 供网关非流式透传 reasoning_content -- 小欧
-  2026-11-05 更名 driver_api(原名 driver 与 vendor\<名>\driver.py 同名, 读码/搜栈分不清);
-             类 Driver→DriverApi; 装载器改读 module.DRIVER_CLASS 并按 Protocol 钩子装载期校验 -- 小欧
+  2026-11-05 接口补 assistant_reasoning, 供网关非流式透传 reasoning_content -- 小欧
+  2026-11-05 更名 driver_api; 类 Driver→DriverApi; 装载器改读 DRIVER_CLASS 并按钩子清单校验 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
 """
 from __future__ import annotations
 
@@ -17,60 +17,60 @@ from typing import Protocol
 
 
 class DriverApi(Protocol):
-    """驱动接口。每个挂钩的规格出处见 9.1.5 的挂钩-出处表。"""
+    """驱动接口契约; 装载期按钩子清单校验, 缺一即拒绝启动。— 小欧 2026-11-05"""
 
-    name: str                      # 驱动名 == config["driver"] == vendor\<名>\（如 "opencode"）
-    provider_id: str               # OpenAI owned_by 用的 id（4.2）
-    version_re: re.Pattern         # 从 --version stdout 捕版本（6.3.4 第①②关）
+    name: str                      # 驱动名, 等于 config["driver"] 与 vendor 目录名
+    provider_id: str               # OpenAI owned_by 用的 id
+    version_re: re.Pattern         # 从 --version stdout 捕版本
 
-    # --- 定位与环境（6.3.3 / 6.3.6 / 8.4） ---
+    # --- 定位与环境 ---
     def cli_candidates(self, config): ...
     #   → [{"path", "level", "probe"}]：5 级候选; PATH 级（4 级）标 probe=False
     def env_overrides(self, tag): ...
     #   → {"XDG_CONFIG_HOME": path, ...}：按子代理实例 tag 隔离; 目录由驱动负责创建
 
-    # --- 进程（7.1.2 / D17 / 8.4 / 8.6） ---
+    # --- 进程 ---
     def spawn_args(self, exe, port): ...
-    #   → 子命令列表; 只允许服务型子命令（8.4: 裸 CLI 会挂用户后台服务）
+    #   → 子命令列表; 只允许服务型子命令（裸 CLI 会挂用户后台服务）
     def credential(self, line): ...
-    #   → stdout 一行 → (脱敏后行, 密码或 "")；密码行必须脱敏（8.6）
+    #   → stdout 一行 → (脱敏后行, 密码或 "")；密码行必须脱敏
     def auth(self, password): ...
-    #   → httpx auth 元组（opencode 为 Basic ("opencode", pw), 6.3.4 实测）
+    #   → httpx auth 元组（opencode 为 Basic ("opencode", pw)）
     def ready(self, port, auth): ...
-    #   → 就绪单次检查 bool（7.1.3 硬判定的落点）; 轮询超时由通用层承担
+    #   → 就绪单次检查 bool; 轮询超时由通用层承担
 
-    # --- 会话与报文（7.3 / 6.3.7 / 8.2） ---
+    # --- 会话与报文 ---
     def session_body(self, model, permissions): ...
     def prompt_body(self, text, files): ...
     def path_create(self): ...
     def path_prompt(self, sid): ...
     def path_wait(self, sid): ...          # → (path, {ok, status, set})，阻塞式等待
-    def path_messages(self, sid): ...      # → (path, params)：定向查询（7.3）
+    def path_messages(self, sid): ...      # → (path, params)：定向查询
     def path_interrupt(self, sid): ...
     def path_delete(self, sid): ...
-    def path_models(self): ...             # → 模型发现端点（4.2）
-    def path_events(self): ...             # → 事件订阅端点（7.4）
+    def path_models(self): ...             # → 模型发现端点
+    def path_events(self): ...             # → 事件订阅端点
 
-    # --- 事件与取数（4.5 / 7.4 / 4.6 / 4.8.2） ---
+    # --- 事件与取数 ---
     def event_session(self, payload): ...
-    #   → 该事件的会话 ID（无则 None）；通用层用它过滤并发串流（7.4）
+    #   → 该事件的会话 ID（无则 None）；通用层用它过滤并发串流
     def event_class(self, payload): ...
     #   → {"kind": "content|reasoning|idle|error|ignore", "text": str, "error": obj}
     def assistant_content(self, message): ...
     def assistant_reasoning(self, message): ...
     #   → content[] 段数组里思考段拼文（无则 ""）；非流式 message.reasoning_content 用
     def token_counts(self, message): ...
-    #   → {"input","written","cached","output","reasoning"} 或 None（4.6 算式入参）
+    #   → {"input","written","cached","output","reasoning"} 或 None（usage 算式入参）
     def finish_reason(self, message): ...  # → "stop" | "length" | ...
 
-    # --- 发现与错误（4.2 / 4.7） ---
+    # --- 发现与错误 ---
     def models_from(self, resp_json): ...
-    #   → (OpenAI items, skipped)：方言字段 → 4.2 映射表，缺 id 项计数
+    #   → (OpenAI items, skipped)：方言字段 → 统一字段，缺 id 项计数
     def map_error(self, error): ...
-    #   → {"status","type","message","detail","internal_cooldown_ms"}（4.7 判读规则）
+    #   → {"status","type","message","detail","internal_cooldown_ms"}
 
 
-# 装载期校验清单: 直接从 Protocol 派生（Protocol 新增钩子自动纳入, 不维护第二份名单）
+# 装载期校验清单: 直接从 Protocol 派生（新增钩子自动纳入, 不维护第二份名单）— 小欧 2026-11-05
 _REQUIRED = tuple(n for n, v in vars(DriverApi).items()
                   if not n.startswith("_") and callable(v))
 _ATTRS = ("name", "provider_id", "version_re")
@@ -82,7 +82,7 @@ def get_driver(config):
     r"""按 config["driver"] 装载 vendor\<名>\driver.py 的 DRIVER_CLASS; 全进程共享一枚实例。"""
     name = str(config.get("driver") or "opencode").strip()
     if not re.match(r"^[A-Za-z0-9_-]+$", name):       # 目录穿越天然不可能
-        raise RuntimeError("拒绝启动: driver 名含非法字符（9.1.6 preflight）")
+        raise RuntimeError("拒绝启动: driver 名含非法字符（preflight）")
     if name not in _LOADED:
         module = importlib.import_module("vendor.%s.driver" % name)
         drv = module.DRIVER_CLASS()                   # 缺 DRIVER_CLASS → AttributeError 早失败

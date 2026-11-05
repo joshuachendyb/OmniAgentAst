@@ -5,8 +5,9 @@
 依据: packages/schema/src/prompt-input.ts 与 protocol/src/groups/session.ts。
 
 编辑历史:
-  2026-11-05 从 vendor/opencode/opencode_client.py 摘出 session/prompt 两个请求体构造并转正为公有名;
-             原文件 1022 行里 OpenCodeClient/AsyncOpenCodeClient/LocalServer 等全仓零调用, 已移出网关包 -- 小欧
+  2026-11-05 从 opencode_client.py 摘出 session/prompt 两个请求体构造并转正为公有名 -- 小欧
+  2026-11-05 原文件全仓零调用的客户端类已移出网关包 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
 """
 from __future__ import annotations
 
@@ -18,11 +19,7 @@ PROVIDER_ID = "opencode"
 def session_body(model: str, title: Optional[str] = None, agent: Optional[str] = None,
                  metadata: Optional[dict] = None, permissions: Any = None,
                  parent_id: Optional[str] = None) -> dict:
-    """建会话请求体；值为 None 的字段一律不传（避免协议校验失败）
-
-    可传 id / parentID / title / agent / model / location / metadata / permissions;
-    注意：协议里**没有** temperature / max_tokens 之类采样参数。
-    """
+    """建会话请求体; 值为 None 的字段一律不传, 协议无采样参数。— 小欧 2026-11-05"""
     body = {"model": {"providerID": PROVIDER_ID, "id": model}}
     if title is not None:
         body["title"] = title
@@ -41,15 +38,8 @@ def prompt_body(text: str, files: Optional[list] = None, agents: Optional[list] 
                 skills: Optional[list] = None, metadata: Optional[dict] = None,
                 delivery: Optional[str] = None, resume: Optional[bool] = None,
                 message_id: Optional[str] = None, extra: Optional[dict] = None) -> dict:
-    """发消息请求体
-
-    files  : [{"uri": <data: URL 或本地路径>, "name": ..., "description": ...}]
-    agents : [{"id"/"name"...}] 由协议 AgentAttachment 决定
-    skills : [{"id": "<skill 名>"}]
-    delivery: "steer"（默认，立即插入当前轮）或 "queue"（排队到下个空闲）
-    resume: False 表示只入队、不触发执行
-    extra  : 逃生口，原样合并进 body（协议新增字段时不用改库）
-    """
+    """发消息请求体: files/agents/skills 附件, delivery=steer|queue, resume=False 只入队;
+    extra 原样合并进 body。— 小欧 2026-11-05"""
     body = {"text": text}
     if files:
         body["files"] = files

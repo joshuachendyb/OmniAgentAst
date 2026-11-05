@@ -3,12 +3,14 @@
 
 编写人: 小欧    创建时间: 2026-11-05 08:31:00
 编辑历史:
-  2026-11-05 小欧 - 按方向重排: 本文件收口全部向上翻译(调用块解析+类型转换+usage), 工具清单渲染与 1~5 段组装迁 mapping.py(向下)
-  2026-11-05 三堂会审整改: parse_calls 拆出 _one_block, _coerce_args 去冗余分支 -- 小欧
-  2026-11-05 14:40:16 组装序重排+协议文案重写+块内JSON容错抢救 -- 小欧
-  2026-11-05 界符改回模型训练同形的 <tool_call>…</tool_call>; 老版本 </call_out> 残收尾与未闭合残块做容错+清理 -- 小欧
+  2026-11-05 按方向重排: 本文件收口全部向上翻译(调用块解析+类型转换+usage) -- 小欧
+  2026-11-05 parse_calls 拆出 _one_block, _coerce_args 去冗余分支 -- 小欧
+  2026-11-05 组装序重排 + 协议文案重写 + 块内 JSON 容错抢救 -- 小欧
+  2026-11-05 界符改回训练同形; </call_out> 残收尾与未闭合残块做容错清理 -- 小欧
   2026-11-05 截断调用不再静默: 块内未闭合对象计入 protocol_invalid 并落 WARN -- 小欧
-  2026-11-05 更名 fc.py→upward.py: 本文件早不只做 function calling(还管 usage 计量与正文抽取), 与 mapping(向下)成对 -- 小欧
+  2026-11-05 更名 upward.py: 还管 usage 计量与正文抽取, 与 mapping(向下)成对 -- 小欧
+  2026-11-05 复数壳内裸对象原被剥标记后当正文泄漏; 改壳内先按块解析再清标记 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
 """
 from __future__ import annotations
 
@@ -20,20 +22,15 @@ from mapping import BLOCK_RE, CALL_OPEN    # 输出规格唯一定义在向下�
 
 _FENCE_RE = re.compile(r"^[ \t]*```[^\n]*\n?|[ \t]*```[ \t]*$")   # 块内 JSON 被代码围栏包住
 
-# 复数包装（训练格式里多个调用包在 <tool_calls>…</tool_calls> 里）: 只剥包装壳, 不扩充单块规格
-# — 小欧 2026-11-05
+# 复数包装: 训练格式把多个调用包在 <tool_calls>…</tool_calls> 里, 壳内按块解析 — 小欧 2026-11-05
 _WRAPPER_RE = re.compile(r"</?tool_calls\s*>", re.I)
+_CALLS_RE = re.compile(r"<tool_calls\s*>(.*?)</tool_calls\s*>", re.S | re.I)
+_CALLS_OPEN = "<tool_calls>"
 
 
 def usage_from_counts(counts):
-    """驱动提供的原始计数 → OpenAI usage（缺失返回 None, 绝不填 0）。
-
-    prompt_tokens     = input + cached + written   （样例 125+7424+0 → 7549）
-    completion_tokens = output + reasoning         （样例 56+17 → 73）
-    计量字段的"名字与来源"是下游细节（驱动 token_counts 计）; "算式"是
-    上游计量事实（通用计）。下游把非缓存输入与缓存命中分开计量, 只取 input
-    会少报 98%——必须按算式相加。
-    """
+    """驱动原始计数 → OpenAI usage（缺失返回 None, 绝不填 0）。
+    prompt=input+cached+written, completion=output+reasoning。— 小欧 2026-11-05"""
     if not counts:
         return None
     prompt = int(counts["input"]) + int(counts["cached"]) + int(counts["written"])
@@ -45,10 +42,7 @@ def usage_from_counts(counts):
 
 
 def _coerce(value, jtype):
-    """单值转类型; 失败保留原值交宿主校验（宿主报 invalid_params, 模型可重试）。
-
-    boolean 的坑: bool("false") is True——必须显式按字面判。
-    """
+    """单值转类型, 失败保留原值; boolean 按字面判(bool("false") 为 True)。— 小欧 2026-11-05"""
     try:
         if jtype == "integer":
             return int(value)
@@ -66,7 +60,7 @@ def _coerce(value, jtype):
 
 
 def _coerce_args(args, schema):
-    """按 tools[i].function.parameters 逐参数转类型。返回 (args, warns)。"""
+    """按 tools[i].function.parameters 逐参数转类型。返回 (args, warns)。— 小欧 2026-11-05"""
     out, warns = {}, []
     props = (schema or {}).get("properties") or {}
     for key, val in dict(args or {}).items():
@@ -81,10 +75,7 @@ def _coerce_args(args, schema):
 
 
 def _brace_end(frag, start):
-    """从 start 处的 '{' 起做字符串感知配对。
-
-    返回 (配对 '}' 的下标或 -1, 未闭合层数, 是否停在字符串内) — 小欧 2026-11-05
-    """
+    """从 start 处 '{' 起字符串感知配对 → (配对下标或 -1, 未闭合层数, 是否停在串内)。— 小欧 2026-11-05"""
     depth, in_str, esc = 0, False, False
     for j in range(start, len(frag)):
         ch = frag[j]
@@ -131,13 +122,8 @@ def _objects(fragment):
 
 
 def _loads_balanced(fragment):
-    """块内 JSON 容错抢救: 括号配对完整提取 + 截断修补 — 小欧 2026-11-05
-
-    步骤1字符串感知配对（引号内大括号不计深度）截取完整 JSON;
-    步骤2未配平时按扫描终态截断修补: 补右括号至未闭合层数, 停在字符串内补闭引号
-    （吸收宿主 json_utils 截断修补思想, 但按嵌套深度补齐——老实现只逐个试尾部）。
-    返回 dict 或 None。
-    """
+    """块内 JSON 容错抢救: 字符串感知配对截取完整 JSON, 未配平按嵌套深度补齐右括号。
+    返回 dict 或 None。— 小欧 2026-11-05"""
     frag = (fragment or "").strip()
     start = frag.find("{")
     if start < 0:
@@ -162,9 +148,7 @@ def _loads_balanced(fragment):
 
 
 def _flatten(objs):
-    """信封/原生形状摊平: {"tool_calls":[…]}、{"calls":[…]}、{"function":{…}} → 调用对象
-    — 小欧 2026-11-05
-    """
+    """信封/原生形状摊平: {"tool_calls":[…]}、{"calls":[…]}、{"function":{…}} → 调用对象 — 小欧 2026-11-05"""
     out = []
     for obj in objs:
         items = []
@@ -221,28 +205,38 @@ def _one_block(raw, known):
     return calls, invalid, warns
 
 
-def parse_calls(answer, tools):
-    """模型输出 → {"calls", "content", "invalid", "warns"}。
+def _first_open(text):
+    """最早出现的块开口 → (下标, 开口长度) 或 (-1, 0); 兼容单块与复数壳（截断残形）。"""
+    best = (-1, 0)
+    for token in (CALL_OPEN, _CALLS_OPEN):
+        idx = text.find(token)
+        if idx >= 0 and (best[0] < 0 or idx < best[0]):
+            best = (idx, len(token))
+    return best
 
-    失败形态一律不抛错:
-      不使用协议 / 无块    → calls=[] content=正文（调用方放行, 空响应才判 502）
-      块内 JSON 非法       → 先括号配对+截断抢救, 抢不回才丢, WARN + invalid
-      块内对象未闭合       → 完整的那几个照收, 截断的丢弃, WARN + invalid（绝不执行半截参数）
-      name 编造            → 丢该块 + WARN + invalid
-      类型转换失败         → 保原值 + WARN（交宿主校验）
-      全部块失败但有正文    → 降级为纯文本
-      无块且无正文（空响应）→ content="", 调用方据此 502 server
-    生成 tool_calls[]: id=call_<8hex>, function.arguments 必须是合法 JSON 字符串。
-    一个块里连续排多个工具时逐个提取成多条 tool_calls; <tool_calls> 复数包装只剥壳。
-    """
+
+def parse_calls(answer, tools):
+    """模型输出 → {"calls", "content", "invalid", "warns"}; 失败形态一律不抛错。
+    无块则放行正文; JSON 非法/未闭合/编造工具名计入 invalid 并落 WARN。— 小欧 2026-11-05"""
     known = {}
     for tool in tools or []:
-        fn = tool.get("function") or {}
+        fn = tool.get("function") if isinstance(tool, dict) else None
+        fn = fn if isinstance(fn, dict) else {}
         if fn.get("name"):
             known[fn["name"]] = fn.get("parameters") or {}
     calls, outs, invalid, warns = [], [], 0, []
+    answer = answer or ""
+    # 复数壳先整体成块: 壳内裸对象/多对象都能解析; 只有解析出调用才摘除该段,
+    # 未解析成功时退回老口径(仅清标记, 正文保留) — 小欧 2026-11-05
+    for m in _CALLS_RE.finditer(answer):
+        found, bad, w = _one_block(m.group(1), known)
+        if found:
+            calls.extend(found)
+            invalid += bad
+            warns.extend(w)
+            answer = answer.replace(m.group(0), "", 1)
+    answer = _WRAPPER_RE.sub("", answer)   # 剥掉残余 <tool_calls> 标记
     pos = 0
-    answer = _WRAPPER_RE.sub("", answer or "")   # 剥掉 <tool_calls> 复数包装壳
     for m in BLOCK_RE.finditer(answer):
         outs.append(answer[pos:m.start()].strip())
         pos = m.end()
@@ -250,13 +244,13 @@ def parse_calls(answer, tools):
         calls.extend(found)
         invalid += bad
         warns.extend(w)
-    # 未闭合残块（老版本漏到 UI 的 <tool_call>{… 无收尾）: 先按截断抢救, 抢不回就整段丢弃,
-    # 绝不把界符原样透给宿主 UI — 小欧 2026-11-05
+    # 未闭合残块（老版本漏到 UI 的 <tool_call>{… 无收尾, 或 <tool_calls> 被截断）:
+    # 先按截断抢救, 抢不回就整段丢弃, 绝不把界符原样透给宿主 UI — 小欧 2026-11-05
     tail = answer[pos:]
-    cut = tail.find(CALL_OPEN)
+    cut, span = _first_open(tail)
     if cut >= 0:
         outs.append(tail[:cut].strip())
-        found, bad, w = _one_block(tail[cut + len(CALL_OPEN):], known)
+        found, bad, w = _one_block(tail[cut + span:], known)
         calls.extend(found)
         invalid += bad
         warns.extend(w)

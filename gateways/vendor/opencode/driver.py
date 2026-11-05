@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
-r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点, 1.8 D25）。
+r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点）。
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
-对齐: 6.3.3–6.3.7（定位/准入/RPC）; 7.1/7.3/7.4（时序/定向查询/事件流）;
-     4.2/4.6/4.8.2（模型/计量/finish）; 4.7（错误映射）; 8.4/8.6（隔离/脱敏）
 换第二案 = 新增 vendor\<案>\driver.py, 实现 gateways\driver_api.py 的 DriverApi 钩子并导出 DRIVER_CLASS。
 
 编辑历史:
-  2026-11-05 实现 assistant_reasoning: content[] 里 type=reasoning 或带 reasoning 字段的段拼文 -- 小欧
-  2026-11-05 实现类更名 Driver→OpenCodeDriver 并导出 DRIVER_CLASS(与接口 DriverApi 同名不再撞车);
-             报文构造改调 bodies.py 两个公有函数(原 opencode_client.py 仅剩的调用面) -- 小欧
+  2026-11-05 实现 assistant_reasoning: content[] 里 reasoning 型段拼文 -- 小欧
+  2026-11-05 实现类更名 OpenCodeDriver 并导出 DRIVER_CLASS; 报文构造改调 bodies.py 公有函数 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
 """
 from __future__ import annotations
 
@@ -19,21 +17,19 @@ import re
 
 import httpx
 
-try:                                  # vendor\opencode\ 为 namespace package;
+try:                                  # vendor\opencode\ 为 namespace package — 小欧 2026-11-05
     from . import bodies as oc                   # 兼容器: 同目录直跑时回退顶层导入
 except ImportError:
-    import bodies as oc               # （打包为插件目录 copy 时两者皆可, 9.5）
+    import bodies as oc               # 打包为插件目录 copy 时两者皆可 — 小欧 2026-11-05
 
 NAME = "opencode"
 PROVIDER_ID = oc.PROVIDER_ID          # 单一来源: 报文构造与驱动自报名同此一处
 VERSION_RE = re.compile(r"^opencode v?(\d+\.\d+\.\d+)")          # 实测: opencode v2.2.0
-PASSWORD_RE = re.compile(r"server password (\S+)")               # D17: 密码出自 stdout
-PASSWORD_MASK = "server password ***"                            # 8.6 脱敏替身
+PASSWORD_RE = re.compile(r"server password (\S+)")               # 密码出自 stdout — 小欧 2026-11-05
+PASSWORD_MASK = "server password ***"                            # 脱敏替身 — 小欧 2026-11-05
 
-# FIX M（2026-11-05 小欧）: 下游 CLI 是 agent 型程序, 默认 build agent 自带一整套
-# 工具并会自己跑多轮 ReAct。网关只想要「一次纯文本补全」, 否则模型会先被 CLI 的
-# 内置工具吸走几十秒, 甚至把网关教给它的调用块当 CLI 工具执行（FIX L 同案）。
-# 这里在隔离的 XDG 配置里注册一个无工具、单步的 agent, 建会话时钉死使用它。
+# 下游 CLI 是 agent 型程序, 默认 agent 自带工具并会自己跑多轮 ReAct; 网关只要一次纯文本补全。
+# 故在隔离 XDG 配置里注册无工具单步 agent, 建会话时钉死使用它。— 小欧 2026-11-05
 AGENT_NAME = "opencli-plain"
 _AGENT_SPEC = {
     "description": "opencli gateway plain-text agent: no tools",
@@ -48,15 +44,15 @@ class OpenCodeDriver:
     provider_id = PROVIDER_ID
     version_re = VERSION_RE
 
-    # --- 定位与环境（6.3.3 5 级解析; 8.4 XDG） -----------------------------
+    # --- 定位与环境（5 级解析 / XDG 隔离） ---
 
     def cli_candidates(self, config):
-        """候选从 config 通用注记里取路径基点（runtime_dir/frozen 由 cli_manager 注入）。"""
+        """候选从 config 通用注记里取路径基点（runtime_dir/frozen 由 cli_manager 注入）。— 小欧 2026-11-05"""
         cli = config.get("cli") or {}
         frozen = bool(config.get("frozen"))
         allow_system = bool(cli.get("allow_system", True))
         if frozen and allow_system:
-            config["system_probe_note"] = "disabled(packaged)"       # 6.3.6 硬约束
+            config["system_probe_note"] = "disabled(packaged)"       # 打包版禁用系统探针 — 小欧 2026-11-05
             allow_system = False
         out = []
         if str(cli.get("executable") or "").strip():                # 1 级: 显式钉死
@@ -70,7 +66,7 @@ class OpenCodeDriver:
         return out
 
     def env_overrides(self, tag):
-        """8.4 出生前隔离: XDG 四目录按 tag（i0/i1/probe）分目录, 不读用户全局配置。"""
+        """出生前隔离: XDG 四目录按 tag（i0/i1/probe）分目录, 不读用户全局配置。— 小欧 2026-11-05"""
         root = os.path.join(str(config_root()), "xdg")
         paths = {}
         for var, sub in (("XDG_CONFIG_HOME", "config"), ("XDG_DATA_HOME", "data"),
@@ -82,7 +78,7 @@ class OpenCodeDriver:
         return paths
 
     def _ensure_agent_config(self, config_home):
-        """FIX M: 在隔离配置里注册无工具单步 agent（已存在则覆盖该项, 不动其他键）。"""
+        """在隔离配置里注册无工具单步 agent（已存在则覆盖该项, 不动其他键）。— 小欧 2026-11-05"""
         cfg_dir = os.path.join(config_home, "opencode")
         os.makedirs(cfg_dir, exist_ok=True)
         path = os.path.join(cfg_dir, "opencode.json")
@@ -99,32 +95,32 @@ class OpenCodeDriver:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2)
 
-    # --- 进程（7.1.2 spawn; D17 密码; 7.1.3 就绪） -------------------------
+    # --- 进程（spawn / 密码捕获 / 就绪） ---
 
     def spawn_args(self, exe, port):
-        """只允许 serve 子命令——裸 opencode 会挂用户后台服务（8.4）。"""
+        """只允许 serve 子命令——裸 CLI 会挂用户后台服务。— 小欧 2026-11-05"""
         return ["serve", "--hostname", "127.0.0.1", "--port", str(port)]
 
     def credential(self, line):
-        """stdout 行 → (脱敏行, 密码)。任何含密码的行都脱敏后再落盘（8.6）。"""
+        """stdout 行 → (脱敏行, 密码)。任何含密码的行都脱敏后再落盘。— 小欧 2026-11-05"""
         match = PASSWORD_RE.search(line)
         if not match:
             return line, ""
         return PASSWORD_MASK, match.group(1)
 
     def auth(self, password):
-        return ("opencode", password)               # 用户名固定（6.3.4 实测）
+        return ("opencode", password)               # 用户名固定（实测）— 小欧 2026-11-05
 
     def ready(self, port, auth):
-        """7.1.3 就绪硬判定: /api/model 200 且 data 为 list。"""
+        """就绪硬判定: /api/model 200 且 data 为 list。— 小欧 2026-11-05"""
         try:
             resp = httpx.get("http://127.0.0.1:%d/api/model" % port, auth=auth,
-                             timeout=3, trust_env=False)        # 8.5: 不走系统代理
+                             timeout=3, trust_env=False)        # 不走系统代理 — 小欧 2026-11-05
             return resp.status_code == 200 and isinstance(resp.json().get("data"), list)
         except Exception:
             return False
 
-    # --- 会话与报文（7.3; 报文构造委托 vendor 纯函数, 使用纪律 1） ---------
+    # --- 会话与报文（报文构造委托 vendor 纯函数） ---
 
     def session_body(self, model, permissions):
         return oc.session_body(model, title="ask-%s" % model,
@@ -140,11 +136,11 @@ class OpenCodeDriver:
         return "/api/session/%s/prompt" % sid
 
     def path_wait(self, sid):
-        # 易错点（vendor 摘录点 2）: 阻塞式等待, 200/204 即执行结束, 无需轮询
+        # 易错点: 阻塞式等待, 200/204 即执行结束, 无需轮询 — 小欧 2026-11-05
         return "/api/experimental/session/%s/wait" % sid, {200, 204}
 
     def path_messages(self, sid):
-        # 7.3 定向查询: type=assistant + desc + limit=1, 报文省 19%
+        # 定向查询: type=assistant + desc + limit=1, 只取末条, 报文更省 — 小欧 2026-11-05
         return "/api/session/%s/message" % sid, \
                {"type": "assistant", "order": "desc", "limit": 1}
 
@@ -160,23 +156,15 @@ class OpenCodeDriver:
     def path_events(self):
         return "/api/event"
 
-    # --- 事件与取数（7.4 / 4.6 / 4.8.2） -----------------------------------
+    # --- 事件与取数 ---
 
     def event_session(self, payload):
         data = payload.get("data") or {}
-        return data.get("sessionID") or None        # 并发过滤键（7.4 过滤行）
+        return data.get("sessionID") or None        # 并发过滤键 — 小欧 2026-11-05
 
     def event_class(self, payload):
-        """判别按内容形状; 事件类型名以实测 opencode v2.2.0 为准。
-
-        FIX H 偏差记录（2026-11-05 小欧）: 实测(diag_events.py)本 CLI 事件为
-        session.* 族——内容 delta 在 session.text.delta 的 data["delta"],
-        收尾文本在 session.text.ended 的 data["text"], 终止判定为
-        session.execution.succeeded（无 "idle" 事件名）。
-        原 6.3.7 草案判据（'text' in kind / kind=='idle'）与实测不合:
-        增量文本漏接 + idle 永不触发（read=60 s 超时 → 流破裂, 实测复现）。
-        保留对旧版事件名("idle"/message.text.* 等)的宽松兼容。
-        """
+        """判别按内容形状; 事件名以实测 opencode v2.2.0 为准。
+        增量在 session.text.delta, 收尾全文在 session.text.ended, 终止为 execution.*。— 小欧 2026-11-05"""
         data = payload.get("data") or {}
         kind = str(payload.get("type") or "")
         if data.get("error"):
@@ -190,8 +178,8 @@ class OpenCodeDriver:
             return {"kind": "content", "text": data.get("delta") or "",
                     "ordinal": data.get("ordinal"), "error": None}
         if kind == "session.text.ended":
-            # FIX I 偏差记录（2026-11-05 小欧）: 收尾事件携带全文, 与 delta 流重复——
-            # 归一为 "final" 由通用层按 ordinal 记账去重; 消息无 delta 时仍可收字。
+            # 收尾事件携带全文, 与 delta 流重复: 归一为 "final" 由通用层按 ordinal 去重。
+            # 消息无 delta 时仍可收字。— 小欧 2026-11-05
             return {"kind": "final", "text": data.get("text") or "",
                     "ordinal": data.get("ordinal"), "error": None}
         if kind == "session.text.started":
@@ -221,7 +209,7 @@ class OpenCodeDriver:
         tokens = message.get("tokens")
         if not isinstance(tokens, dict) \
                 or (tokens.get("input") is None and tokens.get("output") is None):
-            return None                              # 缺计量 → None, 绝不填 0（4.6）
+            return None                              # 缺计量 → None, 绝不填 0 — 小欧 2026-11-05
         cache = tokens.get("cache") or {}
         return {"input": int(tokens.get("input") or 0),
                 "written": int(cache.get("write") or 0),
@@ -231,16 +219,16 @@ class OpenCodeDriver:
 
     def finish_reason(self, message):
         finish = str(message.get("finish") or message.get("rawFinish") or "").strip()
-        return "length" if finish == "length" else "stop"       # 4.8.2 兜底
+        return "length" if finish == "length" else "stop"       # 未知值按 stop 兜底 — 小欧 2026-11-05
 
-    # --- 发现与错误（4.2 / 4.7 判读规则） -----------------------------------
+    # --- 发现与错误 ---
 
     def models_from(self, resp_json):
         items, skipped = [], 0
         for item in (resp_json or {}).get("data") or []:
-            mid = item.get("id") or item.get("modelID")          # id 回退 modelID（4.2）
+            mid = item.get("id") or item.get("modelID")          # id 回退 modelID — 小欧 2026-11-05
             if not mid:
-                skipped += 1                                     # 4.8.1: 必须自己数出来
+                skipped += 1                                     # 缺 id 必须自己数出来 — 小欧 2026-11-05
                 continue
             limit = item.get("limit") or {}
             caps = item.get("capabilities") or {}
@@ -256,16 +244,13 @@ class OpenCodeDriver:
                 "input_modalities": caps.get("input") or [],
                 "output_modalities": caps.get("output") or [],
                 "pricing": {"prompt": "0", "completion": "0"},
-                "free": True,                       # 本网关只暴露免费层（4.2）
+                "free": True,                       # 本网关只暴露免费层 — 小欧 2026-11-05
             })
         return items, skipped
 
     def map_error(self, error):
-        """从下游错误对象到 4.7 统一分派 dict（v6.6 的 errors.from_downstream 原样下沉至此）。
-
-        映射纪律（逐条来自 4.7 表 + 四条判读规则）: 通用层只认返回 dict;
-        头值冷却只进 internal_cooldown_ms（R5 用, 不写响应头）。
-        """
+        """下游错误对象 → 统一分派 dict; 头值冷却只进 internal_cooldown_ms, 不写响应头。
+        通用层只认返回的 dict 形状。— 小欧 2026-11-05"""
         error = error or {}
         etype = str(error.get("type") or "")
         msg = str(error.get("message") or "")
@@ -287,7 +272,7 @@ class OpenCodeDriver:
             return dict(base, status=400, type="context-too-long",
                         message="上下文过长")
         if status == 401 or "auth" in etype:
-            # 判读规则 1: 下游 Basic 鉴权失败是网关内部问题, 包 502 而非透传 401
+            # 下游 Basic 鉴权失败是网关内部问题, 包 502 而非透传 401 — 小欧 2026-11-05
             return dict(base, status=502, type="server",
                         message="网关内部错误（下游鉴权失败），请查看 logs\\cli-out.log")
         if "timeout" in etype or status == 504:
@@ -298,11 +283,11 @@ class OpenCodeDriver:
                     message="下游异常（debug 见 detail）")
 
 
-# 装载器约定: 每个 vendor\<名>\driver.py 必须导出 DRIVER_CLASS（driver_api.get_driver 实例化它）
+# 装载器约定: 每个 vendor\<名>\driver.py 必须导出 DRIVER_CLASS — 小欧 2026-11-05
 DRIVER_CLASS = OpenCodeDriver
 
 
 def config_root():
-    """机器级根目录（与_generic machine_root 同值; 驱动不吃通用层 import, 故就地实现）。"""
+    """机器级根目录（与通用层 machine_root 同值; 驱动不 import 通用层, 故就地实现）。— 小欧 2026-11-05"""
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
     return os.path.join(base, "opencli-gateway")

@@ -1,25 +1,17 @@
 # -*- coding: utf-8 -*-
-r"""cli_manager.py — 下游进程生命周期框架（通用层; 方言细节全部经驱动挂钩, D25）。
+r"""cli_manager.py — 下游进程生命周期框架（方言细节全部经驱动挂钩）。
 
 编写人: 小欧    创建时间: 2026-11-05 09:10:00
-对齐: 6.3 定位与准入 / 7.1 生命周期 / 7.2 池与回收 / 8.2 权限 / 8.4 隔离 /
-     8.6 密码不落盘。通用层零方言——候选、报文端点、密码形状、就绪判据均由
-     vendor\<provider>\driver 给出（9.1.5 接口）。
-
-职责覆盖（对应 9.6 实施步骤 0/3）:
-  1. preflight()     启动前安全闸门: 回环 + token + deny * + 驱动可装载, 缺失拒绝启动（8.2/8.5）
-  2. install_driver() 装载驱动（config["driver"]）并注入运行时键（runtime_dir/frozen/machine_root）
-  3. resolve_admitted_cli()  三关准入: 版本可读 → 版本范围 → 能力探针（6.3.4）; 全失败抛 502
-  4. Instance        环境装配(8.4) → spawn → stdout 捕获密码(8.6) → 就绪判定(7.1.3)
-  5. CliManager      实例池 + 队列 32 + R0–R6(7.2.2) + 重启风暴保护(7.2.4) + R5 冷却
-                      + 启动时清掉上次强杀遗留的下游进程（7.2.7 池端口）
+通用层零方言: 候选、报文端点、密码形状、就绪判据均由 vendor\<provider>\driver 给出。
 
 编辑历史:
   2026-11-05 R5 冷却封顶 1 h（下游 retryAfterMs 实测虚高 14 h）; 启动清场; 端口漂移留痕 -- 小欧
-  2026-11-05 冷却判定从 acquire 迁出为 check_cooldown（模型发现不拦）; netstat 改按字节收防 GBK 静默失败 -- 小欧
-  2026-11-05 命名对齐: GatewayError 迁 errors.py, record_failure→on_downstream_failure(实为重启),
-             check_cooldown→ensure_not_cooling(会抛), admitted_exe→resolve_admitted_cli, resolve_cli 内联,
-             init_driver→install_driver, PERMISSIONS→SESSION_PERMISSIONS -- 小欧
+  2026-11-05 冷却判定从 acquire 迁出为 ensure_not_cooling; netstat 改按字节收防 GBK 静默失败 -- 小欧
+  2026-11-05 命名对齐: GatewayError 迁 errors.py, record_failure→on_downstream_failure, init_driver→install_driver -- 小欧
+  2026-11-05 R4 改按 fail_threshold 累计后才重启, 连续重启失败才升级退避 -- 小欧
+  2026-11-05 启动失败路径补关日志句柄; 清扫线程加异常护栏; 准入缓存存绝对路径 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
+  2026-11-05 运行期文案与行内注释去节号: preflight 启动拒绝原因、探针/候选注释 -- 小欧
 """
 from __future__ import annotations
 
@@ -37,36 +29,37 @@ import httpx
 from driver_api import get_driver
 from errors import GatewayError, RESTARTABLE_TYPES
 
-# 8.2 硬约束: deny * 必须在最前（下游按 findLast 生效, 后写覆盖先写）
+# 硬约束: deny * 必须在最前（下游按 findLast 生效, 后写覆盖先写）— 小欧 2026-11-05
 SESSION_PERMISSIONS = [
     {"action": "*", "resource": "*", "effect": "deny"},
     {"action": "read", "resource": "Z:/nope/*", "effect": "allow"},
 ]
 
-FROZEN = bool(getattr(sys, "frozen", False))    # 打包版硬约束总开关（6.3.6）
-COOLDOWN_S = 3600        # 4.7 规则 3: free-limit 冷却按 1 h 记; 下游 retryAfterMs 实测虚高到 14 h, 只作上限判据
+FROZEN = bool(getattr(sys, "frozen", False))    # 打包版硬约束总开关 — 小欧 2026-11-05
+# 免费额度冷却按 1 h 记; 下游 retryAfterMs 实测虚高到 14 h, 只作上限判据。— 小欧 2026-11-05
+COOLDOWN_S = 3600
 
 
 def runtime_dir():
-    """网关自身目录: 打包版 = exe 同级; 源码 = 本文件目录。注入驱动候选路径用。"""
+    """网关自身目录: 打包版 = exe 同级; 源码 = 本文件目录。— 小欧 2026-11-05"""
     if FROZEN:
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def machine_root():
-    r"""机器级根目录（LOCALAPPDATA\opencli-gateway; 多安装共享与沙箱的公共落点）。"""
+    r"""机器级根目录（LOCALAPPDATA\opencli-gateway; 多安装共享与沙箱公共落点）。— 小欧 2026-11-05"""
     return os.path.join(os.environ.get("LOCALAPPDATA")
                         or os.path.expanduser("~\\AppData\\Local"), "opencli-gateway")
 
 
-SANDBOX_CWD = os.path.join(machine_root(), "sandbox")   # 空目录铁律（8.4 禁放文件）
+SANDBOX_CWD = os.path.join(machine_root(), "sandbox")   # 空目录铁律: 禁放任何文件 — 小欧 2026-11-05
 
-DRV = None          # 驱动单例; install_driver() 填充
+DRV = None          # 驱动单例; install_driver() 填充 — 小欧 2026-11-05
 
 
 def install_driver(config):
-    """装载驱动并注入通用侧运行时键; 驱动只能读这些键, 不 import 通用层。"""
+    """装载驱动并注入通用侧运行时键; 驱动只读这些键, 不 import 通用层。— 小欧 2026-11-05"""
     global DRV
     config["runtime_dir"] = runtime_dir()
     config["frozen"] = FROZEN
@@ -80,12 +73,8 @@ def _is_loopback(host):
 
 
 def preflight(config):
-    """启动前安全闸门（实施排期第 0 步, 9.6）。返回问题清单, 非空即拒绝启动。
-
-    ①监听必须回环（8.5）②token 非空（宿主 ai.opencli.api_key 必须一致）
-    ③权限规则首条必须 deny *（8.2 代码级校验——安全底线不依赖"配置没被改过"）
-    ④驱动可装载且自报名与 config 一致（9.1.5）⑤配置项正常性兜底。
-    """
+    """启动前安全闸门: 回环 + token + deny * + 驱动可装载 + 配置项兜底。
+    返回问题清单, 非空即拒绝启动。— 小欧 2026-11-05"""
     problems = []
     driver_error = None
     try:
@@ -95,25 +84,30 @@ def preflight(config):
     if driver_error is not None:
         problems.append(driver_error)
     if not _is_loopback(config.get("host", "127.0.0.1")):
-        problems.append("拒绝启动: 监听地址必须为 127.0.0.1（8.5 强制回环）")
+        problems.append("拒绝启动: 监听地址必须为 127.0.0.1（强制回环）")
     if not str(config.get("token") or "").strip():
-        problems.append("拒绝启动: token 为空（须与宿主 api_key 一致，8.5）")
+        problems.append("拒绝启动: token 为空（须与宿主 api_key 一致）")
     if not SESSION_PERMISSIONS or SESSION_PERMISSIONS[0].get("action") != "*" \
             or SESSION_PERMISSIONS[0].get("effect") != "deny":
-        problems.append("拒绝启动: 权限规则缺少首条 deny *（8.2 硬约束）")
-    if int(config.get("pool_size", 2)) < 1:
-        problems.append("拒绝启动: pool_size 至少为 1")
-    if int(config.get("queue_max", 32)) < 1:
-        problems.append("拒绝启动: queue_max 至少为 1")
+        problems.append("拒绝启动: 权限规则缺少首条 deny *（硬约束）")
+    # 清扫线程与退避按 cfg[...] 直取: 缺键会在后台线程抛 KeyError 致清扫与退避静默停摆 — 小欧 2026-11-05
+    for key in ("pool_size", "queue_max", "port_base", "port_span", "task_idle_gap_s",
+                "idle_seconds", "max_age_seconds", "max_requests", "fail_threshold",
+                "restart_min_interval_s", "backoff_cap_s", "startup_timeout",
+                "log_keep_days"):
+        try:
+            ok = int(config.get(key, 0)) >= 1
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            problems.append("拒绝启动: 配置项 %s 缺失或不是正整数" % key)
     return problems
 
 
-# ---------------------------------------------------------------------------
-# 定位候选（驱动 5 级）+ 三关准入（6.3.3–6.3.5）
-# ---------------------------------------------------------------------------
+# —— 定位候选（驱动 5 级）+ 三关准入 ——
 
 def _free_port_excluding(banned):
-    """临时端口避开池段 [port_base, port_base+port_span-1]（6.3.4 探针端口纪律）。"""
+    """临时端口避开池段 [port_base, port_base+port_span-1]（探针端口纪律）。— 小欧 2026-11-05"""
     while True:
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -123,11 +117,8 @@ def _free_port_excluding(banned):
 
 
 def _pick_consecutive_ports(config):
-    """port_base 起找 pool_size 个连续空闲端口; 整池顺延, 出 span 即失败（7.2.7）。
-
-    整池连续是 /healthz.instances[] 端口清单可读的前提; 不无限顺延——否则可能
-    撞上用户自己的服务, 故障更难定位（7.2.7 原文）。
-    """
+    """port_base 起找 pool_size 个连续空闲端口; 整池顺延, 出 span 即失败。
+    连续是为了端口清单可读; 不无限顺延, 免得撞上用户自己的服务。— 小欧 2026-11-05"""
     base, span = int(config["port_base"]), int(config["port_span"])
     size = int(config["pool_size"])
     busy = set()
@@ -180,9 +171,8 @@ def _image_name(pid):
 
 
 def _reap_orphans(config):
-    """启动清场: 网关被强杀会留下占池端口的下游 CLI, 不清则整池顺延且无告警
-    （2026-11-05 实测池端口漂到 8205）; 只杀镜像名匹配本驱动的进程 — 小欧 2026-11-05
-    """
+    """启动清场: 网关被强杀会留下占池端口的下游 CLI, 不清则整池顺延且无告警。
+    只杀镜像名匹配本驱动的进程。— 小欧 2026-11-05"""
     if _listener_pids([int(config["port"])]):
         return                         # 已有网关占用服务端口(重复启动): 不动它的下游, 交给绑定失败
     base, span = int(config["port_base"]), int(config["port_span"])
@@ -203,23 +193,28 @@ def _reap_orphans(config):
 
 
 def _in_range(version, compatible):
-    """极简范围判据: '>=2.2.0 <2.3.0' 只解上下限段（6.3.4 配置口径; 2.3 未验证卡上限）。"""
-    lo = hi = None
+    """极简范围判据: '>=2.2.0 <2.3.0' 只解上下限段; `<=x` 为闭上限。— 小欧 2026-11-05"""
+    lo, hi, hi_closed = None, None, False
     for token in str(compatible or "").split():
         if token.startswith(">="):
             lo = token[2:]
-        elif token.startswith("<") and not token.startswith("<="):
-            hi = token[1:]
+        elif token.startswith("<="):
+            hi, hi_closed = token[2:], True
+        elif token.startswith("<"):
+            hi, hi_closed = token[1:], False
     parts = [int(x) for x in version.split(".")]
     if lo and parts < [int(x) for x in lo.split(".")]:
         return False
-    if hi and parts >= [int(x) for x in hi.split(".")]:
-        return False
+    if hi:
+        edge = [int(x) for x in hi.split(".")]
+        beyond = parts > edge if hi_closed else parts >= edge
+        if beyond:
+            return False
     return True
 
 
 def _version_ok(path, compatible):
-    """第①②关: --version 可读（正则来自驱动）且在范围。实测输出 `opencode v2.2.0`。"""
+    """版本可读（正则来自驱动）且在范围。实测输出 `opencode v2.2.0`。— 小欧 2026-11-05"""
     try:
         out = subprocess.run([path, "--version"], capture_output=True,
                              text=True, timeout=15, creationflags=0x08000000)
@@ -235,7 +230,7 @@ def _version_ok(path, compatible):
 
 
 def _spawn(exe, port, env, cwd, log_file):
-    """spawn 下游 serve; serve 子命令由驱动给出（8.4）, 通用层只管弹道与管道。"""
+    """spawn 下游 serve; serve 子命令由驱动给出, 通用层只管弹道与管道。— 小欧 2026-11-05"""
     return subprocess.Popen(
         [exe] + DRV.spawn_args(exe, port),
         env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -243,7 +238,7 @@ def _spawn(exe, port, env, cwd, log_file):
 
 
 def _terminate(proc):
-    """幂等停止（重复调用不报错, 异常路径也要走到, 7.2.7 清理伪码）。"""
+    """幂等停止: 重复调用不报错, 异常路径也要走到, 先 terminate 再强杀。— 小欧 2026-11-05"""
     if proc is None:
         return
     if proc.poll() is None:
@@ -258,31 +253,23 @@ def _terminate(proc):
 
 
 def _env_for(tag):
-    """8.4 装配: 通用层合环境变量, 隔离目录由驱动 env_overrides(tag) 给出并创建。
-
-    实测（8.4）: 用户全局配置在"建会话之前"就进入模型提示词——awareness 不可由
-    权限规则补救, 必须出生前重定向; 隔离后人格词 0 命中。
-    """
+    """装配环境变量: 通用层合 env, 隔离目录由驱动 env_overrides(tag) 给出并创建。
+    用户全局配置在建会话前就进提示词, 权限补救无效, 必须出生前重定向。— 小欧 2026-11-05"""
     env = os.environ.copy()
     env.update(DRV.env_overrides(tag))
-    os.makedirs(SANDBOX_CWD, exist_ok=True)        # 空目录, 禁止放任何文件（8.4）
+    os.makedirs(SANDBOX_CWD, exist_ok=True)        # 空目录, 禁止放任何文件 — 小欧 2026-11-05
     return env
 
 
 def _read_password(proc, timeout, log_file):
-    """stdout 逐行: 驱动 credential() 判密码与脱敏; 首个密码即用（8.6）。
-
-    实测: 密码 0.33 s 出现（6.3.4）; 密码只在内存, 不入日志、不回显 /healthz。
-    注意: 读取线程必须【持续排空】stdout——若找到密码就停止读取, 子进程 64 KB
-    管道缓冲写满会把下游整个卡死（实现级陷阱, 设计在此明确）。线程为 daemon,
-    网关退出即随进程消亡。
-    """
+    """stdout 逐行: 驱动 credential() 判密码与脱敏; 首个密码即用。
+    读取线程必须持续排空 stdout, 否则管道写满会把下游卡死。— 小欧 2026-11-05"""
     holder = {"password": ""}
 
     def pump():
         for raw in iter(proc.stdout.readline, b""):
             line = raw.decode("utf-8", "replace").rstrip("\r\n")
-            line, password = DRV.credential(line)   # 驱动: 判密 + 脱敏（8.6）
+            line, password = DRV.credential(line)   # 驱动判密 + 脱敏 — 小欧 2026-11-05
             if password and not holder["password"]:
                 holder["password"] = password      # 捕获一次即够
             try:
@@ -298,11 +285,8 @@ def _read_password(proc, timeout, log_file):
 
 
 def _probe(exe, config):
-    """第③关能力探针: 起服务 → stdout 捕获密码 → 驱动 ready() → 立即终止（6.3.4）。
-
-    探针端口避开池段; 探针进程不复用为服务进程（防状态污染）; 探针 XDG 目录
-    用独立 tag, 用完即弃。返回 (ok, reason)。
-    """
+    """能力探针: 起服务 → stdout 捕获密码 → 驱动 ready() → 立即终止。
+    探针端口避开池段, 进程不复用为服务进程, 返回 (ok, reason)。— 小欧 2026-11-05"""
     banned = set(range(int(config["port_base"]),
                        int(config["port_base"]) + int(config["port_span"])))
     port = _free_port_excluding(banned)
@@ -323,7 +307,7 @@ def _probe(exe, config):
             time.sleep(0.3)
         return False, "probe-failed: 驱动就绪判据 20 s 未通过"
     finally:
-        _terminate(proc)                         # 探针进程验证完立即释放（6.3.4）
+        _terminate(proc)                         # 探针进程验证完立即释放 — 小欧 2026-11-05
         try:
             log_file.close()
         except Exception:
@@ -331,21 +315,19 @@ def _probe(exe, config):
 
 
 def resolve_admitted_cli(config):
-    """三关准入闸口: 逐驱动候选过 ①②③关, 通过即缓存; 全失败抛 502（6.3.5 禁止硬跑）。"""
+    """三关准入闸口: 逐候选过版本可读/范围/探针, 通过即缓存绝对路径; 全失败抛 502 — 小欧 2026-11-05"""
     cached = config.get("_cli_ok")
     if cached and os.path.exists(cached):
         return cached
     config["candidates"] = []
     compatible = (config.get("cli") or {}).get("compatible", ">=2.2.0 <2.3.0")
-    for cand in DRV.cli_candidates(config):        # 驱动 5 级候选, 顺序写死在 6.3.2
+    for cand in DRV.cli_candidates(config):        # 驱动 5 级候选 — 小欧 2026-11-05
         path = cand["path"]
-        if os.path.dirname(path):
-            exists = os.path.exists(path)
-        else:
-            exists = shutil.which(path) is not None    # PATH 候选（4 级）用 which 判存在
-        if not exists:
+        found = path if os.path.dirname(path) else (shutil.which(path) or "")
+        if not found or not os.path.exists(found):
             config["candidates"].append(dict(cand, ok=False, reason="not-found"))
             continue
+        path = os.path.abspath(found)              # 后续 spawn/缓存一律绝对路径
         version, reason = _version_ok(path, compatible)
         if reason:
             config["candidates"].append(dict(cand, version=version, ok=False,
@@ -364,36 +346,27 @@ def resolve_admitted_cli(config):
     raise GatewayError(502, "network",
                     "已探测 %d 个位置，均不合格（详见 /healthz）"
                     % len(config["candidates"]))
-# ---------------------------------------------------------------------------
-# Instance 与 CliManager（7.2 池语义 / 7.2.4 风暴保护 / R0–R6 落地）
-# ---------------------------------------------------------------------------
+# —— Instance 与 CliManager（池语义 / 风暴保护 / 回收规则）——
+
 
 class Instance:
-    """池内一个实例 = 1 下游进程 + 1 端口 + 1 套按驱动隔离的数据目录（7.2.7 并发表）。
-
-    状态机（7.2 图）: stopped → starting → ready ⇄ busy →(窗口等停机) stopped
-    down 在本实现中并回"由重启风暴保护统一处理"（7.2.4 单飞重启）。
-    """
+    """池内一个实例 = 1 下游进程 + 1 端口 + 1 套按驱动隔离的数据目录。
+    状态机: stopped → starting → ready ⇄ busy → stopped。— 小欧 2026-11-05"""
 
     def __init__(self, index, port, config):
         self.index, self.port, self.config = index, port, config
         self.state = "stopped"
         self.proc = None
         self.log_file = None
-        self.password = ""              # 仅内存（8.6: 不落盘 / 不回显 / 退出即弃）
+        self.password = ""              # 仅内存: 不落盘 / 不回显 / 退出即弃 — 小欧 2026-11-05
         self.started_at = 0.0
         self.last_request_at = 0.0
         self.requests_done = 0          # R3 计数
         self.lock = threading.Lock()
 
     def start(self):
-        """stopped|busy(刚被 acquire) → ready（含 R1 按需启动 + R0 启动清场）。
-
-        幂等: 已 ready 或进程存活时直接复用（7.2.8 任务窗口复用语义, 不重起）。
-        实施偏差记录（2026-11-05 小欧）: acquire() 已把实例置 busy 再进本方法,
-        原守卫 if self.state != "stopped" 让首次请求 no-op 启动(实测 10061)。
-        按 7.2.7 规格修守卫: 每次请求 ensure_started 先于转发, 新实例必须真启动。
-        """
+        """stopped|busy(刚被 acquire) → ready: 按需启动并等就绪。
+        幂等: 已 ready 或进程存活时直接复用。— 小欧 2026-11-05"""
         with self.lock:
             if self.state == "ready":
                 return
@@ -407,9 +380,9 @@ class Instance:
             logs_dir = os.path.join(runtime_dir(), "logs")
             os.makedirs(logs_dir, exist_ok=True)
             log_file = open(os.path.join(logs_dir, "cli-out.log"), "ab")
-            env = _env_for("i%d" % self.index)         # 8.4 出生前装配（驱动给目录）
+            self.log_file = log_file                  # 先挂上: 失败路径靠 _close_log 必达
+            env = _env_for("i%d" % self.index)         # 出生前装配, 隔离目录由驱动给 — 小欧 2026-11-05
             self.proc = _spawn(exe, self.port, env, SANDBOX_CWD, log_file)
-            self.log_file = log_file
             self.password = _read_password(self.proc, timeout=20, log_file=log_file)
             if not self.password:
                 raise GatewayError(502, "server", "网关内部错误（下游密码未捕获）",
@@ -419,15 +392,17 @@ class Instance:
             self.last_request_at, self.requests_done = time.time(), 0
         except GatewayError:
             _terminate(self.proc)
+            self._close_log()                          # 失败路径必关句柄, 防重启风暴下泄漏 — 小欧 2026-11-05
             self._reset("stopped")
             raise
         except Exception as exc:
             _terminate(self.proc)
+            self._close_log()
             self._reset("stopped")
             raise GatewayError(502, "network", "下游启动失败", str(exc)) from exc
 
     def _wait_ready(self):
-        """就绪轮询骨架通用; 硬判点是驱动的 ready()（7.1.3 的落地核心）。"""
+        """就绪轮询骨架通用; 硬判点是驱动的 ready()。— 小欧 2026-11-05"""
         auth = DRV.auth(self.password)
         deadline = time.time() + float(self.config["startup_timeout"])
         while time.time() < deadline:
@@ -441,63 +416,70 @@ class Instance:
                         "下游启动超时（超过 %d s）" % int(self.config["startup_timeout"]))
 
     def touch(self):
-        """请求结束: R3 计数 +1 + 重置 120 s 任务窗口（不 kill, 7.2.8）。"""
+        """请求结束: 计数 +1 + 重置任务窗口（不 kill）。— 小欧 2026-11-05"""
         self.last_request_at = time.time()
         self.requests_done += 1
 
     def stop(self):
-        """幂等停机（R6/R2/R3/停服共用）。busy 期间绝不调用（流会中断, 7.2 图）。"""
+        """幂等停机（空闲/老化回收与停服共用）。busy 期间绝不调用。— 小欧 2026-11-05"""
         with self.lock:
             if self.state == "stopped":
                 return
         _terminate(self.proc)
         self.proc = None
+        self._close_log()
+        self._reset("stopped")
+
+    def _close_log(self):
+        """关闭下游 stdout 日志句柄; 幂等（stop 与 start 失败路径共用）— 小欧 2026-11-05"""
         if self.log_file is not None:
             try:
                 self.log_file.close()
             except Exception:
                 pass
             self.log_file = None
-        self._reset("stopped")
 
     def _reset(self, state):
         self.state = state
-        self.password = ""              # 进程退出即丢弃（8.6）
+        self.password = ""              # 进程退出即丢弃 — 小欧 2026-11-05
 
     def is_idle_beyond(self, gap_s):
         return self.state == "ready" and (time.time() - self.last_request_at) > gap_s
 
     def is_stale(self, max_age_s, max_requests):
-        """R3 判据: 存活超限或完成请求数超限（在请求边界执行, 7.2.2）。"""
+        """老化判据: 存活超限或完成请求数超限（在请求边界执行）。— 小欧 2026-11-05"""
         return self.state == "ready" and (
             time.time() - self.started_at > max_age_s
             or self.requests_done >= max_requests)
 
     def http(self):
-        """绑实例的 httpx 客户端; trust_env=False 防系统代理劫持（8.5）; auth 由驱动给。
-
-        超时对齐 7.6: 该 client 只跑本地快调用; 长等待由 /wait 的 timeout 单独给。
-        """
+        """绑实例的 httpx 客户端; trust_env=False 防系统代理劫持; auth 由驱动给。
+        只跑本地快调用, 长等待由 /wait 的 timeout 单独给。— 小欧 2026-11-05"""
         return httpx.Client(
             base_url="http://127.0.0.1:%d" % self.port,
             auth=DRV.auth(self.password),
             timeout=httpx.Timeout(connect=10, read=60, write=30, pool=10),
             trust_env=False)
 
+    def aclient(self, read_timeout=60):
+        """http() 的异步版: 非流式整包全链路走它, 不阻塞事件循环。
+        read_timeout 可传: /wait 是阻塞式等待, 调用点单独给 900 s。— 小欧 2026-11-05"""
+        return httpx.AsyncClient(
+            base_url="http://127.0.0.1:%d" % self.port,
+            auth=DRV.auth(self.password),
+            timeout=httpx.Timeout(connect=10, read=read_timeout, write=30, pool=10),
+            trust_env=False)
+
     def snapshot(self):
-        """/healthz.instances[] 元素; 绝不含密码（8.6）。"""
+        """/healthz.instances[] 元素; 绝不含密码。— 小欧 2026-11-05"""
         return {"index": self.index, "port": self.port, "state": self.state,
                 "pid": self.proc.pid if self.proc is not None else None,
                 "requests": self.requests_done}
 
 
 class CliManager:
-    """实例池唯一管理者; gateway.py 只与它对话（3.6 依赖方向）。
-
-    R0 启动清场 = 新进程 + 网关每请求删会话 + 7.2.3 的"网关自记账"口径:
-    会话 ID 全部由网关创建, 生命周期与请求同生共死, 启动清场天然无欠账,
-    因而不依赖"下游是否存在会话枚举端点"（7.2.3 待实机确认项的默认①）。
-    """
+    """实例池唯一管理者; gateway.py 只与它对话。
+    启动清场: 会话 ID 全由网关创建, 生命周期与请求同生共死, 天然无欠账。— 小欧 2026-11-05"""
 
     def __init__(self, config):
         if DRV is None:
@@ -512,44 +494,54 @@ class CliManager:
         self._waiting = 0               # 排队中的请求数（池满时累计）
         self.restart_lock = threading.Lock()
         self.last_restart_at = 0.0
-        self.backoff_level = 0          # 60→120→240→…→1800（7.2.4）
-        self.cooldown_until = 0.0       # R5 内部冷却截止（值只在内存）
+        self.backoff_level = 0          # 60→120→240→…→1800 — 小欧 2026-11-05
+        self.fail_streak = 0            # 连续下游类失败计数（达 fail_threshold 才重启）— 小欧 2026-11-05
+        self.restarted_since_success = False   # 上次重启后尚无成功请求 = 连续失败 — 小欧 2026-11-05
+        self.cooldown_until = 0.0       # 内部冷却截止（值只在内存）— 小欧 2026-11-05
         self.stop_flag = False
+        self._reaper_started = False    # start_reaper 幂等标志 — 小欧 2026-11-05
 
-    # --- 启停 -------------------------------------------------------------
+    # --- 启停 ---
 
     def start_reaper(self):
-        """后台清扫线程: R6（或 R2 兜底）+ R3。5 s 一轮, busy 的实例一律跳过。"""
+        """后台清扫线程: 老化回收 + 空闲回收。5 s 一轮, busy 的实例一律跳过。幂等。— 小欧 2026-11-05"""
+        if self._reaper_started:
+            return
+        self._reaper_started = True
         threading.Thread(target=self._reaper_loop, daemon=True).start()
 
     def _reaper_loop(self):
         while not self.stop_flag:
             time.sleep(5)
-            cfg = self.config
-            r6_on = bool(cfg.get("r6_enabled", True))
-            gap = int(cfg["task_idle_gap_s"] if r6_on else cfg["idle_seconds"])
-            for inst in self.instances:
-                if inst.state == "busy":
-                    continue            # busy 绝不杀（7.2 图: 停机只发生在 ready）
-                if inst.is_stale(int(cfg["max_age_seconds"]), int(cfg["max_requests"])):
-                    inst.stop()         # R3: 此刻必无在跑请求
-                elif inst.is_idle_beyond(gap):
-                    inst.stop()         # R6（开）/ R2（R6 关时的兜底, 7.2.2）
+            try:
+                self._reap_once()
+            except Exception as exc:      # 单轮异常不得杀线程, 否则清扫静默停摆 — 小欧 2026-11-05
+                print("[reaper] 本轮清扫异常, 已跳过: %r" % (exc,), file=sys.stderr)
+
+    def _reap_once(self):
+        """单轮: 老化/请求数优先于空闲回收; busy 的实例一律跳过。— 小欧 2026-11-05"""
+        cfg = self.config
+        r6_on = bool(cfg.get("r6_enabled", True))
+        gap = int(cfg["task_idle_gap_s"] if r6_on else cfg["idle_seconds"])
+        for inst in self.instances:
+            if inst.state == "busy":
+                continue            # busy 绝不杀（停机只发生在 ready）— 小欧 2026-11-05
+            if inst.is_stale(int(cfg["max_age_seconds"]), int(cfg["max_requests"])):
+                inst.stop()         # 老化/请求数超限 — 小欧 2026-11-05
+            elif inst.is_idle_beyond(gap):
+                inst.stop()         # 空闲回收（窗口等停机）— 小欧 2026-11-05
 
     def shutdown(self):
-        """网关退出: 全部实例 terminate（cli_manager 是下游唯一责任人, 7.2）。"""
+        """网关退出: 全部实例 terminate（本模块是下游唯一责任人）。— 小欧 2026-11-05"""
         self.stop_flag = True
         for inst in self.instances:
             inst.stop()
 
-    # --- 池与队列（7.5 并发与背压 / R5 冷却） ------------------------------
+    # --- 池与队列（并发与背压 / 冷却） ---
 
     def acquire(self):
-        """取空闲实例; 池满排队（≤ queue_max=32）。
-
-        gateway-busy: 网关自己的队全满, Retry-After 给短值（头 ≤30 s 纪律, 4.7）。
-        R5 冷却不在此判: 冷却是"调模型"的限制, 模型发现不耗额度（见 ensure_not_cooling）。
-        """
+        """取空闲实例; 池满排队（≤ queue_max）。
+        队全满抛 gateway-busy, Retry-After 给短值; 冷却不在此判。— 小欧 2026-11-05"""
         with self.cond:
             while True:
                 for inst in self.instances:
@@ -573,66 +565,75 @@ class CliManager:
             self.cond.notify()
 
     def ensure_not_cooling(self):
-        """R5: 冷却窗口内拒绝调模型（会抛, 不是查询）; 模型发现不耗额度, 不调本方法 — 小欧 2026-11-05"""
+        """冷却窗口内拒绝调模型（会抛, 不是查询）; 模型发现不耗额度, 不调本方法 — 小欧 2026-11-05"""
         remain = self.cooldown_until - time.time()
         if remain > 0:
             raise GatewayError(429, "free-limit",
                             "免费额度受限，冷却中（约 %d s 后可重试）" % int(remain))
 
     def note_cooldown(self, ms):
-        """R5: 429 free-limit → 内部冷却, 绝不重启（重启不改出口 IP, 7.2.2）。
-
-        下游 retryAfterMs 采信但封顶 COOLDOWN_S; 无头值同样按 COOLDOWN_S 记
-        （2026-11-05 实测: 下游给 14 h, 额度早已恢复仍被本地冷却拦住）— 小欧 2026-11-05
-        """
+        """429 free-limit → 内部冷却, 绝不重启（重启不改出口 IP）。
+        下游 retryAfterMs 采信但封顶 COOLDOWN_S, 无头值同样按 COOLDOWN_S 记。— 小欧 2026-11-05"""
         secs = min((ms or 0) / 1000.0, COOLDOWN_S)
         self.cooldown_until = max(self.cooldown_until,
                                   time.time() + (secs if secs > 0 else COOLDOWN_S))
 
-    # --- R4 + 重启风暴保护（7.2.2 / 7.2.4） --------------------------------
+    # --- 失败计数 + 重启风暴保护 ---
+
+    def note_success(self):
+        """请求成功收口: 失败计数清零; 上次重启后终于成功 → 退避复位。— 小欧 2026-11-05"""
+        self.fail_streak = 0
+        if self.restarted_since_success:
+            self.restarted_since_success = False
+            self.backoff_level = 0
 
     def on_downstream_failure(self, etype):
-        """下游类失败时: 计数 + 停掉空闲实例走重启退避。仅 timeout/network/server 触发。"""
+        """连续 fail_threshold 次下游类失败才重启一次; 连续重启失败才升级退避。
+        单次抖动不重启, 退避窗口内不重启（计数保留）。— 小欧 2026-11-05"""
         if etype not in RESTARTABLE_TYPES:
             return
         cfg = self.config
+        self.fail_streak += 1
+        if self.fail_streak < int(cfg["fail_threshold"]):
+            return                      # 未达阈值: 单次抖动不重启（R4）
         interval = float(cfg["restart_min_interval_s"])
         wait = min(interval * (2 ** self.backoff_level), float(cfg["backoff_cap_s"]))
         if time.time() - self.last_restart_at < wait:
-            return                      # 退避期内不重启（熔断状态）
+            return                      # 退避窗口内不重启; 计数保留, 窗口过后再试
         if not self.restart_lock.acquire(blocking=False):
             return                      # 单飞: 已有重启在途, 并发请求等它完成
         try:
-            ok = True
+            failed = False
             for inst in self.instances:
                 if inst.state != "busy":
                     try:
                         inst.stop()
                     except Exception:
-                        ok = False
+                        failed = True
             self.last_restart_at = time.time()
-            if ok:
-                self.backoff_level = 0  # 一次成功动作即复位（成功即复位规则）
-            else:
+            if self.restarted_since_success or failed:
+                # 上次重启后仍无成功请求（或停止动作本身报错）→ 连续重启失败, 升级退避
                 self.backoff_level = min(self.backoff_level + 1, 5)
+            self.restarted_since_success = True
+            self.fail_streak = 0
         finally:
             self.restart_lock.release()
 
     def restart_wait_remaining(self):
-        """重启退避剩余秒数（/healthz 报 restart-backoff 用, 7.2.4）。"""
+        """重启退避剩余秒数（/healthz 用）。— 小欧 2026-11-05"""
         interval = float(self.config["restart_min_interval_s"])
         wait = min(interval * (2 ** self.backoff_level),
                    float(self.config["backoff_cap_s"]))
         return max(0.0, self.last_restart_at + wait - time.time())
 
-    # --- /healthz 聚合（7.1.6 运维事实; 密码/token 永不出现在此, 8.6） ------
+    # --- /healthz 聚合（运维事实; 密码/token 永不出现） ---
 
     def health_snapshot(self):
         states = [inst.state for inst in self.instances]
         serving = [s for s in states if s in ("ready", "busy")]
         status = "degraded" if (not serving and "stopped" not in states) else "ok"
         if all(s == "stopped" for s in states):
-            cli = "idle"                # cli=idle 不是错误（4.7 规则 2: 先 R1 再转发）
+            cli = "idle"                # cli=idle 不是错误: 先按需启动再转发 — 小欧 2026-11-05
         elif serving:
             cli = "up"
         else:

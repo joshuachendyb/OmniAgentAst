@@ -4,12 +4,13 @@
 编写人: 小欧    创建时间: 2026-11-05 08:31:00
 编辑历史:
   2026-11-05 build_prompt 拆 system/conv 键, text 留给纯文本模式 -- 小欧
-  2026-11-05 小欧 - 按方向重排: 本文件收口全部向下翻译(工具清单渲染+1~5 段组装并入), usage 计量迁 fc.py(向上)
-  2026-11-05 三堂会审整改: _as_text 拆为 _content_text/_collect, TAIL_PLAIN 删除, 段注释口径对齐 -- 小欧
-  2026-11-05 14:40:16 组装序定为 1~5 段; 第 5 段输出格式重写成 8 条规则(内嵌界符举例) -- 小欧
+  2026-11-05 按方向重排: 本文件收口全部向下翻译(工具清单渲染 + 1~5 段组装), usage 计量迁出 -- 小欧
+  2026-11-05 _as_text 拆为 _content_text/_split_messages, TAIL_PLAIN 删除 -- 小欧
+  2026-11-05 组装序定为 1~5 段; 第 5 段输出格式重写成 8 条规则 -- 小欧
   2026-11-05 界符改回训练同形 <tool_call>…</tool_call>; 解析侧容错 </call_out> 残收尾 -- 小欧
-  2026-11-05 命名对齐: _collect→_split_messages(它只干分桶), render_tool_list→_render_tool_list(仅本文件调用);
-             usage 计量所在文件更名 fc.py→upward.py -- 小欧
+  2026-11-05 命名对齐: _collect→_split_messages, render_tool_list→_render_tool_list -- 小欧
+  2026-11-05 三处形状防御: 消息项/工具项/function 非 dict 跳过, image_url 非对象按空 -- 小欧
+  2026-11-05 注释规范化: 压缩到两行内并统一署名日期 -- 小欧
 """
 from __future__ import annotations
 
@@ -22,28 +23,20 @@ IGNORABLE_PARAMS = {              # 忽略并在首次出现时记 WARN 的采�
     "frequency_penalty", "presence_penalty",
 }
 
-# 协议界符（全仓唯一一套输出规格）: 与模型训练同形的 <tool_call>…</tool_call> — 小欧 2026-11-05
-# 容错: 老版本把收尾截断成 </call_out> 并泄漏到 UI, 解析侧 </call_out>/</toolcall>/</tool_calls>
-# 等残形一律认(upward.py), 输出仍只写 CALL_CLOSE。
+# 协议界符与模型训练同形; 解析侧容错 </call_out>/</toolcall> 等残形, 输出只写 CALL_CLOSE — 小欧 2026-11-05
 CALL_OPEN = "<tool_call>"
 CALL_CLOSE = "</tool_call>"
 BLOCK_RE = re.compile(re.escape(CALL_OPEN) + r"(.*?)(?:" + re.escape(CALL_CLOSE)
                       + r"|</call_out>)", re.S)
 
-# ============================================================
-# 组装序（全 prompt 从头到尾只有这一套 1~5, 不再出现别的编号）:
-#   1 系统指令 → 2 工具清单 → 3 对话历史 → 4 本轮任务（最新 user 在第 3 段
-#   末尾压轴, 不另拆段） → 5 输出格式与行动提醒。
-# 【各段处理位置】1/3/4 段=本文件 _split_messages 的消息回放; 2 段=本文件
-#   _render_tool_list; 5 段=本文件 _TAIL_TOOLS; 拼装点=本文件 build_prompt。 — 小欧 2026-11-05
-# 第 2、5 段文案集中在下面常量区, 增删文案只动常量, 组装直线不动。
-# ============================================================
+# 组装序 1~5 段: 1 系统指令 → 2 工具清单 → 3 对话历史(本轮任务压轴) → 5 输出格式。
+# 第 2、5 段文案集中在下面常量区, 组装直线不动。— 小欧 2026-11-05
 
 # —— 第 2 段文案: 工具清单（全段唯一一句）——
 _SEC2_LEAD = ("【工具清单】\n"
               "下面是可用的工具清单：响应返回中只能按照下列工具清单和名词+参数的说明进行响应")
 
-# —— 第 5 段文案: 输出格式 + 行动提醒（全段唯一一个常量）— 小欧 2026-11-05 ——
+# —— 第 5 段文案: 输出格式 + 行动提醒（全段唯一一个常量）——
 _TAIL_TOOLS = (
     "\n\n【输出格式】你的响应就是一段纯文字，按下面规则编写回复：解释、说明、最终答复都写在块外。\n"
     "- 1. answer:任务完成，直接写出最终文字答复，不再回复工具块。\n"
@@ -64,18 +57,22 @@ _TYPE_CN = {"string": "字符串", "integer": "整数", "number": "数字", "boo
 
 
 def collect_param_warns(payload):
-    """顶层出现的可忽略采样参数 → WARN 文案列表（网关去重后记日志, 不影响响应）。"""
+    """顶层可忽略采样参数 → WARN 文案列表（记日志, 不影响响应）。— 小欧 2026-11-05"""
     return ["忽略采样参数 %s（下游无此类入参）" % key
             for key in sorted(IGNORABLE_PARAMS) if key in (payload or {})]
 
 
 def _render_tool(index, tool):
     """单个工具翻人话: 编号+名称+用途+逐参数（类型/必填/描述）— 小欧 2026-11-05"""
-    fn = (tool or {}).get("function") or {}
-    schema = fn.get("parameters") or {}
-    props = schema.get("properties") or {}
-    required = schema.get("required") or []
-    desc = (fn.get("description") or "").strip() or "（无描述）"
+    fn = tool.get("function") if isinstance(tool, dict) else None
+    fn = fn if isinstance(fn, dict) else {}
+    schema = fn.get("parameters")
+    schema = schema if isinstance(schema, dict) else {}
+    props = schema.get("properties")
+    props = props if isinstance(props, dict) else {}
+    required = schema.get("required")
+    required = required if isinstance(required, list) else []
+    desc = str(fn.get("description") or "").strip() or "（无描述）"
     lines = ["%d) %s —— %s" % (index, fn.get("name", ""), desc)]
     if not props:
         lines.append("   参数: 无")
@@ -85,16 +82,18 @@ def _render_tool(index, tool):
         pinfo = pinfo if isinstance(pinfo, dict) else {}
         ptype = _TYPE_CN.get(pinfo.get("type") or "string", "字符串")
         need = "必填" if pname in required else "可选"
-        pdesc = (pinfo.get("description") or "").strip()
+        pdesc = str(pinfo.get("description") or "").strip()
         lines.append("   - %s（%s, %s）%s" % (pname, ptype, need,
                      ("：" + pdesc) if pdesc else ""))
     return lines
 
 
-# —— 第 2 段处理函数: 工具清单渲染入口（拼装点 build_prompt 第二元）— 小欧 2026-11-05 ——
+# —— 第 2 段处理函数: 工具清单渲染入口（拼装点 build_prompt 第二元）——
 def _render_tool_list(tools):
     """第 2 段渲染: 工具清单（文案只有 _SEC2_LEAD, 清单逐工具翻人话）— 小欧 2026-11-05"""
-    named = [t for t in (tools or []) if ((t or {}).get("function") or {}).get("name")]
+    named = [t for t in (tools or [])
+             if isinstance(t, dict) and isinstance(t.get("function"), dict)
+             and t["function"].get("name")]
     tool_lines = []
     for i, tool in enumerate(named, 1):
         tool_lines.extend(_render_tool(i, tool))
@@ -106,9 +105,9 @@ def _render_tool_list(tools):
     return "\n\n".join(p for p in parts if p)
 
 
-# —— 消息内容收口: content → 纯文本, data: 图片转附件（http(s) 不下载, 防 SSRF）— 小欧 2026-11-05 ——
+# —— 消息内容收口: content → 纯文本, data: 图片转附件（http(s) 不下载, 防 SSRF）——
 def _content_text(content, attachments):
-    """content → 文本: 字符串原样, 数组取 text 段, data: 图片追加进 attachments。"""
+    """content → 文本: 字符串原样, 数组取 text 段, data: 图片追加进 attachments。— 小欧 2026-11-05"""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -117,9 +116,10 @@ def _content_text(content, attachments):
             if not isinstance(seg, dict):
                 continue
             if seg.get("type") == "text":
-                parts.append(seg.get("text") or "")
+                parts.append(str(seg.get("text") or ""))
             elif seg.get("type") == "image_url":
-                url = ((seg.get("image_url") or {}).get("url")) or ""
+                ref = seg.get("image_url")
+                url = ((ref.get("url") if isinstance(ref, dict) else "") or "")
                 if url.startswith("data:"):
                     attachments.append({"uri": url,
                                         "name": "image-%d" % (len(attachments) + 1)})
@@ -129,17 +129,20 @@ def _content_text(content, attachments):
 
 def _render_calls(body, calls):
     """助手轮的 tool_calls → 「正文（调用 name(参数)、…）」— 小欧 2026-11-05"""
-    rendered = "、".join("%s(%s)" % ((c.get("function") or {}).get("name", ""),
-                                     (c.get("function") or {}).get("arguments", ""))
-                        for c in calls)
+    rendered = "、".join("%s(%s)" % ((c["function"].get("name", ""),
+                                      c["function"].get("arguments", "")))
+                        for c in calls
+                        if isinstance(c, dict) and isinstance(c.get("function"), dict))
     return ("%s（调用 %s）" % (body, rendered)) if body else ("（调用 %s）" % rendered)
 
 
-# —— 第 1/3 段处理函数: 消息回放（1 段收 system 原文, 3 段回放各轮对话）— 小欧 2026-11-05 ——
+# —— 消息回放: 1 段收 system 原文, 3 段回放各轮对话 ——
 def _split_messages(messages, attachments):
-    """宿主 messages → (第 1 段 system 原文列表, 第 3 段对话行列表)。"""
+    """宿主 messages → (第 1 段 system 原文列表, 第 3 段对话行列表)。— 小欧 2026-11-05"""
     sys_lines, conv = [], []
     for m in messages or []:
+        if not isinstance(m, dict):
+            continue                    # 坏形状跳过（入口已校验; 纯函数单独调用也不炸）
         role = m.get("role") or ""
         body = _content_text(m.get("content"), attachments)
         if role == "system":
@@ -154,14 +157,10 @@ def _split_messages(messages, attachments):
     return sys_lines, conv
 
 
-# —— 全 prompt 拼装点（向下翻译唯一入口）: 1 系统指令 → 2 工具清单 →
-#    3 对话历史(+4 本轮任务压轴) → 5 输出格式与行动提醒 — 小欧 2026-11-05 ——
+# —— 全 prompt 拼装点（向下翻译唯一入口）——
 def build_prompt(messages, tools):
     """向下翻译: 宿主 messages(+tools) → 下游单条 prompt; 返回 (prompt, attachments)。
-
-    工具模式 1~5 段: 1 系统指令 → 2 工具清单 → 3 对话历史(+4 本轮任务压轴) → 5 输出格式与行动提醒;
-    tools 为空走纯文本: 只剩 1 系统指令 + 3/4 对话, 不追加任何尾句。
-    """
+    tools 为空走纯文本(不追加尾句)。— 小欧 2026-11-05"""
     attachments = []
     sys_lines, conv = _split_messages(messages, attachments)
     sys_text = "\n".join(s for s in sys_lines if s)
