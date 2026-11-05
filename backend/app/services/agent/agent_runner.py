@@ -192,6 +192,8 @@
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 取消来源兜底(orchestrator_error)显式传 level="WARNING" — 小欧-2026-11-03
 #   同轮 [Runner] 增量摘要锚点命中行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
 # 2026-11-05 小欧 - 终态取数收口: current_thought 仅在 outcome==completed 时取 reasoning(失败/取消终态的reasoning是错误文案, 不入思考位)
+# 2026-11-05 小欧 - 终态 reasoning 净化: 异常分支与守卫兜底改 reasoning="", 错误/取消/兜底文案只走 response/error_message
+#   (历史回放 message_service 用 "thought or reasoning" 兜底, 原写法则把报错文案显示进思考区)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -692,8 +694,9 @@ async def run_agent_in_background(
         logger.error(f"[Runner] 任务 {task_id} 异常: {e}", exc_info=True)
         s = (agent.llm_call_count if agent else None) or 1  # 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
         error_content = str(e)[:200]
+        # reasoning 只装思考: 错误文案由 response/error_message 承载, 否则历史回放思考区显示报错 — 小欧 2026-11-05
         final_step = FinalStep(
-            step=s, response="任务执行失败", reasoning=error_content,
+            step=s, response="任务执行失败", reasoning="",
             outcome="failed", error_type="agent_operation_error", error_message=error_content,
         )
         final_dict = final_step.to_dict()
@@ -740,8 +743,10 @@ async def run_agent_in_background(
                 _last_err = getattr(agent, "_last_error", None) if agent else None
                 if _last_err:
                     _et, _em = _last_err[0] or "agent_operation_error", _last_err[1] or ""
-            _fs = FinalStep(step=(agent.llm_call_count if agent else None) or 1, response=_resp, reasoning=_em or _resp,  # 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
-                            outcome=_oc, error_type=_et, error_message=_em,
+            # 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
+            # reasoning 只装思考: 失败/取消/兜底文案已在 response 与 error_message — 小欧 2026-11-05
+            _fs = FinalStep(step=(agent.llm_call_count if agent else None) or 1, response=_resp,
+                            reasoning="", outcome=_oc, error_type=_et, error_message=_em,
                             cancel_source=(getattr(agent, "_cancel_source", None) if _oc == "cancelled" else ""))  # 方案五: 取消终态带来源落库/下发 — 小欧 2026-09-08
             _fd = _fs.to_dict()
             if stream_state is not None and _oc != "completed":
