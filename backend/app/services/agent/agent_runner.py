@@ -191,6 +191,7 @@
 # 2026-10-14 小欧 - linked 增量摘要: 抽 _build_history_context(先查锚点再定加载范围: 有锚点只取 delta, 否则全量老路, 异常一律降级全量) — 小欧-2026-10-14
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 取消来源兜底(orchestrator_error)显式传 level="WARNING" — 小欧-2026-11-03
 #   同轮 [Runner] 增量摘要锚点命中行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
+# 2026-11-05 小欧 - 终态取数收口: current_thought 仅在 outcome==completed 时取 reasoning(失败/取消终态的reasoning是错误文案, 不入思考位)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -661,7 +662,8 @@ async def run_agent_in_background(
             for _s in reversed(current_execution_steps):
                 if _s.get("type") == "final":
                     stream_state.current_content = _s.get("response") or ""
-                    stream_state.current_thought = _s.get("reasoning") or ""
+                    # thought只装思考: 非completed终态的reasoning是错误/终止文案, 不入思考位 — 小欧 2026-11-05
+                    stream_state.current_thought = (_s.get("reasoning") or "") if (_s.get("outcome") or "") == "completed" else ""
                     break
 
         # 正常结束：终态由 react_cycle 内部设置(agent.status), 无需在此补发
