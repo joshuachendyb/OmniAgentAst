@@ -1,6 +1,6 @@
 @echo off
-rem start.bat - 启动网关。NO_PROXY 显式设置: 回环请求不得走系统代理（9.7 表第 2 条）
-rem 编写人: 小欧    2026-11-05
+rem start.bat - Start gateway. NO_PROXY set explicitly: loopback must bypass system proxy (doc 9.7 row 2)
+rem Author: Xiao Ou 2026-11-05 (remarks transliterated to English per user order; logic unchanged)
 setlocal
 set "NO_PROXY=127.0.0.1,localhost"
 set "no_proxy=127.0.0.1,localhost"
