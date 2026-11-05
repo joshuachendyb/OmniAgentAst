@@ -42,6 +42,7 @@
 #   同时删死变量 display_name_to_save、非 user 角色不查开关(409 门只拦 user, 免一次无用 DB 往返)
 # 2026-11-04 - 小欧 - save_message 的 atxn 补 retry_locked=3: 用户消息高频写, 5 会话并发实测撞锁
 #   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面; 顺清 4 处存量子类 Unused import(F401) — 小欧-2026-11-04
+# 2026-11-05 小欧 - 回放聚合注释纠偏: ThoughtStep构建层兜底已废, 取键thought/reasoning经构建点显式传参仍成立(纯注释)
 """
 message_service — 消息业务服务(services/chat)
 
@@ -152,8 +153,8 @@ def get_session_messages(session_id: str):
                 display_name = extract_display_name_from_steps(steps)
             # thought 派生: 从 execution_steps 的 thought 类型步骤取(北京老陈 2026-08-22: 不读 chat_messages)
             # 2026-10-01 小欧: 取键改 thought/reasoning(解 [1] E11 连带)——content 已被
-            #   _strip_thought_content 剥除(回显只取 thought/reasoning), 且 reasoning-only 分支的
-            #   thought 步正文落在 thought 键上(ThoughtStep._thought = thought or content),
+            #   _strip_thought_content 剥除(回显只取 thought/reasoning); reasoning-only 分支的
+            #   正文落在 thought/reasoning 键上(构建点显式传参, 2026-11-05 构建层兜底已废),
             #   原式 "content or reasoning" 两键皆空 → 消息级 thought 退化为 None, 历史回放推理区空白。
             thought = None
             if steps:

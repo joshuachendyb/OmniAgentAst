@@ -1,14 +1,22 @@
 ﻿# -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-07-15 小欧 FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
+# 2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
 # 2026-07-18 小欧 修复: StreamChunk新增truncated字段
 # 2026-07-19 小欧 StreamChunk新增finish_reason字段(OpenAI兼容API终结原因:stop/length/tool_calls/content_filter)
+# 2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
+# 2026-08-22 小欧 model结构化归一报告v1.25 6.4: ChatResponse(model/provider分离→chat_model:ModelRef)、
+#   StreamChunk(单字段model形态④→chunk_model:ModelRef补provider)、create_cancelled_chunk/create_error_chunk
+#   入参归一 chunk_model:ModelRef — F8 不留兼容别名, 消费点随改
 # 2026-09-02 小欧 设计文档v1.21落码: StreamChunk新增retry_notice/retry_attempt/retry_total字段
 #   (L1重试通知承载, 默认None零行为变化; llm_stream消费转MetaStep(retrying)发前端位置2🔁)
 # 2026-09-06 小欧 元事件载荷通道落码: StreamChunk新增payload:Optional[Dict]载荷通道(元事件统一载体),
 #   create_payload_chunk工厂与取消/错误族同列(单行构造), 默认None零行为变化
 # 2026-10-29 小欧 重试事件文案统一: StreamChunk新增retry_wait/retry_error_type字段
 #   (L1重试事件透传退避秒数+异常类名, 默认None零行为变化)
-# 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+# 2026-10-31 小欧 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2"
+# 2026-11-05 小欧 StreamChunk删reasoning死字段(全链零读写, 思考以is_reasoning标记承载); docstring第4条thought口径纠偏(answer轮回退已随2026-09-01方案A删除)
+
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
@@ -29,25 +37,13 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
 
 3. type 共 3 种：action | answer | error
 
-4. content / thought / reasoning 字段映射：
+4. content / thought / reasoning 字段映射（thought 口径按 2026-09-01 方案A 纠偏 — 小欧 2026-11-05）：
    - content: LLM 非推理文本块累加（is_reasoning=False）
-   - reasoning: LLM 推理文本块累加（is_reasoning=True）
-   - thought:
-     type="action" 时: = full_content（调工具时的附带文本）
-     type="answer" 时: = parsed.get("thought", content)（回退为 content）
+   - reasoning: 思考文本块累加（is_reasoning=True）
+   - thought: DB 收口列。
+     type="action" 时: = full_content（工具轮附带文字）
+     type="answer" 时: 经 FinalStep 单一承载, 思考取 reasoning, 不再回退为 content
 
-编辑历史:
-# 格式规范: {日期} {署名} {修改内容}
-   2026-07-15 小欧 FCFormatError.__init__加self.message=message,补缺失的实例属性(写测试挖出的预存bug)
-   2026-07-17 小沈 FCFormatError→LLMResponseError(FC概念改名,对应用户LLM响应数据错误语义)
-   2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
-   2026-08-22 小欧 model结构化归一报告v1.25 6.4: ChatResponse(model/provider分离→chat_model:ModelRef)、
-     StreamChunk(单字段model形态④→chunk_model:ModelRef补provider)、create_cancelled_chunk/create_error_chunk
-     入参归一 chunk_model:ModelRef — F8 不留兼容别名, 消费点随改
-    2026-09-02 小欧 设计文档v1.21落码: StreamChunk新增retry_notice/retry_attempt/retry_total字段;
-     默认None零行为变化, L1重试通知由base_service yield, llm_stream消费转MetaStep(retrying)
-     2026-09-06 小欧 元事件载荷通道落码: StreamChunk新增payload:Optional[Dict](元事件载荷通道,
-     默认None零行为变化); 新增create_payload_chunk工厂(meta载荷统一载体, 与取消/错误族同列)
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:本模块由 app/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm; 2026-08-14 llm 已独立为 app 顶层目录, 路径由 app/services/llm 改 app/llm)
@@ -93,7 +89,7 @@ class StreamChunk:
     2026-08-22 小欧 归一报告v1.25 6.4: 单字段 model(形态④缺provider) → chunk_model: ModelRef(补 provider)"""
     def __init__(self, content: str, chunk_model: "ModelRef", is_done: bool = False,
                  stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
-                 reasoning: Optional[str] = None, is_reasoning: bool = False,
+                 is_reasoning: bool = False,
                  tool_calls: Optional[List[Dict]] = None,
                  raw_data: str = "",
                  usage: Optional[Dict] = None,
@@ -110,7 +106,6 @@ class StreamChunk:
         self.is_done = is_done
         self.stream_error = stream_error
         self.stream_error_type = stream_error_type
-        self.reasoning = reasoning
         self.is_reasoning = is_reasoning
         self.tool_calls = tool_calls or []
         self.raw_data = raw_data
