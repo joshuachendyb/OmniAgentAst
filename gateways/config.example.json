@@ -1,0 +1,25 @@
+{
+  "driver": "opencode",
+  "host": "127.0.0.1",
+  "port": 8199,
+  "token": "安装时替换为 32 位随机 hex（与宿主 ai.opencli.api_key 一致, 10.2.2 推荐方案 B）",
+  "pool_size": 2,
+  "port_base": 8200,
+  "port_span": 10,
+  "queue_max": 32,
+  "task_idle_gap_s": 120,
+  "r6_enabled": true,
+  "idle_seconds": 600,
+  "max_age_seconds": 7200,
+  "max_requests": 500,
+  "fail_threshold": 3,
+  "restart_min_interval_s": 60,
+  "backoff_cap_s": 1800,
+  "startup_timeout": 30,
+  "log_keep_days": 7,
+  "cli": {
+    "executable": "",
+    "compatible": ">=2.2.0 <2.3.0",
+    "allow_system": true
+  }
+}
