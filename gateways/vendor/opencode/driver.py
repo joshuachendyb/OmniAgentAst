@@ -8,6 +8,7 @@ r"""vendor\opencode\driver.py — opencode CLI 驱动（方言唯一集中点, 1
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -23,6 +24,18 @@ PROVIDER_ID = "opencode"
 VERSION_RE = re.compile(r"^opencode v?(\d+\.\d+\.\d+)")          # 实测: opencode v2.2.0
 PASSWORD_RE = re.compile(r"server password (\S+)")               # D17: 密码出自 stdout
 PASSWORD_MASK = "server password ***"                            # 8.6 脱敏替身
+
+# FIX M（2026-11-05 小欧）: 下游 CLI 是 agent 型程序, 默认 build agent 自带一整套
+# 工具并会自己跑多轮 ReAct。网关只想要「一次纯文本补全」, 否则模型会先被 CLI 的
+# 内置工具吸走几十秒, 甚至把网关教给它的调用块当 CLI 工具执行（FIX L 同案）。
+# 这里在隔离的 XDG 配置里注册一个无工具、单步的 agent, 建会话时钉死使用它。
+AGENT_NAME = "opencli-plain"
+_AGENT_SPEC = {
+    "description": "opencli gateway plain-text agent: no tools",
+    "mode": "primary",
+    "tools": {"*": False},
+    "permission": {"*": "deny"},
+}
 
 
 class Driver:
@@ -60,7 +73,26 @@ class Driver:
             path = os.path.join(root, sub, tag)
             os.makedirs(path, exist_ok=True)
             paths[var] = path
+        self._ensure_agent_config(paths["XDG_CONFIG_HOME"])
         return paths
+
+    def _ensure_agent_config(self, config_home):
+        """FIX M: 在隔离配置里注册无工具单步 agent（已存在则覆盖该项, 不动其他键）。"""
+        cfg_dir = os.path.join(config_home, "opencode")
+        os.makedirs(cfg_dir, exist_ok=True)
+        path = os.path.join(cfg_dir, "opencode.json")
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh) or {}
+            except Exception:
+                data = {}                                  # 坏配置不阻断启动, 重写
+        agents = data.get("agent") or {}
+        agents[AGENT_NAME] = dict(_AGENT_SPEC)
+        data["agent"] = agents
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
 
     # --- 进程（7.1.2 spawn; D17 密码; 7.1.3 就绪） -------------------------
 
@@ -91,7 +123,7 @@ class Driver:
 
     def session_body(self, model, permissions):
         return oc._session_body(model, title="ask-%s" % model,
-                                permissions=permissions)
+                                agent=AGENT_NAME, permissions=permissions)
 
     def prompt_body(self, text, files):
         return oc._prompt_body(text, files=files or None)

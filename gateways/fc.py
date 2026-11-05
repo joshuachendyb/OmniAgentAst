@@ -16,17 +16,24 @@ import json
 import re
 import uuid
 
-# 调用块形状（模型只被允许用这一种形状输出调用意图; 前后各留界符)。
-BLOCK_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)  # 5.2 原文界符逐字节核对: ASCII 标签 <tool_call> 包裹
+# 调用块界符（FIX L, 2026-11-05 小欧）。
+# 事故: 原界符 <tool_call> 与下游 opencode CLI 自带的文本工具解析器同名——模型输出
+# 的调用块被 CLI 抢先当成它的内置工具执行, 返回 "No tool named bash/grep/write",
+# 宿主永远拿不到调用, 表现为死循环读文件、从不落笔（见调试笔记第 6 条）。
+# 改用下游不识别的私有界符, 并保留旧界符解析做兼容。
+CALL_OPEN = "<<<OPENCLI_CALL>>>"
+CALL_CLOSE = "<<<END_OPENCLI_CALL>>>"
+BLOCK_RE = re.compile(re.escape(CALL_OPEN) + r"(.*?)" + re.escape(CALL_CLOSE), re.S)
+LEGACY_BLOCK_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 
 _PROTOCOL_HEADER = (
     "【硬性约束，优先于其他一切要求】\n"
-    "你没有内置工具。read / write / bash / grep 等工具在你的环境中均不存在，\n"
-    "调用它们必然失败（会返回 No tool named ... 或 Permission denied）。\n"
+    "你只能输出文字，不能执行命令、不能读写文件、不能调用任何内置工具。\n"
     "需要外部信息时，只能用下面的「文本协议」表达调用意图，由外部系统代为执行。\n"
 )
 
-_TAIL_TOOLS = "\n\n需要外部信息时必须使用上文的文本协议；禁止调用任何内置工具。"
+_TAIL_TOOLS = ("\n\n需要外部信息时必须使用上文的文本协议；"
+               "不要使用任何其他调用格式（其他格式一律无效）。")
 
 
 def render_tool_protocol(tools):
@@ -42,7 +49,7 @@ def render_tool_protocol(tools):
         lines.append("%d) %s —— %s" % (i, fn.get("name", ""), desc))
         lines.append("   参数: %s" % json.dumps(props, ensure_ascii=False))
     lines.append('调用格式（调用时只输出下面的块，块外不要有任何文字）：')
-    lines.append('<tool_call>{"name":"工具名","arguments":{参数名:值}}</tool_call>')
+    lines.append(CALL_OPEN + '{"name":"工具名","arguments":{参数名:值}}' + CALL_CLOSE)
     return "\n".join(lines)
 
 
@@ -117,7 +124,10 @@ def parse_calls(answer, tools):
     calls, outs, invalid, warns = [], [], 0, []
     pos = 0
     answer = answer or ""
-    for m in BLOCK_RE.finditer(answer):
+    # 新界符 + 旧界符都收（FIX L 兼容; 旧界符可能已被下游吞掉, 能到这里就更要认）
+    matches = sorted(list(BLOCK_RE.finditer(answer)) + list(LEGACY_BLOCK_RE.finditer(answer)),
+                     key=lambda m: m.start())
+    for m in matches:
         outs.append(answer[pos:m.start()].strip())
         pos = m.end()
         try:

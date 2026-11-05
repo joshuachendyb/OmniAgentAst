@@ -281,8 +281,10 @@ async def _plain_chat(inst, payload, prompt, attachments, tools):
             message["content"] = content
 
         usage = mapping.usage_from_counts(DRV.token_counts(assistant))   # 4.6; 缺→null
-        _log("%s model=%s stream=0 out_chars=%d tool_calls=%d usage=%s elapsed=%.1fs"
-             % (rid, model, len(content), int(bool(message.get("tool_calls"))),
+        # FIX N: stream 值按请求实报（原为硬编码 0, 曾把流式排障带偏）
+        _log("%s model=%s stream=%d out_chars=%d tool_calls=%d usage=%s elapsed=%.1fs"
+             % (rid, model, 1 if payload.get("stream") else 0, len(content),
+                int(bool(message.get("tool_calls"))),
                 ("p%d/c%d" % (usage["prompt_tokens"], usage["completion_tokens"]))
                 if usage else "null", time.time() - started))
         inst.touch()                                    # 步骤 11: 重置任务窗口
@@ -328,7 +330,11 @@ async def _stream_tools(inst, payload, prompt, attachments, tools):
     async def gen():
         yield streamer.first_frame()
         msg = choice["message"]
-        yield streamer.delta_frame(content=msg.get("content", ""))
+        # FIX N（2026-11-05 小欧, 对齐 5.6）: 未解析出调用时按普通文本切帧
+        # （200–400 字/帧）; 原实现整段一帧, 宿主 UI 只看到 0/1 个块。
+        text = msg.get("content") or ""
+        for i in range(0, len(text), 300):
+            yield streamer.delta_frame(content=text[i:i + 300])
         if msg.get("tool_calls"):
             yield streamer.delta_frame(tool_calls=msg["tool_calls"])
         yield streamer.final_frame(body_model, usage, choice["finish_reason"])
@@ -386,17 +392,26 @@ def _frames(info, streamed=None):
     streamed: 调用方持有的已流出 ordinal 集合（跨事件共享）。
     """
     if info["kind"] == "content":
+        text = info.get("text") or ""
+        if not text:
+            return ""                    # FIX N: 空 delta 不发帧, 也不占 ordinal
         if streamed is not None and info.get("ordinal") is not None:
             streamed.add(info["ordinal"])
-        return streamer.delta_frame(content=info["text"])
+        return streamer.delta_frame(content=text)
     if info["kind"] == "final":
         if streamed is not None and info.get("ordinal") in streamed:
             return ""
+        text = info.get("text") or ""
+        if not text:
+            return ""
         if streamed is not None and info.get("ordinal") is not None:
             streamed.add(info["ordinal"])
-        return streamer.delta_frame(content=info["text"])
+        return streamer.delta_frame(content=text)
     if info["kind"] == "reasoning":
-        return streamer.delta_frame(reasoning=info["text"])
+        text = info.get("text") or ""
+        if not text:
+            return ""
+        return streamer.delta_frame(reasoning=text)
     return ""
 
 
@@ -416,6 +431,9 @@ async def _stream_text(inst, payload, prompt, attachments):
     首帧(≤60 s)后提交 200 → 心跳 15 s / 静默 180 s → idle → 取末消息 usage → 末帧。
     """
     model = str(payload.get("model") or "")
+    rid = "req_" + uuid.uuid4().hex[:8]
+    started = time.time()
+    out_chars = 0
     sid = ""
     events = None
     ev_task = None                        # FIX D 守护: 等待任务的引用, 出错时可取消
@@ -477,6 +495,8 @@ async def _stream_text(inst, payload, prompt, attachments):
             frames = _frames(info, streamed)
             if frames:
                 first = frames
+                if info["kind"] in ("content", "final"):
+                    out_chars += len(info.get("text") or "")
     except GateError:
         await _aclose(events)
         if ev_task is not None and not ev_task.done():   # FIX D 守护: 弃任务前先取消
@@ -487,6 +507,7 @@ async def _stream_text(inst, payload, prompt, attachments):
         raise                                            # 状态码在提交前可改（4.5）
 
     async def body():
+        nonlocal out_chars
         try:
             yield streamer.first_frame()                 # 已过 warm-up: 首帧即提交 200
             yield first
@@ -499,6 +520,8 @@ async def _stream_text(inst, payload, prompt, attachments):
                 frames = _frames(info, streamed)
                 if frames:
                     last_emit = time.time()
+                    if info["kind"] in ("content", "final"):
+                        out_chars += len(info.get("text") or "")
                     yield frames
                 elif info["kind"] == "idle":
                     break                                # 会话空闲 → 取末消息补 usage
@@ -508,6 +531,11 @@ async def _stream_text(inst, payload, prompt, attachments):
             usage = mapping.usage_from_counts(DRV.token_counts(last or {}))
             finish = DRV.finish_reason(last or {}) or "stop"
             yield streamer.final_frame(model, usage, finish)
+            # FIX N: 纯文本流式此前整条链路无请求日志, 排障只能靠猜; 补齐一行。
+            _log("%s model=%s stream=1 out_chars=%d tool_calls=0 usage=%s elapsed=%.1fs"
+                 % (rid, model, out_chars,
+                    ("p%d/c%d" % (usage["prompt_tokens"], usage["completion_tokens"]))
+                    if usage else "null", time.time() - started))
             inst.touch()                                 # 步骤 11: 重置任务窗口
         except httpx.HTTPError as exc:   # FIX B 偏差记录（2026-11-05 小欧）: 已提交
             raise GateError(502, "network",      # 窗口内传输异常同样归一（4.7 规则 2）
