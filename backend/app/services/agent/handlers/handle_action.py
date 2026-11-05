@@ -148,6 +148,7 @@ from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 
 
 # 2026-11-03 小欧 - 移除三条「已拆分至 file_tool_utils / conflict_detector / tool_constants」悬空标签:
 #   随 30 条拆分遗留死导入一并清除(导入已删, 标签无指代; 下沉去向见模块 docstring 与头部编辑历史) — 小欧-2026-11-03
+# 2026-11-05 小欧 - 工具轮 ThoughtStep 补显式 thought=parsed.thought(对齐构建层去兜底, 行为等价)
 
 
 def _action_tools_view(calls: List[Dict]) -> List[Dict]:
@@ -228,8 +229,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
                 _denied_pre.append((_cn, f"工具 {_cn} 未注册", _c))
         call_result.all_calls = _kept
 
-    await _buf.publish(agent._step_emitter.emit(ThoughtStep(
-        step=step,
+    await _buf.publish(agent._step_emitter.emit(ThoughtStep(step=step, thought=parsed.get("thought", ""),
         content=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
     )).to_dict())
