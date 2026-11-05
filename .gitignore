@@ -117,3 +117,8 @@ gateways/config.json
 gateways/logs/
 gateways/runtime/
 gateways/**/__pycache__/
+
+# 2026-11-05 小欧: gateways/tests/ 是测试工程交付物(run_cases.py 验收回归脚本),
+# 须入库; 上行"tests/"通用规则(为后端/前端 pytest 产物设计)会把它整个吞掉, 故在此反转排除。
+!gateways/tests/
+
