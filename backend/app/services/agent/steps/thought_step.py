@@ -4,6 +4,7 @@
 # 2026-08-18 小欧 - 落码: 删 tool_name/tool_params(工具动作由 action step 承载);
 #   _extra_fields 仅输出 thought/reasoning(content 已由基类 to_dict 经 get_content 输出, 不重复);
 #   get_content 返回 content(历史落库主文本, 前端历史展示读 thought/reasoning 不读 content)
+# 2026-11-05 小欧 - _thought 去 or content 构建层兜底: thought只装思考防混装, handle_action工具轮补显式传thought=附带文字(行为等价); handle_answer经北京老陈裁定不装thought键(思考走reasoning); event_emitter.py死文件(全仓零调用点)删除
 
 from typing import Any, Dict, Optional
 
@@ -25,7 +26,7 @@ class ThoughtStep(ReasoningStep):
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._content = content
-        self._thought = thought or content
+        self._thought = thought  # 去构建层兜底(2026-11-05 小欧): thought只装思考, 三构造点已显式传参
         self._reasoning = reasoning
 
     def get_content(self) -> str:
