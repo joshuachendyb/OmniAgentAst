@@ -419,8 +419,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- concurrency: 并发配额（2 键）---
         _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
-        _item("tuning.concurrency.shell_pool_max_per_type", "int", "PS并发池限额", 8, range_=[1, 20],
-              notice="同一任务里同一种终端（如 PowerShell）最多同时开几个常驻会话：满了新命令要等空位；调大=并行命令更顺但更占内存"),
+        _item("tuning.concurrency.shell_max_processes", "int", "shell并发进程上限", 10, range_=[2, 64],
+              notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
         # --- agent: Agent 循环参数（1 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),

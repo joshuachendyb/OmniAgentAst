@@ -169,10 +169,10 @@ PROGRESSIVE_MAX = 300
 #      偶发故障不应污染后续正常请求(熔断器方案已否决: 一次偶发即长期禁用 shell, 得不偿失)。
 # ============================================================
 _SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execute_command"})
-# 执行器容量: 按 tuning 配置在本处计算(配置派生值不放进 tool_constants 的纯常量表) — 2026-11-04 小欧
-_SHELL_EXECUTOR_MAX = max(32, int(get_config().get("tuning.concurrency.shell_pool_max_per_type", 8)) * 4)
+# 执行器容量: 2026-11-06 小欧 - 去池化后 shell 每命令独立子进程, 执行器线程数固定 32(不再从已删的 shell_pool_max_per_type 派生)
+_SHELL_EXECUTOR_MAX = 32
 _SHELL_EXECUTOR = WorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
-_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 与池容量同源, 不再各写一份
+_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 执行器线程级并发闸门(与 execute_shell_command 的进程级 _SHELL_PROC_SEM 分层)
 
 # ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)

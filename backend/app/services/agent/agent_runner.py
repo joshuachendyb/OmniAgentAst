@@ -219,7 +219,7 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 from app.services.agent.steps import FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.task.task_registry import task_cleanup
-from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
+# 2026-11-06 小欧 - 去池化: 删除 from app.tools import cleanup_shell_pool_by_task(无任务级常驻 shell 资源需清理)
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
     agent_streams, create_task_stream_buffer, reclaim_memory_buffer,
@@ -916,9 +916,7 @@ async def run_agent_in_background(
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）
         await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0)
 
-        # Shell 池清理：关闭该任务的所有 PersistentShell 实例 — 小沈 2026-07-30
-        # 治理第1步-H2(2026-10-04 小欧): cleanup_by_task持池锁+taskkill属同步重活, 移出事件循环。
-        await asyncio.to_thread(cleanup_shell_pool_by_task, task_id)
+        # 2026-11-06 小欧 - 去池化: shell 每命令独立子进程跑完即销毁, 无任务级常驻资源需清理, 删除 cleanup_shell_pool_by_task 调用。
 
         # 落库消费者收尾 — 小欧 2026-10-01
         #   位置铁律: 必须在本 finally 最末(done.set 前)。此前置于守卫块之后, 而下方

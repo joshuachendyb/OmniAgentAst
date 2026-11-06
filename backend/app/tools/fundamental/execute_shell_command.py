@@ -150,6 +150,10 @@
 #   cmd 分支内联 poll+非阻塞读收编为同一 helper(DRY), 超时仍走 _kill_and_read_output 收残存 — 小欧-2026-11-04
 # 2026-11-04 小欧 - 红队 P21 修复: drain_until_exit 增 truncated 回传(进程已退出但孙进程持管道), 工具层追加
 #   可见提示并置 data._truncated —— 有界等待不得变成静默丢输出 — 小欧-2026-11-04
+# 2026-11-06 小欧 - 匿名(空task_id)命令一律走一次性子进程, 不再进 (None,shell_type) 共享池(无任务生命周期即无会话语义,
+#   且原"匿名池有实例→has_session恒真→白名单命令也被迫进池"形成自增强挤池循环); 解释器缺失时明确报错不回落进池;
+#   acquire 传 wait_timeout=剩余预算, 排队时间并入工具自身 timeout — 小欧-2026-11-06
+# 2026-11-06 小欧 - 去池化定案: 删 PersistentShell/ShellPoolManager 全套, 每命令独立子进程跑完即销毁; 并发上限配置默认10
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -242,6 +246,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Literal
@@ -249,11 +254,11 @@ from typing import Any, Dict, Optional, Literal
 from app.tools.file.file_encoding import get_file_encoding
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16: 中风险层独立
-from app.tools.context import get_current_task_id  # ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
-from app.tools.fundamental.shell_engine import shell_pool, _replace_python3_safe  # 2026-11-04 小欧: 删未使用的 PersistentShell(死导入)
+
+from app.tools.fundamental.shell_engine import _replace_python3_safe  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
 from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
 from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
-from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
+
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -268,6 +273,12 @@ from app.tools.tool_constants import (
     SHELL_OUTLIMIT_STDERR_MAX_CHARS,
     SUBPROCESS_TIMEOUT_SHORT,
 )
+# 2026-11-06 小欧 - 去池化: 每条命令独立子进程, 跑完即销毁; 全局仅一个并发信号量管内存。
+#   拿名额有界等待(用工具剩余 timeout), 拿不到明确失败; try/finally 必还, 卡死只毁自己这次调用。
+#   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
+from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
+_SHELL_MAX_PROCESSES = int(get_config().get("tuning.concurrency.shell_max_processes", 10))
+_SHELL_PROC_SEM = threading.BoundedSemaphore(_SHELL_MAX_PROCESSES)
 
 
 # ── 敏感环境变量过滤常量 — 小欧 2026-07-27 ──
@@ -990,7 +1001,7 @@ def shell(
     timeout: int = 60, cwd: Optional[str] = None,
     success_codes: Optional[list[int]] = None,
 ) -> Dict[str, Any]:
-    """执行 Shell 命令（v2: 持久引擎版）
+    """执行 Shell 命令（去池化版: 每命令独立子进程跑完即销毁）
 
     参数:
         command:     命令字符串
@@ -1134,60 +1145,52 @@ def shell(
             logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
+    # 2026-11-06 小欧 - 去池化: 每条命令独立子进程跑完即销毁; 全局一个并发信号量管内存,
+    #   拿名额有界等待(用工具剩余 timeout), 拿不到明确失败; try/finally 必还, 卡死只毁自己这次调用。
+    _slot_acquired = False
     try:
-        task_id = get_current_task_id()
         truncated = False      # 管道被孙进程持有导致的有界截断(必须回传为 _truncated) — 2026-11-04 小欧
-        # 治理层2(2026-10-04 小欧): 出池=无池实例+白名单, 全过走一次性进程; 仅执行路由, 扫描定序属沙箱闸。
-        _one_shot = (
-            shell_type in ("ps7", "ps5")
-            and not shell_pool.has_session(task_id, shell_type)
-            and is_shell_readonly_whitelisted(processed_command)
-        )
-        pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") if _one_shot else None
-        if pwsh_exe:
-            # 治理层2(2026-10-04 小欧): 同解释器一次性子进程, 结构复用bash分支(进程退出判定+硬超时)。
+        _remaining = timeout - (_time_mod.perf_counter() - t0)
+        if not _SHELL_PROC_SEM.acquire(timeout=max(0.0, _remaining)):
+            d = int((_time_mod.perf_counter() - t0) * 1000)
+            llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
+                shell_type, ERR_SHELL_EXCEPTION,
+                f"全局 shell 并发已达上限({_SHELL_MAX_PROCESSES}), 请稍后重试或减少并发",
+                timeout=timeout, cwd=cwd or "", hint="宿主并发限流, 非命令本身错误", cmd_short=cmd_short)
+            return build_error(data={}, llm_data=llm)
+        _slot_acquired = True
+        _remaining = timeout - (_time_mod.perf_counter() - t0)  # 2026-11-06 小欧: 排队耗时后重算剩余, drain 用此值(总时长≤timeout)
+
+        if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5】: 一次性子进程 — 2026-11-06 小欧 去池化
+            if shell_type == "ps5":
+                processed_command = _translate_powershell_operators(processed_command)
+            else:
+                processed_command = _fix_ps7_assignment_operators(processed_command)
+            pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe")
+            if not pwsh_exe:
+                pwsh_exe = shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
+            if not pwsh_exe:
+                d = int((_time_mod.perf_counter() - t0) * 1000)
+                llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
+                    shell_type, ERR_SHELL_EXCEPTION, "未找到 pwsh.exe/powershell.exe",
+                    timeout=timeout, cwd=cwd or "", hint="请确认 PowerShell 已安装并在 PATH 中", cmd_short=cmd_short)
+                return build_error(data={}, llm_data=llm)
             proc = subprocess.Popen(
                 [pwsh_exe, "-NoProfile", "-Command", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=_sanitize_env(),
             )
-            # 2026-11-04 小欧: communicate → 零线程轮询读(communicate 每调必起 _readerthread, 与 CreateProcess 互锁)
-            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
                 stderr_b += TRUNCATED_NOTE
             if timed_out:
-                logger.warning(f"[卡死C10] PS只读一次性命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
+                logger.warning(f"[卡死C10] PS命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
                 _tail_out, _tail_err = _kill_and_read_output(proc)
                 stdout_b += _tail_out
                 stderr_b += _tail_err
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
-
-        elif shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
-            # ps5需要翻译&&→;if($?){cmd2}; ps7原生支持&&无需翻译 — 小欧 2026-07-28
-            # (小欧 2026-08-06): ps7 `&& $env:X='utf-8'`是PS7语法错误(ParserError)导致命令
-            # 从未执行→假超时→连锁失败; 仅此赋值场景复用翻译器, 其余&&保持ps7原生 — 小欧 2026-08-06
-            if shell_type == "ps5":
-                processed_command = _translate_powershell_operators(processed_command)
-            else:
-                processed_command = _fix_ps7_assignment_operators(processed_command)
-            # 2026-08-07 小欧: 枚举式保护(Format-Table/List/Wide)已由shell_engine.py
-            # _exec_locked 的管道层根治取代(命令名盲区fl/ft/fw全部覆盖), 此处移除, 单一根治点(KISS)
-            # (管道末端统一| Out-String -Width 4096, 等效解决80列截断, 比命令层追加更彻底) — 小欧 2026-08-07
-
-            task_id = get_current_task_id()
-            # (小欧 2026-08-06): acquire 传入 _sanitize_env(), 修复持久进程启动时
-            # 直接 copy os.environ(含 API key) 泄漏给子进程的问题(此前仅 exec 时传 env, 进程存活时被忽略)。
-            engine = shell_pool.acquire(task_id, shell_type, workdir=cwd, env=_sanitize_env())
-            try:
-                result = engine.exec(processed_command, timeout, env=_sanitize_env())
-            finally:
-                shell_pool.release(engine)
-            stdout_str = _fix_encoding(result.get("stdout", ""))
-            stderr_str = _fix_encoding(result.get("stderr", ""))
-            returncode = result.get("exit_code", -1)
-            timed_out = result.get("timed_out", False)
 
         elif shell_type == "cmd":  # ── 【CMD专属】: .bat + subprocess ──
             # 写入 temp .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
@@ -1207,7 +1210,7 @@ def shell(
                 # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
                 # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
                 # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
-                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
                 if truncated:
                     stderr_b += TRUNCATED_NOTE
                 if timed_out:
@@ -1239,7 +1242,7 @@ def shell(
                 cwd=cwd, env=child_env,
             )
             # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
-            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, timeout)
+            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
                 stderr_b += TRUNCATED_NOTE
             if timed_out:
@@ -1346,3 +1349,6 @@ def shell(
             shell_type, ERR_SHELL_EXCEPTION, str(e),
             timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境", cmd_short=cmd_short)
         return build_error(data={}, llm_data=llm)
+    finally:
+        if _slot_acquired:
+            _SHELL_PROC_SEM.release()
