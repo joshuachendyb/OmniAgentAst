@@ -11,6 +11,8 @@
 # 编辑历史:
 #   2026-11-04 小欧 - 打包后处理增加"用户使用说明"环节: doc-打包与E2E 下最新一份
 #     OmniAgent智能助手(SPA版)使用说明*.md 复制为 dist 根 OmniAgent使用说明.md(exe 同级)
+#   2026-11-06 小欧 - 前端收集改逐文件并排除 stats.html(dist 缺失硬报错): stats.html 为
+#     rollup-plugin-visualizer 诊断产物(2.4MB)不进生产包; 多 index-*.js 经实测为懒加载 chunk 属必要保留。
 # ============================================================================
 import sys
 from pathlib import Path
@@ -54,10 +56,17 @@ app_tree = Tree(
 )
 
 # 前端 dist → _internal/web/（双击exe完整应用）— 小欧 2026-10-27
-# 需先 npm run build 生成 frontend/dist/，否则不打包(目录缺失时跳过);
+# 需先 npm run build 生成 frontend/dist/，否则打包直接报错(防"静默无前端包");
 #   挂载判据在 main.py(_STATIC_MOUNTED/_missing_web): 打包态缺 assets/index.html 启动即 error 喊出, 开发态没 dist 静默 API-only — 小欧 2026-11-01
+# 2026-11-06 小欧 - 逐文件收集 dist(排除 stats.html): stats.html 是 rollup-plugin-visualizer 诊断产物,
+#   不进生产包(2.4MB 纯冗余); 多 index-*.js 为懒加载 chunk 属必要, 一并收集。
 _frontend_dist = REPO / "frontend" / "dist"
-_frontend_datas = [(str(_frontend_dist), "web")] if _frontend_dist.is_dir() else []
+if not _frontend_dist.is_dir():
+    raise SystemExit(f"[spec] 前端构建产物缺失: {_frontend_dist} —— 请先 npm run build (或走 build_spa.ps1) 再打包")
+_frontend_datas = []
+for _f in _frontend_dist.rglob("*"):
+    if _f.is_file() and _f.name != "stats.html":
+        _frontend_datas.append((str(_f), str(Path("web") / _f.relative_to(_frontend_dist))))
 
 a = Analysis(
     [str(BACKEND / "run_server.py")],

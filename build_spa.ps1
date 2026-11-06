@@ -1,6 +1,9 @@
 ﻿# ============================================================================
 # build_spa.ps1 — SPA 同源打包自动化: 前端构建 + 后端 PyInstaller + 产物验证
 # 创建: 2026-11-06 小欧
+# 编辑历史:
+#   2026-11-06 小欧 - 前置检查加版本下限(node>=18/python>=3.11): 版本过低时打包中段才暴露,
+#     前置拦截更省时; 与 spec 的"dist 缺失硬报错"配套, 杜绝静默无前端包。
 # 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1
 #       或双击 build_spa.bat
 # ============================================================================
@@ -45,10 +48,18 @@ Write-Header "SPA 同源打包开始"
 Write-Step 0 3 "环境检查"
 $nodeVer = try { (node --version) 2>$null } catch { $null }
 if (-not $nodeVer) { Write-Err "node 未安装或不在 PATH"; exit 1 }
+$nodeMajor = [int]($nodeVer -replace 'v','' -replace '\.\d+.*','')
+if ($nodeMajor -lt 18) { Write-Err "node 版本过低: $nodeVer (需 >= 18)"; exit 1 }
 Write-OK "Node.js $nodeVer"
 
 $pyVer = try { (python --version) 2>$null } catch { $null }
 if (-not $pyVer) { Write-Err "python 未安装或不在 PATH"; exit 1 }
+# 2026-11-06 小欧 - python 版本按 major.minor 比较(3.13>=3.11), 不能用主版本号(3<11 误报)
+$pyVerNum = $pyVer -replace 'Python ','' -replace '\s+',''
+$pyParts = $pyVerNum -split '\.'
+$pyMajor = [int]$pyParts[0]
+$pyMinor = if ($pyParts.Count -gt 1) { [int]$pyParts[1] } else { 0 }
+if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 11)) { Write-Err "python 版本过低: $pyVer (需 >= 3.11)"; exit 1 }
 Write-OK "Python $pyVer"
 
 if (-not (Test-Path $spec)) { Write-Err "spec 文件不存在: $spec"; exit 1 }

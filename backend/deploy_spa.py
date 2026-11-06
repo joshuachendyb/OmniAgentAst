@@ -10,6 +10,8 @@
 #     部署前按 exe 路径比对探测目标进程是否在跑, 在跑则只提示(PS+CMD 两套命令)后退出,
 #     不自动杀进程: 占用者可能正在跑任务, 自动杀等于丢数据。
 #     部署时一并同步 dist 根的 OmniAgent使用说明.md(exe 同级), 与打包后处理环节配套。
+#   2026-11-06 小欧 - 部署前先清 _internal/web 再 copytree: web 是唯一随版本陈旧累积的静态资源,
+#     copytree dirs_exist_ok 只覆盖同名, 目标端旧 chunk 永不清除; 其余 _internal 依赖不清理保容错。
 # ============================================================================
 import argparse
 import shutil
@@ -63,6 +65,11 @@ def _deploy(target: Path, dist: Path) -> None:
     """执行部署: 覆盖 exe + 合并 _internal + 同步 exe 同级说明文档 — 小欧 2026-11-04"""
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(dist / EXE_NAME, target / EXE_NAME)
+    # 2026-11-06 小欧 - 前端产物 web/ 是唯一随版本陈旧累积的静态资源, 先清再复制避免旧 assets 残留
+    #   (copytree dirs_exist_ok 只覆盖同名, 目标端已删的旧 chunk 永不清除; 其余 _internal 依赖不清理, 保容错)
+    _web = target / '_internal' / 'web'
+    if _web.is_dir():
+        shutil.rmtree(_web)
     shutil.copytree(dist / '_internal', target / '_internal', dirs_exist_ok=True)
     for doc in dist.glob('OmniAgent使用说明*.md'):
         shutil.copy2(doc, target / doc.name)
