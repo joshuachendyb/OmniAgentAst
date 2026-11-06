@@ -156,6 +156,7 @@
 # 2026-11-06 小欧 - 去池化定案: 删 PersistentShell/ShellPoolManager 全套, 每命令独立子进程跑完即销毁; 并发上限配置默认10
 # 2026-11-06 小欧 - 三堂会审修正: drain_until_exit 改用剩余时间 max(1,int(_remaining)) 非全 timeout(总时长≤timeout); docstring 改"去池化版"
 # 2026-11-06 小欧 - 三路检测引号感知: 新增 _strip_quoted_content 剥离引号内内容, _looks_like_* 不再匹配字符串字面量命令名(如 echo "grep" 不误路由)
+# 2026-11-06 小欧 - truncated路径杀孙进程: 根退出但孙持管道写端(Start-Process/Start-Job)时, kill_process_tree杀孙防僵尸
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -1220,6 +1221,7 @@ def shell(
             )
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
+                kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
                 stderr_b += TRUNCATED_NOTE
             if timed_out:
                 logger.warning(f"[卡死C10] PS命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
@@ -1250,6 +1252,7 @@ def shell(
                 # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
                 stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
                 if truncated:
+                    kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
                     stderr_b += TRUNCATED_NOTE
                 if timed_out:
                     logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
@@ -1282,6 +1285,7 @@ def shell(
             # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
+                kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
                 stderr_b += TRUNCATED_NOTE
             if timed_out:
                 logger.warning(f"[卡死C10] Bash命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
