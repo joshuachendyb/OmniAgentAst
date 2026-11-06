@@ -49,6 +49,11 @@
 #   2026-11-04 小欧 - 新增 _wait_before_close + --no-wait: 占用提示后窗口驻留 30 秒再退出
 #     (原 sys.exit 立即退, 双击启动时控制台一闪而过, 提示根本来不及看), 按任意键可提前关;
 #     stdio 被重定向(脚本/自动化调用)不等待, 免得卡住调用方, --no-wait 可强制跳过。 — 小欧-2026-11-04
+#   2026-11-06 小欧 - 根治幽灵配置文件: _ensure_config 原恒用 base/config/, 源码模式(base=backend)
+#     生成到 backend/config/config.yaml, 而运行时 get_config_path() 读取代码库根 config/config.yaml
+#     (路径错位) → backend/config/config.yaml 每次启动被重建、永不生效、反复误导定位(用户多次删除仍再生)。
+#     修复: 新增 _config_target(): frozen=exe同级 config/, 源码=代码库根 config/(与 get_config_path 同源);
+#     example 源 frozen=exe同级, 源码=backend/config.yaml.example(git 唯一模板)。 — 小欧-2026-11-06
 # ============================================================================
 import argparse
 import shutil
@@ -237,12 +242,32 @@ def _deploy_resources(base: Path) -> None:
     _deploy_one(src_base / "OmniAgent.md", base / "OmniAgent.md", "OmniAgent.md")
 
 
+def _config_target(base: Path) -> Path:
+    """config/config.yaml 目标路径 — 小欧 2026-11-06
+
+    frozen(exe): exe 同级的 config/config.yaml(程序资源在 exe 旁, 与 _deploy_resources 一致)。
+    源码模式: 代码库根(backend 上级) 的 config/config.yaml —— 与 app.config.get_config_path()
+    返回值一致(该函数按 app/config.py 位置上溯 3 层 = 代码库根)。两模式保证
+    "生成位置 == 运行时读取位置", 杜绝幽灵配置文件(2026-11-06 根治)。"""
+    if getattr(sys, "frozen", False):
+        return base / "config" / "config.yaml"
+    return Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+
+
 def _ensure_config(base: Path) -> None:
-    """首次启动补 config/config.yaml(由同目录 config.yaml.example 复制) — 小欧 2026-09-19"""
-    target = base / "config" / "config.yaml"
+    """首次启动补 config/config.yaml(缺失时由 config.yaml.example 复制) — 小欧 2026-09-19
+
+    2026-11-06 修复: 目标路径改用 _config_target()(frozen=exe同级/源码=代码库根), example 源
+    frozen=exe同级, 源码=backend/config.yaml.example(git 唯一模板)。原实现恒用 base/config/
+    在源码模式生成 backend/config/config.yaml, 与运行时读取位置(仓库根 config/)错位,
+    导致该文件每次启动被重建却不生效。 — 小欧-2026-11-06"""
+    target = _config_target(base)
     if target.exists():
         return
-    example = base / "config.yaml.example"
+    if getattr(sys, "frozen", False):
+        example = base / "config.yaml.example"
+    else:
+        example = Path(__file__).resolve().parent / "config.yaml.example"
     if example.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(example, target)
