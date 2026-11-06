@@ -32,11 +32,25 @@ PASSWORD_MASK = "server password ***"                            # 脱敏替身 
 # 下游 CLI 是 agent 型程序, 默认 agent 自带工具并会自己跑多轮 ReAct; 网关只要一次纯文本补全。
 # 故在隔离 XDG 配置里注册无工具单步 agent, 建会话时钉死使用它。— 小欧 2026-11-05
 AGENT_NAME = "opencli-plain"
+# 2026-11-06 小欧 - 实证 "tools":{"*":false} 关不掉内建 read(下游仍只暴露 read), 故逐个点名关; permission 全 deny 一并去掉,
+#   否则模型喊原生 read 只会拿到 permission denied/external_directory, 反被读成"文件没权限"。
 _AGENT_SPEC = {
     "description": "opencli gateway plain-text agent: no tools",
     "mode": "primary",
-    "tools": {"*": False},
-    "permission": {"*": "deny"},
+    "tools": {
+        "*": False,
+        "read": False,
+        "bash": False,
+        "edit": False,
+        "write": False,
+        "patch": False,
+        "grep": False,
+        "glob": False,
+        "list": False,
+        "webfetch": False,
+        "task": False,
+        "todowrite": False,
+    },
 }
 
 
