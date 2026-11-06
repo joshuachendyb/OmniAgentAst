@@ -3,6 +3,8 @@
 # 2026-10-21 小杨 - UNSUPPORTED_TYPE 文案与实际判定口径对齐：类型闸已由后缀白名单改为
 #   "可解码文本或图片"，原文案仍写"仅支持查看 .txt / .md 与图片文件"会误导用户以为
 #   .py/.json/无后缀文件不可读 — 小杨-2026-10-21
+# 2026-11-06 小欧 - 重建附件/素材包错误码(ATTACHMENT_* / LOCAL_IMPORT_DISABLED / PACK_NAME_CONFLICT / INVALID_PARAM)
+#   —— 配套文件被误还原后从设计文档[10]恢复 — 小欧-2026-11-06
 """文件浏览模块的错误契约。
 
 K1：错误响应固定 `{"code": <机器可读>, "message": <中文说明>}，
@@ -22,8 +24,15 @@ SESSION_NOT_FOUND = "SESSION_NOT_FOUND"          # 404 会话不存在
 IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"              # 413 图片超 10MB
 UNSUPPORTED_TYPE = "UNSUPPORTED_TYPE"            # 415 类型不在白名单
 UNDECODABLE = "UNDECODABLE_ENCODING"             # 415 文本编码无法识别
+# 2026-11-04 小欧 - 附件域错误码(同一 {code,message} 契约, 不新造信封)
+ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"      # 413 超单文件/会话总量上限
+ATTACHMENT_UNAVAILABLE = "ATTACHMENT_UNAVAILABLE"  # 500 附件目录不可用(默认工作区建不出来)
+LOCAL_IMPORT_DISABLED = "LOCAL_IMPORT_DISABLED"    # 403 本地导入仅同机可用(跨机禁止)
+# 2026-11-04 小欧 - 素材包专用(409 重名 / 400 参数)
+PACK_NAME_CONFLICT = "PACK_NAME_CONFLICT"          # 409 素材包重名
+INVALID_PARAM = "INVALID_PARAM"                    # 400 参数不合法(名称/条目/配额)
 
-from typing import Dict, NamedTuple, NoReturn, Optional, Tuple
+from typing import Dict, NamedTuple, NoReturn, Optional
 
 from fastapi import HTTPException
 
@@ -50,6 +59,12 @@ _CATALOG: Dict[str, _Err] = {
     #   "可解码文本 + 图片"），会误导用户以为 .py/.json/无后缀文件不可读。
     UNSUPPORTED_TYPE: _Err(415, "该文件不是可预览的文本或图片"),
     UNDECODABLE: _Err(415, "文件编码无法识别"),
+    # 2026-11-04 小欧 - 附件/素材包错误码
+    ATTACHMENT_TOO_LARGE: _Err(413, "文件超过大小限制（图片 10MB / 其他 20MB）"),
+    ATTACHMENT_UNAVAILABLE: _Err(500, "附件目录不可用，请检查会话工作区"),
+    LOCAL_IMPORT_DISABLED: _Err(403, "本地导入仅同机可用"),
+    PACK_NAME_CONFLICT: _Err(409, "已有同名素材包，请换个名字"),
+    INVALID_PARAM: _Err(400, "参数不合法"),
 }
 
 

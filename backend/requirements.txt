@@ -30,6 +30,8 @@ python-pptx>=1.0.0
 openpyxl>=3.1.0
 pdfplumber>=0.11.0
 PyMuPDF>=1.25.0
+# FastAPI 的 UploadFile/Form 必需（附件上传） — 小欧 2026-11-04
+python-multipart>=0.0.9
 
 # 数据处理
 pandas>=3.0.0

@@ -9,6 +9,8 @@
 # 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRef 删 content 字段(wire 不承载正文, 正文由
 #   resolver 在编排层读盘); 删 MAX_REF_CONTENT_CHARS 常量(字符上限改由 services/refs/limits 按预算
 #   反推, DTO 不再设); ChatRequest.refs 增 max_length=MAX_REFS(条数上限, 与 limits 单一真源双保险) — 小欧-2026-10-29
+# 2026-11-06 小欧 - ChatRef 附件字段(重建): kind 描述补 attachment, 增 attachment_id(附件记录 ID,
+#   kind=attachment 时必填, 注入按 id 查表) 与 mime(MIME 展示/能力探测) — 小欧-2026-11-06
 
 """
 models — 从 chat_router.py 拷出
@@ -38,11 +40,14 @@ class ChatRef(BaseModel):
     （chat_user_message.content 保持干净），由 resolver 在编排层读盘后拼入。
     2026-10-29 小欧 - 读取权收归后端: content 字段删除(wire 不承载正文, 见 2.3-8)。
     """
-    kind: str = Field(default="file", description="来源类型: file/selection/log/message")
+    kind: str = Field(default="file", description="来源类型: file/selection/log/message/attachment")
     label: str = Field(default="", description="展示名（文件名 / 选区说明）")
     path: Optional[str] = Field(default=None, description="相对项目根的路径")
     size: Optional[int] = Field(default=None, description="字节数（仅展示）")
     lineRange: Optional[Dict[str, int]] = Field(default=None, description="行号区间 {start,end}")
+    # 2026-11-06 小欧 重建: 附件标识与 MIME(kind=attachment 时必填; 注入按 id 查表, path 仅展示/回执)
+    attachment_id: Optional[str] = Field(default=None, description="附件记录 ID（kind=attachment 时必填）")
+    mime: Optional[str] = Field(default=None, description="MIME（附件/图片展示与能力探测）")
 
 
 class ChatRequest(BaseModel):

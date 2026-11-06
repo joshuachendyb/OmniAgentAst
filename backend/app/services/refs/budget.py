@@ -7,6 +7,7 @@
 #   ②clip_lines 的 keep_lines 即"最终保留行数", 删目标行数折算(原按 0.8 反推, 与 clip 新语义重复) — 小欧-2026-10-30
 # 2026-10-30 小欧 观测收口: 删除本文件私有 _tokens_of, 改用公共 estimate_tokens(与 compaction.prune
 #   _released_tokens 同一实现, 原两份单行同款实现 DRY 违反) — 小欧-2026-10-30
+# 2026-11-06 小欧 重建: C 档压缩对附件(kind=attachment)原样保留, 不行级折半(整批拒绝兜底) — 小欧-2026-11-06
 
 """services.refs.budget — 引用合计体积裁决(纯计算, 零 IO)
 
@@ -70,6 +71,11 @@ def budget_refs(
     factor = limits.total_cap_tokens / total
     kept: List[Dict[str, Any]] = []
     for r in resolved:
+        # 2026-11-06 小欧 重建: 附件(kind=attachment)注入按 id 查表整份生成, 语义上不可行级压缩
+        #   (折半会破坏文件内容语义) → 原样保留, 超限由下方拒绝线整批兜底, 绝不半截。
+        if r.get("kind") == "attachment":
+            kept.append(r)
+            continue
         content = r.get("content") or ""
         n_lines = count_lines(content)          # 与文件页/回执同口径(末尾换行不算新行)
         if n_lines <= REF_MIN_KEEP_LINES:

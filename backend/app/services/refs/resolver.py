@@ -15,6 +15,9 @@
 #   同一语句两处, 收口为循环尾单点) — 小欧-2026-10-30
 # 2026-10-30 小欧 B1: 区间分支出口补 clip_text + truncated 回执 —— 原实现直接返回, 长区间
 #   绕过单条上限(4.6.2)且回执为空 — 小欧-2026-10-30
+# 2026-11-06 小欧 重建附件分支(配套误还原后恢复): 增 _read_attachment(按 attachment_id 查表 +
+#   extract.build_inject_text 生成注入文本), _read_one 先分流 kind=attachment;
+#   失败 reason 用 attachment_missing/attachment_failed — 小欧-2026-11-06
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
@@ -25,10 +28,13 @@
 import asyncio
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from fastapi import HTTPException
 
+# 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
+from app.attachments import extract
+from app.attachments.attachment_service import get_attachment
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源(5.2.11)
@@ -95,10 +101,33 @@ def _fail(ref: Dict[str, Any], reason: str, exc: Exception) -> ResolvedRef:
                        note=f"err:{reason}:{type(exc).__name__}")
 
 
+def _read_attachment(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
+    """附件注入文本生成(唯一产生点)。
+
+    kind=attachment: 按 attachment_id 查表(get_attachment, DB 读), 生成注入文本。
+    失败 reason:
+      attachment_missing  记录不存在(引用已失效/越会话访问)
+      attachment_failed   build_inject_text 内部异常(读盘/解析失败)
+    附件不参与行级读取/预算压缩 —— 注入按 id 查表, 不受 path 越界影响。
+    """
+    att = get_attachment(ref.get("attachment_id") or "")
+    if not att:
+        return ResolvedRef(ref=ref, truncated=False,
+                           note="err:attachment_missing:AttachmentNotFound")
+    try:
+        text = extract.build_inject_text(att)
+    except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
+        return ResolvedRef(ref=ref, truncated=False,
+                           note=f"err:attachment_failed:{type(e).__name__}")
+    return ResolvedRef(ref={**ref, "content": text},
+                       truncated=False, note="")
+
+
 async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
     """按标识读单条正文。同步读盘经 asyncio.to_thread 卸载出事件循环(仓库既有范式)。
 
     读法矩阵(4.6.1):
+      附件(kind=attachment)       → _read_attachment(按 id 查表, 不落文件读分支)
       根内 + 无 lineRange + 字符数≤上限 → read_text_file(整份直读)
       根内 + 无 lineRange + 超上限     → 头尾摘录(4.6.3: 全扫一次取 total_lines,
                                          头 REF_HEAD_RATIO 段 + 尾 REF_TAIL_RATIO 段, 各分块)
@@ -106,6 +135,8 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
       外部 + 无/有 lineRange           → read_external_file(同上口径)
       无 path                          → dropped(no_path)
     """
+    if ref.get("kind") == "attachment":
+        return _read_attachment(ref, limits)
     path = (ref.get("path") or "").strip()
     if not path:
         return ResolvedRef(ref=ref, truncated=False, note="no_path")

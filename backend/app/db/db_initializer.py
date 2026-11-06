@@ -91,6 +91,9 @@
 # 2026-10-31 小欧 - 北京老陈令"旧数据需要处理": 存量库一次性识别老默认目录并置 is_default=1
 #   (目录名 <YYYYMMDD-HHMMSS>-<会话ID前4位> 内嵌会话ID前4位, 精确识别不依赖 project_root;
 #   _ensure_column 改返回"列是否新加"作一次性门控, 防每次启动复活已删默认行破坏规则2) — 小欧-2026-10-31
+# 2026-11-06 小欧 - 附件域 3 表落地+方案B溯源(重建): attachments(会话级素材库, UNIQUE(session_id,sha256) 去重)
+#   / material_packs / material_pack_items; attachments 增 source_task_id(产物「存为附件」来源任务溯源, 可空,
+#   不进去重键/不设外键), 存量库 _ensure_column 幂等补列 + idx_attachments_source_task 索引 — 小欧-2026-11-06
 
 """
 db_initializer — 数据库初始化
@@ -240,6 +243,49 @@ def init_chat_db(get_conn):
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_csw_session ON chat_session_workspaces(session_id);
+
+            -- 2026-11-04 小欧 - [56] S0: 附件登记表。stored_path 为绝对路径真源,
+            --   上行 refs 用「按当前项目根相对化」的 path; 正文不落库(每轮由 extract 生成)
+            CREATE TABLE IF NOT EXISTS attachments (
+                id             TEXT PRIMARY KEY,           -- uuid4 hex
+                session_id     TEXT NOT NULL,
+                original_name  TEXT NOT NULL,              -- 用户原文件名(仅展示)
+                stored_path    TEXT NOT NULL,              -- 绝对路径(真源)
+                mime           TEXT NOT NULL,
+                size           INTEGER NOT NULL,
+                sha256         TEXT NOT NULL,              -- 去重 + 完整性
+                kind           TEXT NOT NULL,              -- text | image | video | richdoc | binary
+                extract_status TEXT NOT NULL DEFAULT 'none',
+                extract_chars  INTEGER NOT NULL DEFAULT 0,
+                source_path    TEXT,                       -- 存为附件来源路径(直接引用时恒 NULL)
+                source_task_id TEXT,                       -- 溯源: 产物「存为附件」时来源任务 id(上传/直接引用恒 NULL)
+                created_at     TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                UNIQUE(session_id, sha256)                 -- 并发上传去重: INSERT OR IGNORE + 回查
+            );
+            CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
+            CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id);
+            -- 不再建 idx_attachments_sha: 被 UNIQUE(session_id,sha256) 冗余覆盖
+
+            -- 2026-11-04 小欧 - [56] S4: 素材包。只存清单, 不复制文件;
+            --   name 唯一(COLLATE NOCASE) 防同名混淆, group_name 空串=未分组
+            CREATE TABLE IF NOT EXISTS material_packs (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                note       TEXT NOT NULL DEFAULT '',
+                group_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS material_pack_items (
+                pack_id TEXT NOT NULL,
+                seq     INTEGER NOT NULL,
+                path    TEXT NOT NULL,
+                label   TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (pack_id, seq),
+                FOREIGN KEY (pack_id) REFERENCES material_packs(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pack_items_pack ON material_pack_items(pack_id);
         ''')
         # 2026-10-10 小欧 - 文档[16]: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
         #   查 sqlite_master 建表语句，无 COLLATE 即重建（表是今日新建，正常 0 行；有行照搬）。
@@ -343,6 +389,12 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_session_trust", "task_id", "TEXT")
         # 2026-10-15 小欧 - TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
+        # 2026-11-06 小欧 - 方案B: 附件溯源 source_task_id(产物「存为附件」来源任务)。
+        #   存量库幂等补列, 无 DEFAULT(历史行读出 NULL = 无任务来源, 老行为零退化)。
+        #   附件仍是会话级素材库(主归属 session 不变), 此列仅溯源, 不进去重键、不设外键(任务可删, 溯源保活)。
+        _ensure_column(conn, "attachments", "source_task_id", "TEXT")
+        # 溯源列索引(存量库幂等补建; 空库已在 executescript 建表时建过) — 小欧 2026-11-06
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id)")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 

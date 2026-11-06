@@ -176,7 +176,7 @@ REF_INTERJECT_RATIO = 0.05  # 【系统级】tuning.refs.interject_ratio: 插话
 
 # 引用来源白名单(2026-10-30 小欧): 唯一真源 —— 编排入口过滤(browse_service.sanitize_refs)
 #   与渲染期过滤(refs.render)共用, 防止"入口放行、渲染静默丢弃"的两套口径分叉
-REF_KINDS = frozenset({"file", "selection", "log", "message"})
+REF_KINDS = frozenset({"file", "selection", "log", "message", "attachment"})  # 2026-11-06 小欧 重建: attachment(附件按 attachment_id 注入, path 越界不丢弃)
 
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;

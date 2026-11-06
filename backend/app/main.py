@@ -74,6 +74,8 @@
 #   启动收尾 mark_runtime_started()(此后 Thread.start 计入 /health.runtime_thread_starts, 应为 0) — 小欧-2026-11-04
 # 2026-11-04 小欧 - 线程源清零(第五版): anyio worker 池预热 40 + MAX_IDLE_TIME 10s→24h(同步端点原空闲即回收重建),
 #   db-txn/browse-probe 线程池建满(ThreadPoolExecutor 懒建即运行期 Thread.start); 与闸门可回收租约配套 — 小欧-2026-11-04
+# 2026-11-06 小欧 - 附件域路由挂载(重建): import attachments/material_packs 路由, _mount 挂载
+#   /api/v1/attachments(上传/列表/详情/删除/collect/local) 与 /api/v1/material-packs(CRUD), 走统一 token 鉴权 — 小欧-2026-11-06
 import sys
 import asyncio
 import time
@@ -117,6 +119,9 @@ from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测
 from app.api.v1.token_usage import router as token_usage_router  # token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
+# 2026-11-04 小欧 - 附件上传/列表/详情/删除 + 素材包 CRUD 路由（重建后重启挂载） — 小欧-2026-11-06
+from app.api.v1.attachments import router as attachments_router
+from app.api.v1.material_packs import router as material_packs_router
 # 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
 from app.api.v1.deps import verify_token, warn_startup_checks
 # 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
@@ -349,6 +354,9 @@ _mount(token_usage_router, "token-usage")  # token 四维度查询 API — 小�
 #   与上方"新增 router 漏 dependencies= 是最大失效来源"的论证自相矛盾。
 #   豁免判定（首设自举/只能本机改口令）全在 deps.verify_token 内，与挂载方式无关。
 _mount(auth_router, "auth")
+# 2026-11-04 小欧 - 附件上传/列表/详情/删除/导入 + 素材包 CRUD（重建后挂载；走 token 鉴权） — 小欧-2026-11-06
+_mount(attachments_router, "attachments")
+_mount(material_packs_router, "material-packs")
 
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──

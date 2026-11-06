@@ -36,6 +36,8 @@
 # 2026-10-30 小欧 批3: sanitize_refs 补 kind 白名单(与 refs.render 共用 constants.REF_KINDS),
 #   入口即拦未知来源, 回执可见; stat_file 的 is_ext 提到 try 前只算一次;
 #   _count_content_lines 委托 text_utils.count_lines(与引用压缩同行数口径) — 小欧-2026-10-30
+# 2026-11-06 小欧 - sanitize_refs 附件豁免(重建): kind=attachment 注入按 attachment_id 查表,
+#   path 仅作展示/回执键(项目根切换后可能失效, id 不会), 不参与路径越界校验 — 小欧-2026-11-06
 
 """文件浏览服务：项目根目录内的只读浏览。
 
@@ -734,6 +736,11 @@ def sanitize_refs(
             })
             continue
         path = (ref.get("path") or "").strip()
+        # 2026-11-06 小欧 重建: 附件(kind=attachment)注入按 attachment_id 查表, path 仅作
+        #   展示/回执键(项目根切换后可能失效, id 不会)——故不参与路径越界校验, 直接放行。
+        if kind == "attachment":
+            kept.append(ref)
+            continue
         if not path:
             logger.warning("[file_browse] 丢弃无 path 的引用条目 label=%s", ref.get("label"))
             dropped.append({
