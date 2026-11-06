@@ -42,11 +42,11 @@
 #        下传→管道末端统一| Out-String -Width 4096 | Out-File(Out-String正确渲染Format对象), 错误最后单独
 #        Out-File -Encoding utf8(编码可控, 规避PS5 2>写UTF-16LE乱码)。分流语义等价旧结构, 别名/变体全覆盖。
 # 2026-08-07 - 小欧 - B6.1/B6.2 回归测试挖出四缺陷并根治(B6结构性缺陷, 三堂会审定稿):
-#        BUG#1: `;`复合命令前段出错, $?只反映最后一条→rc漏报0(错误进err但业务层判success) — test_error_after_success_pipeline
-#        BUG#2: PS5 native写stderr使$?变False→成功命令误报rc=1(PS7/PS5行为不一致) — test_ps5_native_stderr
-#        BUG#3: $LASTEXITCODE跨命令残留污染(先native exit3再跑cmdlet→rc误报3) — 探测复现
-#        BUG#4: throw终止性错误中断ps_cmd→rc文件不写→假超时(C8/C14)30s+杀进程+引擎重建 — 探测复现
-#        B6.1修复: ①前置$global:LASTEXITCODE=0清残留(治BUG#3) ②rc判定改errs分类: LASTEXITCODE非0→取其值
+#        缺陷1: `;`复合命令前段出错, $?只反映最后一条→rc漏报0(错误进err但业务层判success) — test_error_after_success_pipeline
+#        缺陷2: PS5 native写stderr使$?变False→成功命令误报rc=1(PS7/PS5行为不一致) — test_ps5_native_stderr
+#        缺陷3: $LASTEXITCODE跨命令残留污染(先native exit3再跑cmdlet→rc误报3) — 探测复现
+#        缺陷4: throw终止性错误中断ps_cmd→rc文件不写→假超时30s+杀进程+引擎重建 — 探测复现
+#        B6.1修复: ①前置$global:LASTEXITCODE=0清残留(治缺陷3) ②rc判定改errs分类: LASTEXITCODE非0→取其值
 #        (native真失败); errs含非NativeCommandError错误→1(cmdlet真错); NativeCommandError(native stderr)不计错
 #        (治BUG#1/2) ③try/catch兜底终止性错误, catch记录文本到errs+rc=1(治BUG#4)
 #        B6.2微调(探测发现B6.1块外catch致throw前stdout丢失): try/catch移入& {}块内, catch后管道不中断
@@ -139,7 +139,7 @@
 #         本文件瘦身为支撑模块, 仅保留: prewarm_shell_binaries(启动预热)、_replace_python3_safe(命令规范化)、
 #         get_pool_pids_snapshot(返回空集, 保留安全链签名; 去池后无被托管的常驻进程)。
 # 2026-11-06 小欧 - 三堂会审(YAGNI): 删去池化后零调用的死函数 safe_read_file/_TempFiles/_poll_for_file/
-#         _poll_pid_exit/_safe_unlink 及常量 _UNLINK_RETRY/_UNLINK_RETRY_DELAY, 连带删 import contextlib/tempfile
+#         _poll_pid_exit/_safe_unlink 及常量 _UNLINK_RETRY/_UNLINK_RETRY_DELAY, 连带删 import contextlib/tempfile/os/subprocess
 """shell_engine — shell 支撑函数(去池化后) — 小欧 2026-11-06
 
 【为什么不再有持久池】LLM 工具契约不承诺跨命令状态(cwd 参数 + `;`/`&&` 串联已覆盖换目录),

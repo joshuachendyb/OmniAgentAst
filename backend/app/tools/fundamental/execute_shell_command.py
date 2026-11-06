@@ -45,8 +45,8 @@
 # 2026-07-27 - 小欧 - CMD增强: _resolve_safe_cwd安全回退+tempdir保底; CMD分支poll loop代替communicate阻塞; taskkill /T /F杀进程树; 阶段标注【PS专属|CMD专属|通用】; _auto_fix_cmd_syntax修复$env:VAR→%VAR%; _sanitize_env过滤API key泄露子进程
 # 2026-07-27 - 小欧 - Bugfix×5: _close_if_blocks嵌套花括号深度计数; warning分支detail字段逻辑取反; bat_path加引号防空格; _PWSH_CACHE死代码删除; 重复执行消除
 # 2026-07-27 - 小欧 - 重构: _sanitize_env常量提为模块级; cwd不存在改报错为自动回退; PS分支engine.exec传env=_sanitize_env()
-# 2026-07-28 - 小欧 - task005一轮修复4bug: 截断前存_stderr_for_diag; 删command死参数; 删_PWSH_CACHE死代码; 删cwd回退外层重复日志
-# 2026-07-28 - 小欧 - task005二轮修复4bug: CMD超时改立即杀进程; 深度计数简化为存在性检查; 良性stderr白名单扩展; safety检查传shell_type
+# 2026-07-28 - 小欧 - 一轮修复4bug: 截断前存_stderr_for_diag; 删command死参数; 删_PWSH_CACHE死代码; 删cwd回退外层重复日志
+# 2026-07-28 - 小欧 - 二轮修复4bug: CMD超时改立即杀进程; 深度计数简化为存在性检查; 良性stderr白名单扩展; safety检查传shell_type
 # 2026-07-28 - 小欧 - 抽取 _kill_and_read_output 消除CMD超时两处重复代码
 #         _close_if_blocks 改用深度计数+引号感知, 避免字符串内}误判
 #         _cmd_powershell_mismatch_hint 补充英文匹配, 兼容非中文系统
@@ -128,7 +128,7 @@
 #        第一处: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
 #        第二处: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
 #        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法 | ok
-# 2026-08-09 - 小欧 - task005核查落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
+# 2026-08-09 - 小欧 - 核查落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
 #   \b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b (仅HRESULT失败段/NTSTATUS失败段)。
 #   根因: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
@@ -154,6 +154,8 @@
 #   且原"匿名池有实例→has_session恒真→白名单命令也被迫进池"形成自增强挤池循环); 解释器缺失时明确报错不回落进池;
 #   acquire 传 wait_timeout=剩余预算, 排队时间并入工具自身 timeout — 小欧-2026-11-06
 # 2026-11-06 小欧 - 去池化定案: 删 PersistentShell/ShellPoolManager 全套, 每命令独立子进程跑完即销毁; 并发上限配置默认10
+# 2026-11-06 小欧 - 三堂会审修正: drain_until_exit 改用剩余时间 max(1,int(_remaining)) 非全 timeout(总时长≤timeout); docstring 改"去池化版"
+# 2026-11-06 小欧 - 三路检测引号感知: 新增 _strip_quoted_content 剥离引号内内容, _looks_like_* 不再匹配字符串字面量命令名(如 echo "grep" 不误路由)
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -739,6 +741,42 @@ def _shell_mismatch_hint(shell_type: str, stderr: str) -> str:
     return ""
 
 
+def _strip_quoted_content(command: str) -> str:
+    """剥离引号内内容(替换为空格), 供三路检测只看引号外命令结构 — 小欧 2026-11-06
+
+    背景: _looks_like_* 原在整条命令上 re.search, 引号内命令名(如 echo "grep")误判路由。
+    剥离后引号内不参与匹配, 消除字符串字面量误判; 引号外命令结构不变, 不影响真实检测。"""
+    result = []
+    in_dq = False
+    in_sq = False
+    for ch in command:
+        if in_dq:
+            if ch == '"':
+                in_dq = False
+                result.append(ch)
+            else:
+                result.append(' ')
+            continue
+        if in_sq:
+            if ch == "'":
+                in_sq = False
+                result.append(ch)
+            else:
+                result.append(' ')
+            continue
+        if ch == '"':
+            in_dq = True
+            result.append(ch)
+            continue
+        if ch == "'":
+            in_sq = True
+            result.append(ch)
+            continue
+        result.append(ch)
+    return ''.join(result)
+
+
+
 def _auto_fix_cmd_syntax(command: str) -> str:
     """自动修复LLM生成的CMD命令中已知错误模式 — 小欧 2026-07-27
 
@@ -781,13 +819,13 @@ def _auto_fix_bash_syntax(command: str) -> str:
     """自动修复LLM生成的Bash命令中已知错误模式 — 小欧 2026-07-28; 2026-08-06 精简
 
     当前覆盖：
-    - Windows反斜杠 → 正斜杠（Git Bash下\\t会被解释为制表符）
+    - Windows反斜杠 → 正斜杠（Git Bash下反斜杠是转义符, C:\\Users 中 \\U 被吃掉致路径损坏）
 
     注: python3→python 已在 stage 1.0a 统一处理，此处不再重复（DRY）"""
     if not command or sys.platform != "win32":
         return command
     fixed = command
-    # 路径分隔符：Windows反斜杠 → 正斜杠（防止\\t被解释为制表符）
+    # 路径分隔符：Windows反斜杠 → 正斜杠（Git Bash下\是转义符, \U→U致路径损坏, 改/让bash识别）
     fixed = fixed.replace('\\', '/')
     if fixed != command:
         logger.warning(f"[Shell] 自动修复bash语法: 路径转换\\→/, cmd={command[:100]}")
@@ -853,7 +891,7 @@ def _looks_like_bash(command: str) -> bool:
     if not command:
         return False
         
-    cmd_lower = command.lower()
+    cmd_lower = _strip_quoted_content(command).lower()
     
     # bash特有命令（Linux风格语法）— 正则匹配灵活覆盖各种变体
     bash_patterns = [
@@ -916,7 +954,7 @@ def _looks_like_ps(command: str) -> bool:
     if not command:
         return False
 
-    cmd_lower = command.lower()
+    cmd_lower = _strip_quoted_content(command).lower()
 
     # PowerShell特有命令（Windows PowerShell语法）— 正则匹配灵活覆盖各种变体
     ps_patterns = [
@@ -960,7 +998,7 @@ def _looks_like_cmd(command: str) -> bool:
     if not command:
         return False
 
-    cmd_lower = command.lower()
+    cmd_lower = _strip_quoted_content(command).lower()
 
     # CMD特有命令（Windows CMD语法）— 正则匹配灵活覆盖各种变体
     cmd_patterns = [
