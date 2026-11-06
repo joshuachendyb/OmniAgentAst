@@ -22,6 +22,8 @@
 #   2026-10-31 小欧 新增 conv_threshold(北京老陈令): start 压缩前 conv 超窗判定线 = 窗口 × 调节系数,
 #     直接对窗口取比例(不扣 buffer/tools 预留); 消费方 start_step._compact_injected_history —
 #     超此线才阶梯裁剪到 trim_conv_threshold(目标线)以内再压缩 — 小欧-2026-10-31
+#   2026-11-07 小欧 新增 fmt_tok: token 体积紧凑文案(<1000 原值, ≥1000 折K, ≥1_000_000 折M, 带 tok 单位);
+#     消费方 start_step 摘要提示; 与 estimate_tokens 同域(SRP: token 估算与格式化同归本模块) — 小欧-2026-11-07
 
 """services.agent.agent_utils — agent 域公用函数收口 — 小欧 2026-10-31
 
@@ -155,6 +157,25 @@ def conv_threshold(ctx: int) -> int:
         'tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO)))
 
 
+def fmt_tok(n: int) -> str:
+    """token 体积紧凑文案: <1000 原值, ≥1000 折K一位, ≥1_000_000 折M一位, 带 tok 单位 — 小欧 2026-11-07
+
+    适用场景: 给用户看的提示/notice 中 token 体积的紧凑表达(如 "38.0Ktok"/"1.5Mtok")。
+    使用方法: 直接调用, 传 token 数(int)。
+    输入: n —— token 数; 负数或 None 视为 0。
+    输出: str, 如 "500tok" / "38.0Ktok" / "1.5Mtok"。
+    关联逻辑: 与 estimate_tokens 同域——估算出 int 后由本函数转紧凑文案(SRP: 估算与格式化同归本模块)。
+    """
+    n = int(n or 0)
+    if n < 0:
+        n = 0
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}Mtok"
+    if n >= 1000:
+        return f"{n / 1000:.1f}Ktok"
+    return f"{n}tok"
+
+
 __all__ = ["estimate_tokens", "compress_summary_threshold",
            "trim_budget_base", "trim_conv_threshold", "trim_queue_budget",
-           "conv_threshold"]
+           "conv_threshold", "fmt_tok"]

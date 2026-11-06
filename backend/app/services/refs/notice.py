@@ -18,6 +18,9 @@
 #   OK 汇总行留 INFO 声明 → 值=WARNING 时该行只落文件不再上控制台也不进文件(常规流水, 丢了可接受) — 小欧-2026-11-03
 # 2026-11-06 小欧 三堂会审: REASON_LEVELS 补 attachment_missing/attachment_failed(→warn) ——
 #   原重建缺漏, 靠查表默认 warn 兜底行为一致, 显式声明符合文档10 §3.13 单一真源 — 小欧-2026-11-06
+# 2026-11-07 小欧 _tokens_text 改调 agent_utils.fmt_tok(DRY 收口): 原私有只到 k 档/单位 tokens,
+#   与 start_step 摘要提示、react_step 裁剪 notice 三处 token 体积文案各自实现; 统一为 fmt_tok
+#   公有 K/M 两档, 单位 tok。文案由"约 1.2k tokens"变"约 1.2Ktok"(前端原样显示, 可读性等价) — 小欧-2026-11-07
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 
@@ -41,7 +44,7 @@
 from typing import Any, Dict, List, Optional
 
 from app.logger import logger, log_and_print
-from app.services.agent.agent_utils import estimate_tokens   # 2026-10-31 小欧: 自 token_estimate 迁入 agent_utils
+from app.services.agent.agent_utils import estimate_tokens, fmt_tok   # 2026-10-31 小欧: 自 token_estimate 迁入 agent_utils; 2026-11-07 加 fmt_tok 收口 _tokens_text
 from app.utils.sse_formatter import format_sse_event
 
 # 日志体量上限(引用正文永不落日志, 只留可追溯的路径/行区间/计数) — 小欧-2026-10-30
@@ -146,10 +149,8 @@ def summarize_refs(final_refs: List[Dict[str, Any]],
 
 
 def _tokens_text(tokens: int) -> str:
-    """token 文案: <1000 显原值, ≥1000 折 k 保留一位(如 约 640 tokens / 约 1.2k tokens)。"""
-    if tokens < 1000:
-        return f"约 {tokens} tokens"
-    return f"约 {tokens / 1000:.1f}k tokens"
+    """token 文案(复用 agent_utils.fmt_tok, K/M 两档唯一真源): 约 Ntok / 约 X.XKtok / 约 X.XMtok。"""
+    return f"约 {fmt_tok(tokens)}"
 
 
 def refs_counts_text(summary: Dict[str, int]) -> str:

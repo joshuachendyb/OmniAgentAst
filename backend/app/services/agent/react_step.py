@@ -184,6 +184,8 @@
 #   瞬时动作单发 done 不占位置2，token 数读唯一真源 _trimmed_tokens_this_round；未真裁(空转/冷却)零发射 — 小欧-2026-11-01
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 3 处异常/取消调用点(empty_response/consecutive_truncation/
 #   same_tool_loop)显式传 level="WARNING", 不受控制台级别静音 — 小欧-2026-11-03
+# 2026-11-07 小欧 - 裁剪 notice token 文案收口 agent_utils.fmt_tok(DRY): 原始 int 改紧凑 K/M 两档,
+#   与 start_step 摘要提示、refs.notice._tokens_text 三处统一公有真源 — 小欧-2026-11-07
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -212,6 +214,7 @@ from app.db import db
 from app.services.chat import storage
 from app.config import get_config  # 2026-09-28 小欧: 注入截断读 tuning.content 配置(与 message_builder._cap_temp_history 同键, DRY)
 from app.services.agent.compaction_constants import TEMP_HISTORY_CHAR_LIMIT  # 2026-09-28 小欧: 同上, 默认值兜底
+from app.services.agent.agent_utils import fmt_tok  # 2026-11-07 小欧: 裁剪 notice token 文案收口 fmt_tok
 # 2026-10-31 小欧 - 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
 from app.services.refs.render import REF_TAG_OPEN
 from app.services.agent.workspace_block import WS_TAG_OPEN
@@ -352,7 +355,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         if getattr(agent.message_builder, "_trimmed_this_round", False):
             await _emit_publish(agent._step_emitter.emit(MetaStep(
                 step=agent.llm_call_count, type="notice",
-                content=f"历史对话已裁剪(裁掉约{getattr(agent.message_builder, '_trimmed_tokens_this_round', 0)} tok)",
+                content=f"裁剪历史对话(裁掉约{fmt_tok(getattr(agent.message_builder, '_trimmed_tokens_this_round', 0))})",
                 kind="trimming",
                 phase="done",
             )).to_dict())

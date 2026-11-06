@@ -127,6 +127,10 @@
 #   仍按原文口径 _estimate_tokens, 两把尺不同是设计, 勿统一。另: 增量路压缩率分母改用收缩前 delta(_pre_shrink_delta)。— 小欧-2026-10-31
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 摘要失败降级显式传 level="WARNING"(降级必须可见);
 #   同轮 2 处「开始调 LLM 生成摘要」进度行一并传 level="WARNING"(控制台默认档即可见) — 小欧-2026-11-03
+# 2026-11-07 小欧 - 摘要调 LLM 前的 log_print 与 SSE notice 补 token 估算: 两路(全量/增量)在裁剪后、
+#   调 LLM 前估算当前消息体积, 提示由"delta N条"改为"delta N条,约M tok", 限流时定位体积量级 — 小欧-2026-11-07
+# 2026-11-07 小欧 - 摘要提示文案顺序调整: 去逗号改"条约"连写(delta N条约X.XKtok), 裁剪发生时追加
+#   ",(裁剪前M条约Y.YYKtok)"对照(全量路记 _pre_hist/增量路复用 _pre_shrink_delta); _emit_summarizing 加 shrink_note 参数 — 小欧-2026-11-07
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -398,7 +402,8 @@ def _maybe_compact_injected_history(agent) -> None:
         logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_threshold / _ctx:.4g}), 置 _needs_compact")
 
 
-async def _emit_summarizing(agent, scope: str, count: int) -> None:
+async def _emit_summarizing(agent, scope: str, count: int, tokens: int = 0,
+                            shrink_note: str = "") -> None:
     """摘要调 LLM 前播一条 notice(kind=summarizing, phase=start) 给前端 —— 小欧 2026-10-19
 
     背景与 tool_executor 的 installing 同源: 长耗时外部调用期间 SSE 无任何帧, 用户只见转圈,
@@ -406,10 +411,12 @@ async def _emit_summarizing(agent, scope: str, count: int) -> None:
     此处静默比装包更让人不安。
 
     scope 取 '增量'/'全量', 区分两条路径: 增量=同链只压新增段(旧摘要作底), 全量=首轮压缩整段历史。
-    count 为本次送进 LLM 的条数, 供用户判断耗时量级。
+    count/tokens 为裁剪后实际送 LLM 的条数与体积; shrink_note 非空时追加裁剪前对照(仅裁剪发生时)。
     """
+    from app.services.agent.agent_utils import fmt_tok
+    _tok_part = f"约{fmt_tok(tokens)}" if tokens > 0 else ""
     await agent._step_emitter.emit_notice("summarizing", "start",
-                       f"生成摘要中({scope}{count}条)")
+                       f"生成摘要中({scope}{count}条{_tok_part}{shrink_note})")
 
 
 def _shrink_before_summary(agent, messages: List[Dict[str, Any]],
@@ -496,6 +503,7 @@ async def _compact_injected_history(agent) -> str:
     # 2026-10-31 小欧 超窗前置裁剪(北京老陈令): 进入压缩前先判 conv 是否超判定线(窗口×调节系数),
     #   超了由 _shrink_before_summary 阶梯裁到 trim 门限(目标线)以内再压缩, 保证压缩请求本身不撞窗;
     #   未超判定线保持原行为(不裁直接压缩, 零变化)。判定/裁剪/降级口径统一在该函数(增量路共用同一道闸)。
+    _pre_hist = _hist_for_summary  # 裁剪前引用(shrink_to_budget 新建列表不改原, 保留供裁剪对照) — 小欧 2026-11-07
     _hist_for_summary = _shrink_before_summary(agent, _hist_for_summary, "全量")
     try:
         _task_id = getattr(agent, "task_id", None)
@@ -506,8 +514,13 @@ async def _compact_injected_history(agent) -> str:
                 agent._needs_compact = False
                 return ""
         # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
-        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条", level="WARNING")
-        await _emit_summarizing(agent, "全量", len(_hist_for_summary))
+        from app.services.agent.message_builder import MessageBuilder
+        from app.services.agent.agent_utils import fmt_tok
+        _tok = MessageBuilder._estimate_tokens(_hist_for_summary)
+        _shrunk = len(_hist_for_summary) != len(_pre_hist)
+        _shrink_note = f",(裁剪前{len(_pre_hist)}条约{fmt_tok(MessageBuilder._estimate_tokens(_pre_hist))})" if _shrunk else ""
+        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条约{fmt_tok(_tok)}{_shrink_note}", level="WARNING")
+        await _emit_summarizing(agent, "全量", len(_hist_for_summary), _tok, _shrink_note)
         summary_text = await generate_anchored_summary(agent, _hist_for_summary)
         if _task_id and await check_cancelled(_task_id):
             logger.info("[start_step] 摘要后检测到任务取消, 丢弃摘要结果(调用方零退化装配原历史)")
@@ -627,8 +640,13 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
             logger.info("[start_step] 增量摘要前检测到取消, 跳过摘要(回退复用锚点摘要)")
         else:
             # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
-            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条", level="WARNING")
-            await _emit_summarizing(agent, "增量", len(delta_msgs))
+            from app.services.agent.message_builder import MessageBuilder
+            from app.services.agent.agent_utils import fmt_tok
+            _tok = MessageBuilder._estimate_tokens(delta_msgs)
+            _shrunk = len(delta_msgs) != len(_pre_shrink_delta)
+            _shrink_note = f",(裁剪前{len(_pre_shrink_delta)}条约{fmt_tok(MessageBuilder._estimate_tokens(_pre_shrink_delta))})" if _shrunk else ""
+            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条约{fmt_tok(_tok)}{_shrink_note}", level="WARNING")
+            await _emit_summarizing(agent, "增量", len(delta_msgs), _tok, _shrink_note)
             new_summary = await generate_chunked_summary(agent, delta_msgs, anchor_summary)
             if _task_id and await check_cancelled(_task_id):
                 logger.info("[start_step] 增量摘要后检测到取消, 丢弃结果(回退复用锚点摘要)")

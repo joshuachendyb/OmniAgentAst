@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-11-03 21:32:39
-**最近更新**: 2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-07 22:00:00
+**最近更新**: 2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
 
@@ -342,6 +342,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `trim_budget_base` | **loop 裁剪预算基准唯一真源**：`ctx - tuning.trim.compaction_buffer - tuning.trim.tools_token_reserve`。消费方 `MessageBuilder._trim_signal`（信号三元组）、`trim_conv_threshold`、`trim_queue_budget`、`refs.limits.budget_base_of`（引用域同口径） | ctx: int | int |
 | `trim_conv_threshold` | **loop 裁剪触发阈值唯一真源**：`int(trim_budget_base(ctx) × tuning.trim.trigger_ratio)`。消费方 `_trim_signal` 的 abs_trigger 判定 | ctx: int | int |
 | `trim_queue_budget` | **loop 裁剪队列预算唯一真源**：`int(trim_budget_base(ctx) × trigger_ratio²)`（触发线之上再乘一次系数，保证裁完必低于触发线，否则裁了仍触发即死循环）。消费方 `trim_history`（再扣保护区占用） | ctx: int | int |
+| `fmt_tok` | **token 体积紧凑文案唯一真源**（`services/agent/agent_utils.py`）：`<1000` 原值、`≥1000` 折K一位、`≥1_000_000` 折M一位，带 `tok` 单位（如 `500tok`/`38.0Ktok`/`1.5Mtok`）。2026-11-07 小欧 新建收口：消费方 `start_step` 摘要提示（全量/增量两路 log_print+SSE notice）、`react_step` 裁剪 notice、`refs.notice._tokens_text`（引用回执文案）——原各处原始 int 内联或 `_tokens_text` 私有只到k档，DRY 收口为公有 K/M 两档 | n: int | str |
 
 > 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 > 2026-10-20 小欧: `fc_atomic_units` 唯一真源已迁至 `services/agent/fc_message_types.py`（协议层，零依赖），本模块 `keep_valuable_messages` 与 `message_builder` 裁剪复用；本表保留于 3.5 节以示与降本链路的关系。
