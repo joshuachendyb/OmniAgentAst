@@ -1,3 +1,32 @@
+v1.6.4
+发布时间: 2026-11-06 13:07:26 - 小欧-2026-11-06
+## v1.6.3汇总 变更汇总(45个commit: refactor3/fix20/docs20/feat2) - 小欧-2026-11-06
+[2026-11-06 13:07:26 小欧] 范围=v1.6.3以来全部commit(45个); 说明=①shell 去池化定案(删常驻池全套~1000行, 每命令独立子进程+BoundedSemaphore(10)管并发, 三堂会审修正YAGNI死代码/KISS语义/docstring, 三路检测引号感知); ②第三方CLI模型接入网关(gateways通用层+vendor驱动落盘, FIX A-K协议界符/无工具agent/空delta等, 命名对齐driver->driver_api等, /v1/models补token门禁, 部署说明v1.9, 技术方案v6.9-v6.15); ③附件功能设计[10][56]双通道; ④agent_runner终态reasoning净化+thought_step口径纠偏+StreamChunk删reasoning死字段+event_emitter删死文件; ⑤常驻线程池丢ContextVar致shell池键坍缩None修复; ⑥打包后处理放用户使用说明到exe同级。注: 含功能变更(shell去池化+网关接入) → PATCH v1.6.4。
+### 1.6.4.1 shell 去池化重构
+[去池化] refactor bc15c0f29 删PersistentShell/ShellPoolManager全套(~1000行), 每命令独立子进程跑完即销毁+全局BoundedSemaphore(10)管并发; 三堂会审修正(YAGNI删5死函数+2常量/KISS drain改用剩余timeout/docstring改去池化版) - 小欧-2026-11-06
+[引号感知] fix 9c68ee044 三路检测新增_strip_quoted_content剥离引号内内容, _looks_like_*不再匹配字符串字面量命令名(如echo "grep"不误路由); _auto_fix_bash_syntax错误注释修正(\\t非制表符); 编辑历史补全/去task005+BUG#序号违规 - 小欧-2026-11-06
+### 1.6.4.2 第三方CLI模型接入网关
+[网关落盘] code 4adfb5db3 gateways 9.1通用层+vendor.opencode驱动+配置与启停脚本落盘(冒烟三段全绿/FIX A-I) - 小欧-2026-11-05
+[网关修复] fix 0c9c4f04a FIX L私有界符+FIX M无工具agent与会话deny+FIX N空delta不发帧与工具模式切帧 - 小欧-2026-11-05
+[网关修复] code 88fdf3b45 FIX J/K(/v1/models补token门禁+未知模型404本地校验)+tests.run_cases.py回归固化(12过0败3跳) - 小欧-2026-11-05
+[网关命名] refactor 285fd7caa 命名对齐(driver->driver_api/fc->upward/opencode_client->bodies, Protocol装载期校验) - 小欧-2026-11-05
+[网关修复] fix 7939bcdcd 失败重启按实例收口与流式异常记账;竞态/形状/日志轮转 - 小欧-2026-11-05
+[网关修复] fix 086f4898a 三堂会审整改与注释规范化 - 小欧-2026-11-05
+[网关修复] fix aaec44456 协议界符回退+向下翻译收口build_prompt+解析容错+冷却封顶+启动清场+错误落日志 - 小欧-2026-11-05
+[网关修复] fix 7960bf831 driver.py逐个点名关闭内建工具(实证{"*":false}关不掉read) - 小欧-2026-11-06
+[网关文档] docs 多个commit 技术方案v6.5-v6.15定稿+使用与部署说明v1.2-v1.9 - 小欧-2026-11-04~06
+### 1.6.4.3 附件功能设计
+[附件设计] docs b72f0dfdb 附件功能S0-S5完整实施设计更新 - 小欧-2026-11-06
+[附件文档] docs c8f2a11b0 [56]附件文档[10]附件清单补BR/TR需求并回写双通道设计 - 小欧-2026-11-05
+[附件设计] docs 60245ac44/9089301f5/9540b3ff7/e08836b3f [10]同机本地导入通道设计+设计意图补充+实施步骤缺陷修复 - Agnes-2026-11-04
+### 1.6.4.4 agent终态与thought口径
+[终态净化] fix 4719b042a agent_runner终态reasoning净化(错误/取消文案不写思考位) - 小欧-2026-11-05
+[thought口径] fix 330ceb86b/b85c01ec3/a27d0f117 thought_step去or content兜底+handle_action显式thought=+终态取数收口 - 小欧-2026-11-05
+[死字段清理] refactor 95d65015f/40034832b event_emitter删死文件+StreamChunk删reasoning死字段 - 小欧-2026-11-05
+### 1.6.4.5 其他修复
+[池键坍缩] fix 858d7ee75 workers.py常驻线程池丢ContextVar致shell池键坍缩None - 小欧-2026-11-05
+[输出格式] fix b63fdbff5 mapping.py输出格式补规则9,区分"工具被禁用"与"文件无权限" - 小欧-2026-11-05
+[打包说明] feat e07008196 打包后处理把用户使用说明放到exe同级并随部署同步 - 小欧-2026-11-04
 v1.6.3
 发布时间: 2026-11-04 13:55:26 - 小欧-2026-11-04 (原 2026-11-04 13:19:48 首次发布; tag 前移后按最新提交时间更新)
 ## v1.6.2汇总 变更汇总(13个commit: feat3/fix1/docs8/Merge1, 另合并带入分支1540个commit) - 小欧-2026-11-04
