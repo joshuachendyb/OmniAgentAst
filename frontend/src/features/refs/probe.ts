@@ -8,6 +8,9 @@
 // 编辑历史: 2026-10-30 小欧 批3: 抽 statRef(端点唯一调用口, 业务失败归 reason/传输异常上抛) 供
 //   probeRef 与 precheckRefs 共用; 超时码补 ETIMEDOUT, 文案匹配改大小写不敏感 — 小欧-2026-10-30
 
+// 编辑历史: 2026-11-06 小欧 - 附件预检走 /attachments/{id}(不走 /files/stat: stat_file 对非文本返回
+//   ok:false/unsupported, 图片附件会被自家闸门判失效, 永远发不出去) — 小欧-2026-11-06
+
 /**
  * probe —— 前端对引用的唯一读盘点
  *
@@ -17,13 +20,15 @@
  * 职责边界：
  * - probeRef(path)：走 stat 轻端点(存在性/size/mtime, 不读正文)；读失败仍允许入队
  *   (chip 标"未校验")。
- * - precheckRefs(refs)：发送前走 stat 轻端点(GET /files/stat, 真源 browse_service, 落点 5.2.13;
- *   前端入口 fileApi.statFile 见 F12), 只取存在性/mtime, 不读正文(R3: 消掉点引用+发送前
- *   两次全读的 IO); mtime 与点引用时本地比对, 变化条目进 updated → 调用方(precheckOrBlock)
- *   点名提示"内容已更新"——mtime 仅本地比对, 不进 wire(4.5)。
+ * - precheckRefs(refs)：发送前走 stat 轻端点(GET /files/stat, 真源 browse_service);
+ *   只取存在性/mtime, 不读正文(消掉点引用+发送前两次全读的 IO); mtime 与点引用时本地比对,
+ *   变化条目进 updated → 调用方(precheckOrBlock)点名提示"内容已更新"——mtime 仅本地比对, 不进 wire。
  * - 不切片、不裁决：行区间由后端按 lineRange 直接读(前端不再切片, sliceByLineRange 已删)；体积裁决归后端。
  */
 import { fileApi } from '@/services/api/file.api';
+// 2026-11-06 小欧 - 附件预检走 /attachments/{id}，不走 /files/stat
+//   (stat_file 对非文本返回 ok:false/unsupported → 图片附件会被自家闸门判失效, 永远发不出去)
+import { attachmentApi } from '@/services/api/attachment.api';
 
 export interface ProbeResult {
   ok: boolean;
@@ -31,6 +36,16 @@ export interface ProbeResult {
   mtime?: string; // 内部字段: 仅两次预检间本地比对, 不上行(4.5)
   reason?: 'missing' | 'unsupported' | 'timeout';
 }
+
+/** 附件预检: 只判记录还在不在(真源后端), 不读正文、不比对 mtime。 */
+export const probeAttachment = async (id: string): Promise<ProbeResult> => {
+  try {
+    const rec = await attachmentApi.get(id);
+    return { ok: true, size: rec.size };
+  } catch (e) {
+    return { ok: false, reason: reasonOfError(e) };
+  }
+};
 
 /**
  * stat 端点唯一调用口(2026-10-30 小欧): 业务失败(ok:false)归一成 reason, 传输异常**原样抛出**。
@@ -80,7 +95,13 @@ export const probeRef = async (path: string): Promise<ProbeResult> => {
  *  原样上抛, 由调用方转成"校验失败"可见提示(原实现一路 void 到底, 点发送看着没反应)。
  */
 export const precheckRefs = async <
-  T extends { path: string; mtime?: string; invalid?: boolean },
+  T extends {
+    path: string;
+    mtime?: string;
+    invalid?: boolean;
+    kind?: string;
+    attachment_id?: string;
+  },
 >(
   refs: T[]
 ): Promise<{ checked: T[]; invalid: T[]; updated: T[] }> => {
@@ -89,11 +110,23 @@ export const precheckRefs = async <
   //   原实现只回有效条目, 失效 chip 被抹掉, 红底/「已失效」/阻断派生值全成死分支。
   const results = await Promise.all(
     refs.map(async (r) => {
-      const st = await statRef(r.path); // 唯一调用口: 传输异常上抛, 业务失败给 reason
+      // 2026-11-06 小欧 - 附件按 id 校验; 其余仍走 stat 轻端点 — 小欧-2026-11-06
+      const st =
+        r.kind === 'attachment' && r.attachment_id
+          ? await probeAttachment(r.attachment_id)
+          : await statRef(r.path);
       if (!st.ok) {
         return {
           ref: { ...r, invalid: true } as T,
           invalid: true,
+          updated: false,
+        };
+      }
+      if (r.kind === 'attachment') {
+        // 附件没有可比的 mtime 语义: 记录在 = 文件在(库里存的是落盘时写下的真源路径)
+        return {
+          ref: { ...r, size: st.size, invalid: false } as T,
+          invalid: false,
           updated: false,
         };
       }

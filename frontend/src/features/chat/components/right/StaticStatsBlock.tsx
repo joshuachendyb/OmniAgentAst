@@ -42,6 +42,10 @@
 //   纯样式令牌化零逻辑改动, 视觉零变化 — 小欧-2026-10-28
 // 2026-11-02 小欧 - 产出物路径改走唯一链接组件 PathLink（原 FilePathLink）：判据/图标/点击口径/
 //   降级全部收在组件内，本组件只给 rawPath 与 dirHint；别针由业务层并列渲染，不进通用组件 — 小欧-2026-11-02
+
+// 编辑历史: 2026-11-06 小欧 - 产物行「存为附件」(替换原别针 QuoteButton): 调 uploadAttachments 入队,
+//   按会话归属区分工作区内/外复制; 存包中行级 loading 防重 — 小欧-2026-11-06
+
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -78,8 +82,9 @@ import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
 // 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink（行内 + 等宽）；别针不属链接组件 — 小欧-2026-11-02
 import { PathLink } from '@/components/PathLink';
-// 2026-11-02 小欧 - 别针按钮由业务层注入（PathLink 属通用层，不反向依赖 features/refs）— 小欧-2026-11-02
-import { QuoteButton } from '@/features/refs/QuoteButton';
+// 2026-11-06 小欧 - 产出物行「存为附件」(替换原别针 QuoteButton: 两者语义重叠, 保留两个是选择题)
+import { Button } from 'antd';
+import { collectArtifact } from '@/features/refs/uploadAttachment';
 
 // ==================== 展开区局部尺寸常量 ====================
 // 2026-10-28 小欧 - 去魔法数字: 本组件专属尺寸(无现成令牌)提模块级常量;
@@ -120,6 +125,8 @@ interface StaticStatsProps {
   // 2026-09-11 小欧 修复: TokenLayer 复用(stepStyles.ts 公用), 与 RightViewer props 同契约, 消除必选/可选形状不一致(TS2322) — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
   chainTokens?: TokenLayer;
+  /** 2026-11-06 小欧 - ③ 存为附件需要会话归属；为空时按钮禁用 */
+  sessionId?: string | null;
 }
 
 const StaticStatsBlock: React.FC<StaticStatsProps> = ({
@@ -128,8 +135,11 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
   finalStats, // 小欧 2026-09-11 M3c(final_stats帧复合兜底): 折叠区复合兜底 — 小欧-2026-09-11
   sessionTokens,
   chainTokens,
+  sessionId,
 }) => {
   const [chainOpen, setChainOpen] = React.useState(false);
+  // 2026-11-06 小欧 - 正在存为附件的产物路径(行级 loading, 不锁整块)
+  const [collecting, setCollecting] = React.useState('');
   // 小欧 2026-09-11 M3c(final_stats帧复合兜底): DB 全缺失时 final_stats 帧兜底，两者都无才隐藏
   // 小欧 2026-09-11 M3c(final_stats帧复合兜底): effectiveStatus/statusColor 已移至 TitleBlock（final 帧 outcome 驱动，不读 DB）— 小欧-2026-09-11
   if (!detail && !finalStats) return null;
@@ -423,7 +433,36 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                   }}
                 >
                   <PathLink rawPath={a.path} variant="inline" mono tooltip />
-                  <QuoteButton path={a.path} />
+                  {/* 2026-11-06 小欧 - 原别针(QuoteButton)换成「存为附件」——
+                      两者对产物做的事完全相同(进引用区), 并排两个按钮只会让用户猜区别;
+                      差异只在后端: 工作区内不复制、工作区外复制固化 — 小欧-2026-11-06 */}
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{
+                      padding: 0,
+                      height: 'auto',
+                      fontSize: FontSize.CAPTION,
+                    }}
+                    loading={collecting === a.path}
+                    disabled={!sessionId}
+                    title={
+                      sessionId
+                        ? '把产物放进本会话附件（工作区外会复制一份）'
+                        : '请先开始会话'
+                    }
+                    onClick={async () => {
+                      if (!sessionId) return;
+                      setCollecting(a.path);
+                      try {
+                        await collectArtifact(sessionId, a.path);
+                      } finally {
+                        setCollecting('');
+                      }
+                    }}
+                  >
+                    存为附件
+                  </Button>
                 </span>
               </div>
             ))

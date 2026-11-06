@@ -56,6 +56,10 @@
 //   RightViewer 已删该覆盖, 左侧写入仅 updateTaskResponse) - 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 顶栏主语由本页发布(foregroundSessionStore): useLayoutEffect 发布当前会话、卸载即交还
 //   LATEST_RUNNING 口径(URL 无 session_id 时曾与画面不一致) - 小欧-2026-11-03
+
+// 编辑历史: 2026-11-06 小欧 - 附件建会话 ensureSessionForUpload: 先选文件、选中后才建(取消选择不建空会话);
+//   解构到组件作用域供 useCallback 引用(避免闭包访问 chatState 触发 deps warning) — 小欧-2026-11-06
+
 import React, {
   useState,
   useEffect,
@@ -66,6 +70,8 @@ import React, {
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 - 位置2 数据源对象形态
 import { API_BASE_URL } from '../../services/api/client';
+// 2026-11-06 小欧 - 附件先选文件、选中后才建会话(取消选择不建空会话) — 小欧-2026-11-06
+import { sessionApi } from '../../services/api/session.api';
 import { useChatFacade } from '../../features/chat/hooks/useChatFacade';
 import { useSessionTasks } from '../../features/chat/hooks/useSessionTasks';
 import { useModelLayer } from '../../features/chat/hooks/useModelLayer';
@@ -125,6 +131,9 @@ const ChatPage: React.FC = () => {
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
   const { sessionId } = chatState;
+  // 2026-11-06 小欧 - 附件建会话写入(解构到组件作用域, 供 ensureSessionForUpload 依赖,
+  //   避免 useCallback 内访问 chatState 触发 react-hooks/exhaustive-deps warning) — 小欧-2026-11-06
+  const { setSessionId } = chatState;
   // 2026-11-03 小欧 - 顶栏主语发布(会话页口径): URL 不是权威(`/` 无 session_id 时顶栏报"无任务"), 本页显示哪个就报哪个。
   //   用 useLayoutEffect 而非 useEffect: 后者绘制后跑, 首帧会闪一次"别的会话/后台任务"的状态。
   useLayoutEffect(() => {
@@ -235,6 +244,25 @@ const ChatPage: React.FC = () => {
     [chatState.setLinkEnabled]
   );
 
+  /**
+   * 2026-11-06 小欧 - 附件上传前的会话保证。
+   * 已有会话直接返回; 无会话时建一个并同步 URL(与 useChatSend 自动建会话同口径)。
+   * 只在"用户真的选中了文件"后调用, 因此不会产生空会话。 — 小欧-2026-11-06
+   */
+  const ensureSessionForUpload = useCallback(async (): Promise<
+    string | null
+  > => {
+    if (sessionId) return sessionId;
+    try {
+      const s = await sessionApi.createSession();
+      setSessionId(s.session_id);
+      setSearchParams({ session_id: s.session_id });
+      return s.session_id;
+    } catch {
+      return null; // 失败不静默: 调用方(AttachmentArea)负责提示
+    }
+  }, [sessionId, setSessionId, setSearchParams]);
+
   // 2026-11-02 小欧 - 切换会话时重置跨会话泄漏状态（liveError）
   useEffect(() => {
     setLiveError(null);
@@ -285,6 +313,8 @@ const ChatPage: React.FC = () => {
     onToggleLink: handleToggleLink,
     allowInterject: chatState.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: 透传给 useChatPanels→ChatInput
     onToggleInterject: (v: boolean) => chatState.setAllowInterject(v), // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatPage 是开关本地态唯一写入口
+    // 2026-11-06 小欧 - 附件建会话
+    ensureSession: ensureSessionForUpload,
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传
     latestTaskRef, // 2026-09-01 小欧 方案C: 滚动定位ref透传
     rightOpen, // 2026-09-09 小欧: 右侧展开状态透传TaskListPanel

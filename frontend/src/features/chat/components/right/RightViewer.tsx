@@ -160,6 +160,8 @@
  */
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
+// 编辑历史: 2026-11-06 小欧 - StaticStatsBlock 透传 sessionId(存为附件需会话归属, 为空时按钮禁用) — 小欧-2026-11-06
+
 import React, {
   useCallback,
   useEffect,
@@ -637,6 +639,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
                 finalStats={frames.finalStats}
                 sessionTokens={sessionTokens}
                 chainTokens={chainTokens}
+                // 2026-11-06 小欧 - ③ 存为附件按会话归属(与会话工作区判定同源)
+                sessionId={sessionId}
               />
             )}
           </>

@@ -72,6 +72,9 @@
 // 2026-11-03 小欧 R4-1 - 引用清空提前到提交瞬间(与草稿同刻), 失败分支对称还原;
 //   原清空在 onSend 返回后, 而其全程闭合 SSE 终态 → 执行中插话重复携带上一轮引用 — 小欧-2026-11-03
 
+// 编辑历史: 2026-11-06 小欧 - 附件三入口(按钮/拖拽/粘贴)与素材包面板接入: 附件入口改插槽, 由本组件
+//   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
+
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -97,7 +100,13 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
+import { AttachmentArea } from './input/AttachmentArea'; // 2026-11-06 小欧 - 附件入口(插槽装配)
+import { MaterialPackPanel } from './input/MaterialPackPanel'; // 2026-11-06 小欧 - 素材包面板
 import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 动作按钮组(与 SubmitBar 拆出; 2026-10-25 回迁 SubmitBar 行右端)
+import {
+  filesFromDataTransfer,
+  uploadAttachments,
+} from '@/features/refs/uploadAttachment'; // 2026-11-06 小欧 - 拖拽/粘贴统一落点
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
@@ -159,6 +168,8 @@ interface ChatInputProps {
   onToggleLink: (enabled: boolean) => void;
   allowInterject: boolean; // 2026-10-07 小欧 - 插话开关
   onToggleInterject: (enabled: boolean) => void;
+  // 2026-11-06 小欧 - 附件上传前确保会话存在(由 ChatPage 注入) — 小欧-2026-11-06
+  ensureSession?: () => Promise<string | null>;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -174,6 +185,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onToggleLink,
   allowInterject, // 2026-10-07 小欧 - 插话开关
   onToggleInterject,
+  ensureSession, // 2026-11-06 小欧 - 附件建会话
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
@@ -259,6 +271,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [focusKey, setFocusKey] = useState(0);
   const wasBlockedRef = useRef(sendBlocked);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // 2026-11-06 小欧 - 拖拽高亮 + 拖入深度计数(子元素间移动不闪)
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
   // 2026-11-02 小欧 - 引用 chip 点击的唯一跳转口（有 Router 走 SPA，无 Router 整页跳）— 小欧-2026-11-02
   const nav = useOptionalNavigate();
   useEffect(() => {
@@ -648,10 +663,69 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setAtIndex((i) => (i + delta + atHits.length) % atHits.length);
   };
 
+  // 2026-11-06 小欧 - 三入口(按钮/拖拽/粘贴)唯一落点: 上传、建会话、入队、提示全在 uploadAttachments 内
+  const handleFiles = useCallback(
+    (files: File[]): void => {
+      if (files.length === 0) return;
+      void uploadAttachments(files, { sessionId, ensureSession });
+    },
+    [sessionId, ensureSession]
+  );
+
+  /** 只接管"带文件"的拖拽; 拖文本、拖链接一律放行, 不打扰浏览器默认行为 */
+  const hasFiles = (dt: DataTransfer | null): boolean =>
+    !!dt && Array.from(dt.types).includes('Files');
+
+  const onDragEnter = (e: React.DragEvent): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    dragDepth.current += 1;
+    setDragOver(true);
+  };
+
+  const onDragLeave = (): void => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  };
+
+  const onDragOver = (e: React.DragEvent): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault(); // 不阻止 → 松手时浏览器直接打开该文件, 当前页面被替换
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onDrop = (e: React.DragEvent): void => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    handleFiles(filesFromDataTransfer(e.dataTransfer));
+  };
+
+  /** 粘贴截图: 只有剪贴板里真有文件才接管; 纯文本粘贴不 preventDefault(否则正文粘不进来) */
+  const onPaste = (e: React.ClipboardEvent): void => {
+    const files = filesFromDataTransfer(e.clipboardData);
+    if (files.length === 0) return;
+    e.preventDefault();
+    handleFiles(files);
+  };
+
   return (
     <div
       ref={rootRef}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      // 2026-11-06 小欧 - 拖拽/粘贴落点挂在整个输入区(含引用区与按钮行, 不只是 textarea)
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onPaste={onPaste}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        outline: dragOver ? `2px dashed ${Colors.PRIMARY}` : 'none',
+        outlineOffset: 2,
+        borderRadius: 8,
+      }}
     >
       {/* 2026-10-21 小杨 - 引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}
       {refs.length > 0 && (
@@ -886,6 +960,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 2026-10-30 18:42:49 小欧 - workspaceCount 改由 workspaceStore 订阅得到(见上)
         workspaceCount={workspaceCount}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
+        // 2026-11-06 小欧 - 附件入口改插槽(本组件装配会话/上传回调, SubmitBar 只布局)
+        attachment={
+          <AttachmentArea
+            visible
+            sessionId={sessionId}
+            ensureSession={ensureSession}
+          />
+        }
+        // 2026-11-06 小欧 - 素材包面板(读当前 refs 存包 → 投喂回引用区)
+        rightExtra={<MaterialPackPanel refs={refs} />}
         /*
          * 2026-10-25 小欧 - 动作按钮组回迁本行右端(北京老陈指令): 原在 InputCore 框内右下角;
          *   两受阻判据(sendBlocked/emptyDraft)与提交门/提交处理同源, 见 SubmitActions 头注

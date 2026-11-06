@@ -13,6 +13,10 @@
 // 2026-10-25 小欧 - 动作按钮组回迁至本行右端(北京老陈指令): 新增 rightActions 插槽, 布局由 Space 改 flex
 //   容器, 左控件靠左、动作组 marginLeft:auto 贴右; SubmitActions 由 ChatInput 直接构造传入(纯 ReactNode,
 //   本组件零业务) — 小欧-2026-10-25
+
+// 编辑历史: 2026-11-06 小欧 - 新增 attachment 插槽(附件按钮)与 rightExtra 插槽(素材包面板), 均由
+//   ChatInput 构造传入(本组件零业务, 只排布) — 小欧-2026-11-06
+
 /**
  * SubmitBar - 底部功能行：左侧控件(历史/指令/类型/模型/附件/插话/会话事务空间) + 右端动作按钮组
  *
@@ -24,7 +28,6 @@
  */
 import React from 'react';
 import { Button, Space, Checkbox, Badge } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import); 2026-10-10 小欧 - 文档[16] §3.6.5(加 Badge 徽标)
-import { AttachmentArea } from './AttachmentArea';
 
 interface SubmitBarProps {
   modelPickerSlot?: React.ReactNode; // 既有 ModelPicker 实例（可选）
@@ -36,6 +39,10 @@ interface SubmitBarProps {
   onOpenWorkspaces?: () => void;
   /** 2026-10-25 小欧 - 右端动作按钮组(发送/停止/暂停); 不传则不渲染, 整行仅左控件靠左 — 小欧-2026-10-25 */
   rightActions?: React.ReactNode;
+  /** 2026-11-06 小欧 - 附件入口插槽(附件按钮), 由 ChatInput 构造 — 小欧-2026-11-06 */
+  attachment?: React.ReactNode;
+  /** 2026-11-06 小欧 - 右端动作组左侧插槽(素材包面板); 不传不渲染 */
+  rightExtra?: React.ReactNode;
 }
 
 const SubmitBar: React.FC<SubmitBarProps> = ({
@@ -46,13 +53,15 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   workspaceCount, // 2026-10-10 小欧 - 文档[16] §3.6.5
   onOpenWorkspaces,
   rightActions, // 2026-10-25 小欧 - 右端动作按钮组插槽
+  attachment, // 2026-11-06 小欧 - 附件入口
+  rightExtra, // 2026-11-06 小欧 - 素材包面板
 }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
     <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
       {leftExtra}
       {modelPickerSlot}
-      {/* 2026-10-06 小欧 - 北京老陈指令: 附件按钮不再隐藏, 显示+置灰占位（上传仍暂缓） */}
-      <AttachmentArea visible disabled />
+      {/* 2026-11-06 小欧 - 附件入口改插槽——本组件不再认识会话/上传，纯布局(SRP) */}
+      {attachment}
       {/* 插话开关: 附件之后(2026-10-06 北京老陈定); 复用 TaskTypeToggle 邻位 Checkbox 样式不新造组件 */}
       {onToggleInterject && (
         <Checkbox
@@ -72,7 +81,20 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
       )}
     </Space>
     {/* 2026-10-25 小欧 - marginLeft:auto 贴最右: 左控件组与动作组分居两端 */}
-    {rightActions && <div style={{ marginLeft: 'auto' }}>{rightActions}</div>}
+    {/* 2026-11-06 小欧 - 右端容器同时承载素材包(rightExtra)与动作组, 两者皆空则不渲染 */}
+    {(rightExtra || rightActions) && (
+      <div
+        style={{
+          marginLeft: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        {rightExtra}
+        {rightActions}
+      </div>
+    )}
   </div>
 );
 

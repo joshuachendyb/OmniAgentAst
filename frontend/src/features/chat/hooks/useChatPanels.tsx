@@ -51,6 +51,10 @@
 //   全部重新 render(right.viewer 的 RightViewer 最重), 而保存动作正落在流式出帧最密的一刻。
 //   面板只消费一个徽标数字, 该数字改由 ChatInput 内部订阅 workspaceStore 得到 — 小欧-2026-10-30
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+
+// 编辑历史: 2026-11-06 小欧 - 附件建会话单一来源下传: ensureSession 纯透传(本 hook 不解业务, 只把
+//   ChatPage 的 ensureSessionForUpload 经 opts 下传 ChatInput) — 小欧-2026-11-06
+
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -118,6 +122,8 @@ interface UseChatPanelsOptions {
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
   // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
   rightOpen?: boolean;
+  // 2026-11-06 小欧 - 附件上传前确保会话存在(纯透传 ChatInput) — 小欧-2026-11-06
+  ensureSession?: () => Promise<string | null>;
 }
 
 /**
@@ -154,6 +160,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
     latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
     rightOpen, // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
+    ensureSession, // 2026-11-06 小欧 - 附件建会话
   } = opts;
 
   const {
@@ -352,6 +359,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         component: (
           <ChatInput
             sessionId={sessionId}
+            ensureSession={ensureSession} // 2026-11-06 小欧 - 附件建会话
             loading={loading}
             isReceiving={isReceiving}
             isPaused={isPaused}
@@ -432,6 +440,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
       rightOpen, // 2026-09-30 小欧 [81]v1.4-H1: TaskListPanel 模型标签按 rightOpen 派生(折叠显 provider 前缀), 不入依赖则开合不重算
+      ensureSession, // 2026-11-06 小欧 - 附件建会话(渲染依赖, 漏=回调换新后面板仍用旧闭包)
     ]
   );
 }

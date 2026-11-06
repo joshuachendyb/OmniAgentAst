@@ -12,6 +12,10 @@
 // 编辑历史: 2026-10-30 小欧 - P2(体验, 纯展示层零后端改动): 暂停为轮边界挂起语义(本轮LLM完成后才真正挂起),
 //   showTaskResultMessage('pause') 提示补齐排队说明「当前步骤完成后生效」, 避免"已暂停但内容仍在流式输出"体感困惑 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 - 取消链路批量格式化顺带换行(按项目 prettier 重排长条件与对象字面量), 零逻辑改动 — 小欧-2026-10-30
+
+// 编辑历史: 2026-11-06 小欧 - waitTimerRef 类型改 ReturnType<typeof setInterval> | null(同 useChatState
+//   修复, @types/node@20 的 Timeout 覆盖 DOM number) — 小欧-2026-11-06
+
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -75,7 +79,7 @@ export interface UseChatTaskControlOptions {
     cancelInProgressRef: React.MutableRefObject<boolean>;
     // 2026-09-30 小欧 - 删 hasReceivedCancelEventRef 入参：handleCancel 函数体零引用（useSSE 时代残留）。
     //   它在 useChatCallbacks/useChatStreaming 仍真实使用，故只删本 hook 的接收，不动上游 ref 定义。
-    waitTimerRef: React.MutableRefObject<number | null>;
+    waitTimerRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>;
     isPausedRef: React.MutableRefObject<boolean>;
   };
   // [63] 5.14：原 functions.disconnect 组随 useSSE 退场整删——停止任务唯一入口是 chatStreamStore.stop()

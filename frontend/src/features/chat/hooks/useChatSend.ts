@@ -21,6 +21,8 @@
 
 // 编辑历史: 2026-11-03 17:40:00 小欧 - 三堂会审修复: line 205 ownerForCleanup 缩进 6→10 空格(与 if 块内 line 204 对齐, KISS-DIRECT 合规) — 小欧-2026-11-03
 
+// 编辑历史: 2026-11-06 小欧 - Prettier 纯格式修复(重排超长行, 零逻辑变更) — 小欧-2026-11-06
+
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -143,7 +145,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       if (!isInterject) {
         // 2026-11-03 小欧 - owner-scoped 防重：只当"同一会话的发送仍在飞"才挡；
         //   A 跑任务时切 B 并发送，sendingSessionRef(A) !== sessionId(B) → 不挡，B 可发。
-        if (isSendingRef.current && sendingSessionRef.current === sessionId) return;
+        if (isSendingRef.current && sendingSessionRef.current === sessionId)
+          return;
         isSendingRef.current = true;
         sendingSessionRef.current = sessionId; // 初始 owner（auto-create 前为 null，创建后更新）
       } else if (isInterjectingRef.current) {
@@ -265,7 +268,10 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         // finally只负责清理防重标记和计时器
         // 2026-10-07 小欧 - 插话不碰这些(计时器属运行中任务, 清它=把等待钟面打没)
         if (!isInterject) {
-          if (sendingSessionRef.current === ownerForCleanup) { isSendingRef.current = false; sendingSessionRef.current = null; }
+          if (sendingSessionRef.current === ownerForCleanup) {
+            isSendingRef.current = false;
+            sendingSessionRef.current = null;
+          }
           // 停止等待计时器
           if (waitTimerRef.current) {
             clearInterval(waitTimerRef.current);

@@ -5,6 +5,10 @@
 // 2026-11-02 小欧 - labelOf 的末段判据改调 utils/projectPath.baseName（唯一实现），本函数只留空路径回退 — 小欧-2026-11-02
 // 2026-11-02 小欧 - normalizePath 的分隔符归一改调 projectPath.norm（唯一实现），本函数只留盘符小写 —
 //   原自写 `replace(/\\/g,'/')` 是第三套归一口径（另两套：projectPath.norm / useFilesTree.expandToPath）— 小欧-2026-11-02
+
+// 编辑历史: 2026-11-06 小欧 - toWireRef 白名单补 mime/attachment_id(显式投影漏字段会被静默剥掉,
+//   上行附件只剩 path, resolver 拿不到 id 必报 attachment_missing) — 小欧-2026-11-06
+
 import type { ChatRefPayload } from '../../types/chat'; // wire 投影入参类型(与 store 同源)
 import { baseName, norm } from '@/utils/projectPath';
 /**
@@ -36,6 +40,10 @@ export const toWireRef = (r: ChatRefPayload) => ({
   path: r.path,
   lineRange: r.lineRange ?? null,
   size: r.size,
+  // 2026-11-06 小欧 - 白名单补 mime/attachment_id —— 显式投影漏字段会被静默剥掉,
+  //   上行的附件就只剩 path, resolver 拿不到 id → 必报 attachment_missing — 小欧-2026-11-06
+  mime: r.mime,
+  attachment_id: r.attachment_id,
 });
 
 interface RefIdentity {

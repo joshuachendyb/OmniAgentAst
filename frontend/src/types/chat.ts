@@ -23,6 +23,9 @@
 // 编辑历史: 2026-11-02 小欧 - 删 UnusableEntry(库里不再回传不可用行, UI 无需表达该状态);
 //   WorkspacesResponse 删 unusable、增 pruned(仅 prune=true 时非 0) — 小欧-2026-11-02
 
+// 编辑历史: 2026-11-06 小欧 - ChatRefPayload 扩 kind 'attachment' + attachment_id/mime(契约先行,
+//   否则 uploadAttachment 构造 kind:'attachment' 编译不过; 正文由 resolver 附件分支读) — 小欧-2026-11-06
+
 /**
  * 流式API响应类型定义
  *
@@ -270,11 +273,16 @@ export interface ChatRequest {
  * ⚠ `content` 已删除：读取权收归后端，wire 只承载标识（path/lineRange），正文由后端按标识读盘
  *   （见 2.3-8）。path 才是长期有效信息（Agent 日后可凭 path 重读）。
  */
+
 export interface ChatRefPayload {
-  kind: 'file' | 'selection';
+  kind: 'file' | 'selection' | 'attachment';
   label: string;
   path: string;
   size?: number;
+  /** 附件记录 id(上传成功返回), 附件分支预检/上行用 */
+  attachment_id?: string;
+  /** 附件 mime(展示/预检用, 不参与正文裁决) */
+  mime?: string;
   lineRange?: { start: number; end: number } | null;
 }
 

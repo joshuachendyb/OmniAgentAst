@@ -25,6 +25,10 @@
 //   改由 features/chat/services/sessionWorkspaceStore 单向持有(徽标 useSyncExternalStore 订阅,
 //   面板经 store 提交)。原实现让一次保存就使 useChatPanels 的巨型 memo 失效, 7 个面板连带重算,
 //   恰撞流式出帧最密的时刻 —— 故不留在 session 状态里 — 小欧-2026-10-30
+
+// 编辑历史: 2026-11-06 小欧 - waitTimerRef 类型改 ReturnType<typeof setInterval> | null(@types/node@20
+//   的 Timeout 覆盖 DOM number, 修复类型错误; 运行时零差异) — 小欧-2026-11-06
+
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -145,7 +149,9 @@ export interface UseChatStateReturn {
   // ==================== Refs ====================
 
   // 定时器Refs
-  waitTimerRef: React.MutableRefObject<number | null>;
+  // 2026-11-06 小欧 - 修复: @types/node@20 的 setInterval 返回 Timeout 覆盖 DOM number(2026-09-28
+  //   types 限定后仍经引用泄漏), 用 ReturnType<typeof setInterval> 让两环境都匹配(运行时零差异)
+  waitTimerRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>;
 
   // DOM Refs
   messagesEndRef: React.MutableRefObject<HTMLDivElement | null>;
@@ -245,7 +251,7 @@ export const useChatState = (): UseChatStateReturn => {
   // ==================== Refs定义 ====================
 
   // 定时器Refs
-  const waitTimerRef = useRef<number | null>(null);
+  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // DOM Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);

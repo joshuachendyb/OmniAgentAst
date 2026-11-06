@@ -2,6 +2,9 @@
 // 编辑历史: 2026-10-30 小欧 批3: 增 chipToneOf(5 态→3 色系的唯一映射), 组件只查表不写嵌套三元 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 R9: chipStateText 接收整条回执 —— degraded 拼 detail(省略行数/字符数),
 //   dropped 拼中文 reason; 新增 noticeOf/noticeDetailText 供组件标题与文案共用 — 小欧-2026-10-30
+
+// 编辑历史: 2026-11-06 小欧 - 附件专用文案(后端 reason 一一对应, 单一真源在后端) — 小欧-2026-11-06
+
 /**
  * notice —— 引用回执 → chip 状态机(5 态)唯一映射
  *
@@ -79,6 +82,9 @@ const DROP_REASON_TEXT: Record<string, string> = {
   timeout: '读取超时',
   no_path: '缺少文件路径',
   rejected: '整批被拒（超出预算）',
+  // 2026-11-06 小欧 - 附件专用(后端 reason 一一对应, 单一真源在后端) — 小欧-2026-11-06
+  attachment_missing: '附件已失效，请在引用区移除后再发送',
+  attachment_failed: '附件内容读取失败，请重试或换一个文件',
 };
 
 /**
