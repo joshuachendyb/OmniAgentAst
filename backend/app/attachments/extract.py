@@ -2,6 +2,7 @@
 # 2026-11-04 小欧 新建: 附件五分类 + 五张档案卡注入文本(纯函数, 零 DB) — 小欧-2026-11-04
 # 2026-11-06 小欧 补 classify 文本分支: 文本扩展名(如 .txt/.md/.py)先于"任意后缀 → binary"判定,
 #   否则文本文件落 binary, 文本档案卡用不上 — 小欧-2026-11-06
+# 2026-11-06 小欧 S1: text 分支从 _text_card 换成 _text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -76,7 +77,7 @@ def build_inject_text(att: dict[str, Any]) -> str:
     """注入文本唯一产生点。失败由调用方(resolver)折算成 attachment_failed。"""
     kind = att.get("kind") or "binary"
     if kind == "text":
-        return _text_card(att)    # S1: 换成 _text_body(Path(att["stored_path"]), int(att.get("size") or 0))
+        return _text_body(att)
     if kind == "image":
         return _image_card(att)
     if kind == "richdoc":
@@ -91,6 +92,57 @@ def _head(att: dict[str, Any]) -> str:
             f"路径: {att.get('path') or att['stored_path']}\n"
             f"类型: {att.get('mime') or '未知'}\n"
             f"大小: {int(att.get('size') or 0)} 字节")
+
+
+def _text_body(att: dict[str, Any]) -> str:
+    """S1: 文本附件真读正文。
+
+    ≤256KB → 全文注入([附件正文·文本] + head + 正文);
+    >256KB → 档案头([附件档案头] + head + 前40行 + 总行数), 模型凭 path 深读。
+
+    编码: utf-8 → gbk → latin-1 逐个试(DRY: 与 browse _encoding_candidates 同心智,
+      但本函数零 DB 零 HTTP, 不走 browse 路径解析——stored_path 已是绝对路径真源)。
+    """
+    stored = Path(att["stored_path"])
+    size = int(att.get("size") or 0)
+
+    if size <= TEXT_INLINE_MAX:
+        content = _read_text_full(stored)
+        return f"[附件正文·文本]\n{_head(att)}\n正文:\n{content}"
+
+    # > 256KB: 单遍扫描取前 N 行 + 总行数(不整篇入 prompt)
+    head_lines, total = _read_head_and_count(stored, ARCHIVE_HEAD_LINES)
+    preview = "\n".join(head_lines)
+    return (f"[附件档案头]\n{_head(att)}\n"
+            f"预览(前{ARCHIVE_HEAD_LINES}行):\n{preview}\n"
+            f"总行数: {total}\n"
+            f"说明: 需要深读请用文件工具读取上述路径。")
+
+
+def _read_text_full(path: Path) -> str:
+    """读全文: utf-8 → gbk → latin-1 逐个试, 失败用 replace 兜底。"""
+    raw = path.read_bytes()
+    for enc in ("utf-8", "gbk", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
+    """单遍扫描: 取前 n 行(rstrip) + 总行数。不整篇入内存。"""
+    head: list[str] = []
+    total = 0
+    with open(path, "rb") as f:
+        for raw_line in f:
+            total += 1
+            if total <= n:
+                try:
+                    head.append(raw_line.decode("utf-8").rstrip("\r\n"))
+                except UnicodeDecodeError:
+                    head.append(raw_line.decode("gbk", errors="replace").rstrip("\r\n"))
+    return head, total
 
 
 def _text_card(att: dict[str, Any]) -> str:
