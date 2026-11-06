@@ -18,6 +18,8 @@
 # 2026-11-06 小欧 重建附件分支(配套误还原后恢复): 增 _read_attachment(按 attachment_id 查表 +
 #   extract.build_inject_text 生成注入文本), _read_one 先分流 kind=attachment;
 #   失败 reason 用 attachment_missing/attachment_failed — 小欧-2026-11-06
+# 2026-11-06 小欧 三堂会审: _read_one 附件分支补 await asyncio.to_thread(_read_attachment) ——
+#   DB 查表为同步阻塞 IO, 原同步直调在事件循环上裸跑, 违背"同步读盘 to_thread 卸载"纪律 — 小欧-2026-11-06
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
@@ -119,15 +121,20 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
-    return ResolvedRef(ref={**ref, "content": text},
-                       truncated=False, note="")
+    # 2026-11-06 小欧 三堂会审: 补 clip_text 单条上限裁剪 + 回写 size —— 原重建缺失,
+    #   超长附件正文绕过 limits.read_max_bytes(单条预算)直入 prompt, 违反文档10 §3.11/§3.22
+    #   与文档56 §4.4.2 的 clip_text 设计; 附件正文必受单条上限约束。
+    text, omitted = clip_text(text, limits.read_max_bytes)
+    return ResolvedRef(ref={**ref, "content": text, "size": att.get("size")},
+                       truncated=bool(omitted),
+                       note=f"已省略 {omitted} 字符" if omitted else "")
 
 
 async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
     """按标识读单条正文。同步读盘经 asyncio.to_thread 卸载出事件循环(仓库既有范式)。
 
     读法矩阵(4.6.1):
-      附件(kind=attachment)       → _read_attachment(按 id 查表, 不落文件读分支)
+      附件(kind=attachment)       → _read_attachment(to_thread 卸载 DB 查表, 按 id 查表不落文件读分支)
       根内 + 无 lineRange + 字符数≤上限 → read_text_file(整份直读)
       根内 + 无 lineRange + 超上限     → 头尾摘录(4.6.3: 全扫一次取 total_lines,
                                          头 REF_HEAD_RATIO 段 + 尾 REF_TAIL_RATIO 段, 各分块)
@@ -136,7 +143,9 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
       无 path                          → dropped(no_path)
     """
     if ref.get("kind") == "attachment":
-        return _read_attachment(ref, limits)
+        # 2026-11-06 小欧 三堂会审: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
+        #   否则违背本文件"同步读盘经 asyncio.to_thread 卸载(仓库既有范式)"纪律 — 小欧-2026-11-06
+        return await asyncio.to_thread(_read_attachment, ref, limits)
     path = (ref.get("path") or "").strip()
     if not path:
         return ResolvedRef(ref=ref, truncated=False, note="no_path")

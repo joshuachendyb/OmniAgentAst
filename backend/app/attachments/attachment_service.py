@@ -4,6 +4,8 @@
 #   消费方 import 路径同步(`from app.attachments import attachment_service`) — 小欧-2026-11-06
 # 2026-11-06 小欧 方案B: 增 source_task_id 溯源列(产物「存为附件」来源任务); save_bytes 加可选入参,
 #   会话级主归属不变, 仅溯源且不进去重键 — 小欧-2026-11-06
+# 2026-11-06 小欧 三堂会审: _sanitize_name 去首尾点 strip(".")→rstrip(".") —— 原实现剥掉开头点,
+#   破坏 .env/.dockerfile 点文件扩展名(白名单内却 415), 白名单口径分叉 — 小欧-2026-11-06
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
 
@@ -66,9 +68,14 @@ _RESERVED_NAMES = {
 
 
 def _sanitize_name(name: str) -> str:
-    """文件名 sanitize: 去目录段/非法字符/保留名, 限长 120。"""
+    """文件名 sanitize: 去目录段/非法字符/保留名, 限长 120。
+
+    2026-11-06 小欧 三堂会审: 去首尾点改用 rstrip(".") 仅去**结尾点** —— 原实现 strip(".")
+    会把开头点一起剥掉, 破坏点文件(.env/.dockerfile)扩展名, 使其即便在 TEXT_SUFFIXES
+    白名单内也无法上传(415), 白名单口径分叉。修正后保留开头点, 与白名单一致。
+    """
     base = Path((name or "").replace("\\", "/")).name
-    base = _BAD_CHARS.sub("_", base).strip().strip(".")
+    base = _BAD_CHARS.sub("_", base).strip().rstrip(".")
     if not base:
         return "file"
     parts = base.rsplit(".", 1)

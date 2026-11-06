@@ -16,6 +16,8 @@
 #   file_level=INFO 一起沉掉; INFO 档默认不上控制台, 噪音口径不变 — 小欧-2026-11-03
 # 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可): 单键 logging.level, 文件=常规阈值(>=), 控制台=精确匹配(==);
 #   OK 汇总行留 INFO 声明 → 值=WARNING 时该行只落文件不再上控制台也不进文件(常规流水, 丢了可接受) — 小欧-2026-11-03
+# 2026-11-06 小欧 三堂会审: REASON_LEVELS 补 attachment_missing/attachment_failed(→warn) ——
+#   原重建缺漏, 靠查表默认 warn 兜底行为一致, 显式声明符合文档10 §3.13 单一真源 — 小欧-2026-11-06
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 
@@ -53,6 +55,9 @@ REF_LOG_DETAIL_MAX = 5       # 明细行条数上限(仅写文件, 不上控制�
 REASON_LEVELS: Dict[str, str] = {
     "truncated": "info", "range_clipped": "info",
     "missing": "warn", "out_of_root": "warn", "unsupported": "warn",
+    # 2026-11-06 小欧 三堂会审: 补附件专用 reason(原重建缺漏, 靠默认 warn 兜底) — 与 resolver 产出的
+    #   attachment_missing/attachment_failed 一一对应, 符合文档10 §3.13 显式单一真源
+    "attachment_missing": "warn", "attachment_failed": "warn",
     "timeout": "warn", "range_out": "warn", "no_path": "warn",
     "compressed": "warn", "rejected": "error",
 }
