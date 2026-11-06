@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: 附件 API(上传/列表/详情/文本/删除/collect/localCapability/importLocal)
 //   前端附件功能 — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-09: AttachmentRecord 补 source_task_id(方案B溯源, 与后端 _COLS 对齐);
+//   B-03: get/remove/text 增 sessionId 必填(后端会话归属校验, 越会话视同不存在) — 小欧-2026-11-07
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -24,6 +26,8 @@ export interface AttachmentRecord {
   extract_status: 'none' | 'ok' | 'failed';
   extract_chars: number;
   source_path: string | null;
+  /** 产物「存为附件」来源任务(方案B溯源; 上传/直接引用恒 null) */
+  source_task_id: string | null;
   created_at: string;
 }
 
@@ -55,24 +59,33 @@ export const attachmentApi = {
     return res.data;
   },
 
-  /** 存在性校验（发送前预检唯一数据源，不走 /files/stat） */
-  get: async (id: string): Promise<AttachmentRecord> => {
-    const res = await api.get<AttachmentRecord>(`/attachments/id/${id}`);
+  /** 存在性校验（发送前预检唯一数据源，不走 /files/stat）。
+   *  sessionId 必填: 后端会话归属校验(B-03), 越会话访问视同附件不存在。 */
+  get: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
+    const res = await api.get<AttachmentRecord>(`/attachments/id/${id}`, {
+      params: { session_id: sessionId },
+    });
     return res.data;
   },
 
-  /** 预览注入文本（排障/素材包预览用；**不**用于入队 —— ChatRef.content 已删除） */
-  text: async (id: string): Promise<{ id: string; text: string }> => {
+  /** 预览注入文本（排障/素材包预览用；**不**用于入队 —— ChatRef.content 已删除）。
+   *  sessionId 必填: 后端会话归属校验(B-03)。 */
+  text: async (id: string, sessionId: string): Promise<{ id: string; text: string }> => {
     const res = await api.get<{ id: string; text: string }>(
       `/attachments/id/${id}/text`,
-      { timeout: HEAVY_READ_TIMEOUT_MS }
+      { params: { session_id: sessionId }, timeout: HEAVY_READ_TIMEOUT_MS }
     );
     return res.data;
   },
 
-  remove: async (id: string, purge = false): Promise<{ ok: boolean }> => {
+  /** 删除附件记录（限本会话, B-03）; 默认不删磁盘文件。 */
+  remove: async (
+    id: string,
+    sessionId: string,
+    purge = false
+  ): Promise<{ ok: boolean }> => {
     const res = await api.delete<{ ok: boolean }>(`/attachments/id/${id}`, {
-      params: { purge },
+      params: { session_id: sessionId, purge },
     });
     return res.data;
   },

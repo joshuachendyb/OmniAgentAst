@@ -24,6 +24,8 @@
 //   ②回声动作从 useComposerRefs.mergeIncoming 迁到 push 与 hook.add(新意图单点), 并新增
 //   restore() 通道给 refs_blocked 台账重建用 —— 重建时必须保留刚下发的 refs_notice, 否则
 //   chip 无黄/红标; 且重建的是已上行过的条目, 不再重判配额(满额 20 条时会被自己占位挡掉) — 小欧-2026-10-30
+// 编辑历史: 2026-11-07 小欧 - F-01: composerRefStore 导出 occupancy()(当前占用条数),
+//   供上传方发起请求前判容量, 不产生孤儿附件记录 — 小欧-2026-11-07
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -121,6 +123,14 @@ export const composerRefStore = {
   /** 快照 = 待消费数量（变化即触发消费 effect） */
   getSnapshot(): number {
     return queue.length;
+  },
+  /**
+   * 当前占用条数(已入队 chips + 队列新 key) — 2026-11-07 小欧 F-01
+   * 供上传方在发起请求**前**判容量: 容量不足整批拒绝, 不产生
+   * "落库成功却入不了队"的服务端孤儿附件记录。
+   */
+  occupancy(): number {
+    return occupancy();
   },
   /**
    * 发布已入队 chips(上限判定真源) — 2026-10-30 小欧 R5-1

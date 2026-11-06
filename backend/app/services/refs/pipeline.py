@@ -26,14 +26,17 @@ async def prepare_refs(
     *,
     limits: RefLimits,
     scope: str,
+    session_id: Optional[str] = None,
     sanitized_dropped: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """解析 + 体积裁决, 返回 (放行条目, 回执条目)。
 
     回执条目顺序固定: resolver 丢弃 → resolver 提示(截断/区间裁剪) → budget 裁决 →
     入口过滤丢弃(sanitize)。条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决。
+    session_id: 会话归属透传给 resolver(附件注入校验, B-03; None 时附件 fail-closed 折算 missing)。
     """
-    resolved, r_dropped, r_notices = await resolve_refs(refs, limits=limits)
+    resolved, r_dropped, r_notices = await resolve_refs(
+        refs, limits=limits, session_id=session_id)
     final, b_notices = budget_refs(resolved, limits=limits, scope=scope)
     notices = list(r_dropped) + list(r_notices) + list(b_notices) + list(sanitized_dropped or ())
     return final, notices

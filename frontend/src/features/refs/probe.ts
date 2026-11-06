@@ -12,6 +12,9 @@
 //   ok:false/unsupported, 图片附件会被自家闸门判失效, 永远发不出去) — 小欧-2026-11-06
 // 编辑历史: 2026-11-06 小欧 - 三堂会审(KISS): precheckRefs 附件类型判断抽 isAttachment 一次(原两处
 //   r.kind === 'attachment' 重复判断) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-05: kind=attachment 但缺 attachment_id → 直接标 invalid
+//   (原回落 statRef(path), 附件 path 在项目根外会被误判"越界失效"); B-03: probeAttachment
+//   带 sessionId 供后端会话归属校验(越会话视同不存在) — 小欧-2026-11-07
 
 /**
  * probe —— 前端对引用的唯一读盘点
@@ -39,10 +42,13 @@ export interface ProbeResult {
   reason?: 'missing' | 'unsupported' | 'timeout';
 }
 
-/** 附件预检: 只判记录还在不在(真源后端), 不读正文、不比对 mtime。 */
-export const probeAttachment = async (id: string): Promise<ProbeResult> => {
+/** 附件预检: 只判记录还在不在(真源后端, 含会话归属校验 B-03), 不读正文、不比对 mtime。 */
+export const probeAttachment = async (
+  id: string,
+  sessionId: string
+): Promise<ProbeResult> => {
   try {
-    const rec = await attachmentApi.get(id);
+    const rec = await attachmentApi.get(id, sessionId);
     return { ok: true, size: rec.size };
   } catch (e) {
     return { ok: false, reason: reasonOfError(e) };
@@ -105,7 +111,8 @@ export const precheckRefs = async <
     attachment_id?: string;
   },
 >(
-  refs: T[]
+  refs: T[],
+  sessionId?: string | null
 ): Promise<{ checked: T[]; invalid: T[]; updated: T[] }> => {
   // 2026-10-30 小欧 A5: checked 保留全部条目 —— 失效条目带 invalid:true 一起回写,
   //   调用方 setAll 后 chip 仍在(红底+「已失效」), 用户才可能按提示移除;
@@ -114,11 +121,16 @@ export const precheckRefs = async <
     refs.map(async (r) => {
       // 2026-11-06 小欧 三堂会审(KISS): 附件类型判断只写一次 — 小欧-2026-11-06
       const isAttachment = r.kind === 'attachment';
+      // 2026-11-07 小欧 F-05: 附件缺 id / 缺会话凭据 → 直接标 invalid, 不回落 statRef ——
+      //   附件 path 常在项目根外(会话工作区), statRef 会误判"越界失效"; 且缺凭据时
+      //   后端也不认(fail-closed), 前端口径一致
+      if (isAttachment && (!r.attachment_id || !sessionId)) {
+        return { ref: { ...r, invalid: true } as T, invalid: true, updated: false };
+      }
       // 2026-11-06 小欧 - 附件按 id 校验; 其余仍走 stat 轻端点 — 小欧-2026-11-06
-      const st =
-        isAttachment && r.attachment_id
-          ? await probeAttachment(r.attachment_id)
-          : await statRef(r.path);
+      const st = isAttachment
+        ? await probeAttachment(r.attachment_id!, sessionId!)
+        : await statRef(r.path);
       if (!st.ok) {
         return {
           ref: { ...r, invalid: true } as T,

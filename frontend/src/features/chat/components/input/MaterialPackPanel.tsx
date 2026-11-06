@@ -1,6 +1,8 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: ⑤ 素材包面板(搜索/分组/投喂/存包/改名/删除) — 小欧-2026-11-06
 // 编辑历史: 2026-11-06 小欧 - 三堂会审(SRP): 存包表单抽成独立组件 MaterialPackSaveForm, 本组件只留
 //   列表/搜索/分组/投喂/改名/删除(原 376 行, 存包表单态+提交占 4 状态+1 函数) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-07 修复: 投喂按条目身份分流 —— 附件按 id 查表恢复附件语义
+//   (attachmentApi.get + enqueue 唯一入队口), 其余走 quoteFile — 小欧-2026-11-07
 /**
  * MaterialPackPanel —— 素材包（⑤）唯一 UI 入口。
  *
@@ -30,6 +32,9 @@ import {
 } from '@/services/api/materialPack.api';
 import { quoteFile } from '@/features/refs/quote';
 import type { ComposerRef } from '@/features/refs/store';
+// 2026-11-07 小欧 F-07: 附件条目投喂按 id 查表恢复附件语义, 复用 enqueue 唯一入队口
+import { attachmentApi } from '@/services/api/attachment.api';
+import { enqueue } from '@/features/refs/uploadAttachment';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 // 2026-11-06 小欧 三堂会审(SRP): 存包表单独立成组件 — 小欧-2026-11-06
@@ -40,9 +45,11 @@ const PANEL_W = 432;
 interface MaterialPackPanelProps {
   /** 当前引用区条目（「存当前」的数据源） */
   refs: ComposerRef[];
+  /** 当前会话 ID（F-07: 附件条目投喂按 id 查表需会话归属校验, B-03） */
+  sessionId?: string | null;
 }
 
-const MaterialPackPanel: React.FC<MaterialPackPanelProps> = ({ refs }) => {
+const MaterialPackPanel: React.FC<MaterialPackPanelProps> = ({ refs, sessionId }) => {
   const [open, setOpen] = useState(false);
   const [packs, setPacks] = useState<MaterialPack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,12 +92,24 @@ const MaterialPackPanel: React.FC<MaterialPackPanelProps> = ({ refs }) => {
     });
   }, [packs, group, keyword]);
 
-  /** 投喂：逐个走唯一引用入口，失效的计数后一次提示 */
+  /** 投喂：按条目身份分流(F-07) —— 附件按 id 查表恢复附件语义(enqueue 唯一入队口),
+   *  其余走 quoteFile(唯一引用入口); 失效的计数后一次提示 */
   const feed = async (pack: MaterialPack): Promise<void> => {
     setBusyId(pack.id);
     let failed = 0;
     try {
       for (const it of pack.items) {
+        // 2026-11-07 小欧 F-07: 附件条目按 id 恢复附件语义 —— 原一律 quoteFile(path),
+        //   附件降格为普通文件引用, resolver 走文件读分支(路径在根外时直接失效)
+        if (it.kind === 'attachment' && it.attachment_id) {
+          try {
+            const rec = await attachmentApi.get(it.attachment_id, sessionId ?? '');
+            if (!enqueue(rec)) failed += 1;
+          } catch {
+            failed += 1;
+          }
+          continue;
+        }
         const r = await quoteFile(it.path, { label: it.label });
         if (!r.ok) failed += 1;
       }

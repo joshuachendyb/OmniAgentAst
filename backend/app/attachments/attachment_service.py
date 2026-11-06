@@ -7,6 +7,16 @@
 # 2026-11-06 小欧 三堂会审: _sanitize_name 去首尾点 strip(".")→rstrip(".") —— 原实现剥掉开头点,
 #   破坏 .env/.dockerfile 点文件扩展名(白名单内却 415), 白名单口径分叉 — 小欧-2026-11-06
 
+# 2026-11-07 小欧 - B-01 修复: save_upload 初始读限按后缀分档(图片 10MB/其他 20MB),
+#   原统一读 MAX_FILE_BYTES+1, 12MB 图片被完整读入内存后才被拒, 白占堆;
+# 2026-11-07 小欧 - B-03 修复: 增 get_attachment_scoped 会话作用域校验(不匹配视同不存在),
+#   delete_attachment/read_inject_text 加 session_id 必填参数 —— 附件是会话级资产,
+#   跨会话按 id 直取属越权(注入真源 resolver 同步收紧, 见 resolver.py)
+# 2026-11-07 小欧 - B-02 修复: delete_attachment(purge=True) 级联清理 material_pack_items
+#   中引用同 stored_path 的条目 —— 原只删附件记录+磁盘文件, 素材包条目仍存旧 path,
+#   投喂时 quoteFile 找不到文件 → 红底失效
+
+
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
 
 落盘位置: {会话默认工作区}/attachments/
@@ -210,9 +220,16 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
 
 
 async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
-    """HTTP 上传入口：读入内存后交给 save_bytes（磁盘 IO 卸载到线程）。"""
-    data = await upload.read(MAX_FILE_BYTES + 1)
-    if len(data) > MAX_FILE_BYTES:
+    """HTTP 上传入口：读入内存后交给 save_bytes（磁盘 IO 卸载到线程）。
+
+    初始读限按后缀分档(B-01): 图片只读 10MB+1, 超限图片在读入阶段即拒,
+    不再统一读 20MB+1 白占堆; 无扩展名/其他后缀仍按 20MB 读,
+    类型与最终大小裁决归 save_bytes(单一真源不变)。
+    """
+    suffix = Path(upload.filename or "").suffix.lower()
+    limit = MAX_IMAGE_BYTES if suffix in extract.IMAGE_SUFFIXES else MAX_FILE_BYTES
+    data = await upload.read(limit + 1)
+    if len(data) > limit:
         fail(ATTACHMENT_TOO_LARGE)
     return await asyncio.to_thread(
         save_bytes, session_id, upload.filename or "file", data,
@@ -221,7 +238,14 @@ async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
 
 
 def list_attachments(session_id: str) -> list[dict[str, Any]]:
+    """附件列表(限本会话)。B-04: 会话不存在时返回空列表(附件随 session 级联删, 无孤儿数据)。"""
+    if not session_id:
+        return []
     with db.get_conn("chat") as conn:
+        sess = conn.execute(
+            "SELECT 1 FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
+        if not sess:
+            return []
         rows = conn.execute(
             f"SELECT {_COLS} FROM attachments WHERE session_id = ? ORDER BY created_at DESC",
             (session_id,),
@@ -240,30 +264,52 @@ def get_attachment(attachment_id: str) -> dict[str, Any] | None:
     return _row_to_dict(row) if row else None
 
 
-def delete_attachment(attachment_id: str, purge: bool = False) -> None:
-    """删记录; purge=True 时同时删磁盘文件(默认不删, 防误删)。
+def get_attachment_scoped(attachment_id: str, session_id: str | None) -> dict[str, Any] | None:
+    """按 id 取单条并校验会话归属(B-03): 不匹配视同不存在。
 
-    删除顺序修复: purge=True 时**先删磁盘文件、成功后才删 DB 行** ——
-    若磁盘删失败则不删行并抛错, 避免"记录已删、文件成孤儿"。不 purge 时仅删行(磁盘留档)。
+    附件是会话级资产(表级 session_id 外键 + 级联删除), 跨会话按 id 直取属越权。
+    API 端点(get/delete/text)与 resolver 注入共用本口径 —— 单一真源, 不各写一份。
+    session_id 为 None 时视同不匹配(fail-closed: 拿不出会话凭据就不给数据)。
     """
+    att = get_attachment(attachment_id)
+    if att and session_id and att.get("session_id") == session_id:
+        return att
+    return None
+
+
+def delete_attachment(attachment_id: str, session_id: str, *,
+                      purge: bool = False) -> None:
+    """删记录(限本会话); purge=True 时同时删磁盘文件+级联清素材包条目(默认不删, 防误删)。
+
+    删除顺序: purge=True 时**先删磁盘文件、成功后才删 DB 行** ——
+    若磁盘删失败则不删行并抛错, 避免"记录已删、文件成孤儿"。不 purge 时仅删行(磁盘留档)。
+    会话归属先经 get_attachment_scoped 校验(B-03): 越会话删除视同附件不存在。
+    B-02: purge=True 时级联清理 material_pack_items 中引用同 stored_path 的条目,
+    防投喂时 quoteFile 找不到已删文件。
+    """
+    att = get_attachment_scoped(attachment_id, session_id)
+    if not att:
+        fail(NOT_FOUND, "附件不存在")
+    stored_path = att["stored_path"]
     with db.get_conn("chat") as conn:
-        row = conn.execute(
-            f"SELECT {_COLS} FROM attachments WHERE id = ?", (attachment_id,)
-        ).fetchone()
-        if not row:
-            fail(NOT_FOUND, "附件不存在")
         if purge:
             try:
-                Path(row["stored_path"]).unlink(missing_ok=True)
+                Path(stored_path).unlink(missing_ok=True)
             except OSError as e:
                 logger.error(f"[attachments] purge 失败, 记录保留 id={attachment_id} err={e}")
                 fail(ATTACHMENT_UNAVAILABLE, "附件磁盘删除失败，记录已保留")
+            # B-02: 级联清素材包条目(路径已删, 旧条目投喂必然失效)
+            conn.execute(
+                "DELETE FROM material_pack_items WHERE path = ?", (stored_path,))
         conn.execute("DELETE FROM attachments WHERE id = ?", (attachment_id,))
 
 
-def read_inject_text(attachment_id: str) -> str:
-    """预览端点数据源: 与 resolver 同一条生成路径, 不产生第二套口径。"""
-    att = get_attachment(attachment_id)
+def read_inject_text(attachment_id: str, session_id: str) -> str:
+    """预览端点数据源: 与 resolver 同一条生成路径, 不产生第二套口径。
+
+    会话归属先经 get_attachment_scoped 校验(B-03), 越会话预览视同附件不存在。
+    """
+    att = get_attachment_scoped(attachment_id, session_id)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     return extract.build_inject_text(att)

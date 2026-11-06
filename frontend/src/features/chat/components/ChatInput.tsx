@@ -362,7 +362,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }> => {
     if (refs.length === 0)
       return { refsToSend: refs, blocked: false, updated: [] };
-    const { checked, invalid, updated } = await precheckRefs(refs);
+    const { checked, invalid, updated } = await precheckRefs(refs, sessionId);
     // 2026-10-30 小欧 A5: checked 含失效条目(invalid:true), 回写后 chip 保留红底可移除;
     //   原实现回写"仅有效条目", 失效引用从界面消失, 提示却让用户"移除后再发送"。
     const checkedById = new Map(checked.map((c) => [c.id, c]));
@@ -969,7 +969,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           />
         }
         // 2026-11-06 小欧 - 素材包面板(读当前 refs 存包 → 投喂回引用区)
-        rightExtra={<MaterialPackPanel refs={refs} />}
+        rightExtra={<MaterialPackPanel refs={refs} sessionId={sessionId} />}
         /*
          * 2026-10-25 小欧 - 动作按钮组回迁本行右端(北京老陈指令): 原在 InputCore 框内右下角;
          *   两受阻判据(sendBlocked/emptyDraft)与提交门/提交处理同源, 见 SubmitActions 头注

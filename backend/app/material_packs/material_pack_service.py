@@ -2,6 +2,9 @@
 # 2026-11-04 小欧 新建: 素材包 CRUD(名称唯一/条目同事务覆盖/只删记录不动磁盘) — 小欧-2026-11-04
 # 2026-11-06 小欧 改名 service.py→material_pack_service.py: 与系统 *_service.py 命名惯例对齐(名实相符),
 #   消费方 import 路径同步(`from app.material_packs import material_pack_service`) — 小欧-2026-11-06
+# 2026-11-07 小欧 - F-07/F-08 修复: 条目保留引用身份(kind/attachment_id), 附件条目投喂时
+#   按 id 恢复附件语义(原只存 path/label, 附件降格为普通文件引用, resolver 走文件读分支);
+#   B-11 修复: create_pack 名称唯一检查提到总数上限之前(重名+满额时先报"重名", 提示才可行动)
 
 """material_packs.material_pack_service — 素材包唯一读写实现。
 
@@ -30,6 +33,11 @@ def _clean_name(name: str) -> str:
 
 
 def _clean_items(items: list | None) -> list[tuple]:
+    """条目清洗(F-07): 保留 kind/attachment_id 引用身份。
+
+    kind=attachment 时 attachment_id 必填(投喂按 id 查表恢复附件语义, 缺 id 无法恢复);
+    其余 kind 透传(与 REF_KINDS 同域), attachment_id 恒置 None。
+    """
     rows = items or []
     if len(rows) > MAX_ITEMS:
         fail(INVALID_PARAM, f"单个素材包最多 {MAX_ITEMS} 个文件")
@@ -38,7 +46,12 @@ def _clean_items(items: list | None) -> list[tuple]:
         path = str((it or {}).get("path") or "").strip()
         if not path:
             fail(INVALID_PARAM, "素材包条目缺少路径")
-        out.append((i, path, str((it or {}).get("label") or "")[:MAX_LABEL]))
+        kind = ((it or {}).get("kind") or "").strip() or None
+        attachment_id = ((it or {}).get("attachment_id") or "").strip() or None
+        if kind == "attachment" and not attachment_id:
+            fail(INVALID_PARAM, "附件条目缺少 attachment_id")
+        out.append((i, path, str((it or {}).get("label") or "")[:MAX_LABEL],
+                    kind, attachment_id if kind == "attachment" else None))
     return out
 
 
@@ -47,7 +60,8 @@ def _pack_dict(row: Any, items: list[tuple]) -> dict[str, Any]:
         "id": row["id"], "name": row["name"], "note": row["note"],
         "group_name": row["group_name"], "created_at": row["created_at"],
         "updated_at": row["updated_at"],
-        "items": [{"seq": s, "path": p, "label": lbl} for s, p, lbl in items],
+        "items": [{"seq": s, "path": p, "label": lbl, "kind": k, "attachment_id": aid}
+                  for s, p, lbl, k, aid in items],
     }
 
 
@@ -57,13 +71,13 @@ def list_packs() -> list[dict[str, Any]]:
             "SELECT * FROM material_packs ORDER BY group_name, name"
         ).fetchall()
         items = conn.execute(
-            "SELECT pack_id, seq, path, label FROM material_pack_items "
-            "ORDER BY pack_id, seq"
+            "SELECT pack_id, seq, path, label, kind, attachment_id "
+            "FROM material_pack_items ORDER BY pack_id, seq"
         ).fetchall()
     by_pack: dict[str, list[tuple]] = {}
     for it in items:
         by_pack.setdefault(it["pack_id"], []).append(
-            (it["seq"], it["path"], it["label"]))
+            (it["seq"], it["path"], it["label"], it["kind"], it["attachment_id"]))
     return [_pack_dict(p, by_pack.get(p["id"], [])) for p in packs]
 
 
@@ -74,17 +88,18 @@ def _get(conn: Any, pack_id: str) -> dict[str, Any]:
     if not row:
         fail(NOT_FOUND, "素材包不存在")
     items = conn.execute(
-        "SELECT seq, path, label FROM material_pack_items "
+        "SELECT seq, path, label, kind, attachment_id FROM material_pack_items "
         "WHERE pack_id = ? ORDER BY seq", (pack_id,)
     ).fetchall()
-    return _pack_dict(row, [(i["seq"], i["path"], i["label"]) for i in items])
+    return _pack_dict(row, [(i["seq"], i["path"], i["label"],
+                             i["kind"], i["attachment_id"]) for i in items])
 
 
 def _insert_items(conn: Any, pack_id: str, rows: list[tuple]) -> None:
     conn.executemany(
-        "INSERT INTO material_pack_items (pack_id, seq, path, label) "
-        "VALUES (?, ?, ?, ?)",
-        [(pack_id, s, p, lbl) for s, p, lbl in rows],
+        "INSERT INTO material_pack_items (pack_id, seq, path, label, kind, attachment_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(pack_id, s, p, lbl, k, aid) for s, p, lbl, k, aid in rows],
     )
 
 
@@ -93,13 +108,15 @@ def create_pack(name: str, note: str = "", group_name: str = "",
     n = _clean_name(name)
     rows = _clean_items(items)
     with db.get_conn("chat") as conn:
-        total = conn.execute("SELECT COUNT(*) FROM material_packs").fetchone()[0]
-        if int(total) >= MAX_PACKS:
-            fail(INVALID_PARAM, f"素材包最多 {MAX_PACKS} 个，请先清理旧包")
+        # B-11: 名称唯一先于总数上限 —— 重名+满额时先报"重名"(用户改个名即可),
+        #   报"满额"会让用户误以为必须删包, 提示不可行动
         if conn.execute(
             "SELECT 1 FROM material_packs WHERE name = ? COLLATE NOCASE", (n,)
         ).fetchone():
             fail(PACK_NAME_CONFLICT)
+        total = conn.execute("SELECT COUNT(*) FROM material_packs").fetchone()[0]
+        if int(total) >= MAX_PACKS:
+            fail(INVALID_PARAM, f"素材包最多 {MAX_PACKS} 个，请先清理旧包")
         pid = uuid.uuid4().hex
         now = get_local_iso_timestamp()
         conn.execute(

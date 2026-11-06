@@ -3,6 +3,8 @@
 //   两通道同一条入队路径, 附件 ref 构造只此一份(原 localImport 内联重写一份) — 小欧-2026-11-06
 // 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY): 上限数值单一真源 MAX_IMAGE_MB/MAX_FILE_MB, 字节换算与
 //   文案派生共用(原 tip/rejectReason 两处文案硬编码 10MB/20MB) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-01 修复: 上传前容量预检(occupancy + 本批 > MAX_REFS 整批拒绝),
+//   根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
 /**
  * uploadAttachment —— 「把文件送进引用区」的唯一实现（附件域）
  *
@@ -22,7 +24,7 @@ import {
   handleApiError,
   ErrorType,
 } from '@/services/error/handler';
-import { composerRefStore, newRefId, refLimitText } from './store';
+import { composerRefStore, newRefId, refLimitText, MAX_REFS } from './store';
 import { quoteFile } from './quote';
 
 /** 单批选择上限（10 = 一次选择上限；入队总上限仍是 MAX_REFS=20） */
@@ -93,6 +95,16 @@ export async function uploadAttachments(
   const bad = rejectReason(files);
   if (bad) {
     showMessage(ErrorType.WARNING, bad);
+    result.failed = files.length;
+    return result;
+  }
+
+  // 2026-11-07 小欧 - F-01 容量预检: 已入队 + 本批 > MAX_REFS → 整批拒绝, 不发请求。
+  //   原实现先上传后入队, 入队失败时附件已落库 → 服务端孤儿记录(列表可见但无引用指向)。
+  //   从严整批拒绝(不部分上传): 前端无法预知后端返回的 path(去重替换不占新配额的
+  //   边缘场景被误拒), 该场景极罕见且用户删一条 chip 即可继续, KISS 优先。
+  if (composerRefStore.occupancy() + files.length > MAX_REFS) {
+    showMessage(ErrorType.WARNING, refLimitText());
     result.failed = files.length;
     return result;
   }

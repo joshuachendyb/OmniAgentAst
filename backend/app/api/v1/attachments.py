@@ -3,6 +3,10 @@
 # 2026-11-05 Agnes - 增 local-capability / import-local 两端点(同机本地导入通道,
 #   与 upload 构成双通道); 薄壳仍不写业务, 判定与读盘全在 app/attachments/local_import.py — Agnes-2026-11-05
 # 2026-11-06 小欧 方案B: CollectIn 加可选 task_id(产物来源任务溯源), 透传给 collect_artifact — 小欧-2026-11-06
+# 2026-11-07 小欧 - B-03 修复: get/delete/text 三端点加 session_id 必填参数并校验会话归属
+#   (service.get_attachment_scoped 单一口径) —— 附件是会话级资产, 跨会话按 id 直取属越权
+# 2026-11-07 小欧 - B-10 修复: CollectIn.source_path 补 API 层基础校验(拒绝 .. 穿越/空字节),
+#   防内部 collect._resolve_source 变更后 API 层无第二道防线
 
 """attachments_routes — 附件 API 路由薄壳。
 
@@ -14,12 +18,12 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.attachments import attachment_service as attach
 from app.attachments import collect as collector
 from app.attachments import local_import as local
-from app.file_browse.errors import NOT_FOUND, fail
+from app.file_browse.errors import NOT_FOUND, INVALID_PARAM, fail
 
 router = APIRouter()
 
@@ -28,6 +32,19 @@ class CollectIn(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     source_path: str = Field(..., description="产物路径（引用同口径）")
     task_id: str | None = Field(default=None, description="产物来源任务 ID（溯源，可选）")
+
+    @field_validator("source_path")
+    @classmethod
+    def _validate_source_path(cls, v: str) -> str:
+        """B-10: API 层基础校验(第二道防线) —— 拒绝路径穿越与空字节。"""
+        text = (v or "").strip()
+        if not text:
+            fail(INVALID_PARAM, "缺少文件路径")
+        if "\x00" in text:
+            fail(INVALID_PARAM, "路径含非法字符")
+        if ".." in text.replace("\\", "/").split("/"):
+            fail(INVALID_PARAM, "路径不允许包含 .. 穿越")
+        return text
 
 
 class ImportLocalPayload(BaseModel):
@@ -54,9 +71,15 @@ def list_attachments(
 
 
 @router.get("/attachments/id/{attachment_id}")
-def get_attachment(attachment_id: str) -> dict[str, Any]:
-    """单条详情 —— 前端发送前存在性校验的唯一数据源(不走 /files/stat)。"""
-    att = attach.get_attachment(attachment_id)
+def get_attachment(
+    attachment_id: str,
+    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
+) -> dict[str, Any]:
+    """单条详情 —— 前端发送前存在性校验的唯一数据源(不走 /files/stat)。
+
+    越会话访问视同附件不存在(NOT_FOUND), 与 resolver 注入同一口径。
+    """
+    att = attach.get_attachment_scoped(attachment_id, session_id)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     return att
@@ -65,17 +88,21 @@ def get_attachment(attachment_id: str) -> dict[str, Any]:
 @router.delete("/attachments/id/{attachment_id}")
 def delete_attachment(
     attachment_id: str,
+    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
     purge: bool = Query(False, description="true=同时删除磁盘文件"),
 ) -> dict[str, Any]:
-    """删记录; 默认不删磁盘文件(防误删)。"""
-    attach.delete_attachment(attachment_id, purge=purge)
+    """删记录(限本会话); 默认不删磁盘文件(防误删)。"""
+    attach.delete_attachment(attachment_id, session_id, purge=purge)
     return {"ok": True}
 
 
 @router.get("/attachments/id/{attachment_id}/text")
-async def get_attachment_text(attachment_id: str) -> dict[str, Any]:
+async def get_attachment_text(
+    attachment_id: str,
+    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
+) -> dict[str, Any]:
     """按附件类型生成注入文本 —— 仅供预览/排查, **不是**前端入队来源。"""
-    text = await asyncio.to_thread(attach.read_inject_text, attachment_id)
+    text = await asyncio.to_thread(attach.read_inject_text, attachment_id, session_id)
     return {"id": attachment_id, "text": text}
 
 

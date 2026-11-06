@@ -1,4 +1,6 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: 素材包 API(列表/建/改/删) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-07/F-08 修复: 条目保留引用身份(kind/attachment_id),
+//   附件条目投喂时按 id 恢复附件语义(原只存 path/label, 附件降格为普通文件引用) — 小欧-2026-11-07
 /**
  * 素材包（⑤）API 封装。
  *
@@ -14,6 +16,9 @@ export interface MaterialPackItem {
   /** 与引用同口径：项目根内相对 posix / 盘符绝对 */
   path: string;
   label: string;
+  /** 引用身份(F-07): attachment 时投喂按 attachment_id 恢复附件语义 */
+  kind?: string | null;
+  attachment_id?: string | null;
 }
 
 export interface MaterialPack {
@@ -31,7 +36,7 @@ export interface MaterialPackInput {
   name: string;
   note?: string;
   group_name?: string;
-  items: Array<{ path: string; label?: string }>;
+  items: Array<{ path: string; label?: string; kind?: string; attachment_id?: string }>;
 }
 
 export interface MaterialPackPatch {
@@ -39,7 +44,7 @@ export interface MaterialPackPatch {
   note?: string;
   group_name?: string;
   /** 传数组 = 整包覆盖；传 undefined = 不动清单 */
-  items?: Array<{ path: string; label?: string }>;
+  items?: Array<{ path: string; label?: string; kind?: string; attachment_id?: string }>;
 }
 
 export const materialPackApi = {

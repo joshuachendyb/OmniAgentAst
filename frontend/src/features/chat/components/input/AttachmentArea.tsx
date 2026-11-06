@@ -5,6 +5,9 @@
 //   实现, 本组件只交文件); 加同机「从本机导入」入口(据后端 local-capability 结果显隐, 不做安全判定) — 小欧-2026-11-06
 // 编辑历史: 2026-11-06 小欧 - 三堂会审: ①busy 计算修正(原 n-files.length+r.ok 部分失败残留→按钮永久 loading);
 //   ②抽 collectAndUpload(beforeUpload 只留 antd 拦截, SLAP); ③batch.length 判超限(等价 indexOf, 更直接) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-03: 删 collectAndUpload 的死参数 batch(实际数据源是 pendingFiles,
+//   死参数误导阅读); F-10: busyRef 守卫 beforeUpload(setBusy 到 re-render 有间隙, 间隙内再次选择
+//   会混入 pendingFiles), ref 即时生效不受渲染时机影响 — 小欧-2026-11-07
 /**
  * AttachmentArea - 附件按钮（按钮行左侧「📎 附件」）
  *
@@ -39,6 +42,9 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
   ensureSession,
 }) => {
   const [busy, setBusy] = useState(0);
+  // F-10: busy 计数镜像(ref) —— setBusy 是异步渲染, ref 即时生效守卫 beforeUpload 的
+  //   渲染间隙(上传中再次选择文件不混入 pendingFiles)
+  const busyRef = useRef(0);
   const [canLocalImport, setCanLocalImport] = useState(false);
   const blocked = disabled || busy > 0;
 
@@ -61,15 +67,18 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
   const pendingFiles = useRef<File[]>([]);
   /** 收集满一批后统一交给 uploadAttachments（串行, D1 建会话只调一次）。
    *  2026-11-06 小欧 三堂会审(SLAP): 从 beforeUpload 抽出 —— beforeUpload 只留 antd 拦截语义,
-   *  本函数专职业务编排(收集→触发上传→busy 管理), 不再混搭抽象层。 */
-  const collectAndUpload = (batch: File[]): void => {
+   *  本函数专职业务编排(收集→触发上传→busy 管理), 不再混搭抽象层。
+   *  2026-11-07 小欧 F-03: 删死参数 batch —— 数据源是 pendingFiles, 参数从未被读。 */
+  const collectAndUpload = (): void => {
     const files = pendingFiles.current;
     pendingFiles.current = [];
-    setBusy((n) => n + files.length); // 上传期间按钮 loading/禁用
+    busyRef.current += files.length; // ref 即时生效(F-10)
+    setBusy(busyRef.current); // 上传期间按钮 loading/禁用
     void uploadAttachments(files, { sessionId, ensureSession }).then(() => {
       // 2026-11-06 小欧 三堂会审(KISS/bug): 上传完成无论成败都减 files.length;
       //   原 n - files.length + r.ok 在部分失败/全成功时残留 busy(只减成功数), 按钮永久 loading — 小欧-2026-11-06
-      setBusy((n) => Math.max(0, n - files.length));
+      busyRef.current = Math.max(0, busyRef.current - files.length);
+      setBusy(busyRef.current);
     });
   };
 
@@ -77,6 +86,11 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
     file,
     batch
   ) => {
+    // F-10: 上传进行中直接忽略新选择 —— blocked(disabled prop) 要等 re-render 才生效,
+    //   渲染间隙内新文件会混入 pendingFiles; ref 判定即时生效
+    if (busyRef.current > 0) {
+      return Upload.LIST_IGNORE;
+    }
     // 2026-11-06 小欧 三堂会审(DRY/简化): batch.length 判超限(等价 indexOf, 更直接);
     //   数量上限唯一真源是 uploadAttachment.rejectReason, 此处仅 antd UI 层拦截 — 小欧-2026-11-06
     if (batch.length > MAX_BATCH) {
@@ -86,7 +100,7 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
     pendingFiles.current.push(file);
     // 最后一个文件触发上传: antd batch 是本次选择的完整列表
     if (pendingFiles.current.length === batch.length) {
-      collectAndUpload(batch);
+      collectAndUpload();
     }
     return false; // 阻止 antd 自动调 customRequest
   };

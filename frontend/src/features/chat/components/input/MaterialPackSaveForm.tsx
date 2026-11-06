@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-06 小欧 - 三堂会审(SRP): 自 MaterialPackPanel 抽出 —— 存包表单独立成组件,
 //   父组件只留列表/搜索/分组/投喂/改名/删除 — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-08 修复: 存包条目带 kind/attachment_id(附件身份不降格),
+//   投喂时按 id 恢复附件语义(原只存 path/label, resolver 走文件读分支) — 小欧-2026-11-07
 /**
  * MaterialPackSaveForm - 「存当前」表单(存包)
  *
@@ -54,7 +56,13 @@ const MaterialPackSaveForm: React.FC<MaterialPackSaveFormProps> = ({
       await materialPackApi.create({
         name,
         group_name: formGroup.trim(),
-        items: refs.map((r) => ({ path: r.path, label: r.label })),
+        // F-08: 条目保留引用身份 —— 附件带 kind/attachment_id, 投喂时按 id 恢复附件语义
+        items: refs.map((r) => ({
+          path: r.path,
+          label: r.label,
+          kind: r.kind,
+          attachment_id: r.attachment_id,
+        })),
       });
       showSuccess(`已存为素材包「${name}」`);
       setFormOpen(false);

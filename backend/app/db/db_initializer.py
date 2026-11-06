@@ -94,6 +94,11 @@
 # 2026-11-06 小欧 - 附件域 3 表落地+方案B溯源(重建): attachments(会话级素材库, UNIQUE(session_id,sha256) 去重)
 #   / material_packs / material_pack_items; attachments 增 source_task_id(产物「存为附件」来源任务溯源, 可空,
 #   不进去重键/不设外键), 存量库 _ensure_column 幂等补列 + idx_attachments_source_task 索引 — 小欧-2026-11-06
+# 2026-11-07 小欧 - 修复存量库启动失败: executescript 块内 CREATE INDEX ON attachments(source_task_id)
+#   在旧库(缺该列)时整体执行报错; 移除该行, 索引由下方 _ensure_column + conn.execute 幂等补建
+# 2026-11-07 小欧 - B-05 修复: 存量库幂等补 UNIQUE(session_id,sha256) 唯一索引(重复行先按组保留最早),
+#   补齐 save_bytes 并发去重的 DB 级保护; F-07/F-08 修复: material_pack_items 增 kind/attachment_id
+#   两列(建表+存量补列), 附件条目投喂时按 id 恢复附件语义
 
 """
 db_initializer — 数据库初始化
@@ -264,7 +269,8 @@ def init_chat_db(get_conn):
                 UNIQUE(session_id, sha256)                 -- 并发上传去重: INSERT OR IGNORE + 回查
             );
             CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
-            CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id);
+            -- idx_attachments_source_task 不在 executescript 内建: 存量库 source_task_id 列缺失时
+            --   executescript 整体失败; 改由下方 _ensure_column(395) + conn.execute(397) 幂等补建
             -- 不再建 idx_attachments_sha: 被 UNIQUE(session_id,sha256) 冗余覆盖
 
             -- 2026-11-04 小欧 - [56] S4: 素材包。只存清单, 不复制文件;
@@ -282,6 +288,10 @@ def init_chat_db(get_conn):
                 seq     INTEGER NOT NULL,
                 path    TEXT NOT NULL,
                 label   TEXT NOT NULL DEFAULT '',
+                -- 2026-11-07 小欧 - F-07/F-08 修复: 条目保留引用身份(kind/attachment_id),
+                --   附件条目投喂时按 id 查表恢复附件语义(原只存 path/label, 附件降格为普通文件引用)
+                kind          TEXT,
+                attachment_id TEXT,
                 PRIMARY KEY (pack_id, seq),
                 FOREIGN KEY (pack_id) REFERENCES material_packs(id) ON DELETE CASCADE
             );
@@ -395,6 +405,29 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "attachments", "source_task_id", "TEXT")
         # 溯源列索引(存量库幂等补建; 空库已在 executescript 建表时建过) — 小欧 2026-11-06
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id)")
+        # 2026-11-07 小欧 - B-05 修复: 存量库补 UNIQUE(session_id, sha256) 去重约束。
+        #   CREATE TABLE IF NOT EXISTS 对已有表不生效, 存量库无此约束 → save_bytes 的
+        #   check-then-act 去重在并发下无 DB 级保护(两个请求同时过 SELECT 检查, 双写)。
+        #   存量重复行(历史并发产物)先按组保留最早一条再去重建索引, 幂等。
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_dedup "
+                "ON attachments(session_id, sha256)")
+        except sqlite3.IntegrityError:
+            conn.execute(
+                "DELETE FROM attachments WHERE id NOT IN ("
+                "  SELECT id FROM ("
+                "    SELECT id, ROW_NUMBER() OVER ("
+                "      PARTITION BY session_id, sha256"
+                "      ORDER BY created_at ASC, id ASC) AS rn"
+                "    FROM attachments) WHERE rn = 1)")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_dedup "
+                "ON attachments(session_id, sha256)")
+        # 2026-11-07 小欧 - F-07/F-08 修复: 素材包条目补 kind/attachment_id 两列(存量库幂等),
+        #   附件条目投喂时按 id 恢复附件语义, 不再降格为普通文件引用
+        _ensure_column(conn, "material_pack_items", "kind", "TEXT")
+        _ensure_column(conn, "material_pack_items", "attachment_id", "TEXT")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 

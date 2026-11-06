@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-06 小欧 - 三堂会审(SRP): 自 AttachmentArea 抽出 —— 同机导入选择器独立成组件,
 //   AttachmentArea 回归「渲染按钮/限制数量/交文件」三职责(设计 §5.6.2) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - F-04: 增"输入绝对路径"入口 —— 原 fileApi.fetchTree 只列项目根目录树,
+//   用户无法导入项目根外的本地文件; 输入框直调 importLocal, 后端 _import_roots 校验边界 — 小欧-2026-11-07
 /**
  * LocalImportButton - 同机「从本机导入」入口(仅同机显示)
  *
@@ -7,7 +9,7 @@
  * 不做安全判定(薄前端), 探测与导入走 localImport。
  */
 import React, { useState } from 'react';
-import { Button, Modal, List } from 'antd';
+import { Button, Modal, List, Input } from 'antd';
 import { showMessage, ErrorType } from '@/services/error/handler';
 import { fileApi, type FileNode } from '@/services/api/file.api';
 import { importLocal } from '@/features/refs/localImport';
@@ -30,6 +32,8 @@ const LocalImportButton: React.FC<LocalImportButtonProps> = ({
   const [pickPath, setPickPath] = useState('');
   const [pickNodes, setPickNodes] = useState<FileNode[]>([]);
   const [pickLoading, setPickLoading] = useState(false);
+  // F-04: 手动输入绝对路径(绕过目录树只列项目根的限制), 后端 _import_roots 校验边界
+  const [typedPath, setTypedPath] = useState('');
 
   /** posix 路径取父目录（空串 = 项目根） */
   const parentOf = (p: string): string => {
@@ -107,6 +111,25 @@ const LocalImportButton: React.FC<LocalImportButtonProps> = ({
             </List.Item>
           )}
         />
+        {/* F-04: 手动输入绝对路径, 绕过目录树只列项目根的限制 */}
+        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <Input
+            size="small"
+            placeholder="输入绝对路径，如 D:\数据\report.xlsx"
+            value={typedPath}
+            onChange={(e) => setTypedPath(e.target.value)}
+            onPressEnter={() => void doImport(typedPath.trim())}
+            style={{ flex: 1 }}
+          />
+          <Button
+            size="small"
+            type="primary"
+            disabled={!typedPath.trim()}
+            onClick={() => void doImport(typedPath.trim())}
+          >
+            导入
+          </Button>
+        </div>
       </Modal>
     </>
   );

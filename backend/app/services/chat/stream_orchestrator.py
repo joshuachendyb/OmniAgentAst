@@ -628,7 +628,8 @@ async def chat_stream_orchestrator(
                                    "context_length", None) or DEFAULT_CONTEXT_LENGTH)
             _ilimits = resolve_limits(_tgt_ctx, "interject")
             _ifinal, _iall_notices = await prepare_refs(
-                _start_kept, limits=_ilimits, scope="interject", sanitized_dropped=_s_dropped)
+                _start_kept, limits=_ilimits, scope="interject",
+                session_id=session_id, sanitized_dropped=_s_dropped)
             _ibuf = get_stream_buffer(_active_tid)
 
             async def _emit_to_target(payload: dict):
@@ -907,7 +908,8 @@ async def chat_stream_orchestrator(
         # 回执条目全链汇集: 读取失败/截断(resolver) + 压缩/拒绝(budget) + 越界/无 path(sanitize)。
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
         _final_refs, _notices = await prepare_refs(
-            _start_kept, limits=_limits, scope="first", sanitized_dropped=_s_dropped)
+            _start_kept, limits=_limits, scope="first",
+            session_id=session_id, sanitized_dropped=_s_dropped)
         # 2026-10-30 小欧 引用进 loop 前可观测(北京老陈令): 汇总/日志/notice 共用一份数字。
         #   原只在 _notices 非空时打一行 info(无 notices 的成功路径零痕迹, 查错无从下手),
         #   现改为"有引用就留痕": 1 行汇总(控制台+文件) + ≤5 行明细(文件) + SSE notice。

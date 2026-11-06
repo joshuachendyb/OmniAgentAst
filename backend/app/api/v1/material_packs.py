@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-11-04 小欧 新建: 素材包路由薄壳(4 端点, 业务全在 service) — 小欧-2026-11-04
+# 2026-11-07 小欧 - F-07/F-08 修复: PackItemIn 增 kind/attachment_id(条目保留引用身份,
+#   附件条目投喂时按 id 恢复附件语义) — 小欧-2026-11-07
 
 """material_packs 路由薄壳 —— 参数解包 + 转 service, 不写业务、不碰 DB。
 
@@ -19,6 +21,8 @@ router = APIRouter()
 class PackItemIn(BaseModel):
     path: str = Field(..., description="与引用同口径：项目根内相对 / 盘符绝对")
     label: str = Field(default="", description="展示名")
+    kind: Optional[str] = Field(default=None, description="引用身份(attachment 时按 id 恢复附件语义)")
+    attachment_id: Optional[str] = Field(default=None, description="附件记录 ID(kind=attachment 时必填)")
 
 
 class PackCreateIn(BaseModel):

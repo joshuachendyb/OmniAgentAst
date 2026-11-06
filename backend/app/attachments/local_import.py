@@ -5,6 +5,8 @@
 #   拒绝非普通文件 — 小欧-2026-11-05
 # 2026-11-06 小欧 - 改名 local.py→local_import.py: 文件名点明"同机本地导入"职责(原名 local 过于宽泛),
 #   与 *_service.py 等"文件名=职责"惯例对齐; 模块内函数不变 — 小欧-2026-11-06
+# 2026-11-07 小欧 - B-09 修复: _import_roots 移除 Path.home() — 原允许导入 home 下任意文件
+#   (.ssh/.env/ntuser.dat 等敏感数据无审计无类型过滤入系统); 仅保留项目根+会话工作区
 """同机本地导入 —— 附件「进系统」第二通道（仅同机）。
 
 纯浏览器拿不到本地路径，但同机下后端可访问本地文件系统。
@@ -15,7 +17,7 @@
   1. 同机判定只认真实客户端 IP；X-Forwarded-For 仅在直连对端是受信代理时采信，且取最右一跳
      （最左由客户端自填，可伪造）。受信代理列表默认空 = 不采信任何 XFF。
   2. 导入路径必须绝对盘符路径，拒绝 UNC / 相对路径 / 符号链接 / 非普通文件。
-  3. resolve 后必须落在可读根集合（项目根 / 用户主目录 / 会话工作区）内。
+  3. resolve 后必须落在可读根集合（项目根 / 会话工作区）内。
   4. 先 stat 判大小再读盘，读入字节复核一次（防 stat 与 read 之间被替换）。
 """
 import os
@@ -74,15 +76,11 @@ def is_local_request(request: Request) -> bool:
 
 
 def _import_roots(session_id: str) -> set[Path]:
-    """可导入根集合：项目根 + 用户主目录 + 会话工作区。"""
+    """可导入根集合：项目根 + 会话工作区(B-09: 移除 home, 防敏感文件无审计入系统)。"""
     roots: set[Path] = set()
     try:
         roots.add(Path(get_config().get_project_root()).resolve())
     except Exception:  # noqa: BLE001 — 取不到项目根不阻断其余根
-        pass
-    try:
-        roots.add(Path.home().resolve())
-    except Exception:  # noqa: BLE001
         pass
     with db.get_conn("chat") as conn:
         for row in conn.execute(
@@ -116,7 +114,7 @@ def _resolve_import_path(session_id: str, raw: str) -> Path:
             return target
         except ValueError:
             continue
-    fail(UNSUPPORTED_TYPE, "仅支持从项目根、用户目录或会话工作区导入")
+    fail(UNSUPPORTED_TYPE, "仅支持从项目根或会话工作区导入")
 
 
 def import_local(session_id: str, path: str, *, request: Request) -> dict:

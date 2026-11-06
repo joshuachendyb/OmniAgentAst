@@ -20,6 +20,10 @@
 #   失败 reason 用 attachment_missing/attachment_failed — 小欧-2026-11-06
 # 2026-11-06 小欧 三堂会审: _read_one 附件分支补 await asyncio.to_thread(_read_attachment) ——
 #   DB 查表为同步阻塞 IO, 原同步直调在事件循环上裸跑, 违背"同步读盘 to_thread 卸载"纪律 — 小欧-2026-11-06
+# 2026-11-07 小欧 - B-03 修复: resolve_refs/_read_one/_read_attachment 增加 session_id 必填参数,
+#   附件注入前校验会话归属(经 get_attachment_scoped, 与 API 端点同一口径) ——
+#   跨会话按 id 注入属越权, 不匹配折算 attachment_missing(视同失效, 不阻断其余引用)
+
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
@@ -36,7 +40,7 @@ from fastapi import HTTPException
 
 # 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
 from app.attachments import extract
-from app.attachments.attachment_service import get_attachment
+from app.attachments.attachment_service import get_attachment_scoped
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源(5.2.11)
@@ -103,16 +107,17 @@ def _fail(ref: Dict[str, Any], reason: str, exc: Exception) -> ResolvedRef:
                        note=f"err:{reason}:{type(exc).__name__}")
 
 
-def _read_attachment(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
+def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
+                     session_id: str | None) -> ResolvedRef:
     """附件注入文本生成(唯一产生点)。
 
-    kind=attachment: 按 attachment_id 查表(get_attachment, DB 读), 生成注入文本。
-    失败 reason:
-      attachment_missing  记录不存在(引用已失效/越会话访问)
+    kind=attachment: 按 attachment_id 查表(get_attachment_scoped, 含会话归属校验),
+    生成注入文本。失败 reason:
+      attachment_missing  记录不存在/越会话访问(引用已失效/会话不匹配)
       attachment_failed   build_inject_text 内部异常(读盘/解析失败)
     附件不参与行级读取/预算压缩 —— 注入按 id 查表, 不受 path 越界影响。
     """
-    att = get_attachment(ref.get("attachment_id") or "")
+    att = get_attachment_scoped(ref.get("attachment_id") or "", session_id)
     if not att:
         return ResolvedRef(ref=ref, truncated=False,
                            note="err:attachment_missing:AttachmentNotFound")
@@ -121,16 +126,21 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
-    # 2026-11-06 小欧 三堂会审: 补 clip_text 单条上限裁剪 + 回写 size —— 原重建缺失,
-    #   超长附件正文绕过 limits.read_max_bytes(单条预算)直入 prompt, 违反文档10 §3.11/§3.22
-    #   与文档56 §4.4.2 的 clip_text 设计; 附件正文必受单条上限约束。
-    text, omitted = clip_text(text, limits.read_max_bytes)
+    # B-08: text 附件 build_inject_text 已按 TEXT_INLINE_MAX(256KB) 做尺寸控制
+    #   (≤256KB 全文 / >256KB 档案头 ~8KB), 再经 clip_text(read_max_bytes) 二次截断
+    #   会裁掉本应全文注入的 200KB 文本, 与设计意图矛盾; 仅 text 类型跳过,
+    #   非 text 卡片(图片/richdoc/视频/binary 档案卡, 均远小于 read_max_bytes)
+    #   保持 clip_text 兜底不变。
+    omitted = 0
+    if att.get("kind") != "text":
+        text, omitted = clip_text(text, limits.read_max_bytes)
     return ResolvedRef(ref={**ref, "content": text, "size": att.get("size")},
                        truncated=bool(omitted),
                        note=f"已省略 {omitted} 字符" if omitted else "")
 
 
-async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
+async def _read_one(ref: Dict[str, Any], limits: RefLimits,
+                    session_id: str | None) -> ResolvedRef:
     """按标识读单条正文。同步读盘经 asyncio.to_thread 卸载出事件循环(仓库既有范式)。
 
     读法矩阵(4.6.1):
@@ -145,7 +155,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
     if ref.get("kind") == "attachment":
         # 2026-11-06 小欧 三堂会审: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
         #   否则违背本文件"同步读盘经 asyncio.to_thread 卸载(仓库既有范式)"纪律 — 小欧-2026-11-06
-        return await asyncio.to_thread(_read_attachment, ref, limits)
+        return await asyncio.to_thread(_read_attachment, ref, limits, session_id)
     path = (ref.get("path") or "").strip()
     if not path:
         return ResolvedRef(ref=ref, truncated=False, note="no_path")
@@ -227,6 +237,7 @@ async def resolve_refs(
     refs: List[Dict[str, Any]],
     *,
     limits: RefLimits,
+    session_id: str | None = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]], List[Dict[str, str]]]:
     """并发读全部引用(信号量限流 + 超时), 返回 (resolved, dropped, notices)。
 
@@ -234,6 +245,7 @@ async def resolve_refs(
     dropped 元素 = {label, path, reason, detail}(供回执点名; reason 按 4.6.4 分类);
     notices 元素 = {label, path, reason, detail}(非阻断提示); 条目 level 由
     notice.build_notice 统一查 REASON_LEVELS 补齐(单一裁决点, resolver/budget 不碰 level)。
+    session_id: 会话归属(附件注入按此校验, B-03; None 时附件一律折算 missing, fail-closed)。
     """
     sem = asyncio.Semaphore(REF_READ_CONCURRENCY)
 
@@ -244,7 +256,8 @@ async def resolve_refs(
     async def _guarded(ref: Dict[str, Any]) -> ResolvedRef:
         async with sem:
             try:
-                return await asyncio.wait_for(_read_one(ref, limits), timeout=REF_READ_TIMEOUT)
+                return await asyncio.wait_for(
+                    _read_one(ref, limits, session_id), timeout=REF_READ_TIMEOUT)
             except asyncio.TimeoutError:
                 return ResolvedRef(ref=ref, truncated=False, note="timeout")
 
