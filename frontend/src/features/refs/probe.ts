@@ -10,6 +10,8 @@
 
 // 编辑历史: 2026-11-06 小欧 - 附件预检走 /attachments/{id}(不走 /files/stat: stat_file 对非文本返回
 //   ok:false/unsupported, 图片附件会被自家闸门判失效, 永远发不出去) — 小欧-2026-11-06
+// 编辑历史: 2026-11-06 小欧 - 三堂会审(KISS): precheckRefs 附件类型判断抽 isAttachment 一次(原两处
+//   r.kind === 'attachment' 重复判断) — 小欧-2026-11-06
 
 /**
  * probe —— 前端对引用的唯一读盘点
@@ -110,9 +112,11 @@ export const precheckRefs = async <
   //   原实现只回有效条目, 失效 chip 被抹掉, 红底/「已失效」/阻断派生值全成死分支。
   const results = await Promise.all(
     refs.map(async (r) => {
+      // 2026-11-06 小欧 三堂会审(KISS): 附件类型判断只写一次 — 小欧-2026-11-06
+      const isAttachment = r.kind === 'attachment';
       // 2026-11-06 小欧 - 附件按 id 校验; 其余仍走 stat 轻端点 — 小欧-2026-11-06
       const st =
-        r.kind === 'attachment' && r.attachment_id
+        isAttachment && r.attachment_id
           ? await probeAttachment(r.attachment_id)
           : await statRef(r.path);
       if (!st.ok) {
@@ -122,7 +126,7 @@ export const precheckRefs = async <
           updated: false,
         };
       }
-      if (r.kind === 'attachment') {
+      if (isAttachment) {
         // 附件没有可比的 mtime 语义: 记录在 = 文件在(库里存的是落盘时写下的真源路径)
         return {
           ref: { ...r, size: st.size, invalid: false } as T,

@@ -1,4 +1,8 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: 附件入引用区唯一实现(上传/拖拽/粘贴/③产物共用) — 小欧-2026-11-06
+// 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY): 导出 enqueue 供 localImport 复用 —— 上传/本地导入
+//   两通道同一条入队路径, 附件 ref 构造只此一份(原 localImport 内联重写一份) — 小欧-2026-11-06
+// 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY): 上限数值单一真源 MAX_IMAGE_MB/MAX_FILE_MB, 字节换算与
+//   文案派生共用(原 tip/rejectReason 两处文案硬编码 10MB/20MB) — 小欧-2026-11-06
 /**
  * uploadAttachment —— 「把文件送进引用区」的唯一实现（附件域）
  *
@@ -23,8 +27,11 @@ import { quoteFile } from './quote';
 
 /** 单批选择上限（10 = 一次选择上限；入队总上限仍是 MAX_REFS=20） */
 export const MAX_BATCH = 10;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** 2026-11-06 小欧 三堂会审(DRY): 上限数值单一真源, 字节换算与文案派生共用(原文案两处硬编码) — 小欧-2026-11-06 */
+export const MAX_IMAGE_MB = 10;
+export const MAX_FILE_MB = 20;
+const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
+const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 export interface UploadOptions {
   /** 当前会话 ID；为空表示新会话（选中文件后才建会话） */
@@ -48,14 +55,15 @@ function rejectReason(files: File[]): string | null {
       ? MAX_IMAGE_BYTES
       : MAX_FILE_BYTES;
     if (f.size > limit) {
-      return `「${f.name}」超过大小限制（图片 10MB / 其他 20MB）`;
+      return `「${f.name}」超过大小限制（图片 ${MAX_IMAGE_MB}MB / 其他 ${MAX_FILE_MB}MB）`;
     }
   }
   return null;
 }
 
-/** 落盘成功后入队一条 attachment 引用；超 MAX_REFS 返回 false */
-function enqueue(rec: AttachmentRecord): boolean {
+/** 落盘成功后入队一条 attachment 引用；超 MAX_REFS 返回 false。
+ *  2026-11-06 小欧 三堂会审(DRY): 导出供 localImport 复用 —— 上传/本地导入两通道同一条入队路径。 — 小欧-2026-11-06 */
+export function enqueue(rec: AttachmentRecord): boolean {
   return composerRefStore.push({
     id: newRefId(),
     kind: 'attachment',

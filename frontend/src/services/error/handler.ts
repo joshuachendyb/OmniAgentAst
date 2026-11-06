@@ -22,6 +22,8 @@
 //   + classifyError 显式提取分支(422 信封体里无 error_type，自映射走不到，须按 error.workspace_rejected 特征识别)
 // 编辑历史: 2026-10-21 小杨 - 新增 ErrorType.FILE_READ（文件/引用正文读取失败）+ 错误配置表对应条目 — 小杨-2026-10-21
 // 编辑历史: 2026-10-30 小欧 - RequestDiagnostics 诊断上下文与 handleApiError 的 message/diag 透传，补 URL/耗时/请求ID 日志
+// 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY): 新增 errorCodeOf 业务错误码唯一提取(信封 data.error.code),
+//   供 localImport 复用(原手动三层解构且读错信封路径 data.code) — 小欧-2026-11-06
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -976,6 +978,32 @@ export function extractErrorMessage(error: unknown): string | undefined {
   if (typeof e.message === 'string' && e.message) return e.message;
   if (typeof e.detail === 'string' && e.detail) return e.detail;
   if (typeof e.error === 'string' && e.error) return e.error;
+  return undefined;
+}
+
+/**
+ * 提取业务错误码(唯一实现): 本项目错误信封是 {success:false, error:{code,message}},
+ *   code 在 data.error.code; 兼容旧形态 data.code。 — 小欧-2026-11-06
+ */
+export function errorCodeOf(error: unknown): string | undefined {
+  if (error == null) return undefined;
+  const e = error as Record<string, unknown>;
+  const resp = e.response;
+  if (resp && typeof resp === 'object') {
+    const data = (resp as Record<string, unknown>).data as
+      | Record<string, unknown>
+      | undefined;
+    if (data && typeof data === 'object') {
+      const errObj = data.error as Record<string, unknown> | undefined;
+      if (
+        errObj &&
+        typeof errObj === 'object' &&
+        typeof errObj.code === 'string'
+      )
+        return errObj.code;
+      if (typeof data.code === 'string') return data.code;
+    }
+  }
   return undefined;
 }
 
