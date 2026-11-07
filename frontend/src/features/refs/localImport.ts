@@ -1,12 +1,13 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: 同机本地导入入口(仅同机显示) — 小欧-2026-11-06
-// 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY): 删内联 push 构造, 改调 uploadAttachment.enqueue(唯一入队实现);
+// 编辑历史: 2026-11-06 小欧: (DRY) 删内联 push 构造, 改调 uploadAttachment.enqueue(唯一入队实现);
 //   原注释"复用 enqueue"与实际不符(实际自写一份构造) — 小欧-2026-11-06
-// 编辑历史: 2026-11-06 小欧 - 三堂会审(DRY/KISS): 错误码提取走 errorCodeOf(唯一实现), 不再手动三层解构;
+// 编辑历史: 2026-11-06 小欧: (DRY/KISS) 错误码提取走 errorCodeOf(唯一实现), 不再手动三层解构;
 //   并修正信封路径(原读 data.code, 信封为 data.error.code) — 小欧-2026-11-06
-// 2026-11-07 小欧 - F-01 补齐: 导入前容量预检(occupancy>=MAX_REFS 整项拒绝), 与 uploadAttachment
-//   同判据 — 根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - 返回值改 {ok, code}: LOCAL_READ_DENIED 不在此弹通用错误,
-//   交调用方弹授权确认后重试(P2 目录粒度授权) — 小欧-2026-11-07
+// 2026-11-07 小欧 - 导入前容量预检(occupancy>=MAX_REFS 整项拒绝), 与 uploadAttachment 同判据 —
+//   根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 返回值改 {ok, code}: LOCAL_READ_DENIED 不在此弹通用错误,
+//   交调用方弹授权确认后重试(目录粒度授权) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 /** 同机本地导入 —— 附件「进系统」第二通道（仅同机）。
  *  与 uploadAttachments 同一条入队路径（复用 enqueue），只换数据源：
  *  上传拿 File[]，本地导入拿路径 → 后端读盘。
@@ -37,7 +38,7 @@ export async function importLocal(
   sessionId: string,
   path: string
 ): Promise<ImportLocalResult> {
-  // F-01 容量预检: 已满则不发请求(与 uploadAttachment 同判据从严)。
+  // 容量预检: 已满则不发请求(与 uploadAttachment 同判据从严)。
   //   否则落库后 enqueue 失败 → 服务端孤儿附件记录(列表可见但无引用指向)。
   if (composerRefStore.occupancy() >= MAX_REFS) {
     showMessage(ErrorType.WARNING, refLimitText());

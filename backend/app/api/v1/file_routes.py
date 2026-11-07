@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-# 编辑历史: 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览路由薄壳(6 个 GET，逻辑全在 app/file_browse/browse_service.py) — 小欧-2026-10-13
-#   同批新增 /files/root(项目根信息，前端做路径归一)与 /files/recent-files(T3 的 ● 标记数据源)。
-#   v3.8 修正: ① service 改文件顶部一次性 import（原先 6 处函数内 import 是照搬 sessions.py 风格，
+# 编辑历史: 2026-10-13 小欧: 文件浏览路由薄壳(6 个 GET，逻辑全在 app/file_browse/browse_service.py) — 小欧-2026-10-13
+#   同批新增 /files/root(项目根信息，前端做路径归一)与 /files/recent-files(● 标记数据源)。
+#   修正: service 改文件顶部一次性 import（原先 6 处函数内 import 是照搬 sessions.py 风格，
 #     但本模块与 api/v1 无依赖关系，不存在循环，重复 import 违反 DRY）；
-#     ② 补全返回类型注解；③ 模块名 service.py → browse_service.py（与 lifecycle/service.py 撞名）。
-#   2026-10-21 小杨 - 对账修正: ① 文件头"5 个 GET"→ 6 个（v3.8 追加了 /files/search，漏改）；
-#     ② get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
+#     补全返回类型注解；模块名 service.py → browse_service.py（与 lifecycle/service.py 撞名）。
+#   2026-10-21 小杨 - 对账修正: 文件头"5 个 GET"→ 6 个（追加了 /files/search，漏改）；
+#     get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
 # 2026-10-22 小欧 - 新增 /files/external/read：读项目根外文本文件（只读、审计；用户主动点击会话里
 #   外部文件链接时使用；仅盘符绝对路径，exists/is_file/类型/大小闸门复用根内读管道）— 小欧-2026-10-22
 # 2026-10-23 小欧 - 新增 /files/external/tree：列项目根外目录树（只读、审计；外部目录链接跳文件页
@@ -146,7 +146,7 @@ def get_file_raw(
     """图片二进制流。
 
     ⚠️ 绝不能声明 response_model —— 声明后 FastAPI 会按模型序列化响应体，
-    直接破坏二进制流（文档[28] 4.1.3）。
+    直接破坏二进制流。
     304 / Range(206) 由 service + Starlette FileResponse 处理。
     """
     return browse.read_image_file(path, request)

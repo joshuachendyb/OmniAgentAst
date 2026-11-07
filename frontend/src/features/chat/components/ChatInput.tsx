@@ -1,6 +1,6 @@
 ﻿// 编辑历史: 2026-08-26 小欧 - 输入框组合根: 六组件组合, Props兼容父级+modelPickerSlot/onSend二参
 // 编辑历史: 2026-08-28 小欧 - 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CI-01乐观清空(先save后清, onSend失败由父级回补)②CI-02增sessionId入参+useEffect重置draft防跨会话泄漏 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 审计修复: 乐观清空(先save后清, onSend失败由父级回补), 增sessionId入参+useEffect重置draft防跨会话泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 修复: handleSendInternal改async可回补, onSend抛错时还原draft/linked, 杜绝网络/500致输入丢失
 // 编辑历史: 2026-10-03 小欧 - 删本地 linked 自持 state(跨会话泄漏根因), 改受控 linkEnabled+
 //   onToggleLink(真源寄存 useChatState); onSend 第二参由 contextLinkMode 改 linkEnabled: boolean;
@@ -15,14 +15,13 @@
 //   改为"sessionId 变了就载入", 仅「提交标记+上次无会话+提交后又打字」三条件成立才判为建会话回填而跳过
 // 编辑历史: 2026-10-13 14:20 小欧 - 焦点归还: 复现出点「发送」后焦点停在按钮、↑↓ 到不了 textarea(历史已入库);
 //   InputCore 加 focusKey, 提交成功与"输入框由禁用转可用"两处自增(禁用期 focus() 为空操作, 解锁必须补)
-// 编辑历史: 2026-10-13 14:35 小欧 - 复核整改: ①切会话复位 histIdx(否则按↑跳错条目) ②删 ↓ 的死逻辑 atLastLine
-//   (恒为 true, 条件归一为 histIdx>=0) ③焦点归还加 rootRef.contains 前置条件, 不夺走用户放到别处的焦点
-//   ④面板圆角改走 Radius.SM 令牌
+// 编辑历史: 2026-10-13 14:35 小欧 - 复核整改: 切会话复位 histIdx(否则按↑跳错条目), 删 ↓ 的死逻辑 atLastLine
+//   (恒为 true, 条件归一为 histIdx>=0), 焦点归还加 rootRef.contains 前置条件不夺走别处焦点, 面板圆角改走 Radius.SM 令牌
 // 编辑历史: 2026-10-13 14:50 小欧 - 撤回落盘防抖(自纠): 防抖化致刷新丢字(刷新不执行 React 卸载清理, 4 条用例变红);
 //   草稿体量小, 同步写开销可接受, 拿正确性换性能属退化, 退回同步落盘
-// 编辑历史: 2026-10-13 18:15 小欧 - ①输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史)
-//   ②C 常驻灰字显隐改用 sendBlocked(与按钮置灰同源, 原用 isReceiving&&!allowInterject 会漏 loading 窗口)
-//   ③提交门被拦不再静默; 实测"弹 toast"反而致执行中无法换行, 改为不可发送时回车照常换行(见 18:40)
+// 编辑历史: 2026-10-13 18:15 小欧 - 输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史);
+//   灰字显隐改用 sendBlocked(与按钮置灰同源, 原用 isReceiving&&!allowInterject 会漏 loading 窗口);
+//   提交门被拦不再静默; 实测"弹 toast"反而致执行中无法换行, 改为不可发送时回车照常换行(见 18:40)
 // 编辑历史: 2026-10-20 小欧 - 动作按钮组移入框内右下角(北京老陈指令): 新增 SubmitActions 经 InputCore actions
 //   插槽挂载(发送/停止/暂停三钮方形图标化), SubmitBar 只留左侧控件; 新增 emptyDraft 置灰判据
 //   (与 handleSendInternal 的 !content 同源) 并入发送钮受阻态 — 小欧-2026-10-20
@@ -40,23 +39,21 @@
 //   提交门同源不变 — 小欧-2026-10-25
 // 2026-10-25 小欧 - 新增 executingHint 传 InputCore(北京老陈令): 执行中且输入框为空时 placeholder 区
 //   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
-// 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案原样搬移
-//   B 的原话(执行中/提交中两段), 删输入框下方 B 块(原 694-707)消除双提示并存; testid 保 overlay 内层
-//   以保 H3/H9/H10 e2e 不断 — 小欧-2026-10-26
+// 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案沿既有两段;
+//   删输入框下方旧提示块消除双提示并存; testid 保 overlay 内层以保既有 e2e 不断 — 小欧-2026-10-26
 
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
 //   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
 // 2026-10-30 小欧 - @搜索失败改由页面自提示，配合 searchFiles 静默，避免弹出与本操作无关的全局超时文案
-// 2026-10-30 小欧 - 批2序12: chip 改 chipStateOf(r, refNotices) 5 态渲染(黄=已省略/红=已丢弃|已失效),
+// 2026-10-30 小欧 - chip 改 chipStateOf(r, refNotices) 5 态渲染(黄=已省略/红=已丢弃|已失效),
 //   订阅 refNoticeStore(经 useComposerRefs 透传), 回执一到达 chip 即变色 — 小欧-2026-10-30
-// 2026-10-30 小欧 - 批3收尾: ①chip 配色改查 CHIP_TONE_STYLE(状态→色调的裁决在 notice.chipToneOf,
-//   原背景/边框各写一遍三层嵌套三元); ②发送成功后按 id 精确移除本轮条目(不再 clear 整表) ——
+// 2026-10-30 小欧 - 收尾: chip 配色改查 CHIP_TONE_STYLE(状态→色调的裁决在 notice.chipToneOf,
+//   原背景/边框各写一遍三层嵌套三元); 发送成功后按 id 精确移除本轮条目(不再 clear 整表) ——
 //   refs_blocked 回执会在发送途中把台账重建回引用区(新 id), 整表清空会把刚恢复的 chips 抹掉 — 小欧-2026-10-30
-// 2026-10-30 小欧 R1-2/R2-1/R3-1/R6-1/R9: ①预检结果改按 id 合并到最新 chips(原 setAll(checked) 整体覆盖:
-//   在途删掉的引用被复活并随本条上行, 在途新加的引用凭空消失); ②@ 探测写回前复核占位 chip 是否还在
-//   (在途删掉后不再"复活"); ③refs_blocked 后经一次性信号把草稿填回输入框(仅当前为空时);
-//   ④chip 文案拼回执 detail/中文原因, 标题也带原因 — 小欧-2026-10-30
+// 2026-10-30 小欧 - 预检结果改按 id 合并到最新 chips(原 setAll(checked) 整体覆盖: 在途删掉的引用被复活并
+//   随本条上行, 在途新加的引用凭空消失); @ 探测写回前复核占位 chip 是否还在(在途删掉后不再"复活");
+//   refs_blocked 后经一次性信号把草稿填回输入框(仅当前为空时); chip 文案拼回执 detail/中文原因, 标题也带原因 — 小欧-2026-10-30
 // 2026-10-30 18:24:09 小欧 - 删面板关闭时的二次 GET(与保存回执争同一份徽标数, 关闭动画期多一次全量面板重建),
 //   徽标数以 onSaved 的权威列表为准; 顺带删只服务该请求的 noop 与 sessionApi 导入 — 小欧-2026-10-30
 // 2026-10-30 18:36:36 小欧 - 会话目录搬出巨型面板 memo: 徽标数改 useSyncExternalStore 订阅
@@ -69,16 +66,17 @@
 //   与 EXT_MAX=10 口径冲突）— 小欧-2026-11-02
 // 2026-11-02 小欧 - chip 跳转补 { state: { internal: true } }（与 PathLink 同口径）：缺该标记时
 //   文件页不清外部预览态，点 chip 后右侧仍停在上一个外部文件 — 小欧-2026-11-02
-// 2026-11-03 小欧 R4-1 - 引用清空提前到提交瞬间(与草稿同刻), 失败分支对称还原;
+// 2026-11-03 小欧 - 引用清空提前到提交瞬间(与草稿同刻), 失败分支对称还原;
 //   原清空在 onSend 返回后, 而其全程闭合 SSE 终态 → 执行中插话重复携带上一轮引用 — 小欧-2026-11-03
 
 // 编辑历史: 2026-11-06 小欧 - 附件三入口(按钮/拖拽/粘贴)与素材包面板接入: 附件入口改插槽, 由本组件
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 
 /**
- * ChatInput - 输入框组合根（8.12 六组件组合）
+ * ChatInput - 输入框组合根（六组件组合）
  *
- * 【小欧 2026-08-26 8.12】单体拆分为 InputCore/TaskTypeToggle/CommandPanel/
+ * 小欧 2026-08-26 单体拆分为 InputCore/TaskTypeToggle/CommandPanel/
  * AttachmentArea/SubmitBar 组合；对外 Props 保持 loading/isReceiving/isPaused/
  * onCancel/onTogglePause 兼容父级，新增 modelPickerSlot；chatLink 开关改受控
  * （linkEnabled/onToggleLink，真源在 useChatState），onSend 第二参为 boolean linkEnabled。
@@ -117,12 +115,12 @@ import {
   chipToneOf,
   noticeOf,
   noticeDetailText,
-} from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射(5.4.3)
+} from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射
 import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填信号 — 小欧-2026-10-30
 // 2026-10-30 18:42:49 小欧 - 会话使用目录的唯一真源(徽标只订阅其 list.length) — 小欧-2026-10-30
 import { workspaceStore } from '../services/sessionWorkspaceStore';
 import type { ChipTone } from '@/features/refs/notice';
-import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
+import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
   MAX_REFS,
@@ -202,6 +200,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     add,
     setAll,
   } = useComposerRefs();
+  // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
+  const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
   const [atOpen, setAtOpen] = useState(false);
   const [atHits, setAtHits] = useState<SearchHit[]>([]);
@@ -264,9 +264,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const emptyDraft = draft.trim() === '';
 
   // 2026-10-13 14:20 小欧 - 焦点归还: 实测"点发送 → 按↑ 翻不出历史"病根是焦点停在按钮上,
-  //   ↑↓ 事件到不了 textarea。两处触发: ①提交成功立即自增; ②输入框由"发送受阻"转"可发送"
+  //   ↑↓ 事件到不了 textarea。两处触发: 提交成功立即自增; 输入框由"发送受阻"转"可发送"
   //   (模型跑完那一刻)再自增一次 —— 用户点完发送到可发之间有窗口, 补这一次才能接上焦点。
-  // 2026-10-13 14:35 小欧 - 反骚扰: ②不能无条件抢焦点, 否则用户已点到别处(侧栏/设置弹窗/别的输入框)
+  // 2026-10-13 14:35 小欧 - 反骚扰: 不能无条件抢焦点, 否则用户已点到别处(侧栏/设置弹窗/别的输入框)
   //   会被突然夺走, 后续打字落错控件。加前置条件: 仅当焦点已丢失(停在 body)或仍停在本组件内才归还。
   //   发送中「发送」按钮被 disabled 不卸载, 故 activeElement 仍在组件内 → 正常归还, 两者不冲突。
   const [focusKey, setFocusKey] = useState(0);
@@ -292,7 +292,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setFocusKey((k) => k + 1);
   }, [sendBlocked]);
 
-  // 2026-10-30 小欧 R6-1: refs_blocked 后草稿回填(4.8「阻断时草稿保留」)。
+  // 2026-10-30 小欧: refs_blocked 后草稿回填(「阻断时草稿保留」)。
   //   阻断是 SSE 错误帧 —— onSend/sendMessage 正常 resolve, 发送时的乐观清空不会再被 catch 回补,
   //   用户只能重打正文。信号是一次性的(transport 投递 → 此处消费), 仅当输入框当前为空时填入,
   //   不覆盖用户已重新输入的内容。
@@ -346,9 +346,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-09-03 小欧 修复: 乐观清空改可回补 — 备份draft, onSend失败时回填防输入永久丢失 - 小欧-2026-09-03
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
   /**
-   * 发送前预检(F7): stat 预检 → 筛 → 点名 → return。返回 refsToSend / blocked / updated。
-   * 2026-10-30 小欧 - 闸门抽成可单测函数; 数据源 stat 端点(R3); 旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
-   * 2026-10-30 小欧 R1-2/R2-1: 预检结果是**异步窗口**里的旧快照, 不得整体覆盖最新 chips ——
+   * 发送前预检: stat 预检 → 筛 → 点名 → return。返回 refsToSend / blocked / updated。
+   * 2026-10-30 小欧 - 闸门抽成可单测函数; 数据源 stat 端点; 旧 refreshRefs 路径随 refresh.ts 删除。
+   * 2026-10-30 小欧: 预检结果是**异步窗口**里的旧快照, 不得整体覆盖最新 chips ——
    *   原 setAll(checked) 会让"在途删掉的引用"复活并随本条上行(模型读到用户已删的文件),
    *   同时抹掉"在途新加的引用"。改为按 id 把校验结果合到最新 chips:
    *   - 快照有、最新没有 → 用户已删, 不回写、不上行;
@@ -364,7 +364,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (refs.length === 0)
       return { refsToSend: refs, blocked: false, updated: [] };
     const { checked, invalid, updated } = await precheckRefs(refs, sessionId);
-    // 2026-10-30 小欧 A5: checked 含失效条目(invalid:true), 回写后 chip 保留红底可移除;
+    // 2026-10-30 小欧: checked 含失效条目(invalid:true), 回写后 chip 保留红底可移除;
     //   原实现回写"仅有效条目", 失效引用从界面消失, 提示却让用户"移除后再发送"。
     const checkedById = new Map(checked.map((c) => [c.id, c]));
     const merged = getRefs().map((r) => checkedById.get(r.id) ?? r);
@@ -390,9 +390,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     /**
-     * 2026-10-30 小欧 - 闸门抽成可单测函数(F7); 数据源 stat 端点(R3);
-     *   旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
-     *   2026-10-30 小欧 A6: 预检异常必须可见 —— 本函数由回车 `void handleSendInternal()` 调用,
+     * 2026-10-30 小欧 - 闸门抽成可单测函数; 数据源 stat 端点;
+     *   旧 refreshRefs 路径随 refresh.ts 删除。
+     *   预检异常必须可见 —— 本函数由回车 `void handleSendInternal()` 调用,
      *   原实现让 statFile 抛错变成 unhandled rejection, 用户只看到"点了发送没反应"。
      */
     let refsToSend: ComposerRef[];
@@ -409,7 +409,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
     if (blocked) return; // 已点名(内部 showMessage), 不产生任何 LLM 调用
     // 2026-10-30 小欧(阻断级修正): 原 precheckRefs 产出 updated 无消费落点, "内容已更新"
-    //   功能分支丢失(4.5/R2)。发送前点名提示——后端按标识必读最新, 不阻断、不改 chip 态。
+    //   功能分支丢失。发送前点名提示——后端按标识必读最新, 不阻断、不改 chip 态。
     if (updated.length > 0) {
       showMessage(
         ErrorType.FILE_READ,
@@ -424,7 +424,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const backup = draft;
     exitHistory();
     setDraft('');
-    // 2026-11-03 小欧 R4-1: 引用与草稿同刻清(提交瞬间按 id 只清本轮), 原在 onSend 返回后才清
+    // 2026-11-03 小欧: 引用与草稿同刻清(提交瞬间按 id 只清本轮), 原在 onSend 返回后才清
     //   ——而 onSend 全程闭合到 SSE 终态, 执行中插话会把上一轮引用原样再上行一次。
     const sentIds = new Set(refsToSend.map((r) => r.id));
     removeWhere((r) => sentIds.has(r.id));
@@ -445,7 +445,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     } catch {
       setDraft(backup);
       cancelSubmitted();
-      // R4-1 对称还原: 失败把本轮 chips 按原条目还回(mergeRefs 按 path 原位合并, 不产重复) — 小欧-2026-11-03
+      // 对称还原: 失败把本轮 chips 按原条目还回(mergeRefs 按 path 原位合并, 不产重复) — 小欧-2026-11-03
       refsToSend.forEach((r) => add(r));
     }
   };
@@ -747,8 +747,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               fontSize: chatTokens.fontSM,
             }}
           >
-            本轮文件 · {refs.length} 个 · 共{' '}
-            {formatBytes(refs.reduce((sum, r) => sum + (r.size ?? 0), 0))}
+            本轮文件 · {refs.length} 个 · 共 {formatBytes(totalSize)}
           </span>
           {refs.map((r) => {
             /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
@@ -963,7 +962,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         workspaceCount={workspaceCount}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
         // 2026-11-06 小欧 - 附件入口改插槽(本组件装配会话/上传回调, SubmitBar 只布局)
-        // 2026-11-07 小欧 - P1 合门: 唯一「附件」按钮打开文件抽屉, 传入本轮文件做「已加入」判定与计数
+        // 2026-11-07 小欧: 唯一「附件」按钮打开文件抽屉, 传入本轮文件做「已加入」判定与计数
         attachment={
           <AttachmentArea
             visible

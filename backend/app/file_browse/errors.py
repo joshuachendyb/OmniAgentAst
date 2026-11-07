@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-# 编辑历史: 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览模块错误契约(K1: 统一 {code,message}，仅本模块不改全局) — 小欧-2026-10-13
+# 编辑历史: 2026-10-13 小欧: 文件浏览模块错误契约(K1: 统一 {code,message}，仅本模块不改全局) — 小欧-2026-10-13
 # 2026-10-21 小杨 - UNSUPPORTED_TYPE 文案与实际判定口径对齐：类型闸已由后缀白名单改为
 #   "可解码文本或图片"，原文案仍写"仅支持查看 .txt / .md 与图片文件"会误导用户以为
 #   .py/.json/无后缀文件不可读 — 小杨-2026-10-21
 # 2026-11-06 小欧 - 重建附件/素材包错误码(ATTACHMENT_* / LOCAL_IMPORT_DISABLED / PACK_NAME_CONFLICT / INVALID_PARAM)
-#   —— 配套文件被误还原后从设计文档[10]恢复 — 小欧-2026-11-06
+#   —— 配套文件被误还原后按设计恢复 — 小欧-2026-11-06
+# 2026-11-07 小欧 注释清理: 去除文档号/章节号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 """文件浏览模块的错误契约。
 
 K1：错误响应固定 `{"code": <机器可读>, "message": <中文说明>}，
@@ -30,7 +31,7 @@ ATTACHMENT_UNAVAILABLE = "ATTACHMENT_UNAVAILABLE"  # 500 附件目录不可用(�
 LOCAL_IMPORT_DISABLED = "LOCAL_IMPORT_DISABLED"    # 403 本地导入仅同机可用(跨机禁止)
 # 2026-11-07 小欧 - 同机浏览: 目录未授权(用户确认一次即可授权, 与"类型不支持"分开, 前端据此弹授权)
 LOCAL_READ_DENIED = "LOCAL_READ_DENIED"            # 403 目录未授权 / 跨机访问
-# 2026-11-07 小欧 - [13] P3 资产台账: 行在但磁盘文件不存在 / 删除被合集引用
+# 2026-11-07 小欧 - 资产台账: 行在但磁盘文件不存在 / 删除被合集引用
 ATTACHMENT_NOT_AVAILABLE = "ATTACHMENT_NOT_AVAILABLE"  # 410 附件行存在但磁盘文件已丢失
 ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"                # 409 仍被合集引用, 需确认后才能删
 # 2026-11-04 小欧 - 素材包专用(409 重名 / 400 参数)
@@ -79,7 +80,7 @@ _CATALOG: Dict[str, _Err] = {
 def fail(code: str, message: Optional[str] = None) -> NoReturn:
     """抛出统一格式的 HTTPException —— **本模块唯一抛错出口**。
 
-    2026-10-13 小欧 - detail 固定两键 {code, message}，前端按 code 分支（文档[28] 2.6/4.2.4）。
+    2026-10-13 小欧 - detail 固定两键 {code, message}，前端按 code 分支。
     """
     spec = _CATALOG[code]
     raise HTTPException(

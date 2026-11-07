@@ -1,13 +1,14 @@
 // 编辑历史: 2026-11-06 小欧 - 新建: 附件 API(上传/列表/详情/文本/删除/collect/localCapability/importLocal)
 //   前端附件功能 — 小欧-2026-11-06
-// 编辑历史: 2026-11-07 小欧 - F-09: AttachmentRecord 补 source_task_id(方案B溯源, 与后端 _COLS 对齐);
-//   B-03: get/remove/text 增 sessionId 必填(后端会话归属校验, 越会话视同不存在) — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - [13] P3 资产台账: 记录补 scope/last_used_at/use_count/available/
-//   favorited/global_id; list 改作用域选项(session/recent/global/ai + 分页), 增 promote/rename/
-//   clearRecent/loadRawBlob(预览图片走带 token 的 blob, 裸 img src 带不了 header 必 401) — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - [13] P4: remove 改 _silent(409 由抽屉二次确认, 其余错误调用方就地提示) — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - 三堂会审: loadRawBlob 补 signal 与显式 30s 超时(裸 fetch 挂死时
-//   预览抽屉永转 loading); text/raw 注明纯预览严格读口径 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: AttachmentRecord 补 source_task_id(溯源, 与后端 _COLS 对齐); get/remove/text
+//   增 sessionId 必填(后端会话归属校验, 越会话视同不存在) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 资产台账 —— 记录补 scope/last_used_at/use_count/available/favorited/global_id;
+//   list 改作用域选项(session/recent/global/ai + 分页), 增 promote/rename/clearRecent/loadRawBlob(带 token blob) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: remove 改 _silent(409 由抽屉二次确认, 其余错误调用方就地提示) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: loadRawBlob 补 signal 与显式 30s 超时(裸 fetch 挂死时预览抽屉永转 loading);
+//   text/raw 注明纯预览严格读口径 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - scope 注释术语对准: ai 栏 UI 定名「任务产物」 — 小欧-2026-11-07
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -23,7 +24,7 @@ import api, {
 } from './client'; // api 只有默认导出（同 file.api）
 import type { ApiRequestConfig } from './client';
 
-/** 列表作用域: 本会话 / 最近用过 / 已收藏 / AI 生成 */
+/** 列表作用域: 本会话 / 最近用过 / 已收藏 / 任务产物(scope=ai) */
 export type AttachmentScope = 'session' | 'recent' | 'global' | 'ai';
 
 export interface AttachmentRecord {
@@ -41,7 +42,7 @@ export interface AttachmentRecord {
   extract_status: 'none' | 'ok' | 'failed';
   extract_chars: number;
   source_path: string | null;
-  /** 产物「存为附件」来源任务(方案B溯源; 上传/直接引用恒 null) */
+  /** 产物「存为附件」来源任务(溯源; 上传/直接引用恒 null) */
   source_task_id: string | null;
   created_at: string;
   /** session=会话级（仅本会话可读） / global=跨会话全局资产 */
@@ -88,7 +89,7 @@ export const attachmentApi = {
 
   /**
    * 附件列表（作用域唯一入口）。
-   * 2026-11-07 小欧 - [13] P3: 原 `list(sessionId)` 扩为选项对象；session 作用域仍按会话取，
+   * 2026-11-07 小欧: 原 `list(sessionId)` 扩为选项对象；session 作用域仍按会话取，
    *   recent/global/ai 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
    */
   list: async (
@@ -104,7 +105,7 @@ export const attachmentApi = {
   },
 
   /** 存在性校验（发送前预检唯一数据源，不走 /files/stat）。
-   *  sessionId 必填: 后端会话归属校验(B-03)；跨会话 session 级附件自动升级为全局(10.5)。 */
+   *  sessionId 必填: 后端会话归属校验；跨会话 session 级附件自动升级为全局。 */
   get: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
     const res = await api.get<AttachmentRecord>(`/attachments/id/${id}`, {
       params: { session_id: sessionId },

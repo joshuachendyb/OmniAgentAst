@@ -2,16 +2,17 @@
 # 2026-11-04 小欧 新建: 附件路由薄壳(8 端点, 业务全在 app/attachments/attachment_service.py) — 小欧-2026-11-04
 # 2026-11-05 Agnes - 增 local-capability / import-local 两端点(同机本地导入通道,
 #   与 upload 构成双通道); 薄壳仍不写业务, 判定与读盘全在 app/attachments/local_import.py — Agnes-2026-11-05
-# 2026-11-06 小欧 方案B: CollectIn 加可选 task_id(产物来源任务溯源), 透传给 collect_artifact — 小欧-2026-11-06
-# 2026-11-07 小欧 - B-03 修复: get/delete/text 三端点加 session_id 必填参数并校验会话归属
+# 2026-11-06 小欧 溯源改造: CollectIn 加可选 task_id(产物来源任务溯源), 透传给 collect_artifact — 小欧-2026-11-06
+# 2026-11-07 小欧 越权收紧: get/delete/text 三端点加 session_id 必填参数并校验会话归属
 #   (service.get_attachment_scoped 单一口径) —— 附件是会话级资产, 跨会话按 id 直取属越权
-# 2026-11-07 小欧 - B-10 修复: CollectIn.source_path 补 API 层基础校验(拒绝 .. 穿越/空字节),
+# 2026-11-07 小欧 加固: CollectIn.source_path 补 API 层基础校验(拒绝 .. 穿越/空字节),
 #   防内部 collect._resolve_source 变更后 API 层无第二道防线
-# 2026-11-07 小欧 - [13] P3 资产台账端点: 列表加 scope/q/limit/offset、get 跨会话自动 promote、
+# 2026-11-07 小欧 资产台账端点: 列表加 scope/q/limit/offset、get 跨会话自动 promote、
 #   POST promote(收藏)、PATCH 重命名、POST clear-recent、DELETE 加 force(合集引用确认)、
 #   GET raw(预览图片/PDF 二进制) — 小欧-2026-11-07
-# 2026-11-07 小欧 - 三堂会审: 预览读(raw)改严格校验, 自动升级只属发送注入/手动收藏, 读不产生写副作用;
+# 2026-11-07 小欧 预览严格读: 预览读(raw)改严格校验, 自动升级只属发送注入/手动收藏, 读不产生写副作用;
 #   promote 端点改直线分派(已是 global 直接返回, 去掉 auto_promote 后的重复一趟 promote) — 小欧-2026-11-07
+# 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 
 """attachments_routes — 附件 API 路由薄壳。
 
@@ -50,7 +51,7 @@ class CollectIn(BaseModel):
     @field_validator("source_path")
     @classmethod
     def _validate_source_path(cls, v: str) -> str:
-        """B-10: API 层基础校验(第二道防线) —— 拒绝路径穿越与空字节。"""
+        """API 层基础校验(第二道防线) —— 拒绝路径穿越与空字节。"""
         text = (v or "").strip()
         if not text:
             fail(INVALID_PARAM, "缺少文件路径")
@@ -99,11 +100,11 @@ def list_attachments(
 @router.get("/attachments/id/{attachment_id}")
 def get_attachment(
     attachment_id: str,
-    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
+    session_id: str = Query(..., description="会话 ID（会话归属校验）"),
 ) -> dict[str, Any]:
     """单条详情 —— 前端发送前存在性预检的唯一数据源(不走 /files/stat)。
 
-    调用方仅两类(发送预链/合集引用), 跨会话 session 级附件自动 promote(文档[13] 10.5),
+    调用方仅两类(发送预链/合集引用), 跨会话 session 级附件自动 promote,
     用户不感知 404; 纯预览端点(raw/text)一律严格校验, 读不产生写副作用。
     """
     att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
@@ -151,7 +152,7 @@ def delete_attachment(
 @router.get("/attachments/id/{attachment_id}/text")
 async def get_attachment_text(
     attachment_id: str,
-    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
+    session_id: str = Query(..., description="会话 ID（会话归属校验）"),
 ) -> dict[str, Any]:
     """按附件类型生成注入文本 —— 仅供预览/排查, **不是**前端入队来源。"""
     text = await asyncio.to_thread(attach.read_inject_text, attachment_id, session_id)

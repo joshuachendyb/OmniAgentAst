@@ -5,35 +5,30 @@
 # 2026-10-29 小欧 修正: 摘录比例常量 REF_* 改从 app.constants 导入——compaction_constants 为
 #   压缩/裁剪专属域, 引用摘录比例非其职责; 单一真源迁至系统层常量第4节 — 小欧-2026-10-29
 
-# 2026-10-30 小欧 三堂会审整改: ①A2 捕获 browse.fail() 的 HTTPException 并按 code 映射
-#   unsupported/missing; 区间读中途文件消失由 isfile 复核判 missing, 不再误判 range_out;
-#   ②A3 读后按实际字符复核(read_max_bytes), 补行数门槛挡不住的"行少单行极长"与 2MB 截断线;
-#   ③A13 同 path 去重提前到读取前, 整份+区间并存时区间不再白读; ④A14 删区间分支无效 size 回写 — 小欧-2026-10-30
-# 2026-10-30 小欧 批3收尾: 字符级头尾摘录迁 services/refs/clip.clip_text(与预算压缩共用,
-#   杜绝两处口径分叉) — 小欧-2026-10-30
-# 2026-10-30 小欧 批3: resolve_refs 放行条目统一追加(原实现 elif/else 两条分支各写一次 resolved.append,
-#   同一语句两处, 收口为循环尾单点) — 小欧-2026-10-30
-# 2026-10-30 小欧 B1: 区间分支出口补 clip_text + truncated 回执 —— 原实现直接返回, 长区间
-#   绕过单条上限(4.6.2)且回执为空 — 小欧-2026-10-30
+# 2026-10-30 小欧 整改: 异常捕获按 browse.fail code 精确映射(unsupported/missing), 区间读中途文件消失 isfile 复核判 missing;
+#   读后按实际字符复核, 同 path 去重提前到读取前, 删区间分支无效 size 回写 — 小欧-2026-10-30
+# 2026-10-30 小欧 收口: 字符级头尾摘录迁 services/refs/clip.clip_text(与预算压缩共用, 杜绝两处口径分叉);
+#   resolve_refs 放行条目统一循环尾单点追加; 区间分支出口补 clip_text + truncated 回执 — 小欧-2026-10-30
 # 2026-11-06 小欧 重建附件分支(配套误还原后恢复): 增 _read_attachment(按 attachment_id 查表 +
 #   extract.build_inject_text 生成注入文本), _read_one 先分流 kind=attachment;
 #   失败 reason 用 attachment_missing/attachment_failed — 小欧-2026-11-06
-# 2026-11-06 小欧 三堂会审: _read_one 附件分支补 await asyncio.to_thread(_read_attachment) ——
+# 2026-11-06 小欧 收口: _read_one 附件分支补 await asyncio.to_thread(_read_attachment) ——
 #   DB 查表为同步阻塞 IO, 原同步直调在事件循环上裸跑, 违背"同步读盘 to_thread 卸载"纪律 — 小欧-2026-11-06
-# 2026-11-07 小欧 - B-03 修复: resolve_refs/_read_one/_read_attachment 增加 session_id 必填参数,
+# 2026-11-07 小欧 越权收紧: resolve_refs/_read_one/_read_attachment 增加 session_id 必填参数,
 #   附件注入前校验会话归属(经 get_attachment_scoped, 与 API 端点同一口径) ——
 #   跨会话按 id 注入属越权, 不匹配折算 attachment_missing(视同失效, 不阻断其余引用)
-# 2026-11-07 小欧 - B-08 修订: text 附件不再豁免 clip_text, 所有 kind 统一走 read_max_bytes
-#   单条预算闸门(clip_text 未超限原样返回, 小文本仍全文注入) —— 修复 ≤256KB 文本直入绕过
+# 2026-11-07 小欧 单条预算闸门: text 附件不再豁免 clip_text, 所有 kind 统一走 read_max_bytes
+#   (clip_text 未超限原样返回, 小文本仍全文注入) —— 修复 ≤256KB 文本直入绕过
 #   预算、大文本整批被拒的问题 — 小欧-2026-11-07
-# 2026-11-07 小欧 - [13] P3: 跨会话附件改为 auto_promote(自动升级为全局, 不再折算 missing),
+# 2026-11-07 小欧 跨会话放行: 跨会话附件改为 auto_promote(自动升级为全局, 不再折算 missing),
 #   注入成功即 touch_usage 记账 —— 「最近用过」的唯一真源 — 小欧-2026-11-07
+# 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
 为何独立: 读取分流在 quote.ts:34-36(有外部/根内分流)与 refresh.ts:35(没有)的历史
-  实测分叉(D1/D2 直接成因); 本模块成为后端唯一读盘点, 前端不再读正文。
+  实测分叉直接成因; 本模块成为后端唯一读盘点, 前端不再读正文。
 复用既有实现(DRY): read_text_file / read_external_file / _read_range, 不新写读盘逻辑。
 """
 import asyncio
@@ -48,7 +43,7 @@ from app.attachments import extract
 from app.attachments.attachment_service import get_attachment_scoped, touch_usage
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
-from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源(5.2.11)
+from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
 from app.services.refs.clip import clip_text   # 2026-10-30 小欧: 字符级头尾摘录公共实现(与 budget 共用)
 from app.services.refs.limits import RefLimits
 
@@ -64,7 +59,7 @@ REF_READ_BLOCK_LINES = 5000
 class ResolvedRef:
     ref: Dict[str, Any]   # 原始 ref(已填好 content/size; 失败时为原始引用)
     truncated: bool       # 是否因读取上限被截断(直读截断或头尾摘录)
-    note: str             # 失败标记或回执 detail("err:missing:FileNotFoundError"/"已省略 N 行"/"range_clipped"); 文件更新提示由前端本地 mtime 比对, 不出后端回执(R2)
+    note: str             # 失败标记或回执 detail("err:missing:FileNotFoundError"/"已省略 N 行"/"range_clipped"); 文件更新提示由前端本地 mtime 比对, 不出后端回执
 
 
 async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
@@ -72,9 +67,9 @@ async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
     """分块读一个行区间(每块 ≤REF_READ_BLOCK_LINES, 对齐 _read_range 单次钳制)。
 
     为何要分块: _read_range 单次最多返回 5000 行(browse_service.py:946),
-      请求 6000 行区间不切块会静默丢 1000 行(4.6.1 "分块 ≤5000 行")。
+      请求 6000 行区间不切块会静默丢 1000 行(分块 ≤5000 行)。
     返回 (content, clipped): clipped=块内实读行数小于请求行数, 即请求区间越过文件尾
-      (部分区间超尾, 4.6.4 → 回执 range_clipped); 完全越界由空 content 判定。
+      (部分区间超尾 → 回执 range_clipped); 完全越界由空 content 判定。
     """
     reader = browse.read_external_file if is_ext else browse.read_text_file
     parts: List[str] = []
@@ -84,7 +79,7 @@ async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
         r = await asyncio.to_thread(reader, path, cur, n, count_total=count_total)
         content = r.get("content") or ""
         if not content:
-            # 2026-10-30 小欧 A2: _read_lines_range 吞 OSError 返回空串, 若文件在区间读中途
+            # 2026-10-30 小欧: _read_lines_range 吞 OSError 返回空串, 若文件在区间读中途
             #   被删/被移走, 原地 break 会被上层误判为 range_out。此处按盘面复核区分:
             #   已不存在 → 抛 FileNotFoundError 走 missing; 仍存在(区间起点在文件尾后) → 正常 break。
             if not await asyncio.to_thread(os.path.isfile, path):
@@ -102,7 +97,7 @@ async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
 
 
 def _fail(ref: Dict[str, Any], reason: str, exc: Exception) -> ResolvedRef:
-    """失败落点: note 标记 "err:<reason>:<异常名>", resolve_refs 据此入 dropped(4.6.4)。
+    """失败落点: note 标记 "err:<reason>:<异常名>", resolve_refs 据此入 dropped。
 
     归类映射: FileNotFoundError/PermissionError → missing(不存在/不可读);
       IsADirectoryError/UnicodeDecodeError → unsupported(非文本/不可解码);
@@ -121,7 +116,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
       attachment_missing  记录不存在(引用已失效)
       attachment_failed   build_inject_text 内部异常(读盘/解析失败)
     附件不参与行级读取/预算压缩 —— 注入按 id 查表, 不受 path 越界影响。
-    2026-11-07 小欧 - [13] P3: 跨会话 session 级附件 auto_promote(自动收藏, 不 404);
+    2026-11-07 小欧: 跨会话 session 级附件 auto_promote(自动收藏, 不 404);
       生成成功后 touch_usage 记账(use_count/last_used_at 唯一写入点, 「最近用过」真源) — 小欧-2026-11-07
     """
     att = get_attachment_scoped(ref.get("attachment_id") or "", session_id,
@@ -135,13 +130,11 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
     touch_usage(att["id"])
-    # 2026-11-07 小欧 - B-08 修订: text 不再豁免 clip_text。clip_text 对未超限(len≤cap)
-    #   原样返回, 故 ≤read_max_bytes 的小文本仍全文注入(S1 意图不损); >read_max_bytes 的
-    #   大文本头尾摘录, 守住单条预算。原"text 跳过 clip"让 ≤256KB 全文直入 —— 默认预算下
-    #   (read_max_bytes≈30k~79k字符, 见 limits) 50KB 文本即超单条上限, 百 KB 文本直接
-    #   整批被拒(reject 线), 与 S1"AI 能准确引用文本内容"矛盾(见 [10][56] S1 审查)。
-    #   所有 kind 统一 clip_text: 附件 C 档不压缩(budget 语义)与读取期单条预算(read_max)
-    #   是两道不同闸门, 前者保证整份语义, 后者必须对所有 kind 生效。
+    # 2026-11-07 小欧 单条预算统一: text 也走 clip_text —— 未超限(len≤cap)原样返回, 故
+    #   ≤read_max_bytes 的小文本仍全文注入; 超限则头尾摘录, 守住单条预算。原"text 跳过 clip"
+    #   让 ≤256KB 全文直入, 默认预算下(read_max_bytes≈30k~79k字符, 见 limits)50KB 文本即超
+    #   单条上限, 百 KB 文本整批被拒; 附件 budget 语义(整份不压缩)与读取期单条预算(read_max)
+    #   是两道闸门, 后者必须对所有 kind 生效。
     text, omitted = clip_text(text, limits.read_max_bytes)
     return ResolvedRef(ref={**ref, "content": text, "size": att.get("size")},
                        truncated=bool(omitted),
@@ -152,17 +145,17 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
                     session_id: str | None) -> ResolvedRef:
     """按标识读单条正文。同步读盘经 asyncio.to_thread 卸载出事件循环(仓库既有范式)。
 
-    读法矩阵(4.6.1):
+    读法矩阵:
       附件(kind=attachment)       → _read_attachment(to_thread 卸载 DB 查表, 按 id 查表不落文件读分支)
       根内 + 无 lineRange + 字符数≤上限 → read_text_file(整份直读)
-      根内 + 无 lineRange + 超上限     → 头尾摘录(4.6.3: 全扫一次取 total_lines,
+      根内 + 无 lineRange + 超上限     → 头尾摘录(全扫一次取 total_lines,
                                          头 REF_HEAD_RATIO 段 + 尾 REF_TAIL_RATIO 段, 各分块)
       根内 + 有 lineRange              → _read_blocks 分块读区间(≤5000 行/块)
       外部 + 无/有 lineRange           → read_external_file(同上口径)
       无 path                          → dropped(no_path)
     """
     if ref.get("kind") == "attachment":
-        # 2026-11-06 小欧 三堂会审: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
+        # 2026-11-06 小欧: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
         #   否则违背本文件"同步读盘经 asyncio.to_thread 卸载(仓库既有范式)"纪律 — 小欧-2026-11-06
         return await asyncio.to_thread(_read_attachment, ref, limits, session_id)
     path = (ref.get("path") or "").strip()
@@ -174,15 +167,15 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     is_ext = browse._is_abs_drive_path(path)
     try:
         if offset is not None:
-            # 有区间: 分块读, 不触发全扫(count_total=False 见 5.2.10)
+            # 有区间: 分块读, 不触发行数全扫(count_total=False)
             content, clipped = await _read_blocks(path, is_ext, int(offset), int(limit or 1))
             if not content:
-                # 区间完全越界(起点在文件尾之后): dropped(range_out, 4.6.4), 不静默放行空块
+                # 区间完全越界(起点在文件尾之后): dropped(range_out), 不静默放行空块
                 return ResolvedRef(ref=ref, truncated=False, note="err:range_out:_read_blocks")
-            # 2026-10-29 小欧 - range_clipped 回执(F2): 请求区间超出文件尾时如实告知,
-            #   不再静默(4.6.1 注); 未越尾则 note 空 → resolve_refs 走放行分支。
-            #   2026-10-30 小欧 A14: 删 `"size": ref.get("size")` —— 与 {**ref} 重复, 空操作。
-            # 2026-10-30 小欧 B1: 区间分支原样返回, 完全绕过单条上限(4.6.2) —— 一条长区间
+            # 2026-10-29 小欧 - range_clipped 回执: 请求区间超出文件尾时如实告知,
+            #   不再静默; 未越尾则 note 空 → resolve_refs 走放行分支。
+            #   2026-10-30 小欧: 删 `"size": ref.get("size")` —— 与 {**ref} 重复, 空操作。
+            #   2026-10-30 小欧: 区间分支原样返回, 完全绕过单条上限 —— 一条长区间
             #   (实测 56,000 tok > 单条 42,428) 直入 prompt 且回执为空。与整份分支同走
             #   clip_text 复核: 超限则头尾摘录 + truncated 回执; 区间越尾同时给出说明。
             content, _omitted_chars = clip_text(content, limits.read_max_bytes)
@@ -201,7 +194,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
         truncated = bool(r.get("truncated"))
         note = "仅读取前 N 行" if truncated else ""
         if truncated or int(r.get("size") or 0) > limits.read_max_bytes:
-            # 超单条上限 → 头尾摘录(4.6.3): 全扫一次取 total_lines(仅此一次), 头/尾各分块读
+            # 超单条上限 → 头尾摘录: 全扫一次取 total_lines(仅此一次), 头/尾各分块读
             probe = await asyncio.to_thread(reader, path, 1, 1, count_total=True)
             total = int(probe.get("total_lines") or 0)
             head_lines = max(1, int(REF_HEAD_RATIO * limits.read_max_bytes / REF_AVG_LINE_CHARS))
@@ -213,7 +206,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
                 content = f"{head}\n…[引用超长, 已省略 {_omitted} 行]\n{tail}"
                 truncated = True
                 note = f"已省略 {_omitted} 行"
-        # 2026-10-30 小欧 A3: 行数门槛之后再按实际字符复核。行少但单行极长(160KB/800 行)
+        # 2026-10-30 小欧: 行数门槛之后再按实际字符复核。行少但单行极长(160KB/800 行)
         #   与 2MB 单行截断文件都从原实现的 `total <= head+tail` 缺口直出全文, 现统一收口。
         content, _omitted_chars = clip_text(content, limits.read_max_bytes)
         if _omitted_chars:
@@ -225,7 +218,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     except asyncio.TimeoutError:
         raise   # 外层 _guarded 统一超时落点(dropped reason=timeout)
     except HTTPException as e:
-        # 2026-10-30 小欧 A2: browse 的唯一抛错出口是 fail()(HTTPException, detail={code,message})。
+        # 2026-10-30 小欧: browse 的唯一抛错出口是 fail()(HTTPException, detail={code,message})。
         #   原实现被下方 Exception 兜成 missing, 415(UNSUPPORTED_TYPE/UNDECODABLE) 永远到不了
         #   unsupported。此处按 code 精确映射, 其余(404/400/403/413)归 missing。
         _code = e.detail.get("code") if isinstance(e.detail, dict) else None
@@ -238,7 +231,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
         return _fail(ref, "missing", e)
     except (IsADirectoryError, UnicodeDecodeError) as e:
         return _fail(ref, "unsupported", e)
-    except Exception as e:  # noqa: BLE001 — fail() 抛业务错误, 一律归类回执(4.6.4)
+    except Exception as e:  # noqa: BLE001 — fail() 抛业务错误, 一律归类回执
         return _fail(ref, "missing", e)
 
 
@@ -251,14 +244,14 @@ async def resolve_refs(
     """并发读全部引用(信号量限流 + 超时), 返回 (resolved, dropped, notices)。
 
     resolved 元素 = 原始 ref + content/size(供 render 消费);
-    dropped 元素 = {label, path, reason, detail}(供回执点名; reason 按 4.6.4 分类);
+    dropped 元素 = {label, path, reason, detail}(供回执点名; reason 见 _fail 分类映射);
     notices 元素 = {label, path, reason, detail}(非阻断提示); 条目 level 由
     notice.build_notice 统一查 REASON_LEVELS 补齐(单一裁决点, resolver/budget 不碰 level)。
-    session_id: 会话归属(附件注入按此校验, B-03; None 时附件一律折算 missing, fail-closed)。
+    session_id: 会话归属(附件注入按此校验; None 时附件一律折算 missing, fail-closed)。
     """
     sem = asyncio.Semaphore(REF_READ_CONCURRENCY)
 
-    # 2026-10-30 小欧 A13: 同 path 去重提前到**读取前**(整份优先, 同 path 的区间条目直接丢弃)。
+    # 2026-10-30 小欧: 同 path 去重提前到**读取前**(整份优先, 同 path 的区间条目直接丢弃)。
     #   原实现在全部读完后再合并 → 整份+区间并存时区间白读一次(磁盘 IO 与超时预算都浪费)。
     refs = _merge_same_path(list(refs))
 
@@ -280,7 +273,7 @@ async def resolve_refs(
             dropped.append({
                 "label": (rr.ref.get("label") or rr.ref.get("path") or ""),
                 "path": rr.ref.get("path") or "",
-                "reason": _reason,          # 4.6.4 分类: missing/unsupported/range_out
+                "reason": _reason,          # 分类: missing/unsupported/range_out
                 "detail": _exc,             # 异常名, 定位用
             })
             continue
@@ -301,7 +294,7 @@ async def resolve_refs(
             })
         # 放行条目统一在此追加(原实现 elif/else 两条分支各写一次, 同一语句两处 — 2026-10-30 小欧)
         resolved.append(rr.ref)
-    # 同 path 已在读取前去重(A13), 此处不再二次合并
+    # 同 path 已在读取前去重, 此处不再二次合并
     return resolved, dropped, notices
 
 

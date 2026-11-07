@@ -67,7 +67,7 @@
 #   唯一：同时保证事件顺序与重复写入幂等）+ 终态查询索引。IF NOT EXISTS 幂等，新旧库零报错
 #   — 小欧 2026-09-29
 # 2026-10-01 - 小欧 - 解 [1] E6: 启动期去重 SQL 的分组判据由 IFNULL(task_id,'') 改裸 task_id，与唯一索引 idx_steps_unique 完全一致。原两套判据在"存量同时存在 NULL 与 '' 两行"时不同构，去重后仍可能留下两行；task_id 空值已由 append_execution_step fail-loud 杜绝，故此处无需归一化
-# 2026-10-02 - 小欧 - 文档[4] 5.7 项1：chat_sessions 增 link_enabled 列（会话级 link 粘性开关唯一真源）。
+# 2026-10-02 - 小欧 - chat_sessions 增 link_enabled 列（会话级 link 粘性开关唯一真源）。
 #   走既有幂等迁移器 _ensure_column（复用优先，与 version/title_locked 同款写法），不新建迁移分支、不改解析逻辑；
 #   DEFAULT FALSE 使新行天然为关闭态，读侧再用 COALESCE 兜住存量 NULL 行（ALTER ADD COLUMN 不回填旧行）。
 #   compliance: 复用优先 / DRY（单一迁移出口）/ KISS-DIRECT — 小欧 2026-10-02
@@ -91,16 +91,17 @@
 # 2026-10-31 小欧 - 北京老陈令"旧数据需要处理": 存量库一次性识别老默认目录并置 is_default=1
 #   (目录名 <YYYYMMDD-HHMMSS>-<会话ID前4位> 内嵌会话ID前4位, 精确识别不依赖 project_root;
 #   _ensure_column 改返回"列是否新加"作一次性门控, 防每次启动复活已删默认行破坏规则2) — 小欧-2026-10-31
-# 2026-11-06 小欧 - 附件域 3 表落地+方案B溯源(重建): attachments(会话级素材库, UNIQUE(session_id,sha256) 去重)
+# 2026-11-06 小欧 - 附件域 3 表落地+溯源改造(重建): attachments(会话级素材库, UNIQUE(session_id,sha256) 去重)
 #   / material_packs / material_pack_items; attachments 增 source_task_id(产物「存为附件」来源任务溯源, 可空,
 #   不进去重键/不设外键), 存量库 _ensure_column 幂等补列 + idx_attachments_source_task 索引 — 小欧-2026-11-06
 # 2026-11-07 小欧 - 修复存量库启动失败: executescript 块内 CREATE INDEX ON attachments(source_task_id)
 #   在旧库(缺该列)时整体执行报错; 移除该行, 索引由下方 _ensure_column + conn.execute 幂等补建
-# 2026-11-07 小欧 - B-05 修复: 存量库幂等补 UNIQUE(session_id,sha256) 唯一索引(重复行先按组保留最早),
-#   补齐 save_bytes 并发去重的 DB 级保护; F-07/F-08 修复: material_pack_items 增 kind/attachment_id
+# 2026-11-07 小欧 - 存量库补 UNIQUE(session_id,sha256) 唯一索引(重复行先按组保留最早),
+#   补齐 save_bytes 并发去重的 DB 级保护; material_pack_items 增 kind/attachment_id
 #   两列(建表+存量补列), 附件条目投喂时按 id 恢复附件语义
-# 2026-11-07 小欧 - [13] P3 资产台账: attachments 加 scope/last_used_at/use_count, 去会话外键与表级
+# 2026-11-07 小欧 - 资产台账: attachments 加 scope/last_used_at/use_count, 去会话外键与表级
 #   UNIQUE, 存量库重建表(幂等); 唯一性改由两个部分索引承担(session 行按会话+sha / global 行按 sha)
+# 2026-11-07 小欧 - 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 #   —— global 行 session_id 恒 NULL, 会话删除不带走全局资产 — 小欧-2026-11-07
 
 """
@@ -224,7 +225,7 @@ def init_chat_db(get_conn):
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
 
-            -- P3 Journal（[63] 3.4）— 持久事件流，按 task_id + seq 唯一 — 小欧 2026-09-29
+            -- Journal —— 持久事件流，按 task_id + seq 唯一 — 小欧 2026-09-29
             CREATE TABLE IF NOT EXISTS chat_stream_events (
                 task_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,
@@ -238,7 +239,7 @@ def init_chat_db(get_conn):
                 ON chat_stream_events(task_id, event_type, seq);
 
             -- 会话使用的目录列表：一个会话本次任务产物落在这里(可以有多个)
-            -- 2026-10-10 小欧 - 文档[16]: path 列 COLLATE NOCASE。Windows 大小写不敏感是"比较规则"，
+            -- 2026-10-10 小欧: path 列 COLLATE NOCASE。Windows 大小写不敏感是"比较规则"，
             --   `C:/A` 与 `c:/a` 是同一目录，库级必须判重；存储本身保大小写(面板可读)。
             CREATE TABLE IF NOT EXISTS chat_session_workspaces (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,7 +255,7 @@ def init_chat_db(get_conn):
 
             -- 2026-11-04 小欧 - [56] S0: 附件登记表。stored_path 为绝对路径真源,
             --   上行 refs 用「按当前项目根相对化」的 path; 正文不落库(每轮由 extract 生成)
-            -- 2026-11-07 小欧 - [13] P3 升格资产台账: 加 scope/last_used_at/use_count;
+            -- 2026-11-07 小欧 - 升格资产台账: 加 scope/last_used_at/use_count;
             --   scope='global' 为跨会话全局资产(session_id 恒 NULL, 不设会话外键 —— 会话删除不带走全局资产);
             --   session_id 语义订正为「来源会话」, 不再作为访问判定字段(访问只看 scope + 会话归属) — 小欧-2026-11-07
             CREATE TABLE IF NOT EXISTS attachments (
@@ -294,7 +295,7 @@ def init_chat_db(get_conn):
                 seq     INTEGER NOT NULL,
                 path    TEXT NOT NULL,
                 label   TEXT NOT NULL DEFAULT '',
-                -- 2026-11-07 小欧 - F-07/F-08 修复: 条目保留引用身份(kind/attachment_id),
+                -- 2026-11-07 小欧 - 条目保留引用身份(kind/attachment_id),
                 --   附件条目投喂时按 id 查表恢复附件语义(原只存 path/label, 附件降格为普通文件引用)
                 kind          TEXT,
                 attachment_id TEXT,
@@ -310,9 +311,9 @@ def init_chat_db(get_conn):
                 created_at TEXT NOT NULL
             );
         ''')
-        # 2026-11-07 小欧 - [13] P3: 附件表升格资产台账(存量库重建表形态, 幂等) — 小欧-2026-11-07
+        # 2026-11-07 小欧: 附件表升格资产台账(存量库重建表形态, 幂等) — 小欧-2026-11-07
         _migrate_attachments_ledger(conn)
-        # 2026-10-10 小欧 - 文档[16]: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
+        # 2026-10-10 小欧: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
         #   查 sqlite_master 建表语句，无 COLLATE 即重建（表是今日新建，正常 0 行；有行照搬）。
         _csw = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='chat_session_workspaces'"
@@ -360,9 +361,9 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "title_locked", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "title_updated_at", "TEXT")
         _ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
-        # 2026-10-02 小欧 - 文档[4] 5.7 项1：会话级 link 粘性开关（唯一真源），旧库经 _ensure_column 幂等补列
+        # 2026-10-02 小欧：会话级 link 粘性开关（唯一真源），旧库经 _ensure_column 幂等补列
         _ensure_column(conn, "chat_sessions", "link_enabled", "BOOLEAN DEFAULT FALSE")
-        # 2026-10-06 小欧 - 文档[11] 3.2: chat_sessions 增 allow_interject(会话级插话开关唯一真源)。
+        # 2026-10-06 小欧: chat_sessions 增 allow_interject(会话级插话开关唯一真源)。
         #   仿 link_enabled; 存量行 ALTER 后为 NULL, 读方 COALESCE → 关(fail-closed), 不写回填脚本(YAGNI)。
         _ensure_column(conn, "chat_sessions", "allow_interject", "BOOLEAN DEFAULT FALSE")
 
@@ -414,20 +415,20 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_session_trust", "task_id", "TEXT")
         # 2026-10-15 小欧 - TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
-        # 2026-11-06 小欧 - 方案B: 附件溯源 source_task_id(产物「存为附件」来源任务)。
+        # 2026-11-06 小欧: 附件溯源 source_task_id(产物「存为附件」来源任务)。
         #   存量库幂等补列, 无 DEFAULT(历史行读出 NULL = 无任务来源, 老行为零退化)。
         #   附件仍是会话级素材库(主归属 session 不变), 此列仅溯源, 不进去重键、不设外键(任务可删, 溯源保活)。
         _ensure_column(conn, "attachments", "source_task_id", "TEXT")
         # 溯源列索引(存量库幂等补建; 空库已在 executescript 建表时建过) — 小欧 2026-11-06
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id)")
-        # 2026-11-07 小欧 - B-05 修复: 存量库补 UNIQUE(session_id, sha256) 去重约束。
+        # 2026-11-07 小欧: 存量库补 UNIQUE(session_id, sha256) 去重约束。
         #   CREATE TABLE IF NOT EXISTS 对已有表不生效, 存量库无此约束 → save_bytes 的
         #   check-then-act 去重在并发下无 DB 级保护(两个请求同时过 SELECT 检查, 双写)。
         #   存量重复行(历史并发产物)先按组保留最早一条再去重建索引, 幂等。
-        # 2026-11-07 小欧 - [13] P3 收口: 去重索引收窄为 scope='session' 部分索引 ——
+        # 2026-11-07 小欧: 去重索引收窄为 scope='session' 部分索引 ——
         #   promote 需同 sha 的 global 行与 session 行并存, 原全表唯一索引会直接拦住 — 小欧-2026-11-07
         _create_attachment_indexes(conn)
-        # 2026-11-07 小欧 - F-07/F-08 修复: 素材包条目补 kind/attachment_id 两列(存量库幂等),
+        # 2026-11-07 小欧: 素材包条目补 kind/attachment_id 两列(存量库幂等),
         #   附件条目投喂时按 id 恢复附件语义, 不再降格为普通文件引用
         _ensure_column(conn, "material_pack_items", "kind", "TEXT")
         _ensure_column(conn, "material_pack_items", "attachment_id", "TEXT")

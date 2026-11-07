@@ -1,20 +1,27 @@
 // 编辑历史: 2026-11-07 小欧 - 新建: 统一文件抽屉 —— 唯一「附件」入口面板, 左栏选来源、右栏点行即加入本轮 — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - P2: 「我的电脑」改自研浏览器(常用位置/盘符/路径栏/目录列表/授权确认) — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - P3/P4: 新增 最近用过/已收藏/AI 生成 三栏 + 统一 FileRow + 预览抽屉;
-//   ☆ 1 击收藏(promote)/取消收藏/删除 409 二次确认/清空最近用过/分页加载更多/键盘 ↑↓ Space Backspace — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - 三堂会审整改: ①树/库 loading 收口树 treeLoading(复核后排现: 合集面板
-//   无 spinner 点位, 只需拆树指标即消先完成者提前清 spinner 与删合集误闪项目栏); ②列表失败不再假空
-//   (errScopes+重试); ③键盘不劫持 BUTTON 的 Space/Enter; ④busy 丢选择改提示; ⑤feed 改 ensureSid 取凭据
-//   (空串致后端 404 误报已失效); ⑥跨会话行不开放预览(预览端点已改严格读); ⑦色值令牌化 BG.SELECTED — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 「我的电脑」改自研浏览器(常用位置/盘符/路径栏/目录列表/授权确认) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 新增 最近用过/已收藏/AI 生成 三栏 + 统一 FileRow + 预览抽屉; ☆ 1 击收藏/取消收藏/
+//   删除 409 二次确认/清空最近/分页加载更多/键盘 ↑↓ Space Backspace — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 整改 —— 树 loading 收口独立指标/列表失败不再假空(errScopes+重试)/键盘不劫持
+//   BUTTON 的 Space/Enter/busy 丢选择改提示/feed ensureSid 取凭据/跨会话行不开放预览/色值令牌化 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 项目文件栏右栏标题补【项目根目录】(tree 响应同源 project_root, 不加新请求),
+//   与「我的电脑 · hostLabel」一致列明来源地（「来自」文案为用户手改, 保留） — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 用户定名: 「我的电脑」→「后端电脑」（栏标签/右栏标题/两处说明文案）,
+//   消除"客户端还是服务端"歧义; hostLabel 同步展示后端主机名便于核对 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 左栏标签对准: 「AI 生成」→「任务产物」(nav/SCOPE_FROM/右栏标题/空态文案),
+//   session 空态文案明示口径; 后端 session 作用域同步排除溯源行消双栏重叠 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 后端电脑栏两处「本机文件」→「后端电脑文件」(跨机空态/同机模式说明),
+//   消最后两处归属歧义文案 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
- * 左栏来源（文档[13] 6.1）：
+ * 左栏来源：
  * - 最近用过：resolver 注入过（use_count>0），跨会话共享
- * - 本会话：本会话已上传的附件
+ * - 本会话：本会话已提交的附件
  * - 项目文件：项目根文件树（/files/tree）
- * - 我的电脑：自研浏览器（/fs/drives + /files/external/tree），仅同机
- * - AI 生成：任务产物「存为附件」的溯源行
+ * - 我的电脑（后端电脑）：自研浏览器（/fs/drives + /files/external/tree），仅同机，读的是后端进程所在机器的盘
+ * - 任务产物（scope=ai）：产物「存为附件」的溯源行（按来源任务），与「本会话」栏互不重叠
  * - 收藏：scope='global'（★ 星标）+ 合集表
  *
  * 交互：点整行 = 加入/移出本轮；文件名 = 预览；☆ = 收藏（1 击）；⋯ = 重命名/删除。
@@ -113,15 +120,15 @@ const NAV: Array<{ key: SourceKey; label: string }> = [
   { key: 'recent', label: '最近用过' },
   { key: 'session', label: '本会话' },
   { key: 'project', label: '项目文件' },
-  { key: 'local', label: '我的电脑' },
-  { key: 'ai', label: 'AI 生成' },
+  { key: 'local', label: '后端电脑' },
+  { key: 'ai', label: '任务产物' },
 ];
 
 const SCOPE_FROM: Record<ScopeKey, string> = {
   session: '本会话',
   recent: '最近用过',
   global: '已收藏',
-  ai: 'AI 生成',
+  ai: '任务产物',
 };
 
 /** 项目根文件树拍平为文件列表（目录只用于展开，不占行） */
@@ -214,11 +221,13 @@ interface FileDrawerProps {
 
 const emptyTextOf = (scope: ScopeKey, hasSession: boolean): string => {
   if (scope === 'session') {
-    return hasSession ? '本会话还没有附件' : '还没有会话，先上传或加入一个文件';
+    return hasSession
+      ? '本会话还没有附件；上传或导入的文件会列在这里'
+      : '还没有会话，先上传或加入一个文件';
   }
   if (scope === 'recent') return '还没有用过文件；加入并发送一次就会出现在这里';
   if (scope === 'global') return '还没有收藏；点行尾 ☆ 即可跨会话保留';
-  return '还没有 AI 生成的产物';
+  return '还没有任务产物；把 AI 产物「存为附件」后会列在这里';
 };
 
 const FileDrawer: React.FC<FileDrawerProps> = ({
@@ -232,7 +241,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 }) => {
   const [source, setSource] = useState<SourceKey>('recent');
   const [keyword, setKeyword] = useState('');
-  /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07 三堂会审） */
+  /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07） */
   const [treeLoading, setTreeLoading] = useState(false);
   const [lists, setLists] = useState<Record<ScopeKey, AttachmentRecord[]>>({
     session: [],
@@ -257,6 +266,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [renamingAtt, setRenamingAtt] = useState<AttachmentRecord | null>(null);
   const [attNameValue, setAttNameValue] = useState('');
   const [projectFiles, setProjectFiles] = useState<FileNode[]>([]);
+  /** 项目根绝对路径(tree 响应同源下发), 右栏标题【】展示来源地 */
+  const [projectRoot, setProjectRoot] = useState('');
   const [packs, setPacks] = useState<MaterialPack[]>([]);
   const [activePack, setActivePack] = useState<MaterialPack | null>(null);
   const [canLocal, setCanLocal] = useState(false);
@@ -317,7 +328,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         setErrScopes((prev) => ({ ...prev, [scope]: false }));
         applyScope(scope, items, append, items.length >= PAGE);
       } catch (e) {
-        // 失败不清旧列表也不造假空态：标 err 让空态改「加载失败+重试」（2026-11-07 三堂会审）
+        // 失败不清旧列表也不造假空态：标 err 让空态改「加载失败+重试」（2026-11-07）
         setErrScopes((prev) => ({ ...prev, [scope]: true }));
         void e;
       } finally {
@@ -336,8 +347,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     setTreeLoading(true);
     try {
       const res = await fileApi.fetchTree('', { maxDepth: 2 });
+      setProjectRoot(res.project_root ?? '');
       setProjectFiles(flattenFiles(res.nodes).slice(0, 300));
     } catch {
+      setProjectRoot('');
       setProjectFiles([]);
     } finally {
       setTreeLoading(false);
@@ -990,7 +1003,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         (t.tagName === 'INPUT' ||
           t.tagName === 'TEXTAREA' ||
           t.isContentEditable ||
-          // 焦点在按钮/链接上时让控件自己响应 Space/Enter, 键盘不劫持(2026-11-07 三堂会审)
+          // 焦点在按钮/链接上时让控件自己响应 Space/Enter, 键盘不劫持(2026-11-07)
           (t.closest('button, a') as HTMLElement | null) !== null)
       ) {
         return;
@@ -1052,7 +1065,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="当前为远程访问，无法直接读取本机文件，请用上方「上传文件」"
+          description="当前为远程访问，无法直接读取后端电脑文件，请用上方「上传文件」"
         />
       );
     }
@@ -1154,11 +1167,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const paneTitle = (): string => {
     if (source === 'pack') return activePack ? activePack.name : '合集';
     if (source === 'local') {
-      return hostLabel ? `我的电脑 · ${hostLabel}` : '我的电脑';
+      return hostLabel ? `后端电脑 · ${hostLabel}` : '后端电脑';
     }
     if (source === 'fav') return '已收藏';
-    if (source === 'project') return '项目文件';
-    if (source === 'ai') return 'AI 生成';
+    if (source === 'project')
+      return projectRoot ? `项目文件【来自：${projectRoot}】` : '项目文件';
+    if (source === 'ai') return '任务产物';
     if (source === 'recent') return '最近用过';
     return '本会话';
   };
@@ -1378,7 +1392,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
             {source === 'local' && canLocal && (
               <div style={{ marginBottom: Spacing.XS }}>
                 <Typography.Text style={metaStyle}>
-                  同机模式：直接读取本机文件，不传输、不占额外空间
+                  同机模式：直接读取后端电脑文件，不传输、不占额外空间
                   {importing ? ' · 导入中…' : ''}
                 </Typography.Text>
 

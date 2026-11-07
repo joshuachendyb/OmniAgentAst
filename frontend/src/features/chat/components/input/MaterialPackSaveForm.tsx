@@ -1,10 +1,11 @@
-// 编辑历史: 2026-11-06 小欧 - 三堂会审(SRP): 自 MaterialPackPanel 抽出 —— 存包表单独立成组件,
+// 编辑历史: 2026-11-06 小欧: (SRP) 自 MaterialPackPanel 抽出 —— 存包表单独立成组件,
 //   父组件只留列表/搜索/分组/投喂/改名/删除 — 小欧-2026-11-06
-// 编辑历史: 2026-11-07 小欧 - F-08 修复: 存包条目带 kind/attachment_id(附件身份不降格),
+// 编辑历史: 2026-11-07 小欧: 存包条目带 kind/attachment_id(附件身份不降格),
 //   投喂时按 id 恢复附件语义(原只存 path/label, resolver 走文件读分支) — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - P0 正名: 存当前→新建合集 / 素材包→合集 / 引用区→本轮文件 — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - P1 合门: 表单由内联 Space 改 Modal(抽屉左栏仅 172px, 内联表单挤不下);
+// 编辑历史: 2026-11-07 小欧: 存当前→新建合集 / 素材包→合集 / 引用区→本轮文件 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 表单由内联 Space 改 Modal(抽屉左栏仅 172px, 内联表单挤不下);
 //   名字自动填 + 回车即存, 本轮为空时按钮置灰 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 /**
  * MaterialPackSaveForm - 「新建合集」表单
  *
@@ -59,7 +60,7 @@ const MaterialPackSaveForm: React.FC<MaterialPackSaveFormProps> = ({
       await materialPackApi.create({
         name,
         group_name: formGroup.trim(),
-        // F-08: 条目保留引用身份 —— 附件带 kind/attachment_id, 投喂时按 id 恢复附件语义
+        // 条目保留引用身份 —— 附件带 kind/attachment_id, 投喂时按 id 恢复附件语义
         items: refs.map((r) => ({
           path: r.path,
           label: r.label,

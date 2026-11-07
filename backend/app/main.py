@@ -6,7 +6,7 @@
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处异常响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
 # 2026-08-09 - 小欧 - task006 落地(日志级别优化): HTTP 4xx客户端错误与Validation(422)由ERROR降为WARNING, 5xx保持ERROR — 避免测试/非法请求噪音污染ERROR日志, 干扰真实故障排查
 # 2026-08-10 - 小欧 - ⑬get_version改调get_code_root(): 定位version.txt改走代码库根(名实分离, 不再用项目根路径推算) — 步骤1实施(北京老陈驱动)
-# 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
+# 2026-08-12 - 小欧 - 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 # 2026-08-16 - 小欧 - 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
@@ -21,21 +21,21 @@
 # 2026-09-26 小欧 - 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
 #   原状态下局域网任意设备可直调任何接口：读走全部明文密钥、改擦密钥、越权读会话）。
 #   鉴权细节与设计依据见 deps.py 文件头；_mount() 抽成唯一入口的理由见挂载点处注释。
-# 2026-09-27 小欧 - ①默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_API_DOCS=1 开启）：这三者是
+# 2026-09-27 小欧 - 默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_API_DOCS=1 开启）：这三者是
 #   **应用级**路由，不在任何 APIRouter 内，走不到 verify_token，实跑确认无 token 可拉走全部端点与模型。
-#   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
-#   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
+#   / 的 docs 键同步条件化，避免广播一个必 404 的地址。访问口令路由改走 _mount()，不再手写
+#   include_router 绕过唯一入口。_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
 # 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
 #   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
 # 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 调 storage.reconcile_orphaned_tasks, 收尾崩溃残留的 executing 残行(按 start_time<进程启动时刻判归属, 不误伤多 worker) — 小欧-2026-09-29
 # 2026-09-29 小欧 - 挂 _start_journal_retention_task 定期清理超保留期的已终态事件；
 #   退出时同生命周期 cancel（存引用防 GC）— 小欧 2026-09-29
-# 2026-10-03 小欧 - startup_event 增 journal_steps_reconcile 一次性对账 Journal(③) vs chat_task_steps(②);
-#   只告警不自动补, 失败仅 warning 不阻断启动 — 文档[5] 5.3 D2 — 小欧 2026-10-03
+# 2026-10-03 小欧 - startup_event 增 journal_steps_reconcile 一次性对账 Journal 事件与 chat_task_steps 步骤表;
+#   只告警不自动补, 失败仅 warning 不阻断启动 — 小欧 2026-10-03
 # 2026-10-03 - 小欧 - 笔误修正: _t4con 改回 _t_recon(与 _recon_n 配对的 reconcile 计时变量; 同批新增 _t4 串扰致误改, 读写一致故功能未坏)。
 # 2026-10-21 小欧 - GZipMiddleware 显式 compresslevel=1（Starlette 默认 9）：文件树 20MB 响应
 #   实测 level9 压 4~5 秒、level1 压 0.09 秒（体积 1.5MB vs 1.4MB，差别可忽略）— 小欧-2026-10-21
-# 2026-10-15 - 小欧 - 文档[33] 5.18(P5步21): _periodic_cleanup_loop 内加 cleanup_expired_trust(会话信任 TTL 过期回收)。
+# 2026-10-15 - 小欧 - _periodic_cleanup_loop 内加 cleanup_expired_trust(会话信任 TTL 过期回收)。
 #   独立 try: 与 cleanup_expired_tasks 无依赖, 信任表清理挂掉(如锁库)不得连带影响任务清理。
 #   用 db.atxn 回调式(非 async with): 整段 with get_conn 跑在 to_thread 子线, 不占事件循环。— 小欧-2026-10-15
 # 2026-10-21 小杨 - 挂 GZipMiddleware(minimum_size=2048): 文件树大 JSON 响应压缩(3.4MB→~0.4MB),
@@ -67,7 +67,7 @@
 # 2026-11-03 小欧 - http_exception_handler 4xx 全降 INFO(客户端请求不合法/资源不存在, 非服务端故障)、
 #   5xx 保持 ERROR; 422 校验错误同降 INFO。原 probe-404 特例随之删除 — 小欧-2026-11-03
 # 2026-11-03 21:30 小欧 - 四处后台任务 create_task→spawn_bg(强引用防 GC 收口, shutdown 仍按引用 cancel) — 小欧-2026-11-03
-# 2026-11-04 小欧 - R1(三堂会审残留): startup 预热 loop 默认线程池(新增 threading/ThreadPoolExecutor import),
+# 2026-11-04 小欧 - 预热: startup 预建默认线程池(新增 threading/ThreadPoolExecutor import),
 #   非 shell 同步工具 asyncio.to_thread 运行期不再在事件循环线程懒建 Thread.start(同 shell 卡死病灶另一半) — 小欧-2026-11-04
 # 2026-11-04 小欧 - shell 卡死根治(启动期): startup 最早处 install_spawn_gate()(CreateProcess × Thread.start 闸门,
 #   有界等待+快速失败); 串行预热 ps7/ps5 可执行体(prewarm_shell_binaries, 首次 CreateProcessW 移出请求路径);
@@ -114,8 +114,8 @@ from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.config_routes import router as config_router
 from app.api.v1.settings_routes import router as settings_router
 from app.api.v1.model_routes import router as model_router
-from app.api.v1.file_routes import router as file_router  # 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览(J1~J5 底座) — 小欧-2026-10-13
-from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
+from app.api.v1.file_routes import router as file_router  # 2026-10-13 小欧: 文件浏览底座 — 小欧-2026-10-13
+from app.api.v1.tool_routes import router as tool_routes_router  # 工具测试路由迁出 health.py — 小欧 2026-08-12
 from app.api.v1.token_usage import router as token_usage_router  # token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
@@ -133,7 +133,7 @@ from app.logger.shared_handler import install_access_noise_filter  # 2026-10-29 
 from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.services.task.task_registry import cleanup_expired_tasks
-from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧 - 文档[33] 5.18: 过期会话信任回收(TTL)
+from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧: 过期会话信任回收(TTL)
 from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
 from app.db import db
 
@@ -190,7 +190,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-  # 2026-10-21 小杨 - 文件页大 JSON 降量（方案第 ① 步）：
+  # 2026-10-21 小杨 - 文件页大 JSON 降量（第一步）：
   #   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
 app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=1)
 
@@ -201,12 +201,12 @@ app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=1)
 #   已知限制: 响应头只能在 response.start 时写, 超时/断连的请求前端收不到该头 —— req=
 #   只对 4xx/5xx 与成功请求可用, 超时场景靠 URL+耗时+时间窗对账。
 #   两处修正(2026-10-30 小欧):
-#     ① 不能用 @app.middleware("http")(BaseHTTPMiddleware): 它会为每个请求再起一个任务、
+#     不能用 @app.middleware("http")(BaseHTTPMiddleware): 它会为每个请求再起一个任务、
 #       用内存流搬运 body, 而本应用的 SSE 断连清理完全依赖 client-disconnect 传到 reader
 #       生成器(GeneratorExit → deactivate); 多一层搬运等于给这条链加不确定延迟, 且长连接
 #       会长期占住这层的内存流。改成纯 ASGI(只包 send, 零缓冲零额外任务), 写法同
 #       monitoring/middleware.py(DRY/KISS-DIRECT)。
-#     ② 补"异常逃出 app"的路径: 路由内异常本就被 general_exception_handler 转成正常 500 响应
+#     补"异常逃出 app"的路径: 路由内异常本就被 general_exception_handler 转成正常 500 响应
 #       (头照写、[slow] 照记); 但中间件自身或流式 body 迭代期抛的异常会直接穿出本层 —— 无论
 #       响应头是否已发, 都落一条带 reqId+耗时的 [error] 日志(head= 标明头是否已发出), 再原样
 #       抛出(异常处理权仍归外层, 不吞)。
@@ -338,8 +338,8 @@ def _mount(router, tags: str, *, exempt: bool = False) -> None:
 # 探活/回显豁免（便于探活与排障）。/echo 与 /health 同属 health router 且为
 # 纯回显无副作用（已读 health.py:68-76 核实：不落库、不调 LLM），故同享豁免无实际风险。
 _mount(health.router, "health", exempt=True)
-_mount(tool_routes_router, "tools")  # A4: 工具测试路由 — 小欧 2026-08-12
-# 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览路由走 _mount()（自动获得 token 鉴权，勿手写 include_router）
+_mount(tool_routes_router, "tools")  # 工具测试路由 — 小欧 2026-08-12
+# 2026-10-13 小欧 - 文件浏览路由走 _mount()（自动获得 token 鉴权，勿手写 include_router）
 _mount(file_router, "files")
 _mount(chat_router, "chat")
 _mount(task_router, "chat")
@@ -391,7 +391,7 @@ async def _periodic_cleanup_loop() -> None:
             await cleanup_expired_tasks()
         except Exception as e:
             logger.error(f"清理过期任务失败: {e}")
-        # 2026-10-15 小欧 - 文档[33] 5.18: 会话信任 TTL 过期回收。
+        # 2026-10-15 小欧 - 会话信任 TTL 过期回收。
         #   独立 try: 信任表清理挂掉(如锁库)不得连带影响上方任务清理(两者无依赖)。
         #   atxn 是回调式(非 async with): 整段 with get_conn 跑在 to_thread 子线, 不占事件循环。
         try:
@@ -591,7 +591,7 @@ async def startup_event():
         except Exception as _exc:
             logger.warning('[chat_retention] startup sweep failed (degrade): %r' % _exc)
     _start_log_level_watcher()   # 2026-10-25 小欧: 日志级别热重载, config 改动免重启
-    # 2026-10-03 小欧 - 启动期一次性对账 Journal(③) vs chat_task_steps(②), 只告警不自动补 — 文档[5] 5.3 D2
+    # 2026-10-03 小欧 - 启动期一次性对账 Journal 事件与 chat_task_steps 步骤表, 只告警不自动补
     _t4 = time.time()
     try:
         from app.services.chat.stream_event_journal import journal_steps_reconcile as _reconcile

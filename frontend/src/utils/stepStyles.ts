@@ -22,7 +22,7 @@
 //   两种字形并存违 DRY。**本次仅新增令牌并改 MarkdownText 一处**, 存量 5 处尚未收敛(改动面超出本次
 //   范围, 需单独一轮统一), 故此处不作"已统一"表述, 避免注释失真 — 小欧-2026-10-05
 //   v3.7 小欧 订正: 原注释写的 MarkdownBody 已随"按文档第4章实施"删除, 消费端改为 MarkdownText.tsx — 小欧-2026-10-05
-// 编辑历史: 2026-10-13 小欧 - 文档[29]§3.4.3/D-4: 新增**尺寸**令牌组 Size(只管尺寸不管颜色, 严禁新增颜色令牌, 全部复用既有 Colors.*):
+// 编辑历史: 2026-10-13 小欧: 新增**尺寸**令牌组 Size(只管尺寸不管颜色, 严禁新增颜色令牌, 全部复用既有 Colors.*):
 //   PARAMS_PANEL_MAX_H=240(巨型值/树节点展开体限高) / PARAMS_PANEL_MAX_W=720(面板上限, 2026-10-13 23:20 由 640 加宽)
 //   / PARAMS_PANEL_MIN_W=460(窄屏下限, 同日由 320 抬高; 头部标题 nowrap + 三标签所需)
 //   / PARAMS_PANEL_BODY_MAX_H=480(面板内容区限高)。命名沿用既有「名+量纲」风格(BorderWidth/FontSize/Radius) — 小欧-2026-10-13
@@ -34,6 +34,7 @@
 //   asciiArt.ts 列宽模型对齐); 仓内 5 处硬编码字体栈收敛到本令牌(AboutFiles/StaticStatsBlock 2处/
 //   SecretRevealInput/FilePreview) — 小欧-2026-10-22
 // 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/决策序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -243,7 +244,7 @@ export const Colors = {
   WARNING_BORDER: '#ffd591', // 警告浅框(与 ERROR_BORDER 对称, 登录页警示框令牌化) — 小欧-2026-11-02
 } as const;
 
-// 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
+// 2026-10-13 小欧: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
 export const Size = {
   PARAMS_PANEL_MAX_H: 240, // 巨型值 / JSON 树节点展开体限高（每层各自承担，DC-15）
   // 2026-10-13 23:20 小欧 - 640 → 720: 浮层 Segmented 由 2 项(分组|规格表)增至 3 项(+结果)后,

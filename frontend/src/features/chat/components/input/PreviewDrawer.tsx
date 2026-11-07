@@ -1,9 +1,10 @@
-// 编辑历史: 2026-11-07 小欧 - [13] P4 新建: 附件预览抽屉(图片/PDF 走带 token 的 blob,
-//   文本走 /text 前 200 行, 其他给元数据卡), 底部 [加入本轮] + [删除] — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - 三堂会审: 预览请求接 AbortController(抽屉卸载即中止)+30s 超时,
+// 编辑历史: 2026-11-07 小欧: 附件预览抽屉(图片/PDF 走带 token 的 blob, 文本走 /text 前 200 行,
+//   其他给元数据卡), 底部 [加入本轮] + [删除] — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 预览请求接 AbortController(抽屉卸载即中止)+30s 超时,
 //   消服务器挂死时 Skeleton 永转; 超时与失败文案区分 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 /**
- * PreviewDrawer —— 单附件预览（文档[13] 9.2）
+ * PreviewDrawer —— 单附件预览
  *
  * 渲染矩阵：image/* → <img>（最高 60vh）；pdf → <iframe>（不支持则元数据卡）；
  *   text/* 与 json → 等宽字体前 200 行；其他 → 元数据卡（名称/类型/大小/SHA/来源/时间）。
@@ -79,7 +80,7 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
     if (!record || !sessionId) return;
     let alive = true;
     let url = '';
-    // AbortController：卸载即中止 + 30s 超时兜底, 消"服务器挂死 → Skeleton 永转"(三堂会审)
+    // AbortController：卸载即中止 + 30s 超时兜底, 消"服务器挂死 → Skeleton 永转"
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), PREVIEW_TIMEOUT_MS);
     const onAbortErr = (e: unknown): boolean =>

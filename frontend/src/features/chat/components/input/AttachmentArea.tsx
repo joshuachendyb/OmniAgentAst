@@ -1,15 +1,16 @@
-// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 附件多模态预留区, 上传随E1携带(暂缓)(4.6.2)
-// 编辑历史: 2026-08-28 小欧 - ①D/d2: 暂缓期隐藏不占位, 启用加 Tooltip 说明
+// 编辑历史: 2026-08-26 小欧: 附件多模态预留区实施, 上传随消息携带(暂缓)
+// 编辑历史: 2026-08-28 小欧: 暂缓期隐藏不占位, 启用加 Tooltip 说明
 // 编辑历史: 2026-10-06 小欧 - 北京老陈指令: 暂缓期不再隐藏, 改为显示+置灰(disabled)。
 // 编辑历史: 2026-11-06 小欧 - 重写为纯文件选择器(建会话/上传/入队/提示全部下沉 uploadAttachments 唯一
 //   实现, 本组件只交文件); 加同机「从本机导入」入口(据后端 local-capability 结果显隐, 不做安全判定) — 小欧-2026-11-06
-// 编辑历史: 2026-11-06 小欧 - 三堂会审: ①busy 计算修正(原 n-files.length+r.ok 部分失败残留→按钮永久 loading);
-//   ②抽 collectAndUpload(beforeUpload 只留 antd 拦截, SLAP); ③batch.length 判超限(等价 indexOf, 更直接) — 小欧-2026-11-06
-// 编辑历史: 2026-11-07 小欧 - F-03: 删 collectAndUpload 的死参数 batch(实际数据源是 pendingFiles,
-//   死参数误导阅读); F-10: busyRef 守卫 beforeUpload(setBusy 到 re-render 有间隙, 间隙内再次选择
-//   会混入 pendingFiles), ref 即时生效不受渲染时机影响 — 小欧-2026-11-07
-// 编辑历史: 2026-11-07 小欧 - P1 合门: 只留唯一「附件」按钮 —— 点击打开文件抽屉(FileDrawer); 上传收集/
-//   同机导入/合集全部迁入抽屉, 本组件不再持有 Upload 与 pendingFiles(职责只剩按钮+抽屉宿主) — 小欧-2026-11-07
+// 编辑历史: 2026-11-06 小欧: busy 计算修正(部分失败残留→按钮永久 loading); 抽 collectAndUpload(SLAP);
+//   batch.length 判超限(等价 indexOf, 更直接) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧: 删 collectAndUpload 死参数 batch(数据源是 pendingFiles, 死参数误导阅读);
+//   busyRef 守卫 beforeUpload(setBusy 到 re-render 有间隙, ref 即时生效防混入) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 入口合门 —— 只留唯一「附件」按钮打开文件抽屉(FileDrawer);
+//   上传收集/同机导入/合集全部迁入抽屉, 本组件不再持有 Upload 与 pendingFiles(职责只剩按钮+抽屉宿主) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - Tooltip 入口清单同步抽屉标签定名(后端电脑/任务产物) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 /**
  * AttachmentArea - 附件唯一入口（按钮行左侧「附件」）
  *
@@ -49,7 +50,7 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
   if (!visible) return null;
   return (
     <>
-      <Tooltip title="添加文件到本轮（最近用过 / 本会话 / 项目文件 / 我的电脑 / AI 生成 / 收藏）">
+      <Tooltip title="添加文件到本轮（最近用过 / 本会话 / 项目文件 / 后端电脑 / 任务产物 / 收藏）">
         <Button
           size="small"
           icon={<PaperClipOutlined />}

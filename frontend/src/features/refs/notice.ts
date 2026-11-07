@@ -4,9 +4,10 @@
 //   dropped 拼中文 reason; 新增 noticeOf/noticeDetailText 供组件标题与文案共用 — 小欧-2026-10-30
 
 // 编辑历史: 2026-11-06 小欧 - 附件专用文案(后端 reason 一一对应, 单一真源在后端) — 小欧-2026-11-06
-// 编辑历史: 2026-11-07 小欧 - F-06: noticeMapByPath 不再跳过空 path 条目 —— 附件 ref 的 path
+// 编辑历史: 2026-11-07 小欧: noticeMapByPath 不再跳过空 path 条目 —— 附件 ref 的 path
 //   经 rel_to_root 异常回退时为空串, 原 if(it.path) 为 false 直接丢弃 → chip 无黄/红标;
 //   改无条件 set(空串经 normalizePath 归一后作 key, 与 noticeOf 的 r.path??'' 口径一致) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 注释清理: 去除修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 
 /**
  * notice —— 引用回执 → chip 状态机(5 态)唯一映射
@@ -142,7 +143,7 @@ export const chipToneOf = (state: ChipState): ChipTone => {
 };
 
 /** refs_notice items → 归一 path 键控的回执表(chatStreamStore/transport 写入 refNoticeStore)。
- *  F-06: 空 path 也入表(附件 ref rel_to_root 回退时 path 为空串), 与 noticeOf 的 r.path??'' 口径一致。 */
+ *  空 path 也入表(附件 ref rel_to_root 回退时 path 为空串), 与 noticeOf 的 r.path??'' 口径一致。 */
 export const noticeMapByPath = (items: NoticeItem[]): NoticeMap => {
   const m: NoticeMap = new Map();
   for (const it of items) m.set(normalizePath(it.path ?? ''), it);

@@ -1,7 +1,7 @@
 # 编辑历史:
 # 2026-11-04 小欧 新建: 产物「存为附件」——工作区内只引用, 工作区外复制固化 — 小欧-2026-11-04
 # 2026-11-06 小欧 改名 import: service → attachment_service(模块改名对齐命名惯例) — 小欧-2026-11-06
-# 2026-11-06 小欧 方案B: collect_artifact 加可选 task_id, copied 时透传 save_bytes 写入 source_task_id 溯源 — 小欧-2026-11-06
+# 2026-11-06 小欧 溯源改造: collect_artifact 加可选 task_id, copied 时透传 save_bytes 写入 source_task_id 溯源 — 小欧-2026-11-06
 
 """attachments.collect — 概览产出物「存为附件」。
 

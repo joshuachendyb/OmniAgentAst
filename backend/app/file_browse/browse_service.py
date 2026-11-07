@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-# 编辑历史: 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览服务层(路径边界+递归扫描+读文本/图片+recent-files) — 小欧-2026-10-13
+# 编辑历史: 2026-10-13 小欧: 文件浏览服务层(路径边界+递归扫描+读文本/图片+recent-files) — 小欧-2026-10-13
 #   同批新增 _scan_dir / _walk / _resolve_within_root 三个私有函数：前两者是"唯一实现"
 #   （防多处分叉），后者是"安全唯一入口"（五个对外端点全部经它）。
 # 2026-10-13 小欧 - 文件名 service.py → browse_service.py：与既有 app/services/lifecycle/service.py
@@ -14,8 +14,8 @@
 #   绝大多数是环，说成读取失败是误导；两类分开后前端才能分别措辞 — 小欧-2026-10-21
 # 2026-10-21 小欧 - read 的 total_lines 改 _count_lines：末尾换行不产生新行（编辑器口径），
 #   原式 count("\n")+1 让 "a\r\nb\r\n" 算 3 行 → 行号指到不存在的空行，且与前端行号列不一致 — 小欧-2026-10-21
-# 2026-10-21 小欧 - 树扫描提速（**不加任何节点限制**）：① BINARY_EXTS 明确二进制格式走后缀零 IO；
-#   ② .map/.tsbuildinfo 等进文本后缀表；③ 剩余需实探的走 _probe_pool 并发探测
+# 2026-10-21 小欧 - 树扫描提速（**不加任何节点限制**）：BINARY_EXTS 明确二进制格式走后缀零 IO；
+#   .map/.tsbuildinfo 等进文本后缀表；剩余需实探的走 _probe_pool 并发探测
 #   （实测 8.9 万节点单次 7.16s，其中 8KB 实探占约 7.5s 量级，scandir 遍历本身仅约 1s）— 小欧-2026-10-21
 # 2026-10-22 小欧 - 外部只读（北京老陈批准）：新增 read_external_file（盘符绝对路径单文件只读文本，
 #   复用 _probe_text/_read_truncated/_read_range 读管道 + 审计日志，不碰写/工具边界）；
@@ -149,7 +149,7 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024     # C3，北京老陈定
 MAX_TREE_DEPTH = 10                    # 2026-10-21 小杨 - 深度上限 5→10（性能实测达标后放宽）
 MAX_TREE_NODES = 100000                # 2026-10-21 小杨 - 节点上限 5000→100000；**这是默认值，不是闸门**（路由层不设上界）
 
-# utf-8-sig 必须在 utf-8 之前 —— 2026-10-13 小欧 - 真实缺陷(单测 c03 抓出)：
+# utf-8-sig 必须在 utf-8 之前 —— 2026-10-13 小欧 - 真实缺陷(单测抓出)：
 #   含 BOM 的文件用 utf-8 解码**也会成功**，只是首字符残留 '\ufeff'，
 #   于是永远走不到 utf-8-sig 分支 → Markdown 首行 '# 标题' 带上不可见 BOM 而失效。
 #   utf-8-sig 对无 BOM 文件与 utf-8 等价，故前置安全。
@@ -351,7 +351,7 @@ def _exists(p: Path) -> bool:
 def _encoding_candidates(head: bytes) -> Tuple[str, ...]:
     """按文件头 BOM 决定解码顺序。
 
-    2026-10-13 小欧 - 单测 c02 抓出的真实缺陷：Windows 记事本「另存为」默认写 **UTF-16**，
+    2026-10-13 小欧 - 单测抓出的真实缺陷：Windows 记事本「另存为」默认写 **UTF-16**，
     原先 utf-8/utf-8-sig/gbk 三级兜底全部失败 → 415，用户在记事本里存的文件读不出来。
     这里按 BOM 精确判定（utf-16/utf-32 的 BOM 互不相同），**没有 BOM 就不试 utf-16**，
     避免把任意二进制误解成 UTF-16 产出一堆乱码。
@@ -383,18 +383,18 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
 
     环检测键是 **inode 键**（见 _dir_key），不是 realpath 键。
 
-    ① 不跳过任何目录、不做类型过滤 —— 目录里有什么就返回什么（v3.4 裁定）
-    ② os.scandir 而非 Path.iterdir：DirEntry 复用系统调用，is_dir 近乎免费
-    ③ 每条一次带出 name/type/size/mtime（无 hover 单查端点）
-    ④ 单条目异常（权限/坏链接）跳过并计数，不让一个坏条目拖垮整个目录
-    ⑤ 排序：目录在前 + 名称不区分大小写升序
-    ⑥ **解析后越出项目根的条目（符号链接）不返回** —— 设计 4.1.3/4.1.4 硬要求：
+    一、不跳过任何目录、不做类型过滤 —— 目录里有什么就返回什么（既有裁定）
+    二、os.scandir 而非 Path.iterdir：DirEntry 复用系统调用，is_dir 近乎免费
+    三、每条一次带出 name/type/size/mtime（无 hover 单查端点）
+    四、单条目异常（权限/坏链接）跳过并计数，不让一个坏条目拖垮整个目录
+    五、排序：目录在前 + 名称不区分大小写升序
+    六、**解析后越出项目根的条目（符号链接）不返回** —— 设计硬要求：
        树里出现一个点开必然 403 的死条目，比不列出来更糟（用户会反复点）。
-       注意与 v3.4「不跳过任何目录」不冲突：这里跳过的**只有越界链接**，普通目录照列。
-    ⑦ 文本实探只对文件做，且必须传完整路径（2026-10-21 小杨 - 修复：
+       注意与「不跳过任何目录」不冲突：这里跳过的**只有越界链接**，普通目录照列。
+    七、文本实探只对文件做，且必须传完整路径（2026-10-21 小杨 - 修复：
        原实现传 Path(de.name) 相对进程 CWD，Dockerfile/LICENSE 等无后缀文件恒探失败；
        目录也不该被探测——dir.md 这类带文本后缀的目录曾被误判为可预览文本）。
-    ⑧ 2026-10-21 小欧 - 实探**并发化**：类型探测是树扫描的耗时大头
+    八、2026-10-21 小欧 - 实探**并发化**：类型探测是树扫描的耗时大头
        （实测 E:\test_dir：scandir 遍历 2 万项只要 0.21s，而 8KB 实探 4886 个要 1.08s，
        单文件 0.36ms —— 全量 8.9 万节点里 24% 需实探，折算约 7.5s，占总耗时 7.16s 的绝大部分）。
        故：后缀能判的直接判（零 IO），需实探的**批量并发**探（IO 并行）。
@@ -418,10 +418,10 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
             try:
                 is_dir = de.is_dir(follow_symlinks=True)
                 st = de.stat(follow_symlinks=True)
-            except OSError:    # ④ 权限不足/坏链接
+            except OSError:    # 四、权限不足/坏链接
                 skipped += 1
                 continue
-            # ⑥ 越界链接不列出。2026-10-21 小杨 - 性能修复：只有**符号链接**才可能越出根，
+            # 六、越界链接不列出。2026-10-21 小杨 - 性能修复：只有**符号链接**才可能越出根，
             #    普通条目不再调 realpath（原实现每条目一次 resolve，5 万条=几分钟级挂死）
             if de.is_symlink():
                 if _escapes_root(de.path, root):
@@ -452,7 +452,7 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
                 "type": "dir" if is_dir else "file",
                 "size": None if is_dir else st.st_size,
                 "mtime": _fmt_time(st.st_mtime),
-                # ⑦ 目录不探测；文件传绝对路径（de.path），不得相对 CWD
+                # 七、目录不探测；文件传绝对路径（de.path），不得相对 CWD
                 "preview": preview,
             })
     if pending:
@@ -629,7 +629,7 @@ def search_files(keyword: str, limit: int = 20,
                  root: Optional[str] = None) -> Dict[str, Any]:
     """按文件名模糊搜索（输入框 @ 补全的数据源）。
 
-    为什么需要它：北京老陈裁定「在输入框里手打 @文件名 也应能带内容」（文档[28] 决策）。
+    为什么需要它：用户在输入框里手打 @文件名 也应能带内容（既有裁定）。
     纯前端过滤不可行 —— 树只在打开文件页时才进内存，用户没开过文件页就搜不到任何东西。
 
     扫描策略：深度受限的广度优先，每层先看文件再看目录（用户要找的通常就是文件），
@@ -792,7 +792,7 @@ def stat_file(path: str) -> Dict[str, Any]:
     根内: _resolve_within_root 校验(越界/UNC 拒绝, 与 build_tree 同口径);
     外部: _is_abs_drive_path 校验(仅盘符绝对路径, 与 read_external_file 同口径);
     不存在/不可访问 → ok=False + reason(missing/unsupported), 不抛 404
-    (失败语义交调用方组 chip 回执, 与 4.6.4 "失败不抛给用户"同纪律)。
+    (失败语义交调用方组 chip 回执, 与"失败不抛给用户"同纪律)。
     成本口径: 文本判定走 _probe_text(首 8KB 查 NUL, 与 _preview_of 同判定), 不读全文,
     故 10MB 与 10KB 文件的 stat 耗时同量级; 不是零 IO, 勿按 O(1) 理解。
     """
@@ -902,7 +902,7 @@ def _read_file_body(
 ) -> Dict[str, Any]:
     """文本正文读取公共段（根内 / 外部只读共用）：NUL 实探 → 大小 → 编码闸门 → 区间分派。
 
-    2026-10-22 小欧 - 三堂会审抽出的共用段：read_text_file 与 read_external_file 此前
+    2026-10-22 小欧 - 抽出的共用段：read_text_file 与 read_external_file 此前
     各写一遍 exists/probe/stat/head/区间分派（约 20 行），闸门语义改动必漏一处。
     唯一保留差异：非文本文案（外部只读需说明"仅支持文本预览"）。
     路径解析（根内 _resolve_within_root / 外部盘符判定）与类型闸门留在调用方。— 小欧-2026-10-22
@@ -1102,8 +1102,8 @@ def _read_truncated(
     raw = b""
     for enc in _encoding_candidates(head):    # 按 BOM 决定顺序，再逐个试
         try:
-            # 二进制读 + 增量解码：① 天然保留 \r\n（不再需要 newline=""），
-            #   ② 截断时尾部半个多字节字符由增量解码器留在缓冲区，不会炸也不丢字符。
+            # 二进制读 + 增量解码：天然保留 \r\n（不再需要 newline=""），
+            #   截断时尾部半个多字节字符由增量解码器留在缓冲区，不会炸也不丢字符。
             with target.open("rb") as fh:
                 raw = fh.read(MAX_TEXT_BYTES)
             truncated = st.st_size > len(raw)

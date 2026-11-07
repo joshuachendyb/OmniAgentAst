@@ -2,29 +2,26 @@
 # 2026-11-04 小欧 新建: 附件域服务(上传落盘/登记/查询/删除/默认工作区定位) — 小欧-2026-11-04
 # 2026-11-06 小欧 改名 service.py→attachment_service.py: 与系统 *_service.py 命名惯例对齐(名实相符),
 #   消费方 import 路径同步(`from app.attachments import attachment_service`) — 小欧-2026-11-06
-# 2026-11-06 小欧 方案B: 增 source_task_id 溯源列(产物「存为附件」来源任务); save_bytes 加可选入参,
+# 2026-11-06 小欧 溯源改造: 增 source_task_id 溯源列(产物「存为附件」来源任务), save_bytes 加可选入参,
 #   会话级主归属不变, 仅溯源且不进去重键 — 小欧-2026-11-06
-# 2026-11-06 小欧 三堂会审: _sanitize_name 去首尾点 strip(".")→rstrip(".") —— 原实现剥掉开头点,
+# 2026-11-06 小欧 修复: _sanitize_name 去首尾点 strip(".")→rstrip(".") —— 原实现剥掉开头点,
 #   破坏 .env/.dockerfile 点文件扩展名(白名单内却 415), 白名单口径分叉 — 小欧-2026-11-06
 
-# 2026-11-07 小欧 - B-01 修复: save_upload 初始读限按后缀分档(图片 10MB/其他 20MB),
-#   原统一读 MAX_FILE_BYTES+1, 12MB 图片被完整读入内存后才被拒, 白占堆;
-# 2026-11-07 小欧 - B-03 修复: 增 get_attachment_scoped 会话作用域校验(不匹配视同不存在),
-#   delete_attachment/read_inject_text 加 session_id 必填参数 —— 附件是会话级资产,
-#   跨会话按 id 直取属越权(注入真源 resolver 同步收紧, 见 resolver.py)
-# 2026-11-07 小欧 - B-02 修复: delete_attachment(purge=True) 级联清理 material_pack_items
-#   中引用同 stored_path 的条目 —— 原只删附件记录+磁盘文件, 素材包条目仍存旧 path,
-#   投喂时 quoteFile 找不到文件 → 红底失效
-# 2026-11-07 小欧 - [13] P3 资产台账: attachments 升格(scope/last_used_at/use_count);
-#   增 promote_attachment(跨会话自动升级为全局, sha 去重 + 复制到 {data_dir}/assets)、
-#   list_attachments 多作用域(recent/global/session/ai)、rename_attachment、clear_recent、
-#   touch_usage(发送注入时唯一记账点); delete_attachment 改按路径引用计数决定删文件,
-#   被合集引用时 409 需 force 确认 — 小欧-2026-11-07
-# 2026-11-07 小欧 - 三堂会审: 预览(/text)改严格校验不再自动收藏, auto_promote 只留发送注入(resolver)
-#   与手动/引用链 —— 读路径不产生任何写副作用, 尊重 B-03 越权收紧 — 小欧-2026-11-07
+# 2026-11-07 小欧 修复: save_upload 初始读限按后缀分档(图片 10MB/其他 20MB),
+#   原统一读 MAX_FILE_BYTES+1, 12MB 图片被完整读入内存后才被拒, 白占堆 — 小欧-2026-11-07
+# 2026-11-07 小欧 越权收紧: 增 get_attachment_scoped 会话作用域校验(不匹配视同不存在), delete/read_inject_text
+#   加 session_id 必填 —— 附件是会话级资产, 跨会话按 id 直取属越权(resolver 同步收紧) — 小欧-2026-11-07
+# 2026-11-07 小欧 修复: delete_attachment(purge=True) 级联清理 material_pack_items 中引用同 stored_path 的
+#   条目 —— 原只删附件记录+磁盘文件, 素材包条目仍存旧 path, 投喂时找不到 → 红底失效 — 小欧-2026-11-07
+# 2026-11-07 小欧 资产台账: attachments 升格(scope/last_used_at/use_count); 增 promote_attachment、
+#   list 多作用域/重命名/清最近/发送注入记账; delete 改按路径引用计数删文件, 被合集引用 409 需 force 确认 — 小欧-2026-11-07
+# 2026-11-07 小欧 预览严格读: /text 改严格校验不再自动收藏, auto_promote 只留发送注入(resolver)与手动/引用链
+#   —— 读路径不产生任何写副作用, 尊重会话越权收紧 — 小欧-2026-11-07
+# 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 # 2026-11-07 小欧 - favorited/global_id 收口 _decorate_global 单一实现(单条/列表同口径);
 #   delete 合集条目匹配改 attachment_id + rel_to_root 相对路径为真、原绝对 path 子句永假; 
 #   list 非法 scope 由静默回落改 fail(INVALID_PARAM) — 小欧-2026-11-07
+# 2026-11-07 小欧 - 左栏标签对准: session 作用域排除任务产物溯源行(stid 非空归属 ai 栏), 消双栏重叠显示 — 小欧-2026-11-07
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -101,9 +98,8 @@ _RESERVED_NAMES = {
 def _sanitize_name(name: str) -> str:
     """文件名 sanitize: 去目录段/非法字符/保留名, 限长 120。
 
-    2026-11-06 小欧 三堂会审: 去首尾点改用 rstrip(".") 仅去**结尾点** —— 原实现 strip(".")
-    会把开头点一起剥掉, 破坏点文件(.env/.dockerfile)扩展名, 使其即便在 TEXT_SUFFIXES
-    白名单内也无法上传(415), 白名单口径分叉。修正后保留开头点, 与白名单一致。
+    2026-11-06 小欧: 去首尾点改用 rstrip(".") 仅去**结尾点** —— 原实现 strip(".") 把开头点一起剥掉,
+    破坏 .env/.dockerfile 点文件扩展名使其即便在白名单内也无法上传(415), 白名单口径分叉; 修正后保留开头点。
     """
     base = Path((name or "").replace("\\", "/")).name
     base = _BAD_CHARS.sub("_", base).strip().rstrip(".")
@@ -131,7 +127,7 @@ def rel_to_root(stored_path: str) -> str:
 def _row_to_dict(row: Any) -> dict[str, Any]:
     d = dict(zip([c.strip() for c in _COLS.split(",")], tuple(row)))
     d["path"] = rel_to_root(d["stored_path"])
-    # 2026-11-07 小欧 - [13] P3: 磁盘文件是否还在(失效行仍可删/可重命名, 但不可加入本轮)
+    # 2026-11-07 小欧: 磁盘文件是否还在(失效行仍可删/可重命名, 但不可加入本轮)
     d["available"] = Path(d["stored_path"]).is_file()
     d["favorited"] = False
     d["global_id"] = None
@@ -268,7 +264,7 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
 async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
     """HTTP 上传入口：读入内存后交给 save_bytes（磁盘 IO 卸载到线程）。
 
-    初始读限按后缀分档(B-01): 图片只读 10MB+1, 超限图片在读入阶段即拒,
+    初始读限按后缀分档: 图片只读 10MB+1, 超限图片在读入阶段即拒,
     不再统一读 20MB+1 白占堆; 无扩展名/其他后缀仍按 20MB 读,
     类型与最终大小裁决归 save_bytes(单一真源不变)。
     """
@@ -284,13 +280,13 @@ async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
 
 
 _SCOPE_FILTER = {
-    # 本会话: 会话归属行(global 行 session_id 恒 NULL, 天然不进本栏)
-    "session": ("session_id = ?", "created_at DESC"),
+    # 本会话: 会话归属行, 排除任务产物溯源行(归 ai 栏)消双栏重叠; global 行 session_id 恒 NULL 天然不进本栏
+    "session": ("session_id = ? AND (source_task_id IS NULL OR source_task_id = '')", "created_at DESC"),
     # 最近用过: 发送注入过(use_count>0), 跨会话共享
     "recent": ("use_count > 0", "last_used_at DESC"),
     # 已收藏: 全局资产
     "global": ("scope = 'global'", "COALESCE(last_used_at, created_at) DESC"),
-    # AI 生成: 任务产物「存为附件」的溯源行
+    # 任务产物(scope 键沿用 ai): 「存为附件」copied 模式的溯源行
     "ai": ("source_task_id IS NOT NULL AND source_task_id <> ''", "created_at DESC"),
 }
 
@@ -300,7 +296,7 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
                      offset: int = 0) -> list[dict[str, Any]]:
     """附件列表（作用域唯一实现）— 小欧-2026-11-07
 
-    scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(AI 生成)。
+    scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(任务产物)。
     每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
     """
     scope_row = _SCOPE_FILTER.get(scope)
@@ -321,7 +317,7 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
         if scope == "session" and not conn.execute(
             "SELECT 1 FROM chat_sessions WHERE id = ?", (session_id,)
         ).fetchone():
-            return []      # B-04: 会话不存在返回空(附件随 session 级联删, 无孤儿数据)
+            return []      # 会话不存在返回空(附件随 session 级联删, 无孤儿数据)
         rows = conn.execute(
             f"SELECT {_COLS} FROM attachments WHERE {where} "
             f"ORDER BY {order} LIMIT ? OFFSET ?",
@@ -453,11 +449,11 @@ def get_attachment(attachment_id: str) -> dict[str, Any] | None:
 
 def get_attachment_scoped(attachment_id: str, session_id: str | None, *,
                           auto_promote: bool = False) -> dict[str, Any] | None:
-    """按 id 取单条并校验访问权（B-03 + P3 全局放行）— 小欧-2026-11-07
+    """按 id 取单条并校验访问权（会话归属校验 + global 全局放行）— 小欧-2026-11-07
 
     访问规则: scope='global' 对所有会话可读; session 级仍严格校验会话归属。
     auto_promote=True（跨会话引用/预览）时，非本会话的 session 级附件自动升级为全局后返回，
-    用户不感知 404（文档[13] 10.5）。session_id 为 None 时 fail-closed（拿不出凭据不给数据）。
+    用户不感知 404。session_id 为 None 时 fail-closed（拿不出凭据不给数据）。
     """
     att = get_attachment(attachment_id)
     if not att:
@@ -485,7 +481,7 @@ def delete_attachment(attachment_id: str, session_id: str | None, *,
     if att.get("scope") != "global" and (not session_id or att.get("session_id") != session_id):
         fail(NOT_FOUND, "附件不存在")
     stored_path = att["stored_path"]
-    # 2026-11-07 小欧 三堂会审: 合集条目身份=attachment_id; 无 aid 旧条目按写入时同源的
+    # 2026-11-07 小欧: 合集条目身份=attachment_id; 无 aid 旧条目按写入时同源的
     #   rel_to_root 相对路径匹配(库存相对 path, 绝对 stored_path 永不相等) — 小欧-2026-11-07
     rel_path = rel_to_root(stored_path)
     with db.get_conn("chat") as conn:
@@ -517,9 +513,9 @@ def delete_attachment(attachment_id: str, session_id: str | None, *,
 def read_inject_text(attachment_id: str, session_id: str) -> str:
     """预览端点数据源: 与 resolver 同一条生成路径, 不产生第二套口径。
 
-    访问权经 get_attachment_scoped 校验(B-03 + global 放行)。预览是纯读: 不自动收藏
+    访问权经 get_attachment_scoped 校验(会话归属 + global 放行)。预览是纯读: 不自动收藏
     (auto_promote=False), 跨会话 session 级附件预览如实 404 —— 跨会话自动升级只属于
-    发送注入(resolver)与手动/引用链, 预览不产生任何写副作用(文档[13] 10.5)。
+    发送注入(resolver)与手动/引用链, 预览不产生任何写副作用。
     """
     att = get_attachment_scoped(attachment_id, session_id, auto_promote=False)
     if not att:
