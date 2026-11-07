@@ -1,7 +1,9 @@
 v1.6.4
-发布时间: 2026-11-06 13:07:26 - 小欧-2026-11-06
+发布时间: 2026-11-07 22:44:54 - 小欧-2026-11-07 (原 2026-11-06 13:07:26 首次记录 45 个 commit; 追加 11-07 附件域与三入口重构 28 个 commit 后, 按本次 tag 前提交时间更新)
 ## v1.6.3汇总 变更汇总(45个commit: refactor3/fix20/docs20/feat2) - 小欧-2026-11-06
 [2026-11-06 13:07:26 小欧] 范围=v1.6.3以来全部commit(45个); 说明=①shell 去池化定案(删常驻池全套~1000行, 每命令独立子进程+BoundedSemaphore(10)管并发, 三堂会审修正YAGNI死代码/KISS语义/docstring, 三路检测引号感知); ②第三方CLI模型接入网关(gateways通用层+vendor驱动落盘, FIX A-K协议界符/无工具agent/空delta等, 命名对齐driver->driver_api等, /v1/models补token门禁, 部署说明v1.9, 技术方案v6.9-v6.15); ③附件功能设计[10][56]双通道; ④agent_runner终态reasoning净化+thought_step口径纠偏+StreamChunk删reasoning死字段+event_emitter删死文件; ⑤常驻线程池丢ContextVar致shell池键坍缩None修复; ⑥打包后处理放用户使用说明到exe同级。注: 含功能变更(shell去池化+网关接入) → PATCH v1.6.4。
+## v1.6.4汇总(追加) 变更汇总(追加28个commit: feat10/fix10/docs3/perf2/refactor2/chore1; 本版累计74个) - 小欧-2026-11-07
+[2026-11-07 22:44:54 小欧] 范围=51619b67d..d216c7aa2 全部commit(28个); 说明=①附件域 S0/S1 全链路落地(后端 attachments/extract/resolver + 前端附件域, 方案B source_task_id 归属协商, 三堂会审整改); ②附件三入口合门为唯一「附件」按钮 + 统一文件抽屉, P2 自研文件浏览器(/fs/drives + /files/external/tree, 同机只传路径 0 传输), P3/P4 资产台账(scope/promote/最近用过/收藏/预览/键盘), 三堂会审整改(auto_promote 只挂发送链 / raw+text 严格读 / 合集引用删除确认 / 色值令牌化); ③S1 文本注入统一 clip 预算闸门(text 不再绕过 read_max_bytes); ④摘要重试透传 retrying 事件 + 摘要限流快速降级 + token 体积文案收口 fmt_tok; ⑤打包链路 build_spa/deploy_spa 脚本固化 + spec datas 路径修复 + run_server 幽灵配置根治; ⑥shell truncated 路径杀孙进程防僵尸。注: 含功能变更(S0/S1 附件域 + 三入口重构) → 维持 PATCH v1.6.4, tag 打在本块所在提交。
 ### 1.6.4.1 shell 去池化重构
 [去池化] refactor bc15c0f29 删PersistentShell/ShellPoolManager全套(~1000行), 每命令独立子进程跑完即销毁+全局BoundedSemaphore(10)管并发; 三堂会审修正(YAGNI删5死函数+2常量/KISS drain改用剩余timeout/docstring改去池化版) - 小欧-2026-11-06
 [引号感知] fix 9c68ee044 三路检测新增_strip_quoted_content剥离引号内内容, _looks_like_*不再匹配字符串字面量命令名(如echo "grep"不误路由); _auto_fix_bash_syntax错误注释修正(\\t非制表符); 编辑历史补全/去task005+BUG#序号违规 - 小欧-2026-11-06
@@ -27,6 +29,39 @@ v1.6.4
 [池键坍缩] fix 858d7ee75 workers.py常驻线程池丢ContextVar致shell池键坍缩None - 小欧-2026-11-05
 [输出格式] fix b63fdbff5 mapping.py输出格式补规则9,区分"工具被禁用"与"文件无权限" - 小欧-2026-11-05
 [打包说明] feat e07008196 打包后处理把用户使用说明放到exe同级并随部署同步 - 小欧-2026-11-04
+### 1.6.4.6 附件域 S0/S1 落地
+[附件域S0] feat aeedd1172 附件域S0落地+方案B(source_task_id归属协商) 配套恢复与全链路打通 - 小欧-2026-11-06
+[S1正文注入] feat 95922d4bf extract S1 文本正文注入(_text_body ≤256KB全文/>256KB档案头) TDD红绿重构 - 小欧-2026-11-06
+[前端附件域] feat 9239d3f33 前端附件域(S0)实现并修正注释与编辑历史合规 - 小欧-2026-11-06
+[前端整改] refactor a509260b3 前端S0三堂会审10项违规修正 - 小欧-2026-11-06
+[附件域修复] fix 2a25b7897 attachment/material_pack S0 附件域11项bug修复+素材包引用身份恢复 - 小欧-2026-11-07
+[三堂会审] fix 9eed432f0 resolver/notice/attachment_service 三堂会审5处违规修复 - 小欧-2026-11-06
+[上传422] fix 9ebc34404 client.ts 删除实例默认Content-Type覆盖FormData自动协商, 修复上传422 - 小欧-2026-11-07
+[容量预检] fix 4961ceb17 附件双通道容量预检补齐(localImport/collectArtifact 孤儿附件) - 小欧-2026-11-07
+[clip预算] fix e030f23be S1 文本注入回归统一 clip 预算闸门, 修复 text 绕过 read_max_bytes - 小欧-2026-11-07
+### 1.6.4.7 附件三入口重构(P1~P4)
+[入口合门] feat 22aedaef9 三入口合门为唯一「附件」按钮+统一文件抽屉, 删 LocalImportButton/MaterialPackPanel - 小欧-2026-11-07
+[自研浏览器] feat 4989816c1 P2 我的电脑自研浏览器(盘符/常用位置/路径栏/授权台账/目录搜索), 同机只传路径 0 传输 - 小欧-2026-11-07
+[资产台账] feat 39be11065 P3/P4 附件资产台账与文件抽屉(scope/promote/最近用过/收藏/预览/键盘) - 小欧-2026-11-07
+[三堂会审整改] fix 9c68caca1 auto_promote只挂发送链, raw/text改严格读, 合集引用删除确认, 令牌化BG.SELECTED+WARNING - 小欧-2026-11-07
+[规范文档] docs d2d28e07e [13]规范 v2.0: 状态表换令牌表述, 固化 auto_promote 发送链架构 - 小欧-2026-11-07
+[栏名收口] refactor d216c7aa2 栏名对齐(后端电脑/任务产物), 本会话栏排除任务溯源行, 本轮文件条显示总大小, 全量注释去文档号 - 小欧-2026-11-07
+### 1.6.4.8 LLM 摘要与展示优化
+[token文案] feat 5e0fa7172 agent_utils 新增 fmt_tok 收口 token 体积文案 K/M 两档, start_step 摘要附裁剪前后对照 - 小欧-2026-11-07
+[摘要重试] feat b9944ea85 摘要重试透传 retrying 事件给前端, loop 重试改 notice 通道并清位置2; TaskInfoBar P/C/T 去斜线 - 小欧-2026-11-07
+[摘要降级] perf 50c1899b1 摘要限流快速降级: call_llm_with_fallback 加 max_response_retries, 摘要任务取 1 - 小欧-2026-11-07
+[位2截断] perf c0b80749a TaskInfoBar 位2截断宽度 240→300px(20→25 汉字宽) - 小欧-2026-11-07
+### 1.6.4.9 打包/部署/启动
+[打包脚本] feat 5aa355440 build_spa 打包自动化脚本(修复 PowerShell 管道 stderr 误中断) - 小欧-2026-11-06
+[打包链路] fix 51b497606 build_spa 打包链路修正(stats.html排除+dist缺失硬报错+deploy清web+版本下限) - 小欧-2026-11-06
+[一键部署] feat f3e214a26 deploy_spa 同源 SPA 本机一键部署脚本(GBK+CRLF+全goto标签, 首次/升级双场景实测) - 小欧-2026-11-06
+[spec修复] fix 203ef47a5 OmniAgentBackend.spec datas 目标路径修复(PyInstaller 第二参数是目录, 原 web/index.html 被当目录致前端白屏) - 小欧-2026-11-07
+[幽灵配置] fix 309c8a820 run_server.py 根治幽灵配置文件(源码模式 _config_target 指向代码库根 config, 与 get_config_path 同源) - 小欧-2026-11-06
+### 1.6.4.10 其他
+[杀孙进程] fix 5246cbf52 execute_shell_command truncated 路径杀孙进程防僵尸(根退出但孙持管道时 kill_process_tree) - 小欧-2026-11-06
+[门禁定稿] chore 4c6767999 ruff.toml 新增代码门禁定稿+历史范式豁免(F403/F405/F821), 不对历史全量清扫 - 小欧-2026-11-06
+[现状文档] docs 919c5a1a5 [12]附件S0与S1现状文档 v2 补存储全景与会话资产管理能力 - 小欧-2026-11-07
+[打包手册] docs f614a84d6 后端打包手册新增打包工具选择与依据章(〇)+全章节序号重排 - 小欧-2026-11-06
 v1.6.3
 发布时间: 2026-11-04 13:55:26 - 小欧-2026-11-04 (原 2026-11-04 13:19:48 首次发布; tag 前移后按最新提交时间更新)
 ## v1.6.2汇总 变更汇总(13个commit: feat3/fix1/docs8/Merge1, 另合并带入分支1540个commit) - 小欧-2026-11-04
