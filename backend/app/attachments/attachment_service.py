@@ -20,6 +20,11 @@
 #   list_attachments 多作用域(recent/global/session/ai)、rename_attachment、clear_recent、
 #   touch_usage(发送注入时唯一记账点); delete_attachment 改按路径引用计数决定删文件,
 #   被合集引用时 409 需 force 确认 — 小欧-2026-11-07
+# 2026-11-07 小欧 - 三堂会审: 预览(/text)改严格校验不再自动收藏, auto_promote 只留发送注入(resolver)
+#   与手动/引用链 —— 读路径不产生任何写副作用, 尊重 B-03 越权收紧 — 小欧-2026-11-07
+# 2026-11-07 小欧 - favorited/global_id 收口 _decorate_global 单一实现(单条/列表同口径);
+#   delete 合集条目匹配改 attachment_id + rel_to_root 相对路径为真、原绝对 path 子句永假; 
+#   list 非法 scope 由静默回落改 fail(INVALID_PARAM) — 小欧-2026-11-07
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -55,6 +60,7 @@ from app.file_browse.errors import (
     ATTACHMENT_NOT_AVAILABLE,
     ATTACHMENT_TOO_LARGE,
     ATTACHMENT_UNAVAILABLE,
+    INVALID_PARAM,
     NOT_FOUND,
     SESSION_NOT_FOUND,
     UNSUPPORTED_TYPE,
@@ -127,9 +133,26 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     d["path"] = rel_to_root(d["stored_path"])
     # 2026-11-07 小欧 - [13] P3: 磁盘文件是否还在(失效行仍可删/可重命名, 但不可加入本轮)
     d["available"] = Path(d["stored_path"]).is_file()
-    d["favorited"] = d.get("scope") == "global"
-    d["global_id"] = d["id"] if d["favorited"] else None
+    d["favorited"] = False
+    d["global_id"] = None
     return d
+
+
+def _decorate_global(conn: Any, items: list[dict[str, Any]]) -> None:
+    """favorited/global_id 唯一裁决点: 本行是 global 即收藏, 否则看同 sha 的全局行。"""
+    shas = sorted({i["sha256"] for i in items if i["scope"] != "global"})
+    gmap: dict[str, str] = {}
+    if shas:
+        marks = ",".join("?" * len(shas))
+        gmap = {
+            r["sha256"]: r["id"] for r in conn.execute(
+                "SELECT sha256, id FROM attachments "
+                f"WHERE scope = 'global' AND sha256 IN ({marks})", shas)
+        }
+    for it in items:
+        gid = it["id"] if it["scope"] == "global" else gmap.get(it["sha256"])
+        it["favorited"] = gid is not None
+        it["global_id"] = gid
 
 
 def _default_ws_path(conn: Any, session_id: str) -> str | None:
@@ -195,7 +218,9 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
             (session_id, sha),
         ).fetchone()
         if dup:
-            return _row_to_dict(dup)
+            d = _row_to_dict(dup)
+            _decorate_global(conn, [d])
+            return d
         used = conn.execute(
             "SELECT COALESCE(SUM(size), 0) FROM attachments WHERE session_id = ?",
             (session_id,),
@@ -233,7 +258,9 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
                 (session_id, sha),
             ).fetchone()
         if dup:
-            return _row_to_dict(dup)
+            d = _row_to_dict(dup)
+            _decorate_global(conn, [d])
+            return d
         fail(ATTACHMENT_UNAVAILABLE, "附件登记后读取失败")
     return rec
 
@@ -276,7 +303,10 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
     scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(AI 生成)。
     每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
     """
-    where, order = _SCOPE_FILTER.get(scope) or _SCOPE_FILTER["session"]
+    scope_row = _SCOPE_FILTER.get(scope)
+    if not scope_row:
+        fail(INVALID_PARAM, "scope 只支持 session / recent / global / ai")
+    where, order = scope_row
     params: list[Any] = []
     if scope == "session":
         if not session_id:
@@ -298,19 +328,7 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
             (*params, limit, offset),
         ).fetchall()
         items = [_row_to_dict(r) for r in rows]
-        shas = sorted({i["sha256"] for i in items if i["scope"] != "global"})
-        gmap: dict[str, str] = {}
-        if shas:
-            marks = ",".join("?" * len(shas))
-            gmap = {
-                r["sha256"]: r["id"] for r in conn.execute(
-                    f"SELECT sha256, id FROM attachments "
-                    f"WHERE scope = 'global' AND sha256 IN ({marks})", shas)
-            }
-    for it in items:
-        gid = it["id"] if it["scope"] == "global" else gmap.get(it["sha256"])
-        it["favorited"] = bool(gid)
-        it["global_id"] = gid
+        _decorate_global(conn, items)
     return items
 
 
@@ -342,7 +360,9 @@ def promote_attachment(attachment_id: str) -> dict[str, Any] | None:
             (att["sha256"],),
         ).fetchone()
     if dup:
-        return _row_to_dict(dup)
+        d = _row_to_dict(dup)
+        _decorate_global(conn, [d])
+        return d
     src = Path(att["stored_path"])
     if not src.is_file():
         fail(ATTACHMENT_NOT_AVAILABLE)
@@ -375,7 +395,9 @@ def promote_attachment(attachment_id: str) -> dict[str, Any] | None:
             # 仅当幸存行不指向本文件时才清理本次副本(同 sha 同名时 dest 必然相同, 删了就是删幸存行)
             if dup["stored_path"] != str(dest):
                 dest.unlink(missing_ok=True)
-            return _row_to_dict(dup)
+            d = _row_to_dict(dup)
+            _decorate_global(conn, [d])
+            return d
         fail(ATTACHMENT_UNAVAILABLE, "收藏失败，请稍后重试")
     return rec
 
@@ -423,7 +445,10 @@ def get_attachment(attachment_id: str) -> dict[str, Any] | None:
         row = conn.execute(
             f"SELECT {_COLS} FROM attachments WHERE id = ?", (attachment_id,)
         ).fetchone()
-    return _row_to_dict(row) if row else None
+        d = _row_to_dict(row) if row else None
+        if d:
+            _decorate_global(conn, [d])
+    return d
 
 
 def get_attachment_scoped(attachment_id: str, session_id: str | None, *,
@@ -450,9 +475,9 @@ def delete_attachment(attachment_id: str, session_id: str | None, *,
                       purge: bool = True, force: bool = False) -> None:
     """删记录（global 行对任意会话可删；session 行限本会话）。
 
-    purge=True（默认）时按 stored_path 引用计数决定是否删磁盘文件：还有别的行指向同一路径
+    purge=True（默认）时按存储路径引用计数决定是否删磁盘文件：还有别的行指向同一路径
     就只删行，避免"删一条、其余全红"。被合集引用且未 force → 409 ATTACHMENT_IN_USE，
-    确认后 force=True 一并清理素材包条目（B-02：条目留着投喂必失效）。
+    确认后 force=True 一并清理素材包条目（条目身份=attachment_id，无 aid 旧条目按相对路径）。
     """
     att = get_attachment(attachment_id)
     if not att:
@@ -460,10 +485,14 @@ def delete_attachment(attachment_id: str, session_id: str | None, *,
     if att.get("scope") != "global" and (not session_id or att.get("session_id") != session_id):
         fail(NOT_FOUND, "附件不存在")
     stored_path = att["stored_path"]
+    # 2026-11-07 小欧 三堂会审: 合集条目身份=attachment_id; 无 aid 旧条目按写入时同源的
+    #   rel_to_root 相对路径匹配(库存相对 path, 绝对 stored_path 永不相等) — 小欧-2026-11-07
+    rel_path = rel_to_root(stored_path)
     with db.get_conn("chat") as conn:
         pack_refs = conn.execute(
-            "SELECT COUNT(*) FROM material_pack_items WHERE path = ? OR attachment_id = ?",
-            (stored_path, attachment_id),
+            "SELECT COUNT(*) FROM material_pack_items WHERE attachment_id = ? "
+            "OR (attachment_id IS NULL AND path = ?)",
+            (attachment_id, rel_path),
         ).fetchone()[0]
         if pack_refs and not force:
             fail(ATTACHMENT_IN_USE, f"该文件仍被 {pack_refs} 个合集引用，确认后可一并删除")
@@ -479,18 +508,20 @@ def delete_attachment(attachment_id: str, session_id: str | None, *,
                 fail(ATTACHMENT_UNAVAILABLE, "附件磁盘删除失败，记录已保留")
         if purge:
             conn.execute(
-                "DELETE FROM material_pack_items WHERE path = ? OR attachment_id = ?",
-                (stored_path, attachment_id))
+                "DELETE FROM material_pack_items WHERE attachment_id = ? "
+                "OR (attachment_id IS NULL AND path = ?)",
+                (attachment_id, rel_path))
         conn.execute("DELETE FROM attachments WHERE id = ?", (attachment_id,))
 
 
 def read_inject_text(attachment_id: str, session_id: str) -> str:
     """预览端点数据源: 与 resolver 同一条生成路径, 不产生第二套口径。
 
-    访问权经 get_attachment_scoped 校验(B-03 + global 放行); 跨会话 session 级附件
-    走 auto_promote, 与「跨会话引用自动收藏」同一口径(文档[13] 10.5)。
+    访问权经 get_attachment_scoped 校验(B-03 + global 放行)。预览是纯读: 不自动收藏
+    (auto_promote=False), 跨会话 session 级附件预览如实 404 —— 跨会话自动升级只属于
+    发送注入(resolver)与手动/引用链, 预览不产生任何写副作用(文档[13] 10.5)。
     """
-    att = get_attachment_scoped(attachment_id, session_id, auto_promote=True)
+    att = get_attachment_scoped(attachment_id, session_id, auto_promote=False)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     return extract.build_inject_text(att)

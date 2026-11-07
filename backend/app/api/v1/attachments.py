@@ -10,6 +10,8 @@
 # 2026-11-07 小欧 - [13] P3 资产台账端点: 列表加 scope/q/limit/offset、get 跨会话自动 promote、
 #   POST promote(收藏)、PATCH 重命名、POST clear-recent、DELETE 加 force(合集引用确认)、
 #   GET raw(预览图片/PDF 二进制) — 小欧-2026-11-07
+# 2026-11-07 小欧 - 三堂会审: 预览读(raw)改严格校验, 自动升级只属发送注入/手动收藏, 读不产生写副作用;
+#   promote 端点改直线分派(已是 global 直接返回, 去掉 auto_promote 后的重复一趟 promote) — 小欧-2026-11-07
 
 """attachments_routes — 附件 API 路由薄壳。
 
@@ -99,10 +101,10 @@ def get_attachment(
     attachment_id: str,
     session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
 ) -> dict[str, Any]:
-    """单条详情 —— 前端发送前存在性校验的唯一数据源(不走 /files/stat)。
+    """单条详情 —— 前端发送前存在性预检的唯一数据源(不走 /files/stat)。
 
-    global 行对所有会话放行；跨会话的 session 级附件自动 promote（文档[13] 10.5），
-    用户不感知 404，也不需要先手动收藏。
+    调用方仅两类(发送预链/合集引用), 跨会话 session 级附件自动 promote(文档[13] 10.5),
+    用户不感知 404; 纯预览端点(raw/text)一律严格校验, 读不产生写副作用。
     """
     att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
     if not att:
@@ -117,9 +119,10 @@ def get_attachment_raw(
 ) -> FileResponse:
     """预览二进制（图片 / PDF）：直接流式返回磁盘文件，不做 base64。
 
-    ⚠️ 不声明 response_model —— 声明后 FastAPI 会按模型序列化，破坏二进制流。
+    预览是纯读：严格会话校验不自动收藏(auto_promote=False)，跨会话 session 级附件如实 404；
+    预览内容请先收藏(☆)使其成为全局资产。⚠️ 不声明 response_model —— 声明后 FastAPI 会按模型序列化，破坏二进制流。
     """
-    att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
+    att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=False)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     path = Path(att["stored_path"])
@@ -160,10 +163,16 @@ def promote_attachment(
     attachment_id: str,
     session_id: str = Query(..., description="会话 ID（会话归属校验）"),
 ) -> dict[str, Any]:
-    """收藏：升级为全局资产（幂等 + sha 去重）；跨会话引用也走这里。"""
+    """收藏 / 跨会话复用：升级为全局资产（幂等 + sha 去重）。
+
+    直线分派：跨会话由 get_attachment_scoped(auto_promote) 一趟完成升级, 已是 global 直接返回;
+    本会话 session 行才走 promote_attachment —— 不再先 auto 后 promote 两趟重复。
+    """
     att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
     if not att:
         fail(NOT_FOUND, "附件不存在")
+    if att["scope"] == "global":
+        return att
     rec = attach.promote_attachment(att["id"])
     if not rec:
         fail(NOT_FOUND, "附件不存在")

@@ -6,6 +6,8 @@
 //   favorited/global_id; list 改作用域选项(session/recent/global/ai + 分页), 增 promote/rename/
 //   clearRecent/loadRawBlob(预览图片走带 token 的 blob, 裸 img src 带不了 header 必 401) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 - [13] P4: remove 改 _silent(409 由抽屉二次确认, 其余错误调用方就地提示) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 三堂会审: loadRawBlob 补 signal 与显式 30s 超时(裸 fetch 挂死时
+//   预览抽屉永转 loading); text/raw 注明纯预览严格读口径 — 小欧-2026-11-07
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -110,8 +112,8 @@ export const attachmentApi = {
     return res.data;
   },
 
-  /** 预览注入文本（排障/素材包预览用；**不**用于入队 —— ChatRef.content 已删除）。
-   *  sessionId 必填: 后端会话归属校验(B-03)。 */
+  /** 预览注入文本（排障/预览用；**不**用于入队 —— ChatRef.content 已删除）。
+   *  纯预览严格读：会话归属校验必填, 跨会话 session 行如实 404（自动升级只属发送/引用链）。 */
   text: async (
     id: string,
     sessionId: string
@@ -174,12 +176,20 @@ export const attachmentApi = {
   /**
    * 预览二进制（图片/PDF）：带 token fetch 成 blob。
    * 不能裸 `<img src=...>`：带不了 header 必 401。
+   * 纯预览严格读(跨会话 session 行 404)：传 signal 供抽屉卸载/超时中止, 消永久 loading。
    */
-  loadRawBlob: async (id: string, sessionId: string): Promise<Blob> => {
+  loadRawBlob: async (
+    id: string,
+    sessionId: string,
+    signal?: AbortSignal
+  ): Promise<Blob> => {
     const token = getAccessToken();
     const res = await fetch(
       `${API_BASE_URL}/attachments/id/${id}/raw?session_id=${encodeURIComponent(sessionId)}`,
-      token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal,
+      }
     );
     if (!res.ok) throw new Error(`预览加载失败 (${res.status})`);
     return res.blob();

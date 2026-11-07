@@ -1,6 +1,9 @@
-// 编辑历史: 2026-11-07 小欧 - [13] P3/P4 新建: 附件列表行统一组件(勾位/类型图标/文件名/次行/
+// 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
+// 编辑历史: 2026-11-07 小欧 - Colors.BG 新增 SELECTED=#e6f4ff(antd blue-1): 文件抽屉列表行「已加入」底与左栏导航选中底共用(收口两处硬编码) — 小欧-2026-11-07</think>**FileRow.tsx — 星标令牌化（V3）+ 头部编辑历史**<tool_call>edit<arg_key>newString</arg_key><arg_value>// 编辑历史: 2026-11-07 小欧 - [13] P3/P4 新建: 附件列表行统一组件(勾位/类型图标/文件名/次行/
 //   ☆ 收藏/⋯ 更多), 供「最近用过/本会话/已收藏/AI 生成/合集」复用; 键盘焦点态由 active 传入,
 //   点文件名回调预览(不触发加入), 其余区域点整行 = 加入/移出本轮 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 三堂会审: 色值令牌化 —— 选中底改 Colors.BG.SELECTED, 收藏星改
+//   Colors.WARNING(与全站警告色同源), 消两处硬编码 — 小欧-2026-11-07
 /**
  * FileRow —— 文件抽屉的列表行（唯一实现）
  *
@@ -97,7 +100,11 @@ const FileRow: React.FC<FileRowProps> = ({
       borderRadius: 6,
       cursor: 'pointer',
       opacity: invalid ? 0.6 : 1,
-      background: added ? '#e6f4ff' : active ? Colors.BG.HOVER : 'transparent',
+      background: added
+        ? Colors.BG.SELECTED
+        : active
+          ? Colors.BG.HOVER
+          : 'transparent',
       borderLeft: added
         ? `2px solid ${Colors.PRIMARY}`
         : '2px solid transparent',
@@ -160,7 +167,7 @@ const FileRow: React.FC<FileRowProps> = ({
         aria-label={favorited ? '取消收藏' : '收藏'}
         icon={
           favorited ? (
-            <StarFilled style={{ color: '#faad14' }} />
+            <StarFilled style={{ color: Colors.WARNING }} />
           ) : (
             <StarOutlined style={{ color: Colors.TEXT.SECONDARY }} />
           )

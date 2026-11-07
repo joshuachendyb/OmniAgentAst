@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-07 小欧 - [13] P4 新建: 附件预览抽屉(图片/PDF 走带 token 的 blob,
 //   文本走 /text 前 200 行, 其他给元数据卡), 底部 [加入本轮] + [删除] — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 三堂会审: 预览请求接 AbortController(抽屉卸载即中止)+30s 超时,
+//   消服务器挂死时 Skeleton 永转; 超时与失败文案区分 — 小欧-2026-11-07
 /**
  * PreviewDrawer —— 单附件预览（文档[13] 9.2）
  *
@@ -19,6 +21,8 @@ import { formatRelativeTime } from '@/utils/time';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 const PREVIEW_LINES = 200;
+/** 预览传输超时：axios 体系外的裸 fetch 也必须有失败路径（30s，同重负载读口径） */
+const PREVIEW_TIMEOUT_MS = 30_000;
 
 interface PreviewDrawerProps {
   record: AttachmentRecord | null;
@@ -75,8 +79,14 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
     if (!record || !sessionId) return;
     let alive = true;
     let url = '';
+    // AbortController：卸载即中止 + 30s 超时兜底, 消"服务器挂死 → Skeleton 永转"(三堂会审)
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), PREVIEW_TIMEOUT_MS);
+    const onAbortErr = (e: unknown): boolean =>
+      e instanceof DOMException && e.name === 'AbortError';
     setLoading(true);
     if (isText && record.kind === 'text') {
+      // /text 走 axios(拦截器/超时齐备), 不需要停表
       attachmentApi
         .text(record.id, sessionId)
         .then((r) => {
@@ -90,14 +100,19 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
         });
     } else if (isImage || isPdf) {
       attachmentApi
-        .loadRawBlob(record.id, sessionId)
+        .loadRawBlob(record.id, sessionId, ctrl.signal)
         .then((b) => {
           if (!alive) return;
           url = URL.createObjectURL(b);
           setBlobUrl(url);
         })
-        .catch(() => {
-          if (alive) setError('预览加载失败，文件可能已被移动');
+        .catch((e) => {
+          if (alive)
+            setError(
+              onAbortErr(e)
+                ? '预览加载超时，请稍后重试'
+                : '预览加载失败，文件可能已被移动'
+            );
         })
         .finally(() => {
           if (alive) setLoading(false);
@@ -107,6 +122,8 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
     }
     return () => {
       alive = false;
+      window.clearTimeout(timer);
+      ctrl.abort(); // 卸载中止在途请求（alive 已挡掉迟到回调）
       if (url) URL.revokeObjectURL(url);
     };
   }, [record, sessionId, isText, isImage, isPdf]);

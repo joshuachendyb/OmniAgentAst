@@ -2,6 +2,10 @@
 // 编辑历史: 2026-11-07 小欧 - P2: 「我的电脑」改自研浏览器(常用位置/盘符/路径栏/目录列表/授权确认) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 - P3/P4: 新增 最近用过/已收藏/AI 生成 三栏 + 统一 FileRow + 预览抽屉;
 //   ☆ 1 击收藏(promote)/取消收藏/删除 409 二次确认/清空最近用过/分页加载更多/键盘 ↑↓ Space Backspace — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - 三堂会审整改: ①树/库 loading 收口树 treeLoading(复核后排现: 合集面板
+//   无 spinner 点位, 只需拆树指标即消先完成者提前清 spinner 与删合集误闪项目栏); ②列表失败不再假空
+//   (errScopes+重试); ③键盘不劫持 BUTTON 的 Space/Enter; ④busy 丢选择改提示; ⑤feed 改 ensureSid 取凭据
+//   (空串致后端 404 误报已失效); ⑥跨会话行不开放预览(预览端点已改严格读); ⑦色值令牌化 BG.SELECTED — 小欧-2026-11-07
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -228,7 +232,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 }) => {
   const [source, setSource] = useState<SourceKey>('recent');
   const [keyword, setKeyword] = useState('');
-  const [loading, setLoading] = useState(false);
+  /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07 三堂会审） */
+  const [treeLoading, setTreeLoading] = useState(false);
   const [lists, setLists] = useState<Record<ScopeKey, AttachmentRecord[]>>({
     session: [],
     recent: [],
@@ -243,6 +248,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     ai: false,
   });
   const [scopeLoading, setScopeLoading] = useState<ScopeKey | null>(null);
+  /** 各作用域列表失败标记（非阻断：空态改「加载失败+重试」，不再与真空态难辨 — 2026-11-07） */
+  const [errScopes, setErrScopes] = useState<
+    Partial<Record<ScopeKey, boolean>>
+  >({});
   const [activeIndex, setActiveIndex] = useState(-1);
   const [preview, setPreview] = useState<AttachmentRecord | null>(null);
   const [renamingAtt, setRenamingAtt] = useState<AttachmentRecord | null>(null);
@@ -305,9 +314,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           limit: PAGE,
           offset,
         });
+        setErrScopes((prev) => ({ ...prev, [scope]: false }));
         applyScope(scope, items, append, items.length >= PAGE);
-      } catch {
-        /* 全局错误处理器已提示 */
+      } catch (e) {
+        // 失败不清旧列表也不造假空态：标 err 让空态改「加载失败+重试」（2026-11-07 三堂会审）
+        setErrScopes((prev) => ({ ...prev, [scope]: true }));
+        void e;
       } finally {
         setScopeLoading((prev) => (prev === scope ? null : prev));
       }
@@ -321,25 +333,22 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   }, [loadScope]);
 
   const reloadProject = useCallback(async (): Promise<void> => {
-    setLoading(true);
+    setTreeLoading(true);
     try {
       const res = await fileApi.fetchTree('', { maxDepth: 2 });
       setProjectFiles(flattenFiles(res.nodes).slice(0, 300));
     } catch {
       setProjectFiles([]);
     } finally {
-      setLoading(false);
+      setTreeLoading(false);
     }
   }, []);
 
   const reloadPacks = useCallback(async (): Promise<void> => {
-    setLoading(true);
     try {
       setPacks(await materialPackApi.list());
     } catch {
       /* 全局错误处理器已提示 */
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -546,13 +555,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     [sessionId, refreshAfterWrite]
   );
 
-  /** ☆ 收藏开关（1 击，无弹窗） */
+  /** ☆ 收藏开关（1 击，无弹窗；无会话时按钮已置灰, 回调内 fail-closed 兜底——收藏必须带会话凭据） */
   const toggleStar = useCallback(
     (rec: AttachmentRecord): void => {
-      if (!sessionId) {
-        showMessage(ErrorType.WARNING, '先加入一个文件（会创建会话）再收藏');
-        return;
-      }
+      if (!sessionId) return;
       if (rec.favorited) {
         void unpromote(rec);
         return;
@@ -659,7 +665,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     batch
   ) => {
     // busyRef 即时生效：setBusy 到 re-render 有间隙，间隙内再次选择会混入 pendingFiles
-    if (busyRef.current > 0) return Upload.LIST_IGNORE;
+    if (busyRef.current > 0) {
+      showMessage(ErrorType.WARNING, '上传进行中，请稍候再选择');
+      return Upload.LIST_IGNORE;
+    }
     if (batch.length > MAX_BATCH) {
       showMessage(ErrorType.WARNING, `一次最多选择 ${MAX_BATCH} 个文件`);
       return Upload.LIST_IGNORE;
@@ -734,8 +743,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   /** 合集单条加入本轮（附件按 id 恢复附件语义，跨会话由后端自动 promote） */
   const feedOne = async (it: MaterialPackItem): Promise<void> => {
     if (it.kind === 'attachment' && it.attachment_id) {
+      const sid = await ensureSid();
+      if (!sid) return; // ensureSession 已提示建会话失败
       try {
-        const rec = await attachmentApi.get(it.attachment_id, sessionId ?? '');
+        const rec = await attachmentApi.get(it.attachment_id, sid);
         if (!enqueue(rec)) showMessage(ErrorType.WARNING, refLimitText());
       } catch {
         showMessage(ErrorType.WARNING, `「${it.label || it.path}」已失效`);
@@ -747,16 +758,15 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 
   /** 整组加入本轮：按条目身份分流（附件按 id 恢复附件语义） */
   const feedPack = async (pack: MaterialPack): Promise<void> => {
+    const sid = await ensureSid();
+    if (!sid) return; // ensureSession 已提示建会话失败
     setFeedBusy(true);
     let failed = 0;
     try {
       for (const it of pack.items) {
         if (it.kind === 'attachment' && it.attachment_id) {
           try {
-            const rec = await attachmentApi.get(
-              it.attachment_id,
-              sessionId ?? ''
-            );
+            const rec = await attachmentApi.get(it.attachment_id, sid);
             if (!enqueue(rec)) failed += 1;
           } catch {
             failed += 1; // 源文件已不存在
@@ -840,7 +850,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     padding: '6px 10px',
     borderRadius: 6,
     cursor: 'pointer',
-    background: active ? '#e6f4ff' : 'transparent',
+    background: active ? Colors.BG.SELECTED : 'transparent',
     borderLeft: active
       ? `2px solid ${Colors.PRIMARY}`
       : '2px solid transparent',
@@ -859,6 +869,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         const added = isAdded(rec);
         const canManage =
           rec.scope === 'global' || rec.session_id === sessionId;
+        // 预览端点(/raw /text)已改严格只读: 跨会话 session 行不再开放预览, 须先☆成全局资产
+        const canPreview =
+          !!sessionId &&
+          (rec.scope === 'global' || rec.session_id === sessionId);
         const moreItems: MenuProps['items'] = [];
         if (added) moreItems.push({ key: 'remove', label: '移出本轮' });
         if (canManage) {
@@ -876,7 +890,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           invalid: !rec.available,
           starDisabled: !sessionId,
           onToggle: () => toggleAttachment(rec),
-          onPreview: sessionId ? () => setPreview(rec) : undefined,
+          onPreview: canPreview ? () => setPreview(rec) : undefined,
           onStar: () => toggleStar(rec),
           moreItems,
           onMoreClick: (key: string) => {
@@ -975,7 +989,9 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         t &&
         (t.tagName === 'INPUT' ||
           t.tagName === 'TEXTAREA' ||
-          t.isContentEditable)
+          t.isContentEditable ||
+          // 焦点在按钮/链接上时让控件自己响应 Space/Enter, 键盘不劫持(2026-11-07 三堂会审)
+          (t.closest('button, a') as HTMLElement | null) !== null)
       ) {
         return;
       }
@@ -1048,7 +1064,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         />
       );
     }
-    if (source === 'project' && loading)
+    if (source === 'project' && treeLoading)
       return <Spin style={{ marginTop: Spacing.MD }} />;
     if (source === 'local' && (localLoading || (kw.length > 0 && searching))) {
       return <Spin style={{ marginTop: Spacing.MD }} />;
@@ -1057,6 +1073,22 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       return <Spin style={{ marginTop: Spacing.MD }} />;
     }
     if (rows.length === 0) {
+      if (currentScope && errScopes[currentScope]) {
+        return (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="列表加载失败，后端未返回数据"
+          >
+            <Button
+              size="small"
+              type="link"
+              onClick={() => void loadScope(currentScope)}
+            >
+              重试
+            </Button>
+          </Empty>
+        );
+      }
       if (source === 'pack' && !activePack) {
         return (
           <Empty

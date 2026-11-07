@@ -101,12 +101,17 @@ frontend/tsconfig.node.tsbuildinfo
 # 前端 E2E 访问口令状态(globalSetup 运行时生成, 内含 token 不得入库): 小欧 2026-09-27
 frontend/e2e_front_lib/.auth-state.json
 frontend/.auth-state.json
+frontend/coverage
 
+/research
 # tsc 构建产物: 小欧 2026-09-13
 *.tsbuildinfo
 
 # 根目录测试运行动态输出日志(vitest/pytest 生成 _after*/_suite* 等, 进程占用不入库): 小欧 2026-10-30
 /_*.txt
+
+# vitest 根目录缓存产物(results.json, 跑测试自动再生, 不入库): 小欧 2026-11-07
+/.vite/
 
 # 文档历程备份(v5.2/v6.0-v6.4 .bak.md, 过程产物不入库, 正式交付物为同目录主文档): 小欧-2026-11-05
 doc-11月优化/_backup/

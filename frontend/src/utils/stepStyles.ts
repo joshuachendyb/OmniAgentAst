@@ -196,6 +196,9 @@ export const Colors = {
     WARNING_LIGHT: '#fffbe6', // 警告浅底（高亮背景，替 rgba）
     // 2026-11-02 小欧 - HOVER=#f0f0f0: Layout底部版本信息hover底收口(与BORDER.LIGHT同值, BG/BORDER各自组内语义不混用) — 小欧-2026-11-02
     HOVER: '#f0f0f0',
+    // 2026-11-07 小欧 - SELECTED=#e6f4ff(antd blue-1): 选中/已加入浅蓝底(文件抽屉列表行+左栏导航),
+    //   与 Colors.PRIMARY(#1677ff) 同族对比底, 收口两处硬编码  — 小欧-2026-11-07
+    SELECTED: '#e6f4ff',
   },
   // 边框颜色（3种浅色）
   BORDER: {
