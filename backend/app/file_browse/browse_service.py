@@ -69,6 +69,7 @@ from app.constants import REF_KINDS      # 引用来源白名单唯一真源(与
 from app.db import db
 from app.logger import logger
 from app.utils.text_utils import count_lines   # 行数唯一口径(文件页/引用压缩共用) — 小欧 2026-10-30
+from app.file_browse import local_fs
 from app.file_browse.errors import (
     IMAGE_TOO_LARGE,
     INVALID_PATH,
@@ -624,7 +625,8 @@ def build_tree(rel_path: str = "", max_depth: int = MAX_TREE_DEPTH,
 
 
 def search_files(keyword: str, limit: int = 20,
-                 max_depth: int = 4, max_nodes: int = 20000) -> Dict[str, Any]:
+                 max_depth: int = 4, max_nodes: int = 20000,
+                 root: Optional[str] = None) -> Dict[str, Any]:
     """按文件名模糊搜索（输入框 @ 补全的数据源）。
 
     为什么需要它：北京老陈裁定「在输入框里手打 @文件名 也应能带内容」（文档[28] 决策）。
@@ -635,14 +637,28 @@ def search_files(keyword: str, limit: int = 20,
     保证不会因为搜一个词把整个大仓库翻一遍。
 
     2026-10-13 小欧 - 越界符号链接与越界根路径一律不进结果（与 _scan_dir 同一口径）。
+    2026-11-07 小欧 - 加可选 root：按盘符绝对路径搜索（「我的电脑」抽屉用），
+      命中额外带 abs 绝对路径（前端据此直接调 import-local，不在前端拼路径）；
+      外部搜索跳过硬黑名单目录（凭据/系统配置/浏览器配置），与授权台账同一口径。
     """
     kw = (keyword or "").strip().lower()
     if not kw:      # 空关键词必然零命中，却要扫完整仓库 —— 直接短路。
                     # 路由层有 min_length=1 挡住，此处是防御（防止直接调函数时白扫一遍大仓库）。
         return {"keyword": keyword, "results": [], "scanned": 0,
                 "hit_limit": False, "scanned_cap": False}
-    base_root = Path(get_config().get_project_root()).resolve()
-    start_dir, rel = _resolve_within_root("")
+    if root:
+        raw = root.strip()
+        if not _is_abs_drive_path(raw):
+            fail(INVALID_PATH, "只接受盘符绝对路径")
+        base_root = Path(raw)
+        if not _exists(base_root):
+            fail(NOT_FOUND)
+        if not base_root.is_dir():
+            fail(INVALID_PATH, "该路径不是目录")
+        start_dir, rel = base_root, "."
+    else:
+        base_root = Path(get_config().get_project_root()).resolve()
+        start_dir, rel = _resolve_within_root("")
     results: List[Dict[str, Any]] = []
     scanned = 0
     hit_limit = False       # 结果数达 limit（可能还有更多，前端应提示"还有更多"）
@@ -663,9 +679,12 @@ def search_files(keyword: str, limit: int = 20,
                 if scanned > max_nodes:
                     scanned_cap = True
                     break
+                if e["type"] == "dir" and local_fs.is_sensitive(dir_path / e["name"]):
+                    continue
                 if kw in e["name"].lower():
                     results.append({
                         "path": e["key"],            # _join_rel 口径，根层无 "./"
+                        "abs": str(dir_path / e["name"]),
                         "name": e["name"],
                         "type": e["type"],
                         "preview": e["preview"],

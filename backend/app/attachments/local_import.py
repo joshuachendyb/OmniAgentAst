@@ -30,9 +30,11 @@ from app.attachments import attachment_service as service
 from app.attachments import extract
 from app.config import get_config
 from app.db import db
+from app.file_browse import local_fs
 from app.file_browse.errors import (
     ATTACHMENT_TOO_LARGE,
     LOCAL_IMPORT_DISABLED,
+    LOCAL_READ_DENIED,
     NOT_FOUND,
     UNSUPPORTED_TYPE,
     fail,
@@ -76,7 +78,12 @@ def is_local_request(request: Request) -> bool:
 
 
 def _import_roots(session_id: str) -> set[Path]:
-    """可导入根集合：项目根 + 会话工作区(B-09: 移除 home, 防敏感文件无审计入系统)。"""
+    """可导入根集合：项目根 + 会话工作区 + 用户授权目录。
+
+    B-09 移除 home（防敏感文件无审计入系统）；2026-11-07 小欧 - 新增用户授权目录
+    （目录粒度、用户确认一次、可撤销，见 file_browse/local_fs.py），
+    从而在不放开全盘的前提下支持「我的电脑」导入。
+    """
     roots: set[Path] = set()
     try:
         roots.add(Path(get_config().get_project_root()).resolve())
@@ -90,6 +97,7 @@ def _import_roots(session_id: str) -> set[Path]:
             raw = row["path"] if hasattr(row, "keys") else row[0]
             if raw:
                 roots.add(Path(raw).resolve())
+    roots |= local_fs.authorized_roots()
     return roots
 
 
@@ -108,13 +116,16 @@ def _resolve_import_path(session_id: str, raw: str) -> Path:
     if not p.is_file():
         fail(UNSUPPORTED_TYPE, "不是文件")
     target = p.resolve()
+    if local_fs.is_sensitive(target):
+        fail(UNSUPPORTED_TYPE, "该文件位于受保护区域，禁止导入")
     for root in _import_roots(session_id):
         try:
             target.relative_to(root)
             return target
         except ValueError:
             continue
-    fail(UNSUPPORTED_TYPE, "仅支持从项目根或会话工作区导入")
+    # 2026-11-07 小欧 - 与"类型不支持"分开: 前端据此弹「授权该目录」确认, 授权后重试即成功
+    fail(LOCAL_READ_DENIED, "该目录未授权，确认授权后即可导入")
 
 
 def import_local(session_id: str, path: str, *, request: Request) -> dict:

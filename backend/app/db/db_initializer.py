@@ -296,6 +296,13 @@ def init_chat_db(get_conn):
                 FOREIGN KEY (pack_id) REFERENCES material_packs(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_pack_items_pack ON material_pack_items(pack_id);
+
+            -- 2026-11-07 小欧 - 同机「我的电脑」授权目录台账(目录粒度, 可撤销);
+            --   path 大小写不敏感(Windows 盘符/目录名不区分大小写), 撤销不影响已导入的附件
+            CREATE TABLE IF NOT EXISTS local_auth_dirs (
+                path       TEXT PRIMARY KEY COLLATE NOCASE,
+                created_at TEXT NOT NULL
+            );
         ''')
         # 2026-10-10 小欧 - 文档[16]: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
         #   查 sqlite_master 建表语句，无 COLLATE 即重建（表是今日新建，正常 0 行；有行照搬）。

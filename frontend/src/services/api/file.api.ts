@@ -98,6 +98,8 @@ export interface SearchHit {
   type: string;
   preview: string;
   dir: string;
+  /** 2026-11-07 小欧 - 外部根搜索(root 传入)时的绝对路径，前端据此直接调 import-local，不拼路径 */
+  abs?: string;
 }
 
 export interface SearchResponse {
@@ -247,11 +249,17 @@ export const fileApi = {
    * 输入框 `@` 补全数据源。
    * 候选过滤（只留可读文本）在调用方做 —— 与后端 `_preview_of()` 的 `text` 判定对齐，
    * 前端不自立规则。
+   * 2026-11-07 小欧 - 位置参数 limit 改选项对象 {limit, root}：root 为盘符绝对路径时
+   *   按该目录搜索（「我的电脑」抽屉用），命中带 abs 绝对路径 — 小欧-2026-11-07
    */
-  searchFiles: async (q: string, limit = 20): Promise<SearchResponse> => {
+  searchFiles: async (
+    q: string,
+    opts?: { limit?: number; root?: string }
+  ): Promise<SearchResponse> => {
     // 2026-10-30 小欧 - 唯一调用方 ChatInput 在 catch 里自提示，全局 toast 与其重复且文案无关
+    const { limit = 20, root } = opts ?? {};
     const cfg: ApiRequestConfig = {
-      params: { q, limit },
+      params: { q, limit, root },
       _silent: true,
     };
     return (await api.get<SearchResponse>('/files/search', cfg)).data;

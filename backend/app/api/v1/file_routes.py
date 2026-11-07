@@ -55,13 +55,17 @@ def get_files_tree(
 def search_files(
     q: str = Query(..., min_length=1, max_length=200, description="文件名关键词（不区分大小写）"),
     limit: int = Query(20, ge=1, le=100, description="最多返回条数"),
+    root: Optional[str] = Query(
+        None, description="搜索根目录（盘符绝对路径；缺省=项目根）"
+    ),
 ) -> Dict[str, Any]:
     """按文件名模糊搜索 —— 输入框 @ 补全的数据源。
 
     2026-10-13 小欧 - 北京老陈裁定：输入框里手打 @文件名 也应能带内容；
     纯前端过滤不可行（树只在打开文件页时进内存），故后端提供全域搜索。
+    2026-11-07 小欧 - 加 root：外部目录搜索深度 6（项目根保持 4），命中带 abs 绝对路径。
     """
-    return browse.search_files(q, limit=limit)
+    return browse.search_files(q, limit=limit, root=root, max_depth=6 if root else 4)
 
 
 @router.get("/files/read")

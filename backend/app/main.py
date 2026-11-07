@@ -122,6 +122,8 @@ from app.api.v1.task_queries import router as task_queries_router
 # 2026-11-04 小欧 - 附件上传/列表/详情/删除 + 素材包 CRUD 路由（重建后重启挂载） — 小欧-2026-11-06
 from app.api.v1.attachments import router as attachments_router
 from app.api.v1.material_packs import router as material_packs_router
+# 2026-11-07 小欧 - 同机文件系统路由(磁盘列表/授权目录), 「我的电脑」自研浏览器底座 — 小欧-2026-11-07
+from app.api.v1.fs_routes import router as fs_router
 # 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
 from app.api.v1.deps import verify_token, warn_startup_checks
 # 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
@@ -357,6 +359,8 @@ _mount(auth_router, "auth")
 # 2026-11-04 小欧 - 附件上传/列表/详情/删除/导入 + 素材包 CRUD（重建后挂载；走 token 鉴权） — 小欧-2026-11-06
 _mount(attachments_router, "attachments")
 _mount(material_packs_router, "material-packs")
+# 2026-11-07 小欧 - 同机文件系统(磁盘/授权目录); 端点内部再判同机, 跨机 403 — 小欧-2026-11-07
+_mount(fs_router, "fs")
 
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──

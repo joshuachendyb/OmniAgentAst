@@ -28,6 +28,8 @@ UNDECODABLE = "UNDECODABLE_ENCODING"             # 415 文本编码无法识别
 ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"      # 413 超单文件/会话总量上限
 ATTACHMENT_UNAVAILABLE = "ATTACHMENT_UNAVAILABLE"  # 500 附件目录不可用(默认工作区建不出来)
 LOCAL_IMPORT_DISABLED = "LOCAL_IMPORT_DISABLED"    # 403 本地导入仅同机可用(跨机禁止)
+# 2026-11-07 小欧 - 同机浏览: 目录未授权(用户确认一次即可授权, 与"类型不支持"分开, 前端据此弹授权)
+LOCAL_READ_DENIED = "LOCAL_READ_DENIED"            # 403 目录未授权 / 跨机访问
 # 2026-11-04 小欧 - 素材包专用(409 重名 / 400 参数)
 PACK_NAME_CONFLICT = "PACK_NAME_CONFLICT"          # 409 素材包重名
 INVALID_PARAM = "INVALID_PARAM"                    # 400 参数不合法(名称/条目/配额)
@@ -63,6 +65,7 @@ _CATALOG: Dict[str, _Err] = {
     ATTACHMENT_TOO_LARGE: _Err(413, "文件超过大小限制（图片 10MB / 其他 20MB）"),
     ATTACHMENT_UNAVAILABLE: _Err(500, "附件目录不可用，请检查会话工作区"),
     LOCAL_IMPORT_DISABLED: _Err(403, "本地导入仅同机可用"),
+    LOCAL_READ_DENIED: _Err(403, "该目录未授权，确认授权后即可读取"),
     PACK_NAME_CONFLICT: _Err(409, "已有同名素材包，请换个名字"),
     INVALID_PARAM: _Err(400, "参数不合法"),
 }

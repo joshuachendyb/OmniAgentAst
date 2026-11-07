@@ -582,7 +582,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (atTimer.current) window.clearTimeout(atTimer.current);
       atTimer.current = window.setTimeout(() => {
         fileApi
-          .searchFiles(query, 20)
+          .searchFiles(query, { limit: 20 })
           .then((r) => {
             if (seq !== atSeq.current) return; // 迟到响应丢弃
             // 6.7 表第 3 行：@ 候选只列可读文本类型（对齐后端 _preview_of 的 text 判定）

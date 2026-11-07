@@ -1,13 +1,16 @@
 // 编辑历史: 2026-11-07 小欧 - 新建: 统一文件抽屉 —— 唯一「附件」入口的面板, 收纳 MaterialPackPanel(合集)
 //   与 LocalImportButton(同机导入)两项能力; 左栏选来源、右栏点行即加入本轮; 附件 enqueue / 文件 quoteFile /
 //   同机 importLocal 三条入队路径各自唯一 — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - P2: 「我的电脑」改自研浏览器(常用位置/盘符/路径栏/目录列表/授权确认),
+//   取代原路径输入框; 列表点目录进入、点文件导入; 搜索走 /files/search?root=; 已授权目录可撤销 — 小欧-2026-11-07
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
  * 左栏来源：
  * - 本会话：本会话已上传的附件（attachments 会话级）
  * - 项目文件：项目根文件树（/files/tree）
- * - 我的电脑：同机 import-local（只传路径，后端读盘，0 传输）；跨机退化为上传
+ * - 我的电脑：自研浏览器（/fs/drives + /files/external/tree），点文件即同机导入；
+ *   目录未授权时弹一次确认（/fs/authorize），跨机退化为上传
  * - 合集：只存清单、不复制文件（material_packs）
  *
  * 交互：点整行 = 加入本轮（无复选框、无批量确认），关掉抽屉即完成。
@@ -29,13 +32,17 @@ import {
   Modal,
   Popconfirm,
   Spin,
+  Tag,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd';
 import type { UploadProps } from 'antd';
 import {
+  ArrowUpOutlined,
   FileOutlined,
   FolderOpenOutlined,
+  FolderOutlined,
   MoreOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
@@ -48,7 +55,17 @@ import {
   materialPackApi,
   type MaterialPack,
 } from '@/services/api/materialPack.api';
-import { fileApi, type FileNode } from '@/services/api/file.api';
+import {
+  fileApi,
+  type FileNode,
+  type SearchHit,
+} from '@/services/api/file.api';
+import {
+  fsApi,
+  type AuthDir,
+  type FsDrive,
+  type QuickPath,
+} from '@/services/api/fs.api';
 import {
   enqueue,
   uploadAttachments,
@@ -79,9 +96,46 @@ function flattenFiles(nodes: FileNode[], out: FileNode[] = []): FileNode[] {
   return out;
 }
 
+/** 目录绝对路径 + 相对 posix key → 绝对路径（Windows 分隔符） */
+function joinAbs(dir: string, key: string): string {
+  const base = dir.replace(/[\\/]+$/, '');
+  return base ? `${base}\\${key.split('/').join('\\')}` : key;
+}
+
+/** 归一化目录路径：盘符根保留反斜杠，其余去掉尾部反斜杠 */
+function normalizeDir(raw: string): string {
+  const t = raw.trim();
+  if (/^[A-Za-z]:[\\/]?$/.test(t)) return `${t.slice(0, 2)}\\`;
+  return t.replace(/[\\/]+$/, '');
+}
+
+/** 上一级目录（盘符根保持不变） */
+function parentOf(path: string): string {
+  const t = normalizeDir(path);
+  if (/^[A-Za-z]:\\$/.test(t)) return t;
+  const i = t.lastIndexOf('\\');
+  return i <= 2 ? `${t.slice(0, 2)}\\` : t.slice(0, i);
+}
+
+/** 目录优先 + 名称排序（资源管理器习惯） */
+function sortEntries(nodes: FileNode[]): FileNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+}
+
 const metaStyle: React.CSSProperties = {
   fontSize: FontSize.CAPTION,
   color: Colors.TEXT.SECONDARY,
+};
+
+const nameStyle: React.CSSProperties = {
+  fontSize: FontSize.PRIMARY,
+  color: Colors.TEXT.STRONG,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 };
 
 interface FileDrawerProps {
@@ -112,7 +166,17 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [packs, setPacks] = useState<MaterialPack[]>([]);
   const [activePack, setActivePack] = useState<MaterialPack | null>(null);
   const [canLocal, setCanLocal] = useState(false);
-  const [typedPath, setTypedPath] = useState('');
+  const [hostLabel, setHostLabel] = useState<string | null>(null);
+  const [drives, setDrives] = useState<FsDrive[]>([]);
+  const [quick, setQuick] = useState<QuickPath[]>([]);
+  const [authDirs, setAuthDirs] = useState<AuthDir[]>([]);
+  /** 当前浏览目录（盘符绝对路径）；空串 = 尚未选择位置 */
+  const [cwd, setCwd] = useState('');
+  const [pathDraft, setPathDraft] = useState('');
+  const [entries, setEntries] = useState<FileNode[]>([]);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [searching, setSearching] = useState(false);
   const [importing, setImporting] = useState(false);
   const [feedBusy, setFeedBusy] = useState(false);
   const [renaming, setRenaming] = useState<MaterialPack | null>(null);
@@ -162,22 +226,116 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   }, []);
 
   // 打开才拉：抽屉外不做任何预取
+  // 本会话附件常拉 —— 「我的电脑」的「已加入」判定依赖附件记录的 source_path
   useEffect(() => {
     if (!open) return;
     void getLocalCapability().then(setCanLocal);
-  }, [open]);
+    void reloadSession();
+  }, [open, reloadSession]);
 
   useEffect(() => {
     if (!open) return;
-    if (source === 'session') void reloadSession();
-    else if (source === 'project') void reloadProject();
+    if (source === 'project') void reloadProject();
     else if (source === 'pack') void reloadPacks();
-  }, [open, source, reloadSession, reloadProject, reloadPacks]);
+  }, [open, source, reloadProject, reloadPacks]);
+
+  // 「我的电脑」首屏：常用位置 + 磁盘 + 已授权目录
+  useEffect(() => {
+    if (!open || source !== 'local' || !canLocal) return;
+    let alive = true;
+    void fsApi
+      .drives()
+      .then((r) => {
+        if (!alive) return;
+        setHostLabel(r.host_label);
+        setDrives(r.drives);
+        setQuick(r.quick);
+      })
+      .catch(() => {
+        if (alive) setDrives([]);
+      });
+    void fsApi
+      .listAuthorized()
+      .then((dirs) => {
+        if (alive) setAuthDirs(dirs);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open, source, canLocal]);
+
+  // 列当前目录（单层，不递归；深层由用户逐级进入）
+  useEffect(() => {
+    if (!open || source !== 'local' || !canLocal || !cwd) return;
+    let alive = true;
+    setLocalLoading(true);
+    fileApi
+      .fetchExternalTree(cwd, { maxDepth: 1 })
+      .then((res) => {
+        if (alive) setEntries(sortEntries(res.nodes ?? []));
+      })
+      .catch(() => {
+        if (!alive) return;
+        setEntries([]);
+        showMessage(ErrorType.WARNING, `无法打开「${cwd}」，请检查路径或权限`);
+      })
+      .finally(() => {
+        if (alive) setLocalLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, source, canLocal, cwd]);
+
+  // 搜索当前目录（防抖 300ms，后端 /files/search?root=）
+  useEffect(() => {
+    if (!open || source !== 'local' || !cwd) return;
+    const kw = keyword.trim();
+    if (!kw) {
+      setHits([]);
+      setSearching(false);
+      return;
+    }
+    let alive = true;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      fileApi
+        .searchFiles(kw, { limit: 100, root: cwd })
+        .then((r) => {
+          if (alive) setHits(r.results);
+        })
+        .catch(() => {
+          if (alive) setHits([]);
+        })
+        .finally(() => {
+          if (alive) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [open, source, cwd, keyword]);
 
   const totalSize = useMemo(
     () => refs.reduce((sum, r) => sum + (r.size ?? 0), 0),
     [refs]
   );
+
+  /** 本机已导入的源路径（附件记录 source_path）——「我的电脑」行的「已加入」判定 */
+  const addedLocal = useMemo(() => {
+    const ids = new Set(
+      refs
+        .filter((r) => r.kind === 'attachment' && r.attachment_id)
+        .map((r) => r.attachment_id as string)
+    );
+    return new Set(
+      sessionFiles
+        .filter((f) => f.source_path && ids.has(f.id))
+        .map((f) => f.source_path as string)
+    );
+  }, [refs, sessionFiles]);
 
   /** 加入本轮：附件走 enqueue（唯一入队口） */
   const addAttachment = (rec: AttachmentRecord): void => {
@@ -220,20 +378,59 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   };
 
   /** 同机导入：只传路径，落盘目标由后端计算（TR-3） */
-  const importByPath = async (): Promise<void> => {
-    const path = typedPath.trim();
-    if (!path) return;
-    const sid = sessionId || (await ensureSession?.());
-    if (!sid) {
-      showMessage(ErrorType.UNKNOWN, '会话创建失败，附件未导入');
-      return;
-    }
+  const ensureSid = async (): Promise<string | null> =>
+    sessionId || (await ensureSession?.()) || null;
+
+  /** 授权确认：目录未授权时弹一次，授权后原样重试导入 */
+  const askAuthorize = (sid: string, abs: string): void => {
+    const dir = parentOf(abs);
+    Modal.confirm({
+      title: '需要授权读取该目录',
+      content: `「${dir}」尚未授权。授权后可直接读取其中文件，也可在「已授权」里随时撤销。`,
+      okText: '授权并导入',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setAuthDirs(await fsApi.authorize(dir));
+          if ((await importLocal(sid, abs)).ok) void reloadSession();
+        } catch {
+          /* 受保护目录(400) 由全局错误处理器提示 */
+        }
+      },
+    });
+  };
+
+  const openLocalFile = async (abs: string): Promise<void> => {
+    if (importing || addedLocal.has(abs)) return;
     setImporting(true);
     try {
-      if (await importLocal(sid, path)) setTypedPath('');
+      const sid = await ensureSid();
+      if (!sid) {
+        showMessage(ErrorType.UNKNOWN, '会话创建失败，附件未导入');
+        return;
+      }
+      const r = await importLocal(sid, abs);
+      if (r.ok) void reloadSession();
+      else if (r.code === 'LOCAL_READ_DENIED') askAuthorize(sid, abs);
     } finally {
       setImporting(false);
     }
+  };
+
+  const revokeDir = async (path: string): Promise<void> => {
+    try {
+      setAuthDirs(await fsApi.revoke(path));
+      showSuccess(`已撤销「${path}」的读取授权（已导入的附件不受影响）`);
+    } catch {
+      /* 全局错误处理器已提示 */
+    }
+  };
+
+  const navigate = (raw: string): void => {
+    const dir = normalizeDir(raw);
+    if (!dir) return;
+    setPathDraft(dir);
+    setCwd(dir);
   };
 
   /** 整组加入本轮：按条目身份分流（附件按 id 恢复附件语义） */
@@ -336,30 +533,202 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 
   const renderRows = (): React.ReactNode => {
     if (source === 'local') {
+      if (!canLocal) {
+        return (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="当前为远程访问，无法直接读取本机文件，请用上方「上传文件」"
+          />
+        );
+      }
+      const searchingNow = kw.length > 0;
+
+      const localRows = (): React.ReactNode => {
+        if (!cwd) {
+          return (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="选择上方位置或输入路径开始浏览"
+            />
+          );
+        }
+        if (searchingNow) {
+          if (searching) return <Spin style={{ marginTop: Spacing.MD }} />;
+          if (hits.length === 0) {
+            return (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={`「${keyword.trim()}」无匹配文件`}
+              />
+            );
+          }
+          return hits.map((h) => {
+            const added = !!h.abs && addedLocal.has(h.abs);
+            const isDir = h.type === 'dir';
+            return (
+              <div
+                key={h.abs ?? h.path}
+                style={rowStyle(added)}
+                onClick={() => {
+                  if (!h.abs) return;
+                  if (isDir) navigate(h.abs);
+                  else void openLocalFile(h.abs);
+                }}
+              >
+                {isDir ? (
+                  <FolderOutlined style={{ color: Colors.TEXT.SECONDARY }} />
+                ) : (
+                  <FileOutlined style={{ color: Colors.TEXT.SECONDARY }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={nameStyle}>{h.name}</div>
+                  <div style={metaStyle}>
+                    {h.abs ?? h.path}
+                    {added ? ' · 已加入' : ''}
+                  </div>
+                </div>
+              </div>
+            );
+          });
+        }
+        if (localLoading) return <Spin style={{ marginTop: Spacing.MD }} />;
+        if (entries.length === 0) {
+          return (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="该目录为空或无法读取"
+            />
+          );
+        }
+        return entries.map((n) => {
+          const abs = joinAbs(cwd, n.key);
+          const isDir = n.type === 'dir';
+          const added = !isDir && addedLocal.has(abs);
+          return (
+            <div
+              key={n.key}
+              style={rowStyle(added)}
+              onClick={() => {
+                if (isDir) navigate(abs);
+                else void openLocalFile(abs);
+              }}
+            >
+              {isDir ? (
+                <FolderOutlined style={{ color: Colors.TEXT.SECONDARY }} />
+              ) : (
+                <FileOutlined style={{ color: Colors.TEXT.SECONDARY }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={nameStyle}>{n.name}</div>
+                <div style={metaStyle}>
+                  {isDir ? '文件夹' : formatBytes(n.size ?? 0)}
+                  {n.mtime
+                    ? ` · ${n.mtime.slice(0, 16).replace('T', ' ')}`
+                    : ''}
+                  {added ? ' · 已加入' : ''}
+                </div>
+              </div>
+            </div>
+          );
+        });
+      };
+
       return (
         <div style={{ padding: Spacing.XS }}>
           <Typography.Text style={metaStyle}>
-            {canLocal
-              ? '同机模式：后端直接读取本机文件，不传输、不占额外空间'
-              : '当前为远程访问，无法直接读取本机文件，请用上方「上传文件」'}
+            同机模式：直接读取本机文件，不传输、不占额外空间
+            {importing ? ' · 导入中…' : ''}
           </Typography.Text>
-          <div style={{ display: 'flex', gap: 8, marginTop: Spacing.SM }}>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginTop: Spacing.XS,
+            }}
+          >
+            {quick.map((q) => (
+              <Button
+                key={q.path}
+                size="small"
+                onClick={() => navigate(q.path)}
+              >
+                {q.label}
+              </Button>
+            ))}
+            {drives.map((d) => (
+              <Tooltip
+                key={d.path}
+                title={
+                  d.ready
+                    ? `可用 ${formatBytes(d.free)} / 共 ${formatBytes(d.total)}`
+                    : '不可用'
+                }
+              >
+                <Button
+                  size="small"
+                  disabled={!d.ready}
+                  onClick={() => navigate(d.path)}
+                >
+                  {d.path.slice(0, 2)}
+                  {d.label ? ` ${d.label}` : ''}
+                </Button>
+              </Tooltip>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, marginTop: Spacing.XS }}>
+            <Button
+              size="small"
+              icon={<ArrowUpOutlined />}
+              disabled={!cwd}
+              onClick={() => navigate(parentOf(cwd))}
+            />
             <Input
-              placeholder="输入绝对路径，如 D:\资料\报告.xlsx"
-              value={typedPath}
-              disabled={!canLocal}
-              onChange={(e) => setTypedPath(e.target.value)}
-              onPressEnter={() => void importByPath()}
+              size="small"
+              allowClear
+              value={pathDraft}
+              placeholder="盘符路径，如 D:\资料"
+              onChange={(e) => setPathDraft(e.target.value)}
+              onPressEnter={() => navigate(pathDraft)}
             />
             <Button
+              size="small"
               type="primary"
-              disabled={!canLocal || !typedPath.trim()}
-              loading={importing}
-              onClick={() => void importByPath()}
+              onClick={() => navigate(pathDraft)}
             >
-              导入
+              转到
             </Button>
           </div>
+
+          {authDirs.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: Spacing.XS,
+              }}
+            >
+              <span style={metaStyle}>已授权</span>
+              {authDirs.map((a) => (
+                <Tag
+                  key={a.path}
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault();
+                    void revokeDir(a.path);
+                  }}
+                >
+                  {a.path}
+                </Tag>
+              ))}
+            </div>
+          )}
+
+          <div style={{ marginTop: Spacing.XS }}>{localRows()}</div>
         </div>
       );
     }
@@ -540,6 +909,9 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 
   const paneTitle = (): string => {
     if (source === 'pack') return activePack ? activePack.name : '合集';
+    if (source === 'local') {
+      return hostLabel ? `我的电脑 · ${hostLabel}` : '我的电脑';
+    }
     return NAV.find((n) => n.key === source)?.label ?? '';
   };
 
