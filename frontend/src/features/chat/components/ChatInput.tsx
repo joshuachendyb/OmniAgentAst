@@ -970,6 +970,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             sessionId={sessionId}
             ensureSession={ensureSession}
             refs={refs}
+            onRemoveRef={remove}
           />
         }
         /*

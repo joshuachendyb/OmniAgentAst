@@ -7,23 +7,35 @@
 #   (service.get_attachment_scoped 单一口径) —— 附件是会话级资产, 跨会话按 id 直取属越权
 # 2026-11-07 小欧 - B-10 修复: CollectIn.source_path 补 API 层基础校验(拒绝 .. 穿越/空字节),
 #   防内部 collect._resolve_source 变更后 API 层无第二道防线
+# 2026-11-07 小欧 - [13] P3 资产台账端点: 列表加 scope/q/limit/offset、get 跨会话自动 promote、
+#   POST promote(收藏)、PATCH 重命名、POST clear-recent、DELETE 加 force(合集引用确认)、
+#   GET raw(预览图片/PDF 二进制) — 小欧-2026-11-07
 
 """attachments_routes — 附件 API 路由薄壳。
 
 分层同 file_routes.py: 本层只做参数解包与错误转译, 不写业务, 不碰 DB。
 挂载走 main.py 的 _mount()(唯一入口, 自动注入 token 鉴权)。
-端点 8 个: upload / list / get / delete / text / collect / local-capability / import-local。
+端点: upload / list / get / raw / delete / text / promote / rename / clear-recent
+      / collect / local-capability / import-local。
 """
 import asyncio
+import mimetypes
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.attachments import attachment_service as attach
 from app.attachments import collect as collector
 from app.attachments import local_import as local
-from app.file_browse.errors import NOT_FOUND, INVALID_PARAM, fail
+from app.file_browse.errors import (
+    ATTACHMENT_NOT_AVAILABLE,
+    INVALID_PARAM,
+    NOT_FOUND,
+    fail,
+)
 
 router = APIRouter()
 
@@ -53,6 +65,12 @@ class ImportLocalPayload(BaseModel):
     path: str
 
 
+class RenamePayload(BaseModel):
+    """重命名附件展示名（不动磁盘文件名）。"""
+    session_id: str | None = None
+    name: str = Field(..., description="新文件名（仅展示）")
+
+
 @router.post("/attachments/upload")
 async def upload_attachment(
     session_id: str = Form(..., description="会话 ID（用于定位默认工作区）"),
@@ -64,10 +82,16 @@ async def upload_attachment(
 
 @router.get("/attachments")
 def list_attachments(
-    session_id: str = Query(..., description="会话 ID"),
+    session_id: str | None = Query(None, description="会话 ID（scope=session 时必填）"),
+    scope: str = Query("session", description="session | recent | global | ai"),
+    q: str | None = Query(None, description="按文件名过滤"),
+    limit: int = Query(attach.MAX_LIST_ITEMS, ge=1, le=attach.MAX_LIST_ITEMS),
+    offset: int = Query(0, ge=0),
 ) -> list[dict[str, Any]]:
-    """会话附件列表(按创建时间倒序)。"""
-    return attach.list_attachments(session_id)
+    """附件列表（作用域: 本会话 / 最近用过 / 已收藏 / AI 生成）。"""
+    if scope not in ("session", "recent", "global", "ai"):
+        fail(INVALID_PARAM, "scope 只支持 session / recent / global / ai")
+    return attach.list_attachments(session_id, scope=scope, q=q, limit=limit, offset=offset)
 
 
 @router.get("/attachments/id/{attachment_id}")
@@ -77,22 +101,47 @@ def get_attachment(
 ) -> dict[str, Any]:
     """单条详情 —— 前端发送前存在性校验的唯一数据源(不走 /files/stat)。
 
-    越会话访问视同附件不存在(NOT_FOUND), 与 resolver 注入同一口径。
+    global 行对所有会话放行；跨会话的 session 级附件自动 promote（文档[13] 10.5），
+    用户不感知 404，也不需要先手动收藏。
     """
-    att = attach.get_attachment_scoped(attachment_id, session_id)
+    att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     return att
 
 
+@router.get("/attachments/id/{attachment_id}/raw")
+def get_attachment_raw(
+    attachment_id: str,
+    session_id: str = Query(..., description="会话 ID（会话归属校验）"),
+) -> FileResponse:
+    """预览二进制（图片 / PDF）：直接流式返回磁盘文件，不做 base64。
+
+    ⚠️ 不声明 response_model —— 声明后 FastAPI 会按模型序列化，破坏二进制流。
+    """
+    att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
+    if not att:
+        fail(NOT_FOUND, "附件不存在")
+    path = Path(att["stored_path"])
+    if not path.is_file():
+        fail(ATTACHMENT_NOT_AVAILABLE)
+    media = att.get("mime") or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(
+        path, media_type=media,
+        headers={"Cache-Control": "no-cache",
+                 "Content-Disposition": f"inline; filename*=UTF-8''{attachment_id}"},
+    )
+
+
 @router.delete("/attachments/id/{attachment_id}")
 def delete_attachment(
     attachment_id: str,
-    session_id: str = Query(..., description="会话 ID（会话归属校验，B-03）"),
-    purge: bool = Query(False, description="true=同时删除磁盘文件"),
+    session_id: str | None = Query(None, description="会话 ID（session 行必填；global 行可省）"),
+    purge: bool = Query(True, description="true=同时删除磁盘文件（无其他行共享该路径时）"),
+    force: bool = Query(False, description="true=确认删除被合集引用的文件"),
 ) -> dict[str, Any]:
-    """删记录(限本会话); 默认不删磁盘文件(防误删)。"""
-    attach.delete_attachment(attachment_id, session_id, purge=purge)
+    """删记录；默认按路径引用计数删磁盘文件，被合集引用时 409 需 force。"""
+    attach.delete_attachment(attachment_id, session_id, purge=purge, force=force)
     return {"ok": True}
 
 
@@ -104,6 +153,33 @@ async def get_attachment_text(
     """按附件类型生成注入文本 —— 仅供预览/排查, **不是**前端入队来源。"""
     text = await asyncio.to_thread(attach.read_inject_text, attachment_id, session_id)
     return {"id": attachment_id, "text": text}
+
+
+@router.post("/attachments/id/{attachment_id}/promote")
+def promote_attachment(
+    attachment_id: str,
+    session_id: str = Query(..., description="会话 ID（会话归属校验）"),
+) -> dict[str, Any]:
+    """收藏：升级为全局资产（幂等 + sha 去重）；跨会话引用也走这里。"""
+    att = attach.get_attachment_scoped(attachment_id, session_id, auto_promote=True)
+    if not att:
+        fail(NOT_FOUND, "附件不存在")
+    rec = attach.promote_attachment(att["id"])
+    if not rec:
+        fail(NOT_FOUND, "附件不存在")
+    return rec
+
+
+@router.patch("/attachments/id/{attachment_id}")
+def rename_attachment(attachment_id: str, body: RenamePayload) -> dict[str, Any]:
+    """重命名展示名（磁盘文件名不变）。"""
+    return attach.rename_attachment(attachment_id, body.name, body.session_id)
+
+
+@router.post("/attachments/clear-recent")
+def clear_recent() -> dict[str, Any]:
+    """清空最近使用记录（不删除任何文件）。"""
+    return {"cleared": attach.clear_recent()}
 
 
 @router.post("/attachments/collect")

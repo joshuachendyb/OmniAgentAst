@@ -15,6 +15,11 @@
 # 2026-11-07 小欧 - B-02 修复: delete_attachment(purge=True) 级联清理 material_pack_items
 #   中引用同 stored_path 的条目 —— 原只删附件记录+磁盘文件, 素材包条目仍存旧 path,
 #   投喂时 quoteFile 找不到文件 → 红底失效
+# 2026-11-07 小欧 - [13] P3 资产台账: attachments 升格(scope/last_used_at/use_count);
+#   增 promote_attachment(跨会话自动升级为全局, sha 去重 + 复制到 {data_dir}/assets)、
+#   list_attachments 多作用域(recent/global/session/ai)、rename_attachment、clear_recent、
+#   touch_usage(发送注入时唯一记账点); delete_attachment 改按路径引用计数决定删文件,
+#   被合集引用时 409 需 force 确认 — 小欧-2026-11-07
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -33,6 +38,7 @@ import asyncio
 import hashlib
 import mimetypes
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -42,8 +48,11 @@ from fastapi import UploadFile
 from app.attachments import extract
 from app.config import get_config
 from app.db import db
+from app.db.database import resolve_db_dir
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import (
+    ATTACHMENT_IN_USE,
+    ATTACHMENT_NOT_AVAILABLE,
     ATTACHMENT_TOO_LARGE,
     ATTACHMENT_UNAVAILABLE,
     NOT_FOUND,
@@ -59,10 +68,16 @@ from app.utils.time_utils import get_local_iso_timestamp
 MAX_IMAGE_BYTES = browse.MAX_IMAGE_BYTES        # 10MB: 直接引用图片预览口径, 不重写数值(DRY)
 MAX_FILE_BYTES = 20 * 1024 * 1024               # 非图片单文件上限
 MAX_SESSION_BYTES = 200 * 1024 * 1024           # 单会话附件总量上限
+MAX_LIST_ITEMS = 200                            # 「最近用过 / 已收藏」单次上限(抽屉一屏够用)
 
 _ATTACH_SUBDIR = "attachments"
+_ASSETS_SUBDIR = "assets"
 _COLS = ("id, session_id, original_name, stored_path, mime, size, sha256, kind, "
-         "extract_status, extract_chars, source_path, source_task_id, created_at")
+         "extract_status, extract_chars, source_path, source_task_id, created_at, "
+         "scope, last_used_at, use_count")
+# 新行只写前 13 列: scope/last_used_at/use_count 由表默认值给出(session/None/0)
+_INSERT_COLS = ("id, session_id, original_name, stored_path, mime, size, sha256, kind, "
+                "extract_status, extract_chars, source_path, source_task_id, created_at")
 
 # 上传白名单 = extract 五分类词典的组合(类型轴唯一真源, 免两份名单漂移)。
 # 视频后缀 S0 即放行(可传可发, 注入走档案卡); 纯 binary(.zip/.exe 等)一律 415。
@@ -110,6 +125,10 @@ def rel_to_root(stored_path: str) -> str:
 def _row_to_dict(row: Any) -> dict[str, Any]:
     d = dict(zip([c.strip() for c in _COLS.split(",")], tuple(row)))
     d["path"] = rel_to_root(d["stored_path"])
+    # 2026-11-07 小欧 - [13] P3: 磁盘文件是否还在(失效行仍可删/可重命名, 但不可加入本轮)
+    d["available"] = Path(d["stored_path"]).is_file()
+    d["favorited"] = d.get("scope") == "global"
+    d["global_id"] = d["id"] if d["favorited"] else None
     return d
 
 
@@ -194,7 +213,7 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
         with db.get_conn("chat") as conn:
             # INSERT OR IGNORE + 回查: UNIQUE(session_id, sha256) 约束防并发竞态(Agnes 补)
             conn.execute(
-                f"INSERT OR IGNORE INTO attachments ({_COLS}) "
+                f"INSERT OR IGNORE INTO attachments ({_INSERT_COLS}) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (att_id, session_id, safe, str(stored),
                  mime or mimetypes.guess_type(safe)[0] or "application/octet-stream",
@@ -237,20 +256,163 @@ async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
     )
 
 
-def list_attachments(session_id: str) -> list[dict[str, Any]]:
-    """附件列表(限本会话)。B-04: 会话不存在时返回空列表(附件随 session 级联删, 无孤儿数据)。"""
-    if not session_id:
-        return []
-    with db.get_conn("chat") as conn:
-        sess = conn.execute(
-            "SELECT 1 FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
-        if not sess:
+_SCOPE_FILTER = {
+    # 本会话: 会话归属行(global 行 session_id 恒 NULL, 天然不进本栏)
+    "session": ("session_id = ?", "created_at DESC"),
+    # 最近用过: 发送注入过(use_count>0), 跨会话共享
+    "recent": ("use_count > 0", "last_used_at DESC"),
+    # 已收藏: 全局资产
+    "global": ("scope = 'global'", "COALESCE(last_used_at, created_at) DESC"),
+    # AI 生成: 任务产物「存为附件」的溯源行
+    "ai": ("source_task_id IS NOT NULL AND source_task_id <> ''", "created_at DESC"),
+}
+
+
+def list_attachments(session_id: str | None = None, *, scope: str = "session",
+                     q: str | None = None, limit: int = MAX_LIST_ITEMS,
+                     offset: int = 0) -> list[dict[str, Any]]:
+    """附件列表（作用域唯一实现）— 小欧-2026-11-07
+
+    scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(AI 生成)。
+    每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
+    """
+    where, order = _SCOPE_FILTER.get(scope) or _SCOPE_FILTER["session"]
+    params: list[Any] = []
+    if scope == "session":
+        if not session_id:
             return []
+        params.append(session_id)
+    if q and q.strip():
+        where += " AND original_name LIKE ?"
+        params.append(f"%{q.strip()}%")
+    limit = max(1, min(int(limit or MAX_LIST_ITEMS), MAX_LIST_ITEMS))
+    offset = max(0, int(offset or 0))
+    with db.get_conn("chat") as conn:
+        if scope == "session" and not conn.execute(
+            "SELECT 1 FROM chat_sessions WHERE id = ?", (session_id,)
+        ).fetchone():
+            return []      # B-04: 会话不存在返回空(附件随 session 级联删, 无孤儿数据)
         rows = conn.execute(
-            f"SELECT {_COLS} FROM attachments WHERE session_id = ? ORDER BY created_at DESC",
-            (session_id,),
+            f"SELECT {_COLS} FROM attachments WHERE {where} "
+            f"ORDER BY {order} LIMIT ? OFFSET ?",
+            (*params, limit, offset),
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+        items = [_row_to_dict(r) for r in rows]
+        shas = sorted({i["sha256"] for i in items if i["scope"] != "global"})
+        gmap: dict[str, str] = {}
+        if shas:
+            marks = ",".join("?" * len(shas))
+            gmap = {
+                r["sha256"]: r["id"] for r in conn.execute(
+                    f"SELECT sha256, id FROM attachments "
+                    f"WHERE scope = 'global' AND sha256 IN ({marks})", shas)
+            }
+    for it in items:
+        gid = it["id"] if it["scope"] == "global" else gmap.get(it["sha256"])
+        it["favorited"] = bool(gid)
+        it["global_id"] = gid
+    return items
+
+
+def assets_dir() -> Path:
+    """全局资产目录: {data_dir}/assets/{YYYYMM}（不能放会话工作区, 会话删除会带走）。"""
+    folder = resolve_db_dir() / _ASSETS_SUBDIR / get_local_iso_timestamp()[:7].replace("-", "")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(f"[attachments] assets mkdir failed dir={folder} err={e}")
+        fail(ATTACHMENT_UNAVAILABLE, "全局资产目录不可写")
+    return folder
+
+
+def promote_attachment(attachment_id: str) -> dict[str, Any] | None:
+    """升级为全局资产（幂等 + sha 去重）— 小欧-2026-11-07
+
+    跨会话引用与手动 ☆ 共用本实现：复制到 assets/ 后建 scope='global' 行
+    （session_id 恒 NULL，会话删除不影响）。同 sha 已有全局行时直接复用，不再复制。
+    """
+    att = get_attachment(attachment_id)
+    if not att:
+        return None
+    if att["scope"] == "global":
+        return att
+    with db.get_conn("chat") as conn:
+        dup = conn.execute(
+            f"SELECT {_COLS} FROM attachments WHERE scope = 'global' AND sha256 = ? LIMIT 1",
+            (att["sha256"],),
+        ).fetchone()
+    if dup:
+        return _row_to_dict(dup)
+    src = Path(att["stored_path"])
+    if not src.is_file():
+        fail(ATTACHMENT_NOT_AVAILABLE)
+    dest = assets_dir() / f"{att['sha256'][:16]}-{_sanitize_name(att['original_name'])}"
+    new_id = uuid.uuid4().hex
+    try:
+        if not dest.exists():
+            shutil.copy2(src, dest)
+        with db.get_conn("chat") as conn:
+            conn.execute(
+                f"INSERT OR IGNORE INTO attachments ({_INSERT_COLS}, scope) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'global')",
+                (new_id, None, att["original_name"], str(dest), att["mime"],
+                 att["size"], att["sha256"], att["kind"], att["extract_status"],
+                 att["extract_chars"], att["source_path"], att["source_task_id"],
+                 att["created_at"]),
+            )
+    except Exception:
+        logger.exception(f"[attachments] promote 失败 id={attachment_id}")
+        fail(ATTACHMENT_UNAVAILABLE, "收藏失败，请稍后重试")
+    rec = get_attachment(new_id)
+    if rec is None:
+        # 并发 promote: 另一请求先插入同 sha 全局行 → 复用本次结果
+        with db.get_conn("chat") as conn:
+            dup = conn.execute(
+                f"SELECT {_COLS} FROM attachments WHERE scope = 'global' AND sha256 = ? LIMIT 1",
+                (att["sha256"],),
+            ).fetchone()
+        if dup:
+            # 仅当幸存行不指向本文件时才清理本次副本(同 sha 同名时 dest 必然相同, 删了就是删幸存行)
+            if dup["stored_path"] != str(dest):
+                dest.unlink(missing_ok=True)
+            return _row_to_dict(dup)
+        fail(ATTACHMENT_UNAVAILABLE, "收藏失败，请稍后重试")
+    return rec
+
+
+def rename_attachment(attachment_id: str, name: str,
+                      session_id: str | None) -> dict[str, Any]:
+    """重命名（只改展示名, 不动磁盘文件名 —— 同名多行共享路径时改文件名会互相打断）。"""
+    att = get_attachment_scoped(attachment_id, session_id)
+    if not att:
+        fail(NOT_FOUND, "附件不存在")
+    safe = _sanitize_name(name)
+    with db.get_conn("chat") as conn:
+        conn.execute("UPDATE attachments SET original_name = ? WHERE id = ?",
+                     (safe, attachment_id))
+    rec = get_attachment(attachment_id)
+    if rec is None:
+        fail(NOT_FOUND, "附件不存在")
+    return rec
+
+
+def touch_usage(attachment_id: str) -> None:
+    """发送注入成功后的唯一记账点：use_count+1 / last_used_at=now（「最近用过」真源）。"""
+    if not attachment_id:
+        return
+    with db.get_conn("chat") as conn:
+        conn.execute(
+            "UPDATE attachments SET use_count = use_count + 1, last_used_at = ? "
+            "WHERE id = ?", (get_local_iso_timestamp(), attachment_id))
+
+
+def clear_recent() -> int:
+    """清空最近使用记录（只清计数与时间, 不删任何文件）。返回影响行数。"""
+    with db.get_conn("chat") as conn:
+        cur = conn.execute(
+            "UPDATE attachments SET use_count = 0, last_used_at = NULL "
+            "WHERE use_count > 0 OR last_used_at IS NOT NULL")
+        return cur.rowcount or 0
 
 
 def get_attachment(attachment_id: str) -> dict[str, Any] | None:
@@ -264,52 +426,71 @@ def get_attachment(attachment_id: str) -> dict[str, Any] | None:
     return _row_to_dict(row) if row else None
 
 
-def get_attachment_scoped(attachment_id: str, session_id: str | None) -> dict[str, Any] | None:
-    """按 id 取单条并校验会话归属(B-03): 不匹配视同不存在。
+def get_attachment_scoped(attachment_id: str, session_id: str | None, *,
+                          auto_promote: bool = False) -> dict[str, Any] | None:
+    """按 id 取单条并校验访问权（B-03 + P3 全局放行）— 小欧-2026-11-07
 
-    附件是会话级资产(表级 session_id 外键 + 级联删除), 跨会话按 id 直取属越权。
-    API 端点(get/delete/text)与 resolver 注入共用本口径 —— 单一真源, 不各写一份。
-    session_id 为 None 时视同不匹配(fail-closed: 拿不出会话凭据就不给数据)。
+    访问规则: scope='global' 对所有会话可读; session 级仍严格校验会话归属。
+    auto_promote=True（跨会话引用/预览）时，非本会话的 session 级附件自动升级为全局后返回，
+    用户不感知 404（文档[13] 10.5）。session_id 为 None 时 fail-closed（拿不出凭据不给数据）。
     """
     att = get_attachment(attachment_id)
-    if att and session_id and att.get("session_id") == session_id:
+    if not att:
+        return None
+    if att.get("scope") == "global":
         return att
+    if session_id and att.get("session_id") == session_id:
+        return att
+    if auto_promote and session_id:
+        return promote_attachment(attachment_id)
     return None
 
 
-def delete_attachment(attachment_id: str, session_id: str, *,
-                      purge: bool = False) -> None:
-    """删记录(限本会话); purge=True 时同时删磁盘文件+级联清素材包条目(默认不删, 防误删)。
+def delete_attachment(attachment_id: str, session_id: str | None, *,
+                      purge: bool = True, force: bool = False) -> None:
+    """删记录（global 行对任意会话可删；session 行限本会话）。
 
-    删除顺序: purge=True 时**先删磁盘文件、成功后才删 DB 行** ——
-    若磁盘删失败则不删行并抛错, 避免"记录已删、文件成孤儿"。不 purge 时仅删行(磁盘留档)。
-    会话归属先经 get_attachment_scoped 校验(B-03): 越会话删除视同附件不存在。
-    B-02: purge=True 时级联清理 material_pack_items 中引用同 stored_path 的条目,
-    防投喂时 quoteFile 找不到已删文件。
+    purge=True（默认）时按 stored_path 引用计数决定是否删磁盘文件：还有别的行指向同一路径
+    就只删行，避免"删一条、其余全红"。被合集引用且未 force → 409 ATTACHMENT_IN_USE，
+    确认后 force=True 一并清理素材包条目（B-02：条目留着投喂必失效）。
     """
-    att = get_attachment_scoped(attachment_id, session_id)
+    att = get_attachment(attachment_id)
     if not att:
+        fail(NOT_FOUND, "附件不存在")
+    if att.get("scope") != "global" and (not session_id or att.get("session_id") != session_id):
         fail(NOT_FOUND, "附件不存在")
     stored_path = att["stored_path"]
     with db.get_conn("chat") as conn:
-        if purge:
+        pack_refs = conn.execute(
+            "SELECT COUNT(*) FROM material_pack_items WHERE path = ? OR attachment_id = ?",
+            (stored_path, attachment_id),
+        ).fetchone()[0]
+        if pack_refs and not force:
+            fail(ATTACHMENT_IN_USE, f"该文件仍被 {pack_refs} 个合集引用，确认后可一并删除")
+        shared = conn.execute(
+            "SELECT COUNT(*) FROM attachments WHERE stored_path = ? AND id <> ?",
+            (stored_path, attachment_id),
+        ).fetchone()[0]
+        if purge and shared == 0:
             try:
                 Path(stored_path).unlink(missing_ok=True)
             except OSError as e:
                 logger.error(f"[attachments] purge 失败, 记录保留 id={attachment_id} err={e}")
                 fail(ATTACHMENT_UNAVAILABLE, "附件磁盘删除失败，记录已保留")
-            # B-02: 级联清素材包条目(路径已删, 旧条目投喂必然失效)
+        if purge:
             conn.execute(
-                "DELETE FROM material_pack_items WHERE path = ?", (stored_path,))
+                "DELETE FROM material_pack_items WHERE path = ? OR attachment_id = ?",
+                (stored_path, attachment_id))
         conn.execute("DELETE FROM attachments WHERE id = ?", (attachment_id,))
 
 
 def read_inject_text(attachment_id: str, session_id: str) -> str:
     """预览端点数据源: 与 resolver 同一条生成路径, 不产生第二套口径。
 
-    会话归属先经 get_attachment_scoped 校验(B-03), 越会话预览视同附件不存在。
+    访问权经 get_attachment_scoped 校验(B-03 + global 放行); 跨会话 session 级附件
+    走 auto_promote, 与「跨会话引用自动收藏」同一口径(文档[13] 10.5)。
     """
-    att = get_attachment_scoped(attachment_id, session_id)
+    att = get_attachment_scoped(attachment_id, session_id, auto_promote=True)
     if not att:
         fail(NOT_FOUND, "附件不存在")
     return extract.build_inject_text(att)

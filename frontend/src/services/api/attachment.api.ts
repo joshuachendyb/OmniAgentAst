@@ -2,6 +2,10 @@
 //   前端附件功能 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 - F-09: AttachmentRecord 补 source_task_id(方案B溯源, 与后端 _COLS 对齐);
 //   B-03: get/remove/text 增 sessionId 必填(后端会话归属校验, 越会话视同不存在) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - [13] P3 资产台账: 记录补 scope/last_used_at/use_count/available/
+//   favorited/global_id; list 改作用域选项(session/recent/global/ai + 分页), 增 promote/rename/
+//   clearRecent/loadRawBlob(预览图片走带 token 的 blob, 裸 img src 带不了 header 必 401) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧 - [13] P4: remove 改 _silent(409 由抽屉二次确认, 其余错误调用方就地提示) — 小欧-2026-11-07
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -10,11 +14,20 @@
  * - 记录里的 path 是「项目根相对 posix 路径」，直接用于 refs 上行
  * - 错误取 error.code（全局 http_exception_handler 包装后的形状），不匹配中文文案
  */
-import api, { HEAVY_READ_TIMEOUT_MS } from './client'; // api 只有默认导出（同 file.api）
+import api, {
+  API_BASE_URL,
+  getAccessToken,
+  HEAVY_READ_TIMEOUT_MS,
+} from './client'; // api 只有默认导出（同 file.api）
+import type { ApiRequestConfig } from './client';
+
+/** 列表作用域: 本会话 / 最近用过 / 已收藏 / AI 生成 */
+export type AttachmentScope = 'session' | 'recent' | 'global' | 'ai';
 
 export interface AttachmentRecord {
   id: string;
-  session_id: string;
+  /** 来源会话；全局资产为 null（不再作为访问判定字段） */
+  session_id: string | null;
   original_name: string;
   stored_path: string;
   /** 项目根相对 posix 路径（上行 refs 用） */
@@ -29,6 +42,25 @@ export interface AttachmentRecord {
   /** 产物「存为附件」来源任务(方案B溯源; 上传/直接引用恒 null) */
   source_task_id: string | null;
   created_at: string;
+  /** session=会话级（仅本会话可读） / global=跨会话全局资产 */
+  scope: 'session' | 'global';
+  /** 最近注入时间（发送即记） */
+  last_used_at: string | null;
+  /** 注入次数（「最近用过」判据） */
+  use_count: number;
+  /** 磁盘文件是否还在（失效行仍可删，但不可加入本轮） */
+  available: boolean;
+  /** 同 sha 是否已有全局行（= 已收藏） */
+  favorited: boolean;
+  /** 已收藏时对应全局行 id（取消收藏用） */
+  global_id: string | null;
+}
+
+export interface ListOptions {
+  scope?: AttachmentScope;
+  q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export const attachmentApi = {
@@ -52,15 +84,25 @@ export const attachmentApi = {
     return res.data;
   },
 
-  list: async (sessionId: string): Promise<AttachmentRecord[]> => {
-    const res = await api.get<AttachmentRecord[]>('/attachments', {
-      params: { session_id: sessionId },
-    });
-    return res.data;
+  /**
+   * 附件列表（作用域唯一入口）。
+   * 2026-11-07 小欧 - [13] P3: 原 `list(sessionId)` 扩为选项对象；session 作用域仍按会话取，
+   *   recent/global/ai 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
+   */
+  list: async (
+    sessionId?: string | null,
+    opts?: ListOptions
+  ): Promise<AttachmentRecord[]> => {
+    const { scope = 'session', q, limit, offset } = opts ?? {};
+    const cfg: ApiRequestConfig = {
+      params: { session_id: sessionId || undefined, scope, q, limit, offset },
+      _silent: true,
+    };
+    return (await api.get<AttachmentRecord[]>('/attachments', cfg)).data;
   },
 
   /** 存在性校验（发送前预检唯一数据源，不走 /files/stat）。
-   *  sessionId 必填: 后端会话归属校验(B-03), 越会话访问视同附件不存在。 */
+   *  sessionId 必填: 后端会话归属校验(B-03)；跨会话 session 级附件自动升级为全局(10.5)。 */
   get: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
     const res = await api.get<AttachmentRecord>(`/attachments/id/${id}`, {
       params: { session_id: sessionId },
@@ -70,7 +112,10 @@ export const attachmentApi = {
 
   /** 预览注入文本（排障/素材包预览用；**不**用于入队 —— ChatRef.content 已删除）。
    *  sessionId 必填: 后端会话归属校验(B-03)。 */
-  text: async (id: string, sessionId: string): Promise<{ id: string; text: string }> => {
+  text: async (
+    id: string,
+    sessionId: string
+  ): Promise<{ id: string; text: string }> => {
     const res = await api.get<{ id: string; text: string }>(
       `/attachments/id/${id}/text`,
       { params: { session_id: sessionId }, timeout: HEAVY_READ_TIMEOUT_MS }
@@ -78,16 +123,66 @@ export const attachmentApi = {
     return res.data;
   },
 
-  /** 删除附件记录（限本会话, B-03）; 默认不删磁盘文件。 */
-  remove: async (
+  /** 收藏（幂等 + sha 去重）：返回全局行；已收藏时返回同一行。 */
+  promote: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
+    const res = await api.post<AttachmentRecord>(
+      `/attachments/id/${id}/promote`,
+      null,
+      { params: { session_id: sessionId } }
+    );
+    return res.data;
+  },
+
+  /** 重命名展示名（磁盘文件名不变）。 */
+  rename: async (
     id: string,
-    sessionId: string,
-    purge = false
-  ): Promise<{ ok: boolean }> => {
-    const res = await api.delete<{ ok: boolean }>(`/attachments/id/${id}`, {
-      params: { session_id: sessionId, purge },
+    name: string,
+    sessionId?: string | null
+  ): Promise<AttachmentRecord> => {
+    const res = await api.patch<AttachmentRecord>(`/attachments/id/${id}`, {
+      session_id: sessionId || null,
+      name,
     });
     return res.data;
+  },
+
+  /** 删除附件记录；purge=同时删磁盘文件（无其他行共享该路径时），
+   *  force=确认删除被合集引用的文件（否则后端 409 ATTACHMENT_IN_USE）。
+   *  _silent: 409 由抽屉弹二次确认，其余错误由调用方就地提示。 */
+  remove: async (
+    id: string,
+    sessionId?: string | null,
+    opts?: { purge?: boolean; force?: boolean }
+  ): Promise<{ ok: boolean }> => {
+    const { purge = true, force = false } = opts ?? {};
+    const cfg: ApiRequestConfig = {
+      params: { session_id: sessionId || undefined, purge, force },
+      _silent: true,
+    };
+    const res = await api.delete<{ ok: boolean }>(`/attachments/id/${id}`, cfg);
+    return res.data;
+  },
+
+  /** 清空最近使用记录（不删除任何文件）。 */
+  clearRecent: async (): Promise<{ cleared: number }> => {
+    const res = await api.post<{ cleared: number }>(
+      '/attachments/clear-recent'
+    );
+    return res.data;
+  },
+
+  /**
+   * 预览二进制（图片/PDF）：带 token fetch 成 blob。
+   * 不能裸 `<img src=...>`：带不了 header 必 401。
+   */
+  loadRawBlob: async (id: string, sessionId: string): Promise<Blob> => {
+    const token = getAccessToken();
+    const res = await fetch(
+      `${API_BASE_URL}/attachments/id/${id}/raw?session_id=${encodeURIComponent(sessionId)}`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+    );
+    if (!res.ok) throw new Error(`预览加载失败 (${res.status})`);
+    return res.blob();
   },
 
   /**

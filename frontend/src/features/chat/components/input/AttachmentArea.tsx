@@ -32,6 +32,8 @@ interface AttachmentAreaProps {
   ensureSession?: () => Promise<string | null>;
   /** 本轮文件（抽屉内「已加入」判定 + 底部计数） */
   refs: ComposerRef[];
+  /** 按 chip id 移出本轮（抽屉内点已加入行 = 取消加入） */
+  onRemoveRef?: (refId: string) => void;
 }
 
 const AttachmentArea: React.FC<AttachmentAreaProps> = ({
@@ -40,13 +42,14 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
   sessionId,
   ensureSession,
   refs,
+  onRemoveRef,
 }) => {
   const [open, setOpen] = useState(false);
 
   if (!visible) return null;
   return (
     <>
-      <Tooltip title="添加文件到本轮（本会话 / 项目文件 / 我的电脑 / 合集）">
+      <Tooltip title="添加文件到本轮（最近用过 / 本会话 / 项目文件 / 我的电脑 / AI 生成 / 收藏）">
         <Button
           size="small"
           icon={<PaperClipOutlined />}
@@ -62,6 +65,7 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
         sessionId={sessionId}
         ensureSession={ensureSession}
         refs={refs}
+        onRemoveRef={onRemoveRef}
         disabled={disabled}
       />
     </>

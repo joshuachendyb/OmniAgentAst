@@ -99,6 +99,9 @@
 # 2026-11-07 小欧 - B-05 修复: 存量库幂等补 UNIQUE(session_id,sha256) 唯一索引(重复行先按组保留最早),
 #   补齐 save_bytes 并发去重的 DB 级保护; F-07/F-08 修复: material_pack_items 增 kind/attachment_id
 #   两列(建表+存量补列), 附件条目投喂时按 id 恢复附件语义
+# 2026-11-07 小欧 - [13] P3 资产台账: attachments 加 scope/last_used_at/use_count, 去会话外键与表级
+#   UNIQUE, 存量库重建表(幂等); 唯一性改由两个部分索引承担(session 行按会话+sha / global 行按 sha)
+#   —— global 行 session_id 恒 NULL, 会话删除不带走全局资产 — 小欧-2026-11-07
 
 """
 db_initializer — 数据库初始化
@@ -251,9 +254,12 @@ def init_chat_db(get_conn):
 
             -- 2026-11-04 小欧 - [56] S0: 附件登记表。stored_path 为绝对路径真源,
             --   上行 refs 用「按当前项目根相对化」的 path; 正文不落库(每轮由 extract 生成)
+            -- 2026-11-07 小欧 - [13] P3 升格资产台账: 加 scope/last_used_at/use_count;
+            --   scope='global' 为跨会话全局资产(session_id 恒 NULL, 不设会话外键 —— 会话删除不带走全局资产);
+            --   session_id 语义订正为「来源会话」, 不再作为访问判定字段(访问只看 scope + 会话归属) — 小欧-2026-11-07
             CREATE TABLE IF NOT EXISTS attachments (
                 id             TEXT PRIMARY KEY,           -- uuid4 hex
-                session_id     TEXT NOT NULL,
+                session_id     TEXT,                       -- 来源会话(global 行恒 NULL); 非访问判定字段
                 original_name  TEXT NOT NULL,              -- 用户原文件名(仅展示)
                 stored_path    TEXT NOT NULL,              -- 绝对路径(真源)
                 mime           TEXT NOT NULL,
@@ -265,13 +271,13 @@ def init_chat_db(get_conn):
                 source_path    TEXT,                       -- 存为附件来源路径(直接引用时恒 NULL)
                 source_task_id TEXT,                       -- 溯源: 产物「存为附件」时来源任务 id(上传/直接引用恒 NULL)
                 created_at     TEXT NOT NULL,
-                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
-                UNIQUE(session_id, sha256)                 -- 并发上传去重: INSERT OR IGNORE + 回查
+                scope          TEXT NOT NULL DEFAULT 'session',   -- session | global
+                last_used_at   TEXT,                              -- 最近注入时间(发送即记)
+                use_count      INTEGER NOT NULL DEFAULT 0         -- 注入次数(「最近用过」判据)
             );
-            CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
-            -- idx_attachments_source_task 不在 executescript 内建: 存量库 source_task_id 列缺失时
-            --   executescript 整体失败; 改由下方 _ensure_column(395) + conn.execute(397) 幂等补建
-            -- 不再建 idx_attachments_sha: 被 UNIQUE(session_id,sha256) 冗余覆盖
+            -- 唯一/普通索引不在 executescript 内建: 存量库需先重建表形态(去会话外键), 由下方
+            --   _migrate_attachments_ledger + _create_attachment_indexes 统一幂等补建
+            --   部分唯一: UNIQUE(session_id, sha256) WHERE scope='session' / UNIQUE(sha256) WHERE scope='global'
 
             -- 2026-11-04 小欧 - [56] S4: 素材包。只存清单, 不复制文件;
             --   name 唯一(COLLATE NOCASE) 防同名混淆, group_name 空串=未分组
@@ -304,6 +310,8 @@ def init_chat_db(get_conn):
                 created_at TEXT NOT NULL
             );
         ''')
+        # 2026-11-07 小欧 - [13] P3: 附件表升格资产台账(存量库重建表形态, 幂等) — 小欧-2026-11-07
+        _migrate_attachments_ledger(conn)
         # 2026-10-10 小欧 - 文档[16]: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
         #   查 sqlite_master 建表语句，无 COLLATE 即重建（表是今日新建，正常 0 行；有行照搬）。
         _csw = conn.execute(
@@ -416,21 +424,9 @@ def init_chat_db(get_conn):
         #   CREATE TABLE IF NOT EXISTS 对已有表不生效, 存量库无此约束 → save_bytes 的
         #   check-then-act 去重在并发下无 DB 级保护(两个请求同时过 SELECT 检查, 双写)。
         #   存量重复行(历史并发产物)先按组保留最早一条再去重建索引, 幂等。
-        try:
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_dedup "
-                "ON attachments(session_id, sha256)")
-        except sqlite3.IntegrityError:
-            conn.execute(
-                "DELETE FROM attachments WHERE id NOT IN ("
-                "  SELECT id FROM ("
-                "    SELECT id, ROW_NUMBER() OVER ("
-                "      PARTITION BY session_id, sha256"
-                "      ORDER BY created_at ASC, id ASC) AS rn"
-                "    FROM attachments) WHERE rn = 1)")
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_dedup "
-                "ON attachments(session_id, sha256)")
+        # 2026-11-07 小欧 - [13] P3 收口: 去重索引收窄为 scope='session' 部分索引 ——
+        #   promote 需同 sha 的 global 行与 session 行并存, 原全表唯一索引会直接拦住 — 小欧-2026-11-07
+        _create_attachment_indexes(conn)
         # 2026-11-07 小欧 - F-07/F-08 修复: 素材包条目补 kind/attachment_id 两列(存量库幂等),
         #   附件条目投喂时按 id 恢复附件语义, 不再降格为普通文件引用
         _ensure_column(conn, "material_pack_items", "kind", "TEXT")
@@ -721,6 +717,103 @@ def init_task_tracker_db(get_conn):
         # 回灌 chat_user_message/chat_tasks)与索引创建之后, 旧库 chat_messages 历史数据已被结构化表承载后再删,
         # 不丢数据; 运行时已零读 chat_messages(阶段1/2 验证)。 — 小欧 2026-08-27
         conn.execute("DROP TABLE IF EXISTS chat_messages")
+
+
+_ATTACHMENTS_LEDGER_DDL = """
+CREATE TABLE attachments (
+    id             TEXT PRIMARY KEY,
+    session_id     TEXT,
+    original_name  TEXT NOT NULL,
+    stored_path    TEXT NOT NULL,
+    mime           TEXT NOT NULL,
+    size           INTEGER NOT NULL,
+    sha256         TEXT NOT NULL,
+    kind           TEXT NOT NULL,
+    extract_status TEXT NOT NULL DEFAULT 'none',
+    extract_chars  INTEGER NOT NULL DEFAULT 0,
+    source_path    TEXT,
+    source_task_id TEXT,
+    created_at     TEXT NOT NULL,
+    scope          TEXT NOT NULL DEFAULT 'session',
+    last_used_at   TEXT,
+    use_count      INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+_ATTACHMENT_INDEXES = (
+    "idx_attachments_session",
+    "idx_attachments_source_task",
+    "idx_attachments_dedup",
+    "ux_attachments_global_sha",
+    "idx_attachments_scope_used",
+)
+
+
+def _migrate_attachments_ledger(conn: sqlite3.Connection) -> None:
+    """附件表升格资产台账（幂等重建）— 小欧-2026-11-07
+
+    为何必须重建而非 ALTER: 存量表的 `session_id NOT NULL`、`FOREIGN KEY ... ON DELETE CASCADE`、
+    表级 `UNIQUE(session_id, sha256)` 三者在 SQLite 均无法 ALTER 去除；而 promote 要求
+    「同 sha 的 global 行与 session 行并存」且全局资产不随来源会话删除。
+    重建后唯一性由两个部分索引承担（见 _create_attachment_indexes），global 行 session_id 为 NULL。
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='attachments'"
+    ).fetchone()
+    if not row:
+        return
+    ddl = (row["sql"] or "").upper()
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(attachments)")}
+    if "scope" in cols and "REFERENCES CHAT_SESSIONS" not in ddl:
+        return
+    logger.info("[db] attachments 升格资产台账: 重建表(去会话外键 + 补 scope/last_used_at/use_count)")
+    for idx in _ATTACHMENT_INDEXES:
+        conn.execute(f"DROP INDEX IF EXISTS {idx}")
+    conn.execute("ALTER TABLE attachments RENAME TO attachments_legacy")
+    conn.execute(_ATTACHMENTS_LEDGER_DDL)
+    target = ["id", "session_id", "original_name", "stored_path", "mime", "size",
+              "sha256", "kind", "extract_status", "extract_chars", "source_path",
+              "source_task_id", "created_at", "scope", "last_used_at", "use_count"]
+    exprs = [c if c in cols else
+             ("'session'" if c == "scope" else "0" if c == "use_count" else "NULL")
+             for c in target]
+    conn.execute(
+        f"INSERT INTO attachments ({', '.join(target)}) "
+        f"SELECT {', '.join(exprs)} FROM attachments_legacy"
+    )
+    conn.execute("DROP TABLE attachments_legacy")
+
+
+def _create_attachment_indexes(conn: sqlite3.Connection) -> None:
+    """附件台账索引（幂等）：部分唯一索引允许同 sha 的 session 行与 global 行并存 — 小欧-2026-11-07"""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_source_task ON attachments(source_task_id)")
+    for name, sql, keys, scope in (
+        ("idx_attachments_dedup",
+         "CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_dedup "
+         "ON attachments(session_id, sha256) WHERE scope = 'session'",
+         "session_id, sha256", "scope = 'session'"),
+        ("ux_attachments_global_sha",
+         "CREATE UNIQUE INDEX IF NOT EXISTS ux_attachments_global_sha "
+         "ON attachments(sha256) WHERE scope = 'global'",
+         "sha256", "scope = 'global'"),
+    ):
+        try:
+            conn.execute(sql)
+        except sqlite3.IntegrityError:
+            # 历史并发产物可能同键多行: 每组保留最早一条再重建, 幂等
+            logger.warning(f"[db] {name} 存在重复行, 保留最早一条后重建")
+            conn.execute(
+                "DELETE FROM attachments WHERE id NOT IN ("
+                "  SELECT id FROM ("
+                f"    SELECT id, ROW_NUMBER() OVER (PARTITION BY {keys}"
+                "      ORDER BY created_at ASC, id ASC) AS rn"
+                f"    FROM attachments WHERE {scope}) WHERE rn = 1)"
+                f" AND {scope}")
+            conn.execute(sql)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_attachments_scope_used "
+        "ON attachments(scope, last_used_at DESC)")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> bool:

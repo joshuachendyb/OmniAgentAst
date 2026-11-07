@@ -26,6 +26,8 @@
 # 2026-11-07 小欧 - B-08 修订: text 附件不再豁免 clip_text, 所有 kind 统一走 read_max_bytes
 #   单条预算闸门(clip_text 未超限原样返回, 小文本仍全文注入) —— 修复 ≤256KB 文本直入绕过
 #   预算、大文本整批被拒的问题 — 小欧-2026-11-07
+# 2026-11-07 小欧 - [13] P3: 跨会话附件改为 auto_promote(自动升级为全局, 不再折算 missing),
+#   注入成功即 touch_usage 记账 —— 「最近用过」的唯一真源 — 小欧-2026-11-07
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -43,7 +45,7 @@ from fastapi import HTTPException
 
 # 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
 from app.attachments import extract
-from app.attachments.attachment_service import get_attachment_scoped
+from app.attachments.attachment_service import get_attachment_scoped, touch_usage
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源(5.2.11)
@@ -114,13 +116,16 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
                      session_id: str | None) -> ResolvedRef:
     """附件注入文本生成(唯一产生点)。
 
-    kind=attachment: 按 attachment_id 查表(get_attachment_scoped, 含会话归属校验),
+    kind=attachment: 按 attachment_id 查表(get_attachment_scoped, 含访问权校验),
     生成注入文本。失败 reason:
-      attachment_missing  记录不存在/越会话访问(引用已失效/会话不匹配)
+      attachment_missing  记录不存在(引用已失效)
       attachment_failed   build_inject_text 内部异常(读盘/解析失败)
     附件不参与行级读取/预算压缩 —— 注入按 id 查表, 不受 path 越界影响。
+    2026-11-07 小欧 - [13] P3: 跨会话 session 级附件 auto_promote(自动收藏, 不 404);
+      生成成功后 touch_usage 记账(use_count/last_used_at 唯一写入点, 「最近用过」真源) — 小欧-2026-11-07
     """
-    att = get_attachment_scoped(ref.get("attachment_id") or "", session_id)
+    att = get_attachment_scoped(ref.get("attachment_id") or "", session_id,
+                                auto_promote=True)
     if not att:
         return ResolvedRef(ref=ref, truncated=False,
                            note="err:attachment_missing:AttachmentNotFound")
@@ -129,6 +134,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
+    touch_usage(att["id"])
     # 2026-11-07 小欧 - B-08 修订: text 不再豁免 clip_text。clip_text 对未超限(len≤cap)
     #   原样返回, 故 ≤read_max_bytes 的小文本仍全文注入(S1 意图不损); >read_max_bytes 的
     #   大文本头尾摘录, 守住单条预算。原"text 跳过 clip"让 ≤256KB 全文直入 —— 默认预算下

@@ -30,6 +30,9 @@ ATTACHMENT_UNAVAILABLE = "ATTACHMENT_UNAVAILABLE"  # 500 附件目录不可用(�
 LOCAL_IMPORT_DISABLED = "LOCAL_IMPORT_DISABLED"    # 403 本地导入仅同机可用(跨机禁止)
 # 2026-11-07 小欧 - 同机浏览: 目录未授权(用户确认一次即可授权, 与"类型不支持"分开, 前端据此弹授权)
 LOCAL_READ_DENIED = "LOCAL_READ_DENIED"            # 403 目录未授权 / 跨机访问
+# 2026-11-07 小欧 - [13] P3 资产台账: 行在但磁盘文件不存在 / 删除被合集引用
+ATTACHMENT_NOT_AVAILABLE = "ATTACHMENT_NOT_AVAILABLE"  # 410 附件行存在但磁盘文件已丢失
+ATTACHMENT_IN_USE = "ATTACHMENT_IN_USE"                # 409 仍被合集引用, 需确认后才能删
 # 2026-11-04 小欧 - 素材包专用(409 重名 / 400 参数)
 PACK_NAME_CONFLICT = "PACK_NAME_CONFLICT"          # 409 素材包重名
 INVALID_PARAM = "INVALID_PARAM"                    # 400 参数不合法(名称/条目/配额)
@@ -66,6 +69,8 @@ _CATALOG: Dict[str, _Err] = {
     ATTACHMENT_UNAVAILABLE: _Err(500, "附件目录不可用，请检查会话工作区"),
     LOCAL_IMPORT_DISABLED: _Err(403, "本地导入仅同机可用"),
     LOCAL_READ_DENIED: _Err(403, "该目录未授权，确认授权后即可读取"),
+    ATTACHMENT_NOT_AVAILABLE: _Err(410, "附件记录还在，但磁盘文件已不存在"),
+    ATTACHMENT_IN_USE: _Err(409, "该文件仍被合集引用，确认后可一并删除"),
     PACK_NAME_CONFLICT: _Err(409, "已有同名素材包，请换个名字"),
     INVALID_PARAM: _Err(400, "参数不合法"),
 }
