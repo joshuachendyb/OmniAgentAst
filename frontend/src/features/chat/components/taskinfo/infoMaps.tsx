@@ -21,6 +21,7 @@
 // 编辑历史: 2026-10-30 小欧 - NOTICE_CONFIG新增refs_ready_done/refs_ready_failed(引用处置汇总, 无start态) — 小欧-2026-10-30
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 // 编辑历史: 2026-11-01 小欧 - NOTICE_CONFIG 加 trimming_done(对话历史裁剪 notice, 后端 react_step 真裁剪帧发射): ScissorOutlined 剪刀图标, 时间线按 kind+phase 查表 — 小欧-2026-11-01
+// 编辑历史: 2026-11-07 小欧 - NOTICE_CONFIG 加 retrying_start/done: loop 重试改用 notice 通道(有 done 终态清除位置2), 原 MetaStep(retrying) 无 done 拼留 — 小欧-2026-11-07
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -126,6 +127,9 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   summarizing_start: <SyncOutlined spin />,
   summarizing_done: <CheckCircleOutlined />,
   summarizing_failed: <WarningOutlined />,
+  // retrying(LLM重试) — 小欧 2026-11-07: 改用 notice 通道(有 done 终态清除), 原 MetaStep(retrying) 无 done 残留
+  retrying_start: <ReloadOutlined spin />,
+  retrying_done: <CheckCircleOutlined />,
   // installing(依赖安装)
   installing_start: <SyncOutlined spin />,
   installing_done: <CheckCircleOutlined />,

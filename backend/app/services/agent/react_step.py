@@ -186,6 +186,9 @@
 #   same_tool_loop)显式传 level="WARNING", 不受控制台级别静音 — 小欧-2026-11-03
 # 2026-11-07 小欧 - 裁剪 notice token 文案收口 agent_utils.fmt_tok(DRY): 原始 int 改紧凑 K/M 两档,
 #   与 start_step 摘要提示、refs.notice._tokens_text 三处统一公有真源 — 小欧-2026-11-07
+# 2026-11-07 小欧 - loop 重试改用 notice 通道(有 done 终态清除): react_step:399 LLM429重试 +
+#   react_loop:332 单步异常重试, 原 MetaStep(retrying) 无 done 拼留; 改 emit_notice(retrying,start)+
+#   首chunk emit_notice(retrying,done) 清位置2 — 小欧-2026-11-07
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -397,20 +400,20 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         _p = getattr(item, "payload", None)          # 路径2 唯一判别: payload非空=终结响应/通知, 否则原生chunk — 小欧 2026-09-06
         if _p is not None:
             if _p.get("type") == "retrying":
-                # 原 meta 分支逻辑原样: 转 MetaStep(retrying) 发前端 — 小欧 2026-09-06
-                await _emit_publish(agent._step_emitter.emit(MetaStep(
-                    type=_p["type"],
-                    step=agent.llm_call_count,
-                    content=_p["content"],
-                    severity="info",
-                    wait_time=_p.get("wait_time"),
-                )).to_dict())
+                # 2026-11-07 小欧 改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
+                #   重试成功后位置2 残留; 改 emit_notice(retrying, start) + 首个 chunk 时发 done 清除
+                await agent._step_emitter.emit_notice("retrying", "start", _p.get("content", "正在重试"))
+                agent._retrying_notice_active = True
                 continue
             chunk_type, chunk_data = "response", _p  # 终结响应: 喂下方 response 分支(原 "response" 拆包语义)
         else:
             chunk_type, chunk_data = "chunk", item   # 原生 chunk: 喂下方 chunk 分支(原 "chunk" 拆包语义)
 
         if chunk_type == "chunk":
+            if getattr(agent, "_retrying_notice_active", False):
+                # 2026-11-07 小欧 重试恢复清除: 首个正常 chunk 到达 → 发 notice(retrying, done) 清位置2
+                await agent._step_emitter.emit_notice("retrying", "done", "已恢复")
+                agent._retrying_notice_active = False
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
             chunk_buffer.append(content)

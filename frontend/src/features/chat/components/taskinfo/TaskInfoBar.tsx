@@ -471,34 +471,34 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           {/* ── 中组: 3轮次 4本轮token 5步数 6任务token ── */}
           {/* 3-轮次 */}
           {/* G3 步轮: 2026-10-04 小欧 拆为轮/步两段独立 span, 删 xsmall "耗时·轮·步" 合并串(北京老陈: 不要纠缠在一起) */}
-          <span style={STAT_STYLE}>轮:{info.llmCallCount}</span>
+          <span style={STAT_STYLE}>{info.llmCallCount}轮</span>
           <span style={DOT_STYLE}>•</span>
           {/* 4-本轮token(P/C/T) — G5: P加粗+C/T中灰, 序P/C/T, 折K(M); narrow起C/T收进tooltip; 无数据显示– */}
           {/* G5 本轮/任务: P 加粗 + C/T 中灰, 序 P/C/T, 折 K(M); narrow 起 C/T 收进 tooltip; 无数据显示 –;
               本轮项不显标签(北京老陈令), 轮已前移至其前 — 小欧 2026-10-04 */}
           <MetricItem
-            value={`P ${formatTokenK(info.roundUsage?.prompt)}`}
+            value={`P${formatTokenK(info.roundUsage?.prompt)}`}
             detail={
               isNarrow
                 ? undefined
-                : `/ C ${formatTokenK(info.roundUsage?.completion)} / T ${formatTokenK(info.roundUsage?.total)}`
+                : `C${formatTokenK(info.roundUsage?.completion)} T${formatTokenK(info.roundUsage?.total)}`
             }
             tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
           />
           <span style={DOT_STYLE}>•</span>
           {/* 5-步数 */}
-          <span style={STAT_STYLE}>步:{info.stepCount}</span>
+          <span style={STAT_STYLE}>{info.stepCount}步</span>
           <span style={DOT_STYLE}>•</span>
           {/* 6-任务token(P/C/T累计) — 标签"任务" */}
           <MetricItem
             label="任务"
-            value={`P ${formatTokenK(
+            value={`P${formatTokenK(
               info.taskAccumulated?.prompt_tokens ?? info.usage.prompt
             )}`}
             detail={
               isNarrow
                 ? undefined
-                : `/ C ${formatTokenK(info.taskAccumulated?.completion_tokens ?? info.usage.completion)} / T ${formatTokenK(info.taskAccumulated?.total_tokens ?? info.usage.total)}`
+                : `C${formatTokenK(info.taskAccumulated?.completion_tokens ?? info.usage.completion)} T${formatTokenK(info.taskAccumulated?.total_tokens ?? info.usage.total)}`
             }
             // 收窄档 tooltip 是唯一明细源 — 小欧-2026-10-29
             tooltip={`任务 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}

@@ -74,6 +74,9 @@
 #   stream_error 翻译, 裸 cancelled chunk 会被当空 chunk → llm_response=None → set_failed)。 小欧-2026-10-30
 # 2026-11-03 小欧 - [Retry][L2] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 create_cancelled_chunk(死导入) + 无占位符 f 前缀(F541) — 小欧-2026-11-04
+# 2026-11-07 小欧 - call_llm_text_task 透传 retrying 事件给前端(摘要限流可见): 原只取 answer,
+#   retrying 被吞 → 摘要重试前端无感知(死转圈); 检出 type=="retrying" 经 _step_emitter.emit_notice
+#   转发, content(含重试次数/退避秒/错误) — 小欧-2026-11-07
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -426,9 +429,22 @@ async def call_llm_text_task(llm_agent, feed: list) -> str:
     content = ""
     async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):
         _p = getattr(item, "payload", None)
-        if _p is not None and isinstance(_p, dict) and _p.get("type") == "answer":
-            c = str(_p.get("content") or "").strip()
-            if c:
-                content = c
+        if _p is not None and isinstance(_p, dict):
+            _ptype = _p.get("type")
+            if _ptype == "retrying":
+                # 2026-11-07 小欧 透传重试事件给前端(摘要限流可见): 原只取 answer, retrying 被吞
+                #   → 摘要重试前端无感知(死转圈); 经 _step_emitter.emit_notice 转发 content(含重试次数/退避秒/错误)
+                _emitter = getattr(llm_agent, "_step_emitter", None)
+                if _emitter is not None:
+                    try:
+                        await _emitter.emit_notice("summarizing", "start",
+                            f"摘要重试中({_p.get('content', '')})")
+                    except Exception:
+                        pass
+                continue
+            if _ptype == "answer":
+                c = str(_p.get("content") or "").strip()
+                if c:
+                    content = c
     return content
 

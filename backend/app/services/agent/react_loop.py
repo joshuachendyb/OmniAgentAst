@@ -71,6 +71,8 @@
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
 # 2026-10-31 小欧 - init_history 补传 ws_text(编排层渲染的目录块), 本层不再取快照 — 小欧-2026-10-31
 # 2026-11-03 小欧 - _terminate_cancelled 取消终态 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+# 2026-11-07 小欧 - 单步异常重试改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
+#   重试成功后位置2 拼留; 改 emit_notice(retrying,start) + 下轮首 chunk emit_notice(retrying,done) 清除 — 小欧-2026-11-07
 #   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 """react_loop — ReAct 循环核心(薄调度)
 
@@ -329,12 +331,10 @@ async def run_react_cycle(
                         set_failed(agent, f"可恢复错误重试已达上限(3次): {_step_err}")  # task007: 明确上限值 — 小欧 2026-07-23
                         break
                     logger.warning(f"[run_react_cycle] 可恢复异常, 第{agent._retry_count}次重试: {_step_err}")
-                    await _publish(agent._step_emitter.emit(MetaStep(
-                        type="retrying",
-                        step=agent.llm_call_count,
-                        content=f"请求LLM重试: {_step_err}",
-                        severity="info",
-                    )).to_dict())
+                    # 2026-11-07 小欧 改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
+                    #   重试成功后位置2 残留; 改 emit_notice(retrying, start) + 下轮首 chunk 发 done 清除
+                    await agent._step_emitter.emit_notice("retrying", "start", f"请求LLM重试: {_step_err}")
+                    agent._retrying_notice_active = True
                     # 2026-08-13 - 小欧 - 重试计数去双计: 此处不再 set RETRYING(计数已在上方+1),
                     #   直接 continue 回循环顶重试; 否则主循环 RETRYING 处理再+1 → 一次异常计2次,
                     #   上限3实际第2次异常即FAILED。来源B(_dispatch_handler 的 retrying 分支)仍走
