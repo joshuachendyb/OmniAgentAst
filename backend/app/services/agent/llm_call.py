@@ -77,6 +77,9 @@
 # 2026-11-07 小欧 - call_llm_text_task 透传 retrying 事件给前端(摘要限流可见): 原只取 answer,
 #   retrying 被吞 → 摘要重试前端无感知(死转圈); 检出 type=="retrying" 经 _step_emitter.emit_notice
 #   转发, content(含重试次数/退避秒/错误) — 小欧-2026-11-07
+# 2026-11-07 小欧 - 优化1: 摘要限流快速降级. call_llm_with_fallback 加 max_response_retries 参数,
+#   call_llm_text_task 传 _SUMMARY_MAX_RETRIES=1(主链 response_retries=2). 根因: 摘要最早执行撞限流窗口,
+#   L2×2+FC降级各带L1×3重试累计~6分钟全在窗口内必然失败; 减摘要L2重试→更快降级→不阻塞主链 — 小欧-2026-11-07
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -98,6 +101,7 @@ import asyncio
 import json
 import re
 import time
+from typing import Optional
 
 from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5拆分: builder成员同模块内互调, 原builders家族
     _build_answer_response,
@@ -114,6 +118,11 @@ from app.utils.text_utils import extract_tool_call_xml
 from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+import contextlib
+
+
+# 摘要L2重试上限: 比主链 response_retries(=2) 少, 撞限流窗口时更快降级不阻塞主链 — 小欧-2026-11-07
+_SUMMARY_MAX_RETRIES = 1
 
 
 # 重试错误载荷格式化 — 小欧 2026-10-29
@@ -295,12 +304,17 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     yield _build_answer_response(full_content, full_reasoning, usage_data, agent, _finish_reason)
 
 
-async def call_llm_with_fallback(agent, messages, openai_tools):
-    """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
+async def call_llm_with_fallback(agent, messages, openai_tools, max_response_retries: Optional[int] = None):
+    """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25
+
+    max_response_retries: 覆盖配置 tuning.llm.response_retries 的重试上限; None=读配置(主链默认),
+      传入小值用于摘要等需快速降级的场景(撞限流窗口时不反复重试阻塞主链) — 小欧-2026-11-07
+    """
     last_error = None
     # 小欧 2026-09-03 修复: 缓冲最近一次retry notice, CancelledError中断时保证重试通知必落事件流
     _pending_retry_notice = None
-    _retries = get_config().get("tuning.llm.response_retries", _D_RETRIES)
+    _retries = max_response_retries if max_response_retries is not None \
+        else get_config().get("tuning.llm.response_retries", _D_RETRIES)
 
     for attempt in range(_retries):
         # 2026-10-30 小欧: 重试循环顶查取消——已取消不再发请求/重试, 产 cancelled error 由 handle_answer 转终态
@@ -427,7 +441,8 @@ async def call_llm_text_task(llm_agent, feed: list) -> str:
         logger.warning(f"[llm_call] 定制调用钩子异常, 回落通用路径: {type(e).__name__}: {e}")
 
     content = ""
-    async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):
+    async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None,
+                                             max_response_retries=_SUMMARY_MAX_RETRIES):
         _p = getattr(item, "payload", None)
         if _p is not None and isinstance(_p, dict):
             _ptype = _p.get("type")
@@ -436,11 +451,9 @@ async def call_llm_text_task(llm_agent, feed: list) -> str:
                 #   → 摘要重试前端无感知(死转圈); 经 _step_emitter.emit_notice 转发 content(含重试次数/退避秒/错误)
                 _emitter = getattr(llm_agent, "_step_emitter", None)
                 if _emitter is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         await _emitter.emit_notice("summarizing", "start",
                             f"摘要重试中({_p.get('content', '')})")
-                    except Exception:
-                        pass
                 continue
             if _ptype == "answer":
                 c = str(_p.get("content") or "").strip()
