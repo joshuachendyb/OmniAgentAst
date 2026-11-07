@@ -168,10 +168,18 @@ export function filesFromDataTransfer(dt: DataTransfer | null): File[] {
  * referenced：文件已在会话工作区 → 走 quoteFile（复用它的大小/存在性探测与提示），不复制文件。
  * copied    ：文件在工作区外 → 后端已复制并登记，这里直接把返回记录入队。
  */
+// 编辑历史: 2026-11-07 小欧 - F-01 补齐: 存为附件前容量预检(occupancy>=MAX_REFS 整项拒绝)。
+//   copied 分支落库后 enqueue 失败→孤儿附件; 从严预检与 uploadAttachment 一致, 避免了这条孤儿链。
+//   (referenced 分支复用工作区文件本不占新配额, 但从严策略下满额也拦, 补一条 chip 即可继续。) — 小欧-2026-11-07
 export async function collectArtifact(
   sessionId: string,
   sourcePath: string
 ): Promise<boolean> {
+  // F-01 容量预检(copied 会新增一条引用): 满额先拦, 避免后端复制落库后 enqueue 失败 → 孤儿附件。
+  if (composerRefStore.occupancy() >= MAX_REFS) {
+    showMessage(ErrorType.WARNING, refLimitText());
+    return false;
+  }
   try {
     const r = await attachmentApi.collect(sessionId, sourcePath);
     if (r.mode === 'referenced') {
