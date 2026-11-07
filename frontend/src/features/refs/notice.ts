@@ -86,7 +86,7 @@ const DROP_REASON_TEXT: Record<string, string> = {
   no_path: '缺少文件路径',
   rejected: '整批被拒（超出预算）',
   // 2026-11-06 小欧 - 附件专用(后端 reason 一一对应, 单一真源在后端) — 小欧-2026-11-06
-  attachment_missing: '附件已失效，请在引用区移除后再发送',
+  attachment_missing: '附件已失效，请在本轮文件里移除后再发送',
   attachment_failed: '附件内容读取失败，请重试或换一个文件',
 };
 

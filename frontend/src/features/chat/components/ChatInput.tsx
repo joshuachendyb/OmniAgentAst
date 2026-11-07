@@ -101,7 +101,6 @@ import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
 import { AttachmentArea } from './input/AttachmentArea'; // 2026-11-06 小欧 - 附件入口(插槽装配)
-import { MaterialPackPanel } from './input/MaterialPackPanel'; // 2026-11-06 小欧 - 素材包面板
 import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 动作按钮组(与 SubmitBar 拆出; 2026-10-25 回迁 SubmitBar 行右端)
 import {
   filesFromDataTransfer,
@@ -133,6 +132,8 @@ import {
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { resolveChipUrlFresh } from '@/hooks/useProjectRoot';
 import { isLinkableRelPath } from '@/utils/projectPath';
+// 2026-11-07 小欧 - 本轮文件条显示总大小: 复用公用 formatBytes(不新造格式化) — 小欧-2026-11-07
+import { formatBytes } from '@/utils/format';
 // 2026-11-02 小欧 - 引用 chip 点击改 SPA 导航（与 PathLink/FileTrailPanel 同一口径，且避开
 //   await 后再 window.open 被浏览器当弹窗拦截）— 小欧-2026-11-02
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
@@ -373,7 +374,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (stillInvalid.length > 0) {
       showMessage(
         ErrorType.FILE_READ,
-        `引用已失效：${stillInvalid.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
+        `引用已失效：${stillInvalid.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在本轮文件里移除后再发送`
       );
       return { refsToSend: merged, blocked: true, updated };
     }
@@ -746,7 +747,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               fontSize: chatTokens.fontSM,
             }}
           >
-            引用 {refs.length} · 发送到当前会话
+            本轮文件 · {refs.length} 个 · 共{' '}
+            {formatBytes(refs.reduce((sum, r) => sum + (r.size ?? 0), 0))}
           </span>
           {refs.map((r) => {
             /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
@@ -961,15 +963,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
         workspaceCount={workspaceCount}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
         // 2026-11-06 小欧 - 附件入口改插槽(本组件装配会话/上传回调, SubmitBar 只布局)
+        // 2026-11-07 小欧 - P1 合门: 唯一「附件」按钮打开文件抽屉, 传入本轮文件做「已加入」判定与计数
         attachment={
           <AttachmentArea
             visible
             sessionId={sessionId}
             ensureSession={ensureSession}
+            refs={refs}
           />
         }
-        // 2026-11-06 小欧 - 素材包面板(读当前 refs 存包 → 投喂回引用区)
-        rightExtra={<MaterialPackPanel refs={refs} sessionId={sessionId} />}
         /*
          * 2026-10-25 小欧 - 动作按钮组回迁本行右端(北京老陈指令): 原在 InputCore 框内右下角;
          *   两受阻判据(sendBlocked/emptyDraft)与提交门/提交处理同源, 见 SubmitActions 头注

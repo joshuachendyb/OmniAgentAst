@@ -16,6 +16,8 @@
 
 // 编辑历史: 2026-11-06 小欧 - 新增 attachment 插槽(附件按钮)与 rightExtra 插槽(素材包面板), 均由
 //   ChatInput 构造传入(本组件零业务, 只排布) — 小欧-2026-11-06
+// 编辑历史: 2026-11-07 小欧 - P1 合门: 删 rightExtra 插槽(素材包并入文件抽屉, 右端只留动作按钮组);
+//   内层 Space 加 wrap —— 原单行 flex 无 wrap 时子项被压到文字竖排 — 小欧-2026-11-07
 
 /**
  * SubmitBar - 底部功能行：左侧控件(历史/指令/类型/模型/附件/插话/会话事务空间) + 右端动作按钮组
@@ -41,8 +43,7 @@ interface SubmitBarProps {
   rightActions?: React.ReactNode;
   /** 2026-11-06 小欧 - 附件入口插槽(附件按钮), 由 ChatInput 构造 — 小欧-2026-11-06 */
   attachment?: React.ReactNode;
-  /** 2026-11-06 小欧 - 右端动作组左侧插槽(素材包面板); 不传不渲染 */
-  rightExtra?: React.ReactNode;
+  // 2026-11-07 小欧 - P1 合门: 删 rightExtra 插槽(素材包面板并入文件抽屉, 右端只留动作按钮组) — 小欧-2026-11-07
 }
 
 const SubmitBar: React.FC<SubmitBarProps> = ({
@@ -54,10 +55,18 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   onOpenWorkspaces,
   rightActions, // 2026-10-25 小欧 - 右端动作按钮组插槽
   attachment, // 2026-11-06 小欧 - 附件入口
-  rightExtra, // 2026-11-06 小欧 - 素材包面板
 }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      // 2026-11-07 小欧 - 窄屏允许换行: 原单行 flex 无 wrap 导致按钮被挤成竖排 — 小欧-2026-11-07
+      flexWrap: 'wrap',
+      rowGap: 8,
+    }}
+  >
+    <Space size={8} wrap style={{ alignItems: 'center' }}>
       {leftExtra}
       {modelPickerSlot}
       {/* 2026-11-06 小欧 - 附件入口改插槽——本组件不再认识会话/上传，纯布局(SRP) */}
@@ -81,8 +90,8 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
       )}
     </Space>
     {/* 2026-10-25 小欧 - marginLeft:auto 贴最右: 左控件组与动作组分居两端 */}
-    {/* 2026-11-06 小欧 - 右端容器同时承载素材包(rightExtra)与动作组, 两者皆空则不渲染 */}
-    {(rightExtra || rightActions) && (
+    {/* 2026-11-07 小欧 - P1 合门: 右端只剩动作按钮组(素材包并入文件抽屉) */}
+    {rightActions && (
       <div
         style={{
           marginLeft: 'auto',
@@ -91,7 +100,6 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
           gap: 8,
         }}
       >
-        {rightExtra}
         {rightActions}
       </div>
     )}
