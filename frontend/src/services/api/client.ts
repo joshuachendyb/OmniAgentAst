@@ -210,7 +210,11 @@ export const HEAVY_READ_TIMEOUT_MS = 120_000;
 const api: AxiosInstance = axios.create({
   baseURL: `${getApiBaseUrl()}/api/v1`,
   timeout: 60_000,
-  headers: { 'Content-Type': 'application/json' },
+  // 2026-11-07 小欧 - 删实例默认头 Content-Type:application/json —— 真实浏览器 E2E 实测:
+  //   该默认头会覆盖 FormData 的自动协商, 附件上传以 application/json(无 boundary) 发出
+  //   → FastAPI 解析不到 form 字段 → 422, 前端提示"上传失败"但 curl 直传成功。
+  //   删除后 axios 自动协商: 对象 body→application/json, FormData→multipart(浏览器补 boundary),
+  //   既有 JSON 调用行为不变(axios transformRequest 自动补 json 头)。
 });
 
 api.interceptors.request.use(
