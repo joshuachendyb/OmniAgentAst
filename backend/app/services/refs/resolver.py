@@ -23,6 +23,9 @@
 # 2026-11-07 小欧 - B-03 修复: resolve_refs/_read_one/_read_attachment 增加 session_id 必填参数,
 #   附件注入前校验会话归属(经 get_attachment_scoped, 与 API 端点同一口径) ——
 #   跨会话按 id 注入属越权, 不匹配折算 attachment_missing(视同失效, 不阻断其余引用)
+# 2026-11-07 小欧 - B-08 修订: text 附件不再豁免 clip_text, 所有 kind 统一走 read_max_bytes
+#   单条预算闸门(clip_text 未超限原样返回, 小文本仍全文注入) —— 修复 ≤256KB 文本直入绕过
+#   预算、大文本整批被拒的问题 — 小欧-2026-11-07
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -126,14 +129,14 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
-    # B-08: text 附件 build_inject_text 已按 TEXT_INLINE_MAX(256KB) 做尺寸控制
-    #   (≤256KB 全文 / >256KB 档案头 ~8KB), 再经 clip_text(read_max_bytes) 二次截断
-    #   会裁掉本应全文注入的 200KB 文本, 与设计意图矛盾; 仅 text 类型跳过,
-    #   非 text 卡片(图片/richdoc/视频/binary 档案卡, 均远小于 read_max_bytes)
-    #   保持 clip_text 兜底不变。
-    omitted = 0
-    if att.get("kind") != "text":
-        text, omitted = clip_text(text, limits.read_max_bytes)
+    # 2026-11-07 小欧 - B-08 修订: text 不再豁免 clip_text。clip_text 对未超限(len≤cap)
+    #   原样返回, 故 ≤read_max_bytes 的小文本仍全文注入(S1 意图不损); >read_max_bytes 的
+    #   大文本头尾摘录, 守住单条预算。原"text 跳过 clip"让 ≤256KB 全文直入 —— 默认预算下
+    #   (read_max_bytes≈30k~79k字符, 见 limits) 50KB 文本即超单条上限, 百 KB 文本直接
+    #   整批被拒(reject 线), 与 S1"AI 能准确引用文本内容"矛盾(见 [10][56] S1 审查)。
+    #   所有 kind 统一 clip_text: 附件 C 档不压缩(budget 语义)与读取期单条预算(read_max)
+    #   是两道不同闸门, 前者保证整份语义, 后者必须对所有 kind 生效。
+    text, omitted = clip_text(text, limits.read_max_bytes)
     return ResolvedRef(ref={**ref, "content": text, "size": att.get("size")},
                        truncated=bool(omitted),
                        note=f"已省略 {omitted} 字符" if omitted else "")

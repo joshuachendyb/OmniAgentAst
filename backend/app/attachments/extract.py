@@ -3,6 +3,8 @@
 # 2026-11-06 小欧 补 classify 文本分支: 文本扩展名(如 .txt/.md/.py)先于"任意后缀 → binary"判定,
 #   否则文本文件落 binary, 文本档案卡用不上 — 小欧-2026-11-06
 # 2026-11-06 小欧 S1: text 分支从 _text_card 换成 _text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
+# 2026-11-07 小欧 - 修复: _read_head_and_count 补 latin-1 兜底(与 _read_text_full 编码能力对齐),
+#   消除同文件 ≤/≥256KB 两侧解码不一致致的档案头乱码 — 小欧-2026-11-07
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -141,7 +143,13 @@ def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
                 try:
                     head.append(raw_line.decode("utf-8").rstrip("\r\n"))
                 except UnicodeDecodeError:
-                    head.append(raw_line.decode("gbk", errors="replace").rstrip("\r\n"))
+                    try:
+                        head.append(raw_line.decode("gbk").rstrip("\r\n"))
+                    except UnicodeDecodeError:
+                        # 2026-11-07 小欧 - 补 latin-1 兜底: 与 _read_text_full 编码能力对齐,
+                        #   否则 >256KB 档案头分支缺 latin-1, 同文件的 ≤/≥256KB 两侧解码不一致,
+                        #   超大 latin-1 文本档案头乱码(全文分支却正常)。
+                        head.append(raw_line.decode("latin-1").rstrip("\r\n"))
     return head, total
 
 
