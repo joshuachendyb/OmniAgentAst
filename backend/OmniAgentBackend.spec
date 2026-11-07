@@ -13,6 +13,9 @@
 #     OmniAgent智能助手(SPA版)使用说明*.md 复制为 dist 根 OmniAgent使用说明.md(exe 同级)
 #   2026-11-06 小欧 - 前端收集改逐文件并排除 stats.html(dist 缺失硬报错): stats.html 为
 #     rollup-plugin-visualizer 诊断产物(2.4MB)不进生产包; 多 index-*.js 经实测为懒加载 chunk 属必要保留。
+#   2026-11-07 小欧 - 修复 datas 目标路径: PyInstaller datas 第二参数是目标目录非文件路径,
+#     原 web/index.html 被当目录→创建 web/index.html/index.html(嵌套一层, 前端白屏);
+#     改 .parent 取目标目录, 文件名由 PyInstaller 自动保持 — 小欧-2026-11-07
 # ============================================================================
 import sys
 from pathlib import Path
@@ -66,7 +69,7 @@ if not _frontend_dist.is_dir():
 _frontend_datas = []
 for _f in _frontend_dist.rglob("*"):
     if _f.is_file() and _f.name != "stats.html":
-        _frontend_datas.append((str(_f), str(Path("web") / _f.relative_to(_frontend_dist))))
+        _frontend_datas.append((str(_f), str(Path("web") / _f.relative_to(_frontend_dist).parent)))
 
 a = Analysis(
     [str(BACKEND / "run_server.py")],
