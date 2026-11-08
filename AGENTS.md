@@ -129,6 +129,8 @@ uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` �
 **双入口(2026-11-08 小欧, 用户指定默认 uvicorn)**: `start_uvicorn.bat` → 方式二 `python -m uvicorn ... --reload --forwarded-allow-ips 127.0.0.1,::1`; `start_watch.bat`(或 `start_uvicorn.bat watch`)→ 方式一 watchfiles; `start_e2e.bat` 固定传 `watch`(E2E 铁律不变)。
 方式二卡死的结论不变: 本机实测首改文件即卡在 `basereload.py:98`(日志停在 `Reloading...`, worker 照常应答), 卡住就换 `start_watch.bat`。uvicorn 模式下 app 层收不到 `forwarded_allow_ips` 注入(子进程不执行 `run_server.py`), 启动打印一条该告警属预期。— 小欧-2026-11-08
 
+**关窗不级联(2026-11-08 小欧)**: 关闭 console 窗口只终结该控制台的进程组, uvicorn `--reload` 派出的子进程不挂在你的控制台上(detached), 关窗后它们仍在运行并抢同一端口(SO_REUSEADDR — 本机实测三实例同绑 8100, 请求随机分发到旧代码)。start_dev.ps1 已改为**启动前按端口清残留树**(同端口监听者+direct 子进程, 其它进程不动), 任由关窗残留, 重起即自愈; 受控关闭优先走 `Get-NetTCPConnection -LocalPort <端口> -State Listen` 取 OwningProcess 按端口杀。— 小欧-2026-11-08
+
 ### Frontend (workdir=`frontend/`)
 
 ```bash

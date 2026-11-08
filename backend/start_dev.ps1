@@ -11,6 +11,8 @@
 #   8000 上有 OpenCode 桌面版内置 vLLM provider 每 30s 探 /v1/models 刷 404。打包链 run_server.py 不动 — 小欧-2026-11-08
 # 2026-11-08 小欧 - uvicorn 分支补 --log-level warning: 裸 uvicorn 默认 access 日志打控制台, 与
 #   run_server.py 的"只落盘不挂 console"对齐(刷屏无排障价值, 且同步 stdout 有冻结事件循环风险) — 小欧-2026-11-08
+# 2026-11-08 小欧 - 启动前按端口清残留树: 关窗不级联清 uvicorn --reload 子树(detached worker),
+#   残留实例 SO_REUSEADDR 抢同一端口致请求随机分发; 只按端口清, 其它进程不动 — 小欧-2026-11-08
 param(
     [Parameter(Position = 0)]
     [ValidateSet('uvicorn', 'watch', 'watchfiles')]
@@ -33,6 +35,20 @@ if (-not (Get-Command $python -ErrorAction SilentlyContinue)) {
 if ($LASTEXITCODE -ne 0) {
     Write-Host '[start_dev] 当前 python 缺 uvicorn, 请先执行: python -m pip install -r requirements.txt' -ForegroundColor Red
     exit 1
+}
+
+# 启动前按端口清残留树(上方注释): 只杀该端口的监听者及其 direct 子进程, 不碰其它进程
+$stale = @(Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique)
+if ($stale.Count) {
+    $tree = @()
+    foreach ($id in $stale) {
+        $tree += $id
+        $tree += @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$id" | Select-Object -ExpandProperty ProcessId)
+    }
+    Write-Host "[start_dev] 端口 $backendPort 有残留监听(PID $($tree -join ',')), 已清树后重起" -ForegroundColor Yellow
+    $tree | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
 }
 
 if ($Reloader -eq 'uvicorn') {
