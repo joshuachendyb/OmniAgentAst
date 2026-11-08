@@ -61,8 +61,11 @@ export interface ModelState {
   ranges: Record<string, { min: number; max: number }>;
   paramOptions: Record<string, string[]>;
   // 2026-09-23 小欧 - 实施：能力编辑副本与持久化基线（baseline 不注入，保脏）
-  capabilities: string[];
-  capabilitiesBaseline: string[];
+  // 2026-11-08 小欧 [14] F2: capabilities → input/output 双维度
+  inputModalities: string[];
+  inputModalitiesBaseline: string[];
+  outputModalities: string[];
+  outputModalitiesBaseline: string[];
   envOverride: Record<string, boolean>;
   providerConfig: Record<
     string,

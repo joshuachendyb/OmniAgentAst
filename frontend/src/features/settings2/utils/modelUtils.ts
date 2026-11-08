@@ -181,7 +181,16 @@ export const CAPABILITY_OPTIONS = [
   { label: '图片', value: 'image' },
   { label: '视频', value: 'video' },
   { label: '音频', value: 'audio' },
-  { label: 'PDF', value: 'pdf' },
+  // 2026-11-08 小欧 [14] D6: 枚举统一 pdf→file（与远端 /v1/models 的 input_modalities 值一致，pdf 是 file 子集）
+  { label: '文件', value: 'file' },
+];
+
+// 2026-11-08 小欧 [14] §3.10.1/F5: 输出模态勾选枚举（生成输出能力）——
+//   产出场景只勾 image/video（生图/生视频），text/file/audio 一般不出现在输出。
+//   与 CAPABILITY_OPTIONS 共用字段值域 {text,image,file,video,audio}，但 output 只提供可产出项。
+export const OUTPUT_MODALITY_OPTIONS = [
+  { label: '图片生成', value: 'image' },
+  { label: '视频生成', value: 'video' },
 ];
 
 // 2026-09-24 小欧 - 状态归一：去重后恒含 'text'（防加载/切换时缺 text 致假脏；未知值原样保留）- 小欧-2026-09-24

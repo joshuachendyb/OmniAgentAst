@@ -98,7 +98,9 @@ interface Props {
     label: string;
     model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
-    capabilities?: string[];
+    // 2026-11-08 小欧 [14] F1: capabilities → input/output 双维度
+    input_modalities?: string[];
+    output_modalities?: string[];
     param_options?: Record<string, string[]>;
   }) => Promise<void>;
   onSubmitAddProvider: (data: {

@@ -161,6 +161,32 @@ const readModalities = (m: RemoteModelItem): string[] => {
     : [];
 };
 
+// 2026-11-08 小欧 [14] F6: 输出模态收窄（与 readModalities 同模式）
+const readOutputModalities = (m: RemoteModelItem): string[] => {
+  const v = m.output_modalities;
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === 'string')
+    : [];
+};
+
+// 2026-11-08 小欧 [14] §3.10.2/F6: 输出模态展示标签（生图/生视频"生成"徽标，与输入模态分列）
+const OUTPUT_LABEL: Record<string, string> = {
+  image: '图片生成',
+  video: '视频生成',
+};
+
+const renderOutputTags = (m: RemoteModelItem) => {
+  const outs = readOutputModalities(m);
+  if (outs.length === 0) {
+    return <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>–</span>;
+  }
+  return outs.map((v) => (
+    <Tag key={v} style={TAG_STYLE}>
+      {OUTPUT_LABEL[v] ?? v}
+    </Tag>
+  ));
+};
+
 interface LibraryFilters {
   keyword: string;
   freeOnly: boolean;
@@ -687,6 +713,12 @@ export const ModelLibraryTab: React.FC<Props> = ({
             </>
           );
         }}
+      />
+      {/* 2026-11-08 小欧 [14] F6: 输出模态列（生图/生视频，与"输入模态"分列） */}
+      <Table.Column
+        title="输出模态"
+        width={130}
+        render={(_, m: RemoteModelItem) => renderOutputTags(m)}
       />
       {/* 2026-09-29 小欧 - 删「归属」「状态」两列(北京老陈指令，经实勘确认无价值):
            归属: owned_by 实测 OpenRouter 460/460 为 null(整列显示 –)、qnaigc 81 个全为 system、

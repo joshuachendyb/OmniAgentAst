@@ -178,6 +178,8 @@ import {
   CAPABILITY_OPTIONS,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
+  // 2026-11-08 小欧 [14] F3: 输出模态勾选枚举（§3.10.1）
+  OUTPUT_MODALITY_OPTIONS,
 } from '../utils/modelUtils';
 import type { TabKey } from '../types';
 // 2026-09-22 小欧 - 管理选项弹窗（标题行「管理选项」入口）
@@ -347,7 +349,14 @@ const SettingsPage: React.FC = () => {
           )
         ).filter(Boolean).length +
         state.model.removedParams.length +
-        (isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline)
+        (isCapsDirty(
+          state.model.inputModalities,
+          state.model.inputModalitiesBaseline
+        ) ||
+          isCapsDirty(
+            state.model.outputModalities,
+            state.model.outputModalitiesBaseline
+          )
           ? 1
           : 0) +
         Object.keys(state.model.providerDraft).length
@@ -580,19 +589,20 @@ const SettingsPage: React.FC = () => {
         {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
           其 keys 来自 model_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
+        {/* 2026-11-08 小欧 [14] F3: "模型能力"(=输入模态) → inputModalities，下方新增"输出模态"行（§3.10.1） */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>模型能力</span>
           <span style={{ flex: 1 }}>
             <Checkbox.Group
-              value={state.model.capabilities}
+              value={state.model.inputModalities}
               // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原内联 providerConfig env 判定重复表达式）
               disabled={envManaged}
               options={CAPABILITY_OPTIONS}
-              onChange={(v) => s.setCapabilities(v as string[])}
+              onChange={(v) => s.setInputModalities(v as string[])}
             />
             {/* 2026-09-23 小欧 - 未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
               yaml 手写非 5 枚举值看得见、本页不提供增删；有未知值才渲染，空则零开销 */}
-            {state.model.capabilities
+            {state.model.inputModalities
               .filter((v) => !KNOWN_CAPABILITY_VALUES.has(v))
               .map((v) => (
                 <Tag
@@ -609,8 +619,24 @@ const SettingsPage: React.FC = () => {
           </span>
           {/* 2026-09-23 小欧 - && 写法（与 ModelParams 脏点同款，原三元异款） */}
           {isCapsDirty(
-            state.model.capabilities,
-            state.model.capabilitiesBaseline
+            state.model.inputModalities,
+            state.model.inputModalitiesBaseline
+          ) && <DirtyDot />}
+        </div>
+        {/* 2026-11-08 小欧 [14] §3.10.1/F3: 输出模态行（生成输出能力：生图/生视频，与"模型能力"分维度） */}
+        <div style={settingsRowStyle}>
+          <span style={settingsLabelStyle}>输出模态</span>
+          <span style={{ flex: 1 }}>
+            <Checkbox.Group
+              value={state.model.outputModalities}
+              disabled={envManaged}
+              options={OUTPUT_MODALITY_OPTIONS}
+              onChange={(v) => s.setOutputModalities(v as string[])}
+            />
+          </span>
+          {isCapsDirty(
+            state.model.outputModalities,
+            state.model.outputModalitiesBaseline
           ) && <DirtyDot />}
         </div>
         <div data-section="provider-config">
@@ -779,7 +805,12 @@ const SettingsPage: React.FC = () => {
               label: d.label,
               ...(d.model_params ? { model_params: d.model_params } : {}),
               ...(d.range ? { range: d.range } : {}),
-              ...(d.capabilities ? { capabilities: d.capabilities } : {}),
+              ...(d.input_modalities
+              ? { input_modalities: d.input_modalities }
+              : {}),
+              ...(d.output_modalities
+                ? { output_modalities: d.output_modalities }
+                : {}),
               ...(d.param_options ? { param_options: d.param_options } : {}),
             });
             s.syncMtime(res.mtime);

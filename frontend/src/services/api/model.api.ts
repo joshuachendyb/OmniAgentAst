@@ -52,7 +52,9 @@ export interface ModelEntry {
   model_params: Record<string, unknown>;
   param_options?: Record<string, string[]>;
   range: Record<string, { min: number; max: number }>;
-  capabilities: string[];
+  // 2026-11-08 小欧 [14] B1/F1: capabilities 拆为 input_modalities + output_modalities 双维度
+  input_modalities: string[];
+  output_modalities: string[];
   /**
    * 厂商声明的上下文窗口(token)。来源 model_meta.context_length。
    * 2026-11-01 小欧 - 后端原不下发该字段, ②参数区因此拿不到声明值(库保存的窗口既不可见也不可改) — 小欧-2026-11-01
@@ -253,7 +255,9 @@ export const modelApi = {
     label?: string;
     model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
-    capabilities?: string[];
+    // 2026-11-08 小欧 [14] F1: capabilities → input/output 双维度
+    input_modalities?: string[];
+    output_modalities?: string[];
     param_options?: Record<string, string[]>;
   }): Promise<ModelsResponse> => {
     const response = await api.post<ModelsResponse>('/models', data);
@@ -266,7 +270,7 @@ export const modelApi = {
     data: Partial<
       Pick<
         ModelEntry,
-        'label' | 'model_params' | 'range' | 'capabilities' | 'param_options'
+        'label' | 'model_params' | 'range' | 'input_modalities' | 'output_modalities' | 'param_options'
       >
     > & {
       // 2026-09-24 小欧 - 键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24

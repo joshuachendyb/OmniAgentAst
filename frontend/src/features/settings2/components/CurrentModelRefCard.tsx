@@ -77,11 +77,13 @@ export const CurrentModelRefCard: React.FC<Props> = ({
   const status = resolveStatus(currentRef, providers);
   const providerName = currentRef?.provider ?? '';
   const modelName = currentRef?.model ?? '';
-  // 5.4：capabilities tags 复用选中模型数据，无则隐藏整行
+  // 2026-09-21 小欧 - capabilities tags 复用选中模型数据，无则隐藏整行
   const modelEntry = providers
     .find((p) => p.name === providerName)
     ?.models.find((m) => m.name === modelName);
-  const capabilities = modelEntry?.capabilities ?? [];
+  // 2026-11-08 小欧 [14] F4: capabilities → input_modalities（输入能力）+ output_modalities（生图/生视频徽标）
+  const capabilities = modelEntry?.input_modalities ?? [];
+  const outputCapabilities = modelEntry?.output_modalities ?? [];
 
   const bgColor =
     status === 'normal'
@@ -217,6 +219,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
         )}
 
         {/* label:value 两行：左标签定宽，右内容对齐，中英混排不参差 */}
+        {/* 2026-11-08 小欧 [14] F4: 能力→输入能力(input_modalities)；生图/生视频输出补"生成"徽标 */}
         {capabilities.length > 0 && (
           <div style={{ ...metaRowStyle, marginTop: Spacing.MD }}>
             <span style={metaLabelStyle}>能力</span>
@@ -230,6 +233,22 @@ export const CurrentModelRefCard: React.FC<Props> = ({
                   }}
                 >
                   {c}
+                </Tag>
+              ))}
+              {outputCapabilities.map((c) => (
+                <Tag
+                  key={`out-${c}`}
+                  color="orange"
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    marginRight: Spacing.SM,
+                  }}
+                >
+                  {c === 'image'
+                    ? '图片生成'
+                    : c === 'video'
+                      ? '视频生成'
+                      : c}
                 </Tag>
               ))}
             </span>
