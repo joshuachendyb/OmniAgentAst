@@ -46,15 +46,15 @@ export interface TestConnectionProbeProps {
   probeKey: string;
   /** api_base 是否已填（空则按钮禁用：地址不通测了无意义） */
   baseUrlReady: boolean;
-  /** 按钮左间距（由调用方传既有令牌值，避免本组件硬编码间距） */
-  marginLeft: number | string;
+  /** 按钮左间距（由调用方传既有令牌值；flex gap 容器内传 0 或省略） */
+  marginLeft?: number | string;
 }
 
 export const TestConnectionProbe: React.FC<TestConnectionProbeProps> = ({
   providerName,
   probeKey,
   baseUrlReady,
-  marginLeft,
+  marginLeft = 0,
 }) => {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(
@@ -94,7 +94,7 @@ export const TestConnectionProbe: React.FC<TestConnectionProbeProps> = ({
         disabled={!baseUrlReady}
         style={{ marginLeft }}
       >
-        测试连接
+        配置联通测试
       </Button>
       {result && (
         <div

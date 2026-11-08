@@ -46,12 +46,17 @@
 //   `base_url` → `api_base`（与后端 yaml 真源同名）；②删 `retry_times` 死字段（后端只认 max_retries，
 //   该键从未被读取，留着就是第二个名字的温床）；③本地 state `baseUrl` → `apiBase`、HARDCODED_KEYS
 //   同步改名。样式令牌 baseUrlWidth 属视觉尺寸常量，与配置键无关，不改 — 小欧-2026-11-01
+// 2026-11-08 小欧 - ③标题行布局统一：flex → grid 1fr 1fr 1fr + SectionTitle（与①②同款）；
+//   grid div 去 margin（SectionTitle 自带，消除 grid row 高度差异致按钮垂直错位）；
+//   isEnv 分支裸 span → SectionTitle；FontWeight import 清理（仅标题 span 用，改后无残留）；
+//   TestConnectionProbe marginLeft 改可选（flex gap 容器内不再需要传）
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch, Tag } from 'antd';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { SecretRevealInput } from './SecretRevealInput';
 import { TestConnectionProbe } from './TestConnectionProbe';
+import { SectionTitle } from './SectionTitle';
 import {
   settingsControl,
   settingsSpacing,
@@ -200,23 +205,8 @@ export const ProviderConfig: React.FC<Props> = ({
   if (isEnv)
     return (
       <div>
-        {/* env 接管只读：标题仍在（搜索锚点），无保存按钮；裸 span 与正常分支同款防两行 */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            margin: `${Spacing.LG}px 0 ${Spacing.XS}px`,
-          }}
-        >
-          <span
-            style={{
-              fontSize: FontSize.PRIMARY,
-              fontWeight: FontWeight.BOLD,
-            }}
-          >
-            ── ③ Provider 配置 ──
-          </span>
-        </div>
+        {/* env 接管只读：标题仍在（搜索锚点），无保存按钮 */}
+        <SectionTitle title="── ③ Provider 配置 ──" />
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           本 Provider 由 {name.toUpperCase()}_API_KEY
@@ -227,50 +217,40 @@ export const ProviderConfig: React.FC<Props> = ({
 
   return (
     <div>
-      {/* 2026-09-24 小欧 - 标题+保存按钮强制同一行（北京老陈截图：仍两行+按钮靠右）：
-          flex 三段 = 左 spacer 1fr | 按钮 | 右 spacer 1fr → 按钮物理居中；
-          标题用裸 span（不用 SectionTitle 的 block+margin，防独占一行） */}
+      {/* ①②③标题行统一布局：grid 1fr 1fr 1fr + SectionTitle（margin 自带，grid div 不设 margin） */}
       <div
         style={{
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
           alignItems: 'center',
-          margin: `${Spacing.LG}px 0 ${Spacing.XS}px`,
         }}
       >
-        <span
-          style={{
-            flex: 1,
-            fontSize: FontSize.PRIMARY,
-            fontWeight: FontWeight.BOLD,
-          }}
-        >
-          ── ③ Provider 配置 ──
-        </span>
+        <SectionTitle title="── ③ Provider 配置 ──" />
         {/* 无修改 → 灰白不可点；有修改 → 蓝 + 「（N 项）」（N=diff 键数，与底部保存栏同源）。
             api_base 守卫是"原本有值却被清空"（错误状态），不是"当前为空"——原本就空的老配置
             仍须能改其它字段（设计稿曾用"当前为空"一票否决，属退化，已修）。— 小欧 2026-09-26 */}
-        <Button
-          type={dirtyCount > 0 ? 'primary' : 'default'}
-          onClick={() => void doSave()}
-          loading={saving}
-          disabled={
-            dirtyCount === 0 ||
-            (apiBase.trim() === '' && (config.api_base || '').trim() !== '')
-          }
-        >
-          保存 Provider 配置（立即生效）
-          {dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
-        </Button>
-        {/* 2026-09-26 小欧 - 迁出为 TestConnectionProbe（SRP 拆分）：
-            与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。
-            api_base 为空时同样禁用（地址不通测了无意义）。 */}
-        <TestConnectionProbe
-          providerName={name}
-          probeKey={apiKey}
-          baseUrlReady={apiBase.trim() !== ''}
-          marginLeft={Spacing.SM}
-        />
-        <span style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}>
+          <Button
+            type={dirtyCount > 0 ? 'primary' : 'default'}
+            onClick={() => void doSave()}
+            loading={saving}
+            disabled={
+              dirtyCount === 0 ||
+              (apiBase.trim() === '' && (config.api_base || '').trim() !== '')
+            }
+          >
+            保存Provider配置
+            {dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
+          </Button>
+          {/* 2026-09-26 小欧 - 迁出为 TestConnectionProbe（SRP 拆分）：
+              与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。
+              api_base 为空时同样禁用（地址不通测了无意义）。 */}
+          <TestConnectionProbe
+            providerName={name}
+            probeKey={apiKey}
+            baseUrlReady={apiBase.trim() !== ''}
+          />
+        </div>
       </div>
 
       {/* api_key —— 明文查看已迁入 SecretRevealInput（父组件不持有明文）；env 接管时整块只读，
@@ -297,7 +277,7 @@ export const ProviderConfig: React.FC<Props> = ({
         >
           {config.api_key.configured
             ? '密钥已保存 · 请求自动携带'
-            : '密码Key未设置: 空key(不携带认证头);无需输入. 非空Key, 必须输入新密码并保存'}
+            : 'APIKey设置: 空key(不携带认证头). 无需输入;非空Key, 必须输入新Key并保存'}
         </Tag>
       </div>
       {/* 2026-10-31 - 小欧 - 空 api_key 的语义说明收口到 SecretRevealInput 单一出处，

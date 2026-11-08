@@ -129,6 +129,8 @@
 // 2026-11-01 小欧 - 键名统一（北京老陈令）：ModelParams.defaults → baseline、ParamOptionsModal 同；
 //   onSubmitAddModel 透传 default_params → model_params；providerConfig fallback base_url → api_base。
 //   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md - 小欧-2026-11-01
+// 2026-11-08 小欧 - ①②③标题行布局统一：三列 grid（1fr 1fr 1fr）+ SectionTitle + 按钮组中列左对齐（justifySelf:'start'）；
+//   ①按钮补 actionBtnWidth（与②等宽）；③ ProviderConfig 裸 span → SectionTitle、grid div 去 margin（消除 grid row 高度差异致按钮垂直错位）
 import React, { useState } from 'react';
 import {
   Button,
@@ -436,30 +438,45 @@ const SettingsPage: React.FC = () => {
         <div data-section="selector">
           {/* 修正(2026-09-21 小强)：删除「当前系统全局使用模型」冗余小字——该信息已由
             通用 Tab CurrentModelRefCard 完整展示（标题+卡内文案），此处重复（[设置页UI审计] 问题17） */}
-          <SectionTitle title="── ① 选择器 ──" />
+          {/* ①标题行 = 三列 grid（1fr 1fr 1fr）：标题左列 | 按钮组中列左对齐 | 右列空 — ①②③统一布局 */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              alignItems: 'center',
+            }}
+          >
+            <SectionTitle title="── ① 选择器 ──" />
+            <div style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}>
+              <Button icon={<PlusOutlined />} style={{ width: settingsControl.actionBtnWidth }} onClick={() => s.patchModel({ addModelModalOpen: true })}>
+                添加模型
+              </Button>
+              <Button icon={<PlusOutlined />} style={{ width: settingsControl.actionBtnWidth }} onClick={() => s.patchModel({ addProviderModalOpen: true })}>
+                添加 Provider
+              </Button>
+            </div>
+          </div>
           <ModelSelector
             providers={state.model.providers}
             selectedProvider={state.model.selectedProvider}
             selectedModel={state.model.selectedModel}
             onSelectProvider={s.selectProvider}
             onSelectModel={s.selectModel}
-            onAddModel={() => s.patchModel({ addModelModalOpen: true })}
-            onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
           />
         </div>
-        {/* ②标题行 = 三列 grid：标题左 | 三按钮等宽组居中 | 右 1fr 空列对称 */}
+        {/* ②标题行 = 三列 grid（1fr 1fr 1fr）：标题左列 | 按钮组中列左对齐 | 右列空 — ①②③统一布局 */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr auto 1fr',
+            gridTemplateColumns: '1fr 1fr 1fr',
             alignItems: 'center',
           }}
         >
-          <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
+          <SectionTitle title="── ② 选中模型参数 ──" />
           {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
             + gap SM 紧挨，整组居中；
             添加参数 = 管 model_params，管理选项 = 管 param_options，重置 = 回默认值 */}
-          <div style={{ display: 'flex', gap: Spacing.SM }}>
+          <div style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}>
             <Button
               icon={<PlusOutlined />}
               style={{ width: settingsControl.actionBtnWidth }}
@@ -589,9 +606,9 @@ const SettingsPage: React.FC = () => {
         {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
           其 keys 来自 model_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
-        {/* 2026-11-08 小欧 [14] F3: "模型能力"(=输入模态) → inputModalities，下方新增"输出模态"行（§3.10.1） */}
+        {/* 2026-11-08 小欧 [14] F3: 输入模态行 → inputModalities，下方输出模态行（§3.10.1） */}
         <div style={settingsRowStyle}>
-          <span style={settingsLabelStyle}>模型能力</span>
+          <span style={settingsLabelStyle}>输入模态</span>
           <span style={{ flex: 1 }}>
             <Checkbox.Group
               value={state.model.inputModalities}
@@ -623,7 +640,7 @@ const SettingsPage: React.FC = () => {
             state.model.inputModalitiesBaseline
           ) && <DirtyDot />}
         </div>
-        {/* 2026-11-08 小欧 [14] §3.10.1/F3: 输出模态行（生成输出能力：生图/生视频，与"模型能力"分维度） */}
+        {/* 2026-11-08 小欧 [14] §3.10.1/F3: 输出模态行（生成输出能力：生图/生视频，与输入模态分维度） */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>输出模态</span>
           <span style={{ flex: 1 }}>

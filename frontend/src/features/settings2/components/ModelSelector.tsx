@@ -2,9 +2,10 @@
 // 2026-09-21 小欧 - 实施：下拉宽度→settingsControl 令牌
 // 2026-09-21 小欧 - 全文核查：gap/marginTop 裸数字 → Spacing.MD/XS 令牌（设计文档 v1.12 铁规）
 // 2026-09-21 小欧 - 删掉冗余"当前模型"行（该信息已移至模型Tab ①选择器上方独立显示）
+// 2026-11-08 小欧 - 布局优化：添加模型/Provider 按钮上移至①标题行（SettingsPage grid 居中，与②同款）；
+//   能力标签从独立行并入下拉行（原按钮位置），消除垂直冗余行
 import React from 'react';
-import { Button, Select, Tag } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Select, Tag } from 'antd';
 import { settingsControl } from '@/theme/settingsTokens';
 import { Spacing } from '@/utils/stepStyles';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -15,8 +16,6 @@ interface Props {
   selectedModel: string;
   onSelectProvider: (name: string) => void;
   onSelectModel: (name: string) => void;
-  onAddModel: () => void;
-  onAddProvider: () => void;
 }
 
 export const ModelSelector: React.FC<Props> = ({
@@ -25,54 +24,42 @@ export const ModelSelector: React.FC<Props> = ({
   selectedModel,
   onSelectProvider,
   onSelectModel,
-  onAddModel,
-  onAddProvider,
 }) => {
   const provider = providers.find((p) => p.name === selectedProvider);
   const current = provider?.models.find((m) => m.name === selectedModel);
   return (
-    <div>
-      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
-        <Select
-          value={selectedProvider}
-          style={{ width: settingsControl.modelSelectWidth }}
-          onChange={onSelectProvider}
-        >
-          {providers.map((p) => (
-            <Select.Option key={p.name} value={p.name}>
-              {p.label || p.name}
-            </Select.Option>
-          ))}
-        </Select>
-        <Select
-          value={selectedModel}
-          style={{ width: settingsControl.modelNameWidth }}
-          onChange={onSelectModel}
-        >
-          {(provider?.models ?? []).map((m) => (
-            <Select.Option key={m.name} value={m.name}>
-              {m.label || m.name}
-            </Select.Option>
-          ))}
-        </Select>
-        <Button icon={<PlusOutlined />} onClick={onAddModel}>
-          添加模型
-        </Button>
-        <Button icon={<PlusOutlined />} onClick={onAddProvider}>
-          添加 Provider
-        </Button>
-      </div>
-      <div style={{ marginTop: Spacing.XS }}>
-        {/* 2026-11-08 小欧 [14] F4: 输入能力 tags → input_modalities；有生图/生视频补"生成"徽标 */}
-        {(current?.input_modalities ?? []).map((c) => (
-          <Tag key={c}>{c}</Tag>
+    <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
+      <Select
+        value={selectedProvider}
+        style={{ width: settingsControl.modelSelectWidth }}
+        onChange={onSelectProvider}
+      >
+        {providers.map((p) => (
+          <Select.Option key={p.name} value={p.name}>
+            {p.label || p.name}
+          </Select.Option>
         ))}
-        {(current?.output_modalities ?? []).map((c) => (
-          <Tag key={`out-${c}`} color="orange">
-            {c === 'image' ? '图片生成' : c === 'video' ? '视频生成' : c}
-          </Tag>
+      </Select>
+      <Select
+        value={selectedModel}
+        style={{ width: settingsControl.modelNameWidth }}
+        onChange={onSelectModel}
+      >
+        {(provider?.models ?? []).map((m) => (
+          <Select.Option key={m.name} value={m.name}>
+            {m.label || m.name}
+          </Select.Option>
         ))}
-      </div>
+      </Select>
+      {/* 2026-11-08 小欧 [14] F4: 输入能力 tags → input_modalities；有生图/生视频补"生成"徽标 */}
+      {(current?.input_modalities ?? []).map((c) => (
+        <Tag key={c}>{c}</Tag>
+      ))}
+      {(current?.output_modalities ?? []).map((c) => (
+        <Tag key={`out-${c}`} color="orange">
+          {c === 'image' ? '图片生成' : c === 'video' ? '视频生成' : c}
+        </Tag>
+      ))}
     </div>
   );
 };
