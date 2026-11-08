@@ -77,6 +77,8 @@
 # 2026-11-06 小欧 - 附件域路由挂载(重建): import attachments/material_packs 路由, _mount 挂载
 #   /api/v1/attachments(上传/列表/详情/删除/collect/local) 与 /api/v1/material-packs(CRUD), 走统一 token 鉴权 — 小欧-2026-11-06
 # 2026-11-08 小欧 - startup 接老 capabilities 一次性迁移(幂等, 无残留零改动; 先于配置读取) — 小欧-2026-11-08
+# 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server.py 同一收口
+#   (只落盘不上屏); 否者 dictConfig console handler 残留 + 10s 热重载刷 DEBUG 必刷屏 — 小欧-2026-11-08
 import sys
 import asyncio
 import time
@@ -130,7 +132,7 @@ from app.api.v1.deps import verify_token, warn_startup_checks
 # 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
 from app.api.v1.auth_routes import router as auth_router
 from app.logger import logger
-from app.logger.shared_handler import install_access_noise_filter  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤
+from app.logger.shared_handler import install_access_noise_filter, setup_uvicorn_loggers  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤; 2026-11-08 小欧补 setup_uvicorn_loggers(裸 uvicorn 同样收口 uvicorn 三 logger 只落盘不上屏)
 from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.services.task.task_registry import cleanup_expired_tasks
@@ -543,6 +545,10 @@ async def startup_event():
     install_spawn_gate()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
+    # 2026-11-08 小欧 - 裸 uvicorn 模式访问日志刷控制台根治: startup 补调 setup_uvicorn_loggers()
+    #   (与 run_server.py 同一收口, uvicorn 三 logger 只挂文件 handler; 否则 dictConfig 的 console
+    #   handler 残留被 10s 热重载刷成 DEBUG 后必刷屏) — 小欧-2026-11-08
+    setup_uvicorn_loggers()
     # 2026-11-08 小欧: 老 capabilities 一次性迁移(先于任何配置读取; 幂等, 无残留零改动)
     migrate_legacy_capabilities()
     # 2026-11-04 小欧 - 预热 ps7/ps5 可执行体: 首次 CreateProcessW(Defender 扫描)挪到启动期,
