@@ -45,6 +45,7 @@
 // 2026-11-08 小欧 - 传输列改四态(未探测/内联/内联＋外链/不支持)+外链未测标注, 测按钮 tooltip 写明探测地址依赖 — 小欧-2026-11-08
 // 2026-11-08 小欧 - 探测结果按 conclusive 分级(未测成不当结论), 外链是否测过改读结构化 url_tested, 切厂商清探测态 — 小欧-2026-11-08
 // 2026-11-08 小欧 - 列名「传输」→「图片接收」(主行结论+副行通道), 按钮「测」→「实测」, toast 只留短结论 — 小欧-2026-11-08
+// 2026-11-08 小欧 - 图片接收列与行内实测整体撤除（实测迁至②选中模型参数）；本表只留厂商声明维度 — 小欧-2026-11-08
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -71,7 +72,6 @@ import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import { modelApi } from '@/services/api/model.api';
 import type {
-  MediaProbe,
   ModelEntry,
   ProviderEntry,
   RemoteModelItem,
@@ -181,45 +181,6 @@ const OUTPUT_LABEL: Record<string, string> = {
   video: '视频生成',
 };
 
-/** 实测结论主行：只回答"收得到吗"；通道差别放副行，别让细节压过结论。 */
-const ACCEPT_MAIN: Record<string, string> = {
-  inline: '能接收',
-  both: '能接收',
-  none: '不能接收',
-};
-
-/** 主行文案：未测就说未测——把"没测"讲成"不行"会让用户白换模型。 */
-const acceptMain = (accept?: string) => {
-  if (!accept) return '未测';
-  return ACCEPT_MAIN[accept] ?? accept;
-};
-
-/** 副行：内联 = 图片字节 base64 随请求体发送；外链 = 只传地址，由厂商抓取。 */
-const acceptSub = (accept?: string, urlTested = false) => {
-  if (accept === 'none') return '厂商拒绝或静默丢图';
-  if (accept === 'both') return '内联＋外链';
-  if (accept === 'inline') return urlTested ? '仅内联' : '仅内联·外链未测';
-  return '按仅内联处理';
-};
-
-/** 外链能力有没有实测结论：读后端落库的结构化标记，不再解析给人看的 evidence 文本。
- *  url_tested 缺省(旧记录)时用 accept==='both' 反推——外链没通不可能判成 both。 */
-const urlTestedOf = (media?: MediaProbe) =>
-  media?.url_tested ?? media?.accept?.image === 'both';
-
-/** 行内提示：术语就地定义，按「实测值 × 外链是否取证」查表——未测≠不支持，内联≠外链可用。 */
-const acceptTip = (accept?: string, urlTested = false) => {
-  if (!accept)
-    return '尚未实测。未实测按"仅内联"处理：图片字节随请求体发送，公网图片地址不转发。点「实测」可验证';
-  if (accept === 'none')
-    return '实测收不到图片：厂商拒绝该内容类型（HTTP 400/415/422），或返回 200 但图像 token 为 0（网关静默丢图）。发图会降级成一行说明文字';
-  if (accept === 'both')
-    return '实测内联与外链都可用：内联 = 图片字节 base64 随请求体发送；外链 = 只传图片地址，由厂商自己抓取，不下载、不转码';
-  return urlTested
-    ? '实测仅内联可用：外链探测被厂商拒绝（该地址取不到或不认），转发地址会导致整轮请求失败，故不转发'
-    : '实测内联可用。外链未取证——「媒体 → 外链检测用图片地址」为空，或本次外链探测未取得确定结论；未取证一律按外链不可用处理';
-};
-
 const renderOutputTags = (m: RemoteModelItem) => {
   const outs = readOutputModalities(m);
   if (outs.length === 0) {
@@ -303,11 +264,6 @@ export const ModelLibraryTab: React.FC<Props> = ({
   });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  // 2026-11-08 小欧 - 传输探测：本行探测中态 + 本轮结果（避开整页重拉，探测即见）
-  const [probing, setProbing] = useState<string | null>(null);
-  const [probeResult, setProbeResult] = useState<
-    Record<string, { accept: string; urlTested: boolean }>
-  >({});
   // 2026-10-10 小欧 - ZenithFree 双路验证（北京老陈）：结果弹框 + 验证中态
   const [zenVerifying, setZenVerifying] = useState(false);
   const [zenResult, setZenResult] = useState<ZenVerifyResponse | null>(null);
@@ -316,7 +272,6 @@ export const ModelLibraryTab: React.FC<Props> = ({
   // 2026-09-24 小欧 - v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
   // 2026-09-25 小欧：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
   // 2026-09-29 小欧：筛选态一并重置（换 Provider 后沿用旧模态/能力条件会筛出空列表）— 小欧-2026-09-29
-  // 2026-11-08 小欧：探测态一并清空——结果按模型名存, 不清会跨厂商串到同名模型上 — 小欧-2026-11-08
   const resetSelection = (providerName: string) => {
     const p = providers.find((x) => x.name === providerName);
     setRemote(null);
@@ -329,8 +284,6 @@ export const ModelLibraryTab: React.FC<Props> = ({
       minContext: 0,
     });
     setFetchError(null);
-    setProbeResult({});
-    setProbing(null);
   };
 
   // 设计要求：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
@@ -388,35 +341,6 @@ export const ModelLibraryTab: React.FC<Props> = ({
         )}
       </span>
     );
-  };
-
-  /**
-   * 实测该模型能否接收图片并落库。后端以"HTTP 200 且图像 token>0"为准，
-   * 网关静默丢图返回 ok:false 而非假成功 — 小欧-2026-11-08
-   * 外链要测需先在「媒体 → 外链检测用图片地址」填公网图片，未填只测内联。
-   * 结果文案由后端整句给出(短句, 适配轻提示); 细节在列内 tooltip, 不在 toast 里堆。
-   */
-  const runProbe = async (id: string) => {
-    if (!provider || probing) return;
-    setProbing(id);
-    try {
-      const r = await modelApi.probeMedia(provider.name, id);
-      if (!r.conclusive) {
-        // 未取证(限流/鉴权/5xx/无图像 token 字段): 不当实测结果展示, 也不覆盖已存结论 — 小欧-2026-11-08
-        showMessage(ErrorType.WARNING, r.message);
-        return;
-      }
-      setProbeResult((prev) => ({
-        ...prev,
-        [id]: { accept: r.accept, urlTested: r.url_tested },
-      }));
-      if (r.ok) showSuccess(r.message);
-      else showMessage(ErrorType.WARNING, r.message);
-    } catch {
-      showMessage(ErrorType.WARNING, '探测失败，请稍后重试');
-    } finally {
-      setProbing(null);
-    }
   };
 
   // 统计行提示：本轮是否有回落，有才提示（无回落不打扰）
@@ -797,82 +721,6 @@ export const ModelLibraryTab: React.FC<Props> = ({
                 </Tag>
               ))}
             </>
-          );
-        }}
-      />
-      {/* 2026-11-08 小欧: 图片接收列（实测值，非厂商声明）；已配置模型可现场实测 */}
-      <Table.Column
-        title={
-          <Tooltip title="实测结果，不是厂商声明：把一张测试图真的发过去，HTTP 200 且返回图像 token>0 才算真收到。内联 = 图片字节经 base64 编进请求体；外链 = 只传图片地址、由厂商自己抓取。与「输入模态」的区别：那列是厂商声明的输入类型，这列是实测结果，冲突时以本列为准">
-            <span
-              style={{
-                whiteSpace: 'nowrap',
-                cursor: 'help',
-                borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
-              }}
-            >
-              图片接收
-            </span>
-          </Tooltip>
-        }
-        width={176}
-        render={(_, m: RemoteModelItem) => {
-          const stored = storedMeta.get(m.id);
-          const fresh = probeResult[m.id];
-          const accept = fresh?.accept ?? stored?.media?.accept?.image;
-          const urlTested = fresh
-            ? fresh.urlTested
-            : urlTestedOf(stored?.media);
-          return (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: Spacing.XS,
-              }}
-            >
-              <Tooltip title={acceptTip(accept, urlTested)}>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    flexDirection: 'column',
-                    cursor: 'help',
-                    lineHeight: 1.35,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: FontSize.SECONDARY,
-                      whiteSpace: 'nowrap',
-                      color: accept ? undefined : Colors.TEXT.WEAK,
-                    }}
-                  >
-                    {acceptMain(accept)}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: FontSize.SECONDARY,
-                      whiteSpace: 'nowrap',
-                      color: Colors.TEXT.WEAK,
-                    }}
-                  >
-                    {acceptSub(accept, urlTested)}
-                  </span>
-                </span>
-              </Tooltip>
-              {stored && (
-                <Tooltip title="把一张测试图真的发给厂商，用返回值判定：HTTP 200 且图像 token>0 才算真收到；200 但 token 为 0 是网关静默丢图。内联必测；外链需先在「媒体 → 外链检测用图片地址」填公网图片地址，否则只测内联">
-                  <Button
-                    type="link"
-                    size="small"
-                    loading={probing === m.id}
-                    onClick={() => runProbe(m.id)}
-                  >
-                    实测
-                  </Button>
-                </Tooltip>
-              )}
-            </div>
           );
         }}
       />

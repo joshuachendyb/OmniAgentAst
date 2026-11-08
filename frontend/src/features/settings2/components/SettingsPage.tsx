@@ -132,6 +132,7 @@
 // 2026-11-08 小欧 - ①②③标题行布局统一：三列 grid（1fr 1fr 1fr）+ SectionTitle + 按钮组中列左对齐（justifySelf:'start'）；
 //   ①按钮补 actionBtnWidth（与②等宽）；③ ProviderConfig 裸 span → SectionTitle、grid div 去 margin（消除 grid row 高度差异致按钮垂直错位）
 // 2026-11-08 小欧 - 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
+// 2026-11-08 小欧 - 实测迁入②：新增「图片实测」行（紧贴输入模态），探测目标=①选中模型；取证后回读落库值并回填 mtime — 小欧-2026-11-08
 import React, { useState } from 'react';
 import {
   Button,
@@ -169,6 +170,14 @@ import { SectionTitle } from './SectionTitle';
 import { CurrentModelRefCard } from './CurrentModelRefCard';
 import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
+// 2026-11-08 小欧 - 实测写盘绕过保存链，取证后按后端 mtime 回填，防下一次保存被守卫拒一次 — 小欧-2026-11-08
+import { settingsApi } from '@/services/api/settings.api';
+import {
+  acceptMain,
+  acceptSub,
+  acceptTip,
+  urlTestedOf,
+} from '../mediaProbeText';
 import {
   ErrorType,
   handleApiError,
@@ -204,6 +213,8 @@ const SettingsPage: React.FC = () => {
   //   放弃修改时整体重挂载、按已保存配置重新回显（不碰组件内部逻辑，config 本身从未被编辑改写）
   //   — 小欧-2026-11-01
   const [providerResetSeq, setProviderResetSeq] = useState(0);
+  // 2026-11-08 小欧 - 图片实测探测中态（hook 必须置顶：组件早 return 之后不能再调 useState）— 小欧-2026-11-08
+  const [probing, setProbing] = useState(false);
 
   // 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
   // 原 jumpTo 直接切 Tab 绕过确认，会静默丢弃当前组未保存修改
@@ -357,10 +368,10 @@ const SettingsPage: React.FC = () => {
           state.model.inputModalities,
           state.model.inputModalitiesBaseline
         ) ||
-          isCapsDirty(
-            state.model.outputModalities,
-            state.model.outputModalitiesBaseline
-          )
+        isCapsDirty(
+          state.model.outputModalities,
+          state.model.outputModalitiesBaseline
+        )
           ? 1
           : 0) +
         Object.keys(state.model.providerDraft).length
@@ -428,6 +439,38 @@ const SettingsPage: React.FC = () => {
     </div>
   );
 
+  // 2026-11-08 小欧 - 图片实测迁入②：探测目标 = ①选中的 provider+模型，unconclusive 不落库不给结论
+  const runProbe = async () => {
+    const provider = state.model.selectedProvider;
+    const model = state.model.selectedModel;
+    if (!provider || !model || probing) return;
+    setProbing(true);
+    try {
+      const r = await modelApi.probeMedia(provider, model);
+      // 未取证(限流/鉴权/5xx/无图像 token 字段)不当实测结果，也不覆盖已存结论 — 小欧-2026-11-08
+      if (!r.conclusive) {
+        showMessage(ErrorType.WARNING, r.message);
+        return;
+      }
+      await s.refreshModels();
+      // 探测写盘绕过保存链，页面缓存 mtime 已过期；回填后紧接着的保存不再被守卫拒 — 小欧-2026-11-08
+      try {
+        s.syncMtime(await settingsApi.getMtime());
+      } catch {
+        // mtime 回填失败只影响下一次保存的守卫比对，静默
+      }
+      if (r.ok) showSuccess(r.message);
+      else showMessage(ErrorType.WARNING, r.message);
+    } catch {
+      showMessage(
+        ErrorType.WARNING,
+        '探测失败，请检查 Provider 配置的网络可达性'
+      );
+    } finally {
+      setProbing(false);
+    }
+  };
+
   const renderModelTab = () => {
     // 2026-11-01 小欧 - #4 常显化判据：原条件渲染的布尔量提取，一次计算两处引用 — 小欧-2026-11-01
     const hasManagementOptions =
@@ -435,6 +478,32 @@ const SettingsPage: React.FC = () => {
     // 2026-11-01 小欧 - 全域放弃判据：③Provider 草稿纳入「放弃修改」点亮条件（账本拆分反人类病根，
     //   北京老陈实证：改了③区点放弃无反应）— 小欧-2026-11-01
     const hasProviderDraft = Object.keys(state.model.providerDraft).length > 0;
+    // 2026-11-08 小欧 - 图片实测取值单源 = providers[].models[].media（取证即落库，页面不持临时结果）— 小欧-2026-11-08
+    const selectedEntry = state.model.providers
+      .find((p) => p.name === state.model.selectedProvider)
+      ?.models.find((m) => m.name === state.model.selectedModel);
+    const media = selectedEntry?.media;
+    const accept = media?.accept?.image;
+    const urlTested = urlTestedOf(media);
+    const imageChecked = state.model.inputModalities.includes('image');
+    // 未测时按勾选区分「未测 / 不适用」；已测则如实显示，与勾选状态解耦
+    const showInapplicable = !accept && !imageChecked;
+    const probeMain = showInapplicable ? '不适用' : acceptMain(accept);
+    const probeSub = showInapplicable
+      ? '未勾选「图片」输入模态'
+      : acceptSub(accept, urlTested);
+    const probeColor = !accept
+      ? Colors.TEXT.WEAK
+      : accept === 'none'
+        ? Colors.ERROR
+        : Colors.SUCCESS;
+    let probeTip = acceptTip(accept, urlTested);
+    if (showInapplicable) {
+      probeTip =
+        '未勾选「图片」输入模态——当前配置不会发送图片，实测无从谈起。勾选「图片」后此行恢复可用';
+    } else if (!imageChecked) {
+      probeTip = `${probeTip}（当前未勾选「图片」，图片不会发送）`;
+    }
     return (
       <div>
         <div data-section="selector">
@@ -449,11 +518,21 @@ const SettingsPage: React.FC = () => {
             }}
           >
             <SectionTitle title="── ① 选择器 ──" />
-            <div style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}>
-              <Button icon={<PlusOutlined />} style={{ width: settingsControl.actionBtnWidth }} onClick={() => s.patchModel({ addModelModalOpen: true })}>
+            <div
+              style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}
+            >
+              <Button
+                icon={<PlusOutlined />}
+                style={{ width: settingsControl.actionBtnWidth }}
+                onClick={() => s.patchModel({ addModelModalOpen: true })}
+              >
                 添加模型
               </Button>
-              <Button icon={<PlusOutlined />} style={{ width: settingsControl.actionBtnWidth }} onClick={() => s.patchModel({ addProviderModalOpen: true })}>
+              <Button
+                icon={<PlusOutlined />}
+                style={{ width: settingsControl.actionBtnWidth }}
+                onClick={() => s.patchModel({ addProviderModalOpen: true })}
+              >
                 添加 Provider
               </Button>
             </div>
@@ -478,7 +557,9 @@ const SettingsPage: React.FC = () => {
           {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
             + gap SM 紧挨，整组居中；
             添加参数 = 管 model_params，管理选项 = 管 param_options，重置 = 回默认值 */}
-          <div style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}>
+          <div
+            style={{ display: 'flex', gap: Spacing.SM, justifySelf: 'start' }}
+          >
             <Button
               icon={<PlusOutlined />}
               style={{ width: settingsControl.actionBtnWidth }}
@@ -641,6 +722,85 @@ const SettingsPage: React.FC = () => {
             state.model.inputModalities,
             state.model.inputModalitiesBaseline
           ) && <DirtyDot />}
+        </div>
+        {/* 2026-11-08 小欧 - 图片实测行：实测结论紧贴它所验证的「输入模态」声明——
+          声明（厂商说它支持图片）与实测（真的发一张图、以 HTTP 200 且图像 token>0 判定）分列两处，
+          冲突时以实测为准。按钮常显不跳位（同标题行灰钮规则），未勾「图片」禁用并说明原因 — 小欧-2026-11-08 */}
+        <div style={settingsRowStyle}>
+          <span style={settingsLabelStyle}>图片实测</span>
+          {/* 结论区：主词（能接收/不能接收/未测/不适用）+ 限定词（通道），整段挂 Tooltip 讲判据与取证 */}
+          <Tooltip
+            title={
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  lineHeight: 1.7,
+                  maxWidth: 380,
+                }}
+              >
+                <div>{probeTip}</div>
+                {media?.probed_at && (
+                  <div style={{ opacity: 0.85 }}>
+                    实测于 {media.probed_at.replace('T', ' ')}
+                  </div>
+                )}
+                {media?.evidence && (
+                  <div style={{ opacity: 0.7 }}>
+                    取证{' '}
+                    {media.evidence.length > 140
+                      ? `${media.evidence.slice(0, 140)}…`
+                      : media.evidence}
+                  </div>
+                )}
+              </div>
+            }
+          >
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'baseline',
+                gap: Spacing.XS,
+                cursor: 'help',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: FontSize.PRIMARY,
+                  color: probeColor,
+                  borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
+                }}
+              >
+                {probeMain}
+              </span>
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.WEAK,
+                }}
+              >
+                {probeSub}
+              </span>
+            </span>
+          </Tooltip>
+          {/* 动作区靠右固定：结论文案四态长短不一，按钮位置不随文案浮动 */}
+          <Tooltip
+            title={
+              !imageChecked
+                ? '先勾选「图片」——图片不会随请求发送，实测无从谈起'
+                : '把一张测试图真的发给厂商，以返回值判定：HTTP 200 且返回图像 token>0 才算真收到；200 但 token 为 0 属网关静默丢图。内联必测；外链需先在「媒体 → 外链检测用图片地址」填公网图片地址，否则只测内联'
+            }
+          >
+            <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
+              <Button
+                style={{ width: settingsControl.actionBtnWidth }}
+                loading={probing}
+                disabled={s.saving || !imageChecked}
+                onClick={runProbe}
+              >
+                实测
+              </Button>
+            </span>
+          </Tooltip>
         </div>
         {/* 2026-11-08 小欧: 输出模态行（生成输出能力：生图/生视频，与输入模态分维度） */}
         <div style={settingsRowStyle}>
