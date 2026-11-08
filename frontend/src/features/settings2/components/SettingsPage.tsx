@@ -134,6 +134,7 @@
 // 2026-11-08 小欧 - 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
 // 2026-11-08 小欧 - 实测迁入②：新增「图片实测」行（紧贴输入模态），探测目标=①选中模型；取证后回读落库值并回填 mtime — 小欧-2026-11-08
 // 2026-11-09 小欧 - 图片实测行整改（三堂会审）：按钮改紧跟结论(原推行尾); 提示拆「判定/内联/外链/定论」逐行; 副行撤"外链未测" — 小欧-2026-11-09
+// 2026-11-09 小欧 - 行内改三徽标(北京老陈定版)：内联/外链(绿✓通过·红✗失败·灰未测) + 输出能力(整体结论着色) — 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
@@ -147,7 +148,7 @@ import {
   // 2026-11-01 小欧 - ②参数区按钮常显化（北京老陈拍板 #4）：不可用原因用 Tooltip 说明 — 小欧-2026-11-01
   Tooltip,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
 import {
   settingsSpacing,
@@ -173,12 +174,7 @@ import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
 // 2026-11-08 小欧 - 实测写盘绕过保存链，取证后按后端 mtime 回填，防下一次保存被守卫拒一次 — 小欧-2026-11-08
 import { settingsApi } from '@/services/api/settings.api';
-import {
-  acceptMain,
-  acceptSub,
-  acceptVerdict,
-  urlTestedOf,
-} from '../mediaProbeText';
+import { acceptMain, acceptVerdict, urlTestedOf } from '../mediaProbeText';
 import {
   ErrorType,
   handleApiError,
@@ -489,10 +485,19 @@ const SettingsPage: React.FC = () => {
     const imageChecked = state.model.inputModalities.includes('image');
     // 未测时按勾选状态区分「未测 / 不适用」；已测则如实显示，与勾选状态解耦
     const showInapplicable = !accept && !imageChecked;
-    const probeMain = showInapplicable ? '不适用' : acceptMain(accept);
-    const probeSub = showInapplicable
-      ? '未勾选「图片」输入模态'
-      : acceptSub(accept);
+    // 三徽标状态：pass=绿对勾 / fail=红叉 / unknown=灰(未测或未取证)
+    const inlineState = !accept
+      ? 'unknown'
+      : accept === 'none'
+        ? 'fail'
+        : 'pass';
+    const urlState =
+      accept === 'both'
+        ? 'pass'
+        : accept === 'inline' && urlTested
+          ? 'fail'
+          : 'unknown';
+    const verdictWord = showInapplicable ? '不适用' : acceptMain(accept);
     const probeColor = !accept
       ? Colors.TEXT.WEAK
       : accept === 'none'
@@ -763,29 +768,54 @@ const SettingsPage: React.FC = () => {
             <span
               style={{
                 display: 'inline-flex',
-                alignItems: 'baseline',
-                gap: Spacing.XS,
+                alignItems: 'center',
+                gap: Spacing.SM,
                 cursor: 'help',
-                minWidth: 190,
                 whiteSpace: 'nowrap',
+                minWidth: 240,
               }}
             >
+              {/* 通道徽标：灰=未测/未取证，绿✓=通过，红✗=实测失败 */}
+              {[
+                { label: '内联', st: inlineState },
+                { label: '外链', st: urlState },
+              ].map(({ label, st }) => (
+                <span
+                  key={label}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    fontSize: FontSize.PRIMARY,
+                    color:
+                      st === 'pass'
+                        ? Colors.SUCCESS
+                        : st === 'fail'
+                          ? Colors.ERROR
+                          : Colors.TEXT.WEAK,
+                  }}
+                >
+                  {label}
+                  {st === 'pass' && (
+                    <CheckOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                  )}
+                  {st === 'fail' && (
+                    <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                  )}
+                </span>
+              ))}
+              {/* 输出能力徽标：整体结论（=原「能接收」主词），随实测值着色 */}
               <span
                 style={{
-                  fontSize: FontSize.PRIMARY,
-                  color: probeColor,
-                  borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
+                  gap: Spacing.XS,
                 }}
               >
-                {probeMain}
-              </span>
-              <span
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.WEAK,
-                }}
-              >
-                {probeSub}
+                <span style={{ fontSize: FontSize.PRIMARY }}>输出能力</span>
+                <span style={{ fontSize: FontSize.PRIMARY, color: probeColor }}>
+                  {verdictWord}
+                </span>
               </span>
             </span>
           </Tooltip>

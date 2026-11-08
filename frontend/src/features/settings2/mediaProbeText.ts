@@ -1,6 +1,7 @@
 // 编辑历史: 2026-11-08 小欧 - 新建：实测结论词表与提示文案单源（自 ModelLibraryTab 整块搬出，
 //   模型库只读列与②图片实测行共用同一套词，避免两处措辞漂移） — 小欧-2026-11-08
 // 2026-11-09 小欧 - 全量重写：副行只留通道事实（能收什么），机制/后果下沉 acceptVerdict 定论行 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 行内改三徽标(内联/外链/输出能力)：绿✓通过/红✗失败/灰未测，acceptSub 退役
 import type { MediaProbe } from '@/services/api/model.api';
 
 /** 主行：只回答"收得到吗"；通道差别放副行，别让细节压过结论。 */
@@ -14,14 +15,6 @@ const ACCEPT_MAIN: Record<string, string> = {
 export const acceptMain = (accept?: string) => {
   if (!accept) return '未测';
   return ACCEPT_MAIN[accept] ?? accept;
-};
-
-/** 副行只报通道事实：这张模型实测能收哪种图（判定方法与后果在 tooltip 讲）。 */
-export const acceptSub = (accept?: string) => {
-  if (accept === 'none') return '内联外链都不收';
-  if (accept === 'both') return '内联、外链都收';
-  if (accept === 'inline') return '只收内联图';
-  return '暂按只收内联图处理';
 };
 
 /** 外链能力有没有实测结论：读后端落库的结构化标记，不再解析给人看的 evidence 文本。
