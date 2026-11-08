@@ -27,6 +27,7 @@
 //   ③ 字面量令牌化: borderTop 1px→BorderWidth.THIN, overlay top 6→Spacing.SM,
 //   fontSize 14→FontSize.PRIMARY / 12→FontSize.SECONDARY;
 //   ④ 新增局部常量 HINT_LEFT_PX(=11, 对齐 AntD TextArea 水平 padding)/HINT_LINE_HEIGHT(=1.4, 普通文本行高)
+// 2026-11-08 小欧 - placeholder 补"可直接贴公网图片链接"一句(只给格式示范, 完整外链规则在设置页「媒体」Tab) — 小欧-2026-11-08
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -117,7 +118,11 @@ const InputCore: React.FC<InputCoreProps> = ({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         onPressEnter={onPressEnter}
-        placeholder={showHint ? '' : '输入消息，Shift+Enter 换行'}
+        placeholder={
+          showHint
+            ? ''
+            : '输入消息，Shift+Enter 换行；可直接贴公网图片链接（https://…/pic.png）'
+        }
         autoSize={{ minRows: INPUT_MIN_ROWS, maxRows: INPUT_MAX_ROWS }}
         style={{
           borderColor: Colors.BORDER.LIGHT,

@@ -59,6 +59,22 @@ def supports_image_input(llm_model: Any) -> bool:
     return any(isinstance(m, str) and (m == "image" or m.lower().startswith("image/")) for m in mods)
 
 
+def accepts_remote_url(llm_model: Any) -> bool:
+    """实测该模型接受外链图片才直传(accept.image 含 url/both)；未探测一律按不支持处理。
+
+    不探测就发外链的代价是整轮请求被厂商 400 拒掉(厂商侧抓不到或干脆不认这种地址),
+    所以保守方向是"不发"，而不是"试试看" —— 少一张图，好过整轮失败。
+    """
+    if not supports_image_input(llm_model):
+        return False
+    provider = getattr(llm_model, "provider", "") or ""
+    model = getattr(llm_model, "model", "") or ""
+    provider_cfg = (get_config().get("ai") or {}).get(provider) or {}
+    meta = (provider_cfg.get("model_meta") or {}).get(model) or {}
+    accept = (meta.get("media") or {}).get("accept") or {}
+    return str(accept.get("image") or "") in ("url", "both")
+
+
 def split_vision_refs(refs: Optional[list]) -> Tuple[list, list]:
     """(文本引用, 可内联图片引用)。只认 kind=attachment 且 mime=image/*。"""
     text_refs: List[Dict[str, Any]] = []

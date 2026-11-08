@@ -413,6 +413,8 @@ export const modelApi = {
     provider: string;
     model: string;
     accept: string;
+    /** 本次是否真发过外链探测；false(常见于未配置探测地址) 表示 accept=inline 并不等于"外链不支持"。 */
+    url_tested: boolean;
     persisted: boolean;
     message: string;
   }> => {

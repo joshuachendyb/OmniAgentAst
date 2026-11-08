@@ -1196,8 +1196,9 @@ def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
 async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     """探测模型接受哪种图片传输(inline/url)并落库 — 小欧-2026-11-08
 
-    外链探测仅在 app.media_probe.url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
+    外链探测仅在 media.probe_image_url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
     网络类失败不落库(防一次抖动把能力写死成 none); 4xx 与 no_image_tokens 属确定结论。
+    url_tested 只表示「这次有没有真发过外链探测」, 供界面区分「实测不支持外链」与「压根没测」。
     """
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
@@ -1226,6 +1227,7 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
         "provider": name,
         "model": model,
         "accept": accept,
+        "url_tested": bool(probe_url and inline_ok and not url_ev.startswith("network_error")),
         "media": media,
         "persisted": persisted,
         "message": "已记录" if inline_ok else f"未通过看图探测: {inline_ev}",

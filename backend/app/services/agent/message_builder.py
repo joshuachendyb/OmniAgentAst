@@ -159,7 +159,7 @@ from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
 # 2026-11-08 小欧: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
-from app.services.agent.vision import expand_image_slots, image_slot, supports_image_input
+from app.services.agent.vision import accepts_remote_url, expand_image_slots, image_slot
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -599,9 +599,10 @@ class MessageBuilder:
 
         2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
         （media_payload 按文件复用 data URL，同一任务不重复编码）。
-        外链直传只在模型实测/声明可看图时启用，非视觉模型原样走文本。
+        外链直传只在**实测**该模型接受外链(accept.image 含 url)时启用；未探测按不支持处理，
+        与 media 配置的「探测用图片地址」留空即不测外链保持一致。
         """
-        allow_url = supports_image_input(llm_model)
+        allow_url = accepts_remote_url(llm_model)
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
                 msg["content"] = await expand_image_slots(msg["content"], allow_url=allow_url)

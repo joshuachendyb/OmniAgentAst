@@ -39,6 +39,7 @@
 // 2026-11-03 小欧 - sectionOf system 分支增「数据治理」分组: system.chat_retention_days 匹配到后单列一节渲染 — 小欧-2026-11-03
 // 2026-11-03 小欧 - 系统组现状更正(L10/L80 的「3 小节/12 项」已过期): 实际 5 小节 = 运维日志/工程目录/网络/
 //   数据治理/关于, 共 13 项; 无 app.* 项故「系统参数」小节不渲染 — 小欧-2026-11-03
+// 2026-11-08 小欧 - sectionOf 增 media 分支: 本机图片(上限/压缩) 与 外链图片(转发/探测地址) 分两节 — 小欧-2026-11-08
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -118,6 +119,12 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('sandbox.tool.syntax_check.')) return '语法检测';
     if (key.startsWith('sandbox.tool.')) return '工具';
     return '运行控制';
+  }
+  // 2026-11-08 小欧: media 组按语义拆两段 —— 本机图片(上限/压缩) 与 外链(转发/探测地址) — 小欧-2026-11-08
+  if (group === 'media') {
+    if (key.startsWith('media.remote_url') || key.startsWith('media.probe_'))
+      return '外链图片';
+    return '本机图片';
   }
   if (group === 'tuning') {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
