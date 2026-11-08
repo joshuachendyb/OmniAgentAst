@@ -200,6 +200,22 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前选用的模型（哪个服务商+哪个模型）；被环境变量强制指定时整行只读",
               env_key="AI_PROVIDER"),
     ]},
+    # 媒体（media）：图片送进模型的上限与压缩参数，只管"怎么送"，不管"能不能看" —
+    #   能不能看图由模型 input_modalities 判定，能不能收外链由模型库「测」按钮实测 — 小欧-2026-11-08
+    "media": {"label": "媒体", "items": [
+        _item("media.inline_limit_mb", "int", "内联上限(MB)", 2, range_=[1, 20],
+              notice="单张图片直接塞进请求的大小上限。超过先按下面参数压缩；压缩后仍超过、或关掉压缩，就只在对话里留一行说明、图不发出去"),
+        _item("media.compress_enabled", "bool", "超限自动压缩", True,
+              notice="超过上限的图片先在本机缩图再发送（不改原文件）。关掉则超限图片一律不发"),
+        _item("media.compress_max_edge", "int", "压缩长边(像素)", 2048, range_=[256, 4096],
+              notice="缩图后长边的最大像素：调小=更省流量但细节更少，调大=更清晰但更容易再超上限"),
+        _item("media.compress_jpeg_quality", "int", "JPEG 质量", 85, range_=[1, 95],
+              notice="压缩成 JPEG 时的质量：85 左右肉眼基本无损；调低更小更糊，调高更大更清晰。带透明通道的图改存 PNG，不受本项影响"),
+        _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
+              notice="模型能看图时，把你在消息里给出的公网图片链接（markdown 图片或带图片后缀的链接）直接转给模型，不下载不转码。关掉则只发本机附件"),
+        _item("media.probe_image_url", "text", "探测用图片地址", "",
+              notice="模型库「测」按钮测试外链能力时用的公网图片地址。留空=只测内联，不测外链；填一个可公开访问的图片 URL 才能测出模型收不收外链"),
+    ]},
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
     #   两者语义分开，避免误以为"关掉安全开关就不用输口令"。
@@ -474,7 +490,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
 }
 
-GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
+GROUP_ORDER = ["general", "model", "media", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
 
 # 声明"registry 静态 secret 键中哪些的写路径已接好"的唯一权威集合：新增 secret 项必须在此登记，
 # 未登记则模块加载即拒启（fail-fast，防半吊子）。位置须在 _build_index 之前。
@@ -525,6 +541,13 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
                 f"[settings_registry] ENV_INJECTED_KEYS 与 registry 声明不一致，拒启: {key}={env_name}；"
                 f"registry env_inject={bool(item.get('env_inject'))} env_key={item.get('env_key')!r}"
             )
+    # 分组两处声明(GROUPS 定义 / GROUP_ORDER 定 Tab 顺序)必须一一对应:
+    #   漏登记只会让该组静默消失, 故加载即拒启 — 小欧-2026-11-08
+    if set(GROUP_ORDER) != set(GROUPS):
+        raise RuntimeError(
+            f"[settings_registry] GROUP_ORDER 与 GROUPS 不一致，拒启: "
+            f"缺 {sorted(set(GROUPS) - set(GROUP_ORDER))} 多 {sorted(set(GROUP_ORDER) - set(GROUPS))}"
+        )
     return index
 
 

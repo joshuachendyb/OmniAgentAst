@@ -159,7 +159,7 @@ from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
 # 2026-11-08 小欧: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
-from app.services.agent.vision import expand_image_slots, image_slot
+from app.services.agent.vision import expand_image_slots, image_slot, supports_image_input
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -592,15 +592,19 @@ class MessageBuilder:
         #   本函数只产出纯文本 wire 副本，history 恒 str。
         return messages
 
-    async def expand_vision_parts(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def expand_vision_parts(
+        self, messages: List[Dict[str, Any]], llm_model: Any = None
+    ) -> List[Dict[str, Any]]:
         """wire 专属: 把各 user 消息的图片占位展开成 OpenAI parts（原地改浅拷贝，history 不受影响）。
 
         2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
         （media_payload 按文件复用 data URL，同一任务不重复编码）。
+        外链直传只在模型实测/声明可看图时启用，非视觉模型原样走文本。
         """
+        allow_url = supports_image_input(llm_model)
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                msg["content"] = await expand_image_slots(msg["content"])
+                msg["content"] = await expand_image_slots(msg["content"], allow_url=allow_url)
         return messages
 
     def _cap_temp_history(self):

@@ -6,6 +6,7 @@
 // 2026-09-24 小欧 - 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
 // 2026-11-01 小欧 - 新增 TabDirtyDot（Tab 组级脏点，北京老陈批准主案）：沿用 DirtyDot 的 6px 圆点规格，
 //   亮=ORANGE_RED（功能色，与行级 PRIMARY 点区分层级）；不带文字——组级只报方位，计数归保存按钮 — 小欧-2026-11-01
+// 2026-11-08 小欧 - 媒体 Tab：SettingIcon 加 media + FileImageOutlined — 小欧-2026-11-08
 import React from 'react';
 import {
   ApiOutlined,
@@ -14,6 +15,7 @@ import {
   CodeOutlined,
   CopyOutlined,
   DesktopOutlined,
+  FileImageOutlined,
   GlobalOutlined,
   SafetyOutlined,
   SlidersOutlined,
@@ -31,6 +33,7 @@ const TAB_ICON_STYLE: React.CSSProperties = {
 export const SettingIcon: Record<TabKey, React.ReactNode> = {
   general: <GlobalOutlined style={TAB_ICON_STYLE} />,
   model: <ApiOutlined style={TAB_ICON_STYLE} />,
+  media: <FileImageOutlined style={TAB_ICON_STYLE} />,
   security: <SafetyOutlined style={TAB_ICON_STYLE} />,
   appearance: <BgColorsOutlined style={TAB_ICON_STYLE} />,
   system: <DesktopOutlined style={TAB_ICON_STYLE} />,

@@ -1210,7 +1210,7 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
 
     inline_ok, inline_ev = await _probe_once(api_base, headers, model, _PROBE_IMAGE_URL, timeout)
     url_ok, url_ev = False, "skipped"
-    probe_url = str((get_config().get("app") or {}).get("media_probe", {}).get("url") or "").strip()
+    probe_url = str((get_config().get("media") or {}).get("probe_image_url") or "").strip()
     if inline_ok and probe_url:
         url_ok, url_ev = await _probe_once(api_base, headers, model, probe_url, timeout)
 

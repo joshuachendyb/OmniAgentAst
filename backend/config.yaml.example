@@ -366,6 +366,19 @@ app:
   language: zh-CN
   theme: light
 
+# 媒体附件配置 — 图片走哪条通道由实测能力定，本块只管上限/压缩/外链开关 — 小欧-2026-11-08
+#   inline_limit_mb: 内联上限(MB)。超过先压缩；压缩后仍超或关掉压缩 → 退化为一行文字说明
+#   compress_max_edge / compress_jpeg_quality: 压缩只缩不改内容(长边像素、JPEG 质量)
+#   remote_url_passthrough: 模型可看图时，把消息里显式给出的公网图片链接直接转发(零字节搬运)
+#   probe_image_url: 「传输探测」测外链用的公网图片地址；留空=只测内联，跳过外链探测
+media:
+  inline_limit_mb: 2
+  compress_enabled: true
+  compress_max_edge: 2048
+  compress_jpeg_quality: 85
+  remote_url_passthrough: true
+  probe_image_url: ""
+
 # 前端(step)渲染显示配置 — 小欧 2026-10-05 定两个独立开关，默认皆开
 #   step_render.thoughtMarkdown = 「思考排版」: thought 块正文是否按 Markdown 语法渲染
 #       (标题/粗体/列表/代码; 关掉则按纯文本实时显示)

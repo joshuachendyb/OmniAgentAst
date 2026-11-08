@@ -394,7 +394,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     )
 
     # 2026-11-08 小欧: 落盘/日志已取占位原文, 此处才展开图片 parts(避免 base64 入库/入日志); 覆盖全部 user 消息
-    messages = await agent.message_builder.expand_vision_parts(messages)
+    messages = await agent.message_builder.expand_vision_parts(messages, _task_llm)
 
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")

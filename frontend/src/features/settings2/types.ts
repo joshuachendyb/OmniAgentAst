@@ -41,6 +41,7 @@ export type { SettingSchemaItem, SettingSource, ModelEntry, ProviderEntry };
 export type TabKey =
   | 'general'
   | 'model'
+  | 'media'
   | 'security'
   | 'appearance'
   | 'system'
