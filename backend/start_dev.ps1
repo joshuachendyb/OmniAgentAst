@@ -1,8 +1,8 @@
 ﻿# 开发后端启动器: watchfiles 热重载 + run_server.py 正式入口 — 小欧 2026-11-02
 # 原禁用 uvicorn --reload: Windows 上 restart() 走 os.kill(子进程, CTRL_C_EVENT), 子进程收不到即卡死在
 #   basereload.py:98 self.process.join(); 首次改文件起热重载永久失效, 而 worker 照常应答(判定见 AGENTS.md)
-# 用法: 双击 backend\start.bat → uvicorn --reload(默认); 双击 backend\start_watch.bat → watchfiles(原方案)
-#       E2E 用 start_e2e.bat(固定 watch), 命令行传参 backend\start.bat watch 等效 start_watch.bat
+# 用法: 双击 backend\start_uvicorn.bat → uvicorn --reload(默认); 双击 backend\start_watch.bat → watchfiles(原方案)
+#       E2E 用 start_e2e.bat(固定 watch), 命令行传参 backend\start_uvicorn.bat watch 等效 start_watch.bat
 # 2026-11-08 小欧 - 免手工装依赖: 解释器/uvicorn/watchfiles 三步自检, watchfiles 缺失则 pip 装一次;
 #   一律经 python -m ... 起(不依赖 Scripts 目录是否在 PATH) — 小欧-2026-11-08
 # 2026-11-08 小欧 - 增模式参数: 无参默认 uvicorn --reload(补 --forwarded-allow-ips 供其代理中间件用;

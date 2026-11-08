@@ -1040,8 +1040,8 @@ npm run test:e2e      # 整组（先 lint + format）
 **方式一（推荐，日常开发）：watchfiles 热重载**
 
 ```powershell
-# 双击 backend\start.bat，或
-powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1
+# 双击 backend\start_watch.bat，或
+powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch
 ```
 
 内部调用：`watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`
@@ -1242,9 +1242,9 @@ pip install mss imageio numpy
 
 | 命令 | 说明 |
 |------|------|
-| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`（或双击 `backend\start.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8000） |
+| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`（或双击 `backend\start_watch.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8000） |
 | `python run_server.py` | 模式 B：打包行为调试（模拟 exe，端口 8500） |
-| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000` | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
+| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`（或双击 `backend\start_uvicorn.bat`） | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
 | `pytest` | 运行全部测试 |
 | `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
