@@ -105,6 +105,7 @@
 //   withDeclaredMeta(model_params, context_length, max_output_length)：用户值优先、厂商声明值仅兜底，
 //   ②参数区 context_length 行由此恒可编辑且默认显示厂商声明窗口。详见
 //   doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 问题 1/2 - 小欧-2026-11-01
+// 2026-11-08 小欧 - [14] F2 补全：setOutputModalities 保留非可选项(text/audio)，原只留 onChange 项致勾「图片生成」即丢 text — 小欧-2026-11-08
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -120,6 +121,8 @@ import {
   validate,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
+  // 2026-11-08 小欧 [14] F5: 输出侧已知值集合（setter 保留非可选项）
+  KNOWN_OUTPUT_MODALITY_VALUES,
   // 2026-09-24 小欧 - ②能力归一/保存转换（modelUtils 单源，与 SettingsPage 共用词表）- 小欧-2026-09-24
   normalizeCaps,
   capsForSave,
@@ -1321,9 +1324,13 @@ export function useSettings() {
   }, []);
 
   // 2026-11-08 小欧 [14] F2: 输出模态 setter（生图/生视频勾选，去重，isDirty 联合置脏）
+  // 2026-11-08 小欧 fix: 非可选项（text/audio 等）与输入侧同法保留——原 [...Set] 只留 onChange 项致切图即丢 text
   const setOutputModalities = useCallback((uiValues: string[]) => {
     setState((s) => {
-      const next = [...new Set(uiValues)];
+      const unknown = s.model.outputModalities.filter(
+        (v) => !KNOWN_OUTPUT_MODALITY_VALUES.has(v)
+      );
+      const next = [...new Set([...uiValues, ...unknown])];
       const paramsDirty = Object.values(
         isDirty(s.model.params, s.model.baseline, s.model.envOverride)
       ).some(Boolean);

@@ -135,6 +135,8 @@ from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧: 过期会话信任回收(TTL)
 from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
+# 2026-11-08 小欧 - [14] B3: 启动一次性迁移老 capabilities 到 input/output 双维度(幂等)
+from app.services.model.model_service import migrate_legacy_capabilities
 from app.db import db
 
 
@@ -540,6 +542,8 @@ async def startup_event():
     install_spawn_gate()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
+    # 2026-11-08 小欧 - [14] B3: 老 capabilities 一次性迁移(先于任何配置读取; 幂等, 无残留零改动)
+    migrate_legacy_capabilities()
     # 2026-11-04 小欧 - 预热 ps7/ps5 可执行体: 首次 CreateProcessW(Defender 扫描)挪到启动期,
     #   请求路径不再冷启动; 必须在预热线程池之前串行跑完, 不与任何 Thread.start 并发。
     _t_shell = time.time()

@@ -2,13 +2,15 @@
 # 编辑历史:
 # 2026-11-04 小欧 新建: 视觉通道(S2)唯一判定与 parts 生成 — 小欧-2026-11-04
 # 2026-11-08 小欧 对照 [14] 字段统一: 能力判定只读 input_modalities(不碰 capabilities) — 小欧-2026-11-08
+# 2026-11-08 小欧 修: 配置根是 ai(原读顶层 providers 恒空 → 看图通道永不启用); 模型名含 . / 故逐级字面键取 — 小欧-2026-11-08
 
 """services.agent.vision — 视觉通道(S2, 图片类型阶段)。
 
 设计边界:
   1. conversation_history **恒为 str**: 图片以 `[[IMAGE_ATTACHMENT:<id>]]` 占位入列,
      压缩/裁剪/持久化/回执全部零改动;
-  2. 仅在 wire 边界(prepare_messages_for_llm)把占位展开成 OpenAI `image_url` parts;
+  2. 仅在 wire 边界(message_builder.expand_vision_parts)把占位展开成 OpenAI `image_url` parts,
+     且须在落盘/日志取占位原文之后调用(防 base64 入库/入日志);
   3. 能力判定只看模型配置 `input_modalities` 是否含 image(统一后唯一真源, 不写死模型名, 无 capabilities 分支);
   4. 展开失败(记录没了/图超限/读不出)退化为一行说明文字, 不阻断本轮;
   5. 生图/生视频(output)能力不参与判定: S2 只看 input 维度, 生图模型(input 无 image)不会被误判为看图。
@@ -39,8 +41,10 @@ def supports_image_input(llm_model: Any) -> bool:
     """
     provider = getattr(llm_model, "provider", "") or ""
     model = getattr(llm_model, "model", "") or ""
-    providers = get_config().get("providers") or {}
-    meta = ((providers.get(provider) or {}).get("model_meta") or {}).get(model) or {}
+    if not provider or not model:
+        return False
+    provider_cfg = (get_config().get("ai") or {}).get(provider) or {}
+    meta = (provider_cfg.get("model_meta") or {}).get(model) or {}
     mods = meta.get("input_modalities") or []
     return isinstance(mods, list) and "image" in mods
 

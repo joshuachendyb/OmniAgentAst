@@ -65,6 +65,9 @@
       ③_get_models 下发键 default_params → model_params，并补下发 context_length（原只透 max_output_length，
         前端②参数区拿不到厂商声明窗口，导致库保存的值既不下发也无编辑面）。
       旧名不留兼容分支（项目铁律禁止 backward）— 小欧-2026-11-01
+    2026-11-08 小欧 - [14] B2 断链修复: ModelCreateRequest/ModelUpdateRequest 的 capabilities 改 input_modalities +
+      output_modalities 双维度。原 DTO 未声明新字段（extra='ignore' 静默丢弃）→ PUT 保存模态永不落盘；
+      POST 位置参错位（capabilities→input_modalities、param_options→output_modalities 写坏类型）— 小欧-2026-11-08
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -97,7 +100,9 @@ class ModelCreateRequest(BaseModel):
     # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名, 消翻译层) - 小欧-2026-11-01
     model_params: Dict[str, Any] = Field(default_factory=dict)
     range: Dict[str, Any] = Field(default_factory=dict)
-    capabilities: List[str] = Field(default_factory=list)
+    # 2026-11-08 小欧 [14] B2: 模态双维度（原 capabilities 已废弃；不声明则 extra='ignore' 静默丢弃）
+    input_modalities: List[str] = Field(default_factory=list)
+    output_modalities: List[str] = Field(default_factory=list)
     param_options: Optional[Dict[str, List[str]]] = Field(default=None)
 
 
@@ -105,7 +110,9 @@ class ModelUpdateRequest(BaseModel):
     label: Optional[str] = Field(default=None)
     model_params: Optional[Dict[str, Any]] = Field(default=None)
     range: Optional[Dict[str, Any]] = Field(default=None)
-    capabilities: Optional[List[str]] = Field(default=None)
+    # 2026-11-08 小欧 [14] B2: 模态双维度（同 ModelCreateRequest；update_model 白名单已认这两键）
+    input_modalities: Optional[List[str]] = Field(default=None)
+    output_modalities: Optional[List[str]] = Field(default=None)
     param_options: Optional[Dict[str, List[str]]] = Field(default=None)
     # 2026-09-24 小欧 - 参数键级删除：送键名列表，update_model 先从 model_params/range/param_options 删键再 merge — 小欧-2026-09-24
     remove_params: Optional[List[str]] = Field(default=None)
@@ -248,7 +255,8 @@ async def get_models():
 @handle_config_errors("添加模型")
 async def add_model(req: ModelCreateRequest):
     return svc.add_model(req.provider, req.model, req.label,
-                         req.model_params, req.range, req.capabilities,
+                         req.model_params, req.range,
+                         req.input_modalities, req.output_modalities,
                          req.param_options)
 
 

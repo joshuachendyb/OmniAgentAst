@@ -112,6 +112,8 @@
 #   目录块渲染当时放本层(render_workspace_block), 同日下条已改为编排层渲染 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 目录块改由编排层渲染并传文本(init_history/build_interject_text 收 ws_text),
 #   本层不再自取快照渲染 —— 注入/日志/回执同取一份, 不再各算一遍 — 小欧-2026-10-31
+# 2026-11-08 小欧 - [14] S2: 新增 image_slot/vision_slots 占位; 图片 parts 展开拆出
+#   expand_vision_parts(全量 user 消息, 调用方落盘/日志取原文后再展开, history 恒 str) — 小欧-2026-11-08
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -192,7 +194,7 @@ def build_user_turn_text(user_input: str, refs: Optional[list] = None,
 
     纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
     (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
-    [14] S2: 图片用占位标记入列, wire 边界(prepare_messages_for_llm)才换 parts —
+    [14] S2: 图片用占位标记入列, wire 边界(expand_vision_parts)才换 parts —
     history 恒 str, 压缩/裁剪/持久化零改动。
     """
     refs_block = render_refs_block(refs)
@@ -549,8 +551,8 @@ class MessageBuilder:
         注入点(tools/summary/schema)在第一个非system消息前或末尾操作。
 
         MSG-001 小沈 2026-05-24: temp_history加入字符容量限制,从最旧开始移除
-        [14] S2: 改 async(max_images 经 asyncio.to_thread 读盘卸载事件循环);
-              仅在 wire 边界把最后一条 user 的图片占位展开成 parts, 见下方注入点。
+        [14] S2: 仍为 async(沿用既有调用契约); 图片 parts 展开已拆到 expand_vision_parts,
+              供调用方在落盘/日志取原文之后再展开。
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
         self._cap_temp_history()
@@ -586,14 +588,19 @@ class MessageBuilder:
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
         self.conversation_history = [m for m in self.conversation_history
                                      if not any(k.startswith("_temp_") for k in m)]
-        # [14] S2 §4.4: 视觉通道只在 wire 边界展开(history 恒 str)。
-        #   倒序找最后一条 user 即本轮输入, 历史其余 user 保持占位(不重复堆积 base64)。
-        #   expand_image_slots 为 async(读盘卸载事件循环), 此处须 await。
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                if isinstance(msg.get("content"), str):
-                    msg["content"] = await expand_image_slots(msg["content"])
-                break
+        # [14] S2 §4.4: 图片占位展开已移至 expand_vision_parts（调用方落盘/日志之后再展开），
+        #   本函数只产出纯文本 wire 副本，history 恒 str。
+        return messages
+
+    async def expand_vision_parts(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """wire 专属: 把各 user 消息的图片占位展开成 OpenAI parts（原地改浅拷贝，history 不受影响）。
+
+        2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
+        （_data_url_cache 按文件复用，同一任务不重复编码）。
+        """
+        for msg in messages:
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                msg["content"] = await expand_image_slots(msg["content"])
         return messages
 
     def _cap_temp_history(self):

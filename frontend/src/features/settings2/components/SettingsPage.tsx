@@ -131,6 +131,7 @@
 //   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md - 小欧-2026-11-01
 // 2026-11-08 小欧 - ①②③标题行布局统一：三列 grid（1fr 1fr 1fr）+ SectionTitle + 按钮组中列左对齐（justifySelf:'start'）；
 //   ①按钮补 actionBtnWidth（与②等宽）；③ ProviderConfig 裸 span → SectionTitle、grid div 去 margin（消除 grid row 高度差异致按钮垂直错位）
+// 2026-11-08 小欧 - [14] F3 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
 import React, { useState } from 'react';
 import {
   Button,
@@ -182,6 +183,7 @@ import {
   KNOWN_CAPABILITY_VALUES,
   // 2026-11-08 小欧 [14] F3: 输出模态勾选枚举（§3.10.1）
   OUTPUT_MODALITY_OPTIONS,
+  KNOWN_OUTPUT_MODALITY_VALUES,
 } from '../utils/modelUtils';
 import type { TabKey } from '../types';
 // 2026-09-22 小欧 - 管理选项弹窗（标题行「管理选项」入口）
@@ -650,6 +652,21 @@ const SettingsPage: React.FC = () => {
               options={OUTPUT_MODALITY_OPTIONS}
               onChange={(v) => s.setOutputModalities(v as string[])}
             />
+            {/* 2026-11-08 小欧 [14] F3: 非可选项（text/audio 等）灰色只读 Tag——与输入模态行同款 */}
+            {state.model.outputModalities
+              .filter((v) => !KNOWN_OUTPUT_MODALITY_VALUES.has(v))
+              .map((v) => (
+                <Tag
+                  key={v}
+                  style={{
+                    cursor: 'not-allowed',
+                    marginLeft: Spacing.XS,
+                    color: Colors.TEXT.SECONDARY,
+                  }}
+                >
+                  {v}
+                </Tag>
+              ))}
           </span>
           {isCapsDirty(
             state.model.outputModalities,
@@ -823,8 +840,8 @@ const SettingsPage: React.FC = () => {
               ...(d.model_params ? { model_params: d.model_params } : {}),
               ...(d.range ? { range: d.range } : {}),
               ...(d.input_modalities
-              ? { input_modalities: d.input_modalities }
-              : {}),
+                ? { input_modalities: d.input_modalities }
+                : {}),
               ...(d.output_modalities
                 ? { output_modalities: d.output_modalities }
                 : {}),

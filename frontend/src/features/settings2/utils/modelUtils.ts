@@ -21,6 +21,7 @@
 //   ①PARAM_DEFAULT_RANGES / PARAM_PRESETS 的 context_limit → context_length（与后端 yaml 真源同名）；
 //   ②新增 withDeclaredMeta：基线补厂商声明窗口与输出上限（用户值优先，声明值仅兜底），
 //     使模型库勾选进来的模型在②参数区也有一条可编辑的 context_length 行 — 小欧-2026-11-01
+// 2026-11-08 小欧 - [14] F5: 新增 KNOWN_OUTPUT_MODALITY_VALUES 单源（输出行未知值灰标 + setter 保留非可选项） — 小欧-2026-11-08
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -192,6 +193,11 @@ export const OUTPUT_MODALITY_OPTIONS = [
   { label: '图片生成', value: 'image' },
   { label: '视频生成', value: 'video' },
 ];
+
+// 2026-11-08 小欧 - [14] F5: 输出侧已知值集合（与 OUTPUT_MODALITY_OPTIONS 同源，text/file/audio 属未知值→只读灰标）
+export const KNOWN_OUTPUT_MODALITY_VALUES: ReadonlySet<string> = new Set(
+  OUTPUT_MODALITY_OPTIONS.map((o) => o.value)
+);
 
 // 2026-09-24 小欧 - 状态归一：去重后恒含 'text'（防加载/切换时缺 text 致假脏；未知值原样保留）- 小欧-2026-09-24
 export const normalizeCaps = (caps: string[]): string[] => {

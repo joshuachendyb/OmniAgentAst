@@ -174,6 +174,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   (2)add_model 形参 default_params → model_params；update_model 出参键同名；
 #   (3)update_provider_config 删 key_map 的 base_url 与 retry_times 别名（只留 api_base / max_retries），
 #      空 URL 400 校验由双键循环收敛为 api_base 单键 — 小欧-2026-11-01
+# 2026-11-08 小欧 - [14] B3/B4 补齐: 新增 _migrate_legacy_capabilities(startup 一次性迁移, 复用 config_helpers 读写);
+#   _KEY_ALIASES 删 no-op 的 capabilities 行(_merge_capabilities 仅服务 zenmux reasoning 特征, 不是模态双读) — 小欧-2026-11-08
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -192,6 +194,7 @@ from app.services.model.config_helpers import (
     mask_secret_value,
     merge_nested_patch,
     read_yaml_config,
+    write_yaml_config,
     _config_mtime,
 )
 
@@ -723,6 +726,34 @@ def _merge_capabilities_into_modalities(modalities: List[str], capabilities: Any
     return out
 
 
+def _migrate_legacy_capabilities(config_path: Path) -> bool:
+    """老 capabilities 一次性并入 input 维度、显式建 output 维度并删旧键；幂等，无残留时零改动 — 小欧-2026-11-08"""
+    raw = read_yaml_config(config_path) or {}
+    ai = raw.get("ai") or {}
+    changed = False
+    for p in (ai.values() if isinstance(ai, dict) else []):
+        meta = p.get("model_meta") if isinstance(p, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        for m in meta.values():
+            if not isinstance(m, dict) or "capabilities" not in m:
+                continue
+            legacy = m.pop("capabilities")
+            m["input_modalities"] = _merge_capabilities_into_modalities(
+                m.get("input_modalities") or [], legacy)
+            m.setdefault("output_modalities", [])
+            changed = True
+    if changed:
+        write_yaml_config(str(config_path), raw)
+        logger.info(f"[model] 老 capabilities 已迁移为 input/output 双维度: {config_path}")
+    return changed
+
+
+def migrate_legacy_capabilities() -> bool:
+    """startup 迁移入口(只迁真实配置)。config.yaml.example 是仓库模板，随源码静态维护，运行期不写。"""
+    return _migrate_legacy_capabilities(Path(get_config_path()))
+
+
 def _merge_supports_modalities(modalities: List[str], item: Any) -> List[str]:
     """Moonshot supports_image_in/video_in 布尔并入 input_modalities（去重）— 小欧 2026-10-11
 
@@ -769,7 +800,7 @@ _KEY_ALIASES = {
     "output_modalities": ["output_modalities"],
     "supported_parameters": ["supported_parameters", "supported_sampling_parameters"],
     "supported_features": ["supported_features"],
-    "capabilities": ["capabilities"],
+    # 2026-11-08 小欧 - [14] B4: 删 `capabilities` 行(identity 别名, 模态只认 input/output; zenmux reasoning 仍由 _merge_capabilities 直读原键)
   "free": ["free"],
   "stability": ["stability"],
   "publish_time": ["publish_time"],
@@ -1095,6 +1126,7 @@ def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str
       - 提取 _persist_model_meta 独立函数（SRP：编排 vs 细节分离）
       - 用字段配置表 + 循环替代 6 个 if 块（DRY/KISS-DIRECT/OCP）
     """
+    _migrate_legacy_capabilities(Path(get_config_path()))  # [14] B3: 落盘前迁移老 capabilities(幂等, 无残留零改动) — 小欧-2026-11-08
     ai = _raw_ai()
     if name not in _provider_names(ai):
         raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")

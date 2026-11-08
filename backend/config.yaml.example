@@ -72,7 +72,7 @@ ai:
         input_modalities: [text, image]      # 看图
         output_modalities: [text]
       agnes-2.5-pro:
-        input_modalities: [text]             # 待核
+        input_modalities: [text, image]      # 看图（实测 image_tokens 计入）
         output_modalities: [text]
       agnes-3.0-flash:
         input_modalities: [text, image]      # 看图
@@ -94,12 +94,38 @@ ai:
     api_base: https://token.sensenova.cn/v1
     api_key: sk-xxx...
     models:
+      - deepseek-flash
       - deepseek-v4-flash
       - glm-5.2
-      - sensenova-6.8-flash-lite
+      - glm-5.3
       - kimi-k3
+      - sensenova-6.8-flash
+      - sensenova-6.8-flash-lite
     timeout: 200
     max_retries: 3
+    # [14] §3.4.3 双维度能力标注（与真实 config 同构）：input=看图，output=生成产出
+    model_meta:
+      deepseek-flash:
+        input_modalities: [text]
+        output_modalities: [text]
+      deepseek-v4-flash:
+        input_modalities: [text]
+        output_modalities: [text]
+      glm-5.2:
+        input_modalities: [text]
+        output_modalities: [text]
+      glm-5.3:
+        input_modalities: [text]
+        output_modalities: [text]
+      kimi-k3:
+        input_modalities: [text]
+        output_modalities: [text]
+      sensenova-6.8-flash:
+        input_modalities: [text, image]        # 看图
+        output_modalities: [text]
+      sensenova-6.8-flash-lite:
+        input_modalities: [text, image]        # 看图
+        output_modalities: [text]
 
   ZenFree:
     api_base: https://opencode.ai/zen/v1
