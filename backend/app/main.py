@@ -545,9 +545,8 @@ async def startup_event():
     install_spawn_gate()
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
-    # 2026-11-08 小欧 - 裸 uvicorn 模式访问日志刷控制台根治: startup 补调 setup_uvicorn_loggers()
-    #   (与 run_server.py 同一收口, uvicorn 三 logger 只挂文件 handler; 否则 dictConfig 的 console
-    #   handler 残留被 10s 热重载刷成 DEBUG 后必刷屏) — 小欧-2026-11-08
+    # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server 同一收口(只落盘不上屏),
+    #   根治 dictConfig console handler 残留被 10s 热重载刷 DEBUG 刷屏 — 小欧-2026-11-08
     setup_uvicorn_loggers()
     # 2026-11-08 小欧: 老 capabilities 一次性迁移(先于任何配置读取; 幂等, 无残留零改动)
     migrate_legacy_capabilities()
