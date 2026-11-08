@@ -21,7 +21,7 @@
 //   ①PARAM_DEFAULT_RANGES / PARAM_PRESETS 的 context_limit → context_length（与后端 yaml 真源同名）；
 //   ②新增 withDeclaredMeta：基线补厂商声明窗口与输出上限（用户值优先，声明值仅兜底），
 //     使模型库勾选进来的模型在②参数区也有一条可编辑的 context_length 行 — 小欧-2026-11-01
-// 2026-11-08 小欧 - [14] F5: 新增 KNOWN_OUTPUT_MODALITY_VALUES 单源（输出行未知值灰标 + setter 保留非可选项） — 小欧-2026-11-08
+// 2026-11-08 小欧 - 新增 KNOWN_OUTPUT_MODALITY_VALUES 单源（输出行未知值灰标 + setter 保留非可选项） — 小欧-2026-11-08
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -182,11 +182,11 @@ export const CAPABILITY_OPTIONS = [
   { label: '图片', value: 'image' },
   { label: '视频', value: 'video' },
   { label: '音频', value: 'audio' },
-  // 2026-11-08 小欧 [14] D6: 枚举统一 pdf→file（与远端 /v1/models 的 input_modalities 值一致，pdf 是 file 子集）
+  // 2026-11-08 小欧: 枚举统一 pdf→file（与远端 /v1/models 的 input_modalities 值一致，pdf 是 file 子集）
   { label: '文件', value: 'file' },
 ];
 
-// 2026-11-08 小欧 [14] §3.10.1/F5: 输出模态勾选枚举（生成输出能力）——
+// 2026-11-08 小欧: 输出模态勾选枚举（生成输出能力）——
 //   产出场景只勾 image/video（生图/生视频），text/file/audio 一般不出现在输出。
 //   与 CAPABILITY_OPTIONS 共用字段值域 {text,image,file,video,audio}，但 output 只提供可产出项。
 export const OUTPUT_MODALITY_OPTIONS = [
@@ -194,7 +194,7 @@ export const OUTPUT_MODALITY_OPTIONS = [
   { label: '视频生成', value: 'video' },
 ];
 
-// 2026-11-08 小欧 - [14] F5: 输出侧已知值集合（与 OUTPUT_MODALITY_OPTIONS 同源，text/file/audio 属未知值→只读灰标）
+// 2026-11-08 小欧 - 输出侧已知值集合（与 OUTPUT_MODALITY_OPTIONS 同源，text/file/audio 属未知值→只读灰标）
 export const KNOWN_OUTPUT_MODALITY_VALUES: ReadonlySet<string> = new Set(
   OUTPUT_MODALITY_OPTIONS.map((o) => o.value)
 );

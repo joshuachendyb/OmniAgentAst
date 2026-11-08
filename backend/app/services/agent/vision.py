@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-11-04 小欧 新建: 视觉通道(S2)唯一判定与 parts 生成 — 小欧-2026-11-04
-# 2026-11-08 小欧 对照 [14] 字段统一: 能力判定只读 input_modalities(不碰 capabilities) — 小欧-2026-11-08
+# 2026-11-04 小欧 新建: 视觉通道唯一判定与 parts 生成 — 小欧-2026-11-04
+# 2026-11-08 小欧 字段统一后: 能力判定只读 input_modalities(不碰 capabilities) — 小欧-2026-11-08
 # 2026-11-08 小欧 修: 配置根是 ai(原读顶层 providers 恒空 → 看图通道永不启用); 模型名含 . / 故逐级字面键取 — 小欧-2026-11-08
 
-"""services.agent.vision — 视觉通道(S2, 图片类型阶段)。
+"""services.agent.vision — 视觉通道(图片类型阶段)。
 
 设计边界:
   1. conversation_history **恒为 str**: 图片以 `[[IMAGE_ATTACHMENT:<id>]]` 占位入列,
@@ -13,7 +13,7 @@
      且须在落盘/日志取占位原文之后调用(防 base64 入库/入日志);
   3. 能力判定只看模型配置 `input_modalities` 是否含 image(统一后唯一真源, 不写死模型名, 无 capabilities 分支);
   4. 展开失败(记录没了/图超限/读不出)退化为一行说明文字, 不阻断本轮;
-  5. 生图/生视频(output)能力不参与判定: S2 只看 input 维度, 生图模型(input 无 image)不会被误判为看图。
+  5. 生图/生视频(output)能力不参与判定: 只看 input 维度, 生图模型(input 无 image)不会被误判为看图。
 """
 import asyncio
 import base64
@@ -36,7 +36,7 @@ _DATA_URL_MAX = 8
 def supports_image_input(llm_model: Any) -> bool:
     """模型是否接受 image 入参（看图）。
 
-    统一后唯一读 config.model_meta.input_modalities（[14] §3 字段统一），
+    统一后唯一读 config.model_meta.input_modalities（字段统一后唯一真源），
     不再有 capabilities 分支；不写死模型名。走 chat/completions 的看图能力。
     """
     provider = getattr(llm_model, "provider", "") or ""

@@ -40,6 +40,7 @@
 //   数据源=providers[].models（GET /models 已带 model_meta 的两字段，不新增接口），回落值加 * 标记并在
 //   统计行说明，杜绝把本地旧值误当远端实时值；保存时同样取该回落值，避免远端缺失把已存窗口清空。
 //   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 第八章 — 小欧-2026-11-01
+// 2026-11-08 小欧 - 模型库补输出模态列: 读 output_modalities, 生图/生视频打"生成"徽标, 与输入模态分列 — 小欧-2026-11-08
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -161,7 +162,7 @@ const readModalities = (m: RemoteModelItem): string[] => {
     : [];
 };
 
-// 2026-11-08 小欧 [14] F6: 输出模态收窄（与 readModalities 同模式）
+// 2026-11-08 小欧: 输出模态收窄（与 readModalities 同模式）
 const readOutputModalities = (m: RemoteModelItem): string[] => {
   const v = m.output_modalities;
   return Array.isArray(v)
@@ -169,7 +170,7 @@ const readOutputModalities = (m: RemoteModelItem): string[] => {
     : [];
 };
 
-// 2026-11-08 小欧 [14] §3.10.2/F6: 输出模态展示标签（生图/生视频"生成"徽标，与输入模态分列）
+// 2026-11-08 小欧: 输出模态展示标签（生图/生视频"生成"徽标，与输入模态分列）
 const OUTPUT_LABEL: Record<string, string> = {
   image: '图片生成',
   video: '视频生成',
@@ -714,7 +715,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
           );
         }}
       />
-      {/* 2026-11-08 小欧 [14] F6: 输出模态列（生图/生视频，与"输入模态"分列） */}
+      {/* 2026-11-08 小欧: 输出模态列（生图/生视频，与"输入模态"分列） */}
       <Table.Column
         title="输出模态"
         width={130}

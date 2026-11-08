@@ -131,7 +131,7 @@
 //   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md - 小欧-2026-11-01
 // 2026-11-08 小欧 - ①②③标题行布局统一：三列 grid（1fr 1fr 1fr）+ SectionTitle + 按钮组中列左对齐（justifySelf:'start'）；
 //   ①按钮补 actionBtnWidth（与②等宽）；③ ProviderConfig 裸 span → SectionTitle、grid div 去 margin（消除 grid row 高度差异致按钮垂直错位）
-// 2026-11-08 小欧 - [14] F3 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
+// 2026-11-08 小欧 - 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
 import React, { useState } from 'react';
 import {
   Button,
@@ -181,7 +181,7 @@ import {
   CAPABILITY_OPTIONS,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
-  // 2026-11-08 小欧 [14] F3: 输出模态勾选枚举（§3.10.1）
+  // 2026-11-08 小欧: 输出模态勾选枚举
   OUTPUT_MODALITY_OPTIONS,
   KNOWN_OUTPUT_MODALITY_VALUES,
 } from '../utils/modelUtils';
@@ -608,7 +608,7 @@ const SettingsPage: React.FC = () => {
         {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
           其 keys 来自 model_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
-        {/* 2026-11-08 小欧 [14] F3: 输入模态行 → inputModalities，下方输出模态行（§3.10.1） */}
+        {/* 2026-11-08 小欧: 输入模态行 → inputModalities，下方输出模态行 */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>输入模态</span>
           <span style={{ flex: 1 }}>
@@ -642,7 +642,7 @@ const SettingsPage: React.FC = () => {
             state.model.inputModalitiesBaseline
           ) && <DirtyDot />}
         </div>
-        {/* 2026-11-08 小欧 [14] §3.10.1/F3: 输出模态行（生成输出能力：生图/生视频，与输入模态分维度） */}
+        {/* 2026-11-08 小欧: 输出模态行（生成输出能力：生图/生视频，与输入模态分维度） */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>输出模态</span>
           <span style={{ flex: 1 }}>
@@ -652,7 +652,7 @@ const SettingsPage: React.FC = () => {
               options={OUTPUT_MODALITY_OPTIONS}
               onChange={(v) => s.setOutputModalities(v as string[])}
             />
-            {/* 2026-11-08 小欧 [14] F3: 非可选项（text/audio 等）灰色只读 Tag——与输入模态行同款 */}
+            {/* 2026-11-08 小欧: 非可选项（text/audio 等）灰色只读 Tag——与输入模态行同款 */}
             {state.model.outputModalities
               .filter((v) => !KNOWN_OUTPUT_MODALITY_VALUES.has(v))
               .map((v) => (

@@ -189,7 +189,7 @@
 # 2026-11-07 小欧 - loop 重试改用 notice 通道(有 done 终态清除): react_step:399 LLM429重试 +
 #   react_loop:332 单步异常重试, 原 MetaStep(retrying) 无 done 拼留; 改 emit_notice(retrying,start)+
 #   首chunk emit_notice(retrying,done) 清位置2 — 小欧-2026-11-07
-# 2026-11-08 小欧 - [14] S2: 图片 parts 展开从 prepare_messages_for_llm 拆出, 改在
+# 2026-11-08 小欧 - 图片 parts 展开从 prepare_messages_for_llm 拆出, 改在
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
@@ -369,7 +369,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),
     )  # 11.3 C2修复(复核确认): 透传裁剪token数, 防 on_trim 恒0死数据 — 小欧 2026-08-20
     _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
-    # [14] S2 §4.4: prepare_messages_for_llm 为 async(返回纯文本 wire 副本, 图片仍是占位)
+    # prepare_messages_for_llm 为 async(返回纯文本 wire 副本, 图片仍是占位)
     messages = await agent.message_builder.prepare_messages_for_llm()
     # 文件B 增量落盘(loop顺序/结构保真/增量前缀) — 小欧 2026-08-23
     # call_no = agent.llm_call_count(本次调用序号, 上方刚自增)

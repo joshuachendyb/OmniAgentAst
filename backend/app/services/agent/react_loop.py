@@ -74,6 +74,8 @@
 # 2026-11-07 小欧 - 单步异常重试改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
 #   重试成功后位置2 拼留; 改 emit_notice(retrying,start) + 下轮首 chunk emit_notice(retrying,done) 清除 — 小欧-2026-11-07
 #   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
+# 2026-11-08 小欧 - 接视觉通道: 按 supports_image_input 分流, 视觉模型把图片 ref 摘出正文走 wire image_url parts,
+#   非视觉模型原样全走文本档案卡 — 小欧-2026-11-08
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -97,7 +99,7 @@ from app.services.agent.react_inference import handle_react_error, _is_recoverab
 from app.db import db
 from app.services.chat import storage
 from app.services.task.task_state import get_stream_buffer
-# 2026-11-08 小欧 [14] S2: 视觉分流(supports_image_input 判定 / split_vision_refs 摘图片 ref)
+# 2026-11-08 小欧: 视觉分流(supports_image_input 判定 / split_vision_refs 摘图片 ref)
 from app.services.agent.vision import split_vision_refs, supports_image_input
 # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 移除顶层 import(改D路径局部import),
 #   否则 task包冷启动(import task_runtime/task_registry)踩 load-time 循环 — 小欧-2026-09-08
@@ -211,8 +213,8 @@ async def run_react_cycle(
     #   在 message_builder 内拼为 user 消息前置区块。
     # 2026-10-30 小欧 更正: 此处只覆盖**首发**。插话不走 init_history——其 refs 由
     #   orchestrator 插话分支解析并渲染进注入正文(经 drain_inbox 并入), 原"覆盖两处"不实。
-    # [14] S2 §4.5: 视觉模型把图片 ref 摘出正文, 改走 wire image_url parts(init_history 组装占位);
-    #   非视觉模型原样全走文本(档案卡), 行为与 S1 逐字节一致。
+    # 视觉模型把图片 ref 摘出正文, 改走 wire image_url parts(init_history 组装占位);
+    #   非视觉模型原样全走文本(档案卡), 与未接入视觉通道前逐字节一致。
     _refs = (getattr(agent, "_start_meta", None) or {}).get("refs")
     if supports_image_input(getattr(agent, "_task_llm_model", None)):
         _text_refs, _vision_refs = split_vision_refs(_refs)

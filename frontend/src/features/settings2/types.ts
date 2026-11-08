@@ -27,6 +27,7 @@
 //   ensureModelSaved/beforeunload/checkMtime 全链纳入；保存经 saveProviderDraft → PUT /providers 落盘 - 小欧-2026-09-27
 // 2026-11-01 小欧 - 键名统一：ModelState.defaults → baseline（消与 llm.context_length_default 撞名）；
 //   providerConfig.base_url → api_base（与后端 yaml 真源同名）- 小欧-2026-11-01
+// 2026-11-08 小欧 - ModelState 能力字段拆双维度: capabilities → inputModalities/outputModalities(各带 baseline) — 小欧-2026-11-08
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -61,7 +62,7 @@ export interface ModelState {
   ranges: Record<string, { min: number; max: number }>;
   paramOptions: Record<string, string[]>;
   // 2026-09-23 小欧 - 实施：能力编辑副本与持久化基线（baseline 不注入，保脏）
-  // 2026-11-08 小欧 [14] F2: capabilities → input/output 双维度
+  // 2026-11-08 小欧: capabilities → input/output 双维度
   inputModalities: string[];
   inputModalitiesBaseline: string[];
   outputModalities: string[];

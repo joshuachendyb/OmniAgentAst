@@ -43,6 +43,7 @@
 // 编辑历史: 2026-10-11 08:02:51 小欧 - Provider 输入框加长与地址 hover 看全长: 超长地址框内放不下, 原生 title 跟随输入值实时显示完整串(空值不弹); API Key 是掩码不加(hover 弹明文等于泄密) — 小欧-2026-10-11
 // 编辑历史: 2026-11-01 小欧 - 键名统一: 添加模型弹窗参数模板的读写字段 default_params → model_params
 //   （候选来源 ModelEntry.model_params / 提交体 model_params），与后端 DTO 同名 — 小欧-2026-11-01
+// 编辑历史: 2026-11-08 小欧 - 添加模型提交体能力字段 capabilities → input_modalities + output_modalities 双维度 — 小欧-2026-11-08
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -98,7 +99,7 @@ interface Props {
     label: string;
     model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
-    // 2026-11-08 小欧 [14] F1: capabilities → input/output 双维度
+    // 2026-11-08 小欧: capabilities → input/output 双维度
     input_modalities?: string[];
     output_modalities?: string[];
     param_options?: Record<string, string[]>;

@@ -174,7 +174,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   (2)add_model 形参 default_params → model_params；update_model 出参键同名；
 #   (3)update_provider_config 删 key_map 的 base_url 与 retry_times 别名（只留 api_base / max_retries），
 #      空 URL 400 校验由双键循环收敛为 api_base 单键 — 小欧-2026-11-01
-# 2026-11-08 小欧 - [14] B3/B4 补齐: 新增 _migrate_legacy_capabilities(startup 一次性迁移, 复用 config_helpers 读写);
+# 2026-11-08 小欧 - 迁移与别名收口: 新增 _migrate_legacy_capabilities(启动一次性迁移, 复用 config_helpers 读写);
 #   _KEY_ALIASES 删 no-op 的 capabilities 行(_merge_capabilities 仅服务 zenmux reasoning 特征, 不是模态双读) — 小欧-2026-11-08
 """
 from pathlib import Path
@@ -276,7 +276,7 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             # 2026-11-01 小欧 - 键名统一: 下发键 default_params → model_params, 与 yaml 真源同名(消翻译层)
             "model_params": params,
             "range": meta.get("range") or {},
-            # [14] 断链修正：capabilities 拆为 input_modalities + output_modalities，各自只读真源
+            # 断链修正：capabilities 拆为 input_modalities + output_modalities，各自只读真源
             "input_modalities": meta.get("input_modalities") or [],
             "output_modalities": meta.get("output_modalities") or [],
             "param_options": _resolve_param_options(ai, provider, m, params, meta),
@@ -366,7 +366,7 @@ def add_model(provider: str, model: str, label: str = "",
             "model_meta": {model: {
                 "label": label or model,
                 "range": range_ or {},
-                # [14] 断链修正：capabilities 拆为 input/output 双维度
+                # 断链修正：capabilities 拆为 input/output 双维度
                 "input_modalities": input_modalities or [],
                 "output_modalities": output_modalities or [],
                 **({"param_options": param_options} if param_options else {}),
@@ -385,7 +385,7 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     # 白名单放行+落model_meta（小欧 2026-09-22：加 param_options，否则送了即报不支持的配置项）
     # 2026-09-24 小欧：加 remove_params（键级删除，与 model_params merge 叠加）— 小欧-2026-09-24
     # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名) - 小欧-2026-11-01
-    # 2026-11-08 小欧 - [14] B2: 模态字段 capabilities → input_modalities + output_modalities
+    # 2026-11-08 小欧: 模态字段 capabilities → input_modalities + output_modalities
     unknown = set(fields) - {"label", "range", "input_modalities", "output_modalities", "model_params", "param_options", "remove_params"}
     if unknown:
         raise ValueError(f"不支持的配置项: {sorted(unknown)}")
@@ -712,11 +712,11 @@ def _merge_capabilities(feats: List[str], capabilities: Any) -> List[str]:
 
 
 def _merge_capabilities_into_modalities(modalities: List[str], capabilities: Any) -> List[str]:
-    """老格式 capabilities 列表并入 input_modalities（迁移用, 一次性）— [14] §3.3
+    """老格式 capabilities 列表并入 input_modalities（迁移用, 一次性）
 
     agnes/ZenFree 老写法: capabilities:['text','image'] → 并进 input_modalities(去重)。
     仅作"把已判定为 input 的值补充进 input"的兜底, 不承载 input/output 方向判定
-    (生图/生视频的方向由 §3.4.2 手工标注表定, 见 _migrate_legacy_capabilities)。
+    (生图/生视频的方向由手工标注表定, 见 _migrate_legacy_capabilities)。
     """
     out = list(modalities)
     if isinstance(capabilities, list):
@@ -800,7 +800,7 @@ _KEY_ALIASES = {
     "output_modalities": ["output_modalities"],
     "supported_parameters": ["supported_parameters", "supported_sampling_parameters"],
     "supported_features": ["supported_features"],
-    # 2026-11-08 小欧 - [14] B4: 删 `capabilities` 行(identity 别名, 模态只认 input/output; zenmux reasoning 仍由 _merge_capabilities 直读原键)
+    # 2026-11-08 小欧: 删 `capabilities` 行(identity 别名, 模态只认 input/output; zenmux reasoning 仍由 _merge_capabilities 直读原键)
   "free": ["free"],
   "stability": ["stability"],
   "publish_time": ["publish_time"],
@@ -1126,7 +1126,7 @@ def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str
       - 提取 _persist_model_meta 独立函数（SRP：编排 vs 细节分离）
       - 用字段配置表 + 循环替代 6 个 if 块（DRY/KISS-DIRECT/OCP）
     """
-    _migrate_legacy_capabilities(Path(get_config_path()))  # [14] B3: 落盘前迁移老 capabilities(幂等, 无残留零改动) — 小欧-2026-11-08
+    _migrate_legacy_capabilities(Path(get_config_path()))  # 落盘前迁移老 capabilities(幂等, 无残留零改动) — 小欧-2026-11-08
     ai = _raw_ai()
     if name not in _provider_names(ai):
         raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")

@@ -105,7 +105,7 @@
 //   withDeclaredMeta(model_params, context_length, max_output_length)：用户值优先、厂商声明值仅兜底，
 //   ②参数区 context_length 行由此恒可编辑且默认显示厂商声明窗口。详见
 //   doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 问题 1/2 - 小欧-2026-11-01
-// 2026-11-08 小欧 - [14] F2 补全：setOutputModalities 保留非可选项(text/audio)，原只留 onChange 项致勾「图片生成」即丢 text — 小欧-2026-11-08
+// 2026-11-08 小欧 - 补全 setOutputModalities 保留非可选项(text/audio)，原只留 onChange 项致勾「图片生成」即丢 text — 小欧-2026-11-08
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -121,7 +121,7 @@ import {
   validate,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
-  // 2026-11-08 小欧 [14] F5: 输出侧已知值集合（setter 保留非可选项）
+  // 2026-11-08 小欧: 输出侧已知值集合（setter 保留非可选项）
   KNOWN_OUTPUT_MODALITY_VALUES,
   // 2026-09-24 小欧 - ②能力归一/保存转换（modelUtils 单源，与 SettingsPage 共用词表）- 小欧-2026-09-24
   normalizeCaps,
@@ -227,7 +227,7 @@ const initialModel = () => ({
   ranges: {},
   paramOptions: {},
   // 2026-09-23 小欧 - 能力编辑副本+基线（load 四通道回填覆盖）
-  // 2026-11-08 小欧 [14] F2: capabilities → inputModalities(输入) + outputModalities(输出) 双维度
+  // 2026-11-08 小欧: capabilities → inputModalities(输入) + outputModalities(输出) 双维度
   inputModalities: [] as string[],
   inputModalitiesBaseline: [] as string[],
   outputModalities: [] as string[],
@@ -447,7 +447,7 @@ export function useSettings() {
                     >),
                   },
                   // 2026-09-24 小欧 - ②load 通道：normalizeCaps 归一（恒含 text 防假脏；未知值原样保留）- 小欧-2026-09-24
-                  // 2026-11-08 小欧 [14] F2: capabilities→inputModalities + 增 outputModalities 双维度
+                  // 2026-11-08 小欧: capabilities→inputModalities + 增 outputModalities 双维度
                   inputModalities: normalizeCaps([
                     ...(current?.input_modalities ?? []),
                   ]),
@@ -840,7 +840,7 @@ export function useSettings() {
         model_params?: Record<string, unknown>;
         range?: Record<string, { min: number; max: number }>;
         param_options?: Record<string, string[]>;
-        // 2026-11-08 小欧 [14] F2: capabilities → input/output 双维度
+        // 2026-11-08 小欧: capabilities → input/output 双维度
         input_modalities?: string[];
         output_modalities?: string[];
         // 2026-09-24 小欧 - ①键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
@@ -868,7 +868,7 @@ export function useSettings() {
       }
       // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
       //   （state 恒含 text，直接送会让纯文本模型落 ['text'] 而非隐含默认的空）- 小欧-2026-09-24
-      // 2026-11-08 小欧 [14] F2: 能力双维度提交 input/output
+      // 2026-11-08 小欧: 能力双维度提交 input/output
       if (capsChanged) {
         body.input_modalities = capsForSave(state.model.inputModalities);
         body.output_modalities = [...state.model.outputModalities];
@@ -934,7 +934,7 @@ export function useSettings() {
                           model_params: { ...state.model.params },
                           range: { ...state.model.ranges },
                           param_options: { ...state.model.paramOptions },
-                          // [14] F2: providers 缓存回写能力双维度
+                          // 2026-11-08 小欧: providers 缓存回写能力双维度
                           input_modalities: capsSaved,
                           output_modalities: outSaved,
                         }
@@ -1169,7 +1169,7 @@ export function useSettings() {
           ...((first?.param_options ?? {}) as Record<string, string[]>),
         },
         // 2026-09-24 小欧 - ②selectProvider 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
-        // 2026-11-08 小欧 [14] F2: capabilities→input/output 双维度
+        // 2026-11-08 小欧: capabilities→input/output 双维度
         inputModalities: normalizeCaps([...(first?.input_modalities ?? [])]),
         inputModalitiesBaseline: normalizeCaps([
           ...(first?.input_modalities ?? []),
@@ -1221,7 +1221,7 @@ export function useSettings() {
         ranges: nextRanges,
         paramOptions: nextOptions,
         // 2026-09-24 小欧 - ②selectModel 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
-        // 2026-11-08 小欧 [14] F2: capabilities→input/output 双维度
+        // 2026-11-08 小欧: capabilities→input/output 双维度
         inputModalities: normalizeCaps([...(entry.input_modalities ?? [])]),
         inputModalitiesBaseline: normalizeCaps([
           ...(entry.input_modalities ?? []),
@@ -1293,7 +1293,7 @@ export function useSettings() {
   // 2026-09-23 小欧 - 已知值集合改用 modelUtils 单源常量（原每次调用重建 Set）
   // 2026-09-24 小欧 - ②归一：next 过 normalizeCaps（恒含 text——antd Checkbox disabled 项 onChange 可能不带，
   //   归一兜底；未知值仍保留）；isDirty 联合 removedParams — 小欧-2026-09-24
-  // 2026-11-08 小欧 [14] F2: setCapabilities → setInputModalities（输入模态），新增 setOutputModalities
+  // 2026-11-08 小欧: setCapabilities → setInputModalities（输入模态），新增 setOutputModalities
   const setInputModalities = useCallback((uiValues: string[]) => {
     setState((s) => {
       const unknown = s.model.inputModalities.filter(
@@ -1323,7 +1323,7 @@ export function useSettings() {
     });
   }, []);
 
-  // 2026-11-08 小欧 [14] F2: 输出模态 setter（生图/生视频勾选，去重，isDirty 联合置脏）
+  // 2026-11-08 小欧: 输出模态 setter（生图/生视频勾选，去重，isDirty 联合置脏）
   // 2026-11-08 小欧 fix: 非可选项（text/audio 等）与输入侧同法保留——原 [...Set] 只留 onChange 项致切图即丢 text
   const setOutputModalities = useCallback((uiValues: string[]) => {
     setState((s) => {
@@ -1518,7 +1518,7 @@ export function useSettings() {
         paramOptions,
         removedParams: [],
         removedDrafts: {},
-        // [14] F2: 撤销删除回填能力双维度基线
+        // 2026-11-08 小欧: 撤销删除回填能力双维度基线
         inputModalities: normalizeCaps([...m.inputModalitiesBaseline]),
         outputModalities: [...m.outputModalitiesBaseline],
         isDirty: false,
@@ -1557,7 +1557,7 @@ export function useSettings() {
               ...((m.param_options ?? {}) as Record<string, string[]>),
             },
             // 2026-09-24 小欧 - ②refreshModels(select) 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
-            // 2026-11-08 小欧 [14] F2: capabilities→input/output 双维度
+            // 2026-11-08 小欧: capabilities→input/output 双维度
             inputModalities: normalizeCaps([...(m.input_modalities ?? [])]),
             inputModalitiesBaseline: normalizeCaps([
               ...(m.input_modalities ?? []),
@@ -1600,7 +1600,7 @@ export function useSettings() {
     addParam,
     // 2026-09-24 小欧 - ①暴露 removeParam（参数行 × 删除，A 方案）- 小欧-2026-09-24
     removeParam,
-    // 2026-11-08 小欧 [14] F2: 暴露 setInputModalities + setOutputModalities（能力双维度 setter）
+    // 2026-11-08 小欧: 暴露 setInputModalities + setOutputModalities（能力双维度 setter）
     setInputModalities,
     setOutputModalities,
     resetParams,

@@ -112,7 +112,7 @@
 #   目录块渲染当时放本层(render_workspace_block), 同日下条已改为编排层渲染 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 目录块改由编排层渲染并传文本(init_history/build_interject_text 收 ws_text),
 #   本层不再自取快照渲染 —— 注入/日志/回执同取一份, 不再各算一遍 — 小欧-2026-10-31
-# 2026-11-08 小欧 - [14] S2: 新增 image_slot/vision_slots 占位; 图片 parts 展开拆出
+# 2026-11-08 小欧 - 视觉占位与 wire 展开: 新增 image_slot/vision_slots 占位, 图片 parts 展开拆出
 #   expand_vision_parts(全量 user 消息, 调用方落盘/日志取原文后再展开, history 恒 str) — 小欧-2026-11-08
 """
 MessageBuilder — conversation_history 状态管理器
@@ -158,7 +158,7 @@ from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志
 from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
-# 2026-11-08 小欧 [14] S2: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
+# 2026-11-08 小欧: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
 from app.services.agent.vision import expand_image_slots, image_slot
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
@@ -194,7 +194,7 @@ def build_user_turn_text(user_input: str, refs: Optional[list] = None,
 
     纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
     (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
-    [14] S2: 图片用占位标记入列, wire 边界(expand_vision_parts)才换 parts —
+    图片用占位标记入列, wire 边界(expand_vision_parts)才换 parts —
     history 恒 str, 压缩/裁剪/持久化零改动。
     """
     refs_block = render_refs_block(refs)
@@ -366,8 +366,8 @@ class MessageBuilder:
         2026-10-31 小欧 - 目录块文本改由编排层渲染后传入(ws_text),
           本层不再自取快照、不再渲染 —— 注入的文本与日志/回执是同一份, 不会各算一遍。
 
-        [14] S2 - 增 vision_slots(图片引用): 视觉模型由编排层 split_vision_refs 摘出,
-          经 build_user_turn_text 组装占位入列(wire 边界才换 parts, 见 §4.4)。
+        增 vision_slots(图片引用): 视觉模型由编排层 split_vision_refs 摘出,
+          经 build_user_turn_text 组装占位入列(wire 边界才换 parts)。
         """
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
@@ -551,7 +551,7 @@ class MessageBuilder:
         注入点(tools/summary/schema)在第一个非system消息前或末尾操作。
 
         MSG-001 小沈 2026-05-24: temp_history加入字符容量限制,从最旧开始移除
-        [14] S2: 仍为 async(沿用既有调用契约); 图片 parts 展开已拆到 expand_vision_parts,
+        仍为 async(沿用既有调用契约); 图片 parts 展开已拆到 expand_vision_parts,
               供调用方在落盘/日志取原文之后再展开。
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
@@ -588,7 +588,7 @@ class MessageBuilder:
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
         self.conversation_history = [m for m in self.conversation_history
                                      if not any(k.startswith("_temp_") for k in m)]
-        # [14] S2 §4.4: 图片占位展开已移至 expand_vision_parts（调用方落盘/日志之后再展开），
+        # 图片占位展开已移至 expand_vision_parts（调用方落盘/日志之后再展开），
         #   本函数只产出纯文本 wire 副本，history 恒 str。
         return messages
 
@@ -818,7 +818,7 @@ class MessageBuilder:
         total = 0
         for msg in messages:
             content = msg.get("content")
-            # [14] S2 §4.4: content 可能为 str 或 image parts 数组; 图片 base64 不撑爆裁剪/压缩预算
+            # content 可能为 str 或 image parts 数组; 图片 base64 不撑爆裁剪/压缩预算
             #   (只计文本段, 与下发口径同源)。否则 len(list)=part个数 → base64 大图被低估 → 上下文越界。
             if isinstance(content, str):
                 total += len(content)

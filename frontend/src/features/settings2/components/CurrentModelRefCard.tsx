@@ -8,6 +8,7 @@
 // 2026-09-24 18:56:06 小欧 - 修顶栏下拉不刷新：切全局模型成功后补调 AppContext.refreshModelList()，使顶栏收起态带★即时更新（对齐顶栏 handleModelChange 路径）
 // 2026-09-24 19:15:58 小欧 - DRY收口：onOk改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
 // 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一之模型卡去重排: 模型名/标题/全局默认三组重复只留一处; 「更换模型」提至标题行右侧(动作贴对象); 能力/作用改 label:value 定宽对齐; 状态文字仅异常态出现; 「使用中」Tag 改小圆点+文字 — 小欧-2026-10-11
+// 2026-11-08 小欧 - 能力拆双维度: 卡片能力 tags 改读 input_modalities, output 生图/生视频补"生成"徽标 — 小欧-2026-11-08
 import React, { useState } from 'react';
 import { Button, Tag } from 'antd';
 import {
@@ -81,7 +82,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
   const modelEntry = providers
     .find((p) => p.name === providerName)
     ?.models.find((m) => m.name === modelName);
-  // 2026-11-08 小欧 [14] F4: capabilities → input_modalities（输入能力）+ output_modalities（生图/生视频徽标）
+  // 2026-11-08 小欧: capabilities → input_modalities（输入能力）+ output_modalities（生图/生视频徽标）
   const capabilities = modelEntry?.input_modalities ?? [];
   const outputCapabilities = modelEntry?.output_modalities ?? [];
 
@@ -219,7 +220,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
         )}
 
         {/* label:value 两行：左标签定宽，右内容对齐，中英混排不参差 */}
-        {/* 2026-11-08 小欧 [14] F4: 能力→输入能力(input_modalities)；生图/生视频输出补"生成"徽标 */}
+        {/* 2026-11-08 小欧: 能力→输入能力(input_modalities)；生图/生视频输出补"生成"徽标 */}
         {capabilities.length > 0 && (
           <div style={{ ...metaRowStyle, marginTop: Spacing.MD }}>
             <span style={metaLabelStyle}>能力</span>

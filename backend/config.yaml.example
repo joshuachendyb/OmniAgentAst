@@ -37,6 +37,8 @@
 #   2026-11-01 09:25 小欧 - kilo 块补 5 个 free 模型 + 全量 model_meta(镜像真配置模型库保存实况:
 #     cohere/north-mini-code:free、kilo-auto/free、nvidia/nemotron-3.5-super-vl:free、
 #     openrouter/free、reflection/beam-free) — 小欧-2026-11-01
+#   2026-11-08 小欧 - ai.agnes/ai.sensenova 补双维度 model_meta(能力字段统一为 input/output_modalities;
+#     agnes 三个文本模型实测支持看图, 与真实 config.yaml 同构) — 小欧-2026-11-08
 #
 #
 # 严禁事项 — 小欧 2026-09-21
@@ -66,7 +68,7 @@ ai:
       - agnes-video-2.5-flash
     timeout: 120
     max_retries: 3
-    # [14] §3.4.3 双维度能力标注（与真实 config.yaml 同构；api_key 占位不落真 key）
+    # 双维度能力标注（与真实 config.yaml 同构；api_key 占位不落真 key）
     model_meta:
       agnes-2.5-flash:
         input_modalities: [text, image]      # 看图
@@ -103,7 +105,7 @@ ai:
       - sensenova-6.8-flash-lite
     timeout: 200
     max_retries: 3
-    # [14] §3.4.3 双维度能力标注（与真实 config 同构）：input=看图，output=生成产出
+    # 双维度能力标注（与真实 config 同构）：input=看图，output=生成产出
     model_meta:
       deepseek-flash:
         input_modalities: [text]

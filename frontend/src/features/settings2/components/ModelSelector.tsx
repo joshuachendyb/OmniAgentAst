@@ -51,7 +51,7 @@ export const ModelSelector: React.FC<Props> = ({
           </Select.Option>
         ))}
       </Select>
-      {/* 2026-11-08 小欧 [14] F4: 输入能力 tags → input_modalities；有生图/生视频补"生成"徽标 */}
+      {/* 2026-11-08 小欧: 输入能力 tags → input_modalities；有生图/生视频补"生成"徽标 */}
       {(current?.input_modalities ?? []).map((c) => (
         <Tag key={c}>{c}</Tag>
       ))}

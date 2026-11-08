@@ -42,6 +42,7 @@
 //   ①ModelEntry.default_params → model_params（与后端 yaml 真源同名）；
 //   ②ModelEntry 补 context_length（后端本次才开始下发 model_meta 的厂商声明窗口）；
 //   ③ProviderConfigPatch.base_url → api_base，删 retry_times（只留 max_retries）。— 小欧-2026-11-01
+// 2026-11-08 小欧 - 能力字段拆双维度: ModelEntry/新增模型体 capabilities → input_modalities + output_modalities — 小欧-2026-11-08
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -52,7 +53,7 @@ export interface ModelEntry {
   model_params: Record<string, unknown>;
   param_options?: Record<string, string[]>;
   range: Record<string, { min: number; max: number }>;
-  // 2026-11-08 小欧 [14] B1/F1: capabilities 拆为 input_modalities + output_modalities 双维度
+  // 2026-11-08 小欧: capabilities 拆为 input_modalities + output_modalities 双维度
   input_modalities: string[];
   output_modalities: string[];
   /**
@@ -255,7 +256,7 @@ export const modelApi = {
     label?: string;
     model_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
-    // 2026-11-08 小欧 [14] F1: capabilities → input/output 双维度
+    // 2026-11-08 小欧: capabilities → input/output 双维度
     input_modalities?: string[];
     output_modalities?: string[];
     param_options?: Record<string, string[]>;
