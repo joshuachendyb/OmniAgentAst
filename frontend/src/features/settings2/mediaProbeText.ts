@@ -1,8 +1,9 @@
 // 编辑历史: 2026-11-08 小欧 - 新建：实测结论词表与提示文案单源（自 ModelLibraryTab 整块搬出，
 //   模型库只读列与②图片实测行共用同一套词，避免两处措辞漂移） — 小欧-2026-11-08
+// 2026-11-09 小欧 - 全量重写：副行只留通道事实（能收什么），机制/后果下沉 acceptVerdict 定论行 — 小欧-2026-11-09
 import type { MediaProbe } from '@/services/api/model.api';
 
-/** 实测结论主行：只回答"收得到吗"；通道差别放副行，别让细节压过结论。 */
+/** 主行：只回答"收得到吗"；通道差别放副行，别让细节压过结论。 */
 const ACCEPT_MAIN: Record<string, string> = {
   inline: '能接收',
   both: '能接收',
@@ -15,12 +16,12 @@ export const acceptMain = (accept?: string) => {
   return ACCEPT_MAIN[accept] ?? accept;
 };
 
-/** 副行：内联 = 图片字节 base64 随请求体发送；外链 = 只传地址，由厂商抓取。 */
-export const acceptSub = (accept?: string, urlTested = false) => {
-  if (accept === 'none') return '厂商拒绝或静默丢图';
-  if (accept === 'both') return '内联＋外链';
-  if (accept === 'inline') return urlTested ? '仅内联' : '仅内联·外链未测';
-  return '按仅内联处理';
+/** 副行只报通道事实：这张模型实测能收哪种图（判定方法与后果在 tooltip 讲）。 */
+export const acceptSub = (accept?: string) => {
+  if (accept === 'none') return '内联外链都不收';
+  if (accept === 'both') return '内联、外链都收';
+  if (accept === 'inline') return '只收内联图';
+  return '暂按只收内联图处理';
 };
 
 /** 外链能力有没有实测结论：读后端落库的结构化标记，不再解析给人看的 evidence 文本。
@@ -28,15 +29,13 @@ export const acceptSub = (accept?: string, urlTested = false) => {
 export const urlTestedOf = (media?: MediaProbe) =>
   media?.url_tested ?? media?.accept?.image === 'both';
 
-/** 行内提示：术语就地定义，按「实测值 × 外链是否取证」查表——未测≠不支持，内联≠外链可用。 */
-export const acceptTip = (accept?: string, urlTested = false) => {
-  if (!accept)
-    return '尚未实测。未实测按"仅内联"处理：图片字节随请求体发送，公网图片地址不转发。点「实测」可验证';
+/** 定论行：一句讲清«为什么这样发图»——外链转发与否及理由，判定方法由调用处固定行交代。 */
+export const acceptVerdict = (accept?: string, urlTested = false) => {
+  if (!accept) return '未实测——暂只随请求发内联图，图片地址一律不转发';
   if (accept === 'none')
-    return '实测收不到图片：厂商拒绝该内容类型（HTTP 400/415/422），或返回 200 但图像 token 为 0（网关静默丢图）。发图会降级成一行说明文字';
-  if (accept === 'both')
-    return '实测内联与外链都可用：内联 = 图片字节 base64 随请求体发送；外链 = 只传图片地址，由厂商自己抓取，不下载、不转码';
+    return '不收图：接口拒绝图片内容（HTTP 400/415/422），或返回 200 但图像 token 为 0（静默丢图）；发图会降级为一行文字说明';
+  if (accept === 'both') return '内联与外链均实测可用，图片地址可直接转发';
   return urlTested
-    ? '实测仅内联可用：外链探测被厂商拒绝（该地址取不到或不认），转发地址会导致整轮请求失败，故不转发'
-    : '实测内联可用。外链未取证——「媒体 → 外链检测用图片地址」为空，或本次外链探测未取得确定结论；未取证一律按外链不可用处理';
+    ? '只收内联图：测试图片地址被接口拒绝，转发地址会拖垮整轮请求，故不转发'
+    : '只收内联图：外链未取证——「媒体 → 外链检测用图片地址」未配置或探测无结论，不转发图片地址';
 };

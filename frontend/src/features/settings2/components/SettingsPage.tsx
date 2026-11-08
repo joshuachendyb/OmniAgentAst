@@ -133,6 +133,7 @@
 //   ①按钮补 actionBtnWidth（与②等宽）；③ ProviderConfig 裸 span → SectionTitle、grid div 去 margin（消除 grid row 高度差异致按钮垂直错位）
 // 2026-11-08 小欧 - 补全：输出模态行补非可选项灰标（text/audio 只读可见，与输入行同款） — 小欧-2026-11-08
 // 2026-11-08 小欧 - 实测迁入②：新增「图片实测」行（紧贴输入模态），探测目标=①选中模型；取证后回读落库值并回填 mtime — 小欧-2026-11-08
+// 2026-11-09 小欧 - 图片实测行整改（三堂会审）：按钮改紧跟结论(原推行尾); 提示拆「判定/内联/外链/定论」逐行; 副行撤"外链未测" — 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
@@ -175,7 +176,7 @@ import { settingsApi } from '@/services/api/settings.api';
 import {
   acceptMain,
   acceptSub,
-  acceptTip,
+  acceptVerdict,
   urlTestedOf,
 } from '../mediaProbeText';
 import {
@@ -486,24 +487,23 @@ const SettingsPage: React.FC = () => {
     const accept = media?.accept?.image;
     const urlTested = urlTestedOf(media);
     const imageChecked = state.model.inputModalities.includes('image');
-    // 未测时按勾选区分「未测 / 不适用」；已测则如实显示，与勾选状态解耦
+    // 未测时按勾选状态区分「未测 / 不适用」；已测则如实显示，与勾选状态解耦
     const showInapplicable = !accept && !imageChecked;
     const probeMain = showInapplicable ? '不适用' : acceptMain(accept);
     const probeSub = showInapplicable
       ? '未勾选「图片」输入模态'
-      : acceptSub(accept, urlTested);
+      : acceptSub(accept);
     const probeColor = !accept
       ? Colors.TEXT.WEAK
       : accept === 'none'
         ? Colors.ERROR
         : Colors.SUCCESS;
-    let probeTip = acceptTip(accept, urlTested);
-    if (showInapplicable) {
-      probeTip =
-        '未勾选「图片」输入模态——当前配置不会发送图片，实测无从谈起。勾选「图片」后此行恢复可用';
-    } else if (!imageChecked) {
-      probeTip = `${probeTip}（当前未勾选「图片」，图片不会发送）`;
-    }
+    // 定论行：已测 → 一句讲清外链转发与否及理由；未勾选 → 说明为何无从实测
+    const verdictLine = showInapplicable
+      ? '未勾选「图片」输入模态，当前不发图；勾选「图片」后可实测'
+      : !imageChecked
+        ? `${acceptVerdict(accept, urlTested)}（当前未勾选「图片」，不发图）`
+        : acceptVerdict(accept, urlTested);
     return (
       <div>
         <div data-section="selector">
@@ -723,22 +723,27 @@ const SettingsPage: React.FC = () => {
             state.model.inputModalitiesBaseline
           ) && <DirtyDot />}
         </div>
-        {/* 2026-11-08 小欧 - 图片实测行：实测结论紧贴它所验证的「输入模态」声明——
-          声明（厂商说它支持图片）与实测（真的发一张图、以 HTTP 200 且图像 token>0 判定）分列两处，
-          冲突时以实测为准。按钮常显不跳位（同标题行灰钮规则），未勾「图片」禁用并说明原因 — 小欧-2026-11-08 */}
+        {/* 2026-11-09 小欧 - 图片实测行：结论紧贴它所验证的「输入模态」声明；实测(真发一张图、
+          HTTP 200 且图像 token>0 判定)与厂商声明分列，冲突以实测为准；按钮常显，未勾「图片」禁用 — 小欧-2026-11-09 */}
         <div style={settingsRowStyle}>
           <span style={settingsLabelStyle}>图片实测</span>
-          {/* 结论区：主词（能接收/不能接收/未测/不适用）+ 限定词（通道），整段挂 Tooltip 讲判据与取证 */}
+          {/* 结论区主词+通道副行; Tooltip 固定三行(判定/内联/外链)+定论行, 不重复堆叠 */}
           <Tooltip
             title={
               <div
                 style={{
                   fontSize: FontSize.SECONDARY,
-                  lineHeight: 1.7,
-                  maxWidth: 380,
+                  lineHeight: 1.8,
+                  maxWidth: 440,
                 }}
               >
-                <div>{probeTip}</div>
+                <div>
+                  判定：真实发送一张内置测试图，HTTP 200 且返回图像 token&gt;0
+                  才算收到
+                </div>
+                <div>内联＝图片数据直接随请求体发送（base64）</div>
+                <div>外链＝只发图片地址，由厂商接口自行抓取</div>
+                <div>{verdictLine}</div>
                 {media?.probed_at && (
                   <div style={{ opacity: 0.85 }}>
                     实测于 {media.probed_at.replace('T', ' ')}
@@ -761,6 +766,8 @@ const SettingsPage: React.FC = () => {
                 alignItems: 'baseline',
                 gap: Spacing.XS,
                 cursor: 'help',
+                minWidth: 190,
+                whiteSpace: 'nowrap',
               }}
             >
               <span
@@ -782,15 +789,28 @@ const SettingsPage: React.FC = () => {
               </span>
             </span>
           </Tooltip>
-          {/* 动作区靠右固定：结论文案四态长短不一，按钮位置不随文案浮动 */}
+          {/* 按钮紧跟结论（同标题行「动作随文」放法）；x 由结论区定宽锚定，四态文案长短不使按钮搬家 */}
           <Tooltip
             title={
-              !imageChecked
-                ? '先勾选「图片」——图片不会随请求发送，实测无从谈起'
-                : '把一张测试图真的发给厂商，以返回值判定：HTTP 200 且返回图像 token>0 才算真收到；200 但 token 为 0 属网关静默丢图。内联必测；外链需先在「媒体 → 外链检测用图片地址」填公网图片地址，否则只测内联'
+              !imageChecked ? (
+                '未勾选「图片」输入模态，当前不发图，无从实测'
+              ) : (
+                <div
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    lineHeight: 1.8,
+                    maxWidth: 380,
+                  }}
+                >
+                  <div>真实发送一张内置测试图，结论写回本行</div>
+                  <div>
+                    外链取证：先在「媒体 → 外链检测用图片地址」填公网图片地址
+                  </div>
+                </div>
+              )
             }
           >
-            <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
+            <span style={{ marginLeft: Spacing.SM, display: 'inline-flex' }}>
               <Button
                 style={{ width: settingsControl.actionBtnWidth }}
                 loading={probing}
