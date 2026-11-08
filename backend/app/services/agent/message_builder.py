@@ -596,7 +596,7 @@ class MessageBuilder:
         """wire 专属: 把各 user 消息的图片占位展开成 OpenAI parts（原地改浅拷贝，history 不受影响）。
 
         2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
-        （_data_url_cache 按文件复用，同一任务不重复编码）。
+        （media_payload 按文件复用 data URL，同一任务不重复编码）。
         """
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):

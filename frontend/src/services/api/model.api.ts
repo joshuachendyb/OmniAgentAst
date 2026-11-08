@@ -43,8 +43,16 @@
 //   ②ModelEntry 补 context_length（后端本次才开始下发 model_meta 的厂商声明窗口）；
 //   ③ProviderConfigPatch.base_url → api_base，删 retry_times（只留 max_retries）。— 小欧-2026-11-01
 // 2026-11-08 小欧 - 能力字段拆双维度: ModelEntry/新增模型体 capabilities → input_modalities + output_modalities — 小欧-2026-11-08
+// 2026-11-08 小欧 - 补 media 探测块(ModelEntry.media + probeMedia): 记录模型接受哪种媒体传输 — 小欧-2026-11-08
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
+
+/** 媒体传输探测结果。accept 形如 {image: 'inline' | 'url' | 'both' | 'none'}。 */
+export interface MediaProbe {
+  accept?: Record<string, string>;
+  probed_at?: string;
+  evidence?: string;
+}
 
 export interface ModelEntry {
   name: string;
@@ -64,6 +72,8 @@ export interface ModelEntry {
   context_length?: number | null;
   /** 模型最大输出 token 数。后端未下发 → undefined，由 LLM 调用链回退到全局默认值。 — 小欧-2026-10-26 */
   max_output_length?: number | null;
+  /** 媒体传输探测结果(实测得出，非厂商声明)；未探测 → undefined。 — 小欧-2026-11-08 */
+  media?: MediaProbe;
 }
 
 export interface ProviderEntry {
@@ -271,7 +281,12 @@ export const modelApi = {
     data: Partial<
       Pick<
         ModelEntry,
-        'label' | 'model_params' | 'range' | 'input_modalities' | 'output_modalities' | 'param_options'
+        | 'label'
+        | 'model_params'
+        | 'range'
+        | 'input_modalities'
+        | 'output_modalities'
+        | 'param_options'
       >
     > & {
       // 2026-09-24 小欧 - 键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
@@ -385,6 +400,24 @@ export const modelApi = {
     const response = await api.put<ReplaceModelsResult>(
       `/providers/${enc(provider)}/models`,
       { models }
+    );
+    return response.data;
+  },
+
+  /** 实测模型接受哪种图片传输(200 且图像 token>0 才算支持)，结果由后端落 model_meta.media。 */
+  probeMedia: async (
+    provider: string,
+    model: string
+  ): Promise<{
+    ok: boolean;
+    provider: string;
+    model: string;
+    accept: string;
+    persisted: boolean;
+    message: string;
+  }> => {
+    const response = await api.post(
+      `/providers/${enc(provider)}/models/${enc(model)}/probe-media`
     );
     return response.data;
   },

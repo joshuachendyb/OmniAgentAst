@@ -67,6 +67,7 @@
       旧名不留兼容分支（项目铁律禁止 backward）— 小欧-2026-11-01
     2026-11-08 小欧 - 模态断链修复: 两 DTO 由 capabilities 改 input_modalities/output_modalities(原未声明新字段,
       extra='ignore' 静默丢弃→保存永不落盘; POST 位置参错位致选项表写进模态) — 小欧-2026-11-08
+    2026-11-08 小欧 - 新增 probe-media 路由: 实测模型接受哪种图片传输并落 model_meta.media — 小欧-2026-11-08
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -358,6 +359,16 @@ async def test_provider_connection(name: str, req: TestConnectionRequest):
 @handle_config_errors("替换 Provider 模型列表")
 async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
     return svc.replace_provider_models(name, [m.model_dump() for m in req.models])
+
+
+@router.post("/providers/{name}/models/{model:path}/probe-media")
+@handle_config_errors("探测模型媒体传输")
+async def probe_model_media(name: str, model: str):
+    """实测模型是否接受内联图片(200 且图像 token>0), 结果落 model_meta.<model>.media。
+
+    path 转换器: 模型名可含 '/'（z-ai/glm-4.7 等），单段参数会 404。
+    """
+    return await svc.probe_model_media(name, model)
 
 
 # ── ZenithFree 双路验证（北京老陈 2026-10-10）──────────────────────────

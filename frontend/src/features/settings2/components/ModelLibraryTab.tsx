@@ -41,6 +41,7 @@
 //   统计行说明，杜绝把本地旧值误当远端实时值；保存时同样取该回落值，避免远端缺失把已存窗口清空。
 //   详见 doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 第八章 — 小欧-2026-11-01
 // 2026-11-08 小欧 - 模型库补输出模态列: 读 output_modalities, 生图/生视频打"生成"徽标, 与输入模态分列 — 小欧-2026-11-08
+// 2026-11-08 小欧 - 补「传输方式」列与「测」按钮: 只显实测记录(media.accept.image), 未探测显 – — 小欧-2026-11-08
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -176,10 +177,22 @@ const OUTPUT_LABEL: Record<string, string> = {
   video: '视频生成',
 };
 
+/** 媒体传输实测结果标签：accept.image 取值由后端探测写入，未探测不显示任何推断。 */
+const TRANSPORT_LABEL: Record<string, string> = {
+  inline: '内联',
+  url: '外链',
+  both: '内联+外链',
+  none: '不支持',
+};
+
 const renderOutputTags = (m: RemoteModelItem) => {
   const outs = readOutputModalities(m);
   if (outs.length === 0) {
-    return <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>–</span>;
+    return (
+      <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>
+        –
+      </span>
+    );
   }
   return outs.map((v) => (
     <Tag key={v} style={TAG_STYLE}>
@@ -255,6 +268,9 @@ export const ModelLibraryTab: React.FC<Props> = ({
   });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  // 2026-11-08 小欧 - 传输探测：本行探测中态 + 本轮结果（避开整页重拉，探测即见）
+  const [probing, setProbing] = useState<string | null>(null);
+  const [probeAccept, setProbeAccept] = useState<Record<string, string>>({});
   // 2026-10-10 小欧 - ZenithFree 双路验证（北京老陈）：结果弹框 + 验证中态
   const [zenVerifying, setZenVerifying] = useState(false);
   const [zenResult, setZenResult] = useState<ZenVerifyResponse | null>(null);
@@ -332,6 +348,26 @@ export const ModelLibraryTab: React.FC<Props> = ({
         )}
       </span>
     );
+  };
+
+  /**
+   * 实测该模型是否接受内联图片并落库。后端以"200 且图像 token>0"为准，
+   * 网关静默丢图会返回 ok:false 而非假成功 — 小欧-2026-11-08
+   */
+  const runProbe = async (id: string) => {
+    if (!provider || probing) return;
+    setProbing(id);
+    try {
+      const r = await modelApi.probeMedia(provider.name, id);
+      setProbeAccept((prev) => ({ ...prev, [id]: r.accept }));
+      if (r.ok)
+        showSuccess(`传输方式已记录：${TRANSPORT_LABEL[r.accept] ?? r.accept}`);
+      else showMessage(ErrorType.WARNING, r.message);
+    } catch {
+      showMessage(ErrorType.WARNING, '探测失败，请稍后重试');
+    } finally {
+      setProbing(null);
+    }
   };
 
   // 统计行提示：本轮是否有回落，有才提示（无回落不打扰）
@@ -712,6 +748,46 @@ export const ModelLibraryTab: React.FC<Props> = ({
                 </Tag>
               ))}
             </>
+          );
+        }}
+      />
+      {/* 2026-11-08 小欧: 传输方式列（只显实测结果，不按厂商命名推断）；已配置模型可现场重测 */}
+      <Table.Column
+        title="传输"
+        width={126}
+        render={(_, m: RemoteModelItem) => {
+          const stored = storedMeta.get(m.id);
+          const accept = probeAccept[m.id] ?? stored?.media?.accept?.image;
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: Spacing.XS,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  whiteSpace: 'nowrap',
+                  color: accept ? undefined : Colors.TEXT.WEAK,
+                }}
+              >
+                {accept ? (TRANSPORT_LABEL[accept] ?? accept) : '–'}
+              </span>
+              {stored && (
+                <Tooltip title="实测该模型能否直接接收图片（200 且图像 token>0），结果写入配置">
+                  <Button
+                    type="link"
+                    size="small"
+                    loading={probing === m.id}
+                    onClick={() => runProbe(m.id)}
+                  >
+                    测
+                  </Button>
+                </Tooltip>
+              )}
+            </div>
           );
         }}
       />

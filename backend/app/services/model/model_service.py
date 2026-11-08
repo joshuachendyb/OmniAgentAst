@@ -176,10 +176,13 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #      空 URL 400 校验由双键循环收敛为 api_base 单键 — 小欧-2026-11-01
 # 2026-11-08 小欧 - 迁移与别名收口: 新增 _migrate_legacy_capabilities(启动一次性迁移, 复用 config_helpers 读写);
 #   _KEY_ALIASES 删 no-op 的 capabilities 行(_merge_capabilities 仅服务 zenmux reasoning 特征, 不是模态双读) — 小欧-2026-11-08
+# 2026-11-08 小欧 - 模态词汇归一: normalize_modalities(MIME 级/脏值收敛 5 值), 远端解析与落盘同口, 启动迁移既有配置 — 小欧-2026-11-08
+# 2026-11-08 小欧 - 媒体传输探测: probe_model_media 实测 image inline/url 并落 model_meta.media, _models_of 下发 — 小欧-2026-11-08
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import os
+from datetime import datetime
 import httpx
 from fastapi import HTTPException
 from app.llm.adapters import get_provider_adapter
@@ -284,6 +287,7 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             #   (问题2/问题3: 库保存的 context_length 既不下发也无编辑面)
             "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
+            "media": meta.get("media") or {},  # 媒体传输探测结果(实测), 供模型库展示 — 小欧-2026-11-08
         })
     return out
 
@@ -749,9 +753,38 @@ def _migrate_legacy_capabilities(config_path: Path) -> bool:
     return changed
 
 
+def _normalize_config_modalities(config_path: Path) -> bool:
+    """既有 model_meta 模态词汇一次性归一(幂等, 无脏值时零改动) — 小欧-2026-11-08"""
+    raw = read_yaml_config(config_path) or {}
+    ai = raw.get("ai") or {}
+    changed = False
+    for p in (ai.values() if isinstance(ai, dict) else []):
+        meta = p.get("model_meta") if isinstance(p, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        for m in meta.values():
+            if not isinstance(m, dict):
+                continue
+            for key in ("input_modalities", "output_modalities"):
+                cur = m.get(key)
+                if not isinstance(cur, list):
+                    continue
+                norm = normalize_modalities(cur)
+                if norm != cur:
+                    m[key] = norm
+                    changed = True
+    if changed:
+        write_yaml_config(str(config_path), raw)
+        logger.info(f"[model] 模态词汇已归一(image/*→image, pdf→file): {config_path}")
+    return changed
+
+
 def migrate_legacy_capabilities() -> bool:
-    """startup 迁移入口(只迁真实配置)。config.yaml.example 是仓库模板，随源码静态维护，运行期不写。"""
-    return _migrate_legacy_capabilities(Path(get_config_path()))
+    """startup 迁移入口(只迁真实配置): 老 capabilities 并维 + 模态词汇归一；模板文件运行期不写。"""
+    path = Path(get_config_path())
+    changed = _migrate_legacy_capabilities(path)
+    vocab = _normalize_config_modalities(path)
+    return changed or vocab
 
 
 def _merge_supports_modalities(modalities: List[str], item: Any) -> List[str]:
@@ -824,8 +857,31 @@ def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+# 模态词汇归一表: 远端存在 MIME 级值(image/jpeg、application/pdf)与历史脏值 pdf — 小欧-2026-11-08
+_MODALITY_PREFIX = (("image/", "image"), ("audio/", "audio"), ("video/", "video"), ("text/", "text"))
+_MODALITY_ALIAS = {"pdf": "file", "application/pdf": "file"}
+
+
+def normalize_modalities(values: Any) -> List[str]:
+    """模态词归一: MIME 级值与脏值收敛到 {text,image,audio,video,file}, 未知值保序保留不丢能力。"""
+    out: List[str] = []
+    for v in values if isinstance(values, list) else []:
+        if not isinstance(v, str):
+            continue
+        s = v.strip()
+        if not s:
+            continue
+        low = s.lower()
+        canon = _MODALITY_ALIAS.get(low)
+        if canon is None:
+            canon = next((c for pfx, c in _MODALITY_PREFIX if low.startswith(pfx)), s)
+        if canon not in out:
+            out.append(canon)
+    return out
+
+
 def _extract_modalities(modalities: Any) -> List[str]:
-    """Intern InkStone 式嵌套模态拍平：[{'type':'text', ...}] → ['text']。"""
+    """Intern InkStone 式嵌套模态拍平：[{'type':'text', ...}] → ['text']，并归一词汇。"""
     out: List[str] = []
     if not isinstance(modalities, list):
         return out
@@ -837,7 +893,7 @@ def _extract_modalities(modalities: Any) -> List[str]:
             t = entry.get("type")
             if isinstance(t, str) and t not in out:
                 out.append(t)
-    return out
+    return normalize_modalities(out)
 
 
 def _extract_context_length(item: Dict[str, Any]) -> Optional[int]:
@@ -1078,6 +1134,104 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     }
 
 
+# 探测素材: 8x8 纯色 PNG(74B)内联 data URI —— 程序生成, 不依赖外网图床 — 小欧-2026-11-08
+_PROBE_IMAGE_URL = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlE"
+                    "QVR4nGO4o6GBFTEMLQkAe3tLAfuiUfAAAAAASUVORK5CYII=")
+
+
+def _probe_messages(url: str) -> List[Dict[str, Any]]:
+    return [{"role": "user", "content": [
+        {"type": "text", "text": "图中是什么颜色? 只回答颜色。"},
+        {"type": "image_url", "image_url": {"url": url}},
+    ]}]
+
+
+def _image_token_count(usage: Any) -> int:
+    """从 usage 里递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。"""
+    if isinstance(usage, dict):
+        for k, v in usage.items():
+            if isinstance(v, int) and not isinstance(v, bool) and str(k).endswith("image_tokens"):
+                return v
+            if isinstance(v, (dict, list)):
+                hit = _image_token_count(v)
+                if hit:
+                    return hit
+    elif isinstance(usage, list):
+        for v in usage:
+            hit = _image_token_count(v)
+            if hit:
+                return hit
+    return 0
+
+
+async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
+                      url: str, timeout: float) -> Tuple[bool, str]:
+    """单次探测 → (是否真看到图, 证据)。200 但图像 token 为 0 视为网关静默丢图。"""
+    body = {"model": model, "messages": _probe_messages(url), "max_tokens": 16, "temperature": 0}
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(f"{api_base.rstrip('/')}/chat/completions", headers=headers, json=body)
+    except Exception as e:
+        return False, f"network_error: {e}"
+    if resp.status_code != 200:
+        return False, f"http_{resp.status_code}: {resp.text[:160]}"
+    try:
+        data = resp.json()
+    except Exception:
+        return False, "bad_json"
+    tokens = _image_token_count(data.get("usage"))
+    return (True, f"image_tokens={tokens}") if tokens > 0 else (False, "no_image_tokens")
+
+
+def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
+    """探测结果落 model_meta.<model>.media(嵌套整块写); 失败只记日志不影响探测结论。"""
+    try:
+        merge_nested_patch({"ai": {name: {"model_meta": {model: {"media": media}}}}}, scope="model")
+    except Exception:
+        logger.error(f"[probe] 媒体能力落库失败 provider={name} model={model}", exc_info=True)
+        return False
+    return True
+
+
+async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
+    """探测模型接受哪种图片传输(inline/url)并落库 — 小欧-2026-11-08
+
+    外链探测仅在 app.media_probe.url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
+    网络类失败不落库(防一次抖动把能力写死成 none); 4xx 与 no_image_tokens 属确定结论。
+    """
+    ai = _raw_ai()
+    p, api_base = _require_provider_for_fetch(name, ai)
+    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
+    if model not in configured:
+        raise HTTPException(status_code=404, detail=f"模型 {model} 不在 provider {name} 的 models 列表")
+    api_key = os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or "")
+    headers = get_provider_adapter(name).static_headers(api_key)
+    timeout = float(p.get("timeout") or 60)
+
+    inline_ok, inline_ev = await _probe_once(api_base, headers, model, _PROBE_IMAGE_URL, timeout)
+    url_ok, url_ev = False, "skipped"
+    probe_url = str((get_config().get("app") or {}).get("media_probe", {}).get("url") or "").strip()
+    if inline_ok and probe_url:
+        url_ok, url_ev = await _probe_once(api_base, headers, model, probe_url, timeout)
+
+    accept = "both" if (inline_ok and url_ok) else ("inline" if inline_ok else "none")
+    media = {
+        "accept": {"image": accept},
+        "probed_at": datetime.now().isoformat(timespec="seconds"),
+        "evidence": f"image:inline={inline_ev}; image:url={url_ev}",
+    }
+    persisted = False if inline_ev.startswith("network_error") else _persist_media_probe(name, model, media)
+    return {
+        "ok": inline_ok,
+        "provider": name,
+        "model": model,
+        "accept": accept,
+        "media": media,
+        "persisted": persisted,
+        "message": "已记录" if inline_ok else f"未通过看图探测: {inline_ev}",
+    }
+
+
 def _persist_model_meta(
     node: Dict[str, Any],
     meta_by_id: Dict[str, Dict[str, Any]],
@@ -1104,11 +1258,12 @@ def _persist_model_meta(
             val = md.get(key)
             if isinstance(val, int) and not isinstance(val, bool):
                 leaf[key] = val
-        # list 字段组：isinstance(list) 就写，空数组也写（显式声明"无"）
+        # list 字段组：isinstance(list) 就写，空数组也写（显式声明"无"）；模态两字段先归一词汇
         for key in LIST_FIELDS:
             val = md.get(key)
             if isinstance(val, list):
-                leaf[key] = [v for v in val if isinstance(v, str)]
+                strs = [v for v in val if isinstance(v, str)]
+                leaf[key] = normalize_modalities(strs) if key.endswith("_modalities") else strs
         if leaf:
             node.setdefault("model_meta", {}).setdefault(mid, {}).update(leaf)
 
