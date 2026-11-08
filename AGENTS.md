@@ -97,8 +97,8 @@
 
 ```bash
 # 开发服务: 两种启动方式, 见下方《后端开发服务启动: 两种方式》
-watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app   # 方式一(推荐)
-python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000  # 方式二(旧, 会卡死)
+watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8100" app   # 方式一(推荐)
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100  # 方式二(旧, 会卡死)
 
 pytest                                            # all tests
 pytest -x --tb=short                              # fast fail
@@ -111,16 +111,18 @@ ruff check --select ARG,RET,SIM,PIE <改动文件>       # 附加参考: 该四�
 #### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
 
 **方式一(日常开发用这个)**: 双击 `backend\start_watch.bat`(等效 `start_uvicorn.bat watch`), 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch`。
-内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
+内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port $env:BACKEND_PORT" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
 
-**方式二(现为 `start_uvicorn.bat` 默认, 会卡死)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`。
+**方式二(现为 `start_uvicorn.bat` 默认, 会卡死)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100`。
 uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程, 子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 从第一次保存文件起热重载永久失效, 而 worker 照常应答, 极易误判"服务正常"。上游 0.54 仍未修, 升级无效。
 
 **判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 表现是改代码不生效、Ctrl+C 也退不掉, 只能 kill。
 
 **方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
 
-两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
+两者都监听 `0.0.0.0:8100`(端口单源 = env `BACKEND_PORT`, 缺省 8100), 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8100` 对应; 改端口只改该变量(前端 proxy/E2E 均读同一 env)。
+
+**为什么不再是 8000(2026-11-08 小欧)**: OpenCode 桌面版内置 vLLM provider 的 base_url 写死 `http://127.0.0.1:8000`, 每 30s 探 `GET /v1/models` → 我们后端 404 刷日志。挪到 8100 后探测直接连接失败, 日志干净。打包链 `run_server.py` 不读该 env(仍 `--port`, 默认 8500), 防止用户机器残留变量静默改端口。
 
 `backend/start_uvicorn.bat`、`backend/start_watch.bat`、`backend/start_e2e.bat` 均已改为调用 `backend/start_dev.ps1`; `start_dev.ps1` 用 UTF-8 with BOM 保存(PowerShell 5.1 需要), `start_e2e.bat` 用 GBK 保存(控制台中文)。
 
@@ -166,11 +168,11 @@ npm run test -- --run <name>  # single test
 
 #### 启动后端（每次测试前必做）
 
-1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force`
+1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8100).OwningProcess -Force`
 2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
    `Start-Process powershell -ArgumentList "-NoExit","-ExecutionPolicy","Bypass","-Command","& 'F:\OmniAgentAs-01\backend\start_e2e.bat'" -WindowStyle Normal`
    （`start_e2e.bat` 内设 `LOG_LEVEL=WARNING` 后调 `start_dev.ps1`=watchfiles 热重载；**勿用 `uvicorn --reload`**，Windows 上首次改文件即卡死）
-3. 验证：`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
+3. 验证：`Invoke-RestMethod http://127.0.0.1:8100/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
 
 #### 执行脚本（铁律）
 
@@ -216,8 +218,8 @@ npm run test -- --run <name>  # single test
 | 角色 | 进程 | 职责 |
 |------|------|------|
 | 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀** |
-| 后端代理 B | `e2e_case/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（断线测试用） |
-| 后端 C | uvicorn `:8000` | 内存任务持有者 |
+| 后端代理 B | `e2e_case/api-proxy.ts :9000→8100` | 页面 API/SSE 直连目标（断线测试用） |
+| 后端 C | uvicorn `:8100` | 内存任务持有者 |
 
 断线测试原理：`killPort(9000)` 杀 B → 浏览器↔A 完好、仅 API 链路断（真 TCP RST）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=` 断点续传。
 
@@ -262,7 +264,7 @@ FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` �
 | | Ant Design 5, Axios, React Router | |
 | | Vitest, Playwright, ESLint, Prettier | |
 
-**Server URLs**: Backend `http://127.0.0.1:8000` | API docs `http://127.0.0.1:8000/docs` | Frontend `http://localhost:5173`
+**Server URLs**: Backend `http://127.0.0.1:8100`（dev，env `BACKEND_PORT` 可覆盖；打包版默认 8500） | API docs `http://127.0.0.1:8100/docs` | Frontend `http://localhost:5173`
 
 ---
 
@@ -280,8 +282,8 @@ FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` �
 症状：SSE 空闲超时 60 秒 + 日志停写 + `/health` 超时（**端口在监听 ≠ 服务活着**）。
 
 ```powershell
-py-spy dump --pid (Get-NetTCPConnection -LocalPort 8000 -State Listen).OwningProcess   # 唯一可靠定位手段
-Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }   # 重启: --reload 双进程，只 kill 父进程无效
+py-spy dump --pid (Get-NetTCPConnection -LocalPort 8100 -State Listen).OwningProcess   # 唯一可靠定位手段
+Get-NetTCPConnection -LocalPort 8100 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }   # 重启: --reload 双进程，只 kill 父进程无效
 ```
 
 根因结构：`shell_engine` 同步 `exec()` 跑在事件循环里（挂死→全服务僵死）、完成信号靠临时文件轮询（进程半死则永不到达）、常驻池锁跨任务共享。根治＝`to_thread` 卸载 + 只读命令改独立子进程。详见 `doc-9月优化/[53]`。

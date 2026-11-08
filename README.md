@@ -580,7 +580,7 @@ location /api/ {
 | `Connection ''` + HTTP/1.1 | 连接被代理复用/断开，重连频繁 |
 | `proxy_read_timeout` | 默认 60s，长任务中途被切断 |
 
-> 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8000` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
+> 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8100` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
 
 ### 7.7 `tuning` — 调优参数（33 键，9 子组）
 
@@ -692,7 +692,7 @@ frontend/
 │   ├── chat-page.ts                      #  ChatPage POM（六方法）
 │   └── normal-chat.ts                    #  普通会话封装（日常/天气/股票/目录分析等）
 └── e2e_case/                             # 前端 E2E 用例（fre2e_01~21*.spec.ts）
-    ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8000，SSE 直连）
+    ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8100，SSE 直连）
     ├── e2e.config.ts / vite.e2e.config.ts#  Playwright / vite 测试配置
     └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化/模型参数模板）
 ```
@@ -736,9 +736,9 @@ frontend/
 
 | 操作 | 命令 |
 |------|------|
-| 杀 8000 旧进程 | `netstat -ano` 查 `:8000` 的 PID → `taskkill /F /PID <PID>` |
-| 独立窗口启动 | `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal` |
-| 验证就绪 | `Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 `healthy` |
+| 杀 8100 旧进程 | `netstat -ano` 查 `:8100` 的 PID → `taskkill /F /PID <PID>` |
+| 独立窗口启动 | `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100" -WindowStyle Normal` |
+| 验证就绪 | `Invoke-RestMethod http://127.0.0.1:8100/api/v1/health` 返回 `healthy` |
 
 后端必须用**独立 PowerShell 窗口**启动（不走 OpenCode 的 bash 工具，避免日志混扰）；必须 `--reload`，修 Bug 后热重载免重启。
 
@@ -785,11 +785,11 @@ taskkill /F /IM node.exe
 
 ```powershell
 # ✅ 方式一（推荐）：PowerShell 按端口精确杀，可重复执行、无竞态
-Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+Get-NetTCPConnection -LocalPort 8100 -State Listen -ErrorAction SilentlyContinue |
   ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 
 # ✅ 方式二：先查 PID 再杀（需人工核对 PID 归属，勿复制粘贴盲用）
-netstat -ano | findstr :8000
+netstat -ano | findstr :8100
 taskkill /F /PID <上一步确认的PID>
 ```
 
@@ -798,12 +798,12 @@ taskkill /F /PID <上一步确认的PID>
 | 端口 | 进程 | 能否杀 |
 |------|------|--------|
 | 5173 | 前端 vite dev（长驻页面服务） | 仅前端 E2E 断流 case 需要，且优先复用不杀 |
-| 8000 | 后端 uvicorn（`--reload` 双进程） | 可杀，须连父进程一起（见下方提醒） |
+| 8100 | 后端 uvicorn（`--reload` 双进程；env `BACKEND_PORT` 可覆盖） | 可杀，须连父进程一起（见下方提醒） |
 | 9000 | E2E 后端代理 `api-proxy.ts` | 可杀，断流 case 专用手段 |
 | 3080 | **OpenCode Web UI（非本项目）** | **严禁杀** |
 
-**`--reload` 双进程提醒**：后端 `--reload` 会派生父子两进程，只杀监听 8000 的子进程，
-父进程会立刻拉起新的；须 `Get-NetTCPConnection -LocalPort 8000 -State Listen` 取全部
+**`--reload` 双进程提醒**：后端 `--reload` 会派生父子两进程，只杀监听 8100 的子进程，
+父进程会立刻拉起新的；须 `Get-NetTCPConnection -LocalPort 8100 -State Listen` 取全部
 `OwningProcess` 一并杀掉（上面的写法已含此能力），再 `Start-Sleep 3` 等端口释放。
 
 **代码侧已合规**：`frontend/e2e_front_lib/process.ts` 的 `killPort(port)` 走
@@ -927,15 +927,15 @@ async def test_e2e_p0_xx_xxx():
 
 ### 8.7 前端 E2E：case 编写（重点）
 
-前端 E2E = Playwright **真实浏览器**（chromium）+ 真实后端（:8000）+ 真实 LLM + 真实 SQLite。用例 `frontend/e2e_case/*.spec.ts`，公共库唯一来源 `frontend/e2e_front_lib/`。
+前端 E2E = Playwright **真实浏览器**（chromium）+ 真实后端（:8100）+ 真实 LLM + 真实 SQLite。用例 `frontend/e2e_case/*.spec.ts`，公共库唯一来源 `frontend/e2e_front_lib/`。
 
 #### 8.7.1 架构与断流原理（认识"进程分离"，写断线类 case 的前提）
 
 | 角色 | 进程 | 职责 |
 |------|------|------|
 | 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀**（页面永不 reload） |
-| 后端代理 B | `e2e_case/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（`VITE_API_BASE_URL=http://localhost:9000/api/v1` 注入） |
-| 后端 C | uvicorn `:8000` | 内存任务持有者，断流期间任务存活 |
+| 后端代理 B | `e2e_case/api-proxy.ts :9000→8100` | 页面 API/SSE 直连目标（`VITE_API_BASE_URL=http://localhost:9000/api/v1` 注入） |
+| 后端 C | uvicorn `:8100` | 内存任务持有者，断流期间任务存活 |
 
 断线 → 重连剧本：`killPort(9000)` 杀 B → 浏览器↔A(5173) 完好、仅 API 链路断，前端 fetch 收到**真实 TCP RST**（真·断线，页面不 reload）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=lastSeqRef+1` 断点续传。
 
@@ -1044,11 +1044,11 @@ npm run test:e2e      # 整组（先 lint + format）
 powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch
 ```
 
-内部调用：`watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`
+内部调用：`watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port $env:BACKEND_PORT" app`
 
 - watchfiles 盯 `app/` 目录，Python 文件改动后自动重启 `run_server.py`
 - 走 `run_server.py` 而非裸 `uvicorn`：后者不注入 `forwarded_allow_ips`，后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警
-- 监听 `0.0.0.0:8000`，仅暴露 API，不托管前端
+- 监听 `0.0.0.0:8100`（env `BACKEND_PORT` 可覆盖），仅暴露 API，不托管前端
 - API 文档默认关闭，设 `OMNIAGENT_ENABLE_API_DOCS=1` 环境变量可开启 `/docs`
 
 ---
@@ -1059,10 +1059,10 @@ powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch
 # 虚拟环境（推荐）
 python -m venv .venv                        # 仅第一次
 .venv\Scripts\pip install -r requirements.txt  # 仅第一次
-.venv\Scripts\python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+.venv\Scripts\python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100
 
 # 或全局 Python
-python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100
 ```
 
 ⚠️ **Windows 上此方式有严重 bug**：uvicorn 的 `restart()` 用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程，子进程收不到信号 → 父进程卡死在 `basereload.py:98 self.process.join()`。**从第一次保存文件起热重载永久失效**，改代码不再重载，Ctrl+C 也退不掉，只能 kill 进程。
@@ -1081,7 +1081,7 @@ npm run dev
 ```
 
 - 默认端口 **5173**，绑定 `0.0.0.0`（局域网可达）
-- `/api` 请求通过 Vite proxy 转发至后端 :8000，同源无 CORS 问题
+- `/api` 请求通过 Vite proxy 转发至后端 `:8100`(env `BACKEND_PORT` 可覆盖)，同源无 CORS 问题
 - Windows 下 Vite 使用 `usePolling` 轮询监听（`vite.config.ts`），解决 chokidar 长跑丢事件问题
 
 ---
@@ -1091,8 +1091,8 @@ npm run dev
 | 地址 | 说明 |
 |------|------|
 | http://localhost:5173 | 前端页面（Vite HMR） |
-| http://127.0.0.1:8000/api/v1/health | 后端探活接口 |
-| http://127.0.0.1:8000/docs | API 交互式文档（需设 OMNIAGENT_ENABLE_API_DOCS=1） |
+| http://127.0.0.1:8100/api/v1/health | 后端探活接口 |
+| http://127.0.0.1:8100/docs | API 交互式文档（需设 OMNIAGENT_ENABLE_API_DOCS=1） |
 
 ### 9.3 同源SPA打包
 
@@ -1121,11 +1121,11 @@ npm run build        # tsc + vite build，约 1~2 分钟
 **后端地址烘焙（重要）**
 
 打包版 exe 前端静态托管在同端口 8500，API 走同源 `/api`，无需额外配置。
-若需与非打包后端（开发模式 :8000）联调测试，构建时指定：
+若需与非打包后端（开发模式 :8100）联调测试，构建时指定：
 
 ```powershell
-# 后端源码开发模式（端口 8000）
-$env:VITE_API_BASE_URL="http://127.0.0.1:8000"
+# 后端源码开发模式（端口 8100）
+$env:VITE_API_BASE_URL="http://127.0.0.1:8100"
 npm run build
 
 # 后端打包版 exe（端口 8500）
@@ -1242,9 +1242,9 @@ pip install mss imageio numpy
 
 | 命令 | 说明 |
 |------|------|
-| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app`（或双击 `backend\start_watch.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8000） |
+| `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8100" app`（或双击 `backend\start_watch.bat`） | 模式 A：开发服务器（watchfiles 热重载，推荐，端口 8100） |
 | `python run_server.py` | 模式 B：打包行为调试（模拟 exe，端口 8500） |
-| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`（或双击 `backend\start_uvicorn.bat`） | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
+| `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100`（或双击 `backend\start_uvicorn.bat`） | ⚠️ 不推荐：Windows 上 restart() 会卡死，改代码后热重载永久失效 |
 | `pytest` | 运行全部测试 |
 | `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
@@ -1298,7 +1298,7 @@ pip install mss imageio numpy
 
 | 问题 | 解决方案 |
 |------|---------|
-| 后端启动失败 | 检查 Python ≥ 3.11，端口8000是否被占用 |
+| 后端启动失败 | 检查 Python ≥ 3.11，端口8100是否被占用 |
 | 前端启动失败 | 检查 Node.js ≥ 18，清除 node_modules 后重装 |
 | API连接失败 | 检查 config/config.yaml 中的 API 密钥是否有效 |
 | 二级工具不可用 | 安装对应依赖库（见9.5节可选依赖） |

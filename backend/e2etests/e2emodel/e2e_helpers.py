@@ -175,6 +175,8 @@ E2E测试核心测试脚本和代码
 import asyncio
 import atexit
 import json
+# 2026-11-08 小欧 - 提前到此: BASE_URL 需读 env BACKEND_PORT, 原先定义在常量之后 — 小欧-2026-11-08
+import os as _os
 import re
 import signal
 import socket
@@ -272,7 +274,10 @@ def remove_pending_record(test_id: str):
 
 # ─── 常量 ─────────────────────────────────────────────────────
 
-BASE_URL = "http://127.0.0.1:8000"
+# 2026-11-08 小欧 - 开发后端端口统一由 env BACKEND_PORT 决定(缺省 8100), 与 start_dev.ps1/vite proxy 同源;
+#   8000 上 OpenCode 桌面版 vLLM provider 每 30s 探 /v1/models 刷 404 — 小欧-2026-11-08
+BACKEND_PORT = int(_os.environ.get("BACKEND_PORT") or 8100)
+BASE_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 API_PREFIX = "/api/v1"
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
@@ -288,7 +293,6 @@ READ_TOOLS = {"read", "readmedia"}
 #   token 来源优先级: 环境变量 OMNIAGENT_ACCESS_TOKEN（与后端同一份，保证前后端一致）
 #     → 回落读后端配置文件 security.access_token（自动化场景无需额外导出环境变量）。
 #   后端未启用鉴权（OMNIAGENT_REQUIRE_AUTH=0）时，本 header 存在也无害（后端不校验）。
-import os as _os
 
 
 def _resolve_e2e_token() -> str:
@@ -339,7 +343,7 @@ def ensure_backend_ready() -> bool:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)
-        sock.connect(("127.0.0.1", 8000))
+        sock.connect(("127.0.0.1", BACKEND_PORT))
         sock.close()
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
@@ -358,7 +362,7 @@ def ensure_backend_ready() -> bool:
         #   且 /health 豁免鉴权, 不依赖 token; 误杀风险可接受, 挂死风险不可接受。
         print(f"[E2E][探活失败] {BASE_URL}{API_PREFIX}/health 无响应: {exc!r}\n"
               f"       端口在听但 HTTP 不应答 = 后端僵死(疑似 uvicorn 卡在同步阻塞或 reload 卡死)。\n"
-              f"       请重启后端: Stop-Process 占用 8000 的进程, 再按手册 6.1 启动。\n"
+              f"       请重启后端: Stop-Process 占用 {BACKEND_PORT} 的进程, 再按手册 6.1 启动。\n"
               f"       判为不可用 -> 本用例立即失败(不再挂死)。")
         return False
 

@@ -1,6 +1,6 @@
 # 编辑历史: 2026-11-02 小欧 - 新增前端常驻启动器: 隐藏窗口独立控制台 + 端口就绪轮询 + 健康校验 + pid 落盘,
 #   根治"关掉控制台窗口/终端会话结束 → 控制台进程组整树被杀 → 前端无声消失"。用法: 双击 start_frontend.bat
-# 链路: 前端 :5173 --proxy /api--> 后端 :8000 (见 vite.config.ts server.proxy)
+# 链路: 前端 :5173 --proxy /api--> 后端 :8100 (env BACKEND_PORT 可覆盖, 见 vite.config.ts server.proxy)
 param(
     [int]$Port = 5173,
     [int]$TimeoutSeconds = 90
@@ -47,6 +47,6 @@ $page  = Invoke-WebRequest -Uri "http://localhost:$Port/" -TimeoutSec 20 -UseBas
 $proxy = Invoke-WebRequest -Uri "http://localhost:$Port/api/v1/health" -TimeoutSec 20 -UseBasicParsing
 '启动成功'
 "  页面  http://localhost:$Port  HTTP $($page.StatusCode)"
-"  代理  /api/v1/health -> 后端 :8000  HTTP $($proxy.StatusCode)"
+"  代理  /api/v1/health -> 后端 :$(if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { 8100 })  HTTP $($proxy.StatusCode)"
 "  进程  vite PID $($conn.OwningProcess) / launcher PID $($launcher.Id)"
 "  日志  $outLog"

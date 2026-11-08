@@ -7,6 +7,8 @@
 #   一律经 python -m ... 起(不依赖 Scripts 目录是否在 PATH) — 小欧-2026-11-08
 # 2026-11-08 小欧 - 增模式参数: 无参默认 uvicorn --reload(补 --forwarded-allow-ips 供其代理中间件用;
 #   app 层注入仍缺——reload 子进程不跑 run_server.py, 启动会打一条该告警), watch 走 watchfiles — 小欧-2026-11-08
+# 2026-11-08 小欧 - 开发端口 8000→8100: 取 env BACKEND_PORT(缺省 8100), 两种重载器同源;
+#   8000 上有 OpenCode 桌面版内置 vLLM provider 每 30s 探 /v1/models 刷 404。打包链 run_server.py 不动 — 小欧-2026-11-08
 param(
     [Parameter(Position = 0)]
     [ValidateSet('uvicorn', 'watch', 'watchfiles')]
@@ -16,6 +18,8 @@ Set-Location -LiteralPath $PSScriptRoot
 
 $python = 'python'
 $appDir = Join-Path $PSScriptRoot 'app'
+# 端口单源: BACKEND_PORT 覆盖, 默认 8100(避开 8000 —— OpenCode 桌面版内置 vLLM provider 每 30s 探 127.0.0.1:8000/v1/models)
+$backendPort = if ($env:BACKEND_PORT) { [int]$env:BACKEND_PORT } else { 8100 }
 
 if (-not (Get-Command $python -ErrorAction SilentlyContinue)) {
     Write-Host '[start_dev] 未找到 python, 请先把 Python 加入 PATH' -ForegroundColor Red
@@ -30,8 +34,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($Reloader -eq 'uvicorn') {
-    Write-Host '[start_dev] 重载方式: uvicorn --reload (监视 app)' -ForegroundColor Cyan
-    & $python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000 --forwarded-allow-ips 127.0.0.1,::1
+    Write-Host "[start_dev] 重载方式: uvicorn --reload (监视 app, 端口 $backendPort)" -ForegroundColor Cyan
+    & $python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port $backendPort --forwarded-allow-ips 127.0.0.1,::1
     exit $LASTEXITCODE
 }
 
@@ -46,6 +50,6 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-Write-Host "[start_dev] 重载方式: watchfiles (监视 $appDir)" -ForegroundColor Cyan
-& $python -m watchfiles --filter python --verbosity info -- "$python run_server.py --host 0.0.0.0 --port 8000" $appDir
+Write-Host "[start_dev] 重载方式: watchfiles (监视 $appDir, 端口 $backendPort)" -ForegroundColor Cyan
+& $python -m watchfiles --filter python --verbosity info -- "$python run_server.py --host 0.0.0.0 --port $backendPort" $appDir
 exit $LASTEXITCODE

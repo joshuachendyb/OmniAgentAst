@@ -6,6 +6,9 @@
 //   (Windows 解析为 [::1] IPv6 回环) → **局域网其他机器访问不到前端**(后端 uvicorn 已是 0.0.0.0, 两端不对齐)。
 //   依据部署事实: 后端在 B 机器、客户端在局域网多台机器, 前端必须对外可达。
 //   连带: e2e_case/vite.e2e.config.ts 仍绑 ::1(测试专用, 有意不对外暴露, 不改)。 — 小欧-2026-09-26
+// 2026-11-08 小欧 - 开发后端端口 8000→8100: proxy.target 取 env BACKEND_PORT(缺省 8100), 与
+//   backend/start_dev.ps1 同源; 8000 被 OpenCode 桌面版 vLLM provider 每 30s 探 /v1/models 刷 404。
+//   生产构建不走 proxy, 打包版端口仍由 run_server.py --port(默认 8500) 决定 — 小欧-2026-11-08
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import eslint from 'vite-plugin-eslint';
@@ -22,6 +25,8 @@ import path from 'path';
 export default defineConfig(({ command }) => {
   const isBuild = command === 'build';
   const shouldCheck = isBuild;
+  // 后端开发端口单源: env BACKEND_PORT 覆盖, 缺省 8100(须与 backend/start_dev.ps1 一致)
+  const backendPort = process.env.BACKEND_PORT ?? '8100';
 
   return {
     plugins: [
@@ -47,7 +52,8 @@ export default defineConfig(({ command }) => {
     },
     server: {
       // 前端 dev server 端口（Vite 默认 5173）。
-      // 端口关系：前端(:5173) → 后端(:8000)，默认走下方 proxy（/api/* → localhost:8000，同源无 CORS）。
+      // 端口关系：前端(:5173) → 后端(:8100，env BACKEND_PORT 可覆盖)，默认走下方 proxy
+      // （/api/* → localhost:8100，同源无 CORS）。
       // 前端 REST 与 SSE 均为相对路径 /api/v1（修复：此前 REST 直连、SSE 相对，
       // 两条通道分叉）。前后端不同源且无反代时才设 VITE_API_BASE_URL 显式指向后端。
       // 改端口须同步：proxy.target 与 VITE_API_BASE_URL。
@@ -65,10 +71,11 @@ export default defineConfig(({ command }) => {
         usePolling: true,
       },
       proxy: {
-        // Vite 内置 http-proxy：开发模式下 /api/* 请求代理到后端 uvicorn(:8000)。
-        // 改后端端口时同步改 target。生产构建不走此 proxy（由 Nginx/反代接管）。
+        // Vite 内置 http-proxy：开发模式下 /api/* 请求代理到后端 uvicorn(:8100)。
+        // 改后端端口只改 env BACKEND_PORT；target 随之上方 backendPort 取值。
+        // 生产构建不走此 proxy（由 Nginx/反代接管）。
         '/api': {
-          target: 'http://localhost:8000',
+          target: `http://localhost:${backendPort}`,
           changeOrigin: true,
         },
       },

@@ -15,8 +15,8 @@
  *   对应后端 storage.py `list_session_tasks`(按 id ASC)。
  */
 
-/** 全部 E2E 共用的后端 API 根(仅本模块需要 HTTP 直读时用) */
-export const API_BASE = 'http://127.0.0.1:8000/api/v1';
+/** 全部 E2E 共用的后端 API 根(仅本模块需要 HTTP 直读时用); 端口随 BACKEND_PORT, 缺省 8100 */
+export const API_BASE = `http://127.0.0.1:${process.env.BACKEND_PORT ?? '8100'}/api/v1`;
 
 /** 任务不在列表 / 会话为空 —— 交调用方显式判红, 不静默回落成"最新任务" */
 export const STATUS_NOT_FOUND = '__not_found__';

@@ -324,7 +324,7 @@ def pytest_collection_modifyitems(config, items):
         print(f"[conftest] e2e 前置体检: 后端就绪, {len(e2e_items)} 个 e2e 用例纳入运行")
         return
 
-    reason = ("后端未就绪(:8000 无响应或僵死)。请先启动后端, 再跑全量。"
+    reason = ("后端未就绪(:8100 无响应或僵死，BACKEND_PORT 可覆盖)。请先启动后端, 再跑全量。"
               "详见 doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md 第六章。")
     print(f"[conftest] e2e 前置体检: 不可用 -> skip {len(e2e_items)} 个 e2e 用例")
     skip = pytest.mark.skip(reason=reason)

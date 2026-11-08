@@ -25,12 +25,14 @@
  *   未注入时默认 e2e_case/output/api-proxy.log - 小欧-2026-09-13
  * 编辑历史: 2026-09-14 小欧 - 修复: LOG_PATH 对绝对路径 PROXY_LOG 又 join(cwd) 致畸形路径,
  *   mkdirSync 抛异常 node 崩溃退出(9000 不监听, E1 卡 waitPortUp), 改 resolve(绝对/相对双向正确) - 小欧-2026-09-14
+ * 编辑历史: 2026-11-08 小欧 - 后端目标缺省 8000→8100: TARGET 取 env PROXY_TARGET, 否则读 BACKEND_PORT
+ *   (缺省 8100), 与 backend/start_dev.ps1 及 vite proxy 同源 - 小欧-2026-11-08
  */
 import http from 'node:http';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-const TARGET = process.env.PROXY_TARGET || 'http://localhost:8000';
+const TARGET = process.env.PROXY_TARGET || `http://localhost:${process.env.BACKEND_PORT ?? '8100'}`;
 const PORT = Number(process.env.PROXY_PORT || 9000);
 const LOG_PATH = process.env.PROXY_LOG
   ? resolve(process.cwd(), process.env.PROXY_LOG)
@@ -104,7 +106,7 @@ const server = http.createServer((req, res) => {
   );
   proxyReq.on('error', (e) => {
     logLine(`ERR upstream ${req.method} ${path} :: ${e.message}`);
-    // 上游不可达(本代理目标8000异常) → 502
+    // 上游不可达(本代理目标后端端口异常) → 502
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
     }
