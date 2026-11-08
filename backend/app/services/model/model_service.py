@@ -178,6 +178,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   _KEY_ALIASES 删 no-op 的 capabilities 行(_merge_capabilities 仅服务 zenmux reasoning 特征, 不是模态双读) — 小欧-2026-11-08
 # 2026-11-08 小欧 - 模态词汇归一: normalize_modalities(MIME 级/脏值收敛 5 值), 远端解析与落盘同口, 启动迁移既有配置 — 小欧-2026-11-08
 # 2026-11-08 小欧 - 媒体传输探测: probe_model_media 实测 image inline/url 并落 model_meta.media, _models_of 下发 — 小欧-2026-11-08
+# 2026-11-08 小欧 - 探测结论分级: 只有 200 与 400/415/422 算确定结论, 鉴权/限流/5xx/网络不落库; 图像 token 字段缺失≠0 — 小欧-2026-11-08
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1137,6 +1138,8 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
 # 探测素材: 8x8 纯色 PNG(74B)内联 data URI —— 程序生成, 不依赖外网图床 — 小欧-2026-11-08
 _PROBE_IMAGE_URL = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlE"
                     "QVR4nGO4o6GBFTEMLQkAe3tLAfuiUfAAAAAASUVORK5CYII=")
+# 厂商明确拒绝内容类型的状态: 只有这三个算"确定不收图", 其余错误码是环境问题 — 小欧-2026-11-08
+_REJECT_STATUS = frozenset({400, 415, 422})
 
 
 def _probe_messages(url: str) -> List[Dict[str, Any]]:
@@ -1146,41 +1149,51 @@ def _probe_messages(url: str) -> List[Dict[str, Any]]:
     ]}]
 
 
-def _image_token_count(usage: Any) -> int:
-    """从 usage 里递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。"""
+def _image_token_count(usage: Any) -> Optional[int]:
+    """从 usage 里递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。
+
+    返回 None = 响应里根本没有该字段(厂商不报), 与"字段存在且为 0"必须区分:
+    后者是网关静默丢图, 前者什么也证明不了 — 小欧-2026-11-08
+    """
     if isinstance(usage, dict):
         for k, v in usage.items():
             if isinstance(v, int) and not isinstance(v, bool) and str(k).endswith("image_tokens"):
                 return v
             if isinstance(v, (dict, list)):
                 hit = _image_token_count(v)
-                if hit:
+                if hit is not None:
                     return hit
     elif isinstance(usage, list):
         for v in usage:
             hit = _image_token_count(v)
-            if hit:
+            if hit is not None:
                 return hit
-    return 0
+    return None
 
 
 async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
-                      url: str, timeout: float) -> Tuple[bool, str]:
-    """单次探测 → (是否真看到图, 证据)。200 但图像 token 为 0 视为网关静默丢图。"""
+                      url: str, timeout: float) -> Tuple[bool, str, bool]:
+    """单次探测 → (是否真看到图, 证据, 结论是否确定)。
+
+    确定结论只三种: 200 有图像 token / 200 图像 token 为 0 / 400·415·422 拒内容类型。
+    鉴权失败、限流、超时、5xx、坏 JSON 都是环境问题, 不得写成模型能力 — 小欧-2026-11-08
+    """
     body = {"model": model, "messages": _probe_messages(url), "max_tokens": 16, "temperature": 0}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{api_base.rstrip('/')}/chat/completions", headers=headers, json=body)
     except Exception as e:
-        return False, f"network_error: {e}"
+        return False, f"network_error: {e}", False
     if resp.status_code != 200:
-        return False, f"http_{resp.status_code}: {resp.text[:160]}"
+        return False, f"http_{resp.status_code}: {resp.text[:160]}", resp.status_code in _REJECT_STATUS
     try:
         data = resp.json()
     except Exception:
-        return False, "bad_json"
+        return False, "bad_json", False
     tokens = _image_token_count(data.get("usage"))
-    return (True, f"image_tokens={tokens}") if tokens > 0 else (False, "no_image_tokens")
+    if tokens is None:
+        return False, "no_image_token_field", False
+    return (True, f"image_tokens={tokens}", True) if tokens > 0 else (False, "no_image_tokens", True)
 
 
 def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
@@ -1197,8 +1210,8 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     """探测模型接受哪种图片传输(inline/url)并落库 — 小欧-2026-11-08
 
     外链探测仅在 media.probe_image_url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
-    网络类失败不落库(防一次抖动把能力写死成 none); 4xx 与 no_image_tokens 属确定结论。
-    url_tested 只表示「这次有没有真发过外链探测」, 供界面区分「实测不支持外链」与「压根没测」。
+    只落确定结论(见 _probe_once): 一次 429/5xx/密钥错不得把模型能力写死成 none。
+    url_tested 一并落库, 供界面区分「实测不支持外链」与「压根没测」。
     """
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
@@ -1209,28 +1222,37 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     headers = get_provider_adapter(name).static_headers(api_key)
     timeout = float(p.get("timeout") or 60)
 
-    inline_ok, inline_ev = await _probe_once(api_base, headers, model, _PROBE_IMAGE_URL, timeout)
-    url_ok, url_ev = False, "skipped"
+    inline_ok, inline_ev, inline_settled = await _probe_once(
+        api_base, headers, model, _PROBE_IMAGE_URL, timeout)
+    url_ok, url_ev, url_settled = False, "skipped", False
     probe_url = str((get_config().get("media") or {}).get("probe_image_url") or "").strip()
     if inline_ok and probe_url:
-        url_ok, url_ev = await _probe_once(api_base, headers, model, probe_url, timeout)
+        url_ok, url_ev, url_settled = await _probe_once(api_base, headers, model, probe_url, timeout)
 
     accept = "both" if (inline_ok and url_ok) else ("inline" if inline_ok else "none")
     media = {
         "accept": {"image": accept},
         "probed_at": datetime.now().isoformat(timespec="seconds"),
+        "url_tested": url_settled,
         "evidence": f"image:inline={inline_ev}; image:url={url_ev}",
     }
-    persisted = False if inline_ev.startswith("network_error") else _persist_media_probe(name, model, media)
+    persisted = _persist_media_probe(name, model, media) if inline_settled else False
+    if not inline_settled:
+        message = f"本次未测成（{inline_ev}），未记录结论，可稍后重试"
+    elif inline_ok:
+        message = "已记录"
+    else:
+        message = f"未通过看图探测: {inline_ev}"
     return {
         "ok": inline_ok,
         "provider": name,
         "model": model,
         "accept": accept,
-        "url_tested": bool(probe_url and inline_ok and not url_ev.startswith("network_error")),
+        "url_tested": url_settled,
+        "conclusive": inline_settled,
         "media": media,
         "persisted": persisted,
-        "message": "已记录" if inline_ok else f"未通过看图探测: {inline_ev}",
+        "message": message,
     }
 
 

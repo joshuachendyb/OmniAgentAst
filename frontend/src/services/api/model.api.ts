@@ -51,6 +51,8 @@ import type { SessionModelOverride } from '@/types/chat';
 export interface MediaProbe {
   accept?: Record<string, string>;
   probed_at?: string;
+  /** 探测当时外链是否真拿到结论；由后端落库，前端不再解析 evidence 文本。 */
+  url_tested?: boolean;
   evidence?: string;
 }
 
@@ -413,8 +415,10 @@ export const modelApi = {
     provider: string;
     model: string;
     accept: string;
-    /** 本次是否真发过外链探测；false(常见于未配置探测地址) 表示 accept=inline 并不等于"外链不支持"。 */
+    /** 本次外链探测是否拿到确定结论；false = 没测成(未配置探测地址/网络或限流失败)，不得当成"不支持外链"。 */
     url_tested: boolean;
+    /** 本次探测是否拿到确定结论；false 时后端不落库，前端也不得把它当成实测结果展示。 */
+    conclusive: boolean;
     persisted: boolean;
     message: string;
   }> => {

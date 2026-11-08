@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-11-08 小欧 新建: 媒体附件 → 请求 part 唯一构造点(视觉通道原内联逻辑迁入)
 # 2026-11-08 小欧 增自适应选路: 实测支持外链→直传 URL; 超限→本机压缩再内联(替代直接丢弃)
+# 2026-11-08 小欧 压缩保方向(EXIF Orientation 烧进像素); 外链准入改 is_global 单判(补 CGNAT) — 小欧-2026-11-08
 
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
@@ -23,8 +24,6 @@ from app.logger import logger
 
 _DATA_URL_MAX = 8
 _data_url_cache: Dict[Tuple[str, str, int, int, int], str] = {}
-# 单条消息最多转发的图片外链数: 防一段文本堆几十个链接把请求撑爆 — 小欧-2026-11-08
-MAX_REMOTE_IMAGES = 4
 _PRIVATE_HOSTS = {"localhost", "localhost.localdomain"}
 
 
@@ -57,9 +56,12 @@ def _compress_params() -> Tuple[int, int]:
 
 def _compress(raw: bytes, edge: int, quality: int) -> Tuple[bytes, str]:
     """缩图重编码: 有 alpha 走 PNG, 其余走 JPEG(照片压缩比高得多)。"""
-    from PIL import Image  # 延迟导入: 仅压缩路径需要 — 小欧-2026-11-08
+    from PIL import Image, ImageOps  # 延迟导入: 仅压缩路径需要 — 小欧-2026-11-08
 
     with Image.open(io.BytesIO(raw)) as img:
+        # 竖拍手机的 Orientation 只写在 EXIF, 重编码会丢整个 EXIF 段 →
+        #   先把方向烧进像素再编码, 否则发出去的照片躺倒 — 小欧-2026-11-08
+        img = ImageOps.exif_transpose(img)
         keep_alpha = img.mode in ("RGBA", "LA", "P")
         img.thumbnail((edge, edge))
         buf = io.BytesIO()
@@ -128,7 +130,8 @@ def url_reject_reason(url: str) -> str:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return ""  # 域名放行(不解析)
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+    # is_global 一处覆盖回环/内网/链路本地/保留/CGNAT(100.64/10); 组播单独判(224/4 的 is_global 为真) — 小欧-2026-11-08
+    if ip.is_multicast or not ip.is_global:
         return "不接受内网/保留地址"
     return ""
 

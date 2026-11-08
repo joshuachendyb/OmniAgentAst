@@ -114,6 +114,7 @@
 #   本层不再自取快照渲染 —— 注入/日志/回执同取一份, 不再各算一遍 — 小欧-2026-10-31
 # 2026-11-08 小欧 - 视觉占位与 wire 展开: 新增 image_slot/vision_slots 占位, 图片 parts 展开拆出
 #   expand_vision_parts(全量 user 消息, 调用方落盘/日志取原文后再展开, history 恒 str) — 小欧-2026-11-08
+# 2026-11-08 小欧 - 展开按实测双放行(内联/外链各一判定), llm_model 去默认值防漏传静默关外链 — 小欧-2026-11-08
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -159,7 +160,9 @@ from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
 # 2026-11-08 小欧: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
-from app.services.agent.vision import accepts_remote_url, expand_image_slots, image_slot
+from app.services.agent.vision import (
+    accepts_inline_image, accepts_remote_url, expand_image_slots, image_slot,
+)
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -593,19 +596,20 @@ class MessageBuilder:
         return messages
 
     async def expand_vision_parts(
-        self, messages: List[Dict[str, Any]], llm_model: Any = None
+        self, messages: List[Dict[str, Any]], llm_model: Any
     ) -> List[Dict[str, Any]]:
         """wire 专属: 把各 user 消息的图片占位展开成 OpenAI parts（原地改浅拷贝，history 不受影响）。
 
         2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
         （media_payload 按文件复用 data URL，同一任务不重复编码）。
-        外链直传只在**实测**该模型接受外链(accept.image 含 url)时启用；未探测按不支持处理，
-        与 media 配置的「探测用图片地址」留空即不测外链保持一致。
+        内联与外链各自按实测结论放行: 外链只在 accept.image 含 url 时发, 内联在 accept=none 时降级文字。
         """
+        allow_inline = accepts_inline_image(llm_model)
         allow_url = accepts_remote_url(llm_model)
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                msg["content"] = await expand_image_slots(msg["content"], allow_url=allow_url)
+                msg["content"] = await expand_image_slots(
+                    msg["content"], allow_inline=allow_inline, allow_url=allow_url)
         return messages
 
     def _cap_temp_history(self):

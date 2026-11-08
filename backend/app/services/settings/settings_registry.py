@@ -99,6 +99,8 @@ key 全局唯一，加载自检重复直接拒启。
    2026-11-03 22:20 小欧 - 再撤销双键(北京老陈令: 一个值即可, 拆两个是画蛇添足): console_level 整项删除,
       general 14→13 项; 键回单一 logging.level(标签「日志级别」, 默认 WARNING), notice 写明一值两用法 —
       控制台只显示 == 该值的行, 日志文件按原逻辑记 >= 该值; debug true 时文件强制 DEBUG、控制台不受影响 — 小欧-2026-11-03
+    2026-11-08 小欧 - media 组补齐: 「转发图片外链」notice 的条数上限改引 app.constants.MAX_REMOTE_IMAGES(与 vision 截断同源),
+      并补「被拒会留一行说明」; 与内联/压缩四项 notice 的语义对齐 — 小欧-2026-11-08
 
 """
 from typing import Any, Dict, List, Optional
@@ -107,7 +109,8 @@ from typing import Any, Dict, List, Optional
 from app.config import ENV_INJECTED_KEYS
 # 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
 #   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
-from app.constants import DEFAULT_CONTEXT_LENGTH
+# 2026-11-08 小欧 - 外链条数上限引系统级常量: notice 文案与 vision 截断同源, 改值只改一处
+from app.constants import DEFAULT_CONTEXT_LENGTH, MAX_REMOTE_IMAGES
 
 # 只读免确认白名单的**默认展示值**取自安全层内置清单(services→safety 依赖方向合法, 与本包
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
@@ -212,7 +215,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("media.compress_jpeg_quality", "int", "JPEG 质量", 85, range_=[1, 95],
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
-              notice="把你在消息里明确写出的公网图片地址直接转给模型，不下载、不转码。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接；单条消息最多 4 个；本机地址与内网 IP、以及 .pdf/.html/.zip 等非图片后缀一律不转发。且只有「模型库」里实测支持外链的模型才会真的收到，未探测的模型按不支持处理。关掉则只发本机附件"),
+              notice=f"把你在消息里明确写出的公网图片地址直接转给模型，不下载、不转码。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接；单条消息最多 {MAX_REMOTE_IMAGES} 个；本机地址与内网 IP、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会留一行说明。且只有「模型库」里实测支持外链的模型才会真的收到，未探测的模型按不支持处理。关掉则只发本机附件"),
         _item("media.probe_image_url", "text", "探测用图片地址", "",
               notice="「模型库」的「测」按钮测外链能力时发给模型的那张公网图片地址。留空＝只测内联，结果记为「内联」，外链能力不写结论；填一个公网可直接访问的图片 URL 才能测出模型收不收外链。该地址会原样交给厂商，请勿使用带隐私参数的链接"),
     ]},

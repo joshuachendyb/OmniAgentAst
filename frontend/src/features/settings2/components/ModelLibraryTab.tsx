@@ -43,6 +43,7 @@
 // 2026-11-08 小欧 - 模型库补输出模态列: 读 output_modalities, 生图/生视频打"生成"徽标, 与输入模态分列 — 小欧-2026-11-08
 // 2026-11-08 小欧 - 补「传输方式」列与「测」按钮: 只显实测记录(media.accept.image), 未探测显 – — 小欧-2026-11-08
 // 2026-11-08 小欧 - 传输列改四态(未探测/内联/内联＋外链/不支持)+外链未测标注, 测按钮 tooltip 写明探测地址依赖 — 小欧-2026-11-08
+// 2026-11-08 小欧 - 探测结果按 conclusive 分级(未测成不当结论), 外链是否测过改读结构化 url_tested, 切厂商清探测态 — 小欧-2026-11-08
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -192,15 +193,22 @@ const transportText = (accept?: string) => {
   return TRANSPORT_LABEL[accept] ?? accept;
 };
 
-/** 外链是否真测过：未配置「探测用图片地址」(skipped) 或探测时网络失败(network_error) 都算没测成，
- *  此时不得断言外链不支持——一次抖动不该让用户以为模型不行。 */
-const urlTestedOf = (media?: MediaProbe) => {
-  const accept = media?.accept?.image;
-  if (!accept || accept === 'none') return false;
-  const evidence = String(media?.evidence ?? '');
-  return (
-    !evidence.includes('url=skipped') && !evidence.includes('url=network_error')
-  );
+/** 外链能力有没有实测结论：读后端落库的结构化标记，不再解析给人看的 evidence 文本。
+ *  url_tested 缺省(旧记录)时用 accept==='both' 反推——外链没通不可能判成 both。 */
+const urlTestedOf = (media?: MediaProbe) =>
+  media?.url_tested ?? (media?.accept?.image === 'both');
+
+/** 传输列提示：按「实测值 × 外链是否测过」查表，不用排除法推断——未测≠不支持，内联≠外链可用。 */
+const transportTip = (accept?: string, urlTested = false) => {
+  if (!accept)
+    return '尚未实测。点「测」验证该模型能否接收图片；未探测的模型一律按只收内联处理，不会转发外链';
+  if (accept === 'none')
+    return '实测连内联图片都收不了：厂商拒绝该内容类型，或网关把图片静默丢弃。图片会降级成一行说明文字，不发给模型';
+  if (accept === 'both')
+    return '实测内联与外链都能收：外链直接转发图片地址，不下载、不转码';
+  return urlTested
+    ? '实测只收内联：外链探测被厂商拒绝（该地址取不到或不认），发外链会整轮被拒，故不转发'
+    : '实测可收内联图片。外链能力未测——「媒体 → 探测用图片地址」为空、或本次外链探测未测成；未测一律按只收内联处理';
 };
 
 const renderOutputTags = (m: RemoteModelItem) => {
@@ -299,6 +307,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
   // 2026-09-24 小欧 - v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
   // 2026-09-25 小欧：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
   // 2026-09-29 小欧：筛选态一并重置（换 Provider 后沿用旧模态/能力条件会筛出空列表）— 小欧-2026-09-29
+  // 2026-11-08 小欧：探测态一并清空——结果按模型名存, 不清会跨厂商串到同名模型上 — 小欧-2026-11-08
   const resetSelection = (providerName: string) => {
     const p = providers.find((x) => x.name === providerName);
     setRemote(null);
@@ -311,6 +320,8 @@ export const ModelLibraryTab: React.FC<Props> = ({
       minContext: 0,
     });
     setFetchError(null);
+    setProbeResult({});
+    setProbing(null);
   };
 
   // 设计要求：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
@@ -380,6 +391,11 @@ export const ModelLibraryTab: React.FC<Props> = ({
     setProbing(id);
     try {
       const r = await modelApi.probeMedia(provider.name, id);
+      if (!r.conclusive) {
+        // 未测成(限流/鉴权/5xx/未配置探测地址): 不当实测结果展示, 也不覆盖已存结论 — 小欧-2026-11-08
+        showMessage(ErrorType.WARNING, r.message);
+        return;
+      }
       setProbeResult((prev) => ({
         ...prev,
         [id]: { accept: r.accept, urlTested: r.url_tested },
@@ -793,13 +809,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
             ? fresh.urlTested
             : urlTestedOf(stored?.media);
           const untested = !!accept && accept !== 'none' && !urlTested;
-          const tip = !accept
-            ? '尚未实测。点「测」验证该模型能否接收图片；未探测的模型一律按只收内联处理，不会转发外链'
-            : accept === 'none'
-              ? '实测连内联图片都收不了：厂商拒绝该内容类型，或网关把图片静默丢弃。本模型不会收到任何图片'
-              : untested
-                ? '实测可收内联图片。外链能力未测——「媒体 → 探测用图片地址」为空、或本次外链探测网络失败；未测一律按只收内联处理'
-                : '实测内联与外链都能收：外链直接转发图片地址，不下载、不转码';
+          const tip = transportTip(accept, urlTested);
           return (
             <div
               style={{

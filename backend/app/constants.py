@@ -122,6 +122,10 @@ LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输
 #       「llm.context_length_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
 DEFAULT_CONTEXT_LENGTH = 262144  # 【系统级】使用对象: settings_registry(llm.context_length_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
 
+# 单条消息最多转发的图片外链数(防一段文本堆几十个链接把请求撑爆)
+# 使用对象: services/agent/vision(截断) + settings_registry(「转发图片外链」notice 文案同源) — 小欧-2026-11-08
+MAX_REMOTE_IMAGES = 4
+
 # ============================================================
 # 3. 网络与超时
 # ============================================================
