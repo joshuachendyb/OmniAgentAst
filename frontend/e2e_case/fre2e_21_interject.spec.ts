@@ -14,13 +14,13 @@
  *   不可发送由按钮置灰表达) — 小欧-2026-10-22
  */
 import { test, expect } from '@playwright/test';
-import { ChatPage } from '../e2e_front_lib';
+import { ChatPage, API_BASE } from '../e2e_front_lib';
 
 // 2026-10-22 小欧 - 端口订正: 原写 8010, 但本仓 E2E 约定的真后端是 **:8000**
 //   (AGENTS「后端 C uvicorn :8000」+ 前端 vite proxy /api→8000; 8010 上没有任何进程在跑)
 //   → 直连 8010 恒 ECONNREFUSED, 判据取不到数据(与插话功能无关)。
-// 2026-11-08 小欧 - 开发后端端口统一 8000→8100(env BACKEND_PORT 可覆盖), 与 start_dev.ps1/vite proxy 同源
-const BACKEND = `http://127.0.0.1:${process.env.BACKEND_PORT ?? '8100'}`;
+// 2026-11-08 小欧 - BACKEND 由 API_BASE(其 BACKEND_PORT 缺省 8100)派生, 与 task-status 同源不另抄一份
+const BACKEND = API_BASE.replace(/\/api\/v1$/, '');
 const N = 3;
 const mark = (i: number) => `插话标记${i}`;
 const interjectText = (i: number) =>

@@ -56,7 +56,7 @@ export default defineConfig(({ command }) => {
       // （/api/* → localhost:8100，同源无 CORS）。
       // 前端 REST 与 SSE 均为相对路径 /api/v1（修复：此前 REST 直连、SSE 相对，
       // 两条通道分叉）。前后端不同源且无反代时才设 VITE_API_BASE_URL 显式指向后端。
-      // 改端口须同步：proxy.target 与 VITE_API_BASE_URL。
+      // 改端口只改 BACKEND_PORT（VITE_API_BASE_URL 显式直连时须同步改其端口）。
       port: 5173,
       // 2026-09-26 小欧 - 配套改造: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
       //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，
