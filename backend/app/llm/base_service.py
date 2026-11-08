@@ -102,6 +102,7 @@
 #   (与厂商通用键 model_meta.context_length 同名同义, 消我方自造名) — 小欧-2026-11-01
 # 2026-11-03 小欧 - [Retry][L1] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 typing.Any(死导入) — 小欧-2026-11-04
+# 2026-11-08 小欧 设计[15]落码: ①L1重试分支 429+Retry-After 时 yield pause 帧(前端倒计时,可中断); ②429耗尽出口标记冷却注册表(D态,key=provider+model) + 文案限额/限速中文后缀
 """
 LLM 核心模块 — BaseAIService
 
@@ -618,6 +619,12 @@ class BaseAIService:
                     retry_count += 1
                     wait_time = self._retry_wait_seconds(e, retry_count)   # 2026-09-30 小欧: 抽为共用静态方法(DRY)
                     logger.info(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")  # 2026-11-03 小欧: 重试属自愈流程, 降 INFO
+                    # 2026-11-08 小欧(设计[15]三堂会审): A 态——429+Retry-After 时 yield pause 帧(前端倒计时,可中断)
+                    #   Retry-After 值已由 _retry_wait_seconds 解析进 wait_time; pause 帧只负责通知前端, 退避仍走下方可取消等待
+                    if (isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
+                            and e.response.headers.get("Retry-After")):
+                        from app.llm.core import create_pause_chunk
+                        yield create_pause_chunk(self.llm_model, wait_time)
                     # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_call 消费转 MetaStep(retrying) 发前端;
                     #   不设 stream_error 故不触发读方 break; retry_notice 带原始错误文本。
                     #   小欧 2026-09-08 修复: 实测生产日志 httpx.ReadTimeout 的 str(e) 恒为空串
@@ -642,16 +649,20 @@ class BaseAIService:
                     # 429 重试耗尽后出口: 按细分给准确文案(限流缓刑 vs 配额打死), 非一刀切"配额用尽" — 小欧 2026-07-17 / 2026-10-28
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                         _cat = SystemErrorClassifier.classify_error(e)
+                        # 2026-11-08 小欧(设计[15]三堂会审): 429 耗尽标记冷却注册表(D 态)— key 用 provider+model(§4.2 粒度决策)
+                        from app.llm.model_cooldown import ModelCooldownRegistry
+                        _mid = f"{self.llm_model.provider}/{self.llm_model.model}"
+                        ModelCooldownRegistry.get().mark(_mid, is_quota=(_cat == SystemErrorCategory.QUOTA_EXCEEDED))
                         if _cat == SystemErrorCategory.QUOTA_EXCEEDED:
                             yield StreamChunk(
                                 content="", chunk_model=self.llm_model, is_done=True,
-                                stream_error="模型配额/余额已用尽（429），请升级配额后重试",
+                                stream_error="模型限额/余额已用尽（429·限额），请升级限额后重试",
                                 stream_error_type="quota_exceeded",
                             )
                         else:
                             yield StreamChunk(
                                 content="", chunk_model=self.llm_model, is_done=True,
-                                stream_error="模型限流（429），请稍后再试",
+                                stream_error="模型限流（429·限速），请稍后再试",
                                 stream_error_type="rate_limit",
                             )
                         return

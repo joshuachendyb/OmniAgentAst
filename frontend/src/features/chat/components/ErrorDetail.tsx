@@ -9,6 +9,7 @@
 //   配色组(蓝灰 #0958d9/⚙️/标题「配置错误」), 与红系(网络/参数/权限/文件/未知)、黄系(待确认)、蓝系(agent)区分 ——
 //   配置问题属"用户可自行修复", 不应与系统/网络故障同色。配色查找为 ERROR_COLORS_MAP[type] → 去 _error 后缀 → default
 //   三级兜底, config_error 精确命中第一级。标签总数 20 → 21 — 小欧-2026-09-26
+// 编辑历史: 2026-11-08 小欧 - quota_exceeded 中文标签 `配额超限`→`限额超限`(用户裁定"限额"措辞更准, 与后端 429·限额 对齐) — 小欧-2026-11-08
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
 import { Colors } from '@/utils/stepStyles';
@@ -141,7 +142,7 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
   validation_error: '参数错误',
   not_found: '资源不存在',
   internal_error: '内部错误',
-  quota_exceeded: '配额超限',
+  quota_exceeded: '限额超限',
   idle_timeout: '响应超时',
   cancelled: '已取消',
   client: '参数有误',

@@ -191,6 +191,7 @@
 #   首chunk emit_notice(retrying,done) 清位置2 — 小欧-2026-11-07
 # 2026-11-08 小欧 - 图片 parts 展开从 prepare_messages_for_llm 拆出, 改在
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
+# 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -405,6 +406,13 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     async for item in call_llm_with_fallback(agent, messages, openai_tools):
         _p = getattr(item, "payload", None)          # 路径2 唯一判别: payload非空=终结响应/通知, 否则原生chunk — 小欧 2026-09-06
         if _p is not None:
+            if _p.get("type") == "pause":
+                # 2026-11-08 小欧(设计[15]三堂会审): A 态 pause 帧 → rate_limit_wait notice(前端倒计时, 可中断)
+                #   首个正常 chunk 到达时发 done 清除(与 retrying 同机理); pause_seconds 由后端算好 wait_text 下发, 前端零逻辑
+                await agent._step_emitter.emit_notice("rate_limit_wait", "start",
+                                                       _p.get("content") or f"模型限速，{_p.get('wait_text', '')}后恢复（429·延时）")
+                agent._pause_notice_active = True
+                continue
             if _p.get("type") == "retrying":
                 # 2026-11-07 小欧 改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
                 #   重试成功后位置2 残留; 改 emit_notice(retrying, start) + 首个 chunk 时发 done 清除
@@ -416,6 +424,10 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             chunk_type, chunk_data = "chunk", item   # 原生 chunk: 喂下方 chunk 分支(原 "chunk" 拆包语义)
 
         if chunk_type == "chunk":
+            if getattr(agent, "_pause_notice_active", False):
+                # 2026-11-08 小欧(设计[15]三堂会审): pause 恢复清除——首个正常 chunk 到达 → 发 notice(rate_limit_wait, done) 清位置2
+                await agent._step_emitter.emit_notice("rate_limit_wait", "done", "恢复")
+                agent._pause_notice_active = False
             if getattr(agent, "_retrying_notice_active", False):
                 # 2026-11-07 小欧 重试恢复清除: 首个正常 chunk 到达 → 发 notice(retrying, done) 清位置2
                 await agent._step_emitter.emit_notice("retrying", "done", "已恢复")

@@ -80,6 +80,8 @@
 # 2026-11-07 小欧 - 优化1: 摘要限流快速降级. call_llm_with_fallback 加 max_response_retries 参数,
 #   call_llm_text_task 传 _SUMMARY_MAX_RETRIES=1(主链 response_retries=2). 根因: 摘要最早执行撞限流窗口,
 #   L2×2+FC降级各带L1×3重试累计~6分钟全在窗口内必然失败; 减摘要L2重试→更快降级→不阻塞主链 — 小欧-2026-11-07
+# 2026-11-08 小欧 设计[15]落码: ①call_llm_stream 入口 D 态冷却主动延迟(delay_info 区分限额/限速文案, 可取消小步sleep);
+#   ②L1 循环透传 pause 帧(type=="pause")供 react_step 转 rate_limit_wait notice — 小欧-2026-11-08
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -165,6 +167,32 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     # 2026-10-08 小欧 - 上游流先取引用再进 try: 提前退出(break/异常)时在 finally 关它,
     #   否则 BaseAIService.request_stream 异步生成器悬挂, httpx 在飞响应不归还连接池
     #   (每轮 LLM 调用泄漏一次) — 小欧-2026-10-08
+    # 2026-11-08 小欧(设计[15]三堂会审): D 态冷却——模型限速记忆, 发起前主动延迟(削峰减速带)
+    #   key 用 provider+model(§4.2 粒度决策, 同模型名走不同网关限速互相独立)
+    #   冷却等待可取消: 小步恒/递增 sleep 期间复查 _cancelled, 取消后≤0.5s 即停、交由下方
+    #   request_stream 顶部短路产 cancelled chunk(对齐 §8 验收5 立即终止, 不跨层用私有 _cancel_signal,
+    #   遵项目铁则 2026-10-30 —— 与 L2/FC 层"只读 _cancelled"同一约定, KISS)
+    from app.llm.model_cooldown import ModelCooldownRegistry
+    _mref = getattr(agent.llm_client, 'llm_model', None)
+    _model_id = f"{_mref.provider}/{_mref.model}" if _mref else ''
+    _cd, _is_quota = ModelCooldownRegistry.get().delay_info(_model_id)
+    if _cd > 0:
+        # 2026-11-08 小欧(设计[15]三堂会审+用户裁定): 区分冷却类型文案——限额(配额)冷却显"限额", 限速冷却显"限速",
+        # 不混用; 与 §9 "429·限额/429·限速" 标签对齐
+        _kind = "限额" if _is_quota else "限速"
+        logger.info(f"[ModelCooldown] {_model_id} 冷却中({_kind})，等待 {_cd:.1f}s")
+        yield create_payload_chunk(_resolve_chunk_model(agent), {
+            "type": "retrying",
+            "content": f"[冷却]模型{_kind}，等待{_cd:.0f}秒",
+            "wait_time": _cd,
+        })
+        # 可取消冷却等待: 每 0.2s 复查一次 _cancelled(不跨层摸私有 _cancel_signal, 遵项目铁则);
+        #   取消后立即 stop, request_stream 顶部短路产 cancelled chunk, 与现有取消语义一致 — 小欧-2026-11-08
+        _remain = _cd
+        while _remain > 0 and not getattr(agent.llm_client, '_cancelled', False):
+            _step = min(0.2, _remain)
+            _remain -= _step
+            await asyncio.sleep(_step)
     _llm_stream = agent.llm_client.request_stream(
         messages=messages, tools=openai_tools, tool_choice=tool_choice,
     )
@@ -186,6 +214,13 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                                 f"[{chunk.retry_error_type or 'Exception'}]",
                     "wait_time": chunk.retry_wait,  # 小欧 2026-10-29: 透传退避秒数(原None, 前端只读展示)
                 })
+                continue
+
+            if isinstance(chunk, StreamChunk) and getattr(chunk, "payload", None) \
+                    and chunk.payload.get("type") == "pause":
+                # 2026-11-08 小欧(设计[15]三堂会审): A 态 pause 帧透传——后端算好 wait_text,
+                # 原样转发供 react_step 转 rate_limit_wait notice(前端倒计时, 可中断)
+                yield chunk
                 continue
 
             if chunk.tool_calls:

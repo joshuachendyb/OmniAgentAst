@@ -35,6 +35,7 @@
      2026-10-28 小欧 429限流细分(缓刑vs打死): 新增QUOTA_EXCEEDED枚举(配额/余额耗尽→不可重试打死); RATE_LIMIT改可重试(429限流RPM/TPM瞬态→缓刑);
        429分类读服务商错误体error.type/code细分(rate_limit_error→RATE_LIMIT可重试, insufficient_quota/credit_balance_exhausted→QUOTA_EXCEEDED打死),
        修正"限流被误报配额用尽且一刀切不重试"的根因 — 小欧-2026-10-28
+     2026-11-08 小欧 设计[15]落码: _subcategory_for_token 词表补强(新增 throttling_exception/slow_down→RATE_LIMIT, resource_exhausted 二级判据按 message 含 daily 分配额/限速, message 关键词兜底 quota/balance→QUOTA); 签名加 error 参数, 调用点同步 — 小欧-2026-11-08
 """
 
 import json
@@ -101,20 +102,37 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
             SystemErrorCategory.RATE_LIMIT: "接口限流(RPM/TPM瞬态)",   # 文案与配额分离 — 小欧 2026-10-28
-            SystemErrorCategory.QUOTA_EXCEEDED: "接口配额/余额已用尽",  # 新增 — 小欧 2026-10-28
+            SystemErrorCategory.QUOTA_EXCEEDED: "接口限额/余额已用尽",  # 新增 — 小欧 2026-10-28
         }
         return mapping.get(self, "未知错误")
 
 
 # 429 细分 token → 分类(缓刑 vs 打死 二级判据) — 小欧 2026-10-28
-def _subcategory_for_token(token: str) -> Optional[SystemErrorCategory]:
+def _subcategory_for_token(token: str, error: Exception = None) -> Optional[SystemErrorCategory]:
     """按服务商 error.type/error.code 判定 429 细分: 配额/余额耗尽→QUOTA_EXCEEDED(打死),
-    限流/过载→RATE_LIMIT(缓刑); 无法识别返回 None(由调用方走裸429保守可重试) — 小欧-2026-10-28"""
+    限流/过载→RATE_LIMIT(缓刑); 无法识别返回 None(由调用方走裸429保守可重试) — 小欧-2026-10-28
+    2026-11-08 小欧 词表补强(设计[15]三堂会审): ①补 throttling_exception(Bedrock限流,必须重试)
+    /slow_down(OpenAI升速过快); ②resource_exhausted 二级判据(Gemini歧义: message 含 daily 归配额, 否则归限速);
+    ③message 关键词兜底(quota exceeded/balance/insufficient balance 文案型 → 配额), 仅作 429 上下文内兜底"""
     _t = (token or "").lower()
     if _t in ("insufficient_quota", "credit_balance_exhausted", "quota_exceeded", "billing_error"):
         return SystemErrorCategory.QUOTA_EXCEEDED
-    if _t in ("rate_limit_error", "overloaded_error", "requests_limit", "tokens_limit", "tpm_limit", "rpm_limit"):
+    if _t in ("rate_limit_error", "overloaded_error", "requests_limit", "tokens_limit", "tpm_limit", "rpm_limit",
+              "throttling_exception", "slow_down"):
         return SystemErrorCategory.RATE_LIMIT
+    # Gemini RESOURCE_EXHAUSTED 歧义: message 含 daily 字样才归配额, 否则归限速 — 小欧-2026-11-08
+    if _t == "resource_exhausted":
+        _resp = getattr(error, "response", None)
+        _msg = str(error)
+        if _resp is not None:
+            _msg = getattr(_resp, "text", "") or _msg
+        if any(k in _msg.lower() for k in ("daily", "per day", "per_day")):
+            return SystemErrorCategory.QUOTA_EXCEEDED
+        return SystemErrorCategory.RATE_LIMIT
+    # message 关键词兜底: 文案型账务字眼(quota exceeded/balance 等) → 配额打死(仅 429 上下文内兜底) — 小欧-2026-11-08
+    _msg = str(error or "").lower()
+    if any(k in _msg for k in ("quota exceeded", "insufficient balance", "balance")):
+        return SystemErrorCategory.QUOTA_EXCEEDED
     return None
 
 
@@ -141,7 +159,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "模型没有返回内容（Empty Response），请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "模型响应超时（Idle Timeout），请换个问法或稍后重试"),
     SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),   # 瞬态可重试 — 小欧 2026-10-28
-    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型配额/余额已用尽（Quota Exceeded），请升级配额后重试"),  # 账务性打死 — 小欧 2026-10-28
+    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型限额/余额已用尽（Quota Exceeded），请升级限额后重试"),  # 账务性打死 — 小欧 2026-10-28
 }
 
 
@@ -192,7 +210,7 @@ class SystemErrorClassifier:
         _ec = getattr(error, "error_code", "") or ""
         _token = str(_et or _ec or "").lower()
         if _token:
-            _cat = _subcategory_for_token(_token)
+            _cat = _subcategory_for_token(_token, error)
             if _cat is not None:
                 logger.debug(f"[ErrorClassifier] HTTP 429 异常error_type/code={_token} → {_cat}")
                 return _cat
@@ -216,7 +234,7 @@ class SystemErrorClassifier:
                 _ec2 = (_err or {}).get("code") if isinstance(_err, dict) else None
                 _token = str(_et2 or _ec2 or "").lower()
                 if _token:
-                    _cat = _subcategory_for_token(_token)
+                    _cat = _subcategory_for_token(_token, error)
                     if _cat is not None:
                         logger.debug(f"[ErrorClassifier] HTTP 429 错误体 type/code={_token} → {_cat}")
                         return _cat
