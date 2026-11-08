@@ -9,6 +9,8 @@
 #   app 层注入仍缺——reload 子进程不跑 run_server.py, 启动会打一条该告警), watch 走 watchfiles — 小欧-2026-11-08
 # 2026-11-08 小欧 - 开发端口 8000→8100: 取 env BACKEND_PORT(缺省 8100), 两种重载器同源;
 #   8000 上有 OpenCode 桌面版内置 vLLM provider 每 30s 探 /v1/models 刷 404。打包链 run_server.py 不动 — 小欧-2026-11-08
+# 2026-11-08 小欧 - uvicorn 分支补 --log-level warning: 裸 uvicorn 默认 access 日志打控制台, 与
+#   run_server.py 的"只落盘不挂 console"对齐(刷屏无排障价值, 且同步 stdout 有冻结事件循环风险) — 小欧-2026-11-08
 param(
     [Parameter(Position = 0)]
     [ValidateSet('uvicorn', 'watch', 'watchfiles')]
@@ -35,7 +37,7 @@ if ($LASTEXITCODE -ne 0) {
 
 if ($Reloader -eq 'uvicorn') {
     Write-Host "[start_dev] 重载方式: uvicorn --reload (监视 app, 端口 $backendPort)" -ForegroundColor Cyan
-    & $python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port $backendPort --forwarded-allow-ips 127.0.0.1,::1
+    & $python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port $backendPort --forwarded-allow-ips 127.0.0.1,::1 --log-level warning
     exit $LASTEXITCODE
 }
 
