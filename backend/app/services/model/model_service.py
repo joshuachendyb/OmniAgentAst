@@ -273,7 +273,9 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             # 2026-11-01 小欧 - 键名统一: 下发键 default_params → model_params, 与 yaml 真源同名(消翻译层)
             "model_params": params,
             "range": meta.get("range") or {},
-            "capabilities": meta.get("capabilities") or [],
+            # [14] 断链修正：capabilities 拆为 input_modalities + output_modalities，各自只读真源
+            "input_modalities": meta.get("input_modalities") or [],
+            "output_modalities": meta.get("output_modalities") or [],
             "param_options": _resolve_param_options(ai, provider, m, params, meta),
             # 2026-11-01 小欧 - 补下发模型声明窗口: 原只透 max_output_length, 前端②参数区拿不到声明值
             #   (问题2/问题3: 库保存的 context_length 既不下发也无编辑面)
@@ -329,7 +331,8 @@ def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
 def add_model(provider: str, model: str, label: str = "",
               model_params: Optional[Dict[str, Any]] = None,
               range_: Optional[Dict[str, Any]] = None,
-              capabilities: Optional[List[str]] = None,
+              input_modalities: Optional[List[str]] = None,
+              output_modalities: Optional[List[str]] = None,
               param_options: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
     # 2026-11-01 小欧 - 形参键名统一 default_params → model_params(与前端口径/POST DTO 同名) - 小欧-2026-11-01
     ai = _raw_ai()
@@ -360,7 +363,9 @@ def add_model(provider: str, model: str, label: str = "",
             "model_meta": {model: {
                 "label": label or model,
                 "range": range_ or {},
-                "capabilities": capabilities or [],
+                # [14] 断链修正：capabilities 拆为 input/output 双维度
+                "input_modalities": input_modalities or [],
+                "output_modalities": output_modalities or [],
                 **({"param_options": param_options} if param_options else {}),
             }},
         }}
@@ -377,12 +382,13 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     # 白名单放行+落model_meta（小欧 2026-09-22：加 param_options，否则送了即报不支持的配置项）
     # 2026-09-24 小欧：加 remove_params（键级删除，与 model_params merge 叠加）— 小欧-2026-09-24
     # 2026-11-01 小欧 - 键名统一: default_params → model_params(与 yaml 真源同名) - 小欧-2026-11-01
-    unknown = set(fields) - {"label", "range", "capabilities", "model_params", "param_options", "remove_params"}
+    # 2026-11-08 小欧 - [14] B2: 模态字段 capabilities → input_modalities + output_modalities
+    unknown = set(fields) - {"label", "range", "input_modalities", "output_modalities", "model_params", "param_options", "remove_params"}
     if unknown:
         raise ValueError(f"不支持的配置项: {sorted(unknown)}")
     tree: Dict[str, Any] = {"ai": {provider: {}}}
     node = tree["ai"][provider]
-    for k in ("label", "range", "capabilities"):
+    for k in ("label", "range", "input_modalities", "output_modalities"):
         if fields.get(k) is not None:
             node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
     mp = fields.get("model_params")
@@ -700,6 +706,21 @@ def _merge_capabilities(feats: List[str], capabilities: Any) -> List[str]:
             and "reasoning" not in feats:
         return [*feats, "reasoning"]
     return feats
+
+
+def _merge_capabilities_into_modalities(modalities: List[str], capabilities: Any) -> List[str]:
+    """老格式 capabilities 列表并入 input_modalities（迁移用, 一次性）— [14] §3.3
+
+    agnes/ZenFree 老写法: capabilities:['text','image'] → 并进 input_modalities(去重)。
+    仅作"把已判定为 input 的值补充进 input"的兜底, 不承载 input/output 方向判定
+    (生图/生视频的方向由 §3.4.2 手工标注表定, 见 _migrate_legacy_capabilities)。
+    """
+    out = list(modalities)
+    if isinstance(capabilities, list):
+        for v in capabilities:
+            if isinstance(v, str) and v not in out:
+                out.append(v)
+    return out
 
 
 def _merge_supports_modalities(modalities: List[str], item: Any) -> List[str]:

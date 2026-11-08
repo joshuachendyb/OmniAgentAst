@@ -61,10 +61,34 @@ ai:
       - agnes-2.5-pro
       - agnes-3.0-flash
       - agnes-image-2.1-flash
+      - agnes-image-2.5-flash
       - agnes-video-2.5
       - agnes-video-2.5-flash
     timeout: 120
     max_retries: 3
+    # [14] §3.4.3 双维度能力标注（与真实 config.yaml 同构；api_key 占位不落真 key）
+    model_meta:
+      agnes-2.5-flash:
+        input_modalities: [text, image]      # 看图
+        output_modalities: [text]
+      agnes-2.5-pro:
+        input_modalities: [text]             # 待核
+        output_modalities: [text]
+      agnes-3.0-flash:
+        input_modalities: [text, image]      # 看图
+        output_modalities: [text]
+      agnes-image-2.1-flash:
+        input_modalities: [text]             # 生图（不看图）
+        output_modalities: [image]
+      agnes-image-2.5-flash:
+        input_modalities: [text]             # 生图（不看图）
+        output_modalities: [image]
+      agnes-video-2.5:
+        input_modalities: [text]             # 生视频
+        output_modalities: [video]
+      agnes-video-2.5-flash:
+        input_modalities: [text]             # 生视频
+        output_modalities: [video]
 
   sensenova:
     api_base: https://token.sensenova.cn/v1

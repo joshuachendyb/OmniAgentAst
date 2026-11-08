@@ -156,6 +156,8 @@ from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志
 from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
+# 2026-11-08 小欧 [14] S2: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
+from app.services.agent.vision import expand_image_slots, image_slot
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
 #   设计要点：
@@ -184,13 +186,19 @@ _WS_BLOCK_RE = re.compile(
 
 
 def build_user_turn_text(user_input: str, refs: Optional[list] = None,
-                         ws_text: str = "") -> str:
-    """装配本轮 user 消息正文: [引用块][事项目录块][用户原话] — 小欧-2026-10-31
+                         ws_text: str = "",
+                         vision_slots: Optional[list] = None) -> str:
+    """装配本轮 user 消息正文: [引用块][图片占位][事项目录块][用户原话] — 小欧-2026-10-31
 
     纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
     (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
+    [14] S2: 图片用占位标记入列, wire 边界(prepare_messages_for_llm)才换 parts —
+    history 恒 str, 压缩/裁剪/持久化零改动。
     """
-    return "".join(p for p in (render_refs_block(refs), ws_text) if p) + user_input
+    refs_block = render_refs_block(refs)
+    if vision_slots:
+        refs_block += "".join(f"图片附件: {image_slot(r)}\n" for r in vision_slots)
+    return "".join(p for p in (refs_block, ws_text) if p) + user_input
 
 
 class MessageBuilder:
@@ -340,7 +348,8 @@ class MessageBuilder:
             return None
 
     def init_history(self, sys_prompt: str, task_prompt: str,
-                     refs: Optional[list] = None, ws_text: str = "") -> None:
+                     refs: Optional[list] = None, ws_text: str = "",
+                     vision_slots: Optional[list] = None) -> None:
         """初始化conversation_history — 替代base_react.py L368-369
 
         2026-10-13 小欧 - 文档[28] 4.1.6: refs(输入框引用) 正文拼在 task_prompt **之前**，
@@ -354,6 +363,9 @@ class MessageBuilder:
 
         2026-10-31 小欧 - 目录块文本改由编排层渲染后传入(ws_text),
           本层不再自取快照、不再渲染 —— 注入的文本与日志/回执是同一份, 不会各算一遍。
+
+        [14] S2 - 增 vision_slots(图片引用): 视觉模型由编排层 split_vision_refs 摘出,
+          经 build_user_turn_text 组装占位入列(wire 边界才换 parts, 见 §4.4)。
         """
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
@@ -362,7 +374,7 @@ class MessageBuilder:
             sys_prompt = f"{sys_prompt}\n\n{_FILE_REF_RULES}"
         self.conversation_history = []
         self.add_system_message(sys_prompt)
-        self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text))
+        self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text, vision_slots))
 
     def build_interject_text(self, user_input: str, refs: Optional[list] = None,
                              ws_text: str = "") -> Tuple[str, str]:
@@ -530,13 +542,15 @@ class MessageBuilder:
     # 第二组:每轮 LLM 调用的消息组装
     # =========================================================================
 
-    def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
+    async def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
         """准备发给LLM的完整消息列表 — 合并原split+merge+assemble
 
         不再拆出last_message再拼回,整个history作为一个List[Dict]贯穿流程。
         注入点(tools/summary/schema)在第一个非system消息前或末尾操作。
 
         MSG-001 小沈 2026-05-24: temp_history加入字符容量限制,从最旧开始移除
+        [14] S2: 改 async(max_images 经 asyncio.to_thread 读盘卸载事件循环);
+              仅在 wire 边界把最后一条 user 的图片占位展开成 parts, 见下方注入点。
         """
         # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
         self._cap_temp_history()
@@ -572,6 +586,14 @@ class MessageBuilder:
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
         self.conversation_history = [m for m in self.conversation_history
                                      if not any(k.startswith("_temp_") for k in m)]
+        # [14] S2 §4.4: 视觉通道只在 wire 边界展开(history 恒 str)。
+        #   倒序找最后一条 user 即本轮输入, 历史其余 user 保持占位(不重复堆积 base64)。
+        #   expand_image_slots 为 async(读盘卸载事件循环), 此处须 await。
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                if isinstance(msg.get("content"), str):
+                    msg["content"] = await expand_image_slots(msg["content"])
+                break
         return messages
 
     def _cap_temp_history(self):
@@ -789,7 +811,13 @@ class MessageBuilder:
         total = 0
         for msg in messages:
             content = msg.get("content")
-            total += len(content) if content is not None else 0
+            # [14] S2 §4.4: content 可能为 str 或 image parts 数组; 图片 base64 不撑爆裁剪/压缩预算
+            #   (只计文本段, 与下发口径同源)。否则 len(list)=part个数 → base64 大图被低估 → 上下文越界。
+            if isinstance(content, str):
+                total += len(content)
+            elif isinstance(content, list):
+                total += sum(len(p.get("text") or "") for p in content
+                             if isinstance(p, dict))
             tool_calls = msg.get("tool_calls")
             if tool_calls:
                 total += len(json.dumps(tool_calls, ensure_ascii=False))

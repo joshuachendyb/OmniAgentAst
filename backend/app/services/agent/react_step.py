@@ -367,7 +367,8 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),
     )  # 11.3 C2修复(复核确认): 透传裁剪token数, 防 on_trim 恒0死数据 — 小欧 2026-08-20
     _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
-    messages = agent.message_builder.prepare_messages_for_llm()
+    # [14] S2 §4.4: prepare_messages_for_llm 改 async(wire 边界展开图片 parts), 此处须 await
+    messages = await agent.message_builder.prepare_messages_for_llm()
     # 文件B 增量落盘(loop顺序/结构保真/增量前缀) — 小欧 2026-08-23
     # call_no = agent.llm_call_count(本次调用序号, 上方刚自增)
     # 经注入的 agent.file_persist 调用(与 telemetry 同模式, agent 层零 chat 依赖); writer 未挂载时空转 — 小欧 2026-08-23
