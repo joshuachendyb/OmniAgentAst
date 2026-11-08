@@ -179,6 +179,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-08 小欧 - 模态词汇归一: normalize_modalities(MIME 级/脏值收敛 5 值), 远端解析与落盘同口, 启动迁移既有配置 — 小欧-2026-11-08
 # 2026-11-08 小欧 - 媒体传输探测: probe_model_media 实测 image inline/url 并落 model_meta.media, _models_of 下发 — 小欧-2026-11-08
 # 2026-11-08 小欧 - 探测结论分级: 只有 200 与 400/415/422 算确定结论, 鉴权/限流/5xx/网络不落库; 图像 token 字段缺失≠0 — 小欧-2026-11-08
+# 2026-11-08 小欧 - 探测返回 message 改整句人话(_probe_hint 把取证串译成下一步动作), 状态码不再上界面 — 小欧-2026-11-08
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1196,6 +1197,31 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
     return (True, f"image_tokens={tokens}", True) if tokens > 0 else (False, "no_image_tokens", True)
 
 
+def _probe_hint(ev: str) -> str:
+    """未测成的取证串 → 用户可据以行动的说明(技术词汇, 不打哑谜)。
+
+    界面只在轻提示里显示这句, 故必须短且无嵌套括号; 原始取证(状态码/响应片段)留在 media.evidence 供排查 — 小欧-2026-11-08
+    """
+    if ev.startswith("network_error"):
+        return "连不上厂商接口"
+    if ev == "bad_json":
+        return "返回不是 JSON，检查接口地址"
+    if ev == "no_image_token_field":
+        return "厂商未回报图像 token，无法判定"
+    code = ev.split(":", 1)[0][5:] if ev.startswith("http_") else ""
+    if code in ("401", "403"):
+        return f"鉴权失败 {code}，检查 API Key"
+    if code == "404":
+        return "无此模型 404，检查模型名"
+    if code == "408":
+        return "厂商超时 408"
+    if code == "429":
+        return "厂商限流 429"
+    if code.startswith("5"):
+        return f"厂商服务端错误 {code}"
+    return f"厂商拒绝 {code}" if code else "厂商拒绝该请求"
+
+
 def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
     """探测结果落 model_meta.<model>.media(嵌套整块写); 失败只记日志不影响探测结论。"""
     try:
@@ -1212,6 +1238,7 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     外链探测仅在 media.probe_image_url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
     只落确定结论(见 _probe_once): 一次 429/5xx/密钥错不得把模型能力写死成 none。
     url_tested 一并落库, 供界面区分「实测不支持外链」与「压根没测」。
+    返回的 message 是给人看的整句结论(界面原样显示, 不自行拼词) — 小欧-2026-11-08
     """
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
@@ -1237,12 +1264,19 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
         "evidence": f"image:inline={inline_ev}; image:url={url_ev}",
     }
     persisted = _persist_media_probe(name, model, media) if inline_settled else False
+    # 界面用轻提示(toast)展示, 必须短: 结论一句, 细节在列内 tooltip — 小欧-2026-11-08
     if not inline_settled:
-        message = f"本次未测成（{inline_ev}），未记录结论，可稍后重试"
-    elif inline_ok:
-        message = "已记录"
+        message = f"未测成：{_probe_hint(inline_ev)}；原有记录未改动"
+    elif not inline_ok:
+        message = "已记录：该模型收不到图片"
+    elif url_ok:
+        message = "已记录：内联＋外链"
+    elif url_settled:
+        message = "已记录：仅内联（外链被拒）"
+    elif not probe_url:
+        message = "已记录：仅内联（外链未测）"
     else:
-        message = f"未通过看图探测: {inline_ev}"
+        message = f"已记录：仅内联（外链未取证，{_probe_hint(url_ev)}）"
     return {
         "ok": inline_ok,
         "provider": name,

@@ -152,7 +152,7 @@ async def expand_image_slots(text: str, allow_inline: bool = True, allow_url: bo
             dropped.append(reason)
     if dropped:
         # 与内联失败同样给用户可见回执: 只留服务端日志时, 用户会以为模型"看不见图" — 小欧-2026-11-08
-        parts.append({"type": "text", "text": "\n[图片外链未转发: " + "；".join(dropped) + "]"})
+        parts.append({"type": "text", "text": "\n[图片链接未转发: " + "；".join(dropped) + "]"})
     return parts
 
 
@@ -183,7 +183,7 @@ async def _slot_parts(text: str, allow_inline: bool) -> List[Dict[str, Any]]:
             parts.append(part)
         else:
             name = att.get("original_name") if att else m.group(1)
-            pending.append(f"[图片附件未内联: {name} — {reason}]\n")
+            pending.append(f"[图片未发送: {name} — {reason}]\n")
         cursor = m.end()
     pending.append(text[cursor:])
     _flush()

@@ -88,14 +88,14 @@ async def _image_data_url(attachment: Dict[str, Any]) -> Tuple[Optional[str], st
         mime = key[1] or "image/png"
         if len(raw) > limit:
             if not compress_on:
-                return None, f"文件超过 {limit // (1024 * 1024)}MB 未随消息发送"
+                return None, f"超过 {limit // (1024 * 1024)}MB，且没开自动压缩"
             try:
                 raw, mime = _compress(raw, edge, quality)
             except Exception as e:
                 logger.warning(f"[media] 压缩失败 path={key[0]} err={e}")
                 return None, "图片无法解析"
             if len(raw) > limit:
-                return None, f"压缩后仍超过 {limit // (1024 * 1024)}MB 未随消息发送"
+                return None, f"压缩后仍超过 {limit // (1024 * 1024)}MB"
         return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}", ""
 
     try:
@@ -139,7 +139,7 @@ def url_reject_reason(url: str) -> str:
 def build_url_part(url: str) -> Tuple[Optional[Dict[str, Any]], str]:
     """公网图片地址 → image_url part(零字节搬运); 不合法返回 (None, 原因)。"""
     if not media_config().get("remote_url_passthrough", True):
-        return None, "配置已关闭图片外链转发"
+        return None, "配置里关闭了图片链接转发"
     reason = url_reject_reason(url)
     if reason:
         return None, reason

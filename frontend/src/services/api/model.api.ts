@@ -47,11 +47,12 @@
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
-/** 媒体传输探测结果。accept 形如 {image: 'inline' | 'url' | 'both' | 'none'}。 */
+/** 图片接收实测结果。accept.image 由探测写入，只有 'both' | 'inline' | 'none' 三值
+ *  （'url' 单独出现无意义：外链通了必然也通内联，探测也不会产出该值）。 */
 export interface MediaProbe {
   accept?: Record<string, string>;
   probed_at?: string;
-  /** 探测当时外链是否真拿到结论；由后端落库，前端不再解析 evidence 文本。 */
+  /** 外链那条腿是否拿到确定结论；由后端落库，前端不再解析 evidence 文本。 */
   url_tested?: boolean;
   evidence?: string;
 }
@@ -406,7 +407,8 @@ export const modelApi = {
     return response.data;
   },
 
-  /** 实测模型接受哪种图片传输(200 且图像 token>0 才算支持)，结果由后端落 model_meta.media。 */
+  /** 实测模型以哪种方式接收图片(HTTP 200 且图像 token>0 才算真收到)，结果由后端落 model_meta.media。
+   *  message 是后端给的整句短结论，直接进轻提示，前端不再自行拼词。 */
   probeMedia: async (
     provider: string,
     model: string
