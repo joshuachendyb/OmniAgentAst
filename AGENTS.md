@@ -110,10 +110,10 @@ ruff check --select ARG,RET,SIM,PIE <改动文件>       # 附加参考: 该四�
 
 #### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
 
-**方式一(推荐, 日常开发用这个)**: 双击 `backend\start.bat`, 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1`。
+**方式一(日常开发用这个)**: 双击 `backend\start_watch.bat`(等效 `start.bat watch`), 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch`。
 内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8000" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
 
-**方式二(旧, 别用)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`。
+**方式二(现为 `start.bat` 默认, 会卡死)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000`。
 uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程, 子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 从第一次保存文件起热重载永久失效, 而 worker 照常应答, 极易误判"服务正常"。上游 0.54 仍未修, 升级无效。
 
 **判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 表现是改代码不生效、Ctrl+C 也退不掉, 只能 kill。
@@ -123,6 +123,9 @@ uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` �
 两者都监听 `0.0.0.0:8000`, 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8000` 对应; 改端口须同步改代理 target。
 
 `backend/start.bat`、`backend/start_e2e.bat` 均已改为调用 `backend/start_dev.ps1`; `start_dev.ps1` 用 UTF-8 with BOM 保存(PowerShell 5.1 需要), `start_e2e.bat` 用 GBK 保存(控制台中文)。
+
+**双入口(2026-11-08 小欧, 用户指定默认 uvicorn)**: `start.bat` 无参 → 方式二 `python -m uvicorn ... --reload --forwarded-allow-ips 127.0.0.1,::1`; `start_watch.bat`(或 `start.bat watch`)→ 方式一 watchfiles; `start_e2e.bat` 固定传 `watch`(E2E 铁律不变)。
+方式二卡死的结论不变: 本机实测首改文件即卡在 `basereload.py:98`(日志停在 `Reloading...`, worker 照常应答), 卡住就换 `start_watch.bat`。uvicorn 模式下 app 层收不到 `forwarded_allow_ips` 注入(子进程不执行 `run_server.py`), 启动打印一条该告警属预期。— 小欧-2026-11-08
 
 ### Frontend (workdir=`frontend/`)
 
