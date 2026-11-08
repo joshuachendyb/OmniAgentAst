@@ -103,6 +103,8 @@
 # 2026-11-03 小欧 - [Retry][L1] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 typing.Any(死导入) — 小欧-2026-11-04
 # 2026-11-08 小欧 设计[15]落码: ①L1重试分支 429+Retry-After 时 yield pause 帧(前端倒计时,可中断); ②429耗尽出口标记冷却注册表(D态,key=provider+model) + 文案限额/限速中文后缀
+# 2026-11-08 小欧: L1重试事件增 retry_kind 标签(429·延时=有Retry-After契约等待/429·限速=自适应退避, 限额不可重试走终态文案) — 小欧-2026-11-08
+# 2026-11-08 小欧: 回滚非流式 request() 429 冷却标记——该路径当前无消费方(agent 主链全走 request_stream), YAGNI — 小欧-2026-11-08
 """
 LLM 核心模块 — BaseAIService
 
@@ -422,6 +424,7 @@ class BaseAIService:
                         logger.info("[request] 退避期间收到取消, 终止重试")
                         return ChatResponse(content="", chat_model=self.llm_model, error="cancelled")
                     continue
+                # 2026-11-08 小欧: 非流式 request() 当前无消费方(agent 主链全走 request_stream), 429 终态不做冷却标记(YAGNI)
                 return ChatResponse(content="", chat_model=self.llm_model, error=str(e))
 
     async def request_stream(
@@ -621,8 +624,12 @@ class BaseAIService:
                     logger.info(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")  # 2026-11-03 小欧: 重试属自愈流程, 降 INFO
                     # 2026-11-08 小欧(设计[15]三堂会审): A 态——429+Retry-After 时 yield pause 帧(前端倒计时,可中断)
                     #   Retry-After 值已由 _retry_wait_seconds 解析进 wait_time; pause 帧只负责通知前端, 退避仍走下方可取消等待
-                    if (isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
-                            and e.response.headers.get("Retry-After")):
+                    _retry_kind = None
+                    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                        # 2026-11-08 小欧: 429重试事件分类标签——有Retry-After=429·延时(契约等待), 无=429·限速(自适应退避);
+                        #   限额(quota)不可重试走不到本分支, 其标签在下方终态出口文案承载 — 小欧-2026-11-08
+                        _retry_kind = "429·延时" if e.response.headers.get("Retry-After") else "429·限速"
+                    if _retry_kind == "429·延时":
                         from app.llm.core import create_pause_chunk
                         yield create_pause_chunk(self.llm_model, wait_time)
                     # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_call 消费转 MetaStep(retrying) 发前端;
@@ -634,6 +641,7 @@ class BaseAIService:
                         content="", chunk_model=self.llm_model, is_done=False,
                         retry_notice=str(e) or type(e).__name__, retry_attempt=retry_count, retry_total=max_retries,
                         retry_wait=wait_time, retry_error_type=type(e).__name__,  # 小欧 2026-10-29: 事件透传退避秒数+异常类名(统一文案)
+                        retry_kind=_retry_kind,  # 小欧 2026-11-08: 429分类标签透传(429·延时/429·限速), 非429为None
                     )
                     # 2026-10-05 小欧: 退避改为可被 cancel 唤醒的等待 —— 取消立即唤醒, 不再空转满退避时长(5fe9ecc76倒退修复)
                     try:

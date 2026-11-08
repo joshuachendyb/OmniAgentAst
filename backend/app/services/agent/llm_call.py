@@ -82,6 +82,10 @@
 #   L2×2+FC降级各带L1×3重试累计~6分钟全在窗口内必然失败; 减摘要L2重试→更快降级→不阻塞主链 — 小欧-2026-11-07
 # 2026-11-08 小欧 设计[15]落码: ①call_llm_stream 入口 D 态冷却主动延迟(delay_info 区分限额/限速文案, 可取消小步sleep);
 #   ②L1 循环透传 pause 帧(type=="pause")供 react_step 转 rate_limit_wait notice — 小欧-2026-11-08
+# 2026-11-08 小欧: ①L1重试文案括号内标分类(429)→(429·限速/429·延时), 经 _format_retry_payload 新参 retry_kind;
+#   ②冷却成功清零补调用点(_cd>0 且成功出口 clear, 原注册表 clear 全链零调用) — 小欧-2026-11-08
+# 2026-11-08 小欧 三堂会审修复: 冷却成功清零改无条件调用(clear 内部有 if model_id in self._table 守卫, 幂等) —
+#   原 if _cd>0 漏掉"冷却已过期但条目残留"(delay_info 返 0.0 不删条目), 成功调用后旧 hits 残留下次 mark 直接跳档; 现无条件清 — 小欧-2026-11-08
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -142,12 +146,14 @@ _CN_MSG = {
 }
 
 
-def _format_retry_payload(notice: str, exc_type: str) -> str:
-    """重试错误载荷: HTTP→(code)msg; 非HTTP→中文(防英文重复) — 小欧 2026-10-29"""
+def _format_retry_payload(notice: str, exc_type: str, retry_kind: str = None) -> str:
+    """重试错误载荷: HTTP→(code)msg; 非HTTP→中文(防英文重复) — 小欧 2026-10-29
+    2026-11-08 小欧: retry_kind(429·延时/429·限速)并入括号——(429) → (429·限速), 前端一眼辨分类"""
     _t = (notice or "").strip()
     _m = re.match(r"HTTP (\d+) 错误: (.+)", _t)
     if _m:
-        return f"({_m.group(1)}){_m.group(2)}"
+        _code = retry_kind if retry_kind else _m.group(1)  # 429 时换分类标签
+        return f"({_code}){_m.group(2)}"
     if exc_type in _CN_MSG:
         return _CN_MSG[exc_type]
     return _t or (exc_type or "Exception")
@@ -210,7 +216,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                     "type": "retrying",
                     "content": f"[调用]重试 {chunk.retry_attempt}/{chunk.retry_total}"
                                 f"等{chunk.retry_wait or 0}秒, "
-                                f"错误: {_format_retry_payload(chunk.retry_notice, chunk.retry_error_type or 'Exception')} "
+                                f"错误: {_format_retry_payload(chunk.retry_notice, chunk.retry_error_type or 'Exception', getattr(chunk, 'retry_kind', None))} "
                                 f"[{chunk.retry_error_type or 'Exception'}]",
                     "wait_time": chunk.retry_wait,  # 小欧 2026-10-29: 透传退避秒数(原None, 前端只读展示)
                 })
@@ -272,6 +278,14 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
             tool_calls_result = None
         yield _yield_error_response(stream_error, agent, exc_type=chunk.stream_error_type or "")
         return
+
+
+    # 2026-11-08 小欧 三堂会审: D态冷却成功清零——无条件调用(clear 内部有 if model_id in self._table 守卫, 幂等)。
+    #   ① 进入时 _cd>0(冷却中) 成功 → 清 hits 防下次跳档(设计[15]§4.2"成功调用后清除冷却");
+    #   ② 进入时 _cd=0 但条目残留(冷却已过期 delay_info 返 0.0 不删条目) → 成功也须清, 否则旧 hits 残留下次 mark 直接跳档;
+    #   ③ 从未冷却(无条目) → clear 守卫零副作用。
+    #   stream_error/异常/取消均已在前面 return/raise, 走不到此处置信成功 — 小欧-2026-11-08
+    ModelCooldownRegistry.get().clear(_model_id)
 
     # ════════════════════════════════════════════════════
     # type 推断：LLM 产了 tool_calls → action

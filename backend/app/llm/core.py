@@ -17,6 +17,7 @@
 # 2026-10-31 小欧 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2"
 # 2026-11-05 小欧 StreamChunk删reasoning死字段(全链零读写, 思考以is_reasoning标记承载); docstring第4条thought口径纠偏(answer轮回退已随2026-09-01方案A删除)
 # 2026-11-08 小欧 设计[15]落码: 新增 format_wait_human(人类可读时长,秒/分/时自适应)+create_pause_chunk(429+Retry-After pause帧契约: type/pause_seconds/wait_text/reason, 摒弃resume_at), 入__all__
+# 2026-11-08 小欧: StreamChunk 增 retry_kind(429重试分类标签 429·延时/429·限速), 供 L1 重试事件文案标注分类 — 小欧-2026-11-08
 
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
@@ -101,6 +102,7 @@ class StreamChunk:
                  retry_total: Optional[int] = None,    # 小欧 2026-09-02: 最大重试次数
                  retry_wait: Optional[int] = None,     # 小欧 2026-10-29: L1重试退避秒数(事件透传"等{w}秒")
                  retry_error_type: Optional[str] = None,  # 小欧 2026-10-29: L1重试异常类名(事件透传"[ExcType]")
+                 retry_kind: Optional[str] = None,       # 小欧 2026-11-08: 429重试分类标签(429·延时/429·限速), 非429为None
                  payload: Optional[Dict] = None):      # 小欧 2026-09-06: 元事件载荷通道(默认None零行为变化)
         self.content = content
         self.chunk_model = chunk_model   # 前导+model; 补 provider(F8 不留 self.model 兼容别名)
@@ -118,6 +120,7 @@ class StreamChunk:
         self.retry_total = retry_total                  # 小欧 2026-09-02
         self.retry_wait = retry_wait                    # 小欧 2026-10-29
         self.retry_error_type = retry_error_type        # 小欧 2026-10-29
+        self.retry_kind = retry_kind                    # 小欧 2026-11-08: 429重试分类标签(延时/限速)
         self.payload = payload                          # 元事件载荷通道, 默认None零行为变化 — 小欧 2026-09-06
 
 
