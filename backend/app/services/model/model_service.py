@@ -188,6 +188,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-09 小欧 - 生成验证图源解耦: 图生/视频参考腿改用 generation_client.PROBE_IMAGE_URL,
 #   不再借 media.probe_image_url(输入腿素材, 默认 8x8 内联 png 不能当外链图输入) - 小欧-2026-11-09
 # 2026-11-09 小欧 - 视频腿改判: 任务 failed 只记未定(厂商侧失败不可归因模型), conclusive 改按「无未定腿」判定 - 小欧-2026-11-09
+# 2026-11-09 小欧 - 图像 token 只查输入侧(prompt_tokens_details), 补纯文本基线差值判定:
+#   kilo 网关在 completion_tokens_details.image_tokens 恒填 0, 原递归匹配会把能看图的模型判成不支持 - 小欧-2026-11-09
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1187,22 +1189,34 @@ async def _probe_baseline_tokens(api_base: str, headers: Dict[str, str], model: 
 
 
 def _image_token_count(usage: Any) -> Optional[int]:
-    """从 usage 里递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。
+    """从 usage 的输入侧递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。
 
-    返回 None = 响应里根本没有该字段(厂商不报), 与"字段存在且为 0"必须区分:
-    后者是网关静默丢图, 前者什么也证明不了 — 小欧-2026-11-08
+    返回 None = 输入侧根本没有该字段(厂商不报), 与"字段存在且为 0"必须区分:
+    后者是网关静默丢图, 前者什么也证明不了。
+    **只查输入侧**: completion_tokens_details.image_tokens 是"输出图 token"(生图模型用),
+    kilo 等网关对纯文本模型也恒填 0, 误当输入计数会把能看图的模型判成静默丢图 — 小欧-2026-11-09
     """
-    if isinstance(usage, dict):
-        for k, v in usage.items():
+    if not isinstance(usage, dict):
+        return None
+    top = usage.get("image_tokens")
+    if isinstance(top, int) and not isinstance(top, bool):
+        return top
+    return _scan_image_tokens(usage.get("prompt_tokens_details"))
+
+
+def _scan_image_tokens(node: Any) -> Optional[int]:
+    """在 prompt_tokens_details 子树内找 *image_tokens — 小欧-2026-11-09"""
+    if isinstance(node, dict):
+        for k, v in node.items():
             if isinstance(v, int) and not isinstance(v, bool) and str(k).endswith("image_tokens"):
                 return v
             if isinstance(v, (dict, list)):
-                hit = _image_token_count(v)
+                hit = _scan_image_tokens(v)
                 if hit is not None:
                     return hit
-    elif isinstance(usage, list):
-        for v in usage:
-            hit = _image_token_count(v)
+    elif isinstance(node, list):
+        for v in node:
+            hit = _scan_image_tokens(v)
             if hit is not None:
                 return hit
     return None
@@ -1228,14 +1242,14 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
     except Exception:
         return False, "bad_json", False
     tokens = _image_token_count(data.get("usage"))
-    if tokens is not None:
-        return (True, f"image_tokens={tokens}", True) if tokens > 0 else (False, "no_image_tokens", True)
-    # 厂商不报图像 token: 比纯文本基线差值, 图进了上下文即证明能读图 — 小欧-2026-11-09
+    if tokens is not None and tokens > 0:
+        return True, f"image_tokens={tokens}", True
+    # 输入侧没报(或恒报 0): 比纯文本基线差值, 图真进了上下文即证明能读图 — 小欧-2026-11-09
     usage = data.get("usage")
     used = usage.get("prompt_tokens") if isinstance(usage, dict) else None
     base = await _probe_baseline_tokens(api_base, headers, model, timeout)
     if not isinstance(used, int) or base is None:
-        return False, "no_image_token_field", False
+        return (False, "no_image_tokens", True) if tokens == 0 else (False, "no_image_token_field", False)
     delta = used - base
     if delta >= _IMG_DELTA_MIN:
         return True, f"image_tokens={delta}", True
