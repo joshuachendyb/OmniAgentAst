@@ -1152,13 +1152,38 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
 _PROBE_IMAGE_URL = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlE"
                     "QVR4nGO4o6GBFTEMLQkAe3tLAfuiUfAAAAAASUVORK5CYII=")
 # 2026-11-09 小欧 - 拒绝状态集单源: 由 generation_client.REJECT_STATUS 统一持有, 本文件不再复制 — 小欧-2026-11-09
+# 2026-11-09 小欧 - 图像 token 差值判定: 厂商不回报 image_tokens 时改比同 prompt 纯文本基线 prompt_tokens,
+#   差值≥_IMG_DELTA_MIN 即证明图进了上下文(sensenova 系只报 prompt/total) — 小欧-2026-11-09
+_PROBE_TEXT = "图中是什么颜色? 只回答颜色。"
+_IMG_DELTA_MIN = 8
 
 
 def _probe_messages(url: str) -> List[Dict[str, Any]]:
     return [{"role": "user", "content": [
-        {"type": "text", "text": "图中是什么颜色? 只回答颜色。"},
+        {"type": "text", "text": _PROBE_TEXT},
         {"type": "image_url", "image_url": {"url": url}},
     ]}]
+
+
+async def _probe_baseline_tokens(api_base: str, headers: Dict[str, str], model: str,
+                                 timeout: float) -> Optional[int]:
+    """纯文本基线 prompt_tokens(带图请求同 prompt 去掉图片): 差值即图片占用 token — 小欧-2026-11-09"""
+    body = {"model": model, "messages": [{"role": "user", "content": _PROBE_TEXT}],
+            "max_tokens": 16, "temperature": 0}
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(f"{api_base.rstrip('/')}/chat/completions",
+                                     headers=headers, json=body)
+    except Exception:
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        usage = resp.json().get("usage")
+    except Exception:
+        return None
+    n = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+    return n if isinstance(n, int) else None
 
 
 def _image_token_count(usage: Any) -> Optional[int]:
@@ -1187,7 +1212,7 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
                       url: str, timeout: float) -> Tuple[bool, str, bool]:
     """单次探测 → (是否真看到图, 证据, 结论是否确定)。
 
-    确定结论只三种: 200 有图像 token / 200 图像 token 为 0 / 400·415·422 拒内容类型。
+    确定结论: 200 有图像 token(或基线差值≥阈值) / 200 图像 token 为 0(或差值≤0) / 400·415·422 拒内容类型。
     鉴权失败、限流、超时、5xx、坏 JSON 都是环境问题, 不得写成模型能力 — 小欧-2026-11-08
     """
     body = {"model": model, "messages": _probe_messages(url), "max_tokens": 16, "temperature": 0}
@@ -1203,9 +1228,20 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
     except Exception:
         return False, "bad_json", False
     tokens = _image_token_count(data.get("usage"))
-    if tokens is None:
+    if tokens is not None:
+        return (True, f"image_tokens={tokens}", True) if tokens > 0 else (False, "no_image_tokens", True)
+    # 厂商不报图像 token: 比纯文本基线差值, 图进了上下文即证明能读图 — 小欧-2026-11-09
+    usage = data.get("usage")
+    used = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+    base = await _probe_baseline_tokens(api_base, headers, model, timeout)
+    if not isinstance(used, int) or base is None:
         return False, "no_image_token_field", False
-    return (True, f"image_tokens={tokens}", True) if tokens > 0 else (False, "no_image_tokens", True)
+    delta = used - base
+    if delta >= _IMG_DELTA_MIN:
+        return True, f"image_tokens={delta}", True
+    if delta <= 0:
+        return False, "no_image_tokens", True
+    return False, f"image_tokens_ambiguous={delta}", False
 
 
 def _probe_hint(ev: str) -> str:
@@ -1234,7 +1270,9 @@ def _probe_hint(ev: str) -> str:
     if ev == "bad_json":
         return "返回不是 JSON，检查接口地址"
     if ev == "no_image_token_field":
-        return "厂商未回报图像 token，无法判定"
+        return "厂商未回报图像 token，基线差值也取不到"
+    if ev.startswith("image_tokens_ambiguous"):
+        return "图像 token 增量过小，无法确认读到了图"
     if ev == "no_output":
         return "厂商返回 200 但无产物地址"
     code = ev.split(":", 1)[0][5:] if ev.startswith("http_") else ""

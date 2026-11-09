@@ -224,7 +224,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
               notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接（?查询参数原样保留）；单条消息最多 {MAX_REMOTE_IMAGES} 个，超出的静默不转发；本机地址、内网/保留地址、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理、链接整个忽略不留说明（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
         _item("media.probe_image_url", "text", "外链检测用图片地址",
-              "https://cn.bing.com/favicon.ico",
+              "https://www.baidu.com/img/flexible/logo/pc/result.png",
               hidden=True,
               notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。已迁到设置页②「Image_URL」行就地显示与修改，此处仅作配置源登记。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
     ]},

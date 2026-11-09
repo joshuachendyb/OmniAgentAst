@@ -1042,7 +1042,8 @@ const SettingsPage: React.FC = () => {
                   <div style={{ fontWeight: 600 }}>验证方法说明</div>
                   <div>
                     真实调用 LLM 发送一张内置测试图，HTTP 200 且返回图像
-                    token&gt;0 才算「输出能力」正常
+                    token&gt;0（厂商不报图像 token 时按「带图输入 token
+                    明显高于纯文本」）才算「输出能力」正常
                   </div>
                   <div>内联＝图片数据直接随请求体发送（base64）</div>
                   <div>外链＝只发图片地址，由厂商接口自行抓取</div>
