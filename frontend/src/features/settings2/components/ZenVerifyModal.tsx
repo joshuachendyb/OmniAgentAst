@@ -12,17 +12,12 @@
 //     状态后面，失败端点标红；第3列腾出来显示「双端通过/双端失败/两路分歧」。失败原因由单行
 //     省略号改为整段折行完整展示（北京老陈「不能省略」） — 小欧-2026-10-10
 
+//   2026-11-09 小欧 - 删未使用的 FontWeight/settingsModalWidth import（归一 SettingsModal 后遗留）— 小欧-2026-11-09
+//   2026-11-09 小欧 - 删两路分歧提示里被 padding 简写覆盖的死声明 paddingLeft — 小欧-2026-11-09
 import React, { useEffect, useState } from 'react';
 import { Button, Divider, Empty, Tag } from 'antd';
 import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 2个只读弹窗归一到设置页壳
-import {
-  Colors,
-  FontFamily,
-  FontSize,
-  FontWeight,
-  Spacing,
-} from '@/utils/stepStyles';
-import { settingsModalWidth } from '@/theme/settingsTokens';
+import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
 import { ErrorType, showMessage } from '@/services/error/handler';
 import {
   modelApi,
@@ -268,7 +263,6 @@ const ZenVerifyModal: React.FC<{
                     <div
                       style={{
                         marginTop: Spacing.XS,
-                        paddingLeft: MODEL_COL_WIDTH + Spacing.SM,
                         padding: `${Spacing.XS}px ${Spacing.SM}px`,
                         color: meta.color,
                         background: meta.bg,

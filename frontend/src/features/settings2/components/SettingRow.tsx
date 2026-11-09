@@ -16,6 +16,7 @@
 // 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: TextArea rows 3→2(72px→50px; 全项目仅授权目录/IP白名单两项用此控件且内容不长, resize 保留用户可自行拉大) — 小欧-2026-10-11
 // 2026-11-01 小欧 - secret 行 chip 文案精准化：「已配置/未配置」→「已保存/未保存」——chip 对象是
 //   密钥状态，与 ③ 区状态贴「密钥已保存」同一术语族，不再借用「配置」一词 — 小欧-2026-11-01
+// 2026-11-09 小欧 - providerWrite 改 const 并删零调用方的 __setProviderWrite 测试注入口 — 小欧-2026-11-09
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -57,8 +58,8 @@ function secretProviderName(key: string): string {
  *  value 收窄为非空 string：「清空」是显式 clear 语义，不走本函数（否则 clear 意图会在类型转换中被吃掉）。
  *  错误文案与类型不在此包装，统一由调用处 classifyError + extractErrorMessage 给出。
  */
-/** provider 通道的实际写调用；单测可替换以注入失败（默认走真实实现）。 */
-export let providerWrite = (
+/** provider 通道的实际写调用。 */
+const providerWrite = (
   provider: string,
   payload: { api_key: string } | { clear: true }
 ): Promise<unknown> => modelApi.updateProvider(provider, payload);
@@ -74,17 +75,6 @@ const writeSecret = async (key: string, value: string): Promise<void> => {
   }
   throw new Error(`未登记的 secret 项写通道: ${key}`);
 };
-
-/** 单测专用：替换 provider 写入口以注入失败；传 undefined 恢复默认。 */
-export function __setProviderWrite(
-  fn?: (
-    p: string,
-    payload: { api_key: string } | { clear: true }
-  ) => Promise<unknown>
-): void {
-  providerWrite =
-    fn ?? ((provider, payload) => modelApi.updateProvider(provider, payload));
-}
 
 interface Props {
   item: SettingSchemaItem;

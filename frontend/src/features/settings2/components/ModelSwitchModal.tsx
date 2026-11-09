@@ -6,9 +6,10 @@
 //   本次真正迁移到 SettingsModal，并落实视觉优化问题#17（见下）。
 //   视觉优化#17：「当前生效 provider / model」是本次操作的影响预告（当前值 → 将变更），
 //   原为裸灰字，与表单字段同权重，关键信息读不出来。改 ModalSection 容器 + CodeChip 键名。
+// 2026-11-09 小欧 - 删未使用的 FontSize import — 小欧-2026-11-09
 import React, { useEffect, useState } from 'react';
 import { Form, Select } from 'antd';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, Spacing } from '@/utils/stepStyles';
 import { SettingsModal, ModalSection, CodeChip } from '@/theme/SettingsModal';
 import type { ProviderEntry } from '@/services/api/model.api';
 

@@ -45,6 +45,7 @@
 //   （候选来源 ModelEntry.model_params / 提交体 model_params），与后端 DTO 同名 — 小欧-2026-11-01
 // 编辑历史: 2026-11-08 小欧 - 添加模型提交体能力字段 capabilities → input_modalities + output_modalities 双维度 — 小欧-2026-11-08
 
+// 2026-11-09 小欧 - 参数模板 InputNumber 补 null 守卫（null 会随 model_params 落库）；删 Modal/FontWeight/settingsModalWidth 未使用 import — 小欧-2026-11-09
 import React, { useEffect, useState } from 'react';
 import {
   Button,
@@ -54,7 +55,6 @@ import {
   Input,
   InputNumber,
   List,
-  Modal,
   Row,
   Select,
   Space,
@@ -67,8 +67,8 @@ import {
   PlusOutlined,
 } from '@ant-design/icons'; // 2026-10-10 小欧: 模型增删行图标; 22:15 删除确认 emoji⚠ 换矢量图标
 import { SettingsModal, ModalSection, CodeChip } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 3个弹窗归一到底壳; 22:15 补 ModalSection/CodeChip
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { settingsControl } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
 import { PARAM_PRESETS } from '../utils/modelUtils';
 
@@ -310,7 +310,10 @@ export const ModelModals: React.FC<Props> = (props) => {
           <InputNumber
             value={defaultVal as number}
             style={{ width: settingsControl.inputNumberWidth }}
-            onChange={(v) => updateCollectedParam(key, v)}
+            onChange={(v) => {
+              // 清空数字框回 null 时不提交：null 会随 model_params 落库
+              if (v !== null) updateCollectedParam(key, v);
+            }}
           />
         ) : isBoolVal ? (
           <Switch

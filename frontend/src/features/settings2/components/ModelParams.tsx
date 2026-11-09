@@ -29,6 +29,7 @@
 //   并集渲染 + `params[key] ?? baseline[key]` 显示兜底不变 —— 厂商声明窗口经 load 通道注入 baseline 后，
 //   context_length 行即可见可编辑（原本因基线缺失连行都渲染不出来）- 小欧-2026-11-01
 // 2026-11-01 小欧 - 基线补 max_output_length 声明行: 控件只读+标「厂商声明」+不显删除钮(该键非后端解析白名单, 随 extra_body 出网易 400) — 小欧-2026-11-01
+// 2026-11-09 小欧 - 两处 InputNumber 补 null 守卫：清空数字框不再写入 null 参数值 — 小欧-2026-11-09
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -111,7 +112,10 @@ export const ModelParams: React.FC<Props> = ({
                     max={range.max}
                     value={safeNum}
                     disabled={lock}
-                    onChange={(v) => onChange(key, v)}
+                    onChange={(v) => {
+                      // 清空数字框回 null 时不提交：null 会写成参数值并恒判脏
+                      if (v !== null) onChange(key, v);
+                    }}
                   />
                 </span>
               );
@@ -137,7 +141,10 @@ export const ModelParams: React.FC<Props> = ({
                   value={rawValue}
                   disabled={lock}
                   style={{ width: settingsControl.inputNumberWidth }}
-                  onChange={(v) => onChange(key, v)}
+                  onChange={(v) => {
+                    // 清空数字框回 null 时不提交：null 会写成参数值并恒判脏
+                    if (v !== null) onChange(key, v);
+                  }}
                 />
               );
             }

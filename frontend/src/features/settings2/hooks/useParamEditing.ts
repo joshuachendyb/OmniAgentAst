@@ -1,4 +1,5 @@
 // 编辑历史: 2026-11-09 小欧 - 新建：模型参数与输入模态的内存编辑域（增删改/放弃修改），原 useSettings 逻辑原样搬迁 — 小欧-2026-11-09
+// 2026-11-09 小欧 - setParam 脏态补 removedParams 判定：删键后改回原值仍判脏，删键意图不再丢 — 小欧-2026-11-09
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import {
   isDirty,
@@ -55,9 +56,10 @@ export function useParamEditing({
           model: {
             ...s.model,
             params,
-            isDirty: Object.values(
-              isDirty(params, s.model.baseline, s.model.envOverride)
-            ).some(Boolean),
+            isDirty:
+              Object.values(
+                isDirty(params, s.model.baseline, s.model.envOverride)
+              ).some(Boolean) || s.model.removedParams.length > 0,
           },
         };
       });

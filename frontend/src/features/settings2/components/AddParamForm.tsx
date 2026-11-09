@@ -42,6 +42,7 @@
 //   ③handleAdd 补 boolean 转布尔值(values 全为字符串，直接存会让 ModelParams 走 Input 分支显示错位);
 //   ④PARAM_PRESETS 整块迁移至 modelUtils.ts(ModelModals 亦需消费，组件间互引数据是分层异味，
 //   数据层与 PARAM_DEFAULT_RANGES 同住)，本文件只消费不定义，initValuesOf/presetValid 取型不变 — 小欧-2026-10-10
+// 2026-11-09 小欧 - 删未使用的 PARAM_DEFAULT_RANGES import（默认值已由 modelUtils 内部消费）— 小欧-2026-11-09
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select, Switch } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -51,7 +52,7 @@ import {
   settingsLabelStyle,
   settingsRadius,
 } from '@/theme/settingsTokens';
-import { PARAM_DEFAULT_RANGES, PARAM_PRESETS } from '../utils/modelUtils';
+import { PARAM_PRESETS } from '../utils/modelUtils';
 
 // 行内名称列宽（☐ 右侧）：最长预设名「频次惩罚 (frequency_penalty)」@14px≈205px，取 240 保单行+列对齐
 // （settingsLabelStyle.width=180 装不下会折行；不改共享令牌以免影响 ModelParams 等既有行）- 小欧-2026-09-23

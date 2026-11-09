@@ -1,5 +1,6 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页壳（搜索+Tabs+组级脏点+切 Tab 未保存确认+保存条）。
 // 2026-11-09 小欧 - 模型区版式/实测/增删逻辑拆至 ModelTab 与 useCapabilityProbe/useModelActions，本文件只留壳与跨 Tab 编排 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 删 saveGroup 返回值的冗余类型断言（SaveResult.ok 已是 boolean）— 小欧-2026-11-09
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -383,7 +384,7 @@ const SettingsPage: React.FC = () => {
               const jump = pendingJump;
               if (!jump) return;
               void s.saveGroup(state.activeTab).then((r) => {
-                if ((r as { ok: boolean }).ok) {
+                if (r.ok) {
                   s.setActiveTab(jump.tab);
                   if (jump.key) {
                     s.setHighlightKey(jump.key);

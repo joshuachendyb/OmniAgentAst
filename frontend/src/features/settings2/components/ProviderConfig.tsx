@@ -51,6 +51,7 @@
 //   isEnv 分支裸 span → SectionTitle；FontWeight import 清理（仅标题 span 用，改后无残留）；
 //   TestConnectionProbe marginLeft 改可选（flex gap 容器内不再需要传）
 
+// 2026-11-09 小欧 - 删动态参数 null 守卫注释中指向不存在测试文件的过期 case 行 — 小欧-2026-11-09
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch, Tag } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -365,7 +366,6 @@ export const ProviderConfig: React.FC<Props> = ({
                   onChange={(v) => {
                     // 2026-09-27 - 小欧 - null = 清空 = 不修改（同本文件 timeout/max_retries 静态字段）。
                     // 漏判会把 null 送进 patch、后端原样落盘 ⇒ YAML 出现 `rate_limit: null`。
-                    // case: settings2-dynamic-null.test.ts
                     if (v !== null) {
                       setDynamicValues((prev) => ({ ...prev, [key]: v }));
                     }
