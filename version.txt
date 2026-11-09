@@ -1,3 +1,65 @@
+v1.6.5
+发布时间: 2026-11-09 17:01:22 - 小欧-2026-11-09
+## v1.6.4以来 变更汇总(52个commit: feat11/fix17/refactor7/docs16/Merge1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-09
+[2026-11-09 17:01:22 小欧] 范围=v1.6.4..HEAD 全部commit(52个); 说明=①[14]模型多能力字段统一+S2视觉通道全景落盘: 能力收口input_modalities+output_modalities双维度(后端model_service能力位拆分+新vision.py+message_builder/step/loop接视觉, 前端F1-F6设置界面双维度+输出模态行+模型库输出列), 数据迁移纳入config.yaml.example同步, 三堂会审复核修复(DTO双维度/迁移钩子/配置根ai); ②媒体链路P1~P4: 模态词汇归一+媒体part统一构造点+传输探测落库, 外链直传+本机压缩+media配置组(设置页媒体Tab), 外链未探测按只内联门控, 结论分级/单一能力真源/四态提示/EXIF方向; ③图片实测链设置页化: 实测迁②选中模型参数(Image_URL就地配置+失焦即存+mtime守卫), 图片实测行三徽标(内联/外链/输出能力), 外链徽标四态url_err, 验证腿耗时token结构化落库, 默认检测图Bing favicon; ④[15]输出模态生成验证腿: 图/视频双腿实测(新增generation_client单点generate_image/generate_video提交+轮询, probe_output按输出模态分组落库, 前端双腿徽标), 图像token只查输入侧+基线差值优先防误判, 401/403单列paid_model_required, 验证回执常驻(model_meta.last_probe), 输出模态改只读徽标/标签单源OUTPUT_MODALITY_LABEL四处同源; ⑤LLM 429限流分级与冷却记忆: 四态处理+冷却注册表/provider+model冷却/pause帧, 商汤429 token_plan_entitlement_exhausted误判修复(实为配额耗尽), merge合并origin/master后FUNCTIONS.md版本表按版次对齐; ⑥settings2深度重构: useSettings拆为编排壳+11个职责模块+SettingsPage壳化, 参数脏态补删键判定+数字框null守卫; ⑦启动链整顿: 开发端口8000→8100(避OpenCode vLLM探针刷404), 启动脚本拆双入口(start_uvicorn.bat/start_watch.bat, E2E固定watch), start_dev.ps1自检补装watchfiles+启动前按端口清残留树+uvicorn logger收口, start_frontend.bat改powershell与ASCII注释; ⑧version.txt曾写v1.6.5/v1.6.6两段汇总后整体撤销, 本次按用户指令重记v1.6.5一版覆盖全部52个commit。注: 含11个feat([14]S2视觉通道+媒体P1~P4+[15]生成验证腿+LLM429冷却记忆), 均为既有功能的链路增强, 用户明确指定 tag v1.6.5 → 维持PATCH v1.6.5。
+### 1.6.5.1 [14]模型多能力字段统一+S2视觉通道
+[能力设计] docs ce5bd7a21 [14]模型多能力字段统一+S2多媒体升级 能力收口input_modalities+output_modalities双维度, 枚举统一, agnes标注修正, 设置界面补输出模态 - 小欧-2026-11-08
+[设计修正] docs 03776b80c [14]一致性修正 全文复读修4处上下矛盾(§3.6 output模态改可勾选/§3.1+3.2补output_modalities双字段/§1.8 sensenova-u1.5命名统一) - 小欧-2026-11-08
+[迁移同步] docs ba337f3bb [14]数据迁移纳入config.yaml.example同步 §3.4.3+B21+验收12+里程碑M1+决策D12 - 小欧-2026-11-08
+[设计审计] docs 530291352 [14]第3/4章设计代码审计补全为真实完整代码(3.1_models_of/3.2_add_model/3.3迁移钩子/3.10前端output/4.3 vision.py/4.4 B19/4.5 B20) - 小欧-2026-11-08
+[S2后端] feat 3eeeb4b3b S2视觉通道+能力字段统一后端实施(model_service能力位拆input/output+新vision.py+message_builder/step/loop接视觉) - 小欧-2026-11-08
+[S2前端] feat a10203d50 S2设置界面能力双维度inputModalities+outputModalities前端F1-F6+types字段统一/输出模态行/模型库输出列 - 小欧-2026-11-08
+[布局统一] refactor 56a55da8f 设置页①②③标题行布局统一+②标题改名+能力标签改输入模态 - 小欧-2026-11-08
+[会审复核] fix dd0c9b47f 模型多能力字段统一+S2视觉通道三堂会审复核修复(DTO双维度/迁移钩子/配置根ai/图片展开时机与范围) - 小欧-2026-11-08
+[10号文档] docs 6b1198978 [10]号文档 v15修订(配置根ai/展开点移位/展开范围全量)+删除S0-Bug排查文档 - 小欧-2026-11-08
+[会审报告] docs 0b9913382 三堂会审报告[14]模型多能力字段统一+S2多媒体 - 小欧-2026-11-08
+[§13追加] docs b02a0c430 [14]设计文档追加§13三堂会审整改(探测结论分级/单一能力真源) - 小欧-2026-11-08
+[阶段审核] docs 20e3780c4 [10] S2阶段设计审核与梳理 确证本地未实现+能力判定对齐model_service+版本v15 - 小欧-2026-11-07
+### 1.6.5.2 媒体链路P1~P4(基础层/传输/门控/质量)
+[媒体基础层] feat 29d52c3f7 媒体基础层P1-P3(模态词汇归一+媒体part统一构造点+传输探测落库) - 小欧-2026-11-08
+[媒体传输P4] feat 63c3e0174 媒体传输P4(外链直传+本机压缩+media配置组设置页媒体Tab) - 小欧-2026-11-08
+[外链门控] fix 15353ee3f 媒体外链门控(未探测按只内联+探测返回url_tested+传输列四态与配置说明改写) - 小欧-2026-11-08
+[探测质量] fix aa29cb58e 媒体探测与传输(结论分级/单一能力真源/四态提示/EXIF方向) - 小欧-2026-11-08
+[术语统一] refactor c4500201c 模型库术语与提示统一(传输→图片接收/内联·外链就地定义/toast只留短结论) - 小欧-2026-11-08
+### 1.6.5.3 图片实测链设置页化
+[实测迁址] refactor 087f8760f settings2 图片实测迁入②选中模型参数, 模型库撤图片接收列; 词表抽mediaProbeText单源, 实测后回填mtime - 小欧-2026-11-09
+[图片行整改] fix b1798f495 settings2 图片行整改(按钮紧跟结论, 提示拆判定/内联/外链/定论逐行, 副行撤外链未测, 词表重写) - 小欧-2026-11-09
+[三徽标] fix 60e1001fc settings2 图片实测行改三徽标(内联/外链/输出能力 绿✓红✗灰未测, 按钮随排) - 小欧-2026-11-09
+[Image_URL] feat b7d690fdf 图片实测链 实测迁②Image_URL/外链徽标四态url_err/验证腿耗时token结构化落库/默认Bing图 - 小欧-2026-11-09
+[vision补准] fix 3530792f3 vision 裸链接补查询参数防丢参/「转发图片外链」notice逐句补准(超出静默/未测不留说明/内网保留地址) - 小欧-2026-11-09
+### 1.6.5.4 [15]输出模态生成验证腿(图/视频双腿)
+[设计落盘] docs eb7ada450 [15]设计文档 含输入侧实证/生成端点全景/Phase A双腿设计(t2i+i2i)/§七实施代码与落点(三堂会审定稿6处整改)/验收9条 - 小欧-2026-11-09
+[契约定稿] docs 1cb7e964e [15]输出模态生成验证腿设计 契约与代码对齐定稿(REJECT_STATUS单源/probe-output后端闸门/chatLegMuted单谓词/runProbeLeg单入口/输出模态行文案同步/180s超时/i2i图源风险/验收12条) - 小欧-2026-11-09
+[双腿实测] feat 7e5418218 probe-output 生成验证支持图/视频双腿实测(新增generation_client单点generate_image/generate_video提交+轮询, probe_output按输出模态分组落库, 前端双腿徽标+结论词) - 小欧-2026-11-09
+[基线差值] fix 292e73019 model_service 输入图片腿补基线差值判定(厂商不报image_tokens时不误判未验证)+默认检测图源ico改png - 小欧-2026-11-09
+[token口径] fix 0ec577ede model_service 图像token只查输入侧+基线差值优先(kilo网关completion.image_tokens恒0导致误判不支持) - 小欧-2026-11-09
+[付费单列] feat 1092fc554 model_service 401/403需登录付费账号单列paid_model_required并给可执行提示 - 小欧-2026-11-09
+[回执常驻] feat 2476a9bc8 model_service 验证回执常驻(model_meta.last_probe, 未定原因贴验证按钮右侧) - 小欧-2026-11-09
+[会审整改] fix 15a35f7ca probe-output 会审整改(生成腿skipped独立未执行态+FUNCTIONS.md订正mode/600s+素材不可达判定收窄+反代超时入部署FAQ) - 小欧-2026-11-09
+[只读徽标] feat 0532b8b60 settings2 输出模态改只读徽标/4枚齐显(声明橙/未声明灰,去「生成」后缀)/标签单源OUTPUT_MODALITY_LABEL四处同源/撤output编辑链 - 小欧-2026-11-09
+### 1.6.5.5 LLM 429限流分级与冷却记忆
+[设计落盘] docs e621f36b3 [15]LLM429限流分级处理与冷却记忆优化设计 - 小欧-2026-11-08
+[四态实施] feat 2c50f9d65 LLM429四态处理+冷却记忆+暂停帧(D态冷却注册表/provider+model冷却/词表补强/pause帧/限额限速文案) - 小欧-2026-11-08
+[商汤误判] fix fabaf6537 error_classifier+model_cooldown 修复商汤429 token_plan_entitlement_exhausted误判为限速可重试(实为配额耗尽)+补冷却观测日志+三堂会审修复3处缺陷 - 小欧-2026-11-09
+[日志修正] fix 497cafd4c error_classifier 裸429兜底debug日志去多余f前缀(ruff F541) - 小欧-2026-11-09
+[分支合并] merge f334f0a0a master 合并origin/master(LLM429冷却记忆+错因分类)与本地settings2整改, FUNCTIONS.md版本表按版次对齐 - 小欧-2026-11-09
+### 1.6.5.6 settings2 深度重构
+[模块拆分] refactor cf8156587 settings2 useSettings拆为编排壳+11个职责模块, SettingsPage壳化 - 小欧-2026-11-09
+[脏态修复] fix b75267ed6 settings2 参数脏态补删键判定+数字框null守卫+死代码清理 - 小欧-2026-11-09
+### 1.6.5.7 启动链整顿与脚本治理
+[端口迁移] refactor 1d38fba28 开发端口8000→8100 统一经env BACKEND_PORT, 避OpenCode vLLM探针刷404; 打包链run_server.py不动 - 小欧-2026-11-08
+[双入口] feat 95eac49e3 启动脚本拆双入口(start.bat=uvicorn --reload / start_watch.bat=watchfiles, E2E固定watch) - 小欧-2026-11-08
+[改名同步] refactor 246420e0a start.bat更名start_uvicorn.bat, 同步脚本注释/AGENTS/README/文档引用 - 小欧-2026-11-08
+[补装watchfiles] fix d37c84d5b start_dev.ps1 启动器自检并自动补装watchfiles, 改python -m watchfiles免PATH依赖 - 小欧-2026-11-08
+[日志对齐] fix 1c671d992 start_dev.ps1 uvicorn分支补--log-level与run_server.py控制台对齐, access日志不再刷控制台 - 小欧-2026-11-08
+[logger收口] fix dfb74d60b main.py startup补调setup_uvicorn_loggers, 裸uvicorn与run_server同一收口, --log-level单独不够因10s热重载刷DEBUG - 小欧-2026-11-08
+[残留清树] fix 6063b3d88 start_dev.ps1 启动前按端口清残留树, 关窗不级联清uvicorn --reload子树会抢同端口(SO_REUSEADDR实测三实例同绑) - 小欧-2026-11-08
+[bat修正] fix 470640c65 start_frontend.bat 本机无pwsh改powershell, 注释改纯ASCII避cmd.exe按代码页误读中文REM - 小欧-2026-11-08
+[main注释] docs 8902df50e 三堂会审整改 main.py startup注释3行压2行(注释≤2行规约) - 小欧-2026-11-08
+[e2e复用] refactor b1ce587eb 三堂会审整改 fre2e_21复用API_BASE(DRY)+vite残留过期注释 - 小欧-2026-11-08
+### 1.6.5.8 注释治理与version.txt记录
+[注释清理] docs e971a916b 注释清理文档号/章节号/任务号等不可追溯标记, 注释只留技术结论+署名日期 - 小欧-2026-11-08
+[汇总重记] docs e103e2add/2ab9d1e24/689588a3b version.txt先写v1.6.5/v1.6.6两段汇总后整体撤销, 本次按用户指令重记v1.6.5 - 小欧-2026-11-09
 v1.6.4
 发布时间: 2026-11-07 22:44:54 - 小欧-2026-11-07 (原 2026-11-06 13:07:26 首次记录 45 个 commit; 追加 11-07 附件域与三入口重构 28 个 commit 后, 按本次 tag 前提交时间更新)
 ## v1.6.3汇总 变更汇总(45个commit: refactor3/fix20/docs20/feat2) - 小欧-2026-11-06
