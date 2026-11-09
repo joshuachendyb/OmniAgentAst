@@ -22,6 +22,9 @@
 //   ②新增 withDeclaredMeta：基线补厂商声明窗口与输出上限（用户值优先，声明值仅兜底），
 //     使模型库勾选进来的模型在②参数区也有一条可编辑的 context_length 行 — 小欧-2026-11-01
 // 2026-11-08 小欧 - 新增 KNOWN_OUTPUT_MODALITY_VALUES 单源（输出行未知值灰标 + setter 保留非可选项） — 小欧-2026-11-08
+// 2026-11-09 小欧 - OUTPUT_MODALITY_OPTIONS 补 audio=音频生成（实库 kilo/lyria 音频输出）；未知值域收窄 text/file — 小欧-2026-11-09
+// 2026-11-09 小欧 - OUTPUT 再补 text=文本：4 枚徽标齐显(声明橙/未声明灰)，未知值域仅剩 file — 小欧-2026-11-09
+// 2026-11-09 小欧 - 输出标签去「生成」后缀, 四枚与输入侧同词(文本/图片/视频/音频) — 小欧-2026-11-09
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -186,15 +189,24 @@ export const CAPABILITY_OPTIONS = [
   { label: '文件', value: 'file' },
 ];
 
-// 2026-11-08 小欧: 输出模态勾选枚举（生成输出能力）——
-//   产出场景只勾 image/video（生图/生视频），text/file/audio 一般不出现在输出。
-//   与 CAPABILITY_OPTIONS 共用字段值域 {text,image,file,video,audio}，但 output 只提供可产出项。
+// 2026-11-08 小欧: 输出模态徽标渲染源——
+//   与 CAPABILITY_OPTIONS 共用字段值域 {text,image,file,video,audio}，只列可产出维度；
+//   标签与输入侧同词（用户指定不带「生成」后缀）。
+//   2026-11-09 小欧: 补 audio；text 补位成 4 枚齐显
+//   (声明橙/未声明灰统一, 不再走未知值英文 Tag 通道)，唯一未知值只剩 file — 小欧-2026-11-09
 export const OUTPUT_MODALITY_OPTIONS = [
-  { label: '图片生成', value: 'image' },
-  { label: '视频生成', value: 'video' },
+  { label: '文本', value: 'text' },
+  { label: '图片', value: 'image' },
+  { label: '视频', value: 'video' },
+  { label: '音频', value: 'audio' },
 ];
 
-// 2026-11-08 小欧 - 输出侧已知值集合（与 OUTPUT_MODALITY_OPTIONS 同源，text/file/audio 属未知值→只读灰标）
+// 2026-11-09 小欧 - 输出模态中文标签单源(生效卡/模型库列/②输出行同源渲染, 未知名回退原词) — 小欧-2026-11-09
+export const OUTPUT_MODALITY_LABEL: Readonly<Record<string, string>> =
+  Object.fromEntries(OUTPUT_MODALITY_OPTIONS.map((o) => [o.value, o.label]));
+
+// 2026-11-08 小欧 - 输出侧已知值集合（与 OUTPUT_MODALITY_OPTIONS 同源，未知值→只读灰标）
+// 2026-11-09 小欧 - audio/text 入已知值(随徽标补位), 未知值域收窄至 file — 小欧-2026-11-09
 export const KNOWN_OUTPUT_MODALITY_VALUES: ReadonlySet<string> = new Set(
   OUTPUT_MODALITY_OPTIONS.map((o) => o.value)
 );

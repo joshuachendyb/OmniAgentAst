@@ -46,6 +46,8 @@
 // 2026-11-08 小欧 - 探测结果按 conclusive 分级(未测成不当结论), 外链是否测过改读结构化 url_tested, 切厂商清探测态 — 小欧-2026-11-08
 // 2026-11-08 小欧 - 列名「传输」→「图片接收」(主行结论+副行通道), 按钮「测」→「实测」, toast 只留短结论 — 小欧-2026-11-08
 // 2026-11-08 小欧 - 图片接收列与行内实测整体撤除（实测迁至②选中模型参数）；本表只留厂商声明维度 — 小欧-2026-11-08
+// 2026-11-09 小欧 - 输出模态列「音频生成」补位(实库 kilo/lyria out=[text,audio]), OUTPUT_LABEL 增 audio 中文标签 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 本地 OUTPUT_LABEL 撤除改用 modelUtils 单源映射, 标签去「生成」后缀与输入侧同词 — 小欧-2026-11-09
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -82,7 +84,7 @@ import { ErrorType, showMessage, showSuccess } from '@/services/error/handler';
 import ZenVerifyModal from './ZenVerifyModal';
 import { SectionTitle } from './SectionTitle';
 // 2026-10-03 小欧 - 免费判定自 utils/modelUtils 导入（组件内零重定义，与单测同源）— 小欧 2026-10-03
-import { isFreeModel } from '../utils/modelUtils';
+import { isFreeModel, OUTPUT_MODALITY_LABEL } from '../utils/modelUtils';
 
 interface Props {
   providers: ProviderEntry[];
@@ -175,11 +177,7 @@ const readOutputModalities = (m: RemoteModelItem): string[] => {
     : [];
 };
 
-// 2026-11-08 小欧: 输出模态展示标签（生图/生视频"生成"徽标，与输入模态分列）
-const OUTPUT_LABEL: Record<string, string> = {
-  image: '图片生成',
-  video: '视频生成',
-};
+// 2026-11-09 小欧: 本地 OUTPUT_LABEL 撤除, 改用 modelUtils OUTPUT_MODALITY_LABEL 单源(②行/生效卡/本列三处同源, 未知名回退原词) — 小欧-2026-11-09
 
 const renderOutputTags = (m: RemoteModelItem) => {
   const outs = readOutputModalities(m);
@@ -192,7 +190,7 @@ const renderOutputTags = (m: RemoteModelItem) => {
   }
   return outs.map((v) => (
     <Tag key={v} style={TAG_STYLE}>
-      {OUTPUT_LABEL[v] ?? v}
+      {OUTPUT_MODALITY_LABEL[v] ?? v}
     </Tag>
   ));
 };

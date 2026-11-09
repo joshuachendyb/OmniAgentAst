@@ -4,11 +4,13 @@
 // 2026-09-21 小欧 - 删掉冗余"当前模型"行（该信息已移至模型Tab ①选择器上方独立显示）
 // 2026-11-08 小欧 - 布局优化：添加模型/Provider 按钮上移至①标题行（SettingsPage grid 居中，与②同款）；
 //   能力标签从独立行并入下拉行（原按钮位置），消除垂直冗余行
+// 2026-11-09 小欧 - 输出模态标签换单源映射 OUTPUT_MODALITY_LABEL(撤本地 image/video 硬编码三元, 去「生成」后缀, 未知名回退原词) — 小欧-2026-11-09
 import React from 'react';
 import { Select, Tag } from 'antd';
 import { settingsControl } from '@/theme/settingsTokens';
 import { Spacing } from '@/utils/stepStyles';
 import type { ProviderEntry } from '@/services/api/model.api';
+import { OUTPUT_MODALITY_LABEL } from '../utils/modelUtils';
 
 interface Props {
   providers: ProviderEntry[];
@@ -57,7 +59,8 @@ export const ModelSelector: React.FC<Props> = ({
       ))}
       {(current?.output_modalities ?? []).map((c) => (
         <Tag key={`out-${c}`} color="orange">
-          {c === 'image' ? '图片生成' : c === 'video' ? '视频生成' : c}
+          {/* 2026-11-09 小欧: 标签换 modelUtils 单源映射(去「生成」后缀, 与②行/生效卡/模型库列同源) — 小欧-2026-11-09 */}
+          {OUTPUT_MODALITY_LABEL[c] ?? c}
         </Tag>
       ))}
     </div>

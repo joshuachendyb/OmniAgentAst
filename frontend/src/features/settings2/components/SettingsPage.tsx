@@ -141,6 +141,8 @@
 // 2026-11-09 小欧 - 固定验证方法说明(判定/内联/外链/外链取证)移至「图片实测」行名 tip; 徽标 tooltip 只留定论/时间/取证 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 外链徽标增警示态：厂商抓图失败(url_err,已请求未取证)黄warning+?符号；未发请求仍灰字无符号 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 行名改「输入图片能力验证」按钮改「验证」；徽标tip分段:token义/两腿响应(耗时+token)/验证时间(user定版) — 小欧-2026-11-09
+// 2026-11-09 小欧 - 输出模态行改只读徽标(按厂商/配置声明亮/灰, 无实测腿不可实测):
+//   撤 outputModalities 勾选编辑与保存链, ②区输出能力仅展示 — 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
@@ -385,13 +387,10 @@ const SettingsPage: React.FC = () => {
           )
         ).filter(Boolean).length +
         state.model.removedParams.length +
+        // 2026-11-09 小欧: 输出模态改只读, 页面脏计数只看输入模态 — 小欧-2026-11-09
         (isCapsDirty(
           state.model.inputModalities,
           state.model.inputModalitiesBaseline
-        ) ||
-        isCapsDirty(
-          state.model.outputModalities,
-          state.model.outputModalitiesBaseline
         )
           ? 1
           : 0) +
@@ -603,9 +602,7 @@ const SettingsPage: React.FC = () => {
     const urlLeg =
       !urlTested && !urlErr
         ? '未发起（Image_URL 为空）'
-        : `响应 ${
-            media?.url_ms != null ? probeMsText(media.url_ms) : '—'
-          }，${
+        : `响应 ${media?.url_ms != null ? probeMsText(media.url_ms) : '—'}，${
             urlErr
               ? '抓图失败（未取证）'
               : media?.url_tokens != null
@@ -919,7 +916,8 @@ const SettingsPage: React.FC = () => {
                 {media?.probed_at && (
                   <>
                     <div>
-                      图片 token＝厂商把图片折算的输入 token，&gt;0＝图真进了上下文
+                      图片 token＝厂商把图片折算的输入
+                      token，&gt;0＝图真进了上下文
                     </div>
                     <div>内联腿：{inlineLeg}</div>
                     <div>外链腿：{urlLeg}</div>
@@ -1047,17 +1045,33 @@ const SettingsPage: React.FC = () => {
             </span>
           </Tooltip>
         </div>
-        {/* 2026-11-08 小欧: 输出模态行（生成输出能力：生图/生视频，与输入模态分维度） */}
+        {/* 2026-11-09 小欧: 输出模态行改只读徽标(声明亮/未声明灰)：output 仅厂商/配置声明，
+          无探测腿不可实测, 本页不可编辑(添加模型流程的声明入口不受影响) */}
         <div style={settingsRowStyle}>
-          <span style={settingsLabelStyle}>输出模态</span>
+          <Tooltip title="按厂商/配置声明只读展示（生图/生视频无实测腿，不提供编辑）">
+            <span style={settingsLabelStyle}>输出模态</span>
+          </Tooltip>
           <span style={{ flex: 1 }}>
-            <Checkbox.Group
-              value={state.model.outputModalities}
-              disabled={envManaged}
-              options={OUTPUT_MODALITY_OPTIONS}
-              onChange={(v) => s.setOutputModalities(v as string[])}
-            />
-            {/* 2026-11-08 小欧: 非可选项（text/audio 等）灰色只读 Tag——与输入模态行同款 */}
+            {OUTPUT_MODALITY_OPTIONS.map((o) => (
+              <Tag
+                key={o.value}
+                // 2026-11-09 小欧: 声明值=生效卡同款橙色底徽标, 未声明=灰字(与次要文字同层级) — 小欧-2026-11-09
+                color={
+                  state.model.outputModalities.includes(o.value)
+                    ? 'orange'
+                    : undefined
+                }
+                style={{
+                  marginLeft: Spacing.XS,
+                  color: state.model.outputModalities.includes(o.value)
+                    ? undefined
+                    : Colors.TEXT.SECONDARY,
+                }}
+              >
+                {o.label}
+              </Tag>
+            ))}
+            {/* 2026-11-09 小欧: 非可选项(file 等未知值)灰色只读 Tag——text 入徽标后未知值域只剩 file */}
             {state.model.outputModalities
               .filter((v) => !KNOWN_OUTPUT_MODALITY_VALUES.has(v))
               .map((v) => (
@@ -1073,10 +1087,6 @@ const SettingsPage: React.FC = () => {
                 </Tag>
               ))}
           </span>
-          {isCapsDirty(
-            state.model.outputModalities,
-            state.model.outputModalitiesBaseline
-          ) && <DirtyDot />}
         </div>
         <div data-section="provider-config">
           {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}

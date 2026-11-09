@@ -9,6 +9,7 @@
 // 2026-09-24 19:15:58 小欧 - DRY收口：onOk改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
 // 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一之模型卡去重排: 模型名/标题/全局默认三组重复只留一处; 「更换模型」提至标题行右侧(动作贴对象); 能力/作用改 label:value 定宽对齐; 状态文字仅异常态出现; 「使用中」Tag 改小圆点+文字 — 小欧-2026-10-11
 // 2026-11-08 小欧 - 能力拆双维度: 卡片能力 tags 改读 input_modalities, output 生图/生视频补"生成"徽标 — 小欧-2026-11-08
+// 2026-11-09 小欧 - 输出徽标标签换 modelUtils 单源映射(补音频生成); ②输出行同款橙色底, 三处渲染同源 — 小欧-2026-11-09
 import React, { useState } from 'react';
 import { Button, Tag } from 'antd';
 import {
@@ -26,6 +27,7 @@ import {
 } from '@/services/error/handler';
 import { useApp } from '@/contexts/AppContext';
 import { ModelSwitchModal } from './ModelSwitchModal';
+import { OUTPUT_MODALITY_LABEL } from '../utils/modelUtils';
 import type { SessionModelOverride } from '@/types/chat';
 import type { ProviderEntry } from '@/services/api/model.api';
 
@@ -237,6 +239,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
                 </Tag>
               ))}
               {outputCapabilities.map((c) => (
+                // 2026-11-09 小欧: 标签换 modelUtils 单源映射(补音频生成), 橙色徽标语义=生效模型声明的输出能力 — 小欧-2026-11-09
                 <Tag
                   key={`out-${c}`}
                   color="orange"
@@ -245,11 +248,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
                     marginRight: Spacing.SM,
                   }}
                 >
-                  {c === 'image'
-                    ? '图片生成'
-                    : c === 'video'
-                      ? '视频生成'
-                      : c}
+                  {OUTPUT_MODALITY_LABEL[c] ?? c}
                 </Tag>
               ))}
             </span>

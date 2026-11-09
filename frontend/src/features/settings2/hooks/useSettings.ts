@@ -106,6 +106,8 @@
 //   ②参数区 context_length 行由此恒可编辑且默认显示厂商声明窗口。详见
 //   doc-11月优化/模型参数显示链路分析报告-小欧-2026-11-01.md 问题 1/2 - 小欧-2026-11-01
 // 2026-11-08 小欧 - 补全 setOutputModalities 保留非可选项(text/audio)，原只留 onChange 项致勾「图片生成」即丢 text — 小欧-2026-11-08
+// 2026-11-09 小欧 - 输出模态改只读徽标: 撤 setOutputModalities setter/导出; 保存链不再送 output_modalities
+//   (body/类型/基线/缓存回写撤), 脏判定与脏计数剔除 output 检查; 加载链 outputModalities 保留供徽标显示 — 小欧-2026-11-09
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -121,8 +123,6 @@ import {
   validate,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
-  // 2026-11-08 小欧: 输出侧已知值集合（setter 保留非可选项）
-  KNOWN_OUTPUT_MODALITY_VALUES,
   // 2026-09-24 小欧 - ②能力归一/保存转换（modelUtils 单源，与 SettingsPage 共用词表）- 小欧-2026-09-24
   normalizeCaps,
   capsForSave,
@@ -455,7 +455,9 @@ export function useSettings() {
                     ...(current?.input_modalities ?? []),
                   ]),
                   outputModalities: [...(current?.output_modalities ?? [])],
-                  outputModalitiesBaseline: [...(current?.output_modalities ?? [])],
+                  outputModalitiesBaseline: [
+                    ...(current?.output_modalities ?? []),
+                  ],
                   envOverride,
                   providerConfig,
                 },
@@ -576,14 +578,11 @@ export function useSettings() {
     const modelDirty = Object.values(
       isDirty(state.model.params, state.model.baseline, state.model.envOverride)
     ).filter(Boolean).length;
+    // 2026-11-09 小欧: 输出模态改只读徽标, 脏计数只看输入模态 — 小欧-2026-11-09
     const capsDirty = isCapsDirty(
       state.model.inputModalities,
       state.model.inputModalitiesBaseline
-    ) ||
-      isCapsDirty(
-        state.model.outputModalities,
-        state.model.outputModalitiesBaseline
-      )
+    )
       ? 1
       : 0;
     // 2026-09-24 小欧 - ①removedParams 每项计 1（删键是独立待存变更，计入「保存全部(N 项)」计数）- 小欧-2026-09-24
@@ -604,8 +603,6 @@ export function useSettings() {
     state.model.envOverride,
     state.model.inputModalities,
     state.model.inputModalitiesBaseline,
-    state.model.outputModalities,
-    state.model.outputModalitiesBaseline,
     state.model.removedParams,
     state.model.providerDraft,
   ]);
@@ -819,15 +816,10 @@ export function useSettings() {
       );
       // 2026-09-23 小欧 - 能力脏也算可保存；★空 changed 不带 model_params
       //   （后端 model_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
-      const capsChanged =
-        isCapsDirty(
-          state.model.inputModalities,
-          state.model.inputModalitiesBaseline
-        ) ||
-        isCapsDirty(
-          state.model.outputModalities,
-          state.model.outputModalitiesBaseline
-        );
+      const capsChanged = isCapsDirty(
+        state.model.inputModalities,
+        state.model.inputModalitiesBaseline
+      );
       // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 model_params，只送 remove_params）
       const hasRemovals = state.model.removedParams.length > 0;
       if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
@@ -842,7 +834,6 @@ export function useSettings() {
         param_options?: Record<string, string[]>;
         // 2026-11-08 小欧: capabilities → input/output 双维度
         input_modalities?: string[];
-        output_modalities?: string[];
         // 2026-09-24 小欧 - ①键级删除名单（与 model_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
         remove_params?: string[];
       } = {};
@@ -868,10 +859,10 @@ export function useSettings() {
       }
       // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
       //   （state 恒含 text，直接送会让纯文本模型落 ['text'] 而非隐含默认的空）- 小欧-2026-09-24
-      // 2026-11-08 小欧: 能力双维度提交 input/output
+      // 2026-11-09 小欧: 输出模态改只读徽标, body 只送 input_modalities(撤 output 提交: 无编辑入口后
+      //   回写=无意义写入), 后端对缺省键不整块替换, 既有 output_modalities 保真不动 — 小欧-2026-11-09
       if (capsChanged) {
         body.input_modalities = capsForSave(state.model.inputModalities);
-        body.output_modalities = [...state.model.outputModalities];
       }
       setSaving(true);
       try {
@@ -908,7 +899,7 @@ export function useSettings() {
         // 2026-09-24 小欧 - ①保存成功后清空 removedParams；②capabilitiesBaseline 存归一态（与 state 一致防假脏）；
         //   providers 缓存存保存态 capsForSave（空→[] 防 tags 假显文本；有增强→['text',...extras]）- 小欧-2026-09-24
         const capsSaved = capsForSave(state.model.inputModalities);
-        const outSaved = [...state.model.outputModalities];
+        // 2026-11-09 小欧: 输出模态撤编辑链, 保存后仅回写 input 缓存/基线 — 小欧-2026-11-09
         // 2026-09-25 小欧 - 修 F10：函数式更新。baseline 仍存**本次实际提交的那份** params（落盘的就是
         //   它，用新值当基线等于把未保存的编辑当成已保存）；但 isDirty 按**最新** params 重算，
         //   请求在飞期间的新编辑不会被硬置的 false 吞掉（原先它变成保存按钮都点不亮的隐形脏）。
@@ -917,7 +908,6 @@ export function useSettings() {
           inputModalitiesBaseline: normalizeCaps([
             ...state.model.inputModalities,
           ]),
-          outputModalitiesBaseline: [...state.model.outputModalities],
           removedParams: [],
           // 2026-11-01 小欧 - R1(三堂会审批准): 删除键已真落盘, 回显快照同步清, 不留死亡数据 - 小欧-2026-11-01
           removedDrafts: {},
@@ -934,9 +924,8 @@ export function useSettings() {
                           model_params: { ...state.model.params },
                           range: { ...state.model.ranges },
                           param_options: { ...state.model.paramOptions },
-                          // 2026-11-08 小欧: providers 缓存回写能力双维度
+                          // 2026-11-09 小欧: 只回写 input(输出模态本页只读, 保存行为不改产物) — 小欧-2026-11-09
                           input_modalities: capsSaved,
-                          output_modalities: outSaved,
                         }
                   ),
                 }
@@ -1047,13 +1036,10 @@ export function useSettings() {
     //   hadParams 拆出是为了只在参数/能力真保存过时才弹参数保存提示，防误导文案）- 小欧-2026-09-27
     const hadParams =
       Object.values(dirtyMap).some(Boolean) ||
+      // 2026-11-09 小欧: 输出模态改只读, 保存前脏判定只看输入模态 — 小欧-2026-11-09
       isCapsDirty(
         state.model.inputModalities,
         state.model.inputModalitiesBaseline
-      ) ||
-      isCapsDirty(
-        state.model.outputModalities,
-        state.model.outputModalitiesBaseline
       ) ||
       state.model.removedParams.length > 0;
     const hasDraft = Object.keys(state.model.providerDraft).length > 0;
@@ -1308,44 +1294,10 @@ export function useSettings() {
         model: {
           ...s.model,
           inputModalities: next,
+          // 2026-11-09 小欧: 输出模态改只读, 输入脏判定不再联合 output 检查 — 小欧-2026-11-09
           isDirty:
             paramsDirty ||
             isCapsDirty(next, s.model.inputModalitiesBaseline) ||
-            s.model.outputModalities.length !==
-              s.model.outputModalitiesBaseline.length ||
-            isCapsDirty(
-              s.model.outputModalities,
-              s.model.outputModalitiesBaseline
-            ) ||
-            s.model.removedParams.length > 0,
-        },
-      };
-    });
-  }, []);
-
-  // 2026-11-08 小欧: 输出模态 setter（生图/生视频勾选，去重，isDirty 联合置脏）
-  // 2026-11-08 小欧 fix: 非可选项（text/audio 等）与输入侧同法保留——原 [...Set] 只留 onChange 项致切图即丢 text
-  const setOutputModalities = useCallback((uiValues: string[]) => {
-    setState((s) => {
-      const unknown = s.model.outputModalities.filter(
-        (v) => !KNOWN_OUTPUT_MODALITY_VALUES.has(v)
-      );
-      const next = [...new Set([...uiValues, ...unknown])];
-      const paramsDirty = Object.values(
-        isDirty(s.model.params, s.model.baseline, s.model.envOverride)
-      ).some(Boolean);
-      return {
-        ...s,
-        model: {
-          ...s.model,
-          outputModalities: next,
-          isDirty:
-            paramsDirty ||
-            isCapsDirty(next, s.model.outputModalitiesBaseline) ||
-            isCapsDirty(
-              s.model.inputModalities,
-              s.model.inputModalitiesBaseline
-            ) ||
             s.model.removedParams.length > 0,
         },
       };
@@ -1457,15 +1409,11 @@ export function useSettings() {
         const paramsDirty = Object.values(
           isDirty(params, baseline, s.model.envOverride)
         ).some(Boolean);
-        const capsDirty =
-          isCapsDirty(
-            s.model.inputModalities,
-            s.model.inputModalitiesBaseline
-          ) ||
-          isCapsDirty(
-            s.model.outputModalities,
-            s.model.outputModalitiesBaseline
-          );
+        // 2026-11-09 小欧: 输出模态改只读, 脏判定只看输入模态 — 小欧-2026-11-09
+        const capsDirty = isCapsDirty(
+          s.model.inputModalities,
+          s.model.inputModalitiesBaseline
+        );
         return {
           ...s,
           model: {
@@ -1601,8 +1549,8 @@ export function useSettings() {
     // 2026-09-24 小欧 - ①暴露 removeParam（参数行 × 删除，A 方案）- 小欧-2026-09-24
     removeParam,
     // 2026-11-08 小欧: 暴露 setInputModalities + setOutputModalities（能力双维度 setter）
+    // 2026-11-09 小欧: 撤 setOutputModalities 暴露(输出模态改只读徽标, 无编辑入口) — 小欧-2026-11-09
     setInputModalities,
-    setOutputModalities,
     resetParams,
     saveModelGroup,
     // 2026-09-24 小欧 - 暴露切换前强制保存（SettingsPage 删除确认前置调用，防删除后 load() 丢未存改动）
