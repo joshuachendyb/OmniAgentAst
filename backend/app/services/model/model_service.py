@@ -1236,7 +1236,11 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
     except Exception as e:
         return False, f"network_error: {type(e).__name__}: {e}", False
     if resp.status_code != 200:
-        return False, f"http_{resp.status_code}: {resp.text[:160]}", resp.status_code in generation_client.REJECT_STATUS
+        text = resp.text
+        # 「需登录/付费账号」与「key 无效」是两件事, 提示要指到该做的动作 — 小欧-2026-11-09
+        if resp.status_code in (401, 403) and "sign in" in text.lower():
+            return False, f"paid_model_required: {text[:160]}", False
+        return False, f"http_{resp.status_code}: {text[:160]}", resp.status_code in generation_client.REJECT_STATUS
     try:
         data = resp.json()
     except Exception:
@@ -1283,6 +1287,8 @@ def _probe_hint(ev: str) -> str:
         return "轮询查任务失败，稍后重试"
     if ev == "bad_json":
         return "返回不是 JSON，检查接口地址"
+    if ev.startswith("paid_model_required"):
+        return "该模型需登录付费账号，API Key 不足以调用"
     if ev == "no_image_token_field":
         return "厂商未回报图像 token，基线差值也取不到"
     if ev.startswith("image_tokens_ambiguous"):
