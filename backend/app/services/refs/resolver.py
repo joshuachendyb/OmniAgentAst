@@ -23,6 +23,7 @@
 # 2026-11-07 小欧 跨会话放行: 跨会话附件改为 auto_promote(自动升级为全局, 不再折算 missing),
 #   注入成功即 touch_usage 记账 —— 「最近用过」的唯一真源 — 小欧-2026-11-07
 # 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+# 2026-11-09 小欧 S3: 真抽取成功/失败回填抽取态(mark_extract_result, 在 clip_text 之前取 len) — 小欧-2026-11-09
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -40,7 +41,11 @@ from fastapi import HTTPException
 
 # 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
 from app.attachments import extract
-from app.attachments.attachment_service import get_attachment_scoped, touch_usage
+from app.attachments.attachment_service import (
+    get_attachment_scoped,
+    mark_extract_result,
+    touch_usage,
+)
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
@@ -127,8 +132,14 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     try:
         text = extract.build_inject_text(att)
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
+        # 首次失败也回填抽取态(详情页可见), 然后照旧给回执
+        mark_extract_result(att["id"], 0, False)
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
+    # 仅"真抽取正文"(文本/富格式)成功才回填 ok —— 档案卡不改变抽取态,
+    #   避免占住 extract_status='none' 导致真抽取永久无法回填。
+    if not text.startswith("[附件档案卡·"):
+        mark_extract_result(att["id"], len(text), True)
     touch_usage(att["id"])
     # 2026-11-07 小欧 单条预算统一: text 也走 clip_text —— 未超限(len≤cap)原样返回, 故
     #   ≤read_max_bytes 的小文本仍全文注入; 超限则头尾摘录, 守住单条预算。原"text 跳过 clip"

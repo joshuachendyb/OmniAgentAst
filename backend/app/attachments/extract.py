@@ -5,6 +5,7 @@
 # 2026-11-06 小欧 S1: text 分支从 _text_card 换成 _text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
 # 2026-11-07 小欧 - 修复: _read_head_and_count 补 latin-1 兜底(与 _read_text_full 编码能力对齐),
 #   消除同文件 ≤/≥256KB 两侧解码不一致致的档案头乱码 — 小欧-2026-11-07
+# 2026-11-09 小欧 S3/S4: richdoc 真抽取(复用工具层四读取器) + video ffprobe 元数据(缺失降级) — 小欧-2026-11-09
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -12,12 +13,15 @@
   S0 全部     → 档案卡(本文件即完成; 任何类型上传后都能发送)
   S1 text     → _text_card 换成 _text_body(≤256KB 全文 / 超限档案头)
   S2 image    → 卡片只服务非视觉模型(视觉模型由 services/agent/vision.py 走 parts, 不经过本文件)
-  S3 richdoc  → _richdoc_card 换成 _richdoc_body(复用 read_pdf / read_docx / read_xlsx)
-  S4 video    → _video_card 增加 _video_meta(ffprobe; 缺失则降级, 不抛错)
+  S3 richdoc  → _richdoc_body(真抽取, 失败抛异常由 resolver 折算)
+  S4 video    → _video_meta(ffprobe 元数据; 缺失则降级, 不抛错)
 
 零 DB、零状态: 入参是 attachments 表的一行(dict), 返回 str。
 读盘复用 browse_service(唯一实现), 不另写文件读取。
 """
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +29,10 @@ from app.file_browse import browse_service as browse
 
 TEXT_INLINE_MAX = 256 * 1024      # 文本内联上限 256KB（超限走头尾摘录）
 ARCHIVE_HEAD_LINES = 40           # 档案头预览行数
+RICH_MAX_ROWS = 200               # 富格式单 sheet 注入行上限; 超出由模型用 read_xlsx 工具深读
+FFPROBE_TIMEOUT = 8               # 视频元数据探测超时(秒); 网络盘/大文件也不至于挂住请求
+
+_RICH_LABEL = {".pdf": "PDF", ".docx": "Word", ".xlsx": "Excel", ".pptx": "PowerPoint"}
 
 # 五分类后缀词典(唯一真源): service.py 据此组合上传白名单, 严禁另抄一份(DRY)
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
@@ -83,9 +91,9 @@ def build_inject_text(att: dict[str, Any]) -> str:
     if kind == "image":
         return _image_card(att)
     if kind == "richdoc":
-        return _richdoc_card(att)   # S3: 换成 _richdoc_body(att)
+        return _richdoc_body(att)
     if kind == "video":
-        return _video_card(att)     # S4: 卡片前插入 _video_meta 元数据段
+        return _video_card(att)
     return _binary_card(att)
 
 
@@ -153,25 +161,139 @@ def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
     return head, total
 
 
-def _text_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·文本]\n{_head(att)}\n"
-            f"说明: 已收到该文本文件。正文抽取未启用时，可用文件工具按上述路径读取。")
-
-
 def _image_card(att: dict[str, Any]) -> str:
     return (f"[附件档案卡·图片]\n{_head(att)}\n"
             f"说明: 当前模型无视觉能力，无法查看图片内容。"
             f"如需识别图中信息，请用文字描述或改用可读的文本/表格文件。")
 
 
-def _richdoc_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·富格式文档]\n{_head(att)}\n"
-            f"说明: 正文抽取未启用时，可用文件工具读取该路径，"
-            f"或把内容另存为 txt/csv 后再引用。")
+def _richdoc_body(att: dict[str, Any]) -> str:
+    """富格式正文(S3): 复用工具层四个读取实现(pdf/docx/xlsx/pptx), 不另写解析器(DRY)。
+
+    失败一律抛异常 —— 由 resolver 折算成 attachment_failed 回执,
+    不在本层吞掉(否则模型会收到半截内容却以为完整)。
+    """
+    stored = Path(att["stored_path"])
+    suffix = stored.suffix.lower()
+    text = _extract_richdoc(stored, suffix)
+    label = _RICH_LABEL.get(suffix, "文档")
+    return (f"[附件正文·{label}]\n{_head(att)}\n"
+            f"抽取说明: 以下为自动抽取文本, 版式/图片可能丢失; "
+            f"需要精确页码/整表请用文件工具读取上面的路径。\n"
+            f"正文:\n{text}")
+
+
+def _extract_richdoc(stored: Path, suffix: str) -> str:
+    """调工具层读取器并取出纯数据段; 工具返回 error 时抛出。"""
+    resp = _call_tool_reader(stored, suffix)
+    status = (resp.get("llm_data") or {}).get("status") or {}
+    if status.get("exec_code") == "error":
+        raise RuntimeError(status.get("detail") or "抽取失败")
+    data = resp.get("data") or {}
+    if suffix == ".xlsx":
+        return _sheet_text(data)
+    if suffix == ".pptx":
+        return _pptx_text(data)
+    text = str(data.get("text") or "").strip()
+    if not text:
+        raise RuntimeError("未抽取到文本（可能是扫描件或空文档）")
+    return text
+
+
+def _pptx_text(data: dict[str, Any]) -> str:
+    """PPT 幻灯片 → 文本: 每页一段, 含页码与正文。"""
+    slides = data.get("slides") or []
+    if not slides:
+        raise RuntimeError("演示文稿为空")
+    blocks: list[str] = []
+    for s in slides:
+        num = s.get("slide_num") or "?"
+        text = str(s.get("text") or "").strip()
+        blocks.append(f"## 第 {num} 页\n{text}")
+    return "\n\n".join(blocks)
+
+
+def _call_tool_reader(stored: Path, suffix: str) -> dict[str, Any]:
+    """延迟导入: 四个读取器各自带 pdfplumber/docx/openpyxl/pptx, 顶层导入会拖慢服务启动。"""
+    if suffix == ".pdf":
+        from app.tools.document.read_pdf import read_pdf
+        return read_pdf(str(stored))
+    if suffix == ".docx":
+        from app.tools.document.read_docx import read_docx
+        return read_docx(str(stored))
+    if suffix == ".pptx":
+        from app.tools.document.read_pptx import read_pptx
+        return read_pptx(str(stored))
+    from app.tools.document.read_xlsx import read_xlsx
+    return read_xlsx(str(stored))
+
+
+def _cell(v: Any) -> str:
+    """单元格转义: 换行/竖线/控制符压平, 避免注入 Markdown 表结构错行。
+    附件为不可信数据, 抽取文本一律视为文本而非结构, 不保留制表/换行等可控字符。"""
+    if v is None:
+        return ""
+    s = str(v)
+    s = s.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+    s = s.replace("|", "｜")
+    return "".join(ch if ch >= " " else " " for ch in s)
+
+
+def _sheet_text(data: dict[str, Any]) -> str:
+    """工作簿 → 文本表: 每 sheet 一段, 单 sheet 最多 RICH_MAX_ROWS 行。"""
+    sheets = data.get("sheets") or ([data] if "rows" in data else [])
+    blocks: list[str] = []
+    for sh in sheets:
+        name = sh.get("sheet_name") or "Sheet"
+        headers = [_cell(h) for h in (sh.get("headers") or [])]
+        all_rows = sh.get("rows") or []
+        rows = all_rows[:RICH_MAX_ROWS]
+        lines = [" | ".join(headers)] if headers else []
+        lines += [" | ".join(_cell(v) for v in row)
+                  for row in rows]
+        tail = "" if len(all_rows) <= RICH_MAX_ROWS else \
+            f"\n…（仅注入前 {RICH_MAX_ROWS} 行，完整数据请用文件工具读取）"
+        blocks.append(f"## {name}（{len(all_rows)} 行）\n" + "\n".join(lines) + tail)
+    if not blocks:
+        raise RuntimeError("工作簿为空")
+    return "\n\n".join(blocks)
+
+
+def _video_meta(stored: Path) -> dict[str, Any] | None:
+    """ffprobe 读时长/分辨率/编码。未安装或解析失败返回 None(降级, 不抛错)。"""
+    exe = shutil.which("ffprobe")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run(
+            [exe, "-v", "error", "-print_format", "json",
+             "-show_format", "-show_streams", str(stored)],
+            capture_output=True, timeout=FFPROBE_TIMEOUT, check=False,
+        )
+        if out.returncode != 0:
+            return None
+        data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        fmt = data.get("format") or {}
+        stream = next((s for s in data.get("streams") or [] if s.get("codec_type") == "video"), {})
+        return {
+            "duration": fmt.get("duration"),
+            "width": stream.get("width"),
+            "height": stream.get("height"),
+            "codec": stream.get("codec_name"),
+        }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
 
 
 def _video_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·视频]\n{_head(att)}\n"
+    meta = _video_meta(Path(att["stored_path"]))
+    if meta:
+        detail = (f"\n时长: {meta.get('duration') or '未知'} 秒"
+                  f"\n分辨率: {meta.get('width') or '?'}x{meta.get('height') or '?'}"
+                  f"\n编码: {meta.get('codec') or '未知'}")
+    else:
+        detail = "\n元数据: 未读取(本机无 ffprobe 或解析失败, 不影响其余功能)"
+    return (f"[附件档案卡·视频]\n{_head(att)}{detail}\n"
             f"说明: 当前不支持视频内容理解；如需处理请用文件工具按需读取。")
 
 

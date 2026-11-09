@@ -400,6 +400,50 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 ---
 
+### 3.9 附件服务（`app/attachments/`）(2026-11-10 新增 §, 小欧)
+
+附件从上传落盘到注入 prompt 的唯一链路：`attachment_service`（落盘/查/删/抽取状态）、`extract`（五分类与注入文本）、`collect`（产物收编）、`local_import`（同机导入）。纪律：**注入文本只在 `build_inject_text` 产生**；**读盘复用 `browse_service`，不另写解析器**；失败由 resolver 折算 `attachment_failed`，本层不吞。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `save_bytes` | 附件落盘唯一实现：sha256 去重（同会话同内容复用行）、写 `attachments/`、分类、落 DB | session_id: str, name: str, data: bytes | Dict（附件行） |
+| `rel_to_root` | 绝对落盘路径 → 相对 posix 路径（对外展示/引用口径） | stored_path: str | str |
+| `ensure_session_attachment_dir` | 确保默认工作区存在并返回其 `attachments/` 目录 | session_id: str | Path |
+| `classify` | 五分类唯一真源：image/video/richdoc/text/binary；扩展名优先，mime 仅无扩展名时辅助 | stored_path: Path, mime: str, size: int | str |
+| `build_inject_text` | 按 kind 生成注入文本（正文/档案卡），失败抛异常交 resolver 折算 | att: Dict | str |
+| `collect_artifact` | 产物收编：工作区内 `referenced`，区外复制为 `copied`，缺失报 `NOT_FOUND` | session_id: str, source_path: str | Dict |
+| `is_local_request` | 同机判定：直连对端回环/本机网卡地址（受信代理后才采信 XFF 最右一跳） | request: Request | bool |
+| `import_local` | 同机本地导入：仅同机可用，复用 `save_bytes`，路径限定可读根集合 | session_id: str, path: str, request: Request | Dict |
+| `mark_extract_result` | 抽取结果回写：`extract_status`/`extract_chars`（成功/失败各记一次） | attachment_id: str, chars: int, ok: bool | None |
+
+### 3.10 素材包（`app/material_packs/material_pack_service.py`）(2026-11-10 新增 §, 小欧)
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `list_packs` | 列出全部素材包（含条目），按更新时间倒序 | 无 | List[Dict] |
+| `create_pack` | 新建素材包；同名（忽略大小写）→ `PACK_NAME_CONFLICT` | name, note, group_name, items | Dict |
+| `update_pack` | 更新包信息/条目：传 `items` 整包覆盖，传 `[]` 清空，不传不动 | pack_id, name, note, group_name, items | Dict |
+| `delete_pack` | 删包及其条目行；磁盘文件保留 | pack_id: str | None |
+
+### 3.11 视觉通道（`app/services/agent/vision.py` + `media_payload.py`）(2026-11-10 新增 §, 小欧)
+
+`vision` 只做识别/判定/占位，`media_payload` 只造 part；**能力判定单一真源**（实测 > 声明），**wire 展开只在 `react_step` 落盘/日志之后**。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `supports_image_input` | 模型是否接受 image 入参：有实测按实测，无实测回落 `input_modalities` | llm_model | bool |
+| `accepts_inline_image` | 能否发内联图：实测 `none` 为 False，未测照发（不改变既有行为） | llm_model | bool |
+| `accepts_remote_url` | 能否发外链图：仅实测 `accept.image ∈ {url,both}` 为 True，未测一律 False | llm_model | bool |
+| `split_vision_refs` | 按 `kind=attachment 且 mime=image/*` 拆分 refs 为（文本, 图片） | refs: List | Tuple[List, List] |
+| `image_slot` | 生成图片占位 `[[IMAGE_ATTACHMENT:<id>]]`；无 id 退化为空串 | ref: Dict | str |
+| `expand_image_slots` | wire 展开：占位/显式外链 → OpenAI parts；都无则原样返回 str | text: str, allow_inline: bool, allow_url: bool | str \\| List |
+| `inline_limit_bytes` | 内联上限字节（`media.inline_limit_mb`，默认 2MB） | 无 | int |
+| `url_reject_reason` | 外链准入：本机/内网/保留/CGNAT/组播/非图片后缀 → 非空原因 | url: str | str |
+| `build_url_part` | 外链 part 构造（只放 URL，不下载不转码） | url: str | Tuple[Optional[Dict], str] |
+| `build_media_part` | 媒体 part 唯一构造：外链直传/压缩/内联/文字降级 | kind: str, attachment: Dict | Tuple[Optional[Dict], str] |
+
+---
+
 ## 四、工具辅助层（app/tools/）
 
 ### 4.1 工具函数公共辅助（tool_fc_helper.py）
@@ -756,6 +800,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.26 | 2026-11-10 | **新增 §3.9 附件服务 / §3.10 素材包 / §3.11 视觉通道**: 按 [10] 收口登记 `save_bytes`/`rel_to_root`/`ensure_session_attachment_dir`/`classify`/`build_inject_text`/`collect_artifact`/`is_local_request`/`import_local`/`mark_extract_result`；`list_packs`/`create_pack`/`update_pack`/`delete_pack`；`supports_image_input`/`accepts_inline_image`/`accepts_remote_url`/`split_vision_refs`/`image_slot`/`expand_image_slots`/`inline_limit_bytes`/`url_reject_reason`/`build_url_part`/`build_media_part` | 小欧 |
 | v5.25 | 2026-11-09 | **订正 §10.4 与代码对齐**: `VIDEO_MODE_I2V` 枚举值册写 `image` 误，代码真源恒为 `reference`；`VIDEO_POLL_TIMEOUT` 册写 500s 误，代码为 600s，并补记长请求部署约束（总窗≈23min，反向代理 read_timeout 须同级放行） | 小欧 |
 | v5.24 | 2026-11-09 | **新增 §10.4 生成端点单点**: `generation_client.generate_image` 入册（生图唯一 HTTP 出口，t2i/i2i 同端点同函数；探测腿与 Phase B 业务共用，禁直连 httpx）；同册登记 `REJECT_STATUS`（输入腿 `_probe_once` 改引用，拒绝状态集单源）/`IMAGE_PATH`/`VIDEO_PATH`/`PROBE_PROMPT`/`PROBE_I2I_PROMPT` | 小欧 |
 | v5.23 | 2026-11-08 23:45:00 | **§1.13 补登记 `log_and_print`**（小欧, 用户提示后补漏）: `logger/__init__.py` 公共函数（经 `__all__` 导出）——日志文件+控制台双通道单点输出, 收口"logger.info(msg)+print(msg)"为单点; 文件通道按"该行声明档位"落盘(>=阈值), 控制台通道=console_put 唯一一条, **上屏判定=精确匹配(==) logging.level**(非>=阈值); level 是"该行属于哪一档"的声明(默认 DEBUG), 业务/异常/取消/任务起止/冷却等观测行须显式传 level="WARNING" 才在 WARNING 档上屏; 同批在函数 docstring 写「level 上屏机制速查」+「公共函数说明」块。**同批三堂会审修复3处**: ①`error_classifier._subcategory_for_token` message 源统一(补 `error.response.text` 优先, 与 resource_exhausted 同源, 防测试桩/非 SDK str(error) 不含响应体); ②`model_cooldown.mark/clear` 删并存 `logger.info`(只用 log_and_print, 防 logger 与 _file_logger 共享文件 handler 致同一行写文件两次)+删死导入 logger; ③`llm_call` 冷却成功清零改无条件调用(clear 内部有守卫, 防"冷却已过期但条目残留"旧 hits 跳档) — 小欧-2026-11-08 |

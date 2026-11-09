@@ -22,6 +22,7 @@
 #   delete 合集条目匹配改 attachment_id + rel_to_root 相对路径为真、原绝对 path 子句永假; 
 #   list 非法 scope 由静默回落改 fail(INVALID_PARAM) — 小欧-2026-11-07
 # 2026-11-07 小欧 - 左栏标签对准: session 作用域排除任务产物溯源行(stid 非空归属 ai 栏), 消双栏重叠显示 — 小欧-2026-11-07
+# 2026-11-09 小欧 S3: 增 mark_extract_result 抽取态回填(首次成功/失败写 extract_status/extract_chars) — 小欧-2026-11-09
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -431,6 +432,26 @@ def clear_recent() -> int:
             "UPDATE attachments SET use_count = 0, last_used_at = NULL "
             "WHERE use_count > 0 OR last_used_at IS NOT NULL")
         return cur.rowcount or 0
+
+
+def mark_extract_result(attachment_id: str, chars: int, ok: bool) -> None:
+    """首次抽取后回填抽取态（S3）：供详情/文件页展示；不缓存正文。
+
+    只在 status='none' 时写一次 —— 后续每轮抽取是纯函数，重复 UPDATE 无意义。
+    best-effort: 状态回填不是数据路径, UPDATE 自身失败只记 WARNING,
+      不向上抛 —— 否则一次状态写失败会把已成功的抽取折算成 attachment_failed。
+    """
+    if not attachment_id:
+        return
+    try:
+        with db.get_conn("chat") as conn:
+            conn.execute(
+                "UPDATE attachments SET extract_status = ?, extract_chars = ? "
+                "WHERE id = ? AND extract_status = 'none'",
+                ("ok" if ok else "failed", max(0, int(chars)), attachment_id),
+            )
+    except Exception as e:  # noqa: BLE001 — best-effort 状态回填, 失败只留痕不阻断
+        logger.warning("[attachments] 抽取态回填失败 id=%s err=%s", attachment_id, e)
 
 
 def get_attachment(attachment_id: str) -> dict[str, Any] | None:
