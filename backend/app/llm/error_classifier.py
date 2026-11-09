@@ -35,6 +35,9 @@
      2026-10-28 小欧 429限流细分(缓刑vs打死): 新增QUOTA_EXCEEDED枚举(配额/余额耗尽→不可重试打死); RATE_LIMIT改可重试(429限流RPM/TPM瞬态→缓刑);
        429分类读服务商错误体error.type/code细分(rate_limit_error→RATE_LIMIT可重试, insufficient_quota/credit_balance_exhausted→QUOTA_EXCEEDED打死),
        修正"限流被误报配额用尽且一刀切不重试"的根因 — 小欧-2026-10-28
+     2026-11-08 小欧 设计[15]落码: _subcategory_for_token 词表补强(新增 throttling_exception/slow_down→RATE_LIMIT, resource_exhausted 二级判据按 message 含 daily 分配额/限速, message 关键词兜底 quota/balance→QUOTA); 签名加 error 参数, 调用点同步 — 小欧-2026-11-08
+     2026-11-08 小欧 用户裁定修复: 商汤 429 "token plan entitlement exhausted" 实为配额耗尽(报告[14]实测), 原 4/5 场景被误归 RATE_LIMIT 可重试→白打 L1 重试; 补 QUOTA 词表 token_plan_entitlement_exhausted + message 兜底 entitlement exhausted/token plan — 用户-2026-11-08
+     2026-11-08 小欧 三堂会审修复: _subcategory_for_token message 源统一——顶部 _msg 原仅 str(error), 与 resource_exhausted 分支用 error.response.text 不一致; 测试桩/非 SDK 抛错 str(error) 可能不含响应体, 补 _resp.text 优先(与 resource_exhausted 同源), str(error) 兜底(主路径 client_sdk 已把 server_msg 嵌入异常文本, 两者一致) — 小欧-2026-11-08
 """
 
 import json
@@ -101,20 +104,48 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
             SystemErrorCategory.RATE_LIMIT: "接口限流(RPM/TPM瞬态)",   # 文案与配额分离 — 小欧 2026-10-28
-            SystemErrorCategory.QUOTA_EXCEEDED: "接口配额/余额已用尽",  # 新增 — 小欧 2026-10-28
+            SystemErrorCategory.QUOTA_EXCEEDED: "接口限额/余额已用尽",  # 新增 — 小欧 2026-10-28
         }
         return mapping.get(self, "未知错误")
 
 
 # 429 细分 token → 分类(缓刑 vs 打死 二级判据) — 小欧 2026-10-28
-def _subcategory_for_token(token: str) -> Optional[SystemErrorCategory]:
+def _subcategory_for_token(token: str, error: Exception = None) -> Optional[SystemErrorCategory]:
     """按服务商 error.type/error.code 判定 429 细分: 配额/余额耗尽→QUOTA_EXCEEDED(打死),
-    限流/过载→RATE_LIMIT(缓刑); 无法识别返回 None(由调用方走裸429保守可重试) — 小欧-2026-10-28"""
+    限流/过载→RATE_LIMIT(缓刑); 无法识别返回 None(由调用方走裸429保守可重试) — 小欧-2026-10-28
+    2026-11-08 小欧 词表补强(设计[15]三堂会审): ①补 throttling_exception(Bedrock限流,必须重试)
+    /slow_down(OpenAI升速过快); ②resource_exhausted 二级判据(Gemini歧义: message 含 daily 归配额, 否则归限速);
+    ③message 关键词兜底(quota exceeded/balance/insufficient balance 文案型 → 配额), 仅作 429 上下文内兜底
+    2026-11-08 小欧 用户裁定修复: 商汤 429 "token plan entitlement exhausted" 实为配额耗尽(报告[14]实测), 原被误归
+    RATE_LIMIT 可重试(4/5场景)→白打 L1 重试; 补 QUOTA 词表 token_plan_entitlement_exhausted + message 兜底
+    entitlement exhausted/token plan — 用户-2026-11-08"""
     _t = (token or "").lower()
-    if _t in ("insufficient_quota", "credit_balance_exhausted", "quota_exceeded", "billing_error"):
+    # 2026-11-08 小欧 三堂会审: message 源统一——优先 error.response.text(与 resource_exhausted 分支一致),
+    #   测试桩/非 SDK 抛错时 str(error) 可能不含响应体, _resp.text 是可靠真源; str(error) 兜底(主路径 client_sdk
+    #   已把 server_msg 嵌入异常文本, 两者一致) — 小欧-2026-11-08
+    _msg = str(error or "").lower()
+    _resp = getattr(error, "response", None)
+    if _resp is not None:
+        _msg = (getattr(_resp, "text", "") or _msg).lower()
+    # 2026-11-08 小欧 用户裁定: 高置信度 message 兜底优先——服务商 message 是最具体描述,
+    #   entitlement exhausted/token plan/quota exceeded/insufficient balance 属明确配额语义词,
+    #   即使 error.type 被误标 rate_limit_error 也应以 message 真相归 QUOTA(商汤 token plan entitlement exhausted) — 用户-2026-11-08
+    if any(k in _msg for k in ("entitlement exhausted", "token plan", "quota exceeded", "insufficient balance")):
         return SystemErrorCategory.QUOTA_EXCEEDED
-    if _t in ("rate_limit_error", "overloaded_error", "requests_limit", "tokens_limit", "tpm_limit", "rpm_limit"):
+    if _t in ("insufficient_quota", "credit_balance_exhausted", "quota_exceeded", "billing_error",
+              "token_plan_entitlement_exhausted"):  # 2026-11-08 小欧: 商汤 token plan entitlement exhausted 的 error.type/code snake_case 形式
+        return SystemErrorCategory.QUOTA_EXCEEDED
+    if _t in ("rate_limit_error", "overloaded_error", "requests_limit", "tokens_limit", "tpm_limit", "rpm_limit",
+              "throttling_exception", "slow_down"):
         return SystemErrorCategory.RATE_LIMIT
+    # Gemini RESOURCE_EXHAUSTED 歧义: message 含 daily 字样才归配额, 否则归限速 — 小欧-2026-11-08
+    if _t == "resource_exhausted":
+        if any(k in _msg for k in ("daily", "per day", "per_day")):
+            return SystemErrorCategory.QUOTA_EXCEEDED
+        return SystemErrorCategory.RATE_LIMIT
+    # 低置信度 balance 兜底(仅 token 词表未命中时, 防误伤 load balance 等) — 小欧-2026-11-08
+    if "balance" in _msg:
+        return SystemErrorCategory.QUOTA_EXCEEDED
     return None
 
 
@@ -141,7 +172,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "模型没有返回内容（Empty Response），请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "模型响应超时（Idle Timeout），请换个问法或稍后重试"),
     SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),   # 瞬态可重试 — 小欧 2026-10-28
-    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型配额/余额已用尽（Quota Exceeded），请升级配额后重试"),  # 账务性打死 — 小欧 2026-10-28
+    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型限额/余额已用尽（Quota Exceeded），请升级限额后重试"),  # 账务性打死 — 小欧 2026-10-28
 }
 
 
@@ -184,6 +215,8 @@ class SystemErrorClassifier:
           - insufficient_quota / credit_balance_exhausted → QUOTA_EXCEEDED(配额/余额耗尽, 打死不可重试)
           - rate_limit_error / overloaded_error → RATE_LIMIT(瞬态限流, 缓刑可重试)
           - 裸 429(无头无 type) → RATE_LIMIT(保守可重试, 交给重试层按次数上限收敛)
+        2026-11-08 小欧 用户裁定: 裸 429/type 误标时以 message 高置信度配额语义词(商汤 token plan entitlement
+        exhausted)为准归 QUOTA, 防白打 L1 重试 — 用户-2026-11-08
         修正根因: 服务商返回 {"error":{"type":"rate_limit_error","code":"429003"}}(RPM/TPM限流)
         此前被 HTTP 状态码硬编码误报为"配额用尽"且一刀切不重试。"""
         _resp = getattr(error, "response", None)
@@ -192,7 +225,7 @@ class SystemErrorClassifier:
         _ec = getattr(error, "error_code", "") or ""
         _token = str(_et or _ec or "").lower()
         if _token:
-            _cat = _subcategory_for_token(_token)
+            _cat = _subcategory_for_token(_token, error)
             if _cat is not None:
                 logger.debug(f"[ErrorClassifier] HTTP 429 异常error_type/code={_token} → {_cat}")
                 return _cat
@@ -216,13 +249,19 @@ class SystemErrorClassifier:
                 _ec2 = (_err or {}).get("code") if isinstance(_err, dict) else None
                 _token = str(_et2 or _ec2 or "").lower()
                 if _token:
-                    _cat = _subcategory_for_token(_token)
+                    _cat = _subcategory_for_token(_token, error)
                     if _cat is not None:
                         logger.debug(f"[ErrorClassifier] HTTP 429 错误体 type/code={_token} → {_cat}")
                         return _cat
             except (ValueError, TypeError):
                 pass
         # 裸 429(无头无 type) → 保守可重试, 重试层按次数上限收敛 — 小欧 2026-10-28
+        # 2026-11-08 小欧 用户裁定: 裸 429 但 message 含高置信度配额语义词(商汤 token plan entitlement exhausted)
+        #   仍需 message 兜底归 QUOTA, 不得直接 RATE_LIMIT — 用户-2026-11-08
+        _cat = _subcategory_for_token("", error)
+        if _cat is not None:
+            logger.debug(f"[ErrorClassifier] HTTP 429 裸状态码但 message 兜底命中: {str(error)[:80]} → {_cat}")
+            return _cat
         logger.debug(f"[ErrorClassifier] HTTP 429 无细分判据(裸429), 保守归 RATE_LIMIT(可重试)")
         return SystemErrorCategory.RATE_LIMIT
 

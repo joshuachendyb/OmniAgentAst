@@ -4,6 +4,7 @@
 **维护人**: 小沈
 **最后更新时间**: 2026-11-09
 **最近更新**: 2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
 
@@ -157,10 +158,12 @@
 | `invalid_entries` | 返回非法 IP/网段原文，供落盘前报错（全部合法则空列表） | raw: str \| list \| None | List[str] |
 | `matches` | 来源 IP 是否命中白名单（支持单 IP 与 CIDR）；fail-closed：IP 非法/白名单空/条目非法均不命中 | ip: str, raw: str \| list \| None | bool |
 
-### 1.13 控制台镜像（app/logger/console_writer.py）
+### 1.13 控制台镜像（app/logger/）
+
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |
+| `log_and_print` | 【公共函数, __all__ 导出】日志文件+控制台双通道单点输出: 一条消息既进日志文件又上控制台, 收口"logger.info(msg)+print(msg)"为单点。文件通道=_file_logger(不挂控制台 handler)按"该行声明档位"落盘(>=阈值); 控制台通道=console_put 唯一一条, 上屏判定=**精确匹配(==)** logging.level(非>=阈值)。level 是"该行属于哪一档"的声明(默认 DEBUG), 业务/异常/取消/任务起止/冷却等观测行须显式传 level="WARNING" 才在 WARNING 档上屏(默认 DEBUG 不上屏只落文件)。2026-11-08 小欧 补登记+上屏机制速查(见函数 docstring) | msg: str, level: str = "DEBUG" | None |
 
 ### 1.14 shell 命令静态守卫（shell_static_guard.py，位于 app/tools/fundamental/）
 
@@ -752,8 +755,9 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
-| v5.24 | 2026-11-09 | **订正 §10.4 与代码对齐**: `VIDEO_MODE_I2V` 枚举值册写 `image` 误，代码真源恒为 `reference`；`VIDEO_POLL_TIMEOUT` 册写 500s 误，代码为 600s，并补记长请求部署约束（总窗≈23min，反向代理 read_timeout 须同级放行） | 小欧 |
-| v5.23 | 2026-11-09 | **新增 §10.4 生成端点单点**: `generation_client.generate_image` 入册（生图唯一 HTTP 出口，t2i/i2i 同端点同函数；探测腿与 Phase B 业务共用，禁直连 httpx）；同册登记 `REJECT_STATUS`（输入腿 `_probe_once` 改引用，拒绝状态集单源）/`IMAGE_PATH`/`VIDEO_PATH`/`PROBE_PROMPT`/`PROBE_I2I_PROMPT` | 小欧 |
+| v5.25 | 2026-11-09 | **订正 §10.4 与代码对齐**: `VIDEO_MODE_I2V` 枚举值册写 `image` 误，代码真源恒为 `reference`；`VIDEO_POLL_TIMEOUT` 册写 500s 误，代码为 600s，并补记长请求部署约束（总窗≈23min，反向代理 read_timeout 须同级放行） | 小欧 |
+| v5.24 | 2026-11-09 | **新增 §10.4 生成端点单点**: `generation_client.generate_image` 入册（生图唯一 HTTP 出口，t2i/i2i 同端点同函数；探测腿与 Phase B 业务共用，禁直连 httpx）；同册登记 `REJECT_STATUS`（输入腿 `_probe_once` 改引用，拒绝状态集单源）/`IMAGE_PATH`/`VIDEO_PATH`/`PROBE_PROMPT`/`PROBE_I2I_PROMPT` | 小欧 |
+| v5.23 | 2026-11-08 23:45:00 | **§1.13 补登记 `log_and_print`**（小欧, 用户提示后补漏）: `logger/__init__.py` 公共函数（经 `__all__` 导出）——日志文件+控制台双通道单点输出, 收口"logger.info(msg)+print(msg)"为单点; 文件通道按"该行声明档位"落盘(>=阈值), 控制台通道=console_put 唯一一条, **上屏判定=精确匹配(==) logging.level**(非>=阈值); level 是"该行属于哪一档"的声明(默认 DEBUG), 业务/异常/取消/任务起止/冷却等观测行须显式传 level="WARNING" 才在 WARNING 档上屏; 同批在函数 docstring 写「level 上屏机制速查」+「公共函数说明」块。**同批三堂会审修复3处**: ①`error_classifier._subcategory_for_token` message 源统一(补 `error.response.text` 优先, 与 resource_exhausted 同源, 防测试桩/非 SDK str(error) 不含响应体); ②`model_cooldown.mark/clear` 删并存 `logger.info`(只用 log_and_print, 防 logger 与 _file_logger 共享文件 handler 致同一行写文件两次)+删死导入 logger; ③`llm_call` 冷却成功清零改无条件调用(clear 内部有守卫, 防"冷却已过期但条目残留"旧 hits 跳档) — 小欧-2026-11-08 |
 | v5.22 | 2026-11-04 12:52:53 | **§新 4.2.1 工具名/参数别名登记**（补漏项）: `tools_alias_mapper.normalize_params`/`PARAM_ALIASES`/`add_param_alias` 首次入册；`PARAM_ALIASES["edit"]` 增 `model→mode` 键名别名（日志实证 session 12b317fe 12:47:25 一次 6 条 edit 全废，`model:"once"` 即 mode 枚举，语义唯一指向；`normalize_params` 在 schema 校验前执行，已验证救活该调用与双传边界安全） | 小欧 |
 | v5.21 | 2026-11-04 12:19:56 | **新增 §1.18~§1.21（shell 卡死根治的四个公用层）**: ①`proc_io.py`（`drain_until_exit`/`drain_after_exit`/`run`/`TRUNCATED_NOTE`）零线程读管道取代 `communicate`；②`proc_utils.py`（`kill_process_tree`/`kill_pid_descendants`）零建进程树杀，ppid 映射 BFS 支持根已退出；③`workers.py`（`WorkerPool`/`ThreadLeasePool`）启动期建满、运行期零 `Thread.start`；④`spawn_gate.py`（`install_spawn_gate`/`mark_runtime_started`/`snapshot`/`SpawnGateBusy`）可回收租约 + 看门狗 | 小欧 |
 | v5.20 | 2026-11-01 14:40:00 | **键名统一**(北京老陈令: 一个概念一个名字, 不排期一次改净): ①1.x `parse_model_params` 返回值由 `context_limit` 更名 `context_length`, 取值顺序补 `model_meta.context_length` 层(model_params 用户值 > 厂商声明 > 全局默认 > 常量兜底), 常量 `DEFAULT_CONTEXT_LIMIT` → `DEFAULT_CONTEXT_LENGTH`；②10.3 `add_model`/`update_model` 形参与请求体 `default_params` → `model_params`, `_models_of` 下发键同改并补下发 `context_length`(模型库保存的窗口此前无读取面)；③10.3 `update_provider_config` 删 `base_url`/`retry_times` 别名, 只认 `api_base`/`max_retries`；④全局设置键 `llm.context_limit_default` → `llm.context_length_default` | 小欧 |
