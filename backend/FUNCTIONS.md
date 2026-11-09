@@ -723,9 +723,10 @@ def my_parse_json(json_str):
 | `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
 | `_require_provider_for_fetch` | [68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) | name, ai | Tuple[Dict[str, Any], str] |
 | `_http_get_remote_models` | [68] HTTP 拉取层 GET {api_base}/models → (resp, err)；网络异常统一 err 文案；timeout 30s | api_base, headers | Tuple[Any, Optional[str]] |
-| `_KEY_ALIASES` + `_canon_item` | [68] 中央别名表 + 入口归一：同义键（name/display_name/title、pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、supported_parameters/supported_sampling_parameters）在此收敛，新厂商只加表行不碰逻辑；`_first_alias` 已退役删除 | 表 + item | Dict |
+| `_KEY_ALIASES` + `_canon_item` | [68] 中央别名表 + 入口归一：同义键（name/display_name/title、pricing/pricings/cost、context_length/context_window、max_output_length/max_output_tokens/max_output、supported_parameters/supported_sampling_parameters）在此收敛，新厂商只加表行不碰逻辑；`_first_alias` 已退役删除；2026-11-09 增 metadata 子对象降嵌套（OpenCode 网关方言，顶层优先空位回填） | 表 + item | Dict |
 | `_str_list` | [68] 远端值收敛为 List[str]：非数组退空列表、非字符串成员丢弃（防错型打挂挂 response_model 的 DTO） | value | List[str] |
 | `_flatten_pricings` | [68] zenmux 式 pricings（复数嵌套）拍平 → {prompt/completion: str}；只取 perMTokens（perCount 跳过，不污染免费判据） | pricings | Dict[str, str] |
+| `_numeric_cost_to_pricing` | OpenCode 网关 cost{input,output:每百万token数值} → {prompt,completion}字符串（喂免费判据）；非数值形状退空 dict，调用方保留原值 | pricing | Dict[str, str] |
 | `_merge_capabilities` | [68] capabilities:{reasoning:bool} 对象并入 supported_features（去重）；其它键不猜语义 | feats, capabilities | List[str] |
 | `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失丢弃；**键名先经 `_canon_item` 中央别名表归一**（`{**architecture, **item}` 合成查找视图管层级，顶层优先嵌套兜底 → input/output_modalities）；下发 15 字段含 max_output_length/input_modalities/output_modalities/supported_features/publish_time | resp | Tuple[Optional[List[Dict]], Optional[str]] |
 | `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false；key 取值三级优先（probe_key → env `{NAME}_API_KEY` → config）；**key 空白时 pop 掉 Authorization 头**（基类无条件造空 Bearer，无鉴权端点会 400），不动 adapter 基类以免波及 LLM 主链 | name, probe_key=None | Dict: {ok, provider, models, count, configured, current_model, status_code, category, message?} |

@@ -192,6 +192,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   kilo 网关在 completion_tokens_details.image_tokens 恒填 0, 原递归匹配会把能看图的模型判成不支持 - 小欧-2026-11-09
 # 2026-11-09 小欧 - 验证回执常驻: 新增 model_meta.<model>.last_probe{media,output} 记上次验证的 at/ok/message,
 #   未定结论不写能力但原因可常驻界面; 与 media 分键, 判定链不读它 - 小欧-2026-11-09
+# 2026-11-09 小欧 - opencli 网关方言入表(模型库映射缺口, 网关侧零改动): _canon_item 降嵌套 metadata 子对象
+#   (模态/上限等空位回填, 顶层优先); 别名表加 max_output 与 cost 行, _numeric_cost_to_pricing 转
+#   数值 cost→{prompt,completion}(喂免费判据); effort 兼容 list 形状(reasoning_efforts 数组 +
+#   default_reasoning_effort 标量); _merge_supports_features 加 tool_call→tools - 小欧-2026-11-09
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -723,6 +727,21 @@ def _flatten_pricings(pricings: Any) -> Dict[str, str]:
     return flat
 
 
+def _numeric_cost_to_pricing(pricing: Any) -> Dict[str, str]:
+    """OpenCode 网关 cost{input,output:每百万token数值} → {prompt,completion}字符串 — 小欧 2026-11-09
+
+    仅认数值型 input/output 双键（bool 排除）；其余形状退空 dict，调用方保留原值不动。
+    转出后免费判据 prompt=completion="0" 对 opencli 免费模型自然生效。
+    """
+    if not isinstance(pricing, dict) or "prompt" in pricing:
+        return {}
+    ci, co = pricing.get("input"), pricing.get("output")
+    if isinstance(ci, (int, float)) and not isinstance(ci, bool) \
+            and isinstance(co, (int, float)) and not isinstance(co, bool):
+        return {"prompt": str(ci), "completion": str(co)}
+    return {}
+
+
 def _merge_capabilities(feats: List[str], capabilities: Any) -> List[str]:
     """capabilities:{reasoning:bool} 对象并入 supported_features（去重）— 小欧 2026-10-10
 
@@ -821,14 +840,14 @@ def _merge_supports_modalities(modalities: List[str], item: Any) -> List[str]:
 
 
 def _merge_supports_features(feats: List[str], item: Any) -> List[str]:
-    """Moonshot supports_reasoning/dynamic_tools 布尔并入 supported_features（去重）— 小欧 2026-10-11
+    """Moonshot supports_reasoning/dynamic_tools、OpenCode tool_call 布尔并入 supported_features（去重）— 小欧 2026-10-11
 
-    reasoning→'reasoning'；dynamic_tools→'tools'（动态工具调用即挂工具能力，
+    reasoning→'reasoning'；dynamic_tools/tool_call→'tools'（动态工具调用即挂工具能力，
     与 supported_features 现有 'tools' 同语义，见 DTO 注释"直接决定能不能挂工具"）。
     True 才追加；其它键原样忽略。
     """
     out = list(feats)
-    for flag, value in (("supports_reasoning", "reasoning"), ("supports_dynamic_tools", "tools")):
+    for flag, value in (("supports_reasoning", "reasoning"), ("supports_dynamic_tools", "tools"), ("tool_call", "tools")):
         if isinstance(item, dict) and item.get(flag) is True and value not in out:
             out.append(value)
     return out
@@ -846,8 +865,8 @@ _KEY_ALIASES = {
     "name": ["name", "display_name", "title"],
     "description": ["description"],
     "context_length": ["context_length", "context_window"],
-    "max_output_length": ["max_output_length", "max_output_tokens"],
-    "pricing": ["pricing", "pricings"],
+    "max_output_length": ["max_output_length", "max_output_tokens", "max_output"],
+    "pricing": ["pricing", "pricings", "cost"],
     "architecture": ["architecture"],
     "input_modalities": ["input_modalities"],
     "output_modalities": ["output_modalities"],
@@ -874,6 +893,12 @@ def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
             if value is not None:
                 out[canon] = value
                 break
+    # metadata 子对象降嵌套(OpenCode 网关方言): 模态等仅存于 metadata, 顶层优先空位回填 — 小欧-2026-11-09
+    meta = out.get("metadata")
+    if isinstance(meta, dict):
+        for k, v in meta.items():
+            if out.get(k) is None:
+                out[k] = v
     return out
 
 
@@ -1020,6 +1045,9 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         #   zenmux 式复数嵌套才走 _flatten_pricings 拍平（只取 perMTokens，perCount 跳过）。
         if isinstance(pricing, dict) and any(isinstance(v, list) for v in pricing.values()):
             pricing = _flatten_pricings(pricing)
+        else:
+            # OpenCode 网关 cost 数值方言在此转换, 其余形状原样保留 — 小欧-2026-11-09
+            pricing = _numeric_cost_to_pricing(pricing) or pricing
         free, stability = item.get("free"), item.get("stability")
         arch = architecture if isinstance(architecture, dict) else {}
         # 2026-10-05 22:16:38 - 小欧 - 厂商字段别名归一（SenseNova 实抓 9 模型 16 字段后补，丢弃 11 个）：
@@ -1036,9 +1064,13 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         if not supported_parameters:
             supported_parameters = _str_list(item.get("supported_parameters"))
         _pub = item.get("publish_time")
-        _eff = item.get("effort") if isinstance(item.get("effort"), dict) else {}
-        _eff_levels = _eff.get("supported_levels") or _eff.get("valid_efforts")
-        _eff_d = _eff.get("default_level") or _eff.get("default_effort")
+        _eff = item.get("effort")
+        if isinstance(_eff, dict):  # DeepSeek/Moonshot dict 形状
+            _eff_levels = _eff.get("supported_levels") or _eff.get("valid_efforts")
+            _eff_d = _eff.get("default_level") or _eff.get("default_effort")
+        else:  # OpenCode 网关 list 形状: reasoning_efforts 数组 + default_reasoning_effort 标量
+            _eff_levels = _eff if isinstance(_eff, list) else []
+            _eff_d = item.get("default_reasoning_effort")
         models.append({
             "id": str(mid),
             "owned_by": owned_by if isinstance(owned_by, str) else None,
