@@ -38,6 +38,7 @@
      2026-11-08 小欧 设计[15]落码: _subcategory_for_token 词表补强(新增 throttling_exception/slow_down→RATE_LIMIT, resource_exhausted 二级判据按 message 含 daily 分配额/限速, message 关键词兜底 quota/balance→QUOTA); 签名加 error 参数, 调用点同步 — 小欧-2026-11-08
      2026-11-08 小欧 用户裁定修复: 商汤 429 "token plan entitlement exhausted" 实为配额耗尽(报告[14]实测), 原 4/5 场景被误归 RATE_LIMIT 可重试→白打 L1 重试; 补 QUOTA 词表 token_plan_entitlement_exhausted + message 兜底 entitlement exhausted/token plan — 用户-2026-11-08
      2026-11-08 小欧 三堂会审修复: _subcategory_for_token message 源统一——顶部 _msg 原仅 str(error), 与 resource_exhausted 分支用 error.response.text 不一致; 测试桩/非 SDK 抛错 str(error) 可能不含响应体, 补 _resp.text 优先(与 resource_exhausted 同源), str(error) 兜底(主路径 client_sdk 已把 server_msg 嵌入异常文本, 两者一致) — 小欧-2026-11-08
+     2026-11-09 小欧 ruff F541 修复: 裸429兜底 debug 日志去多余 f 前缀(无占位符) — 小欧-2026-11-09
 """
 
 import json
@@ -262,7 +263,7 @@ class SystemErrorClassifier:
         if _cat is not None:
             logger.debug(f"[ErrorClassifier] HTTP 429 裸状态码但 message 兜底命中: {str(error)[:80]} → {_cat}")
             return _cat
-        logger.debug(f"[ErrorClassifier] HTTP 429 无细分判据(裸429), 保守归 RATE_LIMIT(可重试)")
+        logger.debug("[ErrorClassifier] HTTP 429 无细分判据(裸429), 保守归 RATE_LIMIT(可重试)")
         return SystemErrorCategory.RATE_LIMIT
 
     @staticmethod
