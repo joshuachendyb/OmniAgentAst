@@ -27,6 +27,7 @@
 // 2026-11-09 小欧 - 输出标签去「生成」后缀, 四枚与输入侧同词(文本/图片/视频/音频) — 小欧-2026-11-09
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
+import type { ModelState } from '../types';
 
 /** 报价是否为 0。Number() 兼容 "0"/0/"0.000"；v != null 必留（Number(null)===0 会误标免费）。 */
 const isZeroPrice = (v: string | undefined): boolean =>
@@ -178,6 +179,25 @@ export function validate(
 //   只改本函数内部, 不动共享 sameValue——params 数组顺序敏感处仍需顺序比) - 小欧-2026-09-23
 export const isCapsDirty = (caps: string[], baseline: string[]): boolean =>
   !sameValue([...caps].sort(), [...baseline].sort());
+
+/**
+ * 模型组待存项计数：参数值脏 + 删键 + 输入模态脏 + Provider 草稿键数。
+ * 2026-11-09 小欧 - 自 useSettings.dirtyCount 与 SettingsPage.groupDirtyCount 两处同构算式抽出共用 — 小欧-2026-11-09
+ */
+export const modelDirtyCount = (m: ModelState): number => {
+  const paramsDirty = Object.values(
+    isDirty(m.params, m.baseline, m.envOverride)
+  ).filter(Boolean).length;
+  const capsDirty = isCapsDirty(m.inputModalities, m.inputModalitiesBaseline)
+    ? 1
+    : 0;
+  return (
+    paramsDirty +
+    m.removedParams.length +
+    capsDirty +
+    Object.keys(m.providerDraft).length
+  );
+};
 
 export const CAPABILITY_OPTIONS = [
   // 2026-09-24 小欧 - 文本 disabled 恒勾选（北京老陈拍板②：文本隐含默认，UI 不提供取消）- 小欧-2026-09-24
