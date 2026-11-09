@@ -1,3 +1,7 @@
+v1.6.5
+发布时间: 2026-11-09 11:20:00 - 小欧-2026-11-09
+## v1.6.5汇总 变更汇总(1个commit: feat1) - 小欧-2026-11-09
+[2026-11-09 11:20:00 小欧] 范围=v1.6.4以来全部commit(1个: b7d690fdf); 说明=①图片实测迁设置页②: Image_URL 行(外链检测地址 hidden 项就地配置, 失焦即存+mtime守卫+落盘), 媒体页不再重复渲染; ②外链徽标四态定版: 灰没发/绿✓厂商抓到/红✗厂商拒图(400/415/422)/黄?已请求未取证(url_err 结构化落库, Colors.WARNING #AD6800+QuestionOutlined); ③验证腿耗时与token结构化落库(inline_ms/url_ms/inline_tokens/url_tokens, _probe_once签名不动, monotonic掐表), 徽标tip按腿分段(响应耗时+图片token+验证时间收底); ④默认检测图 wikimedia→cn.bing.com/favicon.ico(实测定性: agnes厂商出网146s连不上wikimedia恒失败, Bing favicon 30s过 image_tokens=64, 三处带署名注释+历史同步); ⑤network_error取证串补异常类型名; ⑥行名改「输入图片能力验证」按钮改「验证」(北京老陈定版), 结论3态(输入✓/输入✗/未验证)撤「不适用」; ⑦lint:e2e 摘死路径 src/tests/support(check:full尾段曾恒挂)。注: 功能增强不新增独立模块 → PATCH v1.6.5。
 v1.6.4
 发布时间: 2026-11-07 22:44:54 - 小欧-2026-11-07 (原 2026-11-06 13:07:26 首次记录 45 个 commit; 追加 11-07 附件域与三入口重构 28 个 commit 后, 按本次 tag 前提交时间更新)
 ## v1.6.3汇总 变更汇总(45个commit: refactor3/fix20/docs20/feat2) - 小欧-2026-11-06
