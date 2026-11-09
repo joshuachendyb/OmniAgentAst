@@ -48,8 +48,12 @@ export const acceptVerdict = (
       : '只收内联图：外链未取证——上方「Image_URL」为空，外链腿未发起请求；填好地址再点「验证」即出对/错';
 };
 
-/** 探测腿耗时(ms→人话)：485 ms / 33.2 s；null/undefined = 该腿未发起，返回空串 — 小欧-2026-11-09 */
+/** 探测腿耗时(ms→人话)：485 ms / 33.2 s / 3 分 35 秒；null/undefined = 该腿未发起，返回空串
+ *  视频腿是异步任务，排队可上探到分钟级，故 60s 起换分秒 — 小欧-2026-11-09 */
 export const probeMsText = (ms?: number | null): string => {
   if (ms == null) return '';
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)} 分 ${total % 60} 秒`;
 };

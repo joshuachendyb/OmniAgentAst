@@ -143,6 +143,8 @@
 // 2026-11-09 小欧 - 行名改「输入图片能力验证」按钮改「验证」；徽标tip分段:token义/两腿响应(耗时+token)/验证时间(user定版) — 小欧-2026-11-09
 // 2026-11-09 小欧 - 输出模态行改只读徽标(按厂商/配置声明亮/灰, 无实测腿不可实测):
 //   撤 outputModalities 勾选编辑与保存链, ②区输出能力仅展示 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 生成验证腿([15]): 输出模态行回归只读声明, 另立「生成能力验证」行
+//   (腿徽标+结论+行尾按钮, 与输入图片能力验证同款语法); chat 腿行置灰「不适用」— 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
@@ -188,6 +190,8 @@ import { SectionTitle } from './SectionTitle';
 import { CurrentModelRefCard } from './CurrentModelRefCard';
 import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
+// 2026-11-09 小欧 - 生成验证实测行取句需要单腿记录类型（generate.t2i/i2i）— 小欧-2026-11-09
+import type { OutputProbeRec } from '@/services/api/model.api';
 // 2026-11-08 小欧 - 实测写盘绕过保存链，取证后按后端 mtime 回填，防下一次保存被守卫拒一次 — 小欧-2026-11-08
 import { settingsApi } from '@/services/api/settings.api';
 import {
@@ -234,6 +238,8 @@ const SettingsPage: React.FC = () => {
   const [providerResetSeq, setProviderResetSeq] = useState(0);
   // 2026-11-08 小欧 - 图片实测探测中态（hook 必须置顶：组件早 return 之后不能再调 useState）— 小欧-2026-11-08
   const [probing, setProbing] = useState(false);
+  // 2026-11-09 小欧 - 生成验证探测态（[15]），与 probing 同为组件局部态，供两条腿共用 — 小欧-2026-11-09
+  const [genProbing, setGenProbing] = useState(false);
   // 2026-11-09 小欧 - Image_URL(外链检测用图片地址)行输入缓冲：undefined=未动过，失焦/回车即存
   const [probeUrlDraft, setProbeUrlDraft] = useState<string | undefined>(
     undefined
@@ -459,35 +465,64 @@ const SettingsPage: React.FC = () => {
     </div>
   );
 
-  // 2026-11-08 小欧 - 图片实测迁入②：探测目标 = ①选中的 provider+模型，unconclusive 不落库不给结论
-  const runProbe = async () => {
+  // 2026-11-09 小欧 - probe 落库后回读：探测写盘绕过保存链，页面 providers 缓存与 mtime 都已过期；
+  //   回填 mtime 后紧接着的保存不再被守卫拒 — 小欧-2026-11-09
+  const reloadProbeResult = async () => {
+    await s.refreshModels();
+    try {
+      s.syncMtime(await settingsApi.getMtime());
+    } catch {
+      // mtime 回填失败只影响下一次保存的守卫比对，静默
+    }
+  };
+
+  // 2026-11-09 小欧 - probe 收尾统一口（回读+mtime+原句透出），两条腿共用
+  const settleProbe = async (r: {
+    ok: boolean;
+    conclusive: boolean;
+    persisted: boolean;
+    message: string;
+  }) => {
+    // 未取证(限流/鉴权/5xx/排队/超时)不当实测结果；但已落库的部分腿仍需回读上界面 — 小欧-2026-11-09
+    if (r.persisted) await reloadProbeResult();
+    if (!r.conclusive) {
+      showMessage(ErrorType.WARNING, r.message);
+      return;
+    }
+    if (r.ok) showSuccess(r.message);
+    else showMessage(ErrorType.WARNING, r.message);
+  };
+
+  // 2026-11-09 小欧 - 两条探测腿唯一入口（[15]）：差异只有「请求函数/忙态/失败文案」三处，
+  //   骨架与收尾共用；分叉成两个函数即三处永久同步维护 — 小欧-2026-11-09
+  const runProbeLeg = async (kind: 'media' | 'output') => {
+    // 探测目标 = ①选中的 provider+模型（图片实测腿与生成验证腿同一目标）— 小欧-2026-11-08
     const provider = state.model.selectedProvider;
     const model = state.model.selectedModel;
-    if (!provider || !model || probing) return;
-    setProbing(true);
+    if (!provider || !model || (kind === 'media' ? probing : genProbing))
+      return;
+    const setBusy = kind === 'media' ? setProbing : setGenProbing;
+    setBusy(true);
     try {
-      const r = await modelApi.probeMedia(provider, model);
-      // 未取证(限流/鉴权/5xx/无图像 token 字段)不当实测结果，也不覆盖已存结论 — 小欧-2026-11-08
-      if (!r.conclusive) {
-        showMessage(ErrorType.WARNING, r.message);
-        return;
-      }
-      await s.refreshModels();
-      // 探测写盘绕过保存链，页面缓存 mtime 已过期；回填后紧接着的保存不再被守卫拒 — 小欧-2026-11-08
-      try {
-        s.syncMtime(await settingsApi.getMtime());
-      } catch {
-        // mtime 回填失败只影响下一次保存的守卫比对，静默
-      }
-      if (r.ok) showSuccess(r.message);
-      else showMessage(ErrorType.WARNING, r.message);
-    } catch {
+      await settleProbe(
+        await (kind === 'media'
+          ? modelApi.probeMedia(provider, model)
+          : modelApi.probeOutput(provider, model))
+      );
+    } catch (e) {
+      // 请求侧失败(超时/断连)时后端可能已按组落库：回读一次，界面不停在旧结论 — 小欧-2026-11-09
+      if (kind === 'output') await reloadProbeResult();
+      const timedOut = (e as { code?: string }).code === 'ECONNABORTED';
       showMessage(
         ErrorType.WARNING,
-        '探测失败，请检查 Provider 配置的网络可达性'
+        kind === 'media'
+          ? '探测失败，请检查 Provider 配置的网络可达性'
+          : timedOut
+            ? '生成验证超时（厂商任务可能仍在排队），本行只显示已落库的腿'
+            : '生成验证失败，请检查 Provider 配置的网络可达性'
       );
     } finally {
-      setProbing(false);
+      setBusy(false);
     }
   };
 
@@ -563,6 +598,14 @@ const SettingsPage: React.FC = () => {
       .find((p) => p.name === state.model.selectedProvider)
       ?.models.find((m) => m.name === state.model.selectedModel);
     const media = selectedEntry?.media;
+    // 2026-11-09 小欧 - 生成模型判定（[15]）：输出声明含 image/video
+    const isGenerationModel =
+      state.model.outputModalities.includes('image') ||
+      state.model.outputModalities.includes('video');
+    // chat 腿只在「声明了图片输入」时才有意义：重叠型模型(生成模型+声明图片输入)两行各管各腿,
+    //   不可一并置灰 — 单谓词出口, 置灰/隐按钮/换 tip 三处同源 - 小欧-2026-11-09
+    const chatLegMuted =
+      isGenerationModel && !state.model.inputModalities.includes('image');
     const accept = media?.accept?.image;
     const urlTested = urlTestedOf(media);
     // 外链未取证要分因：厂商抓图失败(url_err) ≠ 没发请求(地址空) — 小欧-2026-11-09
@@ -571,25 +614,35 @@ const SettingsPage: React.FC = () => {
     //   未勾选且无记录时不显定论徽标，有实测记录则照实显示（实测为准，与勾选解耦）
     const imageChecked = state.model.inputModalities.includes('image');
     const showVerdict = imageChecked || !!accept;
-    // 三徽标状态：pass=绿对勾 / fail=红叉 / warn=黄?(已请求厂商抓图失败) / unknown=灰(未发或无记录)
-    const inlineState = !accept
-      ? 'unknown'
-      : accept === 'none'
-        ? 'fail'
-        : 'pass';
-    const urlState =
-      accept === 'both'
+    // 三徽标状态：pass=绿对勾 / fail=红叉 / warn=黄?(已请求厂商抓图失败) / na=灰「不适用」
+    //   / unknown=灰(未发或无记录)
+    const inlineState = chatLegMuted
+      ? 'na'
+      : !accept
+        ? 'unknown'
+        : accept === 'none'
+          ? 'fail'
+          : 'pass';
+    const urlState = chatLegMuted
+      ? 'na'
+      : accept === 'both'
         ? 'pass'
         : accept === 'inline' && urlTested
           ? 'fail'
           : urlErr
             ? 'warn'
             : 'unknown';
-    const verdictWord = showVerdict ? acceptMain(accept) : null;
+    const verdictWord = chatLegMuted
+      ? '不适用'
+      : showVerdict
+        ? acceptMain(accept)
+        : null;
     // 定论行：一句讲清外链转发与否及理由；未勾选时补一句为何不发图
-    const verdictLine = !imageChecked
-      ? `${acceptVerdict(accept, urlTested, urlErr)}（当前未勾选「图片」，不发图）`
-      : acceptVerdict(accept, urlTested, urlErr);
+    const verdictLine = chatLegMuted
+      ? '生成模型：图片输入/输出走生成专用端点，chat 腿 400 为预期现象'
+      : !imageChecked
+        ? `${acceptVerdict(accept, urlTested, urlErr)}（当前未勾选「图片」，不发图）`
+        : acceptVerdict(accept, urlTested, urlErr);
     // 2026-11-09 小欧 - 徽标 tip 按腿行(用户定版)：响应耗时+图片 token；外链按取证/未发/抓图失败三态 — 小欧-2026-11-09
     const inlineLeg =
       media?.inline_ms != null
@@ -609,6 +662,114 @@ const SettingsPage: React.FC = () => {
                 ? `图片 token ${media.url_tokens}`
                 : '未返回 token'
           }`;
+    // 2026-11-09 小欧 - 生成验证([15]): 腿由输出声明决定(图:文生图/图生图, 视频:文生视频/图生视频),
+    //   逐腿徽标+汇总结论上界面, 悬停只补耗时/验证时间 — 小欧-2026-11-09
+    const genImageRec = media?.generate?.image;
+    const genVideoRec = media?.generate?.video;
+    const genLegState = (
+      rec?: OutputProbeRec
+    ): 'pass' | 'fail' | 'warn' | 'unknown' =>
+      !rec || rec.state === 'skipped'
+        ? 'unknown'
+        : rec.state === 'ok'
+          ? 'pass'
+          : rec.state === 'none'
+            ? 'fail'
+            : 'warn';
+    const genLegTip = (label: string, leg?: OutputProbeRec) =>
+      !leg || leg.state === 'skipped'
+        ? ''
+        : `${label}：${
+            leg.state === 'ok'
+              ? `✓ ${probeMsText(leg.ms)}`
+              : leg.state === 'none'
+                ? '✗ 厂商拒绝'
+                : leg.evidence?.startsWith('source_unreachable')
+                  ? '？ 厂商抓不到探测素材'
+                  : leg.evidence?.startsWith('task_failed')
+                    ? '？ 厂商侧生成失败，稍后重试'
+                    : leg.evidence?.startsWith('queue_full')
+                      ? '？ 厂商队列已满'
+                      : leg.evidence?.startsWith('poll_timeout')
+                        ? '？ 等出片超时'
+                        : '？ 未完成（鉴权／限流／协议漂移）'
+          }`;
+    const genLegs: { label: string; rec?: OutputProbeRec }[] = [
+      ...(state.model.outputModalities.includes('image')
+        ? [
+            { label: '文生图', rec: genImageRec?.t2i },
+            { label: '图生图', rec: genImageRec?.i2i },
+          ]
+        : []),
+      ...(state.model.outputModalities.includes('video')
+        ? [
+            { label: '文生视频', rec: genVideoRec?.t2v },
+            { label: '图生视频', rec: genVideoRec?.i2v },
+          ]
+        : []),
+    ];
+    const genStates = genLegs.map((l) => genLegState(l.rec));
+    const genAllPass =
+      genStates.length > 0 && genStates.every((st) => st === 'pass');
+    const genAnyFail = genStates.includes('fail');
+    const genAnyPass = genStates.includes('pass');
+    // 结论词取「有据可依」的最强项：全通过=可用；有腿被拒且无腿通过=不可用；
+    //   已有一条腿通过=部分可用（其余未完成/被拒）；一条都没通过=未完成 — 小欧-2026-11-09
+    const genWordState: 'pass' | 'fail' | 'warn' | 'unknown' = genStates.every(
+      (st) => st === 'unknown'
+    )
+      ? 'unknown'
+      : genAllPass
+        ? 'pass'
+        : genAnyPass
+          ? 'warn'
+          : genAnyFail
+            ? 'fail'
+            : 'warn';
+    const genVerdictWord =
+      genWordState === 'unknown'
+        ? '未验证'
+        : genWordState === 'pass'
+          ? '可用'
+          : genWordState === 'fail'
+            ? '不可用'
+            : genAnyPass
+              ? '部分可用'
+              : '未完成';
+    // 逐腿徽标与结论词共用同一配色口径(未知=弱文字, 不显红叉) — 小欧-2026-11-09
+    const genColor = (st: 'pass' | 'fail' | 'warn' | 'unknown') =>
+      st === 'pass'
+        ? Colors.SUCCESS
+        : st === 'fail'
+          ? Colors.ERROR
+          : st === 'warn'
+            ? Colors.WARNING
+            : Colors.TEXT.WEAK;
+    const genAllAt = genLegs.map((l) => l.rec?.at).filter(Boolean) as string[];
+    const genProbedAt = genAllAt.length ? genAllAt[genAllAt.length - 1] : '';
+    const genPassLabels = genLegs
+      .filter((_, i) => genStates[i] === 'pass')
+      .map((l) => l.label);
+    const genFailLabels = genLegs
+      .filter((_, i) => genStates[i] === 'fail')
+      .map((l) => l.label);
+    const genPendLabels = genLegs
+      .filter((_, i) => genStates[i] === 'warn')
+      .map((l) => l.label);
+    const genVerdict =
+      genWordState === 'unknown'
+        ? '尚未做过生成验证——点右侧「生成验证」实测'
+        : genAllPass
+          ? `${genLegs.map((l) => l.label).join('与')}均通过`
+          : [
+              genPassLabels.length ? `可${genPassLabels.join('、')}` : '',
+              genFailLabels.length
+                ? `${genFailLabels.join('、')}被厂商拒绝`
+                : '',
+              genPendLabels.length ? `${genPendLabels.join('、')}未完成` : '',
+            ]
+              .filter(Boolean)
+              .join('；');
     return (
       <div>
         <div data-section="selector">
@@ -868,28 +1029,32 @@ const SettingsPage: React.FC = () => {
             外链行按取证与否分述，避免对已取证模型说「未取证」的自相矛盾 */}
           <Tooltip
             title={
-              <div
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  lineHeight: 1.8,
-                  maxWidth: 440,
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>验证方法说明</div>
-                <div>
-                  真实调用 LLM 发送一张内置测试图，HTTP 200 且返回图像
-                  token&gt;0 才算「输出能力」正常
+              chatLegMuted ? (
+                '生成模型：图片输入/输出走生成专用端点（如 /v1/images/generations），chat 腿 400 为预期；图片能力请点「生成验证」实测'
+              ) : (
+                <div
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    lineHeight: 1.8,
+                    maxWidth: 440,
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>验证方法说明</div>
+                  <div>
+                    真实调用 LLM 发送一张内置测试图，HTTP 200 且返回图像
+                    token&gt;0 才算「输出能力」正常
+                  </div>
+                  <div>内联＝图片数据直接随请求体发送（base64）</div>
+                  <div>外链＝只发图片地址，由厂商接口自行抓取</div>
+                  <div>
+                    {urlTested
+                      ? '外链已取证——测试图片地址由厂商接口实际抓取成功，图片地址可随请求转发'
+                      : urlErr
+                        ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；可再点「验证」重试'
+                        : '外链未取证——本次验证时上方「Image_URL」为空，外链腿未发起请求；填好地址再点「验证」即出对/错'}
+                  </div>
                 </div>
-                <div>内联＝图片数据直接随请求体发送（base64）</div>
-                <div>外链＝只发图片地址，由厂商接口自行抓取</div>
-                <div>
-                  {urlTested
-                    ? '外链已取证——测试图片地址由厂商接口实际抓取成功，图片地址可随请求转发'
-                    : urlErr
-                      ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；可再点「验证」重试'
-                      : '外链未取证——本次验证时上方「Image_URL」为空，外链腿未发起请求；填好地址再点「验证」即出对/错'}
-                </div>
-              </div>
+              )
             }
           >
             <span
@@ -939,42 +1104,44 @@ const SettingsPage: React.FC = () => {
                 minWidth: 240,
               }}
             >
-              {/* 通道徽标：灰=未发/无记录，绿✓=通过，红✗=实测失败，黄?=已请求但厂商抓图失败(可重试) */}
-              {[
-                { label: '内联', st: inlineState },
-                { label: '外链', st: urlState },
-              ].map(({ label, st }) => (
-                <span
-                  key={label}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    fontSize: FontSize.PRIMARY,
-                    color:
-                      st === 'pass'
-                        ? Colors.SUCCESS
-                        : st === 'fail'
-                          ? Colors.ERROR
-                          : st === 'warn'
-                            ? Colors.WARNING
-                            : Colors.TEXT.WEAK,
-                  }}
-                >
-                  {label}
-                  {st === 'pass' && (
-                    <CheckOutlined style={{ fontSize: FontSize.SECONDARY }} />
-                  )}
-                  {st === 'fail' && (
-                    <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
-                  )}
-                  {st === 'warn' && (
-                    <QuestionOutlined
-                      style={{ fontSize: FontSize.SECONDARY }}
-                    />
-                  )}
-                </span>
-              ))}
+              {/* 通道徽标：灰=未发/无记录，绿✓=通过，红✗=实测失败，黄?=已请求但厂商抓图失败(可重试)；
+                chat 腿不适用时整组不出，只留定论词，免得灰徽标被读成「未验证」 — 小欧-2026-11-09 */}
+              {!chatLegMuted &&
+                [
+                  { label: '内联', st: inlineState },
+                  { label: '外链', st: urlState },
+                ].map(({ label, st }) => (
+                  <span
+                    key={label}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      fontSize: FontSize.PRIMARY,
+                      color:
+                        st === 'pass'
+                          ? Colors.SUCCESS
+                          : st === 'fail'
+                            ? Colors.ERROR
+                            : st === 'warn'
+                              ? Colors.WARNING
+                              : Colors.TEXT.WEAK,
+                    }}
+                  >
+                    {label}
+                    {st === 'pass' && (
+                      <CheckOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                    {st === 'fail' && (
+                      <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                    {st === 'warn' && (
+                      <QuestionOutlined
+                        style={{ fontSize: FontSize.SECONDARY }}
+                      />
+                    )}
+                  </span>
+                ))}
               {/* 输出能力徽标 = 结论 3 态：输入+绿✓ / 输入+红✗ / 未验证灰字（Y/X 落符号，同通道徽标款）；
                 符号状态与内联腿同源（accept 既有值即实测整体结果）；未勾选且无记录时不显 */}
               {verdictWord !== null && (
@@ -993,7 +1160,7 @@ const SettingsPage: React.FC = () => {
                       gap: 2,
                       fontSize: FontSize.PRIMARY,
                       color:
-                        inlineState === 'unknown'
+                        inlineState === 'unknown' || inlineState === 'na'
                           ? Colors.TEXT.WEAK
                           : inlineState === 'fail'
                             ? Colors.ERROR
@@ -1012,43 +1179,45 @@ const SettingsPage: React.FC = () => {
               )}
             </span>
           </Tooltip>
-          {/* 按钮紧跟结论（同标题行「动作随文」放法）；x 由结论区定宽锚定，四态文案长短不使按钮搬家 */}
-          <Tooltip
-            title={
-              !imageChecked ? (
-                '未勾选「图片」输入模态，当前不发图，无从验证'
-              ) : (
-                <div
-                  style={{
-                    fontSize: FontSize.SECONDARY,
-                    lineHeight: 1.8,
-                    maxWidth: 380,
-                  }}
-                >
-                  <div>真实发送一张内置测试图，结论写回本行</div>
-                  <div>
-                    外链取证：先在上方「Image_URL」填公网图片地址，再点「验证」
+          {/* 按钮紧跟结论（同标题行「动作随文」放法）；x 由结论区定宽锚定，四态文案长短不使按钮搬家；
+            生成模型 chat 腿不适用 → 整块（含 Tooltip）不渲染 — 小欧-2026-11-09 */}
+          {!chatLegMuted && (
+            <Tooltip
+              title={
+                !imageChecked ? (
+                  '未勾选「图片」输入模态，当前不发图，无从验证'
+                ) : (
+                  <div
+                    style={{
+                      fontSize: FontSize.SECONDARY,
+                      lineHeight: 1.8,
+                      maxWidth: 380,
+                    }}
+                  >
+                    <div>真实发送一张内置测试图，结论写回本行</div>
+                    <div>
+                      外链取证：先在上方「Image_URL」填公网图片地址，再点「验证」
+                    </div>
                   </div>
-                </div>
-              )
-            }
-          >
-            <span style={{ marginLeft: Spacing.SM, display: 'inline-flex' }}>
-              <Button
-                style={{ width: settingsControl.actionBtnWidth }}
-                loading={probing}
-                disabled={s.saving || !imageChecked}
-                onClick={runProbe}
-              >
-                验证
-              </Button>
-            </span>
-          </Tooltip>
+                )
+              }
+            >
+              <span style={{ marginLeft: Spacing.SM, display: 'inline-flex' }}>
+                <Button
+                  style={{ width: settingsControl.actionBtnWidth }}
+                  loading={probing}
+                  disabled={s.saving || !imageChecked || genProbing}
+                  onClick={() => runProbeLeg('media')}
+                >
+                  验证
+                </Button>
+              </span>
+            </Tooltip>
+          )}
         </div>
-        {/* 2026-11-09 小欧: 输出模态行改只读徽标(声明亮/未声明灰)：output 仅厂商/配置声明，
-          无探测腿不可实测, 本页不可编辑(添加模型流程的声明入口不受影响) */}
+        {/* 2026-11-09 小欧: 输出模态行恢复纯声明只读展示, 实测入口移到下一行「生成能力验证」 — 小欧-2026-11-09 */}
         <div style={settingsRowStyle}>
-          <Tooltip title="按厂商/配置声明只读展示（生图/生视频无实测腿，不提供编辑）">
+          <Tooltip title="按厂商/配置声明只读展示（本页不可编辑，声明入口在添加模型流程）；实测见下一行「生成能力验证」">
             <span style={settingsLabelStyle}>输出模态</span>
           </Tooltip>
           <span style={{ flex: 1 }}>
@@ -1088,6 +1257,162 @@ const SettingsPage: React.FC = () => {
               ))}
           </span>
         </div>
+        {/* 2026-11-09 小欧 - 生成腿行([15])：与「输入图片能力验证」同款语法(腿徽标+结论+行尾按钮)，
+          结论与逐腿状态直接上界面，悬停只补耗时/验证时间 — 小欧-2026-11-09 */}
+        {isGenerationModel && (
+          <div style={settingsRowStyle}>
+            <Tooltip
+              title={
+                <div
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    lineHeight: 1.8,
+                    maxWidth: 440,
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>验证方法说明</div>
+                  <div>
+                    真实调用厂商生成端点：文生＝只发一段提示词；图生＝附一张公网图作输入；返回产物地址才算通过
+                  </div>
+                  <div>
+                    图片腿走 /images/generations（秒级）；视频腿走 /videos
+                    异步任务，提交后轮询取产物，排队时长取决于厂商，超时只记「未完成」不下能力结论
+                  </div>
+                  <div>
+                    按模型声明的输出模态出现对应腿：image →
+                    文生图／图生图，video → 文生视频／图生视频
+                  </div>
+                </div>
+              }
+            >
+              <span
+                style={{
+                  ...settingsLabelStyle,
+                  cursor: 'help',
+                  borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
+                }}
+              >
+                生成能力验证
+              </span>
+            </Tooltip>
+            <Tooltip
+              title={
+                <div
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    lineHeight: 1.8,
+                    maxWidth: 440,
+                  }}
+                >
+                  <div>{genVerdict}</div>
+                  {genLegs.some((l) => l.rec) && (
+                    <>
+                      {genLegs
+                        .map((l) => ({
+                          label: l.label,
+                          tip: genLegTip(l.label, l.rec),
+                        }))
+                        .filter((x) => x.tip)
+                        .map((x) => (
+                          <div key={x.label}>{x.tip}</div>
+                        ))}
+                      {genProbedAt && (
+                        <div style={{ opacity: 0.85 }}>
+                          验证时间 {genProbedAt.replace('T', ' ')}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              }
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: Spacing.SM,
+                  cursor: 'help',
+                  whiteSpace: 'nowrap',
+                  minWidth: 240,
+                }}
+              >
+                {genLegs.map(({ label, rec }) => {
+                  const st = genLegState(rec);
+                  return (
+                    <span
+                      key={label}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        fontSize: FontSize.PRIMARY,
+                        color: genColor(st),
+                      }}
+                    >
+                      {label}
+                      {st === 'pass' && (
+                        <CheckOutlined
+                          style={{ fontSize: FontSize.SECONDARY }}
+                        />
+                      )}
+                      {st === 'fail' && (
+                        <CloseOutlined
+                          style={{ fontSize: FontSize.SECONDARY }}
+                        />
+                      )}
+                      {st === 'warn' && (
+                        <QuestionOutlined
+                          style={{ fontSize: FontSize.SECONDARY }}
+                        />
+                      )}
+                    </span>
+                  );
+                })}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'baseline',
+                    gap: Spacing.XS,
+                  }}
+                >
+                  <span style={{ fontSize: FontSize.PRIMARY }}>生成能力</span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      fontSize: FontSize.PRIMARY,
+                      color: genColor(genWordState),
+                    }}
+                  >
+                    {genVerdictWord}
+                    {genWordState === 'pass' && (
+                      <CheckOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                    {genWordState === 'fail' && (
+                      <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                    {genWordState === 'warn' && (
+                      <QuestionOutlined
+                        style={{ fontSize: FontSize.SECONDARY }}
+                      />
+                    )}
+                  </span>
+                </span>
+              </span>
+            </Tooltip>
+            <span style={{ marginLeft: Spacing.SM, display: 'inline-flex' }}>
+              <Button
+                style={{ width: settingsControl.actionBtnWidth }}
+                loading={genProbing}
+                disabled={s.saving || probing}
+                onClick={() => runProbeLeg('output')}
+              >
+                生成验证
+              </Button>
+            </span>
+          </div>
+        )}
         <div data-section="provider-config">
           {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}
           <ProviderConfig

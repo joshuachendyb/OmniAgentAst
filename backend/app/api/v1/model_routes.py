@@ -68,6 +68,7 @@
     2026-11-08 小欧 - 模态断链修复: 两 DTO 由 capabilities 改 input_modalities/output_modalities(原未声明新字段,
       extra='ignore' 静默丢弃→保存永不落盘; POST 位置参错位致选项表写进模态) — 小欧-2026-11-08
     2026-11-08 小欧 - 新增 probe-media 路由: 实测模型接受哪种图片传输并落 model_meta.media — 小欧-2026-11-08
+    2026-11-09 小欧 - 新增 probe-output 路由: 生成验证(按输出模态跑图腿 t2i/i2i 与视频腿 t2v/i2v)并落 model_meta.media.generate — 小欧-2026-11-09
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -369,6 +370,14 @@ async def probe_model_media(name: str, model: str):
     path 转换器: 模型名可含 '/'（z-ai/glm-4.7 等），单段参数会 404。
     """
     return await svc.probe_model_media(name, model)
+
+
+# 2026-11-09 小欧 - 生成验证：按模型声明的输出模态跑图腿/视频腿，结果落 model_meta.media.generate — 小欧-2026-11-09
+@router.post("/providers/{name}/models/{model:path}/probe-output")
+@handle_config_errors("探测模型生成能力")
+async def probe_model_output(name: str, model: str):
+    """生成验证（图腿 t2i/i2i + 视频腿 t2v/i2v），落 model_meta.<model>.media.generate"""
+    return await svc.probe_model_output(name, model)
 
 
 # ── ZenithFree 双路验证（北京老陈 2026-10-10）──────────────────────────

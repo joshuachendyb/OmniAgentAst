@@ -45,8 +45,17 @@
 // 2026-11-08 小欧 - 能力字段拆双维度: ModelEntry/新增模型体 capabilities → input_modalities + output_modalities — 小欧-2026-11-08
 // 2026-11-08 小欧 - 补 media 探测块(ModelEntry.media + probeMedia): 记录模型接受哪种媒体传输 — 小欧-2026-11-08
 // 2026-11-09 小欧 - MediaProbe 补 url_err(厂商抓图失败≠地址为空没发)与 inline_ms/url_ms/inline_tokens/url_tokens(②验证tip按腿显示) — 小欧-2026-11-09
+// 2026-11-09 小欧 - 生成验证([15]): MediaProbe 扩 generate.image/video 双腿 + probeOutput 接口(视频异步, 显式 1200s 超时) — 小欧-2026-11-09
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
+
+/** 生成验证单腿记录（图腿 t2i/i2i 或视频腿 t2v/i2v），state 语义见后端 media.generate  - 小欧-2026-11-09 */
+export interface OutputProbeRec {
+  state: 'ok' | 'none' | 'unverified' | 'skipped';
+  ms?: number;
+  evidence?: string;
+  at?: string;
+}
 
 /** 图片接收实测结果。accept.image 由探测写入，只有 'both' | 'inline' | 'none' 三值
  *  （'url' 单独出现无意义：外链通了必然也通内联，探测也不会产出该值）。 */
@@ -63,6 +72,11 @@ export interface MediaProbe {
   inline_tokens?: number | null;
   url_tokens?: number | null;
   evidence?: string;
+  /** 生成验证（[15]）：图腿 t2i/i2i、视频腿 t2v/i2v；未点过「生成验证」= undefined  - 小欧-2026-11-09 */
+  generate?: {
+    image?: { t2i?: OutputProbeRec; i2i?: OutputProbeRec };
+    video?: { t2v?: OutputProbeRec; i2v?: OutputProbeRec };
+  };
 }
 
 export interface ModelEntry {
@@ -434,6 +448,33 @@ export const modelApi = {
   }> => {
     const response = await api.post(
       `/providers/${enc(provider)}/models/${enc(model)}/probe-media`
+    );
+    return response.data;
+  },
+
+  /** 生成验证（图腿 t2i+i2i / 视频腿 t2v+i2v）：验证生成模型输入(文本/URL图)与输出(图片/视频)，
+   *  落 model_meta.media.generate。message 为后端整句探测结论，直接进提示；前端不二次拼接。*/
+  probeOutput: async (
+    provider: string,
+    model: string
+  ): Promise<{
+    ok: boolean;
+    provider: string;
+    model: string;
+    generate: {
+      image?: { t2i?: OutputProbeRec; i2i?: OutputProbeRec };
+      video?: { t2v?: OutputProbeRec; i2v?: OutputProbeRec };
+    };
+    conclusive: boolean;
+    persisted: boolean;
+    message: string;
+  }> => {
+    const response = await api.post(
+      `/providers/${enc(provider)}/models/${enc(model)}/probe-output`,
+      null,
+      // 生图单张实测 0.3~17s；生视频是异步任务(提交+轮询, 单腿上限 600s 且队列满重试 3×30s，
+      //   两条腿串行最坏≈23 分钟)，axios 默认 60s 会先断而厂商侧任务仍在跑并计费 → 显式放宽到 30 分钟
+      { timeout: 1_800_000 }
     );
     return response.data;
   },

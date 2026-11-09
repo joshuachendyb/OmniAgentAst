@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-11-07 22:00:00
-**最近更新**: 2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-09
+**最近更新**: 2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
 
@@ -728,12 +728,31 @@ def my_parse_json(json_str):
 | `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false；key 取值三级优先（probe_key → env `{NAME}_API_KEY` → config）；**key 空白时 pop 掉 Authorization 头**（基类无条件造空 Bearer，无鉴权端点会 400），不动 adapter 基类以免波及 LLM 主链 | name, probe_key=None | Dict: {ok, provider, models, count, configured, current_model, status_code, category, message?} |
 | `replace_provider_models` | [68] PUT /providers/{name}/models：替换式写 ai.{name}.models + 差集孤儿清理（removed 键写 None 叶，禁空 dict）；env 接管/空列表/移除当前全局模型 → 400 | name, models | Dict: {ok, mtime, added, removed} |
 
+### 10.4 生成端点单点（generation/generation_client.py）[15] 2026-11-09
+
+生图/生视频端点唯一 HTTP 出口：设置页「生成验证」探测腿（probe-output）与 Phase B 真业务（会话生图工具 + 产物回传）共用同一函数，**生成端点禁直连 httpx**。视频腿是异步任务：提交拿 task_id → 轮询任务详情 → 取产物直链。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `generate_image` | 生图唯一 HTTP 出口（t2i/i2i 同端点同函数）；settled 三态与 `_probe_once` 同口径（200 有产物=ok / 400·415·422 或无产物=none / 401·429·5xx·网络错=未定） | api_base, headers, model, prompt, image=None, timeout=120 | Tuple[bool, str, bool] |
+| `generate_video` | 生视频唯一 HTTP 出口（t2v/i2v 同端点；提交+轮询，`mode` 必填；i2v 素材字段为 `images` 数组）；settled 口径同 `generate_image`，另将队列已满/轮询超时/轮询非 200/任务 failed（厂商侧失败无原因）/无 task_id 判为未定（不可归因模型） | api_base, headers, model, prompt, mode, images=None, timeout=120, poll_timeout=600 | Tuple[bool, str, bool] |
+| `_video_status` / `_video_url` / `_video_reason` / `_source_unreachable` | 视频响应解析私有辅助：状态串兼容平铺与 `data.status` 包裹；产物地址按键名含 video 优先、再退 `.mp4` 直链（响应常同时带封面/尾帧图，只取 `url` 会拿错）；失败原因取 `error/message/fail_reason` 首个非空文本，原样进 evidence；素材抓取失败判定图/视频两腿共用（中英两种报错） | data / text | str / bool |
+| `REJECT_STATUS` | 确定拒绝状态集 {400, 415, 422}；输入腿 `_probe_once` 与视频腿同取此常量（**单源，勿再复制**） | 无 | frozenset |
+| `IMAGE_PATH` / `VIDEO_PATH` | 生成端点协议常量（images 同步产物 / videos 异步 task） | 无 | str |
+| `PROBE_PROMPT` / `PROBE_I2I_PROMPT` | 生成验证探测 prompt 常量（t2i 确定性图形；i2i 只改主色调，对任意图源通用） | 无 | str |
+| `PROBE_VIDEO_PROMPT` / `PROBE_VIDEO_I2V_PROMPT` | 视频腿探测 prompt（t2v 确定性短时长运动；i2v 只做轻微推近，不假设图内容） | 无 | str |
+| `VIDEO_MODE_T2V` / `VIDEO_MODE_I2V` | 视频 `mode` 枚举单源（真机实证：`text`=文生视频、`image`=图生视频；缺省或取值非法一律 400 `mode 无效`） | 无 | str |
+| `VIDEO_POLL_INTERVAL` / `VIDEO_POLL_TIMEOUT` | 轮询节奏(5s)与单腿上限(500s)：真机实测排队约 250s + 生成，上限须覆盖排队，超时只记未完成不下能力结论 | 无 | float |
+| `VIDEO_DONE` / `VIDEO_FAILED` | 任务终态集合（completed/succeeded/success 取产物；failed/error 判确定拒绝） | 无 | frozenset |
+| `PROBE_IMAGE_URL` | 生成腿探测图源（i2i 图片输入 / i2v 首帧）：公网位图直链，**禁 ico/短链/鉴权地址**；与输入腿内联素材解耦，失效时只换这一行 | 无 | str |
+
 ---
 
 ## 版本历史
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.23 | 2026-11-09 | **新增 §10.4 生成端点单点**: `generation_client.generate_image` 入册（生图唯一 HTTP 出口，t2i/i2i 同端点同函数；探测腿与 Phase B 业务共用，禁直连 httpx）；同册登记 `REJECT_STATUS`（输入腿 `_probe_once` 改引用，拒绝状态集单源）/`IMAGE_PATH`/`VIDEO_PATH`/`PROBE_PROMPT`/`PROBE_I2I_PROMPT` | 小欧 |
 | v5.22 | 2026-11-04 12:52:53 | **§新 4.2.1 工具名/参数别名登记**（补漏项）: `tools_alias_mapper.normalize_params`/`PARAM_ALIASES`/`add_param_alias` 首次入册；`PARAM_ALIASES["edit"]` 增 `model→mode` 键名别名（日志实证 session 12b317fe 12:47:25 一次 6 条 edit 全废，`model:"once"` 即 mode 枚举，语义唯一指向；`normalize_params` 在 schema 校验前执行，已验证救活该调用与双传边界安全） | 小欧 |
 | v5.21 | 2026-11-04 12:19:56 | **新增 §1.18~§1.21（shell 卡死根治的四个公用层）**: ①`proc_io.py`（`drain_until_exit`/`drain_after_exit`/`run`/`TRUNCATED_NOTE`）零线程读管道取代 `communicate`；②`proc_utils.py`（`kill_process_tree`/`kill_pid_descendants`）零建进程树杀，ppid 映射 BFS 支持根已退出；③`workers.py`（`WorkerPool`/`ThreadLeasePool`）启动期建满、运行期零 `Thread.start`；④`spawn_gate.py`（`install_spawn_gate`/`mark_runtime_started`/`snapshot`/`SpawnGateBusy`）可回收租约 + 看门狗 | 小欧 |
 | v5.20 | 2026-11-01 14:40:00 | **键名统一**(北京老陈令: 一个概念一个名字, 不排期一次改净): ①1.x `parse_model_params` 返回值由 `context_limit` 更名 `context_length`, 取值顺序补 `model_meta.context_length` 层(model_params 用户值 > 厂商声明 > 全局默认 > 常量兜底), 常量 `DEFAULT_CONTEXT_LIMIT` → `DEFAULT_CONTEXT_LENGTH`；②10.3 `add_model`/`update_model` 形参与请求体 `default_params` → `model_params`, `_models_of` 下发键同改并补下发 `context_length`(模型库保存的窗口此前无读取面)；③10.3 `update_provider_config` 删 `base_url`/`retry_times` 别名, 只认 `api_base`/`max_retries`；④全局设置键 `llm.context_limit_default` → `llm.context_length_default` | 小欧 |

@@ -183,6 +183,11 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-09 小欧 - 外链腿落库补 url_err(发了请求但厂商抓图失败): 与「地址为空没发」结构化区分, 界面提示不再含糊 — 小欧-2026-11-09
 # 2026-11-09 小欧 - network_error 取证串补异常类型名(如 ConnectTimeout), 定位厂商侧120s无响应可读 — 小欧-2026-11-09
 # 2026-11-09 小欧 - 探测两腿耗时(ms)+image_tokens 结构化落库(inline_ms/url_ms/inline_tokens/url_tokens), 界面tip按腿显示 — 小欧-2026-11-09
+# 2026-11-09 小欧 - 生成验证腿: 新增 probe_model_output, 图腿 t2i/i2i 与视频腿 t2v/i2v 按输出声明实测,
+#   分组落 media.generate.{image,video}(一组未取证不连坐另一组); 拒绝状态集上收 generation_client.REJECT_STATUS 单源 - 小欧-2026-11-09
+# 2026-11-09 小欧 - 生成验证图源解耦: 图生/视频参考腿改用 generation_client.PROBE_IMAGE_URL,
+#   不再借 media.probe_image_url(输入腿素材, 默认 8x8 内联 png 不能当外链图输入) - 小欧-2026-11-09
+# 2026-11-09 小欧 - 视频腿改判: 任务 failed 只记未定(厂商侧失败不可归因模型), conclusive 改按「无未定腿」判定 - 小欧-2026-11-09
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -199,6 +204,8 @@ from app.logger import logger
 #   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
 from app.utils.secret_utils import is_blank_secret
 from app.config import get_config  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
+# 2026-11-09 小欧 - 生成端点单点（探测腿与 Phase B 真业务共用唯一 HTTP 出口）— 小欧-2026-11-09
+from app.services.generation import generation_client
 from app.services.model.config_helpers import (
     get_config_path,
     mask_secret_value,
@@ -1144,8 +1151,7 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
 # 探测素材: 8x8 纯色 PNG(74B)内联 data URI —— 程序生成, 不依赖外网图床 — 小欧-2026-11-08
 _PROBE_IMAGE_URL = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlE"
                     "QVR4nGO4o6GBFTEMLQkAe3tLAfuiUfAAAAAASUVORK5CYII=")
-# 厂商明确拒绝内容类型的状态: 只有这三个算"确定不收图", 其余错误码是环境问题 — 小欧-2026-11-08
-_REJECT_STATUS = frozenset({400, 415, 422})
+# 2026-11-09 小欧 - 拒绝状态集单源: 由 generation_client.REJECT_STATUS 统一持有, 本文件不再复制 — 小欧-2026-11-09
 
 
 def _probe_messages(url: str) -> List[Dict[str, Any]]:
@@ -1191,7 +1197,7 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
     except Exception as e:
         return False, f"network_error: {type(e).__name__}: {e}", False
     if resp.status_code != 200:
-        return False, f"http_{resp.status_code}: {resp.text[:160]}", resp.status_code in _REJECT_STATUS
+        return False, f"http_{resp.status_code}: {resp.text[:160]}", resp.status_code in generation_client.REJECT_STATUS
     try:
         data = resp.json()
     except Exception:
@@ -1209,10 +1215,28 @@ def _probe_hint(ev: str) -> str:
     """
     if ev.startswith("network_error"):
         return "连不上厂商接口"
+    if ev.startswith("source_unreachable"):
+        return "厂商抓不到探测图源，换图源再测"
+    if ev.startswith("queue_full"):
+        return "厂商视频队列已满，稍后重试"
+    if ev.startswith("poll_timeout"):
+        return "等视频出片超时，任务可能仍在排队"
+    if ev.startswith("task_failed"):
+        return "厂商侧生成失败，稍后重试"
+    if ev.startswith("no_task_id"):
+        return "厂商未返回任务号，检查接口地址"
+    if ev.startswith("protocol_drift"):
+        return "厂商改了视频参数校验（mode），需同步常量"
+    if ev.startswith("no_output_field"):
+        return "任务已完成但取不到视频地址，响应结构可能变了"
+    if ev.startswith("poll_http_"):
+        return "轮询查任务失败，稍后重试"
     if ev == "bad_json":
         return "返回不是 JSON，检查接口地址"
     if ev == "no_image_token_field":
         return "厂商未回报图像 token，无法判定"
+    if ev == "no_output":
+        return "厂商返回 200 但无产物地址"
     code = ev.split(":", 1)[0][5:] if ev.startswith("http_") else ""
     if code in ("401", "403"):
         return f"鉴权失败 {code}，检查 API Key"
@@ -1310,6 +1334,142 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
         "url_tested": url_settled,
         "conclusive": inline_settled,
         "media": media,
+        "persisted": persisted,
+        "message": message,
+    }
+
+
+# 2026-11-09 小欧 - 生成验证腿：图/视频各两枪(文生+图生)验输入与输出，落 media.generate.{image,video} — 小欧-2026-11-09
+async def probe_model_output(name: str, model: str) -> Dict[str, Any]:
+    """生成验证（[15]）：按声明的输出模态双腿实测，落 media.generate.{image,video}  - 小欧-2026-11-09
+
+    复用三级取值链（env→config）/ adapter 静态头 / _persist_media_probe 深合并
+    （merge_nested_patch 按叶子路径写盘，accept 等输入腿字段物理不可被触碰）；
+    evidence 口径与 _probe_once 同源，message 复用 _probe_hint 短语。
+    闸门：只在模型声明 image/video 输出时执行——与设置页按钮条件同口径。
+    视频腿是异步任务（提交+轮询，单腿上限 VIDEO_POLL_TIMEOUT），超时/排队只记未完成。
+    """
+    ai = _raw_ai()
+    p, api_base = _require_provider_for_fetch(name, ai)
+    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
+    if model not in configured:
+        raise HTTPException(status_code=404, detail=f"模型 {model} 不在 provider {name} 的 models 列表")
+    meta = p.get("model_meta") or {}
+    outs = ((meta.get(model) or {}).get("output_modalities") or []) if isinstance(meta, dict) else []
+    has_image = "image" in outs
+    has_video = "video" in outs
+    if not has_image and not has_video:
+        raise HTTPException(status_code=400, detail=f"模型 {model} 未声明 image/video 输出，无生成验证腿")
+    api_key = os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or "")
+    headers = get_provider_adapter(name).static_headers(api_key)
+    timeout = float(p.get("timeout") or 60)
+
+    def _now() -> str:
+        return datetime.now().isoformat(timespec="seconds")
+
+    async def _probe_leg(coro: Any) -> Tuple[Dict[str, Any], bool]:
+        t0 = time.monotonic()
+        ok, ev, settled = await coro
+        rec = {
+            "state": "ok" if ok else ("none" if settled else "unverified"),
+            "ms": int((time.monotonic() - t0) * 1000),
+            "evidence": ev,
+            "at": _now(),
+        }
+        return rec, settled
+
+    def _image_leg(prompt: str, image: Optional[str] = None) -> Any:
+        return generation_client.generate_image(
+            api_base, headers, model, prompt, image=image, timeout=timeout
+        )
+
+    def _video_leg(prompt: str, mode: str, image: Optional[str] = None) -> Any:
+        return generation_client.generate_video(
+            api_base,
+            headers,
+            model,
+            prompt,
+            mode,
+            images=[image] if image else None,
+            timeout=timeout,
+        )
+
+    skipped = {"state": "skipped", "evidence": "", "at": _now()}
+    generate: Dict[str, Any] = {}
+    settled_groups: Dict[str, Any] = {}
+    legs: List[Tuple[str, Dict[str, Any]]] = []
+    if has_image:
+        t2i, settled = await _probe_leg(_image_leg(generation_client.PROBE_PROMPT))
+        # 图源=generation_client.PROBE_IMAGE_URL(生成腿专用公网位图, 与输入腿素材解耦); t2i 未取证或未成功不打第二枪
+        if settled and t2i["state"] == "ok":
+            i2i, _ = await _probe_leg(
+                _image_leg(generation_client.PROBE_I2I_PROMPT, generation_client.PROBE_IMAGE_URL)
+            )
+        else:
+            i2i = skipped
+        generate["image"] = {"t2i": t2i, "i2i": i2i}
+        if settled:
+            settled_groups["image"] = generate["image"]
+        legs += [("文生图", t2i), ("图生图", i2i)]
+    if has_video:
+        t2v, settled = await _probe_leg(
+            _video_leg(generation_client.PROBE_VIDEO_PROMPT, generation_client.VIDEO_MODE_T2V)
+        )
+        if settled and t2v["state"] == "ok":
+            i2v, _ = await _probe_leg(
+                _video_leg(
+                    generation_client.PROBE_VIDEO_I2V_PROMPT,
+                    generation_client.VIDEO_MODE_I2V,
+                    generation_client.PROBE_IMAGE_URL,
+                )
+            )
+        else:
+            i2v = skipped
+        generate["video"] = {"t2v": t2v, "i2v": i2v}
+        if settled:
+            settled_groups["video"] = generate["video"]
+        legs += [("文生视频", t2v), ("图生视频", i2v)]
+
+    # 分组落库: 图腿已取证就存图腿, 视频腿排队超时不连坐(反之亦然) — 小欧-2026-11-09
+    persisted = (
+        _persist_media_probe(name, model, {"generate": settled_groups}) if settled_groups else False
+    )
+    ok_labels = [lb for lb, r in legs if r["state"] == "ok"]
+    none_labels = [lb for lb, r in legs if r["state"] == "none"]
+    pend_labels = [lb for lb, r in legs if r["state"] == "unverified"]
+    skip_labels = [lb for lb, r in legs if r["state"] == "skipped"]
+    pend_reasons = [
+        (lb, _probe_hint(r["evidence"])) for lb, r in legs if r["state"] == "unverified"
+    ]
+    # 单腿未定时不再重复腿名(摘要已写「X未完成」), 多腿才带前缀区分 — 小欧-2026-11-09
+    pend_hint = "；".join(
+        h if len(pend_reasons) == 1 else f"{lb}：{h}" for lb, h in pend_reasons
+    )
+    if not settled_groups:
+        message = f"未完成：{pend_hint}（原记录未改动）"
+    elif not none_labels and not pend_labels and not skip_labels:
+        # 生成腿自证输入(文生=文本、图生=公网图), 不再套输入腿「文本+URL图片」文案 — 小欧-2026-11-09
+        message = f"已记录：{'、'.join(ok_labels)}均通过"
+    else:
+        parts = []
+        if ok_labels:
+            parts.append(f"可{'、'.join(ok_labels)}")
+        if none_labels:
+            parts.append(f"{'、'.join(none_labels)}被厂商拒绝")
+        if pend_labels:
+            parts.append(f"{'、'.join(pend_labels)}未完成")
+        if skip_labels:
+            parts.append(f"{'、'.join(skip_labels)}未执行")
+        message = "已记录：" + "；".join(parts)
+        if pend_hint:
+            message += f"（{pend_hint}）"
+    return {
+        "ok": all(r["state"] == "ok" for lb, r in legs if r["state"] != "skipped"),
+        "provider": name,
+        "model": model,
+        "generate": generate,
+        # 结论口径 = 无未定腿: 未定腿(skipped 除外)存在时调用方只提示、不落能力结论 — 小欧-2026-11-09
+        "conclusive": all(r["state"] != "unverified" for _, r in legs),
         "persisted": persisted,
         "message": message,
     }

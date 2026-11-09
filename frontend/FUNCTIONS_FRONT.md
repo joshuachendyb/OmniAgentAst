@@ -3,8 +3,8 @@
 **创建时间**: 2026-09-23 14:19:12
 **编写人**: 小欧
 **维护人**: 小欧
-**最后更新时间**: 2026-09-23 14:19:12
-**最近更新**: 2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最后更新时间**: 2026-11-09
+**最近更新**: 2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -153,6 +153,7 @@
 | `modelApi.addProvider` | 建 provider | data | ModelMutationResult |
 | `modelApi.updateProvider` | 改 provider（clear=true 清空 api_key） | name, data | ModelMutationResult |
 | `modelApi.deleteProvider` | 删 provider（级联；禁删最后一个） | name | ModelMutationResult |
+| `modelApi.probeOutput` | 生成验证（按输出模态跑图腿 t2i/i2i 与视频腿 t2v/i2v；视频为异步任务，显式 30 分钟超时） — [15] 小欧-2026-11-09 | provider, model | `{ok, generate:{image?,video?}, conclusive, persisted, message}` |
 
 ### 2.4 其他 API 簿（config/chat/session/task/health.api.ts）
 
