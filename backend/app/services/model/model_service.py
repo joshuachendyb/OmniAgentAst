@@ -180,10 +180,15 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-08 小欧 - 媒体传输探测: probe_model_media 实测 image inline/url 并落 model_meta.media, _models_of 下发 — 小欧-2026-11-08
 # 2026-11-08 小欧 - 探测结论分级: 只有 200 与 400/415/422 算确定结论, 鉴权/限流/5xx/网络不落库; 图像 token 字段缺失≠0 — 小欧-2026-11-08
 # 2026-11-08 小欧 - 探测返回 message 改整句人话(_probe_hint 把取证串译成下一步动作), 状态码不再上界面 — 小欧-2026-11-08
+# 2026-11-09 小欧 - 外链腿落库补 url_err(发了请求但厂商抓图失败): 与「地址为空没发」结构化区分, 界面提示不再含糊 — 小欧-2026-11-09
+# 2026-11-09 小欧 - network_error 取证串补异常类型名(如 ConnectTimeout), 定位厂商侧120s无响应可读 — 小欧-2026-11-09
+# 2026-11-09 小欧 - 探测两腿耗时(ms)+image_tokens 结构化落库(inline_ms/url_ms/inline_tokens/url_tokens), 界面tip按腿显示 — 小欧-2026-11-09
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import os
+import re
+import time
 from datetime import datetime
 import httpx
 from fastapi import HTTPException
@@ -1184,7 +1189,7 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{api_base.rstrip('/')}/chat/completions", headers=headers, json=body)
     except Exception as e:
-        return False, f"network_error: {e}", False
+        return False, f"network_error: {type(e).__name__}: {e}", False
     if resp.status_code != 200:
         return False, f"http_{resp.status_code}: {resp.text[:160]}", resp.status_code in _REJECT_STATUS
     try:
@@ -1232,6 +1237,12 @@ def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
     return True
 
 
+def _ev_tokens(ev: str) -> Optional[int]:
+    """从取证串抽 image_tokens 值(串样例 image_tokens=64, 无值返 None)，供界面按腿显示 — 小欧-2026-11-09"""
+    m = re.search(r"image_tokens=(\d+)", ev or "")
+    return int(m.group(1)) if m else None
+
+
 async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     """探测模型接受哪种图片传输(inline/url)并落库 — 小欧-2026-11-08
 
@@ -1249,18 +1260,32 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     headers = get_provider_adapter(name).static_headers(api_key)
     timeout = float(p.get("timeout") or 60)
 
+    t0 = time.monotonic()
     inline_ok, inline_ev, inline_settled = await _probe_once(
         api_base, headers, model, _PROBE_IMAGE_URL, timeout)
+    inline_ms = int((time.monotonic() - t0) * 1000)
     url_ok, url_ev, url_settled = False, "skipped", False
     probe_url = str((get_config().get("media") or {}).get("probe_image_url") or "").strip()
+    url_ms: Optional[int] = None
     if inline_ok and probe_url:
+        t0 = time.monotonic()
         url_ok, url_ev, url_settled = await _probe_once(api_base, headers, model, probe_url, timeout)
+        url_ms = int((time.monotonic() - t0) * 1000)
 
     accept = "both" if (inline_ok and url_ok) else ("inline" if inline_ok else "none")
+    # 外链腿已请求(内联通过且配置了地址)却未取证 = 厂商抓图失败(network_error 类), 与「地址为空没发」
+    #   结构化区分, 前端提示不再一律归因「地址为空」 — 小欧-2026-11-09
+    url_err = bool(inline_ok and probe_url and not url_ok and not url_settled)
+    # 两腿耗时(ms, 请求往返)/token 结构化落库, 界面 tip 直读, 不再解析 evidence 串 — 小欧-2026-11-09
     media = {
         "accept": {"image": accept},
         "probed_at": datetime.now().isoformat(timespec="seconds"),
         "url_tested": url_settled,
+        "url_err": url_err,
+        "inline_ms": inline_ms,
+        "url_ms": url_ms,
+        "inline_tokens": _ev_tokens(inline_ev),
+        "url_tokens": _ev_tokens(url_ev),
         "evidence": f"image:inline={inline_ev}; image:url={url_ev}",
     }
     persisted = _persist_media_probe(name, model, media) if inline_settled else False

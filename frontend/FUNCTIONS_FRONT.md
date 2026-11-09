@@ -69,6 +69,7 @@
 | `formatRelativeTime` | 相对时间（x 分钟前） | Date/string/number | string |
 | `formatDurationHMS` | 秒数转时分秒时长 | sec: number | string |
 | `formatDebugTime` | 调试时间戳（sseParser 等复用） | 无 | string |
+| `probeMsText`（settings2/mediaProbeText.ts） | 探测腿毫秒转人话（485ms→"485 ms"，33200→"33.2 s"，null→""）；②图片能力验证 tip 复用 | number \| null \| undefined | 2026-11-09 |
 
 ### 1.5 文本规约（textNormalize.ts）
 

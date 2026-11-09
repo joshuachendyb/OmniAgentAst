@@ -135,11 +135,19 @@
 // 2026-11-08 小欧 - 实测迁入②：新增「图片实测」行（紧贴输入模态），探测目标=①选中模型；取证后回读落库值并回填 mtime — 小欧-2026-11-08
 // 2026-11-09 小欧 - 图片实测行整改（三堂会审）：按钮改紧跟结论(原推行尾); 提示拆「判定/内联/外链/定论」逐行; 副行撤"外链未测" — 小欧-2026-11-09
 // 2026-11-09 小欧 - 行内改三徽标(北京老陈定版)：内联/外链(绿✓通过·红✗失败·灰未测) + 输出能力(整体结论着色) — 小欧-2026-11-09
+// 2026-11-09 小欧 - 行名 tip=验证方法说明(判定/内联/外链/外链未取证四行原文)；徽标 tip 只剩定论/实测时间/取证 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 结论收 3 态(北京老陈定版)：勾选只管按钮可用性; 主词改输入Y/输入X/未验证; 撤「不适用」态 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 外链检测地址迁入②实测行(Image_URL, hidden 项)：提示文案改指行内地址框, 媒体页不再引 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 固定验证方法说明(判定/内联/外链/外链取证)移至「图片实测」行名 tip; 徽标 tooltip 只留定论/时间/取证 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 外链徽标增警示态：厂商抓图失败(url_err,已请求未取证)黄warning+?符号；未发请求仍灰字无符号 — 小欧-2026-11-09
+// 2026-11-09 小欧 - 行名改「输入图片能力验证」按钮改「验证」；徽标tip分段:token义/两腿响应(耗时+token)/验证时间(user定版) — 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
   Card,
   Checkbox,
+  // 2026-11-09 小欧 - Image_URL 外链检测地址行（hidden 项就地配置）— 小欧-2026-11-09
+  Input,
   Modal,
   Result,
   Skeleton,
@@ -148,7 +156,13 @@ import {
   // 2026-11-01 小欧 - ②参数区按钮常显化（北京老陈拍板 #4）：不可用原因用 Tooltip 说明 — 小欧-2026-11-01
   Tooltip,
 } from 'antd';
-import { PlusOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  // 2026-11-09 小欧 - 外链徽标警示态符号：厂商抓图失败(已请求未取证)黄?，与 ✓/✗ 同一套符号 — 小欧-2026-11-09
+  QuestionOutlined,
+} from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
 import {
   settingsSpacing,
@@ -174,7 +188,13 @@ import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
 // 2026-11-08 小欧 - 实测写盘绕过保存链，取证后按后端 mtime 回填，防下一次保存被守卫拒一次 — 小欧-2026-11-08
 import { settingsApi } from '@/services/api/settings.api';
-import { acceptMain, acceptVerdict, urlTestedOf } from '../mediaProbeText';
+import {
+  acceptMain,
+  acceptVerdict,
+  probeMsText,
+  urlErrOf,
+  urlTestedOf,
+} from '../mediaProbeText';
 import {
   ErrorType,
   handleApiError,
@@ -212,6 +232,10 @@ const SettingsPage: React.FC = () => {
   const [providerResetSeq, setProviderResetSeq] = useState(0);
   // 2026-11-08 小欧 - 图片实测探测中态（hook 必须置顶：组件早 return 之后不能再调 useState）— 小欧-2026-11-08
   const [probing, setProbing] = useState(false);
+  // 2026-11-09 小欧 - Image_URL(外链检测用图片地址)行输入缓冲：undefined=未动过，失焦/回车即存
+  const [probeUrlDraft, setProbeUrlDraft] = useState<string | undefined>(
+    undefined
+  );
 
   // 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
   // 原 jumpTo 直接切 Tab 绕过确认，会静默丢弃当前组未保存修改
@@ -468,6 +492,60 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // 2026-11-09 小欧 - Image_URL(media.probe_image_url)即存链：失焦/回车触发；本键 hidden 不进脏键槽，
+  //   直写 settings 通道(带外部更新守卫+mtime 回填), 也绕开 saveKeys 闭包读旧 values 的竞态
+  const runProbeUrlSave = async () => {
+    if (probeUrlDraft === undefined) return;
+    const v = probeUrlDraft.trim();
+    setProbeUrlDraft(undefined);
+    const stored =
+      (state.values['media']?.['media.probe_image_url'] as
+        | string
+        | undefined) ?? '';
+    if (v === stored) return;
+    try {
+      const curMtime = await settingsApi.getMtime();
+      if (curMtime !== state.mtime) {
+        s.syncMtime(curMtime);
+        showMessage(
+          ErrorType.WARNING,
+          '配置已被外部更新，刷新后重填 Image_URL'
+        );
+        return;
+      }
+      const r = await settingsApi.updateSettings({
+        // 后端 update_settings 按扁平全名 key 逐项校验(实测: 嵌套分组体报「未知 key: media」)— 小欧-2026-11-09
+        ['media.probe_image_url']: v,
+      });
+      if (!r.ok) {
+        r.errors.forEach((m) =>
+          showMessage(ErrorType.VALIDATE_CONFIG_FAILED, m)
+        );
+        return;
+      }
+      s.patchState({
+        values: {
+          ...state.values,
+          media: {
+            ...(state.values['media'] ?? {}),
+            'media.probe_image_url': v,
+          },
+        },
+        baseline: {
+          ...state.baseline,
+          media: {
+            ...(state.baseline['media'] ?? {}),
+            'media.probe_image_url': v,
+          },
+        },
+      });
+      s.syncMtime(r.mtime);
+      showSuccess('Image_URL 已保存');
+    } catch {
+      showMessage(ErrorType.WARNING, 'Image_URL 保存失败，请重试');
+    }
+  };
+
   const renderModelTab = () => {
     // 2026-11-01 小欧 - #4 常显化判据：原条件渲染的布尔量提取，一次计算两处引用 — 小欧-2026-11-01
     const hasManagementOptions =
@@ -475,6 +553,12 @@ const SettingsPage: React.FC = () => {
     // 2026-11-01 小欧 - 全域放弃判据：③Provider 草稿纳入「放弃修改」点亮条件（账本拆分反人类病根，
     //   北京老陈实证：改了③区点放弃无反应）— 小欧-2026-11-01
     const hasProviderDraft = Object.keys(state.model.providerDraft).length > 0;
+    // 2026-11-09 小欧 - Image_URL 行值单源 = media.probe_image_url（hidden 项，值从 settings load 读出；
+    //   state.values 组内键为全名 key，与 saveKeys 读取口径一致）— 小欧-2026-11-09
+    const probeUrlStored =
+      (state.values['media']?.['media.probe_image_url'] as
+        | string
+        | undefined) ?? '';
     // 2026-11-08 小欧 - 图片实测取值单源 = providers[].models[].media（取证即落库，页面不持临时结果）— 小欧-2026-11-08
     const selectedEntry = state.model.providers
       .find((p) => p.name === state.model.selectedProvider)
@@ -482,10 +566,13 @@ const SettingsPage: React.FC = () => {
     const media = selectedEntry?.media;
     const accept = media?.accept?.image;
     const urlTested = urlTestedOf(media);
+    // 外链未取证要分因：厂商抓图失败(url_err) ≠ 没发请求(地址空) — 小欧-2026-11-09
+    const urlErr = urlErrOf(media);
+    // 2026-11-09 小欧 - 勾选只决定按钮可用性；结论 3 态（未验证/输入Y/输入X），
+    //   未勾选且无记录时不显定论徽标，有实测记录则照实显示（实测为准，与勾选解耦）
     const imageChecked = state.model.inputModalities.includes('image');
-    // 未测时按勾选状态区分「未测 / 不适用」；已测则如实显示，与勾选状态解耦
-    const showInapplicable = !accept && !imageChecked;
-    // 三徽标状态：pass=绿对勾 / fail=红叉 / unknown=灰(未测或未取证)
+    const showVerdict = imageChecked || !!accept;
+    // 三徽标状态：pass=绿对勾 / fail=红叉 / warn=黄?(已请求厂商抓图失败) / unknown=灰(未发或无记录)
     const inlineState = !accept
       ? 'unknown'
       : accept === 'none'
@@ -496,19 +583,35 @@ const SettingsPage: React.FC = () => {
         ? 'pass'
         : accept === 'inline' && urlTested
           ? 'fail'
-          : 'unknown';
-    const verdictWord = showInapplicable ? '不适用' : acceptMain(accept);
-    const probeColor = !accept
-      ? Colors.TEXT.WEAK
-      : accept === 'none'
-        ? Colors.ERROR
-        : Colors.SUCCESS;
-    // 定论行：已测 → 一句讲清外链转发与否及理由；未勾选 → 说明为何无从实测
-    const verdictLine = showInapplicable
-      ? '未勾选「图片」输入模态，当前不发图；勾选「图片」后可实测'
-      : !imageChecked
-        ? `${acceptVerdict(accept, urlTested)}（当前未勾选「图片」，不发图）`
-        : acceptVerdict(accept, urlTested);
+          : urlErr
+            ? 'warn'
+            : 'unknown';
+    const verdictWord = showVerdict ? acceptMain(accept) : null;
+    // 定论行：一句讲清外链转发与否及理由；未勾选时补一句为何不发图
+    const verdictLine = !imageChecked
+      ? `${acceptVerdict(accept, urlTested, urlErr)}（当前未勾选「图片」，不发图）`
+      : acceptVerdict(accept, urlTested, urlErr);
+    // 2026-11-09 小欧 - 徽标 tip 按腿行(用户定版)：响应耗时+图片 token；外链按取证/未发/抓图失败三态 — 小欧-2026-11-09
+    const inlineLeg =
+      media?.inline_ms != null
+        ? `响应 ${probeMsText(media.inline_ms)}${
+            media?.inline_tokens != null
+              ? `，图片 token ${media.inline_tokens}`
+              : '，无 token 记录'
+          }`
+        : '未记录';
+    const urlLeg =
+      !urlTested && !urlErr
+        ? '未发起（Image_URL 为空）'
+        : `响应 ${
+            media?.url_ms != null ? probeMsText(media.url_ms) : '—'
+          }，${
+            urlErr
+              ? '抓图失败（未取证）'
+              : media?.url_tokens != null
+                ? `图片 token ${media.url_tokens}`
+                : '未返回 token'
+          }`;
     return (
       <div>
         <div data-section="selector">
@@ -728,11 +831,44 @@ const SettingsPage: React.FC = () => {
             state.model.inputModalitiesBaseline
           ) && <DirtyDot />}
         </div>
+        {/* 2026-11-09 小欧 - Image_URL 行：外链验证腿用图地址，api_base 同款框(registry hidden 项就地配置)；
+          默认 Bing 公网 favicon，留空=只测内联 */}
+        <div style={settingsRowStyle}>
+          <Tooltip
+            title={
+              <div style={{ fontSize: FontSize.SECONDARY, lineHeight: 1.8 }}>
+                外链验证腿把这里的公网图片地址交给厂商，由厂商接口自己抓取
+                <div style={{ opacity: 0.8 }}>
+                  留空＝只测内联（外链不写结论）
+                </div>
+              </div>
+            }
+          >
+            <span
+              style={{
+                ...settingsLabelStyle,
+                cursor: 'help',
+                borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
+              }}
+            >
+              Image_URL
+            </span>
+          </Tooltip>
+          <span style={{ flex: 1 }}>
+            <Input
+              value={probeUrlDraft ?? probeUrlStored}
+              onChange={(e) => setProbeUrlDraft(e.target.value)}
+              onBlur={runProbeUrlSave}
+              onPressEnter={(e) => (e.target as HTMLInputElement).blur()}
+              style={{ width: settingsControl.baseUrlWidth }}
+            />
+          </span>
+        </div>
         {/* 2026-11-09 小欧 - 图片实测行：结论紧贴它所验证的「输入模态」声明；实测(真发一张图、
           HTTP 200 且图像 token>0 判定)与厂商声明分列，冲突以实测为准；按钮常显，未勾「图片」禁用 — 小欧-2026-11-09 */}
         <div style={settingsRowStyle}>
-          <span style={settingsLabelStyle}>图片实测</span>
-          {/* 结论区主词+通道副行; Tooltip 固定三行(判定/内联/外链)+定论行, 不重复堆叠 */}
+          {/* 2026-11-09 小欧 - 行名 tip = 固定验证方法说明(判定/内联/外链定义/外链取证经纬)；
+            外链行按取证与否分述，避免对已取证模型说「未取证」的自相矛盾 */}
           <Tooltip
             title={
               <div
@@ -742,25 +878,55 @@ const SettingsPage: React.FC = () => {
                   maxWidth: 440,
                 }}
               >
+                <div style={{ fontWeight: 600 }}>验证方法说明</div>
                 <div>
-                  判定：真实发送一张内置测试图，HTTP 200 且返回图像 token&gt;0
-                  才算收到
+                  真实调用 LLM 发送一张内置测试图，HTTP 200 且返回图像
+                  token&gt;0 才算「输出能力」正常
                 </div>
                 <div>内联＝图片数据直接随请求体发送（base64）</div>
                 <div>外链＝只发图片地址，由厂商接口自行抓取</div>
+                <div>
+                  {urlTested
+                    ? '外链已取证——测试图片地址由厂商接口实际抓取成功，图片地址可随请求转发'
+                    : urlErr
+                      ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；可再点「验证」重试'
+                      : '外链未取证——本次验证时上方「Image_URL」为空，外链腿未发起请求；填好地址再点「验证」即出对/错'}
+                </div>
+              </div>
+            }
+          >
+            <span
+              style={{
+                ...settingsLabelStyle,
+                cursor: 'help',
+                borderBottom: `1px dashed ${Colors.TEXT.WEAK}`,
+              }}
+            >
+              输入图片能力验证
+            </span>
+          </Tooltip>
+          {/* 2026-11-09 小欧 - 徽标 tooltip 分段(用户定版)：定论/两腿响应(token+耗时)/验证时间；方法说明在行名 tip */}
+          <Tooltip
+            title={
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  lineHeight: 1.8,
+                  maxWidth: 440,
+                }}
+              >
                 <div>{verdictLine}</div>
                 {media?.probed_at && (
-                  <div style={{ opacity: 0.85 }}>
-                    实测于 {media.probed_at.replace('T', ' ')}
-                  </div>
-                )}
-                {media?.evidence && (
-                  <div style={{ opacity: 0.7 }}>
-                    取证{' '}
-                    {media.evidence.length > 140
-                      ? `${media.evidence.slice(0, 140)}…`
-                      : media.evidence}
-                  </div>
+                  <>
+                    <div>
+                      图片 token＝厂商把图片折算的输入 token，&gt;0＝图真进了上下文
+                    </div>
+                    <div>内联腿：{inlineLeg}</div>
+                    <div>外链腿：{urlLeg}</div>
+                    <div style={{ opacity: 0.85 }}>
+                      验证时间 {media.probed_at.replace('T', ' ')}
+                    </div>
+                  </>
                 )}
               </div>
             }
@@ -775,7 +941,7 @@ const SettingsPage: React.FC = () => {
                 minWidth: 240,
               }}
             >
-              {/* 通道徽标：灰=未测/未取证，绿✓=通过，红✗=实测失败 */}
+              {/* 通道徽标：灰=未发/无记录，绿✓=通过，红✗=实测失败，黄?=已请求但厂商抓图失败(可重试) */}
               {[
                 { label: '内联', st: inlineState },
                 { label: '外链', st: urlState },
@@ -792,7 +958,9 @@ const SettingsPage: React.FC = () => {
                         ? Colors.SUCCESS
                         : st === 'fail'
                           ? Colors.ERROR
-                          : Colors.TEXT.WEAK,
+                          : st === 'warn'
+                            ? Colors.WARNING
+                            : Colors.TEXT.WEAK,
                   }}
                 >
                   {label}
@@ -802,28 +970,55 @@ const SettingsPage: React.FC = () => {
                   {st === 'fail' && (
                     <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
                   )}
+                  {st === 'warn' && (
+                    <QuestionOutlined
+                      style={{ fontSize: FontSize.SECONDARY }}
+                    />
+                  )}
                 </span>
               ))}
-              {/* 输出能力徽标：整体结论（=原「能接收」主词），随实测值着色 */}
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'baseline',
-                  gap: Spacing.XS,
-                }}
-              >
-                <span style={{ fontSize: FontSize.PRIMARY }}>输出能力</span>
-                <span style={{ fontSize: FontSize.PRIMARY, color: probeColor }}>
-                  {verdictWord}
+              {/* 输出能力徽标 = 结论 3 态：输入+绿✓ / 输入+红✗ / 未验证灰字（Y/X 落符号，同通道徽标款）；
+                符号状态与内联腿同源（accept 既有值即实测整体结果）；未勾选且无记录时不显 */}
+              {verdictWord !== null && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'baseline',
+                    gap: Spacing.XS,
+                  }}
+                >
+                  <span style={{ fontSize: FontSize.PRIMARY }}>输出能力</span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      fontSize: FontSize.PRIMARY,
+                      color:
+                        inlineState === 'unknown'
+                          ? Colors.TEXT.WEAK
+                          : inlineState === 'fail'
+                            ? Colors.ERROR
+                            : Colors.SUCCESS,
+                    }}
+                  >
+                    {verdictWord}
+                    {inlineState === 'pass' && (
+                      <CheckOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                    {inlineState === 'fail' && (
+                      <CloseOutlined style={{ fontSize: FontSize.SECONDARY }} />
+                    )}
+                  </span>
                 </span>
-              </span>
+              )}
             </span>
           </Tooltip>
           {/* 按钮紧跟结论（同标题行「动作随文」放法）；x 由结论区定宽锚定，四态文案长短不使按钮搬家 */}
           <Tooltip
             title={
               !imageChecked ? (
-                '未勾选「图片」输入模态，当前不发图，无从实测'
+                '未勾选「图片」输入模态，当前不发图，无从验证'
               ) : (
                 <div
                   style={{
@@ -834,7 +1029,7 @@ const SettingsPage: React.FC = () => {
                 >
                   <div>真实发送一张内置测试图，结论写回本行</div>
                   <div>
-                    外链取证：先在「媒体 → 外链检测用图片地址」填公网图片地址
+                    外链取证：先在上方「Image_URL」填公网图片地址，再点「验证」
                   </div>
                 </div>
               )
@@ -847,7 +1042,7 @@ const SettingsPage: React.FC = () => {
                 disabled={s.saving || !imageChecked}
                 onClick={runProbe}
               >
-                实测
+                验证
               </Button>
             </span>
           </Tooltip>

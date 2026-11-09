@@ -15,7 +15,7 @@
     "test:e2e:debug": "npm run check && playwright test --debug",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
-    "lint:e2e": "eslint e2e_case e2e_front_lib src/tests/support --ext .ts,.tsx",
+    "lint:e2e": "eslint e2e_case e2e_front_lib --ext .ts,.tsx",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "format": "prettier --write .",

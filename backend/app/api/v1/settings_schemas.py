@@ -3,6 +3,7 @@
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：GET/PUT /settings 契约 DTO（5.2）
+  2026-11-09 - 小欧 - SchemaItem 补 hidden 透出(响应模型缺字段会把 registry 的 hidden 整个剥掉, 前端收不到)
 """
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
@@ -26,6 +27,7 @@ class SchemaItem(BaseModel):
     restart: bool = Field(False)
     secret: bool = Field(False)
     readonly: bool = Field(False)
+    hidden: bool = Field(False)
     notice: str = Field("")
 
 

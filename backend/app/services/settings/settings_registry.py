@@ -101,6 +101,10 @@ key 全局唯一，加载自检重复直接拒启。
       控制台只显示 == 该值的行, 日志文件按原逻辑记 >= 该值; debug true 时文件强制 DEBUG、控制台不受影响 — 小欧-2026-11-03
     2026-11-08 小欧 - media 组补齐: 「转发图片外链」notice 的条数上限改引 app.constants.MAX_REMOTE_IMAGES(与 vision 截断同源),
       并补「被拒会留一行说明」; 与内联/压缩四项 notice 的语义对齐 — 小欧-2026-11-08
+    2026-11-09 小欧 - 上架就地配置: 外链检测项登记为 hidden(hidden=True 仅组内不渲染, 键仍可读写), 迁到设置页②实测行就地显示;
+      默认值定为 Wikimedia Commons 公网 PNG — 小欧-2026-11-09
+    2026-11-09 小欧 - 默认检测图换 cn.bing.com/favicon.ico: wikimedia 对 agnes 厂商146s连接超时必失败(实测定性),
+      Bing favicon 走厂商外链腿 30s 过(image_tokens=64), 微软全球CDN可达性最好 — 小欧-2026-11-09
 
 """
 from typing import Any, Dict, List, Optional
@@ -146,7 +150,7 @@ def _item(key: str, type_: str, label: str, default: Any = None,
           step: Optional[float] = None, restart: bool = False, secret: bool = False,
           readonly: bool = False, notice: str = "",
           env_key: Optional[str] = None, env_inject: bool = False,
-          list_of: Optional[str] = None) -> Dict[str, Any]:
+          list_of: Optional[str] = None, hidden: bool = False) -> Dict[str, Any]:
     """单项构造：storage 统一 YAML。
 
     参数 range_ 的尾下划线只避内置 range，与字典键 range 刻意异名（对齐 model_service.add_model）。
@@ -154,11 +158,12 @@ def _item(key: str, type_: str, label: str, default: Any = None,
 否则页面显示值≠实际生效值。两者分开：ai.model_ref 是 dict 而 env 是标量，注入会写坏结构。
 注入清单在 app.config.ENV_INJECTED_KEYS，双向一致性由 _build_index 启动自检保证。
 list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则见 app/utils/allowlist.py。
+hidden=True 的项仍在注册表(可读写)，但设置页组内不再渲染——它已迁到具体功能行就地配置 — 小欧-2026-11-09
 """
     return {"key": key, "type": type_, "label": label, "default": default,
             "options": options, "range": range_, "step": step, "storage": "YAML",
             "restart": restart, "secret": secret, "readonly": readonly, "notice": notice,
-            "env_key": env_key, "env_inject": env_inject, "list_of": list_of}
+            "env_key": env_key, "env_inject": env_inject, "list_of": list_of, "hidden": hidden}
 
 
 GROUPS: Dict[str, Dict[str, Any]] = {
@@ -216,8 +221,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
               notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接；单条消息最多 {MAX_REMOTE_IMAGES} 个；本机地址与内网 IP、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
-        _item("media.probe_image_url", "text", "外链检测用图片地址", "",
-              notice="「模型库」点「实测」时用来试外链的那张公网图片地址（内联用内置的 8×8 PNG，不需要本项）。留空 = 只测内联，外链不写结论；填一个公网可直接访问的图片 URL 才能测出模型收不收外链。该地址会原样交给厂商，别用带隐私参数的链接"),
+        _item("media.probe_image_url", "text", "外链检测用图片地址",
+              "https://cn.bing.com/favicon.ico",
+              hidden=True,
+              notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。已迁到设置页②「Image_URL」行就地显示与修改，此处仅作配置源登记。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
     ]},
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，

@@ -9,6 +9,7 @@
 // 编辑历史: 2026-10-06 小欧 - 新增 SecurityDocsResponse + getSecurityDocs: 安全Tab说明文案三段
 //   (均已由后端插值真实路径, 前端零字符串逻辑)。刻意不并入 getAll — 那边返可配置项的,
 //   混一起前端分不清哪个能改) — 小欧-2026-10-06
+// 2026-11-09 小欧 - SettingSchemaItem 补 hidden(响应模型须透出, 设置页组内过滤不再渲染已迁功能行的项) — 小欧-2026-11-09
 import api from './client';
 import type { ApiRequestConfig } from './client';
 import { setAccessToken } from './client';
@@ -97,6 +98,8 @@ export interface SettingSchemaItem {
   restart: boolean;
   secret: boolean;
   readonly: boolean;
+  /** 已在其他界面行内就地配置(如 Image_URL 行)，组内列表不再重复渲染 — 小欧-2026-11-09 */
+  hidden?: boolean;
   notice?: string;
 }
 

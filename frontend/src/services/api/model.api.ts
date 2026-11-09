@@ -44,6 +44,7 @@
 //   ③ProviderConfigPatch.base_url → api_base，删 retry_times（只留 max_retries）。— 小欧-2026-11-01
 // 2026-11-08 小欧 - 能力字段拆双维度: ModelEntry/新增模型体 capabilities → input_modalities + output_modalities — 小欧-2026-11-08
 // 2026-11-08 小欧 - 补 media 探测块(ModelEntry.media + probeMedia): 记录模型接受哪种媒体传输 — 小欧-2026-11-08
+// 2026-11-09 小欧 - MediaProbe 补 url_err(厂商抓图失败≠地址为空没发)与 inline_ms/url_ms/inline_tokens/url_tokens(②验证tip按腿显示) — 小欧-2026-11-09
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -54,6 +55,13 @@ export interface MediaProbe {
   probed_at?: string;
   /** 外链那条腿是否拿到确定结论；由后端落库，前端不再解析 evidence 文本。 */
   url_tested?: boolean;
+  /** 外链腿已发请求但厂商抓图失败(network_error 类，非确定结论)；false = 没发(地址空)或已取证 — 小欧-2026-11-09 */
+  url_err?: boolean;
+  /** 两腿请求往返耗时(ms，客户端掐表)；url_ms 为 null/缺省 = 外链腿未发起 — 小欧-2026-11-09 */
+  inline_ms?: number | null;
+  url_ms?: number | null;
+  inline_tokens?: number | null;
+  url_tokens?: number | null;
   evidence?: string;
 }
 
