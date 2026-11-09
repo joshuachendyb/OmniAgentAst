@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**系统版本**: v1.6.0 | **更新时间**: 2026-11-04 10:15 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-11-04（第九章重写：开发环境补充watchfiles双模式+同源SPA打包+Tauri桌面打包章节边界）
+**系统版本**: v1.6.6 | **更新时间**: 2026-11-09 22:36 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-11-09（核对最新本地代码同步：附件域与媒体链路、输出模态生成验证腿、LLM 429 冷却、设置页 9 组重构、opencli 免费车道网关、配置节与调优键口径）
 
 ## 一、项目概述
 
@@ -89,6 +89,8 @@
 
 - FastAPI 直接对外提供 REST/SSE，未独立网关层（认证/权限/限流）
 - 任务在单次请求内流式执行，无独立任务队列
+- 附件链路：`app/attachments`（采集/解析/本地导入）+ `services/refs`（引用解析/预算/裁剪/渲染）
+- 媒体链路：`services/model/model_service` 探测 + `media` 配置组 + `services/generation`（生图/生视频单一 HTTP 出口）
 
 ### 2.3 依赖分层
 
@@ -142,10 +144,17 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 ```
 backend/app/tools/
 ├── registry.py              # ToolRegistry 单例 + ensure_tools_registered（含工具名别名归一化）
-├── tools_alias_mapper.py    # 工具名别名映射（normalize_tool_name：LLM 变体名→注册名）
+├── tools_alias_mapper.py    # 工具名/参数名别名映射（normalize_tool_name / normalize_param）
 ├── tool_types.py            # ToolCategory 枚举 / ToolMetadata
-├── tool_constants.py        # CATEGORY_MODULES（分类→模块映射）
-├── toolhelper/              # 工具辅助（错误提示/重试）
+├── tool_constants.py        # CATEGORY_MODULES（分类→模块映射）、路径工具四类名单
+├── tool_response.py         # 统一响应体构建（success/warning/error）
+├── tool_fc_helper.py        # Function-Call 辅助（参数归一/结果格式化）
+├── tool_retry_engine.py     # 工具重试引擎
+├── tool_error_classifier.py # 工具错误分类
+├── tool_description.py      # 工具描述/暴露面收口
+├── conflict_detector.py     # 工具冲突检测
+├── context.py / schema_utils.py / target_utils.py / file_tool_utils.py # 上下文/参数模型/目标/文件辅助
+├── toolhelper/              # 工具辅助（错误提示/重试/行分页/语法护栏）
 ├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
 ├── security/                # 安全守卫（path_safe_check / safety_result / temp_auth，非对外工具）
 ├── trust.py trust_db.py     # 工具信任管理（会话级信任 / 路径级精确撤销）
@@ -173,8 +182,8 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 
 | 层 | 职责 |
 |----|------|
-| L0 | config.yaml `security.enabled` 全局开关 |
-| L1 | 工具安全级别（safe / destructive / dangerous） |
+| L0 | config.yaml `security.system.enabled` 全局安全模块开关（细分硬拦见 `security.system.*`） |
+| L1 | 工具安全级别（safe / destructive / dangerous）+ `security.hitl.*` 人工确认分项开关 |
 | L2 | 已知风险检测：路径越权 / 写入污染 / 代码注入 / 删除安全（delete_safety R1-R6） |
 | L3 | DB 事务编排：操作记录 → 状态追踪 → 备份 → 文件 hash → 审计（operations.db，支持回滚） |
 | hooks | 安全 hooks 协议（`safety/default_hooks.py` 默认转发壳） |
@@ -196,7 +205,11 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 OmniAgentAs-01/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
-│   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
+│   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage/attachments/fs/files/material_packs/auth）
+│   │   ├── attachments/        # 附件域采集/解析/本地导入（attachment_service / extract / local_import / collect）
+│   │   ├── datafile/           # 内置数据文件（安全说明等）
+│   │   ├── file_browse/        # 自研文件浏览器服务（盘符/目录树/本地文件系统）
+│   │   ├── material_packs/     # 素材包
 │   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
 │   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/path_tool_safety_checker/default_hooks/models
@@ -206,9 +219,11 @@ OmniAgentAs-01/
 │   │   ├── services/
 │   │   │   ├── agent/          # Agent体系（base_agent + universal_agent + agent_runner + react_cycle + tool_loader + handlers + steps + compaction）
 │   │   │   ├── chat/           # 对话编排（stream_orchestrator 编排 + sse_events + storage + session/message_service + history_loader + migrate_steps）
+│   │   │   ├── generation/     # 生图/生视频单一 HTTP 出口（generation_client：generate_image / generate_video）
 │   │   │   ├── lifecycle/      # 生命周期管理
 │   │   │   ├── model/          # 模型/配置解析（model_service + config_service + config_helpers）
 │   │   │   ├── prompts/        # 系统提示词适配
+│   │   │   ├── refs/           # 引用解析（resolver / budget / clip / limits / notice / pipeline / render）
 │   │   │   ├── settings/       # 设置注册表（settings_registry + settings_service）
 │   │   │   ├── task/           # 任务追踪（TaskTracker + task_db/task_state/task_registry/task_runtime，暂停/取消/恢复 / hitl_confirmation）
 │   │   │   ├── tool/           # 工具门面（tool_facade）
@@ -224,17 +239,18 @@ OmniAgentAs-01/
 ├── frontend/                   # React + TypeScript 前端（Web App，非桌面/移动端）
 │   ├── src/
 │   │   ├── features/           # 特性域（chat 全链路 + settings2 配置管理）
-│   │   │   ├── chat/           # 聊天特性域（components/hooks/services/sseParser）
+│   │   │   ├── chat/           # 聊天特性域（components/hooks/services/sseParser/streams）
 │   │   │   │   ├── components/ #   layout(SessionLayout/TaskListPanel/SessionPanelRegistry)、
 │   │   │   │   │               #   right(RightViewer/PipelineRenderer)、taskinfo、topbar、ChatInput 等
-│   │   │   │   ├── hooks/      #   useChatPanels 面板组装 / 其余 chat hook
+│   │   │   │   ├── hooks/      #   useChatPanels 面板组装 / useChatFacade 聚合 / 其余 chat hook
 │   │   │   │   └── services/   #   sseParser.ts（SSE 解析）
-│   │   │   └── settings2/      # 设置特性域（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件）
+│   │   │   └── settings2/      # 设置特性域（35 组件 + 12 hooks：SettingsPage/ModelTab/ModelLibraryTab/
+│   │   │                       #   SettingRow/SettingsGroup/ProviderConfig/ParamOptionsModal/LegBadge/ProbeMemo 等）
 │   │   ├── components/         # 通用 UI 组件（AuthorizationModal / 布局等；TrustPanel 在 features/chat/components/config/）
 │   │   ├── contexts/           # React Context（AppContext）
 │   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）；chat 聚合见 features/chat/hooks/useChatFacade
 │   │   ├── lib/                # 库桥接（antd bridge）
-│   │   ├── pages/              # 页面（ChatPage / HistoryPage / Settings2）
+│   │   ├── pages/              # 页面（ChatPage / History / Files / LoginPage / Settings2）
 │   │   ├── services/           # API 层（api/*.api.ts + error/handler）
 │   │   ├── theme/              # 视觉令牌（tokens.ts）
 │   │   ├── types/              # TS 类型定义（chat/sse/execution，如 types/chat.ts）
@@ -242,15 +258,15 @@ OmniAgentAs-01/
 │   │   └── utils/              # 工具函数（time / stepStyles / sse 处理等）
 │   ├── src/tests/              # 前端单元测试（Vitest，git 忽略）
 │   ├── e2e_front_lib/          # 前端 E2E 基座（POM/常量/夹具，必从 ../../e2e_front_lib 引用）
-│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~25*.spec.ts + e2e.config/vite.e2e.config）
+│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~28*.spec.ts + e2e.config/vite.e2e.config）
 │   ├── scripts/                # 辅助脚本（CI/本地启动等）
 │   ├── tests/                  # 前端测试与性能测量脚本
 │   └── package.json
+├── gateways/                   # 第三方 CLI 模型接入网关（通用层 + vendor 驱动）
+├── opencli_source/             # 免费车道 opencli 网关部署物（config.json/opencode2api.exe/start.bat/stop.bat + 部署启停说明）
 ├── config/                     # 配置文件（config.yaml 主配置，已被 Git 忽略）
 ├── doc-5月优化/                # 5月优化（含 doc-5月agent2.0 架构设计文档，旧称 doc-agent2.0）
-├── doc-*/                      # 各月优化/专题设计文档目录
-├── doc/                        # 系统设计文档
-├── notes/                      # 调试笔记
+├── doc-*/                      # 各月优化/专题设计文档目录（doc-打包与E2E、doc-测试与审查等）
 ├── version.txt                 # 版本变更记录（append-only）
 └── AGENTS.md                   # 开发规范
 ```
@@ -266,8 +282,8 @@ OmniAgentAs-01/
 | 层 | 要点 |
 |----|------|
 | 主业务页面 | `ChatPage.tsx` 单页，聊天主流程全部在其内组合 |
-| 其他页面 | `HistoryPage`（历史会话管理）/ `Settings2`（7 Tab 设置管理） |
-| 特性域 | `features/chat`（components/hooks/services/sseParser）+ `features/settings2`（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件） |
+| 其他页面 | `History`（历史会话管理）/ `Files`（文件抽屉/自研浏览器）/ `Settings2`（9 组设置管理）/ `LoginPage`（访问口令登录） |
+| 特性域 | `features/chat`（components/hooks/services/sseParser/streams）+ `features/settings2`（35 组件 + 12 hooks：SettingsPage/ModelTab/ModelLibraryTab/SettingRow/ProviderConfig/LegBadge/ProbeMemo 等） |
 | 全局状态 | 单 Context `AppContext`（安全 Context 已并入） |
 | Hook 编排 | `features/chat/hooks/useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有顶层 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等） |
 
@@ -339,7 +355,7 @@ OmniAgentAs-01/
 | 授权弹窗 | `AuthorizationModal`（path_auth/shell/delete/execute 多类确认，HITLModalShell 统一外壳） |
 | 授权流程 | paused 事件 → `useAuthorization` hook → 用户 confirm/deny → 后端 HITL 接口确认 |
 | 会话信任 | `TrustPanel` 展示/管理信任工具，`TrustedTool` 带 path 字段，路径级精确撤销（`revokeTrust ?path=`） |
-| 超时配置 | 与后端 `security.hitl_timeout`/`auto_confirm_delay` 对齐 |
+| 超时配置 | 与后端 `security.hitl.timeout` / `security.hitl.auto_confirm_delay` 对齐 |
 
 ### 6.6 安全看护（真实机制）
 
@@ -349,7 +365,7 @@ OmniAgentAs-01/
 |------|------|
 | 后端判定 | `path_tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
 | 危险可见化 | 危险操作 → `hitl_gateway`/`safety_gate` 发 paused 帧 → 前端 `AuthorizationModal` 授权弹窗 + `ToolCallLine` 高亮边框（hitl-border） |
-| 安全配置 UI | `Settings2` 安全 Tab（enabled/confirmDangerousOps/auto_confirm_delay/hitl_timeout）——仅透传保存至 config.yaml；**执行判定真正消费的 security 键仅 enabled / hitl_timeout / auto_confirm_delay** |
+| 安全配置 UI | `Settings2` 安全组（`security.system.*` 硬拦开关 / `security.hitl.*` 人工确认 / `security.trust.ttl_days`）——仅透传保存至 config.yaml；危险防护硬底线无条件生效 |
 | 信任会话 | TrustedTool 带 path 字段，路径级精确撤销 |
 | 401 统一登出 | axios 响应拦截清 localStorage + 跳 /（client.ts） |
 
@@ -357,12 +373,16 @@ OmniAgentAs-01/
 
 | 能力 | 实现 |
 |------|------|
-| 7 Tab 设置页 | Settings2 页面：通用/模型/安全/外观/系统/沙箱/调优 7 个 Tab，`SettingsGroup` 动态渲染 |
+| 9 组设置页 | Settings2 页面：通用/模型/媒体/安全/沙箱/调优/系统/模型库/前端 9 组，`SettingsGroup` 动态渲染（分组定义 `settings_registry.GROUP_ORDER`） |
 | 模型选择器 | `ModelSelector` Provider/模型切换，`CurrentModelRefCard` 当前全局模型展示 |
 | Provider CRUD | `ProviderConfig` api_key/base_url/label/timeout/max_retries 配置 |
 | 模型参数管理 | `ModelParams` 五分支渲染 + `ParamOptionsModal` 参数模板管理弹窗 |
+| 模型库 | `ModelLibraryTab` 拉取/勾选模型，落 `ai.{provider}.models` 与 `model_meta`（上下文/最大输出/输入输出模态/能力） |
+| 模型能力 | 输入模态 `input_modalities`（text/image）+ 输出模态 `output_modalities`（text/image/video）双维度；实测优先、无实测回落声明 |
+| 媒体探测 | 设置页②选中模型参数就地「图片实测」（内联/外链/输出能力三徽标），结果落 `model_meta.media` |
+| 生成验证 | 「生成验证」图/视频双腿实测，`services/generation` 单一出口，结果落 `model_meta.last_probe` |
 | 模型切换弹窗 | `ModelSwitchModal` 独立切换弹框，DRY 唯一写链 `configApi.switchCurrentModel` |
-| 调优配置 | 33 个 tuning 键（LLM 语义/网络/并发/Agent/裁剪/压缩/流/任务/HITL/内容，9 子组），前端自动出现调优 Tab |
+| 调优配置 | 36 个 tuning 键（LLM 语义/网络/并发/Agent/裁剪/压缩/流/任务/HITL/内容，9 子组），前端自动出现调优 Tab |
 | 配置运维台 | 配置文件路径展示、一键打开目录、在线查看、检测配置 |
 | Provider 动态参数 | `provider_param_types` 透传 + 白名单校验 + 动态落盘 |
 
@@ -389,6 +409,25 @@ OmniAgentAs-01/
 | 单元测试 | Vitest（`frontend/src/tests/`） |
 | E2E | Playwright 真实浏览器 + 真实后端（`frontend/e2e_case/`，公共库 `e2e_front_lib/`） |
 | 质量门禁 | `npm run check`（lint + format:check），提交前必跑 |
+
+### 6.11 附件与媒体链路
+
+| 能力 | 实现 |
+|------|------|
+| 附件采集 | `app/attachments`（`attachment_service` 归属/容量、`extract` 文本抽取、`local_import` 同机路径导入、`collect` 产物回传） |
+| 引用解析 | `services/refs`（`resolver` 引用身份、`budget`/`clip` 预算闸门、`limits` 上限、`notice` 提示、`pipeline`/`render` 渲染） |
+| 文件抽屉 | 三入口合门为唯一「附件」按钮；`Files` 页 + `file_browse` 自研浏览器（盘符/目录树/路径栏，同机只传路径 0 传输） |
+| 素材台账 | `material_packs` + scope/promote/最近用过/收藏/预览 |
+| 图片传输 | 内联（base64，超限压缩或退化为文字说明）与外链（`remote_url_passthrough`）双通道，由 `media` 配置组控制 |
+| 能力判定 | 输入看 `input_modalities` + 实测 `model_meta.media`（结论分级：内联/外链/输出能力） |
+
+### 6.12 输出模态生成验证
+
+| 能力 | 实现 |
+|------|------|
+| 生成出口 | `services/generation/generation_client`（`generate_image` / `generate_video` 提交 + 轮询），生成端点禁直连 httpx |
+| 双腿实测 | 设置页「生成验证」按输出模态分组跑图/视频腿，结果落 `model_meta.last_probe`（验证回执常驻） |
+| 结论词 | `REJECT_STATUS` 单源；401/403 单列 `paid_model_required`；未定原因贴验证按钮右侧 |
 
 ---
 
@@ -426,16 +465,19 @@ OmniAgentAs-01/
 
 | 配置节 | 作用 |
 |--------|------|
-| `ai` | AI 模型与 Provider（多厂商 OpenAI 兼容 API，含 model_ref 单源） |
+| `ai` | AI 模型与 Provider（多厂商 OpenAI 兼容 API，含 model_ref 单源、model_meta 能力/探测回执） |
 | `workspace` | 工作区（project_root、allowed_dirs） |
 | `agent` | Agent 参数（max_steps） |
-| `llm` | LLM 采样与上下文兜底（sampling 5 键、context_limit_default） |
+| `media` | 媒体附件（内联上限、压缩、外链直传、探测图源） |
+| `appearance` | 前端渲染（step_render 四开关：思考排版/推理内容/Content/Diff） |
+| `llm` | LLM 采样与上下文兜底（sampling 6 键、context_length_default） |
 | `network` | 网络（cors_origins 跨域白名单，系统组展示） |
 | `app` | 应用参数（language、theme） |
-| `logging` | 日志级别与轮转（level、debug） |
-| `security` | 安全开关与 HITL（enabled、hitl_timeout、auto_confirm_delay、confirmDangerousOps） |
+| `logging` | 日志级别与轮转（level、debug、max_file_size、backup_count） |
+| `security` | 安全体系（`security.system.*` 硬拦开关 / `security.hitl.*` 人工确认与只读白名单 / `security.trust.ttl_days`） |
 | `sandbox` | 沙箱预检（工具执行前资源约束） |
-| `tuning` | 调优参数（33 键，9 子组：LLM 语义/网络/并发/Agent/裁剪/压缩/流任务/HITL/内容） |
+| `tuning` | 调优参数（36 键，9 子组：LLM 语义/网络/并发/Agent/裁剪/压缩/流任务/HITL/内容） |
+| `system` | 系统（chat_retention_days 对话历史保留天数，0=不清理） |
 
 ### 7.3 `ai` — 模型与 Provider
 
@@ -454,7 +496,7 @@ OmniAgentAs-01/
 | `label` | Provider 显示名称（可编辑） |
 | `models` | 可用模型列表（字符串数组） |
 | `model_params` | 按模型的补充参数（见下方结构说明） |
-| `model_meta` | 按模型的元数据，含 `param_options` 参数模板选项（P1-P8 实现，前端 ParamOptionsModal 管理） |
+| `model_meta` | 按模型的元数据：`context_length` / `max_output_length` / `input_modalities` / `output_modalities` / `supported_parameters` / `supported_features` / `param_options` / `media`（媒体探测）/ `last_probe`（验证回执） |
 | `timeout` | 请求超时（秒），默认 60；0 为合法值（无超时） |
 | `max_retries` | 失败重试次数，默认 3 |
 
@@ -463,7 +505,7 @@ OmniAgentAs-01/
 ```yaml
 model_params:
   kimi-k2.5-free:
-    context_limit: 262144   # 上下文窗口上限（tokens），LLM 侧覆盖；未配置时兜底 DEFAULT_CONTEXT_LIMIT
+    context_length: 262144  # 上下文窗口上限（tokens），LLM 侧覆盖；未配置时兜底 context_length_default
     reasoning_effort: low    # 其它键整体作为 extra_body 透传（如推理强度），支持任意键
 ```
 
@@ -509,23 +551,46 @@ model_meta:
 
 ### 7.6 `security` — 安全配置
 
-**准入控制（在设置页「外观」组展示，键名前缀仍为 `security.*`）**
+**准入控制（在设置页「前端」组展示，键名前缀仍为 `security.*`）**
 
 | 键 | 说明 |
 |----|------|
 | `security.access_token` | 访问口令。**只能在服务端本机设置**；白名单设备只是免口令登录，不能改口令 |
 | `security.access_token_allowlist` | 免口令 IP/CIDR 白名单，逗号或分号分隔。**白名单内等于无鉴权**（可读全部明文密钥），只应放可信网段 |
 
-**操作安全（在设置页「安全」组）**
+**系统段（设置页「安全」组，硬拦开关，无条件受危险底线约束）**
 
 | 键 | 说明 |
 |----|------|
-| `security.enabled` | 全局安全开关（L0；false=关闭） |
-| `security.confirmDangerousOps` | 危险操作二次确认（HITL） |
-| `security.auto_confirm_delay` | 自动确认等待秒数 |
-| `security.hitl_timeout` | HITL 确认超时（秒） |
+| `security.system.enabled` | 安全模块总闸（关=路径/命令权限判定放行，参数初查仍生效） |
+| `security.system.confirm_dangerous_ops` | 保存设置时二次确认（仅 UX，与后端拦截无关） |
+| `security.system.forbidden_system_path_block` | 禁区系统目录拦截（磁盘根/系统保护目录） |
+| `security.system.forbidden_non_system_path_block` | 禁区非系统目录拦截（代码库目录等） |
+| `security.system.white_list_block` | 白名单外路径拦截 |
+| `security.system.shell_danger_block` | bash 危险命令拦截 |
+| `security.system.shell_risk_block` | bash 风险命令拦截 |
 
-> 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。
+**HITL 人工确认段**
+
+| 键 | 说明 |
+|----|------|
+| `security.hitl.enabled` | 人工确认总开关（关=免确认，但删根/系统目录等硬防线仍生效） |
+| `security.hitl.write_confirm` | 写操作确认 |
+| `security.hitl.delete_confirm` | 删除操作确认 |
+| `security.hitl.dual_path_confirm` | 双路径（copy/move 等）操作确认 |
+| `security.hitl.shell_path_confirm` | shell 命令内路径确认 |
+| `security.hitl.auto_confirm_delay` | 自动确认倒计时（秒） |
+| `security.hitl.timeout` | 人工确认超时（秒） |
+| `security.hitl.shell_readonly_prefixes` | 只读命令免确认白名单（留空回退内置清单） |
+
+**信任段**
+
+| 键 | 说明 |
+|----|------|
+| `security.trust.ttl_days` | 会话信任有效期（天，默认 90） |
+
+> 2026-10-18 起键名按前缀分命名空间（`security.system.*` / `security.hitl.*` / `security.trust.*`），禁旧键别名。旧版 `security.enabled`/`confirmDangerousOps`/`auto_confirm_delay`/`hitl_timeout` 已迁移。
+> 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 等 dead keys 已移除。
 
 #### 7.6.1 请求方向（客户端 → 后端）：谁能免口令进（⚠️ 必读）
 
@@ -582,17 +647,17 @@ location /api/ {
 
 > 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8100` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
 
-### 7.7 `tuning` — 调优参数（33 键，9 子组）
+### 7.7 `tuning` — 调优参数（36 键，9 子组）
 
 | 子组 | 键前缀 | 数量 | 说明 |
 |------|--------|------|------|
 | LLM 语义参数 | `tuning.llm.` | 5 | tool_choice, stream_max_retries, response_fallback, response_retries, stream_options |
 | LLM 网络/超时/连接池 | `tuning.llm_net.` | 7 | read_timeout, connect_timeout, write_timeout, pool_timeout, max_connections, max_keepalive, stream_total_timeout |
-| 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_pool_max_per_type |
+| 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_max_processes |
 | Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
-| 裁剪 | `tuning.trim.` | 3 | max_rounds, trigger_ratio, compaction_buffer |
+| 裁剪 | `tuning.trim.` | 5 | max_rounds, trigger_ratio, compaction_buffer, keep_recent_rounds, tools_token_reserve |
 | 压缩 | `tuning.compaction.` | 4 | start_enabled, start_limit_ratio, summary_feed_max_chars, keep_tail |
-| 前后端之间的流/任务/缓存 | `tuning.live_front.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
+| 前后端之间的流/任务/缓存 | `tuning.live_front.` | 5 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size, journal_retention_days |
 | 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
 | 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
 
@@ -691,7 +756,7 @@ frontend/
 │   ├── stream-diag.ts                    #  attachStreamDiag/printDiag/日志基线/run-on 检测
 │   ├── chat-page.ts                      #  ChatPage POM（六方法）
 │   └── normal-chat.ts                    #  普通会话封装（日常/天气/股票/目录分析等）
-└── e2e_case/                             # 前端 E2E 用例（fre2e_01~21*.spec.ts）
+└── e2e_case/                             # 前端 E2E 用例（fre2e_01~28*.spec.ts）
     ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8100，SSE 直连）
     ├── e2e.config.ts / vite.e2e.config.ts#  Playwright / vite 测试配置
     └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化/模型参数模板）
@@ -921,7 +986,7 @@ async def test_e2e_p0_xx_xxx():
 |----------|-----------|
 | bash 工具 120s 强杀进程树 | 见 8.4 第 3 步 `subprocess.Popen` 方案 |
 | 数据库未隔离 | 复用系统库 `~/.omniagent/chat_history.db`，污染生产数据；用例不删 DB 记录（保留供复盘） |
-| 独立测试配置 | 测试用 `E:\test_dir\test_config\config.yaml`（security.enabled=false），不改系统 `config/config.yaml` |
+| 独立测试配置 | 测试用 `E:\test_dir\test_config\config.yaml`（security.system.enabled=false），不改系统 `config/config.yaml` |
 | 测试数据目录 | 读写统一在 `E:\test_dir\`；用例后清理生成文件（报告/zip/新文档） |
 | 记录竞态 | 大任务 SSE 结束后后台仍在大体积写库，check_db 内置重试 8 次×2s，勿手动加 sleep |
 
@@ -1319,5 +1384,5 @@ pip install mss imageio numpy
 
 ---
 
-| 最后更新 | 2026-11-04 10:15 |  |
+| 最后更新 | 2026-11-09 22:36 | 小欧 |
 
