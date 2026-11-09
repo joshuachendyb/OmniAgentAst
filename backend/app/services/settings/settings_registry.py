@@ -105,6 +105,8 @@ key 全局唯一，加载自检重复直接拒启。
       默认值定为 Wikimedia Commons 公网 PNG — 小欧-2026-11-09
     2026-11-09 小欧 - 默认检测图换 cn.bing.com/favicon.ico: wikimedia 对 agnes 厂商146s连接超时必失败(实测定性),
       Bing favicon 走厂商外链腿 30s 过(image_tokens=64), 微软全球CDN可达性最好 — 小欧-2026-11-09
+    2026-11-09 小欧 - 「转发图片外链」notice 补准(逐句对 vision.py 会审): 裸链接?参数原样保留(同批修
+      _BARE_IMAGE_RE 丢参)、超出4个静默不转发、未实测模型链接整个忽略不留说明、内网改「内网/保留地址」 — 小欧-2026-11-09
 
 """
 from typing import Any, Dict, List, Optional
@@ -220,7 +222,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("media.compress_jpeg_quality", "int", "JPEG 质量", 85, range_=[1, 95],
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
-              notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接；单条消息最多 {MAX_REMOTE_IMAGES} 个；本机地址与内网 IP、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
+              notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接（?查询参数原样保留）；单条消息最多 {MAX_REMOTE_IMAGES} 个，超出的静默不转发；本机地址、内网/保留地址、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理、链接整个忽略不留说明（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
         _item("media.probe_image_url", "text", "外链检测用图片地址",
               "https://cn.bing.com/favicon.ico",
               hidden=True,

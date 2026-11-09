@@ -6,6 +6,7 @@
 # 2026-11-08 小欧 收口: 判定容忍 MIME 级 image/*; part 构造下沉 media_payload(唯一产出点) — 小欧-2026-11-08
 # 2026-11-08 小欧 增外链通道: 消息里显式给出的公网图片链接转 image_url part(需实测支持外链) — 小欧-2026-11-08
 # 2026-11-08 小欧 能力判定单一真源: 有实测记录按实测(比元数据硬), 无实测回落 input_modalities; none 真正生效 — 小欧-2026-11-08
+# 2026-11-09 小欧 修: 裸链接在后缀处截断丢 ?查询参数(CDN 带参图 URL 被改写), 补 ?查询段并吃掉句末标点 — 小欧-2026-11-09
 
 """services.agent.vision — 视觉通道(图片类型阶段)。
 
@@ -34,8 +35,10 @@ from app.services.agent.media_payload import build_media_part, build_url_part
 IMAGE_SLOT_RE = re.compile(r"\[\[IMAGE_ATTACHMENT:([0-9a-f]{32})\]\]")
 # 显式图片外链两种写法: markdown 图片语法 / 带图片扩展名的裸链接
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+# 裸链接补 ?查询段(句末标点不入链): 原在后缀处停表, ?w=100 等参数整段丢失致改写 URL — 小欧-2026-11-09
 _BARE_IMAGE_RE = re.compile(
-    r"https?://[^\s()\[\]<>{}\"'|]+\.(?:png|jpe?g|gif|webp|bmp)", re.IGNORECASE)
+    r"https?://[^\s()\[\]<>{}\"'|，。；：？！]+\.(?:png|jpe?g|gif|webp|bmp)"
+    r"(?:\?[^\s()\[\]<>{}\"'|，。；：？！]*)?", re.IGNORECASE)
 # 明摆着不是图片的后缀: 一张坏链接会让整轮请求 400, 宁可不发 — 小欧-2026-11-08
 _NON_IMAGE_SUFFIX = (
     ".pdf", ".html", ".htm", ".zip", ".rar", ".7z", ".doc", ".docx", ".xls", ".xlsx",
