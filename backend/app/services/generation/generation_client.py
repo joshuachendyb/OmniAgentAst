@@ -4,6 +4,7 @@
 探测腿（settings2 生成验证 probe-output）与未来真业务（会话生图工具等）
 共用本函数；生成端点禁直连 httpx。视频是异步任务：提交 → 轮询 → 取产物
 - 小欧-2026-11-09
+2026-11-09 订正: 素材不可达判定收窄为短语集常量(原含"下载"二字即归此类过宽); _video_url 取证串标注勿回放 - 小欧-2026-11-09
 """
 import asyncio
 import time
@@ -45,13 +46,21 @@ VIDEO_FAILED = frozenset({"failed", "error"})
 # evidence 只作人读取证: 成功腿的 COS 地址带签名可达数百字符, 一律截短 - 小欧-2026-11-09
 _EV_LIMIT = 160
 
+# 厂商抓不到探测素材的报错短语集(图/视频两腿同一判定): 原来含"下载"二字即归此类过宽,
+#   厂商任何文案提到"下载"(如违规提示)都会被误判成素材不可达, 收窄为实测短语 — 小欧-2026-11-09
+_SOURCE_UNREACHABLE_MARKS = (
+    "could not be downloaded",  # images 腿: media URL could not be downloaded
+    "下载失败", "无法下载", "下载超时",  # videos 腿: 中文报错(真机样例"下载失败")
+)
+
 
 def _source_unreachable(text: str) -> bool:
     """厂商抓不到探测素材的报错(图/视频两条腿同一判定): 属素材不可达, 不判模型能力 - 小欧-2026-11-09
 
     真机样例: images 腿 "media URL could not be downloaded"; videos 腿中文"下载失败"。
+    短语见 _SOURCE_UNREACHABLE_MARKS, 勿放宽回子串"下载"。
     """
-    return "could not be downloaded" in text or "下载" in text
+    return any(m in text for m in _SOURCE_UNREACHABLE_MARKS)
 
 
 async def generate_image(
@@ -143,8 +152,8 @@ def _video_reason(data: Any) -> str:
 def _video_url(data: Any) -> str:
     """递归找产物地址: 先认键名含 video 的 http 串, 再退任意 .mp4 直链。
 
-    视频任务响应常同时带封面图/尾帧图, 只按 "url" 取值会拿错, 故按键名优先级收敛
-    - 小欧-2026-11-09
+    视频任务响应常同时带封面图/尾帧图, 只按 "url" 取值会拿错, 故按键名优先级收敛。
+    返回串仅供人读取证(URL 已 lower, 签名类参数大小写敏感), 严禁回放调用 - 小欧-2026-11-09
     """
     found: List[Tuple[str, str, str]] = []
 

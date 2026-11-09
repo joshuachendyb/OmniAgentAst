@@ -145,6 +145,7 @@
 //   撤 outputModalities 勾选编辑与保存链, ②区输出能力仅展示 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 生成验证腿([15]): 输出模态行回归只读声明, 另立「生成能力验证」行
 //   (腿徽标+结论+行尾按钮, 与输入图片能力验证同款语法); chat 腿行置灰「不适用」— 小欧-2026-11-09
+// 2026-11-09 小欧 - 订正: 生成腿 skipped 独立「未执行」态(徽标—/tip/结论行可见), 不再并入 unknown 或误入 fail 同判 — 小欧-2026-11-09
 import React, { useState } from 'react';
 import {
   Button,
@@ -685,32 +686,36 @@ const SettingsPage: React.FC = () => {
     const genVideoRec = media?.generate?.video;
     const genLegState = (
       rec?: OutputProbeRec
-    ): 'pass' | 'fail' | 'warn' | 'unknown' =>
-      !rec || rec.state === 'skipped'
+    ): 'pass' | 'fail' | 'warn' | 'skip' | 'unknown' =>
+      !rec
         ? 'unknown'
-        : rec.state === 'ok'
-          ? 'pass'
-          : rec.state === 'none'
-            ? 'fail'
-            : 'warn';
+        : rec.state === 'skipped'
+          ? 'skip'
+          : rec.state === 'ok'
+            ? 'pass'
+            : rec.state === 'none'
+              ? 'fail'
+              : 'warn';
     const genLegTip = (label: string, leg?: OutputProbeRec) =>
-      !leg || leg.state === 'skipped'
+      !leg
         ? ''
-        : `${label}：${
-            leg.state === 'ok'
-              ? `✓ ${probeMsText(leg.ms)}`
-              : leg.state === 'none'
-                ? '✗ 厂商拒绝'
-                : leg.evidence?.startsWith('source_unreachable')
-                  ? '？ 厂商抓不到探测素材'
-                  : leg.evidence?.startsWith('task_failed')
-                    ? '？ 厂商侧生成失败，稍后重试'
-                    : leg.evidence?.startsWith('queue_full')
-                      ? '？ 厂商队列已满'
-                      : leg.evidence?.startsWith('poll_timeout')
-                        ? '？ 等出片超时'
-                        : '？ 未完成（鉴权／限流／协议漂移）'
-          }`;
+        : leg.state === 'skipped'
+          ? `${label}：— 未执行（前置腿被拒或未取证，未发起第二枪）`
+          : `${label}：${
+              leg.state === 'ok'
+                ? `✓ ${probeMsText(leg.ms)}`
+                : leg.state === 'none'
+                  ? '✗ 厂商拒绝'
+                  : leg.evidence?.startsWith('source_unreachable')
+                    ? '？ 厂商抓不到探测素材'
+                    : leg.evidence?.startsWith('task_failed')
+                      ? '？ 厂商侧生成失败，稍后重试'
+                      : leg.evidence?.startsWith('queue_full')
+                        ? '？ 厂商队列已满'
+                        : leg.evidence?.startsWith('poll_timeout')
+                          ? '？ 等出片超时'
+                          : '？ 未完成（鉴权／限流／协议漂移）'
+            }`;
     const genLegs: { label: string; rec?: OutputProbeRec }[] = [
       ...(state.model.outputModalities.includes('image')
         ? [
@@ -731,9 +736,9 @@ const SettingsPage: React.FC = () => {
     const genAnyFail = genStates.includes('fail');
     const genAnyPass = genStates.includes('pass');
     // 结论词取「有据可依」的最强项：全通过=可用；有腿被拒且无腿通过=不可用；
-    //   已有一条腿通过=部分可用（其余未完成/被拒）；一条都没通过=未完成 — 小欧-2026-11-09
+    //   已有一条腿通过=部分可用；一条都没通过=未完成；skipped 只进结论行不判死 — 小欧-2026-11-09
     const genWordState: 'pass' | 'fail' | 'warn' | 'unknown' = genStates.every(
-      (st) => st === 'unknown'
+      (st) => st === 'unknown' || st === 'skip'
     )
       ? 'unknown'
       : genAllPass
@@ -754,7 +759,7 @@ const SettingsPage: React.FC = () => {
               ? '部分可用'
               : '未完成';
     // 逐腿徽标与结论词共用同一配色口径(未知=弱文字, 不显红叉) — 小欧-2026-11-09
-    const genColor = (st: 'pass' | 'fail' | 'warn' | 'unknown') =>
+    const genColor = (st: 'pass' | 'fail' | 'warn' | 'skip' | 'unknown') =>
       st === 'pass'
         ? Colors.SUCCESS
         : st === 'fail'
@@ -773,6 +778,9 @@ const SettingsPage: React.FC = () => {
     const genPendLabels = genLegs
       .filter((_, i) => genStates[i] === 'warn')
       .map((l) => l.label);
+    const genSkipLabels = genLegs
+      .filter((_, i) => genStates[i] === 'skip')
+      .map((l) => l.label);
     const genVerdict =
       genWordState === 'unknown'
         ? '尚未做过生成验证——点右侧「生成验证」实测'
@@ -784,6 +792,7 @@ const SettingsPage: React.FC = () => {
                 ? `${genFailLabels.join('、')}被厂商拒绝`
                 : '',
               genPendLabels.length ? `${genPendLabels.join('、')}未完成` : '',
+              genSkipLabels.length ? `${genSkipLabels.join('、')}未执行` : '',
             ]
               .filter(Boolean)
               .join('；');
@@ -1384,6 +1393,9 @@ const SettingsPage: React.FC = () => {
                         <QuestionOutlined
                           style={{ fontSize: FontSize.SECONDARY }}
                         />
+                      )}
+                      {st === 'skip' && (
+                        <span style={{ fontSize: FontSize.SECONDARY }}>—</span>
                       )}
                     </span>
                   );
