@@ -102,7 +102,7 @@ frontend/tsconfig.node.tsbuildinfo
 frontend/e2e_front_lib/.auth-state.json
 frontend/.auth-state.json
 frontend/coverage
-
+/opencli
 /research
 # tsc 构建产物: 小欧 2026-09-13
 *.tsbuildinfo
