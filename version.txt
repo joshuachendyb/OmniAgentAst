@@ -1,3 +1,15 @@
+v1.6.6
+发布时间: 2026-11-09 22:36:29 - 小欧-2026-11-09
+## v1.6.5以来 变更汇总(6个commit: feat1/fix3/docs1/Merge1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-09
+[2026-11-09 22:36:29 小欧] 范围=v1.6.5..HEAD 全部commit(6个); 说明=①免费车道opencli网关部署: opencli_source部署物(config.json/opencode2api.exe/start.bat/stop.bat)+部署启停说明+方法1/2文档(16-18), 免费车道方法1 dsh_freelane直连函数库、方法2 opencode2api网关+协议整形+WARP出口池; ②模型库opencli网关方言映射补齐: metadata降嵌套+max_output/cost别名+effort档位+tool_call能力+config.yaml.example同步模型信息(opencli新增带令牌+kilo/qiniu/agnes漂移+model_ref切换opencli/big-pickle); ③error_classifier QUOTA_EXCEEDED文案订正: 限额→配额(QUOTA=quota配额非limit限额, 与枚举语义/测试断言一致)。注: 含1个feat(opencli免费车道网关部署), 均为既有功能的链路增强, 用户明确指定 tag v1.6.6 → 维持PATCH v1.6.6。
+### 1.6.6.1 免费车道opencli网关部署
+[网关部署] feat 7424d4f65 opencli_source 免费车道网关部署物与部署启停说明+方法1/2文档(16-18) - 小欧-2026-11-09
+[方言映射] fix 56b4cdd43 模型库 opencli网关方言映射补齐 metadata降嵌套+max_output/cost别名+effort档位+tool_call能力 - 小欧-2026-11-09
+[配置同步] fix e08717aa9 config.yaml.example 同步当前 config.yaml 模型信息(opencli新增带令牌+kilo/qiniu/agnes漂移+model_ref切换opencli/big-pickle) - 小欧-2026-11-09
+[文档增补] docs 096226b76 方法2技术说明[18]增补八新旧网关身份轮换对比+删[11]网关验收测试自动化执行记录 - 小欧-2026-11-09
+### 1.6.6.2 LLM 429 文案订正
+[文案订正] fix 0d9ef9f86 error_classifier QUOTA_EXCEEDED文案订正 限额→配额(QUOTA=quota配额非limit限额, 与枚举语义/测试断言一致) - 小欧-2026-11-09
+
 v1.6.5
 发布时间: 2026-11-09 17:01:22 - 小欧-2026-11-09
 ## v1.6.4以来 变更汇总(52个commit: feat11/fix17/refactor7/docs16/Merge1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-09
