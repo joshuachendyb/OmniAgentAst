@@ -39,6 +39,7 @@
      2026-11-08 小欧 用户裁定修复: 商汤 429 "token plan entitlement exhausted" 实为配额耗尽(报告[14]实测), 原 4/5 场景被误归 RATE_LIMIT 可重试→白打 L1 重试; 补 QUOTA 词表 token_plan_entitlement_exhausted + message 兜底 entitlement exhausted/token plan — 用户-2026-11-08
      2026-11-08 小欧 三堂会审修复: _subcategory_for_token message 源统一——顶部 _msg 原仅 str(error), 与 resource_exhausted 分支用 error.response.text 不一致; 测试桩/非 SDK 抛错 str(error) 可能不含响应体, 补 _resp.text 优先(与 resource_exhausted 同源), str(error) 兜底(主路径 client_sdk 已把 server_msg 嵌入异常文本, 两者一致) — 小欧-2026-11-08
      2026-11-09 小欧 ruff F541 修复: 裸429兜底 debug 日志去多余 f 前缀(无占位符) — 小欧-2026-11-09
+     2026-11-09 小欧 文案订正: QUOTA_EXCEEDED 用户文案"限额"改"配额"(QUOTA=quota 配额, 非 limit 限额; 与枚举语义/测试断言一致, 两处: description+SYSTEM_ERROR_TYPE_TO_MESSAGE) — 小欧-2026-11-09
 """
 
 import json
@@ -105,7 +106,7 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
             SystemErrorCategory.RATE_LIMIT: "接口限流(RPM/TPM瞬态)",   # 文案与配额分离 — 小欧 2026-10-28
-            SystemErrorCategory.QUOTA_EXCEEDED: "接口限额/余额已用尽",  # 新增 — 小欧 2026-10-28
+            SystemErrorCategory.QUOTA_EXCEEDED: "接口配额/余额已用尽",  # 新增 — 小欧 2026-10-28; 2026-11-09 小欧 文案订正: 限额→配额(QUOTA=quota 配额, 非 limit 限额)
         }
         return mapping.get(self, "未知错误")
 
@@ -173,7 +174,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "模型没有返回内容（Empty Response），请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "模型响应超时（Idle Timeout），请换个问法或稍后重试"),
     SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),   # 瞬态可重试 — 小欧 2026-10-28
-    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型限额/余额已用尽（Quota Exceeded），请升级限额后重试"),  # 账务性打死 — 小欧 2026-10-28
+    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型配额/余额已用尽（Quota Exceeded），请升级配额后重试"),  # 账务性打死 — 小欧 2026-10-28; 2026-11-09 小欧 文案订正: 限额→配额(QUOTA=quota 配额, 非 limit 限额)
 }
 
 
