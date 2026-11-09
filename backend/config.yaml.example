@@ -63,7 +63,6 @@ ai:
       - agnes-2.5-pro
       - agnes-3.0-flash
       - agnes-image-2.1-flash
-      - agnes-image-2.5-flash
       - agnes-video-2.5
       - agnes-video-2.5-flash
     timeout: 120
@@ -147,14 +146,37 @@ ai:
     api_base: https://api.qnaigc.com/v1
     api_key: sk-xxx...
     models:
-      - deepseek-r1
-      - deepseek-v3.1
-      - minimax/minimax-m2.5
-      - moonshotai/kimi-k2
-      - moonshotai/kimi-k2.5
+      - moonshotai/kimi-k3-free
+      - nvidia/nemotron-3-ultra-550b-a55b0-free
+      - qiniu/conatus-free
       - z-ai/glm-4.5-air-free
     timeout: 90
     max_retries: 3
+    model_meta:
+      moonshotai/kimi-k3-free:
+        context_length: 1048576
+        input_modalities: []
+        output_modalities: []
+        supported_parameters: []
+        supported_features: []
+      nvidia/nemotron-3-ultra-550b-a55b0-free:
+        context_length: 1000000
+        input_modalities: []
+        output_modalities: []
+        supported_parameters: []
+        supported_features: []
+      qiniu/conatus-free:
+        context_length: 1000000
+        input_modalities: []
+        output_modalities: []
+        supported_parameters: []
+        supported_features: []
+      z-ai/glm-4.5-air-free:
+        context_length: 0
+        input_modalities: []
+        output_modalities: []
+        supported_parameters: []
+        supported_features: []
 
   zhipuai:
     api_base: https://open.bigmodel.cn/api/paas/v4/
@@ -255,31 +277,42 @@ ai:
     timeout: 120
     max_retries: 3
     models:
-      - cohere/north-mini-code:free
+      - google/lyria-3-clip-preview
+      - google/lyria-3-pro-preview
       - kilo-auto/free
-      - nvidia/nemotron-3.5-super-vl:free
+      - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
       - openrouter/free
-      - reflection/beam-free
     model_meta:
-      cohere/north-mini-code:free:
-        context_length: 256000
-        max_output_length: 64000
+      google/lyria-3-clip-preview:
+        context_length: 1048576
+        max_output_length: 65536
         input_modalities:
           - text
+          - image
         output_modalities:
           - text
+          - audio
         supported_parameters:
-          - frequency_penalty
-          - include_reasoning
           - max_tokens
-          - presence_penalty
-          - reasoning
+          - response_format
           - seed
-          - stop
           - temperature
-          - tool_choice
-          - tools
-          - top_k
+          - top_p
+        supported_features: []
+      google/lyria-3-pro-preview:
+        context_length: 1048576
+        max_output_length: 65536
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+          - audio
+        supported_parameters:
+          - max_tokens
+          - response_format
+          - seed
+          - temperature
           - top_p
         supported_features: []
       kilo-auto/free:
@@ -296,11 +329,12 @@ ai:
           - reasoning
           - include_reasoning
         supported_features: []
-      nvidia/nemotron-3.5-super-vl:free:
-        context_length: 1000000
-        max_output_length: 131072
+      nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free:
+        context_length: 256000
+        max_output_length: 65536
         input_modalities:
           - text
+          - audio
           - image
           - video
         output_modalities:
@@ -309,9 +343,7 @@ ai:
           - include_reasoning
           - max_tokens
           - reasoning
-          - response_format
           - seed
-          - structured_outputs
           - temperature
           - tool_choice
           - tools
@@ -346,20 +378,121 @@ ai:
           - top_logprobs
           - top_p
         supported_features: []
-      reflection/beam-free:
+
+  # opencli 免费车道网关（opencode2api + WARP 出口池），本地 127.0.0.1:8080，0 key 匿名车道
+  opencli:
+    name: opencli
+    label: Opencode-Cli
+    api_base: http://127.0.0.1:8080/v1
+    api_key: 97f2971ba14456bb0e5daacb42ee238584aa0a0d903f5937bed09c573b1fd6fe
+    timeout: 300
+    max_retries: 3
+    models:
+      - beam-free
+      - big-pickle
+      - crouton-alpha-free
+      - deepseek-v4.1-flash-free
+      - glm-5.3-flash-free
+      - inkling-2-small-free
+      - mimo-v2.6-flash-free
+    model_meta:
+      beam-free:
         context_length: 1048576
         max_output_length: 131072
         input_modalities:
           - text
         output_modalities:
           - text
-        supported_parameters:
-          - max_tokens
-          - temperature
-          - tools
+        supported_features:
           - reasoning
-          - include_reasoning
+          - tools
+        supported_parameters: []
+      big-pickle:
+        context_length: 200000
+        max_output_length: 32000
+        input_modalities:
+          - text
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      crouton-alpha-free:
+        context_length: 1048576
+        max_output_length: 270000
+        input_modalities:
+          - text
+          - image
+          - video
+          - file
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      deepseek-v4.1-flash-free:
+        context_length: 200000
+        max_output_length: 32000
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      glm-5.3-flash-free:
+        context_length: 200000
+        max_output_length: 32000
+        input_modalities:
+          - text
+          - image
+          - video
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      inkling-2-small-free:
+        context_length: 1048576
+        max_output_length: 131072
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      mimo-v2.6-flash-free:
+        context_length: 200000
+        max_output_length: 32000
+        input_modalities:
+          - text
+          - image
+          - audio
+          - video
+        output_modalities:
+          - text
+        supported_features:
+          - reasoning
+          - tools
+        supported_parameters: []
+      pulse-alpha-free:
+        context_length: 1048576
+        max_output_length: 131072
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
         supported_features: []
+        supported_parameters: []
 
 # 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
