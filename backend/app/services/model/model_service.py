@@ -190,6 +190,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-09 小欧 - 视频腿改判: 任务 failed 只记未定(厂商侧失败不可归因模型), conclusive 改按「无未定腿」判定 - 小欧-2026-11-09
 # 2026-11-09 小欧 - 图像 token 只查输入侧(prompt_tokens_details), 补纯文本基线差值判定:
 #   kilo 网关在 completion_tokens_details.image_tokens 恒填 0, 原递归匹配会把能看图的模型判成不支持 - 小欧-2026-11-09
+# 2026-11-09 小欧 - 验证回执常驻: 新增 model_meta.<model>.last_probe{media,output} 记上次验证的 at/ok/message,
+#   未定结论不写能力但原因可常驻界面; 与 media 分键, 判定链不读它 - 小欧-2026-11-09
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -304,6 +306,8 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
             "media": meta.get("media") or {},  # 媒体传输探测结果(实测), 供模型库展示 — 小欧-2026-11-08
+            # 上次验证回执(含未定结论的原因), 只给界面常驻显示, 不参与能力判定 — 小欧-2026-11-09
+            "last_probe": meta.get("last_probe") or {},
         })
     return out
 
@@ -1319,6 +1323,19 @@ def _persist_media_probe(name: str, model: str, media: Dict[str, Any]) -> bool:
     return True
 
 
+def _persist_probe_last(name: str, model: str, kind: str, ok: bool, message: str) -> None:
+    """记「上次验证回执」: 未定结论不写能力, 但要留原因给界面常驻显示, 不藏在一次性 toast 里。
+
+    与 media 物理分离(不同键), 判定链永不读它; 写盘失败只记日志 — 小欧-2026-11-09
+    """
+    rec = {"at": datetime.now().isoformat(timespec="seconds"), "ok": ok, "message": message}
+    try:
+        merge_nested_patch(
+            {"ai": {name: {"model_meta": {model: {"last_probe": {kind: rec}}}}}}, scope="model")
+    except Exception:
+        logger.error(f"[probe] 回执落库失败 provider={name} model={model} kind={kind}", exc_info=True)
+
+
 def _ev_tokens(ev: str) -> Optional[int]:
     """从取证串抽 image_tokens 值(串样例 image_tokens=64, 无值返 None)，供界面按腿显示 — 小欧-2026-11-09"""
     m = re.search(r"image_tokens=(\d+)", ev or "")
@@ -1384,6 +1401,8 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
         message = "已记录：仅内联（外链未测）"
     else:
         message = f"已记录：仅内联（外链未取证，{_probe_hint(url_ev)}）"
+    # 回执常驻: 未定结论也能看到原因(需登录/超时/限流), 不随 toast 消失 — 小欧-2026-11-09
+    _persist_probe_last(name, model, "media", inline_ok, message)
     return {
         "ok": inline_ok,
         "provider": name,
@@ -1521,6 +1540,10 @@ async def probe_model_output(name: str, model: str) -> Dict[str, Any]:
         message = "已记录：" + "；".join(parts)
         if pend_hint:
             message += f"（{pend_hint}）"
+    # 回执常驻: 生成腿未完成/被拒的原因同样要能留在界面上 — 小欧-2026-11-09
+    _persist_probe_last(
+        name, model, "output",
+        all(r["state"] == "ok" for _, r in legs if r["state"] != "skipped"), message)
     return {
         "ok": all(r["state"] == "ok" for lb, r in legs if r["state"] != "skipped"),
         "provider": name,

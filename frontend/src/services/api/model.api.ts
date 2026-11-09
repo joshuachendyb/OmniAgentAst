@@ -99,6 +99,20 @@ export interface ModelEntry {
   max_output_length?: number | null;
   /** 媒体传输探测结果(实测得出，非厂商声明)；未探测 → undefined。 — 小欧-2026-11-08 */
   media?: MediaProbe;
+  /** 上次验证回执(未定结论也记原因)；与 media 分键，只供界面常驻显示 — 小欧-2026-11-09 */
+  last_probe?: ProbeLastMap;
+}
+
+/** 一次验证尝试的回执：at=时间, ok=该腿是否全部通过, message=后端拼好的整句(界面原样显示) */
+export interface ProbeLastRec {
+  at?: string;
+  ok?: boolean;
+  message?: string;
+}
+
+export interface ProbeLastMap {
+  media?: ProbeLastRec;
+  output?: ProbeLastRec;
 }
 
 export interface ProviderEntry {

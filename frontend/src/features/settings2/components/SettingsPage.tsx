@@ -191,7 +191,7 @@ import { CurrentModelRefCard } from './CurrentModelRefCard';
 import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
 // 2026-11-09 小欧 - 生成验证实测行取句需要单腿记录类型（generate.t2i/i2i）— 小欧-2026-11-09
-import type { OutputProbeRec } from '@/services/api/model.api';
+import type { OutputProbeRec, ProbeLastRec } from '@/services/api/model.api';
 // 2026-11-08 小欧 - 实测写盘绕过保存链，取证后按后端 mtime 回填，防下一次保存被守卫拒一次 — 小欧-2026-11-08
 import { settingsApi } from '@/services/api/settings.api';
 import {
@@ -598,6 +598,23 @@ const SettingsPage: React.FC = () => {
       .find((p) => p.name === state.model.selectedProvider)
       ?.models.find((m) => m.name === state.model.selectedModel);
     const media = selectedEntry?.media;
+    // 2026-11-09 小欧 - 未定结论的回执常驻: 后端只把确定结论写 media, 失败原因落 last_probe; 短语贴在「验证」按钮右侧, 不另起一行 — 小欧-2026-11-09
+    const lastProbe = selectedEntry?.last_probe;
+    const lastProbeMemo = (rec?: ProbeLastRec) =>
+      rec?.message ? (
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            marginLeft: Spacing.SM,
+            fontSize: FontSize.SECONDARY,
+            lineHeight: 1.6,
+            color: rec.ok ? Colors.TEXT.SECONDARY : Colors.WARNING,
+          }}
+        >
+          上次验证 {rec.at ? rec.at.replace('T', ' ') : '—'}：{rec.message}
+        </span>
+      ) : null;
     // 2026-11-09 小欧 - 生成模型判定（[15]）：输出声明含 image/video
     const isGenerationModel =
       state.model.outputModalities.includes('image') ||
@@ -1215,6 +1232,8 @@ const SettingsPage: React.FC = () => {
               </span>
             </Tooltip>
           )}
+          {/* 2026-11-09 小欧 - 未出定论时把上次尝试原因贴在按钮右侧(不另起行), 刷新不丢 — 小欧-2026-11-09 */}
+          {!accept && lastProbeMemo(lastProbe?.media)}
         </div>
         {/* 2026-11-09 小欧: 输出模态行恢复纯声明只读展示, 实测入口移到下一行「生成能力验证」 — 小欧-2026-11-09 */}
         <div style={settingsRowStyle}>
@@ -1412,6 +1431,8 @@ const SettingsPage: React.FC = () => {
                 生成验证
               </Button>
             </span>
+            {/* 2026-11-09 小欧 - 生成腿有未定/被拒腿时, 上次原因贴按钮右侧(排队满/需登录/超时) — 小欧-2026-11-09 */}
+            {lastProbe?.output?.ok === false && lastProbeMemo(lastProbe.output)}
           </div>
         )}
         <div data-section="provider-config">
