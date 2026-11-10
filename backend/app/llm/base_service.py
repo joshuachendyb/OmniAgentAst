@@ -102,7 +102,7 @@
 #   (与厂商通用键 model_meta.context_length 同名同义, 消我方自造名) — 小欧-2026-11-01
 # 2026-11-03 小欧 - [Retry][L1] 重试日志 WARNING→INFO(重试属自愈流程, 非故障) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 typing.Any(死导入) — 小欧-2026-11-04
-# 2026-11-08 小欧 设计[15]落码: ①L1重试分支 429+Retry-After 时 yield pause 帧(前端倒计时,可中断); ②429耗尽出口标记冷却注册表(D态,key=provider+model) + 文案限额/限速中文后缀
+# 2026-11-08 小欧 429两态设计落码: ①L1重试分支 429+Retry-After 时 yield pause 帧(前端倒计时,可中断); ②429耗尽出口标记冷却注册表(D态,key=provider+model) + 文案限额/限速中文后缀
 # 2026-11-08 小欧: L1重试事件增 retry_kind 标签(429·延时=有Retry-After契约等待/429·限速=自适应退避, 限额不可重试走终态文案) — 小欧-2026-11-08
 # 2026-11-08 小欧: 回滚非流式 request() 429 冷却标记——该路径当前无消费方(agent 主链全走 request_stream), YAGNI — 小欧-2026-11-08
 # 2026-11-10 小欧 配置级默认参数摘除契约(RFC 7396 null-delete同语义): opencli经网关上游严格校验拒收chat_template_kwargs(beam-free 400 unsupported_parameter),
@@ -631,7 +631,7 @@ class BaseAIService:
                     retry_count += 1
                     wait_time = self._retry_wait_seconds(e, retry_count)   # 2026-09-30 小欧: 抽为共用静态方法(DRY)
                     logger.info(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")  # 2026-11-03 小欧: 重试属自愈流程, 降 INFO
-                    # 2026-11-08 小欧(设计[15]三堂会审): A 态——429+Retry-After 时 yield pause 帧(前端倒计时,可中断)
+                    # 2026-11-08 小欧(429两态设计): A 态——429+Retry-After 时 yield pause 帧(前端倒计时,可中断)
                     #   Retry-After 值已由 _retry_wait_seconds 解析进 wait_time; pause 帧只负责通知前端, 退避仍走下方可取消等待
                     _retry_kind = None
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
@@ -666,7 +666,7 @@ class BaseAIService:
                     # 429 重试耗尽后出口: 按细分给准确文案(限流缓刑 vs 配额打死), 非一刀切"配额用尽" — 小欧 2026-07-17 / 2026-10-28
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                         _cat = SystemErrorClassifier.classify_error(e)
-                        # 2026-11-08 小欧(设计[15]三堂会审): 429 耗尽标记冷却注册表(D 态)— key 用 provider+model(§4.2 粒度决策)
+                        # 2026-11-08 小欧(429两态设计): 429 耗尽标记冷却注册表(D 态)— key 用 provider+model(粒度防聚集)
                         from app.llm.model_cooldown import ModelCooldownRegistry
                         _mid = f"{self.llm_model.provider}/{self.llm_model.model}"
                         ModelCooldownRegistry.get().mark(_mid, is_quota=(_cat == SystemErrorCategory.QUOTA_EXCEEDED))

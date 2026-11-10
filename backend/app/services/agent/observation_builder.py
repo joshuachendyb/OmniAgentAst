@@ -149,7 +149,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
 
         # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
         # 2026-08-18 小健 三堂会审 修复: 删除死变量 _data(只赋值未使用, 原始 data 由 data_text/dl 承载)
-        # 2026-10-04 小欧 字段精简(第六章第0步): 删 llm_data_text——前端零引用, 回放兜底实测 0/2306 触发,
+        # 2026-10-04 小欧 字段精简: 删 llm_data_text——前端零引用, 回放兜底实测 0/2306 触发,
         #   且本体是 llm_data 的 indent=2 冗余副本(体积反超本体 28%), 删零行为变化 — 小欧-2026-10-04
         # 2026-10-13 小欧: 新增 raw_data(原始data), 供前端 raw 展示。**不可用它替换 data_text** ——
         #   两者语义不同: data_text=obs_text 是格式化可读str(含 repair_warning), 为 LLM 与回放的唯一文本源;
