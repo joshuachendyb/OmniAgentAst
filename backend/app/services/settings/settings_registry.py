@@ -107,6 +107,11 @@ key 全局唯一，加载自检重复直接拒启。
       Bing favicon 走厂商外链腿 30s 过(image_tokens=64), 微软全球CDN可达性最好 — 小欧-2026-11-09
     2026-11-09 小欧 - 「转发图片外链」notice 补准(逐句对 vision.py 会审): 裸链接?参数原样保留(同批修
       _BARE_IMAGE_RE 丢参)、超出4个静默不转发、未实测模型链接整个忽略不留说明、内网改「内网/保留地址」 — 小欧-2026-11-09
+    2026-11-10 小欧 - tuning.agent 新增 disabled_tools(禁用工具名单, textarea 可编辑): 原 tools_alias_mapper
+      .UNAVAILABLE_OFFICIAL_TOOLS 硬编码五元组; 命中即提示「禁止使用」并点明生效全组, 只影响未注册工具
+      措辞、不拦已注册工具; 键存在即配置为真值——清空=不禁用任何工具(不兜底), 仅缺键/异常形状回落内置;
+      运行时消费口 get_disabled_official_tools/is_disabled_tool(get_config 热读)。
+      同批同步 config.yaml.example 与 config/config.yaml(铁规三处同步) — 小欧-2026-11-10
 
 """
 from typing import Any, Dict, List, Optional
@@ -130,6 +135,9 @@ from app.tools.tool_constants import (
     DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
 )
+# 2026-11-10 小欧 - 禁用工具名单默认展示值取自 tools_alias_mapper 内置五件套(与运行时回落同一真源,
+#   展示与实判不漂移); 生效值=config tuning.agent.disabled_tools, 缺键回落此清单, 清空=不禁用任何工具，工具名称逗号分隔
+from app.tools.tools_alias_mapper import UNAVAILABLE_OFFICIAL_TOOLS as _UNAVAILABLE_OFFICIAL
 
 
 # ============================================================
@@ -449,9 +457,15 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
         _item("tuning.concurrency.shell_max_processes", "int", "shell并发进程上限", 10, range_=[2, 64],
               notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
-        # --- agent: Agent 循环参数（1 键）---
+        # --- agent: Agent 循环参数（2 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
+        # 2026-11-10 小欧 - 官方13件套禁用名单配置化(原 tools_alias_mapper 硬编码五元组):
+        #   只影响未注册工具被拒时的措辞(禁用提示+点明全组), 拦不住已注册工具;
+        #   键存在即配置为真值——清空=不禁用任何工具, 仅缺键/异常形状回落内置(用户拍板, 不兜底)。
+        _item("tuning.agent.disabled_tools", "textarea", "禁用工具名单",
+              ", ".join(_UNAVAILABLE_OFFICIAL),
+              notice="模型调用这些工具时提示「禁止使用」并点明整个名单，防反复试错；不影响已注册正常工具。清空=不禁用任何工具"),
         # --- trim: 裁剪 5 键（loop 每轮评估）— 小欧-2026-10-25
         _item("tuning.trim.max_rounds", "int", "裁剪历史触发轮", 100, range_=[1, 10000],
               notice="用于计算消息数上限(msg_ceiling=max_rounds×2+5)，超出即触发裁剪；调大保留更多原始信息，调小更早裁旧"),

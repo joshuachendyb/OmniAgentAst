@@ -14,6 +14,7 @@
 # 2026-11-10 - 小欧 - 网关强塞的官方13件套幻觉名收编: websearch→searchweb/glob→find/webfetch→fetchpage(参数逐字兼容; 实证 beam-free 连调 websearch×13 全被拒致19轮死循环); fetchpage.format→extract_format
 # 2026-11-10 - 小欧 - 官方5件套禁用名单 UNAVAILABLE_OFFICIAL_TOOLS(question/skill/subagent/patch/execute): 13件套=3收编+5天然命中+5禁用的补集知识, 命中即定性"禁止使用"并点明全组, 防弱模型逐个试错烧轮次
 # 2026-11-10 - 小欧 - 勘误: glob→find 非"参数逐字兼容"(上条表述不实)——pattern同名对齐, path官方面可选本系统必填, 缺失走schema校验反馈一轮补齐; 语义映射(文件名通配搜索)正确维持收编
+# 2026-11-10 - 小欧 - 禁用名单配置化: UNAVAILABLE_OFFICIAL_TOOLS 降为内置回落默认, 新增 get_disabled_official_tools/is_disabled_tool 读 config tuning.agent.disabled_tools(形状兼容str/list, 键存在即配置为真值——清空=不禁用任何工具不兜底, 仅缺键/异常形状回落内置; get_config热生效, 同shell_readonly先例); 两消费点(handle_action/observation_builder)改经判定函数
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -370,6 +371,38 @@ TOOL_NAME_ALIASES = {
 
 # 官方13件套中明确禁用的5个工具: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10
 UNAVAILABLE_OFFICIAL_TOOLS = ("question", "skill", "subagent", "patch", "execute")
+
+
+def get_disabled_official_tools() -> tuple:
+    """生效的禁用工具名单 — 小欧-2026-11-10
+
+    真值源 = 配置 `tuning.agent.disabled_tools`。语义(用户拍板):
+      **键存在即以配置为唯一真值: 清空(空串/空表/全空白) → 空元组 = 不禁用任何工具, 不兜底**;
+      仅缺键/配置不可读/形状异常 → 回落内置 UNAVAILABLE_OFFICIAL_TOOLS(存量配置保升级前行为)。
+    形状兼容两种(设置页 textarea 落盘会把文本按行拆成 YAML list, 手写 yaml 常是字符串):
+      str → 按 , ; 换行 拆;  list/tuple → 逐元素取串, 元素内部再按 , ; 拆。
+    读取用 get_config()(内部 mtime 缓存)热生效; 只影响未注册工具被拒时的措辞, 拦不住已注册工具。
+    """
+    try:
+        from app.config import get_config  # 延迟导入: 本模块为叶子, 不给上层加导入依赖
+        raw = get_config().get("tuning.agent.disabled_tools")  # 不给默认值: 缺键(None)与清空("")是两种语义
+    except Exception:                      # 配置不可读 → 用内置默认, fail-safe 保持既有口径不突变
+        return UNAVAILABLE_OFFICIAL_TOOLS
+    if raw is None or not isinstance(raw, (str, list, tuple)):
+        return UNAVAILABLE_OFFICIAL_TOOLS  # 缺键/数字布尔等异常形状 → 不猜, 用内置
+    chunks = [raw] if isinstance(raw, str) else [str(x) for x in raw]
+    parts: list = []
+    for c in chunks:
+        for p in c.replace(";", ",").replace("\n", ",").split(","):
+            p = p.strip()
+            if p:
+                parts.append(p)
+    return tuple(parts)                     # 拆完全空(清空) → () = 不禁用任何工具, 不兜底
+
+
+def is_disabled_tool(tool_name: str) -> bool:
+    """禁用判定: 命中生效名单→措辞升格"禁止使用"; 注册判定仍在认领层, 本名单不拦截 — 小欧-2026-11-10"""
+    return tool_name in get_disabled_official_tools()
 
 
 def normalize_tool_name(tool_name: str) -> str:
