@@ -13,6 +13,8 @@
 // 编辑历史: 2026-11-07 小欧 - 后端电脑栏两处「本机文件」→「后端电脑文件」(跨机空态/同机模式说明),
 //   消最后两处归属歧义文案 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-10 小欧 - 抽屉顶部新增静态说明: 预先告知支持类型与大小上限、其余类型会被拒绝, 与后端白名单口径一致 — 小欧-2026-11-10
+// 编辑历史: 2026-11-10 小欧 - 排版重设计: 顶部常驻文字改标题旁帮助图标(Tooltip), 规则文案上移 ATTACHMENT_RULES 单一真源 — 小欧-2026-11-10
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -53,6 +55,7 @@ import {
   ArrowUpOutlined,
   FolderOpenOutlined,
   FolderOutlined,
+  InfoCircleOutlined,
   MoreOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
@@ -81,6 +84,7 @@ import {
   enqueue,
   uploadAttachments,
   MAX_BATCH,
+  ATTACHMENT_RULES,
 } from '@/features/refs/uploadAttachment';
 import { quoteFile } from '@/features/refs/quote';
 import { getLocalCapability, importLocal } from '@/features/refs/localImport';
@@ -1188,7 +1192,17 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       open={open}
       onClose={onClose}
       width={720}
-      title="附件"
+      title={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          附件
+          <Tooltip title={ATTACHMENT_RULES}>
+            <InfoCircleOutlined
+              style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.CAPTION }}
+              aria-label="附件规则说明"
+            />
+          </Tooltip>
+        </span>
+      }
       footer={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={metaStyle}>

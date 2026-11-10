@@ -11,6 +11,7 @@
 //   上传收集/同机导入/合集全部迁入抽屉, 本组件不再持有 Upload 与 pendingFiles(职责只剩按钮+抽屉宿主) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 - Tooltip 入口清单同步抽屉标签定名(后端电脑/任务产物) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-10 小欧 - 抽屉标题加帮助图标(Tooltip 展示附件规则), 按钮 Tooltip 补规则行, 消抽屉内常驻文字的视觉噪音 — 小欧-2026-11-10
 /**
  * AttachmentArea - 附件唯一入口（按钮行左侧「附件」）
  *
@@ -21,6 +22,7 @@ import React, { useState } from 'react';
 import { Button, Tooltip } from 'antd';
 import { PaperClipOutlined } from '@ant-design/icons';
 
+import { ATTACHMENT_RULES } from '@/features/refs/uploadAttachment';
 import type { ComposerRef } from '@/features/refs/store';
 import { FileDrawer } from './FileDrawer';
 
@@ -50,7 +52,14 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
   if (!visible) return null;
   return (
     <>
-      <Tooltip title="添加文件到本轮（最近用过 / 本会话 / 项目文件 / 后端电脑 / 任务产物 / 收藏）">
+      <Tooltip
+        title={
+          <div style={{ maxWidth: 280 }}>
+            <div>添加文件到本轮（最近用过 / 本会话 / 项目文件 / 后端电脑 / 任务产物 / 收藏）</div>
+            <div style={{ marginTop: 4, opacity: 0.85 }}>{ATTACHMENT_RULES}</div>
+          </div>
+        }
+      >
         <Button
           size="small"
           icon={<PaperClipOutlined />}

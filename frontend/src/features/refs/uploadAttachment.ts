@@ -5,6 +5,7 @@
 //   文案派生共用(原 tip/rejectReason 两处文案硬编码 10MB/20MB) — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 - F-01 修复: 上传前容量预检(occupancy + 本批 > MAX_REFS 整批拒绝),
 //   根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
+// 编辑历史: 2026-11-10 小欧 - 新增 ATTACHMENT_RULES 规则文案常量(单一真源): 按钮 Tooltip 与抽屉帮助图标共用 — 小欧-2026-11-10
 /**
  * uploadAttachment —— 「把文件送进引用区」的唯一实现（附件域）
  *
@@ -32,6 +33,12 @@ export const MAX_BATCH = 10;
 /** 2026-11-06 小欧 三堂会审(DRY): 上限数值单一真源, 字节换算与文案派生共用(原文案两处硬编码) — 小欧-2026-11-06 */
 export const MAX_IMAGE_MB = 10;
 export const MAX_FILE_MB = 20;
+
+/** 附件规则说明(单一真源): 按钮 Tooltip 与抽屉标题帮助图标共用, 与后端白名单/上限同口径 */
+export const ATTACHMENT_RULES =
+  '支持图片、视频、PDF / Word / Excel / PPT、文本与代码文件；' +
+  `图片 ≤${MAX_IMAGE_MB}MB、其他 ≤${MAX_FILE_MB}MB，一次最多 ${MAX_BATCH} 个、共 ${MAX_REFS} 项；` +
+  '其余类型（如 zip/exe）会被拒绝。';
 const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
