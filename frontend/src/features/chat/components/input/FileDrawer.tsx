@@ -15,6 +15,8 @@
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-10 小欧 - 抽屉顶部新增静态说明: 预先告知支持类型与大小上限、其余类型会被拒绝, 与后端白名单口径一致 — 小欧-2026-11-10
 // 编辑历史: 2026-11-10 小欧 - 排版重设计: 顶部常驻文字改标题旁帮助图标(Tooltip), 规则文案上移 ATTACHMENT_RULES 单一真源 — 小欧-2026-11-10
+// 编辑历史: 2026-11-10 小欧 - 合集限额接入: 打开时拉取后端 limits 并下发表单(入口置灰), 左栏显示合集数/条目数配额;
+//   条目 meta 补引用身份, 右栏标题带上合集用途备注 — 小欧-2026-11-10
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -68,6 +70,7 @@ import {
   materialPackApi,
   type MaterialPack,
   type MaterialPackItem,
+  type MaterialPackLimits,
 } from '@/services/api/materialPack.api';
 import {
   fileApi,
@@ -290,6 +293,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [feedBusy, setFeedBusy] = useState(false);
   const [renamingPack, setRenamingPack] = useState<MaterialPack | null>(null);
   const [packNameValue, setPackNameValue] = useState('');
+  /** 合集限额(后端 get_limits 单一真源), 用于入口置灰与计数展示 */
+  const [packLimits, setPackLimits] = useState<MaterialPackLimits | null>(null);
   const rowsRef = useRef<RowSpec[]>([]);
   const activeElRef = useRef<HTMLDivElement | null>(null);
 
@@ -380,6 +385,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     void getLocalCapability().then(setCanLocal);
     void refreshAll();
     void reloadPacks();
+    void materialPackApi
+      .limits()
+      .then(setPackLimits)
+      .catch(() => {
+        /* 限额加载失败不阻断抽屉使用, 后端仍会校验 */
+      });
   }, [open, refreshAll, reloadPacks]);
 
   useEffect(() => {
@@ -947,7 +958,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         return {
           key: `${it.seq}-${it.path}`,
           name: it.label || it.path,
-          meta: it.path,
+          meta: `${it.kind === 'attachment' ? '附件' : '文件'} · ${it.path}`,
           added,
           onToggle: () => void feedOne(it),
         };
@@ -988,6 +999,9 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const rows = buildRows();
   rowsRef.current = rows;
   const localDirRows = localDirs();
+  /** 合集数达上限：入口置灰(上限未加载时不预判, 后端兜底校验) */
+  const atPackLimit =
+    packLimits !== null && packs.length >= packLimits.max_packs;
 
   const currentScope: ScopeKey | null =
     source === 'project' || source === 'local' || source === 'pack'
@@ -1169,7 +1183,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   };
 
   const paneTitle = (): string => {
-    if (source === 'pack') return activePack ? activePack.name : '合集';
+    if (source === 'pack') {
+      if (!activePack) return '合集';
+      return activePack.note
+        ? `${activePack.name} · ${activePack.note}`
+        : activePack.name;
+    }
     if (source === 'local') {
       return hostLabel ? `后端电脑 · ${hostLabel}` : '后端电脑';
     }
@@ -1283,6 +1302,18 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
             >
               {favLabel}
             </div>
+            {packLimits && (
+              <div
+                style={{
+                  margin: `${Spacing.XS}px 0 2px`,
+                  padding: '0 10px',
+                  fontSize: FontSize.CAPTION,
+                  color: Colors.TEXT.SECONDARY,
+                }}
+              >
+                {`合集 ${packs.length}/${packLimits.max_packs}`}
+              </div>
+            )}
             <div style={{ maxHeight: 220, overflowY: 'auto' }}>
               {packs.length === 0 ? (
                 <div style={{ ...metaStyle, padding: '2px 10px' }}>
@@ -1318,7 +1349,11 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
                     >
                       {p.name}
                     </span>
-                    <span style={metaStyle}>{p.items.length}</span>
+                    <span style={metaStyle}>
+                      {packLimits
+                        ? `${p.items.length}/${packLimits.max_items}`
+                        : p.items.length}
+                    </span>
                     <Dropdown
                       trigger={['click']}
                       menu={{
@@ -1349,7 +1384,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
               )}
             </div>
             <div style={{ marginTop: Spacing.XS }}>
-              <MaterialPackSaveForm refs={refs} onSaved={reloadPacks} />
+              <MaterialPackSaveForm
+                refs={refs}
+                onSaved={reloadPacks}
+                limits={packLimits}
+                atLimit={atPackLimit}
+              />
             </div>
           </div>
 

@@ -2,15 +2,19 @@
 # 2026-11-04 小欧 新建: 素材包 CRUD(名称唯一/条目同事务覆盖/只删记录不动磁盘) — 小欧-2026-11-04
 # 2026-11-06 小欧 改名 service.py→material_pack_service.py: 与系统 *_service.py 命名惯例对齐(名实相符),
 #   消费方 import 路径同步(`from app.material_packs import material_pack_service`) — 小欧-2026-11-06
-# 2026-11-07 小欧 - F-07/F-08 修复: 条目保留引用身份(kind/attachment_id), 附件条目投喂时
+# 2026-11-07 小欧 - 条目保留引用身份(kind/attachment_id), 附件条目投喂时
 #   按 id 恢复附件语义(原只存 path/label, 附件降格为普通文件引用, resolver 走文件读分支);
-#   B-11 修复: create_pack 名称唯一检查提到总数上限之前(重名+满额时先报"重名", 提示才可行动)
+#   create_pack 名称唯一检查提到总数上限之前(重名+满额时先报"重名", 提示才可行动)
+# 2026-11-10 小欧 限额重设: 包总数 200→10、单包条目 10→5(合集=场景组合, 小而精);
+#   新增 get_limits() 单一出口供前端预校验(消前端硬编码 MAX_ITEMS 双真源) — 小欧-2026-11-10
+# 2026-11-10 小欧 注释清理: 去除修复序号等过期标识, 注释语义不变 — 小欧-2026-11-10
 
 """material_packs.material_pack_service — 素材包唯一读写实现。
 
 约束:
-  单包 ≤10 个文件(与一次选择上限一致); 包总数 ≤200; 名称唯一(COLLATE NOCASE);
+  单包 ≤5 个文件(场景组合, 小而精); 包总数 ≤10; 名称唯一(COLLATE NOCASE);
   items 与包同事务覆盖写(先删后插), 删除包只删记录, 不动磁盘文件。
+  限额经 get_limits() 单一出口下发, 前端不重复硬编码。
 """
 import uuid
 from typing import Any
@@ -19,10 +23,16 @@ from app.db import db
 from app.file_browse.errors import INVALID_PARAM, NOT_FOUND, PACK_NAME_CONFLICT, fail
 from app.utils.time_utils import get_local_iso_timestamp
 
-MAX_PACKS = 200
-MAX_ITEMS = 10
+MAX_PACKS = 10
+MAX_ITEMS = 5
 MAX_NAME = 64
 MAX_LABEL = 120
+
+
+def get_limits() -> dict[str, int]:
+    """限额单一真源: 供前端预校验与文案, 与上方常量同源。"""
+    return {"max_packs": MAX_PACKS, "max_items": MAX_ITEMS,
+            "max_name": MAX_NAME, "max_label": MAX_LABEL}
 
 
 def _clean_name(name: str) -> str:
@@ -33,7 +43,7 @@ def _clean_name(name: str) -> str:
 
 
 def _clean_items(items: list | None) -> list[tuple]:
-    """条目清洗(F-07): 保留 kind/attachment_id 引用身份。
+    """条目清洗: 保留 kind/attachment_id 引用身份。
 
     kind=attachment 时 attachment_id 必填(投喂按 id 查表恢复附件语义, 缺 id 无法恢复);
     其余 kind 透传(与 REF_KINDS 同域), attachment_id 恒置 None。
@@ -108,7 +118,7 @@ def create_pack(name: str, note: str = "", group_name: str = "",
     n = _clean_name(name)
     rows = _clean_items(items)
     with db.get_conn("chat") as conn:
-        # B-11: 名称唯一先于总数上限 —— 重名+满额时先报"重名"(用户改个名即可),
+        # 名称唯一先于总数上限 —— 重名+满额时先报"重名"(用户改个名即可),
         #   报"满额"会让用户误以为必须删包, 提示不可行动
         if conn.execute(
             "SELECT 1 FROM material_packs WHERE name = ? COLLATE NOCASE", (n,)

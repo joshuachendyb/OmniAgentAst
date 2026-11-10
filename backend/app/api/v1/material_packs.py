@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-11-04 小欧 新建: 素材包路由薄壳(4 端点, 业务全在 service) — 小欧-2026-11-04
-# 2026-11-07 小欧 - F-07/F-08 修复: PackItemIn 增 kind/attachment_id(条目保留引用身份,
+# 2026-11-07 小欧 - 条目保留引用身份(kind/attachment_id,
 #   附件条目投喂时按 id 恢复附件语义) — 小欧-2026-11-07
+# 2026-11-10 小欧 新增 GET /material-packs/limits: 限额单一出口供前端预校验(消前端硬编码) — 小欧-2026-11-10
+# 2026-11-10 小欧 注释清理: 去除修复序号等过期标识, 注释语义不变 — 小欧-2026-11-10
 
 """material_packs 路由薄壳 —— 参数解包 + 转 service, 不写业务、不碰 DB。
 
@@ -43,6 +45,12 @@ class PackUpdateIn(BaseModel):
 def list_packs() -> List[Dict[str, Any]]:
     """全部素材包(含 items); 分组/搜索在前端本地过滤。"""
     return packs.list_packs()
+
+
+@router.get("/material-packs/limits")
+def pack_limits() -> Dict[str, int]:
+    """合集限额(包总数/单包条目): 前端预校验与文案, 与 service 常量同源。"""
+    return packs.get_limits()
 
 
 @router.post("/material-packs")
