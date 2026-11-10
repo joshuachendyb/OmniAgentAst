@@ -6,6 +6,7 @@
 # 2026-11-07 小欧 - 修复: _read_head_and_count 补 latin-1 兜底(与 _read_text_full 编码能力对齐),
 #   消除同文件 ≤/≥256KB 两侧解码不一致致的档案头乱码 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3/S4: richdoc 真抽取(复用工具层四读取器) + video ffprobe 元数据(缺失降级) — 小欧-2026-11-09
+# 2026-11-10 小欧 ffprobe 子进程补 CREATE_NO_WINDOW: 无控制台部署(打包版/服务态)跑视频元数据防闪黑窗 — 小欧-2026-11-10
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -269,6 +270,7 @@ def _video_meta(stored: Path) -> dict[str, Any] | None:
             [exe, "-v", "error", "-print_format", "json",
              "-show_format", "-show_streams", str(stored)],
             capture_output=True, timeout=FFPROBE_TIMEOUT, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # 无控制台部署(打包版/服务态)防闪黑窗 — 小欧-2026-11-10
         )
         if out.returncode != 0:
             return None

@@ -23,6 +23,8 @@
 #   list 非法 scope 由静默回落改 fail(INVALID_PARAM) — 小欧-2026-11-07
 # 2026-11-07 小欧 - 左栏标签对准: session 作用域排除任务产物溯源行(stid 非空归属 ai 栏), 消双栏重叠显示 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3: 增 mark_extract_result 抽取态回填(首次成功/失败写 extract_status/extract_chars) — 小欧-2026-11-09
+# 2026-11-10 小欧 - read_inject_text 抽取失败兜底: S3改抛异常后预览路径漏改, 富文档/空工作簿抽取异常直穿HTTP 500;
+#   降级为错误说明文本(纯读契约不变, 不回填抽取态), 与resolver失败折算同口径
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -541,4 +543,7 @@ def read_inject_text(attachment_id: str, session_id: str) -> str:
     att = get_attachment_scoped(attachment_id, session_id, auto_promote=False)
     if not att:
         fail(NOT_FOUND, "附件不存在")
-    return extract.build_inject_text(att)
+    try:
+        return extract.build_inject_text(att)
+    except Exception as e:  # noqa: BLE001 — S3改抛异常后预览兜底: 抽取失败降级说明文本不再HTTP 500, 与resolver失败折算同口径
+        return f"[附件抽取失败({type(e).__name__})] 预览不可用。原文可通过下载查看; 发送引用时该附件按失败回执处理。"

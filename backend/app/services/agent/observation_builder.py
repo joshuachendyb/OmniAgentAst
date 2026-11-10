@@ -14,6 +14,7 @@
 # 2026-11-03 小欧 - 参数截断修复提示 WARNING→INFO(自愈修复非故障) — 小欧-2026-11-03
 # 2026-11-10 小欧 - 拒绝观察前缀去重: 拒绝源reason自带"工具 X"(未注册/路径不合法/用户拒绝)时不再重复拼接 —
 #   实证喂回"工具 websearch 工具 websearch 未注册", 重复病句加剧弱模型误判 — 小欧-2026-11-10
+# 2026-11-10 小欧 - 禁用5件套反馈: 命中 UNAVAILABLE_OFFICIAL_TOOLS 时不说"未注册", 点明全组5个均禁用勿再尝试, 防弱模型逐个试错
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -22,6 +23,7 @@ from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ObservationStep
 from app.services.agent.observation_formatter import build_observation_text
+from app.tools.tools_alias_mapper import UNAVAILABLE_OFFICIAL_TOOLS  # 2026-11-10 小欧: 官方5件套禁用名单, 反馈点明全组
 from app.db.models.operation_models import OperationStatus
 
 
@@ -51,7 +53,13 @@ def _add_denial_feedback(agent, denied_items):
         _tid = _call.get("_tool_call_id", "")
         # 2026-11-10 小欧 前缀去重: reason已含"工具 X"则不再拼前缀(单出口治未注册/路径不合法/用户拒绝三源)
         _tag = f"工具 {_cn}"
-        _obs = f"[Observation] {_reason if _tag in _reason else _tag + ' ' + _reason}. 请改用其他工具或方式完成用户任务。"
+        if _cn in UNAVAILABLE_OFFICIAL_TOOLS:
+            # 禁用5件套: 不说"未注册", 点明全组均禁用, 防弱模型逐个试错 — 小欧-2026-11-10
+            _obs = (f"[Observation] 工具 {_cn} 禁止使用。本系统禁用以下 5 个工具: "
+                    f"{'、'.join(UNAVAILABLE_OFFICIAL_TOOLS)} — 请勿再尝试其中任何一个, "
+                    f"请直接改用系统已有工具完成用户任务。")
+        else:
+            _obs = f"[Observation] {_reason if _tag in _reason else _tag + ' ' + _reason}. 请改用其他工具或方式完成用户任务。"
         try:
             agent.message_builder.add_tool_result(_tid, _obs)
         except Exception as e:

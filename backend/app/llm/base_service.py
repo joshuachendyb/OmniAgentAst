@@ -107,6 +107,8 @@
 # 2026-11-08 小欧: 回滚非流式 request() 429 冷却标记——该路径当前无消费方(agent 主链全走 request_stream), YAGNI — 小欧-2026-11-08
 # 2026-11-10 小欧 配置级默认参数摘除契约(RFC 7396 null-delete同语义): opencli经网关上游严格校验拒收chat_template_kwargs(beam-free 400 unsupported_parameter),
 #   撤provider硬编码if改合并层认model_params.<model>.<键>显式null/false=移除该默认键, 摘除声明随config走, 代码零模型名 — 小欧-2026-11-10
+# 2026-11-10 小欧 - 摘除契约通用化: 单键if改遍历merged_params循环摘除(is None or is False判别, 规避0==False误摘数值0),
+#   reasoning_effort等任一默认键显式null/false均可摘(原只摘chat_template_kwargs一个键, 声明通用实现半成品)
 """
 LLM 核心模块 — BaseAIService
 
@@ -187,9 +189,11 @@ class BaseAIService:
             user_ctk = extra_body_params.get("chat_template_kwargs")
             if isinstance(user_ctk, dict) and default_ctk:
                 merged_params["chat_template_kwargs"] = {**default_ctk, **user_ctk}
-            # 配置级默认参数摘除契约(RFC 7396 null-delete同语义): 显式null/false=从请求体移除该键, 详见公用函数清单FUNCTIONS.md — 小欧 2026-11-10
-            if merged_params.get("chat_template_kwargs") in (None, False):
-                merged_params.pop("chat_template_kwargs", None)
+            # 配置级默认参数摘除契约(RFC 7396 null-delete同语义): 任一默认键显式null/false=从请求体移除该键, 详见公用函数清单FUNCTIONS.md — 小欧 2026-11-10
+            # 判别用 is None or is False(非 in (None, False)): 0==False 会把数值0误摘 — 小欧-2026-11-10
+            _drop = [k for k, v in merged_params.items() if v is None or v is False]
+            for _k in _drop:
+                merged_params.pop(_k, None)
         self.extra_body_params = merged_params
         self.context_length = context_length
         self._llm_sdk = None

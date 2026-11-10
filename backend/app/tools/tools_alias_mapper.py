@@ -12,6 +12,8 @@
 # 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→write: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 write 正常执行(与 writefile/writeetext 同源修复)
 # 2026-10-02 - 小欧 - 注册名归位: PARAM_ALIASES 键 shell→bash; TOOL_NAME_ALIASES "bash"→"shell" 反转为 "shell"→"bash"(旧名降级为幻觉名兜底)
 # 2026-11-10 - 小欧 - 网关强塞的官方13件套幻觉名收编: websearch→searchweb/glob→find/webfetch→fetchpage(参数逐字兼容; 实证 beam-free 连调 websearch×13 全被拒致19轮死循环); fetchpage.format→extract_format
+# 2026-11-10 - 小欧 - 官方5件套禁用名单 UNAVAILABLE_OFFICIAL_TOOLS(question/skill/subagent/patch/execute): 13件套=3收编+5天然命中+5禁用的补集知识, 命中即定性"禁止使用"并点明全组, 防弱模型逐个试错烧轮次
+# 2026-11-10 - 小欧 - 勘误: glob→find 非"参数逐字兼容"(上条表述不实)——pattern同名对齐, path官方面可选本系统必填, 缺失走schema校验反馈一轮补齐; 语义映射(文件名通配搜索)正确维持收编
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -362,9 +364,12 @@ TOOL_NAME_ALIASES = {
     "http_request": "httpget",
     "shell": "bash",  # 2026-10-02 小欧 - 注册名已改 bash, 旧名 shell 降级为幻觉名兜底
     "websearch": "searchweb",  # 2026-11-10 小欧 - 网关强塞的官方13件套名收编: 真联网搜索, 必填{query}逐字兼容(实证beam-free连调×13全被拒死循环)
-    "glob": "find",  # 2026-11-10 小欧 - 官方glob{pattern,path}与find必填参数逐字对齐, 收编执行真工具
+    "glob": "find",  # 2026-11-10 小欧 - 官方glob{pattern,path?}→find(文件名通配搜索): pattern必填同名; path官方面可选本系统必填, 只传pattern时schema校验反馈补路径(一轮可纠正非死循环)
     "webfetch": "fetchpage",  # 2026-11-10 小欧 - 官方webfetch{url,format,timeout}→fetchpage, url必填同名
 }
+
+# 官方13件套中明确禁用的5个工具: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10
+UNAVAILABLE_OFFICIAL_TOOLS = ("question", "skill", "subagent", "patch", "execute")
 
 
 def normalize_tool_name(tool_name: str) -> str:

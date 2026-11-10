@@ -5,6 +5,7 @@
 # 2026-10-18 - 小欧 - 归一化前置(L2 唯一职责): _claim 在工具名归一后, 用 normalize_params 把参数名归一为 schema 规范名并原地写回;
 #   下游安全层/执行层统一拿规范 tool+params, 安全层不再重复 normalize_params。未注册工具(_meta is None)不归一, 保持原样交上游拒绝。
 # 2026-10-18 - 小欧 - 补【路径名契约】注释: 安全模块只识别 path/dest 两个路径名, 要求 schema 路径参数名只能是 path/dest, 其余历史名仅作别名归一到二者。
+# 2026-11-10 小欧 - 归一名原地写回 tool_name: 执行链按裸名查表致别名调用过认领却在执行层"未找到"(实测 beam-free 调 websearch 连环), 认领通过即写回归一名(未注册不写回保持原样)
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -42,6 +43,9 @@ def _claim(call: Dict) -> Dict:
     #   schema 若新增第三种路径名 = 破坏契约(安全层会静默漏检), 守护见 test_p1_layer_ownership.py
     #   ::test_single_line_tool_path_keys_converge_to_path_or_dest。
     if _meta is not None:
+        # 2026-11-10 小欧 - 归一名原地写回 tool_name: 执行链(tool_runner→tool_executor→retry_engine)按裸名查表,
+        #   只记旁路 _normal_name 不写回, 别名调用过认领却在执行层"未找到"(实测 beam-free 调 websearch 连环未找到)
+        call["tool_name"] = _normal
         _params = call.get("tool_params")
         if isinstance(_params, dict):
             _normalized, _ = normalize_params(_normal, _params)

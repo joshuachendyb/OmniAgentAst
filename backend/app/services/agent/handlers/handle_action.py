@@ -109,6 +109,7 @@
 # 2026-11-03 小欧 - tool_name 为空 WARNING→DEBUG(LLM 输出缺参数) — 小欧-2026-11-03
 # 2026-11-10 小欧 - 语义修正(被拒≠进展): 全拒/空名action轮与reasoning-only同权计入无进展连击(超限终止), 真实执行才归零 —
 #   实证 beam-free 调未注册 websearch×13, 假动作每轮经 note_progress 归零使 REASONING_ONLY_MAX_ROUNDS 永不可达, 19轮/21万token
+# 2026-11-10 小欧 - 认领拒绝定性分性: 官方5件套禁用名单(question/skill/subagent/patch/execute)命中→"禁止使用", 其余→"未注册"; 前端rejected事件与LLM反馈同源共用_rej
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -138,6 +139,7 @@ from app.services.task.task_context import set_current_task_id
 
 from app.utils.secret_utils import redact_sensitive_params
 from app.tools.target_utils import _extract_target  # 2026-09-04 小健 拆分: target提取下沉工具层
+from app.tools.tools_alias_mapper import UNAVAILABLE_OFFICIAL_TOOLS  # 2026-11-10 小欧: 官方5件套禁用名单, 认领拒绝定性"禁止使用"
 from app.file_persist import make_fp_callback  # 2026-09-04 小健 拆分: 文件A落盘回调工厂下沉file_persist
 
 # 2026-09-04 小健 拆分: 以下函数/类已拆分至3个新文件(action_input_parser/observation_builder/tool_runner), 先复制后修改
@@ -230,10 +232,12 @@ async def handle_action(agent, parsed: Dict) -> dict:
                 _kept.append(_c)
             else:
                 _cn = _c.get("tool_name", "?")
+                # 拒绝定性分性: 禁用名单命中→"禁止使用"(认识但明确禁用), 其余→"未注册"; 前端事件与LLM反馈同源 — 小欧-2026-11-10
+                _rej = f"工具 {_cn} 禁止使用" if _cn in UNAVAILABLE_OFFICIAL_TOOLS else f"工具 {_cn} 未注册"
                 await _buf.publish(agent._step_emitter.emit(MetaStep(
-                    step=step, type="rejected", content=f"工具 {_cn} 未注册",
+                    step=step, type="rejected", content=_rej,
                     reject_type="safety", tool_name=_cn)).to_dict())
-                _denied_pre.append((_cn, f"工具 {_cn} 未注册", _c))
+                _denied_pre.append((_cn, _rej, _c))
         call_result.all_calls = _kept
 
     await _buf.publish(agent._step_emitter.emit(ThoughtStep(step=step, thought=parsed.get("thought", ""),
