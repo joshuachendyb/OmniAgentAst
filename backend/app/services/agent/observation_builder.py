@@ -16,6 +16,7 @@
 #   实证喂回"工具 websearch 工具 websearch 未注册", 重复病句加剧弱模型误判 — 小欧-2026-11-10
 # 2026-11-10 小欧 - 禁用5件套反馈: 命中 UNAVAILABLE_OFFICIAL_TOOLS 时不说"未注册", 点明全组5个均禁用勿再尝试, 防弱模型逐个试错
 # 2026-11-10 小欧 - 禁用名单配置化: 判定改经 is_disabled_tool + 全组提示按生效清单动态点数(读 config tuning.agent.disabled_tools, 缺键回落内置)
+# 2026-11-11 小欧 - 禁用工具反馈措辞改版: "禁止使用"→"已禁用"; 点名全组+给替代方式(question→直接向用户提问/execute→bash/skill、subagent、patch→已有工具组合), 勿再尝试合并一句
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -55,11 +56,12 @@ def _add_denial_feedback(agent, denied_items):
         # 2026-11-10 小欧 前缀去重: reason已含"工具 X"则不再拼前缀(单出口治未注册/路径不合法/用户拒绝三源)
         _tag = f"工具 {_cn}"
         if is_disabled_tool(_cn):
-            # 禁用名单命中(可配置): 不说"未注册", 点明生效全组均禁用, 防弱模型逐个试错 — 小欧-2026-11-10
+            # 禁用名单命中(可配置): 不说"未注册", 点明生效全组均禁用+给替代方式, 防弱模型逐个试错 — 小欧-2026-11-10/11-11措辞改版
             _disabled = get_disabled_official_tools()
-            _obs = (f"[Observation] 工具 {_cn} 禁止使用。本系统禁用以下 {len(_disabled)} 个工具: "
-                    f"{'、'.join(_disabled)} — 请勿再尝试其中任何一个, "
-                    f"请直接改用系统已有工具完成用户任务。")
+            _obs = (f"[Observation] 新omniAgent系统不提供（已禁用）工具 {_cn} 。新omniAgent系统禁用 {len(_disabled)} 个工具: "
+                    f"{'、'.join(_disabled)}。替代方式: question→直接在回复中向用户说明问题等待回答; "
+                    f"execute→改用bash工具; skill/subagent/patch→改用新omniAgent系统已有工具组合完成。"
+                    f"不要再尝试名单中的任何工具。")
         else:
             _obs = f"[Observation] {_reason if _tag in _reason else _tag + ' ' + _reason}. 请改用其他工具或方式完成用户任务。"
         try:
