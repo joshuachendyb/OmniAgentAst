@@ -248,7 +248,7 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     // 点「去对话」→ 跳回聊天页，引用带进输入区
     await page.getByRole('button', { name: '去对话' }).click();
     await expect(
-      page.getByPlaceholder('输入消息，Shift+Enter 换行')
+      page.getByTestId('chat-input-textarea')
     ).toBeVisible({ timeout: 60_000 });
     await expect(
       page.getByText(new RegExp('agent-lifecycle')).first()

@@ -28,6 +28,9 @@
 //   fontSize 14→FontSize.PRIMARY / 12→FontSize.SECONDARY;
 //   ④ 新增局部常量 HINT_LEFT_PX(=11, 对齐 AntD TextArea 水平 padding)/HINT_LINE_HEIGHT(=1.4, 普通文本行高)
 // 2026-11-08 小欧 - placeholder 补"可直接贴公网图片链接"一句(只给格式示范, 完整外链规则在设置页「媒体」Tab) — 小欧-2026-11-08
+// 2026-11-10 小欧 - placeholder 升级为编号化静态清单: 空态常驻显示 6 条输入方式([1]普通输入 [2]图片链接
+//   [3]↑↓翻历史/历史输入 [4]@引用 [5]附件抽屉 [6]拖拽/粘贴), 抽 INPUT_HINTS 常量 + showHints 分支;
+//   动态提示(插话/提交中, executingHint)保持原逻辑不编号; 原生 placeholder 置空由 overlay 统一承载 — 小欧-2026-11-10
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -57,6 +60,25 @@ const { TextArea } = Input;
 //   lineHeight=1.4 为普通文本行高(非等宽, 不引 MonoLineHeight)。
 const HINT_LEFT_PX = 11;
 const HINT_LINE_HEIGHT = 1.4;
+
+// 2026-11-10 小欧 - 输入框静态帮助清单(空态常驻显示)。
+//   [1] 用途: 这是输入框的"输入方式"静态帮助文案, 空态时以 [n] 编号常驻于输入框内(不随执行态变化)。
+//       动态提示(执行中插话 / 正在提交)走 executingHint, 与本清单互斥且不编号。
+//   [2] 维护: 新增 / 删除 / 修改输入方式, 只改本数组即可 —— 编号由数组下标自动生成(第 1 条=[1]),
+//       无需改 JSX; 每项一句完整、精简易懂的说明, 顺序即展示顺序。
+//   [3] 渲染: 6 条全部由 overlay 以 flex-wrap 连续流渲染(第 1 行起, 排满自动换行, 不留半行);
+//       原生 placeholder 置空, 定位锚点用 data-testid="chat-input-textarea"(读屏走 overlay 文本)。
+//   实现与维护约定见 frontend/FUNCTIONS_FRONT.md §4.1 `INPUT_HINTS`。
+const INPUT_HINTS = [
+  '输入文本消息，Shift+Enter 换行，Enter 提交',
+  '↑↓ 翻历史消息',
+  '图片:粘贴,截图,输入公网图片URL（https://…/pic.png）',
+  '@ 引用项目文件，选中后显示在输入框上方的引用区',
+  '点「附件」选择文件（项目 / 后端电脑 / 上传等）',
+  '从本机文件管理器拖拽或粘贴文件进输入区，',
+];
+// 原生 placeholder 置空(清单全由 overlay 连续流渲染); 测试定位锚点 testid
+const HINT_TESTID = 'chat-input-textarea';
 
 interface InputCoreProps {
   value: string;
@@ -108,21 +130,21 @@ const InputCore: React.FC<InputCoreProps> = ({
   }, [focusKey]);
 
   // 2026-10-25 小欧 - 执行中且输入为空 → 橘红 overlay 提示（隐藏原生 placeholder 避免重复）
-  const showHint = !!executingHint && value.trim() === '';
+  const empty = value.trim() === '';
+  const showHint = !!executingHint && empty; // 动态提示(插话/提交中), 不编号
+  // 2026-11-10 小欧 - 空态且无动态提示 → 常驻静态编号清单(替代原生 placeholder)
+  const showHints = empty && !showHint;
 
   return (
     <div style={{ position: 'relative' }}>
       <TextArea
         ref={taRef}
+        data-testid={HINT_TESTID}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         onPressEnter={onPressEnter}
-        placeholder={
-          showHint
-            ? ''
-            : '输入消息，Shift+Enter 换行；可直接贴公网图片链接（https://…/pic.png）'
-        }
+        placeholder=""
         autoSize={{ minRows: INPUT_MIN_ROWS, maxRows: INPUT_MAX_ROWS }}
         style={{
           borderColor: Colors.BORDER.LIGHT,
@@ -142,7 +164,7 @@ const InputCore: React.FC<InputCoreProps> = ({
           }}
         >
           <div style={{ color: Colors.TEXT.WEAK, fontSize: FontSize.PRIMARY }}>
-            输入消息，Shift+Enter 换行
+            {INPUT_HINTS[0]}
           </div>
           {/* 2026-10-26 小欧 - testid 保 H3/H9/H10 e2e 定位(原 B 块已删, 此处为唯一挂载点) */}
           <div
@@ -151,6 +173,36 @@ const InputCore: React.FC<InputCoreProps> = ({
           >
             {executingHint}
           </div>
+        </div>
+      )}
+      {showHints && (
+        <div
+          style={{
+            position: 'absolute',
+            top: Spacing.SM,
+            left: HINT_LEFT_PX,
+            right: HINT_LEFT_PX,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            display: 'flex',
+            flexWrap: 'wrap',
+            columnGap: 16,
+            rowGap: 2,
+            lineHeight: HINT_LINE_HEIGHT,
+          }}
+        >
+          {INPUT_HINTS.map((hint, i) => (
+            <span
+              key={i}
+              style={{
+                color: Colors.TEXT.WEAK,
+                fontSize: FontSize.SECONDARY,
+                maxWidth: '100%',
+              }}
+            >
+              [{i + 1}] {hint}
+            </span>
+          ))}
         </div>
       )}
     </div>

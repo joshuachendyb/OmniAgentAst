@@ -3,8 +3,8 @@
 **创建时间**: 2026-09-23 14:19:12
 **编写人**: 小欧
 **维护人**: 小欧
-**最后更新时间**: 2026-11-09
-**最近更新**: 2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最后更新时间**: 2026-11-10
+**最近更新**: 2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -224,6 +224,7 @@
 | `ReasoningIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行前置图标（step 页面「推理内容...」左端）。`export const ReasoningIcon = SpinSquareIcon` 运行时代理别名（`ReasoningIcon = EyeIcon`），换图标只改该行取值；5 个备用图标 `EyeIcon`(眼睛) / `SignalBarsIcon`(43号) / `SunIcon`(58号) / `ApproachDotsIcon`(65号) / `SpinSquareIcon`(13号, 当前在用) 接口统一。`animating=true` 挂动画类(false 不挂即静止)，节奏唯一真源 `index.css`；`size` 默认 `Icon.BOX`(16px)，图形描边外缘正好填满盒子(与 `GearIcon` 同列齐整)。转/停由 `ThinkingStream` 的 `running` prop 按段序列派生传入 — 小欧 2026-10-07 | `{ size?: number; animating?: boolean }` | JSX |
 | `EyeIcon` / `SignalBarsIcon` / `SunIcon` / `ApproachDotsIcon` / `SpinSquareIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行图标组：当前在用 1 个（`SpinSquareIcon`）+ 备用 4 个（北京老陈令备用常驻，想用即改 `ReasoningIcon` 别名取值）。`viewBox` 统一收为图形外接框，缩放后填满 `Icon.BOX`、垂直居中；`animating` 条件挂动画类 | `{ size?: number; animating?: boolean }` | JSX |
 | `Icon`（图标规格令牌） | `src/utils/stepStyles.ts` | step 行首图标统一规格：`BOX: 16`(盒子边长) + `STROKE: 2`(统一描边宽)。图标组件 `size` 默认取 `Icon.BOX`、`strokeWidth` 取 `Icon.STROKE`；图形需"填满盒子"时令描边外缘=viewBox 边界 — 小欧 2026-10-07 | — | `{ BOX: 16; STROKE: 2 }` |
+| `INPUT_HINTS` | `components/input/InputCore.tsx` | 输入框空态静态帮助清单（输入方式说明）。空态且无动态提示时常驻于输入框内，按数组下标自动生成 `[n]` 编号（第 1 条=`[1]`）。**维护唯一入口**：新增/删除/修改输入方式只改本数组，无需改 JSX，顺序即展示顺序。与动态提示 `executingHint`（执行中插话/正在提交）互斥且不编号 — 小欧 2026-11-10 | — | `string[]` |
 
 ---
 
@@ -297,3 +298,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 |------|------|---------|------|
 | v1.0 | 2026-09-23 14:19:12 | 初始版本：登记全局层（utils 1.1–1.9/theme 令牌）、服务层（api 簿 2.1–2.4/error handler 2.5）、通用组件层、通用 Hooks 层、settings2 特征层（modelUtils/icons/useSettings 契约）；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序语义、resetParams 联合置脏） | 小欧 |
 | v1.1 | 2026-11-02 | 探活口径收敛：删 utils/network.ts（checkNetworkConnection，名"网络检查"实为后端健康检查），改为 services/api/health.api.ts 的 probeAlive + PROBE_TIMEOUT_MS + SLOW_RESPONSE_MS 单一出处，1.7 与 2.4 同步登记 | 小欧 |
+| v1.2 | 2026-11-10 | §4.1 chat 特征层新登记 `INPUT_HINTS`（`components/input/InputCore.tsx`）：输入框空态静态帮助清单（6 条输入方式），编号按数组下标自动生成；增删改输入方式只改数组、无需动 JSX；与动态提示 `executingHint`（执行中插话/正在提交）互斥且不编号 | 小欧 |
