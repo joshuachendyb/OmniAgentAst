@@ -15,6 +15,9 @@
 # 2026-11-10 - 小欧 - 官方5件套禁用名单 UNAVAILABLE_OFFICIAL_TOOLS(question/skill/subagent/patch/execute): 13件套=3收编+5天然命中+5禁用的补集知识, 命中即定性"禁止使用"并点明全组, 防弱模型逐个试错烧轮次
 # 2026-11-10 - 小欧 - 勘误: glob→find 非"参数逐字兼容"(上条表述不实)——pattern同名对齐, path官方面可选本系统必填, 缺失走schema校验反馈一轮补齐; 语义映射(文件名通配搜索)正确维持收编
 # 2026-11-10 - 小欧 - 禁用名单配置化: UNAVAILABLE_OFFICIAL_TOOLS 降为内置回落默认, 新增 get_disabled_official_tools/is_disabled_tool 读 config tuning.agent.disabled_tools(形状兼容str/list, 键存在即配置为真值——清空=不禁用任何工具不兜底, 仅缺键/异常形状回落内置; get_config热生效, 同shell_readonly先例); 两消费点(handle_action/observation_builder)改经判定函数
+# 2026-11-11 - 小欧 - 官方edit签名收编(camelCase): opencli上游OpenCode harness教的键名oldString/newString→
+#   old_string/new_string(Pydantic默认忽略extra键, 无别名则old_string必填缺失, opencli模型的edit每条废一轮schema反馈);
+#   replaceAll(bool)属跨键映射(true→mode:all/false→删键不设, EditInput缺省即once), 在normalize_params键名映射后特判
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -55,6 +58,8 @@ PARAM_ALIASES = {
         "file": "path",
         "filename": "path",
         "file_name": "path",
+        "oldString": "old_string",  # 2026-11-11 小欧: 官方edit camelCase键收编(OpenCode签名, 详见头部编辑历史)
+        "newString": "new_string",
         "model": "mode",  # 键名混淆实证: session 12b317fe 6连发全废(model:"once"), 语义唯一指向mode — 2026-11-04 小欧
     },
     "readmedia": {
@@ -462,6 +467,12 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
         logger.info(
             f"[param_alias] {tool_name}: 参数名映射 {mapped_keys}"
         )
+
+    # 2026-11-11 小欧 - 官方edit跨键收编: replaceAll(bool)→mode(true→all/false→删键不设, EditInput缺省即once);
+    #   OpenCode签名无mode键, replaceAll与本系统mode枚举是同一开关的两种形状, 值依赖改名故不能进PARAM_ALIASES
+    if tool_name == "edit" and "replaceAll" in normalized:
+        if normalized.pop("replaceAll"):
+            normalized["mode"] = "all"
 
     # 参数值别名映射(在名映射后、schema校验前) — 小欧 2026-07-11
     value_aliases = PARAM_VALUE_ALIASES.get(tool_name, {})
