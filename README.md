@@ -509,6 +509,16 @@ model_params:
     reasoning_effort: low    # 其它键整体作为 extra_body 透传（如推理强度），支持任意键
 ```
 
+**按模型配置**：`model_params.<模型名>` 下的每个键值对即为该模型的独立参数。不同模型可拥有不同参数集。
+
+**null 值与摘除契约**：`null`/`false` **不是默认值**，而是**显式操作**——“从请求体中移除该默认键”。如上游拒收 `chat_template_kwargs`，配置 `chat_template_kwargs: null` 即可摘除，无需改代码（RFC 7396 merge-patch 同语义）。
+
+**手动添加参数**：
+- **设置页面**：模型 Tab → ② 参数区 → **+ 添加参数**，勾选常用参数或自定义输入，确认即生效，无需重启。
+- **直接编辑文件**：改 `<包目录>\config\config.yaml`（不是 `.example`），改完后保存即热重载；改坏了可用 `config.yaml.backup.1` ~ `.5` 回滚。
+
+**常见参数**：`temperature`（0.0~2.0）、`max_tokens`、`top_p`（0.0~1.0）、`frequency_penalty`（-2.0~2.0）、`presence_penalty`（-2.0~2.0）、`reasoning_effort`（low/medium/high，仅推理模型）、`seed`、`context_length`（1000~900000）、`chat_template_kwargs`（JSON 对象，如 `{"enable_thinking":true}`）。
+
 `model_meta.param_options` 为 **按模型名分组的参数模板选项**（P1-P8 实现，三层解析：model_meta.param_options > provider 级 param_options > 代码兜底），结构如下：
 
 ```yaml
