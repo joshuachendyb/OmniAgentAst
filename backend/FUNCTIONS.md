@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-11-09
-**最近更新**: 2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-10
+**最近更新**: 2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 **历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
@@ -326,9 +326,10 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_length)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；取值顺序 model_params.context_length > model_meta.context_length > llm.context_length_default > DEFAULT_CONTEXT_LENGTH，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
+| `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_length)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；取值顺序 model_params.context_length > model_meta.context_length > llm.context_length_default > DEFAULT_CONTEXT_LENGTH，余量作 extra_body_params(无则 None)；**摘除契约**：model_params.<model>.<键> 显式 null/false = 从请求体移除该默认键（严格校验上游 400 适配，走配置不动代码） | provider_config: dict, model: str | Tuple[Optional[dict], int] |
 
 > 落点说明(2026-09-01 小欧 复用优先/DRY 归一): 原逻辑双份嵌在 create_service_instance(service.py) 与 stream_orchestrator(L2 跨 provider 快照), 归一为本函数唯一权威, 消除双份漂移; 行为与历史一致(仅去重, 不改逻辑)。
+> 摘除契约(2026-11-10 小欧): 方法名"配置级默认参数摘除"——base_service 合并层认显式 null/false 哨兵并移除该键; 未来任何严格校验上游拒收某默认参数 = 一行配置(model_params.<model>.<键>: null), 不动代码。
 
 ### 3.5 上下文压缩（services/agent/compaction/）
 
@@ -502,6 +503,7 @@ LLM 工具名与参数名的别名归一层，schema 校验前执行（调用点
 |--------|------|------|--------|
 | `normalize_params` | 应用 `PARAM_ALIASES`（键名归一，规范名已存在时别名键被忽略）与 `PARAM_VALUE_ALIASES`（枚举值归一） | tool_name: str, params: Dict | (normalized_params, has_mapping) |
 | `PARAM_ALIASES["edit"]` | `file_path/filepath/file/filename/file_name→path`、`model→mode`（键名混淆实证：session 12b317fe 一次 6 条 edit 全废，`model:"once"` 即 `mode` 枚举值，语义唯一指向） | — | Dict |
+| `TOOL_NAME_ALIASES`（官方13件套收编，2026-11-10） | 网关强塞的官方工具名收编：`websearch→searchweb`（真联网搜索，必填 `{query}` 逐字兼容）/`glob→find`（`{pattern,path}` 必填参数对齐）/`webfetch→fetchpage`（`url` 必填同名）；配套 `PARAM_ALIASES["fetchpage"]` 增 `format→extract_format`（枚举值 markdown/html/text 一致）。实证 beam-free 连调未注册 `websearch`×13 全被拒致 19 轮死循环，收编后假动作→真执行；`execute`(JS运行时)/`patch`(diff)/`question`/`skill`/`subagent` 无诚实对应，不收 | — | Dict |
 | `add_param_alias` | 运行期登记别名（幂等覆盖） | tool_name, alias, canonical | None |
 
 ### 4.3 基础工具（app/tools/fundamental/）
@@ -800,6 +802,8 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.28 | 2026-11-10 | **§4.2.1 官方13件套收编 + 被拒≠进展语义修正**(小欧): ①别名表收编网关强塞的官方工具名 `websearch→searchweb`/`glob→find`/`webfetch→fetchpage`(+`PARAM_ALIASES.fetchpage.format→extract_format`), 参数逐字兼容, 假动作→真执行(实证 beam-free 连调未注册 websearch×13 全被拒致 19 轮/21万 token 死循环); ②handle_action 全拒/空名 action 轮计入无进展连击(超限终止), 真实执行才归零——原假动作经 note_progress 每轮清哨兵使 REASONING_ONLY_MAX_ROUNDS 永不可达; ③observation_builder 拒绝观察前缀去重("工具 X"不再双拼); ④根因: html2text 环境缺装致 network 分类注册三连败(searchweb 静默缺席, 依赖预装 scanner 同崩自掩盖), 装包即愈, 归 FUNDAMENTAL 首批注入由 TOOL_CATEGORY_OVERRIDE 自动达成 | 小欧 |
+| v5.27 | 2026-11-10 | **§3.4 `parse_model_params` 摘除契约**(小欧): beam-free 经网关上游严格校验, 拒收后端默认注入的 `chat_template_kwargs`(HTTP 400 unsupported_parameter); 修法不走代码硬编码——base_service 合并层补"显式 null/false = 摘除该键"契约(RFC 7396 merge-patch 同语义), config.yaml opencli 块 `model_params.beam-free.chat_template_kwargs: null` 一行摘除; 未来同类"严格上游拒收默认参数" = 一行配置 | 小欧 |
 | v5.26 | 2026-11-10 | **新增 §3.9 附件服务 / §3.10 素材包 / §3.11 视觉通道**: 按 [10] 收口登记 `save_bytes`/`rel_to_root`/`ensure_session_attachment_dir`/`classify`/`build_inject_text`/`collect_artifact`/`is_local_request`/`import_local`/`mark_extract_result`；`list_packs`/`create_pack`/`update_pack`/`delete_pack`；`supports_image_input`/`accepts_inline_image`/`accepts_remote_url`/`split_vision_refs`/`image_slot`/`expand_image_slots`/`inline_limit_bytes`/`url_reject_reason`/`build_url_part`/`build_media_part` | 小欧 |
 | v5.25 | 2026-11-09 | **订正 §10.4 与代码对齐**: `VIDEO_MODE_I2V` 枚举值册写 `image` 误，代码真源恒为 `reference`；`VIDEO_POLL_TIMEOUT` 册写 500s 误，代码为 600s，并补记长请求部署约束（总窗≈23min，反向代理 read_timeout 须同级放行） | 小欧 |
 | v5.24 | 2026-11-09 | **新增 §10.4 生成端点单点**: `generation_client.generate_image` 入册（生图唯一 HTTP 出口，t2i/i2i 同端点同函数；探测腿与 Phase B 业务共用，禁直连 httpx）；同册登记 `REJECT_STATUS`（输入腿 `_probe_once` 改引用，拒绝状态集单源）/`IMAGE_PATH`/`VIDEO_PATH`/`PROBE_PROMPT`/`PROBE_I2I_PROMPT` | 小欧 |

@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-09-05 小健 新建：空转防御单一 owner，收口 action/answer 两文件 7 处 _consecutive_reasoning_only 直写（不变量照搬 answer_handler 注释：仅 reasoning-only 累加、余者归零）
 # 2026-10-09 小欧 北京老陈裁定：reasoning-only 检测到即注入 user 警告，替代原 assistant 推理回灌 — 见 notify_stagnation
+# 2026-11-10 小欧 语义扩展: 被拒/空名action轮=无进展(handle_action侧改调note_reasoning_only计入连击, 真实执行才归零); STAGNATION_WARNING补出路, 防"必须行动"把想收场的模型推回假动作(实证beam-free被推回5次)
 """reasoning_guard — reasoning-only 空转防御（计数单一写者）
 
 作用对象是跨轮空转计数，与 message_builder 同属 LLM 交互层，平铺于 app/services/agent/。
@@ -16,6 +17,7 @@ REASONING_ONLY_MAX_ROUNDS = 3  # 小健 2026-09-05：从 answer_handler.py:62 �
 STAGNATION_WARNING = (
     "<system-reminder>\n"
     "上一次你只是重复推理而没有采取行动, 下一次响应必须采取行动或者回答\n"
+    "若所需工具不存在或反复失败, 勿再重复尝试; 请改用系统已有工具, 或基于已知信息直接给出最终回答\n"
     "</system-reminder>"
 )
 

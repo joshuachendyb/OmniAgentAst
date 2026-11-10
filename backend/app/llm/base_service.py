@@ -105,6 +105,8 @@
 # 2026-11-08 小欧 设计[15]落码: ①L1重试分支 429+Retry-After 时 yield pause 帧(前端倒计时,可中断); ②429耗尽出口标记冷却注册表(D态,key=provider+model) + 文案限额/限速中文后缀
 # 2026-11-08 小欧: L1重试事件增 retry_kind 标签(429·延时=有Retry-After契约等待/429·限速=自适应退避, 限额不可重试走终态文案) — 小欧-2026-11-08
 # 2026-11-08 小欧: 回滚非流式 request() 429 冷却标记——该路径当前无消费方(agent 主链全走 request_stream), YAGNI — 小欧-2026-11-08
+# 2026-11-10 小欧 配置级默认参数摘除契约(RFC 7396 null-delete同语义): opencli经网关上游严格校验拒收chat_template_kwargs(beam-free 400 unsupported_parameter),
+#   撤provider硬编码if改合并层认model_params.<model>.<键>显式null/false=移除该默认键, 摘除声明随config走, 代码零模型名 — 小欧-2026-11-10
 """
 LLM 核心模块 — BaseAIService
 
@@ -185,6 +187,9 @@ class BaseAIService:
             user_ctk = extra_body_params.get("chat_template_kwargs")
             if isinstance(user_ctk, dict) and default_ctk:
                 merged_params["chat_template_kwargs"] = {**default_ctk, **user_ctk}
+            # 配置级默认参数摘除契约(RFC 7396 null-delete同语义): 显式null/false=从请求体移除该键, 详见公用函数清单FUNCTIONS.md — 小欧 2026-11-10
+            if merged_params.get("chat_template_kwargs") in (None, False):
+                merged_params.pop("chat_template_kwargs", None)
         self.extra_body_params = merged_params
         self.context_length = context_length
         self._llm_sdk = None

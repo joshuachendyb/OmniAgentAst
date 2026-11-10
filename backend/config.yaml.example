@@ -232,6 +232,7 @@ ai:
   # 模型参数当前值（运行时透传 extra_body/context_length）：写法是在对应模型下挂 model_params，
   #   key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）；
   #   设置页「+ 添加参数」勾选预设后保存即按此形状写入 — 小欧-2026-10-11
+  #   摘除契约：value 显式 null/false = 从请求体移除该默认键（严格校验上游适配，RFC 7396 同语义）— 小欧-2026-11-10
 
   Z_AI:
     api_base: https://api.z.ai/api/paas/v4
@@ -387,6 +388,10 @@ ai:
     api_key: 97f2971ba14456bb0e5daacb42ee238584aa0a0d903f5937bed09c573b1fd6fe
     timeout: 300
     max_retries: 3
+    # model_params 键值显式null=请求体摘除该默认键(beam-free上游严格校验拒收chat_template_kwargs) — 小欧 2026-11-10
+    model_params:
+      beam-free:
+        chat_template_kwargs: null
     models:
       - beam-free
       - big-pickle

@@ -12,6 +12,8 @@
 #   原式对非 dict 的非空 llm_data 抛 AttributeError, 且位于 try 之外会中断整轮观察构建;
 #   _summary 仍只服务 get_last_tool_summary(死循环纠偏), 不再用于改写 tool content — 小欧-2026-10-30
 # 2026-11-03 小欧 - 参数截断修复提示 WARNING→INFO(自愈修复非故障) — 小欧-2026-11-03
+# 2026-11-10 小欧 - 拒绝观察前缀去重: 拒绝源reason自带"工具 X"(未注册/路径不合法/用户拒绝)时不再重复拼接 —
+#   实证喂回"工具 websearch 工具 websearch 未注册", 重复病句加剧弱模型误判 — 小欧-2026-11-10
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -47,7 +49,9 @@ def _add_denial_feedback(agent, denied_items):
     """
     for _cn, _reason, _call in (denied_items or []):
         _tid = _call.get("_tool_call_id", "")
-        _obs = f"[Observation] 工具 {_cn} {_reason}. 请改用其他工具或方式完成用户任务。"
+        # 2026-11-10 小欧 前缀去重: reason已含"工具 X"则不再拼前缀(单出口治未注册/路径不合法/用户拒绝三源)
+        _tag = f"工具 {_cn}"
+        _obs = f"[Observation] {_reason if _tag in _reason else _tag + ' ' + _reason}. 请改用其他工具或方式完成用户任务。"
         try:
             agent.message_builder.add_tool_result(_tid, _obs)
         except Exception as e:

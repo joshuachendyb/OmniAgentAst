@@ -107,6 +107,8 @@
 #   预览/canonical ActionStep(SSE) 展示原文(用户本人数据), canonical 落库时由 storage.append_execution_step 遮蔽。
 # 2026-11-03 小欧 - log_and_print 增 level 参数: [Action] 步骤行显式传 level="WARNING", 控制台默认档即可见 — 小欧-2026-11-03
 # 2026-11-03 小欧 - tool_name 为空 WARNING→DEBUG(LLM 输出缺参数) — 小欧-2026-11-03
+# 2026-11-10 小欧 - 语义修正(被拒≠进展): 全拒/空名action轮与reasoning-only同权计入无进展连击(超限终止), 真实执行才归零 —
+#   实证 beam-free 调未注册 websearch×13, 假动作每轮经 note_progress 归零使 REASONING_ONLY_MAX_ROUNDS 永不可达, 19轮/21万token
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -142,7 +144,7 @@ from app.file_persist import make_fp_callback  # 2026-09-04 小健 拆分: 文�
 from app.services.agent.action_input_parser import _build_call_list  # 2026-09-04 小健 下沉: LLM action输入解析
 from app.services.agent.observation_builder import ObservationContext, build_observation, _add_denial_feedback  # 2026-09-04 小健 下沉: 观察反馈构建层
 from app.services.agent.tool_runner import execute_tools  # 2026-09-04 小健 下沉: 工具执行调度
-from app.services.agent.reasoning_guard import note_progress  # 2026-09-05 小健 8.3: action侧计数归零收口至reasoning_guard
+from app.services.agent.reasoning_guard import note_progress, note_reasoning_only  # 2026-09-05 小健 8.3: 归零收口reasoning_guard; 2026-11-10 小欧 增note_reasoning_only(被拒/空名轮计入无进展连击)
 from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 2026-09-05 小健 10.4第二阶段: 门禁整搬safety_gate
 
 
@@ -187,8 +189,13 @@ async def handle_action(agent, parsed: Dict) -> dict:
 
     if not call_result.tool_name:
         logger.debug(f"[handle_action] tool_name为空, parsed={parsed}")  # 2026-11-03 小欧: LLM 输出缺参数, 降 DEBUG
-        # 2026-09-05 小健 8.3: 归零改 note_progress(收口至reasoning_guard); 原2026-07-17 小欧 注释: action空名异常非reasoning-only, 归零防残留
-        note_progress(agent)
+        # 2026-11-10 小欧 语义修正: 空名action轮=无进展, 计入无进展连击(超限终止); 替代原"归零防残留"(无效轮清哨兵正是死循环帮凶)
+        if note_reasoning_only(agent):
+            logger.warning(f"[handle_action] 连续{agent._consecutive_reasoning_only}轮无进展(空名action, step={step}), 终止任务")
+            _events.extend(agent._step_emitter.emit_failed_final(
+                step=step, response="模型反复返回无效动作，任务已终止（疑似陷入无效循环）",
+            ))
+            return {"events": _events, "result": {}}
         # chendyg 2026-07-01: 删set_failed，_dispatch_handler从MetaStep(type="error")推断状态
         _events.append(agent._step_emitter.emit(MetaStep(
             step=step, type="error", content="LLM返回的action中tool_name为空", error_type="invalid_action", severity="warn"
@@ -292,8 +299,16 @@ async def handle_action(agent, parsed: Dict) -> dict:
         logger.error(f"[handle_action] execute_tools 异常: {e}")
         raise
 
-    # 2026-09-05 小健 8.3: 归零改 note_progress(收口至reasoning_guard); 原2026-07-17 小欧 注释: 本步LLM发起工具调用(非reasoning-only空转), 归零空转计数
-    note_progress(agent)
+    # 2026-11-10 小欧 语义修正(被拒≠进展): 有真实执行才归零; 全拒轮与reasoning-only同权计入无进展连击, 超限终止 —
+    #   原无条件归零使假动作(未注册工具)反复清哨兵, REASONING_ONLY_MAX_ROUNDS 永不可达(实证beam-free 19轮)
+    if _exec_calls:
+        note_progress(agent)
+    elif note_reasoning_only(agent):
+        logger.warning(f"[handle_action] 连续{agent._consecutive_reasoning_only}轮无进展(全拒/未注册工具, step={step}), 终止任务")
+        _events.extend(agent._step_emitter.emit_failed_final(
+            step=step, response="模型反复调用未注册或被拒绝的工具，任务已终止（疑似陷入无效循环）",
+        ))
+        return {"events": _events, "result": {}}
 
     ctx = ObservationContext(
         agent=agent, all_calls=_exec_calls, results=results, step=step,

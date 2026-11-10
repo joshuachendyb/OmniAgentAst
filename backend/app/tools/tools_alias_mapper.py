@@ -11,6 +11,7 @@
 # 2026-08-22 - 小欧 - TOOL_NAME_ALIASES 新增裸名 write/read/edit→write/read/edit: 实证 LLM 三轮幻觉调用裸名"write"(最自然通用名), 因不在别名表被拦截, 同名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后若扩展名为 .docx/.pdf 等仍由 execute_tools 扩展名预检二次路由, 无歧义风险
 # 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→write: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 write 正常执行(与 writefile/writeetext 同源修复)
 # 2026-10-02 - 小欧 - 注册名归位: PARAM_ALIASES 键 shell→bash; TOOL_NAME_ALIASES "bash"→"shell" 反转为 "shell"→"bash"(旧名降级为幻觉名兜底)
+# 2026-11-10 - 小欧 - 网关强塞的官方13件套幻觉名收编: websearch→searchweb/glob→find/webfetch→fetchpage(参数逐字兼容; 实证 beam-free 连调 websearch×13 全被拒致19轮死循环); fetchpage.format→extract_format
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -243,6 +244,7 @@ PARAM_ALIASES = {
         "endpoint": "url",
     },
     "fetchpage": {
+        "format": "extract_format",  # 2026-11-10 小欧 - 官方webfetch参数名收编(枚举值markdown/html/text一致)
         "link": "url",
         "address": "url",
         "endpoint": "url",
@@ -359,6 +361,9 @@ TOOL_NAME_ALIASES = {
     "http_get": "httpget",
     "http_request": "httpget",
     "shell": "bash",  # 2026-10-02 小欧 - 注册名已改 bash, 旧名 shell 降级为幻觉名兜底
+    "websearch": "searchweb",  # 2026-11-10 小欧 - 网关强塞的官方13件套名收编: 真联网搜索, 必填{query}逐字兼容(实证beam-free连调×13全被拒死循环)
+    "glob": "find",  # 2026-11-10 小欧 - 官方glob{pattern,path}与find必填参数逐字对齐, 收编执行真工具
+    "webfetch": "fetchpage",  # 2026-11-10 小欧 - 官方webfetch{url,format,timeout}→fetchpage, url必填同名
 }
 
 
