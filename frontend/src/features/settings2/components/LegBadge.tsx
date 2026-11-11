@@ -1,4 +1,7 @@
 // 编辑历史: 2026-11-09 小欧 - 新建：腿徽标与结论徽标（页面内 4 处重复的 ✓/✗/? 图标与配色三元收口到一处）— 小欧-2026-11-09
+// 2026-11-11 小欧 - BadgeRow 改 forwardRef + 透传 props：antd <Tooltip> 向直接子元素 cloneElement 注入
+//   onMouseEnter/onMouseLeave/ref，原非 forwardRef 函数组件接收不到也不转发到真实 DOM，导致悬停徽标不弹 tip。
+//   输入图片/视频/音频行 + 生成能力行共用本 BadgeRow，单点修复一并覆盖四条验证行。— 小欧-2026-11-11
 import React from 'react';
 import {
   CheckOutlined,
