@@ -113,6 +113,9 @@ key 全局唯一，加载自检重复直接拒启。
       运行时消费口 get_disabled_official_tools/is_disabled_tool(get_config 热读)。
       同批同步 config.yaml.example 与 config/config.yaml(铁规三处同步) — 小欧-2026-11-10
     2026-11-11 小欧 - 新增 media.probe_video_url / media.probe_audio_url(输入能力验证视频/音频素材地址, hidden 仅组内不渲染, 键可读写; 默认值=实测择优公网小文件) — 小欧-2026-11-11
+    2026-11-11 小欧 - 三个验证素材地址(probe_image_url/probe_video_url/probe_audio_url)由 hidden 回媒体页直接显示:
+      原 probe_image_url 迁②Image_URL 行就地配置、probe_video_url/probe_audio_url 无就地入口致"无处可配"(既不在媒体页也不在就地行);
+      现统一去掉 hidden 回 media 组「外链图片」小节直接编辑(SettingRow text 渲染, 走组保存), 与 remote_url_passthrough 同节 — 小欧-2026-11-11
 
 """
 from typing import Any, Dict, List, Optional
@@ -232,19 +235,16 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
               notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接（?查询参数原样保留）；单条消息最多 {MAX_REMOTE_IMAGES} 个，超出的静默不转发；本机地址、内网/保留地址、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理、链接整个忽略不留说明（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
-        _item("media.probe_image_url", "text", "外链检测用图片地址",
+        _item("media.probe_image_url", "text", "图片输入检测外链素材地址",
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
-              hidden=True,
-              notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。已迁到设置页②「Image_URL」行就地显示与修改，此处仅作配置源登记。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
-        # 2026-11-11 小欧 - 视频/音频输入验证素材地址(hidden 仅组内不渲染, 键可读写; 默认值=本机实测
-        #   可达性/速度/体积择优的全球 CDN 小文件(视频 test-videos.co.uk, 音频 runoob; 与图片外链地址同口径) — 小欧-2026-11-11
-        _item("media.probe_video_url", "text", "视频输入检测用素材地址",
+              notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
+        # 2026-11-11 小欧 - 视频/音频输入验证素材地址(默认值=本机实测可达性/速度/体积择优的全球 CDN
+        #   小文件(视频 test-videos.co.uk, 音频 runoob; 与图片外链地址同口径) — 小欧-2026-11-11
+        _item("media.probe_video_url", "text", "视频输入检测外链素材地址",
               "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
-              hidden=True,
               notice="「视频输入能力验证」腿用的公网视频地址（约 991KB 的 mp4，全球 CDN），原样交给厂商接口抓取。留空 = 用内置默认地址；换成私有地址时保证厂商侧可直连 GET"),
-        _item("media.probe_audio_url", "text", "音频输入检测用素材地址",
+        _item("media.probe_audio_url", "text", "音频输入检测外链素材地址",
               "https://www.runoob.com/try/demo_source/horse.mp3",
-              hidden=True,
               notice="「音频输入能力验证」腿用的公网音频地址（约 29KB 的 mp3），后端先下载再 base64 内联发送。留空 = 用内置默认地址"),
     ]},
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）

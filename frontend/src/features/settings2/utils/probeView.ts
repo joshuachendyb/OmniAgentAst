@@ -2,6 +2,8 @@
 // 2026-11-11 小欧 - 图片/视频/音频三行 view 归一为 inputProbeView 唯一分派（原 mediaProbeView/modalityProbeView 吸收合并，
 //   行名/方法tip/徽标tip/按钮tip 全量文案随迁，组件层零 kind 分支）— 小欧-2026-11-11
 // 2026-11-11 小欧 - 注释勘误: 输入行 methodLines/JSDoc "输出能力正常"→"输入能力正常"(输入验证行结论词为输入) — 小欧-2026-11-11
+// 2026-11-11 小欧 - 移除 PROBE_IMAGE_URL_KEY/probeImageUrlOf(死代码): 三个验证素材地址回媒体页直接编辑;
+//   Image_URL 文案"上方「Image_URL」"→"媒体页「外链图片」节"(地址不再模型 Tab 就地行) — 小欧-2026-11-11
 import type {
   MediaProbe,
   ModalityProbeRec,
@@ -120,7 +122,7 @@ const imageInputView = (
         ? '外链已取证——测试图片地址由厂商接口实际抓取成功，图片地址可随请求转发'
         : urlErr
           ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；可再点「验证」重试'
-          : '外链未取证——本次验证时上方「Image_URL」为空，外链腿未发起请求；填好地址再点「验证」即出对/错',
+          : '外链未取证——本次验证时媒体页「外链图片」节的图片地址为空，外链腿未发起请求；填好地址再点「验证」即出对/错',
     ],
     legs: chatLegMuted
       ? []
@@ -154,7 +156,7 @@ const imageInputView = (
     buttonBlockedTip: '未勾选「图片」输入模态，当前不发图，无从验证',
     buttonGoLines: [
       '真实发送一张内置测试图，结论写回本行',
-      '外链取证：先在上方「Image_URL」填公网图片地址，再点「验证」',
+      '外链取证：先在媒体页「外链图片」节填公网图片地址，再点「验证」',
     ],
     memoVisible: !accept,
   };
@@ -290,16 +292,8 @@ export const genProbeView = (
   };
 };
 
-/** Image_URL 落库键（后端 registry hidden 项，全名扁平提交） */
-export const PROBE_IMAGE_URL_KEY = 'media.probe_image_url';
-
-/** Image_URL 当前已存值：values 组内键为全名 key，与 saveKeys 读取口径一致 */
-export const probeImageUrlOf = (
-  values: Record<string, Record<string, unknown>>
-): string =>
-  (values['media']?.[PROBE_IMAGE_URL_KEY] as string | undefined) ?? '';
-
-// ── 输入能力验证行视图（图片/视频/音频归一, 2026-11-11）────────────────────────
+/** 输入能力验证行视图（图片/视频/音频归一, 2026-11-11）────────────────────────
+ *  注：Image_URL 已回媒体页「外链图片」节直接编辑（不再模型 Tab 就地行），文案指向媒体页 — 小欧-2026-11-11 */
 const MODALITY_LABEL: Record<'video' | 'audio', string> = {
   video: '视频',
   audio: '音频',

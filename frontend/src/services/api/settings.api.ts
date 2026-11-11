@@ -99,6 +99,7 @@ export interface SettingSchemaItem {
   secret: boolean;
   readonly: boolean;
   /** 已在其他界面行内就地配置(如 Image_URL 行)，组内列表不再重复渲染 — 小欧-2026-11-09 */
+  /** 2026-11-11 小欧 - 三个验证素材地址已回媒体页直接编辑, 当前无 hidden 项使用; 字段保留作将来扩展 — 小欧-2026-11-11 */
   hidden?: boolean;
   notice?: string;
 }

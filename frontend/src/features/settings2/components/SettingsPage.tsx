@@ -1,6 +1,8 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页壳（搜索+Tabs+组级脏点+切 Tab 未保存确认+保存条）。
 // 2026-11-09 小欧 - 模型区版式/实测/增删逻辑拆至 ModelTab 与 useCapabilityProbe/useModelActions，本文件只留壳与跨 Tab 编排 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 删 saveGroup 返回值的冗余类型断言（SaveResult.ok 已是 boolean）— 小欧-2026-11-09
+// 2026-11-11 小欧 - Image_URL 即存链(probeUrlDraft/saveProbeUrl)移除: 三个验证素材地址已回媒体页直接编辑(走组保存),
+//   ModelTab 不再接收 probeUrlDraft/onProbeUrlChange/onProbeUrlSave props — 小欧-2026-11-11
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -36,10 +38,6 @@ const SettingsPage: React.FC = () => {
   } | null>(null);
   // 放弃修改后自增：ProviderConfig 以 key 重挂载，按已保存配置重新回显本地输入
   const [providerResetSeq, setProviderResetSeq] = useState(0);
-  // Image_URL 输入缓冲：undefined=未编辑，失焦/回车即存
-  const [probeUrlDraft, setProbeUrlDraft] = useState<string | undefined>(
-    undefined
-  );
   // 弹窗/表单开关属视图态，不进领域 state
   const [addModelOpen, setAddModelOpen] = useState(false);
   const [addProviderOpen, setAddProviderOpen] = useState(false);
@@ -142,14 +140,6 @@ const SettingsPage: React.FC = () => {
   const discardModel = () => {
     s.discardGroup('model');
     setProviderResetSeq((x) => x + 1);
-  };
-
-  // Image_URL 即存：缓冲先清、写入走 hook 的守卫链
-  const saveProbeUrl = () => {
-    if (probeUrlDraft === undefined) return;
-    const v = probeUrlDraft;
-    setProbeUrlDraft(undefined);
-    void s.saveProbeImageUrl(v);
   };
 
   /** 切 Tab 确认弹窗的「放弃并切换」：只撤当前组，模型组额外重挂 Provider 配置 */
@@ -293,9 +283,6 @@ const SettingsPage: React.FC = () => {
             probe={probe}
             envManaged={envManaged}
             providerResetSeq={providerResetSeq}
-            probeUrlDraft={probeUrlDraft}
-            onProbeUrlChange={setProbeUrlDraft}
-            onProbeUrlSave={saveProbeUrl}
             addParamFormOpen={addParamFormOpen}
             onAddParamFormOpen={() => setAddParamFormOpen(true)}
             onAddParamFormClose={() => setAddParamFormOpen(false)}

@@ -1,4 +1,7 @@
 // 编辑历史: 2026-11-09 小欧 - 新建：模型 Tab 版式编排（①选择器/②参数区/③配置/④操作区 + 三个弹窗），逻辑全部下沉到面板 — 小欧-2026-11-09
+// 2026-11-11 小欧 - Image_URL 行(ImageUrlRow)移除: 三个验证素材地址(probe_image_url/video/audio)统一回媒体页「外链图片」小节
+//   直接编辑(SettingRow text 渲染, 走组保存), 模型 Tab 只留验证按钮行; 相关 props(probeUrlDraft/onProbeUrlChange/onProbeUrlSave)
+//   与 probeUrlStored/probeImageUrlOf 一并移除 — 小欧-2026-11-11
 import React from 'react';
 import { SectionTitle } from './SectionTitle';
 import { ModelActions } from './ModelActions';
@@ -7,13 +10,11 @@ import { ModelTabSelector } from './ModelTabSelector';
 import { ModelTabParamsHeader } from './ModelTabParamsHeader';
 import { ModelTabParams } from './ModelTabParams';
 import { ModelTabInputModalities } from './ModelTabInputModalities';
-import { ImageUrlRow } from './ImageUrlRow';
 // 2026-11-11 小欧 - 输入能力验证行统一组件（图片/视频/音频合并, 替换原 MediaProbe/ModalityProbe 两组件）— 小欧-2026-11-11
 import { ModelTabInputProbe } from './ModelTabInputProbe';
 import { ModelTabOutputModalities } from './ModelTabOutputModalities';
 import { ModelTabGenProbe } from './ModelTabGenProbe';
 import { ModelTabProviderConfig } from './ModelTabProviderConfig';
-import { probeImageUrlOf } from '../utils/probeView';
 import type { CapabilityProbe } from '../hooks/useCapabilityProbe';
 import type { UseSettings } from '../hooks/useSettings';
 
@@ -22,10 +23,6 @@ interface Props {
   probe: CapabilityProbe;
   envManaged: boolean;
   providerResetSeq: number;
-  /** Image_URL 输入缓冲；undefined=未编辑，显示已存值 */
-  probeUrlDraft: string | undefined;
-  onProbeUrlChange: (value: string) => void;
-  onProbeUrlSave: () => void;
   addParamFormOpen: boolean;
   onAddParamFormOpen: () => void;
   onAddParamFormClose: () => void;
@@ -45,9 +42,6 @@ export const ModelTab: React.FC<Props> = ({
   probe,
   envManaged,
   providerResetSeq,
-  probeUrlDraft,
-  onProbeUrlChange,
-  onProbeUrlSave,
   addParamFormOpen,
   onAddParamFormOpen,
   onAddParamFormClose,
@@ -65,7 +59,6 @@ export const ModelTab: React.FC<Props> = ({
   const m = state.model;
   const hasManagementOptions = Object.keys(m.paramOptions).length > 0;
   const hasProviderDraft = Object.keys(m.providerDraft).length > 0;
-  const probeUrlStored = probeImageUrlOf(state.values);
   // 实测取值单源 = providers[].models[].media（取证即落库，页面不持临时结果）
   const selectedEntry = m.providers
     .find((p) => p.name === m.selectedProvider)
@@ -117,11 +110,6 @@ export const ModelTab: React.FC<Props> = ({
         baseline={m.inputModalitiesBaseline}
         envManaged={envManaged}
         onChange={s.setInputModalities}
-      />
-      <ImageUrlRow
-        value={probeUrlDraft ?? probeUrlStored}
-        onChange={onProbeUrlChange}
-        onSave={onProbeUrlSave}
       />
       <ModelTabInputProbe
         kind="image"
