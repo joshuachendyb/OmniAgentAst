@@ -28,12 +28,12 @@ import logging
 from typing import Any, Dict, Optional
 
 from app.tools.registry import tool_registry
-from app.tools.tools_alias_mapper import normalize_tool_name
 from app.tools.tool_constants import PATH_TOOLS  # 2026-10-20 小欧 - 范围门自守(上游名单门已删)
+from app.tools.tools_alias_mapper import normalize_tool_name
 from app.utils.path_utils import (
     OpCategory,
-    reject_reason_empty_path,
     check_path_syntax_and_exists,
+    reject_reason_empty_path,
 )
 
 logger = logging.getLogger(__name__)

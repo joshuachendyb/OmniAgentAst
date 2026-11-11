@@ -55,19 +55,23 @@ Author: 小沈 - 2026-05-28
 import asyncio
 import contextvars
 import functools
-from concurrent.futures import ThreadPoolExecutor
 import os
 import sqlite3
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import datetime, date, timezone
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Dict, Iterator
-from app.logger import logger
-from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
+
 from app.db.db_initializer import (
-    init_chat_db, init_operations_db, init_task_tracker_db, init_timers_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
+    init_chat_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
+    init_operations_db,
+    init_task_tracker_db,
+    init_timers_db,
 )
+from app.logger import logger
 from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
+from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 
 # db_name → 建表函数(① 资源层自证就绪用; 与 _DB_READY_TABLE 同键) — 小欧 2026-10-06
 _INIT_BY_DB = {
@@ -292,7 +296,7 @@ class DatabaseManager:
                     logger.warning(f"[db] rollback 失败: {db_name}")
             logger.error(f"DB operation failed [{db_name}]: {e}")
             raise
-        except Exception as e:
+        except Exception:
             # 业务级异常(如FileExistsError): 仅回滚, 不当DB错误记避免误报; 由调用方(如execute_with_safety)记录 — 小欧 2026-07-15
             if conn:
                 try:

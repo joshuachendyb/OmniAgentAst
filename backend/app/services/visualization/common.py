@@ -6,9 +6,9 @@
 小沈 2026-06-17 删除db依赖,query_file_operations下沉到service层
 """
 import json
-from pathlib import Path
-from typing import List, Dict, Tuple
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 from app.logger import logger
 
@@ -47,7 +47,7 @@ def count_op_stats(operations: List[Tuple]) -> Dict[str, int]:
     success = 0
     failed = 0
     rolled_back = 0
-    
+
     for op in operations:
         status = op[3]
         if status == "success":
@@ -56,7 +56,7 @@ def count_op_stats(operations: List[Tuple]) -> Dict[str, int]:
             failed += 1
         if "rollback" in str(status):
             rolled_back += 1
-    
+
     return {
         "total": len(operations),
         "success": success,

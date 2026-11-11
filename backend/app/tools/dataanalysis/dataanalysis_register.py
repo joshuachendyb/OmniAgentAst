@@ -19,9 +19,9 @@ DATAANALYSIS Register — 数据分析工具注册点
 #   原一刀切致建空表也弹窗, 且弹窗与路径无关却被文案说成"路径属受保护区域"。SQL 语义只有工具知道。
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 # 数据分析工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
@@ -35,21 +35,20 @@ TOOL_DEPENDENCIES = {
 }
 
 
+from app.tools.dataanalysis.analyze_data import analyze_data
 from app.tools.dataanalysis.dataanalysis_schema import (
     AnalyzeDataInput,
+    ExecuteSqlInput,
     FilterDataInput,
     GenerateChartInput,
-    QuerySqlInput,
-    ExecuteSqlInput,
     GetDbSchemaInput,
+    QuerySqlInput,
 )
-
-from app.tools.dataanalysis.analyze_data import analyze_data
+from app.tools.dataanalysis.execute_sql import execute_sql
 from app.tools.dataanalysis.filter_data import filter_data
 from app.tools.dataanalysis.generate_chart import generate_chart
-from app.tools.dataanalysis.query_sql import query_sql
-from app.tools.dataanalysis.execute_sql import execute_sql
 from app.tools.dataanalysis.get_db_schema import get_db_schema
+from app.tools.dataanalysis.query_sql import query_sql
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);

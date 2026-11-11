@@ -122,6 +122,7 @@ from typing import Any, Dict, List, Optional
 
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
+
 # 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
 #   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
 # 2026-11-08 小欧 - 外链条数上限引系统级常量: notice 文案与 vision 截断同源, 改值只改一处
@@ -131,18 +132,25 @@ from app.constants import DEFAULT_CONTEXT_LENGTH, MAX_REMOTE_IMAGES
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
 # 设页若显示空白则等于"用户看不见它存在" —— 正是本项要消除的问题, 故直接把生效清单亮出来。
 from app.safety.shell_readonly import SHELL_READONLY_PREFIXES as _READONLY_PREFIXES
+from app.tools.tool_constants import (
+    DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
+)
+from app.tools.tool_constants import (
+    DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
+)
+
 # 2026-10-20 小欧 - 路径工具四类名单(只读展示, 与判定同源): 直接取 tool_constants 判定名单,
 #   不另抄一份, 避免设置页展示与实判漂移
 from app.tools.tool_constants import (
     READ_PATH_TOOLS as _READ_PATH_TOOLS,
-    WRITE_PATH_TOOLS as _WRITE_PATH_TOOLS,
-    DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
-    DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
 )
+from app.tools.tool_constants import (
+    WRITE_PATH_TOOLS as _WRITE_PATH_TOOLS,
+)
+
 # 2026-11-10 小欧 - 禁用工具名单默认展示值取自 tools_alias_mapper 内置五件套(与运行时回落同一真源,
 #   展示与实判不漂移); 生效值=config tuning.agent.disabled_tools, 缺键回落此清单, 清空=不禁用任何工具，工具名称逗号分隔
 from app.tools.tools_alias_mapper import UNAVAILABLE_OFFICIAL_TOOLS as _UNAVAILABLE_OFFICIAL
-
 
 # ============================================================
 # !! 铁规（北京老陈 2026-10-25 令）：新增 _item 必须同步 config.yaml.example
@@ -311,13 +319,13 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               ", ".join(sorted(_READ_PATH_TOOLS)),
               notice="当前代码内置的只读工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 READ_PATH_TOOLS" % len(_READ_PATH_TOOLS)),
         _item("security.hitl.tool_lists.write", "textarea", "写入工具名单",
-              ", ".join(sorted(_WRITE_PATH_TOOLS)), 
+              ", ".join(sorted(_WRITE_PATH_TOOLS)),
               notice="当前代码内置的写入工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 WRITE_PATH_TOOLS" % len(_WRITE_PATH_TOOLS)),
         _item("security.hitl.tool_lists.delete", "textarea", "删除工具名单",
-              ", ".join(sorted(_DELETE_PATH_TOOLS)), 
+              ", ".join(sorted(_DELETE_PATH_TOOLS)),
               notice="当前代码内置的删除工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DELETE_PATH_TOOLS" % len(_DELETE_PATH_TOOLS)),
         _item("security.hitl.tool_lists.dual", "textarea", "双动作工具名单",
-              ", ".join(sorted(_DUAL_PATH_TOOLS)), 
+              ", ".join(sorted(_DUAL_PATH_TOOLS)),
               notice="当前代码内置的双动作工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DUAL_PATH_TOOLS" % len(_DUAL_PATH_TOOLS)),
         # ── 信任段 ──
         # 2026-10-18 小欧 - 本项此前只有代码侧读取(trust_db._ttl_expiry 读 security.trust.ttl_days,

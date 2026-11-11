@@ -60,21 +60,19 @@ bash 属 FUNDAMENTAL, 不经 action_kind 分派, 单独立此通道:
 判定与解析零耦合, 本层只编排。
 """
 
-import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.logger import logger
 from app.safety import delete_path_check, read_path_check, write_path_check
 from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 系统源判定改查名单
     SCOPE_FORBIDDEN_SYSTEM,
     SCOPE_TEXT,
     classify_path,
 )
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.safety.shell_parse import parse_shell_action
 from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import shell_has_destructive_delete
-from app.logger import logger
-from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 # shell 元字符: 出现即视为畸形路径, 通道 B fail-closed 硬拦(> < | 与换行 \r \n)
 #   2026-10-18 小欧 订正: 注释原误列 "/"(正斜杠是合法路径分隔, 拦它会误伤全部正斜杠路径), 改注释不改代码。

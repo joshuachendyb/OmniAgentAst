@@ -14,12 +14,11 @@
 """
 
 import time
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from app.logger import logger
-from app.monitoring.collector import MetricsCollector, Metric
+from app.monitoring.collector import Metric, MetricsCollector
 from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: fire-and-forget 统一存引用防 GC
-
 
 # 全局指标收集器实例
 _collector = MetricsCollector()
@@ -27,11 +26,11 @@ _collector = MetricsCollector()
 
 class MonitoringMiddleware:
     """监控中间件"""
-    
+
     def __init__(self, app, collector: MetricsCollector = _collector):
         self.app = app
         self.collector = collector
-    
+
     def _extract_request_info(self, scope) -> dict:
         """提取请求信息 - 小沈 2026-06-08"""
         return {
@@ -40,7 +39,7 @@ class MonitoringMiddleware:
             "start_time": time.time(),
             "request_size": 0,
         }
-    
+
     def _record_error(self, error: Exception, request_info: dict) -> None:
         """记录错误指标 - 小沈 2026-06-08"""
         self.collector.record_metric(
@@ -52,11 +51,11 @@ class MonitoringMiddleware:
                 "error": type(error).__name__
             }
         )
-    
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        
+
         request_info = self._extract_request_info(scope)
         # 捕获请求体大小 — 小欧 2026-07-10
         body_size = [0]
@@ -65,7 +64,7 @@ class MonitoringMiddleware:
             if msg["type"] == "http.request":
                 body_size[0] += len(msg.get("body", b""))
             return msg
-        
+
         wrapped_send = self._make_send_wrapper(
             send,
             request_info["start_time"],
@@ -73,13 +72,13 @@ class MonitoringMiddleware:
             request_info["path"],
             body_size
         )
-        
+
         try:
             await self.app(scope, _receive_with_size, wrapped_send)
         except Exception as e:
             self._record_error(e, request_info)
             raise
-    
+
     def _make_send_wrapper(self, send, start_time, method, path, body_size):
         """创建包装send — 闭包提取为工厂方法 — 小健 2026-05-29"""
         async def wrapper(message):
@@ -87,23 +86,23 @@ class MonitoringMiddleware:
                 await self._record_response_metrics(message, start_time, method, path, body_size[0])
             await send(message)
         return wrapper
-    
+
     def _record(self, name: str, value: float, labels: dict) -> None:
         """记录单个指标 - 小沈 2026-06-08"""
         self.collector.record_metric(name=name, value=value, labels=labels)
-    
+
     async def _record_response_metrics(self, message, start_time, method, path, request_size):
         """记录响应指标 — 提取的独立方法 — 小健 2026-05-29"""
         status_code = message["status"]
         base_labels = {"method": method, "path": path}
-        
+
         self._record("http_requests_total", 1, {**base_labels, "status": str(status_code)})
-        
+
         duration = time.time() - start_time
         self._record("http_request_duration_seconds", duration, base_labels)
-        
+
         self._record("http_request_size_bytes", request_size, base_labels)
-        
+
         if status_code >= 400:
             self._record("errors_total", 1, {**base_labels, "status": str(status_code)})
         # 11.2-C 落 monitoring.db(fire-and-forget 不阻塞响应路径): 原 await 延迟首字节, 改调度后台任务;
@@ -133,7 +132,7 @@ def setup_monitoring(app) -> MetricsCollector:
     """
     # 添加监控中间件
     app.add_middleware(MonitoringMiddleware)
-    
+
     logger.info("监控中间件已启用")
     return _collector
 

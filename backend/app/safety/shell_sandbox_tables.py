@@ -16,10 +16,10 @@
 """
 import re
 
-from app.safety.shell_parse.verb_table import SHELL_KEYS, flatten_verbs
 from app.safety.shell_parse.parse_delete import DELETE_VERBS_BY_SHELL
 from app.safety.shell_parse.parse_move import MOVE_VERBS_BY_SHELL, RENAME_VERBS_BY_SHELL
 from app.safety.shell_parse.parse_write import WRITE_VERBS_BY_SHELL
+from app.safety.shell_parse.verb_table import SHELL_KEYS, flatten_verbs
 
 
 def _intent_verb_union():

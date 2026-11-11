@@ -41,6 +41,7 @@ import os
 import re
 from typing import Dict, Iterator, List, Optional
 
+
 #   2026-10-18 小欧: 文本原子已拆入 app.safety.shell_text_atoms(SRP);
 #   本文件的依赖改**惰性**(调用期导入), 导入期 lexer 不触发该模块, 与沙箱宽表(shell_sandbox_tables
 #   → parse_* → lexer)之间的潜在环彻底解除。原子仍是单一真源(零复制)。

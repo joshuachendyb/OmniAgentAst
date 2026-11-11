@@ -84,7 +84,7 @@ def hint_for_read_error(e: Exception, file_name: str) -> str:
     if isinstance(e, OSError):
         return f"读取文件失败({e.strerror or type(e).__name__})"
     if isinstance(e, MemoryError):
-        return f"文件过大导致内存不足(OOM)，建议使用offset/limit/page等参数分批读取"
+        return "文件过大导致内存不足(OOM)，建议使用offset/limit/page等参数分批读取"
     return f"读取失败({type(e).__name__})"
 
 

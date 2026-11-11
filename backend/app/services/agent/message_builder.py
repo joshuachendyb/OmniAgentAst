@@ -144,31 +144,50 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import get_config  # 小欧 2026-07-08
+from app.constants import (
+    DEFAULT_CONTEXT_LENGTH,  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出; 2026-11-01 键名统一改 DEFAULT_CONTEXT_LENGTH
+)
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
-from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出; 2026-11-01 键名统一改 DEFAULT_CONTEXT_LENGTH
-from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
-    COMPACTION_BUFFER, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
-    TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
-    TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
-    TRIM_CEILING_ROUNDS_MARGIN,
-    TRIM_MIN_MESSAGES,
-)
-from app.services.agent.fc_message_types import (
-    FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
-    message_to_dict, dict_to_message,
-)
-from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
-    WS_INVALIDATED, WS_TAG_CLOSE, WS_TAG_OPEN,
-)
+
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
 from app.services.agent.agent_utils import (
-    trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
+    CHARS_PER_TOKEN,
+    trim_budget_base,
+    trim_conv_threshold,
+    trim_queue_budget,
 )
+
 # 2026-11-11 小欧: 附件/URL 占位 wire 展开(attachment_slot/url_item_slot 组装占位,
 #   expand_attachment_slots 在 wire 边界换 parts); 能力判定由 plan_refs 预分流
 from app.services.agent.attachment_wire import (
-    attachment_slot, expand_attachment_slots, url_item_slot,
+    attachment_slot,
+    expand_attachment_slots,
+    url_item_slot,
+)
+from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
+    COMPACTION_BUFFER,
+    COOLDOWN_ROUNDS,
+    TEMP_HISTORY_CHAR_LIMIT,
+    TOOL_SUMMARY_PREVIEW_CHARS,  # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
+    TRIM_CEILING_ROUND_FACTOR,  # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
+    TRIM_CEILING_ROUNDS_MARGIN,
+    TRIM_MIN_MESSAGES,
+    TRIM_TRIGGER_RATIO,
+)
+from app.services.agent.fc_message_types import (
+    AssistantMessage,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+    message_to_dict,
+)
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
+    WS_INVALIDATED,
+    WS_TAG_CLOSE,
+    WS_TAG_OPEN,
+)
+from app.services.refs.render import (
+    render_refs_block,  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
 )
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
@@ -265,10 +284,14 @@ class MessageBuilder:
         # 2026-10-31 小欧: _tools_token_reserve 属性删除 —— trim_budget_base 已单点持有该口径,
         #   生产侧零读取(仅测试读), 保留即成死属性; tools 预留改由 agent_utils 读配置
         # 2026-10-29 小欧 保护区轮数改唯一解析(北京老陈令断案): 与 start_step 注入件尾部轮数同源单一真源(split_turn.resolve_protect_rounds), 原地夹取算式收敛
-        from app.services.agent.compaction.split_turn import resolve_protect_rounds  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
+        from app.services.agent.compaction.split_turn import (
+            resolve_protect_rounds,  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
+        )
         self._keep_recent_rounds: int = resolve_protect_rounds()  # 最近N工具步硬保护(北京老陈令), 5-20 默认5
         # 重复触发抑制: 触发后 rough≤budget_base 时 find_tail_start 无可裁, cooldown 抑制 N 轮内重复进入 — 小欧 2026-10-25
-        from app.services.agent.compaction.trigger import CompactionCooldown  # 局部 import 防循环依赖(compaction 依赖 message_builder)
+        from app.services.agent.compaction.trigger import (
+            CompactionCooldown,  # 局部 import 防循环依赖(compaction 依赖 message_builder)
+        )
         self._trim_cooldown = CompactionCooldown(cooldown_rounds=COOLDOWN_ROUNDS)
         self._trim_signal_result: Optional[tuple] = None  # 信号结果缓存, _trim_signal() 写入, trim_history() 读取 — 小欧 2026-10-25
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
@@ -735,8 +758,13 @@ class MessageBuilder:
                 return
 
             # 复用 compaction 现成函数; 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧 2026-10-25
-            from app.services.agent.compaction.split_turn import find_tail_start, find_recent_rounds_start, truncate_oversized_message, count_system_prefix
             from app.services.agent.compaction.assembler import remove_dangling_tool_calls
+            from app.services.agent.compaction.split_turn import (
+                count_system_prefix,
+                find_recent_rounds_start,
+                find_tail_start,
+                truncate_oversized_message,
+            )
 
             hist = truncate_oversized_message(self.conversation_history)  # 裁前截断 >4000 字符超长单条, 防止单条 tool 结果超出预算致整轮丢弃 — 小欧 2026-10-25
             prefix = count_system_prefix(hist)
@@ -795,7 +823,7 @@ class MessageBuilder:
             else:
                 logger.info(f"[trim_history] 重建后不足2条, 保留原历史({msg_count}条/{rough_current} tokens)")
         except Exception:
-            logger.warning(f"[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
+            logger.warning("[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
 
     # 2026-10-25 小欧 删除三个旧裁剪方法(北京老陈令, 禁止backward 死代码):
     #   _classify_messages / _trim_to_budget / _rebuild_and_validate 是"分桶 + user 永保 +

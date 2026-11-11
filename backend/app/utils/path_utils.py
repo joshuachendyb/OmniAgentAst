@@ -46,7 +46,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.logger import logger  # check_path_syntax_and_exists 的 TOCTOU 留痕 / check_preconditions 异常留痕
+from app.logger import (
+    logger,  # check_path_syntax_and_exists 的 TOCTOU 留痕 / check_preconditions 异常留痕
+)
+
 
 # 2026-10-06 小欧 - 从 path_safe_check.validate_path 函数体内提到模块级(常量归位): 原先定义在函数里,
 #   每次调用重建一遍 frozenset; 展示层(security_docs)拿不到, 只能硬编码 \ProgramData 等 3 条。
@@ -180,7 +183,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
     检查结果仅作为参考，不保证操作时的文件状态一致。
     """
     if overwrite and Path(destination).exists():
-        return True, None, f"覆盖目标文件，请确认"
+        return True, None, "覆盖目标文件，请确认"
     return True, None, None
 
 

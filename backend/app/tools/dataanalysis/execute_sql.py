@@ -36,14 +36,21 @@ execute_sql — 执行写操作SQL
 import re
 import sqlite3
 import time as _time_mod
-from typing import Any, Dict, List, Optional, Literal, Tuple  # 2026-07-31 小欧: 移除未使用 Union
+from typing import Any, Dict, List, Literal, Optional, Tuple  # 2026-07-31 小欧: 移除未使用 Union
 
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_SQL_EXEC, EXECUTE_SQL_OUTPARM_LIMIT_SQL
-from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
-from app.tools.tool_fc_helper import _get_connection, _close_connection, _strip_sql_comments_and_strings  # 2026-07-31 小欧: Bug注释绕过修复引入
+from app.tools.tool_fc_helper import (  # 2026-07-31 小欧: Bug注释绕过修复引入
+    _close_connection,
+    _get_connection,
+    _strip_sql_comments_and_strings,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_data_error, sql_error_hint
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 # 修复: 影响行数安全阈值(模块级常量,DRY消除3处硬编码) — 小欧 2026-07-23
 _AFFECTED_ROWS_LIMIT = 10000

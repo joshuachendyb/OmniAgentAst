@@ -18,7 +18,8 @@ models — 从 chat_router.py 拷出
 拷贝来源: chat_router.py 第152-166行
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 # 2026-10-29 小欧 - MAX_REF_CONTENT_CHARS 已删除(YAGNI): 读取权收归后端, wire 不承载正文,

@@ -33,4 +33,4 @@ SUMMARY_TEMPLATE = """你是专业的汇总分析助手。
 - Important Context: [exact context needed to continue the work — working environment state, pending dependencies, unresolved questions, anything the next session must know; or "(none)"]
 - Relevant Files: [file or directory path: why it matters, or "(none)"]
 如果提供了[往次摘要]，必须基于增量信息重写全部摘要: 务必删除过期或已被纠正的信息, 不重复不遗漏。"""
-# 
+#

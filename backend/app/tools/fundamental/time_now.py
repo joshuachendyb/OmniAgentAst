@@ -11,10 +11,10 @@ time_now — 获取当前系统时间
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取时间→取时间
 import time as _time_mod
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIME_NOW
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatted: str, weekday: str, detail: str = "", hint: str = "") -> dict:

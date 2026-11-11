@@ -29,7 +29,7 @@
 - 本文件不依赖 agent，纯 DB 操作；表结构权威=11.2-C。
 - 惰性导入 database 防环（database→db_initializer→storage→database）。
 """
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 # 三堂会审修复(小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
 #   本文件设计声明"不依赖、纯 DB 操作", 顶层 app import 破坏该隔离承诺
@@ -117,7 +117,9 @@ def init_monitoring_db(get_conn) -> None:
 
 
 def persist_task_metrics(row: Dict[str, Any]) -> None:
-    from app.db import db as _db   # DatabaseManager 单例（get_conn_with_retry 是实例方法）— 小欧 2026-08-20 修正
+    from app.db import (
+        db as _db,  # DatabaseManager 单例（get_conn_with_retry 是实例方法）— 小欧 2026-08-20 修正
+    )
     # 归一(小欧 2026-08-22 报告v1.25 6.7): 删 model/provider, 统一 task_model JSON 单列 — 小欧 2026-08-22
     _cols = ["session_id", "task_id", "context_root_task_id", "context_link_mode", "outcome", "error_type",
              "task_model", "total_steps", "llm_call_count", "retry_count", "trim_count", "trim_tokens",
@@ -135,7 +137,7 @@ def persist_task_metrics(row: Dict[str, Any]) -> None:
 
 
 def persist_tool_metrics(task_id: str, rows: List[Dict[str, Any]]) -> None:
-    from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
+    from app.db import db as _db  # DatabaseManager 单例 — 小欧 2026-08-20 修正
     with _db.get_conn_with_retry("monitoring") as conn:
         for r in rows:
             conn.execute(
@@ -148,8 +150,10 @@ def persist_tool_metrics(task_id: str, rows: List[Dict[str, Any]]) -> None:
 
 
 def persist_llm_calls(rows: List[Dict[str, Any]]) -> None:
-    from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
-    from app.db.models.chat_models import ModelRef   # 归一(惰性导入, 保持本模块零依赖声明) — 小欧 2026-08-22
+    from app.db import db as _db  # DatabaseManager 单例 — 小欧 2026-08-20 修正
+    from app.db.models.chat_models import (
+        ModelRef,  # 归一(惰性导入, 保持本模块零依赖声明) — 小欧 2026-08-22
+    )
     with _db.get_conn_with_retry("monitoring") as conn:
         for r in rows:
             # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两列 → llm_model JSON 单列(tele_model 序列化)
@@ -173,7 +177,8 @@ async def persist_http_request(method: str, path: str, status_code: int, kind: s
     运行于任务上下文之外; 如需任务级 HTTP 关联, 另立 ContextVar 方案设计再实施。
     — 小欧 2026-08-21"""
     from datetime import datetime
-    from app.db import db as _db   # DatabaseManager 单例 — 小欧 2026-08-20 修正
+
+    from app.db import db as _db  # DatabaseManager 单例 — 小欧 2026-08-20 修正
     try:
         _ts = datetime.now().isoformat(sep=" ")
         def _q(conn):
@@ -203,6 +208,7 @@ async def retention_cleanup_monitoring(http_days: int = 7, metrics_days: int = 7
     Returns deleted row counts per table. Failures only warning, never block main (degrade pattern).
     """
     from datetime import datetime, timedelta
+
     from app.db import db as _db
     _c_http = (datetime.now() - timedelta(days=int(http_days))).isoformat(sep=" ")
     _c_metrics = (datetime.now() - timedelta(days=int(metrics_days))).isoformat(sep=" ")

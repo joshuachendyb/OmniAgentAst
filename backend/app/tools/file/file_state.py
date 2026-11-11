@@ -17,8 +17,6 @@ import threading  # 2026-09-20 小欧 X1修复: 多会话并行时 file_state �
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from app.logger import logger
-
 # {resolved_path_str: (mtime_ns, content_hash, modified_by_self)}
 _state: Dict[str, Tuple[int, str, bool]] = {}
 _state_lock = threading.Lock()  # 2026-09-20 小欧 X1: 保护 _state 全部读写 — 小欧-2026-09-20

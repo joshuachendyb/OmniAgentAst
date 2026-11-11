@@ -38,24 +38,21 @@ config_service — 配置业务服务(services/model)
 A7(小欧 2026-08-13): update_config 业务编排。
 修复(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
 """
+import copy
 import os
 import subprocess
-import copy
 from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.logger import logger
-from app.utils.response_utils import api_success   # open_config_folder 在用，别删（见文件头"别再删的坑"）
-from app.utils.type_utils import to_int_or
 from app.config import get_config as get_config_instance
-from app.services.model.resolver import get_ai_config_resolver
+from app.logger import logger
 from app.services.model.config_helpers import (
-    _update_model_ref,  # 唯一保留的 handler（直调，不经 FIELD_HANDLERS 中转）
     _auto_fix_and_validate,
     _backup_config,
     _fix_config_common_issues,
     _restore_backup_if_needed,  # 收敛后 update_config 的 except 分支仍需回滚备份
+    _update_model_ref,  # 唯一保留的 handler（直调，不经 FIELD_HANDLERS 中转）
     _validate_config_integrity,
     get_config_path,
     is_provider_metadata_field,
@@ -64,6 +61,11 @@ from app.services.model.config_helpers import (
     reload_ai_config,
     write_yaml_config,
 )
+from app.services.model.resolver import get_ai_config_resolver
+from app.utils.response_utils import (
+    api_success,  # open_config_folder 在用，别删（见文件头"别再删的坑"）
+)
+from app.utils.type_utils import to_int_or
 
 
 def update_config(config_update):
@@ -319,7 +321,7 @@ def fix_config() -> dict:
     backup_path = _backup_config(config_path)
     config_data = read_yaml_config(config_path)
     config_data = _fix_config_common_issues(config_data)
-    fixed_issues = [f"删除 provider 下废弃的 model 字段"]
+    fixed_issues = ["删除 provider 下废弃的 model 字段"]
     is_valid, errors, warnings = _validate_config_integrity(config_data)
     if not is_valid:
         return {

@@ -11,10 +11,8 @@ tool_cache_manager — 工具缓存管理
 # 2026-08-05 小欧 修复BUG A(DRY): unloaded计算删除硬编码默认分类{FUNDAMENTAL,FILE}, 改由_loaded_categories全权决定, 消除与_INITIAL_CATEGORIES重复定义失配隐患
 # 2026-10-02 小欧 patch_search_desc的unloaded叠加"该分类确有实现"条件: 零工具分类(SHELL消亡后)若进searchtool描述, LLM搜索无果、搜3次触发熔断FAILED
 
-from app.tools.tool_types import ToolCategory
 from app.tools.registry import tool_registry
-from app.logger import logger
-
+from app.tools.tool_types import ToolCategory
 
 
 def get_openai_tools(agent) -> list:
@@ -85,29 +83,29 @@ def patch_search_desc(agent):
         if cat not in agent._loaded_categories
         and tool_registry.get_implementations_by_category(cat)
     ]
-    
+
     if not unloaded:
         agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
-    
+
     ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
         agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
-    
+
     base_desc = _get_original_search_desc()
     if not base_desc:
         agent._searchtool_desc_override = None
         invalidate_tool_cache(agent)
         return
-    
+
     lines = []
-    
+
     for cat in sorted(unloaded, key=lambda c: c.order):
         lines.append(f"- {cat.name_cn}({cat.value})")
-    
+
     if lines:
         agent._searchtool_desc_override = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
     else:

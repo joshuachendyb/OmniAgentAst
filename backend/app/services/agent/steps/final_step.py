@@ -25,7 +25,8 @@
 
 from typing import Any, Dict, Literal, Optional
 
-from app.db.models.chat_models import ModelRef   # 归一 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一 — 小欧 2026-08-22
+
 from .base import ReasoningStep
 
 

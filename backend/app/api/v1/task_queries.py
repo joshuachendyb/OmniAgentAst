@@ -13,12 +13,15 @@ Author: 小沈 - 2026-05-29
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
-from app.services.task import TaskQueries
-from app.services.task.task_rollback_service import rollback_task_with_stats  # 小欧 2026-08-12 A2-越层
+
 from app.db.operation_queries import query_file_operations
-from app.services.visualization.text_report import generate_text_report
+from app.services.task import TaskQueries
+from app.services.task.task_rollback_service import (
+    rollback_task_with_stats,  # 小欧 2026-08-12 A2-越层
+)
 from app.services.visualization.html_report import generate_html_report
 from app.services.visualization.json_report import generate_json_report
+from app.services.visualization.text_report import generate_text_report
 from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18 API 对外契约统一兜底
 
 router = APIRouter()

@@ -69,9 +69,8 @@ shell 中风险命令判定 — 需用户确认，与文件系统路径无关
 import re
 from typing import Optional
 
-from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.logger import logger
-
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 SHELL_MEDIUM_PATTERNS = [
     # ═══════════════════════════════════════════════════════════════════

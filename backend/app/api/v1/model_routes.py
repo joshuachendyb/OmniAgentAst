@@ -73,16 +73,14 @@
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.config_schemas import (
     ProviderAddRequest,
 )
-from app.logger import logger  # 明文查看审计日志
-from app.services.model.config_helpers import handle_config_errors
-from app.services.model import model_service as svc
-from app.services.model import zen_verify as zen_verify_svc
+
 # 2026-09-26 - 小欧 - 三堂会审后修正(DRY): 审计用来源 IP 复用 deps._client_ip（唯一权威），
 #   不在本文件另写一份。本文件原先自带的 _client_ip 与 deps 版是"同一逻辑两份实现"，
 #   且语义还不一致（deps 版曾懂 TRUST_PROXY_HEADERS/X-Forwarded-For，本版不懂），
@@ -90,7 +88,10 @@ from app.services.model import zen_verify as zen_verify_svc
 #   2026-09-26 二次修正 - 小欧: deps._client_ip 已删除 TRUST_PROXY_HEADERS 与自解析 XFF
 #   （只读 request.client.host，代理信任交回 uvicorn），两端口径现已完全一致。
 from app.api.v1.deps import _client_ip as _audit_ip
-
+from app.logger import logger  # 明文查看审计日志
+from app.services.model import model_service as svc
+from app.services.model import zen_verify as zen_verify_svc
+from app.utils.response_utils import handle_api_errors
 
 router = APIRouter()
 
@@ -248,13 +249,13 @@ class TestConnectionRequest(BaseModel):
 
 
 @router.get("/models")
-@handle_config_errors("获取模型列表")
+@handle_api_errors("获取模型列表")
 async def get_models():
     return svc.get_models()
 
 
 @router.post("/models")
-@handle_config_errors("添加模型")
+@handle_api_errors("添加模型")
 async def add_model(req: ModelCreateRequest):
     return svc.add_model(req.provider, req.model, req.label,
                          req.model_params, req.range,
@@ -263,7 +264,7 @@ async def add_model(req: ModelCreateRequest):
 
 
 @router.put("/models/{provider}/{model:path}")
-@handle_config_errors("修改模型")
+@handle_api_errors("修改模型")
 async def update_model(provider: str, model: str, req: ModelUpdateRequest):
     # 2026-09-21 小欧 修正：模型名可含 '/'（真实 z-ai/glm-4.7、moonshotai/kimi-k2），
     # FastAPI 单段 path 参数遇 '/' 先解码再分断必然 404，改 path 转换器贪婪吞余段。
@@ -271,20 +272,20 @@ async def update_model(provider: str, model: str, req: ModelUpdateRequest):
 
 
 @router.delete("/models/{provider}/{model:path}")
-@handle_config_errors("删除模型")
+@handle_api_errors("删除模型")
 async def delete_model(provider: str, model: str):
     # 2026-09-21 小欧 修 P18：同 update_model，path 转换器支持含 '/' 模型名删除。
     return svc.delete_model(provider, model)
 
 
 @router.get("/providers")
-@handle_config_errors("获取 Provider 列表")
+@handle_api_errors("获取 Provider 列表")
 async def get_providers():
     return svc.get_providers()
 
 
 @router.post("/providers")
-@handle_config_errors("添加 Provider")
+@handle_api_errors("添加 Provider")
 async def add_provider(req: ProviderAddRequest):
     return svc.add_provider(req.name, req.label or req.name, req.api_base,
                             req.api_key, req.model, req.timeout,
@@ -292,25 +293,25 @@ async def add_provider(req: ProviderAddRequest):
 
 
 @router.put("/providers/{name}")
-@handle_config_errors("修改 Provider 配置")
+@handle_api_errors("修改 Provider 配置")
 async def update_provider(name: str, req: ProviderConfigUpdate):
     return svc.update_provider_config(name, req.model_dump(exclude_none=True))
 
 
 @router.delete("/providers/{name}")
-@handle_config_errors("删除 Provider")
+@handle_api_errors("删除 Provider")
 async def delete_provider(name: str):
     return svc.delete_provider(name)
 
 
 @router.get("/providers/{name}/remote-models", response_model=RemoteModelsResponse)
-@handle_config_errors("获取远程模型列表")
+@handle_api_errors("获取远程模型列表")
 async def get_remote_models(name: str):
     return await svc.fetch_remote_models(name)
 
 
 @router.get("/providers/{name}/api-key")
-@handle_config_errors("查看 Provider 密钥明文")
+@handle_api_errors("查看 Provider 密钥明文")
 async def get_provider_api_key_plain(name: str, request: Request):
     """返回**已保存**的 api_key 明文（供"眼睛"切换查看）。
 
@@ -348,7 +349,7 @@ async def get_provider_api_key_plain(name: str, request: Request):
 
 
 @router.post("/providers/{name}/test-connection", response_model=RemoteModelsResponse)
-@handle_config_errors("测试 Provider 连接")
+@handle_api_errors("测试 Provider 连接")
 async def test_provider_connection(name: str, req: TestConnectionRequest):
     """复用 fetch_remote_models 的探测能力（DRY，不新造第二套探测逻辑）。
 
@@ -358,14 +359,14 @@ async def test_provider_connection(name: str, req: TestConnectionRequest):
 
 
 @router.put("/providers/{name}/models")
-@handle_config_errors("替换 Provider 模型列表")
+@handle_api_errors("替换 Provider 模型列表")
 async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
     return svc.replace_provider_models(name, [m.model_dump() for m in req.models])
 
 
 # 2026-11-11 小欧 - probe-media 增 kind 查询参数(image/video/audio 输入能力验证) — 小欧-2026-11-11
 @router.post("/providers/{name}/models/{model:path}/probe-media")
-@handle_config_errors("探测模型媒体传输")
+@handle_api_errors("探测模型媒体传输")
 async def probe_model_media(name: str, model: str, kind: str = "image"):
     """实测模型是否接受指定媒体输入(图片=内联+外链两腿, 视频=URL 腿, 音频=内联腿), 结果落 model_meta.<model>.media。
 
@@ -376,7 +377,7 @@ async def probe_model_media(name: str, model: str, kind: str = "image"):
 
 # 2026-11-09 小欧 - 生成验证：按模型声明的输出模态跑图腿/视频腿，结果落 model_meta.media.generate — 小欧-2026-11-09
 @router.post("/providers/{name}/models/{model:path}/probe-output")
-@handle_config_errors("探测模型生成能力")
+@handle_api_errors("探测模型生成能力")
 async def probe_model_output(name: str, model: str):
     """生成验证（图腿 t2i/i2i + 视频腿 t2v/i2v），落 model_meta.<model>.media.generate"""
     return await svc.probe_model_output(name, model)
@@ -386,21 +387,21 @@ async def probe_model_output(name: str, model: str):
 
 
 @router.post("/providers/{name}/zen-verify")
-@handle_config_errors("ZenithFree 验证")
+@handle_api_errors("ZenithFree 验证")
 async def zen_verify(name: str):
     """双路验证远端最新免费模型(zen_gate 外部库 vs opencodeZenAdapter)，结果落 txt"""
     return await zen_verify_svc.verify_provider_zen(name)
 
 
 @router.get("/zen-verify/reports")
-@handle_config_errors("列验证报告")
+@handle_api_errors("列验证报告")
 async def zen_verify_reports():
     """列历史验证报告(时间倒序)"""
     return zen_verify_svc.list_reports()
 
 
 @router.get("/zen-verify/report")
-@handle_config_errors("读验证报告")
+@handle_api_errors("读验证报告")
 async def zen_verify_report(name: str):
     """读指定验证报告内容"""
     return zen_verify_svc.read_report(name)

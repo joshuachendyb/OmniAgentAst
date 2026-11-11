@@ -46,16 +46,21 @@ remove_dangling_tool_calls 与 keep_valuable_messages(C3 prune 删 tool)协同�
 
 字段名口径(以代码为准): tool_calls 参数原文存 `_args_raw`(编辑历史早期写作 `_raw`, 系迁移前旧名)。
 """
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
 from app.logger import logger
-from app.services.agent.agent_utils import CHARS_PER_TOKEN   # 2026-10-31 小欧: 系数唯一真源(与估算函数同址)
-from app.services.agent.compaction_constants import (
-    TOOL_SUMMARY_HEAD_CHARS,
+from app.services.agent.agent_utils import (
+    CHARS_PER_TOKEN,  # 2026-10-31 小欧: 系数唯一真源(与估算函数同址)
 )
 from app.services.agent.compaction.split_turn import (
-    count_system_prefix, find_tail_start, preserve_recent_budget,
-    truncate_oversized_message, truncate_tool_call_args,
+    count_system_prefix,
+    find_tail_start,
+    preserve_recent_budget,
+    truncate_oversized_message,
+    truncate_tool_call_args,
+)
+from app.services.agent.compaction_constants import (
+    TOOL_SUMMARY_HEAD_CHARS,
 )
 
 
@@ -189,9 +194,12 @@ def shrink_to_budget(messages: List[Dict], limit_tokens: int,
       已全部空转, 再尊重偏好就是拿整个请求换开关, 故无视 allow_prune 无条件执行。 — 小欧-2026-10-31
     """
     from app.services.agent.compaction.prune import (
-        compress_long_tool_output, prune_tool_output_keeping_tail,
+        compress_long_tool_output,
+        prune_tool_output_keeping_tail,
     )
-    from app.services.agent.message_builder import MessageBuilder   # 局部 import 防循环(compaction ↔ message_builder)
+    from app.services.agent.message_builder import (
+        MessageBuilder,  # 局部 import 防循环(compaction ↔ message_builder)
+    )
 
     if not messages:
         return list(messages)

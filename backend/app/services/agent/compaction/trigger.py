@@ -17,7 +17,6 @@
   - should_compact_now: 大窗口下消息数兜底触发(K1), 供 compress_long_tool_output/keep_valuable_messages 补触发。
   - CompactionCooldown: 压缩后冷却节流(K2), 防 C4 每轮烧 LLM; 与触发解耦(触发管"该不该", cooldown 管"刚压过没")。
 """
-from typing import List
 
 from app.services.agent.compaction_constants import (
     COOLDOWN_ROUNDS,

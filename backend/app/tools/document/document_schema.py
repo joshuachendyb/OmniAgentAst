@@ -38,8 +38,10 @@ Document Schema - 文档工具参数模型
 【2026-06-20 小健】删除非document的Schema(QuerySqlInput等6个),已在dataanalysis_schema.py中
 """
 
+from typing import Any, Dict, List, Optional, Union  # 2026-07-31 小欧: 移除未使用 Literal
+
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Any, List, Dict, Union  # 2026-07-31 小欧: 移除未使用 Literal
+
 
 class ReadPdfInput(BaseModel):
     path: str = Field(..., description="文件名+路径(.pdf)")
@@ -110,7 +112,7 @@ class WriteDocxInput(_DocContentOrTableMixin, BaseModel):
 class WriteXlsxInput(BaseModel):
     path: str = Field(..., description="输出文件完整路径(.xlsx),必填")
     data: Optional[List[Dict[str, Any]]] = Field(
-        default=None, 
+        default=None,
         description="""写入的数据。对象数组格式:[{"列1":"a","列2":"b"},{"列1":"c","列2":"d"}]
 - key做列名，value做单元格内容
 - 自动合并所有对象的key作为表头（列顺序按首次出现顺序）

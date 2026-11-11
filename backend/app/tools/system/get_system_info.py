@@ -12,13 +12,13 @@ get_system_info — 获取系统信息
 import platform
 import socket
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
 import psutil
 
-from app.tools.tool_response import build_success, build_error
 from app.logger import logger
 from app.tools.tool_constants import ERR_SYSTEM_INFO
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type: str,
@@ -46,7 +46,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
 def sysinfo(info_type: str = "all") -> Dict[str, Any]:
     """获取系统信息 — 小健 2026-06-22 迁入fundamental独立文件; 小健 2026-06-24 修复无效info_type返回success的bug"""
     t0 = _time_mod.perf_counter()
-    
+
     valid_types = ("basic", "cpu", "memory", "disk", "network", "all")
     if info_type not in valid_types:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -55,7 +55,7 @@ def sysinfo(info_type: str = "all") -> Dict[str, Any]:
             data={"error_detail": f"无效的info_type: {info_type}", "valid_types": list(valid_types)},
             llm_data=llm_data
         )
-    
+
     try:
         data = {}
 

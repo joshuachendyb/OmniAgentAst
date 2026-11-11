@@ -12,12 +12,12 @@ mouse_move — 移动鼠标到指定位置
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 鼠标移动→移动鼠标
 
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
+from app.logger import logger
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_MOVE
-from app.logger import logger
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,

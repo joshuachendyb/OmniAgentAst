@@ -78,7 +78,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   (3)clear 与设置值互斥: clear is True 且 api_key 非空 -> 400, 不静默丢弃任何一方(修前无条件覆盖新 key)
 #   (4)base_url 空即错误状态: base_url/api_base 传空或纯空白 -> 400 文案指向填写完整地址, 不再清空后照存
 #   (5)三条校验均置于 tree/node 构造与 merge 之前, 失败时配置零改动(满足配置未被修改验收)
-#   (6)ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500, 故显式抛 HTTPException(400);
+#   (6)ValueError 会被 handle_api_errors(=原handle_config_errors) 笼统转 500, 故显式抛 HTTPException(400);
 #     不改公共装饰器, 避免波及全项目 24 处调用点(OCP/SRP)
 # 2026-09-26 - 小欧 - add_provider 增加 api_base 必填校验(空/纯空白 -> 400, 文案"api_base 必填:
 #   API 地址是 Provider 的必要配置"), 置于 _validate_new_provider_name 之后、构造 tree 之前, 失败时配置零改动;
@@ -205,36 +205,40 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   已改 test-videos.co.uk 全球 CDN 完整 GET≈3s; 音频 runoob 29KB 正确) — 小欧-2026-11-11
 # 2026-11-11 小欧 - _models_of 下发 ref_capability_map 二维投影(contract 生成, DTO 只透传) — 小欧-2026-11-11
 """
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import base64
 import os
 import re
 import time
-from urllib.parse import urlsplit
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
+
 import httpx
 from fastapi import HTTPException
-from app.llm.adapters import get_provider_adapter
 
-from app.logger import logger
-# 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
-#   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
-from app.utils.secret_utils import is_blank_secret
-from app.config import get_config  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 # 2026-11-09 小欧 - 生成端点单点（探测腿与 Phase B 真业务共用唯一 HTTP 出口）— 小欧-2026-11-09
 # 2026-11-11 小欧: 附件能力二维投影下发(前端徽标只读索引, DTO 只透传)
 from app.attachments.contract import ref_capability_map
+from app.config import (
+    get_config,  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
+)
+from app.llm.adapters import get_provider_adapter
+from app.logger import logger
 from app.services.agent.capability import profile_of
 from app.services.generation import generation_client
 from app.services.model.config_helpers import (
+    _config_mtime,
     get_config_path,
     mask_secret_value,
     merge_nested_patch,
     read_yaml_config,
     write_yaml_config,
-    _config_mtime,
 )
+
+# 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
+#   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
+from app.utils.secret_utils import is_blank_secret
 
 RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 
@@ -621,7 +625,7 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     #   api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
     #   clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
     #   api_base 空即错误状态：空/纯空白 → 400，不再"清空后照存"
-    # ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500，故此处显式抛 400 HTTPException
+    # ValueError 会被 handle_api_errors(=原handle_config_errors) 笼统转 500，故此处显式抛 400 HTTPException
     if fields.get("clear") is True and str(fields.get("api_key") or "").strip():
         raise HTTPException(status_code=400,
                             detail="clear=true 与 api_key 设置值不能同时提交：请只提交其中一项")

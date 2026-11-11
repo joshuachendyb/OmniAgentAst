@@ -34,19 +34,19 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.network.http_client_sdk import create_http_client
-from app.tools.validate.url_validator import validate_proxy
 from app.constants import HTML_TAG_PATTERN
-from app.utils.json_utils import parse_json, coerce_json
 from app.logger import logger
-from app.tools.tool_constants import TOOL_BROWSER_UA
+from app.tools.network.http_client_sdk import create_http_client
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
     SEARCH_WEB_INER_HTML_PARSE,
     SEARCH_WEB_OUTPARM_LIMIT_RAW,
+    TOOL_BROWSER_UA,
 )
+from app.tools.tool_response import build_error, build_success
+from app.tools.validate.url_validator import validate_proxy
+from app.utils.json_utils import coerce_json, parse_json
 
 
 def _decode_bing_redirect_url(url: str) -> str:

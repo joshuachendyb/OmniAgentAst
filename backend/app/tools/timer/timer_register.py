@@ -14,9 +14,9 @@ Timer Register - 定时器工具注册点 — 小欧 2026-06-17
 【2026-07-28 北京老陈】timeadd/timediff/calendar 从 FUNDAMENTAL 迁入
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 # 定时器工具依赖配置 — 小健 2026-06-18
 
@@ -29,22 +29,20 @@ TIMER_TOOL_DEPENDENCIES = {
     "calendar": [],
 }
 
-from app.tools.timer.timer_schema import (
-    TimerSetInput,
-    TimerClearInput,
-    TimerListInput,
-    TimeAddInput,
-    TimeDiffInput,
-    QueryCalendarInput,
-)
-
-from app.tools.timer.timer_set import timer_set
-from app.tools.timer.timer_clear import timer_clear
-from app.tools.timer.timer_list import timer_list
+from app.tools.timer.query_calendar import calendar
 from app.tools.timer.time_add import timeadd
 from app.tools.timer.time_diff import timediff
-from app.tools.timer.query_calendar import calendar
-
+from app.tools.timer.timer_clear import timer_clear
+from app.tools.timer.timer_list import timer_list
+from app.tools.timer.timer_schema import (
+    QueryCalendarInput,
+    TimeAddInput,
+    TimeDiffInput,
+    TimerClearInput,
+    TimerListInput,
+    TimerSetInput,
+)
+from app.tools.timer.timer_set import timer_set
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 TIMER_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);

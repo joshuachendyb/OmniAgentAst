@@ -16,15 +16,17 @@ import time as _time_mod
 from typing import Dict, List, Optional, Tuple
 
 from app.logger import logger
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,
     ERR_SHELL_TIMEOUT,
     ERR_TASK_EMPTY,
     ERR_TASK_LIST,
+    TOOL_TIMEOUTS,
+)
+from app.tools.tool_response import build_error, build_success
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 
 

@@ -55,6 +55,7 @@ from typing import Any
 from fastapi import UploadFile
 
 from app.attachments import extract
+from app.attachments.observability import metric
 from app.config import get_config
 from app.db import db
 from app.db.database import resolve_db_dir
@@ -71,7 +72,6 @@ from app.file_browse.errors import (
     fail,
 )
 from app.logger import logger
-from app.attachments.observability import metric
 from app.services.chat.workspace_service import reconcile_session_workspaces
 from app.utils.time_utils import get_local_iso_timestamp
 

@@ -24,15 +24,21 @@ import time as _time_mod
 from typing import Any, Dict
 
 from app.logger import logger
-from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
-
 from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: IsZoomed 缺失的公用替代
 from app.tools.desktop.window_info import (
-    check_win32_platform, find_windows_by_title, _win32gui, _win32con,
+    _win32con,
+    _win32gui,
+    check_win32_platform,
+    find_windows_by_title,
 )
-
+from app.tools.tool_constants import (
+    ERR_DESKTOP_GET_WINDOW_INFO,
+    ERR_INVALID_ACTION,
+    ERR_WINDOW_NOT_FOUND,
+    ERR_WINDOW_SET_STATE,
+)
+from app.tools.tool_response import build_error, build_success
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 
 _WINDOW_ACTIONS = {
     "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,)) if _win32gui else None,

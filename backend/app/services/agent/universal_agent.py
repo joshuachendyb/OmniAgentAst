@@ -17,19 +17,16 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
 """
 from typing import Any, Optional, Set
 
-from app.services.agent import BaseAgent
-from app.tools.tool_types import ToolCategory
-from app.services.prompts.system_prompts import PromptBuilder
-from app.logger import logger
-from app.utils.cache import TTLCache
-
-from app.services.agent.tool_loader import ToolLoader
-from app.tools.tool_retry_engine import ToolRetryEngine
-
-from app.services.agent.tool_cache_manager import patch_search_desc
-from app.constants import TOOL_CACHE_TTL as _D_TOOL_CACHE_TTL
 from app.config import get_config
-
+from app.constants import TOOL_CACHE_TTL as _D_TOOL_CACHE_TTL
+from app.logger import logger
+from app.services.agent import BaseAgent
+from app.services.agent.tool_cache_manager import patch_search_desc
+from app.services.agent.tool_loader import ToolLoader
+from app.services.prompts.system_prompts import PromptBuilder
+from app.tools.tool_retry_engine import ToolRetryEngine
+from app.tools.tool_types import ToolCategory
+from app.utils.cache import TTLCache
 
 # 初始注入分类 — 小健 2026-06-18
 # 注意：注册(register)和注入(inject)是不同概念：

@@ -100,17 +100,24 @@ import threading
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
-from app.config import get_config  # shell 执行器容量按 tuning 配置计算(配置派生值留在使用方) — 2026-11-04 小欧
-from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
-from app.utils.json_utils import safe_json_dumps, coerce_json  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
+from app.tools.registry import tool_registry
 from app.tools.tool_constants import (
-    TOOL_TIMEOUTS, TOOL_RETRY_BACKOFF, TOOL_RETRY_CONFIG,
+    ERR_INVALID_PARAMS,
+    ERR_MISSING_PARAM,
+    ERR_TOOL_NOT_FOUND,
+    ERR_UNKNOWN,
+    TOOL_RETRY_BACKOFF,
+    TOOL_RETRY_CONFIG,
     TOOL_TIMEOUT_HINTS,
-    ERR_MISSING_PARAM, ERR_INVALID_PARAMS, ERR_TOOL_NOT_FOUND, ERR_UNKNOWN,
+    TOOL_TIMEOUTS,
 )
+from app.tools.tool_error_classifier import ToolErrorCategory, ToolErrorClassifier
 from app.tools.tool_response import build_error
 from app.tools.tools_alias_mapper import normalize_params
-from app.tools.registry import tool_registry
+from app.utils.json_utils import (  # coerce_json: 反向类型容错复用(DRY, 与write_xlsx/analyze_data共用) — 小欧 2026-08-12
+    coerce_json,
+    safe_json_dumps,
+)
 from app.utils.workers import WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现(取代各文件私有池)
 
 # ============================================================
@@ -211,11 +218,11 @@ class StructuredToolError(Exception):
 
 class ToolRetryEngine:
     """统一工具重试引擎 — 绑定Agent的工具字典"""
-    
+
     def __init__(self, tools: Dict[str, Callable]):
         self._tools = tools
-    
-    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
+
+    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any],
                                 timeout: float, action: str = "") -> Any:
         """
         统一单次工具调用 — 小沈 2026-06-08 重构
@@ -262,7 +269,7 @@ class ToolRetryEngine:
             raise
         fut.add_done_callback(lambda _f: _SHELL_SLOTS.release())
         return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
-    
+
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
         *, error_type: Optional[str] = None,
@@ -284,7 +291,7 @@ class ToolRetryEngine:
             other_data={"retry_count": retry_count},
             error_type=error_type or "unknown",
         )
-    
+
     def _get_retry_config(self, action: str):
         """获取重试配置 — 按 tool 名直配 — 小欧 2026-06-29"""
         config = TOOL_RETRY_CONFIG.get(action, {})
@@ -294,7 +301,7 @@ class ToolRetryEngine:
             config.get("retryable", []),  # 修正：使用 retryable 而不是 retryable_errors
             TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
         )
-    
+
     def _get_schema_timeout_default(self, action: str) -> Optional[int]:
         """读工具schema的timeout参数默认值；无timeout参数或无有效默认值返回None — 小欧 2026-08-05
         与 _validate_params 同一途径取 schema(遵守DRY复用 tool_registry.get_tool),
@@ -346,7 +353,7 @@ class ToolRetryEngine:
           (应为 300×1+15=315), 保险丝反而远小于内层超时, 会抢先截杀正常执行。
           故此处显式排除 bool, 让 timeout=True 走 schema 默认值兜底(与 None/0/负数 同路径)。"""
         return isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
-    
+
     def _prepare_execution(self, action: str, action_input: Dict[str, Any]):
         """查找工具+参数规范化+参数验证 — 统一入口，try_once与execute_tool_with_retry共享
          
@@ -473,7 +480,7 @@ class ToolRetryEngine:
         # #21 修正(2026-08-23): on_attempt_recorded 透传最后一跳(缺此跳回调失效) — 小欧 2026-08-23
         return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started,
                                               on_attempt_recorded=on_attempt_recorded)
-    
+
     def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
         """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
         Pydantic v2对Optional[int]生成{"anyOf":[{...,"minimum"/"maximum"...},{"type":"null"}], "type":"integer"},
@@ -499,7 +506,7 @@ class ToolRetryEngine:
         """验证参数（非法参数+必需参数）— 修复: 返回错误字典而非None
         小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
         params = action_input.copy()
-        
+
         try:
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
@@ -518,7 +525,7 @@ class ToolRetryEngine:
                         action_name=action, action_params=params,
                         hint=_build_invalid_param_hint(action, invalid_keys),  # task007 补智能hint, 三审删死参数props_desc — 小欧 2026-08-09
                     )
-                
+
                 required = input_schema.get("required", [])
                 missing = [p for p in required if p not in params]
                 if missing:
@@ -606,7 +613,7 @@ class ToolRetryEngine:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
 
         return params
-    
+
     @staticmethod
     def _struct_error_category(result: Dict[str, Any]) -> ToolErrorCategory:
         """从 error dict 提取自我声明的错误类别(E-3, 2026-09-20 小欧) — 优先 other_data.category,

@@ -15,11 +15,11 @@ time_diff — 时间差值计算
 
 import time as _time_mod
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Union
+from typing import Any, Dict, Optional
 
-from app.tools.tool_fc_helper import parse_datetime_any as _parse_datetime_any
-from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_TIME_DIFF
+from app.tools.tool_fc_helper import parse_datetime_any as _parse_datetime_any
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, seconds: int, days: float, is_future: bool, detail: str = "", hint: str = "", user_start: str = "", user_end: Optional[str] = None) -> dict:

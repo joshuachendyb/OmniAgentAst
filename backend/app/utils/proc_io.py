@@ -163,7 +163,9 @@ def run(args, *, timeout=None, cwd=None, env=None, shell=False,
     if truncated:
         err_b += TRUNCATED_NOTE     # 截断必须对调用方可见(subprocess.run 不会静默丢)
     if timed_out:
-        from app.utils.proc_utils import kill_process_tree   # 局部导入: proc_utils 只依赖 logger, 无循环风险
+        from app.utils.proc_utils import (
+            kill_process_tree,  # 局部导入: proc_utils 只依赖 logger, 无循环风险
+        )
         kill_process_tree(proc)
         _tail_out, _tail_err = drain_after_exit(proc, 1.0)
         out_b += _tail_out

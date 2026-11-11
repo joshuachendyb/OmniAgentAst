@@ -16,7 +16,7 @@ Author: 小沈 - 2026-05-28
 # 2026-10-04 - 小欧 - 字段精简(文档[8]第六章第0步): observation tool_result 删 llm_data_text 字段,
 #   format_llm_data_text 随之零调用方→整函数删除(禁 backward: 不留兼容壳), 同删仅服务于它的死 import json — 小欧-2026-10-04
 
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]:

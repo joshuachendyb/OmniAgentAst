@@ -16,10 +16,14 @@ import winreg
 from typing import Optional  # 2026-07-31 小欧: 移除未使用 Dict, Any
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_REG_DELETE_FAILED, ERR_PARAMETER_INVALID, SUBPROCESS_TIMEOUT_DEFAULT
-from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _parse_path, _backup_registry
+from app.tools.tool_constants import (
+    ERR_PARAMETER_INVALID,
+    ERR_REG_DELETE_FAILED,
+    SUBPROCESS_TIMEOUT_DEFAULT,
+)
+from app.tools.tool_response import build_error, build_success
 from app.tools.validate.registry_path_checker import validate_delete_safety
+from app.tools.win_registry.registry_read import ROOT_KEY_MAP, _backup_registry, _parse_path
 
 # hkey(int) -> 根键名 反向映射, 供 reg.exe 拼接完整键路径 — 小欧 2026-07-12
 ROOT_KEY_MAP_REVERSE = {v: k for k, v in ROOT_KEY_MAP.items()}
@@ -51,7 +55,10 @@ def _delete_registry_recursive(hkey, sub_key):
     的嵌套子键死循环挂起, 详见 test_delete_nonempty_key_recursive_true_still_fails) — 小欧 2026-07-12
     """
     import subprocess  # noqa: F401  (保留: 异常类型对上层可见)
-    from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
+
+    from app.utils.proc_io import (
+        run as proc_run,  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
+    )
     full_key = f"{ROOT_KEY_MAP_REVERSE.get(hkey, 'HKEY_CURRENT_USER')}\\{sub_key}"
     try:
         result = proc_run(

@@ -17,6 +17,8 @@
 # 2026-11-11 小欧 新增 GET /attachments/metrics 只读指标聚合(P5: 降级占比/原生失败率/抽取失败率) — 小欧-2026-11-11
 # 2026-11-11 小欧 新增 POST /attachments/id/{id}/reextract 真抽取手动重跑(文件页重试入口) — 小欧-2026-11-11
 
+# 2026-11-11 小欧 三堂会审整改: capabilities 出口补 suffix_kind 词典下发(消前端后缀表双真源) — 小欧-2026-11-11
+
 """attachments_routes — 附件 API 路由薄壳。
 
 分层同 file_routes.py: 本层只做参数解包与错误转译, 不写业务, 不碰 DB。
@@ -232,7 +234,8 @@ def get_capabilities() -> dict[str, Any]:
                             | RICH_SUFFIXES | TEXT_SUFFIXES))
     return {"accept": accept,
             "limits": contract.limits(),
-            "kind_options": contract.kind_options()}
+            "kind_options": contract.kind_options(),
+            "suffix_kind": contract.suffix_kind()}
 
 
 @router.get("/attachments/metrics")

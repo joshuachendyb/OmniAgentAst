@@ -51,10 +51,12 @@ from app.attachments.attachment_service import (
     touch_usage,
 )
 from app.attachments.observability import metric
+from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
-from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
-from app.services.refs.clip import clip_text   # 2026-10-30 小欧: 字符级头尾摘录公共实现(与 budget 共用)
+from app.services.refs.clip import (
+    clip_text,  # 2026-10-30 小欧: 字符级头尾摘录公共实现(与 budget 共用)
+)
 from app.services.refs.limits import RefLimits
 
 # 单条读取超时(外部盘/网络盘慢时不拖死编排)
@@ -144,7 +146,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
                            note=f"err:attachment_failed:{type(e).__name__}")
     # 仅"真抽取正文"(契约 fallback_quality=content)成功才回填 ok —— 档案卡/元数据不改变抽取态,
     #   避免占住 extract_status='none' 导致真抽取永久无法回填。前缀属实现细节, 不得作判据。
-    from app.attachments.contract import KIND_CONTRACT   # 延迟导入防循环
+    from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
     _route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
     if _route.fallback_quality == "content":
         mark_extract_result(att["id"], len(text), True)
@@ -176,7 +178,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     """
     if ref.get("kind") == "url":
         # 扩展点 0: 链接文本 + 准入(url_reject_reason), 不下载不读盘(P4 下载归 remote_fetch)
-        from app.services.agent.media_payload import url_reject_reason   # 延迟导入: 仅 url 引用需要
+        from app.services.agent.media_payload import url_reject_reason  # 延迟导入: 仅 url 引用需要
         url = str(ref.get("url") or "")
         reason = url_reject_reason(url)
         if reason:

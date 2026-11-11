@@ -15,11 +15,11 @@ mouse_position — 获取鼠标当前位置
 import ctypes
 import ctypes.wintypes
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DESKTOP_GET_MOUSE_POSITION
 from app.logger import logger
+from app.tools.tool_constants import ERR_DESKTOP_GET_MOUSE_POSITION
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, detail: str = "", hint: str = "") -> dict:

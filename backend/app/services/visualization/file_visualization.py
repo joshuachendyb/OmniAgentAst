@@ -8,14 +8,14 @@
 - KISS: 模块级函数而非类+单例,调用更直接
 """
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
-from app.utils.time_utils import timestamp_for_filename
+from app.logger import logger
+from app.services.visualization.animation_report import generate_animation_script
+from app.services.visualization.sankey_report import generate_sankey_data
 from app.services.visualization.text_report import generate_text_report
 from app.services.visualization.tree_report import export_tree_to_json
-from app.services.visualization.sankey_report import generate_sankey_data
-from app.services.visualization.animation_report import generate_animation_script
-from app.logger import logger
+from app.utils.time_utils import timestamp_for_filename
 
 
 def generate_all_reports(task_id: str, task_description: str, output_dir: Path) -> Dict[str, Path]:

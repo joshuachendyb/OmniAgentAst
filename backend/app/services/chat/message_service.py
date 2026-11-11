@@ -49,20 +49,30 @@ message_service — 消息业务服务(services/chat)
 职责(方案4.7.3, 小欧 2026-08-13): 会话消息历史读取/保存 + display_name 缓存(独占)。
 API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
-from app.logger import logger
-from app.utils.cache import LRUCache
-from app.constants import MAX_CACHE_SIZE as _D_CACHE_SIZE
 from app.config import get_config
-from app.utils.time_utils import get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
+from app.constants import MAX_CACHE_SIZE as _D_CACHE_SIZE
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-from app.services.chat.storage import track_user_message, load_execution_steps_batch  # P1-① 小欧 2026-10-27: 批量加载替代 N+1(单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用)
-from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
-from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
-from app.utils.display_utils import extract_display_name_from_steps, build_display_name
-from app.services.task.task_registry import has_active_task_in_session   # 2026-10-07 小欧 - 文档[11] 3.4.5.1
-from app.services.chat.storage import resolve_session_interject, get_session_interject  # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数); 2026-10-30 加 get_session_interject 供 409 门只读判据
-
+from app.logger import logger
+from app.services.chat.storage import (  # P1-① 小欧 2026-10-27: 批量加载替代 N+1(单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用)  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)  # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数); 2026-10-30 加 get_session_interject 供 409 门只读判据
+    fetch_session_user_message_pairs,
+    get_session_interject,
+    insert_user_message,  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
+    load_execution_steps_batch,
+    parse_session_model,
+    resolve_session_interject,
+    track_user_message,
+)
+from app.services.task.task_registry import (
+    has_active_task_in_session,  # 2026-10-07 小欧 - 文档[11] 3.4.5.1
+)
+from app.utils.cache import LRUCache
+from app.utils.display_utils import build_display_name, extract_display_name_from_steps
+from app.utils.time_utils import (  # 小欧 2026-08-08 全程统一本地时区
+    format_timestamp,
+    get_local_iso_timestamp,
+    to_local_iso,
+)
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
 display_name_cache = LRUCache(max_size=get_config().get("tuning.live_front.max_cache_size", _D_CACHE_SIZE))  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24

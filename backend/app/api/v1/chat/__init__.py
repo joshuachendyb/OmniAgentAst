@@ -11,8 +11,9 @@ chat — Chat API模块
 Author: 小沈 - 2026-03-26
 """
 
-from app.api.v1.chat.models import ChatMessage, ChatRequest
 from app.api.v1.chat.chat_routes import router, task_router
+from app.api.v1.chat.models import ChatMessage, ChatRequest
+
 __all__ = [
     "ChatMessage", "ChatRequest",
     "router", "task_router",

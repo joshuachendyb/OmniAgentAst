@@ -26,8 +26,10 @@ FUNDAMENTAL Schema - 基础工具参数模型
 """
 # Merged schema - 小欧 2026-06-18
 
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+
 #分词按"词不拆字": 中文词组整体匹配(如"定时"不再拆成'定'+'时'), 保证多类型关键词各按词组精准命中;
 
 class ToolSearchInput(BaseModel):

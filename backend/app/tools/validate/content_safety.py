@@ -20,8 +20,8 @@
 """
 from typing import Any, Optional, Tuple
 
-from app.utils.json_utils import safe_json_dumps
 from app.logger import logger
+from app.utils.json_utils import safe_json_dumps
 
 
 def check_content_safety(

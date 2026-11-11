@@ -12,8 +12,8 @@ import asyncio
 import time  # shutdown 总预算 deadline 计算 — 小欧-2026-09-25
 from typing import Optional
 
-from app.logger import setup_logger
 from app.llm import BaseAIService
+from app.logger import setup_logger
 
 logger = setup_logger(__name__)
 

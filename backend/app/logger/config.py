@@ -27,9 +27,10 @@
 import logging
 import logging.handlers
 from pathlib import Path
-from app.utils.time_utils import now_str
+
 from app.config import get_config, get_frozen_dir
 from app.logger.levels import to_level_int  # 2026-11-03 小欧: 级别名→int 唯一换算点(DRY)
+from app.utils.time_utils import now_str
 
 _frozen = get_frozen_dir()
 LOG_DIR = (_frozen / "logs") if _frozen is not None else Path(__file__).parent.parent.parent / "logs"
@@ -109,7 +110,9 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         new_path = str(LOG_DIR / f"app_{today}.log")
         if new_path == self.baseFilename:
             return
-        from app.logger.console_writer import console_put  # 小欧 2026-08-30 轮转提示离线化(日志emit路径零同步stdout写)
+        from app.logger.console_writer import (
+            console_put,  # 小欧 2026-08-30 轮转提示离线化(日志emit路径零同步stdout写)
+        )
         console_put(f"[Logger] 日期轮转: {self.baseFilename} -> {new_path}")
         self.baseFilename = new_path
         if self.stream:

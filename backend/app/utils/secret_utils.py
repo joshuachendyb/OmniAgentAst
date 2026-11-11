@@ -17,7 +17,6 @@ secret_utils — 密钥/敏感值判定的公用函数（全局层）
 """
 from typing import Any
 
-
 # 敏感参数键集合 — 全局唯一权威 — 小欧 2026-10-19
 #   命中键的值替换为 "***"。仅"落盘"出口(日志/落库)调用遮蔽; SSE/HITL 展示原文(用户本人数据)。
 SENSITIVE_PARAM_KEYS: frozenset = frozenset({

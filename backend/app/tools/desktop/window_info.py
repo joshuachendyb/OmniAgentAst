@@ -18,9 +18,10 @@ import time as _time_mod
 from typing import Any, Dict, List, Optional
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DESKTOP_GET_WINDOW_INFO, ERR_INVALID_ACTION, ERR_WINDOW_LIST, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE
-
+from app.tools.tool_constants import (
+    ERR_WINDOW_LIST,
+)
+from app.tools.tool_response import build_error, build_success
 
 _HAS_WIN32 = False
 _win32gui = None
@@ -29,9 +30,9 @@ _win32api = None
 
 if platform.system() == "Windows":
     try:
-        import win32gui as _win32gui_mod
-        import win32con as _win32con_mod
         import win32api as _win32api_mod
+        import win32con as _win32con_mod
+        import win32gui as _win32gui_mod
 
         _win32gui = _win32gui_mod
         _win32con = _win32con_mod

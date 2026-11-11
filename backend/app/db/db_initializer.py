@@ -110,9 +110,10 @@ db_initializer — 数据库初始化
 职责: 创建表、确保字段存在
 小欧 2026-06-18 从database.py拆分，遵守SRP
 """
-import sqlite3
 import json as _json
 import re
+import sqlite3
+
 from app.logger import logger
 
 

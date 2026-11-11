@@ -35,11 +35,17 @@
 
 import logging
 
-from app.logger.config import SafeRotatingFileHandler, LogConfig, LOG_DIR
-from app.logger.shared_handler import setup_logger, ConsoleMirrorHandler
 from app.logger.api_logger import APILogger
-from app.logger.console_writer import console_put  # 小欧 2026-08-30 控制台镜像离线化(根治 case09 挂起)
-from app.logger.levels import RECOVERED, log_recovered, to_level_int  # ② 已自愈档(25) — 小欧 2026-10-06
+from app.logger.config import LOG_DIR, LogConfig, SafeRotatingFileHandler
+from app.logger.console_writer import (
+    console_put,  # 小欧 2026-08-30 控制台镜像离线化(根治 case09 挂起)
+)
+from app.logger.levels import (  # ② 已自愈档(25) — 小欧 2026-10-06
+    RECOVERED,
+    log_recovered,
+    to_level_int,
+)
+from app.logger.shared_handler import ConsoleMirrorHandler, setup_logger
 
 api_logger = APILogger()
 logger = setup_logger(__name__)

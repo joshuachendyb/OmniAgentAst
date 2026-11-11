@@ -4,6 +4,10 @@
 #   classify_ref / dedup_key / state_of / plan_refs / aggregate_state / ref_capability_map /
 #   limits / kind_options), 零 IO 零配置, 仅引用 extract 词典与具名出口 — 小欧-2026-11-11
 
+# 2026-11-11 小欧 三堂会审整改: 增 suffix_kind() 后缀→content_kind 词典下发出口,
+#   消前端 useRefCapabilityMap 复制后缀表的双真源漂移 — 小欧-2026-11-11
+
+
 """attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
 单一契约表 KIND_CONTRACT[(source_kind, content_kind)] → KindRoute:
@@ -37,6 +41,7 @@ __all__ = [
     "KIND_CONTRACT", "KIND_MODALITY", "KindRoute", "ItemPlan", "SOURCE_KINDS",
     "CONTENT_KINDS", "MODALITIES", "STATES", "classify_ref", "dedup_key", "state_of",
     "plan_refs", "aggregate_state", "ref_capability_map", "limits", "kind_options",
+    "suffix_kind",
     "AUDIO_SUFFIXES", "IMAGE_SUFFIXES", "RICH_SUFFIXES", "TEXT_SUFFIXES", "VIDEO_SUFFIXES",
     "classify_url", "scan_text_urls",
 ]
@@ -186,6 +191,15 @@ def limits() -> Dict[str, int]:
     from app.services.refs.limits import MAX_REFS
     return {"max_refs": MAX_REFS, "max_urls": _MAX_URLS,
             "max_url_images": MAX_REMOTE_IMAGES}
+
+
+def suffix_kind() -> Dict[str, str]:
+    """后缀→content_kind 词典单一真源(前端徽标分类消费, 禁止前端再复制后缀表)。"""
+    return {**{s: "image" for s in IMAGE_SUFFIXES},
+            **{s: "video" for s in VIDEO_SUFFIXES},
+            **{s: "audio" for s in AUDIO_SUFFIXES},
+            **{s: "richdoc" for s in RICH_SUFFIXES},
+            **{s: "text" for s in TEXT_SUFFIXES}}
 
 
 def kind_options() -> List[Dict[str, str]]:

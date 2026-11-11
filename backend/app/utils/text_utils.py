@@ -28,7 +28,8 @@ v2.1: 新增extract_tool_call_xml(推理降级XML提取) + _format_xml_tool_bloc
 import json
 import re
 from collections import Counter
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from app.logger import logger
 
 
@@ -85,20 +86,20 @@ def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> s
     """
     if len(content) <= budget:
         return content
-    
+
     OMISSION_TEXT_LEN = 50
     if budget <= OMISSION_TEXT_LEN + 10:
         return content[:budget]
-    
+
     head_budget = int(budget * head_ratio)
     tail_budget = budget - head_budget - OMISSION_TEXT_LEN
     head = content[:head_budget]
     tail = content[-tail_budget:] if tail_budget > 0 else ""
     result = f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
-    
+
     if len(result) > budget:
         result = result[:budget]
-    
+
     return result
 
 

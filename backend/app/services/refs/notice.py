@@ -43,8 +43,11 @@
 """
 from typing import Any, Dict, List, Optional
 
-from app.logger import logger, log_and_print
-from app.services.agent.agent_utils import estimate_tokens, fmt_tok   # 2026-10-31 小欧: 自 token_estimate 迁入 agent_utils; 2026-11-07 加 fmt_tok 收口 _tokens_text
+from app.logger import log_and_print, logger
+from app.services.agent.agent_utils import (  # 2026-10-31 小欧: 自 token_estimate 迁入 agent_utils; 2026-11-07 加 fmt_tok 收口 _tokens_text
+    estimate_tokens,
+    fmt_tok,
+)
 from app.utils.sse_formatter import format_sse_event
 
 # 日志体量上限(引用正文永不落日志, 只留可追溯的路径/行区间/计数) — 小欧-2026-10-30

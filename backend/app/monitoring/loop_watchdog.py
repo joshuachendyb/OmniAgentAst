@@ -31,7 +31,9 @@ from typing import List
 
 from app.config import get_config
 from app.logger import logger
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+)
 from app.utils.workers import WorkerPool
 
 _lock = threading.Lock()

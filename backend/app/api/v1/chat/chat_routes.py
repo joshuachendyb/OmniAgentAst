@@ -42,19 +42,24 @@ from typing import Optional
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.logger import logger  # 2026-09-08 小欧: cancel峰值入口留痕(仅文件, 不双写) — 小欧-2026-09-08
-
 from app.api.v1.chat.models import ChatRequest
+from app.api.v1.chat.task_execution import (
+    router as task_execution_router,  # v2.0 C1/C2 — 小欧 2026-08-19
+)
+from app.logger import (
+    logger,  # 2026-09-08 小欧: cancel峰值入口留痕(仅文件, 不双写) — 小欧-2026-09-08
+)
+from app.services.chat.sse_events import (
+    create_error_response,  # [63] 3.6.6 统一错误事件（定义 sse_events:47）
+)
 from app.services.chat.stream_orchestrator import (
     chat_stream_orchestrator,
     chat_stream_reconnect_orchestrator,
     validate_chat_config,
 )
-from app.services.chat.sse_events import create_error_response   # [63] 3.6.6 统一错误事件（定义 sse_events:47）
-from app.services.task.task_runtime import cancel_task
-from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.hitl_confirmation import resolve_confirmation
-from app.api.v1.chat.task_execution import router as task_execution_router  # v2.0 C1/C2 — 小欧 2026-08-19
+from app.services.task.task_registry import pause_task, resume_task
+from app.services.task.task_runtime import cancel_task
 
 router = APIRouter()
 task_router = APIRouter()

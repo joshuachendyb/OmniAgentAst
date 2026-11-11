@@ -25,14 +25,15 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FILE_READ_FAILED
-from app.tools.validate.file_type_checker import check_for_media_tool
-from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
-
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-
+from app.tools.tool_constants import ERR_FILE_READ_FAILED
+from app.tools.tool_response import build_error, build_success
+from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_type_checker import check_for_media_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 _MIME_MAP = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",

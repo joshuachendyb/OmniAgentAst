@@ -192,7 +192,7 @@
 #   启用 atxn(retry_locked=3) 有限重试, 重试耗尽/非锁异常向上抛走 router_error 不再静默起跑(原 L595-596 吞异常
 #   致 ai_message_id=None 带病运行, 前端看似在跑而 DB 全空); 文件 writer 独立 try 仅告警, 原设计意图不变。
 #   — 小欧-2026-09-29
-# 2026-10-02 20:14 小欧 - 无 session_id 时改走 create_session(None) 建会话(原凭空造 UUID 撞外键致整流 500) 
+# 2026-10-02 20:14 小欧 - 无 session_id 时改走 create_session(None) 建会话(原凭空造 UUID 撞外键致整流 500)
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项8: 编排器废止逐请求 context_link_mode, 链根真源改为会话 link 开关;
 #    S3: 链根计算块下移至活跃任务注入判定之后; 关联审查风险1: 拆出 _history_root(装历史用根,
 #   无链根时为 None), 与落库用根区分, 避免无链根时误把自身 task_id 当根导致全量灌历史。
@@ -272,13 +272,86 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional, AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
-from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
+from app.config import get_config
+
 # 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
-from app.constants import DEFAULT_CONTEXT_LENGTH   # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
-from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
+from app.constants import (
+    DEFAULT_CONTEXT_LENGTH,  # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
+)
+from app.constants import (
+    HEARTBEAT_INTERVAL as _D_HEARTBEAT,  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py) — 小欧 2026-09-08
+)
+from app.db import (
+    db,  # 小健 2026-08-17  模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
+)
+from app.file_browse import (
+    browse_service as browse,  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
+)
+from app.logger import log_and_print, logger
+from app.logger.shared_handler import set_session_id
+from app.monitoring import (
+    loop_watchdog,  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
+)
+from app.monitoring.agent_telemetry import (
+    _log_task_end,  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
+)
+from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
+from app.services.agent.agent_runner import run_agent_in_background
+
+# 2026-10-31 小欧 - 注入装配单一化: 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
+#   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
+from app.services.agent.message_builder import build_user_turn_text
+from app.services.agent.steps import (
+    ALL_STEP_TYPES,  # SSE 转发表推导源(见 _SSE_FORWARD_TYPES)— 小欧 2026-10-03
+)
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 目录块渲染/日志/提示三合一
+    build_ws_notice,
+    render_workspace_block,
+    report_ws_block,
+)
+from app.services.chat.history_loader import (
+    _load_previous_messages,  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
+)
+from app.services.chat.session_service import (
+    create_session,  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
+)
+from app.services.chat.sse_events import create_error_response
+from app.services.chat.storage import (  # 追加权威累计查询 — 小欧 2026-08-21  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05  # token 四层同构累计 — 小欧 2026-08-20
+    allocate_and_insert_message,
+    append_execution_step,
+    count_chain_siblings,  # 2026-10-09 小欧 - [20] link 序号 N 取数(第几个 link 任务)
+    get_chain_summary_anchor,  # 2026-10-14 小欧 - linked 增量摘要: 锚点取数(只读, 经闭包注入 agent) — 小欧-2026-10-14
+    get_previous_task_chain,
+    get_session_link,  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
+    get_user_message_id,
+    insert_task,
+    query_task_accumulation,
+    resolve_session_interject,  # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
+    set_session_link_conn,  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
+    token_usage_insert,
+    update_session_accumulation,
+    update_task,
+    update_task_accumulation,
+)
+from app.services.chat.stream_event_journal import (
+    PAGE_SIZE,
+    get_persisted_task_status,
+    is_producer_alive,
+    read_after,
+)
+from app.services.chat.stream_event_journal import (  # [63] 3.6.4 Journal 四口
+    append as journal_append,
+)
+from app.services.model.resolver import (
+    ProviderKeyMissingError,
+    get_ai_config_resolver,
+    resolve_session_client,
+)  # 会话模型覆盖决议 — 小健 2026-09-05
+from app.services.refs.limits import resolve_limits  # 按生效窗口算三档阈值
+
 # 回执 + 观测(汇总/日志/refs_ready notice, 两通道共用同一份数字) — 小欧 2026-10-30
 from app.services.refs.notice import (
     build_notice,
@@ -289,61 +362,36 @@ from app.services.refs.notice import (
     report_refs,
     summarize_refs,
 )
-from app.services.refs.pipeline import prepare_refs                        # 解析→裁决→回执汇集唯一流水线
-from app.services.model.resolver import (
-    ProviderKeyMissingError,
-    get_ai_config_resolver,
-    resolve_session_client,
-) # 会话模型覆盖决议 — 小健 2026-09-05
-from app.logger import logger, log_and_print
-from app.services.chat.sse_events import create_error_response
-from app.services.task.task_registry import (
-    register_task,
-    set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
-    has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
-    inject_message_to_task,
-    cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
-)
-from app.services.task.task_state import get_task_field  # 2026-11-04 小欧: 直连真源(registry 不再再导出) — 小欧-2026-11-04
-from app.services.task.task_runtime import (
-    task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
-)
-from app.utils.sse_formatter import format_agent_sse, format_sse_event  # format_sse_event: 目录块超限 notice 组帧 — 小欧-2026-10-31
-from app.services.agent.agent_runner import run_agent_in_background
-from app.services.agent.steps import ALL_STEP_TYPES  # SSE 转发表推导源(见 _SSE_FORWARD_TYPES)— 小欧 2026-10-03
-from app.services.agent.universal_agent import UniversalAgent
-from app.services.chat.stream_event_journal import append as journal_append, read_after, get_persisted_task_status, is_producer_alive, PAGE_SIZE   # [63] 3.6.4 Journal 四口
-from app.services.task.task_state import create_task_stream_buffer, get_stream_buffer, reclaim_memory_buffer  # [63] 3.6.4 生产唯一入口 + 3.8 改名（回收语义不变）
-from app.constants import HEARTBEAT_INTERVAL as _D_HEARTBEAT  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py) — 小欧 2026-09-08
-from app.config import get_config
+from app.services.refs.pipeline import prepare_refs  # 解析→裁决→回执汇集唯一流水线
 from app.services.task.task_context import _current_task_id
-from app.logger.shared_handler import set_session_id
-from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 追加权威累计查询 — 小欧 2026-08-21
-from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
-from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
-from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
-from app.services.chat.storage import resolve_session_interject     # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
-from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
-from app.services.chat.storage import count_chain_siblings  # 2026-10-09 小欧 - [20] link 序号 N 取数(第几个 link 任务)
-from app.db import db  # 小健 2026-08-17  模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
-from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
-from app.services.chat.storage import get_chain_summary_anchor  # 2026-10-14 小欧 - linked 增量摘要: 锚点取数(只读, 经闭包注入 agent) — 小欧-2026-10-14
-from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
+from app.services.task.task_registry import (
+    cleanup_task,  # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
+    has_active_task_in_session,  # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
+    inject_message_to_task,
+    register_task,
+    set_agent_task,  # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
+)
+from app.services.task.task_runtime import (
+    task_cancel_check,
+    task_cancel_check_and_yield,
+    task_pause_check_and_yield,
+)
+from app.services.task.task_state import (  # [63] 3.6.4 生产唯一入口 + 3.8 改名（回收语义不变）
+    create_task_stream_buffer,
+    get_stream_buffer,
+    get_task_field,  # 2026-11-04 小欧: 直连真源(registry 不再再导出) — 小欧-2026-11-04
+    reclaim_memory_buffer,
+)
 from app.session_workspace import (  # 会话 Workspace 任务级快照(中立层 ContextVar) — 小欧 2026-10-10
     WorkspaceEntry,
     WorkspaceSnapshot,
     reset_current_session_workspaces,
     set_current_session_workspaces,
 )
-# 2026-10-31 小欧 - 注入装配单一化: 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
-#   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
-from app.services.agent.message_builder import build_user_turn_text
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 目录块渲染/日志/提示三合一
-    build_ws_notice, render_workspace_block, report_ws_block,
+from app.utils.sse_formatter import (  # format_sse_event: 目录块超限 notice 组帧 — 小欧-2026-10-31
+    format_agent_sse,
+    format_sse_event,
 )
-from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
-from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
-
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
 # 会被 GC 回收并取消, 导致 run_agent_in_background 的 finally(DB 保存)被打断、结果丢失(问题2)。
@@ -757,7 +805,7 @@ async def chat_stream_orchestrator(
         #   不可沿用落库用的自身 task_id —— 该行此刻尚未 insert, 会致下界缺失而全量灌入会话旧消息。
 
         buffer = create_task_stream_buffer(task_id, session_id, journal_sink)
-        # 占位注册方案(2026-09-20 小欧, 定案): register_task 不再抛异常, 守卫命中返回占位tid 
+        # 占位注册方案(2026-09-20 小欧, 定案): register_task 不再抛异常, 守卫命中返回占位tid
         #   同会话活跃任务被并发请求抢先占位(TOCTOU窗口), 本消息改道注入占位任务, 不丢消息。
         _reg_res = await register_task(task_id, session_id=session_id)  # 删 ai_service — 小欧-2026-09-25
         if _reg_res:
@@ -988,7 +1036,9 @@ async def chat_stream_orchestrator(
         #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
         try:
             from app.file_persist import create_task_writer
-            from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(修复: 顶层无该符号, 缺则 NameError 被吞降级无文件)
+            from app.utils.time_utils import (
+                get_local_iso_timestamp,  # 局部导入必需(修复: 顶层无该符号, 缺则 NameError 被吞降级无文件)
+            )
             _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
             agent.file_persist = create_task_writer(
                 session_id=session_id,

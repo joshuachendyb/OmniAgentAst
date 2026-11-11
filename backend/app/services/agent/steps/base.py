@@ -27,7 +27,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
@@ -105,7 +105,7 @@ class AgentResult:
 
 # MetaStep — 运行时元事件
 # (start/cancelled/paused/resumed/retrying/authorization_required)
-# 小沈 2026-07-13: 实现直接放在 base.py(与 ReasoningStep 基类同文件), 
+# 小沈 2026-07-13: 实现直接放在 base.py(与 ReasoningStep 基类同文件),
 # 没有单独的 meta_step.py 文件;
 # 此前 steps/__init__.py 注释误写 meta_step.py, 已修正。
 # 如需严格 SRP 拆分再单独抽 meta_step.py。

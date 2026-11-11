@@ -4,6 +4,9 @@
 # 2026-11-11 小欧 补错误追踪日志: 各失败路径原先静默返回, 排障无迹可循;
 #   增 logger.warning 留痕 + [cap-metric] fetch_fail 埋点(P5 指标) — 小欧-2026-11-11
 
+# 2026-11-11 小欧 三堂会审整改: ①下载改流式读(累计超限即断, 防大文件整包进内存);
+#   ②重定向相对 Location 先 urljoin 绝对化再逐跳重判(相对路径原被误判域名无法解析) — 小欧-2026-11-11
+
 """services.agent.remote_fetch — URL 下载唯一出网口。
 
 只为"模型支持内联、不支持外链"的 URL 服务。安全四闸门:
@@ -15,7 +18,7 @@ import asyncio
 import ipaddress
 import socket
 from typing import Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -64,19 +67,25 @@ async def fetch_bytes(url: str, kind: str = "") -> Tuple[Optional[bytes], str]:
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=_TIMEOUT) as client:
             while hops < _MAX_HOPS:
-                resp = await client.get(current)
-                if resp.is_redirect:
-                    current = str(resp.headers.get("location") or "")
-                    reason = url_reject_reason(current) or await _host_reject_reason(urlsplit(current).hostname or "")
-                    if reason:
-                        return _fetch_fail(url, kind, f"重定向被拒: {reason}")
-                    hops += 1
-                    continue
-                if resp.status_code >= 400:
-                    return _fetch_fail(url, kind, f"下载失败: HTTP {resp.status_code}")
-                if len(resp.content) > limit:
-                    return _fetch_fail(url, kind, "超过下载体积上限")
-                return resp.content, ""
+                async with client.stream("GET", current) as resp:
+                    if resp.is_redirect:
+                        # 相对 Location 先 urljoin 绝对化, 再统一逐跳重判
+                        current = urljoin(current, str(resp.headers.get("location") or ""))
+                    elif resp.status_code >= 400:
+                        return _fetch_fail(url, kind, f"下载失败: HTTP {resp.status_code}")
+                    else:
+                        # 流式累计, 超限即断(不整包缓冲)
+                        buf = bytearray()
+                        async for chunk in resp.aiter_bytes():
+                            buf += chunk
+                            if len(buf) > limit:
+                                return _fetch_fail(url, kind, "超过下载体积上限")
+                        return bytes(buf), ""
+                reason = url_reject_reason(current) or await _host_reject_reason(
+                    urlsplit(current).hostname or "")
+                if reason:
+                    return _fetch_fail(url, kind, f"重定向被拒: {reason}")
+                hops += 1
     except (httpx.HTTPError, OSError) as e:
         return _fetch_fail(url, kind, f"下载异常: {type(e).__name__}")
     return _fetch_fail(url, kind, "重定向次数超限")

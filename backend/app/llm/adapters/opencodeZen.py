@@ -9,10 +9,13 @@
 # 编辑历史: 2026-09-24 北京老陈 方案1: 删GATE_STUBS假tool与missing注入逻辑, ensure_gate_body只保留stream:true强制
 # 编辑历史: 2026-10-31 小欧 鉴权头改复用基类 auth_headers(空 api_key 不带 Authorization) — 小欧-2026-10-31
 
+import logging
 import os
 import time
-from typing import Dict, List  # List: 仅注释块GATE_STUBS备用代码使用, 取消注释时无需再加 — 北京老陈 2026-09-24
-import logging
+from typing import (  # List: 仅注释块GATE_STUBS备用代码使用, 取消注释时无需再加 — 北京老陈 2026-09-24
+    Dict,
+    List,
+)
 
 from app.llm.adapters.base import ProviderAdapter
 

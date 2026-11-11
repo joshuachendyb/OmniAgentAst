@@ -64,17 +64,24 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
-
-from app.utils.path_utils import validate_path_for_delete  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
-from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-18 小欧 - 路径四级合法性总入口(权限归 safety, 删除硬底线本文件自持)
+from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+    _current_task_id,
+    get_current_hooks_or_noop,
+)
+from app.tools.file.file_write_arbiter import (
+    claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
+)
+from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
+from app.tools.tool_response import build_error, build_success
+from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.utils.path_utils import (  # 2026-10-18 小欧 - 路径四级合法性总入口(权限归 safety, 删除硬底线本文件自持)
+    OpCategory,
+    check_path_four_level,
+    to_win_long_path,  # #5长路径包裹 — 小欧 2026-08-13
+    validate_path_for_delete,  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
+)
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,

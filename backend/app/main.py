@@ -79,14 +79,16 @@
 # 2026-11-08 小欧 - startup 接老 capabilities 一次性迁移(幂等, 无残留零改动; 先于配置读取) — 小欧-2026-11-08
 # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server.py 同一收口
 #   (只落盘不上屏); 否者 dictConfig console handler 残留 + 10s 热重载刷 DEBUG 必刷屏 — 小欧-2026-11-08
-import sys
 import asyncio
+import sys
+import threading
 import time
 import uuid
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+
 import anyio  # 2026-11-04 小欧: anyio worker 池预热(同步端点承载), 消除运行期 Thread.start
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     # Windows PowerShell 5.1中文输出编码修复 — 小欧 2026-07-07
@@ -96,51 +98,79 @@ if sys.platform == "win32":
         # Python -u模式下可能抛AttributeError，忽略
         pass
 
-from fastapi import Depends, FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware  # 2026-10-21 小杨 - 文件页大 JSON 降量（树 3.4MB→~0.4MB）
-from fastapi.responses import JSONResponse, Response
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.datastructures import MutableHeaders  # 2026-10-30 小欧: 纯 ASGI 计时中间件回写响应头
-import traceback
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
-from app.utils.background_tasks import spawn_bg  # 2026-11-03 小欧: 后台任务统一存引用防 GC(与 middleware 同源)
-from app.utils.spawn_gate import install_spawn_gate, mark_runtime_started  # 2026-11-04 小欧: 进程×线程创建闸门
-from app.tools import ensure_tools_registered
-from app.tools.fundamental.shell_engine import prewarm_shell_binaries  # 启动期预热 ps7/ps5 — 2026-11-04 小欧
-from app.config import get_config, get_code_root, env_flag
-from pathlib import Path
 import os
+import traceback
+from pathlib import Path
 
-from app.api.v1 import health, sessions, messages, metrics
-from app.api.v1.config_routes import router as config_router
-from app.api.v1.settings_routes import router as settings_router
-from app.api.v1.model_routes import router as model_router
-from app.api.v1.file_routes import router as file_router  # 2026-10-13 小欧: 文件浏览底座 — 小欧-2026-10-13
-from app.api.v1.tool_routes import router as tool_routes_router  # 工具测试路由迁出 health.py — 小欧 2026-08-12
-from app.api.v1.token_usage import router as token_usage_router  # token 四维度查询 API — 小欧 2026-08-16
-from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
-from app.api.v1.task_queries import router as task_queries_router
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import (
+    GZipMiddleware,  # 2026-10-21 小杨 - 文件页大 JSON 降量（树 3.4MB→~0.4MB）
+)
+from fastapi.responses import JSONResponse, Response
+from starlette.datastructures import MutableHeaders  # 2026-10-30 小欧: 纯 ASGI 计时中间件回写响应头
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.api.v1 import health, messages, metrics, sessions
+
 # 2026-11-04 小欧 - 附件上传/列表/详情/删除 + 素材包 CRUD 路由（重建后重启挂载） — 小欧-2026-11-06
 from app.api.v1.attachments import router as attachments_router
-from app.api.v1.material_packs import router as material_packs_router
-# 2026-11-07 小欧 - 同机文件系统路由(磁盘列表/授权目录), 「我的电脑」自研浏览器底座 — 小欧-2026-11-07
-from app.api.v1.fs_routes import router as fs_router
-# 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
-from app.api.v1.deps import verify_token, warn_startup_checks
+
 # 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
 from app.api.v1.auth_routes import router as auth_router
-from app.logger import logger
-from app.logger.shared_handler import install_access_noise_filter, setup_uvicorn_loggers  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤; 2026-11-08 小欧补 setup_uvicorn_loggers(裸 uvicorn 同样收口 uvicorn 三 logger 只落盘不上屏)
-from app.monitoring import setup_monitoring
+from app.api.v1.chat import execution_stream as chat_execution_router
+from app.api.v1.chat import router as chat_router
+from app.api.v1.chat import task_router
+from app.api.v1.config_routes import router as config_router
+
+# 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
+from app.api.v1.deps import verify_token, warn_startup_checks
+from app.api.v1.file_routes import (
+    router as file_router,  # 2026-10-13 小欧: 文件浏览底座 — 小欧-2026-10-13
+)
+
+# 2026-11-07 小欧 - 同机文件系统路由(磁盘列表/授权目录), 「我的电脑」自研浏览器底座 — 小欧-2026-11-07
+from app.api.v1.fs_routes import router as fs_router
+from app.api.v1.material_packs import router as material_packs_router
+from app.api.v1.model_routes import router as model_router
+from app.api.v1.settings_routes import router as settings_router
+from app.api.v1.task_queries import router as task_queries_router
+from app.api.v1.token_usage import (
+    router as token_usage_router,  # token 四维度查询 API — 小欧 2026-08-16
+)
+from app.api.v1.tool_routes import (
+    router as tool_routes_router,  # 工具测试路由迁出 health.py — 小欧 2026-08-12
+)
+from app.config import env_flag, get_code_root, get_config
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
-from app.services.task.task_registry import cleanup_expired_tasks
+from app.db import db
+from app.logger import logger
+from app.logger.shared_handler import (  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤; 2026-11-08 小欧补 setup_uvicorn_loggers(裸 uvicorn 同样收口 uvicorn 三 logger 只落盘不上屏)
+    install_access_noise_filter,
+    setup_uvicorn_loggers,
+)
+from app.monitoring import setup_monitoring
 from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧: 过期会话信任回收(TTL)
-from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
+from app.services.chat.storage import (
+    reconcile_orphaned_tasks,  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
+)
+
 # 2026-11-08 小欧 - 启动一次性迁移老 capabilities 到 input/output 双维度(幂等)
 from app.services.model.model_service import migrate_legacy_capabilities
-from app.db import db
+from app.services.task.task_registry import cleanup_expired_tasks
+from app.tools import ensure_tools_registered
+from app.tools.fundamental.shell_engine import (
+    prewarm_shell_binaries,  # 启动期预热 ps7/ps5 — 2026-11-04 小欧
+)
+from app.utils.background_tasks import (
+    spawn_bg,  # 2026-11-03 小欧: 后台任务统一存引用防 GC(与 middleware 同源)
+)
+from app.utils.spawn_gate import (  # 2026-11-04 小欧: 进程×线程创建闸门
+    install_spawn_gate,
+    mark_runtime_started,
+)
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
 def get_version() -> str:
@@ -370,8 +400,8 @@ _mount(fs_router, "fs")
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──
 # 2026-11-01 小欧 - 静态托管仅打包态(exe); 开发态 8000 纯 API, 不解析 dist — 小欧-2026-11-01
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 _IS_FROZEN = getattr(sys, "frozen", False)
 _WEB_DIR = _ASSETS_DIR = _INDEX_HTML = None   # 开发态不解析任何 dist 路径 — 小欧 2026-11-01
@@ -619,7 +649,9 @@ async def startup_event():
     logger.info(f"[启动耗时] startup_event 合计: {time.time()-_t0:.3f}s")
     # 启动期结束: 之后任何 Thread.start 都计入 runtime_thread_starts(/health 暴露), 应为 0 — 2026-11-04 小欧
     mark_runtime_started()
-    from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
+    from app.logger.console_writer import (
+        console_put,  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
+    )
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()
     _ref = _cfg.get('ai.model_ref') or {}

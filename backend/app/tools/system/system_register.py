@@ -24,9 +24,9 @@ SYSTEM Register - 系统信息工具注册点
 更新时间: 2026-10-02 小欧
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 SYSTEM_TOOL_DEPENDENCIES = {
     "event_log": ["psutil"],
@@ -35,21 +35,20 @@ SYSTEM_TOOL_DEPENDENCIES = {
     "which": [],             # 2026-10-02 小欧 - 随 which 迁入
 }
 
-from app.tools.system.system_schema import (
-    EventLogInput,
-    CreateTaskInput,
-    DeleteTaskInput,
-    ListTasksInput,
-    WhichInput,          # 2026-10-02 小欧 - 随 which 迁入
-    GetSystemInfoInput,  # 2026-10-02 小欧 - 随 sysinfo 迁入
-)
-
-from app.tools.system.event_log import event_log
 from app.tools.system.create_task import create_task
 from app.tools.system.delete_task import delete_task
-from app.tools.system.list_tasks import list_tasks
-from app.tools.system.find_command import which   # 2026-10-02 小欧 - 自 shell/ 迁入
+from app.tools.system.event_log import event_log
+from app.tools.system.find_command import which  # 2026-10-02 小欧 - 自 shell/ 迁入
 from app.tools.system.get_system_info import sysinfo  # 2026-10-02 小欧 - 自 fundamental/ 迁入
+from app.tools.system.list_tasks import list_tasks
+from app.tools.system.system_schema import (
+    CreateTaskInput,
+    DeleteTaskInput,
+    EventLogInput,
+    GetSystemInfoInput,  # 2026-10-02 小欧 - 随 sysinfo 迁入
+    ListTasksInput,
+    WhichInput,  # 2026-10-02 小欧 - 随 which 迁入
+)
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 SYSTEM_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);

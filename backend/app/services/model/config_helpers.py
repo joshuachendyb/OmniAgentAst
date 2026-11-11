@@ -51,20 +51,19 @@ F10合并: 小欧 - 2026-06-08
 
 import os
 import shutil
-import yaml
 from collections import OrderedDict
-
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from app.config import get_config as get_config_instance, _make_safe_loader
-from app.utils.file_utils import backup_file  # P5b: 从 utils 导入 — 小沈 2026-08-13
-
-from app.config import get_config_path as _get_config_path
-from app.services.lifecycle.lifecycle import reset
-from app.logger import logger
-from app.utils.response_utils import handle_api_errors as handle_config_errors
+import yaml
 from fastapi import HTTPException
+
+from app.config import _make_safe_loader
+from app.config import get_config as get_config_instance
+from app.config import get_config_path as _get_config_path
+from app.logger import logger
+from app.services.lifecycle.lifecycle import reset
+from app.utils.file_utils import backup_file  # P5b: 从 utils 导入 — 小沈 2026-08-13
 
 # ====================================================================
 # 装饰器
@@ -516,6 +515,7 @@ def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> st
     先写者完成后后写者基于最新文件重读合并，杜绝「读原→改→写」非原子下旧快照覆盖丢项。
     2026-09-21 小欧：空 ops 直接跳过（不备份不写盘，S6 备份膨胀）。"""
     import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面
+
     from app.utils.file_utils import atomic_write  # 局部 import：utils 不反向依赖 services
 
     if not ops:

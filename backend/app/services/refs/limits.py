@@ -19,13 +19,18 @@
 from dataclasses import dataclass
 
 from app.config import get_config
-from app.logger import logger
-# 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源); CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
-from app.services.agent.agent_utils import trim_budget_base, CHARS_PER_TOKEN
+
 # 2026-10-31 小欧: 四个预算比例默认值单一真源在常量域(配置 tuning.refs.* 可覆盖) — 小欧-2026-10-31
 from app.constants import (
-    REF_INTERJECT_RATIO, REF_REJECT_RATIO, REF_SINGLE_RATIO, REF_TOTAL_RATIO,
+    REF_INTERJECT_RATIO,
+    REF_REJECT_RATIO,
+    REF_SINGLE_RATIO,
+    REF_TOTAL_RATIO,
 )
+from app.logger import logger
+
+# 2026-10-31 小欧: 预算基准算式收口(与裁剪域同源); CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
+from app.services.agent.agent_utils import CHARS_PER_TOKEN, trim_budget_base
 
 # 引用条数上限: 前端入队即拦、后端 DTO 再拦(双保险, 防止任意条引用直入 prompt)
 MAX_REFS = 20

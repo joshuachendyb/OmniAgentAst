@@ -18,8 +18,9 @@ FC 消息类型安全 — Pydantic 模型
 【签名】小沈
 """
 
-from pydantic import BaseModel
 from typing import List, Optional, Union
+
+from pydantic import BaseModel
 from typing_extensions import Literal
 
 

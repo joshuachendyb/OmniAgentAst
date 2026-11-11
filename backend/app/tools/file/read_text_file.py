@@ -63,18 +63,21 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import READ_OUTLIMIT_CHARS, READ_INPUT_MAX_BYTES
-from app.tools.tool_constants import ERR_FILE_READ_FAILED
-from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
-
-from app.utils.text_utils import add_line_numbers
-from app.tools.toolhelper.line_pager import select_lines
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
+from app.tools.file.file_encoding import (
+    read_file_with_encodings as _try_read_file_with_encodings,  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
+)
 from app.tools.file.file_state import record_read
+from app.tools.tool_constants import ERR_FILE_READ_FAILED, READ_INPUT_MAX_BYTES, READ_OUTLIMIT_CHARS
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.toolhelper.line_pager import select_lines
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
+from app.utils.text_utils import add_line_numbers
 
 
 def _build_read_text_file_llm_data(
@@ -132,7 +135,7 @@ def _build_read_text_file_llm_data(
         }
     end_line = start_line + line_count - 1
     if total_lines == 0:
-        msg = f"文件为空" if not encoding_name else f"文件为空，编码：{encoding_name}"
+        msg = "文件为空" if not encoding_name else f"文件为空，编码：{encoding_name}"
         hint_text = ""
     elif line_count == 0:
         msg = "已无更多内容，当前读取结果为空"
@@ -281,7 +284,7 @@ async def read(
             )
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint="文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 
         lines = content.splitlines(keepends=False)

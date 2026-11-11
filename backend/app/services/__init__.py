@@ -11,13 +11,13 @@ from app.services.lifecycle import (
     close_instance,
     close_instance_sync,
     get_config_path,
-    make_validation_error,
-    validate_credentials,
-    validate_config,
+    get_scope,
     get_service,
     get_service_for_model,
-    get_scope,
+    make_validation_error,
     reset,
+    validate_config,
+    validate_credentials,
 )
 
 __all__ = [

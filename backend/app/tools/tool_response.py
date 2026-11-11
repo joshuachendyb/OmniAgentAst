@@ -106,7 +106,7 @@ def build_missing_dep_error(tool_name: str, missing: Optional[List[str]] = None,
 
     形状随全项目错误体约定(各工具 _build_*_llm_data 同一套): 错误码落 llm_data.status.code。
     """
-    from app.utils.dependency import LOCKED_PACKAGES   # 局部导入: 只此一处用, 不进模块头
+    from app.utils.dependency import LOCKED_PACKAGES  # 局部导入: 只此一处用, 不进模块头
 
     specs = [m for m in (missing or []) if m]
     pkg_list = ", ".join(specs) if specs else "未知依赖"

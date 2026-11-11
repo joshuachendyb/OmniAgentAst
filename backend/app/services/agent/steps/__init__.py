@@ -24,16 +24,16 @@ Updated: 2026-10-30 小欧 - 批2序12: ALL_STEP_TYPES 登记 "refs_notice"(引�
 Updated: 2026-10-30 小欧 - NOTICE_KINDS 补 "refs_ready"(引用处置汇总, 走既有 notice 信封, 无新增事件类型) — 小欧 2026-10-30
 Updated: 2026-10-31 小欧 - NOTICE_KINDS 补 "ws_inject"(事项目录块超限省略提示, 同走 notice 信封) — 小欧 2026-10-31
 """
-from .base import ReasoningStep, MetaStep
 from .action_step import ActionStep
-from .observation_step import ObservationStep
+from .base import MetaStep, ReasoningStep
 from .chunk_step import ChunkStep
-from .thought_step import ThoughtStep
-from .thought_start_step import ThoughtStartStep   # 2026-08-18 小欧 新增
-from .start_content_step import StartStep           # 2026-08-18 小欧 新增(start 拆双)
-from .final_step import FinalStep
 from .error_step import ErrorStep
 from .final_stats_step import FinalStatsStep
+from .final_step import FinalStep
+from .observation_step import ObservationStep
+from .start_content_step import StartStep  # 2026-08-18 小欧 新增(start 拆双)
+from .thought_start_step import ThoughtStartStep  # 2026-08-18 小欧 新增
+from .thought_step import ThoughtStep
 
 __all__ = [
     "ReasoningStep",

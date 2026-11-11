@@ -18,12 +18,12 @@ mouse_click — 鼠标单击
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 点击→点击鼠标
 
 import time as _time_mod
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from app.tools.tool_response import build_success, build_error
+from app.logger import logger
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_CLICK
-from app.logger import logger
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: str = "", clicks: int = 1,

@@ -39,9 +39,11 @@
   - 不做裁剪动作本身(分区/切点/重建): 那是 message_builder.trim_history 的职责, 本模块只给阈值。
 """
 from app.config import get_config
-
 from app.services.agent.compaction_constants import (
-    START_LIMIT_RATIO, COMPACTION_BUFFER, TOOLS_TOKEN_RESERVE, TRIM_TRIGGER_RATIO,
+    COMPACTION_BUFFER,
+    START_LIMIT_RATIO,
+    TOOLS_TOKEN_RESERVE,
+    TRIM_TRIGGER_RATIO,
 )
 
 # chars→token 换算系数 — 小欧 2026-10-31

@@ -13,7 +13,9 @@ Author: 小沈 2026-10-26
 from typing import Tuple
 
 from app.utils.path_utils import absolutize_path, has_path_traversal
-from app.utils.type_utils import safe_sub_dict  # 2026-10-31 小欧: 嵌套取值防御收口公用函数(与 observation_formatter 同源)
+from app.utils.type_utils import (
+    safe_sub_dict,  # 2026-10-31 小欧: 嵌套取值防御收口公用函数(与 observation_formatter 同源)
+)
 
 __all__ = [
     "save_text_to_file",
@@ -31,9 +33,9 @@ async def save_text_to_file(path: str, content: str) -> Tuple[str, str]:
 
     小沈 2026-10-26
     """
-    from app.tools.file.write_text_file import write as _write_tool
     from app.config import get_config
     from app.logger import logger
+    from app.tools.file.write_text_file import write as _write_tool
 
     # BUG-5修复: content=None 拒绝
     if content is None:

@@ -11,7 +11,7 @@
 #   services/chat/message_service.py, 本文件降为路由薄壳(DTO+路由+调service)。display_name_cache 归属 message_service 独占。
 # 2026-08-21 - 小欧 - 新增 GET /sessions/{session_id}/user_messages 从 chat_user_message 读取（替代 chat_messages）— 小欧 2026-08-21
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: MessageCreate 补 allow_interject(开关随消息携带, 后端插话判定必须用它)
- 
+
 """
 消息管理API路由(薄壳)
 
@@ -21,12 +21,13 @@ A7 后: 路由 + MessageCreate DTO → 调 message_service(方案4.7.3)
 3. 获取用户消息(chat_user_message) - GET /sessions/{session_id}/user_messages
 """
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.services.chat.message_service import get_session_messages, save_message
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
 from app.db import db
+from app.services.chat.message_service import get_session_messages, save_message
 from app.services.chat.storage import load_user_messages_by_session
 
 router = APIRouter()

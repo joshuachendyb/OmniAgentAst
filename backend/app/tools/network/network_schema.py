@@ -26,8 +26,9 @@ Network Schema - 网络工具参数模型
 Author: 小沈 - 2026-04-29
 """
 
+from typing import Any, Dict, Literal, Optional
+
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Dict, Any, List, Literal
 
 
 class HttpRequestInput(BaseModel):

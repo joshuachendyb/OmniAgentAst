@@ -50,8 +50,10 @@ import re
 from contextvars import ContextVar
 from typing import Optional
 
-from app.logger.config import SafeRotatingFileHandler, LogConfig
-from app.logger.console_writer import ConsoleMirrorHandler  # 小欧 2026-09-29: 控制台镜像走队列, 禁同步写 stderr
+from app.logger.config import LogConfig, SafeRotatingFileHandler
+from app.logger.console_writer import (
+    ConsoleMirrorHandler,  # 小欧 2026-09-29: 控制台镜像走队列, 禁同步写 stderr
+)
 from app.logger.levels import to_level_int  # 2026-11-03 小欧: 级别名→int 唯一换算点(DRY)
 
 # ---- 会话上下文（session_id），供日志 SessionFilter 注入 — 小沈 2026-07-30 ————

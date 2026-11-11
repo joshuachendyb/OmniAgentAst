@@ -50,25 +50,31 @@
 内部标记 `_summary`/`_compressed`/`_pruned`/`_raw` 由 prepare_messages_for_llm 与 `_temp_*` 同段剥离。
 """
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 # 2026-10-31 小欧: CHARS_PER_TOKEN 迁至 agent_utils(与 token 估算代码同址), 改从此处导入 — 小欧-2026-10-31
-from app.services.agent.agent_utils import CHARS_PER_TOKEN
+from app.services.agent.agent_utils import (
+    CHARS_PER_TOKEN,
+    estimate_tokens,  # 2026-10-30 小欧: chars→token 唯一实现(原私有 _released_tokens, DRY); 2026-10-31 迁 agent_utils
+)
 from app.services.agent.compaction_constants import (
     PRUNE_MINIMUM_TOKENS,
     PRUNE_PROTECT_TOKENS,
-    TOOL_SUMMARY_HEAD_CHARS,          # 2026-10-29 小欧: 原文摘要头部截长(魔法数字清账)
-    USE_SUMMARY_MIN_CHARS,            # 2026-10-29 小欧: use_tool_summary 最小参与长度门槛(三堂会审修复)
-    VALUE_WEIGHT_ASSISTANT,           # 2026-10-29 小欧: 消息价值权重族(魔法数字清账, 原内联权重值直迁)
+    TOOL_SUMMARY_HEAD_CHARS,  # 2026-10-29 小欧: 原文摘要头部截长(魔法数字清账)
+    USE_SUMMARY_MIN_CHARS,  # 2026-10-29 小欧: use_tool_summary 最小参与长度门槛(三堂会审修复)
+    VALUE_WEIGHT_ASSISTANT,  # 2026-10-29 小欧: 消息价值权重族(魔法数字清账, 原内联权重值直迁)
     VALUE_WEIGHT_HISTORY_MEM,
     VALUE_WEIGHT_OTHER,
     VALUE_WEIGHT_SYSTEM,
     VALUE_WEIGHT_TOOL,
     VALUE_WEIGHT_TOOL_CALL_DECISION,
 )
-from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
-from app.services.agent.agent_utils import estimate_tokens  # 2026-10-30 小欧: chars→token 唯一实现(原私有 _released_tokens, DRY); 2026-10-31 迁 agent_utils
-from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
+from app.services.agent.fc_message_types import (
+    fc_atomic_units,  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
+)
+from app.services.agent.message_builder import (
+    MessageBuilder,  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
+)
 
 logger = logging.getLogger(__name__)
 

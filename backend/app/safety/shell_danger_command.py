@@ -39,8 +39,6 @@ import re
 from typing import Optional
 
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
-from app.logger import logger
-
 
 SHELL_DANGER_PATTERNS = [
     # ═══════════════════════════════════════════════════════════════════

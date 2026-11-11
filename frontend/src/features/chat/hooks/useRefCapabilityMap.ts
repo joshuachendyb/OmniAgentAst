@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-11 小欧 新建: 生效模型(L2 会话覆盖 ?? L1 全局)的附件能力二维投影 hook,
 //   chip/文件行徽标唯一数据源(只读索引, 不在前端推导能力) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 三堂会审整改: 删前端复制的后缀正则表(与后端 extract 词典双真源漂移),
+//   改消费后端 capabilities.suffix_kind 词典(模块级一次拉取缓存); mime 兜底保留(HTTP 标准前缀, 非词典) — 小欧-2026-11-11
 
 /**
  * useRefCapabilityMap —— 当前生效模型的 ref_capability_map 只读索引。
@@ -10,6 +12,7 @@
  */
 import { useEffect, useState } from 'react';
 
+import { attachmentApi } from '@/services/api/attachment.api';
 import { configApi } from '@/services/api/config.api';
 import { modelApi } from '@/services/api/model.api';
 import { sessionApi } from '@/services/api/session.api';
@@ -21,20 +24,24 @@ export type RefCapabilityMap = Record<
   Record<string, 'native' | 'degraded' | 'opaque'>
 >;
 
-const _SUFFIX_RES: Array<[RegExp, string]> = [
-  [/\.(png|jpe?g|gif|webp|bmp)$/i, 'image'],
-  [/\.(mp4|mov|mkv|webm|avi|m4v)$/i, 'video'],
-  [/\.(mp3|wav|m4a|aac|flac|ogg|opus|wma)$/i, 'audio'],
-  [/\.(pdf|docx|xlsx|pptx)$/i, 'richdoc'],
-  [
-    /\.(txt|md|markdown|log|csv|tsv|json|jsonl|xml|ya?ml|toml|ini|cfg|conf|env|properties|html?|css|s[ca]ss|less|jsx?|mjs|cjs|tsx?|vue|py|pyi|java|kt|go|rs|c|h|hpp|cpp|cc|cs|php|rb|swift|m|sh|bash|zsh|ps1|bat|cmd|sql|r|lua|pl|scala|dart|gradle|dockerfile)$/i,
-    'text',
-  ],
-];
+/** 后端 suffix_kind 词典模块缓存(一次拉取, 拉取失败降级为仅 mime 兜底) */
+let _suffixKind: Record<string, string> | null = null;
+
+/** 后端后缀→类型词典单源加载(幂等); 前端禁止再写死后缀表 — 小欧-2026-11-11 */
+export async function ensureSuffixKind(): Promise<void> {
+  if (_suffixKind) return;
+  try {
+    const caps = await attachmentApi.capabilities();
+    _suffixKind = caps.suffix_kind ?? {};
+  } catch {
+    _suffixKind = {};
+  }
+}
 
 export function contentKindOf(path: string, mime?: string): string {
-  for (const [re, kind] of _SUFFIX_RES) {
-    if (re.test(path)) return kind;
+  const p = (path || '').toLowerCase();
+  for (const [sfx, kind] of Object.entries(_suffixKind ?? {})) {
+    if (p.endsWith(sfx)) return kind;
   }
   if (mime?.startsWith('image/')) return 'image';
   if (mime?.startsWith('video/')) return 'video';
@@ -63,6 +70,7 @@ export function useRefCapabilityMap(
   useEffect(() => {
     let alive = true;
     void (async () => {
+      await ensureSuffixKind();
       let target: { provider?: string; model?: string } | null = null;
       if (sessionId) {
         try {

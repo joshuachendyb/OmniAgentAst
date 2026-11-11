@@ -25,16 +25,18 @@ tree — 列出目录树 (从list_directory拆分，仅列目录)
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import asyncio
-import time as _time_mod
 import os
+import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
+from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
+from app.tools.tool_response import build_error, build_success
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 # 2026-10-21 小杨 - 修复：max_depth=10 对超大目录不设上限会吃光内存/把
 #   Agent 调用拖到超时；给"目录节点数 + 扫描条目数"双闸门，超限如实置 truncated。

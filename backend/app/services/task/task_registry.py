@@ -52,21 +52,24 @@ Author: 小健 - 2026-05-31
 """
 
 import asyncio
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需; 2026-09-28 inbox 元组化加 Tuple — 小欧-2026-09-28
-from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
-
-from app.logger import logger
-from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
-from app.config import get_config
-from datetime import timedelta
-from app.utils.response_utils import api_success, api_failure
-
-from app.services.task.task_state import (
-    running_tasks_lock,
-    running_tasks,
+from datetime import datetime, timedelta
+from typing import (  # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需; 2026-09-28 inbox 元组化加 Tuple — 小欧-2026-09-28
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
 )
 
+from app.config import get_config
+from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
+from app.logger import logger
+from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
+from app.services.task.task_state import (
+    running_tasks,
+    running_tasks_lock,
+)
+from app.utils.response_utils import api_failure, api_success
 
 # B组调制(2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
 # drain_inbox 找不到任务时从 orphan 找回, 保证收尾窗口注入不静默丢失 — SRP: 孤儿缓存独立于 running_tasks 生命周期

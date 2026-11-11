@@ -26,9 +26,8 @@
 # 2026-09-21 - 小欧 - BUG#11: 去除文件头 UTF-8 BOM(Python 脚本二进制操作), 修复 test_architecture_boundaries
 #   依赖方向守护测试 AST 解析红(ast.parse 报 invalid non-printable character U+FEFF)。纯编码修正, 无逻辑变更。
 
-import re
 from enum import Enum
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict
 
 
 class ToolErrorCategory(Enum):
@@ -42,7 +41,7 @@ class ToolErrorCategory(Enum):
     CONNECT = "connect"
     PROTOCOL = "protocol"
     UNKNOWN = "unknown"
-    
+
     @property
     def is_retryable(self) -> bool:
         """判断工具错误是否可重试"""
@@ -53,7 +52,7 @@ class ToolErrorCategory(Enum):
             ToolErrorCategory.PROTOCOL,
         }
         return self in retryable_categories
-    
+
     @property
     def to_status(self) -> str:
         """转换为状态字符串"""
@@ -69,7 +68,7 @@ class ToolErrorCategory(Enum):
             ToolErrorCategory.UNKNOWN: "error",
         }
         return mapping.get(self, "error")
-    
+
     @property
     def description(self) -> str:
         """错误描述"""
@@ -136,7 +135,7 @@ KEYWORD_TO_TOOL_ERROR: Dict[str, ToolErrorCategory] = {
 
 class ToolErrorClassifier:
     """工具错误分类器"""
-    
+
     @staticmethod
     def classify_tool_error(error: Exception) -> ToolErrorCategory:
         """
@@ -157,14 +156,14 @@ class ToolErrorClassifier:
         # 检查异常类型映射
         if error_type in EXCEPTION_TO_TOOL_ERROR:
             return EXCEPTION_TO_TOOL_ERROR[error_type]
-        
+
         # 检查错误消息关键词
         for keyword, category in KEYWORD_TO_TOOL_ERROR.items():
             if keyword in error_msg:
                 return category
-        
+
         return ToolErrorCategory.UNKNOWN
-    
+
     @staticmethod
     def get_tool_error_info(error: Exception) -> Dict[str, Any]:
         """
@@ -177,7 +176,7 @@ class ToolErrorClassifier:
             包含错误分类、消息、是否可重试等信息的字典
         """
         category = ToolErrorClassifier.classify_tool_error(error)
-        
+
         return {
             "category": category,
             "retryable": category.is_retryable,

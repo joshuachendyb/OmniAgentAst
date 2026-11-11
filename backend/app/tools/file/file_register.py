@@ -37,41 +37,40 @@ F13 rename        — 重命名文件
 更新时间: 2026-06-17
 """
 
+from app.logger import logger
+from app.tools.file.compress_files import compress
+from app.tools.file.copy_file import copy
+from app.tools.file.delete_file import delete
+from app.tools.file.edit_text_file import edit
+from app.tools.file.extract_archive import extract
 from app.tools.file.file_schema import (
     CompressInput,
     CopyInput,
     DeleteInput,
     EditInput,
     ExtractInput,
+    FindInput,
     GrepInput,
     ListdirInput,
-    TreeInput,
     MoveInput,
     ReadInput,
     ReadmediaInput,
     RenameInput,
-    FindInput,
+    TreeInput,
     WriteInput,
 )
-
-from app.tools.file.read_text_file import read
-from app.tools.file.write_text_file import write
-from app.tools.file.read_media_file import readmedia
-from app.tools.file.edit_text_file import edit
-from app.tools.file.list_directory import listdir
-from app.tools.file.tree import tree
-from app.tools.file.search_files import find
 from app.tools.file.grep_file_content import grep
-from app.tools.file.compress_files import compress
-from app.tools.file.extract_archive import extract
+from app.tools.file.list_directory import listdir
 from app.tools.file.move_file import move
-from app.tools.file.copy_file import copy
-from app.tools.file.delete_file import delete
+from app.tools.file.read_media_file import readmedia
+from app.tools.file.read_text_file import read
 from app.tools.file.rename_file import rename
+from app.tools.file.search_files import find
+from app.tools.file.tree import tree
+from app.tools.file.write_text_file import write
 from app.tools.registry import tool_registry
-from app.tools.tool_types import ToolCategory
 from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
-from app.logger import logger
+from app.tools.tool_types import ToolCategory
 
 # 文件工具依赖配置 — 小健 2026-06-18
 # compress的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
@@ -188,7 +187,7 @@ FILE_TOOL_EXAMPLES = {
         {"path": "D:/old.txt", "dest": "new.txt"},
         {"path": "D:/conflict.txt", "dest": "existing.txt", "overwrite": True},
     ],
-    
+
 }
 
 
@@ -239,7 +238,7 @@ def _register_file_tools():
         "delete": delete,
         "rename": rename,
     }
-    
+
     # 2026-10-17 小欧 - delete 确认唯一由删线封装口 check_delete_permission(R3-R6)产出,
     #   故不再用工具级 needs_confirmation 兜底 —— 否则 R3(允许根内普通删除, 免确认)会被误加确认(退化)。
     CONFIRMATION_MAP = {}

@@ -34,12 +34,15 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_READ_PPTX, READ_PPTX_OUTLIMIT_CHARS
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.tools.validate.file_type_checker import check_for_document_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 from app.utils.text_utils import truncate_summary
 
 

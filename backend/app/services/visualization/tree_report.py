@@ -7,10 +7,9 @@ import json
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from app.services.visualization.common import OperationNode, save_json_file as _save
 from app.db.operation_queries import query_tree_operations
-
-from app.logger import logger
+from app.services.visualization.common import OperationNode
+from app.services.visualization.common import save_json_file as _save
 
 
 def _query_tree_operations(task_id: str) -> List[Tuple]:
@@ -26,7 +25,7 @@ def _build_tree_nodes(task_id: str, task_description: str, operations: List[Tupl
         name=task_description,
         status="completed"
     )
-    
+
     for op_id, op_type, src, dst, status in operations:
         node = OperationNode(
             id=op_id,
@@ -37,7 +36,7 @@ def _build_tree_nodes(task_id: str, task_description: str, operations: List[Tupl
             status=status
         )
         root.children.append(node)
-    
+
     return root
 
 
@@ -79,10 +78,10 @@ def generate_tree_structure(task_id: str, task_description: str) -> OperationNod
         根节点
     """
     operations = _query_tree_operations(task_id)
-    
+
     if not operations:
         return None
-    
+
     return _build_tree_nodes(task_id, task_description, operations)
 
 

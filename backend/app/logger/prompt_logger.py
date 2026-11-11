@@ -32,20 +32,22 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 更新说明: v1.1 小健 - 修复并发安全问题,使用线程局部存储
 """
 
-import json
-import uuid
 import contextvars
-from app.utils.time_utils import now_str, timestamp_for_filename
+import uuid
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from app.utils.json_utils import safe_json_dumps
-from app.utils.secret_utils import redact_step_params, redact_sensitive_params  # 落盘日志脱敏敏感参数 — 小欧 2026-10-19
 from app.config import get_frozen_dir
-from app.services.chat.storage import get_user_message_id
 from app.db import db
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.logger import logger
+from app.services.chat.storage import get_user_message_id
+from app.utils.json_utils import safe_json_dumps
+from app.utils.secret_utils import (  # 落盘日志脱敏敏感参数 — 小欧 2026-10-19
+    redact_sensitive_params,
+    redact_step_params,
+)
+from app.utils.time_utils import now_str, timestamp_for_filename
 
 
 class PromptLogger:
@@ -53,7 +55,7 @@ class PromptLogger:
     
     【并发安全】使用 contextvars,每个协程/请求独立的日志数据
     """
-    
+
     def __init__(self):
         """初始化日志目录"""
         # 日志目录:backend/logs/prompt-logs/(frozen打包时为exe所在目录/logs) — 小欧 2026-09-19
@@ -63,18 +65,18 @@ class PromptLogger:
         else:
             self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖
         self._current_log: contextvars.ContextVar = contextvars.ContextVar('prompt_log', default=None)
-    
+
     def _get_current_log(self) -> Optional[Dict[str, Any]]:
         """获取当前协程的日志数据"""
         return self._current_log.get()
-    
+
     def _set_current_log(self, log_data: Optional[Dict[str, Any]]):
         """设置当前协程的日志数据"""
         self._current_log.set(log_data)
-    
+
     def start_request(
         self,
         user_message: str,
@@ -91,12 +93,12 @@ class PromptLogger:
             会话ID(用于标识本次请求)
         """
         timestamp = now_str()
-        
+
         # 延迟导入: 避免循环导入
         user_message_id = get_user_message_id(session_id)
         if user_message_id is None:
             user_message_id = self._user_id_from_db(session_id)
-        
+
         # 初始化日志数据 — AI消息ID由update_ai_message_id()设置,文件名在save()时生成
         current_log = {
             "基本信息": {
@@ -110,13 +112,13 @@ class PromptLogger:
             "Prompt组装过程": [],
             "LLM调用记录": []
         }
-        
+
         # 保存到线程局部存储
         self._set_current_log(current_log)
-        
+
         logger.info(f"[PromptLogger] 开始记录请求: session_id={session_id}")
         return session_id
-    
+
     def _user_id_from_db(self, sid: str) -> Optional[int]:
         """修复: 改用db.get_conn() SDK+修复裸except"""
         try:
@@ -159,7 +161,7 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
-        
+
         entry = {
             "步骤": step_name,
             "类型": "系统Prompt",
@@ -170,12 +172,12 @@ class PromptLogger:
         }
         if round_number > 0:
             entry["轮次"] = round_number
-        
+
         if details:
             entry["详情"] = details
-        
+
         current_log["Prompt组装过程"].append(entry)
-    
+
     def log_task_prompt(
         self,
         task_content: str,
@@ -195,7 +197,7 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
-        
+
         entry = {
             "步骤": "任务Prompt生成",
             "类型": "任务Prompt",
@@ -206,12 +208,12 @@ class PromptLogger:
         }
         if round_number > 0:
             entry["轮次"] = round_number
-        
+
         if context:
             entry["上下文"] = context
-        
+
         current_log["Prompt组装过程"].append(entry)
-    
+
     def _summarize_messages(self, messages):
         """消息统计和摘要提取 — 小欧 2026-07-10"""
         message_stats = {}
@@ -312,15 +314,15 @@ class PromptLogger:
             "工具定义": tools_summary,
             "时间戳": now_str()
         }
-        
+
         if extra_params:
             # 已经用工具数量和工具定义替代了原来的 tool_count
             extra_params.pop("tool_count", None)
             if extra_params:
                 entry["额外参数"] = extra_params
-        
+
         current_log["LLM调用记录"].append(entry)
-    
+
     def log_llm_response(
         self,
         round_number: int = 0,
@@ -344,7 +346,7 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
-        
+
         if not isinstance(response_content, str):
             response_content = str(response_content) if response_content is not None else ""
         if not isinstance(raw_response, str):
@@ -412,7 +414,7 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
-        
+
         entry = {
             "步骤": step_name,
             "类型": "观察结果Prompt",
@@ -423,7 +425,7 @@ class PromptLogger:
         }
         if round_number > 0:
             entry["轮次"] = round_number
-        
+
         if tool_params:
             entry["工具参数"] = redact_sensitive_params(tool_params)  # 落盘脱敏 — 小欧 2026-10-19
 
@@ -431,7 +433,7 @@ class PromptLogger:
         #   大工具结果(读文件/长SQL输出)日志体积/IO/磁盘翻倍; 保留"原始内容"兼容分析脚本
         if raw_data is not None:
             entry["原始内容"] = raw_data
-        
+
         current_log["Prompt组装过程"].append(entry)
 
     def log_status(self, old_status: str, new_status: str, reason: str = ""):
@@ -473,13 +475,13 @@ class PromptLogger:
         else:
             user_id = current_log["基本信息"].get("用户消息ID")
             short_id = str(user_id)[-6:] if user_id else uuid.uuid4().hex[:8]
-        
+
         file_timestamp = timestamp_for_filename()
         # 修复: 文件名加UUID片段防覆蓋 — 小欧 2026-07-18
         _uid = uuid.uuid4().hex[:8]
         filename = f"prompt_{short_id}+{_uid}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
-        
+
         for retry in range(2):
             try:
                 with open(log_file_path, 'w', encoding='utf-8') as f:
@@ -497,7 +499,7 @@ class PromptLogger:
                         f"path={log_file_path}, LLM调用轮次={len(current_log.get('LLM调用记录', []))}, 原因={e}"
                     )
         return False
-    
+
     def get_current_log(self) -> Optional[Dict[str, Any]]:
         """获取当前日志数据"""
         return self._get_current_log()

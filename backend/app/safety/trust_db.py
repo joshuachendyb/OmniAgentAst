@@ -48,13 +48,16 @@
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 from sqlite3 import Connection
+from typing import Optional
 
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
-from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 非文件信任域(与 storage:561 撤销侧同位)
 from app.config import get_config  # 2026-10-15 小欧 - TTL 天数读 security.trust.ttl_days
-
+from app.tools.tool_constants import (
+    NON_FILE_TRUST_TOOLS,  # 小欧 2026-09-16 非文件信任域(与 storage:561 撤销侧同位)
+)
+from app.utils.time_utils import (
+    get_local_iso_timestamp,  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
+)
 
 # 2026-10-15 小欧 - 会话信任 TTL(落库写过期时刻 → 查询按未过期过滤 → 周期清理)
 #   病根: 信任一旦落库即永久有效, 用户点过一次「信任本次会话」后该路径永远不再弹窗,

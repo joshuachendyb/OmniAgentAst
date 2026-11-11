@@ -144,23 +144,35 @@ import json
 import sqlite3
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
-from datetime import datetime, timedelta  # 2026-11-03 小欧 - 在跑任务僵尸年龄窗(见 list_running_tasks)
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import (  # 2026-11-03 小欧 - 在跑任务僵尸年龄窗(见 list_running_tasks)
+    datetime,
+    timedelta,
+)
 from sqlite3 import Connection
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
 
+from app.constants import (  # 2026-11-03 小欧 - 任务状态词表单一真源
+    CHAT_TASK_NON_RUNNING_STATUSES,
+    CHAT_TASK_STATUSES,
+    ChatTaskStatus,
+)
+from app.db.models.chat_models import (  # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
+    ModelRef,
+    SessionModelOverride,
+)
 from app.logger import logger
-from app.db import db
-from app.constants import ChatTaskStatus, CHAT_TASK_NON_RUNNING_STATUSES, CHAT_TASK_STATUSES  # 2026-11-03 小欧 - 任务状态词表单一真源
-from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
-from app.utils.json_utils import safe_json_dumps, parse_json
-from app.utils.secret_utils import redact_step_params  # 落库出口脱敏(step 参数敏感键) — 小欧 2026-10-19
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
-from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 撤销侧规范化同位(与 trust_db:15 同步)
-from app.safety.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧 2026-09-16
-from app.safety.trust_db import trust_scope_path             # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
+from app.safety.trust_db import (
+    trust_scope_path,  # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
+)
+from app.utils.json_utils import parse_json, safe_json_dumps
+from app.utils.secret_utils import (
+    redact_step_params,  # 落库出口脱敏(step 参数敏感键) — 小欧 2026-10-19
+)
+from app.utils.time_utils import (
+    get_local_iso_timestamp,  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
+)
 
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id

@@ -31,8 +31,9 @@ SYSTEM Schema - 系统工具参数模型
 6. sysinfo - 获取系统信息     (2026-10-02 自 FUNDAMENTAL 迁入)
 """
 
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
 
 
 class EventLogInput(BaseModel):

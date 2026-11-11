@@ -35,8 +35,10 @@ File Schema - 文件工具参数模型
 Author: 小沈 - 2026-03-21
 """
 
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Literal, Union
+
 from app.tools.tool_constants import OBS_READ_MAX_ROWS
 
 # ============================================================

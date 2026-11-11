@@ -40,20 +40,20 @@ from pydantic import BaseModel, Field
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionListResponse  # noqa: F401 DTO 透传
 from app.services.chat.session_service import (
+    SessionUpdate,
     create_session,
+    delete_session,
+    get_session_info,
+    get_session_titles_batch,
     list_sessions,
     update_session,
-    delete_session,
-    get_session_titles_batch,
-    get_session_info,
-    SessionUpdate,
 )
 from app.services.chat.storage import (
+    delete_session_trust,
+    get_task_status,
+    list_running_tasks,
     list_session_tasks,
     list_session_trust,
-    delete_session_trust,
-    list_running_tasks,
-    get_task_status,
 )
 
 router = APIRouter()
@@ -181,8 +181,8 @@ def get_session_workspaces_endpoint(session_id: str, prune: bool = False):
     会话不存在/已删 → 404；顺带返回 project_root/allowed_dirs 只读字段（不进 PATCH）。"""
     from app.config import get_config
     from app.services.chat.workspace_service import (
-        get_session_workspaces,
         classify_workspace_rows,
+        get_session_workspaces,
         prune_unusable_rows,
         session_exists,
     )
@@ -213,9 +213,9 @@ def set_session_workspaces_endpoint(session_id: str, body: WorkspaceUpdate):
     元素类型由 WorkspaceUpdate: list[WorkspaceItem] 单一形态, 路径非法(空串/相对路径)由
     _normalize_ws_path 单一真源归入 rejected, 此处不重复校验。"""
     from app.services.chat.workspace_service import (
-        set_session_workspaces,
-        session_exists,
         WORKSPACE_REJECTED_FIELD,
+        session_exists,
+        set_session_workspaces,
     )
     with db.get_conn("chat") as conn:
         if not session_exists(conn, session_id):

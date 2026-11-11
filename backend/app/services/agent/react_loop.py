@@ -86,23 +86,32 @@
 
 import time  # 2026-09-08 小欧: 双写console带时间戳 — 小欧-2026-09-08
 from typing import Any, Dict, Optional
-from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
-from app.config import get_config
-from app.services.agent.steps import FinalStep, MetaStep  # ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
-from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
-from app.services.agent.initialize_run_state import initialize_run_state
-from app.services.agent.start_step import (
-    assemble_start_step as _assemble_start_step,
-    _build_injected_msgs,   # 2026-10-29 北京老陈令: 装配段注入件决策唯一真源(start_step 共用, DRY) — 小欧-2026-10-29
-)
-from app.services.agent.react_step import _process_single_step
-from app.services.agent.react_inference import handle_react_error, _is_recoverable_error
-from app.db import db
-from app.services.chat import storage
-from app.services.task.task_state import get_stream_buffer
+
 # 2026-11-11 小欧: 引用计划统一分流(refs→InputItem→plan_refs), 能力判定不再在本层做 if
 from app.attachments.contract import plan_refs
+from app.config import get_config
+from app.db import db
+from app.logger import (  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
+    log_and_print,
+    logger,
+)
 from app.services.agent.capability import profile
+from app.services.agent.initialize_run_state import initialize_run_state
+from app.services.agent.react_inference import _is_recoverable_error, handle_react_error
+from app.services.agent.react_step import _process_single_step
+from app.services.agent.start_step import (
+    _build_injected_msgs,  # 2026-10-29 北京老陈令: 装配段注入件决策唯一真源(start_step 共用, DRY) — 小欧-2026-10-29
+)
+from app.services.agent.start_step import (
+    assemble_start_step as _assemble_start_step,
+)
+from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed, set_status
+from app.services.agent.steps import (  # ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
+    FinalStep,
+    MetaStep,
+)
+from app.services.chat import storage
+from app.services.task.task_state import get_stream_buffer
 
 
 def to_input_items(refs: list | None) -> list:
@@ -125,7 +134,10 @@ async def _terminate_cancelled(agent, task_id, _publish) -> bool:
     """取消终止统一收口(DRY) — 小欧 2026-10-30: 检测到取消→产 final+cancelled 终态帧→置 CANCELLED, 返回 True=已终止。
     start 装配后与循环顶两处共用(KISS-DIRECT: 单一取消终止逻辑, 消除重复)。取消来源读 agent._cancel_source
     (A/B 经 cancel_task 写回, 循环顶 D 被动继承), 文案按来源出, FinalStep 带 source 落库。"""
-    from app.services.task.task_runtime import check_cancelled, cancel_terminal_text  # 局部 import(防 task包冷启动 load-time 循环) — 小欧-2026-10-30
+    from app.services.task.task_runtime import (  # 局部 import(防 task包冷启动 load-time 循环) — 小欧-2026-10-30
+        cancel_terminal_text,
+        check_cancelled,
+    )
     if not await check_cancelled(task_id):
         return False
     cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"

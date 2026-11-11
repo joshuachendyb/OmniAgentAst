@@ -34,7 +34,8 @@ from app.api.v1.deps import (
     current_client_requires_auth,
     set_token_blocked_reason,
 )
-from app.services.model.config_helpers import handle_config_errors, merge_region_patch
+from app.services.model.config_helpers import merge_region_patch
+from app.utils.response_utils import handle_api_errors
 
 router = APIRouter()
 
@@ -55,7 +56,7 @@ class SetTokenRequest(BaseModel):
 
 
 @router.get("/auth/status")
-@handle_config_errors("查询访问口令状态")
+@handle_api_errors("查询访问口令状态")
 async def get_token_status(request: Request) -> Dict[str, Any]:
     """查访问口令状态。永不回明文。
 
@@ -79,7 +80,7 @@ async def get_token_status(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/auth/token")
-@handle_config_errors("设置访问口令")
+@handle_api_errors("设置访问口令")
 async def set_api_token(req: SetTokenRequest, request: Request) -> Dict[str, Any]:
     """设置/更换访问口令（唯一权威写入口）。
 

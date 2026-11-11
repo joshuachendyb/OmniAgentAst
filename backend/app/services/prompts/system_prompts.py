@@ -32,14 +32,17 @@ Author: 小沈 - 2026-06-14
 """
 
 import re
+
+from app.config import get_config as get_config_instance
+from app.logger import logger
+from app.services.prompts.project_context import load_project_context
 from app.services.prompts.system_adapter import (
     get_default_shell_code,
+)
+from app.services.prompts.system_adapter import (
     get_system_prompt as get_system_prompt_string,
 )
 from app.tools.fundamental.shell_prompt_templates import render_shell_section
-from app.logger import logger
-from app.services.prompts.project_context import load_project_context
-from app.config import get_config as get_config_instance
 
 
 class PromptBuilder:

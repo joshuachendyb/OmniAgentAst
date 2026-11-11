@@ -135,23 +135,41 @@ handle_action — action编排处理(门禁已拆出)
 
 import time
 from typing import Dict, List
-from app.logger import logger, log_and_print
 
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, MetaStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
-from app.services.task.task_context import set_current_task_id
-
-from app.utils.secret_utils import redact_sensitive_params
-from app.tools.target_utils import _extract_target  # 2026-09-04 小健 拆分: target提取下沉工具层
-from app.tools.tools_alias_mapper import is_disabled_tool  # 2026-11-10 小欧: 禁用名单配置化(tuning.agent.disabled_tools), 命中定性"已禁用"(措辞2026-11-11改版)
-from app.file_persist import make_fp_callback  # 2026-09-04 小健 拆分: 文件A落盘回调工厂下沉file_persist
+from app.file_persist import (
+    make_fp_callback,  # 2026-09-04 小健 拆分: 文件A落盘回调工厂下沉file_persist
+)
+from app.logger import log_and_print, logger
 
 # 2026-09-04 小健 拆分: 以下函数/类已拆分至3个新文件(action_input_parser/observation_builder/tool_runner), 先复制后修改
-from app.services.agent.action_input_parser import _build_call_list  # 2026-09-04 小健 下沉: LLM action输入解析
-from app.services.agent.observation_builder import ObservationContext, build_observation, _add_denial_feedback  # 2026-09-04 小健 下沉: 观察反馈构建层
+from app.services.agent.action_input_parser import (
+    _build_call_list,  # 2026-09-04 小健 下沉: LLM action输入解析
+)
+from app.services.agent.handlers.safety_gate import (
+    check_safety_and_confirm,  # 2026-09-05 小健 10.4第二阶段: 门禁整搬safety_gate
+)
+from app.services.agent.observation_builder import (  # 2026-09-04 小健 下沉: 观察反馈构建层
+    ObservationContext,
+    _add_denial_feedback,
+    build_observation,
+)
+from app.services.agent.reasoning_guard import (  # 2026-09-05 小健 8.3: 归零收口reasoning_guard; 2026-11-10 小欧 增note_reasoning_only(被拒/空名轮计入无进展连击)
+    note_progress,
+    note_reasoning_only,
+)
+from app.services.agent.steps import (  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
+    ActionStep,
+    MetaStep,
+    ThoughtStartStep,
+    ThoughtStep,
+)
 from app.services.agent.tool_runner import execute_tools  # 2026-09-04 小健 下沉: 工具执行调度
-from app.services.agent.reasoning_guard import note_progress, note_reasoning_only  # 2026-09-05 小健 8.3: 归零收口reasoning_guard; 2026-11-10 小欧 增note_reasoning_only(被拒/空名轮计入无进展连击)
-from app.services.agent.handlers.safety_gate import check_safety_and_confirm  # 2026-09-05 小健 10.4第二阶段: 门禁整搬safety_gate
-
+from app.services.task.task_context import set_current_task_id
+from app.tools.target_utils import _extract_target  # 2026-09-04 小健 拆分: target提取下沉工具层
+from app.tools.tools_alias_mapper import (
+    is_disabled_tool,  # 2026-11-10 小欧: 禁用名单配置化(tuning.agent.disabled_tools), 命中定性"已禁用"(措辞2026-11-11改版)
+)
+from app.utils.secret_utils import redact_sensitive_params
 
 # 2026-11-03 小欧 - 移除三条「已拆分至 file_tool_utils / conflict_detector / tool_constants」悬空标签:
 #   随 30 条拆分遗留死导入一并清除(导入已删, 标签无指代; 下沉去向见模块 docstring 与头部编辑历史) — 小欧-2026-11-03

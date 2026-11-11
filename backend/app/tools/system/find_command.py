@@ -16,11 +16,15 @@ import shutil
 import time as _time_mod
 from typing import Any, Dict
 
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
-from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import (
-    ERR_PARAMETER_EMPTY, ERR_SHELL_EXCEPTION, ERR_SHELL_FIND_COMMAND,
+    ERR_PARAMETER_EMPTY,
+    ERR_SHELL_EXCEPTION,
+    ERR_SHELL_FIND_COMMAND,
     SUBPROCESS_TIMEOUT_DEFAULT,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 
 

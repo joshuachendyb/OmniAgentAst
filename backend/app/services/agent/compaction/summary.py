@@ -44,14 +44,19 @@
 依据: [4] 14.9.4② / 14.9.6 C5。
 """
 import re
+from typing import Dict, List, Optional
 
-from typing import List, Dict, Optional
-
-from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.summary_feed_max_chars
-from app.logger import log_and_print  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查 — 小欧-2026-10-12
-from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
+from app.config import (
+    get_config,  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.summary_feed_max_chars
+)
+from app.logger import (
+    log_and_print,  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查 — 小欧-2026-10-12
+)
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
-from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用
+from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
+from app.services.agent.llm_call import (
+    call_llm_text_task,  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用
+)
 
 # 摘要收尾指令(防"半截对话→续写", 见文件头编辑历史)
 _SUMMARY_TAIL_USER = "以下是本次需要摘要的历史对话内容。请按 system 指定格式输出七段摘要。"
@@ -153,7 +158,7 @@ def estimate_feed_tokens(messages: List[Dict],
     关联逻辑: 与 generate_* 的构造口径同源; tool 输出占历史体积九成以上(实测 93.86%),
       原文估会远超 feed, 用原文做门限必虚报 → 误触发 → 白丢早段轮次。
     """
-    from app.services.agent.message_builder import MessageBuilder   # 局部 import 防循环
+    from app.services.agent.message_builder import MessageBuilder  # 局部 import 防循环
     if feed_max is None:
         feed_max = int(get_config().get('tuning.compaction.summary_feed_max_chars',
                                         SUMMARY_FEED_MAX_CHARS))

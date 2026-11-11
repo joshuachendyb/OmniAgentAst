@@ -118,25 +118,53 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 """
 
 import asyncio
-import time
-import random  # 2026-10-28 小欧: 429 退避抖动(±jitter)防并发撞限流窗口
 import json as _json
-from typing import List, Dict, Optional, AsyncGenerator, Callable  # 2026-11-04 小欧: 删未使用的 Any(死导入) — 小欧-2026-11-04
+import random  # 2026-10-28 小欧: 429 退避抖动(±jitter)防并发撞限流窗口
+import time
+from typing import (  # 2026-11-04 小欧: 删未使用的 Any(死导入) — 小欧-2026-11-04
+    AsyncGenerator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+)
 
 import httpx
-from app.logger import logger
-from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
-from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游 SDK 异步流(防连接池泄漏) — 小欧-2026-10-08
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
-# 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
-from app.llm.core import create_cancelled_chunk
-from app.llm.client_sdk import create_llm_client, SharedClientLease  # client_lease 注解 — 小欧-2026-09-25
-from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
-from app.llm.error_classifier import SystemErrorClassifier, SystemErrorCategory  # SystemErrorCategory — 小欧 2026-10-28
 
-from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS, RETRY_BACKOFF_BASE as _D_RATE_BASE, RETRY_BACKOFF_CAP as _D_RATE_CAP, RATE_LIMIT_BACKOFF_JITTER as _D_RATE_JITTER  # 重试退避参数 — 小欧 2026-10-28
 from app.config import get_config
+from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT  # 重试退避参数 — 小欧 2026-10-28
+from app.constants import LLM_MAX_TOKENS as _D_MAX_TOKENS
+from app.constants import LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES
+from app.constants import LLM_TEMPERATURE as _D_TEMPERATURE
+from app.constants import RATE_LIMIT_BACKOFF_JITTER as _D_RATE_JITTER
+from app.constants import RETRY_BACKOFF_BASE as _D_RATE_BASE
+from app.constants import RETRY_BACKOFF_CAP as _D_RATE_CAP
+from app.constants import STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.llm.client_sdk import (  # client_lease 注解 — 小欧-2026-09-25
+    SharedClientLease,
+    create_llm_client,
+)
+
+# 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
+from app.llm.core import (
+    ChatResponse,
+    LLMResponseError,
+    StreamChunk,
+    _resolve_exception,
+    create_cancelled_chunk,
+)
+from app.llm.error_classifier import (  # SystemErrorCategory — 小欧 2026-10-28
+    SystemErrorCategory,
+    SystemErrorClassifier,
+)
+from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
+from app.logger import logger
+from app.utils.astream import (
+    aclose_stream,  # 2026-10-08 小欧 - 提前退出时关上游 SDK 异步流(防连接池泄漏) — 小欧-2026-10-08
+)
+from app.utils.json_utils import _normalize_tool_params, _try_fix_incomplete_json, parse_json
+
 
 class BaseAIService:
     """通用AI服务 — request/request_stream/chat — FC-only重构 2026-06-11 小沈"""

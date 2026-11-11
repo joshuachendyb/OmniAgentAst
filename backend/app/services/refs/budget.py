@@ -24,7 +24,9 @@
 from typing import Any, Dict, List, Tuple
 
 from app.constants import REF_MIN_KEEP_LINES
-from app.services.agent.agent_utils import estimate_tokens  # chars→token 唯一实现(原私有 _tokens_of; 2026-10-31 小欧 迁 agent_utils)
+from app.services.agent.agent_utils import (
+    estimate_tokens,  # chars→token 唯一实现(原私有 _tokens_of; 2026-10-31 小欧 迁 agent_utils)
+)
 from app.services.refs.clip import clip_lines
 from app.services.refs.limits import RefLimits
 from app.utils.text_utils import count_lines

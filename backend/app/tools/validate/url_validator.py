@@ -7,7 +7,7 @@ import re
 import socket
 import struct
 from typing import Optional, Tuple
-from urllib.parse import urlparse, urlunparse, quote
+from urllib.parse import quote, urlparse, urlunparse
 
 # 协议白名单：http/https/ftp 等标准网络协议
 ALLOWED_PROTOCOLS = {"http", "https", "ftp", "ftps"}
@@ -123,26 +123,26 @@ def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     if not url or not isinstance(url, str):
         return False, "URL不能为空", None
-    
+
     try:
         parsed = urlparse(url)
     except Exception:
         return False, f"URL格式解析失败: {url}", None
-    
+
     if parsed.scheme not in ALLOWED_PROTOCOLS:
         return False, f"不允许的协议: {parsed.scheme}（允许: {', '.join(sorted(ALLOWED_PROTOCOLS))}）", None
-    
+
     hostname = parsed.hostname
     if not hostname:
         return False, f"URL缺少主机名: {url}", None
-    
+
     host_lower = hostname.lower()
     if host_lower in LOOPBACK or host_lower.startswith(LOOPBACK):
         return False, f"不允许访问回环地址: {hostname}", None
-    
+
     if _is_private_or_loopback_ip(hostname):
         return False, f"不允许访问内网地址: {hostname}", None
-    
+
     # DNS二次校验（防DNS rebinding）
     try:
         addrs = socket.getaddrinfo(hostname, None)
@@ -155,8 +155,8 @@ def validate_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
 
     # 裸IP检查（SSRF绕过常见手法）
     if _is_literal_ip(host_lower):
-        return True, None, f"目标为IP地址而非域名，请确认"
-    
+        return True, None, "目标为IP地址而非域名，请确认"
+
     return True, None, None
 
 
@@ -168,23 +168,23 @@ def validate_proxy(proxy: Optional[str]) -> Tuple[bool, Optional[str], Optional[
     """
     if not proxy:
         return True, None, None
-    
+
     try:
         parsed = urlparse(proxy)
     except Exception:
         return False, f"proxy地址格式解析失败: {proxy}", None
-    
+
     hostname = parsed.hostname
     if not hostname:
         return False, f"proxy地址缺少主机名: {proxy}", None
-    
+
     host_lower = hostname.lower()
     if host_lower in LOOPBACK or host_lower.startswith(LOOPBACK):
-        return False, f"不允许使用localhost作为proxy", None
-    
+        return False, "不允许使用localhost作为proxy", None
+
     if _is_private_or_loopback_ip(hostname):
-        return False, f"不允许使用内网地址作为proxy", None
-    
+        return False, "不允许使用内网地址作为proxy", None
+
     return True, None, None
 
 

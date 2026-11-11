@@ -22,7 +22,7 @@ temp_auth — 白名单外路径临时授权(决策记录, 补项)
 import os
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 # 每 task 的临时授权映射: {授权根(Path) -> 是否递归} — M3: task 级生命周期
 _authorized_paths: ContextVar[Dict[Path, bool]] = ContextVar("temp_authorized_paths", default=None)
@@ -142,9 +142,10 @@ def is_temp_authorized(file_path: str) -> bool:
     # M2: depth defense — 系统禁区永不授权(即使入单也False)
     try:
         # 2026-10-19 小欧 - 目录名单收口: 改查名单, 惰性导入避免循环依赖
-        from app.safety.path_dir_lists import classify_path, SCOPE_FORBIDDEN_SYSTEM
         import os
         from pathlib import Path
+
+        from app.safety.path_dir_lists import SCOPE_FORBIDDEN_SYSTEM, classify_path
         scope, _ = classify_path(file_path)
         if scope == SCOPE_FORBIDDEN_SYSTEM:
             return False

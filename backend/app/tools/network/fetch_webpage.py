@@ -49,45 +49,53 @@ N3: fetchpage — 获取和处理网页内容
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import asyncio
 import base64
-import html2text
 import json
 import re
-import traceback
+import sys
 import time as _time_mod
+import traceback
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
+import html2text
 import httpx
-
-import sys
 
 try:
     import trafilatura as _TRAFILATURA
 except ImportError:
     _TRAFILATURA = None
 
-from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
-from app.tools.context import get_current_text_task, get_current_notice_callback  # 纯文本任务LLM回调 + notice回调(tool_executor注入) — 小欧 2026-10-20 / 小沈 2026-10-26
+from app.constants import (
+    HTML_TAG_PATTERN,
+    MULTI_WHITESPACE_PATTERN,
+    SCRIPT_TAG_PATTERN,
+    STYLE_TAG_PATTERN,
+)
+from app.logger import logger
+from app.tools.context import (  # 纯文本任务LLM回调 + notice回调(tool_executor注入) — 小欧 2026-10-20 / 小沈 2026-10-26
+    get_current_notice_callback,
+    get_current_text_task,
+)
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
-from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
-from app.tools.validate.timeout_validator import validate_timeout
-
-from app.constants import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
-from app.logger import logger
-from app.utils.text_utils import smart_truncate_text
-from app.tools.toolhelper.tool_utils import save_text_to_file
-from app.tools.tool_constants import TOOL_BROWSER_UA, FETCHPAGE_OUTLIMIT_BODY_BYTES, FETCHPAGE_INPUT_MAX_CONTENT_LENGTH, FETCH_WEBPAGE_OUTPARM_LIMIT_DESC
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
+    ERR_NET_UNKNOWN,
     ERR_NETWORK_DOWN,
     ERR_NETWORK_HTTP_ERROR,
     ERR_NETWORK_JS_RENDER,
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
-    ERR_NET_UNKNOWN,
+    FETCH_WEBPAGE_OUTPARM_LIMIT_DESC,
+    FETCHPAGE_INPUT_MAX_CONTENT_LENGTH,
+    FETCHPAGE_OUTLIMIT_BODY_BYTES,
+    TOOL_BROWSER_UA,
 )
-
+from app.tools.tool_response import build_error, build_success, build_warning, with_artifact_file
+from app.tools.toolhelper.tool_utils import save_text_to_file
+from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.url_validator import transcode_url, validate_proxy, validate_url
+from app.utils.text_utils import smart_truncate_text
 
 _VOID_ELEMENTS = frozenset({
     "area", "base", "br", "col", "embed", "hr", "img",

@@ -153,7 +153,7 @@ def classify(stored_path: Path, mime: str, size: int) -> str:
 
 def build_inject_text(att: dict[str, Any]) -> str:
     """注入文本唯一产生点。失败由调用方(resolver)折算成 attachment_failed。"""
-    from app.attachments.contract import KIND_CONTRACT   # 延迟导入防循环
+    from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
     kind = att.get("kind") or "binary"
     route = KIND_CONTRACT.get(("attachment", kind)) or KIND_CONTRACT[("attachment", "binary")]
     return route.extractor(att)

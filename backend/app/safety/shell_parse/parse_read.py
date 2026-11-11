@@ -11,8 +11,8 @@
 """
 from typing import Dict, List
 
-from app.safety.shell_parse.action import READ_KIND, PathAction
 from app.safety.shell_parse import lexer
+from app.safety.shell_parse.action import READ_KIND, PathAction
 from app.safety.shell_parse.verb_table import BASH, CMD, PS, build_verb_re
 
 # ── 读套 · 三型动词表(单一真源) ─────────────────────────────────────────

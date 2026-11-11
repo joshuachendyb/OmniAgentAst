@@ -65,31 +65,46 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 # 编辑历史:
 # 2026-11-03 小欧 - 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障) — 小欧-2026-11-03
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
-import httpx
 import inspect  # SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
 import json
 import threading  # SharedClientPool 池级线程锁(多线程 acquire/release) — 小欧-2026-09-25
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+import httpx
 from fastapi import HTTPException  # 小欧 2026-09-26: base_url 空即错误状态, 构造即报错
 
+from app.config import get_config
 from app.constants import (
     DEFAULT_CONNECT_TIMEOUT as _D_CONNECT_TIMEOUT,
-    DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT,
-    DEFAULT_WRITE_TIMEOUT as _D_WRITE_TIMEOUT,
+)
+from app.constants import (
     DEFAULT_POOL_TIMEOUT as _D_POOL_TIMEOUT,
+)
+from app.constants import (
+    DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT,
+)
+from app.constants import (
+    DEFAULT_WRITE_TIMEOUT as _D_WRITE_TIMEOUT,
+)
+from app.constants import (
     LLM_MAX_CONNECTIONS as _D_MAX_CONNECTIONS,
+)
+from app.constants import (
     LLM_MAX_KEEPALIVE as _D_MAX_KEEPALIVE,
 )
-from app.config import get_config
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.logger import logger
-from app.llm.adapters import get_provider_adapter   # 适配层查询 — 小欧 2026-09-23
-from app.llm.reasoning import extract_reasoning_from_chunk   # diff五 流式收集复用三字段链 — 小欧 2026-09-23
-from app.llm.responses_stream import (   # v3.7.1 模块化: /responses 协议归一独立模块, 与 chat 直通通道隔离 — 小欧 2026-09-24
-    _chat_frame, _DeltaFoldState, _fold_emit_delta,
-    _norm_responses_delta, _responses_completed_eval,
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.llm.adapters import get_provider_adapter  # 适配层查询 — 小欧 2026-09-23
+from app.llm.reasoning import (
+    extract_reasoning_from_chunk,  # diff五 流式收集复用三字段链 — 小欧 2026-09-23
 )
+from app.llm.responses_stream import (  # v3.7.1 模块化: /responses 协议归一独立模块, 与 chat 直通通道隔离 — 小欧 2026-09-24
+    _chat_frame,
+    _DeltaFoldState,
+    _fold_emit_delta,
+    _norm_responses_delta,
+    _responses_completed_eval,
+)
+from app.logger import logger
 
 # 可重试 HTTP 状态: 429限流 / 5xx服务端瞬时错误, 由 base_service L1 重试处理 — 小欧 2026-07-17
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
@@ -345,15 +360,15 @@ def _build_request_body(
         body["tools"] = tools
         if tool_choice:
             body["tool_choice"] = tool_choice
-        
+
         if parallel_tool_calls is None:
             parallel_tool_calls = True  # 执行层(action_handler)的_has_conflict控制并发安全 — 北京老陈 2026-07-04
-        
+
         body["parallel_tool_calls"] = parallel_tool_calls
-    
+
     if extra_body:
         body.update(extra_body)
-    
+
     return body
 
 

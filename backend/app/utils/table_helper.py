@@ -10,7 +10,7 @@
 创建时间: 2026-06-24
 作者: 小健
 """
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _equalize_column_count(table_data: List[List[str]]) -> List[List[str]]:
@@ -41,12 +41,12 @@ def parse_markdown_table(lines: List[str], start_idx: int) -> Tuple[List[List[st
     """
     table_rows = []
     i = start_idx
-    
+
     while i < len(lines):
         line = lines[i].strip()
         if not line or not line.startswith('|'):
             break
-        
+
         cells = [cell.strip() for cell in line.split('|')[1:-1]]
         if cells:
             if not all(c.replace('-', '').replace(':', '') == '' for c in cells):
@@ -73,10 +73,10 @@ def calculate_column_widths(table_data: List[List[str]], total_width: float = 1.
     """
     if not table_data or not table_data[0]:
         return []
-    
+
     cols = len(table_data[0])
     col_max_lens = []
-    
+
     for ci in range(cols):
         max_len = 0
         for ri in range(len(table_data)):
@@ -84,11 +84,11 @@ def calculate_column_widths(table_data: List[List[str]], total_width: float = 1.
                 cell_text = str(table_data[ri][ci])
                 max_len = max(max_len, len(cell_text))
         col_max_lens.append(max(max_len, 1))
-    
+
     total_len = sum(col_max_lens)
     if total_len == 0:
         return [total_width / cols] * cols
-    
+
     return [total_width * w / total_len for w in col_max_lens]
 
 

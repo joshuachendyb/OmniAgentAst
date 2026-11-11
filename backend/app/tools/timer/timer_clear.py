@@ -16,12 +16,12 @@ timer_clear — 清除定时器
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_TIMER_CLEAR
-from app.tools.timer.timer_set import _timers, _timer_callbacks, _timer_lock
 from app.db import db
+from app.tools.timer.timer_set import _timer_callbacks, _timer_lock, _timers
+from app.tools.tool_constants import ERR_TIMER_CLEAR
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str, cancelled: bool, detail: str = "", hint: str = "") -> dict:

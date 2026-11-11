@@ -22,9 +22,9 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 更新时间: 2026-07-31 小欧
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 # 文档工具依赖配置 — 小健 2026-06-18
 # 注意：pip包名与import名不一致时必须用字典格式指定import_name
@@ -45,24 +45,23 @@ TOOL_DEPENDENCIES = {
 
 
 from app.tools.document.document_schema import (
-    ReadPdfInput,
     ReadDocxInput,
+    ReadPdfInput,
     ReadPptxInput,
     ReadXlsxInput,
     WriteDocxInput,
-    WriteXlsxInput,
     WritePdfInput,
     WritePptxInput,
+    WriteXlsxInput,
 )
-
-from app.tools.document.read_pdf import read_pdf
 from app.tools.document.read_docx import read_docx
+from app.tools.document.read_pdf import read_pdf
 from app.tools.document.read_pptx import read_pptx
 from app.tools.document.read_xlsx import read_xlsx
 from app.tools.document.write_docx import write_docx
-from app.tools.document.write_xlsx import write_xlsx
 from app.tools.document.write_pdf import write_pdf
 from app.tools.document.write_pptx import write_pptx
+from app.tools.document.write_xlsx import write_xlsx
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
@@ -150,7 +149,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_document_tools():
     """注册8个文档操作工具到DOCUMENT分类 — 小欧 2026-06-19"""
-    
+
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)

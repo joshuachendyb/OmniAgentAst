@@ -26,17 +26,22 @@ filter_data  按条件筛选/过滤数据
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import time as _time_mod
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from app.tools.tool_response import build_success, build_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.tool_fc_helper import _serialize_rows  # 2026-10-20 小欧 - 删 _check_module: 顶层已导入pandas, 检查为死守卫
 from app.tools.dataanalysis.data_loader import load_data_to_df, validate_top_n
-from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_FILTER_INVALID, FILTER_DATA_OUTPARM_LIMIT_CONDITIONS
+from app.tools.tool_fc_helper import (
+    _serialize_rows,  # 2026-10-20 小欧 - 删 _check_module: 顶层已导入pandas, 检查为死守卫
+)
+from app.tools.tool_response import build_error, build_success
 from app.tools.toolhelper.error_hints import hint_for_data_error
+from app.utils.json_utils import coerce_json
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 
 def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail="", hint="",

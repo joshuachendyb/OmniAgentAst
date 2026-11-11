@@ -18,13 +18,14 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
-
-from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.logger import logger
+from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED, TOOL_TIMEOUTS
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 _SKIP_DIRS = frozenset({
     "node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build",

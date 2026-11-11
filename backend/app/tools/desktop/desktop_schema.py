@@ -32,7 +32,8 @@ DESKTOP Schema - 桌面工具参数模型
 创建时间: 2026-04-29
 """
 
-from typing import Optional, Literal, Dict
+from typing import Dict, Literal, Optional
+
 from pydantic import BaseModel, Field, model_validator
 
 

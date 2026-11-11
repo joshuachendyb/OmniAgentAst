@@ -103,43 +103,46 @@ import re
 from typing import Any, Dict, Optional
 
 from app.logger import logger
-from app.utils.text_utils import truncate_text  # 2026-08-18 小健 三堂会审: target展示截断收敛到公共函数(消除120/200手写分歧)
-from app.utils.type_utils import safe_sub_dict  # 2026-10-31 小欧 三堂会审: status/action 防御取值收口公用函数(与 toolhelper 同源)
 from app.tools.tool_constants import (
+    OBS_DICT_MAX_KEYS,
+    OBS_EDIT_MAX_ROW_CHARS,
+    OBS_EDIT_MAX_ROWS,
+    OBS_ERROR_SUPPLEMENT_MAX_CHARS,
+    OBS_FETCHPAGE_MAX_ROW_CHARS,
+    OBS_FETCHPAGE_MAX_ROWS,
+    OBS_FIND_MAX_ROW_CHARS,
+    OBS_FIND_MAX_ROWS,
+    OBS_GREP_MAX_ROW_CHARS,
+    OBS_GREP_MAX_ROWS,
+    OBS_HTML_SUMMARY_MAX_CHARS,
+    OBS_HTTPGET_MAX_ROW_CHARS,
+    OBS_HTTPGET_MAX_ROWS,
+    OBS_LISTDIR_MAX_ROW_CHARS,
+    OBS_LISTDIR_MAX_ROWS,
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
-    OBS_DICT_MAX_KEYS,
     OBS_METRICS_MAX_ITEMS,
     OBS_METRICS_VALUE_MAX_CHARS,
-    OBS_ERROR_SUPPLEMENT_MAX_CHARS,
-    OBS_HTML_SUMMARY_MAX_CHARS,
-    OBS_SYSINFO_FIELD_MAX_CHARS,
-    OBS_GREP_MAX_ROWS,
-    OBS_GREP_MAX_ROW_CHARS,
-    OBS_SHELL_MAX_ROWS,
-    OBS_SHELL_MAX_ROW_CHARS,
-    OBS_FIND_MAX_ROWS,
-    OBS_FIND_MAX_ROW_CHARS,
-    OBS_SEARCHWEB_MAX_ROWS,
-    OBS_SEARCHWEB_MAX_ROW_CHARS,
-    OBS_HTTPGET_MAX_ROWS,
-    OBS_HTTPGET_MAX_ROW_CHARS,
-    OBS_FETCHPAGE_MAX_ROWS,
-    OBS_FETCHPAGE_MAX_ROW_CHARS,
-    OBS_READ_MAX_ROWS,
-    OBS_READ_MAX_ROW_CHARS,
-    OBS_EDIT_MAX_ROWS,
-    OBS_EDIT_MAX_ROW_CHARS,
-    OBS_LISTDIR_MAX_ROWS,
-    OBS_LISTDIR_MAX_ROW_CHARS,
-    OBS_PDF_MAX_ROWS,
     OBS_PDF_MAX_ROW_CHARS,
-    OBS_PPTX_MAX_ROWS,
+    OBS_PDF_MAX_ROWS,
     OBS_PPTX_MAX_ROW_CHARS,
-    OBS_TREE_MAX_ROWS,
+    OBS_PPTX_MAX_ROWS,
+    OBS_READ_MAX_ROW_CHARS,
+    OBS_READ_MAX_ROWS,
+    OBS_SEARCHWEB_MAX_ROW_CHARS,
+    OBS_SEARCHWEB_MAX_ROWS,
+    OBS_SHELL_MAX_ROW_CHARS,
+    OBS_SHELL_MAX_ROWS,
+    OBS_SYSINFO_FIELD_MAX_CHARS,
     OBS_TREE_MAX_CHILDREN,
+    OBS_TREE_MAX_ROWS,
 )
-
+from app.utils.text_utils import (
+    truncate_text,  # 2026-08-18 小健 三堂会审: target展示截断收敛到公共函数(消除120/200手写分歧)
+)
+from app.utils.type_utils import (
+    safe_sub_dict,  # 2026-10-31 小欧 三堂会审: status/action 防御取值收口公用函数(与 toolhelper 同源)
+)
 
 # 2026-10-05 小欧 文档[8]P1: 已被 handler 自行呈现的 metrics 键, 通用渲染跳过防重复 — 小欧 2026-10-05
 # 2026-10-05 小欧 [10]4.5/5.1.1: total_lines 移出跳集合, 改走统计段通用渲染(单呈现源);
@@ -626,7 +629,7 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 #     err_code = status.get("code", "")
 #     metrics = llm_data.get("metrics", {}) if isinstance(llm_data.get("metrics"), dict) else {}
 #     duration_ms = llm_data.get("duration_ms", 0)
-# 
+#
 #     if exec_code == "success":
 #         text = f"观察: {message} - {tool_zh}"
 #     elif exec_code == "warning":
@@ -635,14 +638,14 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 #     else:
 #         code_suffix = f" [{err_code}]" if err_code else ""
 #         text = f"观察: {message} - {tool_zh}{code_suffix}\n✖ 错误: {status.get('detail', '')}"
-# 
+#
 #     if summary:
 #         action_info = " ".join(
 #             f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v}"
 #             for k, v in action.items()
 #         )
 #         text += f"\n结果: {summary} | {action_info}"
-# 
+#
 #     metric_lines = []
 #     for k, v in metrics.items():
 #         metric_lines.append(f"  {k}: {v}")
@@ -650,16 +653,16 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 #         metric_lines.append(f"  耗时: {duration_ms}ms")
 #     if metric_lines:
 #         text += "\n统计:\n" + "\n".join(metric_lines)
-# 
+#
 #     diff = llm_data.get("diff", "")
 #     if diff:
 #         text += f"\n差异:\n{diff}"
-# 
+#
 #     if exec_code in ("error", "warning"):
 #         hint = status.get("hint", "")
 #         if hint:
 #             text += f"\n建议: {hint}"
-# 
+#
 #     return text
 
 def _format_llm_data(llm_data: Dict) -> str:

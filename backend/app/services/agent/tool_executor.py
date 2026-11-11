@@ -35,15 +35,24 @@ import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from app.tools.tool_types import ToolCategory
-from app.tools.tool_response import is_success
 from app.logger import logger
+from app.safety.default_hooks import (
+    DefaultToolSecurityHooks,  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
+)
+from app.services.agent.llm_call import (
+    call_llm_text_task,  # 2026-10-20 小欧 通用纯文本调用(全系统发起LLM调用唯一入口层, llm_call.py)
+)
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
-from app.safety.default_hooks import DefaultToolSecurityHooks  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
-from app.tools.context import set_current_hooks, reset_current_hooks, \
-    set_current_text_task, reset_current_text_task, \
-    set_current_notice_callback, reset_current_notice_callback  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
-from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 小欧 通用纯文本调用(全系统发起LLM调用唯一入口层, llm_call.py)
+from app.tools.context import (
+    reset_current_hooks,
+    reset_current_notice_callback,
+    reset_current_text_task,
+    set_current_hooks,
+    set_current_notice_callback,  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
+    set_current_text_task,
+)
+from app.tools.tool_response import is_success
+from app.tools.tool_types import ToolCategory
 
 #: 缺库自愈冷却窗(秒): 装不上时窗内不再重复起 pip, 直接回缺库契约。
 #: 取值权衡: pip 冷启动+下载常需数十秒, 窗太小则每次工具调用都拖一次 pip 阻塞。
@@ -80,7 +89,7 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     小健 2026-06-26: 修复状态判断逻辑
     小欧 2026-07-09: 新增parallel/on_retry_started参数，支持并行无重试模式
     """
-    
+
     start = time.time()
     # 2026-10-19 小欧 - 缺库守卫: 注册期已知不可用的工具不真调, 直接回统一缺库契约。
     #   放 retry_engine 之前, 免得缺库错误被重试引擎当成瞬态失败反复重试、白耗时长。
@@ -127,11 +136,11 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         if _notice_token is not None:  # 2026-10-26 小沈 notice回调token同finally reset
             reset_current_notice_callback(_notice_token)
     elapsed = time.time() - start
-    
+
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")
     status = "ok" if is_success(result) else "fail"
     _log_single_tool(tool_name, tool_params, elapsed, status)
-    
+
     if tool_name == "searchtool":
         auto_inject_from_search(agent, result)
     return result
@@ -197,7 +206,7 @@ def registry_pending_deps(tool_name: str) -> List[str]:
     报了"正在安装"却并没有安装动作, 属不实播报。
     """
     from app.tools.registry import tool_registry
-    from app.utils.dependency import LOCKED_PACKAGES, normalize_dep, dependency_status
+    from app.utils.dependency import LOCKED_PACKAGES, dependency_status, normalize_dep
     meta = tool_registry.get_tool(tool_name)
     if meta is None:
         return []

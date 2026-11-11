@@ -12,10 +12,9 @@ Author: 小沈 - 2026-06-11
 import os
 from collections import OrderedDict
 
-from app.config import get_code_root
-from app.logger import logger
+from app.config import get_code_root, get_config
 from app.constants import PROJECT_CONTEXT_MAX_CHARS as _D_CONTEXT_CHARS
-from app.config import get_config
+from app.logger import logger
 
 CONTEXT_FILE = "OmniAgent.md"  # 项目规则文件名(基准名, 大小写不敏感解析) 置于代码根目录(与 version.txt/config/logs 同源)
 # MAX_CHARS 已归一化为系统级 PROJECT_CONTEXT_MAX_CHARS (app/constants.py, 2026-07-15 治理: 8000→10000)

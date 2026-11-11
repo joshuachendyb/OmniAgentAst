@@ -74,15 +74,17 @@
 - 本模块不依赖 agent 内部实现细节，仅读取 agent 的公开属性与 message_builder 既有能力；
 - 全部"新增状态 + stats/context_overview 计算 + 落库聚合"都在本文件，核心 agent 文件仅薄钩子调用。
 """
-from typing import Dict, Any, Optional, List
-import time
 import json  # _model_to_json 单向容错序列化(vars 兜底) — 小欧 2026-09-05
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from app.logger import logger, log_and_print  # log_and_print: TASK_END console 打印 — 小健 2026-09-05
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.logger import (  # log_and_print: TASK_END console 打印 — 小健 2026-09-05
+    log_and_print,
+    logger,
+)
 from app.monitoring import storage  # 落库层（独立，storage 内部惰性导入 database 防环）
-
 
 # 统计 step_count 时剔除的全部非业务 MetaStep type（与 11.2-B / 12.17 完全一致，单一来源）
 # 2026-10-01 小欧: 提为公开常量 M_SKIP 并由 agent_runner 复用(解 [1] E1/E2)——
@@ -312,7 +314,9 @@ class TaskTelemetry:
           本 build 产出该子类 —— 7 统计键逐键等价 MetaStep 时代(零 backward), type 键由 TYPE 类常量承载(删键),
           step 键怪癖(塞 llm_call_count)照单全收(零 backward, 前端逐键等价) — 小欧 2026-09-11
         """
-        from app.services.agent.steps.final_stats_step import FinalStatsStep  # 局部导入防环 — 小欧 2026-09-11
+        from app.services.agent.steps.final_stats_step import (
+            FinalStatsStep,  # 局部导入防环 — 小欧 2026-09-11
+        )
         _agent = self.agent
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         # 2026-09-03 小沈 修复: 增发final_status字段, 从agent.status.value派生,

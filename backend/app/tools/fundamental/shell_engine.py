@@ -156,7 +156,6 @@ from typing import Optional
 from app.logger import logger
 from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread)
 
-
 # ═══════════════════════════════════════════════════════
 #  常量(仅保留支撑函数所需)
 # ═══════════════════════════════════════════════════════

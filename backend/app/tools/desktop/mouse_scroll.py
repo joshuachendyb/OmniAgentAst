@@ -16,12 +16,12 @@ mouse_scroll — 鼠标滚轮滚动
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
+from app.logger import logger
 from app.tools.desktop.desktop_register import check_pyautogui_available
 from app.tools.tool_constants import ERR_DESKTOP_MOUSE_SCROLL
-from app.logger import logger
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: str = "", amount: int = 0,

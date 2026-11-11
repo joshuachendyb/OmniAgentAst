@@ -20,13 +20,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.logger import logger
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import (
     ERR_SHELL_COMMAND_NOT_FOUND,
     ERR_SYSTEM_EVENT_LOG,
     ERR_SYSTEM_TIMEOUT,
+    TOOL_TIMEOUTS,
+)
+from app.tools.tool_response import build_error, build_success
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 
 

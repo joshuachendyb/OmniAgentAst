@@ -24,30 +24,28 @@ import platform
 import re
 import socket
 import subprocess
-
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import time as _time_mod
 from typing import Any, Dict, List, Literal, Optional
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.validate.url_validator import _is_private_or_loopback_ip
-from app.tools.validate.timeout_validator import validate_timeout
-
-
 from app.logger import logger
-from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
-from app.tools.tool_constants import ERR_MISSING_PARAM
 from app.tools.tool_constants import (
     ERR_INVALID_MODE,
+    ERR_MISSING_PARAM,
+    ERR_NET_UNKNOWN,
     ERR_NETWORK_CONNECTION_ERROR,
     ERR_NETWORK_DNS_ERROR,
     ERR_NETWORK_INVALID_HOST,
     ERR_NETWORK_INVALID_PORT,
     ERR_NETWORK_TIMEOUT,
-    ERR_NET_UNKNOWN,
     ERR_SHELL_COMMAND_NOT_FOUND,
 )
-
+from app.tools.tool_response import build_error, build_success
+from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.url_validator import _is_private_or_loopback_ip
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+)
 
 well_known_ports = {
     20: "FTP-Data", 21: "FTP-Control", 22: "SSH", 23: "Telnet", 25: "SMTP",

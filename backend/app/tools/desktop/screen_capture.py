@@ -23,14 +23,17 @@ import os
 import tempfile
 import time as _time_mod
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from app.utils.time_utils import timestamp_for_filename
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
+from app.tools.tool_constants import ERR_SCREEN_SNAPSHOT, ERR_SCREENSHOT
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+    validate_path_for_write,  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
+)
+from app.utils.time_utils import timestamp_for_filename
 
 
 def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optional[str] = None, region=None,

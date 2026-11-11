@@ -129,21 +129,38 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 import os
 from typing import Dict, Optional
 
-from app.logger import logger, log_and_print
 from app.config import get_config
-from app.tools.registry import tool_registry
-from app.safety.path_legality_router import (
-    check_tool_path_permission as _check_tool_path_permission,  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
-    LINE_DELETE, LINE_DUAL, LINE_WRITE, line_of,  # 2026-10-20 小欧 - 归线/确认开关: 归线口径唯一来源
-)
-from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 小欧: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
-from app.safety.shell_parse import parse_shell_action  # 命令动作解析单一真源: 确认标签按命令内实际读/写/删动作取档
-from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
+from app.logger import log_and_print, logger
+
 # 2026-10-19 小欧 - 目录名单收口: 每 loop 构建一次目录名单, 作用域内自动还原; 入口对 tool 路径做格式化
 from app.safety.path_dir_lists import directory_lists_scope, format_path
-from app.tools.tool_constants import PATH_TOOLS  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
-from app.safety.safety_switch import safety_enabled, safety_switch  # 2026-10-20 小欧 - 总闸 + 各独立开关唯一读取口
-from app.utils.path_utils import absolutize_path  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root); 2026-10-26 小沈 - 移除 get_download_dir, download 特判取消
+from app.safety.path_legality_router import (
+    LINE_DELETE,  # 2026-10-20 小欧 - 归线/确认开关: 归线口径唯一来源
+    LINE_DUAL,
+    LINE_WRITE,
+    line_of,
+)
+from app.safety.path_legality_router import (
+    check_tool_path_permission as _check_tool_path_permission,  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
+)
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
+from app.safety.safety_switch import (  # 2026-10-20 小欧 - 总闸 + 各独立开关唯一读取口
+    safety_enabled,
+    safety_switch,
+)
+from app.safety.shell_parse import (
+    parse_shell_action,  # 命令动作解析单一真源: 确认标签按命令内实际读/写/删动作取档
+)
+from app.safety.shell_process_guard import (
+    check_shell_self_kill,  # 2026-10-16 小欧: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
+)
+from app.tools.registry import tool_registry
+from app.tools.tool_constants import (
+    PATH_TOOLS,  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
+)
+from app.utils.path_utils import (
+    absolutize_path,  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root); 2026-10-26 小沈 - 移除 get_download_dir, download 特判取消
+)
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
@@ -439,7 +456,9 @@ class PathToolSafetyChecker:
         2026-10-16 小欧 - 本函数只答“要不要确认”，不再答“拦不拦”——回二元组。
         shell 危险拦截（杀/HIGH）已归位 _check_known_risks（无条件防线）；此处 MEDIUM 只产弹窗文案。
         2026-10-17 小欧 - 删 delete_risk（delete 确认由权限三线删线封装口 check_delete_permission 产出）。"""
-        from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
+        from app.tools.tools_alias_mapper import (
+            normalize_tool_name,  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
+        )
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False, ""  # 2026-10-18 小欧: 纯读免确认; 非只读交工具层 confirm_fn 逐条判定

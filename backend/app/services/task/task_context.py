@@ -12,8 +12,8 @@ A1下沉后为薄壳: 实际实现见 app.tools.context — 小欧 2026-08-12
 """
 
 from app.tools.context import (  # noqa: F401 — 薄壳 re-export, tools 层直接引用 app.tools.context
+    _current_task_id,
     get_current_task_id,
     reset_current_task_id,
     set_current_task_id,
-    _current_task_id,
 )

@@ -15,8 +15,8 @@
   parse_move.py       搬移解析(源/目标分离)
   parse_shell_action.py  唯一入口
 """
-from app.safety.shell_parse.action import PathAction
 from app.safety.shell_parse import lexer
+from app.safety.shell_parse.action import PathAction
 from app.safety.shell_parse.parse_shell_action import parse_shell_action
 
 __all__ = ["PathAction", "lexer", "parse_shell_action"]

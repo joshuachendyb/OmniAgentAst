@@ -28,13 +28,14 @@ Network Register - 网络通信工具注册点
 # ============================================================
 # 网络工具注册 - 使用 Pydantic 模型(按文档设计)
 # ============================================================
-from app.tools.registry import register_tool, tool_registry
-from app.tools.tool_types import ToolCategory
-from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
-from app.logger import logger
 import socket
 import time
 from typing import Any, Dict, Optional
+
+from app.logger import logger
+from app.tools.registry import tool_registry
+from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
+from app.tools.tool_types import ToolCategory
 
 # 网络工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
@@ -87,19 +88,18 @@ def check_network() -> Dict[str, Any]:
 
 
 # 导入 Pydantic 模型
-from app.tools.network.network_schema import (
-    HttpRequestInput,
-    DownloadFileInput,
-    FetchWebpageInput,
-    SearchWebInput,
-    NetworkDiagnoseInput,
-)
-
-from app.tools.network.http_request import httpget
 from app.tools.network.download_file import download
 from app.tools.network.fetch_webpage import fetchpage
-from app.tools.network.search_web import searchweb
+from app.tools.network.http_request import httpget
+from app.tools.network.network_schema import (
+    DownloadFileInput,
+    FetchWebpageInput,
+    HttpRequestInput,
+    NetworkDiagnoseInput,
+    SearchWebInput,
+)
 from app.tools.network.ping_port import ping_port
+from app.tools.network.search_web import searchweb
 
 # 工具描述
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 NETWORK_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:

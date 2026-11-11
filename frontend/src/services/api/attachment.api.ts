@@ -11,6 +11,8 @@
 // 编辑历史: 2026-11-07 小欧 - scope 注释术语对准: ai 栏 UI 定名「任务产物」 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - kind 七类对齐(audio/unknown) + AttachmentCapabilities 类型与 capabilities() 接口 — 小欧-2026-11-11
 // 编辑历史: 2026-11-11 小欧 - P5 指标: AttachmentMetrics 类型 + metrics() 只读聚合接口 — 小欧-2026-11-11
+
+// 编辑历史: 2026-11-11 小欧 - 三堂会审整改: AttachmentCapabilities 补 suffix_kind(后端下发后缀→类型词典, 消前端复制后缀表双真源) — 小欧-2026-11-11
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -74,6 +76,8 @@ export interface AttachmentCapabilities {
   accept: string;
   limits: { max_refs: number; max_urls: number; max_url_images: number };
   kind_options: Array<{ value: string; label: string }>;
+  /** 后缀→content_kind 词典(单一真源后端 extract, 前端禁止再写死后缀表) */
+  suffix_kind: Record<string, string>;
 }
 
 /** P5 运行指标(GET /attachments/metrics): 逐事件计数 + 三比率, 可定位到 source/kind */

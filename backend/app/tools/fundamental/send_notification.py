@@ -20,13 +20,16 @@ send_notification — 发送Windows系统通知
 import subprocess
 import sys
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
+from app.tools.tool_constants import (
+    ERR_DESKTOP_NOTIFICATION,
+    ERR_NO_WIN10TOAST,
+    SEND_NOTIFICATION_OUTPARM_LIMIT_MSG,
+)
 from app.tools.tool_fc_helper import _check_module_available
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST, SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
+from app.tools.tool_response import build_error, build_success
 from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
-
 
 
 def _check_module(module_name: str) -> bool:

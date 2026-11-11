@@ -31,9 +31,9 @@
 5. 有日志记录：记录映射情况，便于监控LLM行为
 """
 
-from typing import Dict, Any, Tuple
-from app.logger import logger
+from typing import Any, Dict, Tuple
 
+from app.logger import logger
 
 PARAM_ALIASES = {
     # 路径参数统一为path后,旧规范名(file_path/dir_path/search_dir)降级为别名 — 小欧 2026-07-11

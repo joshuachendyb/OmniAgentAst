@@ -28,15 +28,26 @@ query_sql — 执行只读SQL查询
 import re  # 2026-07-31 小欧: CTE体写操作检测
 import sqlite3
 import time as _time_mod
-from typing import Any, Dict, Optional, Literal  # 2026-07-31 小欧: 移除未使用 Union, List
+from typing import Any, Dict, Literal, Optional  # 2026-07-31 小欧: 移除未使用 Union, List
 
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_SQL_EXEC, QUERY_SQL_OUTPARM_LIMIT_SQL, OBS_QUERY_SQL_PREVIEW_COLUMNS, QUERY_SQL_INER_LOG_SQL  # 2026-07-31 小欧: 移除未使用 OBS_MAX_DISPLAY_ITEMS
-from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
-from app.tools.tool_fc_helper import _get_connection, _close_connection, _strip_sql_comments_and_strings  # 2026-07-31 小欧: Bug②⑤注释/字符串剥离修复引入
-
+from app.tools.tool_constants import (  # 2026-07-31 小欧: 移除未使用 OBS_MAX_DISPLAY_ITEMS
+    ERR_SQL_EXEC,
+    OBS_QUERY_SQL_PREVIEW_COLUMNS,
+    QUERY_SQL_INER_LOG_SQL,
+    QUERY_SQL_OUTPARM_LIMIT_SQL,
+)
+from app.tools.tool_fc_helper import (  # 2026-07-31 小欧: Bug②⑤注释/字符串剥离修复引入
+    _close_connection,
+    _get_connection,
+    _strip_sql_comments_and_strings,
+)
+from app.tools.tool_response import build_error, build_success
+from app.tools.toolhelper.error_hints import hint_for_data_error, sql_error_hint
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 # 2026-07-31 小欧: Bug② PRAGMA只读白名单 — 仅放行纯只读PRAGMA, 其余(含赋值=形式)一律拒绝, 防 user_version/journal_mode 等写操作借PRAGMA白名单执行
 _READONLY_PRAGMAS = {

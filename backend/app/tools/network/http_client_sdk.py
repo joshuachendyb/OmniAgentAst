@@ -17,18 +17,21 @@ Author: 小沈 - 2026-05-29
 # 2026-10-26 - 小沈 - download方法增强: 支持headers/content_type/大小限制/清理, 合并download_file._stream_download重复逻辑(DRY)
 
 import os
-from typing import Any, Dict, Optional, Tuple
-
+from typing import Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import httpx
-from app.tools.validate.url_validator import validate_url
+
 from app.logger import logger  # 2026-10-26 小沈 - download 清理失败日志
 
-
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
-from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, NETWORK_MAX_CONNECTIONS, NETWORK_MAX_KEEPALIVE
-from app.tools.tool_constants import ERR_INVALID_URL
+from app.tools.tool_constants import (
+    DEFAULT_TIMEOUT_SEC,
+    ERR_INVALID_URL,
+    NETWORK_MAX_CONNECTIONS,
+    NETWORK_MAX_KEEPALIVE,
+)
+from app.tools.validate.url_validator import validate_url
 
 # SSRF重定向拦截文案标识 — 小欧 2026-08-12 (_validate_redirect 抛出的 InvalidURL 统一带此前缀)
 _SSRF_REDIRECT_MARK = "重定向目标被拦截"

@@ -61,14 +61,18 @@
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
 """
-from typing import List, Dict, Optional
-from app.safety.safety_result import SafetyLevel, SafetyResult
+from typing import Dict, List, Optional
 
 from app.logger import logger
-from app.services.agent.steps import MetaStep
+from app.safety.path_dir_lists import (
+    directory_lists_scope,  # 2026-10-19 小欧 - 目录名单作用域(生成即落库)
+)
+from app.safety.safety_result import SafetyLevel, SafetyResult
+from app.safety.temp_auth import (
+    grant_temp_auth,  # 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
+)
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
-from app.safety.temp_auth import grant_temp_auth  # 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
-from app.safety.path_dir_lists import directory_lists_scope  # 2026-10-19 小欧 - 目录名单作用域(生成即落库)
+from app.services.agent.steps import MetaStep
 
 __all__ = ["check_safety_and_confirm"]
 
@@ -195,10 +199,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
         #   删sandbox resumed旁路判定与事件透传plumbing; blocked/超时/拒绝错误并入列表, 签名落->list
         """
         from app.safety.path_tool_safety_checker import get_path_tool_safety_checker
-        from app.safety.trust import resolve_skip
-        from app.safety.trust import extract_trust_path        # 同组路径归一(trust 主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
-        from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18; 2026-10-18 SRP 拆分后改指 shell_readonly
+        from app.safety.shell_readonly import (
+            is_shell_readonly_whitelisted,  # 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18; 2026-10-18 SRP 拆分后改指 shell_readonly
+        )
         from app.safety.shell_tool_classify import is_shell_tool
+        from app.safety.trust import (
+            extract_trust_path,  # 同组路径归一(trust 主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
+            resolve_skip,
+        )
         safety_checker = get_path_tool_safety_checker()
 
         _denied = []
@@ -284,8 +292,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                     continue
                 # 等待源头全收 hitl_gateway — create/wait/窗口/三处独立计时/trust_path/引用信组装 全部删,
                 #   paused/resumed 由网关 publish(事件唯一入口); 本函数纯函数化收list — 小欧 2026-09-06
-                from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
-                from app.services.task.task_state import get_stream_buffer                # 延迟import防环 — 小欧 2026-09-06
+                from app.services.agent.handlers.hitl_gateway import (  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
+                    ConfirmSpec,
+                    hitl_confirm,
+                )
+                from app.services.task.task_state import (
+                    get_stream_buffer,  # 延迟import防环 — 小欧 2026-09-06
+                )
                 _buf = get_stream_buffer(agent.task_id)
                 if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
                     raise RuntimeError(f"[safety] StreamBuffer缺失(task={agent.task_id})")

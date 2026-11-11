@@ -61,13 +61,14 @@ AI配置解析器 — 直接读配置,无效就报错
 Author: 小沈 - 2026-06-07
 """
 
-from typing import Dict, Any, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from app.config import Config, get_config
+from app.db import db
 from app.db.models.chat_models import ModelRef
 from app.logger import logger
-from app.db import db
 from app.services.chat.storage import get_session_model
+
 # 2026-09-26 小欧 - 密钥空白判定收口到公用函数（与 lifecycle/validation.py 同一权威）
 from app.utils.secret_utils import is_blank_secret
 
@@ -83,14 +84,14 @@ class ProviderKeyMissingError(Exception):
 
 
 class AIConfigResolver:
-    
+
     def __init__(self, config: Optional[Config] = None):
         self._config = config or get_config()
         self._model_warning: Optional[str] = None
-    
+
     def get_ai_config(self) -> Dict[str, Any]:
         return self._config.get("ai", {})
-    
+
     def _extract_provider_model(self, ai_config: Dict[str, Any]) -> Tuple[str, str]:
         """提取provider和model - 小沈 2026-06-08
         2026-09-21 小欧 v4.20 单源收敛：改读结构化 ai.model_ref（删扁平 ai.provider/ai.model）"""
@@ -98,24 +99,24 @@ class AIConfigResolver:
         if not isinstance(ref, dict):
             ref = {}
         return ref.get("provider") or "", ref.get("model") or ""
-    
+
     def _validate_provider_model_not_empty(self, provider: str, model: str) -> None:
         """验证provider和model不为空 - 小沈 2026-06-08"""
         if not provider or not model:
             raise ValueError(f"AI配置缺少provider或model: provider={provider}, model={model}")
-    
+
     def _validate_provider_exists(self, ai_config: Dict[str, Any], provider: str) -> None:
         """验证provider存在 - 小沈 2026-06-08"""
         if provider not in ai_config:
             raise ValueError(f"配置文件中不存在 provider: {provider}")
-    
+
     def _get_provider_config(self, ai_config: Dict[str, Any], provider: str) -> Dict[str, Any]:
         """获取provider配置 - 小沈 2026-06-08"""
         provider_config = ai_config[provider]
         if not isinstance(provider_config, dict):
             raise ValueError(f"provider {provider} 配置格式错误")
         return provider_config
-    
+
     def _validate_model_in_list(self, provider_config: Dict[str, Any], provider: str, model: str) -> Optional[str]:
         """验证model在列表中, 不在则warning并返回提示消息(含可用列表) - 小欧 2026-07-22"""
         models = provider_config.get("models") or []
@@ -130,7 +131,7 @@ class AIConfigResolver:
         msg = self._model_warning
         self._model_warning = None
         return msg
-    
+
     def _validate_all(self, ai_config: dict, provider: str, model: str) -> Optional[str]:
         """4 步校验链唯一权威(DRY 归一: resolve_model_ref / validate_config 复用) — 小欧 2026-09-25
         只返回 warning(无警告 None): 两处调用方均不消费 provider_config(原实现的中间变量), 故不外传(YAGNI);
@@ -151,7 +152,7 @@ class AIConfigResolver:
             self._model_warning = warning
 
         return ModelRef(provider=provider, model=model)
-    
+
     def get_service_config(self, provider: str, model: str) -> Dict[str, Any]:
         ai_config = self.get_ai_config()
         if provider not in ai_config:
@@ -231,7 +232,7 @@ async def resolve_session_client(scope, session_id):
             # 均按目标 provider+model 从 config.yaml 查出(后端内部, 不落库、不出前端);
             # api_base 必须用目标 provider 的, 而非 _ov.api_base or 全局(全局=agnes 地址, 仍 503)
             # 导入提到分支入口: snapshot 分支外也用 _resolve_max_tokens, 原仅跨 provider 分支内导入致同 provider 换模型报未定义 — 小欧-2026-10-29
-            from app.services.lifecycle.service import parse_model_params, _resolve_max_tokens
+            from app.services.lifecycle.service import _resolve_max_tokens, parse_model_params
             # 目标模型身份: 覆盖优先, 余沿用全局(同/跨 provider 统一口径的前提) — 小欧 2026-11-01
             _target_pv = _ov.provider or ai_service.llm_model.provider
             _target_model = _ov.model or ai_service.llm_model.model

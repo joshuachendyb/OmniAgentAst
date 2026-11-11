@@ -67,20 +67,23 @@ r"""delete_path_check — 删操作路径检查(删线)
 
 from typing import Any, Dict, Optional
 
-from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
+from app.logger import logger
 from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 取值全部改读名单
-    classify_path,
-    permission_of,
-    SCOPE_TEXT,
-    SCOPE_FORBIDDEN_SYSTEM,
-    SCOPE_FORBIDDEN_NON_SYSTEM,
+    DENY,
     LINE_DELETE,
     LINE_DELETE_RECURSIVE,
     PASS,
-    DENY,
+    SCOPE_FORBIDDEN_NON_SYSTEM,
+    SCOPE_FORBIDDEN_SYSTEM,
+    SCOPE_TEXT,
+    classify_path,
+    permission_of,
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult
-from app.logger import logger
+from app.utils.path_utils import (  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
+    check_preconditions,
+    reject_reason_empty_path,
+)
 
 DELETE_MODE = "delete"
 

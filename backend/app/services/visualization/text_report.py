@@ -3,13 +3,12 @@
 包含 build_text_report_lines + generate_text_report
 小沈 2026-05-29 拆分自 file_visualization.py
 """
-from typing import List, Dict, Tuple
-from datetime import datetime
+from typing import Dict, List, Tuple
 
-from app.services.visualization.common import count_op_stats, format_size
-from app.logger import logger
-from app.utils.time_utils import now_str
 from app.db.operation_queries import query_file_operations
+from app.logger import logger
+from app.services.visualization.common import count_op_stats, format_size
+from app.utils.time_utils import now_str
 
 
 def _build_header(task_id: str, task_description: str, operations: List[Tuple]) -> List[str]:
@@ -18,7 +17,7 @@ def _build_header(task_id: str, task_description: str, operations: List[Tuple]) 
     lines.append("文件操作报告")
     lines.append("=" * 50)
     lines.append(f"会话ID: {task_id}")
-    lines.append(f"Agent: file-operation-agent")
+    lines.append("Agent: file-operation-agent")
     lines.append(f"任务描述: {task_description}")
     lines.append(f"开始时间: {operations[0][6] if operations else ''}")
     lines.append(f"完成时间: {operations[-1][6] if operations else ''}")
@@ -53,7 +52,7 @@ def _build_operations_detail(operations: List[Tuple]) -> List[str]:
         if size:
             lines.append(f"    文件大小: {format_size(size)}")
         if is_dir:
-            lines.append(f"    类型: 目录")
+            lines.append("    类型: 目录")
         if error:
             lines.append(f"    错误信息: {error}")
         lines.append(f"    执行时间: {created_at}")

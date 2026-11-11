@@ -45,7 +45,7 @@
 import json
 import re
 from enum import Enum
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 from app.logger import logger
 
@@ -180,7 +180,7 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
 
 class SystemErrorClassifier:
     """系统级错误分类器"""
-    
+
     @staticmethod
     def _check_special_errors(error: Exception) -> Optional[SystemErrorCategory]:
         """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
@@ -194,7 +194,7 @@ class SystemErrorClassifier:
             pass
         # EndOfStream 由黑名单默认SERVER处理，不需特殊case — 小沈 2026-07-05
         return None
-    
+
     _STATUS_CTX_RE = re.compile(r"status[_\s]*code['\"]?\s*[:=]?\s*(\d{3})", re.IGNORECASE)
 
     @staticmethod
@@ -306,7 +306,7 @@ class SystemErrorClassifier:
                 return SystemErrorCategory.SERVER
             return None
         return None
-    
+
     @staticmethod
     def classify_error(error: Exception) -> SystemErrorCategory:
         """
@@ -324,24 +324,24 @@ class SystemErrorClassifier:
             SystemErrorCategory枚举值
         """
         error_msg = str(error).lower()
-        
+
         # 1. 特殊错误（白名单例外，先于默认规则检查）
         category = SystemErrorClassifier._check_special_errors(error)
         if category:
             return category
-        
+
         # 2. HTTP状态码错误 → 按真实状态码分类(4xx CLIENT 不可重试, 5xx SERVER 可重试)
         category = SystemErrorClassifier._check_http_status_errors(error)
         if category:
             return category
-        
+
         # 3. 系统级关键词
         if "circuit" in error_msg and "open" in error_msg:
             return SystemErrorCategory.CIRCUIT_OPEN
-        
+
         if "empty" in error_msg and "response" in error_msg:
             return SystemErrorCategory.EMPTY_RESPONSE
-        
+
         # 4. Python内置异常 → UNKNOWN（代码bug，重试无意义）— 小沈 2026-07-05
         _builtin_errors = {
             "ValueError", "TypeError", "AttributeError", "KeyError", "IndexError",
@@ -349,11 +349,11 @@ class SystemErrorClassifier:
         }
         if type(error).__name__ in _builtin_errors:
             return SystemErrorCategory.UNKNOWN
-        
+
         # 5. 默认：SERVER(retryable) — 黑名单兜底
         #      httpx/httpcore/anyio 所有未识别异常类型自动走重试
         return SystemErrorCategory.SERVER
-    
+
     @staticmethod
     def classify_error_message(error_type: str, error_message: str = "") -> Tuple[str, str]:
         """
@@ -375,9 +375,9 @@ class SystemErrorClassifier:
                     if category == SystemErrorCategory.CLIENT and error_message:
                         return code, error_message
                     return code, default_message
-        
+
         return 'server', f"服务调用失败: {error_message}"
-    
+
     @staticmethod
     def get_error_info(error: Exception) -> Dict[str, Any]:
         """
@@ -391,7 +391,7 @@ class SystemErrorClassifier:
         """
         category = SystemErrorClassifier.classify_error(error)
         code, message = SystemErrorClassifier.classify_error_message(category.value, str(error))
-        
+
         return {
             "category": category,
             "code": code,

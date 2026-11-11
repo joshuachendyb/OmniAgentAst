@@ -19,19 +19,24 @@ F5: list_directory — 列出目录内容
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import asyncio
-import time as _time_mod
 import os
+import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
-from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
-
-from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.logger import logger
-
+from app.tools.tool_constants import (
+    ERR_FILE_LIST_DIR_FAILED,
+    OBS_LISTDIR_MAX_ROWS,
+    SKIP_DIRS,
+    TOOL_TIMEOUTS,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 # 文件系统遍历时跳过噪声目录 — 小欧 2026-07-05
 

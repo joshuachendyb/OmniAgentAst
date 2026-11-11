@@ -30,8 +30,10 @@ DataAnalysis Schema - 数据分析工具参数模型
 
 """
 
+from typing import Any, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Dict, Any, List, Union, Literal
+
 from app.tools.tool_constants import OBS_MAX_DISPLAY_ITEMS
 
 
@@ -168,7 +170,7 @@ class FilterDataInput(BaseModel):
         description="数据。支持两种格式:1.JSON字符串如'[{\"name\":\"A\",\"age\":25}]'; 2.对象数组如[{\"name\":\"A\",\"age\":25}]。严禁与path参数同时传入"
     )
     conditions: List[Dict[str, Any]] = Field(
-        ..., 
+        ...,
         description="""筛选条件列表。每个条件: {"column": "列名", "operator": "操作符", "value": 值}
 
 【支持的操作符】

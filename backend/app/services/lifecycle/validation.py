@@ -18,13 +18,13 @@ validation — 配置验证
 小沈 2026-06-17
 """
 
-from typing import Optional, Tuple, List
-from dataclasses import dataclass
-
 import os
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 from app.config import get_config_path
 from app.db.models.chat_models import ModelRef
+
 # 2026-09-26 小欧 - 密钥空白判定收口到公用函数(DRY)
 from app.utils.secret_utils import is_blank_secret
 
