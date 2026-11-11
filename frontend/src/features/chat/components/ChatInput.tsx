@@ -73,6 +73,9 @@
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - chip 增能力徽标: useRefCapabilityMap(生效模型 ref_capability_map 只读索引)
+//   + CapabilityBadge, 查不到不显示 — 小欧-2026-11-11
+
 
 /**
  * ChatInput - 输入框组合根（六组件组合）
@@ -147,6 +150,12 @@ import {
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors } from '@/utils/stepStyles';
+// 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
+import {
+  chipCapState,
+  useRefCapabilityMap,
+} from '../hooks/useRefCapabilityMap';
+import { CapabilityBadge } from './input/CapabilityBadge';
 
 /** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
 const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
@@ -201,6 +210,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     add,
     setAll,
   } = useComposerRefs();
+  // 2026-11-11 小欧 - chip 能力徽标数据源(生效模型 ref_capability_map) — 小欧-2026-11-11
+  const capMap = useRefCapabilityMap(sessionId);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -760,6 +771,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             const notice = noticeOf(r, refNotices);
             const tone = CHIP_TONE_STYLE[chipToneOf(state)];
             const detail = noticeDetailText(notice);
+            // 2026-11-11 小欧 - 能力徽标状态(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
+            const capState = capMap ? chipCapState(capMap, r) : undefined;
             return (
               <span
                 key={r.id}
@@ -797,6 +810,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               >
                 <FileOutlined style={{ color: chatTokens.colorPrimary }} />
                 {r.label}
+                {/* 2026-11-11 小欧 - 能力徽标: 按 ref_capability_map[source][content] 只读索引 — 小欧-2026-11-11 */}
+                {capState && <CapabilityBadge state={capState} />}
                 {chipStateText(state, notice)}
                 {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
                 <button

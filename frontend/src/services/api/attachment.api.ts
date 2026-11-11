@@ -145,6 +145,16 @@ export const attachmentApi = {
     return res.data;
   },
 
+  /** 真抽取手动重跑（text/richdoc），返回回填后的附件记录 — 小欧-2026-11-11 */
+  reextract: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
+    const res = await api.post<AttachmentRecord>(
+      `/attachments/id/${id}/reextract`,
+      null,
+      { params: { session_id: sessionId }, timeout: HEAVY_READ_TIMEOUT_MS }
+    );
+    return res.data;
+  },
+
   /** 重命名展示名（磁盘文件名不变）。 */
   rename: async (
     id: string,

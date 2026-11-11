@@ -2,6 +2,7 @@
 // 2026-11-11 小欧 - Image_URL 行(ImageUrlRow)移除: 三个验证素材地址(probe_image_url/video/audio)统一回媒体页「外链图片」小节
 //   直接编辑(SettingRow text 渲染, 走组保存), 模型 Tab 只留验证按钮行; 相关 props(probeUrlDraft/onProbeUrlChange/onProbeUrlSave)
 //   与 probeUrlStored/probeImageUrlOf 一并移除 — 小欧-2026-11-11
+// 2026-11-11 小欧 - 增 ModelTabRefCapability 附件引用能力矩阵面板(ref_capability_map 只读投影) — 小欧-2026-11-11
 import React from 'react';
 import { SectionTitle } from './SectionTitle';
 import { ModelActions } from './ModelActions';
@@ -13,6 +14,7 @@ import { ModelTabInputModalities } from './ModelTabInputModalities';
 // 2026-11-11 小欧 - 输入能力验证行统一组件（图片/视频/音频合并, 替换原 MediaProbe/ModalityProbe 两组件）— 小欧-2026-11-11
 import { ModelTabInputProbe } from './ModelTabInputProbe';
 import { ModelTabOutputModalities } from './ModelTabOutputModalities';
+import { ModelTabRefCapability } from './ModelTabRefCapability';
 import { ModelTabGenProbe } from './ModelTabGenProbe';
 import { ModelTabProviderConfig } from './ModelTabProviderConfig';
 import type { CapabilityProbe } from '../hooks/useCapabilityProbe';
@@ -148,6 +150,8 @@ export const ModelTab: React.FC<Props> = ({
         />
       )}
       <ModelTabOutputModalities value={m.outputModalities} />
+      {/* 2026-11-11 小欧 - 附件引用能力矩阵(ref_capability_map 只读投影) — 小欧-2026-11-11 */}
+      <ModelTabRefCapability map={selectedEntry?.ref_capability_map} />
       {isGenerationModel && (
         <ModelTabGenProbe
           media={media}

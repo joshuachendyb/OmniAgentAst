@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-11-11 小欧 新建(自 vision.py 更名收窄): 附件/URL 占位编解码 + wire 展开,
 #   能力判定归 capability, 识别归 contract/extract, 载荷构造归 media_payload — 小欧-2026-11-11
+# 2026-11-11 小欧 补设计缺口: URL·text/richdoc 下载后按契约文本出口注入正文(失败退链接文本);
+#   附件无原生通道改复用注入文本(原一行说明丢正文) — 小欧-2026-11-11
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
 
@@ -18,6 +20,7 @@ import base64
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from urllib.parse import urlsplit
 
 from app.attachments import contract, extract
 from app.attachments.extract import classify, classify_url
@@ -96,7 +99,7 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
     route = contract.KIND_CONTRACT[("attachment", kind)]
     cap = prof.get(route.native_modality) if route.native_modality else None
     if not (cap and cap.native):
-        return None, f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
+        return None, _inject_fallback(att, aid)
     logical, reason = await build_logical_part(kind, att)
     if not logical:
         return None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]"
@@ -104,9 +107,19 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
     return (part, "") if part else (None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]")
 
 
+def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
+    """无原生通道 → 复用契约文本出口(注入文本); 出口也失败退一行说明。"""
+    try:
+        return extract.build_inject_text(att)
+    except Exception:  # noqa: BLE001 — 文本出口失败不抛, 退一行说明不断轮
+        return f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
+
+
 async def _expand_url(url: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
     ck = classify_url(url)
     route = contract.KIND_CONTRACT[("url", ck)]
+    if route.fetch != "none" and ck in ("text", "richdoc"):
+        return await _fetch_extract_text(url, ck)
     cap = prof.get(route.native_modality) if route.native_modality else None
     if not (cap and cap.native):
         return None, extract._link_body(url)
@@ -116,3 +129,21 @@ async def _expand_url(url: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
         return None, f"[链接未转发: {url} — {reason}]"
     part, reason = to_wire_part(logical)
     return (part, "") if part else (None, f"[链接未转发: {url} — {reason}]")
+
+
+async def _fetch_extract_text(url: str, ck: str) -> Tuple[Any, str]:
+    """text/richdoc URL → 下载字节后按契约文本出口注入正文(与模型视觉能力无关);
+    下载/解析失败退链接文本, 不抛异常断轮。"""
+    from app.services.agent.remote_fetch import fetch_bytes  # 延迟导入防循环
+    raw, reason = await fetch_bytes(url, ck)
+    if raw:
+        name = Path(urlsplit(url).path).name or url
+        att = {"original_name": name, "url": url}
+        try:
+            body = (extract._text_body_from_bytes(att, raw) if ck == "text"
+                    else extract._richdoc_body_from_bytes(att, raw, filename=name))
+            return {"type": "text", "text": body}, ""
+        except Exception:  # noqa: BLE001 — 解析失败退链接文本
+            pass
+    link = extract._link_body(url)
+    return None, (f"{link}\n(自动获取正文失败: {reason})" if reason else link)
