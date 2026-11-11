@@ -508,7 +508,7 @@ app:
 #   inline_limit_mb: 内联上限(MB)。超过先压缩；压缩后仍超或关掉压缩 → 退化为一行文字说明
 #   compress_max_edge / compress_jpeg_quality: 压缩只缩不改内容(长边像素、JPEG 质量)
 #   remote_url_passthrough: 实测支持外链的模型，把它在消息里显式给出的公网图片链接直接转发(零字节搬运)
-#   probe_image_url: 「传输探测」测外链腿用的公网位图地址(设置页② Image_URL 行就地显示/修改)；留空=只测内联
+#   probe_image_url: 「传输探测」测外链腿用的公网位图地址(在媒体页「外链图片」节编辑)；留空=只测内联
 #     默认取 PNG 而非 ico: 实测 sensenova 对 .ico 返 400 image download failed, agnes 可拉 — 小欧-2026-11-09
 #   probe_video_url / probe_audio_url: 视频/音频输入能力验证腿用的公网素材地址；留空=用内置默认
 #     (视频 test-videos 全球 CDN 991KB mp4 / 音频 runoob 29KB mp3, 本机实测择优) — 小欧-2026-11-11

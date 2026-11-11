@@ -4,6 +4,8 @@
 // 2026-11-11 小欧 - 注释勘误: 输入行 methodLines/JSDoc "输出能力正常"→"输入能力正常"(输入验证行结论词为输入) — 小欧-2026-11-11
 // 2026-11-11 小欧 - 移除 PROBE_IMAGE_URL_KEY/probeImageUrlOf(死代码): 三个验证素材地址回媒体页直接编辑;
 //   Image_URL 文案"上方「Image_URL」"→"媒体页「外链图片」节"(地址不再模型 Tab 就地行) — 小欧-2026-11-11
+// 2026-11-11 小欧 - 补漏: urlLegText 外链未取证文案"未发起（Image_URL 为空）"→"未发起（媒体页「外链图片」节未填图片地址）"
+//   (上轮漏改该处, Image_URL 行已删, 用户看到旧文案找不到输入框) — 小欧-2026-11-11
 import type {
   MediaProbe,
   ModalityProbeRec,
@@ -73,7 +75,7 @@ const inlineLegText = (media?: MediaProbe): string =>
 
 const urlLegText = (media: MediaProbe | undefined, urlErr: boolean): string => {
   const urlTested = urlTestedOf(media);
-  if (!urlTested && !urlErr) return '未发起（Image_URL 为空）';
+  if (!urlTested && !urlErr) return '未发起（媒体页「外链图片」节未填图片地址）';
   const cost = media?.url_ms != null ? probeMsText(media.url_ms) : '—';
   const token = urlErr
     ? '抓图失败（未取证）'
