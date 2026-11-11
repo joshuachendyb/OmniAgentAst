@@ -510,6 +510,8 @@ app:
 #   remote_url_passthrough: 实测支持外链的模型，把它在消息里显式给出的公网图片链接直接转发(零字节搬运)
 #   probe_image_url: 「传输探测」测外链腿用的公网位图地址(设置页② Image_URL 行就地显示/修改)；留空=只测内联
 #     默认取 PNG 而非 ico: 实测 sensenova 对 .ico 返 400 image download failed, agnes 可拉 — 小欧-2026-11-09
+#   probe_video_url / probe_audio_url: 视频/音频输入能力验证腿用的公网素材地址；留空=用内置默认
+#     (视频 test-videos 全球 CDN 991KB mp4 / 音频 runoob 29KB mp3, 本机实测择优) — 小欧-2026-11-11
 media:
   inline_limit_mb: 2
   compress_enabled: true
@@ -517,6 +519,8 @@ media:
   compress_jpeg_quality: 85
   remote_url_passthrough: true
   probe_image_url: "https://www.baidu.com/img/flexible/logo/pc/result.png"
+  probe_video_url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+  probe_audio_url: "https://www.runoob.com/try/demo_source/horse.mp3"
 
 # 前端(step)渲染显示配置 — 小欧 2026-10-05 定两个独立开关，默认皆开
 #   step_render.thoughtMarkdown = 「思考排版」: thought 块正文是否按 Markdown 语法渲染

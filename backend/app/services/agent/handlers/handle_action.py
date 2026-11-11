@@ -130,6 +130,7 @@ handle_action — action编排处理(门禁已拆出)
 小沈 2026-06-13 移除ActionHandler类,改为模块级函数
 小健 2026-09-04 拆分: 原docstring"3个函数"随 execute_tools/build_observation 下沉更新为"2个顶层函数", 明确下沉去向(详见头部编辑历史)
 小健 2026-09-05 10.4第二阶段: 门禁拆出safety_gate后, docstring随文件改名handle_action同步更新为"仅1个顶层函数"
+小欧 2026-11-11 禁用工具拒绝文案改版: "禁止使用"→"已禁用"(带omniAgent系统品牌前缀, 与observation_builder同批), 未注册文案不变 — 小欧-2026-11-11
 """
 
 import time

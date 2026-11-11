@@ -112,6 +112,7 @@ key 全局唯一，加载自检重复直接拒启。
       措辞、不拦已注册工具; 键存在即配置为真值——清空=不禁用任何工具(不兜底), 仅缺键/异常形状回落内置;
       运行时消费口 get_disabled_official_tools/is_disabled_tool(get_config 热读)。
       同批同步 config.yaml.example 与 config/config.yaml(铁规三处同步) — 小欧-2026-11-10
+    2026-11-11 小欧 - 新增 media.probe_video_url / media.probe_audio_url(输入能力验证视频/音频素材地址, hidden 仅组内不渲染, 键可读写; 默认值=实测择优公网小文件) — 小欧-2026-11-11
 
 """
 from typing import Any, Dict, List, Optional
@@ -235,6 +236,16 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
               hidden=True,
               notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。已迁到设置页②「Image_URL」行就地显示与修改，此处仅作配置源登记。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
+        # 2026-11-11 小欧 - 视频/音频输入验证素材地址(hidden 仅组内不渲染, 键可读写; 默认值=本机实测
+        #   可达性/速度/体积择优的全球 CDN 小文件(视频 test-videos.co.uk, 音频 runoob; 与图片外链地址同口径) — 小欧-2026-11-11
+        _item("media.probe_video_url", "text", "视频输入检测用素材地址",
+              "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+              hidden=True,
+              notice="「视频输入能力验证」腿用的公网视频地址（约 991KB 的 mp4，全球 CDN），原样交给厂商接口抓取。留空 = 用内置默认地址；换成私有地址时保证厂商侧可直连 GET"),
+        _item("media.probe_audio_url", "text", "音频输入检测用素材地址",
+              "https://www.runoob.com/try/demo_source/horse.mp3",
+              hidden=True,
+              notice="「音频输入能力验证」腿用的公网音频地址（约 29KB 的 mp3），后端先下载再 base64 内联发送。留空 = 用内置默认地址"),
     ]},
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，

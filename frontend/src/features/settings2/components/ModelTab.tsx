@@ -8,7 +8,8 @@ import { ModelTabParamsHeader } from './ModelTabParamsHeader';
 import { ModelTabParams } from './ModelTabParams';
 import { ModelTabInputModalities } from './ModelTabInputModalities';
 import { ImageUrlRow } from './ImageUrlRow';
-import { ModelTabMediaProbe } from './ModelTabMediaProbe';
+// 2026-11-11 小欧 - 输入能力验证行统一组件（图片/视频/音频合并, 替换原 MediaProbe/ModalityProbe 两组件）— 小欧-2026-11-11
+import { ModelTabInputProbe } from './ModelTabInputProbe';
 import { ModelTabOutputModalities } from './ModelTabOutputModalities';
 import { ModelTabGenProbe } from './ModelTabGenProbe';
 import { ModelTabProviderConfig } from './ModelTabProviderConfig';
@@ -122,16 +123,42 @@ export const ModelTab: React.FC<Props> = ({
         onChange={onProbeUrlChange}
         onSave={onProbeUrlSave}
       />
-      <ModelTabMediaProbe
+      <ModelTabInputProbe
+        kind="image"
         media={media}
         lastProbe={selectedEntry?.last_probe?.media}
+        checked={m.inputModalities.includes('image')}
         chatLegMuted={chatLegMuted}
-        imageChecked={m.inputModalities.includes('image')}
         saving={s.saving}
         probing={probe.probing}
         genProbing={probe.genProbing}
-        onProbe={() => void probe.runMediaProbe()}
+        onProbe={() => void probe.runMediaProbe('image')}
       />
+      {/* 视频/音频输入能力验证行: 只在声明对应输入模态时渲染(与图片行同口径) */}
+      {m.inputModalities.includes('video') && (
+        <ModelTabInputProbe
+          kind="video"
+          media={media}
+          lastProbe={selectedEntry?.last_probe?.media}
+          checked
+          saving={s.saving}
+          probing={probe.videoProbing}
+          genProbing={probe.genProbing}
+          onProbe={() => void probe.runMediaProbe('video')}
+        />
+      )}
+      {m.inputModalities.includes('audio') && (
+        <ModelTabInputProbe
+          kind="audio"
+          media={media}
+          lastProbe={selectedEntry?.last_probe?.media}
+          checked
+          saving={s.saving}
+          probing={probe.audioProbing}
+          genProbing={probe.genProbing}
+          onProbe={() => void probe.runMediaProbe('audio')}
+        />
+      )}
       <ModelTabOutputModalities value={m.outputModalities} />
       {isGenerationModel && (
         <ModelTabGenProbe

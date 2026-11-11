@@ -29,6 +29,7 @@
 // 2026-11-09 小欧 - dirtyCount 走 modelDirtyCount 单源；新增 discardGroup（只撤当前组）与
 //   saveProbeImageUrl（Image_URL 即存链，含 mtime 外改守卫）— 小欧-2026-11-09
 // 2026-11-09 小欧 - 编排壳化：加载链/保存链/模型域拆至 useSettingsLoad、useSettingsPersist、useModelDomain — 小欧-2026-11-09
+// 2026-11-11 小欧 - 注释勘误: 文件名纠错——useSettingsPersist/useModelDomain 实为 useSettingsWrites/useModelSaveChain — 小欧-2026-11-11
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { modelDirtyCount } from '../utils/modelUtils';
 import { initialModel } from '../utils/modelState';
