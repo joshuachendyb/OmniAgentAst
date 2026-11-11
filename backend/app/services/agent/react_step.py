@@ -1,6 +1,3 @@
-
-# -*- coding: utf-8 -*-
-# 编辑历史:
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-01 chendyg 状态集中管理重构v2
@@ -192,6 +189,7 @@
 # 2026-11-08 小欧 - 图片 parts 展开从 prepare_messages_for_llm 拆出, 改在
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 # 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
+# 2026-11-11 小欧 展开调用更名 expand_vision_parts → expand_attachment_parts(附件/URL 占位泛化) — 小欧-2026-11-11
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -395,7 +393,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     )
 
     # 2026-11-08 小欧: 落盘/日志已取占位原文, 此处才展开图片 parts(避免 base64 入库/入日志); 覆盖全部 user 消息
-    messages = await agent.message_builder.expand_vision_parts(messages, _task_llm)
+    messages = await agent.message_builder.expand_attachment_parts(messages, _task_llm)
 
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")

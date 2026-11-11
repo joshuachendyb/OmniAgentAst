@@ -64,15 +64,16 @@
                         llm.context_limit_default 设置项默认值由魔法数字 262144 改引本常量;
                         引用方(lifecycle/service/message_builder/stream_orchestrator)导入路径同步改
                         app.constants, compaction_constants 不再定义 — 小欧-2026-10-31
-    2026-11-01 小欧 键名统一: DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH, 与厂商通用键
-                        context_length 同名(原 context_limit 系自造名, 全仓统一后仅存一个名字);
-                        取值顺序同步补 model_meta 一层 — 小欧-2026-11-01
     2026-10-31 小欧 新增引用体积预算比例默认值 REF_SINGLE_RATIO/REF_TOTAL_RATIO/REF_REJECT_RATIO/
                         REF_INTERJECT_RATIO: 原为 services/refs/limits.resolve_limits 内联字面量(0.20/
                         0.40/0.60/0.05), 收口至本文件作单一真源, 配置键 tuning.refs.* 仍可覆盖;
                         取值零变更 — 小欧-2026-10-31
+    2026-11-01 小欧 键名统一: DEFAULT_CONTEXT_LIMIT → DEFAULT_CONTEXT_LENGTH, 与厂商通用键
+                        context_length 同名(原 context_limit 系自造名, 全仓统一后仅存一个名字);
+                        取值顺序同步补 model_meta 一层 — 小欧-2026-11-01
     2026-11-03 小欧 新增 ChatTaskStatus 枚举 + 三集合(TERMINAL/STATUSES/NON_RUNNING): chat_tasks.status
                         单一真源, 收口 INSERT/DDL 默认值/reconcile WHERE 三处魔法字符串 — 小欧-2026-11-03
+    2026-11-11 小欧 REF_KINDS 增 url 来源(引用入口与渲染共用白名单自动放行) — 小欧-2026-11-11
 
 """
 
@@ -187,7 +188,7 @@ REF_INTERJECT_RATIO = 0.05  # 【系统级】tuning.refs.interject_ratio: 插话
 
 # 引用来源白名单(2026-10-30 小欧): 唯一真源 —— 编排入口过滤(browse_service.sanitize_refs)
 #   与渲染期过滤(refs.render)共用, 防止"入口放行、渲染静默丢弃"的两套口径分叉
-REF_KINDS = frozenset({"file", "selection", "log", "message", "attachment"})  # 2026-11-06 小欧 重建: attachment(附件按 attachment_id 注入, path 越界不丢弃)
+REF_KINDS = frozenset({"file", "selection", "log", "message", "attachment", "url"})  # 2026-11-11 小欧: 增 url 来源
 
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;

@@ -47,6 +47,7 @@
 // 2026-11-09 小欧 - MediaProbe 补 url_err(厂商抓图失败≠地址为空没发)与 inline_ms/url_ms/inline_tokens/url_tokens(②验证tip按腿显示) — 小欧-2026-11-09
 // 2026-11-09 小欧 - 生成验证([15]): MediaProbe 扩 generate.image/video 双腿 + probeOutput 接口(视频异步, 显式 1200s 超时) — 小欧-2026-11-09
 // 2026-11-11 小欧 - 注释勘误: 原记录"1200s 超时"实为 1800s(30分钟)，且含②/[15] 章节文档号(铁规禁) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - ModelEntry 增 ref_capability_map 二维投影(后端 contract 生成, 前端只读索引) — 小欧-2026-11-11
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -113,6 +114,9 @@ export interface ModelEntry {
   max_output_length?: number | null;
   /** 媒体传输探测结果(实测得出，非厂商声明)；未探测 → undefined。 — 小欧-2026-11-08 */
   media?: MediaProbe;
+  /** 附件/文件引用能力二维投影(source_kind → content_kind → 三态)；
+   *  后端 contract.ref_capability_map 生成, 徽标只读索引不推导 — 小欧-2026-11-11 */
+  ref_capability_map?: Record<string, Record<string, 'native' | 'degraded' | 'opaque'>>;
   /** 上次验证回执(未定结论也记原因)；与 media 分键，只供界面常驻显示 — 小欧-2026-11-09 */
   last_probe?: ProbeLastMap;
 }

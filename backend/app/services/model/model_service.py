@@ -203,6 +203,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   配置覆盖, 缺省用实测择优内置默认(w3school 788KB mp4 / runoob 29KB mp3); 图片腿行为零改动 - 小欧-2026-11-11
 # 2026-11-11 小欧 - 勘误: 上条"w3school 788KB mp4"实为 test-videos.co.uk 991KB mp4(实测 w3school GET>30s 超时,
 #   已改 test-videos.co.uk 全球 CDN 完整 GET≈3s; 音频 runoob 29KB 正确) — 小欧-2026-11-11
+# 2026-11-11 小欧 - _models_of 下发 ref_capability_map 二维投影(contract 生成, DTO 只透传) — 小欧-2026-11-11
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -222,6 +223,9 @@ from app.logger import logger
 from app.utils.secret_utils import is_blank_secret
 from app.config import get_config  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 # 2026-11-09 小欧 - 生成端点单点（探测腿与 Phase B 真业务共用唯一 HTTP 出口）— 小欧-2026-11-09
+# 2026-11-11 小欧: 附件能力二维投影下发(前端徽标只读索引, DTO 只透传)
+from app.attachments.contract import ref_capability_map
+from app.services.agent.capability import profile_of
 from app.services.generation import generation_client
 from app.services.model.config_helpers import (
     get_config_path,
@@ -319,6 +323,8 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
             "media": meta.get("media") or {},  # 媒体传输探测结果(实测), 供模型库展示 — 小欧-2026-11-08
+            # 附件/文件引用能力二维投影(source_kind → content_kind → 三态), 前端只读索引 — 小欧-2026-11-11
+            "ref_capability_map": ref_capability_map(profile_of(provider, m)),
             # 上次验证回执(含未定结论的原因), 只给界面常驻显示, 不参与能力判定 — 小欧-2026-11-09
             "last_probe": meta.get("last_probe") or {},
         })

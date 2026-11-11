@@ -17,6 +17,7 @@
 // 编辑历史: 2026-11-10 小欧 - 排版重设计: 顶部常驻文字改标题旁帮助图标(Tooltip), 规则文案上移 ATTACHMENT_RULES 单一真源 — 小欧-2026-11-10
 // 编辑历史: 2026-11-10 小欧 - 合集限额接入: 打开时拉取后端 limits 并下发表单(入口置灰), 左栏显示合集数/条目数配额;
 //   条目 meta 补引用身份, 右栏标题带上合集用途备注 — 小欧-2026-11-10
+// 编辑历史: 2026-11-11 小欧 - 接入 capabilities(accept 白名单/setMaxRefs) + 列表行传 kind(图标按类型) — 小欧-2026-11-11
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -64,6 +65,7 @@ import {
 
 import {
   attachmentApi,
+  type AttachmentCapabilities,
   type AttachmentRecord,
 } from '@/services/api/attachment.api';
 import {
@@ -91,7 +93,7 @@ import {
 } from '@/features/refs/uploadAttachment';
 import { quoteFile } from '@/features/refs/quote';
 import { getLocalCapability, importLocal } from '@/features/refs/localImport';
-import { refLimitText, type ComposerRef } from '@/features/refs/store';
+import { refLimitText, setMaxRefs, type ComposerRef } from '@/features/refs/store';
 import {
   showMessage,
   showSuccess,
@@ -297,6 +299,23 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [packLimits, setPackLimits] = useState<MaterialPackLimits | null>(null);
   const rowsRef = useRef<RowSpec[]>([]);
   const activeElRef = useRef<HTMLDivElement | null>(null);
+  // 上传白名单/上限唯一出口(后端 capabilities); 打开抽屉时刷新一次 — 小欧-2026-11-11
+  const [caps, setCaps] = useState<AttachmentCapabilities | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void attachmentApi
+      .capabilities()
+      .then((c) => {
+        if (!alive) return;
+        setCaps(c);
+        setMaxRefs(c.limits.max_refs);
+      })
+      .catch(() => void 0);
+    return () => {
+      alive = false;
+    };
+  }, [open]);
 
   // 上传批量收集（与 AttachmentArea 原实现同口径：antd beforeUpload 逐文件回调 + 末个触发）
   const [busy, setBusy] = useState(0);
@@ -913,6 +932,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           name: rec.original_name,
           meta: metaOf(rec, SCOPE_FROM[scope]),
           mime: rec.mime,
+          kind: rec.kind,
           added,
           favorited: rec.favorited,
           invalid: !rec.available,
@@ -1250,6 +1270,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           />
           <Upload
             multiple
+            accept={caps?.accept}
             showUploadList={false}
             disabled={disabled || busy > 0}
             beforeUpload={beforeUpload}

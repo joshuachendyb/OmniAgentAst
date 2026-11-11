@@ -72,6 +72,7 @@
 // 编辑历史: 2026-11-06 小欧 - 附件三入口(按钮/拖拽/粘贴)与素材包面板接入: 附件入口改插槽, 由本组件
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
 
 /**
  * ChatInput - 输入框组合根（六组件组合）
@@ -123,7 +124,7 @@ import type { ChipTone } from '@/features/refs/notice';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
-  MAX_REFS,
+  getMaxRefs,
   refLimitText,
   type ComposerRef,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
@@ -612,7 +613,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     // 2026-10-30 小欧(D5): 限流必须在 add(pending 占位) 之前——原实现先 add 占位再限流,
     //   超限 return 后占位 chip 残留(pending:true) → refsPending=true 卡死发送闸门
     //   "引用内容仍在载入"; 设计 5.4.7"在入队前同限"由此达成(占位也是入队, 必须一并拦)。
-    if (refs.length >= MAX_REFS) {
+    if (refs.length >= getMaxRefs()) {
       showMessage(ErrorType.FILE_READ, refLimitText());
       return;
     }

@@ -760,6 +760,10 @@ def sanitize_refs(
         if kind == "attachment":
             kept.append(ref)
             continue
+        # 2026-11-11 小欧: url 来源不落 path(下载/准入归 resolver+remote_fetch), 与附件同为标识型引用直接放行
+        if kind == "url":
+            kept.append(ref)
+            continue
         if not path:
             logger.warning("[file_browse] 丢弃无 path 的引用条目 label=%s", ref.get("label"))
             dropped.append({

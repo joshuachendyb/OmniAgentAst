@@ -26,6 +26,7 @@
 //   chip 无黄/红标; 且重建的是已上行过的条目, 不再重判配额(满额 20 条时会被自己占位挡掉) — 小欧-2026-10-30
 // 编辑历史: 2026-11-07 小欧 - F-01: composerRefStore 导出 occupancy()(当前占用条数),
 //   供上传方发起请求前判容量, 不产生孤儿附件记录 — 小欧-2026-11-07
+// 编辑历史: 2026-11-11 小欧 - 删 MAX_REFS 常量, 改 maxRefs 模块缓存 + setMaxRefs/getMaxRefs(上限唯一来自后端 capabilities) — 小欧-2026-11-11
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -43,8 +44,11 @@ import type { ChatRefPayload } from '../../types/chat';
 import { normalizePath, refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
 import type { NoticeMap } from './notice';
 
-// 2026-10-29 小欧 - 引用条数上限: 与 services/refs/limits.py:MAX_REFS 同值(单一真源, 双保险 L1)
-export const MAX_REFS = 20;
+// 2026-11-11 小欧 - 删 MAX_REFS 常量(C8): 上限唯一来自后端 contract.limits(),
+//   经 GET /attachments/capabilities 下发; 前端禁止再写死(双保险改为单真源)。
+let maxRefs = 20;      // 模块缓存: capabilities 拉取成功前沿用保守缺省, 拉取后覆写
+export const setMaxRefs = (n: number): void => { maxRefs = n > 0 ? n : maxRefs; };
+export const getMaxRefs = (): number => maxRefs;
 
 export type ComposerRef = ChatRefPayload & {
   id: string;
@@ -68,7 +72,7 @@ export type ComposerRef = ChatRefPayload & {
 };
 
 /** 超上限的统一提示文案（@补全 / 文件页 / 引用按钮三处共用，避免各写一份）— 小欧-2026-10-30 */
-export const refLimitText = (): string => `一次最多引用 ${MAX_REFS} 项`;
+export const refLimitText = (): string => `一次最多引用 ${maxRefs} 项`;
 
 /**
  * 引用 id：调用方生成（后端不认此 id，仅前端去重用）。
@@ -163,7 +167,7 @@ export const composerRefStore = {
     const known =
       live.some((r) => refKeyOf(r) === k) ||
       queue.some((r) => refKeyOf(r) === k);
-    if (!known && occupancy() >= MAX_REFS) return false;
+    if (!known && occupancy() >= maxRefs) return false;
     place(ref);
     if (ref.path) refNoticeStore.clearPath(ref.path);
     return true;

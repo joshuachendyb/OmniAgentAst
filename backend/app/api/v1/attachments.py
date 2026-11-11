@@ -13,6 +13,7 @@
 # 2026-11-07 小欧 预览严格读: 预览读(raw)改严格校验, 自动升级只属发送注入/手动收藏, 读不产生写副作用;
 #   promote 端点改直线分派(已是 global 直接返回, 去掉 auto_promote 后的重复一趟 promote) — 小欧-2026-11-07
 # 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+# 2026-11-11 小欧 新增 GET /attachments/capabilities 唯一出口(accept/limits/kind_options) — 小欧-2026-11-11
 
 """attachments_routes — 附件 API 路由薄壳。
 
@@ -197,6 +198,21 @@ def collect_attachment(body: CollectIn) -> dict[str, Any]:
     """存为附件：工作区内 referenced(不复制) / 工作区外 copied。"""
     return collector.collect_artifact(body.session_id, body.source_path,
                                       task_id=body.task_id)
+
+
+@router.get("/attachments/capabilities")
+def get_capabilities() -> dict[str, Any]:
+    """上传白名单/上限/类型选项唯一出口(C8): 不设 /limits 别名。
+    accept 由后缀词典组合(单一真源 contract/extract), 前端禁止再写死后缀/大小/上限。"""
+    from app.attachments import contract
+    from app.attachments.extract import (
+        AUDIO_SUFFIXES, IMAGE_SUFFIXES, RICH_SUFFIXES, TEXT_SUFFIXES, VIDEO_SUFFIXES,
+    )
+    accept = ",".join(sorted(IMAGE_SUFFIXES | VIDEO_SUFFIXES | AUDIO_SUFFIXES
+                            | RICH_SUFFIXES | TEXT_SUFFIXES))
+    return {"accept": accept,
+            "limits": contract.limits(),
+            "kind_options": contract.kind_options()}
 
 
 @router.get("/attachments/local-capability")

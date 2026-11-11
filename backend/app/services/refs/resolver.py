@@ -24,6 +24,8 @@
 #   注入成功即 touch_usage 记账 —— 「最近用过」的唯一真源 — 小欧-2026-11-07
 # 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3: 真抽取成功/失败回填抽取态(mark_extract_result, 在 clip_text 之前取 len) — 小欧-2026-11-09
+# 2026-11-11 小欧 附件能力域: 增 url 分支(链接文本+准入, 不下载); 抽取态回填改读契约
+#   fallback_quality, 删除档案卡前缀字符串匹配; 同 path 去重键兼容 url — 小欧-2026-11-11
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -136,9 +138,11 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
         mark_extract_result(att["id"], 0, False)
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
-    # 仅"真抽取正文"(文本/富格式)成功才回填 ok —— 档案卡不改变抽取态,
-    #   避免占住 extract_status='none' 导致真抽取永久无法回填。
-    if not text.startswith("[附件档案卡·"):
+    # 仅"真抽取正文"(契约 fallback_quality=content)成功才回填 ok —— 档案卡/元数据不改变抽取态,
+    #   避免占住 extract_status='none' 导致真抽取永久无法回填。前缀属实现细节, 不得作判据。
+    from app.attachments.contract import KIND_CONTRACT   # 延迟导入防循环
+    _route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
+    if _route.fallback_quality == "content":
         mark_extract_result(att["id"], len(text), True)
     touch_usage(att["id"])
     # 2026-11-07 小欧 单条预算统一: text 也走 clip_text —— 未超限(len≤cap)原样返回, 故
@@ -165,6 +169,16 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
       外部 + 无/有 lineRange           → read_external_file(同上口径)
       无 path                          → dropped(no_path)
     """
+    if ref.get("kind") == "url":
+        # 扩展点 0: 链接文本 + 准入(url_reject_reason), 不下载不读盘(P4 下载归 remote_fetch)
+        from app.services.agent.media_payload import url_reject_reason   # 延迟导入: 仅 url 引用需要
+        url = str(ref.get("url") or "")
+        reason = url_reject_reason(url)
+        if reason:
+            return ResolvedRef(ref=ref, truncated=False,
+                               note=f"err:url_rejected:{reason}")
+        return ResolvedRef(ref={**ref, "content": extract._link_body(url)},
+                           truncated=False, note="")
     if ref.get("kind") == "attachment":
         # 2026-11-06 小欧: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
         #   否则违背本文件"同步读盘经 asyncio.to_thread 卸载(仓库既有范式)"纪律 — 小欧-2026-11-06
@@ -317,7 +331,7 @@ def _merge_same_path(refs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     by_path: Dict[str, List[Dict[str, Any]]] = {}
     order: List[str] = []
     for r in refs:
-        p = r.get("path") or ""
+        p = r.get("path") or r.get("url") or ""
         if p not in by_path:
             by_path[p] = []
             order.append(p)

@@ -71,11 +71,12 @@
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
 # 2026-10-31 小欧 - init_history 补传 ws_text(编排层渲染的目录块), 本层不再取快照 — 小欧-2026-10-31
 # 2026-11-03 小欧 - _terminate_cancelled 取消终态 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+#   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 # 2026-11-07 小欧 - 单步异常重试改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
 #   重试成功后位置2 拼留; 改 emit_notice(retrying,start) + 下轮首 chunk emit_notice(retrying,done) 清除 — 小欧-2026-11-07
-#   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 # 2026-11-08 小欧 - 接视觉通道: 按 supports_image_input 分流, 视觉模型把图片 ref 摘出正文走 wire image_url parts,
 #   非视觉模型原样全走文本档案卡 — 小欧-2026-11-08
+# 2026-11-11 小欧 计划器接线: refs→to_input_items→plan_refs→init_history(plans=), 删除图片能力 if 分流 — 小欧-2026-11-11
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -99,8 +100,16 @@ from app.services.agent.react_inference import handle_react_error, _is_recoverab
 from app.db import db
 from app.services.chat import storage
 from app.services.task.task_state import get_stream_buffer
-# 2026-11-08 小欧: 视觉分流(supports_image_input 判定 / split_vision_refs 摘图片 ref)
-from app.services.agent.vision import split_vision_refs, supports_image_input
+# 2026-11-11 小欧: 引用计划统一分流(refs→InputItem→plan_refs), 能力判定不再在本层做 if
+from app.attachments.contract import plan_refs
+from app.services.agent.capability import profile
+
+
+def to_input_items(refs: list | None) -> list:
+    """编排层 refs DTO → InputItem(浅拷贝补默认来源, 不引入第二份持久化)。"""
+    return [{**r, "kind": r.get("kind") or "file"} for r in (refs or [])]
+
+
 # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 移除顶层 import(改D路径局部import),
 #   否则 task包冷启动(import task_runtime/task_registry)踩 load-time 循环 — 小欧-2026-09-08
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): retrying content 去冗余词(请求LLM重试) — 小欧-2026-10-25
@@ -215,19 +224,17 @@ async def run_react_cycle(
     #   orchestrator 插话分支解析并渲染进注入正文(经 drain_inbox 并入), 原"覆盖两处"不实。
     # 视觉模型把图片 ref 摘出正文, 改走 wire image_url parts(init_history 组装占位);
     #   非视觉模型原样全走文本(档案卡), 与未接入视觉通道前逐字节一致。
-    _refs = (getattr(agent, "_start_meta", None) or {}).get("refs")
-    if supports_image_input(getattr(agent, "_task_llm_model", None)):
-        _text_refs, _vision_refs = split_vision_refs(_refs)
-    else:
-        _text_refs, _vision_refs = _refs, []
+    _refs = (getattr(agent, "_start_meta", None) or {}).get("refs") or []
+    _items = to_input_items(_refs)               # 编排层 refs DTO → InputItem
+    _plans = plan_refs(_items, profile(getattr(agent, "_task_llm_model", None)))
     agent.message_builder.init_history(
         getattr(agent, "_sys_prompt", "") or "",
         task or "",
-        refs=_text_refs,
+        refs=_refs,          # 降级文本块内容真源(resolver 已产出); plans 只定占位/文本块分流
+        plans=_plans,
         # 2026-10-31 小欧 - 目录块由编排层渲染(ws_block)后透传,
         #   与日志/回执同一份文本, 本层不重复渲染 — 小欧-2026-10-31
         ws_text=(getattr(agent, "_start_meta", None) or {}).get("ws_block") or "",
-        vision_slots=_vision_refs,
     )
     # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"); 无摘要则注全量历史。— 小欧 2026-10-14
     # 2026-10-25 小欧 修复(北京老陈令): 合并为一次注入, summary 在前 delta 在后
