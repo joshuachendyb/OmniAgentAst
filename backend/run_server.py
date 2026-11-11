@@ -54,6 +54,9 @@
 #     (路径错位) → backend/config/config.yaml 每次启动被重建、永不生效、反复误导定位(用户多次删除仍再生)。
 #     修复: 新增 _config_target(): frozen=exe同级 config/, 源码=代码库根 config/(与 get_config_path 同源);
 #     example 源 frozen=exe同级, 源码=backend/config.yaml.example(git 唯一模板)。 — 小欧-2026-11-06
+#   2026-11-12 小欧 - uvicorn.run log_level "info"→None: 该值在 uvicorn Config.configure_logging 中
+#     会 setLevel 强覆盖 uvicorn.error/access/asgi, 与 setup_uvicorn_loggers 设的总闸 DEBUG 冲突
+#     (原来靠 startup 二次纠正才恢复, 属多余绕路); 置 None 后由本系统 handler 阈值统一裁决 — 小欧-2026-11-12
 # ============================================================================
 import argparse
 import shutil
@@ -317,10 +320,11 @@ def main() -> None:
     set_forwarded_allow_ips(args.forwarded_allow_ips)
     # uvicorn 日志非阻塞化(2026-10-25): 须在 uvicorn.run 之前装配, 且传 log_config=None
     # 防 uvicorn 默认 dictConfig 覆盖。 — 小欧-2026-10-25
+    # 2026-11-12 小欧 - log_level=None: 不在 uvicorn 侧设级别, 交由本系统 handler 阈值裁决(原因见文件头历史)。
     from app.logger.shared_handler import setup_uvicorn_loggers
     setup_uvicorn_loggers()
     import uvicorn
-    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info",
+    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level=None,
                 log_config=None, forwarded_allow_ips=args.forwarded_allow_ips)
 
 

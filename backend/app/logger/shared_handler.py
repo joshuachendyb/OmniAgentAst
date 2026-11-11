@@ -20,15 +20,15 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 # 2026-10-25 - 小欧 - uvicorn 三 logger 去掉 ConsoleMirrorHandler, 只保留文件 handler: 访问日志对排障
 #   无价值却高频刷屏, 控制台只留 log_and_print 与应用 WARNING+ 日志。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - 日志级别热重载: 新增 refresh_log_levels(), 供 main.py 周期 watcher 调用。  小欧-2026-10-25
-# 2026-10-25 - 小欧 - refresh 补 formatter 刷新(会审缺陷1): 只改级别不改格式串, debug 切换后 lineno 字段
+# 2026-10-25 - 小欧 - refresh 补 formatter 刷新: 只改级别不改格式串, debug 切换后 lineno 字段
 #   与模式脱节; 现同步重设共享 file handler 的 _build_formatter 与各 console 的 _TruncateConsoleFormatter。
-#   get_log_level 单次 get_config()(会审缺陷2)。  小欧-2026-10-25
-# 2026-10-25 - 小欧 - 去掉 _managed_loggers 自维护登记表(会审: 与 logging.loggerDict 重复, 违 DRY),
+#   get_log_level 单次 get_config()。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - 去掉 _managed_loggers 自维护登记表(与 logging.loggerDict 重复, 违 DRY),
 #   refresh 改按 app./uvicorn 前缀遍历全局 loggerDict, 第三方 logger 不动。  小欧-2026-10-25
 # 2026-10-29 - 小欧 - 访问日志噪音过滤: 新增 UvicornAccessFilter + install_access_noise_filter()。
 #   过滤范围: 探活(/health /v1/models /api/v1/health) + 状态刷新高频轮询(recent-files / token-usage 精确 +
 #   sessions/{id}/tasks / task/{id} / task/{id}/steps 正则); SSE process-events 保留(发消息核心链路)。
-#   Filter 挂 logger 级: 噪音拦下不进任何 handler(console+文件都不要, 老陈改裁定案); 文件 handler 保留(业务+SSE落盘)。
+#   Filter 挂 logger 级: 噪音拦下不进任何 handler(console+文件都不要); 文件 handler 保留(业务+SSE落盘)。
 #   args 索引修正: uvicorn 0.46 path 在 args[2] 非 args[1](原读错致过滤失效)。幂等安装。 小欧-2026-10-29
 # 2026-11-03 - 小欧 - 控制台镜像阈值可配: ConsoleMirrorHandler 级别读 LogConfig.get_console_level_int()
 #   (logging.console_level, 默认 WARNING 零行为变化), setup 装配与 refresh_log_levels 热重载同源生效。 小欧-2026-11-03
@@ -44,9 +44,17 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   改 _logger_base_level()=DEBUG 恒定不参与裁决, 文件 handler 只读阈值, 控制台 handler 只做精确匹配 — 小欧-2026-11-03
 # 2026-11-03 - 小欧 - 撤销双键(北京老陈令: 一个值即可): 全部回到单键 logging.level —
 #   文件 handler 按 >= 阈值(调试模式强制 DEBUG), 控制台 handler 按 == 精确匹配; 两通道读同一个值, 用法不同 — 小欧-2026-11-03
+# 2026-11-12 - 小欧 - ① _get_shared_handler 双检创建加锁: 原无锁并发下可各建一个安全 handler 写同一文件,
+#   复现该模块已修的 Windows rename 句柄锁冲突; ② _TruncateConsoleFormatter.format 截断时先 copy 记录,
+#   原原地改 msg/args 会污染共享 LogRecord(依赖 handler 先后顺序, 后续 handler 看到被截断的消息) — 小欧-2026-11-12
+# 2026-11-12 - 小欧 - 收敛共享文件 handler 的 setFormatter/setLevel 到唯一入口 _apply_shared_file_handler_config():
+#   原 setup_logger/setup_uvicorn_loggers/install_access_noise_filter/refresh_log_levels 四处各自设置同一全局
+#   handler, 违 DRY/SRP(改一处漏三处); 现统一入口, 行为不变 — 小欧-2026-11-12
 
+import copy
 import logging
 import re
+import threading
 from contextvars import ContextVar
 from typing import Optional
 
@@ -73,21 +81,25 @@ def set_session_id(sid: str):
 # — 小欧 2026-07-11
 
 _FILE_HANDLER: Optional[SafeRotatingFileHandler] = None
+_FILE_HANDLER_LOCK = threading.Lock()
 
 
 def _get_shared_handler() -> SafeRotatingFileHandler:
     """获取全局唯一的文件 handler — 小欧 2026-07-11"""
     global _FILE_HANDLER
-    if _FILE_HANDLER is None:
-        from app.logger.config import _get_log_file_path
-        log_file = _get_log_file_path()
-        _FILE_HANDLER = SafeRotatingFileHandler(
-            log_file,
-            maxBytes=LogConfig.get_max_bytes(),
-            backupCount=LogConfig.get_backup_count(),
-            encoding='utf-8',
-        )
-        _FILE_HANDLER.addFilter(SessionFilter())
+    if _FILE_HANDLER is not None:
+        return _FILE_HANDLER
+    with _FILE_HANDLER_LOCK:
+        if _FILE_HANDLER is None:
+            from app.logger.config import _get_log_file_path
+            log_file = _get_log_file_path()
+            _FILE_HANDLER = SafeRotatingFileHandler(
+                log_file,
+                maxBytes=LogConfig.get_max_bytes(),
+                backupCount=LogConfig.get_backup_count(),
+                encoding='utf-8',
+            )
+            _FILE_HANDLER.addFilter(SessionFilter())
     return _FILE_HANDLER
 
 
@@ -103,6 +115,7 @@ class _TruncateConsoleFormatter(logging.Formatter):
     def format(self, record):
         raw = record.getMessage()
         if len(raw) > _CONSOLE_MAX_MSG:
+            record = copy.copy(record)
             record.msg = raw[:_CONSOLE_MAX_MSG] + f"...(截断{len(raw)-_CONSOLE_MAX_MSG}字符)"
             record.args = None
         return super().format(record)
@@ -146,6 +159,17 @@ def _build_formatter(is_debug: bool) -> logging.Formatter:
     return logging.Formatter(_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
 
 
+def _apply_shared_file_handler_config() -> None:
+    """共享文件 handler 的 format/level 唯一配置入口 — 小欧-2026-11-12
+    四个装配点(setup_logger / setup_uvicorn_loggers / install_access_noise_filter /
+    refresh_log_levels)曾各自 setFormatter+setLevel 同一全局 handler, 同一职责四处散落(违 DRY/SRP);
+    统一收敛到此处, 改一处即全局生效, 杜绝未来分叉。
+    """
+    fh = _get_shared_handler()
+    fh.setFormatter(_build_formatter(LogConfig.is_debug_mode()))
+    fh.setLevel(_get_file_level())
+
+
 def _logger_base_level() -> int:
     """logger 总闸恒定取最低档 DEBUG — 小欧-2026-11-03
 
@@ -170,15 +194,11 @@ def setup_logger(name: str) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    log_level = _get_file_level()
     is_debug = LogConfig.is_debug_mode()
 
-    formatter = _build_formatter(is_debug)
-
-    # 文件 handler — 全局共享
+    # 文件 handler — 全局共享, 配置走唯一入口
+    _apply_shared_file_handler_config()
     file_handler = _get_shared_handler()
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(log_level)
 
     # console handler — 2026-09-29 小欧 换掉 logging.StreamHandler(直写 stderr):
     #   同步写 stderr 遇阻塞型 stderr 时 emit() 永久阻塞, 而 Handler.handle() 持 handler 锁,
@@ -210,12 +230,8 @@ def setup_uvicorn_loggers() -> None:
     幂等: 重复调用先清空 handlers 再装配, 防 dictConfig/重复启动遗留旧 handler。
     访问日志是高频轮询噪音, 对定位问题无帮助, 故不挂 console 镜像; 需查时看文件日志即可。
     """
-    is_debug = LogConfig.is_debug_mode()
-    formatter = _build_formatter(is_debug)
-
+    _apply_shared_file_handler_config()
     file_handler = _get_shared_handler()
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(_get_file_level())
 
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
@@ -269,11 +285,10 @@ def install_access_noise_filter() -> None:
     """
     _lg = logging.getLogger("uvicorn.access")
     # ① 文件 handler: 业务 + SSE 落盘(噪音被 logger 级 filter 拦, 不落)
+    _apply_shared_file_handler_config()
     _fh = _get_shared_handler()
     if _fh not in _lg.handlers:
         _lg.addHandler(_fh)
-    _fh.setFormatter(_build_formatter(LogConfig.is_debug_mode()))
-    _fh.setLevel(_get_file_level())
     # ② 噪音 filter 挂 logger 级: 拦住的记录不进任何 handler, 彻底不要(console+文件) — 老陈 2026-10-29
     for _f in list(_lg.filters):
         if isinstance(_f, UvicornAccessFilter):
@@ -296,13 +311,10 @@ def refresh_log_levels() -> None:
     2026-11-03 小欧 - 单键(北京老陈令: 撤销 console_level 拆分): 总闸恒定 DEBUG, 文件 handler 按
     logging.level 常规阈值(>=, 调试模式强制 DEBUG)刷新, 控制台 handler 按 == 精确匹配同一值刷新 — 小欧-2026-11-03
     """
-    log_level = _get_file_level()
     base_level = _logger_base_level()
     is_debug = LogConfig.is_debug_mode()
 
-    file_handler = _get_shared_handler()
-    file_handler.setFormatter(_build_formatter(is_debug))
-    file_handler.setLevel(log_level)
+    _apply_shared_file_handler_config()
 
     for name, obj in logging.Logger.manager.loggerDict.items():
         if not isinstance(obj, logging.Logger):

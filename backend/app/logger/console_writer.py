@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-30 - 小欧 - 新增 console_writer: 控制台镜像输出离线化(根治 App_2026-08-30.log:20790~20801 case09 挂起)
+# 2026-08-30 - 小欧 - 新增 console_writer: 控制台镜像输出离线化(根治控制台下挂起)
 #   病根: log_and_print(约20处: react_cycle/action_handler/path_tool_safety_checker等) 与裸print(action_handler.py:919)
 #         在 asyncio 事件循环线程同步写 stdout, 遇阻塞型 stdout(满管道64KB缓冲/Windows控制台选中)永久阻塞,
 #         事件循环冻结44min, 全服务停摆.
@@ -13,7 +13,7 @@
 #   fd 捕获重定向的 fd1, pytest 按 UTF-8 读回崩→全局捕获缓冲污染→全量单测 9267 假 errors。
 #   方案: 改写 _console_worker 用 sys.stdout.buffer.write(msg.encode('utf-8')) 镜像, 编码确定性对齐
 #   文件日志(UTF-8); 控制台/捕获端均以 UTF-8 字节呈现, 编码零歧义。
-# 2026-09-25 - 小欧 - 三堂会审通过记录(合规/合理/关联逻辑三项全部通过, 无退化仅增强):
+# 2026-09-25 - 小欧 - 控制台镜像离线化修改汇总(合规/合理/关联逻辑校验, 无退化仅增强):
 #   【第一次修 2026-08-30 commit 71de3f7b】病根: log_and_print 的 print() 与裸 print(action_handler.py:919)
 #     在 asyncio 事件循环线程同步写 stdout, 遇阻塞型 stdout(满管道64KB/控制台选中)永久阻塞→事件循环冻结44min;
 #     方案 queue.Queue(512)+daemon线程 console_put 非阻塞入队满则丢; 收口面 log_and_print(约20处)/main 启动tip/
@@ -21,7 +21,7 @@
 #   【第二次修 2026-09-24】病根: sys.stdout.write(msg) 按 Windows 控制台代码页(cp936/GBK)编码中文→GBK 字节
 #     写入被 pytest fd 捕获重定向的 fd1, pytest 按 UTF-8 读回崩→全局捕获缓冲污染→全量单测 9267 假 errors;
 #     方案 改写 _console_worker 用 sys.stdout.buffer.write(msg.encode('utf-8')) 字节镜像, 编码确定性对齐文件日志。
-#   【三堂会审 2026-09-25】合规: SRP/DRY/KISS/SLAP/YAGNI/禁backward 全过(职责未变/无复制/直接buffer写/
+#   【校验 2026-09-25】合规: SRP/DRY/KISS/SLAP/YAGNI/禁backward 全过(职责未变/无复制/直接buffer写/
 #     单层/不过度/无垫片); 合理: 换行补位从 console_put 移至 worker 语义零变, 无buffer兜底 replace 防极端环境;
 #     关联: 15+消费方(log_and_print链/agent_runner/path_tool_safety_checker/tool_runner/react_*/handle_answer/
 #     stream_orchestrator)调用路径不变, 仅 worker 输出编码改 UTF-8, 阻塞保护(满队丢弃)保留, 真机验证
@@ -55,7 +55,7 @@
 """
 console_writer — 控制台镜像输出(事件循环线程零同步 stdout 写)
 编写人 小欧 2026-08-30
-更新人 小欧 2026-09-24 UTF-8 字节写 | 2026-09-25 三堂会审通过 | 2026-09-25 小健 复审修双换行+乱码风险记录
+更新人 小欧 2026-09-24 UTF-8 字节写 | 2026-09-25 校验通过 | 2026-09-25 小健 复审修双换行+乱码风险记录
 """
 import logging
 import queue

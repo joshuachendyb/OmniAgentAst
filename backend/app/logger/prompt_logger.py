@@ -1,24 +1,26 @@
 
 # 编辑历史:
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
-# 2026-07-18 - 小欧 - 修复#10 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
+# 2026-07-18 - 小欧 - 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
 # 2026-07-18 - 小欧 - 修复: 文件名加uuid4().hex[:8]片段防覆蓋
 # 2026-07-26 - 小欧 - 修复log_llm_response更新路径漏写token信息字段(字段名"额外信息"→"token信息"); 新增if extra_info写call_entry["token信息"]
-# 2026-07-26 - 小欧 - 三堂会审欧阳task007报告: (1)去掉if extra_info守卫,改为extra_info or {},确保answer/error类型恒写token信息字段;
+# 2026-07-26 - 小欧 - log_llm_response 补 token 信息写入: (1)去掉if extra_info守卫,改为extra_info or {},确保answer/error类型恒写token信息字段;
 #   (2) save()的"no_id"字面量fallback改为uuid4().hex[:8],并提import uuid到文件顶。
 # 2026-07-28 - 小欧 - 欧阳反馈修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
-# 2026-08-09 - 小欧 - task004深度分析报告核查修复A1/A2/A4(三堂会审通过): (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
-# 2026-08-12 - 小欧 - 报告缺陷核查修复(A1补全): log_observation补"内容"字段(与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
-# 2026-08-13 - 小欧 - 三堂会审修复#35: 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
+# 2026-08-09 - 小欧 - 观察字段与冗余赋值修复: (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
+# 2026-08-12 - 小欧 - log_observation 补"内容"字段: (与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
+# 2026-08-13 - 小欧 - 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
 #   【病根】2026-08-12补"内容"后L409 `entry["格式化内容"]=observation_content` 与"内容"完全重复, 大工具结果(读文件/长SQL输出)日志体积/IO/磁盘双倍开销, 违DRY
 #   【改法】删除"格式化内容"赋值, 保留"原始内容"兼容分析脚本; 已grep确认全仓无调用方依赖"格式化内容"键
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _user_id_from_db 查询由 chat_messages(role='user' AND 序) 改读 chat_user_message(与全系统改读新表一致, 不退化/不读 chat_messages)
-# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.4③: log_llm_call 形参 (model, provider) 分离 → llm_model:
+# 2026-08-22 - 小欧 - model 结构化归一: log_llm_call 形参 (model, provider) 分离 → llm_model:
 #   ModelRef 结构; 日志落盘"模型"/"提供商"键取 llm_model.model/.provider(展示派生); import 补 ModelRef
 # 2026-09-19 - 小欧 - exe打包frozen支持: log_dir frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
-# 2026-10-06 - 小欧 - 报告核查修复 P3-07/P3-06: ①log_llm_call 入口 messages 归一(默认 None 而下方
+# 2026-10-06 - 小欧 - log_llm_call/save 修复: ①log_llm_call 入口 messages 归一(默认 None 而下方
 #   len(messages) 直接崩, _summarize_messages 内仅改局部变量); ②save() 显式返回 True/False 且二次失败
 #   补路径+轮次留痕(原仅一行 error, 该条日志随内存对象覆盖无声丢失)
+# 2026-11-12 - 小欧 - ① log_llm_call 弹 tool_count 前先复制 extra_params, 原直接 pop 修改调用方字典(越界副作用);
+#   ② save() 改临时文件 + os.replace 原子落盘, 原 open('w') 先截断, 写到一半失败会留下半截可被误读的 JSON — 小欧-2026-11-12
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -33,6 +35,7 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 """
 
 import contextvars
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -280,7 +283,7 @@ class PromptLogger:
     ):
         """
         记录 LLM 调用
-        2026-08-22 小欧 归一报告v1.25 6.4③: (model, provider) 分离形参 → llm_model: ModelRef 结构;
+        2026-08-22 小欧 结构归一: (model, provider) 分离形参 → llm_model: ModelRef 结构;
           日志落盘取 .model/.provider 拼文本属展示派生(允许)
 
         Args:
@@ -295,7 +298,7 @@ class PromptLogger:
         if not current_log:
             return
 
-        # 2026-10-06 小欧 修 P3-07: 入参默认 messages=None 而下方 entry 构造直接 len(messages) 崩;
+        # 2026-10-06 小欧 入口归一: 入参默认 messages=None 而下方 entry 构造直接 len(messages) 崩;
         #   _summarize_messages 内 `if not messages: messages=[]` 只改局部变量, 外层拿不到 →
         #   入口归一一次, 覆盖 _summarize_messages 与 len(messages) 两个消费点(SRP/KISS-DIRECT)
         messages = messages or []
@@ -316,6 +319,7 @@ class PromptLogger:
         }
 
         if extra_params:
+            extra_params = dict(extra_params)
             # 已经用工具数量和工具定义替代了原来的 tool_count
             extra_params.pop("tool_count", None)
             if extra_params:
@@ -355,7 +359,7 @@ class PromptLogger:
         timestamp = now_str()
         # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 修复
         # 2026-07-26 小欧 修复更新路径漏写token信息bug，改字段名"额外信息"→"token信息"
-        # 2026-08-09 小欧 task004-A2修复: entry构造移入else分支, 消除更新路径整包丢弃的冗余赋值(三堂会审通过)
+        # 2026-08-09 小欧 entry构造移入else分支, 消除更新路径整包丢弃的冗余赋值
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["解析结果"] = response_content
@@ -429,7 +433,7 @@ class PromptLogger:
         if tool_params:
             entry["工具参数"] = redact_sensitive_params(tool_params)  # 落盘脱敏 — 小欧 2026-10-19
 
-        # 2026-08-13 小欧 三堂会审修复#35: 删除重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文),
+        # 2026-08-13 小欧 删除重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文),
         #   大工具结果(读文件/长SQL输出)日志体积/IO/磁盘翻倍; 保留"原始内容"兼容分析脚本
         if raw_data is not None:
             entry["原始内容"] = raw_data
@@ -482,17 +486,24 @@ class PromptLogger:
         filename = f"prompt_{short_id}+{_uid}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
 
+        tmp_path = log_file_path.with_name(log_file_path.name + ".tmp")
         for retry in range(2):
             try:
-                with open(log_file_path, 'w', encoding='utf-8') as f:
+                with open(tmp_path, 'w', encoding='utf-8') as f:
                     f.write(safe_json_dumps(current_log, ensure_ascii=False, indent=2))
+                os.replace(tmp_path, log_file_path)
                 logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
-                return True   # 2026-10-06 小欧 P3-06: 返回成功标志, 供调用方判成败
+                return True   # 2026-10-06 小欧 返回成功标志, 供调用方判成败
             except Exception as e:
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except OSError:
+                    pass
                 if retry == 0:
                     logger.warning(f"[PromptLogger] 保存失败,重试: {e}")
                 else:
-                    # 2026-10-06 小欧 修 P3-06: 二次失败原先仅一行 error, 该条 prompt 日志无声消失
+                    # 2026-10-06 小欧 二次失败原先仅一行 error, 该条 prompt 日志无声消失
                     #   (内存对象随线程局部被下次 start_request 覆盖, 不可恢复); 补轮次与路径留痕
                     logger.error(
                         f"[PromptLogger] 保存失败(已重试1次), 该条 prompt 日志丢失: "
