@@ -1,5 +1,7 @@
 // 编辑历史: 2026-11-11 小欧 新建: 模型页附件引用能力矩阵面板(P5),
 //   数据 = ModelEntry.ref_capability_map(后端 contract.ref_capability_map 生成, 只读不推导) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 增运行指标条(P5): 拉取 GET /attachments/metrics 只读聚合,
+//   展示近1天三比率(降级占比/原生失败率/抽取失败率) + fetch_fail 计数, 失败可定位到 source/kind — 小欧-2026-11-11
 
 /**
  * ModelTabRefCapability —— 当前模型的附件引用能力矩阵。
@@ -7,10 +9,11 @@
  * 行 = content_kind(七类), 列 = source_kind(file/attachment/url),
  * 单元格 = 契约三态徽标(native/degraded/opaque), 缺格显示「—」。
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Table, Tooltip } from 'antd';
 
 import { CapabilityBadge, type CapabilityState } from '@/features/chat/components/input/CapabilityBadge';
+import { attachmentApi, type AttachmentMetrics } from '@/services/api/attachment.api';
 
 const CONTENT_KINDS = ['text', 'image', 'video', 'audio', 'richdoc', 'binary', 'unknown'];
 const SOURCE_KINDS = ['file', 'attachment', 'url'] as const;
@@ -56,6 +59,46 @@ export const ModelTabRefCapability: React.FC<{ map?: RefCapabilityMap }> = ({ ma
           <span>native=原生直传 · degraded=降级注入 · opaque=仅链接文本</span>
         </Tooltip>
       </div>
+      <MetricsStrip />
     </div>
+  );
+};
+
+/** 运行指标条(P5): 近1天三比率 + fetch_fail 计数, 只读日志聚合(后端 /attachments/metrics) */
+const MetricsStrip: React.FC = () => {
+  const [m, setM] = useState<AttachmentMetrics | null>(null);
+  useEffect(() => {
+    let alive = true;
+    attachmentApi.metrics(1).then((r) => alive && setM(r)).catch(() => {/* 指标拉取失败静默, 面板不受影响 */});
+    return () => { alive = false; };
+  }, []);
+  if (!m) return null;
+  const keys = Array.from(new Set([
+    ...Object.keys(m.rates.degrade), ...Object.keys(m.rates.native_fail),
+    ...Object.keys(m.rates.extract_fail), ...Object.keys(m.counts.fetch_fail ?? {}),
+  ]));
+  if (!keys.length) return null;
+  const pct = (v: number | undefined) => (v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
+  return (
+    <Table
+      size="small"
+      pagination={false}
+      style={{ marginTop: 8 }}
+      rowKey="key"
+      columns={[
+        { title: '运行指标(近1天)', dataIndex: 'key', width: 140 },
+        { title: '降级占比', dataIndex: 'degrade', width: 90 },
+        { title: '原生失败率', dataIndex: 'native_fail', width: 100 },
+        { title: '抽取失败率', dataIndex: 'extract_fail', width: 100 },
+        { title: '下载失败次数', dataIndex: 'fetch_fail', width: 110 },
+      ]}
+      dataSource={keys.map((k) => ({
+        key: k,
+        degrade: pct(m.rates.degrade[k]),
+        native_fail: pct(m.rates.native_fail[k]),
+        extract_fail: pct(m.rates.extract_fail[k]),
+        fetch_fail: m.counts.fetch_fail?.[k] ?? '—',
+      }))}
+    />
   );
 };

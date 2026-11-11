@@ -10,6 +10,7 @@
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 - scope 注释术语对准: ai 栏 UI 定名「任务产物」 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - kind 七类对齐(audio/unknown) + AttachmentCapabilities 类型与 capabilities() 接口 — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - P5 指标: AttachmentMetrics 类型 + metrics() 只读聚合接口 — 小欧-2026-11-11
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -73,6 +74,17 @@ export interface AttachmentCapabilities {
   accept: string;
   limits: { max_refs: number; max_urls: number; max_url_images: number };
   kind_options: Array<{ value: string; label: string }>;
+}
+
+/** P5 运行指标(GET /attachments/metrics): 逐事件计数 + 三比率, 可定位到 source/kind */
+export interface AttachmentMetrics {
+  days: number;
+  counts: Record<string, Record<string, number>>;
+  rates: {
+    degrade: Record<string, number>;
+    native_fail: Record<string, number>;
+    extract_fail: Record<string, number>;
+  };
 }
 
 export const attachmentApi = {
@@ -259,6 +271,12 @@ export const attachmentApi = {
   /** GET /attachments/capabilities: 单一出口, 不设 /limits 别名 */
   capabilities: async (): Promise<AttachmentCapabilities> => {
     const res = await api.get<AttachmentCapabilities>('/attachments/capabilities');
+    return res.data;
+  },
+
+  /** GET /attachments/metrics: 只读日志聚合(P5), 不加新表 */
+  metrics: async (days = 1): Promise<AttachmentMetrics> => {
+    const res = await api.get<AttachmentMetrics>('/attachments/metrics', { params: { days } });
     return res.data;
   },
 };

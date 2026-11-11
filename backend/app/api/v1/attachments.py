@@ -14,6 +14,7 @@
 #   promote 端点改直线分派(已是 global 直接返回, 去掉 auto_promote 后的重复一趟 promote) — 小欧-2026-11-07
 # 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 # 2026-11-11 小欧 新增 GET /attachments/capabilities 唯一出口(accept/limits/kind_options) — 小欧-2026-11-11
+# 2026-11-11 小欧 新增 GET /attachments/metrics 只读指标聚合(P5: 降级占比/原生失败率/抽取失败率) — 小欧-2026-11-11
 # 2026-11-11 小欧 新增 POST /attachments/id/{id}/reextract 真抽取手动重跑(文件页重试入口) — 小欧-2026-11-11
 
 """attachments_routes — 附件 API 路由薄壳。
@@ -232,6 +233,14 @@ def get_capabilities() -> dict[str, Any]:
     return {"accept": accept,
             "limits": contract.limits(),
             "kind_options": contract.kind_options()}
+
+
+@router.get("/attachments/metrics")
+def get_metrics(days: int = 1) -> dict[str, Any]:
+    """附件能力域运行指标(P5): 只读聚合 logs/app_*.log 的 [cap-metric] 行, 不加新表。
+    返回逐事件计数(可定位到 source/kind) + 三比率(降级占比/原生失败率/抽取失败率)。"""
+    from app.attachments.observability import metrics_summary
+    return metrics_summary(days)
 
 
 @router.get("/attachments/local-capability")

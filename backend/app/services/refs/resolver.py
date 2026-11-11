@@ -26,6 +26,8 @@
 # 2026-11-09 小欧 S3: 真抽取成功/失败回填抽取态(mark_extract_result, 在 clip_text 之前取 len) — 小欧-2026-11-09
 # 2026-11-11 小欧 附件能力域: 增 url 分支(链接文本+准入, 不下载); 抽取态回填改读契约
 #   fallback_quality, 删除档案卡前缀字符串匹配; 同 path 去重键兼容 url — 小欧-2026-11-11
+# 2026-11-11 小欧 P5 指标埋点: 真抽取成功/失败补 [cap-metric] extract_ok/extract_fail
+#   (kind 来自附件记录, 失败可定位到 kind) — 小欧-2026-11-11
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -48,6 +50,7 @@ from app.attachments.attachment_service import (
     mark_extract_result,
     touch_usage,
 )
+from app.attachments.observability import metric
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
@@ -136,6 +139,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     except Exception as e:  # noqa: BLE001 — 呈现失败折算 attachment_failed, 不阻断其余引用
         # 首次失败也回填抽取态(详情页可见), 然后照旧给回执
         mark_extract_result(att["id"], 0, False)
+        metric("extract_fail", "attachment", att.get("kind") or "binary", reason=type(e).__name__)
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
     # 仅"真抽取正文"(契约 fallback_quality=content)成功才回填 ok —— 档案卡/元数据不改变抽取态,
@@ -144,6 +148,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     _route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
     if _route.fallback_quality == "content":
         mark_extract_result(att["id"], len(text), True)
+        metric("extract_ok", "attachment", att.get("kind") or "binary")
     touch_usage(att["id"])
     # 2026-11-07 小欧 单条预算统一: text 也走 clip_text —— 未超限(len≤cap)原样返回, 故
     #   ≤read_max_bytes 的小文本仍全文注入; 超限则头尾摘录, 守住单条预算。原"text 跳过 clip"

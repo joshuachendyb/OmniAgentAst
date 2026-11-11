@@ -4,6 +4,8 @@
 #   能力判定归 capability, 识别归 contract/extract, 载荷构造归 media_payload — 小欧-2026-11-11
 # 2026-11-11 小欧 补设计缺口: URL·text/richdoc 下载后按契约文本出口注入正文(失败退链接文本);
 #   附件无原生通道改复用注入文本(原一行说明丢正文) — 小欧-2026-11-11
+# 2026-11-11 小欧 P5 指标埋点: 展开结果逐项 [cap-metric](native/degraded/native_fail) +
+#   降级/失败 WARNING 留痕(原先静默, 排障无迹) — 小欧-2026-11-11
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
 
@@ -24,6 +26,8 @@ from urllib.parse import urlsplit
 
 from app.attachments import contract, extract
 from app.attachments.extract import classify, classify_url
+from app.attachments.observability import metric
+from app.logger import logger
 from app.services.agent import capability
 from app.services.agent.media_payload import build_logical_part, ensure_payload, to_wire_part
 
@@ -64,7 +68,7 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     cursor = 0
     for m in _SLOT_RE.finditer(text):
         pending.append(text[cursor:m.start()])
-        part, fallback = await _expand_one(m, prof)
+        part, fallback = await _expand_one(m, prof, str(llm_model))
         if part:
             if pending:
                 parts.append({"type": "text", "text": "".join(pending)})
@@ -80,14 +84,14 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     return parts if len(parts) > 1 else (parts[0].get("text") if parts else text)
 
 
-async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any]) -> Tuple[Any, str]:
+async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
     """单个占位 → (wire part, 失败降级文字)。不抛异常断轮。"""
     if m.group(1):
-        return await _expand_attachment(m.group(1), prof)
-    return await _expand_url(decode_url_item(m.group(2)), prof)
+        return await _expand_attachment(m.group(1), prof, model)
+    return await _expand_url(decode_url_item(m.group(2)), prof, model)
 
 
-async def _expand_attachment(aid: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
+async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
     from app.attachments.attachment_service import get_attachment  # 延迟导入防循环
 
     att = get_attachment(aid)
@@ -99,12 +103,21 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
     route = contract.KIND_CONTRACT[("attachment", kind)]
     cap = prof.get(route.native_modality) if route.native_modality else None
     if not (cap and cap.native):
+        logger.warning("[wire] 附件降级 id=%s kind=%s model=%s reason=无原生通道", aid, kind, model)
+        metric("degraded", "attachment", kind, model, "无原生通道")
         return None, _inject_fallback(att, aid)
     logical, reason = await build_logical_part(kind, att)
     if not logical:
+        logger.warning("[wire] 附件原生载荷失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
+        metric("native_fail", "attachment", kind, model, reason)
         return None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]"
     part, reason = to_wire_part(logical)
-    return (part, "") if part else (None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]")
+    if not part:
+        logger.warning("[wire] 附件原生方言失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
+        metric("native_fail", "attachment", kind, model, reason)
+        return None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]"
+    metric("native", "attachment", kind, model)
+    return part, ""
 
 
 def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
@@ -115,23 +128,32 @@ def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
         return f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
 
 
-async def _expand_url(url: str, prof: Dict[str, Any]) -> Tuple[Any, str]:
+async def _expand_url(url: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
     ck = classify_url(url)
     route = contract.KIND_CONTRACT[("url", ck)]
     if route.fetch != "none" and ck in ("text", "richdoc"):
-        return await _fetch_extract_text(url, ck)
+        return await _fetch_extract_text(url, ck, model)
     cap = prof.get(route.native_modality) if route.native_modality else None
     if not (cap and cap.native):
+        logger.warning("[wire] URL 降级 kind=%s model=%s url=%s reason=无原生通道", ck, model, url)
+        metric("degraded", "url", ck, model, "无原生通道")
         return None, extract._link_body(url)
     transport = "url" if "url" in cap.transport else "inline"
     logical, reason = await ensure_payload({"url": url, "content_kind": ck}, transport)
     if not logical:
+        logger.warning("[wire] URL 原生载荷失败 kind=%s model=%s url=%s reason=%s", ck, model, url, reason)
+        metric("native_fail", "url", ck, model, reason)
         return None, f"[链接未转发: {url} — {reason}]"
     part, reason = to_wire_part(logical)
-    return (part, "") if part else (None, f"[链接未转发: {url} — {reason}]")
+    if not part:
+        logger.warning("[wire] URL 原生方言失败 kind=%s model=%s url=%s reason=%s", ck, model, url, reason)
+        metric("native_fail", "url", ck, model, reason)
+        return None, f"[链接未转发: {url} — {reason}]"
+    metric("native", "url", ck, model)
+    return part, ""
 
 
-async def _fetch_extract_text(url: str, ck: str) -> Tuple[Any, str]:
+async def _fetch_extract_text(url: str, ck: str, model: str = "") -> Tuple[Any, str]:
     """text/richdoc URL → 下载字节后按契约文本出口注入正文(与模型视觉能力无关);
     下载/解析失败退链接文本, 不抛异常断轮。"""
     from app.services.agent.remote_fetch import fetch_bytes  # 延迟导入防循环
@@ -142,8 +164,12 @@ async def _fetch_extract_text(url: str, ck: str) -> Tuple[Any, str]:
         try:
             body = (extract._text_body_from_bytes(att, raw) if ck == "text"
                     else extract._richdoc_body_from_bytes(att, raw, filename=name))
+            metric("native", "url", ck, model, "fetched_text")
             return {"type": "text", "text": body}, ""
-        except Exception:  # noqa: BLE001 — 解析失败退链接文本
-            pass
+        except Exception as e:  # noqa: BLE001 — 解析失败退链接文本
+            logger.warning("[wire] URL 正文抽取失败 kind=%s url=%s err=%s", ck, url, type(e).__name__)
+            metric("extract_fail", "url", ck, model, f"解析失败:{type(e).__name__}")
     link = extract._link_body(url)
+    if reason:
+        metric("degraded", "url", ck, model, f"获取正文失败:{reason}")
     return None, (f"{link}\n(自动获取正文失败: {reason})" if reason else link)

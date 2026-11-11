@@ -27,6 +27,7 @@
 #   降级为错误说明文本(纯读契约不变, 不回填抽取态), 与resolver失败折算同口径
 # 2026-11-11 小欧 - 增 reextract 真抽取手动重跑: 重置抽取态后按契约文本出口重算回填
 #   (仅 fallback_quality=content 的 kind, 失败折算 failed 不抛异常) — 小欧-2026-11-11
+# 2026-11-11 小欧 - P5 指标埋点: reextract 成功/失败补 [cap-metric] extract_ok/extract_fail — 小欧-2026-11-11
 
 
 
@@ -70,6 +71,7 @@ from app.file_browse.errors import (
     fail,
 )
 from app.logger import logger
+from app.attachments.observability import metric
 from app.services.chat.workspace_service import reconcile_session_workspaces
 from app.utils.time_utils import get_local_iso_timestamp
 
@@ -480,9 +482,11 @@ def reextract(attachment_id: str) -> dict[str, Any] | None:
     try:
         text = extract.build_inject_text(att)
         mark_extract_result(attachment_id, len(text), True)
+        metric("extract_ok", "attachment", att.get("kind") or "binary")
     except Exception as e:  # noqa: BLE001 — 重试失败折算 failed, 不向上抛
         logger.warning("[attachments] 重新抽取失败 id=%s err=%s", attachment_id, e)
         mark_extract_result(attachment_id, 0, False)
+        metric("extract_fail", "attachment", att.get("kind") or "binary", reason=type(e).__name__)
     return get_attachment(attachment_id)
 
 
