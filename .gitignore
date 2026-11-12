@@ -17,6 +17,21 @@ backend/tests/
 tests/
 tests/output/
 backend/pytest-of-chend/
+# 2026-11-11 小欧: hooks 运行时生成物与节点池数据统一落 hooks/log/, 可重跑再生, 整目录不入库;
+# 流水线源码在 hooks/nodepool/(入库), log/ 只放产物 — 小欧-2026-11-11
+hooks/log/
+# 2026-11-12 小欧: OmniVPN 成为唯一维护且入库的出口换桶目录; 内核 exe/运行时库/产物不入库 — 小欧-2026-11-12
+OmniVPN/log/
+OmniVPN/mihomo/*.exe
+OmniVPN/mihomo/cache.db*
+# 2026-11-11 小欧: 出口/VPN 资料里含明文账号口令, 严禁入库 — 小欧-2026-11-11
+hooks/vpn-*.txt
+# 2026-11-11 小欧: VPN 试用工具(内核/GUI/节点表)合计 400+MB 二进制, 属本机试验环境不入库 — 小欧-2026-11-11
+vpn-trial/
+# 2026-11-11 小欧: WARP 时代的 socks->http 桥 gost.exe 与其它本地二进制, 不入库 — 小欧-2026-11-11
+bin/
+# ruff 缓存目录(自忽略靠 .ruff_cache/.gitignore, 这里补显式规则防其被清后 status 变脏) — 小欧-2026-11-12
+.ruff_cache/
 # 手工压测/验收脚本(小欧 2026-09-29): 真路径零Mock但不在 pytest testpaths 内, 不会自动跑;
 # 引用内部实现, 内部签名变更后会失效, 需按需同步; 故不入库, 避免 git status 长期脏
 backend/testscompress/

@@ -263,7 +263,8 @@ OmniAgentAs-01/
 │   ├── tests/                  # 前端测试与性能测量脚本
 │   └── package.json
 ├── gateways/                   # 第三方 CLI 模型接入网关（通用层 + vendor 驱动）
-├── opencli_source/             # 免费车道 opencli 网关部署物（config.json/opencode2api.exe/start.bat/stop.bat + 部署启停说明）
+├── opencli_gateway/              # 免费车道 opencli 网关母本（config.json/opencode2api.exe/opencli_gateway_start.bat/opencli_gateway_stop.bat/opencli_gateway_stop.ps1 + opencli的gateway使用说明）
+├── OmniVPN/                    # 出口换桶配套服务（mihomo 精简内核 config.yaml/双击 bat+ps1/exit_probe.py/exit_rotator.py/nodepool 重建流水线 + OmniVPN使用说明；内核 exe/log/cache 不入库）
 ├── config/                     # 配置文件（config.yaml 主配置，已被 Git 忽略）
 ├── doc-5月优化/                # 5月优化（含 doc-5月agent2.0 架构设计文档，旧称 doc-agent2.0）
 ├── doc-*/                      # 各月优化/专题设计文档目录（doc-打包与E2E、doc-测试与审查等）
