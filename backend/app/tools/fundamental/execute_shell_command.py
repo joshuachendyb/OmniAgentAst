@@ -252,34 +252,43 @@ import tempfile
 import threading
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Literal, Optional
 
-from app.tools.file.file_encoding import get_file_encoding
-from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
-from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16: 中风险层独立
-
-from app.tools.fundamental.shell_engine import _replace_python3_safe  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
-from app.utils.proc_utils import kill_process_tree  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
-from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
-
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_fc_helper import _decode_bytes_safe
-from app.tools.validate.timeout_validator import validate_timeout
-from app.logger import logger
-
-from app.tools.tool_constants import (
-    ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
-    ERR_SHELL_EXCEPTION, ERR_SHELL_EXEC,
-    ERR_SHELL_INJECTION, ERR_SHELL_TIMEOUT,
-    EXECUTE_SHELL_OUTPARM_LIMIT_CMD,
-    SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
-    SHELL_OUTLIMIT_STDERR_MAX_CHARS,
-    SUBPROCESS_TIMEOUT_SHORT,
-)
 # 2026-11-06 小欧 - 去池化: 每条命令独立子进程, 跑完即销毁; 全局仅一个并发信号量管内存。
 #   拿名额有界等待(用工具剩余 timeout), 拿不到明确失败; try/finally 必还, 卡死只毁自己这次调用。
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
+from app.logger import logger
+from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
+from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
+from app.tools.file.file_encoding import get_file_encoding
+from app.tools.fundamental.shell_engine import (
+    _replace_python3_safe,  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
+)
+from app.tools.tool_constants import (
+    ERR_PARAMETER_EMPTY,
+    ERR_PARAMETER_INVALID,
+    ERR_SHELL_EXCEPTION,
+    ERR_SHELL_EXEC,
+    ERR_SHELL_INJECTION,
+    ERR_SHELL_TIMEOUT,
+    EXECUTE_SHELL_OUTPARM_LIMIT_CMD,
+    SHELL_OUTLIMIT_STDERR_MAX_CHARS,
+    SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
+    SUBPROCESS_TIMEOUT_SHORT,
+)
+from app.tools.tool_fc_helper import _decode_bytes_safe
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.validate.timeout_validator import validate_timeout
+from app.utils.proc_io import (  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
+    TRUNCATED_NOTE,
+    drain_after_exit,
+    drain_until_exit,
+)
+from app.utils.proc_utils import (
+    kill_process_tree,  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
+)
+
 _SHELL_MAX_PROCESSES = int(get_config().get("tuning.concurrency.shell_max_processes", 10))
 _SHELL_PROC_SEM = threading.BoundedSemaphore(_SHELL_MAX_PROCESSES)
 
@@ -891,9 +900,9 @@ def _looks_like_bash(command: str) -> bool:
     """
     if not command:
         return False
-        
+
     cmd_lower = _strip_quoted_content(command).lower()
-    
+
     # bash特有命令（Linux风格语法）— 正则匹配灵活覆盖各种变体
     bash_patterns = [
         r'\bmkdir -p\b',           # mkdir -p 目录
@@ -924,7 +933,7 @@ def _looks_like_bash(command: str) -> bool:
         r'\bls\b',                # ls -la（CMD用dir）
         r'\bwc\b',                # wc -l（CMD用find /c）
     ]
-    
+
     for pattern in bash_patterns:
         if re.search(pattern, cmd_lower, re.IGNORECASE):
             return True
@@ -1084,7 +1093,7 @@ def shell(
 
     stripped_command = command.strip() if command else ""
     processed_command = stripped_command
-    
+
     # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复 ──
     #  python3 → python（引号感知，仅替换引号外的python3；复用shell_engine._replace_python3_safe，DRY）
     processed_command, _python3_cnt = _replace_python3_safe(processed_command)

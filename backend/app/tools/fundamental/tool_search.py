@@ -34,11 +34,11 @@ searchtool — BM25 全文检索搜索工具
 import math
 import time
 from collections import Counter
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from app.tools.registry import tool_registry
-from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DOC_QUERY_EMPTY, TOOL_SEARCH_INER_RESULTS_TOP
+from app.tools.tool_response import build_error, build_success
 
 
 def _tokenize(text: str) -> List[str]:
@@ -168,7 +168,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     """tool_search的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
         return {
-            "summary": f"搜TOOL，失败：关键词为空",
+            "summary": "搜TOOL，失败：关键词为空",
             "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,

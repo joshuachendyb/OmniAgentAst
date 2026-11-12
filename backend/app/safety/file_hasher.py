@@ -60,7 +60,7 @@ def compute_file_hash(
         raise FileNotFoundError(f"文件不存在: {file_path}")
     hasher = select_hasher(algorithm)
     start_time = time.time() if timeout_ms is not None else None
-    
+
     with open(file_path, 'rb') as f:
         while True:
             chunk = f.read(chunk_size)
@@ -71,7 +71,7 @@ def compute_file_hash(
                 elapsed_ms = (time.time() - start_time) * 1000
                 if elapsed_ms > timeout_ms:
                     raise TimeoutError(f"哈希计算超时({timeout_ms}毫秒)")
-    
+
     return hasher.hexdigest()
 
 

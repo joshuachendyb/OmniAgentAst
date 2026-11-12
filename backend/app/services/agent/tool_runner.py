@@ -12,14 +12,14 @@
 #   显式传 level="WARNING", 控制台默认 WARNING 档即可见步骤 — 小欧-2026-11-03
 import asyncio
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
-from app.logger import logger, log_and_print
-from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
 from app.config import get_config
+from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
+from app.logger import log_and_print, logger
 from app.services.agent.tool_executor import execute_tool
-from app.tools.file_tool_utils import _auto_correct_file_tool
 from app.tools.conflict_detector import _has_conflict, _partition_calls
+from app.tools.file_tool_utils import _auto_correct_file_tool
 from app.utils.secret_utils import redact_sensitive_params
 
 

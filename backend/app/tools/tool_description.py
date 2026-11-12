@@ -18,9 +18,9 @@
 #   LLM 试调一次才知不可用、白耗一轮; 两处必须同判据, 否则清单列了签名而实际调不通。
 """
 
-from typing import Dict, Any
+from typing import Optional, Set
+
 from app.tools.tool_types import ToolCategory
-from typing import Set, Optional
 from app.utils.display_utils import format_param_value
 
 
@@ -109,7 +109,7 @@ def generate_param_reminder(
         schema = meta.input_schema
         if not schema or "properties" not in schema:
             continue
-        
+
         required_set = set(schema.get("required", []))
         param_parts = []
         for pname, pinfo in schema.get("properties", {}).items():
@@ -132,12 +132,12 @@ def generate_param_reminder(
                     param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
                 else:
                     param_parts.append("{}({}, {})".format(pname, req_str, ptype))
-        
+
         if param_parts:
             if style == "code":
                 lines.append(f"def {name}({', '.join(param_parts)})")
             else:
                 lines.append("- " + name + ": " + ", ".join(param_parts))
-    
+
     return "\n".join(lines)
 

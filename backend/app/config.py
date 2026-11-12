@@ -28,11 +28,15 @@
 import functools
 import os
 import sys
-import yaml
 from collections import OrderedDict
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, Optional
+
+import yaml
+
 from app.utils.type_utils import to_int_or
+
+
 @functools.lru_cache(maxsize=1)
 def _make_safe_loader() -> type:
     """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
@@ -82,22 +86,22 @@ class Config:
 
     _config_data: Optional[Dict[str, Any]] = None
     _config_mtime: Optional[float] = None  # 配置文件修改时间,用于缓存检测
-    
+
     def _load_config(self):
         """加载配置文件（高层编排，只负责流程控制）
         
         【修复S-2 2026-06-08 小沈】拆分为私有方法，遵守SLAP原则
         """
         config_path = self._get_config_path()
-        
+
         self._check_config_exists(config_path)
-        
+
         if self._is_cache_valid(config_path):
             return
-        
+
         self._load_from_file(config_path)
         self._apply_env_overrides()
-    
+
     def _check_config_exists(self, config_path: Path) -> None:
         """检查配置文件是否存在"""
         if not config_path.exists():
@@ -105,18 +109,18 @@ class Config:
                 f"配置文件不存在：{config_path}。"
                 "请在前端创建配置文件或手动创建 config/config.yaml"
             )
-    
+
     def _is_cache_valid(self, config_path: Path) -> bool:
         """检查缓存是否有效"""
         new_mtime = config_path.stat().st_mtime
         return self._config_data is not None and self._config_mtime == new_mtime
-    
+
     def _load_from_file(self, config_path: Path) -> None:
         """从文件加载配置"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config_data = yaml.load(f, Loader=_make_safe_loader())
-            
+
             if not self._config_data:
                 raise ValueError("配置文件为空，请检查 config/config.yaml")
         except (yaml.YAMLError, ValueError) as e:
@@ -124,17 +128,17 @@ class Config:
                 f"加载配置文件失败：{e}。"
                 "请检查 config/config.yaml 格式是否正确"
             )
-        
+
         self._config_mtime = config_path.stat().st_mtime
-    
+
     def _get_config_path(self) -> Path:
         """获取配置文件路径 — 2026-09-21 小欧：收敛掉自身 env 分支，统一走顶层 get_config_path(DRY 单源)"""
         return Path(get_config_path())
-    
+
     def _apply_env_overrides(self):
         """应用环境变量覆盖 — 通用模式:{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
         ai_config = self._config_data.get('ai', {})
-        
+
         for provider_name, provider_config in ai_config.items():
             if not isinstance(provider_config, dict):
                 continue
@@ -142,7 +146,7 @@ class Config:
             env_value = os.getenv(env_key)
             if env_value:
                 provider_config['api_key'] = env_value
-        
+
         # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
         # 2026-09-21 小欧: env_nonempty 排除纯空白覆写
         _env_provider = os.getenv('AI_PROVIDER')
@@ -152,7 +156,7 @@ class Config:
                 _ref = {}
                 ai_config['model_ref'] = _ref
             _ref['provider'] = _env_provider
-        
+
         # 日志级别(单键 logging.level, 撤销 file_level/console_level 双键 — 北京老陈令 2026-11-03)
         logging_config = self._config_data.get('logging', {})
         if env_nonempty('LOG_LEVEL'):
@@ -175,7 +179,7 @@ class Config:
                     node[part] = child
                 node = child
             node[parts[-1]] = os.getenv(env_name)
-    
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         获取配置项
@@ -189,15 +193,15 @@ class Config:
         """
         keys = key.split('.')
         value = self._config_data
-        
+
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
             else:
                 return default
-        
+
         return value
-    
+
 
     def get_max_rounds(self, default: int = 100) -> int:
         """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08

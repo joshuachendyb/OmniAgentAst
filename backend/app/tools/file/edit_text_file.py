@@ -68,22 +68,40 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
-from app.tools.tool_constants import EDIT_INPUT_MAX_BYTES
-from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
-from app.tools.tool_constants import EDIT_OUTPARM_LIMIT_OLD, EDIT_OUTPARM_LIMIT_NEW, EDIT_OUTPARM_LIMIT_SAFETY
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
-from app.tools.validate.file_type_checker import check_for_text_tool
-from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归 路径安全层
-from app.tools.toolhelper.error_hints import hint_for_write_error
-from app.utils.path_utils import to_win_long_path  # 长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
-from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
-from app.tools.file.file_state import check_conflict_strict, record_write, record_read
+from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+    _current_task_id,
+    get_current_hooks_or_noop,
+)
+from app.tools.file.file_encoding import (
+    read_file_with_encodings as _try_read_file_with_encodings,  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
+)
+from app.tools.file.file_state import check_conflict_strict, record_read, record_write
+from app.tools.file.file_write_arbiter import (
+    claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 精确替换落盘前登记占用
+)
 from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
-from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
-from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 精确替换落盘前登记占用
+from app.tools.tool_constants import (
+    EDIT_INPUT_MAX_BYTES,
+    EDIT_OUTPARM_LIMIT_NEW,
+    EDIT_OUTPARM_LIMIT_OLD,
+    EDIT_OUTPARM_LIMIT_SAFETY,
+    ERR_FILE_EDIT_FAILED,
+)
+from app.tools.tool_response import build_error, build_success, build_warning, with_artifact_file
+from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.tools.toolhelper.syntax_validator import (  # 小欧 2026-07-21 统一语法检测接入
+    detect_language,
+    validate_syntax,
+)
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归 路径安全层
+    OpCategory,
+    check_path_four_level,
+    to_win_long_path,  # 长路径包裹 — 小欧 2026-08-13
+    validate_path_for_write,
+)
 
 
 def _insert_line_after(content: str, match_end: int, new_string: str) -> str:
@@ -202,15 +220,15 @@ def _check_anchor_overlap(mode: str, old_string: str, new_string: str) -> str:
     if mode == "before":
         _last_line = new_string.rstrip('\n').rsplit('\n')[-1].strip() if '\n' in new_string else new_string.strip()
         if _last_line and _last_line == _os:
-            return (f"new_string尾行与锚点old_string相同,"
-                    f"插入后锚点行重复。"
-                    f"new_string只包含新内容即可,不要包含old_string整行")
+            return ("new_string尾行与锚点old_string相同,"
+                    "插入后锚点行重复。"
+                    "new_string只包含新内容即可,不要包含old_string整行")
     elif mode == "after":
         _first_line = new_string.strip('\n').split('\n')[0].strip() if '\n' in new_string else new_string.strip()
         if _first_line and _first_line == _os:
-            return (f"new_string首行与锚点old_string相同,"
-                    f"插入后锚点行重复。"
-                    f"new_string只包含新内容即可,不要包含old_string整行")
+            return ("new_string首行与锚点old_string相同,"
+                    "插入后锚点行重复。"
+                    "new_string只包含新内容即可,不要包含old_string整行")
     return ""
 
 
@@ -547,7 +565,7 @@ async def _precise_replace_in_file(
             preview = replace_result.get('content_preview', '')
             total_lines = replace_result.get('total_lines', 0)
             if total_lines == 1 and not content.strip():
-                return {"error_detail": f"未找到匹配内容：文件为空"}
+                return {"error_detail": "未找到匹配内容：文件为空"}
             _ed = f"未找到匹配内容: '{old_string}'。文件共{total_lines}行，前15行:\n{preview}"
             if mode == "once" and count == 0 and new_string and new_string in content:
                 _ed += "。提示: new_string 在文件中但 old_string 未找到，可能参数填反"

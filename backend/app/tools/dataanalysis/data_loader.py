@@ -12,10 +12,9 @@ data_loader  dataanalysis模块的数据加载公用函数
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
-
 
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import normalize_list_dict

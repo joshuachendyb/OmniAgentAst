@@ -9,9 +9,9 @@ REGISTRY Register - 注册表工具注册点
 更新时间: 2026-06-16 小沈 - 1→3拆分
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 # 注册表工具依赖配置 — 小健 2026-06-18
 # 注册表工具使用内置库，无第三方依赖
@@ -21,15 +21,14 @@ REGISTRY_TOOL_DEPENDENCIES = {
     ]
 }
 
-from app.tools.win_registry.win_registry_schema import (
-    RegistryReadInput,
-    RegistryWriteInput,
-    RegistryDeleteInput,
-)
-
+from app.tools.win_registry.registry_delete import registry_delete
 from app.tools.win_registry.registry_read import registry_read
 from app.tools.win_registry.registry_write import registry_write
-from app.tools.win_registry.registry_delete import registry_delete
+from app.tools.win_registry.win_registry_schema import (
+    RegistryDeleteInput,
+    RegistryReadInput,
+    RegistryWriteInput,
+)
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 REGISTRY_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);

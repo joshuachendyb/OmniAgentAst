@@ -29,21 +29,26 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 from app.db import db
-from app.db.models.operation_models import OperationType, OperationStatus
+from app.db.models.operation_models import OperationStatus, OperationType
 from app.logger import logger
+from app.safety.file_hasher import compute_file_hash
+from app.safety.file_safety_config import (
+    FileSafetyConfig,  # 小欧 2026-08-12 A2-内部环: 配置数据类独立
+)
+from app.safety.operation_backup_rollback import backup_to_recycle_bin
 from app.utils.id_utils import generate_operation_id
 from app.utils.path_utils import to_win_long_path
-from app.utils.time_utils import get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
-from app.safety.file_hasher import compute_file_hash
-from app.safety.file_safety_config import FileSafetyConfig  # 小欧 2026-08-12 A2-内部环: 配置数据类独立
-from app.safety.operation_backup_rollback import backup_to_recycle_bin
+from app.utils.time_utils import (  # 小欧 2026-08-08 全程统一本地时区
+    get_local_iso_timestamp,
+    to_local_iso,
+)
 
 
 def collect_file_info(path: Path) -> Dict[str, Any]:
-    """收集文件信息（长路径兼容: 普通Path.exists/stat对超长路径失效, 走\\?\前缀）"""
+    """收集文件信息（长路径兼容: 普通Path.exists/stat对超长路径失效, 走\\?\\前缀）"""
     if not path:
         return {"size": None, "hash": None, "extension": None, "is_directory": False}
     long_path = to_win_long_path(path)

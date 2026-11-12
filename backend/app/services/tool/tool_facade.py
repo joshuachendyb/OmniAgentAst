@@ -43,13 +43,13 @@ tool_facade — 工具门面(API 适配层)
 import uuid
 from typing import Optional
 
-from app.tools.registry import tool_registry
-from app.tools.tool_types import ToolCategory
-from app.tools.tool_retry_engine import ToolRetryEngine
-from app.tools.tool_response import is_success
-from app.safety.path_tool_safety_checker import get_path_tool_safety_checker
 from app.safety.default_hooks import DefaultToolSecurityHooks
+from app.safety.path_tool_safety_checker import get_path_tool_safety_checker
 from app.services.task.task_context import _current_task_id
+from app.tools.registry import tool_registry
+from app.tools.tool_response import is_success
+from app.tools.tool_retry_engine import ToolRetryEngine
+from app.tools.tool_types import ToolCategory
 
 
 def _safe_status_message(result: dict) -> str:
@@ -63,10 +63,10 @@ def _safe_status_message(result: dict) -> str:
     if not isinstance(_st, dict):
         return ""
     return _st.get("message", "")
-from app.utils.cache import TTLCache
 from app.constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 from app.logger import logger
 from app.services.agent.tool_loader import ToolLoader
+from app.utils.cache import TTLCache
 
 # 模块级惰性缓存: 全量工具实现表(与 ToolLoader 同源的 registry 公共 API 构建, 不摸私有字段)。
 # 供 _FacadeAgent._retry_engine(→tool_executor 非并行分支)复用 — 小欧 2026-08-12

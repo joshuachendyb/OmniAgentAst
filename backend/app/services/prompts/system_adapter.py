@@ -16,13 +16,14 @@ Author: 小沈 - 2026-06-14
 import os
 import platform
 import shutil
-
 from typing import Optional
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 
-from app.logger import logger
-from app.utils.time_utils import now_str
 from app.config import get_config as get_config_instance
+from app.logger import logger
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+)
+from app.utils.time_utils import now_str
 
 PATH_FORMATS = {
     "Windows": "C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt",
@@ -49,7 +50,7 @@ def _get_environment_info() -> str:
     """
 
     config = get_config_instance()
-    # git 状态只基于项目根(tool工作区), 严禁从代码库根推算 
+    # git 状态只基于项目根(tool工作区), 严禁从代码库根推算
     root = config.get_project_root()
     now = now_str()
     is_git = _check_is_git_repo(root)

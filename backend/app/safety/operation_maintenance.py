@@ -26,13 +26,13 @@ _cleanup_lock = threading.Lock()  # #15: 并发串行化清理, 防多工具并�
 
 from app.db import db
 from app.logger import logger
+from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
-from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 
 
 def _get_folder_size(path: Path) -> int:
-    """递归计算文件夹总字节数（长路径支持: 深嵌套子项普通Path无法遍历, 需\\?\前缀）"""
+    """递归计算文件夹总字节数（长路径支持: 深嵌套子项普通Path无法遍历, 需\\?\\前缀）"""
     total = 0
     try:
         for entry in Path(to_win_long_path(path)).rglob("*"):

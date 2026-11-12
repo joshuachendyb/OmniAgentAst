@@ -5,12 +5,12 @@
 - 修复：全局共享一个 handler，消除竞争；doRollover() 加 OSError 保护
 """
 # 编辑历史:
-# 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
+# 2026-08-30 - 小欧 - 控制台写离线化(挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
 # 2026-09-19 - 小欧 - exe打包frozen支持: LOG_DIR frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
 # 2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（is_debug_mode/get_log_level 读键同步）
 # 2026-10-25 - 小欧 - LogConfig 方法改调 get_config() 取实时值, 删导入期类属性快照:
 #   get_config() 内置 mtime 缓存未变则直接返回, 零额外成本; 配置改动无需重启即被读取感知。 - 小欧-2026-10-25
-# 2026-10-25 - 小欧 - get_log_level 单次 get_config() 提 cfg 局部变量(会审缺陷2): 消双重 stat。 - 小欧-2026-10-25
+# 2026-10-25 - 小欧 - get_log_level 单次 get_config() 提 cfg 局部变量: 消双重 stat。 - 小欧-2026-10-25
 # 2026-11-03 - 小欧 - LogConfig 新增 get_console_level()(logging.console_level, 默认 WARNING 零行为变化),
 #   控制台显示阈值与文件日志解耦; 供 shared_handler 装配/热重载读 — 小欧-2026-11-03
 # 2026-11-03 - 小欧 - get_log_level→get_file_level, 键 logging.level→logging.file_level(名副其实, 唯一管文件):
@@ -23,13 +23,17 @@
 #   get_console_level_int() 读同一原值, 控制台只显示 == 该值的行 — 小欧-2026-11-03
 # 2026-11-03 - 小欧 - 删 get_file_level() 纯中转层(三跳违反 KISS-DIRECT): 调试强制下沉到唯一消费点
 #   shared_handler._get_file_level — 小欧-2026-11-03
+# 2026-11-12 - 小欧 - 日期轮转两处修正: ①新文件按 handler 自身 baseFilename 目录派生, 原用全局 LOG_DIR
+#   致自定义目录构造的 handler 轮转跳到 LOG_DIR; ②_current_date 改为 reopen 成功后提交, 原先提交再 _open,
+#   失败后当日不再重试且后续写入落到旧日文件 — 小欧-2026-11-12
 
 import logging
 import logging.handlers
 from pathlib import Path
-from app.utils.time_utils import now_str
+
 from app.config import get_config, get_frozen_dir
 from app.logger.levels import to_level_int  # 2026-11-03 小欧: 级别名→int 唯一换算点(DRY)
+from app.utils.time_utils import now_str
 
 _frozen = get_frozen_dir()
 LOG_DIR = (_frozen / "logs") if _frozen is not None else Path(__file__).parent.parent.parent / "logs"
@@ -105,17 +109,20 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         today = now_str('%Y-%m-%d')
         if self._current_date == today:
             return
-        self._current_date = today
-        new_path = str(LOG_DIR / f"app_{today}.log")
+        new_path = str(Path(self.baseFilename).parent / f"app_{today}.log")
         if new_path == self.baseFilename:
+            self._current_date = today
             return
-        from app.logger.console_writer import console_put  # 小欧 2026-08-30 轮转提示离线化(日志emit路径零同步stdout写)
+        from app.logger.console_writer import (
+            console_put,  # 小欧 2026-08-30 轮转提示离线化(日志emit路径零同步stdout写)
+        )
         console_put(f"[Logger] 日期轮转: {self.baseFilename} -> {new_path}")
         self.baseFilename = new_path
         if self.stream:
             self.stream.close()
             self.stream = None
         self.stream = self._open()
+        self._current_date = today
 
     # ---- 大小轮转 -------------------------------------------------
 

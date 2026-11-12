@@ -71,11 +71,12 @@
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
 # 2026-10-31 小欧 - init_history 补传 ws_text(编排层渲染的目录块), 本层不再取快照 — 小欧-2026-10-31
 # 2026-11-03 小欧 - _terminate_cancelled 取消终态 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
+#   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 # 2026-11-07 小欧 - 单步异常重试改用 notice 通道(有 done 终态清除): 原 MetaStep(retrying) 无 done,
 #   重试成功后位置2 拼留; 改 emit_notice(retrying,start) + 下轮首 chunk emit_notice(retrying,done) 清除 — 小欧-2026-11-07
-#   同轮 [start_summary] 3 处注入/落库日志一并传 level="WARNING"(控制台默认档即可见摘要动作) — 小欧-2026-11-03
 # 2026-11-08 小欧 - 接视觉通道: 按 supports_image_input 分流, 视觉模型把图片 ref 摘出正文走 wire image_url parts,
 #   非视觉模型原样全走文本档案卡 — 小欧-2026-11-08
+# 2026-11-11 小欧 计划器接线: refs→to_input_items→plan_refs→init_history(plans=), 删除图片能力 if 分流 — 小欧-2026-11-11
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -85,22 +86,39 @@
 
 import time  # 2026-09-08 小欧: 双写console带时间戳 — 小欧-2026-09-08
 from typing import Any, Dict, Optional
-from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
+
+# 2026-11-11 小欧: 引用计划统一分流(refs→InputItem→plan_refs), 能力判定不再在本层做 if
+from app.attachments.contract import plan_refs
 from app.config import get_config
-from app.services.agent.steps import FinalStep, MetaStep  # ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
-from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
+from app.db import db
+from app.logger import (  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
+    log_and_print,
+    logger,
+)
+from app.services.agent.capability import profile
 from app.services.agent.initialize_run_state import initialize_run_state
+from app.services.agent.react_inference import _is_recoverable_error, handle_react_error
+from app.services.agent.react_step import _process_single_step
+from app.services.agent.start_step import (
+    _build_injected_msgs,  # 2026-10-29 北京老陈令: 装配段注入件决策唯一真源(start_step 共用, DRY) — 小欧-2026-10-29
+)
 from app.services.agent.start_step import (
     assemble_start_step as _assemble_start_step,
-    _build_injected_msgs,   # 2026-10-29 北京老陈令: 装配段注入件决策唯一真源(start_step 共用, DRY) — 小欧-2026-10-29
 )
-from app.services.agent.react_step import _process_single_step
-from app.services.agent.react_inference import handle_react_error, _is_recoverable_error
-from app.db import db
+from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed, set_status
+from app.services.agent.steps import (  # ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
+    FinalStep,
+    MetaStep,
+)
 from app.services.chat import storage
 from app.services.task.task_state import get_stream_buffer
-# 2026-11-08 小欧: 视觉分流(supports_image_input 判定 / split_vision_refs 摘图片 ref)
-from app.services.agent.vision import split_vision_refs, supports_image_input
+
+
+def to_input_items(refs: list | None) -> list:
+    """编排层 refs DTO → InputItem(浅拷贝补默认来源, 不引入第二份持久化)。"""
+    return [{**r, "kind": r.get("kind") or "file"} for r in (refs or [])]
+
+
 # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 移除顶层 import(改D路径局部import),
 #   否则 task包冷启动(import task_runtime/task_registry)踩 load-time 循环 — 小欧-2026-09-08
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): retrying content 去冗余词(请求LLM重试) — 小欧-2026-10-25
@@ -116,7 +134,10 @@ async def _terminate_cancelled(agent, task_id, _publish) -> bool:
     """取消终止统一收口(DRY) — 小欧 2026-10-30: 检测到取消→产 final+cancelled 终态帧→置 CANCELLED, 返回 True=已终止。
     start 装配后与循环顶两处共用(KISS-DIRECT: 单一取消终止逻辑, 消除重复)。取消来源读 agent._cancel_source
     (A/B 经 cancel_task 写回, 循环顶 D 被动继承), 文案按来源出, FinalStep 带 source 落库。"""
-    from app.services.task.task_runtime import check_cancelled, cancel_terminal_text  # 局部 import(防 task包冷启动 load-time 循环) — 小欧-2026-10-30
+    from app.services.task.task_runtime import (  # 局部 import(防 task包冷启动 load-time 循环) — 小欧-2026-10-30
+        cancel_terminal_text,
+        check_cancelled,
+    )
     if not await check_cancelled(task_id):
         return False
     cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
@@ -215,19 +236,17 @@ async def run_react_cycle(
     #   orchestrator 插话分支解析并渲染进注入正文(经 drain_inbox 并入), 原"覆盖两处"不实。
     # 视觉模型把图片 ref 摘出正文, 改走 wire image_url parts(init_history 组装占位);
     #   非视觉模型原样全走文本(档案卡), 与未接入视觉通道前逐字节一致。
-    _refs = (getattr(agent, "_start_meta", None) or {}).get("refs")
-    if supports_image_input(getattr(agent, "_task_llm_model", None)):
-        _text_refs, _vision_refs = split_vision_refs(_refs)
-    else:
-        _text_refs, _vision_refs = _refs, []
+    _refs = (getattr(agent, "_start_meta", None) or {}).get("refs") or []
+    _items = to_input_items(_refs)               # 编排层 refs DTO → InputItem
+    _plans = plan_refs(_items, profile(getattr(agent, "_task_llm_model", None)))
     agent.message_builder.init_history(
         getattr(agent, "_sys_prompt", "") or "",
         task or "",
-        refs=_text_refs,
+        refs=_refs,          # 降级文本块内容真源(resolver 已产出); plans 只定占位/文本块分流
+        plans=_plans,
         # 2026-10-31 小欧 - 目录块由编排层渲染(ws_block)后透传,
         #   与日志/回执同一份文本, 本层不重复渲染 — 小欧-2026-10-31
         ws_text=(getattr(agent, "_start_meta", None) or {}).get("ws_block") or "",
-        vision_slots=_vision_refs,
     )
     # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"); 无摘要则注全量历史。— 小欧 2026-10-14
     # 2026-10-25 小欧 修复(北京老陈令): 合并为一次注入, summary 在前 delta 在后

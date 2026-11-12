@@ -18,10 +18,12 @@ import fnmatch
 import re
 import sqlite3
 import time as _time_mod
-from typing import List, Optional, Dict  # 2026-07-31 小欧: 移除未使用 Any, Union, Literal; Dict 实际仍在使用(List[Dict]/-> Dict), 已恢复
+from typing import (  # 2026-07-31 小欧: 移除未使用 Any, Union, Literal; Dict 实际仍在使用(List[Dict]/-> Dict), 已恢复
+    Dict,
+    List,
+    Optional,
+)
 
-from app.tools.tool_response import build_success, build_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import (
     ERR_DB_CONNECTION,
     ERR_DOC_DB_TABLE_NOT_FOUND,
@@ -29,8 +31,13 @@ from app.tools.tool_constants import (
     ERR_SQL_EXEC,
     GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES,
 )
+from app.tools.tool_fc_helper import _close_connection, _get_connection
+from app.tools.tool_response import build_error, build_success
 from app.tools.toolhelper.error_hints import sql_error_hint
-from app.tools.tool_fc_helper import _get_connection, _close_connection
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 
 def _resolve_schema(conn, connection_type: str, db_name: Optional[str]) -> Optional[str]:

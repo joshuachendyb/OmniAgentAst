@@ -27,7 +27,10 @@ tools/context — 工具层运行上下文
 from contextvars import ContextVar
 from typing import Optional
 
-from app.tools.security_hooks import ToolSecurityHooks, NoOpHooks  # 修复: NoOpHooks 兜底 — 小沈 2026-08-13
+from app.tools.security_hooks import (  # 修复: NoOpHooks 兜底 — 小沈 2026-08-13
+    NoOpHooks,
+    ToolSecurityHooks,
+)
 
 _current_task_id: ContextVar[Optional[str]] = ContextVar("tool_task_id", default=None)
 _current_hooks: ContextVar[Optional[ToolSecurityHooks]] = ContextVar("current_hooks", default=None)

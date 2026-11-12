@@ -11,7 +11,7 @@ task_rollback_service — 任务回滚编排服务(task 域)
 依赖方向: api → services/task → services/safety (单向, 无循环)
 小欧 2026-08-12 A2-越层拆分
 """
-from typing import Dict, Any
+from typing import Any, Dict
 
 from app.logger import logger
 from app.safety.operation_backup_rollback import rollback_session

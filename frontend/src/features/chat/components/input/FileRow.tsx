@@ -1,9 +1,11 @@
 // 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
-// 编辑历史: 2026-11-07 小欧 - Colors.BG 新增 SELECTED=#e6f4ff(antd blue-1): 文件抽屉列表行「已加入」底与左栏导航选中底共用(收口两处硬编码) — 小欧-2026-11-07</think>**FileRow.tsx — 星标令牌化（V3）+ 头部编辑历史**<tool_call>edit<arg_key>newString</arg_key><arg_value>// 编辑历史: 2026-11-07 小欧: 附件列表行统一组件(勾位/类型图标/文件名/次行/☆ 收藏/⋯ 更多),
+// 编辑历史: 2026-11-07 小欧 - Colors.BG 新增 SELECTED=#e6f4ff(antd blue-1): 文件抽屉列表行「已加入」底与左栏导航选中底共用(收口两处硬编码) — 小欧-2026-11-07
+// 编辑历史: 2026-11-07 小欧: 附件列表行统一组件(勾位/类型图标/文件名/次行/☆ 收藏/⋯ 更多),
 //   供「最近用过/本会话/已收藏/任务产物/合集」复用; 键盘焦点态由 active 传入; 点文件名回调预览 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧: 色值令牌化 —— 选中底改 Colors.BG.SELECTED, 收藏星改 Colors.WARNING(与全站警告色同源),
 //   消两处硬编码 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 CapabilityBadge(state/contentKind) — 小欧-2026-11-11
 /**
  * FileRow —— 文件抽屉的列表行（唯一实现）
  *
@@ -19,6 +21,7 @@ import { Button, Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   CheckOutlined,
+  CustomerServiceOutlined,
   FileImageOutlined,
   FileOutlined,
   FilePdfOutlined,
@@ -26,17 +29,21 @@ import {
   MoreOutlined,
   StarFilled,
   StarOutlined,
+  VideoCameraOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 
 import { Colors, FontSize } from '@/utils/stepStyles';
+import { CapabilityBadge, type CapabilityState } from './CapabilityBadge';
 
-/** 按 mime 取类型图标（线性图标，无 emoji） */
-function iconOf(mime: string): React.ReactNode {
-  if (mime.startsWith('image/')) return <FileImageOutlined />;
+/** 按 kind 取类型图标（record.kind 权威，mime 仅兜底；线性图标，无 emoji） */
+function iconOf(kind: string | undefined, mime: string): React.ReactNode {
+  const k = kind || (mime.startsWith('image/') ? 'image' : mime === 'application/pdf' ? 'richdoc' : '');
+  if (k === 'image') return <FileImageOutlined />;
+  if (k === 'video') return <VideoCameraOutlined />;
+  if (k === 'audio') return <CustomerServiceOutlined />;
+  if (k === 'richdoc' || k === 'text') return <FileTextOutlined />;
   if (mime === 'application/pdf') return <FilePdfOutlined />;
-  if (mime.startsWith('text/') || mime.includes('json'))
-    return <FileTextOutlined />;
   return <FileOutlined />;
 }
 
@@ -45,6 +52,10 @@ export interface FileRowProps {
   /** 次行说明：类型 · 大小 · 来源 · 相对时间 */
   meta: string;
   mime?: string;
+  /** 附件权威类型(七类), mime 仅兜底 — 小欧-2026-11-11 */
+  kind?: string;
+  /** 当前模型对该内容类型的能力状态(ref_capability_map 只读索引) — 小欧-2026-11-11 */
+  capState?: CapabilityState;
   /** 已加入本轮 */
   added?: boolean;
   /** 已收藏（同 sha 存在全局行） */
@@ -75,6 +86,8 @@ const FileRow: React.FC<FileRowProps> = ({
   name,
   meta,
   mime = '',
+  kind,
+  capState,
   added = false,
   favorited = false,
   invalid = false,
@@ -126,7 +139,7 @@ const FileRow: React.FC<FileRowProps> = ({
       {invalid ? (
         <WarningOutlined style={{ color: Colors.ERROR_TEXT }} />
       ) : (
-        iconOf(mime)
+        iconOf(kind, mime)
       )}
     </span>
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -152,10 +165,11 @@ const FileRow: React.FC<FileRowProps> = ({
         {invalid ? (
           <span style={{ color: Colors.ERROR_TEXT }}>源文件已不存在</span>
         ) : (
-          <>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {meta}
             {added ? ' · 已加入' : ''}
-          </>
+            {capState && <CapabilityBadge state={capState} contentKind={kind} />}
+          </span>
         )}
       </div>
     </div>

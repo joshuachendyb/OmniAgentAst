@@ -46,6 +46,8 @@
 // 2026-11-08 小欧 - 补 media 探测块(ModelEntry.media + probeMedia): 记录模型接受哪种媒体传输 — 小欧-2026-11-08
 // 2026-11-09 小欧 - MediaProbe 补 url_err(厂商抓图失败≠地址为空没发)与 inline_ms/url_ms/inline_tokens/url_tokens(②验证tip按腿显示) — 小欧-2026-11-09
 // 2026-11-09 小欧 - 生成验证([15]): MediaProbe 扩 generate.image/video 双腿 + probeOutput 接口(视频异步, 显式 1200s 超时) — 小欧-2026-11-09
+// 2026-11-11 小欧 - 注释勘误: 原记录"1200s 超时"实为 1800s(30分钟)，且含②/[15] 章节文档号(铁规禁) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - ModelEntry 增 ref_capability_map 二维投影(后端 contract 生成, 前端只读索引) — 小欧-2026-11-11
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -77,6 +79,19 @@ export interface MediaProbe {
     image?: { t2i?: OutputProbeRec; i2i?: OutputProbeRec };
     video?: { t2v?: OutputProbeRec; i2v?: OutputProbeRec };
   };
+  /** 视频/音频输入能力验证记录(单腿, 2026-11-11)：state 语义同 OutputProbeRec + unverified — 小欧-2026-11-11 */
+  video?: ModalityProbeRec;
+  audio?: ModalityProbeRec;
+}
+
+/** 视频/音频输入验证单腿记录 — 小欧-2026-11-11 */
+export interface ModalityProbeRec {
+  state: 'ok' | 'none' | 'unverified';
+  ms?: number;
+  tokens?: number | null;
+  evidence?: string;
+  at?: string;
+  source?: string;
 }
 
 export interface ModelEntry {
@@ -99,6 +114,9 @@ export interface ModelEntry {
   max_output_length?: number | null;
   /** 媒体传输探测结果(实测得出，非厂商声明)；未探测 → undefined。 — 小欧-2026-11-08 */
   media?: MediaProbe;
+  /** 附件/文件引用能力二维投影(source_kind → content_kind → 三态)；
+   *  后端 contract.ref_capability_map 生成, 徽标只读索引不推导 — 小欧-2026-11-11 */
+  ref_capability_map?: Record<string, Record<string, 'native' | 'degraded' | 'opaque'>>;
   /** 上次验证回执(未定结论也记原因)；与 media 分键，只供界面常驻显示 — 小欧-2026-11-09 */
   last_probe?: ProbeLastMap;
 }
@@ -443,25 +461,30 @@ export const modelApi = {
     return response.data;
   },
 
-  /** 实测模型以哪种方式接收图片(HTTP 200 且图像 token>0 才算真收到)，结果由后端落 model_meta.media。
+  /** 实测模型以哪种方式接收媒体(HTTP 200 且对应模态 token>0 才算真收到)，结果由后端落 model_meta.media。
+   *  kind: image=内联+外链两腿 / video=URL 腿 / audio=内联腿 — 小欧-2026-11-11
    *  message 是后端给的整句短结论，直接进轻提示，前端不再自行拼词。 */
   probeMedia: async (
     provider: string,
-    model: string
+    model: string,
+    kind: 'image' | 'video' | 'audio' = 'image'
   ): Promise<{
     ok: boolean;
     provider: string;
     model: string;
-    accept: string;
+    kind: string;
+    accept: string | null;
     /** 本次外链探测是否拿到确定结论；false = 没测成(未配置探测地址/网络或限流失败)，不得当成"不支持外链"。 */
-    url_tested: boolean;
+    url_tested?: boolean;
     /** 本次探测是否拿到确定结论；false 时后端不落库，前端也不得把它当成实测结果展示。 */
     conclusive: boolean;
     persisted: boolean;
     message: string;
   }> => {
     const response = await api.post(
-      `/providers/${enc(provider)}/models/${enc(model)}/probe-media`
+      `/providers/${enc(provider)}/models/${enc(model)}/probe-media`,
+      null,
+      { params: { kind } }
     );
     return response.data;
   },

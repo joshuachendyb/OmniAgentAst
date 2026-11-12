@@ -23,8 +23,9 @@ import asyncio
 import json
 import time
 from typing import Dict
-from app.logger import logger, log_and_print
+
 from app.llm.error_classifier import SystemErrorClassifier
+from app.logger import log_and_print, logger
 from app.services.agent.steps import MetaStep
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3

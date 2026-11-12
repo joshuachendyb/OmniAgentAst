@@ -13,16 +13,19 @@ query_calendar — 节日/日期查询
 
 import time as _time_mod
 from datetime import datetime
-from typing import Dict, Any, Optional, Union, Literal
+from typing import Any, Dict, Optional
 
+from app.tools.tool_constants import ERR_TIME_DATE
 from app.tools.tool_fc_helper import (
-    parse_datetime_any as _parse_datetime_any,
-    is_holiday as _is_holiday,
-    calc_next_n_workday as _calc_next_n_workday,
     get_holiday_date_by_name as _get_holiday_date_by_name,
 )
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_TIME_DATE
+from app.tools.tool_fc_helper import (
+    is_holiday as _is_holiday,
+)
+from app.tools.tool_fc_helper import (
+    parse_datetime_any as _parse_datetime_any,
+)
+from app.tools.tool_response import build_error, build_success
 
 _WEEKDAY_CN = {
     "Monday": "星期一", "Tuesday": "星期二", "Wednesday": "星期三",
@@ -79,18 +82,18 @@ def calendar(
             is_weekend = isoweekday >= 6
             is_hol, holiday_name = _is_holiday(date_obj)
             is_workday = not is_weekend and not is_hol
-            
+
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             weekday_cn = _WEEKDAY_CN.get(dt.strftime("%A"), "")
             llm_data = _build_query_calendar_llm_data("success", duration_ms, date_obj.isoformat(), is_weekend, is_hol, is_workday, holiday_name or "", user_name=name, user_year=year, weekday_cn=weekday_cn)
             return build_success(data={}, llm_data=llm_data)
-        
+
         holiday_info = _get_holiday_date_by_name(name, year)
         if holiday_info is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_calendar_llm_data("error", duration_ms, "", False, False, False, "", detail=f"未找到节日名称或无效日期: {name}", hint="请检查节日名称或日期格式是否正确", user_name=name, user_year=year)
             return build_error(data={}, llm_data=llm_data)
-        
+
         date_obj = datetime.strptime(holiday_info["date"], "%Y-%m-%d").date()
         isoweekday = holiday_info["isoweekday"]
         is_weekend = isoweekday >= 6

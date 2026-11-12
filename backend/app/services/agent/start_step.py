@@ -155,9 +155,13 @@ from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tu
 
 if TYPE_CHECKING:  # 2026-11-03 小欧 - 仅供注解解析: StartStep 实体在函数内局部导入防包级环, 注解引用此前是悬空名
     from app.services.agent.steps import StartStep  # noqa: F401
-from app.logger import logger, log_and_print
-from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
-from app.services.agent.agent_utils import compress_summary_threshold  # 小欧-2026-10-31: 压缩摘要阈值唯一真源迁 agent_utils(agent 层公用函数收口)
+from app.logger import log_and_print, logger
+from app.services.agent.agent_utils import (
+    compress_summary_threshold,  # 小欧-2026-10-31: 压缩摘要阈值唯一真源迁 agent_utils(agent 层公用函数收口)
+)
+from app.services.agent.compaction_constants import (
+    KEEP_RECENT_ROUNDS,  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
+)
 
 # 2026-10-26 小欧 - _start_summary 来源前缀: 让前端/日志一眼区分摘要来源
 #   往次摘要=复用锚点；本次摘要=本轮新压
@@ -218,7 +222,10 @@ def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str,
             break
     _tail_n = KEEP_RECENT_ROUNDS   # 解析失败兜底(常量与解析函数缺省同源, 非内联数)
     try:
-        from app.services.agent.compaction.split_turn import find_recent_rounds_start, resolve_protect_rounds
+        from app.services.agent.compaction.split_turn import (
+            find_recent_rounds_start,
+            resolve_protect_rounds,
+        )
         _tail_n = resolve_protect_rounds()
         _start = find_recent_rounds_start(msgs, _tail_n)
     except Exception as e:  # noqa: BLE001 - 切分失败零退化: 附件只保留 user, 注入件= user+摘要
@@ -440,10 +447,10 @@ def _shrink_before_summary(agent, messages: List[Dict[str, Any]],
     if not messages:
         return messages
     try:
-        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
         from app.services.agent.agent_utils import conv_threshold, trim_conv_threshold
         from app.services.agent.compaction.assembler import shrink_to_budget
         from app.services.agent.compaction.summary import estimate_feed_tokens
+        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
 
         _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
         _ctx_threshold = conv_threshold(_ctx)       # 判定线: 窗口 × 调节系数
@@ -514,8 +521,8 @@ async def _compact_injected_history(agent) -> str:
                 agent._needs_compact = False
                 return ""
         # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
-        from app.services.agent.message_builder import MessageBuilder
         from app.services.agent.agent_utils import fmt_tok
+        from app.services.agent.message_builder import MessageBuilder
         _tok = MessageBuilder._estimate_tokens(_hist_for_summary)
         _shrunk = len(_hist_for_summary) != len(_pre_hist)
         _shrink_note = f",(裁剪前{len(_pre_hist)}条约{fmt_tok(MessageBuilder._estimate_tokens(_pre_hist))})" if _shrunk else ""
@@ -640,8 +647,8 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
             logger.info("[start_step] 增量摘要前检测到取消, 跳过摘要(回退复用锚点摘要)")
         else:
             # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
-            from app.services.agent.message_builder import MessageBuilder
             from app.services.agent.agent_utils import fmt_tok
+            from app.services.agent.message_builder import MessageBuilder
             _tok = MessageBuilder._estimate_tokens(delta_msgs)
             _shrunk = len(delta_msgs) != len(_pre_shrink_delta)
             _shrink_note = f",(裁剪前{len(_pre_shrink_delta)}条约{fmt_tok(MessageBuilder._estimate_tokens(_pre_shrink_delta))})" if _shrunk else ""
@@ -695,8 +702,8 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
     依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(解耦)。
     设计文档: start契约设计章节。
     """
-    from app.services.agent.steps import StartStep  # 局部导入防包级环
     from app.services.agent.message_builder import MessageBuilder
+    from app.services.agent.steps import StartStep  # 局部导入防包级环
 
     _meta = getattr(agent, "_start_meta", None)
     _ai = getattr(agent, "llm_client", None)

@@ -56,13 +56,18 @@ r"""read_path_check — 读操作路径检查(读线)
 
 from typing import Any, Dict, Optional, Tuple
 
-from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17  本函数自 path_check_common 迁 path_utils
-from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 读线禁区分档改查名单
-    classify_path,
-    SCOPE_FORBIDDEN_SYSTEM,
+from app.logger import (
+    logger,  # 2026-11-04 小欧: 补缺失导入(原 except 分支 NameError, 放行兜底失效) — 小欧-2026-11-04
 )
-from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
-from app.logger import logger  # 2026-11-04 小欧: 补缺失导入(原 except 分支 NameError, 放行兜底失效) — 小欧-2026-11-04
+from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 读线禁区分档改查名单
+    SCOPE_FORBIDDEN_SYSTEM,
+    classify_path,
+)
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
+from app.utils.path_utils import (  # 2026-10-17  本函数自 path_check_common 迁 path_utils
+    check_preconditions,
+    reject_reason_empty_path,
+)
 
 READ_MODE = "read"
 

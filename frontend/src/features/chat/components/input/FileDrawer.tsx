@@ -17,6 +17,9 @@
 // 编辑历史: 2026-11-10 小欧 - 排版重设计: 顶部常驻文字改标题旁帮助图标(Tooltip), 规则文案上移 ATTACHMENT_RULES 单一真源 — 小欧-2026-11-10
 // 编辑历史: 2026-11-10 小欧 - 合集限额接入: 打开时拉取后端 limits 并下发表单(入口置灰), 左栏显示合集数/条目数配额;
 //   条目 meta 补引用身份, 右栏标题带上合集用途备注 — 小欧-2026-11-10
+// 编辑历史: 2026-11-11 小欧 - 接入 capabilities(accept 白名单/setMaxRefs) + 列表行传 kind(图标按类型) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - 列表行补能力徽标(ref_capability_map 只读索引) + 抽取态回显(metaOf)
+//   + text/richdoc 真抽取手动重跑(行菜单「重新抽取」) — 小欧-2026-11-11
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -64,6 +67,7 @@ import {
 
 import {
   attachmentApi,
+  type AttachmentCapabilities,
   type AttachmentRecord,
 } from '@/services/api/attachment.api';
 import {
@@ -91,7 +95,7 @@ import {
 } from '@/features/refs/uploadAttachment';
 import { quoteFile } from '@/features/refs/quote';
 import { getLocalCapability, importLocal } from '@/features/refs/localImport';
-import { refLimitText, type ComposerRef } from '@/features/refs/store';
+import { refLimitText, setMaxRefs, type ComposerRef } from '@/features/refs/store';
 import {
   showMessage,
   showSuccess,
@@ -103,6 +107,11 @@ import { formatBytes } from '@/utils/format';
 import { formatRelativeTime } from '@/utils/time';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { FileRow, type FileRowProps } from './FileRow';
+// 2026-11-11 小欧 - 行内能力徽标(ref_capability_map 只读索引) — 小欧-2026-11-11
+import {
+  chipCapState,
+  useRefCapabilityMap,
+} from '@/features/chat/hooks/useRefCapabilityMap';
 import { PreviewDrawer } from './PreviewDrawer';
 import { MaterialPackSaveForm } from './MaterialPackSaveForm';
 
@@ -186,14 +195,20 @@ function typeLabel(mime: string, name: string): string {
   return ext || '文件';
 }
 
-/** 列表行次行：类型 · 大小 · 来源 · 相对时间 */
+/** 列表行次行：类型 · 大小 · 来源 · 相对时间 · 抽取态(text/richdoc 真抽取回显) */
 function metaOf(rec: AttachmentRecord, from: string): string {
-  return [
+  const parts = [
     typeLabel(rec.mime, rec.original_name),
     formatBytes(rec.size),
     from,
     formatRelativeTime(rec.last_used_at ?? rec.created_at),
-  ].join(' · ');
+  ];
+  // 2026-11-11 小欧 - 真抽取态回显: ok=字数, failed=标注失败(重试在行菜单) — 小欧-2026-11-11
+  if (rec.kind === 'text' || rec.kind === 'richdoc') {
+    if (rec.extract_status === 'ok') parts.push(`已抽取 ${rec.extract_chars} 字`);
+    else if (rec.extract_status === 'failed') parts.push('抽取失败');
+  }
+  return parts.join(' · ');
 }
 
 /** RowSpec = FileRow 的全部入参（active/rowRef 由列表层注入）+ key */
@@ -297,6 +312,23 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [packLimits, setPackLimits] = useState<MaterialPackLimits | null>(null);
   const rowsRef = useRef<RowSpec[]>([]);
   const activeElRef = useRef<HTMLDivElement | null>(null);
+  // 上传白名单/上限唯一出口(后端 capabilities); 打开抽屉时刷新一次 — 小欧-2026-11-11
+  const [caps, setCaps] = useState<AttachmentCapabilities | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void attachmentApi
+      .capabilities()
+      .then((c) => {
+        if (!alive) return;
+        setCaps(c);
+        setMaxRefs(c.limits.max_refs);
+      })
+      .catch(() => void 0);
+    return () => {
+      alive = false;
+    };
+  }, [open]);
 
   // 上传批量收集（与 AttachmentArea 原实现同口径：antd beforeUpload 逐文件回调 + 末个触发）
   const [busy, setBusy] = useState(0);
@@ -378,6 +410,20 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const refreshAfterWrite = useCallback(async (): Promise<void> => {
     await Promise.all([refreshAll(), reloadPacks()]);
   }, [refreshAll, reloadPacks]);
+  // 2026-11-11 小欧 - 行内能力徽标数据源 + 真抽取手动重跑(text/richdoc) — 小欧-2026-11-11
+  const capMap = useRefCapabilityMap(sessionId);
+  const retryExtract = useCallback(
+    async (rec: AttachmentRecord) => {
+      if (!sessionId) return;
+      try {
+        await attachmentApi.reextract(rec.id, sessionId);
+        await refreshAll();
+      } catch {
+        /* 重试失败保持原抽取态, 不打断抽屉 */
+      }
+    },
+    [sessionId, refreshAll]
+  );
 
   // 打开才拉：抽屉外不做任何预取（合集列表一并在开时拉，否则左栏先显示「暂无合集」）
   useEffect(() => {
@@ -906,6 +952,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         if (canManage) {
           if (moreItems.length > 0) moreItems.push({ type: 'divider' });
           moreItems.push({ key: 'rename', label: '重命名' });
+          // 2026-11-11 小欧 - 真抽取手动重跑(text/richdoc, 抽取失败/未抽取均可重试) — 小欧-2026-11-11
+          if (rec.kind === 'text' || rec.kind === 'richdoc') {
+            moreItems.push({ key: 'reextract', label: '重新抽取' });
+          }
           moreItems.push({ key: 'delete', label: '删除', danger: true });
         }
         return {
@@ -913,6 +963,15 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           name: rec.original_name,
           meta: metaOf(rec, SCOPE_FROM[scope]),
           mime: rec.mime,
+          kind: rec.kind,
+          // 2026-11-11 小欧 - 行内能力徽标(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
+          capState: capMap
+            ? chipCapState(capMap, {
+                kind: 'attachment',
+                path: rec.original_name,
+                mime: rec.mime,
+              })
+            : undefined,
           added,
           favorited: rec.favorited,
           invalid: !rec.available,
@@ -926,6 +985,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
             else if (key === 'rename') {
               setRenamingAtt(rec);
               setAttNameValue(rec.original_name);
+            } else if (key === 'reextract') {
+              void retryExtract(rec);
             } else if (key === 'delete') {
               void confirmDelete(rec);
             }
@@ -1250,6 +1311,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           />
           <Upload
             multiple
+            accept={caps?.accept}
             showUploadList={false}
             disabled={disabled || busy > 0}
             beforeUpload={beforeUpload}

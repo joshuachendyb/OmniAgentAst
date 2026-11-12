@@ -25,13 +25,11 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
 import configparser
 import csv
 import importlib
-import locale
 import json
+import locale
 import re
 import sqlite3
 import subprocess
-
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -42,11 +40,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from app.tools.tool_constants import QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT, DEFAULT_TIMEOUT_SEC
 from app.constants import UTC_OFFSET_PATTERN
-
 from app.logger import logger
-
+from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+)
 
 # ═══════════════════════════════════════════════════════════════
 # 来自 common_helper.py
@@ -318,7 +317,7 @@ def get_holiday_date_by_name(name: str, year: Optional[int] = None) -> Optional[
                 "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
     if cleaned in LUNAR_HOLIDAY_NAMES:
         try:
-            from lunarcalendar import Lunar, Converter
+            from lunarcalendar import Converter, Lunar
             m, d = LUNAR_HOLIDAY_NAMES[cleaned]
             lunar = Lunar(year, m, d)
             solar = Converter.Lunar2Solar(lunar)
@@ -596,8 +595,9 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
 
 def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
     """按传入 dict 的原始 key 顺序写入 YAML（tool专用辅助函数，不做任何重排）— 小沈 2026-06-09 — 小欧 2026-06-24 修复全局YAML状态污染"""
-    import yaml
     from collections import OrderedDict
+
+    import yaml
     path = Path(file_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 

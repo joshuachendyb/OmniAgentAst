@@ -30,15 +30,13 @@ import importlib.util
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 
 from app.file_persist import _files_root
 from app.llm.adapters import get_provider_adapter
-
 from app.llm.adapters.base import ProviderAdapter
-
 from app.logger import logger
 from app.services.model import model_service as svc
 

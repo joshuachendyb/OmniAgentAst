@@ -1,6 +1,3 @@
-
-# -*- coding: utf-8 -*-
-# 编辑历史:
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-01 chendyg 状态集中管理重构v2
@@ -192,6 +189,7 @@
 # 2026-11-08 小欧 - 图片 parts 展开从 prepare_messages_for_llm 拆出, 改在
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 # 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
+# 2026-11-11 小欧 展开调用更名 expand_vision_parts → expand_attachment_parts(附件/URL 占位泛化) — 小欧-2026-11-11
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -200,30 +198,41 @@
 """
 
 import time
-from typing import Dict, List    # X2: 补 Dict 类型标注（4.1.1 _emit_publish 类型标注需要）— 小欧 2026-09-12
-from app.logger import logger, log_and_print
+from typing import (  # X2: 补 Dict 类型标注（4.1.1 _emit_publish 类型标注需要）— 小欧 2026-09-12
+    Dict,
+    List,
+)
+
+from app.config import (
+    get_config,  # 2026-09-28 小欧: 注入截断读 tuning.content 配置(与 message_builder._cap_temp_history 同键, DRY)
+)
+from app.db import db
+from app.logger import log_and_print, logger
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ChunkStep, MetaStep, ObservationStep, FinalStep
-from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
+from app.services.agent.agent_utils import (
+    fmt_tok,  # 2026-11-07 小欧: 裁剪 notice token 文案收口 fmt_tok
+)
+from app.services.agent.compaction_constants import (
+    TEMP_HISTORY_CHAR_LIMIT,  # 2026-09-28 小欧: 同上, 默认值兜底
+)
 from app.services.agent.llm_call import call_llm_with_fallback
-from app.services.agent.tool_cache_manager import get_openai_tools
+from app.services.agent.react_dispatch import _dispatch_handler
 from app.services.agent.react_inference import (
-    _should_retry_truncated_tool,
+    _MAX_CONSECUTIVE_SAME_TOOL_CALLS,
     _MAX_CONSECUTIVE_TRUNCATIONS,
     _SAME_TOOL_WARN_ROUNDS,
-    _MAX_CONSECUTIVE_SAME_TOOL_CALLS,
     _check_same_tool_loop,
+    _should_retry_truncated_tool,
     _warn_same_tool_loop,
 )
-from app.services.agent.react_dispatch import _dispatch_handler
-from app.db import db
+from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed, set_status
+from app.services.agent.steps import ChunkStep, FinalStep, MetaStep, ObservationStep
+from app.services.agent.tool_cache_manager import get_openai_tools
+from app.services.agent.workspace_block import WS_TAG_OPEN
 from app.services.chat import storage
-from app.config import get_config  # 2026-09-28 小欧: 注入截断读 tuning.content 配置(与 message_builder._cap_temp_history 同键, DRY)
-from app.services.agent.compaction_constants import TEMP_HISTORY_CHAR_LIMIT  # 2026-09-28 小欧: 同上, 默认值兜底
-from app.services.agent.agent_utils import fmt_tok  # 2026-11-07 小欧: 裁剪 notice token 文案收口 fmt_tok
+
 # 2026-10-31 小欧 - 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
 from app.services.refs.render import REF_TAG_OPEN
-from app.services.agent.workspace_block import WS_TAG_OPEN
 
 
 async def _absorb_inbox(agent) -> int:
@@ -395,7 +404,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     )
 
     # 2026-11-08 小欧: 落盘/日志已取占位原文, 此处才展开图片 parts(避免 base64 入库/入日志); 覆盖全部 user 消息
-    messages = await agent.message_builder.expand_vision_parts(messages, _task_llm)
+    messages = await agent.message_builder.expand_attachment_parts(messages, _task_llm)
 
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")

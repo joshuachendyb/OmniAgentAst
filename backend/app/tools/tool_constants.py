@@ -95,6 +95,7 @@
 """
 
 from typing import Dict
+
 from app.tools.tool_types import ToolCategory  # 2026-10-02 小欧 - TOOL_CATEGORY_OVERRIDE 用(无循环)
 
 # ============================================================
@@ -417,7 +418,7 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: 
 # ============================================================
 
 # 【tool 级】使用对象: win_registry 注册表 hive 名称映射
-HIVE_MAP: dict[str, str] = {  
+HIVE_MAP: dict[str, str] = {
     "HKCU": "HKEY_CURRENT_USER",
     "HKLM": "HKEY_LOCAL_MACHINE",
     "HKCR": "HKEY_CLASSES_ROOT",

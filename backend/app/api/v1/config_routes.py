@@ -52,26 +52,42 @@ from app.api.v1.config_schemas import (
     ProviderInfo,
     SecurityConfig,
 )
+from app.services.model.config_helpers import get_config_path
+from app.utils.response_utils import handle_api_errors
 from app.services.model.config_service import (
     fix_config as svc_fix_config,
+)
+from app.services.model.config_service import (
     get_full_config as svc_get_full_config,
+)
+from app.services.model.config_service import (
     get_model_list as svc_get_model_list,
+)
+from app.services.model.config_service import (
     get_system_config_data,
+)
+from app.services.model.config_service import (
     open_config_folder as svc_open_config_folder,
+)
+from app.services.model.config_service import (
     read_config_file as svc_read_config_file,
+)
+from app.services.model.config_service import (
     read_version_file as svc_read_version_file,
+)
+from app.services.model.config_service import (
     # 2026-09-26 小欧 - update_config 保留（收敛为只切模型，内部只派发 ai_model_ref）
     update_config as update_config_service,
+)
+from app.services.model.config_service import (
     validate_config as svc_validate_config,
 )
-from app.services.model.config_helpers import get_config_path, handle_config_errors
-
 
 router = APIRouter()
 
 
 @router.get("/config", response_model=ConfigResponse)
-@handle_config_errors("获取配置")
+@handle_api_errors("获取配置")
 async def get_system_config():
     data = get_system_config_data()
     security_config = data["security"]
@@ -98,7 +114,7 @@ async def get_system_config():
 #     且其中 theme 早已是 registry 只读项（暗色入口已移除）——旧 handler 一并删除，不再有第二条写路径。
 #   保留全部 GET 端点（GET /config、/config/read、/config/full、/config/validate、/config/fix、/config/path 等）。 — 小欧-2026-09-26
 @router.put("/config")
-# 2026-09-26 - 小欧 - 修裸 500：本端点原先**未挂** @handle_config_errors（全文件其它端点都挂了），
+# 2026-09-26 - 小欧 - 修裸 500：本端点原先**未挂** @handle_api_errors（全文件其它端点都挂了），
 #   而 update_config_service 内部事务链（备份→改→校验→写→reload）任一步抛异常
 #   （含 filelock 超时、备份失败、YAML 不可写、reload 失败）都会直穿成框架默认 500，
 #   前端拿不到结构化 {success,message,errors}，且日志缺统一出处。挂上后与同文件其它端点一致。
@@ -109,7 +125,7 @@ async def get_system_config():
 #   ⇒ PUT /config 100% 失败（实测复现，顶栏「切换全局模型」全链断）。
 #   修法：改回 `async def`（与同文件其它被装饰端点一致），业务函数 update_config_service 本身是同步的，
 #   照原样 return 即可，不改任何业务逻辑。
-@handle_config_errors("更新配置")
+@handle_api_errors("更新配置")
 async def update_config(config_update: ConfigUpdate):
     return update_config_service(config_update)
 
@@ -135,7 +151,7 @@ async def get_model_list():
 
 
 @router.get("/config/full", response_model=FullConfigResponse)
-@handle_config_errors("获取完整配置")
+@handle_api_errors("获取完整配置")
 async def get_full_config():
     result = svc_get_full_config()
     providers = {}
@@ -149,14 +165,14 @@ async def get_full_config():
 
 
 @router.post("/config/fix", response_model=ConfigFixResponse)
-@handle_config_errors("配置修复")
+@handle_api_errors("配置修复")
 async def fix_config():
     result = svc_fix_config()
     return ConfigFixResponse(**result)
 
 
 @router.get("/config/path", response_model=ConfigPathResponse)
-@handle_config_errors("获取配置路径")
+@handle_api_errors("获取配置路径")
 async def get_config_path_endpoint():
     config_path = get_config_path()
     return ConfigPathResponse(
@@ -167,19 +183,19 @@ async def get_config_path_endpoint():
 
 
 @router.get("/config/read")
-@handle_config_errors("读取配置文件")
+@handle_api_errors("读取配置文件")
 async def read_config_file():
     return svc_read_config_file()
 
 
 @router.get("/config/version-file")
-@handle_config_errors("读取版本文件")
+@handle_api_errors("读取版本文件")
 async def read_version_file():
     # 2026-09-21 小欧 关于页"查看 version 文件全文"：返回 version.txt 全文
     return svc_read_version_file()
 
 
 @router.post("/config/open-folder")
-@handle_config_errors("打开配置目录")
+@handle_api_errors("打开配置目录")
 async def open_config_folder():
     return svc_open_config_folder()

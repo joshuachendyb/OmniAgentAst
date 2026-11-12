@@ -53,16 +53,18 @@ service — 服务创建与获取
 小沈 2026-06-17
 """
 
-from typing import Optional, Dict, Any, Tuple, List  # List: _retired_scopes — 小欧-2026-09-25
 import threading
+from typing import List, Optional, Tuple  # List: _retired_scopes — 小欧-2026-09-25
 
-from app.logger import setup_logger
-from app.llm import BaseAIService
-from app.db.models.chat_models import ModelRef
-from app.services.lifecycle.lifecycle import close_instance_sync
-from app.services.lifecycle.connection_scope import ConnectionScope  # 唯一所有者 — 小欧-2026-09-25
 from app.config import get_config  # 新增 — 小欧 2026-09-23
-from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
+from app.constants import (
+    DEFAULT_CONTEXT_LENGTH,  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
+)
+from app.db.models.chat_models import ModelRef
+from app.llm import BaseAIService
+from app.logger import setup_logger
+from app.services.lifecycle.connection_scope import ConnectionScope  # 唯一所有者 — 小欧-2026-09-25
+from app.services.lifecycle.lifecycle import close_instance_sync
 
 logger = setup_logger(__name__)
 

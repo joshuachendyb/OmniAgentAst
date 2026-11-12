@@ -10,6 +10,7 @@
 //   (均已由后端插值真实路径, 前端零字符串逻辑)。刻意不并入 getAll — 那边返可配置项的,
 //   混一起前端分不清哪个能改) — 小欧-2026-10-06
 // 2026-11-09 小欧 - SettingSchemaItem 补 hidden(响应模型须透出, 设置页组内过滤不再渲染已迁功能行的项) — 小欧-2026-11-09
+// 2026-11-11 小欧 - hidden 注释同步：三个验证素材 URL 已回媒体页直接编辑, 当前无 hidden 项使用, 字段保留作将来扩展 — 小欧-2026-11-11
 import api from './client';
 import type { ApiRequestConfig } from './client';
 import { setAccessToken } from './client';
@@ -99,6 +100,7 @@ export interface SettingSchemaItem {
   secret: boolean;
   readonly: boolean;
   /** 已在其他界面行内就地配置(如 Image_URL 行)，组内列表不再重复渲染 — 小欧-2026-11-09 */
+  /** 2026-11-11 小欧 - 三个验证素材地址已回媒体页直接编辑, 当前无 hidden 项使用; 字段保留作将来扩展 — 小欧-2026-11-11 */
   hidden?: boolean;
   notice?: string;
 }

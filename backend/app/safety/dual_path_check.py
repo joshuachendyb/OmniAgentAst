@@ -37,14 +37,16 @@ r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/ex
 
 import os
 from typing import Any, Dict, Optional
-from app.safety import read_path_check, write_path_check, delete_path_check
+
+from app.safety import delete_path_check, read_path_check, write_path_check
 from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 系统源外泄判定改查名单; 2026-10-20 小欧 - classify_path 判定改由 validate_read 单次承担, 换 SCOPE_TEXT 取归属文案
-    SCOPE_TEXT,
     SCOPE_FORBIDDEN_SYSTEM,
+    SCOPE_TEXT,
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
-from app.tools.tool_constants import DUAL_ACTION_PARAMS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 删 CONTENT_PARAM_KEYS(改类型判断)
-
+from app.tools.tool_constants import (
+    DUAL_ACTION_PARAMS,  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 删 CONTENT_PARAM_KEYS(改类型判断)
+)
 
 # ── 复合工具参数动作声明(表体在 tool_constants.DUAL_ACTION_PARAMS, 与 DUAL_PATH_TOOLS 同层) ──
 # 2026-10-15 小欧 - 阶段三定稿 / 2026-10-15 (真分开):

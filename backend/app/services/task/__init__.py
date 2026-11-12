@@ -24,33 +24,35 @@ Task 系统模块入口
 
 # 2026-11-04 小欧 - 导出改直连真源: 7 个判定/读字段函数本属 task_state, 原经 task_registry 再导出
 #   (registry 自身零使用) → 门面直接从 task_state 导入, 消再导出链 — 小欧-2026-11-04
-from app.services.task.task_state import (
-    check_cancelled,
-    check_paused,
-    check_was_paused,
-    get_running_task_status,
-    is_task_running,
-    get_cancel_request_time,
-    get_task_field,
-)
+from app.services.task.task_db import TaskQueries, TaskTracker, get_tracker
 from app.services.task.task_registry import (
+    cleanup_expired_tasks,
+    cleanup_task,
+    pause_task,
+    pop_task_field,
     register_task,
+    resume_task,
     set_cancelled,
     set_paused,
     set_resumed,
     set_was_paused,
-    pop_task_field,
-    cleanup_task,
-    cleanup_expired_tasks,
+    task_cleanup,
 )
 from app.services.task.task_runtime import (
     cancel_task,
-    task_cancel_check_and_yield,
     task_cancel_check,
+    task_cancel_check_and_yield,
     task_pause_check,
 )
-from app.services.task.task_registry import pause_task, resume_task, task_cleanup
-from app.services.task.task_db import TaskTracker, get_tracker, TaskQueries
+from app.services.task.task_state import (
+    check_cancelled,
+    check_paused,
+    check_was_paused,
+    get_cancel_request_time,
+    get_running_task_status,
+    get_task_field,
+    is_task_running,
+)
 
 __all__ = [
     # registry

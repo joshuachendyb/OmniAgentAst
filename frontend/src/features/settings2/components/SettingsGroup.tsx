@@ -41,6 +41,8 @@
 //   数据治理/关于, 共 13 项; 无 app.* 项故「系统参数」小节不渲染 — 小欧-2026-11-03
 // 2026-11-08 小欧 - sectionOf 增 media 分支: 本机图片(上限/压缩) 与 外链图片(转发/探测地址) 分两节 — 小欧-2026-11-08
 // 2026-11-09 小欧 - visibleItems 过滤 hidden 项(media.probe_image_url 已迁②Image_URL 行就地配置): 键仍留 schema 供读写链 — 小欧-2026-11-09
+// 2026-11-11 小欧 - 三个验证素材地址(probe_image_url/video/audio)由 hidden 回媒体页直接显示: visibleItems 过滤逻辑保留
+//   (防御性, 其它组仍可能注册 hidden 项), media 组现无 hidden 项 — 小欧-2026-11-11
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -155,6 +157,8 @@ export const SettingsGroup: React.FC<Props> = ({
   const fontSize = Number(values['appearance.fontSize'] ?? 14);
   // 2026-11-09 小欧 - hidden 项不渲染(已迁到功能行就地配置, 如 media.probe_image_url=②Image_URL 行)，
   //   键仍留 schema 供读写链(saveKeys/groupOfKey)工作 — 小欧-2026-11-09
+  // 2026-11-11 小欧 - 三个验证素材地址已回媒体页直接显示(不再 hidden), media 组现无 hidden 项;
+  //   过滤逻辑保留作防御(其它组仍可能注册 hidden 项) — 小欧-2026-11-11
   const visibleItems = items.filter((item) => !item.hidden);
   // 外观组分「登录与准入」/「外观」两块后，预览小卡（服务于"字号"这个外观项）
   //   必须随「外观」块一起渲染 —— 否则它会孤零零压在"登录与准入"上方，位置与语义都不对。

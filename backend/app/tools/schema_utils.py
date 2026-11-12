@@ -5,8 +5,10 @@ Schema处理工具 — Pydantic JSON Schema 修复和生成
 拆分自 registry.py — 小沈 2026-05-29
 """
 
-from typing import Dict, Any, Optional, Type
+from typing import Any, Dict, Optional, Type
+
 from pydantic import BaseModel
+
 from app.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -28,12 +30,12 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not schema or 'properties' not in schema:
         return schema
-    
+
     properties = schema['properties']
     for prop_name, prop_info in properties.items():
         if 'type' in prop_info:
             continue
-        
+
         if 'anyOf' in prop_info:
             non_null_types = []
             for item in prop_info['anyOf']:
@@ -41,13 +43,13 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                     t = item['type']
                     if t != 'null':
                         non_null_types.append(t)
-            
+
             if non_null_types:
                 unique_types = list(dict.fromkeys(non_null_types))
                 if len(unique_types) == 1:
                     prop_info['type'] = unique_types[0]
                 # 多个类型:保留anyOf结构,不合并为逗号字符串(opencode/deepseek等API不兼容逗号格式)
-        
+
         if 'oneOf' in prop_info and 'type' not in prop_info:
             non_null_types = []
             for item in prop_info['oneOf']:
@@ -55,12 +57,12 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                     t = item['type']
                     if t != 'null':
                         non_null_types.append(t)
-            
+
             if non_null_types:
                 unique_types = list(dict.fromkeys(non_null_types))
                 if len(unique_types) == 1:
                     prop_info['type'] = unique_types[0]
-        
+
         if 'type' not in prop_info and 'anyOf' not in prop_info and 'oneOf' not in prop_info:
             if '$ref' in prop_info:
                 prop_info['type'] = 'object'
@@ -68,7 +70,7 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                 prop_info['type'] = 'object'
             else:
                 prop_info['type'] = 'string'
-    
+
     return schema
 
 
@@ -79,7 +81,7 @@ def _generate_input_schema(input_model: Optional[Type[BaseModel]], input_schema:
     try:
         schema = input_model.model_json_schema()
         schema = _fix_schema_types(schema)
-        logger.debug(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
+        logger.debug("[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
         return schema
     except Exception as e:
         logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")

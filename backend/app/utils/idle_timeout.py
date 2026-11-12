@@ -20,7 +20,8 @@
 
 import asyncio
 import time
-from typing import AsyncIterator, TypeVar, Generic
+from typing import AsyncIterator, Generic, TypeVar
+
 from app.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -49,10 +50,10 @@ class IdleTimeoutIterator(Generic[T]):
     - 网络流超时检测
     - 任何需要空闲超时的异步迭代场景
     """
-    
+
     def __init__(
-        self, 
-        iterator: AsyncIterator[T], 
+        self,
+        iterator: AsyncIterator[T],
         timeout_seconds: float = 30.0,
         name: str = "iterator"
     ):
@@ -70,11 +71,11 @@ class IdleTimeoutIterator(Generic[T]):
         self._last_content_time: float = time.time()
         self._started = False
         self._count = 0
-    
+
     def __aiter__(self) -> 'IdleTimeoutIterator[T]':
         """返回异步迭代器"""
         return self
-    
+
     async def __anext__(self) -> T:
         """获取下一个元素,带空闲超时检测
         
@@ -89,11 +90,11 @@ class IdleTimeoutIterator(Generic[T]):
             self._started = True
             self._last_content_time = time.time()
             logger.debug(f"[IdleTimeoutIterator-{self._name}] 开始迭代,超时={self._timeout}秒")
-        
+
         # 计算剩余空闲时间
         elapsed = time.time() - self._last_content_time
         remaining = self._timeout - elapsed
-        
+
         if remaining <= 0:
             # 已超时
             logger.warning(f"[IdleTimeoutIterator-{self._name}] 空闲超时:已过{elapsed:.1f}秒(阈值{self._timeout}秒)")
@@ -101,24 +102,24 @@ class IdleTimeoutIterator(Generic[T]):
                 f"空闲超时:{self._name}超过{self._timeout}秒未收到内容",
                 timeout_seconds=self._timeout
             )
-        
+
         try:
             # 使用 asyncio.wait_for 设置超时
             result = await asyncio.wait_for(
                 self._iterator.__anext__(),
                 timeout=remaining
             )
-            
+
             # 收到内容,重置计时器
             self._last_content_time = time.time()
             self._count += 1
-            
+
             # 日志(每10个元素记录一次)
             if self._count % 10 == 1:
                 logger.debug(f"[IdleTimeoutIterator-{self._name}] 收到第{self._count}个元素")
-            
+
             return result
-            
+
         except asyncio.TimeoutError:
             # 等待超时
             elapsed = time.time() - self._last_content_time
@@ -131,22 +132,22 @@ class IdleTimeoutIterator(Generic[T]):
             # 迭代正常结束
             logger.debug(f"[IdleTimeoutIterator-{self._name}] 迭代结束,共{self._count}个元素")
             raise
-    
+
     # ==================== 状态查询方法 ====================
-    
+
     def get_elapsed_time(self) -> float:
         """获取从上次收到内容到现在经过的秒数"""
         return time.time() - self._last_content_time
-    
+
     def get_remaining_time(self) -> float:
         """获取距离超时还有多少秒"""
         elapsed = time.time() - self._last_content_time
         return max(0.0, self._timeout - elapsed)
-    
+
     def get_count(self) -> int:
         """获取已收到的元素数量"""
         return self._count
-    
+
     def reset_timer(self) -> None:
         """手动重置计时器(用于外部控制)"""
         self._last_content_time = time.time()

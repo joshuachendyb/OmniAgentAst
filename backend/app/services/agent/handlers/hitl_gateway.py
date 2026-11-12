@@ -36,9 +36,13 @@
 import re
 from dataclasses import dataclass
 from typing import Optional
+
 from app.logger import logger
+from app.services.agent.status_table import (  # AgentStatus真实位置status_table行19 — 小健-2026-09-05
+    AgentStatus,
+    set_status,
+)
 from app.services.agent.steps import MetaStep
-from app.services.agent.status_table import set_status, AgentStatus  # AgentStatus真实位置status_table行19 — 小健-2026-09-05
 
 
 @dataclass
@@ -61,8 +65,10 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
     单行化: 截断结果内换行(含四周空白)压成空格, 保证每个参数值恒为一行
        (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"契约);
     弹窗参数原文展示(用户本人数据); 落盘出口(日志/落库)另经 redact_* 遮蔽。"""
-    from app.utils.text_utils import truncate_text          # 延迟import防环(FUNCTIONS.md已登记) — 小欧-2026-09-16
-    from app.safety.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
+    from app.safety.trust import extract_trust_path  # 延迟import防环(主键权威) — 老陈-2026-09-16
+    from app.utils.text_utils import (
+        truncate_text,  # 延迟import防环(FUNCTIONS.md已登记) — 小欧-2026-09-16
+    )
     _all: dict = {k: v for k, v in (params or {}).items()}
     _path = extract_trust_path(tool_name, params)          # 复用trust.py主键权威, 不重写
     _out: dict = {}
@@ -86,8 +92,11 @@ async def _resolve_timeouts(auto_confirm):
     auto_confirm=True(bypass)→security.hitl.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
      （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。
      2026-09-18 小欧: 参数mode字符串→auto_confirm布尔(去mode字段同批, 唯一真相源)。"""
-    from app.config import get_config                            # 延迟import防环
-    from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, HITL_CONFIRM_LEAD as _D_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT as _D_MIN_TIMEOUT, BYPASS_AUTO_LEAD as _D_BYPASS_LEAD
+    from app.config import get_config  # 延迟import防环
+    from app.constants import BYPASS_AUTO_LEAD as _D_BYPASS_LEAD
+    from app.constants import HITL_CONFIRM_LEAD as _D_CONFIRM_LEAD
+    from app.constants import HITL_MIN_CONFIRM_TIMEOUT as _D_MIN_TIMEOUT
+    from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
     cfg = get_config()
     if not auto_confirm:
         _bt = int(float(cfg.get("security.hitl.timeout", _D_HITL_TIMEOUT)))
@@ -103,9 +112,14 @@ async def _resolve_timeouts(auto_confirm):
 
 async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     """spec属性访问（与4.2同形）→verdict。网关内统一：超时计算/trust_path/脱敏/SUSPENDED→wait→EXECUTING。"""
-    from app.services.task.hitl_confirmation import (            # 延迟import防环
-        create_confirmation, wait_for_confirmation_result, resolve_confirmation)
-    from app.safety.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
+    from app.safety.trust import (
+        extract_trust_path,  # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
+    )
+    from app.services.task.hitl_confirmation import (  # 延迟import防环
+        create_confirmation,
+        resolve_confirmation,
+        wait_for_confirmation_result,
+    )
     _path = spec.path or extract_trust_path(spec.tool_name, spec.params)
     confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
     _bt, _ct = await _resolve_timeouts(spec.auto_confirm)

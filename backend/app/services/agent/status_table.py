@@ -13,7 +13,10 @@ chendyg 2026-07-01
 """
 
 from enum import Enum
-from app.logger import logger  # 2026-11-04 小欧: 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
+
+from app.logger import (
+    logger,  # 2026-11-04 小欧: 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
+)
 from app.logger.prompt_logger import get_prompt_logger
 
 

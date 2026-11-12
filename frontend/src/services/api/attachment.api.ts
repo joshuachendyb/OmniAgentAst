@@ -9,6 +9,10 @@
 //   text/raw 注明纯预览严格读口径 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 - scope 注释术语对准: ai 栏 UI 定名「任务产物」 — 小欧-2026-11-07
+// 编辑历史: 2026-11-11 小欧 - kind 七类对齐(audio/unknown) + AttachmentCapabilities 类型与 capabilities() 接口 — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - P5 指标: AttachmentMetrics 类型 + metrics() 只读聚合接口 — 小欧-2026-11-11
+
+// 编辑历史: 2026-11-11 小欧 - 三堂会审整改: AttachmentCapabilities 补 suffix_kind(后端下发后缀→类型词典, 消前端复制后缀表双真源) — 小欧-2026-11-11
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -38,7 +42,8 @@ export interface AttachmentRecord {
   mime: string;
   size: number;
   sha256: string;
-  kind: 'text' | 'image' | 'video' | 'richdoc' | 'binary';
+  // 与后端 extract.classify 七类对齐(audio P3 接入, unknown 为 URL/无后缀兜底) — 小欧-2026-11-11
+  kind: 'text' | 'image' | 'video' | 'audio' | 'richdoc' | 'binary' | 'unknown';
   extract_status: 'none' | 'ok' | 'failed';
   extract_chars: number;
   source_path: string | null;
@@ -64,6 +69,26 @@ export interface ListOptions {
   q?: string;
   limit?: number;
   offset?: number;
+}
+
+/** 上传白名单/上限/类型选项唯一出口(C8); 前端禁止写死后缀/大小/上限 — 小欧-2026-11-11 */
+export interface AttachmentCapabilities {
+  accept: string;
+  limits: { max_refs: number; max_urls: number; max_url_images: number };
+  kind_options: Array<{ value: string; label: string }>;
+  /** 后缀→content_kind 词典(单一真源后端 extract, 前端禁止再写死后缀表) */
+  suffix_kind: Record<string, string>;
+}
+
+/** P5 运行指标(GET /attachments/metrics): 逐事件计数 + 三比率, 可定位到 source/kind */
+export interface AttachmentMetrics {
+  days: number;
+  counts: Record<string, Record<string, number>>;
+  rates: {
+    degrade: Record<string, number>;
+    native_fail: Record<string, number>;
+    extract_fail: Record<string, number>;
+  };
 }
 
 export const attachmentApi = {
@@ -132,6 +157,16 @@ export const attachmentApi = {
       `/attachments/id/${id}/promote`,
       null,
       { params: { session_id: sessionId } }
+    );
+    return res.data;
+  },
+
+  /** 真抽取手动重跑（text/richdoc），返回回填后的附件记录 — 小欧-2026-11-11 */
+  reextract: async (id: string, sessionId: string): Promise<AttachmentRecord> => {
+    const res = await api.post<AttachmentRecord>(
+      `/attachments/id/${id}/reextract`,
+      null,
+      { params: { session_id: sessionId }, timeout: HEAVY_READ_TIMEOUT_MS }
     );
     return res.data;
   },
@@ -234,6 +269,18 @@ export const attachmentApi = {
       session_id: sessionId,
       path,
     });
+    return res.data;
+  },
+
+  /** GET /attachments/capabilities: 单一出口, 不设 /limits 别名 */
+  capabilities: async (): Promise<AttachmentCapabilities> => {
+    const res = await api.get<AttachmentCapabilities>('/attachments/capabilities');
+    return res.data;
+  },
+
+  /** GET /attachments/metrics: 只读日志聚合(P5), 不加新表 */
+  metrics: async (days = 1): Promise<AttachmentMetrics> => {
+    const res = await api.get<AttachmentMetrics>('/attachments/metrics', { params: { days } });
     return res.data;
   },
 };

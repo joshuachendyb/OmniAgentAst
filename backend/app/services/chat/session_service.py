@@ -46,19 +46,33 @@ session_service — 会话业务服务(services/chat)
 职责(方案4.7.3, 小欧 2026-08-13): 会话 CRUD(创建/列表/更新/删除/批量标题) + 乐观锁 + 标题历史。
 API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
-from typing import Optional, List, Tuple
-import uuid
 import json
+import uuid
+from typing import List, Optional, Tuple
 
-from pydantic import BaseModel, Field
 from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
-from app.logger import logger
-from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
-from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
+from app.db.models.chat_models import (
+    BatchTitleResponse,
+    SessionListResponse,
+    SessionModelOverride,
+    SessionResponse,
+)
+from app.logger import logger
 from app.services.chat.message_service import delete_session_display_names
-from app.services.chat.storage import parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
+from app.services.chat.storage import (  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
+    count_session_messages,
+    forget_session_message_ids,
+    parse_session_model,
+)
+from app.utils.time_utils import (  # 小欧 2026-08-08 全程统一本地时区
+    format_timestamp,
+    get_local_iso_timestamp,
+    now_str,
+    to_local_iso,
+)
 
 
 class SessionUpdate(BaseModel):
@@ -262,8 +276,8 @@ def _cancel_cascade(session_id: str) -> None:
     import asyncio  # 2026-09-20 小欧 H1: run_coroutine_threadsafe/get_event_loop 需 asyncio — 小欧-2026-09-20
     import threading  # 2026-09-20 小欧 A-5: _thread_id 判 self-loop — 小欧-2026-09-20
     try:
-        from app.services.task.task_state import running_tasks
         from app.services.task.task_runtime import cancel_task
+        from app.services.task.task_state import running_tasks
         submitted = set()  # 修复(小欧 2026-09-20): 追踪已提交取消的task, 防快照间漏取消
         futures = []
         for _tid, _meta in list(running_tasks.items()):

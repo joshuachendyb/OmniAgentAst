@@ -30,20 +30,22 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.db import db
-from app.utils.path_utils import to_win_long_path
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
-from app.utils.time_utils import timestamp_for_filename  # 2026-11-04 小欧: 补缺失导入(备份路径时间戳, 原 NameError) — 小欧-2026-11-04
-from app.db.models.operation_models import OperationType, OperationStatus
-from app.logger import logger
-from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
-
-
-
 # —— 备份(并自 operation_backup.py) ——
 from uuid import uuid4
+
+from app.db import db
+from app.db.models.operation_models import OperationStatus, OperationType
+from app.logger import logger
 from app.safety.file_safety_config import FileSafetyConfig
 from app.safety.operation_maintenance import cleanup_expired_backups
+from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
+from app.utils.path_utils import to_win_long_path
+from app.utils.time_utils import (
+    get_local_iso_timestamp,  # 小欧 2026-08-08 全程统一本地时区
+    timestamp_for_filename,  # 2026-11-04 小欧: 补缺失导入(备份路径时间戳, 原 NameError) — 小欧-2026-11-04
+)
+
+
 def rollback_operation(operation_id: str) -> bool:
     """回滚单个文件操作"""
 

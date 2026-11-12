@@ -26,8 +26,13 @@
 import time
 from typing import Dict, Optional
 
-from app.constants import MODEL_COOLDOWN_STEPS, MODEL_QUOTA_COOLDOWN  # 2026-11-08 小欧: 从全局 constants 导入, 不重复定义(DRY)
-from app.logger import log_and_print  # 2026-11-08 小欧: log_and_print 供 console 观测冷却是否生效(收口 logger.info+print 为单点, 不并存 logger)
+from app.constants import (  # 2026-11-08 小欧: 从全局 constants 导入, 不重复定义(DRY)
+    MODEL_COOLDOWN_STEPS,
+    MODEL_QUOTA_COOLDOWN,
+)
+from app.logger import (
+    log_and_print,  # 2026-11-08 小欧: log_and_print 供 console 观测冷却是否生效(收口 logger.info+print 为单点, 不并存 logger)
+)
 
 
 class ModelCooldownRegistry:

@@ -82,9 +82,9 @@ def _load_ts_languages():
         return _JS_LANG, _TS_LANG, _TSX_LANG
     _TS_TRIED = True
     try:
-        from tree_sitter import Language
         import tree_sitter_javascript as _tsjs
         import tree_sitter_typescript as _tsts
+        from tree_sitter import Language
         _JS_LANG = Language(_tsjs.language())
         _TS_LANG = Language(_tsts.language_typescript())
         _TSX_LANG = Language(_tsts.language_tsx())
@@ -216,8 +216,12 @@ def _ts_syntax_errors(content: str, lang) -> list:
 
 def _node_check_js(content: str, file_path: Optional[str] = None):
     """A方案兜底: node --check 校验 JS(仅做语法解析不执行) — 小欧 2026-10-12"""
-    import shutil, tempfile
-    from app.utils.proc_io import run as proc_run  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
+    import shutil
+    import tempfile
+
+    from app.utils.proc_io import (
+        run as proc_run,  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
+    )
     _node = shutil.which("node")
     if not _node:
         return None  # 无 Node → 跳过(等价放行)

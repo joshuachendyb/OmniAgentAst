@@ -54,6 +54,9 @@
 #     (路径错位) → backend/config/config.yaml 每次启动被重建、永不生效、反复误导定位(用户多次删除仍再生)。
 #     修复: 新增 _config_target(): frozen=exe同级 config/, 源码=代码库根 config/(与 get_config_path 同源);
 #     example 源 frozen=exe同级, 源码=backend/config.yaml.example(git 唯一模板)。 — 小欧-2026-11-06
+#   2026-11-12 小欧 - uvicorn.run log_level "info"→None: 该值在 uvicorn Config.configure_logging 中
+#     会 setLevel 强覆盖 uvicorn.error/access/asgi, 与 setup_uvicorn_loggers 设的总闸 DEBUG 冲突
+#     (原来靠 startup 二次纠正才恢复, 属多余绕路); 置 None 后由本系统 handler 阈值统一裁决 — 小欧-2026-11-12
 # ============================================================================
 import argparse
 import shutil
@@ -308,6 +311,13 @@ def main() -> None:
     _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
     _ensure_config(base)      # 确保 config/config.yaml 存在，再导入 app.* 模块
 
+    # 打包版: 创建 KILL_ON_JOB_CLOSE Job Object, 保证关 console 窗口时子进程树(shell 等)
+    #   随主进程自动终止, 不留孤儿锁 DLL(重新部署时 MSVCP140.dll 等被锁无法覆盖) — 小欧-2026-11-07
+    _job_handle = 0
+    if getattr(sys, "frozen", False):
+        from app.utils.win_job_object import assign_current_to_kill_on_close_job
+        _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
+
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
     #   应用层原先自己读 FORWARDED_ALLOW_IPS 环境变量，与 uvicorn 各读一次可能不一致
@@ -317,10 +327,11 @@ def main() -> None:
     set_forwarded_allow_ips(args.forwarded_allow_ips)
     # uvicorn 日志非阻塞化(2026-10-25): 须在 uvicorn.run 之前装配, 且传 log_config=None
     # 防 uvicorn 默认 dictConfig 覆盖。 — 小欧-2026-10-25
+    # 2026-11-12 小欧 - log_level=None: 不在 uvicorn 侧设级别, 交由本系统 handler 阈值裁决(原因见文件头历史)。
     from app.logger.shared_handler import setup_uvicorn_loggers
     setup_uvicorn_loggers()
     import uvicorn
-    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info",
+    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level=None,
                 log_config=None, forwarded_allow_ips=args.forwarded_allow_ips)
 
 

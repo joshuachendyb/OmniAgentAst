@@ -5,11 +5,11 @@
 - YAGNI: 去除类包装,直接导出模块级函数
 - SRP: 各报告类型独立模块,本文件仅做导出入口
 """
-from app.services.visualization.file_visualization import generate_all_reports
 from app.services.visualization.common import (
-    OperationNode,
     FlowData,
+    OperationNode,
 )
+from app.services.visualization.file_visualization import generate_all_reports
 
 __all__ = [
     'generate_all_reports',

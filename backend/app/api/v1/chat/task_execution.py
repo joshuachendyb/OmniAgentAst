@@ -8,10 +8,14 @@ task_execution — C1 任务详情统计 + C2 按 task_id 步骤回放
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
 from app.db import db
 from app.logger import logger
 from app.services.chat.storage import (
-    get_task_detail, get_task_tool_stats, load_steps_by_task, load_user_message_by_task,
+    get_task_detail,
+    get_task_tool_stats,
+    load_steps_by_task,
+    load_user_message_by_task,
     save_process_events,
 )
 

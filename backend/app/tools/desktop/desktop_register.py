@@ -28,9 +28,9 @@ DESKTOP Register - 桌面工具注册点
 
 import importlib
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 DESKTOP_TOOL_DEPENDENCIES = {
     "window_info": [{"import_name": "win32gui", "pip_package": "pywin32"}],
@@ -55,32 +55,30 @@ def check_pyautogui_available() -> bool:
         return False
 
 
+from app.tools.desktop.clipboard_control import clipboard_control
 from app.tools.desktop.desktop_schema import (
-    WindowInfoInput,
-    WindowFocusInput,
-    WindowResizeInput,
-    SetWindowStateInput,
+    ClipboardControlInput,
+    KeyboardControlInput,
     MouseClickInput,
     MouseMoveInput,
-    MouseScrollInput,
     MousePositionInput,
-    KeyboardControlInput,
+    MouseScrollInput,
     ScreenCaptureInput,
-    ClipboardControlInput,
+    SetWindowStateInput,
+    WindowFocusInput,
+    WindowInfoInput,
+    WindowResizeInput,
 )
-
-from app.tools.desktop.window_info import window_info
-from app.tools.desktop.set_window_state import set_window_state
-from app.tools.desktop.window_focus import window_focus
-from app.tools.desktop.window_resize import window_resize
+from app.tools.desktop.keyboard_control import keyboard_control
 from app.tools.desktop.mouse_click import mouse_click
 from app.tools.desktop.mouse_move import mouse_move
-from app.tools.desktop.mouse_scroll import mouse_scroll
 from app.tools.desktop.mouse_position import mouse_position
-from app.tools.desktop.keyboard_control import keyboard_control
+from app.tools.desktop.mouse_scroll import mouse_scroll
 from app.tools.desktop.screen_capture import screen_capture
-from app.tools.desktop.clipboard_control import clipboard_control
-
+from app.tools.desktop.set_window_state import set_window_state
+from app.tools.desktop.window_focus import window_focus
+from app.tools.desktop.window_info import window_info
+from app.tools.desktop.window_resize import window_resize
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 DESKTOP_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);

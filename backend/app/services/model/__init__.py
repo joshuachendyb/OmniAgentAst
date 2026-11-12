@@ -15,7 +15,6 @@ config — 配置管理模块
 #   导出集合与名值零变化（仍是同一批符号，只是 FIELD_HANDLERS 字典内容变窄），
 #   故不改 __all__、不改下游 import 写法（禁止 backward：不为"看起来一致"而制造无谓改动）— 小欧 2026-09-26
 
-from app.services.model.resolver import AIConfigResolver, get_ai_config_resolver
 from app.services.model.config_helpers import (
     FIELD_HANDLERS,
     _auto_fix_and_validate,
@@ -28,13 +27,13 @@ from app.services.model.config_helpers import (
     ensure_provider_exists,
     ensure_provider_not_duplicate,
     get_config_path,
-    handle_config_errors,
     is_provider_metadata_field,
     load_config,
     read_yaml_config,
     save_config,
     write_yaml_config,
 )
+from app.services.model.resolver import AIConfigResolver, get_ai_config_resolver
 
 __all__ = [
     "AIConfigResolver", "get_ai_config_resolver",
@@ -45,7 +44,7 @@ __all__ = [
     "_validate_config_integrity",
     "ensure_model_exists", "ensure_model_not_duplicate",
     "ensure_provider_exists", "ensure_provider_not_duplicate",
-    "get_config_path", "handle_config_errors",
+    "get_config_path",
     "is_provider_metadata_field", "load_config",
     "read_yaml_config", "save_config", "write_yaml_config",
 ]

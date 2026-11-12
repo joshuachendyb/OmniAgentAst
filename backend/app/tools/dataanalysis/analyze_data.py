@@ -24,16 +24,18 @@ analyze_data  对数据集进行统计分析
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import time as _time_mod
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from app.tools.tool_response import build_success, build_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.tools.tool_fc_helper import _check_module
-from app.utils.json_utils import coerce_json
+from app.tools.dataanalysis.data_loader import convert_pd_value, load_data_to_df, validate_top_n
 from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success
 from app.tools.toolhelper.error_hints import hint_for_data_error
-from app.tools.dataanalysis.data_loader import load_data_to_df, convert_pd_value, validate_top_n
-
+from app.utils.json_utils import coerce_json
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 
 def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List[str],

@@ -23,8 +23,12 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.db import db
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.services.chat.storage import query_token_usage, query_task_accumulation, query_session_accumulation  # 11.1 复用查询函数统一口径+缺行兜底 — 小欧 2026-08-20
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.services.chat.storage import (  # 11.1 复用查询函数统一口径+缺行兜底 — 小欧 2026-08-20
+    query_session_accumulation,
+    query_task_accumulation,
+    query_token_usage,
+)
 from app.utils.response_utils import handle_api_errors
 
 router = APIRouter()
@@ -61,7 +65,9 @@ async def get_token_usage(session_id: Optional[str] = None,
     # 2026-09-03 小欧/北京老陈: token_usage查询补日志
     from app.logger import logger as _log
     _log.info(f"[token-usage] 查询: session_id={session_id}, task_id={task_id}, model={model}")
-    from app.config import get_config as _get_cfg   # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
+    from app.config import (
+        get_config as _get_cfg,  # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
+    )
     _model_ref = None
     if model:
         _provider = (_get_cfg().get("ai", {}).get("model_ref") or {}).get("provider", "")

@@ -13,10 +13,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_fc_helper import _detect_encoding
 from app.logger import logger
 from app.tools.tool_constants import READ_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
-
+from app.tools.tool_fc_helper import _detect_encoding
 
 _ENCODING_PRIORITY = [
     "utf-8", "gbk", "gb2312", "utf-8-sig",

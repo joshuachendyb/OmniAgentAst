@@ -17,14 +17,17 @@ execution_stream — 执行步骤流式查看
 # 2026-10-01 - 小欧 - 解 [1] E3: 读步骤补传 task_id(p["pair_task_id"]), 与 message_service/history_loader 同源; 不传则同 ai_message_id 下的多任务步骤被跨任务混读
 
 import json
-import asyncio
-from typing import Optional, Any, Dict
-from fastapi import APIRouter, HTTPException, Query
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
+
 from app.db import db
-from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
-from app.services.chat.storage import fetch_session_user_message_pairs  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律)
+from app.services.chat.storage import (
+    fetch_session_user_message_pairs,  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律)
+    load_execution_steps,  # 从chat_message_steps组装 — 小欧 2026-07-14
+)
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 router = APIRouter()
 
@@ -109,7 +112,7 @@ async def _generate_execution_stream(session_id: str):
                         yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                 elif content:
                     yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
-        
+
         yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'content': '执行完成'}, ensure_ascii=False)}\n\n"
     except Exception as e:
         yield f"event: error\ndata: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -144,7 +147,7 @@ async def get_execution_stream(session_id: str):
 
     if not session:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-    
+
     # 返回SSE流
     return StreamingResponse(
         _generate_execution_stream(session_id),

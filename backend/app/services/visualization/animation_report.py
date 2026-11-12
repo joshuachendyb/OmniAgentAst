@@ -4,15 +4,15 @@
      load_template_assets, render_animation_html, generate_animation_script
 小沈 2026-05-29 拆分自 file_visualization.py
 """
-import json
 import functools
+import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from jinja2 import Environment, FileSystemLoader
 
-
-from app.logger import logger
 from app.db.operation_queries import query_animation_operations as _query_animation_operations
+from app.logger import logger
 
 
 def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
@@ -35,15 +35,15 @@ def build_animation_data(operations_data: List[Dict[str, Any]],
     """
     success_count = 0
     operation_types: Dict[str, int] = {}
-    
+
     for op in operations_data:
         if op.get("status") == "success":
             success_count += 1
         op_type = op.get("type", "unknown")
         operation_types[op_type] = operation_types.get(op_type, 0) + 1
-    
+
     error_count = len(operations_data) - success_count
-    
+
     return {
         "operations": operations_data,
         "task_description": task_description,

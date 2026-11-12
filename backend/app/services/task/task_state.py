@@ -35,7 +35,8 @@ task_state — 运行态任务数据存储 + 只读查询
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
-from app.logger import logger          # [63] 3.6.2：降级日志需要（本文件此前无 logger）
+
+from app.logger import logger  # [63] 3.6.2：降级日志需要（本文件此前无 logger）
 
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}

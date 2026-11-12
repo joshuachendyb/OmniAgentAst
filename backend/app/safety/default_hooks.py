@@ -12,10 +12,11 @@ default_hooks — 默认安全 hooks 实现(转发壳)
 """
 from typing import Any, Callable, Optional, Tuple
 
-from app.tools.security_hooks import ToolSecurityHooks
+from app.safety.operation_record import (
+    execute_with_safety as _execute_with_safety,
+)
 from app.safety.operation_record import (
     record_operation as _record_operation,
-    execute_with_safety as _execute_with_safety,
 )
 
 

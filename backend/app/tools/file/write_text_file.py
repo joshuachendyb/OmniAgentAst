@@ -62,9 +62,13 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file  # 2026-08-21 小欧 11.6.1: 产出物声明
-from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS
-from app.tools.tool_constants import WRITE_INPUT_MAX_BYTES
+from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS, WRITE_INPUT_MAX_BYTES
+from app.tools.tool_response import (  # 2026-08-21 小欧 11.6.1: 产出物声明
+    build_error,
+    build_success,
+    build_warning,
+    with_artifact_file,
+)
 
 
 def _build_content_preview(content: str) -> str:
@@ -73,20 +77,28 @@ def _build_content_preview(content: str) -> str:
     if len(content) <= _pc * 2:
         return content
     return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
-from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
-
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 路径安全层
-from app.tools.toolhelper.error_hints import hint_for_write_error
-from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.content_safety import check_content_safety
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.utils.path_utils import to_win_long_path  # 长路径包裹 — 小欧 2026-08-13
+from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
+    _current_task_id,
+    get_current_hooks_or_noop,
+)
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.file.file_state import record_write, check_conflict, is_unchanged
-from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
+from app.tools.file.file_state import check_conflict, is_unchanged, record_write
+from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
+from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.tools.toolhelper.syntax_validator import (  # 小欧 2026-07-21 统一语法检测接入
+    detect_language,
+    validate_syntax,
+)
+from app.tools.validate.content_safety import check_content_safety
+from app.tools.validate.file_type_checker import check_for_text_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+    to_win_long_path,  # 长路径包裹 — 小欧 2026-08-13
+    validate_path_for_write,  # 2026-10-16 小欧 - 仅业务警告, 合法性归 路径安全层
+)
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:

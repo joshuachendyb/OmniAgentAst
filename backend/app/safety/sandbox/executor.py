@@ -41,17 +41,19 @@ from typing import Dict, List, Optional
 
 from app.config import get_config
 from app.logger import logger
-from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
-
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
+
 # 2026-10-16 小欧 - 接线: shell 静态判定符号随整文件下沉到 app.safety.shell_command_process,
 #   并跟正名。全部正名直用, 不留 as 旧名别名(禁止 backward, 旧名零残留),
 #   故下方调用点同步正名。本模块是「越界写扫描 + 只读直通」两个消费方之一, 故随只读白名单一并下沉(不留越层 import)。
 # 2026-10-18 小欧 订正(SRP 拆分后): shell_command_process.py 已按职责删除, 符号现分居
 #   shell_sandbox_tables(越界表) / shell_readonly(只读白名单) / shell_tool_classify(工具分类) /
 #   shell_text_atoms(文本原子) / shell_parse(动作解析); 下方 import 即现行真源。
-from app.safety.shell_process_guard import shell_has_hidden_kill  # 2026-10-16: 自杀检查已归并 guard(不可隔离动词同源)
+from app.safety.shell_process_guard import (
+    shell_has_hidden_kill,  # 2026-10-16: 自杀检查已归并 guard(不可隔离动词同源)
+)
+from app.safety.shell_readonly import is_shell_readonly_whitelisted
 from app.safety.shell_sandbox_tables import (
     SHELL_OUTSIDE_TARGET_RE,
     SHELL_REDIRECT_RE,
@@ -59,9 +61,9 @@ from app.safety.shell_sandbox_tables import (
     SHELL_SANDBOX_SELF_RE,
     SHELL_WRITE_INTENT_RE,
 )
-from app.safety.shell_readonly import is_shell_readonly_whitelisted
-from app.safety.shell_tool_classify import is_shell_tool, shell_registry_key_exists
 from app.safety.shell_text_atoms import shell_ps_literal_path, shell_resolve_env_fragment
+from app.safety.shell_tool_classify import is_shell_tool, shell_registry_key_exists
+from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流
 

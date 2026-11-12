@@ -33,7 +33,7 @@ class LRUCache:
     3. 日志记录:异常必须记录,统计定期记录
     4. 自动清理:LRU策略,防止内存泄漏
     """
-    
+
     def __init__(self, max_size: int = 1000, log_interval: int = 100):
         """
         初始化缓存
@@ -49,7 +49,7 @@ class LRUCache:
         self._misses = 0
         self._operation_count = 0
         self._log_interval = log_interval
-    
+
     def get(self, key: str) -> Optional[Any]:
         """获取缓存
         
@@ -75,7 +75,7 @@ class LRUCache:
             # 缓存异常不影响主流程
             logger.error(f"[LRUCache] get异常: {e}")
             return None
-    
+
     def set(self, key: str, value: Any):
         """设置缓存
         
@@ -93,7 +93,7 @@ class LRUCache:
         except Exception as e:
             # 缓存异常不影响主流程
             logger.error(f"[LRUCache] set异常: {e}")
-    
+
     def delete(self, key: str):
         """删除缓存条目
         
@@ -106,13 +106,13 @@ class LRUCache:
                     del self._cache[key]
         except Exception as e:
             logger.error(f"[LRUCache] delete异常: {e}")
-    
+
     def _log_if_needed(self):
         """根据间隔记录统计日志"""
         if self._operation_count % self._log_interval == 0:
             stats = self.get_stats()
             logger.info(f"[LRUCache] 统计: {stats}")
-    
+
     def get_stats(self) -> Dict:
         """获取统计信息"""
         total = self._hits + self._misses
@@ -124,7 +124,7 @@ class LRUCache:
             "misses": self._misses,
             "hit_rate": f"{hit_rate:.2%}"
         }
-    
+
     def clear(self):
         """清空缓存"""
         try:

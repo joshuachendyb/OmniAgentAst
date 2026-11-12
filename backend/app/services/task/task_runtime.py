@@ -68,22 +68,30 @@ task_runtime — 运行态任务管理（内存）
 import asyncio  # 2026-09-20 小欧 X3修复: _pause_core 已用 asyncio.wait_for/TimeoutError 却未import, 暂停超时均NameError — 小欧-2026-09-20
 import time
 from datetime import datetime
-from typing import Optional, AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消请求) — 小欧-2026-09-08
-from app.utils.sse_formatter import format_agent_sse
-from app.utils.response_utils import api_success, api_failure
-from app.services.task.task_state import (
-    check_cancelled, check_paused, check_was_paused,
-    get_pause_event, running_tasks,
-    StreamBuffer,  # 2026-10-30 小欧 - R4: 取消检查需读 buffer.event_log 判"是否已有真实终态"
+from app.logger import (  # 2026-09-08 小欧: log_and_print 双写(console可见取消请求) — 小欧-2026-09-08
+    log_and_print,
+    logger,
 )
+from app.services.agent.status_table import AgentStatus, set_status
 from app.services.task.task_registry import (
-    set_cancelled, set_was_paused, set_resumed, build_step_dict,   # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
-    claim_agent_task_for_cancel,                    # 2026-10-30 小欧: 取消幂等(首次才打断 agent 协程)
+    build_step_dict,
+    claim_agent_task_for_cancel,  # 2026-10-30 小欧: 取消幂等(首次才打断 agent 协程)
+    set_cancelled,  # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
+    set_resumed,
+    set_was_paused,
 )
-
-from app.services.agent.status_table import set_status, AgentStatus
+from app.services.task.task_state import (
+    StreamBuffer,  # 2026-10-30 小欧 - R4: 取消检查需读 buffer.event_log 判"是否已有真实终态"
+    check_cancelled,
+    check_paused,
+    check_was_paused,
+    get_pause_event,
+    running_tasks,
+)
+from app.utils.response_utils import api_failure, api_success
+from app.utils.sse_formatter import format_agent_sse
 
 # 暂停自动恢复超时(秒): 前端 SSE 消费路径(task_pause_check_and_yield)与后台 wait_for_resume 同口径 —
 # 暂停最多等该时长, 超时自动恢复继续(防任务永久卡 SUSPENDED 的状态漂移) — 小欧 2026-10-30

@@ -25,10 +25,14 @@
 """
 from typing import List, Optional
 
-from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse import lexer
+from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import (
-    SHELL_DELETE_RE, parse_delete_action, shell_has_force_delete, shell_has_recursive_delete)
+    SHELL_DELETE_RE,
+    parse_delete_action,
+    shell_has_force_delete,
+    shell_has_recursive_delete,
+)
 from app.safety.shell_parse.parse_move import SHELL_MOVE_RE, SHELL_RENAME_RE, parse_move_action
 from app.safety.shell_parse.parse_read import READ_RE, parse_read_action
 from app.safety.shell_parse.parse_write import parse_write_action

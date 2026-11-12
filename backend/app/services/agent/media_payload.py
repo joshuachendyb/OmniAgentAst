@@ -3,6 +3,10 @@
 # 2026-11-08 小欧 新建: 媒体附件 → 请求 part 唯一构造点(视觉通道原内联逻辑迁入)
 # 2026-11-08 小欧 增自适应选路: 实测支持外链→直传 URL; 超限→本机压缩再内联(替代直接丢弃)
 # 2026-11-08 小欧 压缩保方向(EXIF Orientation 烧进像素); 外链准入改 is_global 单判(补 CGNAT) — 小欧-2026-11-08
+# 2026-11-11 小欧 逻辑/方言分层: build_media_part → build_logical_part + to_wire_part + ensure_payload,
+#   新增 _read_capped/_b64; 压缩/缓存/外链准入原样保留 — 小欧-2026-11-11
+# 2026-11-11 小欧 增 URL 直传方言: build_url_part 按 content_kind 分派 video_url/audio_url;
+#   to_wire_part 补 video/audio 外链 part(内联仍按原降级口径) — 小欧-2026-11-11
 
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
@@ -136,24 +140,94 @@ def url_reject_reason(url: str) -> str:
     return ""
 
 
-def build_url_part(url: str) -> Tuple[Optional[Dict[str, Any]], str]:
-    """公网图片地址 → image_url part(零字节搬运); 不合法返回 (None, 原因)。"""
+def build_url_part(url: str, kind: str = "image") -> Tuple[Optional[Dict[str, Any]], str]:
+    """公网媒体地址 → 直传 part(零字节搬运); 不合法返回 (None, 原因)。
+    方言按 content_kind 分派: image→image_url / video→video_url / audio→audio_url;
+    其余 kind 不产直传 part(文本/富文档走抽取路径)。"""
     if not media_config().get("remote_url_passthrough", True):
-        return None, "配置里关闭了图片链接转发"
+        return None, "配置里关闭了媒体链接转发"
     reason = url_reject_reason(url)
     if reason:
         return None, reason
-    return {"type": "image_url", "image_url": {"url": url}}, ""
+    part_type = {"image": "image_url", "video": "video_url", "audio": "audio_url"}.get(kind)
+    if not part_type:
+        return None, "该类型不支持链接直传"
+    return {"type": part_type, part_type: {"url": url}}, ""
 
 
-async def build_media_part(kind: str, attachment: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
-    """本地附件 → content part; 不可内联时返回 (None, 原因)。
+def _b64(raw: Optional[bytes]) -> str:
+    return base64.b64encode(raw or b"").decode("ascii")
 
-    kind=image 产出 OpenAI image_url part(url 为 data URI); file/video 待线格式接入后在此扩展。
-    """
-    if kind != "image":
-        return None, "该类型尚未接入请求体"
-    url, reason = await _image_data_url(attachment)
-    if not url:
-        return None, reason
-    return {"type": "image_url", "image_url": {"url": url}}, ""
+
+async def _read_capped(attachment: Dict[str, Any]) -> Tuple[Optional[bytes], str]:
+    """读附件字节(上限 inline_limit_bytes); 超限/不可读返回 (None, 原因)。"""
+    path = str(attachment.get("stored_path") or "")
+    limit = inline_limit_bytes()
+
+    def _work() -> Tuple[Optional[bytes], str]:
+        with open(path, "rb") as fh:
+            raw = fh.read(limit + 1)
+        if len(raw) > limit:
+            return None, f"超过 {limit // (1024 * 1024)}MB"
+        return raw, ""
+
+    try:
+        return await asyncio.to_thread(_work)
+    except OSError as e:
+        logger.warning(f"[media] 读文件失败 path={path} err={e}")
+        return None, "文件不可读"
+
+
+async def build_logical_part(kind: str, attachment: Dict[str, Any],
+                             transport: str = "inline") -> Tuple[Optional[Dict[str, Any]], str]:
+    """本地附件 → 逻辑 part(只描述语义: modality/mime/data/url, 不描述方言)。"""
+    if kind == "image":
+        url, reason = await _image_data_url(attachment)
+        return ({"modality": "image", "mime": attachment.get("mime") or "image/png",
+                 "data": None, "url": url}, "") if url else (None, reason)
+    if kind in ("video", "audio", "richdoc", "file"):
+        raw, reason = await _read_capped(attachment)
+        return ({"modality": kind, "mime": attachment.get("mime") or "",
+                 "data": raw, "url": None}, "") if raw else (None, reason)
+    return None, "该类型无原生通道"
+
+
+def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Optional[Dict[str, Any]], str]:
+    """逻辑 part → 方言 part。chat 产出 OpenAI 兼容结构; responses 由适配器二次转换。
+    video 无标准 chat part: 仅当 provider 适配器显式声明支持才产出, 否则显式原因。"""
+    modality, url = logical.get("modality"), logical.get("url")
+    if modality == "image":
+        if url:
+            return {"type": "image_url", "image_url": {"url": url}}, ""
+        raw = logical.get("data")
+        if raw:
+            mime = str(logical.get("mime") or "image/png")
+            return {"type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{_b64(raw)}"}}, ""
+        return None, "图片载荷为空"
+    if modality == "video":
+        if url:
+            return {"type": "video_url", "video_url": {"url": url}}, ""
+        return None, "该传输方言不支持视频内联"
+    if modality == "audio":
+        if url:
+            return {"type": "audio_url", "audio_url": {"url": url}}, ""
+        mime = str(logical.get("mime") or "")
+        fmt = mime.rpartition("/")[2] if mime.rpartition("/")[2] in ("wav", "mp3") else "wav"
+        return {"type": "input_audio",
+                "input_audio": {"data": _b64(logical.get("data")), "format": fmt}}, ""
+    return None, f"该模态无 {dialect} 方言实现"
+
+
+async def ensure_payload(item: Dict[str, Any], transport: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """载荷可获取性: url 直传; inline 需字节时按 route.fetch 调 remote_fetch。
+    仅媒体模态(image/audio/video)产出逻辑 part; text/richdoc 的 URL 内联走抽取路径。"""
+    if transport == "url":
+        return build_url_part(str(item.get("url") or ""), str(item.get("content_kind") or "image"))
+    kind = str(item.get("content_kind") or "")
+    if kind not in ("image", "audio", "video"):
+        return None, "该类型无内联媒体载荷(文本/富文档走抽取路径)"
+    from app.services.agent.remote_fetch import fetch_bytes  # 延迟导入: 仅 URL 内联需要
+    raw, reason = await fetch_bytes(str(item.get("url") or ""), kind)
+    return ({"modality": kind, "mime": "", "data": raw, "url": None}, "") \
+        if raw else (None, reason)

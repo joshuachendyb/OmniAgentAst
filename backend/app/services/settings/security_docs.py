@@ -52,6 +52,7 @@ from typing import Dict, List
 
 from app.config import get_config
 from app.logger import logger
+
 # 2026-10-20 小欧 - 禁区清单数据源收口: 改读 path_dir_lists 三类名单组织函数(全系统唯一组织口),
 #   弃 tool_constants 旧常量(与判定名单分叉的手抄份); _platform_root 供剥平台根前缀成相对段
 from app.safety.path_dir_lists import (

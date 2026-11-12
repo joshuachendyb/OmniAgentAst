@@ -21,8 +21,9 @@ Timer Schema - 定时器工具参数模型
 - 添加与参数无关的内容
 """
 
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
 
 
 class TimerSetInput(BaseModel):

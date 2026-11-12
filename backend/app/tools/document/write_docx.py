@@ -29,15 +29,23 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
-from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.content_safety import check_content_safety
-from app.tools.tool_constants import ERR_WRITE_DOCX
-from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
-from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _parse_inline_md
+from app.tools.tool_constants import ERR_WRITE_DOCX
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.toolhelper.error_hints import hint_for_write_error, permission_error_hint
+from app.tools.validate.content_safety import check_content_safety
+from app.tools.validate.file_type_checker import check_office_file
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
+    OpCategory,
+    check_path_four_level,
+)
+from app.utils.table_helper import (  # 2026-07-31 小欧: 移除未使用 logger
+    calculate_column_widths,
+    get_table_header_style_config,
+    normalize_table_data,
+    parse_markdown_table,
+)
 
 
 def _apply_inline_formatting(p, text):
@@ -60,10 +68,10 @@ def _format_cell_content(cell, text):
 
 def _set_docx_table_style(table):
     """设置表格边框和表头样式 — 小健 2026-06-24"""
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
-    from docx.shared import RGBColor, Pt
-    
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
     tbl = table._tbl
     tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
     tblBorders = OxmlElement('w:tblBorders')
@@ -76,7 +84,7 @@ def _set_docx_table_style(table):
     tblPr.append(tblBorders)
     if tbl.tblPr is None:
         tbl.insert(0, tblPr)
-    
+
     header_config = get_table_header_style_config()
     if len(table.rows) > 0:
         for cell in table.rows[0].cells:
@@ -96,10 +104,10 @@ def _set_docx_table_style(table):
 def _set_docx_column_widths(table, table_data):
     """设置列宽自适应 — 小健 2026-06-24"""
     from docx.shared import Inches
-    
+
     if not table_data or not table_data[0]:
         return
-    
+
     col_widths = calculate_column_widths(table_data, total_width=6.0)
     for ci, width in enumerate(col_widths):
         if ci < len(table.columns):
@@ -194,7 +202,7 @@ def write_docx(
                 if not line:
                     i += 1
                     continue
-                
+
                 p = None
                 if line.startswith('# '):
                     p = doc.add_paragraph(style='Heading 1')
@@ -231,7 +239,7 @@ def write_docx(
                     p = doc.add_paragraph()
                     _apply_inline_formatting(p, line)
                 i += 1
-        
+
         if table_data:
             table_data = normalize_table_data(table_data)
             if table_data and len(table_data) > 0 and len(table_data[0]) > 0:

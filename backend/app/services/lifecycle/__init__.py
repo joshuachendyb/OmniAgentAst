@@ -12,12 +12,24 @@ service_manager — 服务管理模块
 - get_service/get_service_for_model/get_scope/reset: 服务创建与唯一所有者门面
 """
 
-from app.services.lifecycle.validation import ConfigValidationResult
-from app.services.lifecycle.lifecycle import close_instance, close_instance_sync, reset
-from app.services.lifecycle.lifecycle import shutdown  # 停机收口 — 小欧-2026-09-25
 from app.config import get_config_path
-from app.services.lifecycle.validation import make_validation_error, validate_credentials, validate_config
-from app.services.lifecycle.service import get_service, get_service_for_model, get_scope  # 小欧-2026-09-25
+from app.services.lifecycle.lifecycle import (
+    close_instance,
+    close_instance_sync,
+    reset,
+    shutdown,  # 停机收口 — 小欧-2026-09-25
+)
+from app.services.lifecycle.service import (  # 小欧-2026-09-25
+    get_scope,
+    get_service,
+    get_service_for_model,
+)
+from app.services.lifecycle.validation import (
+    ConfigValidationResult,
+    make_validation_error,
+    validate_config,
+    validate_credentials,
+)
 
 __all__ = [
     "ConfigValidationResult",

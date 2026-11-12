@@ -19,7 +19,7 @@ Author: 小健 - 2026-05-28
 
 import ast
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 def parse_json(json_str: Optional[str], label: str = "", raise_on_error: bool = False) -> Any:
@@ -43,7 +43,7 @@ def parse_json(json_str: Optional[str], label: str = "", raise_on_error: bool = 
         return None
     try:
         return json.loads(json_str)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         if raise_on_error:
             raise
         return None
@@ -106,7 +106,6 @@ def read_json_file(file_path: str, label: str = "", raise_on_error: bool = False
         FileNotFoundError: raise_on_error=True且文件不存在时
         json.JSONDecodeError: raise_on_error=True且解析失败时
     """
-    from pathlib import Path
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)

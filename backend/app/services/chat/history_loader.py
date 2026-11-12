@@ -30,9 +30,13 @@ from typing import Any, Dict, List, Optional
 
 from app.db import db
 from app.logger import logger
-from app.utils.json_utils import safe_json_dumps  # steps序列化为JSON串供多轮上下文 — 小欧 2026-07-14
-from app.services.chat.storage import load_execution_steps  # 从chat_message_steps组装 — 小欧 2026-07-14
-from app.services.chat.storage import fetch_session_user_message_pairs  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律)
+from app.services.chat.storage import (
+    fetch_session_user_message_pairs,  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律)
+    load_execution_steps,  # 从chat_message_steps组装 — 小欧 2026-07-14
+)
+from app.utils.json_utils import (
+    safe_json_dumps,  # steps序列化为JSON串供多轮上下文 — 小欧 2026-07-14
+)
 
 
 def _collect_turns(msg_id: int, exec_steps_json: str) -> Dict[int, Dict[str, List]]:

@@ -64,11 +64,9 @@ from urllib.parse import quote
 from fastapi import Request, Response
 from fastapi.responses import FileResponse
 
-from app.config import get_config, get_code_root
-from app.constants import REF_KINDS      # 引用来源白名单唯一真源(与 refs.render 共用) — 小欧 2026-10-30
+from app.config import get_code_root, get_config
+from app.constants import REF_KINDS  # 引用来源白名单唯一真源(与 refs.render 共用) — 小欧 2026-10-30
 from app.db import db
-from app.logger import logger
-from app.utils.text_utils import count_lines   # 行数唯一口径(文件页/引用压缩共用) — 小欧 2026-10-30
 from app.file_browse import local_fs
 from app.file_browse.errors import (
     IMAGE_TOO_LARGE,
@@ -81,6 +79,8 @@ from app.file_browse.errors import (
     UNSUPPORTED_TYPE,
     fail,
 )
+from app.logger import logger
+from app.utils.text_utils import count_lines  # 行数唯一口径(文件页/引用压缩共用) — 小欧 2026-10-30
 
 # ── 常量（后缀规则唯一真源，前端不自己判后缀） ──────────────────────────
 # 2026-10-21 小杨 - 文本文件真判定在 _preview_of 的实探（首 8KB 查 NUL）；
@@ -760,6 +760,10 @@ def sanitize_refs(
         if kind == "attachment":
             kept.append(ref)
             continue
+        # 2026-11-11 小欧: url 来源不落 path(下载/准入归 resolver+remote_fetch), 与附件同为标识型引用直接放行
+        if kind == "url":
+            kept.append(ref)
+            continue
         if not path:
             logger.warning("[file_browse] 丢弃无 path 的引用条目 label=%s", ref.get("label"))
             dropped.append({
@@ -1193,7 +1197,7 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
     注意 path 是 LLM 原样给的、未做 abspath 归一（M6），故逐条 resolve 后判界。
     返回项含 ops: 该 path 在扫描窗口内被哪些工具动过（tool 名去重、字母序；FT1）。
     """
-    from app.services.chat.workspace_service import session_exists   # 函数内 import 避免循环依赖
+    from app.services.chat.workspace_service import session_exists  # 函数内 import 避免循环依赖
     with db.get_conn("chat") as conn:
         if not session_exists(conn, session_id):
             fail(SESSION_NOT_FOUND)

@@ -26,21 +26,26 @@ registry_read — 读取Windows注册表键值
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import os
-import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
-
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 import tempfile
+import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
 import time as _time_mod
 import winreg
+from typing import Any, Optional  # 2026-07-31 小欧: 移除未使用 Dict
 from uuid import uuid4  # 2026-09-20 小欧 D-6: 备份文件名唯一后缀 — 小欧-2026-09-20
-from app.utils.time_utils import timestamp_for_filename
-from typing import Optional, Any  # 2026-07-31 小欧: 移除未使用 Dict
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT, HIVE_MAP
+from app.tools.tool_constants import (
+    ERR_PARAMETER_INVALID,
+    ERR_REG_READ_FAILED,
+    HIVE_MAP,
+    SUBPROCESS_TIMEOUT_DEFAULT,
+)
+from app.tools.tool_response import build_error, build_success
 from app.tools.validate.registry_path_checker import validate_registry_key
-from app.tools.tool_constants import ERR_REG_READ_FAILED, ERR_PARAMETER_INVALID
+from app.utils.proc_io import (
+    run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
+)
+from app.utils.time_utils import timestamp_for_filename
 
 ROOT_KEY_MAP = {
     "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,

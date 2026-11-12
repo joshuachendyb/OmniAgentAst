@@ -14,7 +14,11 @@ from typing import Optional, Protocol
 
 from app.logger import logger
 from app.safety.sandbox.job_object import SandboxJob
-from app.utils.proc_io import TRUNCATED_NOTE, drain_after_exit, drain_until_exit  # 零线程读管道 — 2026-11-04 小欧
+from app.utils.proc_io import (  # 零线程读管道 — 2026-11-04 小欧
+    TRUNCATED_NOTE,
+    drain_after_exit,
+    drain_until_exit,
+)
 
 _TAIL_CHARS = 4096   # stdout/stderr 尾部截断口径(PreCheckResult.stdout_tail 同款)
 

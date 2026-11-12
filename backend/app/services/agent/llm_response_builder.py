@@ -27,7 +27,9 @@ from app.llm.core import LLMResponseError, create_payload_chunk
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 from app.tools.tool_constants import RESPONSE_PREVIEW_LIMIT_CHARS
-from app.utils.text_utils import truncate_text  # 2026-10-06 小欧 P1-02: response_content 截断预览复用公共函数
+from app.utils.text_utils import (
+    truncate_text,  # 2026-10-06 小欧 P1-02: response_content 截断预览复用公共函数
+)
 
 
 def _resolve_chunk_model(agent):

@@ -104,28 +104,38 @@ llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发�
 """
 
 import asyncio
+import contextlib
 import json
 import re
 import time
 from typing import Optional
 
+from app.config import get_config
+from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK
+from app.constants import LLM_RESPONSE_RETRIES as _D_RETRIES
+from app.constants import LLM_TOOL_CHOICE as _D_TOOL_CHOICE
+from app.constants import RETRY_BACKOFF_CAP as _D_BACKOFF_CAP
+from app.llm.adapters import (
+    get_provider_adapter,  # 2026-10-20 小欧 call_llm_text_task 迁入(原 summary.py 内 lazy 导入)
+)
+from app.llm.core import (  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 2026-11-04 删未使用的 create_cancelled_chunk(已改 _yield_error_response) — 小欧-2026-11-04
+    LLMResponseError,
+    StreamChunk,
+    create_payload_chunk,
+)
+from app.logger import logger
+from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5拆分: builder成员同模块内互调, 原builders家族
     _build_answer_response,
     _build_tool_calls_response,
     _format_response_error,
-    _resolve_chunk_model,          # 小健 2026-09-06: 路径2 出口统一取模型 ModelRef(复用2.5.2, 防二次重复)
+    _resolve_chunk_model,  # 小健 2026-09-06: 路径2 出口统一取模型 ModelRef(复用2.5.2, 防二次重复)
     _yield_error_response,
 )
-from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE, RETRY_BACKOFF_CAP as _D_BACKOFF_CAP
-from app.config import get_config
-from app.llm.adapters import get_provider_adapter  # 2026-10-20 小欧 call_llm_text_task 迁入(原 summary.py 内 lazy 导入)
-from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 2026-11-04 删未使用的 create_cancelled_chunk(已改 _yield_error_response) — 小欧-2026-11-04
+from app.utils.astream import (
+    aclose_stream,  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
+)
 from app.utils.text_utils import extract_tool_call_xml
-from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
-from app.logger import logger
-from app.logger.prompt_logger import get_prompt_logger
-import contextlib
-
 
 # 摘要L2重试上限: 比主链 response_retries(=2) 少, 撞限流窗口时更快降级不阻塞主链 — 小欧-2026-11-07
 _SUMMARY_MAX_RETRIES = 1

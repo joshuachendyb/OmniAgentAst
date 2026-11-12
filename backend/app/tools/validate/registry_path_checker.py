@@ -3,10 +3,8 @@
 # 2026-07-31 - 小欧 - Bug修复: (1)恢复严格hive白名单{HKCU,HKLM}(撤销d1236eaa1对HKCR/HKU/HKCC的放行, 属安全回退, 修复test_registry_path_checker 3项既有失败); (2)路径内嵌"类hive前缀"但无效(INVALID_HIVE\.../HKEY_XXX\...)返回INVALID, 严禁静默回退HKCU | py_compile ✓
 # 2026-08-05 - 小欧 - Bug修复: 错误提示文案与实际白名单不一致(原文案"仅允许HKCU/HKLM/HKCR/HKU/HKCC"误导LLM以为5根键可用, 实际仅HKCU/HKLM), 改为"仅允许HKCU/HKLM" | py_compile ✓
 
-from typing import Optional, Tuple
-
 import winreg
-
+from typing import Optional, Tuple
 
 ALLOWED_HIVES = {"HKCU", "HKLM"}
 
@@ -76,33 +74,33 @@ def validate_registry_key(key_path: str, hive: str, operation: str = "read") -> 
     """
     if not key_path or not isinstance(key_path, str):
         return False, "key_path不能为空", None
-    
+
     clean_key_path, resolved_hive = _normalize_key_path(key_path, hive)
     key_path = clean_key_path
     hive = resolved_hive
-    
+
     hive_upper = hive.upper() if hive else "HKCU"
     if hive_upper not in ALLOWED_HIVES:
         return False, f"不允许的hive: {hive_upper}（仅允许HKCU/HKLM）", None
-    
+
     # 检查路径穿越 — 小沈 2026-06-28
     if ".." in key_path:
         return False, "key_path包含路径穿越符，禁止访问上级目录", None
 
     if key_path.endswith("\\") or key_path.endswith("/"):
         return False, "key_path不能以\\结尾", None
-    
+
     warnings = []
     if hive_upper == "HKLM":
         warnings.append(f"{hive_upper}涉及系统级注册表，请确认")
-    
+
     if operation in ("write", "delete"):
         for pattern in CRITICAL_KEY_PATTERNS:
             if pattern.lower() in key_path.lower():
                 _op = "写入" if operation == "write" else "删除"
                 warnings.append(f"{_op}关键注册表键: {pattern}，请确认")
                 break
-    
+
     warning_msg = "；".join(warnings) if warnings else None
     return True, None, warning_msg
 
@@ -117,7 +115,7 @@ def validate_delete_safety(key_path: str, value_name: Optional[str],
     )
     if not is_valid:
         return is_valid, error_msg, warning_msg
-    
+
     hive_upper = hive.upper() if hive else "HKCU"
 
     if value_name is None and not recursive:

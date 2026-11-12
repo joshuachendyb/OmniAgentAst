@@ -12,14 +12,15 @@
 # 2026-08-14 - 小欧 - monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 """
 
+from typing import Dict, Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
-from app.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.logger import logger
+from app.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.utils.response_utils import handle_api_errors
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 router = APIRouter()
 
@@ -67,12 +68,12 @@ async def get_metrics():
     """
     summary = get_metrics_summary()
     total_metrics = int(sum(data.get("count", 0) for data in summary.values()))
-    
+
     metrics_dict = {
-        name: MetricSummary(**data) 
+        name: MetricSummary(**data)
         for name, data in summary.items()
     }
-    
+
     return MetricsResponse(
         success=True,
         metrics=metrics_dict,
@@ -111,7 +112,7 @@ async def reset_metrics_endpoint(request: ResetMetricsRequest):
             status_code=400,
             detail="必须设置confirm=true来确认重置指标"
         )
-    
+
     reset_metrics()
     return ResetMetricsResponse(
         success=True,

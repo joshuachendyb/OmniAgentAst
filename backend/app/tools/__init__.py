@@ -15,8 +15,7 @@ Tools 模块 - 按功能域组织的工具集
   2026-11-06 - 小欧 - 去池化: 删除 cleanup_shell_pool_by_task 门面(每命令独立子进程跑完即销毁, 无任务级常驻 shell 资源需清理)
 """
 
-from app.tools.registry import tool_registry, register_tool, ToolRegistry, ensure_tools_registered
-
+from app.tools.registry import ToolRegistry, ensure_tools_registered, register_tool, tool_registry
 
 __all__ = [
     "tool_registry",

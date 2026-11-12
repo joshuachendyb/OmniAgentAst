@@ -6,6 +6,7 @@
 // 编辑历史: 2026-11-07 小欧 - F-01 修复: 上传前容量预检(occupancy + 本批 > MAX_REFS 整批拒绝),
 //   根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
 // 编辑历史: 2026-11-10 小欧 - 新增 ATTACHMENT_RULES 规则文案常量(单一真源): 按钮 Tooltip 与抽屉帮助图标共用 — 小欧-2026-11-10
+// 编辑历史: 2026-11-11 小欧 - 容量预检与规则文案改读 getMaxRefs()(上限单真源后端) — 小欧-2026-11-11
 /**
  * uploadAttachment —— 「把文件送进引用区」的唯一实现（附件域）
  *
@@ -25,7 +26,7 @@ import {
   handleApiError,
   ErrorType,
 } from '@/services/error/handler';
-import { composerRefStore, newRefId, refLimitText, MAX_REFS } from './store';
+import { composerRefStore, newRefId, refLimitText, getMaxRefs } from './store';
 import { quoteFile } from './quote';
 
 /** 单批选择上限（10 = 一次选择上限；入队总上限仍是 MAX_REFS=20） */
@@ -37,7 +38,7 @@ export const MAX_FILE_MB = 20;
 /** 附件规则说明(单一真源): 按钮 Tooltip 与抽屉标题帮助图标共用, 与后端白名单/上限同口径 */
 export const ATTACHMENT_RULES =
   '支持图片、视频、PDF / Word / Excel / PPT、文本与代码文件；' +
-  `图片 ≤${MAX_IMAGE_MB}MB、其他 ≤${MAX_FILE_MB}MB，一次最多 ${MAX_BATCH} 个、共 ${MAX_REFS} 项；` +
+  `图片 ≤${MAX_IMAGE_MB}MB、其他 ≤${MAX_FILE_MB}MB，一次最多 ${MAX_BATCH} 个、共 ${getMaxRefs()} 项；` +
   '其余类型（如 zip/exe）会被拒绝。';
 const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -110,7 +111,7 @@ export async function uploadAttachments(
   //   原实现先上传后入队, 入队失败时附件已落库 → 服务端孤儿记录(列表可见但无引用指向)。
   //   从严整批拒绝(不部分上传): 前端无法预知后端返回的 path(去重替换不占新配额的
   //   边缘场景被误拒), 该场景极罕见且用户删一条 chip 即可继续, KISS 优先。
-  if (composerRefStore.occupancy() + files.length > MAX_REFS) {
+  if (composerRefStore.occupancy() + files.length > getMaxRefs()) {
     showMessage(ErrorType.WARNING, refLimitText());
     result.failed = files.length;
     return result;
@@ -183,7 +184,7 @@ export async function collectArtifact(
   sourcePath: string
 ): Promise<boolean> {
   // F-01 容量预检(copied 会新增一条引用): 满额先拦, 避免后端复制落库后 enqueue 失败 → 孤儿附件。
-  if (composerRefStore.occupancy() >= MAX_REFS) {
+  if (composerRefStore.occupancy() >= getMaxRefs()) {
     showMessage(ErrorType.WARNING, refLimitText());
     return false;
   }

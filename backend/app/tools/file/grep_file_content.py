@@ -48,22 +48,27 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional
 
-from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import (
-    TOOL_TIMEOUTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, SKIP_DIRS,
-    GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
-    GREP_OUTLIMIT_MATCHED_CHARS,
-)
-
-
-from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
-from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-
-
-
+from app.tools.tool_constants import (
+    BINARY_EXTENSIONS,
+    ERR_FILE_CONTENT_SEARCH_FAILED,
+    GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
+    GREP_OUTLIMIT_MATCHED_CHARS,
+    GREP_OUTLIMIT_MATCHES_MAX,
+    SKIP_DIRS,
+    TOOL_TIMEOUTS,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.tools.validate.file_type_checker import (
+    TEXT_EXTENSIONS,
+    _detect_binary_content,
+    is_binary_file,
+)
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+)
 
 # 模块级 ReDoS 检测常量 — 小沈 2026-07-05
 _REDOS_PATTERNS = frozenset({

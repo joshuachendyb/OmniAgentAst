@@ -24,8 +24,8 @@ import asyncio
 import time
 from typing import Optional
 
-from app.logger import logger
 from app.llm import BaseAIService, SharedClientLease
+from app.logger import logger
 
 # 换代归还的 owner 释放协程强引用表: asyncio 仅持 Task 弱引用, GC 回收会取消协程致 ref 悬挂,
 # 强引用持有, done 时 discard 防泄漏(与 orchestrator._background_tasks 同精神) — 小欧 2026-09-25

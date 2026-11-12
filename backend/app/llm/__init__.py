@@ -18,28 +18,25 @@ LLM服务包
 """
 
 from app.llm.base_service import BaseAIService
-from app.llm.client_sdk import SharedClientLease  # 共享池 lease 对外导出(scope/resolver 注入用) — 小欧 2026-09-25
-
-from app.llm.xml_adapter import (
-    convert_xml_tool_call_to_json,
-    is_xml_tool_call,
+from app.llm.client_sdk import (
+    SharedClientLease,  # 共享池 lease 对外导出(scope/resolver 注入用) — 小欧 2026-09-25
 )
-from app.llm.reasoning import (
-    fix_thinking_messages,
-    extract_reasoning_from_chunk,
-    extract_reasoning_from_message,
-)
-
 from app.llm.core import (
     ChatResponse,
     StreamChunk,
     _resolve_exception,
-)
-
-from app.llm.core import (
     create_cancelled_chunk,
     create_error_chunk,
     create_payload_chunk,
+)
+from app.llm.reasoning import (
+    extract_reasoning_from_chunk,
+    extract_reasoning_from_message,
+    fix_thinking_messages,
+)
+from app.llm.xml_adapter import (
+    convert_xml_tool_call_to_json,
+    is_xml_tool_call,
 )
 
 __all__ = [

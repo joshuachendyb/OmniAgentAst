@@ -145,8 +145,8 @@ def _ws_deny_reason(p: str) -> Optional[str]:
       宽根规则保留: 授权家目录/盘根会放大删除允许范围, 与档位无关。"""
     # 2026-10-15 小欧: validate_path 随三线分离删除, 等价能力迁 app.safety.write_path_check.validate_write
     #   (三元组, system 口径一致, 原延迟导入未同步会 ImportError); 2026-10-16 起 services 只走写线公开接口
-    from app.safety.write_path_check import validate_write as _validate_write_path
     from app.safety.path_dir_lists import SCOPE_FORBIDDEN_SYSTEM
+    from app.safety.write_path_check import validate_write as _validate_write_path
     _ok, _msg, scope = _validate_write_path(p)
     if scope == SCOPE_FORBIDDEN_SYSTEM:
         return _msg or "路径在全局禁区内"

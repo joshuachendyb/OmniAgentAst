@@ -25,17 +25,14 @@ sse_events — SSE事件流处理模块
 小欧 2026-07-10
 """
 
-import json
-import re
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
-from app.utils.sse_formatter import format_sse_event, format_agent_sse
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.services.agent.steps import ErrorStep   # 三堂会审: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
-from app.logger import logger
-
+from app.services.agent.steps import (
+    ErrorStep,  # 三堂会审: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
+)
+from app.utils.sse_formatter import format_agent_sse
 
 # ====================================================================
 

@@ -119,6 +119,8 @@
 //   原注释只列 tool_name/llm_data/data_text/other_data, 与后端契约不符易误导排查 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 - 批2序12: 新增 refs_notice 事件(登记 KNOWN_EVENT_TYPES + case 分派
 //   onRefsNotice, 只投回调不进步骤列表) — 小欧-2026-10-30
+// 编辑历史: 2026-11-07 小欧 - final_stats tool_stats 扁平化: SSE 嵌套 {tool:{call_count,error_count,
+//   latency}} 与 DB 扁平 {tool:call_count} 两种格式统一为扁平, 修复 React error #31(对象渲染为子节点) — 小欧-2026-11-07
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -135,6 +137,21 @@ const toStepNumber = (v: unknown): number => Number(v) || 1;
 const assignTimeout = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 60;
+};
+
+// 2026-11-07 小欧 - SSE tool_stats 扁平化: 后端 final_stats 帧的 tool_stats 是嵌套结构
+//   {tool_name: {call_count, error_count, latency}}, DB 路径(adaptTaskDetail)已是扁平 {tool_name: call_count};
+//   统一扁平化, 下游 StaticStatsBlock 渲染 {k}×{v} 时 v 为数字不炸 React error #31 — 小欧-2026-11-07
+const _flattenToolStats = (raw: unknown): Record<string, number> => {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (k === 'null') continue;
+    if (typeof v === 'number') out[k] = v;
+    else if (v && typeof v === 'object' && typeof (v as Record<string, unknown>).call_count === 'number')
+      out[k] = (v as Record<string, number>).call_count;
+  }
+  return out;
 };
 
 // 2026-09-14 小欧 DRY: push+flush 模式提取, 消6处重复 — 小欧-2026-09-14
@@ -545,7 +562,7 @@ const processSSEData = (
           ...prev,
           finalStats: {
             duration: rawData.duration,
-            tool_stats: rawData.tool_stats,
+            tool_stats: _flattenToolStats(rawData.tool_stats),
             artifacts: rawData.artifacts,
             final_status: rawData.final_status,
             retry_count: rawData.retry_count,

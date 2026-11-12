@@ -24,16 +24,18 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.tools.context import _current_task_id  # A-2: 写仲裁登记使用任务ID — 小欧 2026-09-20
+from app.tools.file.file_write_arbiter import (
+    claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 重命名登记占用
+)
 from app.tools.file.move_file import _move_file_impl
-from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
+from app.tools.tool_response import build_error, build_success, with_artifact_file
 from app.utils.path_utils import (  # 2026-10-17 小欧: 路径四级合法性总入口 + 保留字符原子(派生名格式检查用)
     OpCategory,
     check_path_four_level,
     path_has_reserved_char,
 )
-from app.tools.context import _current_task_id  # A-2: 写仲裁登记使用任务ID — 小欧 2026-09-20
-from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 重命名登记占用
 
 
 def _build_rename_file_llm_data(

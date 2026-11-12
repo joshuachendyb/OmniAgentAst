@@ -52,11 +52,11 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 from uuid import uuid4
 
-from app.services.task.task_runtime import check_cancelled
-
-from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, MAX_PENDING_CONFIRMATIONS as _D_MAX_CONFIRM
 from app.config import get_config
+from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
+from app.constants import MAX_PENDING_CONFIRMATIONS as _D_MAX_CONFIRM
 from app.logger import logger
+from app.services.task.task_runtime import check_cancelled
 
 
 @dataclass
@@ -83,7 +83,9 @@ def _cleanup_stale_confirmations():
         return
 
     _last_cleanup_time = now
-    from app.config import get_config as _get_cfg_cln  # 对应 config.yaml security.hitl.timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
+    from app.config import (
+        get_config as _get_cfg_cln,  # 对应 config.yaml security.hitl.timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
+    )
     _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
     with _pending_lock:
         stale = [k for k, v in _pending_confirmations.items()

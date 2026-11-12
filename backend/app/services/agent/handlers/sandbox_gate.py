@@ -78,7 +78,10 @@
 依赖方向: handlers → sandbox(单向), 故本模块可安全 import sandbox, 反之不可。
 """
 from app.logger import logger
-from app.safety.safety_result import SafetyLevel  # 分类单源(safety 层, 无环: safety 不依赖 services)
+from app.safety.safety_result import (
+    SafetyLevel,  # 分类单源(safety 层, 无环: safety 不依赖 services)
+)
+
 # 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT
 #   均延迟到函数内导入(小欧 2026-08-25 修复循环import回归): 本模块被 action_handler 顶层 import,
 #   若在模块顶层 import agent.steps / task.hitl_confirmation 会构成
@@ -116,7 +119,10 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         return True, []
     # 毛病4(2026-09-18 小欧): 用户拒绝记忆检查点 B(覆盖豁免直通 requires=False 路径, 主路 requires 路径已由检查点 A 拦截) —
     #   同 (tool, path) 本任务内被用户拒绝过 → 不弹裁决窗直接拒绝; 信任清除记忆; 主路刚确认(main_confirmed)不受历史约束
-    from app.services.agent.handlers.safety_gate import refusal_key, _rejection_cache_of  # 延迟导入防环(同 hitl_gateway 模式) — 小欧-2026-09-18
+    from app.services.agent.handlers.safety_gate import (  # 延迟导入防环(同 hitl_gateway 模式) — 小欧-2026-09-18
+        _rejection_cache_of,
+        refusal_key,
+    )
     _rk = refusal_key(tool_name, params, safety_result)
     _rc = _rejection_cache_of(agent)
     if trusted:
@@ -149,8 +155,11 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
     #   paused先于wait到达 / SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 — 小健 2026-09-05
-    from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm       # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
-    from app.services.task.task_state import get_stream_buffer                            # 延迟import防环 — 小欧 2026-09-06
+    from app.services.agent.handlers.hitl_gateway import (  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
+        ConfirmSpec,
+        hitl_confirm,
+    )
+    from app.services.task.task_state import get_stream_buffer  # 延迟import防环 — 小欧 2026-09-06
     logger.info(f"[sandbox] 转HITL用户裁决: tool={tool_name}")
     _buf = get_stream_buffer(agent.task_id)
     if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05

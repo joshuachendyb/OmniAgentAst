@@ -31,13 +31,21 @@ window_focus — 聚焦窗口
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_FOCUS_WINDOW, ERR_WINDOW_NOT_FOUND, ERR_NO_WIN32GUI, ERR_INVALID_PARAMS  # 2026-08-05 小欧 #9: 补缺失的 ERR_NO_WIN32GUI(原缺导入导致 NameError 崩溃); 2026-08-05 #10: ERR_INVALID_PARAM字符串→ERR_INVALID_PARAMS常量
-from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: 窗口前台切换共用件
-from app.tools.desktop.window_info import check_win32_platform, find_windows_by_title, _win32gui  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/函数内try-import, 与 window_resize 对齐
 from app.logger import logger
+from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: 窗口前台切换共用件
+from app.tools.desktop.window_info import (  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/函数内try-import, 与 window_resize 对齐
+    check_win32_platform,
+    find_windows_by_title,
+)
+from app.tools.tool_constants import (  # 2026-08-05 小欧 #9: 补缺失的 ERR_NO_WIN32GUI(原缺导入导致 NameError 崩溃); 2026-08-05 #10: ERR_INVALID_PARAM字符串→ERR_INVALID_PARAMS常量
+    ERR_FOCUS_WINDOW,
+    ERR_INVALID_PARAMS,
+    ERR_NO_WIN32GUI,
+    ERR_WINDOW_NOT_FOUND,
+)
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_window_focus_llm_data(exec_code: str, duration_ms: int, window_title: str = "",

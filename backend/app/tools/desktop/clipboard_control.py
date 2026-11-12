@@ -23,11 +23,11 @@ clipboard_control — 剪贴板操作(read/write)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 剪贴板→剪贴读写
 import ctypes
 import time as _time_mod
-from typing import Dict, Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_DESKTOP_CLIPBOARD, CLIPBOARD_INPUT_MAX_CHARS
 from app.logger import logger
+from app.tools.tool_constants import CLIPBOARD_INPUT_MAX_CHARS, ERR_DESKTOP_CLIPBOARD
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: str,

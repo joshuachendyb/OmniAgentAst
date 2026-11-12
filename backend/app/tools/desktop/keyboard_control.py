@@ -13,12 +13,12 @@ keyboard_control — 键盘控制
 # 2026-07-30 - 小欧 - 删除未使用的List/ERR_KEY_COMBO import;helper error_detail去掉冗余安装提示(主函数hint已有)
 # 2026-07-30 - 小欧 - 删除未使用的_key_combo函数(内嵌List[str]但List import已删,会NameError)
 import time as _time_mod
-from typing import Dict, Any, Literal
+from typing import Any, Dict, Literal
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.desktop.desktop_register import check_pyautogui_available
-from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_TYPE, ERR_KEYBOARD_SHORTCUT
 from app.logger import logger
+from app.tools.desktop.desktop_register import check_pyautogui_available
+from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_KEYBOARD_SHORTCUT, ERR_KEYBOARD_TYPE
+from app.tools.tool_response import build_error, build_success
 
 
 def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: str, text_or_keys: str,
@@ -77,7 +77,7 @@ def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> 
     小欧 2026-07-04 修复: 增加None/空字符串校验
     """
     t0 = _time_mod.perf_counter()
-    
+
     if not isinstance(text_or_keys, str) or not text_or_keys.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, hint="请提供非空的键盘输入内容")
@@ -100,7 +100,7 @@ def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> 
         hint = "工具暂时不能使用:需要安装pyautogui库,请执行: pip install pyautogui" if is_dep_error else "请检查键盘操作参数是否正确"
         llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, err_code=err_code, detail=result["error_detail"], hint=hint)
         return build_error(data={}, llm_data=llm_data)
-    
+
     llm_data = _build_keyboard_control_llm_data("success", duration_ms, action, text_or_keys)
     # ---- observation_formatter route -------------------------------------------
     # branch: #21 fallback (key:val) — type 或 shortcut

@@ -28,20 +28,27 @@ import os
 import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
+
+from reportlab.lib.units import mm
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
-from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_constants import ERR_WRITE_PDF
-from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
-from reportlab.lib.units import mm
-from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.content_safety import check_content_safety
-from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
-
+from app.tools.tool_constants import ERR_WRITE_PDF
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.toolhelper.error_hints import hint_for_write_error, permission_error_hint
+from app.tools.validate.content_safety import check_content_safety
+from app.tools.validate.file_type_checker import check_office_file
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
+    OpCategory,
+    check_path_four_level,
+)
+from app.utils.table_helper import (  # 2026-07-31 小欧: 移除未使用 logger
+    get_table_header_style_config,
+    normalize_table_data,
+    parse_markdown_table,
+)
 
 # 2026-07-31 小欧: Bug⑧ CJK字体候选列表(按优先级渐进回退) — (注册名, 字体文件路径)
 _CJK_FONT_CANDIDATES = [
@@ -55,12 +62,12 @@ _CJK_FONT_CANDIDATES = [
 
 def _create_pdf_table(table_data, chinese_style):
     """创建PDF表格 — 小健 2026-06-24"""
-    from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
-    
+    from reportlab.platypus import Table, TableStyle
+
     header_config = get_table_header_style_config()
     bg_color = colors.HexColor('#' + header_config["bg_color"])
-    
+
     table = Table(table_data)
     style_commands = [
         ('BACKGROUND', (0, 0), (-1, 0), bg_color),
@@ -76,7 +83,7 @@ def _create_pdf_table(table_data, chinese_style):
         ('TOPPADDING', (0, 1), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
     ]
-    
+
     table.setStyle(TableStyle(style_commands))
     return table
 
@@ -149,10 +156,10 @@ def write_pdf(
 
     try:
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     except ImportError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性", not_written=True)
@@ -238,7 +245,7 @@ def write_pdf(
                     elements.append(Paragraph(_md_to_pdf_xml(line), chinese_style))
                     elements.append(Spacer(1, 3 * mm))
                 i += 1
-        
+
         if table_data:
             table_data = normalize_table_data(table_data)
             if table_data and len(table_data) > 0:

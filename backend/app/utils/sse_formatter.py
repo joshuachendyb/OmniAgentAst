@@ -14,7 +14,7 @@ SSE格式化是纯字符串操作,不依赖任何业务逻辑,属于utils层。
 """
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 

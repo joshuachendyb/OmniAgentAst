@@ -19,12 +19,16 @@
 #   —— 读路径不产生任何写副作用, 尊重会话越权收紧 — 小欧-2026-11-07
 # 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 # 2026-11-07 小欧 - favorited/global_id 收口 _decorate_global 单一实现(单条/列表同口径);
-#   delete 合集条目匹配改 attachment_id + rel_to_root 相对路径为真、原绝对 path 子句永假; 
+#   delete 合集条目匹配改 attachment_id + rel_to_root 相对路径为真、原绝对 path 子句永假;
 #   list 非法 scope 由静默回落改 fail(INVALID_PARAM) — 小欧-2026-11-07
 # 2026-11-07 小欧 - 左栏标签对准: session 作用域排除任务产物溯源行(stid 非空归属 ai 栏), 消双栏重叠显示 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3: 增 mark_extract_result 抽取态回填(首次成功/失败写 extract_status/extract_chars) — 小欧-2026-11-09
 # 2026-11-10 小欧 - read_inject_text 抽取失败兜底: S3改抛异常后预览路径漏改, 富文档/空工作簿抽取异常直穿HTTP 500;
 #   降级为错误说明文本(纯读契约不变, 不回填抽取态), 与resolver失败折算同口径
+# 2026-11-11 小欧 - 增 reextract 真抽取手动重跑: 重置抽取态后按契约文本出口重算回填
+#   (仅 fallback_quality=content 的 kind, 失败折算 failed 不抛异常) — 小欧-2026-11-11
+# 2026-11-11 小欧 - P5 指标埋点: reextract 成功/失败补 [cap-metric] extract_ok/extract_fail — 小欧-2026-11-11
+
 
 
 """attachments.attachment_service — 附件落盘与登记（唯一写盘点）。
@@ -51,6 +55,7 @@ from typing import Any
 from fastapi import UploadFile
 
 from app.attachments import extract
+from app.attachments.observability import metric
 from app.config import get_config
 from app.db import db
 from app.db.database import resolve_db_dir
@@ -454,6 +459,35 @@ def mark_extract_result(attachment_id: str, chars: int, ok: bool) -> None:
             )
     except Exception as e:  # noqa: BLE001 — best-effort 状态回填, 失败只留痕不阻断
         logger.warning("[attachments] 抽取态回填失败 id=%s err=%s", attachment_id, e)
+
+
+
+def reextract(attachment_id: str) -> dict[str, Any] | None:
+    """手动重跑真抽取: 重置抽取态后按契约文本出口重算并回填。
+
+    仅 fallback_quality=content 的 kind(text/richdoc)有真抽取态可回填;
+    卡/元数据类原样返回(无重试意义)。失败折算 extract_status='failed', 不抛异常。
+    """
+    att = get_attachment(attachment_id)
+    if not att:
+        return None
+    from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
+    route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
+    if route.fallback_quality != "content":
+        return att
+    with db.get_conn("chat") as conn:
+        conn.execute(
+            "UPDATE attachments SET extract_status = 'none', extract_chars = 0 WHERE id = ?",
+            (attachment_id,))
+    try:
+        text = extract.build_inject_text(att)
+        mark_extract_result(attachment_id, len(text), True)
+        metric("extract_ok", "attachment", att.get("kind") or "binary")
+    except Exception as e:  # noqa: BLE001 — 重试失败折算 failed, 不向上抛
+        logger.warning("[attachments] 重新抽取失败 id=%s err=%s", attachment_id, e)
+        mark_extract_result(attachment_id, 0, False)
+        metric("extract_fail", "attachment", att.get("kind") or "binary", reason=type(e).__name__)
+    return get_attachment(attachment_id)
 
 
 def get_attachment(attachment_id: str) -> dict[str, Any] | None:

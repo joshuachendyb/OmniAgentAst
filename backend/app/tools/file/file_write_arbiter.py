@@ -18,8 +18,6 @@ import time as _time
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Tuple
 
-from app.logger import logger
-
 # {resolved_path_str: {"task_id": str, "acquired_at": float}}
 _write_claims: Dict[str, Dict] = {}
 _claims_lock = threading.Lock()

@@ -44,21 +44,15 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error, with_artifact_file
+from app.config import get_config  # 用户指定路径基准 get_project_root()
+from app.logger import logger
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
-from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
-from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write, absolutize_path, get_output_dir, has_path_traversal
-from app.config import get_config  # 用户指定路径基准 get_project_root()
-# 2026-10-26 小沈 - 默认输出目录改用 get_output_dir()(project_root/output), 用户指定路径仍用 project_root
-from app.tools.toolhelper.error_hints import hint_for_write_error
-
-from app.logger import logger
-
 from app.tools.tool_constants import (
-    ERR_INVALID_URL,
     DOWNLOAD_INPUT_MAX_BYTES,
+    ERR_INVALID_PARAMS,
+    ERR_INVALID_URL,
+    ERR_NET_UNKNOWN,
     ERR_NETWORK_CREATE_DIR,
     ERR_NETWORK_DOWN,
     ERR_NETWORK_HTTP_ERROR,
@@ -66,8 +60,20 @@ from app.tools.tool_constants import (
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
     ERR_NETWORK_WRITE_FILE,
-    ERR_INVALID_PARAMS,
-    ERR_NET_UNKNOWN,
+)
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+
+# 2026-10-26 小沈 - 默认输出目录改用 get_output_dir()(project_root/output), 用户指定路径仍用 project_root
+from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.url_validator import transcode_url, validate_proxy, validate_url
+from app.utils.path_utils import (
+    OpCategory,
+    absolutize_path,
+    check_path_four_level,
+    get_output_dir,
+    has_path_traversal,
+    validate_path_for_write,
 )
 
 
@@ -267,7 +273,7 @@ async def download(
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except ValueError as ve:
-        # 文件超DOWNLOAD_INPUT_MAX_BYTES属输入/参数错误, 归ERR_INVALID_PARAMS而非ERR_NET_UNKNOWN, 避免重试引擎无谓重试/误导LLM — 小欧 2026-08-13 
+        # 文件超DOWNLOAD_INPUT_MAX_BYTES属输入/参数错误, 归ERR_INVALID_PARAMS而非ERR_NET_UNKNOWN, 避免重试引擎无谓重试/误导LLM — 小欧 2026-08-13
         logger.error(f"[download] 下载大小超限: {ve}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_INVALID_PARAMS, detail=str(ve), hint="文件超过下载大小限制,请换用更小资源或分片", timeout=timeout, proxy=proxy, headers=headers)

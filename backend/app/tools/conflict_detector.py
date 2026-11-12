@@ -22,14 +22,16 @@ conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并�
 
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
-import os
 import hashlib
-from typing import Dict, List, Any, Set
+import os
+from typing import Any, Dict, List, Set
+
+from app.logger import logger
+
 # 2026-10-14 小欧 - WINDOW_TARGET_TOOLS 归 tool_constants,
 #   _parse_paths 由 trust 迁入本文件(唯一消费方在此, 原挂 trust 属 SRP 债)。
 from app.tools.tool_constants import FILE_OPERATION_TOOLS, WINDOW_TARGET_TOOLS
 from app.tools.tools_alias_mapper import PARAM_ALIASES
-from app.logger import logger
 
 # 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
 # 同路径多次调用判定: 读-读无竞态不冲突(仍并行), 仅需从写集合排除, 防 read_xlsx 等被误判写操作致并行退化串行

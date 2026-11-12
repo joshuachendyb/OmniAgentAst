@@ -12,7 +12,7 @@ file_tool_utils — 文件工具扩展名预检自动纠正
 
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
-from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, MEDIA_EXTENSIONS
+from app.tools.validate.file_type_checker import MEDIA_EXTENSIONS, TEXT_EXTENSIONS
 
 # #4 自动纠正: 文件扩展名→tool_name 映射（三分类: 文本→read, 文档→专用工具, 多媒体→readmedia）
 # P07修复: .csv 是双域(文本+表格), 从读取映射移除, 使 read_xlsx/read 均不被自动改写 — 小欧 2026-08-07

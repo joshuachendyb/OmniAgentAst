@@ -11,8 +11,8 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
 # 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + __init__ 默认值改读 tuning 配置
 # 2026-09-23 小欧 - 删死链 should_promote/max_consecutive（历史接口全仓零调用，tuning.agent.max_consecutive_chunks 配置同步删除）; __init__ 仅保留 max_chunks_before_stop
-from app.constants import MAX_CHUNKS_WITHOUT_PROMOTE as _D_NO_PROMOTE  # noqa: F401 - 作为默认值使用
 from app.config import get_config
+from app.constants import MAX_CHUNKS_WITHOUT_PROMOTE as _D_NO_PROMOTE  # noqa: F401 - 作为默认值使用
 
 
 class ChunkBuffer:

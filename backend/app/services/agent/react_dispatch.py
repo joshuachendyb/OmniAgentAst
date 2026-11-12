@@ -42,12 +42,20 @@
 
 import time
 from typing import Dict, List
+
 from app.logger import log_and_print
-from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled, set_completed
 from app.services.agent.handlers import (
-    handle_action, handle_answer,
+    handle_action,
+    handle_answer,
 )
 from app.services.agent.react_inference import _RECOVERABLE_ERRORS
+from app.services.agent.status_table import (
+    AgentStatus,
+    set_cancelled,
+    set_completed,
+    set_failed,
+    set_status,
+)
 
 # 2026-09-17 小欧 会审V3整改(#2): 全量拒绝类键清单——rejected/blocked/timeout 为旧 error 通道时代键(兼容保留),
 #   safety/sandbox/user 为统一 rejected 事件的 reject_type 取值; 成功清桶需遍历全清防残留 — 小欧-2026-09-17

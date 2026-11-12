@@ -25,9 +25,9 @@
 from app.services.agent.compaction.assembler import (
     get_new_messages_since,
     inject_compressed_summary,
+    remove_dangling_tool_calls,
     shrink_to_budget,
     split_history_window,
-    remove_dangling_tool_calls,
 )
 from app.services.agent.compaction.prune import (
     clear_tool_outputs,

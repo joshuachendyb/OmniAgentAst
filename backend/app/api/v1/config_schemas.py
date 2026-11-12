@@ -20,11 +20,16 @@
 # 2026-09-27 小欧 - SecurityConfig 加护栏注释：禁止在此声明密钥字段，脱敏靠 config_service 出口白名单
 #   挑选，而非"本类没声明就丢掉"（那是巧合不是契约，后人加字段即可能泄露）。同轮精简冗长注释。
 """配置DTO定义（Pydantic模型）"""
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, ConfigDict, Field  # 2026-09-26 小欧 - 修 D16: ConfigUpdate 需 extra="forbid" 拒多余字段 — 小欧-2026-09-26
+from typing import List, Optional
+
+from pydantic import (  # 2026-09-26 小欧 - 修 D16: ConfigUpdate 需 extra="forbid" 拒多余字段 — 小欧-2026-09-26
+    BaseModel,
+    ConfigDict,
+    Field,
+)
+
 from app.constants import DEFAULT_MAX_STEPS as _D_MAX_STEPS
-from app.config import get_config
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 
 
 class SecurityConfig(BaseModel):

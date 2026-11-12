@@ -64,17 +64,24 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.tools.tool_fc_helper import _check_module
+from app.db.models.operation_models import OperationType
+from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+    _current_task_id,
+    get_current_hooks_or_noop,
+)
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
-from app.utils.json_utils import coerce_json
-from app.utils.path_utils import OpCategory, check_path_four_level, to_win_long_path  # 2026-10-17 小欧: 路径四级合法性总入口 + 长路径化 — 小欧 2026-08-13
-from app.utils.path_utils import path_has_extra_drive, path_has_reserved_name  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success, with_artifact_file
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
-from app.logger import logger
-from app.db.models.operation_models import OperationType
+from app.utils.json_utils import coerce_json
+from app.utils.path_utils import (  # 2026-10-17 小欧: 路径四级合法性总入口 + 长路径化 — 小欧 2026-08-13  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
+    OpCategory,
+    check_path_four_level,
+    path_has_extra_drive,
+    path_has_reserved_name,
+    to_win_long_path,
+)
 
 
 def _build_compress_files_llm_data(
@@ -371,7 +378,7 @@ async def compress(
                     except OSError:
                         pass
                 raise
-            except Exception as e:
+            except Exception:
                 # 非预期异常: 先清理损坏文件,再抛出原始异常
                 if Path(to_win_long_path(dst)).exists():  # #5长路径 — 小欧 2026-08-13
                     try:

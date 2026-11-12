@@ -23,18 +23,23 @@
          查询函数 → tool_queries.py, 格式转换 → tool_description.py
 """
 
-from typing import Dict, List, Optional, Callable, Any, Type, Set, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+
 from pydantic import BaseModel
-from app.tools.tool_types import ToolCategory, ToolMetadata
-from app.tools.schema_utils import _generate_input_schema
-from app.tools.tool_description import to_openai_tools, generate_param_reminder
-from app.tools.tools_alias_mapper import normalize_tool_name
+
 from app.logger import setup_logger
-from app.utils.dependency import ensure_dependency, install_missing, normalize_dep, dep_install_spec
+from app.tools.schema_utils import _generate_input_schema
 from app.tools.tool_constants import (  # 2026-10-16 小欧 - 四表分立: 原 PATH_ACTION_KINDS 混放四档
-    CATEGORY_MODULES, READ_PATH_TOOLS, WRITE_PATH_TOOLS,
-    DELETE_PATH_TOOLS, DUAL_PATH_TOOLS,
+    CATEGORY_MODULES,
+    DELETE_PATH_TOOLS,
+    DUAL_PATH_TOOLS,
+    READ_PATH_TOOLS,
+    WRITE_PATH_TOOLS,
 )
+from app.tools.tool_description import generate_param_reminder, to_openai_tools
+from app.tools.tool_types import ToolCategory, ToolMetadata
+from app.tools.tools_alias_mapper import normalize_tool_name
+from app.utils.dependency import dep_install_spec, ensure_dependency, install_missing, normalize_dep
 
 
 def _resolve_action_kind(name: str, fallback: str) -> str:
@@ -85,7 +90,7 @@ class ToolRegistry:
         self._tools: Dict[str, ToolMetadata] = {}
         self._categories: Dict[ToolCategory, List[str]] = {}
         self._implementations: Dict[str, Callable] = {}
-    
+
     def _check_dependencies(self, dependencies: List[Union[str, Dict[str, Any]]], tool_name: str) -> List[str]:
         """检查并安装工具依赖 — 小健 2026-06-18
 
@@ -124,7 +129,7 @@ class ToolRegistry:
                 missing.append(spec)
 
         return missing
-    
+
     def register(
         self,
         name: str,
@@ -177,7 +182,7 @@ class ToolRegistry:
             needs_confirmation, action_confirmation, confirm_fn, op_param, deps,
             target_param, missing,
         )
-    
+
     def _update_existing_tool(
         self,
         name: str,
@@ -223,7 +228,7 @@ class ToolRegistry:
         # 【修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
         self._update_category_index(category, name)
         return {"status": "success"}
-    
+
     def _register_new_tool(
         self,
         name: str,
@@ -270,13 +275,13 @@ class ToolRegistry:
         self._update_category_index(category, name)
         logger.debug(f"Tool registered: {name} (category: {category.value}, needs_confirmation: {needs_confirmation}, dependencies: {dependencies}, missing_deps: {missing_deps or []})")
         return {"status": "success"}
-    
+
     def _update_category_index(self, category: ToolCategory, name: str) -> None:
         """更新分类索引"""
         self._categories.setdefault(category, [])
         if name not in self._categories[category]:
             self._categories[category].append(name)
-    
+
 
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
         """获取工具元数据(返回dataclass)
@@ -290,7 +295,7 @@ class ToolRegistry:
         if tool is not None:
             return tool
         return self._tools.get(normalize_tool_name(name))
-    
+
     def get_implementation(self, name: str) -> Optional[Callable]:
         """获取工具实现函数"""
         return self._implementations.get(name)
@@ -340,13 +345,13 @@ class ToolRegistry:
             tool_names = self._categories.get(category, [])
         else:
             tool_names = list(self._tools.keys())
-        
+
         if expose_to_llm_only:
             # 2026-10-19 小欧 - 改读 visible_to_llm(依赖齐备才算暴露面): 此处仍是旧字段,
             #   与 tool_description 的单一判据口径不一致, 漏改会分裂"该不该给 LLM"的定义。
             tool_names = [name for name in tool_names if self._tools[name].visible_to_llm]
 
-        
+
         return [
             {
                 "name": self._tools[name].name,
@@ -356,23 +361,23 @@ class ToolRegistry:
             }
             for name in tool_names
         ]
-    
+
     def unregister(self, name: str) -> Dict[str, Any]:
         """注销工具"""
         if name not in self._tools:
             return {"status": "error", "error": f"Tool '{name}' not found"}
-        
+
         metadata = self._tools[name]
         category_tools = self._categories.get(metadata.category, [])
         if name in category_tools:
             category_tools.remove(name)
-        
+
         del self._tools[name]
         del self._implementations[name]
-        
+
         logger.info(f"Tool unregistered: {name}")
         return {"status": "success"}
-    
+
     def get_implementations_by_category(self, category: ToolCategory) -> Dict[str, Callable]:
         """按分类一次遍历获取 {name: implementation}，消除N+1查询 — 小沈 2026-06-08"""
         tool_names = self._categories.get(category, [])
@@ -458,7 +463,7 @@ def register_tool(
             target_param=target_param,
         )
         return func
-    
+
     return decorator
 
 
@@ -513,6 +518,7 @@ def preinstall_tool_dependencies() -> List[str]:
     导致批量化空转。锁定包由 dependency.LOCKED_PACKAGES 经 pip 约束文件保护。
     """
     import time as _time
+
     from app.utils.dependency import install_missing
 
     _t = _time.time()

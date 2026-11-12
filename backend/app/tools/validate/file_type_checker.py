@@ -33,12 +33,10 @@ Safety层（app/safety/path_tool_safety_checker.py + app/safety/path_classify_ca
    【解决】_check_archive_file 与 get_file_category 增加 endswith 全串匹配, 复合后缀优先
 """
 from pathlib import Path
-from typing import Tuple, Optional, Literal
+from typing import Literal, Optional, Tuple
 
 from app.tools.tool_constants import BINARY_EXTENSIONS
-
 from app.tools.validate.tool_module_checker import check_tool_module
-
 
 # ============================================================
 # 文件类型分类定义
@@ -143,13 +141,13 @@ def check_file_type(
     """
     if isinstance(file_path, Path):
         file_path = str(file_path)
-    
+
     if not file_path or not file_path.strip():
         return False, "文件路径不能为空", None
-    
+
     path = Path(file_path)
     suffix = path.suffix.lower()
-    
+
     # 检查文件是否存在（allow_create=True时允许不存在）
     if not allow_create:
         if not path.exists():
@@ -160,7 +158,7 @@ def check_file_type(
         # allow_create=True时，如果文件存在且是目录，报错
         if path.exists() and path.is_dir():
             return False, f"路径是目录而非文件: {file_path}", None
-    
+
     # 根据期望类型进行检查
     if expected_type == "text":
         return _check_text_file(path, suffix, check_content, allow_create)
@@ -241,13 +239,13 @@ def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create:
             return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", "extract"  # 2026-10-14 小欧 - 修谎报: 工具真名是 extract(extract_archive 只是文件名), hint 点名不存在的工具名属误导 LLM — 小欧-2026-10-14
         else:
             return False, f"工具选择错误：'{suffix}'是二进制文件，不能用文本工具操作。请确认文件类型后选择合适的工具", None
-    
+
     # 检查内容（如果启用且文件存在）
     if check_content and not allow_create and path.exists():
         is_binary, reason = _detect_binary_content(path)
         if is_binary:
             return False, f"工具选择错误：{reason}，不能用文本工具操作。建议使用readmedia工具", "readmedia"
-    
+
     return True, "", None
 
 
@@ -264,7 +262,7 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
             return False, f"工具选择错误：'{suffix}'是不支持的格式。{hint}", None
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用read或对应的文档工具", None
-    
+
     return True, "", None
 
 
@@ -280,7 +278,7 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
             return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用readmedia工具", "readmedia"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
-    
+
     return True, "", None
 
 
@@ -306,7 +304,7 @@ def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[st
             return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read工具", "read"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
-    
+
     return True, "", None
 
 
@@ -315,13 +313,13 @@ def _check_not_binary(path: Path, suffix: str, check_content: bool, allow_create
     # 检查扩展名
     if suffix in BINARY_EXTENSIONS:
         return False, f"工具选择错误：'{suffix}'是二进制文件类型，不能用文本工具操作。请确认文件类型后选择合适的工具", None
-    
+
     # 检查内容（如果启用且文件存在）
     if check_content and not allow_create and path.exists():
         is_binary, reason = _detect_binary_content(path)
         if is_binary:
             return False, reason, None
-    
+
     return True, "", None
 
 
@@ -335,16 +333,16 @@ def _detect_binary_content(path: Path) -> Tuple[bool, str]:
     try:
         with open(path, 'rb') as f:
             chunk = f.read(8192)
-        
+
         # 检查空字节
         if b'\x00' in chunk:
             return True, "文件包含空字节(0x00)，疑似二进制文件"
-        
+
         # 检查BOM标记
         null_count = chunk.count(b'\xff\xfe') + chunk.count(b'\xfe\xff')
         if null_count > 0 and len(chunk) < 100:
             return True, "文件包含BOM标记但内容过短，疑似二进制文件"
-        
+
         return False, ""
     except Exception:
         return False, ""
@@ -401,9 +399,9 @@ def get_file_category(file_path: str) -> Optional[str]:
     """
     if not file_path:
         return None
-    
+
     suffix = Path(file_path).suffix.lower()
-    
+
     if suffix in TEXT_EXTENSIONS:
         return "text"
     elif suffix in MEDIA_EXTENSIONS:

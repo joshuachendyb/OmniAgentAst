@@ -8,9 +8,9 @@
 
 from typing import Dict, Set
 
-from app.logger import logger
 from app.llm.adapters.base import ProviderAdapter
 from app.llm.adapters.opencodeZen import OpencodeZenAdapter
+from app.logger import logger
 
 # 模块级默认实例: 未注册 provider 复用同一实例(行为==现状), 避免每次 new — 小欧 2026-09-23
 _DEFAULT_ADAPTER: ProviderAdapter = ProviderAdapter()

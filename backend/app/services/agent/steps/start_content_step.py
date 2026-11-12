@@ -5,7 +5,8 @@
 #   单结构承载; display_name 键消亡(设计要求2: 后端零依赖仅前端派生, 消费点 agent_runner startinfo 已随删)
 from typing import Any, Dict, Optional
 
-from app.db.models.chat_models import ModelRef   # 归一 — 小欧 2026-08-22
+from app.db.models.chat_models import ModelRef  # 归一 — 小欧 2026-08-22
+
 from .base import ReasoningStep
 
 

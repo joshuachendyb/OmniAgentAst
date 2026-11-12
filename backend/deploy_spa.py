@@ -116,8 +116,10 @@ def main() -> int:
     print(f'[deploy_spa] 部署 {dist}  ->  {target}')
     try:
         _deploy(target, dist)
-    except PermissionError as exc:
-        print(f'[deploy_spa] 写入被拒(可能仍有进程占用文件): {exc}')
+    except (PermissionError, shutil.Error) as exc:
+        print(f'[deploy_spa] 写入失败(文件被锁或权限拒绝): {exc}')
+        print('  可能原因: 目标 exe 已停但有子进程残留锁住 DLL, 或文件权限不足')
+        print('  尝试: 关闭所有相关进程后重试, 或删除目标 _internal 目录后重试')
         return 3
     _report(target, dist)
     print('[deploy_spa] 部署完成')

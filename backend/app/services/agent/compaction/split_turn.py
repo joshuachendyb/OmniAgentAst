@@ -49,20 +49,19 @@ absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary �
   (truncate_oversized_message 截 content / truncate_tool_call_args 截 tool_calls.arguments), 体积估算
   一律可按调用方口径(estimator)传入, 保证"按什么尺判就按什么尺裁"。— 小欧-2026-10-31
 """
-from typing import List, Dict, Tuple
-
 import json
+from typing import Dict, List
 
 from app.logger import logger
 from app.services.agent.compaction_constants import (
-    KEEP_RECENT_ROUNDS,               # 2026-10-30 小欧: 保护区轮数默认值(原函数内重复 import, 上提模块顶)
-    PROTECT_ROUNDS_MAX,               # 2026-10-30 小欧: 保护区轮数夹取上限(同上)
-    PROTECT_ROUNDS_MIN,               # 2026-10-30 小欧: 保护区轮数夹取下限(同上)
+    KEEP_RECENT_ROUNDS,  # 2026-10-30 小欧: 保护区轮数默认值(原函数内重复 import, 上提模块顶)
+    PROTECT_ROUNDS_MAX,  # 2026-10-30 小欧: 保护区轮数夹取上限(同上)
+    PROTECT_ROUNDS_MIN,  # 2026-10-30 小欧: 保护区轮数夹取下限(同上)
     SPLIT_TURN_MAX_ASSISTANT_CHARS,
     TAIL_TOKEN_MAX,
     TAIL_TOKEN_MIN,
     TAIL_TOKEN_RATIO,
-    TOOL_SUMMARY_HEAD_CHARS,          # 2026-10-31 小欧: 旧轮 tool 输出/工具参数保首门限(4000 的 1/8, 迁入用)
+    TOOL_SUMMARY_HEAD_CHARS,  # 2026-10-31 小欧: 旧轮 tool 输出/工具参数保首门限(4000 的 1/8, 迁入用)
 )
 from app.services.agent.message_builder import MessageBuilder
 
@@ -198,7 +197,7 @@ def resolve_protect_rounds() -> int:
     输出: int, clamp 到 [PROTECT_ROUNDS_MIN, PROTECT_ROUNDS_MAX], 默认 KEEP_RECENT_ROUNDS。
     关联逻辑: 与 message_builder 旧夹取表达式同式(收敛后该处改调本函数, 全域只此一处算式)。
     """
-    from app.config import get_config   # app.config 零业务依赖, 不入循环
+    from app.config import get_config  # app.config 零业务依赖, 不入循环
     return max(PROTECT_ROUNDS_MIN, min(PROTECT_ROUNDS_MAX, int(get_config().get('tuning.trim.keep_recent_rounds', KEEP_RECENT_ROUNDS))))
 
 

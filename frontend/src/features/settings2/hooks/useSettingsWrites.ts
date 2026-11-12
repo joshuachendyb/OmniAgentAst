@@ -1,4 +1,6 @@
-// 编辑历史: 2026-11-09 小欧 - 新建：设置项写入通道（脏键批量保存 + Image_URL 即存），原 useSettings 保存逻辑原样搬迁 — 小欧-2026-11-09
+// 编辑历史: 2026-11-09 小欧 - 新建：设置项写入通道（脏键批量保存），原 useSettings 保存逻辑原样搬迁 — 小欧-2026-11-09
+// 2026-11-11 小欧 - 移除 saveProbeImageUrl(Image_URL 即存链): 三个验证素材地址已回媒体页直接编辑(走组保存),
+//   Image_URL 不再即存, 直写通道连同 PROBE_IMAGE_URL_KEY import 一并移除 — 小欧-2026-11-11
 import {
   useCallback,
   type Dispatch,
@@ -12,7 +14,6 @@ import {
 import { SETTINGS_SAVED_EVT } from '@/constants/settingsEvents';
 import { validate } from '../utils/modelUtils';
 import { findGroupOfKey, normalizeSecret } from '../utils/settingsShape';
-import { PROBE_IMAGE_URL_KEY } from '../utils/probeView';
 import {
   ErrorType,
   handleApiError,
@@ -205,57 +206,5 @@ export function useSettingsWrites({
     ]
   );
 
-  // 2026-11-09 小欧 - Image_URL 即存链（hidden 项不进脏键槽）：外部更新守卫 + mtime 回填，
-  //   直写 settings 通道，绕开 saveKeys 闭包读旧 values 的竞态 — 小欧-2026-11-09
-  const saveProbeImageUrl = useCallback(
-    async (raw: string) => {
-      const v = raw.trim();
-      const stored =
-        ((state.values['media'] ?? {})[PROBE_IMAGE_URL_KEY] as
-          | string
-          | undefined) ?? '';
-      if (v === stored) return;
-      try {
-        const curMtime = await settingsApi.getMtime();
-        if (curMtime !== mtimeRef.current) {
-          syncMtime(curMtime);
-          showMessage(
-            ErrorType.WARNING,
-            '配置已被外部更新，刷新后重填 Image_URL'
-          );
-          return;
-        }
-        const r = await settingsApi.updateSettings({
-          [PROBE_IMAGE_URL_KEY]: v,
-        });
-        if (!r.ok) {
-          r.errors.forEach((m) =>
-            showMessage(ErrorType.VALIDATE_CONFIG_FAILED, m)
-          );
-          return;
-        }
-        setState((st) => ({
-          ...st,
-          values: {
-            ...st.values,
-            media: { ...(st.values['media'] ?? {}), [PROBE_IMAGE_URL_KEY]: v },
-          },
-          baseline: {
-            ...st.baseline,
-            media: {
-              ...(st.baseline['media'] ?? {}),
-              [PROBE_IMAGE_URL_KEY]: v,
-            },
-          },
-        }));
-        syncMtime(r.mtime);
-        showSuccess('Image_URL 已保存');
-      } catch {
-        showMessage(ErrorType.WARNING, 'Image_URL 保存失败，请重试');
-      }
-    },
-    [state.values, syncMtime, setState, mtimeRef]
-  );
-
-  return { saveKeys, saveProbeImageUrl };
+  return { saveKeys };
 }

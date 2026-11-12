@@ -50,12 +50,11 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
-from app.config import get_config
-from app.services.agent.status_table import AgentStatus, set_status
-from app.services.agent.chunk_buffer import ChunkBuffer
+from app.db import db
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
-from app.db import db
+from app.services.agent.chunk_buffer import ChunkBuffer
+from app.services.agent.status_table import AgentStatus, set_status
 
 
 def initialize_run_state(

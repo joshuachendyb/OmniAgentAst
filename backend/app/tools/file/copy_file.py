@@ -49,20 +49,30 @@ import os
 import shutil
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional  # 2026-11-04 小欧: 删未使用的 Tuple(死导入) — 小欧-2026-11-04
+from typing import (  # 2026-11-04 小欧: 删未使用的 Tuple(死导入) — 小欧-2026-11-04
+    Any,
+    Dict,
+    Optional,
+)
 
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
-
-from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归路径安全层
-from app.tools.toolhelper.error_hints import hint_for_write_error
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.logger import logger
 from app.db.models.operation_models import OperationType
-from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-
+from app.logger import logger
+from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+    _current_task_id,
+    get_current_hooks_or_noop,
+)
+from app.tools.file.file_write_arbiter import (
+    claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
+)
+from app.tools.tool_constants import ERR_FILE_COPY_FAILED
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.toolhelper.error_hints import hint_for_write_error
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
+    to_win_long_path,  # #5长路径包裹 — 小欧 2026-08-13
+    validate_path_for_overwrite,  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归路径安全层
+)
 
 
 def _build_copy_file_llm_data(

@@ -65,10 +65,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
-from app.logger import logger
 from app.config import get_code_root, get_config
+from app.logger import logger
+from app.safety.safety_switch import (
+    safety_switch,  # 2026-10-20 小欧 - 三个名单开关: 关闭 = 对应名单置空
+)
 from app.session_workspace import session_workspace_paths
-from app.safety.safety_switch import safety_switch  # 2026-10-20 小欧 - 三个名单开关: 关闭 = 对应名单置空
 
 #: 盘根 label 标识 —— 该条目只判自身(模块内私有, 外部零使用); 行为靠 self_only, label 仅文案
 _DISK_ROOT_LABEL = "磁盘根目录"

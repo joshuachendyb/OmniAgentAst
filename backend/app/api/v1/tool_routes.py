@@ -19,14 +19,16 @@ tool_routes — 工具测试路由(独立模块)
 
 安全栏(2026-10-15 收敛): /tool/execute 仅测试用 — 单一门 = logging.debug, 非调试模式直接拒执行。
 """
-from fastapi import APIRouter
 from dataclasses import asdict
 from typing import Optional
 
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁定: 调试开关守卫与 /echo 共用
-from app.services.tool import list_tools, execute_tool
+from app.api.v1._gates import (
+    require_debug_mode,  # 2026-10-15 北京老陈裁定: 调试开关守卫与 /echo 共用
+)
+from app.services.tool import execute_tool, list_tools
 
 router = APIRouter()
 

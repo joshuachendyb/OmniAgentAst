@@ -4,12 +4,12 @@
 # 记录 2026-07-17 小欧 新增reasoning-only空转防御: 复用_dedup_repeat剔除循环重复+连续REASONING_ONLY_MAX_ROUNDS(默认3)轮纯推理无工具无答案即终止; 字段_consecutive_reasoning_only在action/正常answer/真空处归零(防御增强不退化正常流程)
 # 记录 2026-07-17 小欧 计数器修正: 判断改>REASONING_ONLY_MAX_ROUNDS(默认3,即第4轮终止); 补全error/未知类型分支归零, 使不变量"仅reasoning-only累加、其余出口归零"严格成立(复核3遍)
 # 记录 2026-07-17 小欧 重复检测升级: 用句子频率法(v2)替换固定200字chunk, 100%命中率98.4%压缩率; 删除DUP_CHUNK, 新增SENTENCE_MIN_REPEAT=3, REPEAT_CHECK_MIN_LEN=500改250; 排除markdown表行防假阳性(复核3遍+边缘测试14场景)
-# 记录 2026-07-18 小欧 修复FAILED终态返回空响应(病根+思路+逻辑): 
-#                【病根】response_text仅由final事件填充(e2e_helpers.py:365/agent_runner.py:163), 
+# 记录 2026-07-18 小欧 修复FAILED终态返回空响应(病根+思路+逻辑):
+#                【病根】response_text仅由final事件填充(e2e_helpers.py:365/agent_runner.py:163),
 #                     失败终态设计上不补FinalStep→LLM硬失败时正文为空(unit-09暴露);
 #          而2026-07-13设计"失败终态仅ErrorStep不补FinalStep", 致LLM硬失败(如HTTP400内容审核,
-#            今日unit-09暴露)时响应正文为空、无诊断信息; 
-#           【思路】在error/unknown分支补发FinalStep填充响应正文; 
+#            今日unit-09暴露)时响应正文为空、无诊断信息;
+#           【思路】在error/unknown分支补发FinalStep填充响应正文;
 #           【逻辑】①FinalStep先于ErrorStep产出, 使derive_status_from_steps(storage.py:49迁移兜底)最后终态=error→仍判failed不翻转 ②_dispatch_handler中error优先于final→终态仍FAILED不退化 ③复用reasoning-only终止分支emit FinalStep既有模式, 不造新范式
 # 记录 2026-07-18 小欧 FinalStep终态规整重构(多态自包含):
 # 【病根】response_text仅由final事件填充, 失败终态无FinalStep→body空;
@@ -74,10 +74,22 @@ v4.1: reasoning-only分支改add_assistant_message(reasoning)合法注入(工具
 import time
 from typing import Dict
 
-from app.services.agent.steps import ThoughtStep, FinalStep, MetaStep  # 2026-09-07 小欧: 4.4.2 时序根治删除ThoughtStartStep导入(全分支已移走) — 2026-08-18 小欧 ThoughtStartStep新增
-from app.utils.text_utils import format_tool_call_markup, dedup_repeat, REPEAT_CHECK_MIN_LEN  # 小健 2026-09-05：去重函数归位文本层；门槛常量随迁，供L182预检引用
-from app.services.agent.reasoning_guard import note_progress, note_reasoning_only, notify_stagnation  # 小健 2026-09-05：空转计数唯一写者收口；2026-10-09 小欧 北京老陈裁定加 notify_stagnation
-from app.logger import logger, log_and_print
+from app.logger import log_and_print, logger
+from app.services.agent.reasoning_guard import (  # 小健 2026-09-05：空转计数唯一写者收口；2026-10-09 小欧 北京老陈裁定加 notify_stagnation
+    note_progress,
+    note_reasoning_only,
+    notify_stagnation,
+)
+from app.services.agent.steps import (  # 2026-09-07 小欧: 4.4.2 时序根治删除ThoughtStartStep导入(全分支已移走) — 2026-08-18 小欧 ThoughtStartStep新增
+    FinalStep,
+    MetaStep,
+    ThoughtStep,
+)
+from app.utils.text_utils import (  # 小健 2026-09-05：去重函数归位文本层；门槛常量随迁，供L182预检引用
+    REPEAT_CHECK_MIN_LEN,
+    dedup_repeat,
+    format_tool_call_markup,
+)
 
 
 async def handle_answer(agent, parsed: Dict) -> dict:

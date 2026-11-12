@@ -1,4 +1,7 @@
 // 编辑历史: 2026-11-09 小欧 - 新建：腿徽标与结论徽标（页面内 4 处重复的 ✓/✗/? 图标与配色三元收口到一处）— 小欧-2026-11-09
+// 2026-11-11 小欧 - BadgeRow 改 forwardRef + 透传 props：antd <Tooltip> 向直接子元素 cloneElement 注入
+//   onMouseEnter/onMouseLeave/ref，原非 forwardRef 函数组件接收不到也不转发到真实 DOM，导致悬停徽标不弹 tip。
+//   输入图片/视频/音频行 + 生成能力行共用本 BadgeRow，单点修复一并覆盖四条验证行。— 小欧-2026-11-11
 import React from 'react';
 import {
   CheckOutlined,
@@ -65,11 +68,18 @@ export const VerdictBadge: React.FC<{
   </span>
 );
 
-/** 徽标组容器：minWidth 锚定，结论文案长短不推按钮搬家 */
-export const BadgeRow: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => (
+/** 徽标组容器：minWidth 锚定，结论文案长短不推按钮搬家。」
+ *  2026-11-11 小欧 - forwardRef + 透传 props：antd <Tooltip> 通过 cloneElement 向直接子元素注入
+ *  onMouseEnter/onMouseLeave/ref 等，原 React.FC 非 forwardRef 组件的这些 props 会丢到真实 DOM 上，
+ *  导致悬停徽标不弹 tip（输入图片/视频/音频行 + 生成能力行共用本组件，一并修复）。— 小欧-2026-11-11
+ */
+export const BadgeRow = React.forwardRef<
+  HTMLSpanElement,
+  React.HTMLAttributes<HTMLSpanElement>
+>(({ children, ...rest }, ref) => (
   <span
+    ref={ref}
+    {...rest}
     style={{
       display: 'inline-flex',
       alignItems: 'center',
@@ -81,4 +91,5 @@ export const BadgeRow: React.FC<{ children: React.ReactNode }> = ({
   >
     {children}
   </span>
-);
+));
+BadgeRow.displayName = 'BadgeRow';

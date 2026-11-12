@@ -78,7 +78,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   (3)clear 与设置值互斥: clear is True 且 api_key 非空 -> 400, 不静默丢弃任何一方(修前无条件覆盖新 key)
 #   (4)base_url 空即错误状态: base_url/api_base 传空或纯空白 -> 400 文案指向填写完整地址, 不再清空后照存
 #   (5)三条校验均置于 tree/node 构造与 merge 之前, 失败时配置零改动(满足配置未被修改验收)
-#   (6)ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500, 故显式抛 HTTPException(400);
+#   (6)ValueError 会被 handle_api_errors(=原handle_config_errors) 笼统转 500, 故显式抛 HTTPException(400);
 #     不改公共装饰器, 避免波及全项目 24 处调用点(OCP/SRP)
 # 2026-09-26 - 小欧 - add_provider 增加 api_base 必填校验(空/纯空白 -> 400, 文案"api_base 必填:
 #   API 地址是 Provider 的必要配置"), 置于 _validate_new_provider_name 之后、构造 tree 之前, 失败时配置零改动;
@@ -196,32 +196,49 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   (模态/上限等空位回填, 顶层优先); 别名表加 max_output 与 cost 行, _numeric_cost_to_pricing 转
 #   数值 cost→{prompt,completion}(喂免费判据); effort 兼容 list 形状(reasoning_efforts 数组 +
 #   default_reasoning_effort 标量); _merge_supports_features 加 tool_call→tools - 小欧-2026-11-09
+# 2026-11-11 小欧 - 输入能力验证泛化三态: probe_model_media 增 kind(image/video/audio);
+#   _probe_messages/_probe_once/_media_token_count/_ev_tokens 按 kind 分派 part 形状与 token 键,
+#   视频腿=video_url 直传公网素材, 音频腿=下载素材 base64 内联 input_audio(协议无音频 URL part);
+#   视频/音频结果落 media.{kind} 子块(深合并不触碰图片腿平铺字段), 素材地址 media.probe_{kind}_url
+#   配置覆盖, 缺省用实测择优内置默认(w3school 788KB mp4 / runoob 29KB mp3); 图片腿行为零改动 - 小欧-2026-11-11
+# 2026-11-11 小欧 - 勘误: 上条"w3school 788KB mp4"实为 test-videos.co.uk 991KB mp4(实测 w3school GET>30s 超时,
+#   已改 test-videos.co.uk 全球 CDN 完整 GET≈3s; 音频 runoob 29KB 正确) — 小欧-2026-11-11
+# 2026-11-11 小欧 - _models_of 下发 ref_capability_map 二维投影(contract 生成, DTO 只透传) — 小欧-2026-11-11
 """
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+import base64
 import os
 import re
 import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
+
 import httpx
 from fastapi import HTTPException
-from app.llm.adapters import get_provider_adapter
 
-from app.logger import logger
-# 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
-#   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
-from app.utils.secret_utils import is_blank_secret
-from app.config import get_config  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 # 2026-11-09 小欧 - 生成端点单点（探测腿与 Phase B 真业务共用唯一 HTTP 出口）— 小欧-2026-11-09
+# 2026-11-11 小欧: 附件能力二维投影下发(前端徽标只读索引, DTO 只透传)
+from app.attachments.contract import ref_capability_map
+from app.config import (
+    get_config,  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
+)
+from app.llm.adapters import get_provider_adapter
+from app.logger import logger
+from app.services.agent.capability import profile_of
 from app.services.generation import generation_client
 from app.services.model.config_helpers import (
+    _config_mtime,
     get_config_path,
     mask_secret_value,
     merge_nested_patch,
     read_yaml_config,
     write_yaml_config,
-    _config_mtime,
 )
+
+# 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
+#   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
+from app.utils.secret_utils import is_blank_secret
 
 RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 
@@ -310,6 +327,8 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
             "media": meta.get("media") or {},  # 媒体传输探测结果(实测), 供模型库展示 — 小欧-2026-11-08
+            # 附件/文件引用能力二维投影(source_kind → content_kind → 三态), 前端只读索引 — 小欧-2026-11-11
+            "ref_capability_map": ref_capability_map(profile_of(provider, m)),
             # 上次验证回执(含未定结论的原因), 只给界面常驻显示, 不参与能力判定 — 小欧-2026-11-09
             "last_probe": meta.get("last_probe") or {},
         })
@@ -606,7 +625,7 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     #   api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
     #   clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
     #   api_base 空即错误状态：空/纯空白 → 400，不再"清空后照存"
-    # ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500，故此处显式抛 400 HTTPException
+    # ValueError 会被 handle_api_errors(=原handle_config_errors) 笼统转 500，故此处显式抛 400 HTTPException
     if fields.get("clear") is True and str(fields.get("api_key") or "").strip():
         raise HTTPException(status_code=400,
                             detail="clear=true 与 api_key 设置值不能同时提交：请只提交其中一项")
@@ -1192,21 +1211,53 @@ _PROBE_IMAGE_URL = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAA
 # 2026-11-09 小欧 - 拒绝状态集单源: 由 generation_client.REJECT_STATUS 统一持有, 本文件不再复制 — 小欧-2026-11-09
 # 2026-11-09 小欧 - 图像 token 差值判定: 厂商不回报 image_tokens 时改比同 prompt 纯文本基线 prompt_tokens,
 #   差值≥_IMG_DELTA_MIN 即证明图进了上下文(sensenova 系只报 prompt/total) — 小欧-2026-11-09
+# 2026-11-11 小欧 - 输入探测泛化三态(image/video/audio): 视频=video_url 直传公网素材,
+#   音频=下载素材后 base64 内联 input_audio(OpenAI 兼容协议无音频 URL part); 素材地址可由
+#   media.probe_video_url / media.probe_audio_url 配置覆盖, 缺省用下方实测选定的默认值 — 小欧-2026-11-11
 _PROBE_TEXT = "图中是什么颜色? 只回答颜色。"
-_IMG_DELTA_MIN = 8
+_PROBE_VIDEO_TEXT = "这段视频里主体在做什么? 只回答一句话。"
+_PROBE_AUDIO_TEXT = "这段音频里是什么声音? 只回答一句话。"
+# 默认素材(本机实测可达性/速度/体积择优): 视频取 test-videos.co.uk 全球 CDN 991KB≈3s 完整 GET
+#   (w3school 中国 CDN HEAD 快但 GET 实测 >30s, kilo 抓取 60s 超时根因), 音频 runoob 29KB≈0.5s — 小欧-2026-11-11
+_PROBE_VIDEO_URL_DEFAULT = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+_PROBE_AUDIO_URL_DEFAULT = "https://www.runoob.com/try/demo_source/horse.mp3"
+_MEDIA_DELTA_MIN = 8
+_PROBE_KIND_TEXT = {"image": _PROBE_TEXT, "video": _PROBE_VIDEO_TEXT, "audio": _PROBE_AUDIO_TEXT}
+_PROBE_TOKEN_SUFFIX = {"image": "image_tokens", "video": "video_tokens", "audio": "audio_tokens"}
+# 取证串 → 人话的模态名(_probe_hint 用)
+_PROBE_HINT_LABEL = {"image": "图像", "video": "视频", "audio": "音频"}
+# 音频素材后缀 → input_audio.format 合法值(OpenAI 兼容协议枚举)
+_AUDIO_SUFFIX_FORMAT = {".mp3": "mp3", ".wav": "wav", ".m4a": "m4a", ".ogg": "ogg", ".flac": "flac", ".webm": "webm"}
 
 
-def _probe_messages(url: str) -> List[Dict[str, Any]]:
+def _audio_format(url: str) -> str:
+    """素材 URL 后缀 → input_audio.format; 无法识别按 mp3(默认素材即 mp3) — 小欧-2026-11-11"""
+    path = urlsplit(url).path.lower()
+    for suf, fmt in _AUDIO_SUFFIX_FORMAT.items():
+        if path.endswith(suf):
+            return fmt
+    return "mp3"
+
+
+def _probe_messages(media: str, kind: str = "image",
+                    audio_format: str = "mp3") -> List[Dict[str, Any]]:
+    """探测请求 messages: kind 决定素材 part 形状(image_url / video_url / input_audio) — 小欧-2026-11-11"""
+    if kind == "image":
+        part: Dict[str, Any] = {"type": "image_url", "image_url": {"url": media}}
+    elif kind == "video":
+        part = {"type": "video_url", "video_url": {"url": media}}
+    else:
+        part = {"type": "input_audio", "input_audio": {"data": media, "format": audio_format}}
     return [{"role": "user", "content": [
-        {"type": "text", "text": _PROBE_TEXT},
-        {"type": "image_url", "image_url": {"url": url}},
+        {"type": "text", "text": _PROBE_KIND_TEXT[kind]},
+        part,
     ]}]
 
 
 async def _probe_baseline_tokens(api_base: str, headers: Dict[str, str], model: str,
-                                 timeout: float) -> Optional[int]:
-    """纯文本基线 prompt_tokens(带图请求同 prompt 去掉图片): 差值即图片占用 token — 小欧-2026-11-09"""
-    body = {"model": model, "messages": [{"role": "user", "content": _PROBE_TEXT}],
+                                 text: str, timeout: float) -> Optional[int]:
+    """纯文本基线 prompt_tokens(带素材请求同 prompt 去掉素材): 差值即素材占用 token — 小欧-2026-11-09"""
+    body = {"model": model, "messages": [{"role": "user", "content": text}],
             "max_tokens": 16, "temperature": 0}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -1224,48 +1275,68 @@ async def _probe_baseline_tokens(api_base: str, headers: Dict[str, str], model: 
     return n if isinstance(n, int) else None
 
 
-def _image_token_count(usage: Any) -> Optional[int]:
-    """从 usage 的输入侧递归找图像 token 数: 各家键位不同, 只认 *image_tokens 且为 int。
+def _media_token_count(usage: Any, kind: str) -> Optional[int]:
+    """从 usage 的输入侧递归找指定模态 token 数: 各家键位不同, 只认 *{kind}_tokens 且为 int。
 
     返回 None = 输入侧根本没有该字段(厂商不报), 与"字段存在且为 0"必须区分:
-    后者是网关静默丢图, 前者什么也证明不了。
-    **只查输入侧**: completion_tokens_details.image_tokens 是"输出图 token"(生图模型用),
-    kilo 等网关对纯文本模型也恒填 0, 误当输入计数会把能看图的模型判成静默丢图 — 小欧-2026-11-09
+    后者是网关静默丢素材, 前者什么也证明不了。
+    **只查输入侧**: completion_tokens_details.* 是"输出 token"(生成模型用),
+    kilo 等网关对纯文本模型也恒填 0, 误当输入计数会把能看素材的模型判成静默丢 — 小欧-2026-11-09
+    2026-11-11 小欧 - 泛化 kind(image/video/audio), 键后缀单源 _PROBE_TOKEN_SUFFIX — 小欧-2026-11-11
     """
     if not isinstance(usage, dict):
         return None
-    top = usage.get("image_tokens")
+    suffix = _PROBE_TOKEN_SUFFIX[kind]
+    top = usage.get(suffix)
     if isinstance(top, int) and not isinstance(top, bool):
         return top
-    return _scan_image_tokens(usage.get("prompt_tokens_details"))
+    return _scan_token_key(usage.get("prompt_tokens_details"), suffix)
 
 
-def _scan_image_tokens(node: Any) -> Optional[int]:
-    """在 prompt_tokens_details 子树内找 *image_tokens — 小欧-2026-11-09"""
+def _scan_token_key(node: Any, suffix: str) -> Optional[int]:
+    """在 prompt_tokens_details 子树内找以 suffix 结尾的 int 键 — 小欧-2026-11-09"""
     if isinstance(node, dict):
         for k, v in node.items():
-            if isinstance(v, int) and not isinstance(v, bool) and str(k).endswith("image_tokens"):
+            if isinstance(v, int) and not isinstance(v, bool) and str(k).endswith(suffix):
                 return v
             if isinstance(v, (dict, list)):
-                hit = _scan_image_tokens(v)
+                hit = _scan_token_key(v, suffix)
                 if hit is not None:
                     return hit
     elif isinstance(node, list):
         for v in node:
-            hit = _scan_image_tokens(v)
+            hit = _scan_token_key(v, suffix)
             if hit is not None:
                 return hit
     return None
 
 
-async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
-                      url: str, timeout: float) -> Tuple[bool, str, bool]:
-    """单次探测 → (是否真看到图, 证据, 结论是否确定)。
+async def _fetch_audio_b64(url: str, timeout: float) -> Tuple[Optional[str], str]:
+    """下载音频素材并 base64 内联(音频探测唯一素材通道) — 小欧-2026-11-11
 
-    确定结论: 200 有图像 token(或基线差值≥阈值) / 200 图像 token 为 0(或差值≤0) / 400·415·422 拒内容类型。
-    鉴权失败、限流、超时、5xx、坏 JSON 都是环境问题, 不得写成模型能力 — 小欧-2026-11-08
+    失败返回 (None, 取证串): 属素材不可达, 不判模型能力(与图片外链腿同口径)。
     """
-    body = {"model": model, "messages": _probe_messages(url), "max_tokens": 16, "temperature": 0}
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(url)
+    except Exception as e:
+        return None, f"source_download_failed: {type(e).__name__}: {e}"[:160]
+    if resp.status_code != 200:
+        return None, f"source_download_failed: http_{resp.status_code}"
+    return base64.b64encode(resp.content).decode("ascii"), ""
+
+
+async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
+                      media: str, timeout: float, kind: str = "image",
+                      audio_format: str = "mp3") -> Tuple[bool, str, bool]:
+    """单次探测 → (是否真看到素材, 证据, 结论是否确定)。
+
+    确定结论: 200 有对应模态 token(或基线差值≥阈值) / 200 该 token 为 0(或差值≤0) / 400·415·422 拒内容类型。
+    鉴权失败、限流、超时、5xx、坏 JSON 都是环境问题, 不得写成模型能力 — 小欧-2026-11-08
+    2026-11-11 小欧 - 泛化 kind(image/video/audio), 取证串按模态命名({kind}_tokens=…) — 小欧-2026-11-11
+    """
+    body = {"model": model, "messages": _probe_messages(media, kind, audio_format),
+            "max_tokens": 16, "temperature": 0}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{api_base.rstrip('/')}/chat/completions", headers=headers, json=body)
@@ -1281,21 +1352,21 @@ async def _probe_once(api_base: str, headers: Dict[str, str], model: str,
         data = resp.json()
     except Exception:
         return False, "bad_json", False
-    tokens = _image_token_count(data.get("usage"))
+    tokens = _media_token_count(data.get("usage"), kind)
     if tokens is not None and tokens > 0:
-        return True, f"image_tokens={tokens}", True
-    # 输入侧没报(或恒报 0): 比纯文本基线差值, 图真进了上下文即证明能读图 — 小欧-2026-11-09
+        return True, f"{kind}_tokens={tokens}", True
+    # 输入侧没报(或恒报 0): 比纯文本基线差值, 素材真进了上下文即证明能读 — 小欧-2026-11-09
     usage = data.get("usage")
     used = usage.get("prompt_tokens") if isinstance(usage, dict) else None
-    base = await _probe_baseline_tokens(api_base, headers, model, timeout)
+    base = await _probe_baseline_tokens(api_base, headers, model, _PROBE_KIND_TEXT[kind], timeout)
     if not isinstance(used, int) or base is None:
-        return (False, "no_image_tokens", True) if tokens == 0 else (False, "no_image_token_field", False)
+        return (False, f"no_{kind}_tokens", True) if tokens == 0 else (False, f"no_{kind}_token_field", False)
     delta = used - base
-    if delta >= _IMG_DELTA_MIN:
-        return True, f"image_tokens={delta}", True
+    if delta >= _MEDIA_DELTA_MIN:
+        return True, f"{kind}_tokens={delta}", True
     if delta <= 0:
-        return False, "no_image_tokens", True
-    return False, f"image_tokens_ambiguous={delta}", False
+        return False, f"no_{kind}_tokens", True
+    return False, f"{kind}_tokens_ambiguous={delta}", False
 
 
 def _probe_hint(ev: str) -> str:
@@ -1306,7 +1377,9 @@ def _probe_hint(ev: str) -> str:
     if ev.startswith("network_error"):
         return "连不上厂商接口"
     if ev.startswith("source_unreachable"):
-        return "厂商抓不到探测图源，换图源再测"
+        return "厂商抓不到探测素材，换素材地址再测"
+    if ev.startswith("source_download_failed"):
+        return "下载探测素材失败，换素材地址再测"
     if ev.startswith("queue_full"):
         return "厂商视频队列已满，稍后重试"
     if ev.startswith("poll_timeout"):
@@ -1329,6 +1402,13 @@ def _probe_hint(ev: str) -> str:
         return "厂商未回报图像 token，基线差值也取不到"
     if ev.startswith("image_tokens_ambiguous"):
         return "图像 token 增量过小，无法确认读到了图"
+    # 2026-11-11 小欧 - 视频/音频取证串同款提示(键名即模态, 不再逐 kind 复制分支) — 小欧-2026-11-11
+    m = re.match(r"no_(video|audio)_token_field$", ev)
+    if m:
+        return _PROBE_HINT_LABEL[m.group(1)] + " token 无回报，基线差值也取不到"
+    m = re.match(r"(video|audio)_tokens_ambiguous", ev)
+    if m:
+        return _PROBE_HINT_LABEL[m.group(1)] + " token 增量过小，无法确认读到了素材"
     if ev == "no_output":
         return "厂商返回 200 但无产物地址"
     code = ev.split(":", 1)[0][5:] if ev.startswith("http_") else ""
@@ -1374,14 +1454,26 @@ def _ev_tokens(ev: str) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
-    """探测模型接受哪种图片传输(inline/url)并落库 — 小欧-2026-11-08
+def _ev_tokens(ev: str, kind: str = "image") -> Optional[int]:
+    """从取证串抽 {kind}_tokens 值(串样例 image_tokens=64, 无值返 None)，供界面按腿显示 — 小欧-2026-11-09
+    2026-11-11 小欧 - 泛化 kind(视频/音频腿取证串同款命名) — 小欧-2026-11-11"""
+    m = re.search(rf"{kind}_tokens=(\d+)", ev or "")
+    return int(m.group(1)) if m else None
 
-    外链探测仅在 media.probe_image_url 配置时执行: 不硬编码第三方图床, 避免内网/地域导致误判。
+
+async def probe_model_media(name: str, model: str, kind: str = "image") -> Dict[str, Any]:
+    """探测模型接受哪种媒体输入并落库 — 小欧-2026-11-08
+
+    kind=image: 内联(内置 8x8 PNG) + 外链(media.probe_image_url 配置时) 两腿, accept=both/inline/none;
+    kind=video: 单腿 video_url 直传公网素材(内联 base64 体积过大且非通用协议), accept=url/none;
+    kind=audio: 下载素材后 base64 内联 input_audio(OpenAI 兼容协议无音频 URL part), accept=inline/none。
+    视频/音频素材地址由 media.probe_video_url / media.probe_audio_url 配置, 缺省用实测择优的内置默认值。
     只落确定结论(见 _probe_once): 一次 429/5xx/密钥错不得把模型能力写死成 none。
-    url_tested 一并落库, 供界面区分「实测不支持外链」与「压根没测」。
     返回的 message 是给人看的整句结论(界面原样显示, 不自行拼词) — 小欧-2026-11-08
+    2026-11-11 小欧 - 泛化 kind(图片行为不变, 视频/音频落 media.{kind} 子块) — 小欧-2026-11-11
     """
+    if kind not in _PROBE_KIND_TEXT:
+        raise HTTPException(status_code=400, detail=f"未知探测类型 {kind}(合法: image/video/audio)")
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
@@ -1390,13 +1482,17 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
     api_key = os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or "")
     headers = get_provider_adapter(name).static_headers(api_key)
     timeout = float(p.get("timeout") or 60)
+    cfg = get_config().get("media") or {}
+
+    if kind in ("video", "audio"):
+        return await _probe_media_single_leg(name, model, kind, api_base, headers, timeout, cfg)
 
     t0 = time.monotonic()
     inline_ok, inline_ev, inline_settled = await _probe_once(
         api_base, headers, model, _PROBE_IMAGE_URL, timeout)
     inline_ms = int((time.monotonic() - t0) * 1000)
     url_ok, url_ev, url_settled = False, "skipped", False
-    probe_url = str((get_config().get("media") or {}).get("probe_image_url") or "").strip()
+    probe_url = str(cfg.get("probe_image_url") or "").strip()
     url_ms: Optional[int] = None
     if inline_ok and probe_url:
         t0 = time.monotonic()
@@ -1439,10 +1535,72 @@ async def probe_model_media(name: str, model: str) -> Dict[str, Any]:
         "ok": inline_ok,
         "provider": name,
         "model": model,
+        "kind": kind,
         "accept": accept,
         "url_tested": url_settled,
         "conclusive": inline_settled,
         "media": media,
+        "persisted": persisted,
+        "message": message,
+    }
+
+
+# 视频/音频探测共用骨架: 单腿(视频=URL 直传, 音频=下载内联), 结果落 media.{kind} 子块 — 小欧-2026-11-11
+async def _probe_media_single_leg(
+    name: str, model: str, kind: str, api_base: str,
+    headers: Dict[str, str], timeout: float, cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """单腿探测编排(视频/音频): 取素材 → _probe_once → 落库/回执, 与图片腿同口径。"""
+    label = _PROBE_HINT_LABEL[kind]
+    src = str(cfg.get(f"probe_{kind}_url") or
+              (_PROBE_VIDEO_URL_DEFAULT if kind == "video" else _PROBE_AUDIO_URL_DEFAULT)).strip()
+    if not src:
+        message = f"未测成：未配置{label}素材地址；原有记录未改动"
+        _persist_probe_last(name, model, "media", False, message)
+        return {"ok": False, "provider": name, "model": model, "kind": kind,
+                "accept": None, "conclusive": False, "media": {}, "persisted": False, "message": message}
+
+    if kind == "audio":
+        b64, dl_err = await _fetch_audio_b64(src, timeout)
+        if b64 is None:
+            message = f"未测成：{_probe_hint(dl_err)}；原有记录未改动"
+            _persist_probe_last(name, model, "media", False, message)
+            return {"ok": False, "provider": name, "model": model, "kind": kind,
+                    "accept": None, "conclusive": False, "media": {}, "persisted": False, "message": message}
+        t0 = time.monotonic()
+        ok, ev, settled = await _probe_once(
+            api_base, headers, model, b64, timeout, kind="audio", audio_format=_audio_format(src))
+    else:
+        t0 = time.monotonic()
+        ok, ev, settled = await _probe_once(api_base, headers, model, src, timeout, kind="video")
+    ms = int((time.monotonic() - t0) * 1000)
+
+    accept = ("url" if kind == "video" else "inline") if ok else "none"
+    # 单腿记录落 media.{kind} 子块(深合并, 不触碰图片腿平铺字段); 顶层 probed_at 留给图片腿
+    rec = {
+        "state": "ok" if ok else ("none" if settled else "unverified"),
+        "ms": ms,
+        "tokens": _ev_tokens(ev, kind),
+        "evidence": ev,
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "source": src,
+    }
+    persisted = _persist_media_probe(name, model, {"accept": {kind: accept}, kind: rec}) if settled else False
+    if not settled:
+        message = f"未测成：{_probe_hint(ev)}；原有记录未改动"
+    elif ok:
+        message = f"已记录：{label}输入可用"
+    else:
+        message = f"已记录：该模型收不到{label}"
+    _persist_probe_last(name, model, "media", ok, message)
+    return {
+        "ok": ok,
+        "provider": name,
+        "model": model,
+        "kind": kind,
+        "accept": accept,
+        "conclusive": settled,
+        "media": {"accept": {kind: accept}, kind: rec},
         "persisted": persisted,
         "message": message,
     }

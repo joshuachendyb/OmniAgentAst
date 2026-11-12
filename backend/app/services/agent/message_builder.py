@@ -119,6 +119,8 @@
 # 2026-11-10 小欧 - §7.3 门控收口: expand_vision_parts 的内联放行由 accepts_inline_image 单条件改为
 #   supports_image_input and accepts_inline_image 双条件, 防切到声明无视觉且未实测的模型后历史图片占位
 #   仍按"未测照发"内联导致整轮 400; 回归 test_vision_expand_gated_by_supports — 小欧-2026-11-10
+# 2026-11-11 小欧 附件能力域: build_user_turn_text/init_history 收口 plans 单参数(native 写占位,
+#   其余走 refs 文本块); expand_vision_parts → expand_attachment_parts(占位级展开归 attachment_wire) — 小欧-2026-11-11
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -142,31 +144,50 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import get_config  # 小欧 2026-07-08
+from app.constants import (
+    DEFAULT_CONTEXT_LENGTH,  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出; 2026-11-01 键名统一改 DEFAULT_CONTEXT_LENGTH
+)
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
-from app.constants import DEFAULT_CONTEXT_LENGTH  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出; 2026-11-01 键名统一改 DEFAULT_CONTEXT_LENGTH
-from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
-    COMPACTION_BUFFER, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
-    TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
-    TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
-    TRIM_CEILING_ROUNDS_MARGIN,
-    TRIM_MIN_MESSAGES,
-)
-from app.services.agent.fc_message_types import (
-    FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
-    message_to_dict, dict_to_message,
-)
-from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
-    WS_INVALIDATED, WS_TAG_CLOSE, WS_TAG_OPEN,
-)
+
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
 from app.services.agent.agent_utils import (
-    trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
+    CHARS_PER_TOKEN,
+    trim_budget_base,
+    trim_conv_threshold,
+    trim_queue_budget,
 )
-# 2026-11-08 小欧: 视觉通道 wire 展开(image_slot 组装占位 / expand_image_slots wire 换 parts)
-from app.services.agent.vision import (
-    accepts_inline_image, accepts_remote_url, expand_image_slots, image_slot,
-    supports_image_input,
+
+# 2026-11-11 小欧: 附件/URL 占位 wire 展开(attachment_slot/url_item_slot 组装占位,
+#   expand_attachment_slots 在 wire 边界换 parts); 能力判定由 plan_refs 预分流
+from app.services.agent.attachment_wire import (
+    attachment_slot,
+    expand_attachment_slots,
+    url_item_slot,
+)
+from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
+    COMPACTION_BUFFER,
+    COOLDOWN_ROUNDS,
+    TEMP_HISTORY_CHAR_LIMIT,
+    TOOL_SUMMARY_PREVIEW_CHARS,  # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
+    TRIM_CEILING_ROUND_FACTOR,  # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
+    TRIM_CEILING_ROUNDS_MARGIN,
+    TRIM_MIN_MESSAGES,
+    TRIM_TRIGGER_RATIO,
+)
+from app.services.agent.fc_message_types import (
+    AssistantMessage,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+    message_to_dict,
+)
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
+    WS_INVALIDATED,
+    WS_TAG_CLOSE,
+    WS_TAG_OPEN,
+)
+from app.services.refs.render import (
+    render_refs_block,  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
 )
 
 # 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
@@ -197,17 +218,26 @@ _WS_BLOCK_RE = re.compile(
 
 def build_user_turn_text(user_input: str, refs: Optional[list] = None,
                          ws_text: str = "",
-                         vision_slots: Optional[list] = None) -> str:
-    """装配本轮 user 消息正文: [引用块][图片占位][事项目录块][用户原话] — 小欧-2026-10-31
+                         plans: Optional[list] = None) -> str:
+    """装配本轮 user 消息正文: [引用文本块][原生占位][事项目录块][用户原话] — 小欧-2026-10-31
 
     纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
     (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
-    图片用占位标记入列, wire 边界(expand_vision_parts)才换 parts —
-    history 恒 str, 压缩/裁剪/持久化零改动。
+    plans 决定每项"写占位还是写文本块": native 项按来源写占位(附件→ATTACHMENT,
+    URL→URL_ITEM), 其余项走既有 refs 文本块渲染(ref.content 由 resolver 提前产出)。
+    refs 与 plans 同序一一对应(plan_refs 保序生成), native 项跳过文本块渲染防双写。
     """
-    refs_block = render_refs_block(refs)
-    if vision_slots:
-        refs_block += "".join(f"图片附件: {image_slot(r)}\n" for r in vision_slots)
+    native = {id(r) for r, p in zip(refs or [], plans or []) if p.state == "native"}
+    text_refs = [r for r in (refs or []) if id(r) not in native] if plans is not None else refs
+    refs_block = render_refs_block(text_refs)
+    for r, p in zip(refs or [], plans or []):
+        if p.state != "native":
+            continue
+        if p.source_kind == "attachment":
+            refs_block += f"附件: {attachment_slot(r)}\n"
+        elif p.source_kind == "url":
+            slot, link = url_item_slot(r)
+            refs_block += f"链接: {slot or ('(链接文本) ' + link)}\n"
     return "".join(p for p in (refs_block, ws_text) if p) + user_input
 
 
@@ -254,10 +284,14 @@ class MessageBuilder:
         # 2026-10-31 小欧: _tools_token_reserve 属性删除 —— trim_budget_base 已单点持有该口径,
         #   生产侧零读取(仅测试读), 保留即成死属性; tools 预留改由 agent_utils 读配置
         # 2026-10-29 小欧 保护区轮数改唯一解析(北京老陈令断案): 与 start_step 注入件尾部轮数同源单一真源(split_turn.resolve_protect_rounds), 原地夹取算式收敛
-        from app.services.agent.compaction.split_turn import resolve_protect_rounds  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
+        from app.services.agent.compaction.split_turn import (
+            resolve_protect_rounds,  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
+        )
         self._keep_recent_rounds: int = resolve_protect_rounds()  # 最近N工具步硬保护(北京老陈令), 5-20 默认5
         # 重复触发抑制: 触发后 rough≤budget_base 时 find_tail_start 无可裁, cooldown 抑制 N 轮内重复进入 — 小欧 2026-10-25
-        from app.services.agent.compaction.trigger import CompactionCooldown  # 局部 import 防循环依赖(compaction 依赖 message_builder)
+        from app.services.agent.compaction.trigger import (
+            CompactionCooldown,  # 局部 import 防循环依赖(compaction 依赖 message_builder)
+        )
         self._trim_cooldown = CompactionCooldown(cooldown_rounds=COOLDOWN_ROUNDS)
         self._trim_signal_result: Optional[tuple] = None  # 信号结果缓存, _trim_signal() 写入, trim_history() 读取 — 小欧 2026-10-25
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
@@ -359,7 +393,7 @@ class MessageBuilder:
 
     def init_history(self, sys_prompt: str, task_prompt: str,
                      refs: Optional[list] = None, ws_text: str = "",
-                     vision_slots: Optional[list] = None) -> None:
+                     plans: Optional[list] = None) -> None:
         """初始化conversation_history — 替代base_react.py L368-369
 
         2026-10-13 小欧 - 文档[28] 4.1.6: refs(输入框引用) 正文拼在 task_prompt **之前**，
@@ -374,8 +408,8 @@ class MessageBuilder:
         2026-10-31 小欧 - 目录块文本改由编排层渲染后传入(ws_text),
           本层不再自取快照、不再渲染 —— 注入的文本与日志/回执是同一份, 不会各算一遍。
 
-        增 vision_slots(图片引用): 视觉模型由编排层 split_vision_refs 摘出,
-          经 build_user_turn_text 组装占位入列(wire 边界才换 parts)。
+        增 plans(引用计划): 计划器按当前模型画像决定每项走原生占位还是降级文本块,
+          占位由 build_user_turn_text 组装, wire 边界才换 parts。
         """
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
@@ -384,7 +418,7 @@ class MessageBuilder:
             sys_prompt = f"{sys_prompt}\n\n{_FILE_REF_RULES}"
         self.conversation_history = []
         self.add_system_message(sys_prompt)
-        self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text, vision_slots))
+        self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text, plans))
 
     def build_interject_text(self, user_input: str, refs: Optional[list] = None,
                              ws_text: str = "") -> Tuple[str, str]:
@@ -600,24 +634,17 @@ class MessageBuilder:
         #   本函数只产出纯文本 wire 副本，history 恒 str。
         return messages
 
-    async def expand_vision_parts(
+    async def expand_attachment_parts(
         self, messages: List[Dict[str, Any]], llm_model: Any
     ) -> List[Dict[str, Any]]:
-        """wire 专属: 把各 user 消息的图片占位展开成 OpenAI parts（原地改浅拷贝，history 不受影响）。
+        """wire 专属: 把各 user 消息的附件/URL 占位展开成 OpenAI parts（原地改浅拷贝）。
 
-        2026-11-08 小欧: 原只展开最后一条 user，插话后上一轮图片对模型彻底丢失；改为全量展开
-        （media_payload 按文件复用 data URL，同一任务不重复编码）。
-        内联先按 supports_image_input 门控(声明无视觉且未实测的模型, 历史占位不得内联),
-        再叠实测: 外链只在 accept.image 含 url 时发, 内联在 accept=none 时降级文字。
-        2026-11-10 小欧: 内联放行补 supports_image_input 门控, 防切到声明无视觉且未实测的模型后
-        历史图片占位仍按 accepts_inline_image 的"未测照发"内联, 导致整轮 400 — 小欧-2026-11-10
+        消息级遍历; 占位级展开归 attachment_wire.expand_attachment_slots。
+        展开期自描述零请求期依赖: transport 由 capability.profile 按当前 llm_model 重算。
         """
-        allow_inline = supports_image_input(llm_model) and accepts_inline_image(llm_model)
-        allow_url = accepts_remote_url(llm_model)
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                msg["content"] = await expand_image_slots(
-                    msg["content"], allow_inline=allow_inline, allow_url=allow_url)
+                msg["content"] = await expand_attachment_slots(msg["content"], llm_model)
         return messages
 
     def _cap_temp_history(self):
@@ -731,8 +758,13 @@ class MessageBuilder:
                 return
 
             # 复用 compaction 现成函数; 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧 2026-10-25
-            from app.services.agent.compaction.split_turn import find_tail_start, find_recent_rounds_start, truncate_oversized_message, count_system_prefix
             from app.services.agent.compaction.assembler import remove_dangling_tool_calls
+            from app.services.agent.compaction.split_turn import (
+                count_system_prefix,
+                find_recent_rounds_start,
+                find_tail_start,
+                truncate_oversized_message,
+            )
 
             hist = truncate_oversized_message(self.conversation_history)  # 裁前截断 >4000 字符超长单条, 防止单条 tool 结果超出预算致整轮丢弃 — 小欧 2026-10-25
             prefix = count_system_prefix(hist)
@@ -791,7 +823,7 @@ class MessageBuilder:
             else:
                 logger.info(f"[trim_history] 重建后不足2条, 保留原历史({msg_count}条/{rough_current} tokens)")
         except Exception:
-            logger.warning(f"[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
+            logger.warning("[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
 
     # 2026-10-25 小欧 删除三个旧裁剪方法(北京老陈令, 禁止backward 死代码):
     #   _classify_messages / _trim_to_budget / _rebuild_and_validate 是"分桶 + user 永保 +

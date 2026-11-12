@@ -112,12 +112,17 @@ key 全局唯一，加载自检重复直接拒启。
       措辞、不拦已注册工具; 键存在即配置为真值——清空=不禁用任何工具(不兜底), 仅缺键/异常形状回落内置;
       运行时消费口 get_disabled_official_tools/is_disabled_tool(get_config 热读)。
       同批同步 config.yaml.example 与 config/config.yaml(铁规三处同步) — 小欧-2026-11-10
+    2026-11-11 小欧 - 新增 media.probe_video_url / media.probe_audio_url(输入能力验证视频/音频素材地址, hidden 仅组内不渲染, 键可读写; 默认值=实测择优公网小文件) — 小欧-2026-11-11
+    2026-11-11 小欧 - 三个验证素材地址(probe_image_url/probe_video_url/probe_audio_url)由 hidden 回媒体页直接显示:
+      原 probe_image_url 迁②Image_URL 行就地配置、probe_video_url/probe_audio_url 无就地入口致"无处可配"(既不在媒体页也不在就地行);
+      现统一去掉 hidden 回 media 组「外链图片」小节直接编辑(SettingRow text 渲染, 走组保存), 与 remote_url_passthrough 同节 — 小欧-2026-11-11
 
 """
 from typing import Any, Dict, List, Optional
 
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
+
 # 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
 #   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
 # 2026-11-08 小欧 - 外链条数上限引系统级常量: notice 文案与 vision 截断同源, 改值只改一处
@@ -127,18 +132,25 @@ from app.constants import DEFAULT_CONTEXT_LENGTH, MAX_REMOTE_IMAGES
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
 # 设页若显示空白则等于"用户看不见它存在" —— 正是本项要消除的问题, 故直接把生效清单亮出来。
 from app.safety.shell_readonly import SHELL_READONLY_PREFIXES as _READONLY_PREFIXES
+from app.tools.tool_constants import (
+    DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
+)
+from app.tools.tool_constants import (
+    DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
+)
+
 # 2026-10-20 小欧 - 路径工具四类名单(只读展示, 与判定同源): 直接取 tool_constants 判定名单,
 #   不另抄一份, 避免设置页展示与实判漂移
 from app.tools.tool_constants import (
     READ_PATH_TOOLS as _READ_PATH_TOOLS,
-    WRITE_PATH_TOOLS as _WRITE_PATH_TOOLS,
-    DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
-    DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
 )
+from app.tools.tool_constants import (
+    WRITE_PATH_TOOLS as _WRITE_PATH_TOOLS,
+)
+
 # 2026-11-10 小欧 - 禁用工具名单默认展示值取自 tools_alias_mapper 内置五件套(与运行时回落同一真源,
 #   展示与实判不漂移); 生效值=config tuning.agent.disabled_tools, 缺键回落此清单, 清空=不禁用任何工具，工具名称逗号分隔
 from app.tools.tools_alias_mapper import UNAVAILABLE_OFFICIAL_TOOLS as _UNAVAILABLE_OFFICIAL
-
 
 # ============================================================
 # !! 铁规（北京老陈 2026-10-25 令）：新增 _item 必须同步 config.yaml.example
@@ -231,10 +243,17 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
               notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接（?查询参数原样保留）；单条消息最多 {MAX_REMOTE_IMAGES} 个，超出的静默不转发；本机地址、内网/保留地址、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理、链接整个忽略不留说明（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
-        _item("media.probe_image_url", "text", "外链检测用图片地址",
+        _item("media.probe_image_url", "text", "图片输入检测外链素材地址",
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
-              hidden=True,
-              notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。已迁到设置页②「Image_URL」行就地显示与修改，此处仅作配置源登记。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
+              notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
+        # 2026-11-11 小欧 - 视频/音频输入验证素材地址(默认值=本机实测可达性/速度/体积择优的全球 CDN
+        #   小文件(视频 test-videos.co.uk, 音频 runoob; 与图片外链地址同口径) — 小欧-2026-11-11
+        _item("media.probe_video_url", "text", "视频输入检测外链素材地址",
+              "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+              notice="「视频输入能力验证」腿用的公网视频地址（约 991KB 的 mp4，全球 CDN），原样交给厂商接口抓取。留空 = 用内置默认地址；换成私有地址时保证厂商侧可直连 GET"),
+        _item("media.probe_audio_url", "text", "音频输入检测外链素材地址",
+              "https://www.runoob.com/try/demo_source/horse.mp3",
+              notice="「音频输入能力验证」腿用的公网音频地址（约 29KB 的 mp3），后端先下载再 base64 内联发送。留空 = 用内置默认地址"),
     ]},
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
@@ -300,13 +319,13 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               ", ".join(sorted(_READ_PATH_TOOLS)),
               notice="当前代码内置的只读工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 READ_PATH_TOOLS" % len(_READ_PATH_TOOLS)),
         _item("security.hitl.tool_lists.write", "textarea", "写入工具名单",
-              ", ".join(sorted(_WRITE_PATH_TOOLS)), 
+              ", ".join(sorted(_WRITE_PATH_TOOLS)),
               notice="当前代码内置的写入工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 WRITE_PATH_TOOLS" % len(_WRITE_PATH_TOOLS)),
         _item("security.hitl.tool_lists.delete", "textarea", "删除工具名单",
-              ", ".join(sorted(_DELETE_PATH_TOOLS)), 
+              ", ".join(sorted(_DELETE_PATH_TOOLS)),
               notice="当前代码内置的删除工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DELETE_PATH_TOOLS" % len(_DELETE_PATH_TOOLS)),
         _item("security.hitl.tool_lists.dual", "textarea", "双动作工具名单",
-              ", ".join(sorted(_DUAL_PATH_TOOLS)), 
+              ", ".join(sorted(_DUAL_PATH_TOOLS)),
               notice="当前代码内置的双动作工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DUAL_PATH_TOOLS" % len(_DUAL_PATH_TOOLS)),
         # ── 信任段 ──
         # 2026-10-18 小欧 - 本项此前只有代码侧读取(trust_db._ttl_expiry 读 security.trust.ttl_days,

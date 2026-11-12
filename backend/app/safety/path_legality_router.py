@@ -58,16 +58,21 @@ registry._resolve_action_kind 同序查表 → 本模块的"按表分派"与该�
 import logging
 from typing import Any, Dict, Optional
 
-from app.safety import shell_path_check, dual_path_check
-from app.safety import read_path_check, write_path_check, delete_path_check
+from app.safety import (
+    delete_path_check,
+    dual_path_check,
+    read_path_check,
+    shell_path_check,
+    write_path_check,
+)
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_switch import safety_switch  # 2026-10-20 小欧 - shell 路径判定开关
 from app.tools.tool_constants import (
-    READ_PATH_TOOLS,
-    WRITE_PATH_TOOLS,
     DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS,
+    READ_PATH_TOOLS,
+    WRITE_PATH_TOOLS,
 )
-from app.safety.safety_switch import safety_switch  # 2026-10-20 小欧 - shell 路径判定开关
-from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 logger = logging.getLogger(__name__)
 

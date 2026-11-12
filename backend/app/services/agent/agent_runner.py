@@ -215,24 +215,39 @@ import time
 from typing import Any, Dict, List, Optional
 
 from app.db import db
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.services.agent.steps import FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from app.logger import (  # 2026-09-08 小欧: log_and_print 双写(console可见G路径定级) — 小欧-2026-09-08
+    log_and_print,
+    logger,
+)
+from app.logger.prompt_logger import get_prompt_logger
+from app.monitoring.agent_telemetry import (  # total_steps 口径单一真源(解 [1] E1/E2/4-1); SSE_ONLY_TYPES 落库侧过滤集(文档[5] 5.2 D4 去重) — 小欧 2026-10-01 / 2026-10-03
+    SSE_ONLY_TYPES,
+    count_business_steps,
+)
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
+from app.services.agent.steps import FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
+from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
+from app.services.chat.stream_event_journal import (
+    append as journal_append,  # [63] 3.6.5 直连兜底注入 Journal sink
+)
 from app.services.task.task_registry import task_cleanup
+
 # 2026-11-06 小欧 - 去池化: 删除 from app.tools import cleanup_shell_pool_by_task(无任务级常驻 shell 资源需清理)
 from app.services.task.task_state import (
-    running_tasks, running_tasks_lock,
-    agent_streams, create_task_stream_buffer, reclaim_memory_buffer,
+    agent_streams,
+    create_task_stream_buffer,
+    reclaim_memory_buffer,
+    running_tasks,
+    running_tasks_lock,
 )
-from app.services.chat.stream_event_journal import append as journal_append   # [63] 3.6.5 直连兜底注入 Journal sink
-from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见G路径定级) — 小欧-2026-09-08
-from app.logger.prompt_logger import get_prompt_logger
-from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
-from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
-from app.monitoring.agent_telemetry import count_business_steps, SSE_ONLY_TYPES  # total_steps 口径单一真源(解 [1] E1/E2/4-1); SSE_ONLY_TYPES 落库侧过滤集(文档[5] 5.2 D4 去重) — 小欧 2026-10-01 / 2026-10-03
-from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_usage序列化 — 小欧 2026-08-19
+from app.utils.json_utils import (
+    safe_json_dumps,  # v2.0 改动2: accumulated_usage序列化 — 小欧 2026-08-19
+)
 from app.utils.text_utils import normalize_blank_lines  # 13.11 落库收口 — 小欧 2026-08-30
-
+from app.utils.time_utils import (
+    get_local_iso_timestamp,  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
+)
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
 # 会被 GC 回收并取消, 导致 finally 的 DB落库finalize/update_task 被打断、结果丢失。

@@ -33,16 +33,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
-from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.content_safety import check_content_safety
-from app.tools.tool_constants import ERR_DOC_WRITE_PPTX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_PPTX
-from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
-from app.utils.json_utils import coerce_json  # 2026-07-31 小欧: 移除未使用 logger
-from app.utils.table_helper import calculate_column_widths, get_table_header_style_config, dict_table_to_rows
 from app.tools.document.md_inline_utils import _parse_inline_md
+from app.tools.tool_constants import (
+    ERR_DOC_WRITE_PPTX,  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_PPTX
+)
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.toolhelper.error_hints import hint_for_write_error, permission_error_hint
+from app.tools.validate.content_safety import check_content_safety
+from app.tools.validate.file_type_checker import check_office_file
+from app.utils.json_utils import coerce_json  # 2026-07-31 小欧: 移除未使用 logger
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
+    OpCategory,
+    check_path_four_level,
+)
+from app.utils.table_helper import (
+    calculate_column_widths,
+    dict_table_to_rows,
+    get_table_header_style_config,
+)
 
 
 def _set_pptx_paragraph_text(paragraph, text):
@@ -152,16 +161,20 @@ def _add_pptx_content(slide, content):
 
 def _add_pptx_table(slide, table_data, start_top=None):
     """添加表格到幻灯片(独立shape) — 小欧 2026-06-19; 小健 2026-06-24 修复多表格重叠和超出边界、列宽自适应、表头样式"""
-    from pptx.util import Inches, Emu, Pt  # 2026-07-31 小欧: 修移至函数顶部(Inches 原在行130, 但行128先使用导致NameError)
     from pptx.dml.color import RGBColor
+    from pptx.util import (  # 2026-07-31 小欧: 修移至函数顶部(Inches 原在行130, 但行128先使用导致NameError)
+        Emu,
+        Inches,
+        Pt,
+    )
     if not table_data or not table_data[0] or len(table_data[0]) == 0:
         return start_top if start_top is not None else Inches(2)  # 2026-07-31 小欧: Bug⑥ falsy-zero → is not None
-    
+
     rows, cols = len(table_data), len(table_data[0])
     left = Inches(1)
     top = start_top if start_top is not None else Inches(2)  # 2026-07-31 小欧: Bug⑥ falsy-zero → is not None
     width = Inches(6)
-    
+
     slide_height = Inches(7.5)
     max_height = int(slide_height - top - Inches(0.5))
     # 2026-07-31 小欧: Bug⑭ — 上方表格已把 top 推出版心时 max_height 为负, add_table 负高度崩溃/损坏XML。
@@ -171,19 +184,19 @@ def _add_pptx_table(slide, table_data, start_top=None):
         return Emu(int(top))
     row_height = min(int(Inches(0.4)), max_height // rows)
     height = Emu(row_height * rows)
-    
+
     if height > max_height:
         height = Emu(max_height)
         row_height = max_height // rows
-    
+
     tbl = slide.shapes.add_table(rows, cols, left, top, width, height).table
-    
+
     col_widths = calculate_column_widths(table_data, total_width=6.0)
     total_width_emu = int(width)
     for ci, w in enumerate(col_widths):
         col_width_emu = int(total_width_emu * w / 6.0)
         tbl.columns[ci].width = Emu(col_width_emu)
-    
+
     header_config = get_table_header_style_config()
     for ri, row in enumerate(table_data):
         for ci, val in enumerate(row):
@@ -197,7 +210,7 @@ def _add_pptx_table(slide, table_data, start_top=None):
                         _set_pptx_paragraph_text(cell.text_frame.add_paragraph(), line)
                 else:
                     _set_pptx_paragraph_text(cell.text_frame.paragraphs[0], text)
-                
+
                 if ri == 0:
                     for para in cell.text_frame.paragraphs:
                         for run in para.runs:
@@ -208,7 +221,7 @@ def _add_pptx_table(slide, table_data, start_top=None):
                     for para in cell.text_frame.paragraphs:
                         for run in para.runs:
                             run.font.color.rgb = RGBColor(255, 255, 255)
-    
+
     return Emu(int(top) + int(height) + int(Inches(0.3)))
 
 
@@ -320,13 +333,13 @@ def _add_pptx_slide(prs, slide_data):
     """添加一页幻灯片 — 小欧 2026-06-19; 小健 2026-06-24 增加参数验证"""
     if not isinstance(slide_data, dict):
         return  # 跳过无效slide
-    
+
     slide_type = slide_data.get("type", 1)
     title = _normalize_text(slide_data.get("title", ""))
     subtitle = _normalize_text(slide_data.get("subtitle", ""))
     content = slide_data.get("content")
     tables = slide_data.get("tables")
-    
+
     layout = _select_layout(prs, slide_type)
     slide = prs.slides.add_slide(layout)
 

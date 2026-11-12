@@ -12,13 +12,13 @@
 小欧 2026-08-14 monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 包内 import 路径同步
 """
 
-from app.monitoring.collector import MetricType, Metric, MetricsCollector
+from app.monitoring.collector import Metric, MetricsCollector, MetricType
 from app.monitoring.middleware import (
     MonitoringMiddleware,
-    setup_monitoring,
     get_metrics_summary,
     get_raw_metrics,
     reset_metrics,
+    setup_monitoring,
 )
 
 __all__ = [

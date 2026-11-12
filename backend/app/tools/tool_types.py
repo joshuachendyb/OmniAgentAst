@@ -16,11 +16,11 @@
 拆分自 registry.py — 小沈 2026-05-29
 """
 
-from typing import Dict, List, Optional, Callable, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
-from app.logger import logger
+from typing import Any, Callable, Dict, List, Optional, Union
 
+from app.logger import logger
 
 # ====================================================================
 # 一、工具分类枚举
@@ -85,7 +85,7 @@ class ToolMetadata:
     examples: List[Dict[str, Any]] = field(default_factory=list)
     expose_to_llm: bool = True
     failure_hint_fn: Optional[Callable] = None
-    
+
     # 【2026-06-16 小沈】Layer 2安全字段（替代5级枚举）
     needs_confirmation: bool = False
     action_confirmation: Optional[Dict[str, bool]] = None

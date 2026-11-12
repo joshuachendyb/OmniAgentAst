@@ -25,9 +25,9 @@ FUNDAMENTAL Register — 基础工具注册点
 - bash — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入, 2026-10-02 由 shell 改名)
 """
 
+from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.logger import logger
 
 # 基础工具依赖配置 — 小健 2026-06-18
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
@@ -37,16 +37,17 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "notify": ["win10toast"],
 }
 
-from app.tools.fundamental.fundamental_schema import (
-    ToolSearchInput,
-    TimeNowInput,
-    ShellInput,
-    SendNotificationInput,
-)
-from app.tools.fundamental.tool_search import searchtool
-from app.tools.fundamental.time_now import timenow
 from app.tools.fundamental.execute_shell_command import shell
+from app.tools.fundamental.fundamental_schema import (
+    SendNotificationInput,
+    ShellInput,
+    TimeNowInput,
+    ToolSearchInput,
+)
 from app.tools.fundamental.send_notification import notify
+from app.tools.fundamental.time_now import timenow
+from app.tools.fundamental.tool_search import searchtool
+
 # 方案1: bash别名工具复用本模块 ShellInput/shell 2026-09-24
 
 

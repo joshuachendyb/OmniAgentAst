@@ -7,10 +7,9 @@ target_utils — 工具调用target字段提取
 从 action_handler.py 下沉而来，action_handler 不应包含工具 schema 查询逻辑。
 target 字段用于 ActionStep 结构化展示（极少截断保留完整值）。
 """
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from app.tools.registry import tool_registry
-
 
 _TARGET_PARAM_PRIORITY = (
     "command", "sql", "url", "host", "pattern",

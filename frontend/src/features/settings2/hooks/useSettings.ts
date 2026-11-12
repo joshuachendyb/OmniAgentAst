@@ -26,9 +26,10 @@
 //   withDeclaredMeta（用户值优先、厂商声明窗口兜底，context_length 行恒可编辑）。
 // 2026-11-08 小欧 - 能力字段拆 input/output 双维度；setOutputModalities 保留非可选项。
 // 2026-11-09 小欧 - 输出模态改只读徽标：撤 setter 与保存通道，脏判定只看输入模态，加载链保留供徽标显示。
-// 2026-11-09 小欧 - dirtyCount 走 modelDirtyCount 单源；新增 discardGroup（只撤当前组）与
-//   saveProbeImageUrl（Image_URL 即存链，含 mtime 外改守卫）— 小欧-2026-11-09
+// 2026-11-09 小欧 - dirtyCount 走 modelDirtyCount 单源；新增 discardGroup（只撤当前组）— 小欧-2026-11-09
+// 2026-11-11 小欧 - 撤 saveProbeImageUrl 导出(Image_URL 即存链已移除, 三个验证素材地址回媒体页走组保存) — 小欧-2026-11-11
 // 2026-11-09 小欧 - 编排壳化：加载链/保存链/模型域拆至 useSettingsLoad、useSettingsPersist、useModelDomain — 小欧-2026-11-09
+// 2026-11-11 小欧 - 注释勘误: 文件名纠错——useSettingsPersist/useModelDomain 实为 useSettingsWrites/useModelSaveChain — 小欧-2026-11-11
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { modelDirtyCount } from '../utils/modelUtils';
 import { initialModel } from '../utils/modelState';
@@ -176,7 +177,7 @@ export function useSettings() {
     ]
   );
 
-  const { saveKeys, saveProbeImageUrl } = useSettingsWrites({
+  const { saveKeys } = useSettingsWrites({
     state,
     setState,
     setSaving,
@@ -259,7 +260,6 @@ export function useSettings() {
     setInputModalities,
     resetParams,
     discardGroup,
-    saveProbeImageUrl,
     saveModelGroup,
     // 2026-09-24 小欧 - 暴露切换前强制保存（SettingsPage 删除确认前置调用，防删除后 load() 丢未存改动）
     ensureModelSaved,

@@ -51,8 +51,9 @@ LLM 响应 → type 分类链（知识备忘 — 小欧 2026-07-15）:
 对外透明:本模块由 app/llm/__init__.py 对外导出(ChatResponse/StreamChunk/create_cancelled_chunk等),外部import路径不变。 — 小欧 2026-08-14 更正(原"llm_core.py重新导出"失效,该文件已合并入 llm; 2026-08-14 llm 已独立为 app 顶层目录, 路径由 app/services/llm 改 app/llm)
 """
 
-from typing import List, Dict, Optional
-from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
+from typing import Dict, List, Optional
+
+from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
 
 

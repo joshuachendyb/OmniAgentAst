@@ -8,6 +8,9 @@ APILogger — 从 setup.py 拷出
 # 编辑历史:
 # 2026-11-03 - 小欧 - 删 __init__ 期 debug_mode 快照, 两处改实时读 LogConfig.is_debug_mode():
 #   原快照致设置页切换调试模式需重启才生效 — 小欧-2026-11-03
+# 2026-11-12 - 小欧 - ① __new__ 去掉手动 __init__ 调用(type.__call__ 已会在返回实例上调用, 原为重复初始化);
+#   ② _request_times 增 TTL 清理: 超时/异常未走 log_response_with_time 的条目原永久驻留, dict 无界增长;
+#   ③ 删死代码 _should_log(全仓零调用, YAGNI) — 小欧-2026-11-12
 
 import logging
 import time
@@ -16,6 +19,9 @@ from typing import Optional
 
 from app.logger.config import LogConfig
 from app.logger.shared_handler import setup_logger
+
+
+_REQUEST_TTL_SECONDS = 300
 
 
 class APILogger:
@@ -33,13 +39,16 @@ class APILogger:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.__init__()
         return cls._instance
 
-    def _should_log(self, level: int) -> bool:
-        return self.logger.isEnabledFor(level)
+    def _prune_request_times(self) -> None:
+        """清理超过 TTL 仍未响应的请求记录, 防超时/异常路径下 _request_times 无界增长 — 小欧-2026-11-12"""
+        cutoff = time.time() - _REQUEST_TTL_SECONDS
+        for rid in [k for k, v in self._request_times.items() if v.get('start_time', 0) < cutoff]:
+            self._request_times.pop(rid, None)
 
     def log_request_start(self, provider: str, model: str, message_len: int, history_count: int = 0) -> str:
+        self._prune_request_times()
         request_id = str(uuid.uuid4())[:8]
         self._request_times[request_id] = {
             'start_time': time.time(),

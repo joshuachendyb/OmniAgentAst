@@ -34,21 +34,21 @@ health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
 """
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel
-
+import asyncio
 import os
 import socket
-import asyncio
 import time
 from functools import lru_cache
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁定: /echo 受调试开关约束
 from app.db import db
 from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.utils.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
+from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 router = APIRouter()
 

@@ -11,7 +11,7 @@
 
 from typing import Dict, Optional
 
-from app.utils.secret_utils import is_blank_secret   # 空密钥判定唯一权威 — 小欧 2026-10-31
+from app.utils.secret_utils import is_blank_secret  # 空密钥判定唯一权威 — 小欧 2026-10-31
 
 
 class ProviderAdapter:

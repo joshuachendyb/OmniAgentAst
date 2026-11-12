@@ -29,7 +29,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
   2026-09-21 - 小欧 - v4.20 单源收敛: update_settings 写 ai.model_ref 时删「同时双写扁平 ai.provider/ai.model」
     （唯一源=ai.model_ref，与 resolver/model_service/config_helpers 读取侧一致）
    2026-09-21 - 小欧 - 修复: get_group 对 group 做 strip().lower() 归一，未知分组 Value Error→HTTPException(400)
-    （原裸 ValueError 被 handle_config_errors 笼统转 500；配合路由空串/大小写归一）
+    （原裸 ValueError 被 handle_api_errors 笼统转 500；配合路由空串/大小写归一）
    2026-09-21 - 小欧 - 修复: _item_data 普通键缺省（YAML 无此键）时 source 由 'yaml' 改标 'default'
     （缺失与显式写入同标 yaml 前端无法区分"默认值"与"已落盘"，误导用户以为已保存）
    2026-09-21 - 小欧 - 修复: is_env 判定改调 config.env_nonempty（原 bool(os.environ.get) 把纯空白 env 误判接管，
@@ -67,32 +67,37 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       缺键也标 'yaml'）；白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
     2026-09-28 - 小欧 - 内部读键 range_→range 随 registry 键名统一（边界校验两处）
 """
-from pathlib import Path
 import json
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 
-from app.config import env_nonempty, get_config, get_code_root
+from app.config import env_nonempty, get_code_root, get_config
 from app.db.models.chat_models import ModelRef
 from app.logger import logger
 from app.services.model.config_helpers import (
+    _config_mtime,
+    _get_dotted,
     get_config_path,
     get_config_snapshot,
+    has_dotted,
     mask_secret_value,
     merge_region_patch,
     read_yaml_config,
-    _get_dotted,
-    has_dotted,
-    _config_mtime,
 )
 from app.services.settings.settings_registry import (
-    GROUPS, GROUP_ORDER, get_item,
+    GROUP_ORDER,
+    GROUPS,
+    get_item,
 )
+
 # 白名单语法单一权威在 app/utils/allowlist.py（写侧校验/落盘归一 与 读侧匹配 同源）
 from app.utils.allowlist import (
     invalid_entries as invalid_ip_cidr_entries,
+)
+from app.utils.allowlist import (
     normalize as normalize_ip_cidr,
 )
 
@@ -127,10 +132,10 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
     # 2026-09-21 - 小欧 - 系统Tab「工程目录/日志目录」只读派生值：全部实时计算跟随配置
     #   （workspace.project_root / logging.debug 变更后即刷新；不落 yaml，与 config_path 同一机制）
     if key.startswith("paths."):
+        from app.config import get_code_root
         from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
         from app.logger.config import LOG_DIR
-        from app.config import get_code_root
-        from app.services.prompts.project_context import CONTEXT_FILE, resolve_context_path
+        from app.services.prompts.project_context import resolve_context_path
         _p_root = get_config().get_project_root()
         # 2026-09-21 - 小欧 - 本字典 keys 必须与 settings_registry system 组全部 paths.* 条目一一对应；
         #   registry 新增 paths.* 条目时必须同步到此加派值。直接 dict[key] 取(fail-fast)：

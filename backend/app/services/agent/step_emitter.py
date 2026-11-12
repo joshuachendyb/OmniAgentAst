@@ -27,11 +27,14 @@ Author: 小沈 - 2026-05-31
 # 2026-11-03 小欧 - log_and_print 增 level 参数: emit_notice 日志显式传 level="WARNING"(控制台默认档可见通知) — 小欧-2026-11-03
 """
 
-from typing import Optional
 import time
+from typing import Optional
 
-from app.services.agent.steps import FinalStep, ReasoningStep  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
-from app.logger import logger, log_and_print
+from app.logger import log_and_print, logger
+from app.services.agent.steps import (  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
+    FinalStep,
+    ReasoningStep,
+)
 
 
 class StepEmitter:
@@ -92,7 +95,9 @@ class StepEmitter:
     def emit_failed_final(self, step, response, error_type="", error_message="", reasoning=""):
         """终态工厂(failed) — 小健 2026-09-05：收口 handler 侧 3 处 failed 分产；
         09-03 顺序铁律内聚于此：set_failed 先行再 emit，使 build_final_stats_step 读到 FAILED"""
-        from app.services.agent.status_table import set_failed  # 延迟 import，随 answer_handler.py:127 既有惯例，防循环依赖 — 小健 2026-09-05
+        from app.services.agent.status_table import (
+            set_failed,  # 延迟 import，随 answer_handler.py:127 既有惯例，防循环依赖 — 小健 2026-09-05
+        )
         set_failed(self.agent, error_message or response)
         return self.emit_final_with_stats(FinalStep(
             step=step, response=response, outcome="failed",

@@ -4,11 +4,10 @@ HTML报告模块 - 生成HTML格式的文件操作报告(含图表)
 小沈 2026-05-29 拆分自 file_visualization.py
 """
 import html
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
-
-from app.logger import logger
 from app.db.operation_queries import query_file_operations
+from app.logger import logger
 
 
 def build_html_report_content(

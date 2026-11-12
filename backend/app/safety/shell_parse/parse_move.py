@@ -19,8 +19,8 @@
 """
 from typing import Dict, List
 
-from app.safety.shell_parse.action import DELETE_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse import lexer
+from app.safety.shell_parse.action import DELETE_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.verb_table import BASH, CMD, PS, build_verb_re
 
 # ── 搬移套 · 三型动词表(单一真源) ───────────────────────────────────────

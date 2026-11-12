@@ -23,13 +23,24 @@ registry_write — 写入Windows注册表键值
 
 import time as _time_mod
 import winreg
-from typing import Any, Callable, Dict, Optional  # 2026-07-31 小欧: 移除未使用 Optional; Dict 实际仍在使用, 已恢复 — 2026-09-20 小欧 E-2直线化: 恢复 Optional(_rollback_registry 形参 _backup_file)
+from typing import (  # 2026-07-31 小欧: 移除未使用 Optional; Dict 实际仍在使用, 已恢复 — 2026-09-20 小欧 E-2直线化: 恢复 Optional(_rollback_registry 形参 _backup_file)
+    Any,
+    Callable,
+    Dict,
+    Optional,
+)
 
 from app.logger import logger
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_REG_WRITE_FAILED, ERR_PARAMETER_INVALID
-from app.tools.win_registry.registry_read import _parse_path, _backup_registry, _validate_root_key, _restore_registry_from_backup  # 2026-07-31 小欧: 移除未使用 ROOT_KEY_MAP — 小欧 2026-09-20 E-2: 引入 _restore_registry_from_backup(写失败回滚)
+from app.tools.tool_constants import ERR_PARAMETER_INVALID, ERR_REG_WRITE_FAILED
+from app.tools.tool_response import build_error, build_success
 from app.tools.validate.registry_path_checker import validate_registry_key
+from app.tools.win_registry.registry_read import (  # 2026-07-31 小欧: 移除未使用 ROOT_KEY_MAP — 小欧 2026-09-20 E-2: 引入 _restore_registry_from_backup(写失败回滚)
+    _backup_registry,
+    _parse_path,
+    _restore_registry_from_backup,
+    _validate_root_key,
+)
+
 
 def _rollback_registry(_backup_file: Optional[str]) -> None:
     """写失败回滚(reg import 恢复写前快照) — 小欧 2026-09-20 E-2直线化(10大规范三堂会审):

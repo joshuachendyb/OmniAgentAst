@@ -61,24 +61,27 @@ r"""write_path_check — 写操作路径检查(写线)
 小欧 2026-10-15 建 / 2026-10-19 小欧 重写
 """
 
+import logging  # 2026-10-20 小欧 - 需授权明细日志引入
 from typing import Any, Dict, Optional, Tuple
 
-import logging                            # 2026-10-20 小欧 - 需授权明细日志引入
 logger = logging.getLogger(__name__)
 
-from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
 from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 写线判定改走名单+权限矩阵
-    classify_path,
-    permission_of,
-    SCOPE_TEXT,
-    SCOPE_FORBIDDEN_SYSTEM,
-    SCOPE_FORBIDDEN_NON_SYSTEM,
+    DENY,
     LINE_WRITE,
     PASS,
-    DENY,
+    SCOPE_FORBIDDEN_NON_SYSTEM,
+    SCOPE_FORBIDDEN_SYSTEM,
+    SCOPE_TEXT,
+    classify_path,
+    permission_of,
 )
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.safety.temp_auth import is_temp_authorized
-from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
+from app.utils.path_utils import (  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
+    check_preconditions,
+    reject_reason_empty_path,
+)
 
 WRITE_MODE = "write"
 

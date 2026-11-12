@@ -9,9 +9,12 @@
 import json
 from datetime import datetime, timedelta
 from typing import Optional
+
 from app.db import db
 from app.services.chat.storage import get_task_detail
-from app.utils.json_utils import safe_json_dumps   # 复用 SafeJSONEncoder: 裸 json.dumps 遇不可序列化值会整帧丢失
+from app.utils.json_utils import (
+    safe_json_dumps,  # 复用 SafeJSONEncoder: 裸 json.dumps 遇不可序列化值会整帧丢失
+)
 from app.utils.time_utils import get_local_iso_timestamp
 
 TERMINAL = ("completed", "failed", "cancelled")

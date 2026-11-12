@@ -72,6 +72,10 @@
 // 编辑历史: 2026-11-06 小欧 - 附件三入口(按钮/拖拽/粘贴)与素材包面板接入: 附件入口改插槽, 由本组件
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - chip 增能力徽标: useRefCapabilityMap(生效模型 ref_capability_map 只读索引)
+//   + CapabilityBadge, 查不到不显示 — 小欧-2026-11-11
+
 
 /**
  * ChatInput - 输入框组合根（六组件组合）
@@ -123,7 +127,7 @@ import type { ChipTone } from '@/features/refs/notice';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
-  MAX_REFS,
+  getMaxRefs,
   refLimitText,
   type ComposerRef,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
@@ -146,6 +150,12 @@ import {
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors } from '@/utils/stepStyles';
+// 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
+import {
+  chipCapState,
+  useRefCapabilityMap,
+} from '../hooks/useRefCapabilityMap';
+import { CapabilityBadge } from './input/CapabilityBadge';
 
 /** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
 const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
@@ -200,6 +210,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     add,
     setAll,
   } = useComposerRefs();
+  // 2026-11-11 小欧 - chip 能力徽标数据源(生效模型 ref_capability_map) — 小欧-2026-11-11
+  const capMap = useRefCapabilityMap(sessionId);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -612,7 +624,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     // 2026-10-30 小欧(D5): 限流必须在 add(pending 占位) 之前——原实现先 add 占位再限流,
     //   超限 return 后占位 chip 残留(pending:true) → refsPending=true 卡死发送闸门
     //   "引用内容仍在载入"; 设计 5.4.7"在入队前同限"由此达成(占位也是入队, 必须一并拦)。
-    if (refs.length >= MAX_REFS) {
+    if (refs.length >= getMaxRefs()) {
       showMessage(ErrorType.FILE_READ, refLimitText());
       return;
     }
@@ -759,6 +771,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             const notice = noticeOf(r, refNotices);
             const tone = CHIP_TONE_STYLE[chipToneOf(state)];
             const detail = noticeDetailText(notice);
+            // 2026-11-11 小欧 - 能力徽标状态(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
+            const capState = capMap ? chipCapState(capMap, r) : undefined;
             return (
               <span
                 key={r.id}
@@ -796,6 +810,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               >
                 <FileOutlined style={{ color: chatTokens.colorPrimary }} />
                 {r.label}
+                {/* 2026-11-11 小欧 - 能力徽标: 按 ref_capability_map[source][content] 只读索引 — 小欧-2026-11-11 */}
+                {capState && <CapabilityBadge state={capState} />}
                 {chipStateText(state, notice)}
                 {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
                 <button

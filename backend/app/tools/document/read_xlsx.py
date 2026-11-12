@@ -12,8 +12,8 @@
 #     为工作表名
 #   2. 内函数WindowsPath泄漏行83/176 str()化
 #   3. caller传str(path)合规标注行213/228
-# 2026-07-21 - 小欧 - 字节安全治理: 移除行数限制(INER_READ_XLSX_MAX_ROWS), 
-#    改为入口字节大小检查(READ_XLSX_INPUT_MAX_BYTES=20MB)防OOM; 
+# 2026-07-21 - 小欧 - 字节安全治理: 移除行数限制(INER_READ_XLSX_MAX_ROWS),
+#    改为入口字节大小检查(READ_XLSX_INPUT_MAX_BYTES=20MB)防OOM;
 #    内部函数默认max_rows=1000000(安全兜底不再触发truncated)
 # 2026-07-23 - 小欧 - 新增 Tool 层输出截断
 #    rows 超 XLSX_OUTLIMIT_ROWS_MAX=1000 截断 + data.truncated=True
@@ -48,14 +48,18 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional  # 2026-07-31 小欧: 移除未使用 List
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_type_checker import check_for_document_tool
-from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import (
     ERR_DOC_READ_XLSX,
-    XLSX_OUTLIMIT_ROWS_MAX, XLSX_OUTLIMIT_CELL_CHARS,
+    XLSX_OUTLIMIT_CELL_CHARS,
+    XLSX_OUTLIMIT_ROWS_MAX,
+)
+from app.tools.tool_fc_helper import _check_module
+from app.tools.tool_response import build_error, build_success
+from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.tools.validate.file_type_checker import check_for_document_tool
+from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
+    OpCategory,
+    check_path_four_level,
 )
 from app.utils.text_utils import truncate_summary
 

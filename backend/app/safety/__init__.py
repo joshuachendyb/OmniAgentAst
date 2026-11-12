@@ -15,66 +15,77 @@
 小欧 2026-07-10 拍平 file_safety/ 目录到 safety/
 """
 
-from app.safety.file_safety_config import FileSafetyConfig
-from app.safety.operation_record import (
-    collect_file_info, update_op_failed, record_operation,
-    execute_with_safety,
+from app.db.models.operation_models import OperationStatus, OperationType
+from app.db.operation_queries import (
+    get_operation,
+    get_operation_task_id,
+    get_session_operations,
+    query_animation_operations,
+    query_file_operations,
+    query_mermaid_operations,
+    query_sankey_operations,
+    query_tree_operations,
+    row_to_operation_record,
+)
+from app.safety.delete_path_check import check_delete_permission
+from app.safety.dual_path_check import (
+    check_dual_permission,
 )
 from app.safety.file_hasher import compute_file_hash
-from app.db.operation_queries import (
-    row_to_operation_record, get_operation, get_session_operations,
-    get_operation_task_id, query_file_operations, query_tree_operations,
-    query_sankey_operations, query_animation_operations, query_mermaid_operations,
-)
+from app.safety.file_safety_config import FileSafetyConfig
 from app.safety.operation_backup_rollback import (
     backup_to_recycle_bin,
-)
-from app.safety.operation_backup_rollback import (
-    rollback_operation, rollback_session,
+    rollback_operation,
+    rollback_session,
 )
 from app.safety.operation_maintenance import (
     cleanup_expired_backups,
 )
+from app.safety.operation_record import (
+    collect_file_info,
+    execute_with_safety,
+    record_operation,
+    update_op_failed,
+)
+
+# 2026-10-19 小欧 - 目录名单收口(v1.19 ): 包级转出收到与 path_dir_lists.__all__ 一致
+#   原先转出 22 个名字, 其中 12 个全库零使用; 且转出 build/get/get_or_build/ContextVar 等
+#   等于把"能绕过 loop 作用域拿到清单"的函数公开, 破坏"每 loop 构建一次"的约束。
+#   现只转出真正被外部调用的判定/作用域入口。
+from app.safety.path_dir_lists import (
+    CONFIRM,
+    DENY,
+    FORBIDDEN_SCOPES,
+    PASS,
+    PERMISSION,
+    SCOPE_FORBIDDEN_NON_SYSTEM,
+    SCOPE_FORBIDDEN_SYSTEM,
+    SCOPE_TEXT,
+    SYSTEM_PROTECTED_DIR_NAMES,
+    classify_path,
+    directory_lists_scope,
+    format_path,
+    permission_of,
+)
+
 # 2026-10-15 小欧 - 补新模块导出。
 #   路径检查九个模块此前一律走显式模块路径(from app.safety.path_legality_router import ...)未在包级导出;
 #   现按文档要求补齐, 便于外部统一从 app.safety 取用。
 # 2026-10-16 小欧 - tool去检查化: 删 validate_path_for_write/delete 别名导出(与工具层 for_* 同名不同义,
 #   实测全仓零外部使用); 改直挂 validate_read/write/delete 真名。
 from app.safety.path_legality_router import check_tool_path_permission
-# 2026-10-19 小欧 - 目录名单收口(v1.19 ): 包级转出收到与 path_dir_lists.__all__ 一致
-#   原先转出 22 个名字, 其中 12 个全库零使用; 且转出 build/get/get_or_build/ContextVar 等
-#   等于把"能绕过 loop 作用域拿到清单"的函数公开, 破坏"每 loop 构建一次"的约束。
-#   现只转出真正被外部调用的判定/作用域入口。
-from app.safety.path_dir_lists import (
-    classify_path,
-    format_path,
-    permission_of,
-    directory_lists_scope,
-    SYSTEM_PROTECTED_DIR_NAMES,
-    SCOPE_FORBIDDEN_SYSTEM,
-    SCOPE_FORBIDDEN_NON_SYSTEM,
-    FORBIDDEN_SCOPES,
-    SCOPE_TEXT,
-    PASS,
-    CONFIRM,
-    DENY,
-    PERMISSION,
-)
+
 # 2026-10-17  check_preconditions 已迁 app.utils.path_utils, 此处不再转出(禁 backward 再导出)
-from app.safety.read_path_check import validate_read, check_read_permission
-from app.safety.write_path_check import validate_write, check_write_permission
-from app.safety.delete_path_check import check_delete_permission
-from app.safety.dual_path_check import (
-    check_dual_permission,
-)
+from app.safety.read_path_check import check_read_permission, validate_read
+from app.safety.safety_result import SafetyResult
+
 # 2026-10-17 小欧 - DUAL_ACTION_PARAMS 表体已上移 tool_constants(与 DUAL_PATH_TOOLS 同层),
 #   本层不再转出(无外部消费方, 禁 backward 再导出); 消费方一律 from app.tools.tool_constants import。
 # 2026-10-16 小欧 - 删死导入(YAGNI): resolve_path_param 原在此 import 但不在 __all__,
 #   故 `from app.safety import *` 从来拿不到它; 实测全仓 3 处消费方一律走
 #   `dual_path_check.resolve_path_param` 模块限定调用, 无一处用顶层路径 —— 纯死导入, 删。
 from app.safety.shell_path_check import check_shell_permission
-from app.safety.safety_result import SafetyResult
-from app.db.models.operation_models import OperationType, OperationStatus
+from app.safety.write_path_check import check_write_permission, validate_write
 
 __all__ = [
     "FileSafetyConfig",

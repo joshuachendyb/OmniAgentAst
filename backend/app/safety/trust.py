@@ -30,12 +30,12 @@ trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过�
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
 from typing import Dict, Optional
-from app.tools.tools_alias_mapper import PARAM_ALIASES, normalize_tool_name
-from app.tools.tool_constants import NON_FILE_TRUST_TOOLS
+
 # 2026-10-14 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 归 tool_constants,
 #   _parse_paths 归 conflict_detector。本模块旧定义已删, 改由 import 解析(不留双份)。
 from app.tools.conflict_detector import _parse_paths
-
+from app.tools.tool_constants import NON_FILE_TRUST_TOOLS
+from app.tools.tools_alias_mapper import PARAM_ALIASES, normalize_tool_name
 
 # ════════════════════════════════════════════════════════════
 # 纯函数：路径解析（迁至 app/tools/conflict_detector.py — 文档[33] 4.11-C）
@@ -81,7 +81,7 @@ async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool
     信任预查第2步: 上游 safety_gate 预查, 下游总闸 skip_confirmation — 小欧-2026-10-14
     """
     from app.db import db
-    from app.safety.trust_db import get_session_id_by_task, check_session_trust
+    from app.safety.trust_db import check_session_trust, get_session_id_by_task
     try:
         _sid = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent_task_id))
     except Exception:
@@ -107,8 +107,8 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     HITL确认后落库, 供下次信任预查豁免 — 小欧-2026-10-14
     """
     from app.db import db
-    from app.safety.trust_db import get_session_id_by_task, insert_session_trust
     from app.logger import logger
+    from app.safety.trust_db import get_session_id_by_task, insert_session_trust
 
     def _do(conn):
         _sid = get_session_id_by_task(conn, task_id)

@@ -94,8 +94,6 @@ Author: 小沈 - 2026-05-27（原）；小欧 2026-07-12（补充统一说明）
 
 from typing import Dict, List, Optional
 
-from app.logger import logger
-
 
 def fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]:
     """

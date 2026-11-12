@@ -17,16 +17,19 @@
 # 2026-11-10 小欧 - 禁用5件套反馈: 命中 UNAVAILABLE_OFFICIAL_TOOLS 时不说"未注册", 点明全组5个均禁用勿再尝试, 防弱模型逐个试错
 # 2026-11-10 小欧 - 禁用名单配置化: 判定改经 is_disabled_tool + 全组提示按生效清单动态点数(读 config tuning.agent.disabled_tools, 缺键回落内置)
 # 2026-11-11 小欧 - 禁用工具反馈措辞改版: "禁止使用"→"已禁用"; 点名全组+给替代方式(question→直接向用户提问/execute→bash/skill、subagent、patch→已有工具组合), 勿再尝试合并一句
-from itertools import zip_longest
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from itertools import zip_longest
+from typing import Any, Dict, List
 
+from app.db.models.operation_models import OperationStatus
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ObservationStep
 from app.services.agent.observation_formatter import build_observation_text
-from app.tools.tools_alias_mapper import get_disabled_official_tools, is_disabled_tool  # 2026-11-10 小欧: 禁用名单配置化, 反馈点明生效全组
-from app.db.models.operation_models import OperationStatus
+from app.services.agent.steps import ObservationStep
+from app.tools.tools_alias_mapper import (  # 2026-11-10 小欧: 禁用名单配置化, 反馈点明生效全组
+    get_disabled_official_tools,
+    is_disabled_tool,
+)
 
 
 @dataclass

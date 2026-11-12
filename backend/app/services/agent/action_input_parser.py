@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from app.logger import logger
-from app.tools.registry import resolve_registered_tool  # 2026-10-17 小欧 - 认领(未注册识别)上移解析层
+from app.tools.registry import (
+    resolve_registered_tool,  # 2026-10-17 小欧 - 认领(未注册识别)上移解析层
+)
 from app.tools.tools_alias_mapper import normalize_params  # 2026-10-18 小欧 - 参数名归一前置
 
 

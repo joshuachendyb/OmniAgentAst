@@ -37,22 +37,18 @@ N1: httpget — 发起HTTP请求
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import asyncio
 import json
 import time as _time_mod
-import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import httpx
 import anyio  # 小欧 2026-08-26: 引入以识别对端提前断流的瞬时连接故障 anyio.EndOfStream
+import httpx
 
-from app.tools.tool_response import build_success, build_error
+from app.logger import logger
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
-from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
-from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.json_utils import coerce_json
-from app.logger import logger
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
@@ -60,11 +56,13 @@ from app.tools.tool_constants import (
     ERR_NETWORK_INVALID_PARAM,
     ERR_NETWORK_REQUEST_ERROR,
     ERR_NETWORK_TIMEOUT,
-    HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES,
     HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS,
+    HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES,
 )
-
-
+from app.tools.tool_response import build_error, build_success
+from app.tools.validate.timeout_validator import validate_timeout
+from app.tools.validate.url_validator import transcode_url, validate_proxy, validate_url
+from app.utils.json_utils import coerce_json
 
 
 def _build_http_request_llm_data(

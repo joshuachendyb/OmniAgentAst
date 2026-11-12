@@ -34,16 +34,18 @@ task_db — 任务DB持久化（tasks表 + operations表）
 
 import json
 import threading
-from app.utils.id_utils import generate_operation_id
-from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08: 全程统一本地时区, 本地ISO无Z入库
-from app.utils.time_utils import format_timestamp  # 小欧 2026-07-18: API 对外契约统一兜底
-from typing import Optional, Dict, Any, List
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from app.db import db
-from app.logger import logger
-from app.utils.json_utils import parse_json
 from app.db.models.operation_models import OperationStatus
+from app.logger import logger
+from app.utils.id_utils import generate_operation_id
+from app.utils.json_utils import parse_json
+from app.utils.time_utils import (
+    format_timestamp,  # 小欧 2026-07-18: API 对外契约统一兜底
+    get_local_iso_timestamp,  # 小欧 2026-08-08: 全程统一本地时区, 本地ISO无Z入库
+)
 
 
 class TaskStatus(str, Enum):

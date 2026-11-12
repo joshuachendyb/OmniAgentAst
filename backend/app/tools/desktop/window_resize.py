@@ -39,14 +39,23 @@ window_resize — 调整窗口大小
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import time as _time_mod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE, ERR_NO_WIN32GUI, ERR_INVALID_PARAMS  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量; 2026-08-13 #33: 补ERR_INVALID_PARAMS(空标题参数非法)
-
-from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: IsZoomed 缺失的公用替代
-from app.tools.desktop.window_info import check_win32_platform, find_windows_by_title, _win32gui, _win32con  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/局部import
 from app.logger import logger
+from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: IsZoomed 缺失的公用替代
+from app.tools.desktop.window_info import (  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/局部import
+    _win32con,
+    _win32gui,
+    check_win32_platform,
+    find_windows_by_title,
+)
+from app.tools.tool_constants import (  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量; 2026-08-13 #33: 补ERR_INVALID_PARAMS(空标题参数非法)
+    ERR_INVALID_PARAMS,
+    ERR_NO_WIN32GUI,
+    ERR_WINDOW_NOT_FOUND,
+    ERR_WINDOW_RESIZE,
+)
+from app.tools.tool_response import build_error, build_success
 from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 
 

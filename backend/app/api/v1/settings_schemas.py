@@ -6,6 +6,7 @@
   2026-11-09 - 小欧 - SchemaItem 补 hidden 透出(响应模型缺字段会把 registry 的 hidden 整个剥掉, 前端收不到)
 """
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
