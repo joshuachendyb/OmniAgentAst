@@ -92,3 +92,4 @@ export const BadgeRow = React.forwardRef<
     {children}
   </span>
 ));
+BadgeRow.displayName = 'BadgeRow';
