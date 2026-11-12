@@ -311,6 +311,13 @@ def main() -> None:
     _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
     _ensure_config(base)      # 确保 config/config.yaml 存在，再导入 app.* 模块
 
+    # 打包版: 创建 KILL_ON_JOB_CLOSE Job Object, 保证关 console 窗口时子进程树(shell 等)
+    #   随主进程自动终止, 不留孤儿锁 DLL(重新部署时 MSVCP140.dll 等被锁无法覆盖) — 小欧-2026-11-07
+    _job_handle = 0
+    if getattr(sys, "frozen", False):
+        from app.safety.sandbox.job_object import assign_current_to_kill_on_close_job
+        _job_handle = assign_current_to_kill_on_close_job()  # 保持引用防 GC 关闭句柄
+
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
     #   应用层原先自己读 FORWARDED_ALLOW_IPS 环境变量，与 uvicorn 各读一次可能不一致

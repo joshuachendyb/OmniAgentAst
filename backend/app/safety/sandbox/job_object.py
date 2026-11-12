@@ -6,6 +6,8 @@
 # 2026-10-08 - 小欧 - 补两项内核限额(纵深防御, 事故驱动): KILL_ON_JOB_CLOSE(句柄一关即杀全树, 防 exec 器崩溃留孤儿)
 #   + ACTIVE_PROCESS_LIMIT(默认 64, 堵 fork 炸弹); 实测 QueryInformationJobObject 读回 LimitFlags=0x2108 确认生效,
 #   限 1 时孙进程创建被内核拒绝。注意二者均不阻止子进程杀宿主进程, 那类由 shell_readonly 静态判定负责。 — 小欧-2026-10-08
+# 2026-11-07 - 小欧 - 新增 assign_current_to_kill_on_close_job(): 打包版 exe 顶层 Job Object,
+#   保证关 console 窗口时子进程树(shell 等)随主进程自动终止, 不留孤儿锁 DLL。— 小欧-2026-11-07
 import ctypes
 import subprocess
 from ctypes import wintypes
@@ -16,6 +18,7 @@ _JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
 _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000   # 2026-10-08 小欧 新增: Job 句柄一关即杀全树, 防 exec 器崩溃留孤儿
 _JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008     # 2026-10-08 小欧 新增: 限制树内并发进程数, 堵 fork 炸弹
 _JobObjectExtendedLimitInformation = 9   # JobObjectInformationClass 枚举值
+_JobObjectBasicLimitInformation = 2      # JobObjectInformationClass 枚举值(轻量限额只用 Basic 结构)
 
 # v1.21 Z7: 64位 HANDLE 截断防护 — ctypes 默认 restype=c_int 会截断 64 位句柄(经典坑), 全部显式声明
 _kernel32 = ctypes.windll.kernel32
@@ -29,6 +32,7 @@ _kernel32.TerminateJobObject.restype = wintypes.BOOL
 _kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
 _kernel32.CloseHandle.restype = wintypes.BOOL
 _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+_kernel32.GetCurrentProcess.restype = wintypes.HANDLE
 
 
 class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
@@ -106,3 +110,31 @@ class SandboxJob:
             _kernel32.CloseHandle(self._handle)
             logger.info("[sandbox][job] CloseHandle 释放 Job")
             self._handle = None
+
+def assign_current_to_kill_on_close_job() -> int:
+    """打包版 exe 顶层 Job Object: KILL_ON_JOB_CLOSE 保证主进程退出时子进程树自动终止。
+
+    用途: 关 console 窗口时 shell 子进程等随主进程退出, 不留孤儿锁 DLL。
+    机制: 当前进程 assign 入 Job → 子进程自动继承 → 主进程退出时 OS 回收句柄
+          → KILL_ON_JOB_CLOSE 触发 → 内核杀全部子进程树。
+    失败只 warning 不 crash(进程可能已在其他 Job Object 中, Windows 8+ 允许嵌套但旧版不允许)。
+    返回 Job Object 句柄, 调用方须保持引用防 GC 关闭句柄(句柄关闭即触发杀树)。— 小欧-2026-11-07
+    """
+    handle = _kernel32.CreateJobObjectW(None, None)
+    if not handle:
+        logger.warning(f"[job] CreateJobObjectW 失败: {ctypes.GetLastError()}")
+        return 0
+    info = JOBOBJECT_BASIC_LIMIT_INFORMATION()
+    info.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not _kernel32.SetInformationJobObject(
+            handle, _JobObjectBasicLimitInformation,
+            ctypes.byref(info), ctypes.sizeof(info)):
+        _kernel32.CloseHandle(handle)
+        logger.warning(f"[job] SetInformationJobObject 失败: {ctypes.GetLastError()}")
+        return 0
+    if not _kernel32.AssignProcessToJobObject(handle, _kernel32.GetCurrentProcess()):
+        _kernel32.CloseHandle(handle)
+        logger.warning(f"[job] AssignProcessToJobObject 失败(可能已在其他 Job 中): {ctypes.GetLastError()}")
+        return 0
+    logger.info("[job] 当前进程已收编入 KILL_ON_JOB_CLOSE Job, 子进程将随主进程退出自动终止")
+    return handle
