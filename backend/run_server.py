@@ -315,8 +315,8 @@ def main() -> None:
     #   随主进程自动终止, 不留孤儿锁 DLL(重新部署时 MSVCP140.dll 等被锁无法覆盖) — 小欧-2026-11-07
     _job_handle = 0
     if getattr(sys, "frozen", False):
-        from app.safety.sandbox.job_object import assign_current_to_kill_on_close_job
-        _job_handle = assign_current_to_kill_on_close_job()  # 保持引用防 GC 关闭句柄
+        from app.utils.win_job_object import assign_current_to_kill_on_close_job
+        _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
 
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
