@@ -15,9 +15,13 @@ Author: 小沈 - 2026-05-29
 #   供 httpget/fetch_webpage/download 三个网络工具复用(原各自手写isinstance分支, DRY统一)
 # 2026-08-12 - 小欧 - _validate_redirect 新增 InvalidURL 抛出的文案标识前缀 "重定向目标被拦截", 供 is_ssrf_blocked_error 语义识别
 # 2026-10-26 - 小沈 - download方法增强: 支持headers/content_type/大小限制/清理, 合并download_file._stream_download重复逻辑(DRY)
+# 2026-11-12 - 小欧 - check_network 从 network_register.py 移入: network_register 导入 download/fetchpage/httpget 形成循环导入,
+#   check_network 被三者引用故反向依赖; 移至 http_client_sdk(不参与循环) 消除根因(SRP: 注册点不承担网络检查职责)
 
 import os
-from typing import Dict, Optional, Tuple
+import socket
+import time
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
 import httpx
@@ -35,6 +39,29 @@ from app.tools.validate.url_validator import validate_url
 
 # SSRF重定向拦截文案标识 — 小欧 2026-08-12 (_validate_redirect 抛出的 InvalidURL 统一带此前缀)
 _SSRF_REDIRECT_MARK = "重定向目标被拦截"
+
+
+def check_network() -> Dict[str, Any]:
+    """检查网络连通性 — 小欧 2026-06-24 从3个文件中提取公共函数; 2026-11-12 从 network_register 移入此处消除循环导入"""
+    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
+    for host, port in test_hosts:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            t1 = time.time()
+            sock.connect((host, port))
+            latency = (time.time() - t1) * 1000
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
+        except (socket.timeout, socket.error, OSError):
+            pass
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+    return {"connected": False}
 
 
 def is_ssrf_blocked_error(error: Exception) -> Optional[dict]:
