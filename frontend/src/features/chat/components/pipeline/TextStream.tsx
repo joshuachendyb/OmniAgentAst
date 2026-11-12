@@ -94,6 +94,7 @@ const TextStream: React.FC<TextStreamProps> = ({
       <MarkdownSlot
         text={clean.slice(0, typing ? shown : clean.length)}
         markdown={markdown}
+        scene="chat"
       />
       {/* 2026-11-03 小欧 - 蓝波纹光标留在句尾不动, 只把钟面拆走(计时归顶栏) — 小欧-2026-11-03 */}
       {cursor && typing && <ActionWaitingIcon />}{' '}

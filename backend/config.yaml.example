@@ -533,6 +533,11 @@ media:
 #       (开=显示代码变更对比; 关=隐藏Diff视图)
 # 四个开关互不干涉: 各自控制独立渲染维度 — 小欧-2026-10-26
 appearance:
+  # 阅读区字号(px): 只作用长文阅读区(文件预览 md 美显 / 设置页说明弹框), 可选 12/14/16;
+  #   不影响流水线正文与任务卡回复区。缺省 14。
+  fontSize: 14
+  # 界面密度: comfortable(舒适, 默认) / compact(紧凑) —— 控件高与阅读区间距, 不改字号。
+  density: comfortable
   step_render:
     thoughtMarkdown: true
     reasoningVisible: true

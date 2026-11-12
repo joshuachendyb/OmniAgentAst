@@ -426,7 +426,18 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               options=["zh-CN", "en-US"], restart=True),
         _item("app.theme", "readonly", "主题", "light", readonly=True,
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
-        _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
+        # 2026-11-12 小欧 - **阅读区字号**(文档[31] §4.2/§4.3/§7.1 定案):
+        #   label 明确「阅读区」, notice 写清作用范围(只管长文阅读区, 不影响流水线正文与任务卡);
+        #   range 收窄为 [12,16] step 2 —— 三档全落在全局字号阶梯上, 不产生 13/15 这类游离半档
+        #   (13px 当年被废正是因半档游离)。已存的越界/非阶梯值由读取侧钳制(夹紧 + 向下吸附)。
+        _item("appearance.fontSize", "range", "阅读区字号(px)", 14, range_=[12, 16], step=2,
+              notice="长文阅读区的正文档位（文件预览的 Markdown 美显、设置页说明弹框），可选 12 / 14 / 16 三档。不影响流水线正文与任务卡回复区（那两处是信息流，节奏固定）。"),
+        # 2026-11-12 小欧 - **界面密度**(文档[31] §4.2/§7.1 定案): 全局密度, 管控件高与排布松紧。
+        #   此前前端 useSettings 引用了 appearance.density 但 registry 无此键 → 彻底死分支(永不触发);
+        #   本次正式注册, 前端写入侧零改动即自动生效(键名沿用 localStorage 的 density 字段)。
+        _item("appearance.density", "select", "界面密度", "comfortable",
+              options=["comfortable", "compact"],
+              notice="全局排布松紧：紧凑 = 控件更矮、阅读区间距更紧；舒适 = 默认。字号与流水线正文节奏不受此影响。"),
         # 2026-10-05 小欧 - step 渲染显示选项(两个独立开关):
         #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"归组吞掉;
         #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节

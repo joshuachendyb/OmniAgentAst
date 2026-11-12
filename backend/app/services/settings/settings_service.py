@@ -124,6 +124,29 @@ def app_version() -> str:
     return "0.0.0"
 
 
+def _clamp_range_value(item: Dict[str, Any], value: Any) -> Any:
+    """range 项的读取侧钳制(文档[31] §7.1 定案):
+    ① 先夹紧到 [lo, hi]; ② 再**向下吸附**到最近合法档(13→12、15→14)。
+    取"向下"而非"就近"是**不放大**用户已表达的意图(选了 13 落到 12 比落到 14 更保守)。
+
+    仅对 **step > 1** 的 range 项生效 —— 即"档位型"滑块(当前只有 appearance.fontSize:
+    12/14/16 三档)。step=1 的连续型 range 项不吸附(其合法值本就是整数网格, 夹紧已足够)。
+    落库路径另有 _validate_value 的严格校验(越界/步长不符直接拒写), 故本函数只处理
+    **历史已存**的越界值 —— 契约变更(收窄 range)不该让老配置直接失效。
+    """
+    if item.get("type") != "range" or not item.get("range"):
+        return value
+    step = item.get("step") or 1
+    if step <= 1 or not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    lo, hi = item["range"]
+    clamped = min(max(float(value), float(lo)), float(hi))
+    # 向下吸附: 取不超过 clamped 的最大合法档
+    steps = int((clamped - float(lo)) / step)
+    snapped = float(lo) + steps * step
+    return int(snapped) if snapped == int(snapped) else snapped
+
+
 def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any, str]:
     if key == "config_path":
         return str(get_config_path()), "ro"
@@ -155,6 +178,9 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         raw_val = _get_dotted(raw, key, item["default"])
         return (raw_val if raw_val is not None else item["default"]), "ro"
     raw_val = _get_dotted(raw, key, item["default"])
+    # 2026-11-12 小欧 - 档位型 range 项读取侧钳制(夹紧 + 向下吸附), 见 _clamp_range_value 说明。
+    #   位置在此处(读回 raw 之后): 只影响**展示值**, 落盘值不动(用户下次保存即被规范化)。
+    raw_val = _clamp_range_value(item, raw_val)
     # 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) YAML 存 list，读回拼回多行供 SettingRow 文本框显示
     if item["type"] == "textarea" and isinstance(raw_val, list):
         raw_val = "\n".join(str(x) for x in raw_val)

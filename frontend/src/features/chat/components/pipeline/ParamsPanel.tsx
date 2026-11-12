@@ -202,6 +202,10 @@ const VIEW_OPTIONS = [
  * 面板头控件统一盒: 与 antd `Segmented size="small"` 同高(controlHeightSM=24)。
  * 2026-10-13 小欧 - 实测截图: Segmented 24px / CopyButton≈20px / ✕≈16px 三者直接并排,
  *   顶端与底端都不齐, 观感粗糙。统一包成 24px 居中盒后三者基线对齐(内容居中, 盒高一致)。
+ * 2026-11-12 小欧 - 流水线零变化锚点(文档[32]): 24 不再是「碰巧等于 antd 由 32 派生的
+ *   controlHeightSM」, 而是**根 ConfigProvider 显式钉死**的全站 small 档值(24/28/32 阶梯的
+ *   小档, 两档密度同值)。故无论密度怎么切, 本盒与 Segmented 恒为 24 → 流水线像素零变化;
+ *   若放任 antd 派生(基线 28 → small 21px), 本盒与 Segmented 会一起被拖到 21, 流水线即变形。
  */
 const HEADER_CTRL_BOX: React.CSSProperties = {
   display: 'inline-flex',

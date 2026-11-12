@@ -109,6 +109,9 @@ import CountdownRing from './CountdownRing';
 //   在 flex 行里会被挤折行），字重直接给数值 600，与原 h5 视觉一致。
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
 import { norm } from '@/utils/projectPath';
+// 2026-11-12 小欧 - 字号走全局阶梯令牌: 工具名「值」用 PRIMARY(14), 必大于其 12px label
+//   (原为 13px 裸值 —— 游离半档, 且与 label 只差 1px 层级本就没拉开)
+import { FontSize } from '@/utils/stepStyles';
 
 // 2026-10-11 03:30 小欧 - Title 已彻底不用（03:05 起标题自绘 span），同步摘除解构避免死变量告警
 const { Text } = Typography;
@@ -545,7 +548,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
             工具名称:
           </Text>
-          <Text strong style={{ fontSize: 13, color: '#1677ff' }}>
+          <Text strong style={{ fontSize: FontSize.PRIMARY, color: '#1677ff' }}>
             {request.toolName}
           </Text>
           {paramsStr && (

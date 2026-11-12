@@ -65,7 +65,7 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
                           = 把 MarkdownText 里刚删掉的同一坏行为搬回来, 故不折叠);
           markdown=false → **保留原 CollapsibleText 长文折叠**, 与本次改动前逐字一致, 零退化。 */}
       {markdown ? (
-        <MarkdownSlot text={clean} markdown />
+        <MarkdownSlot text={clean} markdown scene="chat" />
       ) : (
         <CollapsibleText text={clean} />
       )}

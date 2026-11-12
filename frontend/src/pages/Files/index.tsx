@@ -145,10 +145,14 @@ import { Spacing, Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 // 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
 //   设置页设计令牌——控件高 28/圆角 4（taskTokens 推导与依据见 settingsTokens 注释）
-import {
-  SETTINGS_CONTROL_HEIGHT,
-  SETTINGS_RADIUS,
-} from '@/theme/settingsTokens';
+// 2026-11-12 小欧 - 控件高改随界面密度(文档[32] 全站控件刻度统一): 本页 ConfigProvider
+//   原硬写 controlHeight=28, 会**覆盖**根下发的密度值 → 密度对本页无效。
+//   现统一读 pageControlTokens(density): 控件高取全站刻度(normal 随密度), 圆角取本页
+//   逐页审计结论(全档 4, 须显式补发 LG, 否则继承全局 8)。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
+import { pageControlTokens } from '@/theme/controlScale';
+import type { AppearanceDensity } from '@/constants/appearancePrefs';
+import type { ThemeConfig } from 'antd';
 
 // 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook
 import { useFilesTree } from '@/features/files/hooks/useFilesTree';
@@ -161,15 +165,21 @@ const MAX_LEFT_W = 360;
 const EXT_KEY = '__ext__';
 
 /** 2026-10-21 小杨 - 控件规格统一：设置页同款常量（控件高 28 / 圆角 4）
- *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算 */
-const PAGE_THEME = {
-  token: {
-    controlHeight: SETTINGS_CONTROL_HEIGHT,
-    controlHeightSM: SETTINGS_CONTROL_HEIGHT,
-    borderRadius: SETTINGS_RADIUS,
-    borderRadiusSM: SETTINGS_RADIUS,
-  },
-} as const;
+ *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算
+ *  —— 2026-11-12 小欧 - 控件高改随界面密度(文档[32]): 原硬写 28 会覆盖根下发的密度值 →
+ *     密度对本页无效；改为读全站刻度 pageControlTokens(density), 与设置页同一口径。
+ *     theme 对象按密度缓存(仍不在 render 内新建, 保持全树不重算)。 */
+const PAGE_THEME = (
+  density: AppearanceDensity
+): ThemeConfig => ({
+  token: pageControlTokens(density),
+});
+
+/** theme 对象按密度缓存(避免每次 render 新建 → ConfigProvider 全树重算) */
+const PAGE_THEME_CACHE: Record<AppearanceDensity, ThemeConfig> = {
+  comfortable: PAGE_THEME('comfortable'),
+  compact: PAGE_THEME('compact'),
+};
 
 /** 定位输入（自带草稿与错误态）：输入过程只重绘本组件，不惊动树/预览 */
 const LocateBox: React.FC<{
@@ -304,6 +314,11 @@ const SplitPane: React.FC<{
 
 const FilesPage: React.FC = () => {
   const nav = useNavigate();
+  // 2026-11-12 小欧 - 密度接线(文档[32]): 本页原把 theme 写成模块级常量对象,
+  //   既不随密度变化(PAGE_THEME_CACHE 建了却从未被消费), 又把控件高写死 28。
+  //   现读运行时密度 → 取按密度缓存的 theme 对象(缓存命中即同一引用, 不触发全树重算)。
+  const { density } = useAppearancePrefs();
+  const pageTheme = PAGE_THEME_CACHE[density];
   const [params] = useSearchParams();
   // 2026-11-02 小欧 - 删两处死代码：locationState（(nav as any) ? undefined : undefined 的空壳）
   //   与模块级 navState —— 后者与深链 effect 内局部 state 读取重复，且从未被引用 — 小欧-2026-11-02
@@ -958,7 +973,7 @@ const FilesPage: React.FC = () => {
 
   if (rootErr) {
     return (
-      <ConfigProvider theme={PAGE_THEME}>
+      <ConfigProvider theme={pageTheme}>
         <Result
           status="error"
           title="工作目录不可用"
@@ -970,7 +985,7 @@ const FilesPage: React.FC = () => {
   }
 
   return (
-    <ConfigProvider theme={PAGE_THEME}>
+    <ConfigProvider theme={pageTheme}>
       <div
         style={{
           padding: Spacing.MD,

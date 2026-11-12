@@ -27,7 +27,7 @@ import {
 import { LogoGridIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
 import { showMessage, ErrorType } from '@/services/error/handler';
-import { Colors, Spacing, Size } from '../../utils/stepStyles';
+import { Colors, FontSize, Spacing, Size } from '../../utils/stepStyles';
 
 type MenuItem = Required<MenuProps>['items'][number];
 
@@ -213,8 +213,9 @@ const NavContent: React.FC<{
               : `${Spacing.XL}px ${Spacing.XXL}px`,
           // 2026-11-02 小欧 - 收口: #e8e8e8=Colors.BORDER.VERTICAL(同值零视差) — 小欧-2026-11-02
           borderTop: `1px solid ${Colors.BORDER.VERTICAL}`,
-          // 13px保留裸值: FontSize令牌二档14/12, 换任一即变视觉, 无同值可替 — 小欧-2026-11-02
-          fontSize: 13,
+          // 2026-11-12 小欧 - 归位 SECONDARY(12): 侧栏底部「关于/版本」触发条属低频次要信息,
+          //   归次要正文档。原 13px 裸值是「当年只有 14/12 二档、无同值可替」的妥协, 随阶梯扩充而失效
+          fontSize: FontSize.SECONDARY,
           color: Colors.TEXT.MUTED,
           background: Colors.BG.SECONDARY,
           textAlign: isMobile || collapsed ? 'center' : 'left',

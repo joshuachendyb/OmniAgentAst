@@ -595,93 +595,219 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   编辑历史: 2026-10-11 小欧 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式。
-   只作用于安全Tab 两个说明弹框(安全策略说明/读写判定流程)的 Markdown 渲染结果,
-   不影响全局 MarkdownText(thought/答复/任务列表共用)。
+   Markdown 排版作用域(.md-body) —— 2026-11-12 小欧
+   替换原 .doc-body 块(607-685)。原块是**死规则**: MarkdownText 全部用内联 style 书写,
+   类选择器被内联压死(仅 th/td 的 !important 侥幸生效) —— 双真源 + 伪实现。
+   本块为**唯一排版真源**: 所有数字由 utils/markdownStyles.ts 解算成 --md-* CSS 变量注入,
+   本处只消费变量, 不写字号/间距数字 → 单一真源, 永不再出现「类样式被内联压死」。
+   场景差异(取哪几档/装饰取舍)全部落在 TS 侧, CSS 侧零分支。
 
    ⚠️ 铁律: 只依赖 markdown **结构标签**(h2/ol/ul/code/p/strong), 零文本假设 ——
       后端 .md 改措辞/增删条目/改代码名, 样式都跟着结构走, 不会失效(北京老陈 2026-10-11)。
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* 章节标题(一、二、三): 与正文拉开层级, 底部细分隔线便于扫读跳转 */
-.doc-body h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #262626;
-  margin: 24px 0 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f0f0f0;
-  line-height: 26px;
-}
-.doc-body h2:first-child {
-  margin-top: 0;
+/* 根容器: 正文最大行宽 40em(中文一行超约 40 字即回行困难); 超宽时左对齐不居中 */
+.md-body {
+  white-space: normal;
+  font-size: var(--md-fs-body);
+  line-height: var(--md-lh-body);
+  color: var(--md-color-text);
+  max-width: var(--md-measure);
 }
 
-/* 三级标题: 比 h2 小一档, 保持层级 */
-.doc-body h3 {
-  font-size: 15px;
+/* 引用块: 浅底 + 左线(阅读区); 流水线仅左线(背景变量为 transparent) */
+.md-body blockquote {
+  margin: var(--md-gap-para) 0;
+  padding: var(--md-pad-quote-y) var(--md-pad-quote-x);
+  border-left: var(--md-border-w-thick) solid var(--md-color-quote-bar);
+  background: var(--md-color-quote-bg);
+  color: var(--md-color-text);
+}
+
+.md-body hr {
+  border: none;
+  border-top: var(--md-border-w) solid var(--md-color-divider);
+  margin: var(--md-gap-para) 0;
+}
+
+/* 代码块: 四边整框 + 圆角 + 浅底; 框线图的 1.1 行高由渲染层加内联 class 兜住
+   ⚠ 2026-11-12 小欧 - 代码块的**行为**属性(white-space/word-break/max-height/overflow,
+     即 P3「横向滚动而非折行」)不在此声明: max-height 400px 是数字, 写在 CSS 即违[30]
+     「数字与颜色只在 TS 一处」; 且与渲染层内联那份构成双源(类样式被内联压死的老病)。
+     现由 utils/markdownStyles 的 codeBlockStyle 单点给出(值完全一致 → 视觉零变化)。 */
+.md-body pre {
+  margin: var(--md-gap-para) 0;
+  padding: var(--md-pad-code-y) var(--md-pad-code-x);
+  border: var(--md-border-w) solid var(--md-color-border);
+  border-radius: var(--md-radius);
+  background: var(--md-color-code-block-bg);
+  font-family: var(--md-font-mono);
+  font-size: var(--md-fs-code-block);
+  line-height: var(--md-lh-code-block);
+  position: relative;
+}
+.md-body pre code {
+  padding: 0;
+  border-left: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  font-size: inherit;
+}
+/* 链接: 去 break-all(长 URL 被拦腰截断), 改 overflow-wrap 正常断行 */
+.md-body a {
+  color: var(--md-color-link);
+  text-decoration: underline;
+  overflow-wrap: break-word;
+}
+/* 图片: 限宽 + 圆角(缺陷 #7) */
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--md-radius);
+}
+/* 选中态: 替换浏览器默认蓝底, 与浅色体系一致 */
+.md-body ::selection {
+  background: var(--md-color-selection-bg);
+  color: var(--md-color-selection-fg);
+}
+/* 焦点态: 保留浏览器默认 focus ring(不覆盖, 避免可见性回退), 也不设 outline:none */
+/* 滚动条可见性: Windows 默认 overlay 滚动条静止时不可见 → 用户看不出右侧还有内容 */
+.md-body pre,
+.md-body .md-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #bfbfbf transparent;
+}
+.md-body .md-table-scroll {
+  overflow-x: auto;
+  margin: var(--md-gap-para) 0;
+}
+/* 隔行斑马: 仅 preview(长表横滚时纵向定位靠斑马辅助) */
+.md-preview tbody tr:nth-child(even) td {
+  background: var(--md-color-zebra);
+}
+
+/* 章节标题: 与正文拉开层级, 底部细分隔线便于扫读跳转 */
+.md-body h1 {
+  font-size: var(--md-fs-h1);
   font-weight: 600;
-  color: #333333;
-  margin: 16px 0 8px;
-  line-height: 22px;
+  color: var(--md-color-title);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
+  padding-bottom: var(--md-gap-head-bottom);
+  border-bottom: var(--md-h1-divider);
+  letter-spacing: -0.01em;
+}
+.md-body h2 {
+  font-size: var(--md-fs-h2);
+  font-weight: 600;
+  color: var(--md-color-title);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
+  padding-bottom: var(--md-h2-divider-pad);
+  border-bottom: var(--md-h2-divider);
+  letter-spacing: -0.01em;
+}
+.md-body h3 {
+  font-size: var(--md-fs-h3);
+  font-weight: 600;
+  color: var(--md-color-title);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
+  letter-spacing: -0.01em;
+}
+/* h4/h5/h6 一律不再缩小字号, 只用字重+字色三层递减(600 STRONG → 500 PRIMARY → 400 PRIMARY) */
+.md-body h4 {
+  font-size: var(--md-fs-h4);
+  font-weight: 600;
+  color: var(--md-color-title);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
+}
+.md-body h5 {
+  font-size: var(--md-fs-h5);
+  font-weight: 500;
+  color: var(--md-color-title-soft);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
+}
+.md-body h6 {
+  font-size: var(--md-fs-h6);
+  font-weight: 400;
+  color: var(--md-color-title-soft);
+  margin: var(--md-gap-head-top) 0 var(--md-gap-head-bottom);
 }
 
 /* 段落: 行高与间距给呼吸感(原默认偏挤) */
-.doc-body p {
-  line-height: 1.7;
-  margin: 8px 0;
-  color: #595959;
+.md-body p {
+  line-height: var(--md-lh-body);
+  margin: var(--md-gap-para) 0;
+  color: var(--md-color-text);
+  /* 渐进增强: 减少段末孤字; 不支持的浏览器忽略该属性, 行为不变 */
+  text-wrap: pretty;
 }
 
 /* 有序列表: 条目间距 + 行高, 密集规则可读 */
-.doc-body ol {
-  margin: 8px 0;
-  padding-left: 24px;
+.md-body ol {
+  margin: var(--md-gap-para) 0;
+  padding-left: var(--md-indent);
 }
-.doc-body ol > li {
-  line-height: 1.7;
-  margin: 10px 0;
-  padding-left: 4px;
-  color: #595959;
+.md-body ol > li {
+  line-height: var(--md-lh-body);
+  margin: var(--md-gap-list) 0;
+  color: var(--md-color-text);
 }
 
 /* 无序列表(子项): 缩进 + 圆点, 与有序列表区分层级 */
-.doc-body ul {
-  margin: 6px 0;
-  padding-left: 20px;
+.md-body ul {
+  margin: var(--md-gap-para) 0;
+  padding-left: var(--md-indent);
   list-style: disc;
 }
-.doc-body ul > li {
-  line-height: 1.6;
-  margin: 6px 0;
-  color: #595959;
+.md-body ul > li {
+  line-height: var(--md-lh-body);
+  margin: var(--md-gap-list) 0;
+  color: var(--md-color-text);
 }
 
-/* 行内代码: 浅蓝底 + 左侧品牌色竖线 + 等宽字体, 技术术语从正文里跳出来 */
-.doc-body code {
-  /* 2026-10-22 小欧 - 字体栈改引 CSS 变量 --font-mono(与 TS 侧 FontFamily.MONO 同一份栈, 避免两处各写一套) */
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  background: #e6f4ff;
-  color: #1677ff;
-  border-left: 2px solid #69b1ff;
+/* 行内代码: 浅灰底 + 深色字(对比约 11.7:1, 远超 AA) + 2px 品牌色左线作品牌标识 */
+.md-body code {
+  font-family: var(--md-font-mono);
+  font-size: var(--md-fs-inline-code);
+  background: var(--md-color-code-bg);
+  color: var(--md-color-code);
+  border-left: var(--md-border-w-thick) solid var(--md-color-code-accent);
   padding: 1px 5px;
-  border-radius: 3px;
-  word-break: break-all;
+  border-radius: var(--md-radius);
 }
 
 /* 加粗: 关键动作结论(直接执行/直接拒绝/转 HITL)从文字中跳出来 */
-.doc-body strong {
+.md-body strong {
   font-weight: 600;
-  color: #262626;
+  color: var(--md-color-title);
 }
 
-/* 2026-10-11 小欧 北京老陈令「表线要看得见」: 表格边框从几乎不可见的 #f0f0f0
-   加深到 #d9d9d9。MarkdownText 的 th/td 是内联样式, CSS 类优先级不够, 故用 !important。
-   仅作用于 .doc-body(安全Tab弹框), 不影响全局 markdown 表格。 — 小欧-2026-10-11 */
-.doc-body th,
-.doc-body td {
-  border: 1px solid #d9d9d9 !important;
+/* 表格: 表线 #d9d9d9(取代几乎不可见的 #f0f0f0), 表头浅底 + STRONG 字 */
+.md-body table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--md-fs-table);
+}
+.md-body th {
+  border: var(--md-border-w) solid var(--md-color-border);
+  padding: var(--md-pad-cell-y) var(--md-pad-cell-x);
+  text-align: left;
+  font-weight: 500;
+  color: var(--md-color-title);
+  background: var(--md-color-table-head-bg);
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.md-body td {
+  border: var(--md-border-w) solid var(--md-color-border);
+  padding: var(--md-pad-cell-y) var(--md-pad-cell-x);
+  color: var(--md-color-text);
+  overflow-wrap: anywhere;
+}
+/* 数字列: 右对齐 + 等宽数字(列内小数点对齐) */
+.md-body td.md-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ════════════════════════════════════════════════════════════════════

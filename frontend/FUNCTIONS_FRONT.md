@@ -3,8 +3,8 @@
 **创建时间**: 2026-09-23 14:19:12
 **编写人**: 小欧
 **维护人**: 小欧
-**最后更新时间**: 2026-11-10
-**最近更新**: 2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最后更新时间**: 2026-11-12
+**最近更新**: 2026-11-12 小欧 §1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -59,7 +59,20 @@
 |--------|------|------|--------|
 | `chatTokens` | 聊天域令牌（settingsTokens 派生源之一） | — | 对象 |
 
-### 1.4 时间处理（time.ts）
+
+### 1.4 控件刻度（theme/controlScale.ts，全站控件规格唯一真源）
+
+| 导出名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `CONTROL_HEIGHT` | 控件高三档 × 两档密度（舒适 24/28/32、紧凑 24/24/28）——控件规格唯一定义点，禁沿用 UI 库缺省值/派生值 | — | 对象 |
+| `CONTROL_RADIUS` | 全局圆角三档（sm4/normal6/lg8，取自 stepStyles 的 Radius 阶梯） | — | 对象 |
+| `PAGE_RADIUS_FLAT` | 页面级圆角全档 4（设置页/文件页/事项工作区面板逐页审计结论） | — | 对象 |
+| `CONTROL_HEIGHT_SM` | 小档控件高 24（两档密度同值，贴「文字不被压」22px 底线；流水线零变化锚点） | — | number |
+| `controlHeightByDensity` | 取某密度下的控件高三档 | density | `{small, normal, large}` |
+| `controlScaleTokens` | 根 ConfigProvider 的控件规格 token 组（控件高 3 档 + 圆角 3 档，全部显式下发） | density | 对象 |
+| `pageControlTokens` | 页面级控件规格 token 组（normal 随密度、small 与 normal 齐平、圆角全档 4） | density | 对象 |
+
+### 1.5 时间处理（time.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -71,27 +84,27 @@
 | `formatDebugTime` | 调试时间戳（sseParser 等复用） | 无 | string |
 | `probeMsText`（settings2/mediaProbeText.ts） | 探测腿毫秒转人话（485ms→"485 ms"，33200→"33.2 s"，null→""）；②图片能力验证 tip 复用 | number \| null \| undefined | 2026-11-09 |
 
-### 1.5 文本规约（textNormalize.ts）
+### 1.6 文本规约（textNormalize.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `normalizeBlankLines` | 空行规约：连续空行折叠为一个，段首尾 trim，幂等；与后端 `normalize_blank_lines` 同一张规则表（见 backend/FUNCTIONS.md 1.7） | text: string | string |
 
-### 1.6 视图派生（viewState.ts）
+### 1.7 视图派生（viewState.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `computeTaskActive` | 任务活跃判定提纯（streaming/highlight/badge 统一入口） | 状态入参 | boolean |
 | `computeIsCurrentLive` | 是否当前直播任务判定提纯 | ComputeIsCurrentLiveArgs | boolean |
 
-### 1.7 剪贴板/客户端（clipboard.ts / clientInfo.ts）
+### 1.8 剪贴板/客户端（clipboard.ts / clientInfo.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `copyTextToClipboard` | 剪贴板复制（异常兜底） | text: string | Promise<void> |
 | `getClientInfo` / `getClientOS` / `isMobile` | 客户端信息/系统/移动端判定 | 无 | ClientInfo/string/boolean |
 
-### 1.8 日志样式（logStyles.ts，console 调试日志统一出口）
+### 1.9 日志样式（logStyles.ts，console 调试日志统一出口）
 
 | 导出名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -101,7 +114,22 @@
 | `logAIComplete` / `logAIError` / `logUserSend` / `logHistoryLoad` | AI 完成/失败/用户发送/历史加载日志 | 各字段 | void |
 | `logDebug` / `logError` | 通用调试/错误日志 | label, data/error | void |
 
-### 1.9 内容变换与历史（markdown.tsx / searchTransformers.ts / stepContentUtils.ts / chatHistory.ts / sessionStorage.ts / chatMessages.ts）
+
+### 1.10 Markdown 排版解算与外观偏好（utils/markdownStyles.ts / constants/appearancePrefs.ts / hooks/useAppearancePrefs.ts）
+
+| 导出名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `mdStyles` | Markdown 排版唯一解算点：按场景×正文档位×密度解出 CSS 变量与场景 class（文档[30]） | scene, base?, density? | `{vars, rootClass, codeLineHeight, decorations}` |
+| `DENSITY_PAD` | 密度→阅读区间距系数（comfortable 1 / compact 0.75）——**全仓唯一定义点** | — | 对象 |
+| `codeBlockStyle` | 代码块行为样式（P3 横向滚动：whiteSpace/wordBreak/overflow/maxHeight）——唯一真源，CSS 侧不重复声明 | — | 对象 |
+| `codeFenceLineHeight` | 围栏行高判定（含框线字符的取 1.1，其余取场景值） | content, fallback | number |
+| `isNumericCell` | 表格数字列判定（走 tabular-nums 等宽数字） | 单元格文本 | boolean |
+| `APPEARANCE_FONT_SIZES` / `APPEARANCE_DENSITIES` | 外观偏好合法档位（字号 12/14/16、密度 comfortable/compact）——**密度词表唯一真源** | — | 数组 |
+| `AppearanceDensity` | 密度档位类型（由 `APPEARANCE_DENSITIES` 派生，不另写字面量联合） | — | 类型 |
+| `clampFontSize` / `clampDensity` | 偏好值钳制：字号夹紧后向下吸附到合法档；密度非法值回落默认 | unknown | number / AppearanceDensity |
+| `useAppearancePrefs` | 读取外观偏好并订阅变更（同标签页事件 + 设置保存广播 + 跨标签页 storage 事件） | — | `{fontSize, density}` |
+
+### 1.11 内容变换与历史（markdown.tsx / searchTransformers.ts / stepContentUtils.ts / chatHistory.ts / sessionStorage.ts / chatMessages.ts）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -299,3 +327,5 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.0 | 2026-09-23 14:19:12 | 初始版本：登记全局层（utils 1.1–1.9/theme 令牌）、服务层（api 簿 2.1–2.4/error handler 2.5）、通用组件层、通用 Hooks 层、settings2 特征层（modelUtils/icons/useSettings 契约）；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序语义、resetParams 联合置脏） | 小欧 |
 | v1.1 | 2026-11-02 | 探活口径收敛：删 utils/network.ts（checkNetworkConnection，名"网络检查"实为后端健康检查），改为 services/api/health.api.ts 的 probeAlive + PROBE_TIMEOUT_MS + SLOW_RESPONSE_MS 单一出处，1.7 与 2.4 同步登记 | 小欧 |
 | v1.2 | 2026-11-10 | §4.1 chat 特征层新登记 `INPUT_HINTS`（`components/input/InputCore.tsx`）：输入框空态静态帮助清单（6 条输入方式），编号按数组下标自动生成；增删改输入方式只改数组、无需动 JSX；与动态提示 `executingHint`（执行中插话/正在提交）互斥且不编号 | 小欧 |
+| v1.3 | 2026-11-12 | §1.4 新登记 `controlScale.ts`（`theme/controlScale.ts`）：**全站控件刻度唯一真源** —— 控件高三档（24/28/32，等差 4px）× 两档密度（紧凑档整档下移一档、小档 24 两档同值）+ 全局圆角三档（取自 stepStyles 的 Radius 阶梯）+ 页面级圆角全档 4 预设 + `controlScaleTokens`/`pageControlTokens` 两个 token 构造器。配套文档[32]；§1.4–§1.11 章节序号顺延（原 1.4–1.9 后移一位，无交叉引用需改） | 小欧 |
+| v1.4 | 2026-11-12 | §1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（补登上一轮遗漏）：Markdown 排版解算（`mdStyles` / `codeFenceLineHeight` / `isNumericCell` / `codeBlockStyle`，文档[30]）与外观偏好读取（`APPEARANCE_FONT_SIZES`/`APPEARANCE_DENSITIES` 密度词表唯一真源、`AppearanceDensity` 类型、`clampFontSize`/`clampDensity`、`useAppearancePrefs`）；`DENSITY_PAD` 登记为阅读区间距系数唯一真源 | 小欧 |

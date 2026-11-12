@@ -35,8 +35,8 @@ const StatusLine: React.FC<StatusLineProps> = ({ step }) => {
     <div
       style={{
         color: Colors.ERROR,
-        fontSize: FontSize.TERTIARY,
-        lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+        fontSize: FontSize.SECONDARY,
+        lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
         margin: stepMargin(false),
         padding: `${Spacing.XS}px ${Spacing.SM}px`,
         background: Colors.ERROR_BG,

@@ -520,7 +520,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   <CollapsibleText
                     text={t.response}
                     renderExpanded={(expandedText) => (
-                      <MarkdownSlot text={expandedText} markdown />
+                      <MarkdownSlot text={expandedText} markdown scene="task" />
                     )}
                   />
                 </div>

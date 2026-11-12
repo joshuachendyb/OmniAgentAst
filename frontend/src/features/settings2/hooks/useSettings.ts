@@ -34,7 +34,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { modelDirtyCount } from '../utils/modelUtils';
 import { initialModel } from '../utils/modelState';
 import { findGroupOfKey } from '../utils/settingsShape';
-import { PREF_KEY, readLocalPrefs } from '../constants/settingsPrefs';
+import { PREF_KEY, readLocalPrefs, APPEARANCE_PREFS_CHANGED_EVT } from '@/constants/appearancePrefs';
 import { useSettingsHighlight } from './useSettingsHighlight';
 import { useSettingsLoad } from './useSettingsLoad';
 import { useSettingsWrites } from './useSettingsWrites';
@@ -111,27 +111,30 @@ export function useSettings() {
 
   /** 改控件：与持久化基线对比记脏；外观两项同步 localStorage 预览。 */
   const setValue = useCallback((group: string, key: string, value: unknown) => {
+    // 2026-11-12 小欧 - 外观两项(阅读区字号/界面密度)写本地预应用后广播变更事件:
+    //   读取侧 hook(useAppearancePrefs)据此即时生效(不必等保存往返), 跨标签页由 storage 事件同步。
+    if (
+      group === 'appearance' &&
+      (key === 'appearance.fontSize' || key === 'appearance.density')
+    ) {
+      try {
+        localStorage.setItem(
+          PREF_KEY,
+          JSON.stringify({
+            ...readLocalPrefs(),
+            [key === 'appearance.fontSize' ? 'fontSize' : 'density']: value,
+          })
+        );
+        window.dispatchEvent(new Event(APPEARANCE_PREFS_CHANGED_EVT));
+      } catch {
+        /* 本地预览失败不阻断 */
+      }
+    }
     setState((s) => {
       const values = {
         ...s.values,
         [group]: { ...(s.values[group] ?? {}), [key]: value },
       };
-      if (
-        group === 'appearance' &&
-        (key === 'appearance.fontSize' || key === 'appearance.density')
-      ) {
-        try {
-          localStorage.setItem(
-            PREF_KEY,
-            JSON.stringify({
-              ...readLocalPrefs(),
-              [key === 'appearance.fontSize' ? 'fontSize' : 'density']: value,
-            })
-          );
-        } catch {
-          /* 本地预览失败不阻断 */
-        }
-      }
       // 与持久化/服务端基线一致则撤销脏标记，否则置脏——原无条件置脏，改回原值仍脏（迫使多存一次）
       const dirtyKeys = { ...s.dirtyKeys };
       if (s.baseline[group]?.[key] === value) delete dirtyKeys[key];

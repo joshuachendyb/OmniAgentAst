@@ -319,8 +319,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
 //   结构完全同式仅色异, 抽共用免三处内联重复, 颜色按态传(取消ORANGE_RED/失败ERROR/reasoning灰) — 小欧-2026-09-11
 const terminalDetailStyle = (color: string): React.CSSProperties => ({
   color,
-  fontSize: FontSize.TERTIARY,
-  lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+  fontSize: FontSize.SECONDARY,
+  lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
   margin: stepMargin(false),
 });
 
@@ -612,8 +612,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               key={`obs-${gi}-${seg.step.step ?? gi}`}
               style={{
                 color: Colors.SUCCESS,
-                fontSize: FontSize.TERTIARY,
-                lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+                fontSize: FontSize.SECONDARY,
+                lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
                 margin: stepMargin(false),
               }}
             >

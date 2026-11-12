@@ -1008,7 +1008,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
       <Text
         type="secondary"
         style={{
-          fontSize: FontSize.TERTIARY,
+          fontSize: FontSize.SECONDARY,
           display: 'block',
           textAlign: 'right',
         }}

@@ -20,6 +20,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Spin } from 'antd';
 import { BranchesOutlined, FileTextOutlined } from '@ant-design/icons';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
+// 2026-11-12 小欧 - 阅读区排版消费外观偏好(阅读区字号/界面密度): 说明弹框是 doc 场景,
+//   字号与间距随设置项变; 流水线不消费(见 utils/markdownStyles 的作用范围)。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
 import { SettingsModal } from '@/theme/SettingsModal';
 import {
   settingsApi,
@@ -54,6 +57,8 @@ type PopupKey = (typeof POPUPS)[number]['key'];
 export function DirectoryAccessNote() {
   const [docs, setDocs] = useState<SecurityDocsResponse | null>(null);
   const [error, setError] = useState('');
+  // 2026-11-12 小欧 - 阅读区外观偏好(字号/密度): 本组件是 doc 场景消费点
+  const appearance = useAppearancePrefs();
   const [openKey, setOpenKey] = useState<PopupKey | null>(null);
   // 2026-10-11 小欧 - 文档卡片 hover 态(单值, 两卡互斥高亮)
   const [hovered, setHovered] = useState<PopupKey | null>(null);
@@ -102,7 +107,14 @@ export function DirectoryAccessNote() {
       ) : !docs ? (
         <Spin />
       ) : (
-        <MarkdownSlot text={docs.classification} markdown fixedTable />
+        <MarkdownSlot
+          text={docs.classification}
+          markdown
+          fixedTable
+          scene="doc"
+          base={appearance.fontSize}
+          density={appearance.density}
+        />
       )}
 
       {/* 两个说明弹框入口: 文档卡片(北京老陈令「按人类设计师设计优化」)。
@@ -202,12 +214,16 @@ export function DirectoryAccessNote() {
         bodyMaxHeight="78vh"
       >
         {docs && (
-          // 2026-10-11 小欧 北京老陈令「按人类设计师设计优化」: .doc-body 作用域样式
-          //   (index.css) 只作用于本弹框的 markdown 渲染结果, 不影响全局 MarkdownText。
-          //   样式只依赖结构标签(h2/ol/ul/code/p/strong), 后端文案改动不会失效。
-          <div className="doc-body">
-            <MarkdownSlot text={docs[current.key]} markdown />
-          </div>
+          // 2026-11-12 小欧 - .doc-body 作用域样式随旧排版块一并移除(该块是死规则:
+          //   类样式被 MarkdownText 内联样式压死), 现由 .md-body 作用域统管排版;
+          //   样式只依赖结构标签(h1..h6/ol/ul/code/p/strong/table), 后端文案改动不会失效。
+          <MarkdownSlot
+            text={docs[current.key]}
+            markdown
+            scene="doc"
+            base={appearance.fontSize}
+            density={appearance.density}
+          />
         )}
       </SettingsModal>
     </div>
