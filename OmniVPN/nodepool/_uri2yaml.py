@@ -302,6 +302,7 @@ def main():
             continue
         seen.add(key)
         n += 1
+        stats["ok"] += 1   # 修复: ok 从未自增导致打印恒为"生成 0" — 小欧 2026-11-12
         by_type[p["type"]] = by_type.get(p["type"], 0) + 1
         name = "N%02d" % n
         remark = urllib.parse.unquote(line.split("#", 1)[1]) if "#" in line else ""
