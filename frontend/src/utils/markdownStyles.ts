@@ -35,6 +35,34 @@ import type { AppearanceDensity } from '@/constants/appearancePrefs';
 export const READING_LINE_HEIGHT = 1.6;
 
 
+
+/**
+ * 阅读区内容块统一宽度上限(唯一定义点, px) —— 2026-11-13 小欧。
+ *   背景: 文件预览面板宽由拖拽决定(左树 200~360 + flex 右栏), 1920 屏下右栏约 1500px。
+ *         原 40em(560px) 钉在 .md-body 根容器 → 整页内容(含代码块/宽表)都只有 560px,
+ *         右侧空掉近千像素, 屏幕资源浪费。
+ *   裁定: **统一单栏 + 恒定窄边距** —— 段落/标题/代码块/表格/图片同宽同基线。
+ *         ① 不按「文字/表格」分两档: 分档会造成宽窄不一(文字只占左侧一条、表格满宽),
+ *            基线参差、观感割裂, 且空白集中在一侧。
+ *         ② **留白用固定窄边距, 不用比例也不用 margin auto 均分** ——
+ *            比例留白在宽屏下会把内容推成窄条; margin auto 均分在容器 < 上限时归零(内容贴边),
+ *            两者都造成「留白忽大忽小」。现由 READING_GUTTER_PX 恒定左右各留一道窄边距。
+ *         ③ 上限 1800px: 覆盖 1920 屏的面板宽(约 1500px)不再人为截断;
+ *            仅 2560 屏等超宽场景封顶, 避免一行拉到 200+ 字完全不可读(居中均分剩余)。
+ *   流水线(chat/task)不设上限、不加边距 → 满宽, 行为与改前完全一致。
+ */
+export const READING_MEASURE_MAX_PX = 1800;
+
+/**
+ * 阅读区内容块左右恒定边距(唯一定义点, px) —— 2026-11-13 小欧。
+ *   语义: 「有边距但不浪费」—— 24px 既保证文字不贴容器边框(留一道设计过的窄边),
+ *         又几乎不占屏幕(1920 屏面板约 1500px 时, 内容仍占约 96%)。
+ *         叠加文件预览容器自身 padding 8px + 边框 1px, 文字距面板外沿共约 33px。
+ */
+export const READING_GUTTER_PX = 24;
+
+
+
 /** 排版场景(每个场景 = 从全局阶梯中取用的一段连续区间) */
 export type MdScene = 'preview' | 'doc' | 'chat' | 'task';
 
@@ -131,8 +159,8 @@ interface SceneConfig {
   tableOffset: number;
   /** 行内代码字号档位 */
   inlineCodeTier: MdTier;
-  /** 正文最大行宽(em); null = 不限 */
-  measure: string | null;
+  /** 成段文字是否限行宽: true = 按 clamp(下限, 62%, 上限) 夹逼; false = 满宽(流水线) */
+  proseLimit: boolean;
   spacing: SceneSpacing;
   decorations: SceneDecorations;
 }
@@ -144,7 +172,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     titleOffsets: { h1: 3, h2: 2, h3: 1 },
     tableOffset: 0,
     inlineCodeTier: 'SECONDARY',
-    measure: '40em',
+    proseLimit: true,
     spacing: {
       lineHeight: READING_LINE_HEIGHT,
       paraGap: 8,
@@ -177,7 +205,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     titleOffsets: { h1: 2, h2: 1, h3: 0 },
     tableOffset: 0,
     inlineCodeTier: 'SECONDARY',
-    measure: '40em',
+    proseLimit: true,
     spacing: {
       lineHeight: READING_LINE_HEIGHT,
       paraGap: 8,
@@ -211,7 +239,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     titleOffsets: { h1: 1, h2: 1, h3: 0 },
     tableOffset: -1,
     inlineCodeTier: 'SECONDARY',
-    measure: null,
+    proseLimit: false,
     spacing: {
       lineHeight: 1.35,
       paraGap: 4,
@@ -245,7 +273,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     titleOffsets: { h1: 1, h2: 1, h3: 1 },
     tableOffset: -1,
     inlineCodeTier: 'SMALL',
-    measure: null,
+    proseLimit: false,
     spacing: {
       lineHeight: 1.5,
       paraGap: 4,
@@ -413,7 +441,13 @@ export const mdStyles = (
     '--md-pad-code-x': `${spacing.codePadX}px`,
     '--md-pad-quote-y': `${spacing.quotePadY}px`,
     '--md-pad-quote-x': `${spacing.quotePadX}px`,
-    '--md-measure': cfg.measure ?? 'none',
+    // 阅读区内容块统一宽度上限: min(100%, 1800px) —— 窄面板自然收缩到面板宽,
+    //   宽面板封顶防超宽屏一行拉到 200+ 字。全部内容同宽同基线, **不分档**。
+    '--md-measure': cfg.proseLimit
+      ? `min(100%, ${READING_MEASURE_MAX_PX}px)`
+      : 'none',
+    // 阅读区左右恒定窄边距: 预览/文档场景 24px(有边距但不浪费), 流水线 0(零视觉变化)
+    '--md-gutter': cfg.proseLimit ? `${READING_GUTTER_PX}px` : '0px',
     '--md-radius': `${Radius.SM}px`,
     // 章节分隔线: h1 全场景; h2 仅阅读区(装饰裁剪矩阵)
     '--md-h1-divider': `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
