@@ -10,9 +10,11 @@
 //   配置问题属"用户可自行修复", 不应与系统/网络故障同色。配色查找为 ERROR_COLORS_MAP[type] → 去 _error 后缀 → default
 //   三级兜底, config_error 精确命中第一级。标签总数 20 → 21 — 小欧-2026-09-26
 // 编辑历史: 2026-11-08 小欧 - quota_exceeded 中文标签 `配额超限`→`限额超限`(用户裁定"限额"措辞更准, 与后端 429·限额 对齐) — 小欧-2026-11-08
+// 2026-11-12 小欧 - 字号归位: 13px×5 全部废除, 同文件 14/15/12px 裸值一并改引 FontSize 阶梯
+//   (label→SECONDARY / value→PRIMARY「值>label」/ 错误类型码与堆栈→CODE / 标题 15px 游离半档→SUBHEAD) — 小欧-2026-11-12
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface ErrorDetailProps {
   errorType?: string;
@@ -162,11 +164,16 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
 };
 
 // ========== Step 4: 合并内联style常量 ==========
+// 2026-11-12 小欧 - 字号归位: 本文件原有 13px×5 与 14/15/12px 裸值, 违反 [31]「全局字号阶梯唯一,
+//   13px 明确废除」与「数字只在 TS 一处」; 现全部改引 FontSize 阶梯档位:
+//   label(次要标签)→SECONDARY 12 / value(键值对的值)→PRIMARY 14(值必须大于 label, [31] §3.4 同源原则)
+//   code(错误类型码)→CODE 12 等宽专档 / 错误详情正文→SECONDARY 12 / 堆栈 pre→CODE 12 /
+//   错误类型标题 15px(游离半档)→SUBHEAD 16 小节级 —— 小欧-2026-11-12
 const containerStyle: React.CSSProperties = {
   marginTop: 12,
   padding: '16px',
   borderRadius: 8,
-  fontSize: '14px',
+  fontSize: FontSize.PRIMARY,
 };
 
 const headerStyle: React.CSSProperties = {
@@ -175,14 +182,14 @@ const headerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  fontSize: '15px',
+  fontSize: FontSize.SUBHEAD,
   paddingBottom: 8,
 };
 
 const messageStyle: React.CSSProperties = {
   marginBottom: 8,
   fontWeight: 500,
-  fontSize: '14px',
+  fontSize: FontSize.PRIMARY,
 };
 
 const gridStyle: React.CSSProperties = {
@@ -194,18 +201,18 @@ const gridStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   color: Colors.TEXT.WEAK,
   whiteSpace: 'nowrap',
-  fontSize: '13px',
+  fontSize: FontSize.SECONDARY,
 };
 
 const valueStyle: React.CSSProperties = {
   color: Colors.TEXT.SECONDARY,
-  fontSize: '13px',
+  fontSize: FontSize.PRIMARY,
 };
 
 const codeBlockStyle: React.CSSProperties = {
   padding: '2px 8px',
   borderRadius: 4,
-  fontSize: '13px',
+  fontSize: FontSize.CODE,
   fontWeight: 500,
 };
 
@@ -218,13 +225,13 @@ const contextBoxStyle: React.CSSProperties = {
 
 const detailsBoxStyle: React.CSSProperties = {
   color: Colors.TEXT.WEAK,
-  fontSize: '12px',
+  fontSize: FontSize.SECONDARY,
   marginBottom: 4,
 };
 
 const contentBoxStyle: React.CSSProperties = {
   color: Colors.TEXT.SECONDARY,
-  fontSize: '13px',
+  fontSize: FontSize.SECONDARY,
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-all',
 };
@@ -235,7 +242,7 @@ const stackPreStyle: React.CSSProperties = {
   background: 'rgba(0, 0, 0, 0.03)',
   borderRadius: 6,
   color: Colors.TEXT.WEAK,
-  fontSize: '12px',
+  fontSize: FontSize.CODE,
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-all',
   maxHeight: '150px',
@@ -369,7 +376,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
               <summary
                 style={{
                   color: Colors.TEXT.WEAK,
-                  fontSize: '13px',
+                  fontSize: FontSize.SECONDARY,
                   cursor: 'pointer',
                 }}
               >

@@ -43,9 +43,19 @@
 // 2026-11-09 小欧 - visibleItems 过滤 hidden 项(media.probe_image_url 已迁②Image_URL 行就地配置): 键仍留 schema 供读写链 — 小欧-2026-11-09
 // 2026-11-11 小欧 - 三个验证素材地址(probe_image_url/video/audio)由 hidden 回媒体页直接显示: visibleItems 过滤逻辑保留
 //   (防御性, 其它组仍可能注册 hidden 项), media 组现无 hidden 项 — 小欧-2026-11-11
+// 2026-11-12 小欧 - 预览小卡按 [31] §4.5 重做: 拆「界面密度双档 + 阅读区字号三档」双区, 密度样例按真实
+//   密度参数渲染(DENSITY_PAD 留白 + controlScale 控件高), 字号样例三行纯文字, 当前档加主色边框 — 小欧-2026-11-12
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
+import {
+  APPEARANCE_DENSITIES,
+  APPEARANCE_FONT_SIZES,
+  clampDensity,
+  clampFontSize,
+} from '@/constants/appearancePrefs';
+import { DENSITY_PAD } from '@/utils/markdownStyles';
+import { controlHeightByDensity } from '@/theme/controlScale';
 import type {
   SettingSchemaItem,
   SettingSource,
@@ -154,7 +164,9 @@ export const SettingsGroup: React.FC<Props> = ({
   onRefresh,
 }) => {
   let lastSection: string | null = null;
-  const fontSize = Number(values['appearance.fontSize'] ?? 14);
+  const fontSize = clampFontSize(values['appearance.fontSize']);
+  // 2026-11-12 小欧 - 密度档取当前设置值(读侧单点 constants/appearancePrefs 的 clampDensity) — 小欧-2026-11-12
+  const density = clampDensity(values['appearance.density']);
   // 2026-11-09 小欧 - hidden 项不渲染(已迁到功能行就地配置, 如 media.probe_image_url=②Image_URL 行)，
   //   键仍留 schema 供读写链(saveKeys/groupOfKey)工作 — 小欧-2026-11-09
   // 2026-11-11 小欧 - 三个验证素材地址已回媒体页直接显示(不再 hidden), media 组现无 hidden 项;
@@ -163,61 +175,122 @@ export const SettingsGroup: React.FC<Props> = ({
   // 外观组分「登录与准入」/「外观」两块后，预览小卡（服务于"字号"这个外观项）
   //   必须随「外观」块一起渲染 —— 否则它会孤零零压在"登录与准入"上方，位置与语义都不对。
   //   故改为在渲染到「外观」块首项时再输出（appearance 组内顺序由后端 registry 保证：准入项在前、外观项在后）。
+  // 2026-11-12 小欧 - 预览小卡按 [31] §4.5 重做: 一块卡片同时演示两个受控量, 各占一区互不混淆 ——
+  //   上半「界面密度」: 左右两块用同一段示例文本, 按**真实密度参数**渲染(字号恒 14,
+  //     阅读区留白按 DENSITY_PAD 缩放、控件高按 controlScale 刻度), 当前档加主色边框标示;
+  //   下半「阅读区字号」: 12/14/16 三行纯文字样例(控件预览不是排版预览, 不接真实 Markdown),
+  //     当前档加主色边框, 卡尾注明作用范围。
+  //   原实现把「紧凑/舒适」两个标签贴在**字号**样例上(两格字号同值、只差 padding) —— 标签描述的是密度
+  //     却挂在字号样例上, 是 [31] §4.1 判定的误导源头; 现两标签归位到密度样例块, 语义归位。
+  // 小欧-2026-11-12
   const appearancePreview = (
     <Card
       size="small"
       style={{ marginBottom: Spacing.LG }}
-      title="预览小卡（改下面控件，这里实时变）"
+      title="外观预览（拖动上面的控件，这里实时变）"
     >
+      <div
+        style={{
+          fontSize: FontSize.SECONDARY,
+          color: Colors.TEXT.SECONDARY,
+          marginBottom: Spacing.XS,
+        }}
+      >
+        界面密度（控件高 / 阅读区间距）
+      </div>
       <div
         style={{
           display: 'flex',
           gap: Spacing.MD,
           alignItems: 'flex-start',
+          marginBottom: Spacing.LG,
         }}
       >
-        <div>
-          <div
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
-              marginBottom: Spacing.XS,
-            }}
-          >
-            紧凑
-          </div>
-          <div
-            style={{
-              fontSize,
-              padding: Spacing.XS,
-              background: Colors.BG.TERTIARY,
-              borderRadius: Radius.DEFAULT,
-            }}
-          >
-            示例消息气泡 4px
-          </div>
+        {APPEARANCE_DENSITIES.map((d) => {
+          const pad = DENSITY_PAD[d];
+          const controlHeight = controlHeightByDensity(d).normal;
+          const gap = Math.max(2, Math.round((Spacing.MD * pad) / 2) * 2);
+          const active = d === density;
+          return (
+            <div
+              key={d}
+              style={{
+                border: `1px solid ${active ? Colors.PRIMARY : Colors.BORDER.LIGHT}`,
+                borderRadius: Radius.DEFAULT,
+                padding: Spacing.XS,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                  marginBottom: Spacing.XS,
+                }}
+              >
+                {d === 'comfortable' ? '舒适' : '紧凑'}
+              </div>
+              <div
+                style={{
+                  fontSize: FontSize.PRIMARY,
+                  lineHeight: 1.6,
+                  padding: gap,
+                  background: Colors.BG.SECONDARY,
+                  borderRadius: Radius.SM,
+                  marginBottom: gap,
+                }}
+              >
+                示例消息气泡
+              </div>
+              <div
+                style={{
+                  height: controlHeight,
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '0 8px',
+                  fontSize: FontSize.PRIMARY,
+                  background: Colors.BG.SECONDARY,
+                  border: `1px solid ${Colors.BORDER.DEFAULT}`,
+                  borderRadius: Radius.SM,
+                }}
+              >
+                输入框样例
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          fontSize: FontSize.SECONDARY,
+          color: Colors.TEXT.SECONDARY,
+          marginBottom: Spacing.XS,
+        }}
+      >
+        阅读区字号（px）
+      </div>
+      {APPEARANCE_FONT_SIZES.map((px) => (
+        <div
+          key={px}
+          style={{
+            fontSize: px,
+            lineHeight: 1.6,
+            padding: Spacing.XS,
+            border: `1px solid ${px === fontSize ? Colors.PRIMARY : 'transparent'}`,
+            borderRadius: Radius.SM,
+            color: Colors.TEXT.PRIMARY,
+          }}
+        >
+          示例正文 {px}px
         </div>
-        <div>
-          <div
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
-              marginBottom: Spacing.XS,
-            }}
-          >
-            舒适
-          </div>
-          <div
-            style={{
-              fontSize,
-              padding: Spacing.LG,
-              background: Colors.BG.TERTIARY,
-              borderRadius: Radius.DEFAULT,
-            }}
-          >
-            示例消息气泡 12px
-          </div>
-        </div>
+      ))}
+      <div
+        style={{
+          fontSize: FontSize.CAPTION,
+          color: Colors.TEXT.SECONDARY,
+          marginTop: Spacing.XS,
+        }}
+      >
+        字号仅作用于阅读区（文件预览 / 说明弹框），不影响流水线正文与任务卡。
       </div>
     </Card>
   );
