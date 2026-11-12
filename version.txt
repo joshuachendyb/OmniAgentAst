@@ -1,3 +1,15 @@
+v1.6.8
+发布时间: 2026-11-12 10:40:35 - 小欧-2026-11-12
+## v1.6.7以来 变更汇总(4个commit: feat2/refactor1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-12
+[2026-11-12 10:40:35 小欧] 范围=v1.6.7..HEAD 全部commit(4个); 说明=①opencli 网关目录收拢: opencli_source 更名 opencli_gateway(母本5部署文件+使用说明, git识别rename), 启停壳改名 opencli_gateway_start/stop.bat(+stop.ps1), 使用说明全文重写(网关五件事/config字段15节/WARP内置出口池独立成章——2026-11-12正确方法重验: 12个暴露模型11个200仅beam-free逐模型地域403、ipv6栈换桶真实ipv4栈无效、启动验证五五开、隧道内DNS病态/OmniVPN配套章顺延第9章/详细文档第10章), README树同步(opencli_gateway改名+补OmniVPN行), gitignore 补 hooks/log、OmniVPN产物、.ruff_cache、bin 等规则, 旧 opencli_source 六文件删除; ②OmniVPN 出口换桶配套服务入库: mihomo精简内核config.yaml/双击三对bat+ps1/exit_probe.py/exit_rotator.py/nodepool重建流水线(9步脚本)/OmniVPN使用说明, 内核exe/log/cache.db不入库, 桶判定口径统一(前缀变=新桶硬标准, loc随行标注, 尾号忽略); ③tools_alias_mapper.py edit 官方camelCase签名收编(old_string/new_string/mode(all/once), 上游OpenCode签名不再每条废一轮schema反馈); ④hooks旧目录清理删除。注: 均为既有链路收拢与工具适配, 无新增功能模块 → 维持PATCH v1.6.8。
+### 1.6.8.1 opencli 网关目录收拢
+[网关] refactor 02ac1bf64 opencli_source更名opencli_gateway+启停壳改名+使用说明重写(WARP独立成章/OmniVPN顺延)+README/gitignore同步 - 小欧-2026-11-12
+### 1.6.8.2 OmniVPN 配套服务入库
+[OmniVPN] feat 8b1c24838 mihomo内核配置/双击脚本/exit_probe/exit_rotator/nodepool流水线/使用说明 - 小欧-2026-11-12
+### 1.6.8.3 tools_alias_mapper edit签名收编
+[别名] feat 6eedeb85a edit官方camelCase签名收编(old_string/new_string/mode(all/once)) - 小欧-2026-11-11
+### 1.6.8.4 旧目录清理
+[清理] docs 1acf18298 hooks旧目录清理删除 - 小欧-2026-11-11
 v1.6.7
 发布时间: 2026-11-10 22:37:21 - 小欧-2026-11-10
 ## v1.6.6以来 变更汇总(27个commit: feat4/fix4/docs19, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-10
