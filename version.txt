@@ -1,3 +1,45 @@
+v1.6.9
+发布时间: 2026-11-12 13:55:00 - 小欧-2026-11-12
+## v1.6.8以来 变更汇总(32个commit: feat10/fix9/refactor5/docs8, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-12
+[2026-11-12 13:55:00 小欧] 范围=v1.6.8..HEAD 全部commit(32个, merge提交除外); 说明=①OmniVPN 节点池增强(本轮5提交): 抓源v2并行化+源单重整(9源全活进料15001条, 串行10分钟挂死改1.5秒), 死点池入库(复活注入/实测结算/连5死彻底清除, 流水线9步扩11步), 双击入口挪根目录(nodepool只留步骤实现), 轻量巡检update-pool-quick(现池复验+死点复活1~2分钟, 挂proxy-switch尾巴), exit_probe v2.5 TUN隧道环境检测+出口信息永不缺位(不管哪个VPN在跑都输出完整出口对照), 使用说明§4.2按处理操作对象分节(bat/ps1双轨); ②SPA打包链: 增量打包(git diff变更分级, app/直复制跳PyInstaller), 提示信息阶段化, deploy_spa _internal逐文件复制防锁DLL崩溃+异常处理补shutil.Error; ③附件能力域升级(远端合入): 二维契约表驱动能力协商与渲染, 设计缺口7项闭合, P5指标面板落地, 三堂会审整改(import断链/DNS阻塞/上限真源/既有函数复用); ④多媒体输入验证: model+settings输入能力验证三态(image/video/audio), 验证素材URL回媒体页组保存, Tooltip事件穿透修复, LegBadge displayName构建修复; ⑤基础设施: job_object ctypes封装提取win_job_object+打包版exe顶层KILL_ON_JOB_CLOSE关窗不留孤儿, win_job_object与network循环导入消除, 日志框架共享handler收口+QuickEdit防镜像线程阻塞, sseParser final_stats扁平化修复React error#31; ⑥网关交互: 禁用工具拒绝文案改版(点名全组+替代方式指引), AGENTS/OmniAgent编辑规矩修订。注: 均为功能链路增强与修复, 无架构重写, 维持PATCH v1.6.9。
+### 1.6.9.1 OmniVPN 节点池增强
+[节点池] feat c5e7d563c _fetch2.py 抓源v2:并行化+源单重整(9源全活,进料15001条,直连失败走7890备援) - 小欧-2026-11-12
+[节点池] feat 783b7960b _deadpool.py,rebuild-pool.bat,ps1,_uri2yaml.py 死点池接入流水线(9步扩11步:复活注入/结算,连5死彻底清除)+入口挪根目录+生成计数修复 - 小欧-2026-11-12
+[节点池] feat 550c9e487 exit_probe.py v2.5 TUN隧道环境检测(不点名误标裸线)+出口信息永不缺位 - 小欧-2026-11-12
+[节点池] feat 79cf1fca6 update-pool-quick.bat,ps1,proxy-switch.bat 轻量巡检(现池复验+死点复活,1~2分钟)并挂换桶尾巴 - 小欧-2026-11-12
+[节点池] docs b744a9ac5 OmniVPN使用说明.md,opencli的gateway使用说明.md 11步/死点池同步+§4.2按处理操作对象分节(bat与ps1双轨说明) - 小欧-2026-11-12
+### 1.6.9.2 SPA 打包链优化
+[打包] feat e4f12e466 build_spa 增量打包 git diff检测变更分级处理,app/直接复制跳过PyInstaller,.build_commit放build\目录 - 小欧-2026-11-12
+[打包] refactor 72928ab6b SPA打包部署 提示信息阶段化重构+build_commit记录路径修正(build\下) - 小欧-2026-11-12
+[打包] fix b67b0d0ec deploy_spa _internal 逐文件复制替代 copytree, 被锁系统 DLL 跳过而非崩溃 - 小欧-2026-11-12
+[打包] fix 7e3b48562 deploy_spa 异常处理补shutil.Error+错误提示加排查建议 - 小欧-2026-11-07
+### 1.6.9.3 附件能力域升级(远端合入)
+[附件] feat 928747705 附件能力域升级 二维契约表驱动能力协商与渲染 - 小欧-2026-11-11
+[附件] feat 93da3e341 附件能力域 设计缺口7项闭合(旧占位幂等迁移/URL文本闭环/媒体URL直传方言/无原生通道档案卡降级/chip+文件行能力徽标/抽取态回显+重新抽取/P5能力矩阵面板) - 小欧-2026-11-11
+[附件] feat 64480041a 附件能力域 P5指标面板落地(metrics_summary/observability埋点/重抽取接口/前端矩阵面板与API) - 小欧-2026-11-11
+[附件] fix 0bb309032 附件能力域 三堂会审6项整改+import断链修复(remote_fetch流式上限与urljoin重定向/前端后缀词典单源/handle_api_errors统一引用) - 小欧-2026-11-11
+[附件] docs 810c27230 [22]附件能力域 §7后端/§8前端代码详细设计+§7.0/§8.0代码清单与三处落位勘误 - 小欧-2026-11-11
+[附件] docs 77835472e [22]附件能力域 全文逐章互查修正14项(契约text行补缺/C6对齐定案/remote_fetch不断轮与kind上限/伪码与实现归一等) - 小欧-2026-11-11
+[附件] docs d773411f9 [22]附件能力域 新增§11 TDD实施顺序(18步红绿重构)+§9/§10勘误+§12~§14顺延 - 小欧-2026-11-11
+[附件] docs 385ee8e7e [22]附件能力域 三堂会审12项违规清零(循环导入/refs+plans并存/DNS阻塞/上限真源/str模型名/既有函数复用/limits真源等) - 小欧-2026-11-11
+### 1.6.9.4 多媒体输入验证与 settings 前端
+[多媒体] feat 714cd1031 model+settings S2多媒体升级-输入能力验证三态(image/video/audio) - 小欧-2026-11-11
+[多媒体] refactor 792291ae9 settings 三个验证素材URL回媒体页组保存, 模型Tab移除Image_URL即存链 - 小欧-2026-11-11
+[多媒体] fix 74581c925 settings 验证行徽标Tooltip事件穿透(改BadgeRow为forwardRef全覆盖四条验证行tip) - 小欧-2026-11-11
+[多媒体] fix 7da0cbe33 settings 三URL回归后漏改的两处Image_URL旧指路 - 小欧-2026-11-11
+[前端] fix d45c4ef0c LegBadge BadgeRow加displayName修复react/display-name构建失败 - 小欧-2026-11-07
+[补漏] docs de0688715 补漏3处代码编辑历史(LegBadge/mediaProbeText/settings.api缺头部记录) - 小欧-2026-11-11
+### 1.6.9.5 基础设施: job_object/日志/网络/SSE
+[沙箱] feat 69443b368 job_object+run_server 打包版exe顶层KILL_ON_JOB_CLOSE Job Object,关console窗口子进程树自动终止不留孤儿锁DLL - 小欧-2026-11-07
+[沙箱] refactor 6a693ffe8 job_object 底层ctypes封装提取到app/utils/win_job_object.py(SRP:沙箱目录只放沙箱功能)+错字F修复 - 小欧-2026-11-07
+[沙箱] fix caf50f537 win_job_object+network循环导入 SetInformationJobObject改用ExtendedLimitInformation(87错),check_network从network_register移至http_client_sdk - 小欧-2026-11-12
+[日志] refactor f3c378fe4 日志框架 共享handler配置收口唯一入口+uvicorn日志级别不被覆盖+注释编辑历史规范化 - 小欧-2026-11-12
+[日志] fix 9179c0678 日志控制台 关闭Windows QuickEdit防镜像线程flush永久阻塞(选中冻结输出致控制台停写) - 小欧-2026-11-11
+[SSE] fix 16bce7c84 sseParser final_stats tool_stats扁平化:SSE嵌套与DB扁平统一,修复React error#31对象渲染为子节点 - 小欧-2026-11-07
+### 1.6.9.6 网关交互与规矩文档
+[网关] refactor cc41fc85c observation_builder.py+handle_action.py 禁用工具拒绝文案改版:禁止使用→已禁用,点名全组+替代方式指引 - 小欧-2026-11-11
+[规矩] docs 00b660828 AGENTS+OmniAgent 编辑更新文档规矩条款修订(措辞统一) - 小欧-2026-11-11
+[会审] docs 41f9dc32a doc-11月优化[22]+[23]+[27] 三堂会审A3+B1~B9整改落盘+请求模式定案(声明即首选请求模式) - 小欧-2026-11-11
 v1.6.8
 发布时间: 2026-11-12 10:40:35 - 小欧-2026-11-12
 ## v1.6.7以来 变更汇总(4个commit: feat2/refactor1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-12
