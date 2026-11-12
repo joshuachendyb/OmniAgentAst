@@ -10,6 +10,13 @@
 //   ⚠ 本地存储仅是**预览缓存**: 权威值在后端 settings registry(YAML),
 //     设置页保存成功后由后端下发; 本地键让「改设置即时生效」无需等待网络往返。
 
+
+// 2026-11-13 小欧 - 增「本地预应用」设置键单点表(LOCAL_PREF_SETTING_KEYS)与 localPrefKeyOf 推导:
+//   写侧(useSettings)原用三元 `key === 'appearance.fontSize' ? 'fontSize' : 'density'` 硬编码映射,
+//   新增第三个外观本地项时条件与映射两处必漏一处; 现键表与本键名定义同文件单点,
+//   新增项只改键表一行, 本地键由前缀切片推导, 无第二处要同步。 — 小欧-2026-11-13
+
+
 /** localStorage 预置键(唯一定义点) */
 export const PREF_KEY = 'omni.prefs.v1';
 
@@ -20,6 +27,22 @@ export const APPEARANCE_FONT_SIZES = [12, 14, 16] as const;
 export const APPEARANCE_DENSITIES = ['comfortable', 'compact'] as const;
 
 export type AppearanceDensity = (typeof APPEARANCE_DENSITIES)[number];
+
+
+/**
+ * 走「本地预应用」通道的设置键(唯一定义点)。
+ *   写侧 useSettings.setValue 按本表判定是否写本地预览缓存;
+ *   新增外观本地项只需在表内加一行, 本地键由 localPrefKeyOf 推导, 无第二处映射要同步。
+ */
+export const LOCAL_PREF_SETTING_KEYS = [
+  'appearance.fontSize',
+  'appearance.density',
+] as const;
+
+/** 设置键 → 本地偏好键('appearance.fontSize' → 'fontSize') */
+export const localPrefKeyOf = (settingKey: string): string =>
+  settingKey.slice('appearance.'.length);
+
 
 /** 默认值 */
 export const DEFAULT_APPEARANCE_FONT_SIZE = 14;

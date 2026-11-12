@@ -11,6 +11,8 @@
 //   非会话页给 LATEST_RUNNING(开跑最晚且仍在跑), 排序键为任务开跑时刻, 不随落库抖动 — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 16:40 小欧 - 删 sameOthers/activeSessions(在跑列表收口 runningTasksStore), 缓存改为按主语 Map,
 //   采样透传 getMergedRunningTasks(): 刷新后内存为空仍能报出「开跑最晚且仍在跑」 — 小欧-2026-11-03
+// 编辑历史: 2026-11-13 小欧 - 注释纠偏: StreamPhase 实为 9 态(idle + 8 个流档, 12:31 增 detached 时
+//   头注漏更正), 「8 档状态名」JSDoc 改「9 态」; 历史条目按当时事实保留不动。 — 小欧-2026-11-13
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { chatStreamStore } from '../streams/chatStreamStore';
@@ -29,7 +31,7 @@ const STALE_SEC = 30;
 
 export type StreamTone = Tone;
 
-/** 2026-11-03 06:40:41 小欧 - 8 档状态名(与 CSS 类 spin-<phase> 一一对应):
+/** 2026-11-03 06:40:41 小欧 - 9 态状态名(与 CSS 类 spin-<phase> 一一对应; 2026-11-13 纠偏: 原写 8 档, 增 detached 后实为 9 态):
  *  表现层只认 phase, 不再拿中文文案当判断键(改文案不会悄悄失效) — 小欧-2026-11-03 */
 export type StreamPhase =
   | 'idle'

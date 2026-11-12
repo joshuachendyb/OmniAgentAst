@@ -20,6 +20,8 @@
 //      密度只改控件高一个维度。
 //   ④删 --density-pad CSS 变量: 全仓零消费方(阅读区间隔由 utils/markdownStyles.ts 在 TS 侧解算),
 //      留着即死代码 + 双真源。规范见文档[32]。
+// 编辑历史: 2026-11-13 小欧 - 三堂会审: Tooltip 色值归令牌(裸 '#ffffff'/'#595959' →
+//   Colors.BG.PRIMARY/Colors.TEXT.PRIMARY, 同像素零视觉差)。 — 小欧-2026-11-13
 import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { App as AntdApp, ConfigProvider } from 'antd';
@@ -33,6 +35,7 @@ import './index.css';
 //   （原 useSSE config.token 全仓 0 处赋值 → Authorization 从不附带，2026-09-26 缺陷不复现）。
 import { setTransportConfig } from './features/chat/streams/chatStreamTransport';
 import { API_BASE_URL } from './services/api/client';
+import { Colors } from './utils/stepStyles';
 import { useAppearancePrefs } from './hooks/useAppearancePrefs';
 // 控件规格唯一真源(文档[32]): 控件高三档 + 圆角三档全部显式下发,
 // 不下发即等于让 antd 用 0.75×/1.25× 派生 21/35 这类非 4px 网格值。
@@ -62,8 +65,9 @@ const RootTheme: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         ...theme,
         components: {
           Tooltip: {
-            colorBgSpotlight: '#ffffff',
-            colorTextLightSolid: '#595959',
+            // 2026-11-13 小欧 - 色值归令牌(同像素零视觉差): 裸 '#ffffff'/'#595959' → Colors 阶梯
+            colorBgSpotlight: Colors.BG.PRIMARY,
+            colorTextLightSolid: Colors.TEXT.PRIMARY,
           },
         },
       }}

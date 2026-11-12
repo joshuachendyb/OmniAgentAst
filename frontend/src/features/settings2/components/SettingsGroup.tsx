@@ -45,17 +45,23 @@
 //   (防御性, 其它组仍可能注册 hidden 项), media 组现无 hidden 项 — 小欧-2026-11-11
 // 2026-11-12 小欧 - 预览小卡按 [31] §4.5 重做: 拆「界面密度双档 + 阅读区字号三档」双区, 密度样例按真实
 //   密度参数渲染(DENSITY_PAD 留白 + controlScale 控件高), 字号样例三行纯文字, 当前档加主色边框 — 小欧-2026-11-12
+
+// 2026-11-13 小欧 - 三堂会审修复(3 项):
+//   ① 预览卡读侧改 useAppearancePrefs()(全局生效值单点), 消除「values 草稿态 vs 本地预览缓存」双真源;
+//   ② 密度样例外框圆角 Radius.DEFAULT(6)→Radius.SM(4), 对齐 [32] 设置页页面级圆角全档 4;
+//   ③ 裸数字归位: lineHeight 1.6→READING_LINE_HEIGHT(markdownStyles 唯一常量)、
+//     padding '0 8px'→Spacing.MD、三处 1px→BorderWidth.THIN。 — 小欧-2026-11-13
+
 import React from 'react';
 import { Card } from 'antd';
-import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
+import { BorderWidth, FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
 import {
   APPEARANCE_DENSITIES,
   APPEARANCE_FONT_SIZES,
-  clampDensity,
-  clampFontSize,
 } from '@/constants/appearancePrefs';
-import { DENSITY_PAD } from '@/utils/markdownStyles';
+import { DENSITY_PAD, READING_LINE_HEIGHT } from '@/utils/markdownStyles';
 import { controlHeightByDensity } from '@/theme/controlScale';
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
 import type {
   SettingSchemaItem,
   SettingSource,
@@ -164,9 +170,11 @@ export const SettingsGroup: React.FC<Props> = ({
   onRefresh,
 }) => {
   let lastSection: string | null = null;
-  const fontSize = clampFontSize(values['appearance.fontSize']);
-  // 2026-11-12 小欧 - 密度档取当前设置值(读侧单点 constants/appearancePrefs 的 clampDensity) — 小欧-2026-11-12
-  const density = clampDensity(values['appearance.density']);
+  // 2026-11-13 小欧 - 预览卡改读 useAppearancePrefs()(全局生效值唯一读取点):
+  //   原读 values(设置页草稿态)与全局消费方(本地预览缓存)是两套来源 ——
+  //   改了控件不保存就离开时, 卡片「当前档」与全局实际档不一致(双真源, P0)。
+  //   现与全局同源: 拖动控件经写侧本地预应用 + 变更广播即时生效, 「实时变」语义不变。 — 小欧-2026-11-13
+  const { fontSize, density } = useAppearancePrefs();
   // 2026-11-09 小欧 - hidden 项不渲染(已迁到功能行就地配置, 如 media.probe_image_url=②Image_URL 行)，
   //   键仍留 schema 供读写链(saveKeys/groupOfKey)工作 — 小欧-2026-11-09
   // 2026-11-11 小欧 - 三个验证素材地址已回媒体页直接显示(不再 hidden), media 组现无 hidden 项;
@@ -215,8 +223,8 @@ export const SettingsGroup: React.FC<Props> = ({
             <div
               key={d}
               style={{
-                border: `1px solid ${active ? Colors.PRIMARY : Colors.BORDER.LIGHT}`,
-                borderRadius: Radius.DEFAULT,
+                border: `${BorderWidth.THIN}px solid ${active ? Colors.PRIMARY : Colors.BORDER.LIGHT}`,
+                borderRadius: Radius.SM,
                 padding: Spacing.XS,
               }}
             >
@@ -232,7 +240,7 @@ export const SettingsGroup: React.FC<Props> = ({
               <div
                 style={{
                   fontSize: FontSize.PRIMARY,
-                  lineHeight: 1.6,
+                  lineHeight: READING_LINE_HEIGHT,
                   padding: gap,
                   background: Colors.BG.SECONDARY,
                   borderRadius: Radius.SM,
@@ -246,10 +254,10 @@ export const SettingsGroup: React.FC<Props> = ({
                   height: controlHeight,
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '0 8px',
+                  padding: `0 ${Spacing.MD}px`,
                   fontSize: FontSize.PRIMARY,
                   background: Colors.BG.SECONDARY,
-                  border: `1px solid ${Colors.BORDER.DEFAULT}`,
+                  border: `${BorderWidth.THIN}px solid ${Colors.BORDER.DEFAULT}`,
                   borderRadius: Radius.SM,
                 }}
               >
@@ -273,9 +281,9 @@ export const SettingsGroup: React.FC<Props> = ({
           key={px}
           style={{
             fontSize: px,
-            lineHeight: 1.6,
+            lineHeight: READING_LINE_HEIGHT,
             padding: Spacing.XS,
-            border: `1px solid ${px === fontSize ? Colors.PRIMARY : 'transparent'}`,
+            border: `${BorderWidth.THIN}px solid ${px === fontSize ? Colors.PRIMARY : 'transparent'}`,
             borderRadius: Radius.SM,
             color: Colors.TEXT.PRIMARY,
           }}

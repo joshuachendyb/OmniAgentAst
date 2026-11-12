@@ -30,6 +30,11 @@ import {
 // 密度词表唯一真源(2026-11-12 小欧 - 文档[32]): 本文件不再自造 'comfortable' | 'compact' 字面量联合
 import type { AppearanceDensity } from '@/constants/appearancePrefs';
 
+// 2026-11-13 小欧 - 阅读区正文行高收口为唯一常量: preview/doc 两场景同值 1.6,
+//   设置页预览小卡此前自写裸 1.6 构成第二真源, 现同源引用本常量。
+export const READING_LINE_HEIGHT = 1.6;
+
+
 /** 排版场景(每个场景 = 从全局阶梯中取用的一段连续区间) */
 export type MdScene = 'preview' | 'doc' | 'chat' | 'task';
 
@@ -141,7 +146,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     inlineCodeTier: 'SECONDARY',
     measure: '40em',
     spacing: {
-      lineHeight: 1.6,
+      lineHeight: READING_LINE_HEIGHT,
       paraGap: 8,
       headTop: 16,
       headBottom: 8,
@@ -174,7 +179,7 @@ const SCENES: Record<MdScene, SceneConfig> = {
     inlineCodeTier: 'SECONDARY',
     measure: '40em',
     spacing: {
-      lineHeight: 1.6,
+      lineHeight: READING_LINE_HEIGHT,
       paraGap: 8,
       headTop: 12,
       headBottom: 8,

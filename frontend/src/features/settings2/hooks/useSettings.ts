@@ -34,7 +34,13 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { modelDirtyCount } from '../utils/modelUtils';
 import { initialModel } from '../utils/modelState';
 import { findGroupOfKey } from '../utils/settingsShape';
-import { PREF_KEY, readLocalPrefs, APPEARANCE_PREFS_CHANGED_EVT } from '@/constants/appearancePrefs';
+import {
+  APPEARANCE_PREFS_CHANGED_EVT,
+  LOCAL_PREF_SETTING_KEYS,
+  PREF_KEY,
+  localPrefKeyOf,
+  readLocalPrefs,
+} from '@/constants/appearancePrefs';
 import { useSettingsHighlight } from './useSettingsHighlight';
 import { useSettingsLoad } from './useSettingsLoad';
 import { useSettingsWrites } from './useSettingsWrites';
@@ -113,16 +119,15 @@ export function useSettings() {
   const setValue = useCallback((group: string, key: string, value: unknown) => {
     // 2026-11-12 小欧 - 外观两项(阅读区字号/界面密度)写本地预应用后广播变更事件:
     //   读取侧 hook(useAppearancePrefs)据此即时生效(不必等保存往返), 跨标签页由 storage 事件同步。
-    if (
-      group === 'appearance' &&
-      (key === 'appearance.fontSize' || key === 'appearance.density')
-    ) {
+    // 2026-11-13 小欧 - 键判定/本地键名收口到 constants/appearancePrefs 单点
+    //   (LOCAL_PREF_SETTING_KEYS + localPrefKeyOf), 修复三元硬编码「加第三项必漏」缺陷。 — 小欧-2026-11-13
+    if ((LOCAL_PREF_SETTING_KEYS as readonly string[]).includes(key)) {
       try {
         localStorage.setItem(
           PREF_KEY,
           JSON.stringify({
             ...readLocalPrefs(),
-            [key === 'appearance.fontSize' ? 'fontSize' : 'density']: value,
+            [localPrefKeyOf(key)]: value,
           })
         );
         window.dispatchEvent(new Event(APPEARANCE_PREFS_CHANGED_EVT));
