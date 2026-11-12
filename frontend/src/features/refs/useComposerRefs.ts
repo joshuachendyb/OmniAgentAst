@@ -25,6 +25,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -68,10 +69,17 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     refNoticeStore.getSnapshot
   );
 
-  /** 最新 chips 镜像(异步窗口读真值) — 2026-10-30 小欧 */
+  /** 最新 chips 镜像(异步窗口读真值) — 2026-10-30 小欧
+   *  2026-11-12 小欧 - 镜像改用 useLayoutEffect: 被动 effect 在 React 18 里是**异步调度**的,
+   *    存在「DOM 已显示新 chip、但镜像仍是旧数组」的窗口 —— 预检在途时用户新增的引用会被漏发
+   *    (refs-real-scenarios R2-1 复现: 芯片已出现在界面上, 发出去的上行 refs 里却没有它)。
+   *    layout effect 与 DOM 提交**同刻**执行 → 镜像与界面永远一致, 不存在这一窗口。
+   *    setLive(配额记账)仍留被动 effect: 它只写 store, 不在读路径上, 无需同刻。 */
   const refsRef = useRef<ComposerRef[]>([]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     refsRef.current = refs;
+  }, [refs]);
+  useEffect(() => {
     // 上限判定真源: store 需要知道"已入队多少条"(队列只是一次性投递通道)
     composerRefStore.setLive(refs);
   }, [refs]);
