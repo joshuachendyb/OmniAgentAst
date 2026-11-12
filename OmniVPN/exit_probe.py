@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_probe.py — 出口身份探测与 mihomo VPN 状态检查（查桶）
-# 编写人: 小欧    版本: v2.3    更新时间: 2026-11-12 04:00:00
+# 编写人: 小欧    版本: v2.5    更新时间: 2026-11-12 13:00:00
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
@@ -11,6 +11,13 @@
 #                       (运行中/未运行、存活/失联、启用/未启用), 控制器端口提为常量
 #   v2.3 2026-11-12 小欧 不带参数 = --mihomo 体检 + 走 7890 查当前出口桶, 两段连跑
 #                       (用户指定); 显式 --cf-trace 缺省仍查裸线, 原口径不变
+#   v2.4 2026-11-12 小欧 修复退化: 原"直连恒为裸线(loc=CN)"是硬假设, 机器上其它 TUN 模式 VPN
+#                       (实测 skyline)接管直连后被误标为裸线且全程不点名; 新增 [0] 本机 VPN
+#                       隧道环境节(枚举 TUN/隧道网卡 + 已知 VPN 进程), [4] 判定行改动态
+#                       (隧道 Up = 直连出口为该 VPN 出口, 非裸线); 通用化实现, 不写死任何一家
+#   v2.5 2026-11-12 小欧 出口信息永不缺位(用户要求: 不管哪个 VPN 在跑都要输出完整出口对照):
+#                       不带参数时 7890 未运行不再跳过 trace 段, 改查直连链路出口(被 TUN 接管
+#                       时即该 VPN 出口, 带 trace 明细+ASN 归属); 显式 --cf-trace 口径不变
 #   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
 #                       新增 --cf-trace; 出口身份带 family/loc/colo
 #   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
@@ -36,21 +43,30 @@
 #   python exit_probe.py --cf-trace       # 只查出口身份(缺省裸线, 恒 loc=CN) + ASN 归属
 #   python exit_probe.py --cf-trace --proxy http://127.0.0.1:7890   # 查当前出口桶(走节点)
 #
-# --mihomo 查什么: 7890/9090 端口 → 内核版本 → PROXY 组当前选中 → 各节点最近测活结果
-#                  → 系统代理开关 → 直连出口 vs 走代理出口(桶对照)
+# --mihomo 查什么: [0] 本机 VPN 隧道环境(TUN/隧道网卡+VPN进程) → 7890/9090 端口 → 内核版本
+#                  → PROXY 组当前选中 → 各节点最近测活结果 → 系统代理开关 → 直连出口 vs 走代理出口
 
 import argparse
+import csv
 import datetime
 import ipaddress
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 
 import httpx
 
 IP_ECHO = ["https://api.ipify.org?format=json", "https://ifconfig.me/ip"]
+
+# TUN/隧道网卡识别关键词(通用, 不写死任何一家 VPN) — 小欧 2026-11-12
+TUN_KEYWORDS = ("tunnel", "tun-", "tap-", "wintun", "wireguard", "tap windows",
+                "openvpn", "skyline", "tailscale", "zerotier", "radmin")
+# 已知 VPN/代理内核进程名(子串匹配, 报告里点名谁在跑) — 小欧 2026-11-12
+KNOWN_VPN_PROCS = ("skyline", "mihomo", "clash", "v2ray", "xray", "sing-box", "singbox",
+                   "hysteria", "wireguard", "openvpn", "gost", "tun2socks", "tailscale")
 
 # Cloudflare 的 trace 端点：返回 CF 眼中的来源 IP / 地区 / 边缘机房。
 # opencode.ai 与 www.cloudflare.com 在同一张 CF 网络上，所以这里的 ip= 最接近服务端实际看到的地址。
@@ -220,9 +236,61 @@ def _port_open(port):
         return False
 
 
+def _list_adapters():
+    """枚举本机网卡: [(名称, 描述, 状态)]。经 PowerShell Get-NetAdapter 取权威数据。"""
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-NetAdapter | Select-Object Name,InterfaceDescription,Status | "
+             "ConvertTo-Csv -NoTypeInformation"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=25)
+        rows = list(csv.DictReader((r.stdout or "").splitlines()))
+        return [(x.get("Name", ""), x.get("InterfaceDescription", ""), x.get("Status", ""))
+                for x in rows if x.get("Name")]
+    except Exception:
+        return []
+
+
+def _vpn_processes():
+    """正在运行的已知 VPN/代理内核进程名(去重)。"""
+    try:
+        r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=25)
+        running = {row[0].lower() for row in csv.reader((r.stdout or "").splitlines()) if row}
+        return sorted({p for p in KNOWN_VPN_PROCS if any(p in n for n in running)})
+    except Exception:
+        return []
+
+
+def tunnel_env(log):
+    """[0] 本机 VPN 隧道环境: TUN/隧道网卡 + 已知 VPN 进程。
+    判定直连链路是否被其它 VPN 接管(skyline 等 TUN 工具开着时, 直连出口=该 VPN 出口,
+    不再是裸线; v2.3 及以前误标为裸线) — 小欧 2026-11-12"""
+    adapters = _list_adapters()
+    tunnels = [(n, d, s) for (n, d, s) in adapters
+               if any(k in (d or "").lower() or k in (n or "").lower() for k in TUN_KEYWORDS)]
+    log("[0] 本机 VPN 隧道环境")
+    if tunnels:
+        for n, d, s in tunnels:
+            tag = "  <- 接管中(直连出口被此网卡接管)" if s == "Up" else ""
+            log("    网卡 %-30s [%s] %s%s" % (n, s, d, tag))
+    else:
+        log("    网卡         : 未发现 TUN/隧道类网卡")
+    procs = _vpn_processes()
+    log("    VPN 进程     : %s" % (", ".join(procs) if procs else "未发现已知 VPN 进程"))
+    tun_up = any(s == "Up" for _, _, s in tunnels)
+    log("    结论         : %s" % (
+        "隧道网卡 Up, 直连链路已被 VPN(TUN)接管 -> [4] 的直连出口是该 VPN 的出口, 非裸线"
+        if tun_up else
+        "无 Up 状态隧道网卡 -> 直连出口为裸线"))
+    return tun_up
+
+
 def mihomo_status(log, proxy):
     """一条命令体检 mihomo VPN: 服务进程 -> 节点池 -> 系统代理 -> 出口对照。
     作者: 小欧 2026-11-12"""
+    tun_up = tunnel_env(log)
     log("[1] 服务进程")
     up, api = _port_open(PROXY_PORT), _port_open(CONTROLLER_PORT)
     log("    代理端口 %d : %s" % (PROXY_PORT, "运行中" if up else "未运行"))
@@ -265,7 +333,10 @@ def mihomo_status(log, proxy):
     log("    直连出口   : %s" % fmt_identity(exit_identity(make_client())))
     log("    代理出口   : %s" % fmt_identity(
         exit_identity(make_client(proxy=proxy or "http://127.0.0.1:%d" % PROXY_PORT))))
-    log("    判定       : 直连恒为裸线(loc=CN); 看「代理出口」的前缀+loc 即当前出口桶")
+    log("    判定       : %s" % (
+        "直连出口已被隧道接管(见[0]), 这一行是 VPN 的出口不是裸线; 看「代理出口」的前缀+loc 即 mihomo 出口桶"
+        if tun_up else
+        "直连恒为裸线(loc=CN); 看「代理出口」的前缀+loc 即当前出口桶"))
 
 
 def main():
@@ -294,11 +365,11 @@ def main():
         lines.append(s)
 
     log("=" * 78)
-    log("exit_probe v2.3  出口身份探测 / mihomo VPN 状态    %s" % stamp)
+    log("exit_probe v2.5  出口身份探测 / mihomo VPN 状态    %s" % stamp)
     log("=" * 78)
 
     # 模式判定: 显式 --mihomo 只体检; 显式 --cf-trace 只查出口(缺省裸线);
-    # 不带参数 = 体检 + 走 7890 查当前出口桶, 两段连跑(用户指定 2026-11-12)
+    # 不带参数 = 体检 + 查当前出口桶, 两段连跑(用户指定 2026-11-12)
     mode_status = args.mihomo or not args.cf_trace
     mode_trace = args.cf_trace or not args.mihomo
 
@@ -306,39 +377,43 @@ def main():
         mihomo_status(log, args.proxy)
 
     if mode_trace:
-        skip_trace = False
         if args.cf_trace:
             obs = args.proxy or None   # 显式 --cf-trace: 不给 --proxy 即查裸线(None=直连, 口径不变)
         else:
-            obs = args.proxy or "http://127.0.0.1:%d" % PROXY_PORT  # 无参数: 查当前出口桶
-            if not _port_open(PROXY_PORT):
-                log("[提示] 本地代理端口 %d 未运行, 跳过走代理出口查询" % PROXY_PORT)
-                skip_trace = True
-        if not skip_trace:
-            client = make_client(proxy=obs)
-            trace = cf_trace(client)
-            if not trace:
-                log("[错误] Cloudflare trace 无响应 (链路不通或被代理拦截)")
-                client.close()
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write("\n".join(lines))
-                print("报告已落盘: %s" % out_path)
-                return 2
-            for key in ("ip", "loc", "colo", "warp", "gateway", "visit_scheme", "http", "tls"):
-                if key in trace:
-                    log("%-14s %s" % (key, trace[key]))
-            ident = exit_identity(client)
-            log("出口身份       : %s" % fmt_identity(ident))
-            info = asn_of(client, (ident or {}).get("ip"))
-            if info:
-                log("ASN            : %s  (%s)" % (info.get("as"), info.get("asname")))
-                log("归属           : %s %s %s / %s" % (info.get("country"), info.get("regionName"),
-                                                      info.get("city"), info.get("isp")))
-                if info.get("reverse"):
-                    log("reverse        : %s" % info["reverse"])
-            log("说明: ip= 即服务端(经 Cloudflare)所见地址; 换节点后该值不变 = 未换出口。")
-            log("      出口桶指纹 = 前缀(IPv4 /24, IPv6 /48) + loc; 同前缀仅尾号变化 = 同一桶。")
+            # v2.5: 7890 未运行不再跳过——不管哪个 VPN 在跑都要给完整出口信息;
+            # mihomo 没跑时当前出口 = 直连链路出口(skyline 等 TUN 接管时即该 VPN 出口, 见[0])
+            if args.proxy:
+                obs = args.proxy
+            elif _port_open(PROXY_PORT):
+                obs = "http://127.0.0.1:%d" % PROXY_PORT
+            else:
+                obs = None
+                log("[提示] 本地代理端口 %d 未运行: 无 mihomo 代理出口可查, "
+                    "下面查的是直连链路出口(被 TUN VPN 接管时即该 VPN 的出口, 见[0])" % PROXY_PORT)
+        client = make_client(proxy=obs)
+        trace = cf_trace(client)
+        if not trace:
+            log("[错误] Cloudflare trace 无响应 (链路不通或被代理拦截)")
             client.close()
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            print("报告已落盘: %s" % out_path)
+            return 2
+        for key in ("ip", "loc", "colo", "warp", "gateway", "visit_scheme", "http", "tls"):
+            if key in trace:
+                log("%-14s %s" % (key, trace[key]))
+        ident = exit_identity(client)
+        log("出口身份       : %s" % fmt_identity(ident))
+        info = asn_of(client, (ident or {}).get("ip"))
+        if info:
+            log("ASN            : %s  (%s)" % (info.get("as"), info.get("asname")))
+            log("归属           : %s %s %s / %s" % (info.get("country"), info.get("regionName"),
+                                                  info.get("city"), info.get("isp")))
+            if info.get("reverse"):
+                log("reverse        : %s" % info["reverse"])
+        log("说明: ip= 即服务端(经 Cloudflare)所见地址; 换节点后该值不变 = 未换出口。")
+        log("      出口桶指纹 = 前缀(IPv4 /24, IPv6 /48) + loc; 同前缀仅尾号变化 = 同一桶。")
+        client.close()
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
