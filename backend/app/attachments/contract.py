@@ -7,6 +7,15 @@
 # 2026-11-11 小欧 三堂会审整改: 增 suffix_kind() 后缀→content_kind 词典下发出口,
 #   消前端 useRefCapabilityMap 复制后缀表的双真源漂移 — 小欧-2026-11-11
 
+# 2026-11-12 小欧 修正 state_of 两处错判: ①text 路由(native_modality=None,
+#   fallback_quality=content)误判 degraded, 实为全文注入, 判 native 档;
+#   ②_URL_OVERRIDE["text"] 的 fallback_quality 由 content 改 link(实际出口
+#   _link_body 只注入链接地址), 判 opaque 档 — 判定对齐运行时实际, 纠错非兼容改动
+
+# 2026-11-12 小欧 删 state_of 的 transport_ok 死参数: plan_refs 仅在非 native 分支调用,
+#   该参数在判定式中恒不起作用; ref_capability_map 投影传 False 致有原生模态路由
+#   (image/video/audio/richdoc)在矩阵永远显不出 native, 与 plan_refs 只看 cap.native
+#   的运行时口径分叉(视觉模型图片格错显元信息注入)。native 判定统一只看画像声明 — 小欧-2026-11-12
 
 """attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
@@ -73,7 +82,7 @@ _BASE: Dict[str, KindRoute] = {
     "unknown": KindRoute(None,    "link",     _link_body,    "notice"),
 }
 _URL_OVERRIDE: Dict[str, KindRoute] = {
-    "text":    KindRoute(None,    "content", _link_body, "link_text", fetch="optional"),
+    "text":    KindRoute(None,    "link",    _link_body, "link_text", fetch="optional"),
     "image":   KindRoute("image", "link", _link_body, "link_text", fetch="optional"),
     "video":   KindRoute("video", "link", _link_body, "link_text", fetch="optional"),
     "audio":   KindRoute("audio", "link", _link_body, "link_text", fetch="optional"),
@@ -131,13 +140,19 @@ def dedup_key(item: Dict[str, Any]) -> str:
     return f"file:{str(item.get('path') or '').replace(chr(92), '/').lower()}"
 
 
-def state_of(source_kind: str, content_kind: str, prof: Dict[str, Any],
-             transport_ok: bool) -> str:
-    """唯一状态函数(C9): link/card → opaque; content/metadata → degraded。"""
+def state_of(source_kind: str, content_kind: str, prof: Dict[str, Any]) -> str:
+    """唯一状态函数(C9): degraded 仅在"有原生模态但未走原生"时成立;
+    native_modality 为 None 的路由无降级可言, 直接按 fallback_quality 定档
+    (content→native 全文注入, card/metadata→degraded, link→opaque)。
+    native 判定只看画像声明(与 plan_refs 同口径): transport 可用性是逐条目
+    运行时事实, 不属于模型能力投影, 二维投影不得掺入。"""
     route = KIND_CONTRACT[(source_kind, content_kind)]
     cap = prof.get(route.native_modality) if route.native_modality else None
-    if cap and cap.native and transport_ok:
+    if cap and cap.native:
         return "native"
+    if route.native_modality is None:
+        return "native" if route.fallback_quality == "content" else (
+            "degraded" if route.fallback_quality == "metadata" else "opaque")
     if route.fallback_quality in ("content", "metadata"):
         return "degraded"
     return "opaque"
@@ -164,7 +179,7 @@ def plan_refs(items: Optional[List[Dict[str, Any]]], prof: Dict[str, Any]) -> Li
         if cap and cap.native:
             plans.append(replace(base, state="native", transport=_pick_transport(cap)))
         else:
-            plans.append(replace(base, state=state_of(src, ck, prof, False),
+            plans.append(replace(base, state=state_of(src, ck, prof),
                                  reason=_reason(route, cap)))
     return plans
 
@@ -179,7 +194,7 @@ def aggregate_state(states: List[str]) -> str:
 
 def ref_capability_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
     """二维只读投影 {source_kind: {content_kind: state}}, 前端/23 只读索引。"""
-    return {s: {c: state_of(s, c, prof, False) for c in CONTENT_KINDS}
+    return {s: {c: state_of(s, c, prof) for c in CONTENT_KINDS}
             for s in SOURCE_KINDS}
 
 
