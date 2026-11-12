@@ -4,7 +4,7 @@
 **编写人**: 小欧
 **维护人**: 小欧
 **最后更新时间**: 2026-11-12
-**最近更新**: 2026-11-12 小欧 §1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最近更新**: 2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -15,6 +15,20 @@
 3. **没有才创建新的（先查后建）**
 4. **新函数必须添加到本清单（版本历史同步登记）**
 5. **禁止向后兼容：不保留旧名称别名，不做新旧双轨**
+
+### 前端控件规格铁律（2026-11-12 小欧 增补，强制）
+
+与《开发人员戒律》第八章同源；本节为前端唯一执行清单。控件规格唯一真源：`frontend/src/theme/controlScale.ts`（登记见 §1.4），推导与验收线见 `doc-11月优化/[32]全站控件刻度统一与界面密度设计-小欧-2026-11-12.md`。
+
+| 规则 | 说明 | 违反后果 |
+|------|------|---------|
+| **控件规格唯一定义点** | 控件高/圆角的**全部档位**只能在 `frontend/src/theme/controlScale.ts` 定义；其它任何文件不得写死控件高数值或另立刻度表 | 退回重做 |
+| **禁沿用 UI 库缺省值** | 不得把 UI 库的缺省 token（如 antd 的 `controlHeight` 32 / `borderRadius` 6）当作项目标准；缺省值只作反例 | 退回重做 |
+| **禁依赖库的派生公式** | 库按公式派生的档位（antd 的 `controlHeightSM` = base×0.75、`controlHeightLG` = base×1.25 等）必须**显式下发**后再用；放任派生会产出 21/35 这类非 4px 网格值 | 退回重做 |
+| **密度只切档位** | 界面密度 = 「哪一档控件高生效」，不是「在某基线上减几 px」；密度**不得改字号** | 退回重做 |
+| **字号恒 14** | 控件内字号恒 14px；**禁止用 antd `componentSize` 承载密度**（其 small 档会把 `Select`/`DatePicker` 字号切到 12） | 退回重做 |
+| **流水线零变化** | 流水线（消息渲染区）控件在两档密度下必须像素不变；流水线内唯一 antd 控件走 small 档，故 small 档两档同值 | 退回重做 |
+| **数字只在 TS 一处** | CSS 只消费 TS 解算出的变量，不得在 CSS 里写像素数字（与 [30] 排版单一真源同源纪律） | 退回重做 |
 
 ---
 
@@ -329,3 +343,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.2 | 2026-11-10 | §4.1 chat 特征层新登记 `INPUT_HINTS`（`components/input/InputCore.tsx`）：输入框空态静态帮助清单（6 条输入方式），编号按数组下标自动生成；增删改输入方式只改数组、无需动 JSX；与动态提示 `executingHint`（执行中插话/正在提交）互斥且不编号 | 小欧 |
 | v1.3 | 2026-11-12 | §1.4 新登记 `controlScale.ts`（`theme/controlScale.ts`）：**全站控件刻度唯一真源** —— 控件高三档（24/28/32，等差 4px）× 两档密度（紧凑档整档下移一档、小档 24 两档同值）+ 全局圆角三档（取自 stepStyles 的 Radius 阶梯）+ 页面级圆角全档 4 预设 + `controlScaleTokens`/`pageControlTokens` 两个 token 构造器。配套文档[32]；§1.4–§1.11 章节序号顺延（原 1.4–1.9 后移一位，无交叉引用需改） | 小欧 |
 | v1.4 | 2026-11-12 | §1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（补登上一轮遗漏）：Markdown 排版解算（`mdStyles` / `codeFenceLineHeight` / `isNumericCell` / `codeBlockStyle`，文档[30]）与外观偏好读取（`APPEARANCE_FONT_SIZES`/`APPEARANCE_DENSITIES` 密度词表唯一真源、`AppearanceDensity` 类型、`clampFontSize`/`clampDensity`、`useAppearancePrefs`）；`DENSITY_PAD` 登记为阅读区间距系数唯一真源 | 小欧 |
+| v1.5 | 2026-11-12 | §使用规则 新增「前端控件规格铁律（强制）」七条：控件规格唯一定义点（`theme/controlScale.ts`）、禁沿用 UI 库缺省值、禁依赖库的派生公式、密度只切档位、字号恒 14（禁 `componentSize` 承载密度）、流水线零变化、数字只在 TS 一处；与《开发人员戒律》第八章同源，本清单为前端唯一执行位置；依据文档[32] | 小欧 |
