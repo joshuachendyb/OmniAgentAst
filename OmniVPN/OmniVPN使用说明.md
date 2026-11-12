@@ -39,15 +39,17 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 **proxy-off.ps1** 恢复直连：关闭 WinInet 系统代理；加 `-Stop` 参数时连 mihomo 进程一起停（同时收 `mihomo-slim` 与官方内核名两个进程名），停完报告当前直连出口。
 
-### 3.3 nodepool 节点池流水线（nodepool\ 子目录）
+### 3.3 nodepool 节点池流水线（入口在根目录，步骤实现在 nodepool\ 子目录）
 
-免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。`rebuild-pool.ps1`（bat 为双击壳）按序执行 9 步：抓取 9 个公开订阅源（`_fetch2.py`，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，绑源地址 3 秒判据）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟；并发 12 实测存活数最准，调大会低估）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
+免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。双击入口 `rebuild-pool.bat` 在 OmniVPN 根目录（用户要求：双击执行脚本不放子目录），它调用编排 `rebuild-pool.ps1`（v1.2），步骤实现脚本在 `nodepool\` 下，按序执行 11 步：抓取公开订阅源（`_fetch2.py`，9 源并行抓取，秒级完成，直连失败自动走 7890 备援，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，绑源地址 3 秒判据）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"）→ **死点池复活注入**（`_deadpool.py revive`，把上次实测失败的节点追加进待测清单，跳过 TCP/TLS 预筛直进实测，单次上限 300 条）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟；并发 12 实测存活数最准，调大会低估）→ **死点池结算**（`_deadpool.py record`：注入且实测通过 = 复活移出池；仍失败 = 失败次数+1；连续 5 次死 = 彻底清除；本轮新失败的新鲜节点 = 入池。池文件 `log\deadpool.txt`）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
 
-公开免费池的存活率约 1.2%（实测：9 源 5776 条 → TCP 通 1826 → mihomo 节点 1290 → 真能出网 16 → 每桶留 2 共 6），节点失联与复活都属正常。
+死点池存在的原因：免费节点失联后过几天常会复活，一次性淘汰太浪费；连续 5 次实测仍死的才彻底扔掉。不想跑全量重建时，双击 `update-pool-quick.bat` 做轻量巡检（约 1~2 分钟）：现池逐节点复验报存活数 + 死点池复活实测与结算，实测用临时端口 7897/9097 起独立 mihomo 实例，不影响在跑的 7890/9090 主实例；该巡检也挂在 `proxy-switch.bat` 尾部，换桶结束后自动带跑一遍。
+
+公开免费池的存活率约 1.2%（实测口径：源单 9 源进料 15001 条 → TLS 通约 2 千 → mihomo 节点约 1300 → 真能出网约 16 → 每桶留 2 共 6），节点失联与复活都属正常。
 
 ### 3.4 目录里其余文件
 
-`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加 6 个内联节点加 WLAN 绑定。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑第 8/9 步够用）、探测报告 exit_probe_report-*.txt、订阅缓存。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
+`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加 6 个内联节点加 WLAN 绑定。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑"测出口定桶/轮转排序"两步够用）、探测报告 exit_probe_report-*.txt、订阅缓存、死点池 deadpool.txt 与轻量巡检目录 quick\。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
 
 ## 4 脚本与命令的使用
 
@@ -55,37 +57,99 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 每天开始干活前双击 `proxy-on.bat`——窗口会依次打印内核就绪、系统代理启用、直连出口与代理出口对照，看完就能关（mihomo 是后台进程不受影响，但出口查询每步要 3~8 秒，别在查询中途关窗）。看"代理出口"那一项的 loc 和前缀，就是当前出口桶。
 
-撞 429 时双击 `proxy-switch.bat`——窗口出现"换桶成功"即配额恢复，继续发请求；出现"换桶失败"说明节点池整体失效，按提示按 Y 重建（约 15 分钟），或直接双击 `nodepool\rebuild-pool.bat`。
+撞 429 时双击 `proxy-switch.bat`——窗口出现"换桶成功"即配额恢复，继续发请求；出现"换桶失败"说明节点池整体失效，按提示按 Y 重建（约 15~20 分钟），或直接双击根目录的 `rebuild-pool.bat`。
 
-收工时双击 `proxy-off.bat`——取消系统代理并停止内核，本机恢复裸线直连（出口恒为 `loc=CN`）；只想关系统代理、保留内核运行，用命令行 `proxy-off.ps1`（不带 `-Stop`，见 4.2）。
+收工时双击 `proxy-off.bat`——取消系统代理并停止内核，本机恢复裸线直连（出口恒为 `loc=CN`）；只想关系统代理、保留内核运行，用命令行 `proxy-off.ps1`（不带 `-Stop`，见 4.2.1）。
+
+平时想确认节点池健康度，双击 `update-pool-quick.bat`——先复验现池（打印"现池存活 x / y"，全死会提示重建），再把死点池里的节点拉出来实测一轮（复活移出、连续 5 死清除），全程 1~2 分钟。注意 `proxy-switch.bat` 每次换桶后会自动带跑这个巡检，通常无需手动双击。
 
 ### 4.2 命令行用法
 
-以下相对路径命令的执行前提是站在仓库根 `D:\NDOOmniAgent` 下（脚本内部全部按 `__file__`/`$PSScriptRoot`/`%~dp0` 自定位，报告落盘与 import 不受当前目录影响，故也可改用绝对路径在任意目录执行）。
+以下相对路径命令的执行前提是站在仓库根 `D:\NDOOmniAgent` 下（脚本内部全部按 `__file__`/`$PSScriptRoot`/`%~dp0` 自定位，报告落盘与 import 不受当前目录影响，故也可改用绝对路径在任意目录执行）。bat 是双击入口，ps1 是同一功能的命令行实现（bat 内部就是调同名 ps1），按处理操作对象分节如下：
+
+| 处理操作对象 | 双击入口（bat） | 命令行实现 |
+|------|------|------|
+| mihomo 主实例与系统代理（7890/9090） | `proxy-on.bat` / `proxy-off.bat` | `proxy-on.ps1` / `proxy-off.ps1` |
+| 出口桶（PROXY 组当前选中节点） | `proxy-switch.bat` | `proxy-switch.ps1`、`exit_rotator.py` |
+| 节点池（`log\` 池数据 + `mihomo\config.yaml` 节点段） | `rebuild-pool.bat`、`update-pool-quick.bat` | `rebuild-pool.ps1`、`update-pool-quick.ps1`、`nodepool\_deadpool.py` |
+| 出口身份与隧道环境诊断 | ——（报告落 `log\exit_probe_report-*.txt`） | `exit_probe.py` |
+| 本机命令行程序的网络出口 | ——（设环境变量，无脚本） | `$env:HTTP_PROXY` / `$env:HTTPS_PROXY` |
+
+#### 4.2.1 mihomo 主实例与系统代理
+
+操作对象：7890/9090 端口的 mihomo 内核进程 + WinInet 系统代理开关。
+
+```bat
+:: 双击(或命令行直接调): 启动内核(未监听才启, 最多等 15 秒) + 设系统代理 + 打印直连/代理出口对照
+OmniVPN\proxy-on.bat
+:: 双击(或命令行直接调): 取消系统代理并连内核一起停(固定带 -Stop)
+OmniVPN\proxy-off.bat
+```
+
+ps1 是更细粒度的命令行版，差别在 `proxy-off.ps1` 不带 `-Stop` 时只关系统代理、内核留着跑：
 
 ```powershell
-# 体检 + 查当前出口桶(两段连跑, 日常首选)
+powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-on.ps1
+powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-off.ps1        # 只关系统代理, 内核继续跑
+powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-off.ps1 -Stop  # 关系统代理并停内核(= proxy-off.bat)
+```
+
+#### 4.2.2 出口桶（撞 429 时换出口）
+
+操作对象：PROXY 组当前选中的节点（换节点 = 换出口桶）。
+
+```powershell
+# = 双击 OmniVPN\proxy-switch.bat: 先确认内核在跑, 最多 4 轮自动换桶, 全失败引导重建
+powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-switch.ps1
+
+# 底层执行器(单次口径; proxy-switch.ps1 内部调的就是它)
+python OmniVPN\exit_rotator.py --verify --proxy http://127.0.0.1:7890
+python OmniVPN\exit_rotator.py --target mihomo --group PROXY --wait --proxy http://127.0.0.1:7890
+```
+
+返回码 0/1/2 的判定口径见 4.3。
+
+#### 4.2.3 节点池
+
+操作对象：`log\` 下的池数据文件与 `mihomo\config.yaml` 的节点段（含死点池 `log\deadpool.txt`）。
+
+```powershell
+# 全量重建(11 步约 15~20 分钟; = 双击 OmniVPN\rebuild-pool.bat)
+powershell -ExecutionPolicy Bypass -File OmniVPN\rebuild-pool.ps1
+
+# 轻量巡检(现池复验 + 死点复活结算, 1~2 分钟, 临时端口不影响在跑的 mihomo; = 双击 update-pool-quick.bat)
+powershell -ExecutionPolicy Bypass -File OmniVPN\update-pool-quick.ps1
+
+# 死点池单步手动(一般不用: 流水线第 4/11、7/11 步与巡检脚本会自动调)
+python OmniVPN\nodepool\_deadpool.py revive <tls_ok.txt> <inject_out.txt>
+python OmniVPN\nodepool\_deadpool.py record <map.txt> <good.txt> <reachable.txt> <inject.txt>
+```
+
+`nodepool\` 下其余 `_*.py` 是流水线步骤实现脚本，只被编排 ps1 调用，不单独手动跑。
+
+#### 4.2.4 出口身份与隧道环境诊断
+
+操作对象：本机直连/代理两条链路的出口身份（IP、前缀、loc、ASN）与本机 VPN 隧道环境。
+
+```powershell
+# 体检 + 查当前出口(两段连跑, 日常首选): 7890 在跑查代理出口, 没跑则查直连链路出口(被 TUN VPN 接管时即该 VPN 出口)
 python OmniVPN\exit_probe.py
 
-# 只做 VPN 状态体检
+# 只做 VPN/代理状态体检(TUN 隧道环境、端口、PROXY 选中、系统代理)
 python OmniVPN\exit_probe.py --mihomo
 
 # 只查出口身份
 python OmniVPN\exit_probe.py --cf-trace                                # 裸线, 恒 loc=CN
 python OmniVPN\exit_probe.py --cf-trace --proxy http://127.0.0.1:7890  # 当前出口桶(看这个)
+```
 
-# 换桶执行器口径
-python OmniVPN\exit_rotator.py --verify --proxy http://127.0.0.1:7890
-python OmniVPN\exit_rotator.py --target mihomo --group PROXY --wait --proxy http://127.0.0.1:7890
+不管哪个 VPN 在跑，报告都输出完整出口对照（直连出口 + 代理出口 + trace 明细 + ASN 归属），落盘 `log\exit_probe_report-*.txt`。
 
-# 代理开关(双击脚本的内部等价)
-powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-on.ps1
-powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-off.ps1 -Stop
+#### 4.2.5 本机命令行程序的网络出口
 
-# 重建节点池(proxy-switch 引导, 或双击 nodepool\rebuild-pool.bat)
-powershell -ExecutionPolicy Bypass -File OmniVPN\nodepool\rebuild-pool.ps1
+操作对象：不认 WinInet 系统代理的命令行程序（bun/undici 等）。手动喂环境变量，只认 `http://`，别用 7891 SOCKS：
 
-# 命令行程序不认系统代理时手动喂(bun/undici 只认 http://, 别用 7891 SOCKS)
+```powershell
 $env:HTTP_PROXY='http://127.0.0.1:7890'; $env:HTTPS_PROXY='http://127.0.0.1:7890'
 ```
 
@@ -95,7 +159,7 @@ $env:HTTP_PROXY='http://127.0.0.1:7890'; $env:HTTPS_PROXY='http://127.0.0.1:7890
 
 ### 4.4 常见问题处置
 
-`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。4 轮全失败，整池死透，走重建。
+`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2.5 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。4 轮全失败，整池死透，走重建。
 
 ## 5 相关文档
 

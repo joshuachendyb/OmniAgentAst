@@ -201,7 +201,8 @@ ipv4 栈换桶无效。Cloudflare 永远分配同一个共享 NAT 地址 104.28.
 | `OmniVPN\proxy-on.bat` | 启动 mihomo + 设系统代理 7890 + 打印直连/代理出口对照 | 开始干活前 |
 | `OmniVPN\proxy-switch.bat` | 换出口桶，最多 4 轮自动跳失联节点，全失败引导重建节点池 | 撞 429 时 |
 | `OmniVPN\proxy-off.bat` | 取消系统代理 + 停止 mihomo（bat 固定带 `-Stop`） | 收工/回直连 |
-| `OmniVPN\nodepool\rebuild-pool.bat` | 重建节点池（9 步约 15 分钟，跑完自动重启 mihomo） | 整池死透时 |
+| `OmniVPN\rebuild-pool.bat` | 重建节点池（11 步约 15~20 分钟，含死点池复活/结算，跑完自动重启 mihomo；步骤实现在 nodepool\） | 整池死透时 |
+| `OmniVPN\update-pool-quick.bat` | 轻量巡检：现池复验 + 死点复活结算（约 1~2 分钟，临时端口不影响在跑的 mihomo） | 换桶后自动带跑/想看池健康度时 |
 
 mihomo 是独立后台进程，关掉窗口不影响代理运行；出口查询每步 3~8 秒，别在查询中途关窗。
 
@@ -252,7 +253,7 @@ $env:ALL_PROXY   = 'http://127.0.0.1:7890'
 
 ### 9.7 节点池的定位与重建
 
-节点池是公开免费节点（存活率约 1.2%，死节点多、会集体抖动），只作应急通道；节点生生死死属常态，探活与轮换会自动跳过失联节点。整池死透时按 proxy-switch 的引导重建（nodepool 9 步流水线，约 15 分钟）。v2rayN、gost、WARP 隧道等旧通道已于 2026-11-11 移除，exit_rotator 仅保留 mihomo 一种 target。
+节点池是公开免费节点（存活率约 1.2%，死节点多、会集体抖动），只作应急通道；节点生生死死属常态，探活与轮换会自动跳过失联节点。整池死透时按 proxy-switch 的引导重建（nodepool 11 步流水线，含死点池复活与结算，约 15~20 分钟）。v2rayN、gost、WARP 隧道等旧通道已于 2026-11-11 移除，exit_rotator 仅保留 mihomo 一种 target。
 
 ### 9.8 日常流程
 
