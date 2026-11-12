@@ -27,6 +27,8 @@
 #   被误归类"文件超过下载大小限制", 改安全解析、非数字置0交流式累计口径; symlink 判定 realpath
 #   与 abspath 对大小写还原口径不同(Windows 不区分大小写), 正常文件被判"路径被篡改"误报,
 #   normcase 消除大小写差异后再比, 真 symlink/junction 仍可检出
+# 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
+#   (network_register 导入 download 形成循环, check_network 已移至 http_client_sdk)
 """
 N2: download — 下载文件到本地
 
@@ -46,8 +48,7 @@ import httpx
 
 from app.config import get_config  # 用户指定路径基准 get_project_root()
 from app.logger import logger
-from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
-from app.tools.network.network_register import check_network
+from app.tools.network.http_client_sdk import check_network, create_http_client, is_ssrf_blocked_error
 from app.tools.tool_constants import (
     DOWNLOAD_INPUT_MAX_BYTES,
     ERR_INVALID_PARAMS,

@@ -37,6 +37,7 @@
 # 2026-10-26 小沈 - Jina优先重构+save_to落盘+notice消息(LLM提取前/后通知)+LLM timeout精确计算(P1:remaining<10s降级、min(remaining,120));
 #   BUG修复:save_text_to_file None/空content拒绝、路径穿越(has_path_traversal)、write None处理;
 #   schema:extract_format描述加MD守护、timeout默认30→60 | py_compile+118回归测试全过
+# 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -76,8 +77,7 @@ from app.tools.context import (  # 纯文本任务LLM回调 + notice回调(tool_
     get_current_notice_callback,
     get_current_text_task,
 )
-from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
-from app.tools.network.network_register import check_network
+from app.tools.network.http_client_sdk import check_network, create_http_client, is_ssrf_blocked_error
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NET_UNKNOWN,

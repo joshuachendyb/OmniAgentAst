@@ -62,15 +62,36 @@ def _hint_running(target: Path, pids: List[int]) -> None:
 
 
 def _deploy(target: Path, dist: Path) -> None:
-    """执行部署: 覆盖 exe + 合并 _internal + 同步 exe 同级说明文档 — 小欧 2026-11-04"""
+    """执行部署: 覆盖 exe + 合并 _internal + 同步 exe 同级说明文档 — 小欧 2026-11-04
+
+    2026-11-07 小欧 - _internal 逐文件复制: 系统运行时 DLL(MSVCP140/VCRUNTIME 等)被其他进程
+      加载时无法覆盖(WinError 32), 但这些 DLL 不随版本变化, 跳过不影响运行; web/ 先清再复制
+      保证前端产物不累积旧 chunk。— 小欧-2026-11-07
+    """
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(dist / EXE_NAME, target / EXE_NAME)
-    # 2026-11-06 小欧 - 前端产物 web/ 是唯一随版本陈旧累积的静态资源, 先清再复制避免旧 assets 残留
-    #   (copytree dirs_exist_ok 只覆盖同名, 目标端已删的旧 chunk 永不清除; 其余 _internal 依赖不清理, 保容错)
+    # 前端产物 web/ 是唯一随版本陈旧累积的静态资源, 先清再复制避免旧 assets 残留
     _web = target / '_internal' / 'web'
     if _web.is_dir():
         shutil.rmtree(_web)
-    shutil.copytree(dist / '_internal', target / '_internal', dirs_exist_ok=True)
+    # _internal 逐文件复制: 被锁的系统 DLL 跳过(不随版本变化), 其余正常覆盖
+    _skipped = []
+    for src in (dist / '_internal').rglob('*'):
+        if src.is_dir():
+            continue
+        rel = src.relative_to(dist / '_internal')
+        dst = target / '_internal' / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(src, dst)
+        except (PermissionError, OSError) as exc:
+            _skipped.append(str(rel))
+    if _skipped:
+        print(f'[deploy_spa] 跳过 {len(_skipped)} 个被锁文件(系统 DLL, 不随版本变化):')
+        for s in _skipped[:5]:
+            print(f'  {s}')
+        if len(_skipped) > 5:
+            print(f'  ... 及其他 {len(_skipped) - 5} 个')
     for doc in dist.glob('OmniAgent使用说明*.md'):
         shutil.copy2(doc, target / doc.name)
 

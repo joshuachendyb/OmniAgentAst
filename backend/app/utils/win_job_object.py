@@ -4,6 +4,8 @@
 # 2026-11-07 - 小欧 - 从 sandbox/job_object.py 提取底层封装: ctypes 声明/结构体/常量是沙箱和打包版
 #   共用的底层设施, 不应归属沙箱目录(SRP); assign_current_to_kill_on_close_job() 是通用进程管理,
 #   非沙箱功能。提取到 app/utils/ 与 proc_utils.py 同层(通用进程工具)。— 小欧-2026-11-07
+# 2026-11-12 - 小欧 - SetInformationJobObject 从 BasicLimitInformation(Class=2) 改用 ExtendedLimitInformation(Class=9):
+#   KILL_ON_JOB_CLOSE 在 Basic 上返回 ERROR_INVALID_PARAMETER(87), 必须用 Extended 才能设置此标志
 import ctypes
 from ctypes import wintypes
 
@@ -78,10 +80,10 @@ def assign_current_to_kill_on_close_job() -> int:
     if not handle:
         logger.warning(f"[job] CreateJobObjectW 失败: {ctypes.GetLastError()}")
         return 0
-    info = JOBOBJECT_BASIC_LIMIT_INFORMATION()
-    info.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
     if not kernel32.SetInformationJobObject(
-            handle, JobObjectBasicLimitInformation,
+            handle, JobObjectExtendedLimitInformation,
             ctypes.byref(info), ctypes.sizeof(info)):
         kernel32.CloseHandle(handle)
         logger.warning(f"[job] SetInformationJobObject 失败: {ctypes.GetLastError()}")

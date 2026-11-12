@@ -3,6 +3,8 @@
 # 2026-10-02 - 小欧 - 归组调整: searchweb/fetchpage 改读 TOOL_CATEGORY_OVERRIDE(归类单一真相源), 归 FUNDAMENTAL — 小欧-2026-10-02
 # 2026-10-19 - 小欧 - 按实现文件顶层 import 补齐依赖声明: fetchpage 用 html2text 抽正文, httpget 用 anyio
 #   跑异步(随 httpx 一并装入, 列出是为声明与实现对齐)。此前两者顶层 import 但未声明, 依赖表与实现脱节。
+# 2026-11-12 - 小欧 - check_network 移至 http_client_sdk.py: network_register 导入 download/fetchpage/httpget 形成循环,
+#   check_network 被三者引用故反向依赖; 移出后 network_register 只做注册(SRP), 删 socket/time/Any/Dict 无用导入
 """
 Network Register - 网络通信工具注册点
 
@@ -28,11 +30,11 @@ Network Register - 网络通信工具注册点
 # ============================================================
 # 网络工具注册 - 使用 Pydantic 模型(按文档设计)
 # ============================================================
-import socket
-import time
-from typing import Any, Dict, Optional
+
+from typing import Optional
 
 from app.logger import logger
+
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
 from app.tools.tool_types import ToolCategory
@@ -55,7 +57,7 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     """http_request失败时的国内替代URL提示 — 小健 2026-05-24"""
     failed_url = (tool_params or {}).get("url", "")
     hint = "⚠️ 网络请求失败。如果是访问国外服务超时,请换用国内可达的替代地址:\n"
-    hint += "  - 查公网IP → 用 https://myip.ipip.net 或 https://ip.sb/api\n"   # 移除易503的 httpbin.org — 小欧 2026-08-07
+    hint += "  - 查公网IP → 用 https://myip.ipip.net 或 https://ip.sb/api\n"
     hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
     hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
     hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
@@ -64,27 +66,6 @@ def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     hint += "请勿重复请求同一失败URL!"
     return hint
 
-def check_network() -> Dict[str, Any]:
-    """检查网络连通性 — 小欧 2026-06-24 从3个文件中提取公共函数"""
-    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
-    for host, port in test_hosts:
-        sock = None
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            t1 = time.time()
-            sock.connect((host, port))
-            latency = (time.time() - t1) * 1000
-            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
-        except (socket.timeout, socket.error, OSError):
-            pass
-        finally:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-    return {"connected": False}
 
 
 # 导入 Pydantic 模型

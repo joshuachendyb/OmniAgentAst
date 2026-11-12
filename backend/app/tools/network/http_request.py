@@ -27,6 +27,7 @@
 # 2026-08-26 - 小欧 - 修复: httpget请求外部API时对端提前断流抛 anyio.EndOfStream(裸Exception非httpx体系)落入catch-all记"意外错误"ERROR, 触发E2E"日志无非安全ERROR"断言失败
 #   【病根】line355仅对Timeout/RequestError等httpx异常raise交引擎重试, anyio.EndOfStream不属httpx体系被漏过, 落到catch-all记致命ERROR(语义错误, 属瞬时连接故障)
 #   【改法】line355重抛元组追加 anyio.EndOfStream, 归入瞬时故障抛ToolRetryEngine重试(重试耗尽则返回结构化错误+warning, 不再记ERROR), 与Timeout/RequestError同处理
+# 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
 """
 N1: httpget — 发起HTTP请求
 
@@ -47,8 +48,7 @@ import anyio  # 小欧 2026-08-26: 引入以识别对端提前断流的瞬时连
 import httpx
 
 from app.logger import logger
-from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
-from app.tools.network.network_register import check_network
+from app.tools.network.http_client_sdk import check_network, create_http_client, is_ssrf_blocked_error
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_DOWN,
