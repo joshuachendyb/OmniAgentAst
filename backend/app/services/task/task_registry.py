@@ -50,6 +50,7 @@
 #   ③task_cleanup 增 terminal_status 判据, 正常完成不杀后台进程(否则完成后唤醒续跑被掐死),
 #   仅非正常终态杀进程树; ④上一条"cleanup_task/cleanup_expired_tasks 删任务前 terminate 后台进程"
 #   记载与实现不符, 实际两处均未 terminate, 以本条为准 — 商量-2026-11-13
+# 2026-11-14 商量 - 补偿删除 SQL 收口到 storage.delete_user_message(与续跑失败补偿同一出口, DRY) — 商量-2026-11-14
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -75,7 +76,7 @@ from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上
 from app.db import db
 from app.logger import logger
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
-from app.services.chat.storage import bind_message_to_task, insert_user_message
+from app.services.chat.storage import bind_message_to_task, delete_user_message, insert_user_message
 from app.services.task.task_state import (
     running_tasks,
     running_tasks_lock,
@@ -186,8 +187,7 @@ async def inject_system_notice(task_id: str, content: str, session_id: Optional[
                 return False
     # 落库窗口内任务已终态: 删除已落库消息补偿, 不留脏消息
     try:
-        await db.atxn("chat", lambda c: c.execute(
-            "DELETE FROM chat_user_message WHERE id=?", (_uid,)), retry_locked=3)
+        await db.atxn("chat", lambda c: delete_user_message(c, _uid), retry_locked=3)
     except Exception as e:
         logger.warning(f"[TaskRegistry] 系统通知补偿删除失败(task={task_id}, uid={_uid}): {e}")
     return False

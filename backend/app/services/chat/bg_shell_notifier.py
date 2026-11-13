@@ -3,6 +3,8 @@
 #   完成事实并经注入回调转交, 本模块负责注入活跃任务或唤醒续跑, 保持 tools→services 不越层
 # 编辑历史:
 # (初版)
+# 2026-11-14 商量 - 注入失败分流: 目标任务窗口内终态 → 改走续跑唤醒(原直接落盘会丢唤醒);
+#   任务仍活跃(inbox满)时保持落盘兜底, 不再无意义重试 — 商量-2026-11-14
 """
 S: bg_shell_notifier — 后台命令完成后的业务路由
 
@@ -35,9 +37,14 @@ async def notify_bg_shell_done(*, shell_id: str, task_id: str, notice_id: str,
     active_tid = await has_active_task_in_session(session_id)
     if active_tid is not None:
         ok = await inject_system_notice(active_tid, text)
-        if not ok:
-            logger.warning(f"[bg_shell] {shell_id} 注入失败(inbox满/终态窗口), 降级落盘: {output_file}")
-        return
+        if ok:
+            return
+        # 注入失败两种成因: 目标任务恰在窗口内终态 / inbox 满(任务仍活跃)。
+        #   仅前者可改走续跑; 后者再发只会被 register 守卫挡回, 保持落盘兜底 — 商量-2026-11-14
+        if await has_active_task_in_session(session_id) is not None:
+            logger.warning(f"[bg_shell] {shell_id} 注入失败(inbox满), 降级落盘: {output_file}")
+            return
+        logger.info(f"[bg_shell] {shell_id} 目标任务已终态, 改走续跑唤醒")
     ok = await resume_session_with_notice(
         session_id, text, notice_id=notice_id, source_task_id=task_id)
     if not ok:

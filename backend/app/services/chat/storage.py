@@ -137,6 +137,8 @@
 # 2026-11-13 商量 - 后台续跑两维标记(设计[33] 8.6): insert_task 增 creation_source 入参落
 #   chat_tasks.creation_source(默认 user); insert_user_message 增 msg_kind(默认 user);
 #   list_session_tasks SELECT 补 creation_source 供前端续跑徽标; 存量行 DEFAULT 兜底 — 商量-2026-11-13
+# 2026-11-14 商量 - 新增 delete_user_message: 未投递消息补偿删除唯一出口(续跑失败/注入未命中),
+#   与 task_registry.inject_system_notice 共用, 不留用户可见但 agent 未读的 system_notice — 商量-2026-11-14
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -946,6 +948,16 @@ def insert_user_message(
          msg_kind, now),
     )
     return cursor.lastrowid
+
+
+def delete_user_message(conn: Connection, user_message_id: int) -> int:
+    """删除指定 chat_user_message 行, 返回删除行数 — 商量 2026-11-14
+
+    用于"消息已落库但未投递任何任务"的补偿(续跑起跑失败/注入未命中),
+    避免会话里残留用户可见、agent 从未读取的 system_notice。
+    """
+    cur = conn.execute("DELETE FROM chat_user_message WHERE id=?", (user_message_id,))
+    return cur.rowcount
 
 
 def bind_message_to_task(conn: Connection, user_message_id: int, task_id: str) -> bool:

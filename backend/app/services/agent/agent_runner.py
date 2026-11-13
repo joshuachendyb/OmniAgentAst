@@ -197,6 +197,8 @@
 # 2026-11-13 商量 - thought-start 首帧补 task_start_time(后端权威任务起点, 与终态 duration=end-start_time 同源):
 #   该帧在历史加载/摘要压缩之前发出 → 前端实时秒表压缩期即走动, 且实时值与终态值无误差;
 #   start_time 为 epoch 秒, 转 ISO 需 ×1000(格式化函数按毫秒) — 商量-2026-11-13
+# 2026-11-14 商量 - 协程句柄自登记: 首行 set_agent_task(task_id, current_task()), 取消可直达;
+#   编排层不再在 create_task 后 await 注册, 消除该窗口内断连导致快照被提前关闭 — 商量-2026-11-14
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -234,7 +236,7 @@ from app.services.chat.storage import update_user_message_final  # v2.0 改动2 
 from app.services.chat.stream_event_journal import (
     append as journal_append,  # [63] 3.6.5 直连兜底注入 Journal sink
 )
-from app.services.task.task_registry import task_cleanup
+from app.services.task.task_registry import set_agent_task, task_cleanup
 
 # 2026-11-06 小欧 - 去池化: 删除 from app.tools import cleanup_shell_pool_by_task(无任务级常驻 shell 资源需清理)
 from app.services.task.task_state import (
@@ -360,6 +362,9 @@ async def run_agent_in_background(
     if _self_task is not None:
         _background_tasks.add(_self_task)
         _self_task.add_done_callback(_background_tasks.discard)
+    # 2026-11-14 商量 - 协程句柄自登记(首行, 早于任何业务 await): 取消可直达本协程;
+    #   编排层 create_task 后不再 await 注册, 消除"已交接快照被当未交接关闭"的断连窗口。
+    await set_agent_task(task_id, _self_task)
 
     buffer = agent_streams.get(task_id)
     if buffer is None:
