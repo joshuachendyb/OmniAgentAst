@@ -120,6 +120,8 @@ key 全局唯一，加载自检重复直接拒启。
       tuning.shell_bg_log_max_mb(输出文件轮转阈值) + tuning.shell_bg_result_retain_hours(结果保留时长) — 商量-2026-11-13
     2026-11-13 商量 - 复核撤销 shell_bg_log_max_mb(轮转从未实现, 纯假配置; 保留 shell_bg_result_retain_hours),
       后台命令配置项实为 2 项 — 商量-2026-11-13
+    2026-11-13 商量 - 三堂会审补 tuning.shell_bg_max_output_mb(输出上限, 超限杀进程防磁盘写满),
+      后台命令配置项 3 项 — 商量-2026-11-13
 
 """
 from typing import Any, Dict, List, Optional
@@ -493,6 +495,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
         _item("tuning.concurrency.shell_max_background", "int", "后台命令并发上限", 5, range_=[1, 32],
               notice="后台运行的命令最多同时几条；到顶后新后台命令直接拒绝并提示稍后。后台命令无超时，完成后自动通知并续跑"),
+        _item("tuning.shell_bg_max_output_mb", "int", "后台输出上限(MB)", 512, range_=[0, 8192],
+              notice="单条后台命令输出文件最多写多少 MB；超过即强制终止该命令，防日志狂写把磁盘写满拖垮系统。默认512MB（并发5条时峰值约2.5GB）。0=不限制（不建议）"),
         _item("tuning.shell_bg_result_retain_hours", "int", "后台结果保留(小时)", 24, range_=[1, 720],
               notice="后台命令结束后结果文件保留多久；到期在新后台命令启动时顺带清理"),
         # --- agent: Agent 循环参数（2 键）---

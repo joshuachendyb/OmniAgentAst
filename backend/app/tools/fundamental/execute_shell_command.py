@@ -160,6 +160,9 @@
 # 2026-11-13 商量 - 新增 background 参数: 后台运行命令并立即返回; 后台分支复用全部前置(校验/预处理/
 #   三路检测/语法修复/安全检查), 仅执行段改走 shell_background.run_shell_background(popen_factory 注入
 #   四种 shell 启动装配, DRY), 前台路径零改动; 中风险命令后台一律拒绝不弹窗; 后台默认无超时(显式 timeout 生效)
+# 2026-11-13 商量 - 三堂会审根治: (1)cmd 后台启动脚本路径改走 shell_background.bat_sidecar_path, 与清理侧
+#   同一单源(原 outfile[:-4]+".bat" 与清理 output_file+".bat" 不一致致 .bat 永不被删); (2)Popen 后即关父进程
+#   写句柄(子进程已继承, 父侧不关会拖住产物删除); (3)success_codes 传入后台, 成功判定与前台一致
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -1224,39 +1227,43 @@ def shell(
         _task_id = get_current_task_id() or ""
 
         def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
-            """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)"""
+            """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)。
+            Popen 返回后立即关闭父进程写句柄: 子进程已继承独立句柄, 父侧不关会拖住产物删除。"""
             try:
                 _out = open(outfile, "ab")
-                if shell_type in ("ps7", "ps5"):
-                    if shell_type == "ps5":
-                        cmd = _translate_powershell_operators(cmd)
-                    else:
-                        cmd = _fix_ps7_assignment_operators(cmd)
-                    exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
-                          or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
-                    return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
+                try:
+                    if shell_type in ("ps7", "ps5"):
+                        if shell_type == "ps5":
+                            cmd = _translate_powershell_operators(cmd)
+                        else:
+                            cmd = _fix_ps7_assignment_operators(cmd)
+                        exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
+                              or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
+                        return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                    if shell_type == "cmd":
+                        # 启动脚本路径走 shell_background.bat_sidecar_path(与清理侧同一单源)
+                        bat_path = shell_background.bat_sidecar_path(outfile)
+                        with open(bat_path, "w", encoding=locale.getpreferredencoding(), errors="replace") as f:
+                            f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
+                        return subprocess.Popen(f'"{bat_path}"', shell=True,
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                    bash_exe = _find_bash()
+                    if not bash_exe:
+                        logger.error("[bg_shell] bash 解释器未找到")
+                        return None
+                    return subprocess.Popen([bash_exe, "-l", "-c", cmd],
                         stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
-                if shell_type == "cmd":
-                    # 2026-11-13 商量(复核修正): 启动脚本与输出文件同目录同名(.log→.bat),
-                    #   随结果文件保留时长惰性清理, 不再散落系统 TEMP 成孤儿
-                    bat_path = outfile[:-4] + ".bat"
-                    with open(bat_path, "w", encoding=locale.getpreferredencoding(), errors="replace") as f:
-                        f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
-                    return subprocess.Popen(f'"{bat_path}"', shell=True,
-                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
-                bash_exe = _find_bash()
-                if not bash_exe:
-                    logger.error("[bg_shell] bash 解释器未找到")
-                    return None
-                return subprocess.Popen([bash_exe, "-l", "-c", cmd],
-                    stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                finally:
+                    _out.close()
             except Exception as e:
                 logger.error(f"[bg_shell] Popen 装配失败: {e}", exc_info=True)
                 return None
 
         result = shell_background.run_shell_background(
             processed_command, shell_type, cwd, _task_id, cmd_short, _popen_factory,
-            timeout=(timeout if _timeout_explicit else None))  # None=后台默认无超时, 显式传才生效 — 商量-2026-11-13
+            timeout=(timeout if _timeout_explicit else None),  # None=后台默认无超时, 显式传才生效 — 商量-2026-11-13
+            success_codes=success_codes)
         if result is not None and result.get("llm_data"):
             result["llm_data"]["action"]["params"]["timeout"] = timeout  # 留痕原始入参供历史核对
         return result
