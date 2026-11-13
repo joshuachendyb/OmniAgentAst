@@ -79,12 +79,13 @@ def _build_schema(conn) -> None:
             context_link_mode TEXT, context_root_task_id TEXT, sessionModel TEXT NOT NULL,
             accumulated_usage TEXT DEFAULT '{}', llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
             retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0, error_type TEXT, error_message TEXT,
-            ai_message_id INTEGER, created_at TEXT, updated_at TEXT
+            ai_message_id INTEGER, creation_source TEXT NOT NULL DEFAULT 'user', created_at TEXT, updated_at TEXT
         );
         CREATE TABLE chat_user_message (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, content TEXT NOT NULL,
             task_id TEXT, response TEXT, reasoning TEXT, outcome TEXT, chat_model TEXT,
-            accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT, created_at TEXT
+            accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT,
+            msg_kind TEXT NOT NULL DEFAULT 'user', created_at TEXT
         );
         -- 2026-10-05 小欧(③b): 消息 id 单一序列(生产侧 db_initializer 12.2-C4)。
         -- 测试侧须同步, 否则 storage.insert_user_message 会在 no such table: id_sequence 处红(环境错, 无效 Red)
