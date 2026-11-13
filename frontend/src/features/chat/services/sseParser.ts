@@ -123,7 +123,7 @@
 //   latency}} 与 DB 扁平 {tool:call_count} 两种格式统一为扁平, 修复 React error #31(对象渲染为子节点) — 小欧-2026-11-07
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
-import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
+import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
 import { pickConv, pickInject } from '@/utils/contextFrame';
 
 // 2026-09-12 小欧 修复: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
@@ -424,6 +424,26 @@ const processSSEData = (
       }
     }
 
+    // 2026-11-13 商量 - 服务器时钟锚(实时秒表的单一真源):
+    //   记下"最新一帧的服务器时刻 + 该帧到达客户端时刻", 秒表 = (服务器时刻 − 任务权威起点) + 客户端增量。
+    //   服务器已流逝走服务器时钟(与终态 duration 同一真源, 免疫客户端时钟偏移); 客户端只补增量(帧间平滑走动)。
+    //   仅取**字符串** timestamp(后端本地ISO, 统一表示; 数值戳不参与, 避免与ISO混算时区口径不一致)。
+    //   落钟规则: 服务器时刻**单调前进**(不倒退——重连回放的旧帧不得把时钟拉回)+ 推进不足250ms不落钟
+    //   (节流防帧密时逐帧重渲染; 突发回放取到的是最后越过250ms门槛的帧, 滞后≤0.25s, 终态显示以后端 duration 为准)。
+    if (typeof rawData.timestamp === 'string' && rawData.timestamp) {
+      const _recvAt = Date.now();
+      handlers.setMetaFrames?.((prev) => {
+        const cur = prev.serverClock;
+        if (cur) {
+          const curTs = parseTimeSafe(cur.ts)?.getTime() ?? 0;
+          const nextTs = parseTimeSafe(rawData.timestamp as string)?.getTime() ?? 0;
+          if (!nextTs || nextTs <= curTs) return prev;
+          if (nextTs - curTs < 250) return prev;
+        }
+        return { ...prev, serverClock: { ts: rawData.timestamp as string, recvAt: _recvAt } };
+      });
+    }
+
     const step: ExecutionStep = {
       type: rawData.type as ExecutionStep['type'],
 
@@ -499,6 +519,16 @@ const processSSEData = (
           step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复: 加Number(); 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
           timestamp: timestampValue,
         };
+        // 2026-11-13 商量 - 首个 thought-start 携带后端权威任务起点(task_start_time):
+        //   该帧在历史加载/摘要压缩之前发出(北京老陈 2026-10-07 定案), 故摘要压缩期秒表即走动;
+        //   起点取后端权威值(与终态 duration=end-start_time 同一真源), 实时值与终态值不再对不上。
+        //   时钟锚由上方统一入口按同一帧 timestamp 记录, 此处只落起点; 后续轮次不带该字段,
+        //   且此处首值胜出 → 锚点唯一。
+        if (rawData.task_start_time) {
+          handlers.setMetaFrames?.((prev) =>
+            prev.taskStartTime ? prev : { ...prev, taskStartTime: rawData.task_start_time }
+          );
+        }
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
         pushAndFlush(handlers, ts);
         onStep?.(ts);

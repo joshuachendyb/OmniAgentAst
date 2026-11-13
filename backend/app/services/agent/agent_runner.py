@@ -194,6 +194,9 @@
 # 2026-11-05 小欧 - 终态取数收口: current_thought 仅在 outcome==completed 时取 reasoning(失败/取消终态的reasoning是错误文案, 不入思考位)
 # 2026-11-05 小欧 - 终态 reasoning 净化: 异常分支与守卫兜底改 reasoning="", 错误/取消/兜底文案只走 response/error_message
 #   (历史回放 message_service 用 "thought or reasoning" 兜底, 原写法则把报错文案显示进思考区)
+# 2026-11-13 商量 - thought-start 首帧补 task_start_time(后端权威任务起点, 与终态 duration=end-start_time 同源):
+#   该帧在历史加载/摘要压缩之前发出 → 前端实时秒表压缩期即走动, 且实时值与终态值无误差;
+#   start_time 为 epoch 秒, 转 ISO 需 ×1000(格式化函数按毫秒) — 商量-2026-11-13
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -247,6 +250,7 @@ from app.utils.json_utils import (
 from app.utils.text_utils import normalize_blank_lines  # 13.11 落库收口 — 小欧 2026-08-30
 from app.utils.time_utils import (
     get_local_iso_timestamp,  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
+    to_local_iso,  # 2026-11-13 商量: thought-start 首帧下发任务权威起点(与 duration 同源) — 商量-2026-11-13
 )
 
 # 后台任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者断开后任务再无强引用,
@@ -660,7 +664,16 @@ async def run_agent_in_background(
 
         from app.services.agent.steps import ThoughtStartStep  # 2026-10-07 北京老陈 第1发前移至此
         # 2026-10-12 小欧 - 首帧带 task_id（北京老陈令）: 前端凭 task_id 开门显示, 后续帧不带 — 小欧-2026-10-12
-        await _publish(agent._step_emitter.emit(ThoughtStartStep(step=1, task_id=task_id)).to_dict())
+        # 2026-11-13 商量 - 首帧补 task_start_time(后端权威任务起点, 本地ISO):
+        #   该帧在历史加载/摘要压缩之前发出, 前端实时秒表据此定起点 →
+        #   ①摘要压缩期秒表即走动(原锚"start 帧到达时刻", 压缩期不走字);
+        #   ②实时值与终态 duration(=end-start_time, 同一 start_time)同源无误差。
+        #   start_time 是 epoch **秒**(与 duration=time.time()-start_time 同单位), to_local_iso 数字入参按**毫秒**,
+        #   故乘 1000 再格式化; 否则按秒当毫秒解析会落到 1970 年, 前端秒表差成五十六年。
+        await _publish(agent._step_emitter.emit(ThoughtStartStep(
+            step=1, task_id=task_id,
+            task_start_time=to_local_iso(start_time * 1000) if start_time else None,
+        )).to_dict())
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         ctx = await _build_history_context(db_ops, session_id)

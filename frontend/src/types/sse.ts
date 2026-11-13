@@ -115,6 +115,13 @@ export interface TaskMetaFrames {
   finalStats: FinalStatsFrame | null;
   contextOverview: ContextOverviewFrame | null; // 保留上一帧
   truncated: { content: string; severity: 'info' | 'warn' | 'error' } | null;
+  // 2026-11-13 商量 - 任务起点信号(首个 thought-start 帧携带, 仅SSE, 在历史加载/摘要压缩之前发出):
+  //   taskStartTime = 后端权威任务起点(本地ISO; 与终态 duration=end-start_time 同一真源)。
+  taskStartTime?: string | null;
+  serverClock?: {
+    ts: string;   // 最新一帧的**服务器**时刻(本地ISO)
+    recvAt: number; // 该帧到达客户端的时刻(毫秒) —— 之后秒表按客户端增量继续走
+  } | null;
 }
 export const emptyMetaFrames = (): TaskMetaFrames => ({
   contextSummary: '',
