@@ -107,6 +107,26 @@ export interface BatchTitleResponse {
   }>;
 }
 
+/** 会话任务产出物条目(「本会话产物」行) — 后端 chat_tasks.artifacts 真源 */
+export interface SessionArtifactItem {
+  task_id: string;
+  task_created_at: string;
+  name: string;
+  path: string;
+  /** 项目根相对 posix 路径(根内有值, 可直接作文件引用上行; 根外为 null) */
+  rel_path: string | null;
+  type: string;
+  tool_name: string;
+  /** 产物文件是否还在（失效行仍可见，不可加入本轮） */
+  exists: boolean;
+}
+
+export interface SessionArtifactsResponse {
+  session_id: string;
+  total: number;
+  artifacts: SessionArtifactItem[];
+}
+
 export const sessionApi = {
   createSession: async (
     title?: string
@@ -307,6 +327,17 @@ export const sessionApi = {
       `/sessions/tasks/${encodeURIComponent(taskId)}`
     );
     return response.data.task;
+  },
+
+  // 2026-11-13 小欧 - 会话任务产出物清单(「本会话产物」唯一真源): 读 chat_tasks.artifacts,
+  //   跨任务按任务时间倒序; 产出物是任务产物, 不是附件台账行(工作区内产物走引用模式不落库)
+  listSessionArtifacts: async (
+    sessionId: string
+  ): Promise<SessionArtifactsResponse> => {
+    const response = await api.get<SessionArtifactsResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/artifacts`
+    );
+    return response.data;
   },
 
   // 2026-11-02 小欧 - 会话目录读口: prune=true 才清库(面板主动请求), 默认纯读零副作用;

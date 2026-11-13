@@ -181,7 +181,8 @@ export function filesFromDataTransfer(dt: DataTransfer | null): File[] {
 //   (referenced 分支复用工作区文件本不占新配额, 但从严策略下满额也拦, 补一条 chip 即可继续。) — 小欧-2026-11-07
 export async function collectArtifact(
   sessionId: string,
-  sourcePath: string
+  sourcePath: string,
+  taskId?: string | null
 ): Promise<boolean> {
   // F-01 容量预检(copied 会新增一条引用): 满额先拦, 避免后端复制落库后 enqueue 失败 → 孤儿附件。
   if (composerRefStore.occupancy() >= getMaxRefs()) {
@@ -189,7 +190,7 @@ export async function collectArtifact(
     return false;
   }
   try {
-    const r = await attachmentApi.collect(sessionId, sourcePath);
+    const r = await attachmentApi.collect(sessionId, sourcePath, taskId);
     if (r.mode === 'referenced') {
       const q = await quoteFile(r.path, { label: r.label, size: r.size });
       if (!q.ok) {

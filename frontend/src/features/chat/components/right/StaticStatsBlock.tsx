@@ -455,7 +455,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       if (!sessionId) return;
                       setCollecting(a.path);
                       try {
-                        await collectArtifact(sessionId, a.path);
+                        // 溯源: 传来源任务 id, 后端据此落 source_task_id(产物归属可追)
+                        await collectArtifact(sessionId, a.path, detail?.task_id ?? null);
                       } finally {
                         setCollecting('');
                       }

@@ -28,8 +28,8 @@ import api, {
 } from './client'; // api 只有默认导出（同 file.api）
 import type { ApiRequestConfig } from './client';
 
-/** 列表作用域: 本会话 / 最近用过 / 已收藏 / 任务产物(scope=ai) */
-export type AttachmentScope = 'session' | 'recent' | 'global' | 'ai';
+/** 列表作用域: 本会话附件(session) / 他会话附件(recent) / 已收藏(global) */
+export type AttachmentScope = 'session' | 'recent' | 'global';
 
 export interface AttachmentRecord {
   id: string;
@@ -78,6 +78,8 @@ export interface AttachmentCapabilities {
   kind_options: Array<{ value: string; label: string }>;
   /** 后缀→content_kind 词典(单一真源后端 extract, 前端禁止再写死后缀表) */
   suffix_kind: Record<string, string>;
+  /** 「他会话附件」时间窗(天, 后端唯一真源): 标签文案按此渲染, 前端不写死天数 */
+  recent_window_days: number;
 }
 
 /** P5 运行指标(GET /attachments/metrics): 逐事件计数 + 三比率, 可定位到 source/kind */
@@ -115,7 +117,7 @@ export const attachmentApi = {
   /**
    * 附件列表（作用域唯一入口）。
    * 2026-11-07 小欧: 原 `list(sessionId)` 扩为选项对象；session 作用域仍按会话取，
-   *   recent/global/ai 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
+   *   recent/global 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
    */
   list: async (
     sessionId?: string | null,
@@ -234,14 +236,17 @@ export const attachmentApi = {
   /**
    * ③ 存为附件（S0）：工作区内产物 → referenced（不复制，直接可引用）；
    * 工作区外 → copied（复制进 attachments/ 并返回完整记录）。
+   * taskId: 来源任务溯源（可选）—— 断链修复, 产物溯源行据此落 source_task_id。
    */
   collect: async (
     sessionId: string,
-    sourcePath: string
+    sourcePath: string,
+    taskId?: string | null
   ): Promise<CollectResult> => {
     const res = await api.post<CollectResult>('/attachments/collect', {
       session_id: sessionId,
       source_path: sourcePath,
+      task_id: taskId ?? null,
     });
     return res.data;
   },

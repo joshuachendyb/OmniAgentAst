@@ -201,6 +201,22 @@ def _is_abs_drive_path(p: str) -> bool:
     return bool(Path(p).is_absolute())
 
 
+# 2026-11-13 小欧 - 新增 root_relative: 绝对路径 → 项目根相对 posix 路径(根外返 None),
+#   与 attachments.rel_to_root 同根同算法收口一处; 附件台账的「根内可引用/根外须复制」判据复用它 — 小欧-2026-11-13
+def root_relative(abs_path: str) -> Optional[str]:
+    """绝对路径 → 项目根相对 posix 路径；根外/异常返回 None。
+
+    与 attachments 的 rel_to_root 同根同算法（单一真源），但根外返回 None 而非回落
+    绝对路径 —— 调用方需要区分「根内可作文件引用」与「根外只能复制固化」时用它。
+    """
+    try:
+        root = Path(get_config().get_project_root()).resolve()
+        return Path(abs_path).resolve().relative_to(root).as_posix()
+    except Exception:  # noqa: BLE001 — 根外/不可解析 → 无根内相对路径
+        return None
+
+
+
 def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
     """把用户传入的相对路径解析为项目根内的绝对路径。
 

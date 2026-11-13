@@ -28,6 +28,11 @@
 # 2026-11-11 小欧 - 增 reextract 真抽取手动重跑: 重置抽取态后按契约文本出口重算回填
 #   (仅 fallback_quality=content 的 kind, 失败折算 failed 不抛异常) — 小欧-2026-11-11
 # 2026-11-11 小欧 - P5 指标埋点: reextract 成功/失败补 [cap-metric] extract_ok/extract_fail — 小欧-2026-11-11
+# 2026-11-13 小欧 - 来源栏判据重构(标签名副其实, 各栏唯一真源/互斥):
+#   1) 删 ai 作用域(任务产物真源是 chat_tasks.artifacts, 用附件台账判据取该清单恒为空);
+#   2) session 作用域恢复为全部本会话台账行(存为附件的副本归此, 与「AI 产出的」不重叠);
+#   3) recent 作用域加约束: 限近 RECENT_WINDOW_DAYS 天窗 + 排除本会话 + 排除全局资产,
+#      原判据仅 use_count>0 无时间窗, 「最近」名不副实; — 小欧-2026-11-13
 
 
 
@@ -49,6 +54,7 @@ import mimetypes
 import re
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +62,6 @@ from fastapi import UploadFile
 
 from app.attachments import extract
 from app.attachments.observability import metric
-from app.config import get_config
 from app.db import db
 from app.db.database import resolve_db_dir
 from app.file_browse import browse_service as browse
@@ -125,11 +130,8 @@ def _sanitize_name(name: str) -> str:
 
 def rel_to_root(stored_path: str) -> str:
     """绝对路径 → 当前项目根相对 posix 路径(上行 refs 用)。根外/异常回落 posix 绝对路径。"""
-    try:
-        root = Path(get_config().get_project_root()).resolve()
-        return Path(stored_path).resolve().relative_to(root).as_posix()
-    except Exception:  # noqa: BLE001 — 取不到根不影响附件本身可用
-        return Path(stored_path).as_posix()
+    rel = browse.root_relative(stored_path)
+    return rel if rel is not None else Path(stored_path).as_posix()
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -288,15 +290,17 @@ async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
 
 
 _SCOPE_FILTER = {
-    # 本会话: 会话归属行, 排除任务产物溯源行(归 ai 栏)消双栏重叠; global 行 session_id 恒 NULL 天然不进本栏
-    "session": ("session_id = ? AND (source_task_id IS NULL OR source_task_id = '')", "created_at DESC"),
-    # 最近用过: 发送注入过(use_count>0), 跨会话共享
-    "recent": ("use_count > 0", "last_used_at DESC"),
+    # 本会话附件: 本会话的附件台账行(上传/导入/存为附件的副本都在此); global 行 session_id 恒 NULL 天然不进本栏
+    "session": ("session_id = ?", "created_at DESC"),
+    # 最近发送: 别的对话里发送过(use_count>0) 且在时间窗内; 排除本会话(归「本会话附件」)与全局资产(归「已收藏」)
+    "recent": ("scope = 'session' AND session_id IS NOT NULL AND session_id <> ? "
+               "AND use_count > 0 AND last_used_at >= ?", "last_used_at DESC"),
     # 已收藏: 全局资产
     "global": ("scope = 'global'", "COALESCE(last_used_at, created_at) DESC"),
-    # 任务产物(scope 键沿用 ai): 「存为附件」copied 模式的溯源行
-    "ai": ("source_task_id IS NOT NULL AND source_task_id <> ''", "created_at DESC"),
 }
+
+# 「最近发送」时间窗(天): 超过窗口的发送记录不再出现在该栏, 防"最近"名不副实
+RECENT_WINDOW_DAYS = 30
 
 
 def list_attachments(session_id: str | None = None, *, scope: str = "session",
@@ -304,18 +308,24 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
                      offset: int = 0) -> list[dict[str, Any]]:
     """附件列表（作用域唯一实现）— 小欧-2026-11-07
 
-    scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(任务产物)。
+    scope: session(我上传的) / recent(最近发送) / global(已收藏)。
     每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
     """
     scope_row = _SCOPE_FILTER.get(scope)
     if not scope_row:
-        fail(INVALID_PARAM, "scope 只支持 session / recent / global / ai")
+        fail(INVALID_PARAM, "scope 只支持 session / recent / global")
     where, order = scope_row
     params: list[Any] = []
     if scope == "session":
         if not session_id:
             return []
         params.append(session_id)
+    if scope == "recent":
+        if not session_id:
+            return []
+        # 排除本会话(本会话的行归「我上传的」) + 时间窗起点(本地时区, 与 last_used_at 写入同源)
+        cutoff = (datetime.now() - timedelta(days=RECENT_WINDOW_DAYS)).isoformat()
+        params.extend([session_id, cutoff])
     if q and q.strip():
         where += " AND original_name LIKE ?"
         params.append(f"%{q.strip()}%")

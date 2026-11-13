@@ -20,15 +20,19 @@
 // 编辑历史: 2026-11-11 小欧 - 接入 capabilities(accept 白名单/setMaxRefs) + 列表行传 kind(图标按类型) — 小欧-2026-11-11
 // 编辑历史: 2026-11-11 小欧 - 列表行补能力徽标(ref_capability_map 只读索引) + 抽取态回显(metaOf)
 //   + text/richdoc 真抽取手动重跑(行菜单「重新抽取」) — 小欧-2026-11-11
+// 编辑历史: 2026-11-13 小欧 - 来源栏重构(标签名副其实, 各栏唯一真源/互斥):
+//   「本会话」→「本会话附件」(附件台账行)、「最近用过」→「他会话附件」(限近30天·其它对话发送过)、
+//   「任务产物」→「本会话产物」(真源换 chat_tasks.artifacts 任务产出物, 不再取 attachments 恒空栏);
+//   产物行加入本轮 = 根内引用源文件 / 根外存为附件; 右栏补口径副标题, 每栏回答一个唯一问题 — 小欧-2026-11-13
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
- * 左栏来源：
- * - 最近用过：resolver 注入过（use_count>0），跨会话共享
- * - 本会话：本会话已提交的附件
+ * 左栏来源（每栏回答一个唯一问题，互斥不重叠）：
+ * - 本会话附件：本次对话的附件台账行（上传/导入/存为附件的副本）
+ * - 本会话产物：本次对话中 AI 任务产出的文件（真源=chat_tasks.artifacts，全部任务，任务时间倒序）
+ * - 他会话附件：近 30 天在其它对话发送过的附件（跨会话共享，限时间窗）
  * - 项目文件：项目根文件树（/files/tree）
  * - 我的电脑（后端电脑）：自研浏览器（/fs/drives + /files/external/tree），仅同机，读的是后端进程所在机器的盘
- * - 任务产物（scope=ai）：产物「存为附件」的溯源行（按来源任务），与「本会话」栏互不重叠
  * - 收藏：scope='global'（★ 星标）+ 合集表
  *
  * 交互：点整行 = 加入/移出本轮；文件名 = 预览；☆ = 收藏（1 击）；⋯ = 重命名/删除。
@@ -71,6 +75,10 @@ import {
   type AttachmentRecord,
 } from '@/services/api/attachment.api';
 import {
+  sessionApi,
+  type SessionArtifactItem,
+} from '@/services/api/session.api';
+import {
   materialPackApi,
   type MaterialPack,
   type MaterialPackItem,
@@ -88,6 +96,7 @@ import {
   type QuickPath,
 } from '@/services/api/fs.api';
 import {
+  collectArtifact,
   enqueue,
   uploadAttachments,
   MAX_BATCH,
@@ -117,34 +126,34 @@ import { MaterialPackSaveForm } from './MaterialPackSaveForm';
 
 /** 左栏来源 + 合集仓库 */
 type SourceKey =
-  | 'recent'
   | 'session'
+  | 'ai'
+  | 'recent'
   | 'project'
   | 'local'
-  | 'ai'
   | 'fav'
   | 'pack';
 
 /** 附件作用域（后端 list scope 同名） */
-type ScopeKey = 'session' | 'recent' | 'global' | 'ai';
+type ScopeKey = 'session' | 'recent' | 'global';
 
-const SCOPES: ScopeKey[] = ['session', 'recent', 'global', 'ai'];
+const SCOPES: ScopeKey[] = ['session', 'recent', 'global'];
 /** 单页条数（后端上限 200） */
 const PAGE = 50;
 
 const NAV: Array<{ key: SourceKey; label: string }> = [
-  { key: 'recent', label: '最近用过' },
-  { key: 'session', label: '本会话' },
+  { key: 'session', label: '本会话附件' },
+  { key: 'ai', label: '本会话产物' },
+  { key: 'recent', label: '他会话附件' },
   { key: 'project', label: '项目文件' },
   { key: 'local', label: '后端电脑' },
-  { key: 'ai', label: '任务产物' },
 ];
 
+/** 附件行次行里的来源标注（与左栏标签同名即为冗余 → 该栏只标"上传于/发送于"） */
 const SCOPE_FROM: Record<ScopeKey, string> = {
-  session: '本会话',
-  recent: '最近用过',
-  global: '已收藏',
-  ai: '任务产物',
+  session: '本会话上传',
+  recent: '其它对话发送',
+  global: '跨会话收藏',
 };
 
 /** 项目根文件树拍平为文件列表（目录只用于展开，不占行） */
@@ -244,13 +253,16 @@ interface FileDrawerProps {
 const emptyTextOf = (scope: ScopeKey, hasSession: boolean): string => {
   if (scope === 'session') {
     return hasSession
-      ? '本会话还没有附件；上传或导入的文件会列在这里'
+      ? '本次对话还没有附件；上传、导入或存为附件的文件会列在这里'
       : '还没有会话，先上传或加入一个文件';
   }
-  if (scope === 'recent') return '还没有用过文件；加入并发送一次就会出现在这里';
-  if (scope === 'global') return '还没有收藏；点行尾 ☆ 即可跨会话保留';
-  return '还没有任务产物；把 AI 产物「存为附件」后会列在这里';
+  if (scope === 'recent')
+    return '近 30 天内你在其它对话发送过的附件会列在这里';
+  return '还没有收藏；点行尾 ☆ 即可跨会话保留';
 };
+
+/** 「本会话产物」空态（真源=任务产出物，非附件台账行） */
+const AI_EMPTY_TEXT = '本次对话还没有任务产出的文件；任务生成文件后会列在这里';
 
 const FileDrawer: React.FC<FileDrawerProps> = ({
   open,
@@ -261,7 +273,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   onRemoveRef,
   disabled = false,
 }) => {
-  const [source, setSource] = useState<SourceKey>('recent');
+  const [source, setSource] = useState<SourceKey>('session');
   const [keyword, setKeyword] = useState('');
   /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07） */
   const [treeLoading, setTreeLoading] = useState(false);
@@ -269,16 +281,18 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     session: [],
     recent: [],
     global: [],
-    ai: [],
   });
   const listsRef = useRef(lists);
   const [hasMore, setHasMore] = useState<Record<ScopeKey, boolean>>({
     session: false,
     recent: false,
     global: false,
-    ai: false,
   });
   const [scopeLoading, setScopeLoading] = useState<ScopeKey | null>(null);
+  /** 「本会话产物」任务产出物清单（真源=chat_tasks.artifacts，非附件台账行） */
+  const [artifacts, setArtifacts] = useState<SessionArtifactItem[]>([]);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [artifactsErr, setArtifactsErr] = useState(false);
   /** 各作用域列表失败标记（非阻断：空态改「加载失败+重试」，不再与真空态难辨 — 2026-11-07） */
   const [errScopes, setErrScopes] = useState<
     Partial<Record<ScopeKey, boolean>>
@@ -398,6 +412,24 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     }
   }, []);
 
+  /** 「本会话产物」任务产出物清单（真源=chat_tasks.artifacts，跨任务按任务时间倒序） */
+  const reloadArtifacts = useCallback(async (): Promise<void> => {
+    if (!sessionId) {
+      setArtifacts([]);
+      return;
+    }
+    setArtifactsLoading(true);
+    try {
+      const res = await sessionApi.listSessionArtifacts(sessionId);
+      setArtifacts(res.artifacts ?? []);
+      setArtifactsErr(false);
+    } catch {
+      setArtifactsErr(true);
+    } finally {
+      setArtifactsLoading(false);
+    }
+  }, [sessionId]);
+
   const reloadPacks = useCallback(async (): Promise<void> => {
     try {
       setPacks(await materialPackApi.list());
@@ -443,6 +475,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     if (!open) return;
     if (source === 'project') void reloadProject();
   }, [open, source, reloadProject]);
+
+  // 「本会话产物」按需加载（切到该栏才拉，避免开抽屉就多打一轮请求）
+  useEffect(() => {
+    if (!open || source !== 'ai') return;
+    void reloadArtifacts();
+  }, [open, source, reloadArtifacts]);
 
   // 「我的电脑」首屏：常用位置 + 磁盘 + 已授权目录
   useEffect(() => {
@@ -994,6 +1032,55 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         };
       });
 
+  /** 「本会话产物」产物行：源文件清单（真源=chat_tasks.artifacts），加入本轮=引用源文件 */
+  const buildArtifactRows = (): RowSpec[] =>
+    artifacts
+      // 已存为附件的产物: 副本台账行归「本会话附件」, 此处不重复列(同一文件只出现一处)
+      .filter((a) => !lists.session.some((r) => r.source_path === a.path))
+      .filter((a) => match(a.name))
+      .map((a) => {
+        const inRoot = !!a.rel_path;
+        // 类型按文件名后缀推导(artifacts.type 无点且可能缺省), 与后端 suffix_kind 词典对齐
+        const ext = `.${(a.name.split('.').pop() || '').toLowerCase()}`;
+        const added = inRoot
+          ? refs.some((r) => r.path === a.rel_path && r.kind !== 'attachment')
+          : false;
+        return {
+          key: `${a.task_id}:${a.path}`,
+          name: a.name,
+          meta: [
+            ext.slice(1).toUpperCase() || '文件',
+            a.tool_name || 'AI 产出',
+            formatRelativeTime(a.task_created_at),
+            inRoot ? '可引用' : '在项目根外',
+          ].join(' · '),
+          kind: caps?.suffix_kind?.[ext] ?? 'unknown',
+          added,
+          invalid: !a.exists,
+          starDisabled: true,
+          onToggle: () => void toggleArtifact(a),
+        };
+      });
+
+  /** 产物行加入本轮：根内引用源文件(不复制)；根外则存为附件(复制固化) */
+  const toggleArtifact = async (a: SessionArtifactItem): Promise<void> => {
+    if (!a.exists) {
+      showMessage(ErrorType.WARNING, '该产物文件已不存在');
+      return;
+    }
+    if (!sessionId) {
+      showMessage(ErrorType.WARNING, '请先开始会话');
+      return;
+    }
+    if (a.rel_path) {
+      await togglePath(a.rel_path, a.name);
+      return;
+    }
+    // 根外文件无法作文件引用(越界会被丢弃) → 走存为附件复制固化
+    const ok = await collectArtifact(sessionId, a.path, a.task_id);
+    if (ok) await refreshAfterWrite();
+  };
+
   /** 当前右栏行（键盘导航共用同一份） */
   const buildRows = (): RowSpec[] => {
     if (source === 'project') {
@@ -1053,7 +1140,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           };
         });
     }
-    const scope: ScopeKey = source === 'fav' ? 'global' : source;
+    if (source === 'ai') return buildArtifactRows();
+    const scope: ScopeKey = source === 'fav' ? 'global' : (source as 'session' | 'recent');
     return buildAttachRows(scope);
   };
 
@@ -1065,7 +1153,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     packLimits !== null && packs.length >= packLimits.max_packs;
 
   const currentScope: ScopeKey | null =
-    source === 'project' || source === 'local' || source === 'pack'
+    source === 'project' || source === 'local' || source === 'pack' || source === 'ai'
       ? null
       : source === 'fav'
         ? 'global'
@@ -1158,6 +1246,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     }
     if (source === 'project' && treeLoading)
       return <Spin style={{ marginTop: Spacing.MD }} />;
+    if (source === 'ai' && artifactsLoading && rows.length === 0)
+      return <Spin style={{ marginTop: Spacing.MD }} />;
     if (source === 'local' && (localLoading || (kw.length > 0 && searching))) {
       return <Spin style={{ marginTop: Spacing.MD }} />;
     }
@@ -1217,6 +1307,30 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           />
         );
       }
+      if (source === 'ai') {
+        if (artifactsErr) {
+          return (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="产出物清单加载失败，后端未返回数据"
+            >
+              <Button
+                size="small"
+                type="link"
+                onClick={() => void reloadArtifacts()}
+              >
+                重试
+              </Button>
+            </Empty>
+          );
+        }
+        return (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={kw.length > 0 ? `「${keyword.trim()}」无匹配产物` : AI_EMPTY_TEXT}
+          />
+        );
+      }
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -1256,9 +1370,29 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
     if (source === 'fav') return '已收藏';
     if (source === 'project')
       return projectRoot ? `项目文件【来自：${projectRoot}】` : '项目文件';
-    if (source === 'ai') return '任务产物';
-    if (source === 'recent') return '最近用过';
-    return '本会话';
+    if (source === 'ai') return '本会话产物';
+    if (source === 'recent') return '他会话附件';
+    return '本会话附件';
+  };
+
+  /** 口径说明：每个标签回答哪一个唯一问题（消除同名歧义） */
+  const paneHint = (): string => {
+    switch (source) {
+      case 'session':
+        return '本次对话上传、导入或存为附件的文件（附件实体，不含引用）';
+      case 'ai':
+        return '本次对话中 AI 任务产出的文件（全部任务，任务时间倒序）';
+      case 'recent':
+        return `近 ${caps?.recent_window_days ?? 30} 天你在其它对话发送过的附件（附件实体，不含引用）`;
+      case 'fav':
+        return '你收藏的附件，跨会话可用';
+      case 'project':
+        return '项目根目录下的文件';
+      case 'local':
+        return '后端电脑上的文件';
+      default:
+        return '';
+    }
   };
 
   const favLabel = `★ 已收藏${
@@ -1475,6 +1609,11 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
                 </Button>
               )}
               <Typography.Text strong>{paneTitle()}</Typography.Text>
+              {paneHint() && (
+                <Typography.Text style={{ ...metaStyle, fontSize: FontSize.CAPTION }}>
+                  {paneHint()}
+                </Typography.Text>
+              )}
               {source === 'recent' && lists.recent.length > 0 && (
                 <Popconfirm
                   title="清空最近使用记录？"

@@ -148,6 +148,7 @@ from datetime import (  # 2026-11-03 小欧 - 在跑任务僵尸年龄窗(见 li
     datetime,
     timedelta,
 )
+from pathlib import Path
 from sqlite3 import Connection
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -162,6 +163,7 @@ from app.db.models.chat_models import (  # 归一: ModelRef=SessionModelOverride
     ModelRef,
     SessionModelOverride,
 )
+from app.file_browse import browse_service as browse
 from app.logger import logger
 from app.safety.trust_db import (
     trust_scope_path,  # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
@@ -1193,6 +1195,53 @@ def list_running_tasks(conn: Connection) -> List[Dict[str, Any]]:
         (*_excluded, cutoff),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# 2026-11-13 小欧 - 任务产出物清单读口: list_session_task_artifacts 读 chat_tasks.artifacts 真源,
+#   附 rel_path(项目根相对路径, 根内有值)/exists(文件是否还在) 供前端渲染与加入本轮判定 — 小欧-2026-11-13
+def list_session_task_artifacts(conn: Connection, session_id: str) -> List[Dict[str, Any]]:
+    """会话内全部任务的产出物清单（chat_tasks.artifacts 真源，跨任务倒序）。
+
+    「AI 产出的」唯一真源：产出物是**任务产物**，不是附件台账行 —— 工作区内产物走引用
+    模式从不落 attachments 表，用 attachments 判据取该清单恒为空。
+    倒序口径：任务时间新→旧（同任务内保持声明顺序）；同一文件被多任务反复产出只列一次（保留最新任务）。
+    rel_path：项目根相对 posix 路径（在根内才有值，可直接作文件引用上行）；
+    根外的产物 rel_path 为 None，只能经「存为附件」复制固化后入轮。
+    """
+    rows = conn.execute(
+        "SELECT task_id, artifacts, created_at FROM chat_tasks "
+        "WHERE session_id = ? ORDER BY id DESC",
+        (session_id,),
+    ).fetchall()
+    out: List[Dict[str, Any]] = []
+    seen_paths: set[str] = set()
+    for r in rows:
+        items = parse_json(r["artifacts"], label="artifacts") if r["artifacts"] else []
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            path = (it.get("path") or "").strip()
+            if not path:
+                continue
+            # 同一文件被多任务反复产出(write→edit)只列一次, 保留最新任务(倒序首个)
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            rel: Optional[str] = browse.root_relative(path)
+            out.append({
+                "task_id": r["task_id"],
+                "task_created_at": r["created_at"],
+                "name": it.get("name") or Path(path).name,
+                "path": path,
+                "rel_path": rel,
+                "type": it.get("type") or "",
+                "tool_name": it.get("tool_name") or "",
+                # 产物文件是否还在（失效行仍可见，不可加入本轮）
+                "exists": Path(path).is_file(),
+            })
+    return out
 
 
 def get_task_status(conn: Connection, task_id: str) -> Optional[Dict[str, Any]]:

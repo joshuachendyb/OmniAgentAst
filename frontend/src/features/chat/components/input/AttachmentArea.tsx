@@ -55,7 +55,7 @@ const AttachmentArea: React.FC<AttachmentAreaProps> = ({
       <Tooltip
         title={
           <div style={{ maxWidth: 280 }}>
-            <div>添加文件到本轮（最近用过 / 本会话 / 项目文件 / 后端电脑 / 任务产物 / 收藏）</div>
+            <div>添加文件到本轮（本会话附件 / 本会话产物 / 他会话附件 / 项目文件 / 后端电脑 / 收藏）</div>
             <div style={{ marginTop: 4, opacity: 0.85 }}>{ATTACHMENT_RULES}</div>
           </div>
         }

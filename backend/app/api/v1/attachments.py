@@ -90,15 +90,15 @@ async def upload_attachment(
 
 @router.get("/attachments")
 def list_attachments(
-    session_id: str | None = Query(None, description="会话 ID（scope=session 时必填）"),
-    scope: str = Query("session", description="session | recent | global | ai"),
+    session_id: str | None = Query(None, description="会话 ID（scope=session / recent 时必填）"),
+    scope: str = Query("session", description="session | recent | global"),
     q: str | None = Query(None, description="按文件名过滤"),
     limit: int = Query(attach.MAX_LIST_ITEMS, ge=1, le=attach.MAX_LIST_ITEMS),
     offset: int = Query(0, ge=0),
 ) -> list[dict[str, Any]]:
-    """附件列表（作用域: 本会话 / 最近用过 / 已收藏 / AI 生成）。"""
-    if scope not in ("session", "recent", "global", "ai"):
-        fail(INVALID_PARAM, "scope 只支持 session / recent / global / ai")
+    """附件列表（作用域: 我上传的 / 最近发送 / 已收藏）。"""
+    if scope not in ("session", "recent", "global"):
+        fail(INVALID_PARAM, "scope 只支持 session / recent / global")
     return attach.list_attachments(session_id, scope=scope, q=q, limit=limit, offset=offset)
 
 
@@ -235,7 +235,9 @@ def get_capabilities() -> dict[str, Any]:
     return {"accept": accept,
             "limits": contract.limits(),
             "kind_options": contract.kind_options(),
-            "suffix_kind": contract.suffix_kind()}
+            "suffix_kind": contract.suffix_kind(),
+            # 「最近发送」时间窗(天)唯一真源: 前端标签文案按此渲染, 不写死天数
+            "recent_window_days": attach.RECENT_WINDOW_DAYS}
 
 
 @router.get("/attachments/metrics")
