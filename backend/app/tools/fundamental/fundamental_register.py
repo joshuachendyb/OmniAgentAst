@@ -6,6 +6,8 @@
 # 2026-10-18 - 小欧 - bash 挂 confirm_fn/op_param: 确认文案改由工具产(命令语义只有 shell 知道),
 #   原先 shell_command_confirm / shell_read_confirm 两类弹窗正文为空, 用户不知在确认什么。
 # 2026-11-13 商量 - 新增 bash_result(查询后台命令状态与输出), 只读无确认 — 商量-2026-11-13
+# 2026-11-13 商量 - 改名: bash_result 改名 task_query(通用后台任务查询, 描述特别指明当前支持 shell 后台命令), 8处注册项同步
+# 2026-11-13 商量 - 再改名: task_query 改名 bg_task_query, 与 SYSTEM 计划任务三件套语义区分, 8处注册项同步
 """
 FUNDAMENTAL Register — 基础工具注册点
 
@@ -24,7 +26,7 @@ FUNDAMENTAL Register — 基础工具注册点
 - timenow — 获取当前时间
 - notify — 发送系统通知 (从DESKTOP迁入)
 - bash — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入, 2026-10-02 由 shell 改名)
-- bash_result — 查询后台命令状态与输出 (2026-11-13)
+- bg_task_query — 查询后台任务执行状态与输出, 当前支持 bash background=true 的 Shell 后台命令 (2026-11-13)
 """
 
 from app.logger import logger
@@ -36,14 +38,14 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "searchtool": [],  # 使用内置库
     "timenow": [],  # 使用内置库
     "bash": [],  # 使用内置库
-    "bash_result": [],  # 使用内置库
+    "bg_task_query": [],  # 使用内置库
     "notify": ["win10toast"],
 }
 
-from app.tools.fundamental.bash_result import bash_result
+from app.tools.fundamental.bg_task_query import bg_task_query
 from app.tools.fundamental.execute_shell_command import shell
 from app.tools.fundamental.fundamental_schema import (
-    BashResultInput,
+    BgTaskQueryInput,
     SendNotificationInput,
     ShellInput,
     TimeNowInput,
@@ -63,7 +65,7 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "searchtool": """搜索备用工具。按工具名称和类型关键词检索,支持一次搜索多个类型(如'网络 文档 时间'),命中几个分类就自动注入几个分类的整类工具;结果最多返回10个工具;无命中时提示更换关键词重搜,不注入分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
     "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
-    "bash_result": """查询后台Shell命令(bash background=true)的状态与输出。适用场景:后台命令完成通知丢失时取回结果、或中途查看后台命令当前输出。""",
+    "bg_task_query": """查询后台任务执行状态与输出。当前支持的后台任务: bash background=true 的 Shell 后台命令(区别于Windows计划任务list_tasks)。适用场景:后台命令完成通知丢失时取回结果、或中途查看后台命令当前输出。""",
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
 }
 
@@ -84,9 +86,9 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"command": "Get-ChildItem", "shell_type": "ps5", "timeout": 10},
         {"command": "python -m http.server 8000", "background": True},
     ],
-    "bash_result": [
+    "bg_task_query": [
         {"shell_id": "bgsh_0123456789ab"},
-        {"output_file": "C:/Users/me/AppData/Local/Temp/omni_bg_shell/bgsh_0123456789ab.log"},
+        {"output_file": "D:/OmniAgentAs/output/bgsh_0123456789ab.log"},
     ],
     "notify": [
         {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻"},
@@ -119,7 +121,7 @@ def _register_fundamental_tools():
         "searchtool": searchtool,
         "timenow": timenow,
         "bash": shell,
-        "bash_result": bash_result,
+        "bg_task_query": bg_task_query,
         "notify": notify,
     }
 
@@ -127,7 +129,7 @@ def _register_fundamental_tools():
         "searchtool": ToolSearchInput,
         "timenow": TimeNowInput,
         "bash": ShellInput,
-        "bash_result": BashResultInput,
+        "bg_task_query": BgTaskQueryInput,
         "notify": SendNotificationInput,
     }
 

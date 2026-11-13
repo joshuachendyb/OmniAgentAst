@@ -6,6 +6,8 @@
 //   linkEnabled(源 sessionData.link_enabled); ②缓存读侧返回补 linkEnabled: state.linkEnabled === true
 //   (生产构建命中缓存即 return, 不补则镜像恒 false —— dev 因 DEBUG_LOAD_FROM_API 短路不可达, 故 dev 全绿 prod 假绿);
 //   ③写入点 saveSessionToCache 补 linkEnabled(3 处写入点中的第 1 处)。 — 小欧-2026-10-03
+// 编辑历史: 2026-11-13 商量 - parseMessage 透传 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
+//   新增字段): 后台续跑通知(设计[33] 8.7)种类在解析层保真, 系统通知样式渲染消费
 /**
  * 聊天历史工具函数
  *
@@ -176,6 +178,8 @@ export const parseMessage = (rawMessage: unknown): Message => {
     timestamp: new Date((msg.timestamp as string) || Date.now()),
     executionSteps,
     display_name: msg.display_name as string | undefined,
+    // 2026-11-13 商量 - 消息种类(user/system_notice)随解析透传, 系统通知渲染消费
+    msg_kind: (msg.msg_kind as string) || undefined,
     model: (msg.model as string) || undefined,
     provider: (msg.provider as string) || undefined,
     is_reasoning: msg.is_reasoning as boolean | undefined,

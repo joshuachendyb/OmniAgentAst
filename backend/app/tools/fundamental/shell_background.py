@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 2026-11-13 商量 - 新建: bash 后台执行模块。非阻塞 Popen + 输出重定向临时文件 +
 #   主循环 run_coroutine_threadsafe 提交等待协程 + 完成通知唤醒(注入/续跑/降级落盘三分叉)
+# 2026-11-13 商量 - 后台输出目录改走 get_output_dir()(= project_root/output, 与 download_file/
+#   generate_chart 同一单源): 原 %TEMP%\omni_bg_shell 与工具层输出基准割裂, 统一归口
 # 编辑历史:
 # (初版)
 """
@@ -58,7 +60,10 @@ def _new_shell_id() -> str:
 
 
 def _bg_output_dir() -> str:
-    d = os.path.join(os.environ.get("TEMP", "."), "omni_bg_shell")
+    # 2026-11-13 商量: 输出目录单源 get_output_dir()(= project_root/output),
+    #   与 download_file/generate_chart 同基准, 不再落 %TEMP%
+    from app.utils.path_utils import get_output_dir
+    d = get_output_dir()
     os.makedirs(d, exist_ok=True)
     return d
 

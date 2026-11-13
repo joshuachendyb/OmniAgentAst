@@ -9,7 +9,7 @@ S: bg_shell_notifier — 后台命令完成后的业务路由
 按 session 级两级判定:
   同会话有活跃任务 → 注入 system_notice 到活跃任务 inbox(下一轮吸收)
   同会话无活跃任务 → resume_session_with_notice 自动续跑(wake-on-idle)
-两者都失败时由调用方(shell_background)保留输出文件供 bash_result 兜底查询。
+两者都失败时由调用方(shell_background)保留输出文件供 bg_task_query 兜底查询。
 """
 from app.db import db
 from app.logger import logger

@@ -8,6 +8,8 @@
 # 2026-10-14 - 小欧 - ToolSearchInput docstring: 旧关键词示例换成实测清单(可用词7类31个/禁用词31个/易错对照4条);
 #   删死词"进程"(零命中且无对应工具)、"看图"(应"图片")。清单只存此处, 注册端与prompt端不重复
 # 2026-11-13 商量 - 后台命令: ShellInput 增 background 参数; 新增 BashResultInput(后台结果查询) — 商量-2026-11-13
+# 2026-11-13 商量 - 改名: BashResultInput 改名 TaskQueryInput, 配合工具 bash_result→task_query 通用化
+# 2026-11-13 商量 - 再改名: TaskQueryInput 改名 BgTaskQueryInput, 配合工具 task_query→bg_task_query 与计划任务区分
 """
 FUNDAMENTAL Schema - 基础工具参数模型
 
@@ -135,7 +137,7 @@ class ShellInput(BaseModel):
     )
 
 
-class BashResultInput(BaseModel):
+class BgTaskQueryInput(BaseModel):
     shell_id: Optional[str] = Field(
         default=None, description="后台命令ID(bash background=true 返回的 shell_id)"
     )
@@ -149,6 +151,6 @@ __all__ = [
     "TimeNowInput",
     "SendNotificationInput",
     "ShellInput",
-    "BashResultInput",
+    "BgTaskQueryInput",
 ]
 

@@ -35,6 +35,10 @@
 //   滚动到该任务并自动展开其追加块(上方滚动守卫只认 latestTaskId 变化, 并入不产生新任务→条纹丝不动), 见 L231 区块 — 小欧-2026-10-28
 // 编辑历史: 2026-10-30 小欧 - 引用提示统一走 quoteWithToast(成功/超限/读取失败三分支唯一实现); 成功不弹
 //   (随后直接导航, 原页 toast 无意义), 失败由它统一点名(含"超上限", 原实现漏该分支误报"读取失败") — 小欧-2026-10-30
+// 编辑历史: 2026-11-13 商量 - 新增"续跑"徽标: creation_source=system_resume 时显示, 区分后台命令完成唤醒的任务 — 商量-2026-11-13
+// 编辑历史: 2026-11-13 商量 - 用户问题区域按系统通知样式渲染: 续跑任务的消息体是系统通知
+//   (msg_kind=system_notice ⇔ creation_source=system_resume, 设计[33] 8.6 两维标记),
+//   灰字+SUCCESS左条+浅底, 不再按用户问题强样式渲染
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -407,6 +411,21 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 );
               })()}
 
+              {/* 续跑徽标(后台命令完成自动唤醒的任务) — 商量-2026-11-13 */}
+              {t.creation_source === 'system_resume' && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: Colors.SUCCESS,
+                    backgroundColor: '#f5f5f5',
+                    padding: '1px 5px',
+                    borderRadius: 3,
+                  }}
+                >
+                  续跑
+                </span>
+              )}
+
               {/* 轮次标签（显示LLM调用轮次） */}
               {t.llm_call_count > 0 && (
                 <span
@@ -433,6 +452,18 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   fontWeight: 500, // 中等加粗
                   lineHeight: 1.5,
                   wordBreak: 'break-word',
+                  // 2026-11-13 商量 - 系统通知样式: 续跑任务的消息体是系统通知(msg_kind=system_notice ⇔
+                  //   creation_source=system_resume, 设计[33] 8.6 两维标记), 不按用户问题样式渲染
+                  ...(t.creation_source === 'system_resume'
+                    ? {
+                        color: Colors.TEXT.SECONDARY,
+                        fontWeight: 400,
+                        padding: '4px 8px',
+                        backgroundColor: '#fafafa',
+                        borderLeft: `2px solid ${Colors.SUCCESS}`,
+                        borderRadius: '0 3px 3px 0',
+                      }
+                    : {}),
                 }}
               >
                 <CollapsibleText text={t.user_input} />

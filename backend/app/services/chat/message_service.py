@@ -43,6 +43,9 @@
 # 2026-11-04 - 小欧 - save_message 的 atxn 补 retry_locked=3: 用户消息高频写, 5 会话并发实测撞锁
 #   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面; 顺清 4 处存量子类 Unused import(F401) — 小欧-2026-11-04
 # 2026-11-05 小欧 - 回放聚合注释纠偏: ThoughtStep构建层兜底已废, 取键thought/reasoning经构建点显式传参仍成立(纯注释)
+# 2026-11-13 商量 - get_session_messages 消息读取出口补 msg_kind: MessageResponse 新增可选字段,
+#   user 行取 pairs 已回传的 msg_kind(user/system_notice), assistant 行恒 None;
+#   后台续跑通知(设计[33] 8.7)在前端可按它渲染系统通知样式, 不再与用户发言混同
 """
 message_service — 消息业务服务(services/chat)
 
@@ -147,6 +150,8 @@ def get_session_messages(session_id: str):
                 timestamp=format_timestamp(p['created_at']),
                 execution_steps=[], display_name=None, thought=None,
                 task_id=_p_tid,
+                # 2026-11-13 商量: 消息种类随行下发(user/system_notice), 前端按它渲染系统通知样式
+                msg_kind=p.get('msg_kind'),
             ))
             ai_id = p['ai_message_id']
             if ai_id is None or _carrier.get(ai_id) != _i:
@@ -180,6 +185,7 @@ def get_session_messages(session_id: str):
                 timestamp=format_timestamp(p['created_at']),
                 execution_steps=steps, display_name=display_name,
                 thought=thought, task_id=_p_tid,
+                msg_kind=None,  # 2026-11-13 商量: msg_kind 是 user 侧语义, assistant 行恒 None
             ))
 
         title_locked = bool(session['title_locked'])

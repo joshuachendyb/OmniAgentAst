@@ -8,8 +8,12 @@
 # 2026-10-01 - 小欧 - 解 [1] E4: MessageResponse 增 task_id 字段(该消息配对的任务ID)。此前 execution_steps 无任务归属，前端拿到整会话所有消息的步骤却无法区分属于哪个任务，只能平铺合并当本任务展示(RightViewer C3 跨任务降级)；本字段使前端可按 task 精确过滤
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项3: SessionResponse 增 link_enabled(会话级 link 粘性开关)
 # 2026-10-03 - 小欧 - 文档[4] 5.7.5/5.7.6 废止: 回退 SessionResponse.link_enabled(零消费死字段; 前端唯一读真源是 GET /sessions/{id}/messages, 同一真源两个 HTTP 读出口即双通道隐患)。
+# 2026-11-13 - 商量 - MessageResponse 增 msg_kind 可选字段(chat_user_message.msg_kind, user/system_notice):
+#   后台续跑通知消息(设计[33] 8.7)此前在消息读取出口丢失种类信息, 前端无法区分用户发言与系统通知;
+#   值取自 fetch_session_user_message_pairs 已回传的 msg_kind, assistant 行恒 None
 """
 聊天数据模型 (Chat Data Models)
+
 定义会话、消息等数据结构
 
 Author: 小沈 - 2026-05-22
@@ -98,3 +102,6 @@ class MessageResponse(BaseModel):
     #   整会话所有消息的步骤却无法区分属于哪个任务, 只能平铺合并当本任务展示
     #   (RightViewer C3 跨任务降级)。本字段使前端可按 task 精确过滤。
     task_id: Optional[str] = Field(None, description="该消息配对的任务ID(user 气泡为其所发起的任务)")
+    # 2026-11-13 商量 - 消息种类(chat_user_message.msg_kind, user/system_notice):
+    #   后台续跑通知(设计[33] 8.7)在读取出口保真, 前端按它渲染系统通知样式; assistant 行恒 None
+    msg_kind: Optional[str] = Field(None, description="消息种类(user=用户发言/system_notice=系统通知)")

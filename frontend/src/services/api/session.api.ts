@@ -14,6 +14,8 @@
 //   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
 //   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
+// 编辑历史: 2026-11-13 商量 - ApiMessage 补 msg_kind(后端 MessageResponse 新增可选字段, user/system_notice):
+//   后台续跑通知消息(设计[33] 8.7)的种类在 wire 上保真, 前端按它渲染系统通知样式, 不再与用户发言混同
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -67,6 +69,8 @@ export interface ApiMessage {
   // 2026-10-01 小欧 - 后端 MessageResponse 新增该字段(配对任务ID): 此前消息只带 execution_steps 无归属,
   //   跨任务降级会把别的任务步骤当本任务显示 — 小欧-2026-10-01
   task_id?: string | null;
+  // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知(设计[33] 8.7)按它渲染系统通知样式
+  msg_kind?: string | null;
 }
 
 export interface GetSessionMessagesResponse {

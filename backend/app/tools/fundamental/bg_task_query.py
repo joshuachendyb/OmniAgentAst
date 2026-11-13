@@ -3,9 +3,12 @@
 #   后台命令状态+输出; 通知丢失兜底 + 中途读输出(非轮询)
 # 编辑历史:
 # (初版)
+# 2026-11-13 商量 - 改名: bash_result 改名 task_query(通用后台任务查询), 描述特别指明当前支持 bash background=true 的 Shell 后台命令
+# 2026-11-13 商量 - 再改名: task_query 改名 bg_task_query, 与 SYSTEM 计划任务三件套(create/list/delete_task)语义区分
 """
-S: bash_result — 查询后台 Shell 命令状态与输出
+S: bg_task_query — 查询后台任务执行状态与输出
 
+当前支持的后台任务: bash background=true 的 Shell 后台命令(按 shell_id 或 output_file 查询)。
 支持两种查询键: shell_id(注册表内存态, 服务重启后失效) 或 output_file(磁盘文件, 恒可查)。
 输出读当前文件后过 _truncate_shell_field 截断(与前台同款, LLM 侧恒有界)。
 """
@@ -23,7 +26,7 @@ from app.tools.tool_constants import (
 from app.tools.tool_response import build_error, build_success
 
 
-def bash_result(
+def bg_task_query(
     shell_id: Optional[str] = None,
     output_file: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -41,7 +44,7 @@ def bash_result(
     if not shell_id and not output_file:
         return build_error(data={}, llm_data={
             "summary": "查询后台命令结果，失败",
-            "action": {"tool": "bash_result", "tool_zh": "查询", "params": {}},
+            "action": {"tool": "bg_task_query", "tool_zh": "查询", "params": {}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_EMPTY,
                        "detail": "shell_id 与 output_file 至少提供一个",
                        "hint": "请从 bash background=true 的返回值或对话历史中取 shell_id"},
@@ -58,7 +61,7 @@ def bash_result(
             else:
                 return build_error(data={}, llm_data={
                     "summary": f"查询后台命令{shell_id}，失败",
-                    "action": {"tool": "bash_result", "tool_zh": "查询", "params": {"shell_id": shell_id}},
+                    "action": {"tool": "bg_task_query", "tool_zh": "查询", "params": {"shell_id": shell_id}},
                     "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_INVALID,
                                "detail": f"未找到后台命令 {shell_id}(服务重启或结果已过期清理)",
                                "hint": "请检查 shell_id 是否正确; 结果文件过期后不可恢复"},
@@ -69,7 +72,7 @@ def bash_result(
         if not os.path.isfile(output_file):
             return build_error(data={}, llm_data={
                 "summary": "查询后台命令结果，失败",
-                "action": {"tool": "bash_result", "tool_zh": "查询", "params": {"output_file": output_file}},
+                "action": {"tool": "bg_task_query", "tool_zh": "查询", "params": {"output_file": output_file}},
                 "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_INVALID,
                            "detail": f"输出文件不存在: {output_file}",
                            "hint": "请核对文件路径"},
@@ -84,7 +87,7 @@ def bash_result(
             with open(path, "rb") as f:
                 parts.append(f.read())
         except OSError as e:
-            logger.warning(f"[bash_result] 读输出失败({path}): {e}")
+            logger.warning(f"[bg_task_query] 读输出失败({path}): {e}")
     raw = b"".join(parts)
     stdout_str = raw.decode("utf-8", errors="replace")
     stdout_str, _trunc = _truncate_shell_field(stdout_str, SHELL_OUTLIMIT_STDOUT_MAX_CHARS)
@@ -106,7 +109,7 @@ def bash_result(
         data=data,
         llm_data={
             "summary": f"查询后台命令{shell_id or os.path.basename(path)}，成功",
-            "action": {"tool": "bash_result", "tool_zh": "查询",
+            "action": {"tool": "bg_task_query", "tool_zh": "查询",
                        "params": {"shell_id": shell_id or "", "output_file": output_file or ""}},
             "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
             "duration_ms": 0,
