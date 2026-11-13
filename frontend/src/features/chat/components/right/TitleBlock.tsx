@@ -27,6 +27,13 @@
 //   实时任务只拿到短条。改在 final 未带 token 时取本会话 usage 帧的任务累计(metaFrames.taskAccumulated,
 //   与 TaskInfoBar「任务 P/C/T」同源), 且仅当该条 final 就是该会话当前任务那条(同引用或同 timestamp+step)
 //   才取用; 历史任务的 final 来自 REST 另建对象, 永不命中, 绝不拿实时值冒充 — 小欧-2026-10-28
+
+// 2026-11-13 商量 - 时间范围数据源根治: 删 startTimestamp prop, 改用**任务自身**权威时刻——
+//   结束=终态步骤 timestamp(后端本地ISO, 与落库同源), 开始=结束−duration(与 update_task.duration 同源,
+//   实测与 chat_tasks.start_time 误差0.1s)。原实现用会话级 SSE start 帧时刻配任务级 duration, 两源不同:
+//   历史任务开始时间取的是别的任务/初始值0的时刻(整体错位), 会话级为0时更渲染1970年时间对
+//   (秒级任务看着"开始与结束几乎相同")。终态步骤 timestamp 或 duration 缺失时整项隐藏(不编造时间) — 商量-2026-11-13
+
 import React from 'react';
 import { Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
@@ -35,14 +42,12 @@ import { CircleArrow } from '@/components/CircleArrow';
 import { PillBadge } from '@/components/PillBadge';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { formatTokenK } from '../taskinfo/infoMaps';
+import { parseTimeSafe } from '@/utils/time';
 
 interface TitleBlockProps {
   finalStep?: ExecutionStep | null;
   expanded: boolean;
   onToggle: () => void;
-  // 2026-10-27 小欧 - 新增 startTimestamp: SSE start 帧时间戳, 用于计算开始/结束时间范围
-  //   结束时间 = startTimestamp + duration * 1000; 缺失时整项隐藏 — 小欧-2026-10-27
-  startTimestamp?: number;
 }
 
 // 2026-10-27 小欧 - 紧凑耗时格式(doc[48] N10): <60s 保留 1 位小数(修原 Math.round 精度损失 1.4s→"1s"),
@@ -124,11 +129,22 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   finalStep,
   expanded,
   onToggle,
-  startTimestamp,
 }) => {
   if (!finalStep) return null;
   const outcome = finalStep.outcome;
   const duration = finalStep.duration;
+  // 2026-11-13 商量 - 时间范围改用**任务自身**权威时刻(终态步骤), 不再用会话级 start 帧时刻:
+  //   结束 = 终态步骤 timestamp(后端本地 ISO, 与落库同源; 基类 base.py 已为缺省 timestamp 自动补当前时刻)
+  //   开始 = 结束 − duration(与后端 update_task.duration 同源算式, 实测与 chat_tasks.start_time 误差 0.1s)
+  // 原实现用"会话级 SSE start 帧时刻"(frames.startTimestamp)配"任务级 duration"——两源不同:
+  //   ①历史任务: 会话级时刻与该任务无关(可能是别的任务/初始值 0), 开始时间整体错位,
+  //     结束时间随之偏移(后端三字段自洽, 错在前端拼接);
+  //   ②会话级时刻为 0(未收到 start 帧)时更会渲染 1970 年的时间对, 秒级任务看起来"开始与结束几乎相同"。
+  // 终态步骤 timestamp 缺失或 duration 缺失时整项隐藏(不编造时间)。
+  const endDate = parseTimeSafe(finalStep.timestamp);
+  const endMs = endDate ? endDate.getTime() : null;
+  const startMs =
+    endMs != null && duration != null ? endMs - duration * 1000 : null;
   const model = finalStep.model;
   const provider = finalStep.provider;
   // 2026-09-11 小欧 修复: 删 ?? null——TokenLayer 字段类型 number|undefined, 传 null 违 TS2322；此处语义完全等价保留 — 小欧-2026-09-11
@@ -217,15 +233,10 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
             概览
           </Typography.Text>
           <PillBadge text={outcome ?? '-'} color={pillColor} />
-          {/* 2026-10-27 小欧 - 新增时间范围显示：startTimestamp + duration 计算结束时间，
-            箭头式紧凑格式保持一行；缺失时整项隐藏 — 小欧-2026-10-27 */}
-          {startTimestamp != null && duration != null && (
-            <InlineText>
-              {formatTimeRange(
-                startTimestamp,
-                startTimestamp + duration * 1000
-              )}
-            </InlineText>
+          {/* 2026-10-27 小欧 - 时间范围显示；2026-11-13 商量 - 数据源改任务自身权威时刻(终态步骤 timestamp − duration),
+            箭头式紧凑格式保持一行；缺失时整项隐藏 */}
+          {startMs != null && endMs != null && (
+            <InlineText>{formatTimeRange(startMs, endMs)}</InlineText>
           )}
           {/* 2026-10-27 小欧 - N10: 缺失整项隐藏(含间距 span), 不渲染"运行耗时 -"(标签与占位符黏连) — 小欧-2026-10-27 */}
           {duration != null && (
