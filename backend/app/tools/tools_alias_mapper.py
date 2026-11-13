@@ -18,6 +18,12 @@
 # 2026-11-11 - 小欧 - 官方edit签名收编(camelCase): opencli上游OpenCode harness教的键名oldString/newString→
 #   old_string/new_string(Pydantic默认忽略extra键, 无别名则old_string必填缺失, opencli模型的edit每条废一轮schema反馈);
 #   replaceAll(bool)属跨键映射(true→mode:all/false→删键不设, EditInput缺省即once), 在normalize_params键名映射后特判
+# 2026-11-13 - 商量 - 错位参数展开(expand_misplaced_params): LLM幻觉把整个edit对象塞进new_string字段(嵌套dict或XML标签串),
+#   外层缺path/old_string致ERR_MISSING_PARAM; 日志实证59次edit中17次失败(29%轮次浪费), 展开后可直接执行省一轮重试;
+#   $text→new_string 经PARAM_ALIASES统一映射(无特判); 通用设计: 其他tool有PARAM_ALIASES条目即自动获得展开能力。
+#   判据收紧(三堂会审, 反例实证): ①承载错位的字段名本身须是已知参数名(否则 write_xlsx.data 等合法dict参数被误展开);
+#   ②XML串须提取出≥2个参数且含自身规范名(否则编辑含 "</path>" 的代码时 new_string 被吞);
+#   ③_EXTRA_KNOWN_KEYS 补 edit.replaceAll(不在别名表, 丢则静默只替换首处)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -31,6 +37,7 @@
 5. 有日志记录：记录映射情况，便于监控LLM行为
 """
 
+import re
 from typing import Any, Dict, Tuple
 
 from app.logger import logger
@@ -60,6 +67,7 @@ PARAM_ALIASES = {
         "file_name": "path",
         "oldString": "old_string",  # 2026-11-11 小欧: 官方edit camelCase键收编(OpenCode签名, 详见头部编辑历史)
         "newString": "new_string",
+        "$text": "new_string",  # 2026-11-13 商量: LLM幻觉键(嵌套dict内$text=替换后文本), 经PARAM_ALIASES统一映射无特判
         "model": "mode",  # 键名混淆实证: session 12b317fe 6连发全废(model:"once"), 语义唯一指向mode — 2026-11-04 小欧
     },
     "readmedia": {
@@ -423,6 +431,99 @@ def normalize_tool_name(tool_name: str) -> str:
     return tool_name
 
 
+# XML 闭标签分割: 按 </tag> 切串, 奇数段=文本(去开标签后即值), 偶数段=标签名 — 商量 2026-11-13
+_XML_CLOSE_SPLIT = re.compile(r"</([A-Za-z_$][\w]*)>")
+_XML_OPEN_PREFIX = re.compile(r"^<[^>]+>")
+
+# 显式参数但不在 PARAM_ALIASES 的工具键: edit.replaceAll 由 normalize_params 跨键特判(true→mode:all),
+# 无别名条目; 错位展开时须一并识别, 否则该键被丢弃后只替换第一处而非全部(静默错误比失败更糟) — 商量 2026-11-13
+_EXTRA_KNOWN_KEYS = {"edit": {"replaceAll"}}
+
+
+def _extract_xml_tag_params(value: str, known_keys: set, aliases: dict) -> Dict[str, str]:
+    """从 XML 标签串中提取参数键值对(宽容: 允许无开标签, 如 'text</newString>')
+
+    LLM 偶尔把 edit 参数序列化成 XML 标签串塞进单个字段:
+      '### 1.6...</newString><old_string>### 1.5...</old_string><path>F:\\...</path>'
+    按 </tag> 分割后, 每段文本(去掉开标签前缀)即对应参数值, 标签名经 aliases 映射为规范名。
+    只收标签名命中已知参数名的段, 其余段丢弃(防未知键泄漏到顶层触发非法参数)。
+    """
+    parts = _XML_CLOSE_SPLIT.split(value)
+    result = {}
+    for i in range(0, len(parts) - 1, 2):
+        text = parts[i]
+        tag = parts[i + 1]
+        if tag in known_keys or tag in aliases:
+            target = aliases.get(tag, tag)
+            text = _XML_OPEN_PREFIX.sub("", text)  # 去掉开标签(如有)
+            if text:
+                result[target] = text
+    return result
+
+
+def expand_misplaced_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+    """展开 LLM 幻觉的错位参数(嵌套 dict / XML 标签串 → 顶层平铺) — 商量 2026-11-13
+
+    实证形态(edit, deepseek-v4.1-flash, session 37dcf0a6):
+    1. 嵌套 dict: {'new_string': {'old_string':..., 'path':..., '$text':...}}
+       LLM 把整个 edit 对象塞进 new_string 字段, $text 是臆想键(=替换后文本)
+    2. XML 标签串: {'new_string': 'val</newString><old_string>...</old_string><path>...</path>'}
+       LLM 把参数序列化成 XML 文本塞进单个字段
+
+    判据(防误伤合法内容, 实证反例: 编辑含 "</path>" 的代码时 new_string 曾被吞掉):
+      ① 承载错位的字段名本身必须是已知参数名 —— 该参数本应收到标量, 却收到 dict/标签串才叫错位;
+         否则其他 tool 的合法 dict 参数(如 write_xlsx.data 内含 path 字段)会被误展开。
+      ② XML 串须提取出 ≥2 个参数, 且含该字段自身的规范名 —— 错位串必然以自身闭标签分段;
+         单个 "</xxx>" 只是代码里的字符串字面量, 不构成错位。
+
+    通用设计: 从 PARAM_ALIASES 推导参数名集合(别名+规范名), 其他 tool 有 PARAM_ALIASES 条目即自动获得能力。
+
+    Returns:
+        (expanded_params, has_expansion) — 无需展开时原样返回 (params, False)
+    """
+    if not params or tool_name not in PARAM_ALIASES:
+        return params, False
+
+    aliases = PARAM_ALIASES[tool_name]
+    known_keys = set(aliases.keys()) | set(aliases.values()) | _EXTRA_KNOWN_KEYS.get(tool_name, set())
+
+    expanded = {}
+    has_expansion = False
+    mapped = []
+
+    for key, value in params.items():
+        canonical_key = aliases.get(key, key)
+        # 承载错位的字段本身须是已知参数名(判据①)
+        if isinstance(value, dict) and key in known_keys:
+            inner = {
+                aliases.get(k, k): v
+                for k, v in value.items()
+                if k in known_keys
+            }
+            if inner:
+                expanded.update(inner)
+                mapped.extend(f"{key}.{k}" for k in value if k in known_keys)
+                has_expansion = True
+            else:
+                expanded[key] = value
+        elif isinstance(value, str) and "</" in value and key in known_keys:
+            xml_params = _extract_xml_tag_params(value, known_keys, aliases)
+            # 判据②: ≥2 参数且含自身规范名, 才是错位标签串
+            if len(xml_params) >= 2 and canonical_key in xml_params:
+                expanded.update(xml_params)
+                mapped.extend(f"{key}<{k}>" for k in xml_params)
+                has_expansion = True
+            else:
+                expanded[key] = value
+        else:
+            expanded[key] = value
+
+    if has_expansion:
+        logger.info(f"[param_expand] {tool_name}: 错位参数展开 {mapped}")
+
+    return expanded, has_expansion
+
+
 def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
     """
     规范化参数名 - 将LLM返回的参数名映射为Schema要求的参数名
@@ -438,6 +539,9 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
     """
     if not params:
         return params, False
+
+    # 错位参数展开(嵌套 dict / XML 标签串 → 顶层平铺), 在键名映射之前 — 商量 2026-11-13
+    params, _ = expand_misplaced_params(tool_name, params)
 
     if tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES:
         return params, False
