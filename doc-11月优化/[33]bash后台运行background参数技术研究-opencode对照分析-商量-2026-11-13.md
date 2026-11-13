@@ -1238,6 +1238,37 @@ async def resolve_link_context(creation_source, session_id, task_id):
 
 **⑦ 与修订⑤/⑥ 的关系**：修订⑥"续跑恒 linked"是本节 `SYSTEM_RESUME` 分支的**特例**，被本节纳入统一架构；原"抽 `_resolve_link_context` 两路共用"作废（两路逻辑本质不同，正确做法是**按来源分派**而非"共用"）。本节将"用户/续跑"两路扩为"USER/SYSTEM_RESUME/SYSTEM_TRIGGERED"三路（未来 N 路），单一入口 `resolve_link_context` 内部分派。
 
+**⑧ 架构要点 6：`creation_source` 不绑定 shell，按"关联语义"分类（通用维度）**
+
+用户追问"其他 tool 或组件创建的任务，creation_source 要不要更通用"。**要，且必须**——`creation_source` 是**通用任务创建来源维度**，不绑定 shell 后台续跑：
+
+```python
+class TaskCreationSource(str, Enum):
+    USER = "user"                    # 用户手动发消息
+    SYSTEM_RESUME = "system_resume"  # 续跑语义(强制后继, 恒 linked) —— 任何 tool/组件触发续跑都归此
+    SYSTEM_TRIGGERED = "system_triggered"  # 触发语义(独立, 恒 independent) —— 定时任务等
+```
+
+**关键：枚举值按"关联语义"分类，不按"哪个 tool"分类**。理由：link 判定依据的是**语义**（是否有内在关联），不是创建者身份。故：
+- tool A 触发续跑 → `SYSTEM_RESUME`（与 shell 续跑同语义，同判定）
+- tool B 触发独立任务 → `SYSTEM_TRIGGERED`（与定时任务同语义，同判定）
+- 任何 tool 创建的任务都能**复用现有枚举值**，无需为每个 tool 加新值
+
+**⑨ 架构要点 7：`creation_source`（语义）与 `trigger`（创建者）正交，职责分离**
+
+两个维度**正交**，不可混为一谈：
+
+| 维度 | 值示例 | 职责 | 消费方 |
+|------|-------|------|--------|
+| `creation_source` | user / system_resume / system_triggered | **判定依据**（link 语义） | `resolve_link_context` 分派 |
+| `trigger` | bg_shell_resume / scheduled_cron / tool_a_resume | **展示/诊断依据**（哪个组件触发的） | 前端徽标、日志、统计 |
+
+- `creation_source` 值域**稳定有限**（语义类别），`trigger` 值域**随组件增长**（具体创建者）——前者决定 link 判定，后者不影响判定
+- 未来加 tool 触发新任务：**只加 trigger 值**（展示），`creation_source` 复用现有语义值（判定），`resolve_link_context` 零改动
+- 严禁用 `trigger` 字符串做 link 判定（脆弱、随组件增长漂移）；严禁用 `creation_source` 做前端徽标文案（语义与展示混用）
+
+**⑩ 结论（回答本问）**：任务创建类型/来源**必须加**，且按**关联语义**设计成通用枚举（`creation_source`），与具体创建者（`trigger`）正交分离。这样任何 tool/组件创建的任务都能复用同一套 link 判定，未来扩展只加 `trigger` 值、不动 `resolve_link_context`——**"便于做不同处理"的关键正是把"语义判定"与"创建者展示"解耦成两个正交维度**。
+
 ### 8.12 实施顺序与验证清单
 
 | 步 | 内容 | 验证 |
