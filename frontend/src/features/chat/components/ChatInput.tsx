@@ -149,7 +149,7 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize } from '@/utils/stepStyles';
 // 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
 import {
   chipCapState,
@@ -827,7 +827,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                     background: 'transparent',
                     cursor: 'pointer',
                     padding: '0 4px',
-                    fontSize: 14,
+                    fontSize: FontSize.PRIMARY,
                     lineHeight: '16px',
                     color: Colors.TEXT.SECONDARY,
                   }}

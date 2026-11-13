@@ -141,7 +141,7 @@ import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { isMutatedByOps } from '@/utils/fileOps';
 import { readStoredSessionId } from '@/utils/sessionStorage';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
-import { Spacing, Colors } from '@/utils/stepStyles';
+import { Spacing, Colors, FontSize } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 // 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
 //   设置页设计令牌——控件高 28/圆角 4（taskTokens 推导与依据见 settingsTokens 注释）
@@ -1027,7 +1027,7 @@ const FilesPage: React.FC = () => {
             }}
             title="本页只读，不会修改任何文件"
           >
-            <LockOutlined style={{ fontSize: 12 }} />
+            <LockOutlined style={{ fontSize: FontSize.SECONDARY }} />
             只读浏览
           </span>
           <span style={{ color: Colors.TEXT.SECONDARY }}>

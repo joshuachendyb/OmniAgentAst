@@ -39,6 +39,9 @@
 // 编辑历史: 2026-11-13 商量 - 用户问题区域按系统通知样式渲染: 续跑任务的消息体是系统通知
 //   (msg_kind=system_notice ⇔ creation_source=system_resume, 设计[33] 8.6 两维标记),
 //   灰字+SUCCESS左条+浅底, 不再按用户问题强样式渲染
+// 编辑历史: 2026-11-13 商量 - 字号/字重归位令牌: 12→FontSize.SECONDARY(4处)/11→SMALL(2处)/10→CAPTION(4处)
+//   /fontWeight 500→MEDIUM/400→REGULAR, 遵守 2026-11-12 stepStyles 7档阶梯"唯一真源"铁律(11-12整改只收了13px, 本文件漏网);
+//   fontSize:6 状态点●为装饰图形非文字, 不入阶梯(加注释说明); lineHeight 无令牌暂留数字 — 商量-2026-11-13
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -70,7 +73,7 @@ import { toRelativePath } from '@/utils/projectPath';
 
 import type { SessionTaskItem } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '@/types/execution';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
 import { showSuccess, handleError } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
@@ -270,7 +273,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
             暂无任务
           </Typography.Text>
         }
@@ -348,7 +351,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               }}
             >
               {/* 时间标签 */}
-              <span style={{ fontSize: 11, color: Colors.TEXT.TERTIARY }}>
+              <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
                 {formatTime(t.created_at)}
               </span>
 
@@ -356,7 +359,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               {t.model && (
                 <span
                   style={{
-                    fontSize: 10,
+                    fontSize: FontSize.CAPTION,
                     color: Colors.TEXT.PRIMARY,
                     backgroundColor: '#f5f5f5',
                     padding: '1px 5px',
@@ -375,14 +378,14 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 return (
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: FontSize.SMALL,
                       color: st ? st.color : Colors.TEXT.TERTIARY,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 2,
                     }}
                   >
-                    <span style={{ fontSize: 6 }}>●</span>
+                    <span style={{ fontSize: 6 /* 状态点装饰图形, 非文字, 不入字号阶梯 */ }}>●</span>
                     {st ? st.name : t.status}
                   </span>
                 );
@@ -396,7 +399,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 return (
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: FontSize.CAPTION,
                       // 2026-10-03 小欧 视觉修正: 原背景 #e6f4ff 与激活行背景同色(#e6f4ff),
                       // 激活行上徽标底色与行背景融为一体、丢了分层感 → 改与同行轮次标签一致 #f5f5f5,
                       // 字色仍用 Colors.INFO(#096dd9) 强调"链"语义; 对比度 #096dd9 on #f5f5f5 ≈ 4.9:1 达 WCAG AA
@@ -415,7 +418,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               {t.creation_source === 'system_resume' && (
                 <span
                   style={{
-                    fontSize: 10,
+                    fontSize: FontSize.CAPTION,
                     color: Colors.SUCCESS,
                     backgroundColor: '#f5f5f5',
                     padding: '1px 5px',
@@ -430,7 +433,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               {t.llm_call_count > 0 && (
                 <span
                   style={{
-                    fontSize: 10,
+                    fontSize: FontSize.CAPTION,
                     color: Colors.TEXT.PRIMARY,
                     backgroundColor: '#f5f5f5',
                     padding: '1px 5px',
@@ -447,9 +450,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               <div
                 className="task-text-block" // position:relative由CSS .task-text-block定义，不重复内联(DRY)
                 style={{
-                  fontSize: 12,
+                  fontSize: FontSize.SECONDARY,
                   color: Colors.TEXT.STRONG, // 强文本，问题突出
-                  fontWeight: 500, // 中等加粗
+                  fontWeight: FontWeight.MEDIUM,
                   lineHeight: 1.5,
                   wordBreak: 'break-word',
                   // 2026-11-13 商量 - 系统通知样式: 续跑任务的消息体是系统通知(msg_kind=system_notice ⇔
@@ -457,7 +460,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   ...(t.creation_source === 'system_resume'
                     ? {
                         color: Colors.TEXT.SECONDARY,
-                        fontWeight: 400,
+                        fontWeight: FontWeight.REGULAR,
                         padding: '4px 8px',
                         backgroundColor: '#fafafa',
                         borderLeft: `2px solid ${Colors.SUCCESS}`,
@@ -496,7 +499,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     border: 'none',
                     cursor: 'pointer',
                     padding: 0,
-                    fontSize: 12,
+                    fontSize: FontSize.SECONDARY,
                     color: Colors.TEXT.TERTIARY,
                   }}
                 >
@@ -539,7 +542,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               >
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: FontSize.SECONDARY,
                     color: Colors.TEXT.PRIMARY, // 主文本，比问题稍浅
                     lineHeight: 1.6, // 回复正文行高略大，阅读舒适
                     wordBreak: 'break-word',

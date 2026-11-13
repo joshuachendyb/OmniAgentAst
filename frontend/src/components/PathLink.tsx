@@ -32,7 +32,7 @@ import { resolveChipUrlFresh, useProjectRoot } from '@/hooks/useProjectRoot';
 //   此处只并列渲染，与旧 components/markdown/FileRefChip 的依赖方向一致 — 小欧-2026-11-02
 import { QuoteButton } from '@/features/refs/QuoteButton';
 import { chatTokens } from '@/theme/tokens';
-import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontFamily, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 
 export interface PathLinkProps {
   /** 原始路径（绝对或相对项目根，原样展示） */
@@ -88,8 +88,8 @@ const monoStyle: React.CSSProperties = {
 
 /** 徽标（目录/根外共用一个规格） */
 const badgeStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 600,
+  fontSize: FontSize.CAPTION,
+  fontWeight: FontWeight.BOLD,
 };
 
 /** 链接外壳的输入：只含渲染所需，不含判定参数（判定在 PathLink 内做一次） */

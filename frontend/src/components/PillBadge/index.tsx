@@ -5,7 +5,7 @@
 import React from 'react';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons) — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface PillBadgeProps {
   /** 标签文本 */
@@ -40,7 +40,7 @@ const PillBadge: React.FC<PillBadgeProps> = ({
         borderRadius: 11,
         color: '#fff',
         fontSize: FontSize.SECONDARY,
-        fontWeight: 500,
+        fontWeight: FontWeight.MEDIUM,
         padding: '0 10px',
         ...(shine
           ? {

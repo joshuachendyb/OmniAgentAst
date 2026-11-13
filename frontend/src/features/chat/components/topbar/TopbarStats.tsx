@@ -18,7 +18,7 @@
 import React from 'react';
 import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
 import { Tooltip, Typography } from 'antd';
-import { type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用公用TokenLayer消重复私有形状 — 小欧-2026-09-12
+import { type TokenLayer, FontSize } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用公用TokenLayer消重复私有形状 — 小欧-2026-09-12
 
 // 2026-09-01 小欧: 3字段紧凑格式(与StaticStatsBlock的P/C/T一致, 去/两侧空格省宽度), 无值显'-'
 // 2026-09-12 小欧: 参数类型 TokenTriple→TokenLayer(复用公用, 消私有形状) — 小欧-2026-09-12
@@ -51,20 +51,20 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
       : '';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
         任务数 {taskCount ?? 0}
       </Typography.Text>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
         会话累计 {formatTriple(sessionTokens)}
       </Typography.Text>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
         链累计 {formatTriple(chainTokens)}
       </Typography.Text>
       {timeTip && (
         <Tooltip
           title={<span style={{ whiteSpace: 'pre-line' }}>{timeTip}</span>}
         >
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
             ⓘ
           </Typography.Text>
         </Tooltip>

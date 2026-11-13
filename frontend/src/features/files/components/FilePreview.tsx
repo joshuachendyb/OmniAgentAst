@@ -65,6 +65,7 @@ import {
   Colors,
   FontFamily,
   FontSize,
+  FontWeight,
   MonoLineHeight,
   Spacing,
 } from '@/utils/stepStyles';
@@ -665,7 +666,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               style={{
                 color: Colors.ERROR,
                 fontSize: chatTokens.fontMD,
-                fontWeight: 600,
+                fontWeight: FontWeight.BOLD,
                 border: `1px solid ${Colors.ERROR}`,
                 borderRadius: 4,
                 padding: '1px 8px',
@@ -688,7 +689,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               style={{
                 color: Colors.TEXT.STRONG,
                 fontSize: chatTokens.fontMD,
-                fontWeight: 600,
+                fontWeight: FontWeight.BOLD,
                 maxWidth: '10em',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

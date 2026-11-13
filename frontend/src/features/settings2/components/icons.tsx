@@ -26,7 +26,7 @@ import type { TabKey } from '../types';
 
 // 2026-09-21 小欧 - 定案：Tab 图标 fontSize=14（文档明确规格，不随 Tabs 主题缩放，Tabs 集成）
 const TAB_ICON_STYLE: React.CSSProperties = {
-  fontSize: 14,
+  fontSize: FontSize.PRIMARY,
 };
 
 // 2026-09-22 小欧 - tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined

@@ -151,7 +151,7 @@ export function DirectoryAccessNote() {
             >
               <span
                 style={{
-                  fontSize: 20,
+                  fontSize: FontSize.TITLE,
                   lineHeight: '20px',
                   color: _hover ? Colors.BORDER.ACCENT : Colors.TEXT.SECONDARY,
                   flexShrink: 0,
@@ -202,7 +202,7 @@ export function DirectoryAccessNote() {
               gap: Spacing.SM,
             }}
           >
-            <span style={{ color: Colors.BORDER.ACCENT, fontSize: 16 }}>
+            <span style={{ color: Colors.BORDER.ACCENT, fontSize: FontSize.SUBHEAD }}>
               {current.icon}
             </span>
             {current.title}

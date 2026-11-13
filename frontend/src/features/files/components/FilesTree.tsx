@@ -38,7 +38,7 @@ import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
 import { joinAbsPath, toAbsolutePath } from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 
 export interface FilesTreeProps {
@@ -338,7 +338,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
               style={{
                 padding: `3px 8px 3px ${(depth + 1) * 16 + 8 + 20}px`,
                 color: '#999',
-                fontSize: 12,
+                fontSize: FontSize.SECONDARY,
               }}
             >
               （空目录）

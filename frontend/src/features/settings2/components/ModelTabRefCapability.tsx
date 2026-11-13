@@ -20,6 +20,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Table, Tag } from 'antd';
+import { FontSize, FontWeight } from '@/utils/stepStyles';
 
 import { CapabilityBadge, ACTION, STATE_META, type CapabilityState } from '@/features/chat/components/input/CapabilityBadge';
 import { attachmentApi, type AttachmentMetrics } from '@/services/api/attachment.api';
@@ -39,7 +40,7 @@ type RefCapabilityMap = Record<string, Record<string, 'native' | 'degraded' | 'o
 
 /** 常驻图例: 按档位三组, 动作词从 ACTION 映射取该档位实际出现的组合(去重), 不另建词表 */
 const Legend: React.FC = () => (
-  <div style={{ marginTop: 4, fontSize: 12 }}>
+  <div style={{ marginTop: 4, fontSize: FontSize.SECONDARY }}>
     {(['native', 'degraded', 'opaque'] as const).map((st) => {
       const words = [...new Set(CONTENT_KINDS.map((ck) => ACTION[`${ck}:${st}`]).filter(Boolean))];
       return (
@@ -56,7 +57,7 @@ export const ModelTabRefCapability: React.FC<{ map?: RefCapabilityMap }> = ({ ma
   const hasData = map && SOURCE_KINDS.some((sk) => map[sk] && Object.keys(map[sk]).length);
   if (!hasData) {
     return (
-      <div style={{ marginTop: 12, opacity: 0.6, fontSize: 12 }}>当前模型未提供能力数据</div>
+      <div style={{ marginTop: 12, opacity: 0.6, fontSize: FontSize.SECONDARY }}>当前模型未提供能力数据</div>
     );
   }
   const dataSource = CONTENT_KINDS.map((ck) => ({
@@ -68,8 +69,8 @@ export const ModelTabRefCapability: React.FC<{ map?: RefCapabilityMap }> = ({ ma
   }));
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontWeight: 600, marginBottom: 2 }}>模型多态内容处理模式推测分析表</div>
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+      <div style={{ fontWeight: FontWeight.BOLD, marginBottom: 2 }}>模型多态内容处理模式推测分析表</div>
+      <div style={{ fontSize: FontSize.SECONDARY, opacity: 0.7, marginBottom: 4 }}>
         行 = 内容形态（送进来的东西按后缀/MIME 分七类）；列 = 引用通道：
         <b>引用</b>（工作区文件路径，只记路径不复制，发送时现场读取）／
         <b>附件</b>（上传复制进附件目录的文件实体）／
@@ -115,7 +116,7 @@ const MetricsStrip: React.FC = () => {
   const pct = (v: number | undefined) => (v === undefined ? '—' : `${(v * 100).toFixed(1)}%`);
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontWeight: 600, marginBottom: 2 }}>运行指标（近 1 天实测）</div>
+      <div style={{ fontWeight: FontWeight.BOLD, marginBottom: 2 }}>运行指标（近 1 天实测）</div>
       <Table
         size="small"
         pagination={false}
@@ -135,7 +136,7 @@ const MetricsStrip: React.FC = () => {
           fetch_fail: m.counts.fetch_fail?.[k] ?? '—',
         }))}
       />
-      <div style={{ fontSize: 12, opacity: 0.7 }}>指标越低越好；下载失败次数为近 1 天累计</div>
+      <div style={{ fontSize: FontSize.SECONDARY, opacity: 0.7 }}>指标越低越好；下载失败次数为近 1 天累计</div>
     </div>
   );
 };

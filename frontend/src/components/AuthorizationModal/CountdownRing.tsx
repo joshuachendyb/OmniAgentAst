@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { Progress } from 'antd';
+import { FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface CountdownRingProps {
   countdown: number;
@@ -42,7 +43,7 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
               <div
                 style={{
                   fontSize: numFont,
-                  fontWeight: 600,
+                  fontWeight: FontWeight.BOLD,
                   color: countdown <= 3 ? '#fa541c' : '#333',
                   animation:
                     countdown <= 3 ? 'pulse 0.8s ease-in-out infinite' : 'none',
@@ -50,7 +51,7 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
               >
                 {countdown}
               </div>
-              <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
+              <div style={{ fontSize: FontSize.SMALL, color: '#8c8c8c' }}>秒</div>
             </div>
           )}
         />

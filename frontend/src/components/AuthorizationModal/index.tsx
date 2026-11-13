@@ -111,7 +111,7 @@ import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
 import { norm } from '@/utils/projectPath';
 // 2026-11-12 小欧 - 字号走全局阶梯令牌: 工具名「值」用 PRIMARY(14), 必大于其 12px label
 //   (原为 13px 裸值 —— 游离半档, 且与 label 只差 1px 层级本就没拉开)
-import { FontSize } from '@/utils/stepStyles';
+import { FontSize, FontWeight } from '@/utils/stepStyles';
 
 // 2026-10-11 03:30 小欧 - Title 已彻底不用（03:05 起标题自绘 span），同步摘除解构避免死变量告警
 const { Text } = Typography;
@@ -227,7 +227,7 @@ const META_ROW: React.CSSProperties = {
   alignItems: 'center',
   gap: 4,
   marginBottom: 6,
-  fontSize: 12,
+  fontSize: FontSize.SECONDARY,
   color: '#262626',
   textAlign: 'left',
 };
@@ -377,8 +377,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           <span
             title={titleText}
             style={{
-              fontSize: 16,
-              fontWeight: 600,
+              fontSize: FontSize.SUBHEAD,
+              fontWeight: FontWeight.BOLD,
               lineHeight: '22px',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -390,7 +390,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </span>
           <Tag
             color={safetyConfig.color}
-            style={{ marginBottom: 0, fontSize: 12, flexShrink: 0 }}
+            style={{ marginBottom: 0, fontSize: FontSize.SECONDARY, flexShrink: 0 }}
           >
             {statusTagText}
           </Tag>
@@ -423,8 +423,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             <span
               title={request.content}
               style={{
-                fontSize: 14,
-                fontWeight: 600,
+                fontSize: FontSize.PRIMARY,
+                fontWeight: FontWeight.BOLD,
                 color: '#262626',
                 display: '-webkit-box',
                 WebkitLineClamp: 2,
@@ -530,7 +530,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             信任此操作（本次会话）
           </Checkbox>
           {isBypass && (
-            <span style={{ fontSize: 11, color: '#8c8c8c' }}>
+            <span style={{ fontSize: FontSize.SMALL, color: '#8c8c8c' }}>
               自动确认模式下信任不生效
             </span>
           )}
@@ -545,7 +545,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             marginBottom: 2,
           }}
         >
-          <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          <Text type="secondary" style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}>
             工具名称:
           </Text>
           <Text strong style={{ fontSize: FontSize.PRIMARY, color: '#1677ff' }}>
@@ -554,7 +554,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           {paramsStr && (
             <Text
               type="secondary"
-              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+              style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}
             >
               执行参数:
             </Text>
@@ -577,7 +577,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         >
           <span
             style={{
-              fontSize: 12,
+              fontSize: FontSize.SECONDARY,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
             }}
@@ -600,8 +600,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         >
           <span
             style={{
-              fontSize: 12,
-              fontWeight: 400,
+              fontSize: FontSize.SECONDARY,
+              fontWeight: FontWeight.REGULAR,
               color: '#8c8c8c',
               // 2026-10-11 03:20 小欧 - 修文案折行：原 flex:1 + minWidth:0 允许文本被按钮挤压到
               //   折成两行（「到点未响应将自动拒/绝」孤字）。改为不参与收缩且禁折，

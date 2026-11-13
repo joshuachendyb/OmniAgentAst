@@ -25,7 +25,7 @@ import React, { useRef } from 'react';
 import { Input, Tooltip } from 'antd';
 import { InfoCircleOutlined, LockOutlined } from '@ant-design/icons';
 import { sessionApi } from '../../../services/api/session.api';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 import {
   showTitleSaved,
   showSaveError,
@@ -139,7 +139,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center' }}>
       <span
-        style={{ color: Colors.TEXT.PRIMARY, fontSize: 14, fontWeight: 500 }}
+        style={{ color: Colors.TEXT.PRIMARY, fontSize: FontSize.PRIMARY, fontWeight: FontWeight.MEDIUM }}
       >
         会话
       </span>
@@ -189,8 +189,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             style={{
               cursor: 'pointer',
               color: titleLocked ? Colors.TEXT.STRONG : Colors.TEXT.PRIMARY,
-              fontSize: 14,
-              fontWeight: titleLocked ? 500 : 400,
+              fontSize: FontSize.PRIMARY,
+              fontWeight: titleLocked ? FontWeight.MEDIUM : FontWeight.REGULAR,
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -215,7 +215,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               <Tooltip title="AI自动生成的标题">
                 <InfoCircleOutlined
                   style={{
-                    fontSize: 12,
+                    fontSize: FontSize.SECONDARY,
                     marginLeft: 4,
                     color: Colors.TEXT.SECONDARY,
                   }}
@@ -224,7 +224,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             ) : (
               <Tooltip title="标题已锁定，防止自动覆盖">
                 <LockOutlined
-                  style={{ fontSize: 12, marginLeft: 4, color: Colors.PRIMARY }}
+                  style={{ fontSize: FontSize.SECONDARY, marginLeft: 4, color: Colors.PRIMARY }}
                 />
               </Tooltip>
             )}

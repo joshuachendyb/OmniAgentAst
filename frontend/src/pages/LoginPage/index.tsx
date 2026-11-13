@@ -37,7 +37,7 @@ import {
   extractErrorMessage,
   showMessage,
 } from '@/services/error/handler';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 // 2026-09-26 小欧 - 首次设置/查状态走 authApi
 import { authApi } from '@/services/api/settings.api';
 
@@ -211,7 +211,7 @@ const LoginPage: React.FC = () => {
 
       {(view.kind === 'login' || view.kind === 'firstSetup') && (
         <>
-          <div style={{ fontSize: 20, fontWeight: 600 }}>
+          <div style={{ fontSize: FontSize.TITLE, fontWeight: FontWeight.BOLD }}>
             {view.kind === 'firstSetup'
               ? '首次使用，请设置访问口令'
               : '请输入访问口令'}

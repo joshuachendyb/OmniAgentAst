@@ -1,4 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 抽会话页设计token, 收敛硬编码主色/字号/间距/圆角(对齐AntD5), 消除双主色跳变
+// 2026-11-13 商量 - 字号双真源归一: fontSM/fontMD 改派生自 FontSize.SECONDARY/PRIMARY(stepStyles 7档阶梯,
+//   2026-11-12 定为全站唯一字号真源), 本对象不再自持 12/14 数值; 消费方读值不变, 零视觉差
 /**
  * chatTokens - 会话页 UI 收敛 token（边距白皮书 / Token 收敛）
  *
@@ -11,6 +13,8 @@
  * @date 2026-08-27
  */
 
+import { FontSize } from '@/utils/stepStyles';
+
 export const chatTokens = {
   colorText: '#595959',
   colorTextSecondary: '#8c8c8c',
@@ -20,8 +24,8 @@ export const chatTokens = {
   colorSuccess: '#52c41a',
   colorError: '#ff4d4f',
   colorWarning: '#faad14',
-  fontSM: 12,
-  fontMD: 14,
+  fontSM: FontSize.SECONDARY,
+  fontMD: FontSize.PRIMARY,
   radius: 6,
   gap: 8,
 } as const;

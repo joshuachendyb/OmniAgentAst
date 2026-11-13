@@ -14,7 +14,7 @@
 //   (label→SECONDARY / value→PRIMARY「值>label」/ 错误类型码与堆栈→CODE / 标题 15px 游离半档→SUBHEAD) — 小欧-2026-11-12
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface ErrorDetailProps {
   errorType?: string;
@@ -177,7 +177,7 @@ const containerStyle: React.CSSProperties = {
 };
 
 const headerStyle: React.CSSProperties = {
-  fontWeight: 600,
+  fontWeight: FontWeight.BOLD,
   marginBottom: 12,
   display: 'flex',
   alignItems: 'center',
@@ -188,7 +188,7 @@ const headerStyle: React.CSSProperties = {
 
 const messageStyle: React.CSSProperties = {
   marginBottom: 8,
-  fontWeight: 500,
+  fontWeight: FontWeight.MEDIUM,
   fontSize: FontSize.PRIMARY,
 };
 
@@ -213,7 +213,7 @@ const codeBlockStyle: React.CSSProperties = {
   padding: '2px 8px',
   borderRadius: 4,
   fontSize: FontSize.CODE,
-  fontWeight: 500,
+  fontWeight: FontWeight.MEDIUM,
 };
 
 const contextBoxStyle: React.CSSProperties = {

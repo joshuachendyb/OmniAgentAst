@@ -171,7 +171,7 @@ import React, {
 } from 'react';
 import { Spin, Empty, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
-import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复定义 — 小欧-2026-09-11
+import { Colors, FontSize, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复定义 — 小欧-2026-09-11
 import { sessionApi } from '../../../../services/api/session.api';
 import {
   executionApi,
@@ -596,7 +596,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
               description={
                 <Typography.Text
                   type="secondary"
-                  style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
+                  style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
                 >
                   暂无执行记录
                 </Typography.Text>

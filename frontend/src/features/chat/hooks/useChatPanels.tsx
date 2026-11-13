@@ -70,7 +70,7 @@ import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 // 2026-10-30 小欧 - 删 chatStreamStore 直接导入: storeStatus 改由 chatStreaming.status 传入(同一快照,
 //   且已入 useMemo 依赖), 本文件不再直读 store。
-import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
+import { Colors, FontSize, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
   SessionTaskItem,
@@ -236,7 +236,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
               >
                 <Typography.Text
                   type="secondary"
-                  style={{ fontSize: 12, color: Colors.TEXT.PRIMARY }}
+                  style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
                 >
                   {effective.display_name ||
                     `${effective.provider} (${effective.model})`}
@@ -253,7 +253,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
                     display: 'inline-block',
                   }}
                 />
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
                   {effective.source === 'session' ? '会话' : '全局'}
                 </Typography.Text>
               </span>

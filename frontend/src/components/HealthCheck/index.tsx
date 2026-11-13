@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、字符串字面量统一单引号, 防止格式再次出错
 import React, { useState, useEffect } from 'react';
 import { Card, Tag, Button, Input } from 'antd';
+import { FontSize } from '@/utils/stepStyles';
 import { healthApi, type EchoResponse } from '../../services/api/health.api';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 
@@ -79,7 +80,7 @@ const HealthCheck: React.FC = () => {
           <div>
             <strong>后端回复:</strong> {echoResponse.received}
           </div>
-          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+          <div style={{ fontSize: FontSize.SECONDARY, color: '#666', marginTop: 4 }}>
             时间戳: {new Date(echoResponse.timestamp).toLocaleString()}
           </div>
         </div>

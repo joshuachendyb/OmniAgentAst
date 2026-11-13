@@ -40,7 +40,7 @@ import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-11-02 小欧 - 路径渲染复用唯一链接组件（判据/图标/点击口径/降级全在组件内）— 小欧-2026-11-02
 import { PathLink } from '@/components/PathLink';
 import { chatTokens } from '@/theme/tokens';
-import { Colors, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 /**
  * ops 徽标配色/文案 —— ops 的取值域是后端工具**注册名**（FILE_OPERATION_TOOLS，16 个），
@@ -147,7 +147,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         }}
       >
         <CaretRightOutlined
-          style={{ fontSize: 10 }}
+          style={{ fontSize: FontSize.CAPTION }}
           rotate={expanded ? 90 : 0}
         />
         文件足迹

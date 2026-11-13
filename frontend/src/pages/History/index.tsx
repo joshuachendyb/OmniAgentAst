@@ -85,7 +85,7 @@ import {
   refreshRunningTasks,
   useMergedRunningTasks,
 } from '@/features/chat/streams/runningTasksStore';
-import { Spacing } from '@/utils/stepStyles';
+import { Spacing, FontSize } from '@/utils/stepStyles';
 import { useNavigate } from 'react-router-dom';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 import dayjs from 'dayjs';
@@ -567,7 +567,7 @@ const HistoryPage: React.FC = () => {
                     description={
                       <Space direction="vertical">
                         <Text type="secondary">暂无历史会话</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
                           开始与AI助手对话，会话将自动保存
                         </Text>
                       </Space>
@@ -711,14 +711,14 @@ const HistoryPage: React.FC = () => {
                               <FolderOutlined
                                 style={{
                                   color: '#69b1ff',
-                                  fontSize: 12,
+                                  fontSize: FontSize.SECONDARY,
                                   flexShrink: 0,
                                 }}
                               />
                               <Tooltip title={tooltipText}>
                                 <Typography.Text
                                   style={{
-                                    fontSize: 12,
+                                    fontSize: FontSize.SECONDARY,
                                     color: '#1677ff',
                                     maxWidth: '100%',
                                   }}
@@ -729,7 +729,7 @@ const HistoryPage: React.FC = () => {
                                 </Typography.Text>
                               </Tooltip>
                               {wsList.some((w) => w.is_default) && (
-                                <Tag color="gold" style={{ fontSize: 11 }}>
+                                <Tag color="gold" style={{ fontSize: FontSize.SMALL }}>
                                   默认
                                 </Tag>
                               )}
@@ -746,11 +746,11 @@ const HistoryPage: React.FC = () => {
                           }}
                         >
                           <ClockCircleOutlined style={{ color: '#999' }} />
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                          <Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
                             更新于 {formatDate(session.updated_at)}
                           </Text>
                           <span style={{ flex: 1 }} />
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                          <Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
                             创建于{' '}
                             {dayjs(session.created_at).format(
                               'YYYY-MM-DD HH:mm'
