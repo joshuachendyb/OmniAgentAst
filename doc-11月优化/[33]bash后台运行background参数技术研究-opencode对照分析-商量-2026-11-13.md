@@ -1178,7 +1178,67 @@ tuning:
 
 > 前端改动评估：**3 处均为渲染层小改**，无状态管理/数据流/布局结构改动；SSE 帧类型零新增（bg_shell_done 走现役 notice 帧管道），TaskListPanel/RightViewer 零结构破坏。
 
-### 8.11 实施顺序与验证清单
+### 8.11 架构设计：任务创建来源维度（creation_source，前瞻兼容定时任务等系统任务）
+
+> **本节定位**：回答"系统创建任务既有续跑也有非续跑（如定时任务），架构要点在哪里"。核心结论：**link 属性不能靠"是否用户发起"二分，而要由"任务创建来源 + 关联语义"决定**；创建来源必须是一等公民维度（枚举 + 持久化），link 判定按来源统一分派。
+
+**① 问题本质：系统创建任务不是单一类别**
+
+| 类别 | 创建来源 | 与前置任务的关联语义 | link 判定 |
+|------|---------|---------------------|----------|
+| 用户手动发消息 | `USER` | 由用户意图决定，跟会话 link 开关走 | 跟开关（现役 L789-803 不动） |
+| shell 后台完成续跑 | `SYSTEM_RESUME` | **强制后继**（原任务派生/触发，内在必然关联） | **恒 linked**，链根=原任务链根 |
+| 定时任务等（未来） | `SYSTEM_TRIGGERED` | **无关联**（独立触发点，非任何任务的后继） | **恒 independent**，root=自身 |
+
+续跑必须 linked 的实证：`get_previous_task_chain` 取会话最近任务链根，若续跑标 independent，用户后续打开 link 开关发新消息时链根取到续跑自身、原任务被跳过、关联不上（修订⑥）。
+
+**② 架构要点 1：创建来源枚举（一等公民）**
+
+```python
+class TaskCreationSource(str, Enum):
+    USER = "user"                    # 用户手动发消息
+    SYSTEM_RESUME = "system_resume"  # 系统续跑(shell 后台完成 → 强制后继)
+    SYSTEM_TRIGGERED = "system_triggered"  # 系统触发(定时任务等, 未来) → 独立
+```
+
+**③ 架构要点 2：link 判定 = f(创建来源)，统一入口 `resolve_link_context`**
+
+```python
+async def resolve_link_context(creation_source, session_id, task_id):
+    """按创建来源分派 link 判定。现役用户路径(L789-803)抽入 USER 分支, 行为零变化。
+    SYSTEM_RESUME 恒 linked 继承原任务链根; SYSTEM_TRIGGERED 恒 independent。
+    未来新系统任务类型: 枚举加值 + 本函数加一分派分支即可, 不动现役用户路径。"""
+    if creation_source == TaskCreationSource.SYSTEM_RESUME:
+        mode, root = "linked", task_id
+        prev = await db.atxn("chat", lambda c: get_previous_task_chain(c, session_id))
+        if prev:
+            root = prev
+        return mode, root, root          # (context_link_mode, context_root_task_id, _history_root)
+    if creation_source == TaskCreationSource.SYSTEM_TRIGGERED:
+        return "independent", task_id, None
+    # USER → 现役跟开关走(原样保留, 不退化)
+    ...
+```
+
+**④ 架构要点 3：关联语义与创建来源解耦**
+
+创建来源是**输入**，link 属性是**输出**，中间是"关联语义"判定规则。二者解耦后：新增系统任务类型时只加来源枚举值 + 分派分支，**不改关联语义规则本身**（linked/independent 的含义恒定）。
+
+**⑤ 架构要点 4：创建来源持久化到 chat_tasks（ALTER ADD COLUMN）**
+
+现役表（storage.py:464 实证）无创建来源列。需加 `creation_source TEXT NOT NULL DEFAULT 'user'`，存量行 COALESCE 兜底为 'user'（对齐 get_session_link 的 COALESCE 兜底先例）。理由：
+- 前端区分显示：续跑徽标 / 定时任务徽标 / 用户任务（不依赖 trigger 字符串）
+- 后续链判定、增量摘要、统计按来源处理
+- 未来扩展只加枚举值，不改 link 判定
+- **职责分离**：`creation_source`=创建语义（判定依据），`trigger`/徽标=UI 显示语义（展示依据），二者不复用
+
+**⑥ 架构要点 5：创建来源显式传递，不隐式推断**
+
+`resolve_link_context(creation_source, ...)` 的 `creation_source` 在建任务时**显式传参**（`_create_and_launch_task` / `insert_task` 增参），不靠全局状态、不靠 user_input 前缀猜测、不靠上下文隐式推断——杜绝"续跑 vs 定时"靠字符串匹配的脆弱判断。
+
+**⑦ 与修订⑤/⑥ 的关系**：修订⑥"续跑恒 linked"是本节 `SYSTEM_RESUME` 分支的**特例**，被本节纳入统一架构；原"抽 `_resolve_link_context` 两路共用"作废（两路逻辑本质不同，正确做法是**按来源分派**而非"共用"）。本节将"用户/续跑"两路扩为"USER/SYSTEM_RESUME/SYSTEM_TRIGGERED"三路（未来 N 路），单一入口 `resolve_link_context` 内部分派。
+
+### 8.12 实施顺序与验证清单
 
 | 步 | 内容 | 验证 |
 |----|------|------|
