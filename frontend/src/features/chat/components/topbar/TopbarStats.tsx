@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 前面会话累计(session)后面链累计(chain), 各为3字段P/C/T紧凑格式; chainTokens由number改TokenTriple
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-03 taskCount加??0兜底防undefined闪烁 — 小欧-2026-09-02
 // 编辑历史: 2026-09-12 小欧 - 三堂会审修复: 删私有TokenTriple改复用stepStyles.ts公用TokenLayer(DRY, 消类型碎片), formatTriple语义不变 — 小欧-2026-09-12
+// 编辑历史: 2026-11-13 商量 - 会话累计/链累计 token 数字改 K/M 折算显示(复用公用 formatTokenK, 与 TitleBlock/TaskInfoBar 同口径; 单值缺失仍显 '-') — 商量-2026-11-13
 /**
  * TopbarStats - 顶栏会话级聚合信息（任务数/会话累计token/链累计token/创建更新时间悬浮）
  *
@@ -19,14 +20,17 @@ import React from 'react';
 import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
 import { Tooltip, Typography } from 'antd';
 import { type TokenLayer, FontSize } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用公用TokenLayer消重复私有形状 — 小欧-2026-09-12
+import { formatTokenK } from '../taskinfo/infoMaps'; // 2026-11-13 商量: token 数字统一 K/M 折算(复用公用折算函数, DRY) — 商量-2026-11-13
 
 // 2026-09-01 小欧: 3字段紧凑格式(与StaticStatsBlock的P/C/T一致, 去/两侧空格省宽度), 无值显'-'
 // 2026-09-12 小欧: 参数类型 TokenTriple→TokenLayer(复用公用, 消私有形状) — 小欧-2026-09-12
+// 2026-11-13 商量: 数字改 K/M 折算(≥1000→1.2K, ≥1e6→1.2M), 与 TitleBlock/TaskInfoBar 同口径;
+//   单值缺失仍显 '-'(formatTokenK 对 null 返 '–', 故此处先判存在再折算) — 商量-2026-11-13
 const formatTriple = (t: TokenLayer): string => {
   if (!t) return '-';
-  const p = t.prompt_tokens ?? '-';
-  const c = t.completion_tokens ?? '-';
-  const v = t.total_tokens ?? '-';
+  const p = t.prompt_tokens != null ? formatTokenK(t.prompt_tokens) : '-';
+  const c = t.completion_tokens != null ? formatTokenK(t.completion_tokens) : '-';
+  const v = t.total_tokens != null ? formatTokenK(t.total_tokens) : '-';
   return `P${p}/C${c}/T${v}`;
 };
 
