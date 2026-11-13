@@ -1400,4 +1400,20 @@ async def resolve_link_context(creation_source, session_id, task_id):
 
 ---
 
+## 九、实施收口对照（2026-11-13 会审后落档：实施与初稿差异 5 项）
+
+> 以下差异均已在代码编辑历史留痕并经三堂会审复核确认，初稿相应章节以本节为准：
+
+| # | 初稿 | 实施定稿 | 理由 |
+|---|------|---------|------|
+| 1 | 4.3/4.4 输出日志轮转（`shell_bg_log_max_mb` 50MB 保留2份） | 删轮转配置（假轮转），改 `tuning.shell_bg_result_retain_hours`（默认24h）惰性清理：新后台命令启动时顺带扫过期项删文件，不起定时器 | 进程写端只管追加，轮转会使 output_file 直查路径失义；KISS/YAGNI |
+| 2 | 8.8 NOTICE_KINDS 补 `bg_shell_done` | 撤销登记：后台完成走注入/续跑业务流，不产生 notice 信封帧，登记为死配置 | 会审复核发现死配置 |
+| 3 | 8.4/8.5 工具名 `bash_result` | 两轮改名定稿 `bg_task_query`（与 SYSTEM 计划任务三件套语义区分），注册/schema/前端 task.api 同步 | 命名语义清晰 |
+| 4 | 3.1 `_notify_and_wake` 在 tools 层 shell_background 内做 session 级判定 | 通知路由上移 services 层 `bg_shell_notifier.notify_bg_shell_done`（main 启动注入回调），tools 层只产生完成事实 | 防 tools→services 越层 import，分层更干净；session 级两级判定逻辑原样保留 |
+| 5 | 3.1 注册表记录 task_id + session_id（running_tasks 反查） | 注册表只存 task_id；会话反查走 chat_tasks DB 真源（内存注册表查不到已清理任务） | 会审复核修正① |
+
+另：notice_id 定稿为 `f"{shell_id}_done"`（初稿为 shell_id+完成时间戳）——同 shell_id 通知只发一次由 `_wait_and_notify` 单次执行保证，幂等语义不变。
+
+---
+
 *编写人: 商量 — 2026-11-13*
