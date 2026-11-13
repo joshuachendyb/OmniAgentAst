@@ -635,6 +635,7 @@ async def run_agent_in_background(
     #
     # 强引用保障：_background_tasks 集合持有 Task 引用，防止 GC 回收导致 finally 不执行
     # （无强引用时 Task 被 GC → CancelledError → finally 可能被打断 → DB 结果丢失）
+    _terminal_status = "failed"  # fail-safe 预置: 异常早于终态判定时 finally 引用不炸且按失败处置 — 商量-2026-11-13
 
     # ① 正常结束分支 — 小欧 2026-07-13
     try:
@@ -929,7 +930,8 @@ async def run_agent_in_background(
 
         # 生命周期清理：原 openai.py finally 的 task_cleanup 迁入此处 — 小欧 2026-07-12
         # 修复旧 bug：断线时不再误删在跑的 agent（cleanup 由生产者自身在结束时调用）
-        await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0)
+        await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0,
+                           _terminal_status)
 
         # 2026-11-06 小欧 - 去池化: shell 每命令独立子进程跑完即销毁, 无任务级常驻资源需清理, 删除 cleanup_shell_pool_by_task 调用。
 

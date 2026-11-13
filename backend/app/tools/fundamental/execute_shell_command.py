@@ -157,6 +157,9 @@
 # 2026-11-06 小欧 - 三堂会审修正: drain_until_exit 改用剩余时间 max(1,int(_remaining)) 非全 timeout(总时长≤timeout); docstring 改"去池化版"
 # 2026-11-06 小欧 - 三路检测引号感知: 新增 _strip_quoted_content 剥离引号内内容, _looks_like_* 不再匹配字符串字面量命令名(如 echo "grep" 不误路由)
 # 2026-11-06 小欧 - truncated路径杀孙进程: 根退出但孙持管道写端(Start-Process/Start-Job)时, kill_process_tree杀孙防僵尸
+# 2026-11-13 商量 - 新增 background 参数: 后台运行命令并立即返回; 后台分支复用全部前置(校验/预处理/
+#   三路检测/语法修复/安全检查), 仅执行段改走 shell_background.run_shell_background(popen_factory 注入
+#   四种 shell 启动装配, DRY), 前台路径零改动; 中风险命令后台一律拒绝不弹窗; 后台默认无超时(显式 timeout 生效)
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -262,6 +265,8 @@ from app.logger import logger
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.file.file_encoding import get_file_encoding
+from app.tools.context import get_current_task_id
+from app.tools.fundamental import shell_background
 from app.tools.fundamental.shell_engine import (
     _replace_python3_safe,  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
 )
@@ -1046,23 +1051,31 @@ def _looks_like_cmd(command: str) -> bool:
 
 def shell(
     command: str, shell_type: Literal["ps7", "ps5", "cmd", "bash", None] = "ps7",
-    timeout: int = 60, cwd: Optional[str] = None,
+    timeout: Optional[int] = None, cwd: Optional[str] = None,
     success_codes: Optional[list[int]] = None,
+    background: bool = False,
 ) -> Dict[str, Any]:
     """执行 Shell 命令（去池化版: 每命令独立子进程跑完即销毁）
 
     参数:
         command:     命令字符串
         shell_type:  "ps7"(默认), "ps5", "cmd" 或 "bash"
-        timeout:     超时秒数，默认 60，范围 1-600
+        timeout:     超时秒数, 范围 1-600; None=未显式传(前台兜底60秒, 后台无超时) — 商量-2026-11-13
         cwd:         工作目录绝对路径
+        background:  True=后台运行并立即返回(默认无超时, 显式 timeout 才生效)
 
     返回:
         build_success / build_error / build_warning 标准格式
         data: {stdout, stderr}（原始输出; returncode/shell_type/duration_ms 仅在 llm_data, 不在 data）
+        background=true 时: data={shell_id, output_file, status}
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1【通用】: 参数校验 ──
+    # 2026-11-13 商量(复核修正): timeout 语义归一 — None=未显式传(前台兜底60秒, 后台无超时),
+    #   不再用 "60 即默认" 的魔法值猜测; 显式传 60 的后台命令照常生效60秒超时。
+    _timeout_explicit = timeout is not None
+    if not _timeout_explicit:
+        timeout = 60   # 前台默认(后台分支按 _timeout_explicit 判定无超时)
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "bash")
     t0 = _time_mod.perf_counter()
     _cmd_limit = EXECUTE_SHELL_OUTPARM_LIMIT_CMD
@@ -1191,6 +1204,62 @@ def shell(
             return build_error(data={}, llm_data=llm)
         if safety.needs_confirm:
             logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
+
+    # ── 阶段 2.5【后台专属】: 安全收紧 — 商量 2026-11-13 ──
+    #  后台命令天然长驻/高影响: 中风险(需确认)命令在无值守场景弹窗会挂死,
+    #  故后台分支对 needs_confirm 一律拒绝(仅白名单级放行), 不弹窗。
+    if background and safety and safety.needs_confirm:
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
+            shell_type, ERR_SHELL_INJECTION, f"后台命令安全等级不足: {safety.message}",
+            timeout=timeout, cwd=cwd or "",
+            hint="该命令需人工确认, 不支持后台运行; 请去掉 background 参数前台执行",
+            cmd_short=cmd_short)
+        return build_error(data={}, llm_data=llm)
+
+    # ── 阶段 2.9【后台专属】: 转后台执行并立即返回 — 商量 2026-11-13 ──
+    #  不占 _SHELL_PROC_SEM(前台并发槽), 不进 drain_until_exit(阻塞读);
+    #  timeout 语义: 后台默认无超时, 显式传则生效(对齐 opencode)
+    if background:
+        _task_id = get_current_task_id() or ""
+
+        def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
+            """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)"""
+            try:
+                _out = open(outfile, "ab")
+                if shell_type in ("ps7", "ps5"):
+                    if shell_type == "ps5":
+                        cmd = _translate_powershell_operators(cmd)
+                    else:
+                        cmd = _fix_ps7_assignment_operators(cmd)
+                    exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
+                          or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
+                    return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
+                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                if shell_type == "cmd":
+                    # 2026-11-13 商量(复核修正): 启动脚本与输出文件同目录同名(.log→.bat),
+                    #   随结果文件保留时长惰性清理, 不再散落系统 TEMP 成孤儿
+                    bat_path = outfile[:-4] + ".bat"
+                    with open(bat_path, "w", encoding=locale.getpreferredencoding(), errors="replace") as f:
+                        f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
+                    return subprocess.Popen(f'"{bat_path}"', shell=True,
+                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                bash_exe = _find_bash()
+                if not bash_exe:
+                    logger.error("[bg_shell] bash 解释器未找到")
+                    return None
+                return subprocess.Popen([bash_exe, "-l", "-c", cmd],
+                    stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+            except Exception as e:
+                logger.error(f"[bg_shell] Popen 装配失败: {e}", exc_info=True)
+                return None
+
+        result = shell_background.run_shell_background(
+            processed_command, shell_type, cwd, _task_id, cmd_short, _popen_factory,
+            timeout=(timeout if _timeout_explicit else None))  # None=后台默认无超时, 显式传才生效 — 商量-2026-11-13
+        if result is not None and result.get("llm_data"):
+            result["llm_data"]["action"]["params"]["timeout"] = timeout  # 留痕原始入参供历史核对
+        return result
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     # 2026-11-06 小欧 - 去池化: 每条命令独立子进程跑完即销毁; 全局一个并发信号量管内存,

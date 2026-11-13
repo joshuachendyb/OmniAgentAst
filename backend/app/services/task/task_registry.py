@@ -41,6 +41,15 @@
 # 2026-11-03 小欧 - uid 非法拒绝注入 WARNING→DEBUG(调用方参数非法) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删 8 个零使用的 task_state 再导出 + 未用 TASK_TIMEOUT(死导入);
 #   门面/调用方改直连 task_state 真源 — 小欧-2026-11-04
+# 2026-11-13 商量 - 后台命令续跑(设计[33] 8.3/8.4): 新增 get_task_session(任务→会话反查) +
+#   inject_system_notice(锁内检查存活+落 system_notice 消息+投 inbox 原子完成, 供后台完成唤醒);
+#   cleanup_task/cleanup_expired_tasks 删除任务前 terminate 未退出后台进程, 生命周期绑定不留孤儿 — 商量-2026-11-13
+# 2026-11-13 商量 - 三堂会审复核修正4项: ①删 get_task_session(内存注册表查不到已清理任务, 会话反查
+#   改走 chat_tasks DB 真源, bg_shell_notifier 直查); ②inject_system_notice 锁内 await 违反锁内禁挂起
+#   纪律, 改两段锁(锁内校验→锁外落库→二次锁内校验+投递, 窗口终态删消息补偿不留脏数据);
+#   ③task_cleanup 增 terminal_status 判据, 正常完成不杀后台进程(否则完成后唤醒续跑被掐死),
+#   仅非正常终态杀进程树; ④上一条"cleanup_task/cleanup_expired_tasks 删任务前 terminate 后台进程"
+#   记载与实现不符, 实际两处均未 terminate, 以本条为准 — 商量-2026-11-13
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -63,8 +72,10 @@ from typing import (  # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] �
 
 from app.config import get_config
 from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
+from app.db import db
 from app.logger import logger
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
+from app.services.chat.storage import bind_message_to_task, insert_user_message
 from app.services.task.task_state import (
     running_tasks,
     running_tasks_lock,
@@ -133,6 +144,53 @@ async def has_active_task_in_session(session_id: str) -> Optional[str]:
             if _t.get("session_id") == session_id and _t.get("status") in ("running", "paused"):
                 return _tid
     return None
+
+
+async def inject_system_notice(task_id: str, content: str, session_id: Optional[str] = None) -> bool:
+    """向运行中任务注入一条系统通知(后台命令完成唤醒) — 商量 2026-11-13
+
+    锁内只做存活判定与投递(零 await, 锁内禁挂起纪律), 落库在锁外:
+      ①锁内存活校验 → ②锁外落库 → ③二次锁内存活校验+投 inbox;
+    ②③窗口内任务终态则删除已落库消息补偿, 不留脏消息。
+    返回 True=已投递, False=任务不存活/落库失败/队列满。
+    """
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        if not _t or _t.get("status") not in ("running", "paused"):
+            return False
+        _sid = _t.get("session_id") or session_id
+        if not _sid:
+            logger.warning(f"[TaskRegistry] 任务 {task_id} 无会话归属, 系统通知无法落库")
+            return False
+    try:
+        def _insert_and_bind(c):
+            _uid = insert_user_message(
+                c, session_id=_sid, content=content, msg_kind="system_notice")
+            bind_message_to_task(c, _uid, task_id)  # 执行期归属, 与用户注入消息一致
+            return _uid
+        _uid = await db.atxn("chat", _insert_and_bind, retry_locked=3)
+    except Exception as e:
+        logger.error(f"[TaskRegistry] 系统通知落库失败(task={task_id}): {e}")
+        return False
+    if (_uid or 0) <= 0:
+        return False
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        _q = _t.get("_inbox") if _t else None
+        if _t and _t.get("status") in ("running", "paused") and _q is not None:
+            try:
+                _q.put_nowait((content, _uid))
+                return True
+            except asyncio.QueueFull:
+                logger.warning(f"[TaskRegistry] 任务 {task_id} inbox 已满({INBOX_MAX}), 系统通知未投递(消息已落库)")
+                return False
+    # 落库窗口内任务已终态: 删除已落库消息补偿, 不留脏消息
+    try:
+        await db.atxn("chat", lambda c: c.execute(
+            "DELETE FROM chat_user_message WHERE id=?", (_uid,)), retry_locked=3)
+    except Exception as e:
+        logger.warning(f"[TaskRegistry] 系统通知补偿删除失败(task={task_id}, uid={_uid}): {e}")
+    return False
 
 
 async def inject_message_to_task(task_id: str, content: str, user_message_id: int) -> bool:
@@ -374,12 +432,18 @@ async def resume_task(task_id: str, session_id=None) -> dict:
     return result
 
 
-async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
-    """任务完成后清理"""
+async def task_cleanup(task_id: str, llm_call_count: int = 0,
+                       terminal_status: str = "completed") -> None:
+    """任务完成后清理 — terminal_status 供后台 shell 连带处置判定 — 商量-2026-11-13"""
     logger.info(
         f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======"
     )
     cleaned = await cleanup_task(task_id)
+    # 2026-11-13 商量(复核修正): 后台 shell 连带处置按终态分流 — 正常完成(completed)不杀,
+    #   进程继续跑、完成后照常唤醒续跑; 非正常终态(failed/cancelled)杀进程树防孤儿。
+    if terminal_status != "completed":
+        from app.tools.fundamental import shell_background
+        shell_background.kill_background_by_task(task_id)
     if cleaned:
         logger.info(f"[Cleanup] 任务 {task_id} 正常完成,已清理")
     else:

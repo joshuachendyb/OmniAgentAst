@@ -242,7 +242,10 @@ def _load_previous_messages(session_id: str, context_root_task_id: Optional[str]
             pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id, upper_id=upper_message_id)
             messages = []
             for p in pairs:
-                messages.append({"role": "user", "content": p["user_content"] or ""})
+                # 2026-11-13 商量: msg_kind=system_notice(后台唤醒通知)非用户发言, 不装 user 轮;
+                #   其触发的 AI 答复(含工具轮)保留, 语义真实(答复内容已吸收通知信息)。
+                if p.get("msg_kind") != "system_notice":
+                    messages.append({"role": "user", "content": p["user_content"] or ""})
                 ai_id = p["ai_message_id"]
                 if ai_id is None:
                     continue

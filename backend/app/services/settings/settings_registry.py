@@ -116,6 +116,10 @@ key 全局唯一，加载自检重复直接拒启。
     2026-11-11 小欧 - 三个验证素材地址(probe_image_url/probe_video_url/probe_audio_url)由 hidden 回媒体页直接显示:
       原 probe_image_url 迁②Image_URL 行就地配置、probe_video_url/probe_audio_url 无就地入口致"无处可配"(既不在媒体页也不在就地行);
       现统一去掉 hidden 回 media 组「外链图片」小节直接编辑(SettingRow text 渲染, 走组保存), 与 remote_url_passthrough 同节 — 小欧-2026-11-11
+    2026-11-13 商量 - 新增后台命令 3 项: tuning.concurrency.shell_max_background(并发上限) +
+      tuning.shell_bg_log_max_mb(输出文件轮转阈值) + tuning.shell_bg_result_retain_hours(结果保留时长) — 商量-2026-11-13
+    2026-11-13 商量 - 复核撤销 shell_bg_log_max_mb(轮转从未实现, 纯假配置; 保留 shell_bg_result_retain_hours),
+      后台命令配置项实为 2 项 — 商量-2026-11-13
 
 """
 from typing import Any, Dict, List, Optional
@@ -482,11 +486,15 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="请求结束后先留着不断开的连接条数，下次请求直接复用、省去重新连的时间；0=用完就断（更省资源，但下次会慢一点）"),
         _item("tuning.llm_net.stream_total_timeout", "int", "单次总时长上限(秒)", 500, range_=[60, 3600],
               notice="一次回答从开始到结束的总时间上限，到点强制掐断（防模型卡住永远不出结果）。与上面「等待回复间隔」分工：本项管总时长，上面管字与字的间隔"),
-        # --- concurrency: 并发配额（2 键）---
+        # --- concurrency: 并发配额（3 键）---
         _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
         _item("tuning.concurrency.shell_max_processes", "int", "shell并发进程上限", 10, range_=[2, 64],
               notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
+        _item("tuning.concurrency.shell_max_background", "int", "后台命令并发上限", 5, range_=[1, 32],
+              notice="后台运行的命令最多同时几条；到顶后新后台命令直接拒绝并提示稍后。后台命令无超时，完成后自动通知并续跑"),
+        _item("tuning.shell_bg_result_retain_hours", "int", "后台结果保留(小时)", 24, range_=[1, 720],
+              notice="后台命令结束后结果文件保留多久；到期在新后台命令启动时顺带清理"),
         # --- agent: Agent 循环参数（2 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),

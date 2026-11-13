@@ -79,6 +79,8 @@
 # 2026-11-08 小欧 - startup 接老 capabilities 一次性迁移(幂等, 无残留零改动; 先于配置读取) — 小欧-2026-11-08
 # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server.py 同一收口
 #   (只落盘不上屏); 否者 dictConfig console handler 残留 + 10s 热重载刷 DEBUG 必刷屏 — 小欧-2026-11-08
+# 2026-11-13 商量 - startup 缓存主事件循环给 shell_background(工作线程后台命令完成后
+#   run_coroutine_threadsafe 提交回主循环唤醒) — 商量-2026-11-13
 import asyncio
 import sys
 import threading
@@ -573,6 +575,11 @@ async def startup_event():
     _t0 = time.time()
     # 2026-11-04 小欧 - 进程×线程创建闸门: 必须在任何运行期并发开始前装好(有界等待, 超限快速失败)
     install_spawn_gate()
+    # 2026-11-13 商量 - 缓存主事件循环 + 注册后台完成通知路由(services 层回调, 防 tools→services 越层)
+    from app.services.chat.bg_shell_notifier import notify_bg_shell_done
+    from app.tools.fundamental.shell_background import set_main_loop, set_notify_router
+    set_main_loop(asyncio.get_running_loop())
+    set_notify_router(notify_bg_shell_done)
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
     # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server 同一收口(只落盘不上屏),

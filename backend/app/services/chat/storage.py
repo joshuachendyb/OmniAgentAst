@@ -134,6 +134,9 @@
 #   "Expression tree too large"; 返回结构与单查一致 _strip_thought_content) — 小欧-2026-10-27
 # 2026-11-03 - 小欧 - 新增 list_running_tasks/get_task_status(跨会话在跑任务 + 单任务轻量读, 带 24h 僵尸年龄窗);
 #   update_task 增 status 词表校验(非法值打 ERROR 并 fail-safe 落 failed); 三处状态字面量改引 constants.ChatTaskStatus — 小欧-2026-11-03
+# 2026-11-13 商量 - 后台续跑两维标记(设计[33] 8.6): insert_task 增 creation_source 入参落
+#   chat_tasks.creation_source(默认 user); insert_user_message 增 msg_kind(默认 user);
+#   list_session_tasks SELECT 补 creation_source 供前端续跑徽标; 存量行 DEFAULT 兜底 — 商量-2026-11-13
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -455,6 +458,7 @@ def insert_task(
     task_id: str, session_id: str, user_message_id: Optional[int], ai_message_id: Optional[int] = None,
     user_input: str, context_link_mode: str, context_root_task_id: str,
     task_model: ModelRef,
+    creation_source: str = "user",
 ) -> None:
     """chat_tasks 任务行创建 INSERT（随任务启动，stream_orchestrator 建 task_id 后调用）— 小欧 2026-08-16
     2026-08-22 小欧 归一报告v1.25 6.3: provider/model/display_name 三分离入参 → task_model: ModelRef 单结构,
@@ -463,11 +467,12 @@ def insert_task(
     conn.execute(
         """INSERT INTO chat_tasks
            (task_id, session_id, user_message_id, ai_message_id, user_input, context_link_mode,
-            context_root_task_id, sessionModel, start_time, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            context_root_task_id, sessionModel, creation_source, start_time, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (task_id, session_id, user_message_id, ai_message_id, user_input,
          context_link_mode, context_root_task_id,
          task_model.model_dump_json(),   # 必填参数直取( 删永不可达的 else None 死防御) 小欧 2026-08-22
+         creation_source,
          now, ChatTaskStatus.EXECUTING.value, now, now),
     )
 
@@ -845,6 +850,21 @@ def get_session_link(conn: Connection, session_id: str) -> bool:
     return bool(row[0]) if row else False
 
 
+def get_task_session_id(conn: Connection, task_id: str) -> Optional[str]:
+    """task_id → session_id 反查(chat_tasks 唯一真源, 后台命令完成唤醒用) — 商量-2026-11-13
+    不走内存注册表: 任务可能已清理, DB 行仍在(会话归属是落库事实)。"""
+    row = conn.execute(
+        "SELECT session_id FROM chat_tasks WHERE task_id=?", (task_id,)).fetchone()
+    return row["session_id"] if row else None
+
+
+def get_task_chain_root(conn: Connection, task_id: str) -> Optional[str]:
+    """读任务自身登记的链根(context_root_task_id), 供续跑继承链不断代 — 商量-2026-11-13"""
+    row = conn.execute(
+        "SELECT context_root_task_id FROM chat_tasks WHERE task_id=?", (task_id,)).fetchone()
+    return row["context_root_task_id"] if row else None
+
+
 def set_session_link_conn(conn: Connection, session_id: str, enabled: bool) -> int:
     """写会话 link 开关，返回命中行数(0=会话不存在) — 文档[4] 5.7.14。
     conn 级写，与同族 get_session_link 对称，供编排器经 db.atxn offload 调用。
@@ -909,6 +929,7 @@ def insert_user_message(
     session_id: str, content: str,
     client_os: str = None, browser: str = None,
     device: str = None, network: str = None,
+    msg_kind: str = "user",
 ) -> int:
     """新建 chat_user_message 行（用户发消息时落库），返回本表 id。
     b: id 改由 id_sequence 显式指定(与 assistant 侧同一序列, 前端 user/assistant 气泡 id 不可重号);
@@ -919,9 +940,10 @@ def insert_user_message(
     now = get_local_iso_timestamp()
     cursor = conn.execute(
         """INSERT INTO chat_user_message
-           (id, session_id, content, client_os, browser, device, network, created_at)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (next_message_id(conn), session_id, content, client_os, browser, device, network, now),
+           (id, session_id, content, client_os, browser, device, network, msg_kind, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (next_message_id(conn), session_id, content, client_os, browser, device, network,
+         msg_kind, now),
     )
     return cursor.lastrowid
 
@@ -1032,7 +1054,7 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     sql = """SELECT cum.id AS user_id, cum.content AS user_content, cum.response AS ai_content,
                     cum.reasoning AS ai_reasoning,
                     cum.chat_model AS chat_model, cum.task_id AS task_id,
-                    cum.created_at AS created_at,
+                    cum.created_at AS created_at, cum.msg_kind AS msg_kind,
                     ct.ai_message_id AS ai_message_id, ct.task_id AS pair_task_id
              FROM chat_user_message cum
              LEFT JOIN chat_tasks ct ON ct.id = COALESCE(
@@ -1061,6 +1083,7 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
             "provider": _cm.provider if _cm else None,
             "task_id": r["task_id"],
             "created_at": r["created_at"],
+            "msg_kind": r["msg_kind"],   # 2026-11-13 商量: 消息种类外露(system_notice 与用户发言区分)
             "ai_message_id": r["ai_message_id"],
             "pair_task_id": r["pair_task_id"],   # 2026-09-28 小欧: 渲染合并同任务判据()
         })
@@ -1138,7 +1161,7 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     rows = conn.execute(
         """SELECT task_id, user_input, response, status, duration, sessionModel,
                   total_steps, llm_call_count, context_link_mode, context_root_task_id, user_message_id,
-                  created_at, updated_at
+                  creation_source, created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id ASC""",
         (session_id,),
     ).fetchall()

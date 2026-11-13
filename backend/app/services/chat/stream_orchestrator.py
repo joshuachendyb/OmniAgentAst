@@ -259,6 +259,9 @@
 # 2026-11-04 - 小欧 - get_task_field 改从 task_state 直连真源(registry 不再再导出) — 小欧-2026-11-04
 # 2026-11-04 - 小欧 - bind_message_to_task 的 atxn 补 retry_locked=3: 每消息高频写, 5 会话并发实测撞锁
 #   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面 — 小欧-2026-11-04
+# 2026-11-13 商量 - 后台命令完成唤醒(设计[33] 8.7/8.8): 抽 _create_and_launch_task(落库+writer+
+#   create_task 打包, 创建来源显式传入); 新增 resume_session_with_notice(无活跃任务时以
+#   SYSTEM_RESUME 续跑, 通知消息 msg_kind=system_notice, 恒 linked 继承链根) — 商量-2026-11-13
 
 
 
@@ -328,6 +331,7 @@ from app.services.chat.storage import (  # 追加权威累计查询 — 小欧 2
     get_session_link,  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
     get_user_message_id,
     insert_task,
+    insert_user_message,  # 2026-11-13 商量: 续跑系统通知消息落库(msg_kind=system_notice)
     query_task_accumulation,
     resolve_session_interject,  # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
     set_session_link_conn,  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
@@ -905,12 +909,13 @@ async def chat_stream_orchestrator(
                 upper_message_id=_user_msg_id, lower_message_id=lower_message_id),
             load_chain_summary=_load_chain_summary,  # 取同链最近非空摘要锚点(增量摘要起点), 无锚点返 None — 小欧-2026-10-14
             log_task_end=_log_task_end,
-            insert_task=lambda c: insert_task(  # -1 chat_tasks 创建 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) 小欧 2026-08-22
+            insert_task=lambda c, creation_source="user": insert_task(  # -1 chat_tasks 创建 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
                 ai_message_id=None,  # agent_runner 分配后回填 — 小欧 2026-08-19
                 user_input=user_input, context_link_mode=_context_link_mode,
                 context_root_task_id=_context_root_task_id,
-                task_model=agent.llm_client.llm_model),
+                task_model=agent.llm_client.llm_model,
+                creation_source=creation_source),
             update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # -1 chat_tasks 终态
             insert_token=lambda c, **kw: token_usage_insert(  # -3 共用 归一: task_model 传 ModelRef 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id,
@@ -998,67 +1003,13 @@ async def chat_stream_orchestrator(
             "ws_block": _ws_block.text,
         }
         # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
-        # -1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) 小欧 2026-08-16
-        _ai_message_id = None
-        # 目录前导常量局部导入(2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
-        from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
-        # -1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
-        #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
-        #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
-        def _setup_task_db(conn):
-            _db_ops.insert_task(conn)
-            # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
-            # 镜像写点(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
-            # eager分配assistant行+创建时即写chat_tasks.ai_message_id —
-            #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
-            #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
-            _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
-            conn.execute(
-                "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
-                (_aid, task_id),
-            )
-            # 落库 $dir 引用(2026-08-23): 物理目录 = files/Sion_{session_id}/Task_{task_id}/,
-            #   前导 2026-08-24 , 与 TaskFileWriter._dir 同源常量拼装),
-            #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
-            conn.execute(
-                "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
-                (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
-            )
-            return _aid
-        # 关键DB事务不再被 try 吞(小欧 2026-09-29 SRP/KISS-DIRECT): 任务行+ai_message_id 是全链路落库地基,
-        #   建立失败却继续起跑 = 前端看着"在跑"而 chat_tasks/chat_task_steps 全空(2026-09-29 19:49 PAR-05 实锤)。
-        #   locked 由 atxn(retry_locked=3) 有限重试; 重试耗尽/非锁异常向上抛, 走下方编排 yield router_error
-        #   (失败显式可见), 杜绝静默降级(原 L595-596 吞异常致 ai_message_id=None 带病起跑, 埋 NOT NULL 崩点)。
-        _ai_message_id = await db.atxn("chat", _setup_task_db, retry_locked=3)
-        # 文件A/B 创建(header)——assistant 分配即建; 创建后挂载
-        #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 小欧 2026-08-23
-        #   非DB文件写, 与关键DB事务分离(SRP): 保持原"仅告警不连坐"设计意图 — writer 失败
-        #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
-        try:
-            from app.file_persist import create_task_writer
-            from app.utils.time_utils import (
-                get_local_iso_timestamp,  # 局部导入必需(修复: 顶层无该符号, 缺则 NameError 被吞降级无文件)
-            )
-            _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
-            agent.file_persist = create_task_writer(
-                session_id=session_id,
-                task_id=task_id,
-                ai_message_id=_ai_message_id,
-                start_time_iso=get_local_iso_timestamp(),
-                model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
-            )
-        except Exception as _writer_e:
-            logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
-        # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
-        # 2026-10-31 小欧 - 交干净 user_input, 注入块由 message_builder.init_history 统一装配 — 小欧-2026-10-31
-        bg_task = asyncio.create_task(run_agent_in_background(
-            agent, task_id, user_input, None, session_id, state, _task_start_time,
-            db_ops=_db_ops, ai_message_id=_ai_message_id))
-        _agent_tasks.add(bg_task)
-        bg_task.add_done_callback(_agent_tasks.discard)
-        # 2026-10-30 小欧 - 登记 agent 协程句柄供取消直达: 取消必须能打断"响应头未到"(TTFB)的在飞等待,
-        #   flag/关连接都做不到, 只有 cancel() 能。句柄由本层 _agent_tasks 持强引用, 登记表只借引用。
-        await set_agent_task(task_id, bg_task)
+        # 2026-11-13 商量: 落库+writer+create_task 收口到 _create_and_launch_task, 与续跑共用(DRY)
+        bg_task = await _create_and_launch_task(
+            task_id=task_id, session_id=session_id, user_input=user_input,
+            user_msg_id=_user_msg_id, context_link_mode=_context_link_mode,
+            context_root_task_id=_context_root_task_id, creation_source="user",
+            agent=agent, state=state, task_start_time=_task_start_time,
+            db_ops=_db_ops)
         # 交接完成: 快照关闭责任移交 runner finally, orchestrator 不再归还 — 小欧-2026-09-25
         _snapshot_handed_to_runner = True
 
@@ -1093,6 +1044,203 @@ async def chat_stream_orchestrator(
         _current_task_id.reset(_task_token)
         if _ws_token is not None:                # 判空: 快照段没走到则不还牌
             reset_current_session_workspaces(_ws_token)   # 必须传 token
+
+
+async def _create_and_launch_task(
+    *, task_id: str, session_id: str, user_input: str, user_msg_id: Optional[int],
+    creation_source: str, agent, state, task_start_time: float, db_ops,
+):
+    """落库任务行 + 建文件 writer + 起后台 agent 协程(首发/续跑共用) — 商量 2026-11-13
+
+    关键 DB 事务建立失败向上抛(调用方决定收尾), 不静默降级; writer 失败仅告警。
+    返回已登记的 bg_task(强引用归 _agent_tasks), 快照关闭责任交 runner finally。
+    """
+    from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
+
+    def _setup_task_db(conn):
+        db_ops.insert_task(conn, creation_source=creation_source)
+        _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=user_msg_id)
+        conn.execute(
+            "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
+            (_aid, task_id),
+        )
+        conn.execute(
+            "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
+            (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
+        )
+        return _aid
+
+    ai_message_id = await db.atxn("chat", _setup_task_db, retry_locked=3)
+    try:
+        from app.file_persist import create_task_writer
+        from app.utils.time_utils import get_local_iso_timestamp
+        _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
+        agent.file_persist = create_task_writer(
+            session_id=session_id,
+            task_id=task_id,
+            ai_message_id=ai_message_id,
+            start_time_iso=get_local_iso_timestamp(),
+            model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
+        )
+    except Exception as _writer_e:
+        logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
+    bg_task = asyncio.create_task(run_agent_in_background(
+        agent, task_id, user_input, None, session_id, state, task_start_time,
+        db_ops=db_ops, ai_message_id=ai_message_id))
+    _agent_tasks.add(bg_task)
+    bg_task.add_done_callback(_agent_tasks.discard)
+    await set_agent_task(task_id, bg_task)
+    return bg_task
+
+
+async def resume_session_with_notice(
+    session_id: str, notice_text: str, notice_id: Optional[str] = None,
+    source_task_id: Optional[str] = None,
+) -> bool:
+    """后台命令完成后自动续跑(会话无活跃任务) — 商量 2026-11-13
+
+    以 SYSTEM_RESUME 创建新任务(恒 linked 继承链根), 通知消息 msg_kind=system_notice。
+    返回 True=新任务已起跑/已注入活跃任务, False=资源或配置失败(调用方降级落盘)。
+    """
+    from app.services.chat.creation_source import resolve_resume_link_context
+
+    _active = await has_active_task_in_session(session_id)
+    if _active:
+        logger.info(f"[chat] 续跑跳过: 会话 {session_id} 已有活跃任务 {_active}(notice={notice_id})")
+        return False
+
+    task_id = generate_task_id()
+    _context_link_mode, _context_root_task_id, _history_root = await resolve_resume_link_context(
+        session_id, task_id, source_task_id)
+    try:
+        _user_msg_id = await db.atxn(
+            "chat",
+            lambda c: insert_user_message(
+                c, session_id=session_id, content=notice_text, msg_kind="system_notice"),
+            retry_locked=3)
+    except Exception as e:
+        logger.error(f"[chat] 续跑通知消息落库失败(session={session_id}): {e}")
+        return False
+
+    create_task_stream_buffer(task_id, session_id, journal_append)
+    _reg_res = await register_task(task_id, session_id=session_id)
+    if _reg_res:
+        # 竞态窗口: 判定后已有任务抢先注册 → 通知注入活跃任务, 本任务作废
+        reclaim_memory_buffer(task_id)
+        try:
+            await inject_message_to_task(_reg_res, notice_text, _user_msg_id)
+        except Exception as e:
+            logger.warning(f"[chat] 续跑竞态注入失败(target={_reg_res}): {e}")
+            return False
+        logger.info(f"[chat] 续跑竞态命中活跃任务, 通知已注入: target={_reg_res}, task={task_id}作废")
+        return True
+
+    _task_token = _current_task_id.set(task_id)
+    set_session_id(session_id)
+    _ws_token = None
+    _session_client = None
+    _handed = False
+    try:
+        scope = get_scope()
+        agent = UniversalAgent(llm_client=scope.ai_service, task_id=task_id)
+        if scope.is_released:
+            logger.info(f"[chat] 续跑换代窗口: scope 已退休, 改取当前代(task={task_id})")
+            scope = get_scope()
+        try:
+            _session_client = await resolve_session_client(scope, session_id)
+        except ProviderKeyMissingError as _pk:
+            logger.warning(f"[chat] 续跑配置缺失(task={task_id}): {_pk}")
+            reclaim_memory_buffer(task_id)
+            await cleanup_task(task_id)
+            return False
+        agent.llm_client = _session_client
+        agent._task_llm_model = getattr(_session_client, "llm_model", None)
+
+        _ws_snap, _ws_ok = await _load_ws_snapshot(session_id)
+        if _ws_ok:
+            _ws_token = set_current_session_workspaces(_ws_snap)
+        _ws_block = render_workspace_block(_ws_snap)
+
+        _chain_sibling_count = 0
+        try:
+            _chain_sibling_count = await db.atxn(
+                "chat",
+                lambda conn: count_chain_siblings(
+                    conn,
+                    context_root_task_id=_context_root_task_id,
+                    current_task_id=task_id),
+            )
+        except Exception as _e:
+            logger.warning(f"[chat] 续跑取链内序号失败(session={session_id}), 序号默认0: {_e}")
+
+        agent._start_meta = {
+            "user_input": notice_text,
+            "session_id": session_id,
+            "context_link_mode": _context_link_mode,
+            "context_root_task_id": _context_root_task_id,
+            "context_link_index": _chain_sibling_count + 1,
+            "warning": None,
+            "refs": [],
+            "ws_block": _ws_block.text,
+        }
+
+        async def _load_chain_summary():
+            if not _context_root_task_id:
+                return None
+            return await db.atxn("chat", lambda c: get_chain_summary_anchor(
+                c, context_root_task_id=_context_root_task_id, current_task_id=task_id))
+
+        import types as _types
+        _db_ops = _types.SimpleNamespace(
+            append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(
+                c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),
+            load_previous=lambda sid, lower_message_id=None: _load_previous_messages(
+                sid, context_root_task_id=_history_root,
+                upper_message_id=_user_msg_id, lower_message_id=lower_message_id),
+            load_chain_summary=_load_chain_summary,
+            log_task_end=_log_task_end,
+            insert_task=lambda c, creation_source="system_resume": insert_task(
+                c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
+                ai_message_id=None,
+                user_input=notice_text, context_link_mode=_context_link_mode,
+                context_root_task_id=_context_root_task_id,
+                task_model=agent.llm_client.llm_model,
+                creation_source=creation_source),
+            update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),
+            insert_token=lambda c, **kw: token_usage_insert(
+                c, task_id=task_id, session_id=session_id,
+                task_model=agent.llm_client.llm_model, **kw),
+            update_task_accumulation=lambda c, **kw: update_task_accumulation(c, **kw),
+            update_session_accumulation=lambda c, **kw: update_session_accumulation(c, **kw),
+            query_task_acc=lambda c, **kw: query_task_accumulation(c, **kw),
+            user_msg_id=_user_msg_id,
+        )
+        state = StreamState()
+        await _create_and_launch_task(
+            task_id=task_id, session_id=session_id, user_input=notice_text,
+            user_msg_id=_user_msg_id, creation_source="system_resume",
+            agent=agent, state=state, task_start_time=time.time(), db_ops=_db_ops)
+        _handed = True
+        logger.info(f"[chat] 后台命令续跑已起跑: task={task_id}, session={session_id}, "
+                    f"notice={notice_id}, source={source_task_id}")
+        return True
+    except Exception as e:
+        logger.error(f"[chat] 续跑起跑失败(session={session_id}): {e}", exc_info=True)
+        try:
+            reclaim_memory_buffer(task_id)
+            await cleanup_task(task_id)
+        except Exception:
+            pass
+        return False
+    finally:
+        if _session_client is not None and not _handed:
+            try:
+                await _session_client.close()
+            except Exception as _sce:
+                logger.warning(f"[chat] 续跑未交接快照关闭失败(task={task_id}): {_sce}")
+        _current_task_id.reset(_task_token)
+        if _ws_token is not None:
+            reset_current_session_workspaces(_ws_token)
 
 
 # SSE 转发白名单 — 小欧 2026-09-12

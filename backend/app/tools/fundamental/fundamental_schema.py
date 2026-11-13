@@ -7,6 +7,7 @@
 # 2026-08-05 - 小欧 - ToolSearchInput: 说明多分类关键词一次搜索即注入多个分类整类工具; 补充"词不拆字"分词与无命中/纯符号返回未匹配提示
 # 2026-10-14 - 小欧 - ToolSearchInput docstring: 旧关键词示例换成实测清单(可用词7类31个/禁用词31个/易错对照4条);
 #   删死词"进程"(零命中且无对应工具)、"看图"(应"图片")。清单只存此处, 注册端与prompt端不重复
+# 2026-11-13 商量 - 后台命令: ShellInput 增 background 参数; 新增 BashResultInput(后台结果查询) — 商量-2026-11-13
 """
 FUNDAMENTAL Schema - 基础工具参数模型
 
@@ -102,6 +103,7 @@ class ShellInput(BaseModel):
     - stderr: 标准错误内容
     - returncode: 退出码(0=成功)
     - shell_type: 实际使用的shell类型
+    - background=true 时: data={shell_id, output_file, status}
     """
     command: str = Field(
         ..., description="命令字符串。多个命令用;分隔。注意:本机Python解释器命令为python,禁止使用python3。"
@@ -111,8 +113,9 @@ class ShellInput(BaseModel):
         default="ps7",
         description="命令解释器: ps7=PowerShell 7+(推荐/默认), ps5=PowerShell 5.1, cmd=cmd.exe, bash=Git Bash/WSL"
     )
-    timeout: int = Field(
-        default=60, ge=1, le=600, description="超时时间(秒);上限10分钟"
+    timeout: Optional[int] = Field(
+        default=None, ge=1, le=600,
+        description="超时时间(秒);上限10分钟。不传: 前台默认60秒, 后台无超时(显式传则生效)"
     )
     cwd: Optional[str] = Field(
         default=None, description="需要在特定目录下执行命令的工作目录(绝对路径).不设置则使用当前目录"
@@ -123,6 +126,22 @@ class ShellInput(BaseModel):
                "当命令用非零退出码表达业务结果(如校验工具返回1=有问题)时,"
                "在此追加如[1,2]防止被误判为执行失败。不传则只认0。"
     )
+    background: bool = Field(
+        default=False,
+        description="后台运行命令并立即返回(适合dev server/长构建)。"
+                    "无需在命令末尾加&。完成时会自动收到系统通知并自动继续处理,"
+                    "不要轮询等待; 期间可继续其他工作或直接结束回答。"
+                    "后台命令默认无超时, 显式传timeout则生效。"
+    )
+
+
+class BashResultInput(BaseModel):
+    shell_id: Optional[str] = Field(
+        default=None, description="后台命令ID(bash background=true 返回的 shell_id)"
+    )
+    output_file: Optional[str] = Field(
+        default=None, description="输出文件路径(服务重启后 shell_id 失效时按文件直查)"
+    )
 
 
 __all__ = [
@@ -130,5 +149,6 @@ __all__ = [
     "TimeNowInput",
     "SendNotificationInput",
     "ShellInput",
+    "BashResultInput",
 ]
 
