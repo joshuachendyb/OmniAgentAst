@@ -273,6 +273,900 @@ async def _wait_and_notify(shell_id):
 
 **结论**：通知的"展示形态"与"LLM 语义"完全解耦——LLM 眼里是 user role 消息（opencode 同款），用户眼里是系统通知条+新任务卡片（不冒充用户发言），前端左右结构零破坏。
 
+
+---
+
+## 八、详细设计（基于本地最新代码，逐文件代码清单）
+
+> 代码基线：master@06d62ffd6。所有 diff 均以现役代码为锚点；新文件给完整代码，修改文件给精确 diff。
+> 改动总览：后端 8 文件（3 新增 + 5 修改）、前端 2 文件（1 修改 + 1 内部新增渲染分支）、配置 2 项。
+
+| # | 文件 | 类型 | 内容 |
+|---|------|------|------|
+| 8.1 | `backend/app/tools/fundamental/shell_background.py` | **新增** | 后台执行模块（注册表/信号量/等待通知协程） |
+| 8.2 | `backend/app/tools/fundamental/execute_shell_command.py` | 修改 | shell() 加 background 参数与分支 |
+| 8.3 | `backend/app/tools/fundamental/fundamental_schema.py` | 修改 | ShellInput 加 background 字段 |
+| 8.4 | `backend/app/tools/fundamental/bash_result.py` | **新增** | bash_result 查询工具实现 |
+| 8.5 | `backend/app/tools/fundamental/fundamental_register.py` | 修改 | 注册 bash_result |
+| 8.6 | `backend/app/services/task/task_registry.py` | 修改 | 新增 inject_system_notice + cleanup 连带杀挂钩 |
+| 8.7 | `backend/app/services/chat/stream_orchestrator.py` | 修改 | 抽取建任务核心段 + resume_session_with_notice |
+| 8.8 | `backend/app/services/agent/steps/__init__.py` | 修改 | NOTICE_KINDS 补 bg_shell_done |
+| 8.9 | `backend/app/config` 配置项 | 修改 | tuning.shell_max_background / shell_bg_log_max_mb |
+| 8.10 | `frontend/.../TaskListPanel.tsx` | 修改 | system_notice 通知条渲染 + 自动续跑徽标（**含前端**） |
+
+### 8.1 新增 `backend/app/tools/fundamental/shell_background.py`（完整代码）
+
+```python
+# -*- coding: utf-8 -*-
+# 2026-11-13 商量 - 新建: bash 后台执行模块(设计文档[33]第8章)。非阻塞 Popen + 输出重定向
+#   临时文件 + 主循环 run_coroutine_threadsafe 提交等待协程 + 完成通知唤醒(注入/续跑/杀进程三分叉)
+# 编辑历史:
+# (初版)
+"""
+S: shell_background — bash 工具后台执行支撑
+
+职责(SRP): 只管"后台进程生命周期 + 完成后通知唤醒路由"; 通知判定逻辑在
+_notify_and_wake(session级两级判定), 续跑入口在编排层 resume_session_with_notice。
+shell() 保持同步函数(铁律, tool_retry_engine.py:239), 本模块异步部分经
+run_coroutine_threadsafe 提交主事件循环执行。
+"""
+import asyncio
+import os
+import subprocess
+import threading
+import time
+import uuid
+from concurrent.futures import Future
+from typing import Any, Dict, Optional
+
+from app.config import get_config
+from app.logger import logger
+from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import ERR_SHELL_EXCEPTION
+
+# ── 全局态 ──────────────────────────────────────────────
+_BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {proc, output_file, task_id, command, shell_type, status, started_at, notice_id}}
+_BG_LOCK = threading.Lock()          # 注册表读写锁(工作线程注册 vs 主循环协程更新)
+_BG_TASKS: set = set()               # Future 强引用集合, done 回调 discard 防GC(仿 agent_runner._background_tasks)
+_MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None  # 启动时缓存(main.py 启动钩子调 set_main_loop)
+
+_BG_MAX = int(get_config().get("tuning.concurrency.shell_max_background", 5))
+_BG_SEM = threading.BoundedSemaphore(_BG_MAX)
+_BG_LOG_MAX_MB = int(get_config().get("tuning.shell_bg_log_max_mb", 50))
+_BG_RESULT_RETAIN_HOURS = int(get_config().get("tuning.shell_bg_result_retain_hours", 24))
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """main.py 启动时缓存主事件循环引用(供工作线程 run_coroutine_threadsafe 提交)"""
+    global _MAIN_LOOP
+    _MAIN_LOOP = loop
+
+
+def _new_shell_id() -> str:
+    return f"bgsh_{uuid.uuid4().hex[:12]}"
+
+
+def _bg_output_dir() -> str:
+    d = os.path.join(os.environ.get("TEMP", "."), "omni_bg_shell")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
+                          task_id: str, cmd_short: str,
+                          popen_factory) -> Dict[str, Any]:
+    """启动后台命令并立即返回。popen_factory: 由调用方注入(Popen 构造, 复用 shell() 各
+    shell_type 的启动参数装配, 避免本模块重复实现四种 shell 的命令行拼装 DRY)。
+    返回 build_success 标准格式, data={shell_id, output_file, status:"running"}。"""
+    if _MAIN_LOOP is None:
+        return build_error(data={}, llm_data={
+            "summary": f"执行Shell命令{cmd_short}，失败",
+            "action": {"tool": "bash", "tool_zh": "执行", "params": {"command": command, "background": True}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_SHELL_EXCEPTION,
+                       "detail": "主事件循环未初始化, 后台执行不可用", "hint": "服务启动中, 请稍后重试"},
+            "duration_ms": 0, "metrics": {}})
+    if not _BG_SEM.acquire(blocking=False):
+        return build_error(data={}, llm_data={
+            "summary": f"执行Shell命令{cmd_short}，失败",
+            "action": {"tool": "bash", "tool_zh": "执行", "params": {"command": command, "background": True}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_SHELL_EXCEPTION,
+                       "detail": f"后台并发已达上限({_BG_MAX}), 请等待现有后台命令结束",
+                       "hint": "属容量管理, 非命令本身错误"},
+            "duration_ms": 0, "metrics": {}})
+    try:
+        shell_id = _new_shell_id()
+        output_file = os.path.join(_bg_output_dir(), f"{shell_id}.log")
+        # stdout/stderr 合流写文件(2>&1 语义, 与 opencode info.file 单文件同构);
+        # 轮转由 _rotate_check 在读取/通知时执行(见 bash_result), 进程写端只管写
+        with open(output_file, "ab") as _f:  # 预创建, 防 Popen 竞态
+            pass
+        proc = popen_factory(command, cwd, output_file)  # stdout=open(file,'ab'), stderr=STDOUT
+        if proc is None:
+            _BG_SEM.release()
+            return build_error(data={}, llm_data={
+                "summary": f"执行Shell命令{cmd_short}，失败",
+                "action": {"tool": "bash", "tool_zh": "执行", "params": {"command": command, "background": True}},
+                "status": {"exec_code": "error", "message": "失败", "code": ERR_SHELL_EXCEPTION,
+                           "detail": "后台进程启动失败", "hint": "请检查命令与解释器"},
+                "duration_ms": 0, "metrics": {}})
+        with _BG_LOCK:
+            _BG_REGISTRY[shell_id] = {
+                "proc": proc, "output_file": output_file, "task_id": task_id,
+                "command": command, "shell_type": shell_type,
+                "status": "running", "started_at": time.time(),
+                "notice_id": f"{shell_id}_done",   # 幂等键(同 shell_id 恒定, 续跑只许一次)
+            }
+        # 跨线程提交: shell() 在 _SHELL_EXECUTOR 工作线程执行, 线程内无事件循环,
+        # asyncio.create_task 直接调用必炸 → run_coroutine_threadsafe 提交主循环
+        fut = asyncio.run_coroutine_threadsafe(_wait_and_notify(shell_id), _MAIN_LOOP)
+        _BG_TASKS.add(fut)
+        fut.add_done_callback(_BG_TASKS.discard)
+        return build_success(
+            data={"shell_id": shell_id, "output_file": output_file, "status": "running"},
+            llm_data={
+                "summary": f"执行Shell命令{cmd_short}，已转后台",
+                "action": {"tool": "bash", "tool_zh": "执行",
+                           "params": {"command": command, "background": True}},
+                "status": {"exec_code": "success", "message": "已转后台运行",
+                           "code": "", "detail": "",
+                           "hint": "完成时会自动收到系统通知并自动继续处理, 不要轮询等待; "
+                                   "期间可继续其他工作或直接结束回答"},
+                "duration_ms": 0,
+                "metrics": {"shell_id": {"value": shell_id, "text": f"后台ID {shell_id}"},
+                            "output_file": {"value": output_file, "text": "输出文件"}}})
+    except Exception as e:
+        _BG_SEM.release()
+        logger.error(f"[bg_shell] 后台启动异常: {e}", exc_info=True)
+        return build_error(data={}, llm_data={
+            "summary": f"执行Shell命令{cmd_short}，失败",
+            "action": {"tool": "bash", "tool_zh": "执行", "params": {"command": command, "background": True}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_SHELL_EXCEPTION,
+                       "detail": str(e), "hint": "后台启动异常"},
+            "duration_ms": 0, "metrics": {}})
+
+
+async def _wait_and_notify(shell_id: str) -> None:
+    """等待后台进程退出并路由通知(主事件循环协程)。
+    进程等待经默认线程池 offload, 零占事件循环; 通知路由按 session 级两级判定(设计 3.1)。"""
+    from app.services.task.task_registry import (
+        has_active_task_in_session, inject_system_notice, get_task_session,
+    )
+    info = _BG_REGISTRY.get(shell_id)
+    if not info:
+        return
+    proc: subprocess.Popen = info["proc"]
+    loop = asyncio.get_running_loop()
+    # 阻塞 wait 卸载线程池; 后台命令无超时(设计决策2), 显式 timeout 由 wait 参数承载
+    timeout = info.get("timeout") or None
+    try:
+        rc = await loop.run_in_executor(None, lambda: proc.wait(timeout))
+        status = "completed" if rc == 0 else "failed"
+    except subprocess.TimeoutExpired:
+        from app.utils.proc_utils import kill_process_tree
+        kill_process_tree(proc)
+        rc = proc.returncode if proc.returncode is not None else -1
+        status = "failed"
+    except Exception as e:
+        logger.error(f"[bg_shell] 等待异常({shell_id}): {e}", exc_info=True)
+        rc = -1
+        status = "failed"
+
+    with _BG_LOCK:
+        info["status"] = status
+        info["returncode"] = rc
+        info["finished_at"] = time.time()
+    _BG_SEM.release()
+
+    # ── 通知文本(摘要+尾部输出, 对齐 opencode resultMessages) ──
+    duration = int(info["finished_at"] - info["started_at"])
+    tail = _read_output_tail(info["output_file"], 600)
+    text = (f"[系统通知] 后台命令已完成(shell_id={shell_id}, 退出码{rc}, 耗时{duration}s)\n"
+            f"命令: {info['command'][:200]}\n"
+            f"输出文件: {info['output_file']}\n"
+            f"输出尾部:\n{tail}")
+
+    task_id = info["task_id"]
+    try:
+        # ── 三分叉路由(session 级两级判定, 设计 3.1) ──
+        session_id = get_task_session(task_id)
+        if session_id is None:
+            logger.warning(f"[bg_shell] {shell_id} 无法反查 session(任务已清理), 通知降级落盘: {info['output_file']}")
+            return
+        active_tid = await has_active_task_in_session(session_id)
+        if active_tid is not None:
+            # 状态A/A': 原任务或同会话新任务活跃 → 注入 inbox(先落库拿真实uid)
+            ok = await inject_system_notice(active_tid, text)
+            if not ok:
+                logger.warning(f"[bg_shell] {shell_id} 注入失败(inbox满/终态窗口), 降级落盘: {info['output_file']}")
+        else:
+            # 状态B: 同会话无活跃任务 → 自动续跑(wake-on-idle)
+            from app.services.chat.stream_orchestrator import resume_session_with_notice
+            ok = await resume_session_with_notice(
+                session_id, text, notice_id=info["notice_id"], source_task_id=task_id)
+            if not ok:
+                logger.warning(f"[bg_shell] {shell_id} 续跑发起失败, 降级落盘: {info['output_file']}")
+    except Exception as e:
+        logger.error(f"[bg_shell] 通知路由异常({shell_id}): {e}", exc_info=True)
+    finally:
+        _schedule_result_cleanup(shell_id)
+
+
+def _read_output_tail(path: str, max_chars: int) -> str:
+    """读输出文件尾部(轮转感知: 读当前份; 超限文件读末尾 max_chars)"""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > max_chars * 4:
+                f.seek(-max_chars * 4, os.SEEK_END)
+            data = f.read()
+        return data.decode("utf-8", errors="replace")[-max_chars:]
+    except OSError:
+        return "(输出文件读取失败)"
+
+
+def _rotate_check(shell_id: str) -> None:
+    """轮转检查: 输出文件超 _BG_LOG_MAX_MB 时轮转(当前→.1, 旧.1→.2 删除)。
+    后台进程持写端打开旧文件继续写(Windows 句柄语义), 轮转后新读取从 .1 取尾部。"""
+    info = _BG_REGISTRY.get(shell_id)
+    if not info:
+        return
+    path = info["output_file"]
+    try:
+        if os.path.getsize(path) > _BG_LOG_MAX_MB * 1024 * 1024:
+            p1 = path + ".1"
+            if os.path.exists(p1):
+                os.remove(path + ".2")
+                os.rename(p1, path + ".2")
+            os.rename(path, p1)
+            # 不重开写端: 进程仍持旧句柄, 输出续写 .1; bash_result 合并 .2+.1+当前
+    except OSError:
+        pass
+
+
+def get_bg_info(shell_id: str) -> Optional[dict]:
+    with _BG_LOCK:
+        return dict(_BG_REGISTRY.get(shell_id) or {})
+
+
+def kill_background_by_task(task_id: str) -> int:
+    """任务 cancelled 连带杀: 终结本 task_id 名下全部后台进程(设计 3.4)。返回杀掉数。"""
+    from app.utils.proc_utils import kill_process_tree
+    n = 0
+    with _BG_LOCK:
+        targets = [sid for sid, i in _BG_REGISTRY.items() if i["task_id"] == task_id]
+    for sid in targets:
+        info = _BG_REGISTRY.get(sid)
+        if info and info["status"] == "running":
+            try:
+                kill_process_tree(info["proc"])
+                info["status"] = "killed"
+                _BG_SEM.release()
+                n += 1
+                logger.info(f"[bg_shell] 任务取消连带杀后台进程: {sid} (task={task_id})")
+            except Exception as e:
+                logger.warning(f"[bg_shell] 连带杀失败({sid}): {e}")
+    return n
+
+
+def _schedule_result_cleanup(shell_id: str) -> None:
+    """结果文件延迟清理(默认24h)。KISS: 惰性清理——新后台命令启动时顺带扫过期项,
+    不起定时器(YAGNI)。"""
+    now = time.time()
+    with _BG_LOCK:
+        expired = [sid for sid, i in _BG_REGISTRY.items()
+                   if i.get("status") not in ("running", None)
+                   and now - i.get("finished_at", now) > _BG_RESULT_RETAIN_HOURS * 3600]
+    for sid in expired:
+        info = _BG_REGISTRY.pop(sid, None)
+        if info:
+            for suf in ("", ".1", ".2"):
+                try:
+                    os.remove(info["output_file"] + suf)
+                except OSError:
+                    pass
+```
+
+**要点**：
+- `popen_factory` 由 shell() 注入——四种 shell_type 的命令行装配（pwsh/-Command、bat、bash -l -c）留在 execute_shell_command.py 单点（DRY），本模块只管生命周期。
+- `_MAIN_LOOP` 由 main.py 启动钩子调 `set_main_loop(asyncio.get_running_loop())` 缓存。
+- 幂等键 `notice_id` 在注册时即固化（`{shell_id}_done`），续跑入口据此防重。
+
+### 8.2 修改 `backend/app/tools/fundamental/execute_shell_command.py`（diff）
+
+**① 头部编辑历史追加 + import**：
+
+```diff
++# 2026-11-13 商量 - 新增 background 参数: 后台运行命令并立即返回(设计文档[33])。
++#   后台分支复用本文件全部前置(校验/预处理/三路检测/语法修复/安全检查), 仅执行段
++#   改走 shell_background.run_shell_background(popen_factory 注入四种 shell 的启动装配, DRY);
++#   前台路径零改动。安全检查: 后台分支中风险以上一律拒绝不弹窗([9]卡死治理教训)。
+ import uuid
++from app.tools.fundamental import shell_background
++from app.tools.context import get_current_task_id   # 已有 import, 此处仅示意依赖关系
+```
+
+**② shell() 签名与 docstring**（L1047）：
+
+```diff
+ def shell(
+     command: str, shell_type: Literal["ps7", "ps5", "cmd", "bash", None] = "ps7",
+     timeout: int = 60, cwd: Optional[str] = None,
+     success_codes: Optional[list[int]] = None,
++    background: bool = False,
+ ) -> Dict[str, Any]:
+```
+
+**③ 安全检查段（L1183-1193 之后）追加后台安全收紧**：
+
+```diff
+     safety = check_shell_danger_command(processed_command, shell_type) or \
+         check_shell_risk_command(processed_command, shell_type)
+     if safety:
+         d = int((_time_mod.perf_counter() - t0) * 1000)
+         if safety.blocked:
+             ...  # 原样不动
+         if safety.needs_confirm:
+             logger.warning(...)  # 原样不动
++    # ── 阶段 2.5【后台专属】: 安全收紧 — 商量 2026-11-13 ──
++    #  后台命令天然长驻/高影响: 中风险(需确认)命令在无值守场景弹窗 120s 挂死([9]教训),
++    #  故后台分支对 needs_confirm 一律拒绝(仅白名单级放行), 不弹窗。
++    if background and safety and safety.needs_confirm:
++        d = int((_time_mod.perf_counter() - t0) * 1000)
++        llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
++            shell_type, ERR_SHELL_INJECTION, f"后台命令安全等级不足: {safety.message}",
++            timeout=timeout, cwd=cwd or "",
++            hint="该命令需人工确认, 不支持后台运行; 请去掉 background 参数前台执行",
++            cmd_short=cmd_short)
++        return build_error(data={}, llm_data=llm)
+```
+
+**④ 执行段入口（L1198 `_slot_acquired = False` 之前）插入后台分支**：
+
+```diff
+     # ── 阶段 3【PS/CMD分支】: 执行 ──
+     ...
+-    _slot_acquired = False
++    # ── 阶段 2.9【后台专属】: 转后台执行并立即返回 — 商量 2026-11-13 ──
++    #  不占 _SHELL_PROC_SEM(前台并发槽), 不进 drain_until_exit(阻塞读);
++    #  timeout 语义: 后台默认无超时, 显式传则生效(对齐 opencode shell.ts:195)
++    if background:
++        _task_id = get_current_task_id() or ""
++        def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
++            """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)"""
++            try:
++                _out = open(outfile, "ab")
++                if shell_type in ("ps7", "ps5"):
++                    exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
++                          or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
++                    return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
++                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
++                if shell_type == "cmd":
++                    bat_encoding = locale.getpreferredencoding()
++                    bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True)
++                    with os.fdopen(bat_fd, 'w', encoding=bat_encoding, errors='replace') as f:
++                        f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
++                    return subprocess.Popen(f'"{bat_path}"', shell=True,
++                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
++                bash_exe = _find_bash()
++                if not bash_exe:
++                    logger.error("[bg_shell] bash 解释器未找到")
++                    return None
++                return subprocess.Popen([bash_exe, "-l", "-c", cmd],
++                    stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
++            except Exception as e:
++                logger.error(f"[bg_shell] Popen 装配失败: {e}", exc_info=True)
++                return None
++        result = shell_background.run_shell_background(
++            processed_command, shell_type, cwd, _task_id, cmd_short, _popen_factory)
++        if result is not None and result.get("llm_data"):
++            result["llm_data"]["action"]["params"]["timeout"] = timeout  # 留痕供历史核对
++        return result
++    _slot_acquired = False
+```
+
+> 注：`result["llm_data"]` 结构以 tool_response 实际返回键为准（build_success 的 llm_data 直通），实施时按 build_success 返回结构调整此行。
+
+### 8.3 修改 `backend/app/tools/fundamental/fundamental_schema.py`（diff）
+
+```diff
+ class ShellInput(BaseModel):
+     ...
+     success_codes: Optional[list[int]] = Field(
+         default=None,
+         description="..."
+     )
++    background: bool = Field(
++        default=False,
++        description="后台运行命令并立即返回(适合dev server/长构建)。"
++                    "无需在命令末尾加&。完成时会自动收到系统通知并自动继续处理,"
++                    "不要轮询等待; 期间可继续其他工作或直接结束回答。"
++                    "后台命令默认无超时, 显式传timeout则生效。"
++    )
+```
+
+> ShellInput docstring【返回值结构】段同步补一行：`background=true 时: data={shell_id, output_file, status}`。
+
+---
+
+*编写人: 商量 — 2026-11-13*
+
+### 8.4 新增 `backend/app/tools/fundamental/bash_result.py`（完整代码）
+
+```python
+# -*- coding: utf-8 -*-
+# 2026-11-13 商量 - 新建: bash_result 后台命令结果查询工具(设计文档[33]第8章)。
+#   按 shell_id 或 output_file 查后台命令状态+输出; 通知丢失兜底 + 中途读输出(非轮询)。
+# 编辑历史:
+# (初版)
+"""
+S: bash_result — 查询后台 Shell 命令状态与输出
+
+支持两种查询键: shell_id(注册表内存态, 服务重启后失效) 或 output_file(磁盘文件, 恒可查)。
+输出合并轮转份(.2+.1+当前)后过 _truncate_shell_field 截断(与前台同款, LLM 侧恒有界)。
+"""
+import os
+from typing import Any, Dict, Optional
+
+from app.logger import logger
+from app.tools.fundamental import shell_background
+from app.tools.fundamental.execute_shell_command import _truncate_shell_field
+from app.tools.tool_constants import (
+    ERR_PARAMETER_EMPTY, ERR_PARAMETER_INVALID,
+    SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
+)
+from app.tools.tool_response import build_success, build_error
+
+
+def bash_result(
+    shell_id: Optional[str] = None,
+    output_file: Optional[str] = None,
+) -> Dict[str, Any]:
+    """查询后台 Shell 命令状态与输出
+
+    参数:
+        shell_id:    后台命令ID(bash background=true 返回值中的 shell_id)
+        output_file: 输出文件路径(shell_id 注册表失效时按文件直查, 服务重启后仍可用)
+
+    返回:
+        data: {status(running/completed/failed/killed/unknown), command, returncode,
+               duration_s, stdout(截断后)}
+    """
+    # ── 参数校验: 二选一必填 ──
+    if not shell_id and not output_file:
+        return build_error(data={}, llm_data={
+            "summary": "查询后台命令结果，失败",
+            "action": {"tool": "bash_result", "tool_zh": "查询", "params": {}},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_EMPTY,
+                       "detail": "shell_id 与 output_file 至少提供一个",
+                       "hint": "请从 bash background=true 的返回值或对话历史中取 shell_id"},
+            "duration_ms": 0, "metrics": {}})
+
+    # ── 路径1: shell_id 查注册表(含进程存活态) ──
+    if shell_id:
+        info = shell_background.get_bg_info(shell_id)
+        if not info:
+            # 注册表无此 id: 服务重启/已过期清理 → 若同目录文件在, 引导按文件查
+            _guess = os.path.join(shell_background._bg_output_dir(), f"{shell_id}.log")
+            if os.path.exists(_guess):
+                info = {"output_file": _guess, "status": "unknown", "command": "", "task_id": ""}
+            else:
+                return build_error(data={}, llm_data={
+                    "summary": f"查询后台命令{shell_id}，失败",
+                    "action": {"tool": "bash_result", "tool_zh": "查询", "params": {"shell_id": shell_id}},
+                    "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_INVALID,
+                               "detail": f"未找到后台命令 {shell_id}(服务重启或结果已过期清理)",
+                               "hint": "请检查 shell_id 是否正确; 结果文件过期后不可恢复"},
+                    "duration_ms": 0, "metrics": {}})
+
+    # ── 路径2: output_file 直查(磁盘文件, 重启后可用) ──
+    else:
+        if not os.path.isfile(output_file):
+            return build_error(data={}, llm_data={
+                "summary": "查询后台命令结果，失败",
+                "action": {"tool": "bash_result", "tool_zh": "查询", "params": {"output_file": output_file}},
+                "status": {"exec_code": "error", "message": "失败", "code": ERR_PARAMETER_INVALID,
+                           "detail": f"输出文件不存在: {output_file}",
+                           "hint": "请核对文件路径"},
+                "duration_ms": 0, "metrics": {}})
+        info = {"output_file": output_file, "status": "unknown", "command": "", "task_id": ""}
+
+    # ── 读输出(合并轮转份 .2 + .1 + 当前) ──
+    path = info["output_file"]
+    parts = []
+    for suffix in (".2", ".1", ""):
+        p = path + suffix
+        if os.path.isfile(p):
+            try:
+                with open(p, "rb") as f:
+                    parts.append(f.read())
+            except OSError as e:
+                logger.warning(f"[bash_result] 读输出失败({p}): {e}")
+    raw = b"".join(parts)
+    stdout_str = raw.decode("utf-8", errors="replace")
+    stdout_str, _trunc = _truncate_shell_field(stdout_str, SHELL_OUTLIMIT_STDOUT_MAX_CHARS)
+
+    duration_s = 0
+    if "started_at" in info and "finished_at" in info:
+        duration_s = int(info["finished_at"] - info["started_at"])
+
+    data: Dict[str, Any] = {
+        "status": info.get("status", "unknown"),
+        "command": info.get("command", ""),
+        "returncode": info.get("returncode"),
+        "duration_s": duration_s,
+        "stdout": stdout_str,
+    }
+    if _trunc:
+        data["_truncated"] = True
+    return build_success(
+        data=data,
+        llm_data={
+            "summary": f"查询后台命令{shell_id or os.path.basename(path)}，成功",
+            "action": {"tool": "bash_result", "tool_zh": "查询",
+                       "params": {"shell_id": shell_id or "", "output_file": output_file or ""}},
+            "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+            "duration_ms": 0,
+            "metrics": {"status": {"value": data["status"], "text": f"状态 {data['status']}"},
+                        "output_len": {"value": len(stdout_str), "text": f"输出{len(stdout_str)}字符"}}})
+```
+
+**Schema**（fundamental_schema.py 追加）：
+
+```python
+class BashResultInput(BaseModel):
+    shell_id: Optional[str] = Field(
+        default=None, description="后台命令ID(bash background=true 返回的 shell_id)"
+    )
+    output_file: Optional[str] = Field(
+        default=None, description="输出文件路径(服务重启后 shell_id 失效时按文件直查)"
+    )
+```
+
+### 8.5 修改 `backend/app/tools/fundamental/fundamental_register.py`（diff）
+
+```diff
+ from app.tools.fundamental.execute_shell_command import shell
++from app.tools.fundamental.bash_result import bash_result
+ from app.tools.fundamental.fundamental_schema import (
++    BashResultInput,
+     SendNotificationInput,
+     ShellInput,
+     ...
+ )
+ 
+ FUNDAMENTAL_TOOL_DEPENDENCIES = {
+     ...
+     "bash": [],  # 使用内置库
++    "bash_result": [],  # 使用内置库
+ }
+ 
+ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
+     ...
++    "bash_result": """查询后台Shell命令(bash background=true)的状态与输出。适用场景:后台命令完成通知丢失时取回结果、或中途查看后台命令当前输出。""",
+ }
+ 
+ FUNDAMENTAL_TOOL_EXAMPLES = {
+     ...
++    "bash_result": [
++        {"shell_id": "bgsh_ab12cd34ef56"},
++        {"output_file": "C:\\Users\\...\\omni_bg_shell\\bgsh_ab12cd34ef56.log"},
++    ],
+ }
+ 
+     tool_methods = {
+         ...
+         "bash": shell,
++        "bash_result": bash_result,
+     }
+ 
+     TOOL_INPUT_MODELS = {
+         ...
+         "bash": ShellInput,
++        "bash_result": BashResultInput,
+     }
+```
+
+> 头部 docstring "5个工具" 改 "6个工具"，清单补 bash_result 一行。
+
+### 8.6 修改 `backend/app/services/task/task_registry.py`（diff）
+
+**① 新增 `get_task_session` + `inject_system_notice`**（置于 inject_message_to_task 之后）：
+
+```diff
+ async def inject_message_to_task(task_id: str, content: str, user_message_id: int) -> bool:
+     ...  # 原样不动
+
+
++def get_task_session(task_id: str) -> Optional[str]:
++    """反查任务的 session_id(后台 shell 完成通知路由用) — 商量 2026-11-13
++    任务已终态被 cleanup 删除时返回 None(由调用方降级落盘)。
++    同步函数: running_tasks 读走 _BG_REGISTRY 工作线程/主循环两处, 锁内快照读线程安全。"""
++    # 注: running_tasks_lock 是 asyncio.Lock, 此处不能同步持锁;
++    # dict 读在 CPython 下原子, cleanup 删除与读并发最坏返回 None, 语义安全
++    _t = running_tasks.get(task_id)
++    return _t.get("session_id") if _t else None
++
++
++async def inject_system_notice(task_id: str, content: str) -> bool:
++    """系统通知注入(后台 shell 完成通知等, 设计文档[33]) — 商量 2026-11-13
++    与 inject_message_to_task 并列同一 inbox; 不放宽其 uid>0 防御(防重落库红线)。
++    通知恒先落库拿真实 uid 再投递(对齐 opencode synthetic 双写):
++      ① storage.insert_user_message 落 chat_user_message(system_notice 标记见下)
++      ② bind_message_to_task 执行期归属(与用户插话同款)
++      ③ 投 (content, uid) 元组; _absorb_inbox 吸收时锚演进正常, 零改动
++    落库失败(DB 异常)不投递, 返回 False 由调用方降级(结果文件仍在)。
++    system_notice 标记: content 以 [系统通知] 前缀承载(零 DDL, 前端按前缀渲染,
++    历史回放/LLM 上下文均可见来源); 如后续需结构化标记再议加列, 首版 KISS。"""
++    from app.db import db
++    from app.services.chat import storage
++    async with running_tasks_lock:
++        _t = running_tasks.get(task_id)
++        if not _t or _t.get("status") not in ("running", "paused"):
++            return False
++        session_id = _t.get("session_id")
++        _q = _t.get("_inbox")
++        if _q is None or not session_id:
++            return False
++    try:
++        def _persist(conn):
++            uid = storage.insert_user_message(conn, session_id=session_id, content=content)
++            storage.bind_message_to_task(conn, uid, task_id)
++            return uid
++        uid = await db.atxn("chat", _persist, retry_locked=3)
++    except Exception as e:
++        logger.error(f"[TaskRegistry] 系统通知落库失败(task={task_id}): {e}", exc_info=True)
++        return False
++    if uid <= 0:
++        return False
++    async with running_tasks_lock:
++        _t = running_tasks.get(task_id)
++        if not _t or _t.get("status") not in ("running", "paused"):
++            return False   # 落库成功但任务恰终态: 消息已在历史, 下轮对话可见, 不丢
++        _q = _t.get("_inbox")
++        if _q is None:
++            return False
++        try:
++            _q.put_nowait((content, uid))
++        except asyncio.QueueFull:
++            logger.warning(f"[TaskRegistry] 系统通知注入被拒(inbox满, task={task_id})")
++            return False
++    logger.info(f"[TaskRegistry] 系统通知已注入(task={task_id}, uid={uid})")
++    return True
+```
+
+> 设计说明：锁外落库（db.atxn 耗时操作不持 running_tasks_lock，防锁内 await 长占）；投递前二次校验任务状态（落库窗口任务可能终态——消息已持久化在会话历史，用户下次发话 LLM 可见，语义不丢）。
+
+**② cleanup_task 连带杀挂钩**（cancel 路径）：
+
+```diff
+ async def cleanup_task(task_id: str) -> bool:
+     """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)"""
++    # 2026-11-13 商量: cancelled 任务连带杀名下后台 shell 进程(设计 3.4,
++    #   opencode interrupt 清 pendingWake 语义: 取消后不复活, 孤儿进程一并终结)
++    from app.tools.fundamental import shell_background
+     async with running_tasks_lock:
+         if task_id not in running_tasks:
+             return False
+         if running_tasks[task_id].get("status") != "cancelled":
+             ...  # 原样不动
+```
+
+> 实施注意：kill 动作必须在锁外执行（kill_process_tree 可能阻塞），改为 cleanup_task 返回后由调用方（task_cleanup）调用 `shell_background.kill_background_by_task(task_id)`；task_registry 是数据层不持进程句柄操作（SRP）。即挂钩点实际放在 `task_registry.task_cleanup`（L377，编排收尾统一入口）：
+
+```diff
+ async def task_cleanup(task_id: str, llm_call_count: int = 0) -> None:
+     """任务完成后清理"""
+     ...
+     cleaned = await cleanup_task(task_id)
++    # 2026-11-13 商量: 任务收尾连带清理名下后台 shell(取消→杀进程树; 正常终态→仅注销跟踪)
++    from app.tools.fundamental import shell_background
++    shell_background.kill_background_by_task(task_id)  # 内部只杀 status=running 项
+     ...
+```
+
+### 8.7 修改 `backend/app/services/chat/stream_orchestrator.py`（diff）
+
+**① 从编排 generator 抽取"建任务核心段"（SRP，用户路径与系统续跑路径共用）**：
+
+现役 L1000-1061 段（_setup_task_db → allocate → file_persist → create_task(run_agent_in_background)）抽为：
+
+```diff
++async def _create_and_launch_task(*, agent, session_id: str, task_id: str,
++                                   user_message_id: int, db_ops, state,
++                                   _task_start_time) -> tuple:
++    """建任务核心段: 落库任务行+分配ai_message+文件writer+起后台agent — 商量 2026-11-13
++    从编排 generator 抽取(SRP): 用户路径(chat_stream)与系统续跑路径
++    (resume_session_with_notice)共用同一建任务实现(DRY)。
++    返回 (ai_message_id, bg_task)。"""
++    _ai_message_id = None
++    from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
++    def _setup_task_db(conn):
++        db_ops.insert_task(conn)
++        _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=user_message_id)
++        conn.execute("UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?", (_aid, task_id))
++        conn.execute("UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
++                     (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id))
++        return _aid
++    _ai_message_id = await db.atxn("chat", _setup_task_db, retry_locked=3)
++    try:
++        from app.file_persist import create_task_writer
++        from app.utils.time_utils import get_local_iso_timestamp
++        _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
++        agent.file_persist = create_task_writer(
++            session_id=session_id, task_id=task_id, ai_message_id=_ai_message_id,
++            start_time_iso=get_local_iso_timestamp(),
++            model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None))
++    except Exception as _writer_e:
++        logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
++    bg_task = asyncio.create_task(run_agent_in_background(
++        agent, task_id, user_input, None, session_id, state, _task_start_time,
++        db_ops=db_ops, ai_message_id=_ai_message_id))
++    _agent_tasks.add(bg_task)
++    bg_task.add_done_callback(_agent_tasks.discard)
++    await set_agent_task(task_id, bg_task)
++    return _ai_message_id, bg_task
+```
+
+（原 generator 内对应段替换为对 _create_and_launch_task 的调用，参数原样透传；user_input 经参数传入。）
+
+**② 新增 `resume_session_with_notice`（模块级函数）**：
+
+```diff
++_RESUMED_NOTICES: set = set()   # notice_id 幂等集合(内存态; 服务重启后集合清空,
++#   但 shell_id 注册表同样清空, 不会重放, 语义自洽)
++_RESUMED_LOCK = asyncio.Lock()
++
++
++async def resume_session_with_notice(session_id: str, notice_text: str,
++                                      notice_id: str, source_task_id: str = "") -> bool:
++    """系统驱动续跑: 后台 shell 完成且同会话无活跃任务时, 自动开新一轮任务 — 商量 2026-11-13
++    对齐 opencode execution.wake 空闲语义(run-coordinator.ts:131 idle→start)。
++    流程: 幂等守卫 → 通知落库为 user message → 复用 _create_and_launch_task 建任务
++          → 事件全落 journal(stream_buffer 持久化), 不等待前端消费者
++          (复用"客户端断开静默返回, agent 后台继续"现役语义 L1069)。
++    返回 True=续跑任务已发起; False=占位改注入(由调用方执行)/幂等跳过/发起失败。"""
++    async with _RESUMED_LOCK:
++        if notice_id in _RESUMED_NOTICES:
++            return True   # 幂等: 该通知已触发过续跑(对齐 opencode notificationID reconcile)
++        _RESUMED_NOTICES.add(notice_id)
++    try:
++        # 1. 占位守卫: 同会话已有活跃任务(用户恰好刚发消息) → 不续跑, 返回 False
++        #    由调用方(shell_background)改道注入该活跃任务(状态A'路径)
++        if await has_active_task_in_session(session_id):
++            return False
++        # 2. 通知落库为 user message(真实 uid; 前端历史按 [系统通知] 前缀渲染,
++        #    LLM 上下文以 user role 进入, 对齐 opencode to-llm-message)
++        from app.db import db
++        from app.services.chat import storage
++        def _persist(conn):
++            uid = storage.insert_user_message(conn, session_id=session_id, content=notice_text)
++            return uid
++        uid = await db.atxn("chat", _persist, retry_locked=3)
++        # 3. 生成新 task_id + 建 buffer(journal 持久化, 前端经任务列表/journal 重连发现)
++        task_id = generate_task_id()   # 现役 id 生成入口(与编排层同源)
++        create_task_stream_buffer(task_id, session_id)   # journal_sink 挂接, 事件不丢
++        _reg = await register_task(task_id, session_id=session_id)
++        if _reg:   # 返回 str=同会话被占位(并发窗口) → 落库消息已在, 返回 False 改注入
++            return False
++        # 4. 装配 agent + 建任务核心段(与用户路径共用, DRY)
++        agent = build_agent_for_session(session_id, source_task_id=source_task_id,
++                                        trigger="bg_shell_resume")
++        await _create_and_launch_task(agent=agent, session_id=session_id, task_id=task_id,
++                                      user_message_id=uid, db_ops=..., state=...,
++                                      _task_start_time=time.time())
++        logger.info(f"[bg_resume] 续跑任务已发起(session={session_id}, task={task_id}, "
++                    f"notice={notice_id}, uid={uid})")
++        return True
++    except Exception as e:
++        logger.error(f"[bg_resume] 续跑发起失败(session={session_id}, notice={notice_id}): {e}",
++                     exc_info=True)
++        return False
+```
+
+> 实施注意：
+> - `build_agent_for_session` / `generate_task_id` / `create_task_stream_buffer` / `db_ops` / `state` 均为编排层现役符号，抽取时按实际签名适配；`trigger="bg_shell_resume"` 供任务卡片显示"自动续跑"徽标（透传进 chat_tasks 或 stream_buffer meta，前端按此渲染）。
+> - SSE 消费：run_agent_in_background 的产出全部经 stream_buffer 落 journal；前端 TaskListPanel 轮询/刷新发现新任务后走**现役 journal 重连回放**（after_seq 机制），零新帧类型。
+> - 续跑任务的 user_input 传通知文本摘要（供任务列表卡片显示"后台命令已完成…"）。
+
+### 8.8 修改 `backend/app/services/agent/steps/__init__.py`（diff）
+
+```diff
+ NOTICE_KINDS = frozenset({
+     ...
++    "bg_shell_done",   # 2026-11-13 商量: 后台 shell 完成通知(注入吸收轮播报, 设计 7.2)
+ })
+```
+
+> 播报点：`_absorb_inbox` 吸收到 uid 对应 content 含 `[系统通知]` 前缀时，经现役 `_emit_publish` 直发一条 `notice(kind="bg_shell_done", phase="done")`（与 trimming 通知同款形态，react_step.py L365-368 同模式），前端流水线显示通知行。实施时在 `_absorb_inbox` 的 `_merged` 构造后追加：
+
+```diff
+     _merged = "\n".join(_contents)
++    # 2026-11-13 商量: 系统通知吸收时播报 bg_shell_done notice(前端流水线通知行)
++    if any(c.startswith("[系统通知]") for c in _contents):
++        _notice_step = build_step_dict(None, "notice", "后台命令已完成，结果已并入本轮上下文")
++        _notice_step["kind"] = "bg_shell_done"; _notice_step["phase"] = "done"
++        await _publish(_notice_step)
+```
+
+（`_publish`/`build_step_dict` 为 react_step.py 现役符号；实施按该文件 `_emit_publish` 收口约定接入。）
+
+### 8.9 配置项（`backend/app/config` tuning 段）
+
+```yaml
+tuning:
+  concurrency:
+    shell_max_processes: 10        # 现役: 前台 shell 并发
+    shell_max_background: 5        # 新增: 后台 shell 并发上限(名额生命周期=命令生命周期)
+  shell_bg_log_max_mb: 50         # 新增: 后台输出文件轮转上限(保留 .1/.2 两份)
+  shell_bg_result_retain_hours: 24 # 新增: 结果文件保留时长(惰性清理)
+```
+
+### 8.10 前端修改：`frontend/src/features/chat/components/layout/TaskListPanel.tsx`（**含前端**）
+
+**改动1 — 任务卡片"自动续跑"徽标**（任务条目渲染处，trigger 字段透传后）：
+
+```diff
++// 2026-11-13 商量: 自动续跑任务徽标(设计 7.2) — 与模型标签同款行内小徽标
++{t.trigger === 'bg_shell_resume' && (
++  <span style={{
++    marginLeft: 6, fontSize: FontSize.SMALL,
++    color: Colors.TEXT.SECONDARY,
++    border: `1px solid ${Colors.BORDER.LIGHT}`,
++    borderRadius: 4, padding: '0 4px',
++  }}>
++    自动续跑
++  </span>
++)}
+```
+
+**改动2 — 历史条目 `system_notice` 渲染分支**（任务卡片 user_input 摘要渲染处）：
+
+```diff
++// 2026-11-13 商量: [系统通知] 前缀的 user 消息不渲染为用户发言气泡/摘要,
++//   改渲染居中灰色系统通知条(设计 7.2, 对齐 opencode [Synthetic context] 展示)
++const isSystemNotice = (text: string) => text?.startsWith('[系统通知]');
++
++// 任务卡片正文处:
++{isSystemNotice(t.user_input) ? (
++  <div style={{
++    textAlign: 'center', color: Colors.TEXT.SECONDARY,
++    fontSize: FontSize.SMALL, padding: `${Spacing.XS} 0`,
++  }}>
++    ⚙ {t.user_input.split('\n')[0].replace('[系统通知] ', '')}
++  </div>
++) : (
++  /* 原有 user_input 渲染不动 */
++)}
+```
+
+**改动3 — RightViewer 通知行渲染**（bg_shell_done notice 帧，复用现役 notice 渲染通道）：
+
+```diff
++// 2026-11-13 商量: bg_shell_done 通知行 — 复用现役 notice 帧渲染管道
++//   (sseParser/StepRenderer 对 type=notice 已有通用渲染, 仅需在 kind 白名单
++//    或样式映射表加一项, 零新组件)
++const NOTICE_KIND_STYLES = {
++  ...,
++  bg_shell_done: { icon: '⚙', label: '后台命令完成' },
++};
+```
+
+> 前端改动评估：**3 处均为渲染层小改**，无状态管理/数据流/布局结构改动；SSE 帧类型零新增（bg_shell_done 走现役 notice 帧管道），TaskListPanel/RightViewer 零结构破坏。
+
+### 8.11 实施顺序与验证清单
+
+| 步 | 内容 | 验证 |
+|----|------|------|
+| 1 | 8.1 shell_background.py + main.py 挂 set_main_loop | 单测: 注册表/信号量/幂等键；跨线程提交冒烟 |
+| 2 | 8.6 task_registry（inject_system_notice + task_cleanup 挂钩） | 单测: 落库→投递→_absorb_inbox 吸收全链（uid 真实、锚演进正常）；cancelled 连带杀 |
+| 3 | 8.2/8.3 shell() 分支 + schema | 回归: 前台路径逐字节等价（background=False 全既有用例）；后台分支安全收紧（中风险拒绝） |
+| 4 | 8.7 编排层抽取 + resume_session_with_notice | 集成: 任务终态后自动续跑（journal 落事件、任务列表可见）；活跃任务时改注入；幂等（同 notice_id 二次触发跳过） |
+| 5 | 8.4/8.5 bash_result 工具 + 注册 | 单测: shell_id/output_file 双路径、轮转合并读、截断 |
+| 6 | 8.8/8.10 通知帧 + 前端 | E2E: 三状态（活跃注入/终态续跑/取消杀进程）+ 前端通知条/徽标渲染 |
+| 7 | 8.9 配置 | 默认值冒烟 |
+
+**边界回归**：服务重启（注册表清空、结果文件可查）、inbox 满（降级落盘）、多后台并发完成（串行合并）、长驻命令占满名额（明确失败）。
+
 ---
 
 *编写人: 商量 — 2026-11-13*
