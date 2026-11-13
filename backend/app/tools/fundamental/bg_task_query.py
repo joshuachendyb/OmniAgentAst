@@ -8,6 +8,8 @@
 # 2026-11-13 商量 - 三堂会审根治: (1)读输出改"有界尾读"——仅读文件末尾 max_chars*4 字节再解码取尾,
 #   峰值内存有界(原全量 f.read() 对 64MiB 文件峰值翻倍); (2)取尾巴而非头截断, 完成态能看到最新结果,
 #   契合"中途看进度"意图; (3)output_file 直查加输出目录边界校验, 关闭任意文件读取口子
+# 2026-11-13 商量 - 10轮三堂会审增量: 终态语义字段 timed_out 改 outcome(completed/failed/timeout/
+#   oversize/killed), 与后台模块统一, 查询方可区分"超时被杀/输出超限被杀/命令失败"三种终态
 """
 S: bg_task_query — 查询后台任务执行状态与输出
 
@@ -71,8 +73,9 @@ def bg_task_query(
         output_file: 输出文件路径(shell_id 注册表失效时按文件直查, 服务重启后仍可用)
 
     返回:
-        data: {status(running/completed/failed/killed/unknown), command, returncode,
-               duration_s, stdout(截断后)}
+        data: {status(running/completed/failed/killed/unknown), outcome(终态语义
+              completed/failed/timeout/oversize/killed/unknown), command, returncode,
+              duration_s, stdout(有界尾读)}
     """
     # ── 参数校验: 二选一必填 ──
     if not shell_id and not output_file:
@@ -129,7 +132,7 @@ def bg_task_query(
         "status": info.get("status", "unknown"),
         "command": info.get("command", ""),
         "returncode": info.get("returncode"),
-        "timed_out": info.get("timed_out", False),
+        "outcome": info.get("outcome", "unknown"),
         "duration_s": duration_s,
         "stdout": stdout_str,
     }

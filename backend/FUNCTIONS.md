@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-11-10
-**最近更新**: 2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-13
+**最近更新**: 2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 **历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
@@ -273,6 +273,28 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 - 缺库工具在三个暴露点都要挡住：`to_openai_tools`、`generate_param_reminder`、`tool_search` 的 BM25 索引（后者漏了会出现"搜到 1 个却注入 0 类"的误导）。
 - `heal_missing_deps` 与 `apply_heal_result` 必须拆开：前者经 `to_thread` 跑在工作线程，与事件循环并发读同一份 meta，跨线程写会读到 `available` 已翻而 `missing_deps` 未写的中间态。
 - 运行期自愈需加冷却窗（如 `_HEAL_COOLDOWN_SEC`）：装不上时每次工具调用都重试 = 每次都起一个 pip。
+
+### 2.3 后台命令执行（app/tools/fundamental/shell_background.py + bg_task_query.py）
+
+后台 Shell 命令的生命周期与查询单源。后台命令**默认无超时**，故等待必须与工具共享线程池隔离，否则卡死后台永久霸占 `tool-sync` 池致全站工具饿死（系统级卡死）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `run_shell_background` | 启动后台命令并立即返回；`popen_factory` 由调用方注入以复用四种 shell 装配；`success_codes` 与前台同语义 | command, shell_type, cwd, task_id, cmd_short, popen_factory, timeout=None, success_codes=None | dict（build_success 标准格式） |
+| `bat_sidecar_path` | cmd 后台启动脚本路径**唯一真源**（生成与清理共用，消除两处推导漂移致 .bat 永不被删） | output_file: str | str |
+| `kill_background_by_task` | 任务非正常终态时连带杀本 task 名下全部后台进程树 | task_id: str | int（终止数） |
+| `kill_all_background` | 服务关闭时杀全部 running 后台进程树（防主循环关闭后子进程成孤儿跨重启） | reason: str = "shutdown" | int（终止数） |
+| `cleanup_orphan_artifacts` | 启动期清理上一世残留产物（重启后注册表为空，惰性清理覆盖不到致磁盘泄漏）；只动 `bgsh_*` 命名空间且 mtime 早于启动时刻 | not_after: float | int（删除数） |
+| `get_bg_info` | 取后台命令注册表快照（副本，调用方不持锁） | shell_id: str | Optional[dict] |
+| `bg_task_query` | 查询后台任务状态与输出；`output_file` 直查限输出目录内（防任意文件读取）；输出走**有界尾读**（峰值内存与文件大小无关） | shell_id=None, output_file=None | dict（build_success 标准格式） |
+
+**实现要点**
+
+- 等待走专用常驻池 `_BG_WAIT_POOL`（`WorkerPool`，容量=后台并发上限），与 `tool-sync` 池彻底隔离；共享池会让无超时后台永久占线程。
+- 终态语义统一为 `outcome` 字段（`completed`/`failed`/`timeout`/`oversize`/`killed`），布尔 `timed_out` 信息量不足，查询方无法区分超时、超限与命令失败。
+- 输出文件超 `tuning.shell_bg_max_output_mb` 即杀进程（默认 512MB，并发 5 条峰值约 2.5GB），防日志狂写把磁盘写满。
+- 结果产物清理"先删产物、删净才 pop 注册表"，删除失败保留记录下轮重试，连续失败达上限才放弃（防注册表无限累积）。
+- 等待 Future 被取消（主循环关闭）时须兜底杀进程 + 还槽，否则成孤儿进程且信号量永久泄漏。
 
 ---
 
@@ -802,6 +824,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.33 | 2026-11-13 | **§2.3 新登记后台命令执行**(商量): `run_shell_background`/`bat_sidecar_path`/`kill_background_by_task`/`kill_all_background`/`cleanup_orphan_artifacts`/`get_bg_info`/`bg_task_query` 入册; 实现要点记 5 条(专用等待池隔离 tool-sync 防无超时后台霸占工具线程池致全站饿死、终态语义统一 outcome 字段、输出超 `shell_bg_max_output_mb` 强杀防磁盘写满、产物先删后 pop 且失败重试有上限、Future 取消兜底杀进程还槽防孤儿与信号量泄漏); 同批三堂会审 10 轮增量: 启动中途异常补杀已启动进程、启动期清理上一世残留产物、启动失败不留空 .log、timed_out 改 outcome、补后台启停 info 日志、并发上限 notice 补"需重启生效"、输出上限默认 512MB(并发 5 条峰值 2.5GB, 原 2048MB 峰值 10GB 与防写满初衷相悖) | 商量 |
 | v5.32 | 2026-11-10 | **§4.2.1 禁用名单配置化**(小欧): `UNAVAILABLE_OFFICIAL_TOOLS` 五元组降为内置回落默认, 新增 `get_disabled_official_tools`/`is_disabled_tool` 读 config `tuning.agent.disabled_tools`(形状兼容 str/list——设置页 textarea 落盘为 YAML list; **键存在即配置为真值: 清空=不禁用任何工具不兜底(用户拍板), 仅缺键/形状异常回落内置**; get_config 热生效, 同 shell_readonly.get_readonly_prefixes 先例); 两消费点(handle_action 拒绝定性 / observation_builder 全组反馈动态点数)改经判定函数; settings_registry 登记 tuning.agent.disabled_tools(textarea, 默认展示内置五件套, notice 写明"只影响未注册工具措辞不拦已注册工具/清空=不禁用任何工具"), config.yaml.example 与 config/config.yaml 三同步, 前端零改动(tuning.agent.→「Agent 循环参数」节已有) | 小欧 |
 | v5.31 | 2026-11-10 | **[25]会审核实后修复4项**(小欧): ①base_service 摘除契约通用化——单键if改遍历 merged_params 循环摘除(`is None or is False` 判别, 规避 `0==False` 误摘数值0), 任一默认键显式 null/false 均可摘(reasoning_effort: null 原样出网缺口闭合, 契约声明自此与实现一致); ②attachment_service.read_inject_text 抽取失败兜底——try/except 降级错误说明文本(S3 改抛异常后预览路径漏改, 富文档/空工作簿异常直穿 HTTP 500), 纯读契约不变不回填抽取态, 与 resolver 失败折算同口径; ③extract.py ffprobe 补 CREATE_NO_WINDOW(无控制台部署闪黑窗, 先例 send_notification); ④glob→find 勘误——语义映射正确维持收编, 撤"参数逐字兼容"表述: path 官方面可选本系统必填, 只传 pattern 走 schema 校验反馈一轮补路径(FindInput 实测 Field required) | 小欧 |
 | v5.30 | 2026-11-10 | **§4.2.1 别名执行断裂修复**(小欧): 10-17 认领重构后归一名只存旁路键 `_normal_name`, 执行链(tool_runner→tool_executor→tool_retry_engine)按裸名查 `self._tools`——凡 LLM 调别名(writefile/write_text/websearch 等)过认领却在执行层 `工具 'X' 未找到`(tool_retry_engine:375), 别名机制执行面全断(实测真 beam-free 调 websearch 连环未找到, 12 步熔断); 修法: `_claim` 认领通过(registered)即归一名原地写回 `call['tool_name']`, 未注册不写回保持原样——单点修复(认领=归一唯一真源), 前端事件/DB 落库随之显真名; 实测 beam-free `websearch`→`searchweb` 真执行×4, 2 轮/33s completed | 小欧 |

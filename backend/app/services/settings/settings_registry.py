@@ -122,6 +122,8 @@ key 全局唯一，加载自检重复直接拒启。
       后台命令配置项实为 2 项 — 商量-2026-11-13
     2026-11-13 商量 - 三堂会审补 tuning.shell_bg_max_output_mb(输出上限, 超限杀进程防磁盘写满),
       后台命令配置项 3 项 — 商量-2026-11-13
+    2026-11-13 商量 - 10轮三堂会审: 后台输出上限默认值定为 512MB(并发5条峰值2.5GB, 守住系统级红线;
+      原 2048MB 峰值 10GB 与"防磁盘写满"初衷相悖), 并发上限提示补"需重启生效" — 商量-2026-11-13
 
 """
 from typing import Any, Dict, List, Optional
@@ -494,7 +496,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("tuning.concurrency.shell_max_processes", "int", "shell并发进程上限", 10, range_=[2, 64],
               notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
         _item("tuning.concurrency.shell_max_background", "int", "后台命令并发上限", 5, range_=[1, 32],
-              notice="后台运行的命令最多同时几条；到顶后新后台命令直接拒绝并提示稍后。后台命令无超时，完成后自动通知并续跑"),
+              notice="后台运行的命令最多同时几条；到顶后新后台命令直接拒绝并提示稍后。后台命令无超时，完成后自动通知并续跑。（改本项需重启服务生效）"),
         _item("tuning.shell_bg_max_output_mb", "int", "后台输出上限(MB)", 512, range_=[0, 8192],
               notice="单条后台命令输出文件最多写多少 MB；超过即强制终止该命令，防日志狂写把磁盘写满拖垮系统。默认512MB（并发5条时峰值约2.5GB）。0=不限制（不建议）"),
         _item("tuning.shell_bg_result_retain_hours", "int", "后台结果保留(小时)", 24, range_=[1, 720],

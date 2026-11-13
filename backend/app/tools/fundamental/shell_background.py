@@ -16,6 +16,10 @@
 #   输出文件超 tuning.shell_bg_max_output_mb 即杀进程, 防磁盘写满拖垮整机; (3)新增 kill_all_background 供
 #   shutdown 调用, 正常关闭不再遗留孤儿进程; (4)等待 Future 被取消(主循环关闭/协程未跑)时兜底杀进程+还槽,
 #   杜绝孤儿进程与信号量永久泄漏; (5)清理失败达上限后放弃记录, 防孙进程持句柄致注册表无限累积
+# 2026-11-13 商量 - 10轮三堂会审增量: (1)启动中途异常补杀已启动进程(原只还槽致孤儿); (2)新增
+#   cleanup_orphan_artifacts 启动期清理上一世残留产物(重启后注册表为空, 惰性清理覆盖不到, 磁盘泄漏);
+#   (3)启动失败不留空 .log 产物; (4)终态语义统一为 outcome 字段(completed/failed/timeout/oversize/killed),
+#   原 timed_out 布尔信息量不足致查询无法区分超时/超限/失败; (5)补后台启动与结束 info 日志(成功路径此前无日志)
 """
 S: shell_background — bash 工具后台执行支撑
 
@@ -128,6 +132,7 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                          f"后台并发已达上限({_BG_MAX}), 请等待现有后台命令结束",
                          "属容量管理, 非命令本身错误")
     shell_id = ""
+    proc = None
     try:
         shell_id = _new_shell_id()
         output_file = os.path.join(_bg_output_dir(), f"{shell_id}.log")
@@ -137,6 +142,10 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
         proc = popen_factory(command, cwd, output_file)
         if proc is None:
             _BG_SEM.release()
+            try:   # 启动失败不留空产物(无注册表记录 → 惰性清理覆盖不到)
+                os.remove(output_file)
+            except OSError:
+                pass
             return _bg_error(command, cmd_short, "后台进程启动失败", "请检查命令与解释器")
         with _BG_LOCK:
             _BG_REGISTRY[shell_id] = {
@@ -145,7 +154,7 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 "status": "running", "started_at": time.time(),
                 "timeout": timeout,
                 "success_codes": success_codes or [],
-                "timed_out": False,
+                "outcome": "running",   # 终态语义: completed/failed/timeout/oversize/killed
                 "notice_id": f"{shell_id}_done",   # 通知追踪ID(仅日志留痕; 同 shell_id 通知只发一次由 _wait_and_notify 单次执行保证)
                 "sem_released": False,
             }
@@ -168,6 +177,8 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                              f"等待协程提交失败: {_sub_e}", "服务正在关闭, 请稍后重试")
         _BG_TASKS.add(fut)
         fut.add_done_callback(lambda f: _on_wait_future_done(shell_id, f))
+        logger.info(f"[bg_shell] 后台已启动 {shell_id} (task={task_id}, type={shell_type}, "
+                    f"timeout={timeout}, out={output_file})")
         return build_success(
             data={"shell_id": shell_id, "output_file": output_file, "status": "running"},
             llm_data={
@@ -182,6 +193,13 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 "metrics": {"shell_id": {"value": shell_id, "text": f"后台ID {shell_id}"},
                             "output_file": {"value": output_file, "text": "输出文件"}}})
     except Exception as e:
+        # 启动中途异常: 已启动的进程必须杀掉(否则成孤儿), 且信号量只还一次
+        if proc is not None:
+            from app.utils.proc_utils import kill_process_tree
+            try:
+                kill_process_tree(proc)
+            except Exception:
+                pass
         with _BG_LOCK:
             _info = _BG_REGISTRY.get(shell_id)
             if _info is not None:
@@ -289,14 +307,17 @@ async def _finish_and_notify(shell_id: str, info: dict, rc: int, outcome: str) -
         if not killed:
             info["status"] = "failed" if outcome != "completed" else "completed"
             info["returncode"] = rc
-            info["timed_out"] = (outcome == "timeout")
+            info["outcome"] = outcome
             info["finished_at"] = time.time()
+        else:
+            info["outcome"] = "killed"
     if killed:
         # 任务取消连带杀: 进程终结是取消动作的一部分, 不再发完成通知(否则会唤醒续跑, 取消后复活)
         logger.info(f"[bg_shell] {shell_id} 已被任务取消连带杀, 跳过完成通知")
         return
 
     duration = int(info["finished_at"] - info["started_at"])
+    logger.info(f"[bg_shell] 后台已结束 {shell_id} outcome={outcome} rc={rc} 耗时{duration}s")
     tail = _read_output_tail(info["output_file"], 600)
     if outcome == "timeout":
         head = f"[系统通知] 后台命令超时已被终止(shell_id={shell_id}, 超时{info.get('timeout')}s, 耗时{duration}s)"
@@ -406,6 +427,30 @@ def kill_all_background(reason: str = "shutdown") -> int:
             logger.info(f"[bg_shell] {reason} 终止后台进程: {sid}")
         except Exception as e:
             logger.warning(f"[bg_shell] {reason} 终止失败({sid}): {e}")
+    return n
+
+
+def cleanup_orphan_artifacts(not_after: float) -> int:
+    """启动期清理孤儿产物(服务重启收口)。返回删除文件数。
+
+    背景: 结果文件惰性清理只走注册表, 服务重启后注册表为空 → 上一世的后台 .log/.bat
+    永不被清理, 长期残留吃磁盘。此处一次性收口。
+    安全: 只删 (a) 本模块命名空间 bgsh_* 前缀 (b) mtime 早于 not_after(启动时刻) 的文件;
+    活跃进程仍在追加写的文件 mtime 会刷新, 不会被误删; 其他工具的产物一律不动。"""
+    import glob
+    d = _bg_output_dir()
+    n = 0
+    for pattern in (f"bgsh_*{_BG_SIDECAR_SUFFIX}", "bgsh_*.log"):
+        for path in glob.glob(os.path.join(d, pattern)):
+            try:
+                if os.path.getmtime(path) >= not_after:
+                    continue
+                os.remove(path)
+                n += 1
+            except OSError as e:
+                logger.warning(f"[bg_shell] 启动期孤儿产物删除失败 {path}: {e}")
+    if n:
+        logger.info(f"[bg_shell] 启动期清理孤儿结果产物 {n} 个(上一世后台命令残留)")
     return n
 
 

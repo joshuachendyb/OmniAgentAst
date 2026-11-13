@@ -81,6 +81,11 @@
 #   (只落盘不上屏); 否者 dictConfig console handler 残留 + 10s 热重载刷 DEBUG 必刷屏 — 小欧-2026-11-08
 # 2026-11-13 商量 - startup 缓存主事件循环给 shell_background(工作线程后台命令完成后
 #   run_coroutine_threadsafe 提交回主循环唤醒) — 商量-2026-11-13
+# 2026-11-13 商量 - shutdown_event 关闭前杀全部后台进程树(主循环关闭致等待协程被取消,
+#   不主动杀则子进程脱离父进程存活成孤儿); startup 清理上一世后台结果产物(重启后注册表为空,
+#   惰性清理覆盖不到致磁盘残留) — 商量-2026-11-13
+# 注: shell_background 必须"函数体内 import"——该模块 import 时即创建 WorkerPool 常驻线程
+#   (有副作用), 提到文件顶部会让任何 import main 的场景(测试/脚本)连带起线程, 副作用外泄
 import asyncio
 import sys
 import threading
@@ -580,6 +585,12 @@ async def startup_event():
     from app.tools.fundamental.shell_background import set_main_loop, set_notify_router
     set_main_loop(asyncio.get_running_loop())
     set_notify_router(notify_bg_shell_done)
+    # 2026-11-13 商量 - 启动期清理上一世后台结果产物: 结果惰性清理只走注册表, 重启后注册表为空,
+    #   上一世的 .log/.bat 永不会被清 → 磁盘残留泄漏; 此处一次性收口(只动 bgsh_* 命名空间)
+    from app.tools.fundamental import shell_background as _shell_bg
+    _n_orphan = _shell_bg.cleanup_orphan_artifacts(time.time())
+    if _n_orphan:
+        logger.info(f"[启动] 清理后台孤儿结果产物 {_n_orphan} 个")
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
     # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server 同一收口(只落盘不上屏),
