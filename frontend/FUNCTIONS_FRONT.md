@@ -3,8 +3,8 @@
 **创建时间**: 2026-09-23 14:19:12
 **编写人**: 小欧
 **维护人**: 小欧
-**最后更新时间**: 2026-11-12
-**最近更新**: 2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最后更新时间**: 2026-11-13
+**最近更新**: 2026-11-13 商量 §4.1 输入框帮助信息分层：撤销 `INPUT_HINTS` 常驻编号清单，输入框仅保留核心 placeholder（能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片` 并入 placeholder，空态零额外高度），其余输入方式由 `ShortcutHelp`（「输入技巧」浮层，按 输入/文件与引用/图片 分组 + 按钮行中段入口）承载，增删改输入方式只改 `SHORTCUT_GROUPS`；`InputCore` 显式下发上下留白 4→2（不沿用 UI 库缺省）；2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -266,7 +266,7 @@
 | `ReasoningIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行前置图标（step 页面「推理内容...」左端）。`export const ReasoningIcon = SpinSquareIcon` 运行时代理别名（`ReasoningIcon = EyeIcon`），换图标只改该行取值；5 个备用图标 `EyeIcon`(眼睛) / `SignalBarsIcon`(43号) / `SunIcon`(58号) / `ApproachDotsIcon`(65号) / `SpinSquareIcon`(13号, 当前在用) 接口统一。`animating=true` 挂动画类(false 不挂即静止)，节奏唯一真源 `index.css`；`size` 默认 `Icon.BOX`(16px)，图形描边外缘正好填满盒子(与 `GearIcon` 同列齐整)。转/停由 `ThinkingStream` 的 `running` prop 按段序列派生传入 — 小欧 2026-10-07 | `{ size?: number; animating?: boolean }` | JSX |
 | `EyeIcon` / `SignalBarsIcon` / `SunIcon` / `ApproachDotsIcon` / `SpinSquareIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行图标组：当前在用 1 个（`SpinSquareIcon`）+ 备用 4 个（北京老陈令备用常驻，想用即改 `ReasoningIcon` 别名取值）。`viewBox` 统一收为图形外接框，缩放后填满 `Icon.BOX`、垂直居中；`animating` 条件挂动画类 | `{ size?: number; animating?: boolean }` | JSX |
 | `Icon`（图标规格令牌） | `src/utils/stepStyles.ts` | step 行首图标统一规格：`BOX: 16`(盒子边长) + `STROKE: 2`(统一描边宽)。图标组件 `size` 默认取 `Icon.BOX`、`strokeWidth` 取 `Icon.STROKE`；图形需"填满盒子"时令描边外缘=viewBox 边界 — 小欧 2026-10-07 | — | `{ BOX: 16; STROKE: 2 }` |
-| `INPUT_HINTS` | `components/input/InputCore.tsx` | 输入框空态静态帮助清单（输入方式说明）。空态且无动态提示时常驻于输入框内，按数组下标自动生成 `[n]` 编号（第 1 条=`[1]`）。**维护唯一入口**：新增/删除/修改输入方式只改本数组，无需改 JSX，顺序即展示顺序。与动态提示 `executingHint`（执行中插话/正在提交）互斥且不编号 — 小欧 2026-11-10 | — | `string[]` |
+| `ShortcutHelp` / `SHORTCUT_GROUPS` | `components/input/ShortcutHelp.tsx` | 输入帮助分层唯一落点：输入框内只保留核心 placeholder（提交语义 + 能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片`，见 `InputCore.PLACEHOLDER_HINTS`），原常驻编号清单的其余输入方式迁入「输入技巧」浮层（按 输入 / 文件与引用 / 图片 三组归类，可随新增扩展）；入口经 `SubmitBar.middleExtra` 落在底部按钮行中段（右对齐、与按钮同高，输入区零额外高度；打字后/受阻态 placeholder 隐藏时入口仍常驻）。**维护唯一入口**：增删改输入方式只改 `SHORTCUT_GROUPS`，浮层分组自动跟随 — 商量 2026-11-13 | — | `ShortcutGroup[]` / JSX |
 
 ---
 
@@ -344,3 +344,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.3 | 2026-11-12 | §1.4 新登记 `controlScale.ts`（`theme/controlScale.ts`）：**全站控件刻度唯一真源** —— 控件高三档（24/28/32，等差 4px）× 两档密度（紧凑档整档下移一档、小档 24 两档同值）+ 全局圆角三档（取自 stepStyles 的 Radius 阶梯）+ 页面级圆角全档 4 预设 + `controlScaleTokens`/`pageControlTokens` 两个 token 构造器。配套文档[32]；§1.4–§1.11 章节序号顺延（原 1.4–1.9 后移一位，无交叉引用需改） | 小欧 |
 | v1.4 | 2026-11-12 | §1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（补登上一轮遗漏）：Markdown 排版解算（`mdStyles` / `codeFenceLineHeight` / `isNumericCell` / `codeBlockStyle`，文档[30]）与外观偏好读取（`APPEARANCE_FONT_SIZES`/`APPEARANCE_DENSITIES` 密度词表唯一真源、`AppearanceDensity` 类型、`clampFontSize`/`clampDensity`、`useAppearancePrefs`）；`DENSITY_PAD` 登记为阅读区间距系数唯一真源 | 小欧 |
 | v1.5 | 2026-11-12 | §使用规则 新增「前端控件规格铁律（强制）」七条：控件规格唯一定义点（`theme/controlScale.ts`）、禁沿用 UI 库缺省值、禁依赖库的派生公式、密度只切档位、字号恒 14（禁 `componentSize` 承载密度）、流水线零变化、数字只在 TS 一处；与《开发人员戒律》第八章同源，本清单为前端唯一执行位置；依据文档[32] | 小欧 |
+| v1.6 | 2026-11-13 | §4.1 登记改为 `ShortcutHelp` / `SHORTCUT_GROUPS`（`components/input/ShortcutHelp.tsx`）：撤销 `INPUT_HINTS` 编号清单常驻输入框的做法，输入框仅保留核心 placeholder；其余输入方式按 输入/文件与引用/图片 三组归入「输入技巧」浮层（原名「全部技巧」）；能力提示尾段并入 placeholder（`@ 引用 · 拖入文件 · 粘贴图片`），入口置于按钮行中段；`InputCore` 显式下发上下留白 4→2；增删改输入方式只改 `SHORTCUT_GROUPS` | 商量 |

@@ -75,8 +75,13 @@
 // 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
 // 编辑历史: 2026-11-11 小欧 - chip 增能力徽标: useRefCapabilityMap(生效模型 ref_capability_map 只读索引)
 //   + CapabilityBadge, 查不到不显示 — 小欧-2026-11-11
-
-
+// 2026-11-13 商量 - 输入帮助分层 + 落位: 输入框内只留核心 placeholder, 非常用输入方式收进「输入技巧」
+//   浮层; 微图例(@ 引用 · 拖入文件 · 粘贴图片)并入 placeholder 尾段(空态零额外高度),
+//   「输入技巧」入口经 SubmitBar.middleExtra 放在按钮行中段, 与按钮同高 → 输入区零额外高度 — 商量-2026-11-13
+//   入口在打字后/受阻态(placeholder 被隐藏)仍常驻, 承担能力发现的持续性 — 商量-2026-11-13
+// 2026-11-13 商量 - 底部纵向留白收口: 根 gap 8→6(输入区内部节奏, 按钮行归输入框工具条);
+//   删引用行 marginBottom 4(与父 gap 重复计), 删 sendBlocked 灰字行(与 InputCore executingHint 同为
+//   "不可发送"提示, 空态下两者叠加) — 商量-2026-11-13
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -110,6 +115,7 @@ import {
 } from '@/features/refs/uploadAttachment'; // 2026-11-06 小欧 - 拖拽/粘贴统一落点
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
+import { ShortcutHelp } from './input/ShortcutHelp'; // 2026-11-13 商量 - 输入帮助浮层+单行微图例
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
@@ -149,7 +155,7 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 // 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
 import {
   chipCapState,
@@ -734,7 +740,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        // 2026-11-13 商量 - 纵向节奏收口 8→Spacing.SM(6): 输入区内部区块间用小间距档, 按钮行是输入框的
+        //   工具条, 不应与"上下区块"共用同一档; 引用行/提示行、输入框与按钮行的留白同步收紧
+        gap: Spacing.SM,
         outline: dragOver ? `2px dashed ${Colors.PRIMARY}` : 'none',
         outlineOffset: 2,
         borderRadius: 8,
@@ -747,8 +755,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            gap: 6,
-            marginBottom: 4,
+            gap: Spacing.SM,
           }}
         >
           {/* 2026-10-21 小杨 - 给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
@@ -844,11 +851,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
           引用内容正在载入，稍候即可发送
         </div>
       )}
-      {sendBlocked && refs.length > 0 && (
-        <div style={{ color: Colors.TEXT.WEAK, fontSize: chatTokens.fontSM }}>
-          当前正在生成，请等待本轮结束后编辑并发送
-        </div>
-      )}
       {/* 2026-10-21 小杨 - 候选面板改为**浮层**（absolute）
           原实现是普通文档流 → 每打开一次就把下方内容整体下推，输入区位置跳动。
           现在锚定在输入框下沿、不参与布局。 */}
@@ -941,6 +943,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       <SubmitBar
         modelPickerSlot={modelPickerSlot ?? null}
+        /* 2026-11-13 商量 - 微图例下沉到按钮行中段(零额外高度), 见 ShortcutHelp 头注 */
+        middleExtra={<ShortcutHelp />}
         leftExtra={
           <Space
             size={8}

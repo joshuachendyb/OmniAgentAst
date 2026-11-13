@@ -19,6 +19,9 @@
 // 编辑历史: 2026-11-07 小欧: 入口合门 —— 删 rightExtra 插槽(素材包并入文件抽屉, 右端只留动作按钮组);
 //   内层 Space 加 wrap —— 原单行 flex 无 wrap 时子项被压到文字竖排 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/决策号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 2026-11-13 商量 - 新增 middleExtra 插槽(左控件组与动作组之间的弹性中段, 右对齐): 承载低强调说明
+//   (输入微图例), 使说明与按钮共用同一行高度, 输入区不再为说明单开一行; 空间不足时插槽收缩,
+//   内容自行省略(由插槽内容负责 minWidth:0/ellipsis) — 商量-2026-11-13
 
 /**
  * SubmitBar - 底部功能行：左侧控件(历史/指令/类型/模型/附件/插话/会话事务空间) + 右端动作按钮组
@@ -44,6 +47,12 @@ interface SubmitBarProps {
   rightActions?: React.ReactNode;
   /** 2026-11-06 小欧 - 附件入口插槽(附件按钮), 由 ChatInput 构造 — 小欧-2026-11-06 */
   attachment?: React.ReactNode;
+  /**
+   * 2026-11-13 商量 - 弹性中段插槽(左控件组与动作组之间, 右对齐)。
+   *   承载低强调说明类内容, 与按钮同处一行 → 不额外占用输入区高度;
+   *   容器 flex:1 + minWidth:0, 空间不足时收缩, 省略策略由插槽内容自行负责 — 商量-2026-11-13
+   */
+  middleExtra?: React.ReactNode;
   // 2026-11-07 小欧: 合门删 rightExtra 插槽(素材包面板并入文件抽屉, 右端只留动作按钮组) — 小欧-2026-11-07
 }
 
@@ -56,6 +65,7 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   onOpenWorkspaces,
   rightActions, // 2026-10-25 小欧 - 右端动作按钮组插槽
   attachment, // 2026-11-06 小欧 - 附件入口
+  middleExtra, // 2026-11-13 商量 - 弹性中段插槽(说明类)
 }) => (
   <div
     style={{
@@ -90,6 +100,20 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
         </Badge>
       )}
     </Space>
+    {/* 2026-11-13 商量 - 弹性中段: 说明类内容与按钮同行, 不占输入区高度; 收缩时由内容省略 */}
+    {middleExtra && (
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+        }}
+      >
+        {middleExtra}
+      </div>
+    )}
     {/* 2026-10-25 小欧 - marginLeft:auto 贴最右: 左控件组与动作组分居两端 */}
     {/* 2026-11-07 小欧: 合门后右端只剩动作按钮组(素材包并入文件抽屉) */}
     {rightActions && (

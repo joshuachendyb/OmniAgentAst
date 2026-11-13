@@ -10,6 +10,9 @@
 // 编辑历史: 2026-10-28 小欧 - 修复横向溢出: 中部行未设 min-width/overflow → 默认 min-width:auto,
 //   被 SplitPane 内容横向撑破, 右面板(含 absolute 折叠按钮/滚动条)随之移出视口;
 //   补 minWidth:0+overflow:hidden, 右边缘约束在屏幕内(与 SplitPane.tsx 根容器/右面板同款修复) — 小欧-2026-10-28
+
+// 2026-11-13 商量 - 底部三槽(taskinfo/config/input)合并为同一 dock: 原各自为根 flex 子项被根 gap 分隔,
+//   taskinfo 与输入框间形成 8px 白缝且两条上边线平行; 合并后紧贴, 仅保留与中部区的根间距 — 商量-2026-11-13
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -210,16 +213,20 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       />
     </div>
 
-    {/* ③④⑤ taskinfo / config / input */}
-    {hasVisibleSlot(panels, 'taskinfo') && (
-      <div>{renderSlot(panels, 'taskinfo')}</div>
-    )}
-    {hasVisibleSlot(panels, 'config') && (
-      <div>{renderSlot(panels, 'config')}</div>
-    )}
-    {hasVisibleSlot(panels, 'input') && (
-      <div>{renderSlot(panels, 'input')}</div>
-    )}
+    {/* ③④⑤ 底部停靠区: taskinfo/config/input 合并为同一 dock 紧贴排列。
+        原三者各自为根 flex 子项, 根 gap 在 taskinfo 与输入框之间留 8px 白缝,
+        两条上边线上下平行形成断线感; 合并后内部无缝隙, 仅与中部区保留根 gap。 */}
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {hasVisibleSlot(panels, 'taskinfo') && (
+        <div>{renderSlot(panels, 'taskinfo')}</div>
+      )}
+      {hasVisibleSlot(panels, 'config') && (
+        <div>{renderSlot(panels, 'config')}</div>
+      )}
+      {hasVisibleSlot(panels, 'input') && (
+        <div>{renderSlot(panels, 'input')}</div>
+      )}
+    </div>
   </div>
 );
 

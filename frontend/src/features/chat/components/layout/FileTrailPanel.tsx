@@ -18,6 +18,10 @@
 //   2026-11-02 小欧 - 行内路径改复用唯一链接组件 PathLink（删自建 button+nav+渲染期根解析）：
 //     原实现是第二套「路径点击 → 跳转」，用渲染期根，而 PathLink 用点击实时根，口径会漂；
 //     图标/可点性/不可链接降级一并交给 PathLink — 小欧-2026-11-02
+
+//   2026-11-13 商量 - 折叠区标题行固定 24px(原 6px 上下留白撑到约 34px, 与 taskinfo/按钮行失衡):
+//     定高 + 说明文案单行省略, 窄栏不折行 — 商量-2026-11-13
+
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -41,6 +45,8 @@ import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { PathLink } from '@/components/PathLink';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+// 2026-11-13 商量 - 标题行高度取全站控件刻度唯一真源(小号档 24px), 不写字面量 — 商量-2026-11-13
+import { CONTROL_HEIGHT_SM } from '@/theme/controlScale';
 
 /**
  * ops 徽标配色/文案 —— ops 的取值域是后端工具**注册名**（FILE_OPERATION_TOOLS，16 个），
@@ -137,10 +143,15 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
           alignItems: 'center',
           gap: Spacing.XS,
           width: '100%',
+          // 2026-11-13 商量 - 标题行取全站小号控件刻度 CONTROL_HEIGHT_SM(24px), 与按钮行同高:
+          //   原 6px 上下留白把行撑到约 34px, 与 taskinfo(≈27)/按钮行(24)失衡;
+          //   定高后由 flex 居中, 不再另写行高; 说明文案单行省略保证窄栏不折行破高度
+          height: CONTROL_HEIGHT_SM,
+          boxSizing: 'border-box',
           border: 'none',
           background: 'transparent',
           cursor: 'pointer',
-          padding: `${Spacing.SM}px ${Spacing.LG}px`,
+          padding: `0 ${Spacing.LG}px`,
           color: Colors.TEXT.STRONG,
           fontSize: chatTokens.fontMD,
           textAlign: 'left',
@@ -156,6 +167,12 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
             marginLeft: Spacing.XS,
+            // 2026-11-13 商量 - 说明文案单行省略: 保证标题行恒为 24px, 窄栏也不折行撑高
+            flex: '1 1 auto',
+            minWidth: 0,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+            textOverflow: 'ellipsis',
           }}
         >
           本会话中 Agent 读写过的文件 · 点文件路径打开，点「引用」加入本轮对话

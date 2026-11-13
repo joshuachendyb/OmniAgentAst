@@ -31,6 +31,17 @@
 // 2026-11-10 小欧 - placeholder 升级为编号化静态清单: 空态常驻显示 6 条输入方式([1]普通输入 [2]图片链接
 //   [3]↑↓翻历史/历史输入 [4]@引用 [5]附件抽屉 [6]拖拽/粘贴), 抽 INPUT_HINTS 常量 + showHints 分支;
 //   动态提示(插话/提交中, executingHint)保持原逻辑不编号; 原生 placeholder 置空由 overlay 统一承载 — 小欧-2026-11-10
+// 2026-11-13 商量 - 撤销编号化清单(输入框只留核心 placeholder[1]): 6 条常驻清单随输入方式增加会塞满输入框,
+//   且打字即消失、占位却不提供即时价值。原 [2]~[6] 迁入 ShortcutHelp 的「输入技巧」浮层(分组归类、可扩展),
+//   输入框恢复单行原生 placeholder; 仅保留 executingHint 的橘红 overlay(真正的动态情境提示) — 商量-2026-11-13
+// 2026-11-13 商量 - ① 能力提示并入 placeholder 尾段(PLACEHOLDER_HINTS: @ 引用 · 拖入文件 · 粘贴图片):
+//   空态自带说明, minRows=2 已预留两行 → 零额外高度, 打字即隐不干扰;
+//   ② 显式下发上下留白 4→2(TEXTAREA_PAD_Y, 取视觉下限非 1px: 圆角下首行贴边过紧),
+//   overlay top 同源改用该常量, 水平 11 与 HINT_LEFT_PX 一致 — 商量-2026-11-13
+
+// 2026-11-13 商量 - textarea 显式行高 HINT_LINE_HEIGHT(1.4), 与 overlay 提示同源:
+//   原走 AntD 缺省 1.5714 致两者基线差约 1px、折行位置不一致; 统一后空态高度同步压缩 — 商量-2026-11-13
+
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -44,40 +55,30 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
-import {
-  Colors,
-  Radius,
-  BorderWidth,
-  Spacing,
-  FontSize,
-} from '@/utils/stepStyles';
+import { Colors, Radius, BorderWidth, FontSize } from '@/utils/stepStyles';
 import { INPUT_MIN_ROWS, INPUT_MAX_ROWS } from '@/constants/layout';
 
 const { TextArea } = Input;
 
 // 2026-10-28 小欧 - placeholder 提示 overlay 定位/行高(仅本组件使用, 局部常量):
-//   left=11 与 AntD TextArea 默认水平 padding 对齐(overlay 文字与框内文字左缘一致);
+//   left=11 为框内文字左缘(AntD TextArea 水平 padding 缺省值), 现由本组件显式下发保证同源;
 //   lineHeight=1.4 为普通文本行高(非等宽, 不引 MonoLineHeight)。
 const HINT_LEFT_PX = 11;
 const HINT_LINE_HEIGHT = 1.4;
 
-// 2026-11-10 小欧 - 输入框静态帮助清单(空态常驻显示)。
-//   [1] 用途: 这是输入框的"输入方式"静态帮助文案, 空态时以 [n] 编号常驻于输入框内(不随执行态变化)。
-//       动态提示(执行中插话 / 正在提交)走 executingHint, 与本清单互斥且不编号。
-//   [2] 维护: 新增 / 删除 / 修改输入方式, 只改本数组即可 —— 编号由数组下标自动生成(第 1 条=[1]),
-//       无需改 JSX; 每项一句完整、精简易懂的说明, 顺序即展示顺序。
-//   [3] 渲染: 6 条全部由 overlay 以 flex-wrap 连续流渲染(第 1 行起, 排满自动换行, 不留半行);
-//       原生 placeholder 置空, 定位锚点用 data-testid="chat-input-textarea"(读屏走 overlay 文本)。
-//   实现与维护约定见 frontend/FUNCTIONS_FRONT.md §4.1 `INPUT_HINTS`。
-const INPUT_HINTS = [
-  '输入文本消息，Shift+Enter 换行，Enter 提交',
-  '↑↓ 翻历史消息',
-  '图片:粘贴,截图,输入公网图片URL（https://…/pic.png）',
-  '@ 引用项目文件，选中后显示在输入框上方的引用区',
-  '点「附件」选择文件（项目 / 后端电脑 / 上传等）',
-  '从本机文件管理器拖拽或粘贴文件进输入区，',
-];
-// 原生 placeholder 置空(清单全由 overlay 连续流渲染); 测试定位锚点 testid
+// 2026-11-13 商量 - 输入框上下留白收口到视觉下限: 4(库缺省)→2。
+//   2px 是下限而非 1px: 圆角 4px 下 1px 会让首行文字视觉贴上描边, 且与全站单行控件
+//   "行盒20+留白3" 的舒展度反差过大; 2px 配合 22px 行盒仍留出约半个字身的呼吸。
+//   本组件显式下发, 不依赖库缺省(与控件规格不一味沿用库默认值同源)。
+const TEXTAREA_PAD_Y = 2;
+
+// 输入框核心占位: 只保留提交语义(唯一必须一眼可见的信息)。
+//   其余输入方式(翻历史/@引用/附件/拖拽/图片)的完整说明归 ShortcutHelp 浮层(「输入技巧」入口)。
+const PLACEHOLDER_TEXT = '输入文本消息，Shift+Enter 换行，Enter 提交';
+// 能力提示尾段(2026-11-13 商量): 极简符号 + 短词, 只在空态露出; minRows=2 已预留两行,
+//   长文案也不额外增高(打字即隐), 是"零成本的能力发现位"。
+const PLACEHOLDER_HINTS = '@ 引用 · 拖入文件 · 粘贴图片';
+// 测试定位锚点 testid(原生 placeholder 交还给 textarea)
 const HINT_TESTID = 'chat-input-textarea';
 
 interface InputCoreProps {
@@ -101,9 +102,9 @@ interface InputCoreProps {
    */
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
   /**
-   * 2026-10-25 小欧 - 执行中追加提示（输入框为空时以橘红色显示在 placeholder 下方）。
+   * 执行中追加提示（输入框为空时以橘红色 overlay 显示，替代原生 placeholder）。
    *   不传/传 undefined 时行为不变；传入时输入框为空 → 隐藏原生 placeholder、
-   *   显示灰+橘红双层 overlay；输入框非空 → overlay 自动消失。
+   *   仅显示橘红 overlay；输入框非空 → overlay 自动消失。
    */
   executingHint?: string;
 }
@@ -129,11 +130,9 @@ const InputCore: React.FC<InputCoreProps> = ({
     taRef.current?.focus();
   }, [focusKey]);
 
-  // 2026-10-25 小欧 - 执行中且输入为空 → 橘红 overlay 提示（隐藏原生 placeholder 避免重复）
+  // 动态提示(执行中插话/提交中): 输入为空时以橘红 overlay 显示, 同时隐藏原生 placeholder 避免重复
   const empty = value.trim() === '';
-  const showHint = !!executingHint && empty; // 动态提示(插话/提交中), 不编号
-  // 2026-11-10 小欧 - 空态且无动态提示 → 常驻静态编号清单(替代原生 placeholder)
-  const showHints = empty && !showHint;
+  const showExecutingHint = !!executingHint && empty;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -144,65 +143,39 @@ const InputCore: React.FC<InputCoreProps> = ({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         onPressEnter={onPressEnter}
-        placeholder=""
+        placeholder={
+          showExecutingHint ? '' : `${PLACEHOLDER_TEXT} · ${PLACEHOLDER_HINTS}`
+        }
         autoSize={{ minRows: INPUT_MIN_ROWS, maxRows: INPUT_MAX_ROWS }}
         style={{
           borderColor: Colors.BORDER.LIGHT,
           borderTop: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
           borderRadius: Radius.SM,
+          // 显式下发上下留白(4→2), 水平与 overlay 左缘同源为 11
+          padding: `${TEXTAREA_PAD_Y}px ${HINT_LEFT_PX}px`,
+          // 2026-11-13 商量 - 行高与 overlay 提示同源为 HINT_LINE_HEIGHT: 原 textarea 走 AntD 缺省 1.5714,
+          //   与 overlay 的 1.4 相差约 1px, 灰字/橘红提示基线错位且折行位置不同; 统一后同时压缩空态高度
+          lineHeight: HINT_LINE_HEIGHT,
         }}
       />
-      {showHint && (
+      {showExecutingHint && (
         <div
           style={{
             position: 'absolute',
-            top: Spacing.SM,
+            top: TEXTAREA_PAD_Y,
             left: HINT_LEFT_PX,
             pointerEvents: 'none',
             userSelect: 'none',
             lineHeight: HINT_LINE_HEIGHT,
           }}
         >
-          <div style={{ color: Colors.TEXT.WEAK, fontSize: FontSize.PRIMARY }}>
-            {INPUT_HINTS[0]}
-          </div>
-          {/* 2026-10-26 小欧 - testid 保 H3/H9/H10 e2e 定位(原 B 块已删, 此处为唯一挂载点) */}
+          {/* testid 保既有 e2e 定位(overlay 是动态提示的唯一挂载点) */}
           <div
             data-testid="receiving-hint"
             style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}
           >
             {executingHint}
           </div>
-        </div>
-      )}
-      {showHints && (
-        <div
-          style={{
-            position: 'absolute',
-            top: Spacing.SM,
-            left: HINT_LEFT_PX,
-            right: HINT_LEFT_PX,
-            pointerEvents: 'none',
-            userSelect: 'none',
-            display: 'flex',
-            flexWrap: 'wrap',
-            columnGap: 16,
-            rowGap: 2,
-            lineHeight: HINT_LINE_HEIGHT,
-          }}
-        >
-          {INPUT_HINTS.map((hint, i) => (
-            <span
-              key={i}
-              style={{
-                color: Colors.TEXT.WEAK,
-                fontSize: FontSize.SECONDARY,
-                maxWidth: '100%',
-              }}
-            >
-              [{i + 1}] {hint}
-            </span>
-          ))}
         </div>
       )}
     </div>
