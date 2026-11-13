@@ -13,6 +13,7 @@
 
 // 2026-11-13 商量 - 底部三槽(taskinfo/config/input)合并为同一 dock: 原各自为根 flex 子项被根 gap 分隔,
 //   taskinfo 与输入框间形成 8px 白缝且两条上边线平行; 合并后紧贴, 仅保留与中部区的根间距 — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 各处 gap 改走全站间距语义档 Gap, 容器内距改走 Spacing — 商量-2026-11-13
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -33,7 +34,8 @@ import {
   type SessionPanel,
   type SlotName,
 } from './SessionPanelRegistry';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, Spacing } from '@/utils/stepStyles';
+import { Gap } from '@/theme/spacing';
 import { SplitPane } from './SplitPane';
 
 interface SessionLayoutProps {
@@ -93,7 +95,8 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       flexDirection: 'column',
       flex: 1,
       minHeight: 0,
-      gap: 8,
+      // 独立区块之间的间距(中部滚动区 ↔ 底部停靠区), 由根容器 gap 唯一承担
+      gap: Gap.SECTION,
       minWidth: 0,
       overflow: 'hidden', // 2026-09-15 小欧: 外层Layout已锁定height:100vh, 本层不再留paddingBottom, 输入条回正常文档流由flex底部钉住, 中部滚动区自行滚动
     }}
@@ -105,7 +108,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: 8,
+        gap: Gap.INLINE,
       }}
     >
       {renderSlot(panels, 'topbar')}
@@ -123,7 +126,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
         minHeight: 0,
         minWidth: 0,
         overflow: 'hidden',
-        gap: 8,
+        gap: Gap.SECTION,
       }}
     >
       <SplitPane
@@ -168,7 +171,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
                   overflowX: 'hidden',
                   // 2026-10-28 小欧 - 防展开「任务统计」滚动条出现致右栏宽度突变(CLS): 始终预留 gutter — 小欧-2026-10-28
                   scrollbarGutter: 'stable',
-                  padding: '0 12px 8px',
+                  padding: `0 ${Spacing.LG}px ${Spacing.MD}px`,
                 }}
               >
                 {renderSlot(panels, 'right')}
@@ -198,7 +201,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
                 marginLeft: 'auto',
                 display: 'flex',
                 alignItems: 'flex-start',
-                padding: '0 8px',
+                padding: `0 ${Spacing.MD}px`,
               }}
             >
               <Button

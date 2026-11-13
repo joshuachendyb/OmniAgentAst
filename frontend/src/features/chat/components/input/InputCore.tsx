@@ -40,6 +40,8 @@
 
 // 2026-11-13 商量 - textarea 显式行高 HINT_LINE_HEIGHT(1.4), 与 overlay 提示同源:
 //   原走 AntD 缺省 1.5714 致两者基线差约 1px、折行位置不一致; 统一后空态高度同步压缩 — 商量-2026-11-13
+// 2026-11-13 商量 - 行高改走全站标准 LineHeight.DENSE, 删本地 HINT_LINE_HEIGHT;
+//   内距改走 controlScale 的 CONTROL_PADDING(不再自持 11px/2px 字面量) — 商量-2026-11-13
 
 /**
  * InputCore - 输入框本体（多行）
@@ -56,17 +58,17 @@ import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
 import { Colors, Radius, BorderWidth, FontSize } from '@/utils/stepStyles';
 import { CONTROL_PADDING } from '@/theme/controlScale';
+import { LineHeight } from '@/theme/spacing';
 import { INPUT_MIN_ROWS, INPUT_MAX_ROWS } from '@/constants/layout';
 
 const { TextArea } = Input;
 
 // 2026-10-28 小欧 - placeholder 提示 overlay 定位/行高(仅本组件使用):
 //   水平内距与框内文字同源, 一律取全站控件内距标准 CONTROL_PADDING.TEXT_INPUT_X;
-//   lineHeight=1.4 为普通文本行高(非等宽, 不引 MonoLineHeight)。
+//   行高取全站行高唯一标准 LineHeight.DENSE(1.4), 与 overlay 提示同源, 不再自持局部行高。
 // 2026-11-13 商量 - 删本地 HINT_LEFT_PX(=11, 库缺省值): 水平内距改由 controlScale 的
 //   CONTROL_PADDING.TEXT_INPUT_X(12, 4px 网格标准档)统一下发, textarea 与 overlay 共用同一值;
 //   上下内距同理取 CONTROL_PADDING.TEXT_INPUT_Y_TIGHT, 本组件不再自持内距字面量 — 商量-2026-11-13
-const HINT_LINE_HEIGHT = 1.4;
 
 // 输入框核心占位: 只保留提交语义(唯一必须一眼可见的信息)。
 //   其余输入方式(翻历史/@引用/附件/拖拽/图片)的完整说明归 ShortcutHelp 浮层(「输入技巧」入口)。
@@ -149,9 +151,10 @@ const InputCore: React.FC<InputCoreProps> = ({
           borderRadius: Radius.SM,
           // 内距取全站控件内距标准(水平 4px 网格档, 上下视觉下限), 与 overlay 左缘/顶缘同源
           padding: `${CONTROL_PADDING.TEXT_INPUT_Y_TIGHT}px ${CONTROL_PADDING.TEXT_INPUT_X}px`,
-          // 2026-11-13 商量 - 行高与 overlay 提示同源为 HINT_LINE_HEIGHT: 原 textarea 走 AntD 缺省 1.5714,
-          //   与 overlay 的 1.4 相差约 1px, 灰字/橘红提示基线错位且折行位置不同; 统一后同时压缩空态高度
-          lineHeight: HINT_LINE_HEIGHT,
+          // 2026-11-13 商量 - 行高与 overlay 提示同源为全站行高标准 LineHeight.DENSE:
+          //   原 textarea 走 AntD 缺省 1.5714, 与 overlay 的 1.4 相差约 1px, 灰字/橘红提示基线错位且
+          //   折行位置不同; 统一后同时压缩空态高度
+          lineHeight: LineHeight.DENSE,
         }}
       />
       {showExecutingHint && (
@@ -162,7 +165,7 @@ const InputCore: React.FC<InputCoreProps> = ({
             left: CONTROL_PADDING.TEXT_INPUT_X,
             pointerEvents: 'none',
             userSelect: 'none',
-            lineHeight: HINT_LINE_HEIGHT,
+            lineHeight: LineHeight.DENSE,
           }}
         >
           {/* testid 保既有 e2e 定位(overlay 是动态提示的唯一挂载点) */}

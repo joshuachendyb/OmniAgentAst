@@ -22,6 +22,7 @@
 // 2026-11-13 商量 - 新增 middleExtra 插槽(左控件组与动作组之间的弹性中段, 右对齐): 承载低强调说明
 //   (输入微图例), 使说明与按钮共用同一行高度, 输入区不再为说明单开一行; 空间不足时插槽收缩,
 //   内容自行省略(由插槽内容负责 minWidth:0/ellipsis) — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: gap 改走全站间距语义档 Gap.INLINE(含 antd Space 的 size), 不再写裸 8 — 商量-2026-11-13
 
 /**
  * SubmitBar - 底部功能行：左侧控件(历史/指令/类型/模型/附件/插话/会话事务空间) + 右端动作按钮组
@@ -34,6 +35,7 @@
  */
 import React from 'react';
 import { Button, Space, Checkbox, Badge } from 'antd'; // 2026-10-07 小欧: 插话开关 Checkbox 合并为同行 import; 2026-10-10 小欧: 加 Badge 徽标
+import { Gap } from '@/theme/spacing';
 
 interface SubmitBarProps {
   modelPickerSlot?: React.ReactNode; // 既有 ModelPicker 实例（可选）
@@ -71,13 +73,13 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
     style={{
       display: 'flex',
       alignItems: 'center',
-      gap: 8,
+      gap: Gap.INLINE,
       // 2026-11-07 小欧 - 窄屏允许换行: 原单行 flex 无 wrap 导致按钮被挤成竖排 — 小欧-2026-11-07
       flexWrap: 'wrap',
-      rowGap: 8,
+      rowGap: Gap.INLINE,
     }}
   >
-    <Space size={8} wrap style={{ alignItems: 'center' }}>
+    <Space size={Gap.INLINE} wrap style={{ alignItems: 'center' }}>
       {leftExtra}
       {modelPickerSlot}
       {/* 2026-11-06 小欧 - 附件入口改插槽——本组件不再认识会话/上传，纯布局(SRP) */}
@@ -122,7 +124,7 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
           marginLeft: 'auto',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: Gap.INLINE,
         }}
       >
         {rightActions}

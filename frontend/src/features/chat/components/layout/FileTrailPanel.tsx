@@ -21,6 +21,8 @@
 
 //   2026-11-13 商量 - 折叠区标题行固定 24px(原 6px 上下留白撑到约 34px, 与 taskinfo/按钮行失衡):
 //     定高 + 说明文案单行省略, 窄栏不折行 — 商量-2026-11-13
+//   2026-11-13 商量 - 间距归一: 文件行之间的距离改由列表容器 gap 承担(删行 padding 叠加),
+//     标题行内元素间距改由父容器 gap 承担(删 span marginLeft) — 商量-2026-11-13
 
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
@@ -46,7 +48,8 @@ import { PathLink } from '@/components/PathLink';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 // 2026-11-13 商量 - 标题行高度取全站控件刻度唯一真源(小号档 24px), 不写字面量 — 商量-2026-11-13
-import { CONTROL_HEIGHT_SM } from '@/theme/controlScale';
+import { CONTROL_HEIGHT_SM, CONTROL_PADDING } from '@/theme/controlScale';
+import { Gap, LineHeight } from '@/theme/spacing';
 
 /**
  * ops 徽标配色/文案 —— ops 的取值域是后端工具**注册名**（FILE_OPERATION_TOOLS，16 个），
@@ -141,7 +144,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: Spacing.XS,
+          gap: Gap.ROW,
           width: '100%',
           // 2026-11-13 商量 - 标题行取全站小号控件刻度 CONTROL_HEIGHT_SM(24px), 与按钮行同高:
           //   原 6px 上下留白把行撑到约 34px, 与 taskinfo(≈27)/按钮行(24)失衡;
@@ -166,7 +169,6 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
           style={{
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
-            marginLeft: Spacing.XS,
             // 2026-11-13 商量 - 说明文案单行省略: 保证标题行恒为 24px, 窄栏也不折行撑高
             flex: '1 1 auto',
             minWidth: 0,
@@ -181,7 +183,6 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
           style={{
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
-            marginLeft: Spacing.XS,
           }}
         >
           {loading && files.length === 0 ? '' : files.length}
@@ -204,7 +205,11 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
+            // 容器内距 = 内容离容器边的留白; 文件行之间的距离由本容器 gap 唯一承担
             padding: `0 ${Spacing.LG}px ${Spacing.MD}px`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: Gap.ROW,
           }}
         >
           {loading && files.length === 0 ? (
@@ -230,8 +235,10 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                     /* 2026-10-23 小欧 - 路径折多行时 center 会让图标/徽标/时间/引用悬在行中间
                        错开首行 → flex-start 对齐首行（单行时两者等价） — 小欧-2026-10-23 */
                     alignItems: 'flex-start',
-                    gap: Spacing.SM,
-                    padding: `${Spacing.XS}px 0`,
+                    gap: Gap.INLINE,
+                    // 行内留白只做"内容离行容器边"; 行与行之间的距离由父容器 gap 承担, 不再叠加 padding
+                    padding: 0,
+                    minHeight: CONTROL_HEIGHT_SM,
                   }}
                 >
                   {/* 键盘目标①：文件路径 = 打开文件。2026-11-02 小欧 - 改复用唯一链接组件 PathLink：
@@ -286,13 +293,15 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: Gap.ROW,
                         border: 'none',
                         background: 'transparent',
                         cursor: 'pointer',
                         color: Colors.PRIMARY,
                         fontSize: chatTokens.fontSM,
-                        padding: '2px 4px',
+                        // 按钮内距(内容离按钮边), 非元素间距
+                        padding: `${CONTROL_PADDING.CHIP_Y}px ${CONTROL_PADDING.CHIP_X}px`,
+                        lineHeight: LineHeight.DENSE,
                         whiteSpace: 'nowrap',
                       }}
                     >

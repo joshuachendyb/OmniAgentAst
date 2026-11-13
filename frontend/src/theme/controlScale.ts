@@ -79,6 +79,9 @@ export const PAGE_RADIUS_FLAT = {
 export const CONTROL_PADDING = {
   TEXT_INPUT_X: Spacing.LG,
   TEXT_INPUT_Y_TIGHT: 2,
+  /** 徽标/小标签内距: 水平 4 / 垂直 1(贴合小号控件行盒, 不撑高行) */
+  CHIP_X: Spacing.XS,
+  CHIP_Y: 1,
 } as const;
 
 /**

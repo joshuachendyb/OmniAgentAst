@@ -7,6 +7,8 @@
 // 2026-11-13 商量 - 微图例并入 placeholder 尾段(@ 引用 · 拖入文件 · 粘贴图片, 见 InputCore 的
 //   PLACEHOLDER_HINTS): 空态自带说明且 minRows=2 已预留两行, 不额外占高; 本组件随之只留
 //   「输入技巧」浮层入口(单一职责), 常驻入口承担打字后/受阻态的持续可发现性 — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 分组/条目间距改由父容器 gap 承担(删 marginBottom 与条目 padding 叠加),
+//   行高改走全站标准 LineHeight.DENSE, 内距改走 controlScale 的 CONTROL_PADDING — 商量-2026-11-13
 import React, { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Popover } from 'antd';
@@ -16,8 +18,9 @@ import {
   FontFamily,
   FontSize,
   Radius,
-  Spacing,
 } from '@/utils/stepStyles';
+import { Gap, LineHeight } from '@/theme/spacing';
+import { CONTROL_PADDING } from '@/theme/controlScale';
 
 interface ShortcutItem {
   /** 键位/触发物徽标; 无固定键位的能力(如拖拽)填动作名 */
@@ -67,10 +70,10 @@ const PANEL_MAX_H = 360;
 const kbdStyle: CSSProperties = {
   flexShrink: 0,
   minWidth: 44,
-  padding: `0 ${Spacing.XS}px`,
+  padding: `0 ${CONTROL_PADDING.CHIP_X}px`,
   fontFamily: FontFamily.MONO,
   fontSize: FontSize.SMALL,
-  lineHeight: '16px',
+  lineHeight: LineHeight.DENSE,
   textAlign: 'center',
   color: Colors.TEXT.PRIMARY,
   background: Colors.BG.SECONDARY,
@@ -82,12 +85,28 @@ const ShortcutHelp: React.FC = () => {
   const [open, setOpen] = useState(false);
 
   const content = (
-    <div style={{ width: PANEL_W, maxHeight: PANEL_MAX_H, overflowY: 'auto' }}>
+    <div
+      style={{
+        width: PANEL_W,
+        maxHeight: PANEL_MAX_H,
+        overflowY: 'auto',
+        // 分组之间的距离由父容器 gap 唯一承担
+        display: 'flex',
+        flexDirection: 'column',
+        gap: Gap.SECTION,
+      }}
+    >
       {SHORTCUT_GROUPS.map((group) => (
-        <div key={group.title} style={{ marginBottom: Spacing.MD }}>
+        <div
+          key={group.title}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: Gap.ROW,
+          }}
+        >
           <div
             style={{
-              marginBottom: Spacing.XS,
               fontSize: FontSize.SMALL,
               color: Colors.TEXT.SECONDARY,
             }}
@@ -100,8 +119,7 @@ const ShortcutHelp: React.FC = () => {
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: Spacing.SM,
-                padding: `${Spacing.XS}px 0`,
+                gap: Gap.INLINE,
               }}
             >
               <span style={kbdStyle}>{item.key}</span>
@@ -110,7 +128,7 @@ const ShortcutHelp: React.FC = () => {
                   flex: 1,
                   minWidth: 0,
                   fontSize: FontSize.SECONDARY,
-                  lineHeight: '16px',
+                  lineHeight: LineHeight.DENSE,
                   color: Colors.TEXT.PRIMARY,
                 }}
               >
@@ -136,13 +154,15 @@ const ShortcutHelp: React.FC = () => {
         aria-label="查看输入技巧"
         style={{
           flexShrink: 0, // 中段收缩时入口不被压缩, 恒可点
-          margin: '-2px -4px', // 视觉贴右缘, 不撑高按钮行
-          padding: '2px 4px',
+          // 铁律三例外①: 负 margin 与自身内距等量抵消, 使入口文字视觉贴右缘, 不是元素间距
+          margin: `-${CONTROL_PADDING.CHIP_Y}px -${CONTROL_PADDING.CHIP_X}px`,
+          // 按钮内距(内容离按钮边), 非元素间距
+          padding: `${CONTROL_PADDING.CHIP_Y}px ${CONTROL_PADDING.CHIP_X}px`,
           border: 'none',
           background: 'transparent',
           cursor: 'pointer',
           fontSize: FontSize.SECONDARY,
-          lineHeight: '16px',
+          lineHeight: LineHeight.DENSE,
           color: Colors.PRIMARY,
         }}
       >

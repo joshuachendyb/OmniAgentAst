@@ -82,6 +82,8 @@
 // 2026-11-13 商量 - 底部纵向留白收口: 根 gap 8→6(输入区内部节奏, 按钮行归输入框工具条);
 //   删引用行 marginBottom 4(与父 gap 重复计), 删 sendBlocked 灰字行(与 InputCore executingHint 同为
 //   "不可发送"提示, 空态下两者叠加) — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 全站间距语义档(theme/spacing.ts 的 Gap)落地, gap 改用语义名;
+//   chip 内距/删除钮内距改走 controlScale 的 CONTROL_PADDING, 行高改走 LineHeight — 商量-2026-11-13
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -156,7 +158,9 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors, FontSize, Spacing, Radius } from '@/utils/stepStyles';
+import { Colors, FontSize, Radius, Spacing } from '@/utils/stepStyles';
+import { Gap, LineHeight } from '@/theme/spacing';
+import { CONTROL_PADDING } from '@/theme/controlScale';
 // 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
 import {
   chipCapState,
@@ -741,9 +745,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        // 2026-11-13 商量 - 纵向节奏收口 8→Spacing.SM(6): 输入区内部区块间用小间距档, 按钮行是输入框的
+        // 2026-11-13 商量 - 纵向节奏取 Gap.STACK: 输入区内部区块间用同层兄弟档, 按钮行是输入框的
         //   工具条, 不应与"上下区块"共用同一档; 引用行/提示行、输入框与按钮行的留白同步收紧
-        gap: Spacing.SM,
+        gap: Gap.STACK,
         // 2026-11-13 商量 - 拖拽高亮外框规格走全站焦点环令牌(FOCUS_RING), 圆角走 Radius.LG:
         //   原 2px/2/8 为裸字面量, 现由 controlScale 统一; antd 只作渲染, 不提供任何规格 — 商量-2026-11-13
         outline: dragOver
@@ -760,7 +764,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            gap: Spacing.SM,
+            gap: Gap.INLINE,
           }}
         >
           {/* 2026-10-21 小杨 - 给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
@@ -799,11 +803,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   color: Colors.TEXT.STRONG,
                   border: `1px solid ${tone.border}`,
                   borderRadius: chatTokens.radius,
-                  padding: '1px 4px 1px 6px',
+                  padding: `${CONTROL_PADDING.CHIP_Y}px ${CONTROL_PADDING.CHIP_X}px`,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 4,
+                  gap: Gap.ROW,
+                  // chip 文字行高取全站行高标准 LOOSE(14px×1.5714≈22px), 配合 chip 上下内距 1px 得 24px 行盒
+                  lineHeight: LineHeight.LOOSE,
                 }}
                 onClick={() => {
                   // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
@@ -838,9 +844,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                     border: 'none',
                     background: 'transparent',
                     cursor: 'pointer',
-                    padding: '0 4px',
+                    padding: `0 ${CONTROL_PADDING.CHIP_X}px`,
+                    // 删除按钮与 chip 文字同字号同行高(不再单写 16px), 靠颜色区分主次
                     fontSize: FontSize.PRIMARY,
-                    lineHeight: '16px',
+                    lineHeight: LineHeight.LOOSE,
                     color: Colors.TEXT.SECONDARY,
                   }}
                 >
@@ -893,7 +900,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               top: '100%',
               left: 0,
               right: 0,
-              marginTop: 4,
+              marginTop: Gap.ROW,
               zIndex: 20,
               border: `1px solid ${chatTokens.colorBorder}`,
               borderRadius: chatTokens.radius,
@@ -914,7 +921,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   void pickAtItem(h);
                 }}
                 style={{
-                  padding: '4px 8px',
+                  padding: `${Gap.ROW}px ${Spacing.MD}px`,
                   cursor: 'pointer',
                   background: i === atIndex ? Colors.BG.TERTIARY : undefined,
                 }}
