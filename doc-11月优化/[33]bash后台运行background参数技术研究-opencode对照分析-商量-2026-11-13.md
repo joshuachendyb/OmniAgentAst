@@ -1,7 +1,7 @@
 # bash 后台运行 background 参数设计（opencode 源码实证 + OmniAgent 落地方案）
 
 **编写人**: 商量
-**日期**: 2026-11-13（初稿→修订①：审查修正通知机制→修订②：opencode 执行链路源码实证，纠正"任务终态只能降级桌面通知"的想当然结论，改为自动续跑方案→修订③：补同会话串行语义与前端左右结构处理→修订④：全文一致性核查，修正文内矛盾与实施缺口并融入正文→修订⑤：续跑任务 user_input 语义澄清（系统通知文本非用户输入）→修订⑥：修正修订⑤ link 错判，续跑任务恒 linked 继承原任务链根（与开关无关）→修订⑦：新增 8.11 任务创建来源维度架构设计（前瞻兼容定时任务）→修订⑧：8.11 补通用性强化（creation_source 按关联语义分类不绑定 shell + 与 trigger 正交分离）→修订⑨：三堂会审全文一致性核查，修正 8.7 代码顺序（task_id 使用先于定义）与版本信息缺漏→修订⑩：用户质疑"usermessage 不加表字段吗"，修正为结构化标记——chat_user_message 加 msg_kind（消息级）+ chat_tasks 加 creation_source（任务级），两级正交，弃"零 DDL 靠前缀"方案，8.11 升为首版即实施）
+**日期**: 2026-11-13（初稿→修订①：审查修正通知机制→修订②：opencode 执行链路源码实证，纠正"任务终态只能降级桌面通知"的想当然结论，改为自动续跑方案→修订③：补同会话串行语义与前端左右结构处理→修订④：全文一致性核查，修正文内矛盾与实施缺口并融入正文→修订⑤：续跑任务 user_input 语义澄清（系统通知文本非用户输入）→修订⑥：修正修订⑤ link 错判，续跑任务恒 linked 继承原任务链根（与开关无关）→修订⑦：新增 8.11 任务创建来源维度架构设计（前瞻兼容定时任务）→修订⑧：8.11 补通用性强化（creation_source 按关联语义分类不绑定 shell + 与 trigger 正交分离）→修订⑨：三堂会审全文一致性核查，修正 8.7 代码顺序（task_id 使用先于定义）与版本信息缺漏→修订⑩：用户质疑"usermessage 不加表字段吗"，修正为结构化标记——chat_user_message 加 msg_kind（消息级）+ chat_tasks 加 creation_source（任务级），两级正交，弃"零 DDL 靠前缀"方案，8.11 升为首版即实施→修订⑪：三堂会审关联核查，修正 create_task_stream_buffer 漏 journal_sink（现役三参）、_create_and_launch_task 缺 user_input 形参、msg_kind 消费路径误判（真实历史读路径 fetch_session_user_message_pairs 为显式列 SELECT，前端判定统一走任务级 creation_source，msg_kind 仅语义/审计）、补 insert_task 写侧 diff 与 list_session_tasks 补列落位）
 **opencode 源码依据**（全部 2.2.5 实证）:
 - `packages/core/src/tool/plugin/shell.ts`（L151-183 notifyWhenDone / L248-251 background 分支）
 - `packages/core/src/session/session.ts`（L286-326 synthetic 定义）
@@ -266,8 +266,8 @@ async def _wait_and_notify(shell_id):
 | 层 | 处理 | 复用现役组件 |
 |----|------|------------|
 | **存储层** | 通知文本落库 user message，带 `msg_kind='system_notice'` 标记（chat_user_message 加 msg_kind 列，8.6②），**不冒充真实用户消息**；状态A/A'/B 三路径统一先落库再投递（inject_system_notice 内部落库拿真实 uid），对齐 opencode synthetic 双写 | storage.insert_user_message |
-| **LLM 层** | history_loader 读到 msg_kind='system_notice' 标记 → 照常转 user role 进上下文（对齐 opencode to-llm-message） | message_builder 既有 user 消息路径 |
-| **前端-历史** | 历史加载遇 msg_kind='system_notice' 标记 → **不渲染为用户气泡**，渲染为居中灰色系统通知条（"⚙ 后台命令已完成 · shell_xxx · 退出码0"） | 前端新增一个通知条渲染分支 |
+| **LLM 层** | `_load_previous_messages`（fetch_session_user_message_pairs，不含 msg_kind）本就把每条会话消息按 user role 进上下文（对齐 opencode to-llm-message）；系统通知文本无需特殊判定即作为 user 消息参与推理 | message_builder 既有 user 消息路径 |
+| **前端-历史** | 前端为左任务清单+右流水线（无 user 气泡），任务行渲染 `t.user_input`；任务卡片按**任务级 `creation_source==='system_resume'`** 渲染居中灰色通知条（"⚙ 后台命令已完成 · shell_xxx · 退出码0"），不冒充用户发言（`msg_kind` 为消息级语义标记，前端不据此渲染） | TaskListPanel 新增通知条分支（读 creation_source，见 8.10 改动2） |
 | **前端-实时** | 续跑任务作为**新任务出现在左栏任务清单**（与用户发起的任务同款展示，可加"自动续跑"小徽标区分）；右栏流水线正常渲染该任务执行 | TaskListPanel/RightViewer 零结构改动 |
 | **实时通知帧** | 任务内注入路径（情况2）复用现役 MetaStep notice 事件（kind="bg_shell_done"），在任务2 的流水线中显示一条通知行 | react_step notice/MetaStep 现役机制（同 trimming 通知） |
 
@@ -895,10 +895,11 @@ class BashResultInput(BaseModel):
 +      ② bind_message_to_task 执行期归属(与用户插话同款)
 +      ③ 投 (content, uid) 元组; _absorb_inbox 吸收时锚演进正常, 零改动
 +    落库失败(DB 异常)不投递, 返回 False 由调用方降级(结果文件仍在)。
-+    msg_kind 标记: chat_user_message 加 msg_kind 列(结构化, 见 8.6 ②), 系统通知传
-+    'system_notice' 区分真实用户消息('user'), 前端/LLM/历史统一按列判定, 不靠字符串匹配;
-+    content 以 [系统通知] 前缀承载仅作**人类可读展示文案**(非判定依据), 与 msg_kind 分工
-+    (对齐 8.11 ⑨ creation_source/trigger 正交同理: 判定走结构化字段, 展示走前缀)。"""
++    msg_kind 标记: chat_user_message 加 msg_kind 列(结构化语义/审计, 见 8.6 ②), 系统通知传
++    'system_notice' 区分真实用户消息('user'); 前端任务卡片判定统一走任务级 creation_source(8.11),
++    LLM 天然按 user role(fetch_session_user_message_pairs 不含 msg_kind), 故 msg_kind 当前读路径不消费;
++    content 的 [系统通知] 前缀仅作**人类可读展示文案**(实时广播按前缀判定, 因 inbox 元组仅 (content, uid))。
++    (对齐 8.11 ⑨ creation_source/trigger 正交: 判定走结构化字段, 展示走前缀)。"""
 +    from app.db import db
 +    from app.services.chat import storage
 +    async with running_tasks_lock:
@@ -977,7 +978,7 @@ class BashResultInput(BaseModel):
 #   老库 PRAGMA 查列后补; 存量行 DEFAULT 'user' 兜底(历史消息均视为真实用户消息)。
 ```
 
-> 读侧零改动：`load_user_messages_by_session` / `load_user_message_by_task` 均 `SELECT *`，新列自动带出；前端/LLM 按 `msg_kind` 判定（不靠 `[系统通知]` 前缀，前缀仅展示文案）。存量行 msg_kind='user' 兜底，历史消息行为不变（零退化）。
+> **读侧与消费方（关联核查修正）**：前端任务清单/历史判定统一走**任务级 `creation_source`**（`list_session_tasks` 返回；前端 `TaskListPanel` 渲染的是 `t.user_input` 任务行，无独立 user 气泡）。`msg_kind` 为**消息级结构化语义/审计标记**，当前前端/LLM 读路径**不消费**——真实历史读路径是 `fetch_session_user_message_pairs`（**显式列 SELECT，非 SELECT \***；被 `get_session_messages`（前端，message_service.py:107）与 `_load_previous_messages`（LLM，history_loader.py:242）共用），其 SELECT 不含 msg_kind；**若未来需消息级消费，须给该函数 SELECT 补 `cum.msg_kind` 并在返回 dict 带出**。`load_user_messages_by_session`/`load_user_message_by_task` 为 `SELECT *`，新列自动带出仅供管理/诊断。存量行 `msg_kind='user'` 兜底，历史行为不变（零退化）。
 
 **②' `chat_tasks` 加 `creation_source` 列（任务级来源，与消息级 `msg_kind` 正交）**：
 
@@ -992,7 +993,38 @@ class BashResultInput(BaseModel):
 #   存量行 DEFAULT 'user' 兜底(历史任务均视为用户发起)。
 ```
 
-> **两级正交**：消息级 `chat_user_message.msg_kind`（消息行渲染/LLM 判定）+ 任务级 `chat_tasks.creation_source`（任务卡片判定/link 语义）。续跑任务落库：`insert_task` 传 `creation_source='system_resume'`（任务级）+ 通知消息行 `insert_user_message` 传 `msg_kind='system_notice'`（消息级）。`list_session_tasks` 显式列（L1139 实证）需补 `creation_source` 列。
+
+**②'' 写侧 `insert_task` 增参+列（与 `insert_user_message` 加 `msg_kind` 对称，DRY 一致）**：
+
+```diff
+# storage.py insert_task(现役 L453-472)加参数+列:
+ def insert_task(
+     conn: Connection, *,
+     task_id: str, session_id: str, user_message_id: Optional[int], ai_message_id: Optional[int] = None,
+     user_input: str, context_link_mode: str, context_root_task_id: str,
+     task_model: ModelRef,
++    creation_source: str = "user",   # 2026-11-13 商量: 任务创建来源(user/system_resume, 8.11)
+ ) -> None:
+     ...
+     conn.execute(
+         """INSERT INTO chat_tasks
+-           (task_id, session_id, user_message_id, ai_message_id, user_input, context_link_mode,
+-            context_root_task_id, sessionModel, start_time, status, created_at, updated_at)
+-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
++           (task_id, session_id, user_message_id, ai_message_id, user_input, context_link_mode,
++            context_root_task_id, sessionModel, start_time, status, created_at, updated_at,
++            creation_source)
++           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         (task_id, session_id, user_message_id, ai_message_id, user_input,
+          context_link_mode, context_root_task_id,
+          task_model.model_dump_json(),
+-         now, ChatTaskStatus.EXECUTING.value, now, now),
++         now, ChatTaskStatus.EXECUTING.value, now, now, creation_source),
+     )
+```
+
+
+> **两级正交**：消息级 `chat_user_message.msg_kind`（结构化语义/审计，当前前端/LLM 读路径不消费）+ 任务级 `chat_tasks.creation_source`（任务卡片判定/link 语义，前端与续跑判定唯一依据）。续跑任务落库：`insert_task` 传 `creation_source='system_resume'`（任务级）+ 通知消息行 `insert_user_message` 传 `msg_kind='system_notice'`（消息级）。`list_session_tasks`（函数定义于 `storage.py:1124`，显式列 SELECT 在 L1141）需在 **SELECT 列表 + 返回 dict 补 `creation_source`**（前端 `t.creation_source` 依赖此列，否则任务卡片通知条/徽标判定取不到值）。
 
 **③ cleanup_task 连带杀挂钩**（cancel 路径）：
 
@@ -1030,7 +1062,7 @@ class BashResultInput(BaseModel):
 
 ```diff
 +async def _create_and_launch_task(*, agent, session_id: str, task_id: str,
-+                                   user_message_id: int, db_ops, state,
++                                   user_message_id: int, user_input: str, db_ops, state,
 +                                   _task_start_time, creation_source: str = "user") -> tuple:
 +    """建任务核心段: 落库任务行+分配ai_message+文件writer+起后台agent — 商量 2026-11-13
 +    从编排 generator 抽取(SRP): 用户路径(chat_stream)与系统续跑路径
@@ -1093,8 +1125,8 @@ class BashResultInput(BaseModel):
 +        #    由调用方(shell_background)改道注入该活跃任务(状态A'路径)
 +        if await has_active_task_in_session(session_id):
 +            return False
-+        # 2. 通知落库为 user message(真实 uid; 结构化标记 msg_kind='system_notice'(8.6②),
-+        #    前端历史按 msg_kind 判定, LLM 上下文以 user role 进入, 对齐 opencode to-llm-message)
++        # 2. 通知落库为 user message(真实 uid; 结构化语义标记 msg_kind='system_notice'(8.6②),
++        #    前端判定走任务级 creation_source, LLM 天然以 user role 进入, 对齐 opencode to-llm-message)
 +        from app.db import db
 +        from app.services.chat import storage
 +        from app.services.chat.creation_source import TaskCreationSource, resolve_link_context  # 8.11
@@ -1129,7 +1161,10 @@ class BashResultInput(BaseModel):
 +        #  _prev_root = await db.atxn("chat", lambda c: get_previous_task_chain(c, session_id))
 +        #  if _prev_root: _context_root_task_id = _prev_root; _history_root = _prev_root)
         # 5. 建 buffer(journal 持久化, 前端经任务列表/journal 重连发现)
-+        create_task_stream_buffer(task_id, session_id)   # journal_sink 挂接, 事件不丢
++        #    三参必传: 现役 stream_orchestrator.py:582 journal_sink=journal_append(L346 导入),
++        #    L807 create_task_stream_buffer(task_id, session_id, journal_sink); 漏传 journal_sink
++        #    则事件不落 journal, 续跑任务前端不可见 → 直接违背自动续跑目的
++        create_task_stream_buffer(task_id, session_id, journal_append)   # journal_sink 挂接, 事件不丢
 +        _reg = await register_task(task_id, session_id=session_id)
 +        if _reg:   # 返回 str=同会话被占位(并发窗口) → 落库消息已在, 返回 False 改注入
 +            return False
@@ -1137,7 +1172,7 @@ class BashResultInput(BaseModel):
 +        agent = build_agent_for_session(session_id, source_task_id=source_task_id,
 +                                        trigger="bg_shell_resume")
 +        await _create_and_launch_task(agent=agent, session_id=session_id, task_id=task_id,
-+                                      user_message_id=uid, db_ops=..., state=...,
++                                      user_message_id=uid, user_input=notice_text, db_ops=..., state=...,
 +                                      _task_start_time=time.time(),
 +                                      creation_source="system_resume")
 +        logger.info(f"[bg_resume] 续跑任务已发起(session={session_id}, task={task_id}, "
@@ -1150,7 +1185,7 @@ class BashResultInput(BaseModel):
 ```
 
 > 实施注意：
-> - **user_input 语义澄清（修订⑤）**：续跑任务的 `user_input`（chat_tasks 落库列，任务卡片显示源）= **系统通知文本**（`[系统通知] 后台命令已完成(shell_id=xx, 退出码0...)`），**不是用户输入**；对应消息行（chat_user_message）内容同为该通知文本。**两级结构化标记**：任务级 `creation_source='system_resume'`（chat_tasks，8.6②'）+ 消息级 `msg_kind='system_notice'`（chat_user_message，8.6②）。前端 8.10 改动2 任务卡片按 `creation_source==='system_resume'` 判定，消息行（RightViewer 历史）按 `msg_kind==='system_notice'` 判定，均渲染居中灰通知条，不冒充用户发言；`[系统通知]` 前缀仅作展示文案。LLM 上下文以 user role 进入（对齐 opencode to-llm-message synthetic→user）。
+> - **user_input 语义澄清（修订⑤）**：续跑任务的 `user_input`（chat_tasks 落库列，任务卡片显示源）= **系统通知文本**（`[系统通知] 后台命令已完成(shell_id=xx, 退出码0...)`），**不是用户输入**；对应消息行（chat_user_message）内容同为该通知文本。**两级结构化标记**：任务级 `creation_source='system_resume'`（chat_tasks，8.6②'）+ 消息级 `msg_kind='system_notice'`（chat_user_message，8.6②）。前端 8.10 改动2 任务卡片按 `creation_source==='system_resume'` 判定渲染居中灰通知条（前端为左任务清单+右流水线，无独立 user 气泡，消息级 `msg_kind` 不参与前端渲染，仅作语义/审计标记）；`[系统通知]` 前缀仅作展示文案。LLM 上下文天然以 user role 进入（对齐 opencode to-llm-message synthetic→user）。
 > - **link 属性（修订⑥，上文步骤4）**：续跑任务**恒 `linked`**，链根 = `get_previous_task_chain(session_id)`（=原任务的链根：原任务 linked 则延续同一条链，原任务 independent 则以原任务为新链根），**与会话 link 开关无关**——由任务关联的内在性质（原任务派生/触发）决定。若标 independent 会导致后续用户打开 link 开关发新消息时链根取到续跑自身、原任务被跳过、关联不上。用户手动消息的 link 判定（跟开关走，现役 L789-803）**保持不动**；两路逻辑本质不同，**不抽共用函数**（原修订⑤ `_resolve_link_context` 方案作废）。
 > - `build_agent_for_session` / `generate_task_id` / `create_task_stream_buffer` / `db_ops` / `state` 均为编排层现役符号，抽取时按实际签名适配；`trigger="bg_shell_resume"` 仅作**日志/诊断**（8.11⑨），任务卡片"自动续跑"徽标判定走**任务级 `creation_source='system_resume'`**（chat_tasks 列，8.11/8.6②'），非 trigger。
 > - SSE 消费：run_agent_in_background 的产出全部经 stream_buffer 落 journal；前端 TaskListPanel 轮询/刷新发现新任务后走**现役 journal 重连回放**（after_seq 机制），零新帧类型。
@@ -1171,7 +1206,8 @@ class BashResultInput(BaseModel):
      _merged = "\n".join(_contents)
 +    # 2026-11-13 商量: 系统通知吸收时播报 bg_shell_done notice(前端流水线通知行)
 +    #   实时播报按 content 前缀判定(inbox 元组仅 (content, uid), 无 msg_kind 列, KISS);
-+    #   历史/前端结构化判定走 msg_kind 列(8.6②), 二者分工: 实时触发展示 vs 历史语义。
++    #   历史/前端判定走任务级 creation_source(list_session_tasks), msg_kind 仅语义/审计不参与渲染;
++    #   二者分工: 实时播报按前缀(inbox 元组无 msg_kind, KISS) vs 任务卡片按 creation_source。
 +    if any(c.startswith("[系统通知]") for c in _contents):
 +        _notice_step = build_step_dict(None, "notice", "后台命令已完成，结果已并入本轮上下文")
 +        _notice_step["kind"] = "bg_shell_done"; _notice_step["phase"] = "done"
