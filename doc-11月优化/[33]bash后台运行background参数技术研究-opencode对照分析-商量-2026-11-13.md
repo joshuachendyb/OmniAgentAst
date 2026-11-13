@@ -1042,28 +1042,29 @@ class BashResultInput(BaseModel):
 +            uid = storage.insert_user_message(conn, session_id=session_id, content=notice_text)
 +            return uid
 +        uid = await db.atxn("chat", _persist, retry_locked=3)
-+        # 3. link 属性继承(设计修订⑤, 回答"续跑任务的 link 怎么处理"):
-        #    续跑任务 = 原任务的后继, 必须与用户手动发消息走**完全相同的 link 判定路径**:
-        #    a) 读会话 link 开关 get_session_link(session_id) —— 不自造规则, 跟开关走
-        #    b) 开关开 → get_previous_task_chain 取会话最近任务为链根,
-        #       context_link_mode="linked", context_root_task_id=链根
-        #       (续跑任务天然排在原任务之后, 链序号 N=count_chain_siblings+1 自动正确,
-        #        增量摘要锚点 get_chain_summary_anchor 照常命中, 链语义零破坏)
-        #    c) 开关关 → context_link_mode="independent", root=自身(默认值), 与
-        #       用户该会话下的任务组织方式一致
-        #    即: 续跑任务在 link 维度上是"一条普通新消息", 唯一区别是 user_input
-        #        内容为系统通知文本而非用户输入 —— link 判定代码与用户路径共用
-        #        同一函数(抽 _resolve_link_context(session_id, task_id) 供两路共用, DRY)
-        _link_on = await db.atxn("chat", lambda conn: get_session_link(conn, session_id))
-        _context_link_mode = "linked" if _link_on else "independent"
++        # 3. link 属性继承(设计修订⑥, 修正修订⑤错判, 回答"续跑任务的 link 怎么处理"):
+        #    续跑任务 = 原任务**派生/触发**的强制后继, 非用户发起, 二者有**内在必然关联**,
+        #    故 link 属性**由任务关联的内在性质决定, 与会话 link 开关无关**:
+        #    a) 恒 context_link_mode="linked" —— 不自造 independent, 不跟开关走
+        #    b) 链根 = get_previous_task_chain(session_id) = **原任务的链根**
+        #       (续跑创建时原任务刚 completed 且为会话最近一条, 该函数返回其链根:
+        #        原任务 linked → 返回链根 R(续跑延续同一条链, 序号 count_chain_siblings+1 自动正确);
+        #        原任务 independent → 返回原任务自身(续跑以原任务为新链根, 新链第二环))
+        #    c) 无前驱兜底 → root=自身
+        #    【为何不可跟开关走】若续跑标 independent(root=自身), 用户后续打开 link 开关发新消息时,
+        #    get_previous_task_chain 取最近一条任务(=续跑自身)的链根返回续跑自身 —— 原任务被跳过,
+        #    断链, 关联不起来(即"新任务点击为 link 就关联不上")。故续跑必须恒 linked。
+        #    【为何不抽共用函数】用户手动消息的 link 判定 = 跟开关走(现役 L789-803 不变);
+        #    续跑任务的 link 判定 = 恒 linked 继承原任务链根 —— 两路逻辑**本质不同**, 不可共用,
+        #    原修订⑤"抽 _resolve_link_context 两路共用"作废。
+        _context_link_mode = "linked"
         _context_root_task_id = task_id
         _history_root = None
-        if _link_on:
-            _prev_root = await db.atxn("chat",
-                lambda conn: get_previous_task_chain(conn, session_id))
-            if _prev_root:
-                _context_root_task_id = _prev_root
-                _history_root = _prev_root
+        _prev_root = await db.atxn("chat",
+            lambda conn: get_previous_task_chain(conn, session_id))
+        if _prev_root:
+            _context_root_task_id = _prev_root
+            _history_root = _prev_root
         # 4. 生成新 task_id + 建 buffer(journal 持久化, 前端经任务列表/journal 重连发现)
 +        task_id = generate_task_id()   # 现役 id 生成入口(与编排层同源)
 +        create_task_stream_buffer(task_id, session_id)   # journal_sink 挂接, 事件不丢
@@ -1087,7 +1088,7 @@ class BashResultInput(BaseModel):
 
 > 实施注意：
 > - **user_input 语义澄清（修订⑤）**：续跑任务的 `user_input`（chat_tasks 落库列，任务卡片显示源）= **系统通知文本**（`[系统通知] 后台命令已完成(shell_id=xx, 退出码0...)`），**不是用户输入**；对应消息行（chat_user_message）内容同为该通知文本。前端 8.10 改动2 按 `[系统通知]` 前缀渲染为居中灰通知条，不冒充用户发言；LLM 上下文以 user role 进入（对齐 opencode to-llm-message synthetic→user）。
-> - **link 属性（修订⑤，上文步骤3）**：续跑任务走与用户发消息**完全相同**的 link 判定路径（读会话 link 开关→linked 继承链根 / independent root=自身），不自造规则；链序号、增量摘要锚点、任务链展示全部自动正确。实施时将编排层 L789-803 的 link 判定段抽为 `_resolve_link_context(session_id, task_id)` 供用户路径与续跑路径共用（DRY）。
+> - **link 属性（修订⑥，上文步骤3）**：续跑任务**恒 `linked`**，链根 = `get_previous_task_chain(session_id)`（=原任务的链根：原任务 linked 则延续同一条链，原任务 independent 则以原任务为新链根），**与会话 link 开关无关**——由任务关联的内在性质（原任务派生/触发）决定。若标 independent 会导致后续用户打开 link 开关发新消息时链根取到续跑自身、原任务被跳过、关联不上。用户手动消息的 link 判定（跟开关走，现役 L789-803）**保持不动**；两路逻辑本质不同，**不抽共用函数**（原修订⑤ `_resolve_link_context` 方案作废）。
 > - `build_agent_for_session` / `generate_task_id` / `create_task_stream_buffer` / `db_ops` / `state` 均为编排层现役符号，抽取时按实际签名适配；`trigger="bg_shell_resume"` 供任务卡片显示"自动续跑"徽标（透传进 chat_tasks 或 stream_buffer meta，前端按此渲染）。
 > - SSE 消费：run_agent_in_background 的产出全部经 stream_buffer 落 journal；前端 TaskListPanel 轮询/刷新发现新任务后走**现役 journal 重连回放**（after_seq 机制），零新帧类型。
 > - 续跑任务的 user_input 传通知文本摘要（供任务列表卡片显示"后台命令已完成…"）。
