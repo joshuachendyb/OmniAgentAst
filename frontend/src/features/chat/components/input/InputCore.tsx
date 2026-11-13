@@ -36,8 +36,7 @@
 //   输入框恢复单行原生 placeholder; 仅保留 executingHint 的橘红 overlay(真正的动态情境提示) — 商量-2026-11-13
 // 2026-11-13 商量 - ① 能力提示并入 placeholder 尾段(PLACEHOLDER_HINTS: @ 引用 · 拖入文件 · 粘贴图片):
 //   空态自带说明, minRows=2 已预留两行 → 零额外高度, 打字即隐不干扰;
-//   ② 显式下发上下留白 4→2(TEXTAREA_PAD_Y, 取视觉下限非 1px: 圆角下首行贴边过紧),
-//   overlay top 同源改用该常量, 水平 11 与 HINT_LEFT_PX 一致 — 商量-2026-11-13
+//   ② 上下留白取视觉下限, 水平内距与 overlay 左缘同源 — 统一由 controlScale 的 CONTROL_PADDING 下发 — 商量-2026-11-13
 
 // 2026-11-13 商量 - textarea 显式行高 HINT_LINE_HEIGHT(1.4), 与 overlay 提示同源:
 //   原走 AntD 缺省 1.5714 致两者基线差约 1px、折行位置不一致; 统一后空态高度同步压缩 — 商量-2026-11-13
@@ -56,21 +55,18 @@
 import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
 import { Colors, Radius, BorderWidth, FontSize } from '@/utils/stepStyles';
+import { CONTROL_PADDING } from '@/theme/controlScale';
 import { INPUT_MIN_ROWS, INPUT_MAX_ROWS } from '@/constants/layout';
 
 const { TextArea } = Input;
 
-// 2026-10-28 小欧 - placeholder 提示 overlay 定位/行高(仅本组件使用, 局部常量):
-//   left=11 为框内文字左缘(AntD TextArea 水平 padding 缺省值), 现由本组件显式下发保证同源;
+// 2026-10-28 小欧 - placeholder 提示 overlay 定位/行高(仅本组件使用):
+//   水平内距与框内文字同源, 一律取全站控件内距标准 CONTROL_PADDING.TEXT_INPUT_X;
 //   lineHeight=1.4 为普通文本行高(非等宽, 不引 MonoLineHeight)。
-const HINT_LEFT_PX = 11;
+// 2026-11-13 商量 - 删本地 HINT_LEFT_PX(=11, 库缺省值): 水平内距改由 controlScale 的
+//   CONTROL_PADDING.TEXT_INPUT_X(12, 4px 网格标准档)统一下发, textarea 与 overlay 共用同一值;
+//   上下内距同理取 CONTROL_PADDING.TEXT_INPUT_Y_TIGHT, 本组件不再自持内距字面量 — 商量-2026-11-13
 const HINT_LINE_HEIGHT = 1.4;
-
-// 2026-11-13 商量 - 输入框上下留白收口到视觉下限: 4(库缺省)→2。
-//   2px 是下限而非 1px: 圆角 4px 下 1px 会让首行文字视觉贴上描边, 且与全站单行控件
-//   "行盒20+留白3" 的舒展度反差过大; 2px 配合 22px 行盒仍留出约半个字身的呼吸。
-//   本组件显式下发, 不依赖库缺省(与控件规格不一味沿用库默认值同源)。
-const TEXTAREA_PAD_Y = 2;
 
 // 输入框核心占位: 只保留提交语义(唯一必须一眼可见的信息)。
 //   其余输入方式(翻历史/@引用/附件/拖拽/图片)的完整说明归 ShortcutHelp 浮层(「输入技巧」入口)。
@@ -151,8 +147,8 @@ const InputCore: React.FC<InputCoreProps> = ({
           borderColor: Colors.BORDER.LIGHT,
           borderTop: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
           borderRadius: Radius.SM,
-          // 显式下发上下留白(4→2), 水平与 overlay 左缘同源为 11
-          padding: `${TEXTAREA_PAD_Y}px ${HINT_LEFT_PX}px`,
+          // 内距取全站控件内距标准(水平 4px 网格档, 上下视觉下限), 与 overlay 左缘/顶缘同源
+          padding: `${CONTROL_PADDING.TEXT_INPUT_Y_TIGHT}px ${CONTROL_PADDING.TEXT_INPUT_X}px`,
           // 2026-11-13 商量 - 行高与 overlay 提示同源为 HINT_LINE_HEIGHT: 原 textarea 走 AntD 缺省 1.5714,
           //   与 overlay 的 1.4 相差约 1px, 灰字/橘红提示基线错位且折行位置不同; 统一后同时压缩空态高度
           lineHeight: HINT_LINE_HEIGHT,
@@ -162,8 +158,8 @@ const InputCore: React.FC<InputCoreProps> = ({
         <div
           style={{
             position: 'absolute',
-            top: TEXTAREA_PAD_Y,
-            left: HINT_LEFT_PX,
+            top: CONTROL_PADDING.TEXT_INPUT_Y_TIGHT,
+            left: CONTROL_PADDING.TEXT_INPUT_X,
             pointerEvents: 'none',
             userSelect: 'none',
             lineHeight: HINT_LINE_HEIGHT,

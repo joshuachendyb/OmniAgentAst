@@ -1,6 +1,8 @@
 // 编辑历史: 2026-11-12 小欧 - 新建: 全站控件刻度**唯一真源**(控件高三档 + 圆角三档 + 页面级圆角预设)。
 //
 //   【铁律 —— 北京老陈 2026-10-10「不许拿 UI 库默认值当标准」的落地】
+//   ★ 严禁使用 antd 的默认规格属性(控件高/内距/行高/圆角/焦点环/密度)★
+//   任何"和 antd 缺省一致"都不是理由 —— antd 的默认值只是库作者的工程折中, 不是本项目的设计标准。
 //   控件规格一律取**本项目标准**, 严禁沿用任何 UI 库的缺省值, 更严禁依赖库的派生公式:
 //     antd v5 的 seed 缺省 = controlHeight 32 / borderRadius 6;
 //     它的派生公式 controlHeightSM = base × 0.75、controlHeightLG = base × 1.25
@@ -35,7 +37,7 @@
 //     属页面级决策, 须**显式补发 borderRadiusLG: 4**, 否则会继承全局 8 导致弹窗圆角 4→8。
 
 import type { AppearanceDensity } from '@/constants/appearancePrefs';
-import { Radius } from '@/utils/stepStyles';
+import { Radius, Spacing } from '@/utils/stepStyles';
 
 /**
  * 小号档控件高(px) —— **两档密度同值**, 原因见文件头推导:
@@ -66,6 +68,26 @@ export const PAGE_RADIUS_FLAT = {
   sm: Radius.SM,
   lg: Radius.SM,
 } as const;
+
+/**
+ * 控件内距(px) —— 本项目标准, **严禁沿用 UI 库缺省**(antd 的 4px 11px 属库折中, 非本项目设计值)。
+ *   TEXT_INPUT_X = 12: 文本输入类控件(Input/TextArea)的水平内距, 取 4px 网格标准档 Spacing.LG。
+ *     框内文字/占位层/表单控件左缘统一由本值决定, 不再出现 11px 这类库缺省残留。
+ *   TEXT_INPUT_Y_TIGHT = 2: 多行文本输入(空态)的上下内距, 取「字体行盒已含呼吸 + 圆角不压首行」的视觉下限;
+ *     该值刻意小于 4px 网格, 属本项目显式例外, 目的为压缩空态高度, 非照抄库缺省。
+ */
+export const CONTROL_PADDING = {
+  TEXT_INPUT_X: Spacing.LG,
+  TEXT_INPUT_Y_TIGHT: 2,
+} as const;
+
+/**
+ * 焦点环规格(px) —— 本项目标准, 与 antd 的 outline 缺省无关。
+ *   WIDTH 2: 环线粗细, 保证在浅底上清晰可辨。
+ *   OFFSET 2: 环线到控件边缘的间距, 使其落在圆角外侧、不压住 1px 边框。
+ */
+export const FOCUS_RING_WIDTH = 2;
+export const FOCUS_RING_OFFSET = 2;
 
 /** 该密度下的控件高三档 */
 export const controlHeightByDensity = (

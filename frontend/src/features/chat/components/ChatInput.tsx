@@ -147,6 +147,7 @@ import { formatBytes } from '@/utils/format';
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
 import { showMessage, ErrorType } from '../../../services/error/handler';
 import { chatTokens } from '@/theme/tokens';
+import { FOCUS_RING_WIDTH, FOCUS_RING_OFFSET } from '@/theme/controlScale';
 import {
   loadRecentInputs,
   addRecentInput,
@@ -155,7 +156,7 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing, Radius } from '@/utils/stepStyles';
 // 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
 import {
   chipCapState,
@@ -743,9 +744,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 2026-11-13 商量 - 纵向节奏收口 8→Spacing.SM(6): 输入区内部区块间用小间距档, 按钮行是输入框的
         //   工具条, 不应与"上下区块"共用同一档; 引用行/提示行、输入框与按钮行的留白同步收紧
         gap: Spacing.SM,
-        outline: dragOver ? `2px dashed ${Colors.PRIMARY}` : 'none',
-        outlineOffset: 2,
-        borderRadius: 8,
+        // 2026-11-13 商量 - 拖拽高亮外框规格走全站焦点环令牌(FOCUS_RING), 圆角走 Radius.LG:
+        //   原 2px/2/8 为裸字面量, 现由 controlScale 统一; antd 只作渲染, 不提供任何规格 — 商量-2026-11-13
+        outline: dragOver
+          ? `${FOCUS_RING_WIDTH}px dashed ${Colors.PRIMARY}`
+          : 'none',
+        outlineOffset: FOCUS_RING_OFFSET,
+        borderRadius: Radius.LG,
       }}
     >
       {/* 2026-10-21 小杨 - 引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}

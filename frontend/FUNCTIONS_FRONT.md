@@ -4,7 +4,7 @@
 **编写人**: 小欧
 **维护人**: 小欧
 **最后更新时间**: 2026-11-13
-**最近更新**: 2026-11-13 商量 §4.1 输入框帮助信息分层：撤销 `INPUT_HINTS` 常驻编号清单，输入框仅保留核心 placeholder（能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片` 并入 placeholder，空态零额外高度），其余输入方式由 `ShortcutHelp`（「输入技巧」浮层，按 输入/文件与引用/图片 分组 + 按钮行中段入口）承载，增删改输入方式只改 `SHORTCUT_GROUPS`；`InputCore` 显式下发上下留白 4→2（不沿用 UI 库缺省）；2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最近更新**: 2026-11-13 商量 控件规格收口：`controlScale.ts` 新增 `CONTROL_PADDING`（文本输入水平内距 12=4px 网格标准档、上下内距 2=视觉下限）与 `FOCUS_RING_WIDTH`/`FOCUS_RING_OFFSET`（2/2），清除 `InputCore` 的 11px（库缺省内距）与 `ChatInput` 的 `outlineOffset:2`/`borderRadius:8` 裸字面量；`tokens.ts` 的 radius/gap 改派生自 `Radius.DEFAULT`/`Spacing.MD`；`stepStyles.ts`/`tokens.ts`/`controlScale.ts` 顶部补「严禁使用 antd 默认规格属性」铁律横幅；2026-11-13 商量 §4.1 输入框帮助信息分层：撤销 `INPUT_HINTS` 常驻编号清单，输入框仅保留核心 placeholder（能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片` 并入 placeholder，空态零额外高度），其余输入方式由 `ShortcutHelp`（「输入技巧」浮层，按 输入/文件与引用/图片 分组 + 按钮行中段入口）承载，增删改输入方式只改 `SHORTCUT_GROUPS`；`InputCore` 显式下发上下留白 4→2（不沿用 UI 库缺省）；2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -82,6 +82,8 @@
 | `CONTROL_RADIUS` | 全局圆角三档（sm4/normal6/lg8，取自 stepStyles 的 Radius 阶梯） | — | 对象 |
 | `PAGE_RADIUS_FLAT` | 页面级圆角全档 4（设置页/文件页/事项工作区面板逐页审计结论） | — | 对象 |
 | `CONTROL_HEIGHT_SM` | 小档控件高 24（两档密度同值，贴「文字不被压」22px 底线；流水线零变化锚点） | — | number |
+| `CONTROL_PADDING` | 控件内距标准（`TEXT_INPUT_X` 12=4px 网格标准档、`TEXT_INPUT_Y_TIGHT` 2=视觉下限），禁沿用 UI 库的 4/11 缺省 | — | 对象 |
+| `FOCUS_RING_WIDTH` / `FOCUS_RING_OFFSET` | 焦点环线宽 2 / 环到控件边缘间距 2，本项目自定义、与库 outline 缺省无关 | — | number |
 | `controlHeightByDensity` | 取某密度下的控件高三档 | density | `{small, normal, large}` |
 | `controlScaleTokens` | 根 ConfigProvider 的控件规格 token 组（控件高 3 档 + 圆角 3 档，全部显式下发） | density | 对象 |
 | `pageControlTokens` | 页面级控件规格 token 组（normal 随密度、small 与 normal 齐平、圆角全档 4） | density | 对象 |
@@ -345,3 +347,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.4 | 2026-11-12 | §1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（补登上一轮遗漏）：Markdown 排版解算（`mdStyles` / `codeFenceLineHeight` / `isNumericCell` / `codeBlockStyle`，文档[30]）与外观偏好读取（`APPEARANCE_FONT_SIZES`/`APPEARANCE_DENSITIES` 密度词表唯一真源、`AppearanceDensity` 类型、`clampFontSize`/`clampDensity`、`useAppearancePrefs`）；`DENSITY_PAD` 登记为阅读区间距系数唯一真源 | 小欧 |
 | v1.5 | 2026-11-12 | §使用规则 新增「前端控件规格铁律（强制）」七条：控件规格唯一定义点（`theme/controlScale.ts`）、禁沿用 UI 库缺省值、禁依赖库的派生公式、密度只切档位、字号恒 14（禁 `componentSize` 承载密度）、流水线零变化、数字只在 TS 一处；与《开发人员戒律》第八章同源，本清单为前端唯一执行位置；依据文档[32] | 小欧 |
 | v1.6 | 2026-11-13 | §4.1 登记改为 `ShortcutHelp` / `SHORTCUT_GROUPS`（`components/input/ShortcutHelp.tsx`）：撤销 `INPUT_HINTS` 编号清单常驻输入框的做法，输入框仅保留核心 placeholder；其余输入方式按 输入/文件与引用/图片 三组归入「输入技巧」浮层（原名「全部技巧」）；能力提示尾段并入 placeholder（`@ 引用 · 拖入文件 · 粘贴图片`），入口置于按钮行中段；`InputCore` 显式下发上下留白 4→2；增删改输入方式只改 `SHORTCUT_GROUPS` | 商量 |
+| v1.7 | 2026-11-13 | §1.4 新增 `CONTROL_PADDING`（`TEXT_INPUT_X` 12 / `TEXT_INPUT_Y_TIGHT` 2）与 `FOCUS_RING_WIDTH`/`FOCUS_RING_OFFSET`（2/2）：文本输入水平内距脱离库缺省 11px 改为 4px 网格标准档，焦点环规格集中定义；`InputCore` 删本地 `HINT_LEFT_PX`/`TEXTAREA_PAD_Y`，`ChatInput` 的 `outlineOffset`/`borderRadius` 改走令牌；`tokens.ts` 的 radius/gap 派生自 `Radius.DEFAULT`/`Spacing.MD`；`stepStyles.ts`/`tokens.ts`/`controlScale.ts` 顶部补「严禁使用 antd 默认规格属性」铁律横幅 | 商量 |
