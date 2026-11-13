@@ -1,7 +1,7 @@
 # bash 后台运行 background 参数设计（opencode 源码实证 + OmniAgent 落地方案）
 
 **编写人**: 商量
-**日期**: 2026-11-13（初稿→修订①：审查修正通知机制→修订②：opencode 执行链路源码实证，纠正"任务终态只能降级桌面通知"的想当然结论，改为自动续跑方案→修订③：补同会话串行语义与前端左右结构处理→修订④：全文一致性核查，修正文内矛盾与实施缺口并融入正文→修订⑤：续跑任务 user_input 语义澄清（系统通知文本非用户输入）→修订⑥：修正修订⑤ link 错判，续跑任务恒 linked 继承原任务链根（与开关无关）→修订⑦：新增 8.11 任务创建来源维度架构设计（前瞻兼容定时任务）→修订⑧：8.11 补通用性强化（creation_source 按关联语义分类不绑定 shell + 与 trigger 正交分离）→修订⑨：三堂会审全文一致性核查，修正 8.7 代码顺序（task_id 使用先于定义）与版本信息缺漏→修订⑩：用户质疑"usermessage 不加表字段吗"，修正为结构化标记——chat_user_message 加 msg_kind（消息级）+ chat_tasks 加 creation_source（任务级），两级正交，弃"零 DDL 靠前缀"方案，8.11 升为首版即实施→修订⑪：三堂会审关联核查，修正 create_task_stream_buffer 漏 journal_sink（现役三参）、_create_and_launch_task 缺 user_input 形参、msg_kind 消费路径误判（真实历史读路径 fetch_session_user_message_pairs 为显式列 SELECT，前端判定统一走任务级 creation_source，msg_kind 仅语义/审计）、补 insert_task 写侧 diff 与 list_session_tasks 补列落位）
+**日期**: 2026-11-13（初稿→修订①：审查修正通知机制→修订②：opencode 执行链路源码实证，纠正"任务终态只能降级桌面通知"的想当然结论，改为自动续跑方案→修订③：补同会话串行语义与前端左右结构处理→修订④：全文一致性核查，修正文内矛盾与实施缺口并融入正文→修订⑤：续跑任务 user_input 语义澄清（系统通知文本非用户输入）→修订⑥：修正修订⑤ link 错判，续跑任务恒 linked 继承原任务链根（与开关无关）→修订⑦：新增 8.11 任务创建来源维度架构设计（前瞻兼容定时任务）→修订⑧：8.11 补通用性强化（creation_source 按关联语义分类不绑定 shell + 与 trigger 正交分离）→修订⑨：三堂会审全文一致性核查，修正 8.7 代码顺序（task_id 使用先于定义）与版本信息缺漏→修订⑩：用户质疑"usermessage 不加表字段吗"，修正为结构化标记——chat_user_message 加 msg_kind（消息级）+ chat_tasks 加 creation_source（任务级），两级正交，弃"零 DDL 靠前缀"方案，8.11 升为首版即实施→修订⑪：三堂会审关联核查，修正 create_task_stream_buffer 漏 journal_sink（现役三参）、_create_and_launch_task 缺 user_input 形参、msg_kind 消费路径误判（真实历史读路径 fetch_session_user_message_pairs 为显式列 SELECT，前端判定统一走任务级 creation_source，msg_kind 仅语义/审计）、补 insert_task 写侧 diff 与 list_session_tasks 补列落位→修订⑫：关联核查补充——①场景A/A'注入明确**无独立任务属性**（等同插话机制，不新建 `chat_tasks`、无 `creation_source`，仅消息落库并归属当前活跃任务）②续跑恒 linked **仅限该任务自身属性**，不回写会话 link 开关，**后续任务是否 link 仍由续聊开关决定**，仅当开关打开时链根经续跑任务继承原链）
 **opencode 源码依据**（全部 2.2.5 实证）:
 - `packages/core/src/tool/plugin/shell.ts`（L151-183 notifyWhenDone / L248-251 background 分支）
 - `packages/core/src/session/session.ts`（L286-326 synthetic 定义）
@@ -108,6 +108,9 @@ _notify_and_wake(shell_id):
 - **新增 `inject_system_notice(task_id, content)`**（task_registry.py，与 inject_message_to_task 并列）：同一 inbox 队列；**先 storage.insert_user_message 落库（带 msg_kind='system_notice' 标记，8.6②）拿真实 uid，再投 (content, uid) 元组**——对齐 opencode synthetic 双写（inbox+projector 持久化），重启不丢、前端历史可见；-1 仅作落库前瞬时占位，**落库后投真实 uid**，_absorb_inbox 吸收时锚演进正常零改动；**不放宽原函数 uid>0 防御**（那是防重落库红线，动了破插话功能）
 - paused 同样可投递，恢复后吸收
 - agent 正在跑长工具时通知等工具完成才吸收——与 opencode 门铃 drain 语义一致
+
+- **无独立任务属性（等同插话机制）**：状态A/A' 的注入**不新建 `chat_tasks` 行、不产生 `creation_source`**，仅经 `insert_user_message` 落一条 `chat_user_message`（`msg_kind='system_notice'`）+ `bind_message_to_task` 归属当前活跃任务——与用户实时插话（编排层 `inject_message_to_task` + `_bind_task_id` 归属）**同一机制、同一 inbox**，区别仅消息级 `msg_kind` 语义标记。通知成为当前任务的一轮 user 输入，由该任务 LLM 下一轮 `_absorb_inbox` 吸收，不另起任务。
+
 
 ### 3.3 状态B：任务已终态（= opencode wake-on-idle 路径）——**自动续跑，修正初稿**
 
@@ -1146,6 +1149,11 @@ class BashResultInput(BaseModel):
 +        #        原任务 linked → 返回链根 R(续跑延续同一条链, 序号 count_chain_siblings+1 自动正确);
 +        #        原任务 independent → 返回原任务自身(续跑以原任务为新链根, 新链第二环))
 +        #    c) 无前驱兜底 → root=自身
++        #    d) 续跑恒 linked **仅为该续跑任务自身**的上下文属性, 不回写会话 link 开关
++        #       (不调 set_session_link_conn); 故本会话**后续用户消息**的 link 仍按现役 L775-803
++        #       "跟开关走"判定, 与续跑任务无关。仅当后续消息因开关打开而 linked 时,
++        #       get_previous_task_chain 取最近任务(=续跑任务)链根=原链根, 链自然延续原任务链
++        #       (不跳过原任务); 开关关闭则后续 independent(root=自身), 与续跑链无关。
 +        #    【为何不可跟开关走】若续跑标 independent(root=自身), 用户后续打开 link 开关发新消息时,
 +        #    get_previous_task_chain 取最近一条任务(=续跑自身)的链根返回续跑自身 —— 原任务被跳过,
 +        #    断链, 关联不起来(即"新任务点击为 link 就关联不上")。故续跑必须恒 linked。
@@ -1186,7 +1194,7 @@ class BashResultInput(BaseModel):
 
 > 实施注意：
 > - **user_input 语义澄清（修订⑤）**：续跑任务的 `user_input`（chat_tasks 落库列，任务卡片显示源）= **系统通知文本**（`[系统通知] 后台命令已完成(shell_id=xx, 退出码0...)`），**不是用户输入**；对应消息行（chat_user_message）内容同为该通知文本。**两级结构化标记**：任务级 `creation_source='system_resume'`（chat_tasks，8.6②'）+ 消息级 `msg_kind='system_notice'`（chat_user_message，8.6②）。前端 8.10 改动2 任务卡片按 `creation_source==='system_resume'` 判定渲染居中灰通知条（前端为左任务清单+右流水线，无独立 user 气泡，消息级 `msg_kind` 不参与前端渲染，仅作语义/审计标记）；`[系统通知]` 前缀仅作展示文案。LLM 上下文天然以 user role 进入（对齐 opencode to-llm-message synthetic→user）。
-> - **link 属性（修订⑥，上文步骤4）**：续跑任务**恒 `linked`**，链根 = `get_previous_task_chain(session_id)`（=原任务的链根：原任务 linked 则延续同一条链，原任务 independent 则以原任务为新链根），**与会话 link 开关无关**——由任务关联的内在性质（原任务派生/触发）决定。若标 independent 会导致后续用户打开 link 开关发新消息时链根取到续跑自身、原任务被跳过、关联不上。用户手动消息的 link 判定（跟开关走，现役 L789-803）**保持不动**；两路逻辑本质不同，**不抽共用函数**（原修订⑤ `_resolve_link_context` 方案作废）。
+> - **link 属性（修订⑥，上文步骤4）**：续跑任务**恒 `linked`**，链根 = `get_previous_task_chain(session_id)`（=原任务的链根：原任务 linked 则延续同一条链，原任务 independent 则以原任务为新链根），**与会话 link 开关无关**——由任务关联的内在性质（原任务派生/触发）决定。若标 independent 会导致后续用户打开 link 开关发新消息时链根取到续跑自身、原任务被跳过、关联不上。用户手动消息的 link 判定（跟开关走，现役 L789-803）**保持不动**；两路逻辑本质不同，**不抽共用函数**（原修订⑤ `_resolve_link_context` 方案作废）。**续跑恒 linked 仅指该任务自身**，不回写会话开关；本会话**后续用户消息**仍跟开关走（步骤4 d），仅当开关打开时链根经续跑任务继承原链。
 > - `build_agent_for_session` / `generate_task_id` / `create_task_stream_buffer` / `db_ops` / `state` 均为编排层现役符号，抽取时按实际签名适配；`trigger="bg_shell_resume"` 仅作**日志/诊断**（8.11⑨），任务卡片"自动续跑"徽标判定走**任务级 `creation_source='system_resume'`**（chat_tasks 列，8.11/8.6②'），非 trigger。
 > - SSE 消费：run_agent_in_background 的产出全部经 stream_buffer 落 journal；前端 TaskListPanel 轮询/刷新发现新任务后走**现役 journal 重连回放**（after_seq 机制），零新帧类型。
 > - 续跑任务的 user_input 传通知文本摘要（供任务列表卡片显示"后台命令已完成…"）。
