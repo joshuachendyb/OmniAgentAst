@@ -17,6 +17,8 @@
 # 2026-07-28 - 小欧 - 修复: edit.new_string description 恢复"替换/插入的新文本"(上次精简丢弃了插入/删除语义)
 # 2026-07-29 - 小欧 - 锚点重叠约束加schema desc: EditInput/old_string/new_string加说明, before/after模式new_string不能包含old_string整行
 # 2026-08-05 - 小欧 - 修复: CompressInput.timeout 补 ge=5/le=1800 (description写5-1800但Field缺约束,clamp失效;配合compress internal timeout-2 deadline,ge=5使internal≥3s安全,防LLM传≤2导致deadline过去拿不到信息)
+# 2026-11-13 商量 - GrepInput.glob / FindInput.pattern 描述补花括号多扩展名支持(如 "*.{py,ts,tsx}"),
+#   与实现(app.utils.glob_pattern.expand_braces)对齐, 让 LLM 知道该能力可用
 """
 File Schema - 文件工具参数模型
 
@@ -233,7 +235,8 @@ class TreeInput(BaseModel):
 class FindInput(BaseModel):
     """支持offset参数跳过前N条结果;工具返回显示域按行×列收口,offset仅用于跳过"""
     pattern: str = Field(
-        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\""
+        description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\";"
+                    "支持花括号多扩展名,如 \"*.{py,ts,tsx}\""
     )
     path: str = Field(
         description="搜索的起始目录(绝对路径)。如 D:/项目代码"
@@ -268,7 +271,8 @@ class GrepInput(BaseModel):
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件名过滤(glob通配符),如 \"*.py\",仅对目录递归搜索生效"
+        description="文件名过滤(glob通配符),如 \"*.py\",仅对目录递归搜索生效;"
+                    "支持花括号多扩展名,如 \"*.{py,ts,tsx}\""
     )
     ignore_case: bool = Field(
         default=True,

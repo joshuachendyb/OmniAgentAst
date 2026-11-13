@@ -30,6 +30,9 @@
 # 2026-10-26 - 小欧 - grep matched 字段截断: 正则匹配原文超 GREP_OUTLIMIT_MATCHED_CHARS=500 尾部截断
 #    修复 observation 帧因 matched 含 5.3MB 单行 JSON(.pytest_cache/conv_hist) 导致 SSE 单帧超 8MB 前端判帧损坏断连
 #    同时 GREP_OUTLIMIT_MATCH_CONTENT_CHARS 2000→1000(content/before/after 同宽收窄, 与 display 行宽 OBS_GREP_MAX_ROW_CHARS=150 更协调)
+# 2026-11-13 商量 - glob 支持花括号多扩展名: fnmatch 不认 {a,b}(shell 展开特性), LLM 常写
+#   "*.{py,ts,tsx}" 表达多扩展名过滤, 原实现直接匹配必然 0 命中(表现为"明明有文件却搜不到"且无报错)。
+#   改走单源 expand_braces 展开后任一模式命中即算命中(保持 fnmatch 原有大小写语义不变)。
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -65,6 +68,7 @@ from app.tools.validate.file_type_checker import (
     _detect_binary_content,
     is_binary_file,
 )
+from app.utils.glob_pattern import expand_braces  # 2026-11-13 商量 - 花括号展开(单源)
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
     check_path_four_level,
@@ -162,6 +166,10 @@ def _grep_files_sync(
     total_files = 0
     skipped_binary_files = []  # 记录跳过的二进制文件
     _deadline_exceeded = False
+    # 2026-11-13 商量 - glob 花括号展开(单源 expand_braces): fnmatch 不认 {a,b}, LLM 常写
+    #   "*.{py,ts,tsx}" 表达多扩展名过滤, 直接匹配必然 0 命中(表现为"明明有文件却搜不到")。
+    #   展开一次, 遍历时任一模式命中即算命中(保持 fnmatch 原有大小写语义不变)。
+    glob_patterns = expand_braces(glob_filter) if glob_filter else None
 
     def _search_one_file(fpath: Path) -> None:
         nonlocal total_matches, total_files
@@ -232,7 +240,7 @@ def _grep_files_sync(
                     _deadline_exceeded = True
                     break
                 fpath = Path(root) / fname
-                if glob_filter and not fnm.fnmatch(fname, glob_filter):
+                if glob_patterns and not any(fnm.fnmatch(fname, p) for p in glob_patterns):
                     continue
                 _search_one_file(fpath)
 
@@ -262,7 +270,7 @@ async def grep(
     参数说明:
         pattern: 正则表达式搜索模式(Python re 语法); 搜含 . ( ) [ ] 等特殊字符的纯文本请自行转义(如 foo\\.bar)
         path: 搜索文件或目录（必填）
-        glob: 文件名过滤模式（如"*.py"，仅对目录递归搜索生效）
+        glob: 文件名过滤模式（如"*.py"，仅对目录递归搜索生效）；支持花括号多扩展名（如"*.{py,ts,tsx}"）
         ignore_case: 是否忽略大小写,默认True(等价于 pattern 前加 (?i))
         context: 返回匹配行前后各N行上下文,默认0(仅校验非负)
     """

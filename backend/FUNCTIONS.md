@@ -3,7 +3,7 @@
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
 **最后更新时间**: 2026-11-13
-**最近更新**: 2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最近更新**: 2026-11-13 商量 §1.22 新登记通配模式花括号展开（`app/utils/glob_pattern.py` 的 `expand_braces`）：fnmatch 不认 `{a,b}` → LLM 写 `"*.{py,ts,tsx}"` 必然 0 命中且无报错；grep 工具 `glob` 与 find 工具 `pattern` 由此共用同一单源；2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 **历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
@@ -240,6 +240,16 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `mark_runtime_started` | 标记启动期结束，此后每次 `Thread.start` 计入 `runtime_thread_starts`（验收须为 0） | — | None |
 | `snapshot` | 运行指标：popen_calls/thread_start_calls/runtime_thread_starts/gate_timeouts/forced_reclaims/wait_max_ms/popen_max_ms/holder/runtime_samples/threads | — | dict |
 | `SpawnGateBusy` | 等锁超上限异常（含持有者诊断信息），供工具层快速失败 | — | RuntimeError |
+
+### 1.22 通配模式花括号展开（glob_pattern.py）
+
+文件名通配模式的花括号展开**唯一真源**。`fnmatch` 只支持 `*` `?` `[seq]`，**不认 `{a,b}`**（那是 shell 展开特性）→ LLM 写 `"*.{py,ts,tsx}"` 表达多扩展名过滤时必然 0 命中，且工具层无任何报错，表现为"明明有文件却搜不到"，极难自纠。本模块只做展开、**不做匹配**（匹配仍由调用方的 fnmatch 完成，保留各调用点原有的大小写语义）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `expand_braces` | 展开花括号组：`"*.{py,ts}"` → `["*.py", "*.ts"]`；支持嵌套（`"{a,{b,c}}"` → `["a","b","c"]`）；无逗号的组（`"{a}"`）与未配对 `{` 按字面量处理不报错；展开数超 64 即截断（防 `{a,b}`×N 组组合爆炸） | pattern: str, max_patterns: int = 64 | list[str]（无可展开组时返回单元素列表） |
+
+**消费点**：`app/tools/file/grep_file_content.py`（grep 工具的 `glob` 参数）、`app/tools/file/search_files.py`（find 工具的 `pattern` 参数）——两者共用此单源，不重复实现。
 
 ---
 
@@ -824,6 +834,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.34 | 2026-11-13 | **§1.22 新登记通配模式花括号展开**(商量): 新建 `app/utils/glob_pattern.py` 的 `expand_braces`——fnmatch 不认 `{a,b}`(shell 展开特性), LLM 写 `"*.{py,ts,tsx}"` 过滤多扩展名必然 0 命中且工具层无报错(表现为"明明有文件却搜不到"); 本模块只做展开不做匹配(保留各调用点原有大小写语义), 支持嵌套/无逗号字面量/未配对花括号不报错/展开上限 64 防组合爆炸; 消费点两处共用同一单源: grep 工具 `glob` 参数(`grep_file_content.py`)、find 工具 `pattern` 参数(`search_files.py`); 同步 schema 描述(LLM 可见)与 grep 示例, 补登记于 FUNCTIONS.md §1.22 | 商量 |
 | v5.33 | 2026-11-13 | **§2.3 新登记后台命令执行**(商量): `run_shell_background`/`bat_sidecar_path`/`kill_background_by_task`/`kill_all_background`/`cleanup_orphan_artifacts`/`get_bg_info`/`bg_task_query` 入册; 实现要点记 5 条(专用等待池隔离 tool-sync 防无超时后台霸占工具线程池致全站饿死、终态语义统一 outcome 字段、输出超 `shell_bg_max_output_mb` 强杀防磁盘写满、产物先删后 pop 且失败重试有上限、Future 取消兜底杀进程还槽防孤儿与信号量泄漏); 同批三堂会审 10 轮增量: 启动中途异常补杀已启动进程、启动期清理上一世残留产物、启动失败不留空 .log、timed_out 改 outcome、补后台启停 info 日志、并发上限 notice 补"需重启生效"、输出上限默认 512MB(并发 5 条峰值 2.5GB, 原 2048MB 峰值 10GB 与防写满初衷相悖) | 商量 |
 | v5.32 | 2026-11-10 | **§4.2.1 禁用名单配置化**(小欧): `UNAVAILABLE_OFFICIAL_TOOLS` 五元组降为内置回落默认, 新增 `get_disabled_official_tools`/`is_disabled_tool` 读 config `tuning.agent.disabled_tools`(形状兼容 str/list——设置页 textarea 落盘为 YAML list; **键存在即配置为真值: 清空=不禁用任何工具不兜底(用户拍板), 仅缺键/形状异常回落内置**; get_config 热生效, 同 shell_readonly.get_readonly_prefixes 先例); 两消费点(handle_action 拒绝定性 / observation_builder 全组反馈动态点数)改经判定函数; settings_registry 登记 tuning.agent.disabled_tools(textarea, 默认展示内置五件套, notice 写明"只影响未注册工具措辞不拦已注册工具/清空=不禁用任何工具"), config.yaml.example 与 config/config.yaml 三同步, 前端零改动(tuning.agent.→「Agent 循环参数」节已有) | 小欧 |
 | v5.31 | 2026-11-10 | **[25]会审核实后修复4项**(小欧): ①base_service 摘除契约通用化——单键if改遍历 merged_params 循环摘除(`is None or is False` 判别, 规避 `0==False` 误摘数值0), 任一默认键显式 null/false 均可摘(reasoning_effort: null 原样出网缺口闭合, 契约声明自此与实现一致); ②attachment_service.read_inject_text 抽取失败兜底——try/except 降级错误说明文本(S3 改抛异常后预览路径漏改, 富文档/空工作簿异常直穿 HTTP 500), 纯读契约不变不回填抽取态, 与 resolver 失败折算同口径; ③extract.py ffprobe 补 CREATE_NO_WINDOW(无控制台部署闪黑窗, 先例 send_notification); ④glob→find 勘误——语义映射正确维持收编, 撤"参数逐字兼容"表述: path 官方面可选本系统必填, 只传 pattern 走 schema 校验反馈一轮补路径(FindInput 实测 Field required) | 小欧 |
