@@ -449,12 +449,13 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # 2026-10-05 小欧 - step 渲染显示选项(两个独立开关):
         #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"归组吞掉;
         #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节
-        #   思考排版=thought 段(text)是否按 Markdown 语法渲染; 推理内容=reasoning 段折叠初值, 两者互不干涉
-        #   顺序=推理内容 在前、思考排版 在后 — 小欧-2026-10-05
-        _item("appearance.step_render.reasoningVisible", "bool", "推理内容", True,
-              notice="推理内容折叠开关：开=每段思考进来就展开；关=新出现的推理段默认只显示标题行，点标题行的箭头可单独展开/收起"),
+        #   思考排版=thought 段(text)是否按 Markdown 语法渲染; 思考内容=reasoning 段折叠初值, 两者互不干涉
+        #   顺序=思考内容 在前、思考排版 在后 — 小欧-2026-10-05
+        # 2026-11-14 商量 - 标签「推理内容」→「思考内容」, 与流水线标题行文案统一(思考内容... 同名同义)
+        _item("appearance.step_render.reasoningVisible", "bool", "思考内容", True,
+              notice="思考内容折叠开关：开=每段思考进来就展开；关=新出现的思考段默认只显示标题行，点标题行的箭头可单独展开/收起"),
         _item("appearance.step_render.thoughtMarkdown", "bool", "思考排版", True,
-              notice="思考内容(thought)用 Markdown 语法渲染的开关：开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
+              notice="思考排版开关：thought 段用 Markdown 语法渲染；开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
         _item("appearance.step_render.contentRender", "bool", "Content渲染", True,
               notice="步骤内容(content)渲染开关：开=正常渲染步骤内容，关=隐藏步骤内容"),
         _item("appearance.step_render.diffRender", "bool", "Diff渲染", True,

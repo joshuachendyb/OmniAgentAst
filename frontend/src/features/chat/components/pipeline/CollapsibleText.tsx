@@ -15,6 +15,7 @@
 // 编辑历史: 2026-10-05 小欧 - 折叠 state 与事件处理交公用 hook useDisclosure(文档[9] §5.7), 与 ThinkingStream 去重; 5 处调用行为零回归 — 小欧-2026-10-05
 // 编辑历史: 2026-10-05 小欧 - 加可选 renderExpanded: 展开态渲染由调用方注入(左列 task 卡 response 传 MarkdownSlot);
 //   不传则展开仍显纯文本, 折叠态与其余 4 处调用零变化 — 小欧-2026-10-05
+// 编辑历史: 2026-11-14 商量 - 折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -28,7 +29,7 @@
 
 import React, { useMemo } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FoldArrow, FontSize, Spacing } from '@/utils/stepStyles';
 // 2026-10-05 小欧 - 折叠状态交公用 hook(文档[9] §5.7): 与 ThinkingStream 思考行共用,
 //   原 onClick/onKeyDown 逻辑重复两处, 违 DRY/健壮性; 本组件 5 处调用行为零变化 — 小欧-2026-10-05
 import { useDisclosure } from '@/features/chat/hooks/useDisclosure';
@@ -107,7 +108,7 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
           }}
         >
           <CircleArrow
-            size={14}
+            size={FoldArrow.SM}
             color={Colors.PRIMARY}
             expanded={expanded}
             animated={false}

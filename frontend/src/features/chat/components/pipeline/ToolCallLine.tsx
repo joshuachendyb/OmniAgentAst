@@ -67,6 +67,7 @@
 // 2026-10-23 小欧 - 参数树传 tool 名（ParamsTree 的 tool prop），目录类工具的 path 按目录渲染 — 小欧-2026-10-23
 // 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改挂首行右端文字数码(WaitTimerText, 齿轮位置动画不动);
 //   门控与齿轮同源(已出结果/被拦截/回放不挂) — 小欧-2026-11-03
+// 编辑历史: 2026-11-14 商量 - 工具子行折叠箭头尺寸走令牌 FoldArrow.MD(16→14 并禁裸数字) — 商量-2026-11-14
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -99,6 +100,7 @@ import {
 import {
   Colors,
   BorderWidth,
+  FoldArrow,
   FontSize,
   FontWeight,
   Spacing,
@@ -399,7 +401,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       )}
                       {/* 展开箭头 */}
                       <CircleArrow
-                        size={16}
+                        size={FoldArrow.MD}
                         color={Colors.TEXT.PRIMARY}
                         expanded={isOpen}
                         animated={false}

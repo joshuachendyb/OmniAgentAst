@@ -1,11 +1,12 @@
 // 编辑历史: 2026-09-13 小欧 - CircleArrow 简洁版：圆形+实心三角+折叠旋转 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: 默认色引 Colors 令牌(FOLD_COLLAPSED/FOLD_EXPANDED/BORDER.LIGHT)去硬编码;
 //   新增 animated prop(默认true)——内部折叠传 animated=false 保持静止, 主折叠保留旋转动画 — 小欧-2026-09-15
+// 编辑历史: 2026-11-14 商量 - 默认直径 28(魔法数且与任何档位都不符) 改走令牌 FoldArrow.MD(14), 尺寸唯一真源收口 stepStyles.FoldArrow — 商量-2026-11-14
 import React from 'react';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FoldArrow } from '@/utils/stepStyles';
 
 interface CircleArrowProps {
-  /** 圆形直径，默认28 */
+  /** 圆形直径，默认 FoldArrow.MD(14) — 折叠箭头尺寸唯一真源 stepStyles.FoldArrow, 禁裸数字 */
   size?: number;
   /** 三角颜色，默认Colors.FOLD_COLLAPSED(#4096ff) */
   color?: string;
@@ -22,7 +23,7 @@ interface CircleArrowProps {
 }
 
 const CircleArrow: React.FC<CircleArrowProps> = ({
-  size = 28,
+  size = FoldArrow.MD,
   color = Colors.FOLD_COLLAPSED,
   expandedColor = Colors.FOLD_EXPANDED,
   expanded = false,

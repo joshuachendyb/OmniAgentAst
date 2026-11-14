@@ -23,6 +23,11 @@
 // 编辑历史: 2026-10-05 小欧 - 第2轮会审: 统一"手动折叠vs设置默认值"三处相反注释为单一语义(设置是默认值, 变即新基线) — 小欧-2026-10-05
 // 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改落标题行右端文字数码(WaitTimerText, 不摆表盘);
 //   表盘只留顶栏 HeaderWaitClock, 图标位置动画不动 — 小欧-2026-11-03
+
+// 编辑历史: 2026-11-14 商量 - 标题行文案「推理内容...」→「思考内容...」(与设置项「思考内容」同名同义);
+//   方框图标(ReasoningIcon)视觉收一号(见 WaitingIcons 编辑历史), 盒子尺寸仍 16 不动;
+//   折叠箭头尺寸改走令牌 FoldArrow.MD(禁裸数字) — 商量-2026-11-14
+
 /**
  * ThinkingStream - 思考流（思考图标行 + 尾随光标）
  *
@@ -34,7 +39,7 @@
  */
 
 import React from 'react';
-import { Colors, FontSize, Spacing, getStreamStyle } from '@/utils/stepStyles';
+import { Colors, FoldArrow, FontSize, Spacing, getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize'; // 13.11 显示兜底 — 小欧 2026-08-30
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧: CURSOR T 翻转打点(抽公用 hook) — 小欧-2026-09-14
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-10-05 小欧: 折叠箭头(同 CollapsibleText) — 小欧-2026-10-05
@@ -144,9 +149,9 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
         }}
       >
         <ReasoningIcon animating={running} />
-        {'推理内容...'}
+        {'思考内容...'}
         <CircleArrow
-          size={14}
+          size={FoldArrow.MD}
           color={Colors.PRIMARY}
           expanded={expanded}
           animated={false}

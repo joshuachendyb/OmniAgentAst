@@ -27,17 +27,18 @@
 //   实时任务只拿到短条。改在 final 未带 token 时取本会话 usage 帧的任务累计(metaFrames.taskAccumulated,
 //   与 TaskInfoBar「任务 P/C/T」同源), 且仅当该条 final 就是该会话当前任务那条(同引用或同 timestamp+step)
 //   才取用; 历史任务的 final 来自 REST 另建对象, 永不命中, 绝不拿实时值冒充 — 小欧-2026-10-28
-
 // 2026-11-13 商量 - 时间范围数据源根治: 删 startTimestamp prop, 改用**任务自身**权威时刻——
 //   结束=终态步骤 timestamp(后端本地ISO, 与落库同源), 开始=结束−duration(与 update_task.duration 同源,
 //   实测与 chat_tasks.start_time 误差0.1s)。原实现用会话级 SSE start 帧时刻配任务级 duration, 两源不同:
 //   历史任务开始时间取的是别的任务/初始值0的时刻(整体错位), 会话级为0时更渲染1970年时间对
 //   (秒级任务看着"开始与结束几乎相同")。终态步骤 timestamp 或 duration 缺失时整项隐藏(不编造时间) — 商量-2026-11-13
 
+// 编辑历史: 2026-11-14 商量 - 概览主标题行折叠箭头尺寸走令牌 FoldArrow.LG(24→16 并禁裸数字) — 商量-2026-11-14
+
 import React from 'react';
 import { Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { Colors, FoldArrow, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { CircleArrow } from '@/components/CircleArrow';
 import { PillBadge } from '@/components/PillBadge';
 import { chatStreamStore } from '../../streams/chatStreamStore';
@@ -265,7 +266,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
           )}
         </div>
         <CircleArrow
-          size={24}
+          size={FoldArrow.LG}
           expanded={expanded}
           glow
           style={{ flexShrink: 0 }}

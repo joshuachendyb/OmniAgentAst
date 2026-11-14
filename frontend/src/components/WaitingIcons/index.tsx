@@ -13,6 +13,8 @@
 //   换图标只改 ReasoningIcon 别名取值, 调用方零改动 — 小欧-2026-10-07
 // 编辑历史: 2026-11-03 07:52:00 小欧 - 三图标去掉 waitClock 与内嵌钟面(钟面改挂步骤标题行右端/顶栏),
 //   图标本身位置与动画一字未动(北京老陈定案: 图标不动, 只把钟面拔出来) — 小欧-2026-11-03
+// 编辑历史: 2026-11-14 商量 - SpinSquareIcon(ReasoningIcon 别名)方框描边外缘 0..18 收到 1..17(视觉 14px, 盒子仍 Icon.BOX=16):
+//   方形轮廓在 16px 盒内读感比齿轮/水滴大一圈, 视觉收一号与齿轮同档; 盒子尺寸不动 → 行首图标左边缘与文字起始 x 仍同一条竖线 — 商量-2026-11-14
 import React from 'react';
 import { Colors, Icon } from '@/utils/stepStyles';
 
@@ -309,7 +311,10 @@ export const SpinSquareIcon: React.FC<{
     style={{ flexShrink: 0 }} // 2026-10-07 小欧 - 与 DropletIcon 一致防 flex 压扁 — 小欧-2026-10-07
     aria-hidden="true"
   >
-    <rect x="1" y="1" width="16" height="16" rx="2" />
+    {/* 2026-11-14 商量: 方框描边外缘由 0..18 收到 1..17(视觉 14px, 盒子仍 Icon.BOX=16) —
+        方形轮廓在 16px 盒内读感比齿轮/水滴大一圈, 视觉收一号与齿轮同档;
+        盒子尺寸不动 → 行首图标左边缘与文字起始 x 仍同一条竖线(2026-10-07 铁律不破) */}
+    <rect x="2" y="2" width="14" height="14" rx="2" />
   </svg>
 );
 /**

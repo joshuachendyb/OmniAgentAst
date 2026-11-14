@@ -19,6 +19,8 @@
 // 2026-10-23 小欧 - 透传 tool 名：目录类工具（isDirToolPath）的 path 按目录渲染 — 小欧-2026-10-23
 // 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink），本文件只透传
 //   rawPath/dirHint/projectRoot — 小欧-2026-11-02
+
+// 编辑历史: 2026-11-14 商量 - 参数树节点折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
@@ -30,6 +32,7 @@ import { useProjectRoot } from '@/hooks/useProjectRoot';
 import {
   BorderWidth,
   Colors,
+  FoldArrow,
   FontFamily,
   FontSize,
   Icon,
@@ -129,7 +132,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
       >
         {foldable && (
           <CircleArrow
-            size={14}
+            size={FoldArrow.SM}
             color={Colors.PRIMARY}
             expanded={open}
             animated={false}
@@ -286,7 +289,7 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries, tool }) => {
         }}
       >
         <CircleArrow
-          size={14}
+          size={FoldArrow.SM}
           color={Colors.PRIMARY}
           // 2026-10-13 小欧 - 补 expandedColor: 树根**恒展开且不可折叠**(无 onClick), 若用默认的
           //   FOLD_EXPANDED(#ff4d94 粉)会永远显示粉色 —— 而粉色在本系统是"可折叠且当前展开"的语义色,

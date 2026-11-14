@@ -70,6 +70,7 @@ import { CopyButton } from '@/components/markdown/CopyButton';
 import {
   BorderWidth,
   Colors,
+  FoldArrow,
   FontFamily,
   FontSize,
   Radius,
@@ -254,6 +255,7 @@ const CATEGORY_META: ReadonlyArray<{
  */
 // 2026-10-21 小杨 - PATH_KEYS / isPathLike 已抽到 ./paramCategories
 //   （ParamsPanel 与 ParamsTree 双入口共用同一判据，见该文件头注）—— 本文件不再持有副本。
+// 编辑历史: 2026-11-14 商量 - 参数分组行折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
 
 /**
  * 巨型值判定 = **值含换行**(如 content 的多行代码块)。
@@ -578,7 +580,7 @@ const ValueToggle: React.FC<{
       }}
     >
       <CircleArrow
-        size={14}
+        size={FoldArrow.SM}
         color={Colors.PRIMARY}
         expanded={open}
         animated={false}

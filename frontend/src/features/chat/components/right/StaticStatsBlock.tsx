@@ -36,7 +36,7 @@
 //   复用现有令牌: 12px→Spacing.LG(容器padding), 1px→BorderWidth.THIN(section/chip/错误条边框),
 //   2px→BorderWidth.THICK(sectionTitle色条), 4→Radius.SM(错误条圆角);
 //   无现成令牌提模块级局部常量(命名沿用 ParamsPanel NESTED_INDENT_PX 先例):
-//   LABEL_COL_W=72(基本信息标签列宽)/ARROW_SIZE=20(链折叠箭头直径)/CHIP_RADIUS=2(chip圆角,Radius.SM=4偏大)/
+//   LABEL_COL_W=72(基本信息标签列宽)/CHIP_RADIUS=2(chip圆角,Radius.SM=4偏大)/
 //   CHAIN_ROW_GAP=Spacing.XS/2(链行间距)/SEQ_COL_W=20(链序号列宽)/PARAM_MAX_W=320(参数省略最大宽)/
 //   ART_INDEX_W=16(产出物序号列宽)/ERR_PAD_Y=2(错误条纵向内边距,横向用Spacing.SM)。
 //   纯样式令牌化零逻辑改动, 视觉零变化 — 小欧-2026-10-28
@@ -45,6 +45,7 @@
 
 // 编辑历史: 2026-11-06 小欧 - 产物行「存为附件」(替换原别针 QuoteButton): 调 uploadAttachments 入队,
 //   按会话归属区分工作区内/外复制; 存包中行级 loading 防重 — 小欧-2026-11-06
+// 编辑历史: 2026-11-14 商量 - 工具调用链折叠箭头尺寸走令牌 FoldArrow.LG(20→16 并删本地 ARROW_SIZE, 禁裸数字) — 商量-2026-11-14
 
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
@@ -68,6 +69,7 @@ import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 M3c(fin
 import {
   BorderWidth,
   Colors,
+  FoldArrow,
   FontFamily,
   FontWeight,
   FontSize,
@@ -91,7 +93,6 @@ import { collectArtifact } from '@/features/refs/uploadAttachment';
 //   能复用现有令牌(Spacing/Radius/BorderWidth/FontSize)一律用令牌, 不重造(DRY/复用优先)。
 //   命名沿用项目先例(ParamsPanel NESTED_INDENT_PX / InputHistoryPanel PANEL_W 等局部常量) — 小欧-2026-10-28
 const LABEL_COL_W = 72; // 基本信息 grid 标签列宽(标签左值右)
-const ARROW_SIZE = 20; // 工具调用链折叠箭头直径(标题行 CircleArrow 24 属另一组件, 各自局部)
 const CHIP_RADIUS = 2; // 工具汇总 chip 圆角(Radius.SM=4 偏大, chip 用更小)
 const CHAIN_ROW_GAP = Spacing.XS / 2; // 工具调用链行间距(Spacing.XS 半档)
 const SEQ_COL_W = 20; // 工具调用链序号列宽
@@ -311,9 +312,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             >
               工具调用链{chain.length ? ` (${chain.length}步)` : ''}
             </span>
-            {/* 2026-09-15 小欧: ▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消双三角符号 — 小欧-2026-09-15 */}
+            {/* 2026-09-15 小欧: ▲▼→CircleArrow(PRIMARY#595959/静止animated=false), 复用组件消双三角符号; 尺寸走 FoldArrow.LG — 小欧-2026-09-15 */}
             <CircleArrow
-              size={ARROW_SIZE}
+              size={FoldArrow.LG}
               color={Colors.TEXT.PRIMARY}
               expandedColor={Colors.TEXT.PRIMARY}
               expanded={chainOpen}
