@@ -10,21 +10,21 @@
 # 2026-07-22 - 小欧 - 修复: trim_history 日志路径未覆盖 _rebuild_and_validate 返回 None 的情况，将日志移入 if 分支 + else warning
 # 2026-07-22 - 小欧 - 补充 assistant 消息四种存储形态类注释(源自对话梳理: action轮只存tool_calls, answer/reasoning-only/异常才存content)
 # 2026-07-23 - 小欧 - react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
-# 2026-08-08 - 小欧 - v1.6双阈值扩展: ①pop_temp_messages判断条件由_temp_reasoning改为通用_temp_*前缀(兼容_temp_same_tool_warn, 绝后新增标记漏清理); ②prepare_messages_for_llm剥离_temp_*内部标记防泄漏LLM
-# 2026-08-09 - 小欧 - v1.7发送即清(北京老陈 2026-08-09 指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
+# 2026-08-08 - 小欧 - 双阈值扩展: ①pop_temp_messages判断条件由_temp_reasoning改为通用_temp_*前缀(兼容_temp_same_tool_warn, 绝后新增标记漏清理); ②prepare_messages_for_llm剥离_temp_*内部标记防泄漏LLM
+# 2026-08-09 - 小欧 - 发送即清(北京老陈指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
 #   立即剔除本轮已发送的_temp_*临时消息(纠偏/推理仅活"本轮发送这一次"), 防死循环长历史中残留/重复携带/污染压缩与持久化;
 #   与终态pop_temp_messages安全网双保险(reasoning-only/纠偏正常脱落)。ast语法✓
 # 2026-08-17 - 小健 - S5(compaction 落地 943a77917): ①add_tool_result 新增 summary 形参, 工具层 llm_data.summary
-#   透传 stash `_summary` 供 compaction.use_tool_summary 复用(DRY, 14.9.6 C2 前置, 与 observation_formatter 拼接解耦);
+#   透传 stash `_summary` 供 compaction.use_tool_summary 复用(DRY, 与 observation_formatter 拼接解耦);
 #   ②prepare_messages_for_llm 新增 _COMPACTION_TEMP_KEYS=("_summary","_pruned","_compressed","_raw","_truncated"),
-#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 14.9.3②/14.9.6 C2 剥离要求)。
+#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐剥离要求)。
 # 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
 # 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
 # 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
 # 2026-08-20 - 小欧 - C2修复(真实缺陷复核确认): trim_history 新增瞬时裁剪token指标 `_trimmed_tokens_this_round`(每轮重置0, 实际裁剪时= rough_current-裁剪后估算, 与 `_trimmed_this_round` 同周期), 供 react_cycle on_trim 透传落 task_metrics.trim_tokens; 原 on_trim 只拿到 bool、token 数恒0 且 finalize 丢弃 → 裁剪遥测死链路。
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): __init__ 加 _msg_id_counter 自增计数 +
 #   prepare_messages_for_llm 开头单点惰性补 _msg_id(不进 LLM wire, 由 react_cycle 写盘后 pop)——文件B 稳定去重依赖;
-#   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
+#   单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
 #   各 add_*/inject_history/trim_history 零改动(最小侵入)
 # 2026-08-29 - 小沈 - 修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
 # 2026-09-20 - 小欧 - B组修复(锚演进): add_user_message 增可选 user_message_id 参数(未传自动合成负id, 内部维护
@@ -36,13 +36,13 @@
 # 2026-09-23 - 小欧 - wiring假保存修复: _cap_temp_history 改读 tuning.content.temp_history_char_limit 兜底常量（此前设置页可改实际不生效）
 # 2026-09-28 - 小欧 - 锚属性名修复: 新增只读 property current_user_msg_id(读私有 _current_user_msg_id)。
 #   根因: agent_runner 用 getattr(mb, 'current_user_msg_id', None) 读锚恒 None(私有/公开名不匹配), 9-20 锚回填与
-#   D-1 两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
+#   两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
 # 2026-10-04 小欧 - _estimate_tokens 取整方式: 系数改浮点(1.8)后 `chars // c` 返回 float, 改 int(chars / c) 保 int 契约
-# 2026-10-05 - 小欧 - wire 推理字段去冲突(北京老陈裁定): prepare_messages_for_llm 剥离段追加 内部字段 reasoning
+# 2026-10-05 - 小欧 - wire 推理字段去冲突(北京老陈定案): prepare_messages_for_llm 剥离段追加 内部字段 reasoning
 #   → API 标准 reasoning_content(单次改名, 同 fc_message_types.message_to_dict 规则)后删除, 空的 reasoning_content 不上线。
 #   根因: reasoning-only 轮(handle_answer.py:182 / react_step.py:532 两处裸 dict)把两个字段写进同一消息,
 #   sensenova 拒绝 reasoning 与 reasoning_content 并存 → HTTP 400 "inference request is invalid", 且被 error_classifier
-#   误分类 CLIENT(重试无用) → B3 空转后必然 400。实测: 单字段任一 200 / 双字段 400 / 修后形状 200。
+#   误分类 CLIENT(重试无用) → 空转后必然 400。实测: 单字段任一 200 / 双字段 400 / 修后形状 200。
 #   收口在唯一出站边界, 覆盖全部生产者(含未来新增), 不改写入点。compliance: SRP/DRY/KISS-DIRECT/禁backward
 # 2026-10-13 小欧 - init_history 增 refs 形参, 输入框引用正文拼入 user 消息**前置**区块。
 #   入库/历史保持干净(user_input 在 orchestrator:433 已定格为用户原文, 不含 refs),
@@ -73,23 +73,23 @@
 # 2026-10-25 23:09 小欧 - trim_history 触发基准改预算口径(北京老陈定): 绝对值触发基准由 MAX_CONTEXT_TOKENS 改 budget_base(=MAX_CONTEXT_TOKENS-_compaction_buffer-_tools_token_reserve, 与裁剪预算同源单口径), TRIM_TRIGGER_RATIO 默认 0.75→0.9, 预算单点计算供触发与 find_tail_start 共用删重复 _budget — 小欧-2026-10-25
 # 2026-10-25 23:55 小欧 - trim_history 三项加固(北京老陈令): ①over-trim bug 修复 tail_start 改队列拆分(实测 max 每次丢 15~19 万 tok 预算允许上下文, keep_recent_rounds 是"留至少 N 轮"非"只留 N 轮"); ②接 C2 truncate_oversized_message 裁前截断 >4000 字符超长单条(防单条 tool 结果超出预算致整轮丢弃); ③接 C3 CompactionCooldown 重复触发抑制(修复后 rebuilt≈budget_base>触发阈值致每轮无可裁, cooldown 抑制 N 轮内重复进入, rough>budget_base 强制裁剪防 400) — 小欧-2026-10-25
 # 2026-10-25 小欧 - 信号计算与裁剪逻辑分离: ①_trim_signal() 抽为独立函数返回 bool, 结果存 _trim_signal_result; ②信号计算移至调用方(react_step: 先 _trim_signal 判信号, 触发后调 trim_history); ③trim_history 仅读信号结果做裁剪不再算信号; ④术语统一(水位→阈值调节系数/倒挂→重复触发抑制/空转→无可裁/溢窗→窗口溢出/拦→抑制/强裁→强制裁剪; budget_base=裁剪预算, TRIM_TRIGGER_RATIO=阈值调节系数, 乘积=触发阈值) — 小欧-2026-10-25
-# 2026-10-26 小欧 - 三堂会审修复(北京老陈令): ①删 backward 兼容(信号计算回退) trim_history 只读信号不算信号(禁止backward); ②user 边界对齐移入 fallback 分支(原在两分支后是死代码); ③protected 删重复计算; ④count_system_prefix 消除 prefix 三处重复(DRY); ⑤"头部保护区"→"头部"(术语修正); ⑥_trim_signal docstring 删错误初始值版(矛盾信息) — 小欧-2026-10-26
+# 2026-10-26 小欧 - 复核修复(北京老陈令): ①删 backward 兼容(信号计算回退) trim_history 只读信号不算信号(禁止backward); ②user 边界对齐移入 fallback 分支(原在两分支后是死代码); ③protected 删重复计算; ④count_system_prefix 消除 prefix 三处重复(DRY); ⑤"头部保护区"→"头部"(术语修正); ⑥_trim_signal docstring 删错误初始值版(矛盾信息) — 小欧-2026-10-26
 # 2026-10-26 小欧 - 队列预算公式改(北京老陈令): budget_for_queue = budget_base × trigger_ratio² - 保护区token(原 budget_base - 保护区token), 队列只能用触发阈值再乘系数后的剩余预算; 保护区/预算链注释同步更新 — 小欧-2026-10-26
-# 2026-10-29 小欧 - trim_history 队列幸存者语义替换收口(北京老陈令"接上吧"): 保留旧轮 tool 消息 _summary 换一行真摘要, 同日三堂会审终态修订: ①新换条数对比 swap 前旗数只计本轮(上一轮旧旗不再谎报"换摘要N条"); ②无裁剪且零新换保留原历史直接返回(不重建/不动裁剪旗/不复位冷却, 杜绝幻影重建); ③未裁剪分支不跑 remove_dangling_tool_calls("保留原历史"下禁止静默动刀, 实测孤儿 assistant 被无声删除); swap 门槛 USE_SUMMARY_MIN_CHARS=300 归 compaction_constants — 小欧-2026-10-29
+# 2026-10-29 小欧 - trim_history 队列幸存者语义替换收口(北京老陈令"接上吧"): 保留旧轮 tool 消息 _summary 换一行真摘要, 同日复核终态修订: ①新换条数对比 swap 前旗数只计本轮(上一轮旧旗不再谎报"换摘要N条"); ②无裁剪且零新换保留原历史直接返回(不重建/不动裁剪旗/不复位冷却, 杜绝幻影重建); ③未裁剪分支不跑 remove_dangling_tool_calls("保留原历史"下禁止静默动刀, 实测孤儿 assistant 被无声删除); swap 门槛 USE_SUMMARY_MIN_CHARS=300 归 compaction_constants — 小欧-2026-10-29
 # 2026-10-29 小欧 - 保护区轮数改唯一解析(北京老陈令断案"系统路径整体最佳"): _keep_recent_rounds 由原地夹取算式改调 split_turn.resolve_protect_rounds(), 与 start_step 注入件尾部轮数同源单一真源(tuning.trim.keep_recent_rounds, clamp 5~20, 默认5=5零行为变化); KEEP_RECENT_ROUNDS 本域导入摘除(解析下沉 split_turn, 死导入清除) — 小欧-2026-10-29
 # 2026-10-29 小欧 - 魔法数字清账(北京老陈令): get_last_tool_summary 纠偏预览截长 200→TOOL_SUMMARY_PREVIEW_CHARS, _trim_signal 过短历史下限 5→TRIM_MIN_MESSAGES, trim 兜底上限 _max_rounds*2+5→*TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN(常量归 compaction_constants), 各值原内联字面量直迁零行为变化 — 小欧-2026-10-29
 # 2026-10-29 小欧 - trim_history 队列剩余段接 C2 use_tool_summary(北京老陈令"接上吧"): 裁剪后仍保留的旧轮里, tool 消息有 _summary 且 content 更长者整条换一行语义摘要(原文存_raw); 逐条浅拷贝隔离(mutate 原地字典, 防污染 conversation_history 与保护区引用); 保护区(最近N轮)零接触保保真; 与保头截断同批共存(先截后换兼容: _truncated 不阻塞 swap, _compressed 才跳过); 跨任务重载历史无 _summary 属已知边界不重灌 — 小欧-2026-10-29
-# 2026-10-30 小欧 - 三堂会审撤销接线(北京老陈令, 实测取证后裁定): 队列幸存者语义替换(use_tool_summary)从 trim_history 摘除。
+# 2026-10-30 小欧 - 复核撤销接线(北京老陈令, 实测取证后定案): 队列幸存者语义替换(use_tool_summary)从 trim_history 摘除。
 #   取证: 全库工具 llm_data.summary 均为一行状态/计数(read_text_file.py:142 "读文件X，成功：40行，2048字节"、
 #   search_files.py:105 命中数、read_docx.py:74 段数字符数), 不含正文; 实测 1898 字符观察(含 40 行文件正文)
 #   被换成 48 字符状态行, 正文本轮内不可见且留"读过了"误导痕迹。保留 c2 的另三处修复: 无裁剪即保留原历史
 #   (不重建/不动裁剪旗/不复位冷却)、未裁剪不跑 remove_dangling_tool_calls、裁剪分支照旧。_summary stash
 #   继续保留(get_last_tool_summary 死循环纠偏消费), 不再用于改写 tool content — 小欧-2026-10-30
-# 2026-10-30 小欧 - 三堂会审收尾(北京老陈令): ①get_last_tool_summary 改 content 优先 —— 工具 _summary 只是
+# 2026-10-30 小欧 - 复核收尾(北京老陈令): ①get_last_tool_summary 改 content 优先 —— 工具 _summary 只是
 #   一行状态/计数, 优先它会让死循环纠偏提示失去"上次到底返回了什么"的判据, 改回改造前实际生效行为(content
 #   为空才回退 _summary); ②新增 keep_full_raw 单点(DRY): prune 两处与 split_turn 一处的"原文存 _raw"
 #   同构写入收口, 统一"只保留最长者"守卫(split_turn 二次截断原会把全文 _raw 吃成截断头, 违反其 docstring) — 小欧-2026-10-30
-# 2026-10-30 小欧 - 三堂会审二轮(北京老陈令"坐实问题再修"): trim_history 队列预算不足分支修复 —— 原 else 在
+# 2026-10-30 小欧 - 复核二轮(北京老陈令"坐实问题再修"): trim_history 队列预算不足分支修复 —— 原 else 在
 #   "未溢窗但 阈值×系数² 预算不够"时直接 tail_start=keep_from 走"丢光队列", 与"预算不足保留原历史"原则
 #   相反(实测 12 个旧轮一次清空/51 条→只留保护区); 拆为 溢窗分支(行为不变, 注释订正) + 退回硬剩余预算判定 — 小欧-2026-10-30
 # 2026-10-30 小欧 - 新增 ensure_file_ref_rules(): 插话带引用时 system 消息早已建好, 需幂等补注
@@ -104,7 +104,7 @@
 #   trim_budget_base ②队列预算 trim_base×ratio² 改调 trim_queue_budget(trim_history 内联算式删除)
 #   ③删 _tools_token_reserve 属性 —— trim_budget_base 已单点读 tuning.trim.tools_token_reserve,
 #   该属性生产侧零读取(仅测试读)。预算链数值不变 — 小欧-2026-10-31
-# 2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①keep_full_raw 增可选 key 形参(缺省 "_raw"), 参数原文可存
+# 2026-10-31 小欧 - 复核整改(北京老陈令): ①keep_full_raw 增可选 key 形参(缺省 "_raw"), 参数原文可存
 #   _args_raw 而不与 content 原文抢同一字段(同条消息既截 content 又截参数时, 后写者会把前者覆盖掉);
 #   ②_COMPACTION_TEMP_KEYS 补 _args_raw, 请求前随其余内部标记一并剥离, 防泄漏进 wire — 小欧-2026-10-31
 # 2026-10-31 小欧 - 注入装配单一化: 新增 build_user_turn_text(纯装配, 引用块+目录块+用户原话)
@@ -116,7 +116,7 @@
 #   expand_vision_parts(全量 user 消息, 调用方落盘/日志取原文后再展开, history 恒 str) — 小欧-2026-11-08
 # 2026-11-08 小欧 - 展开按实测双放行(内联/外链各一判定), llm_model 去默认值防漏传静默关外链 — 小欧-2026-11-08
 
-# 2026-11-10 小欧 - §7.3 门控收口: expand_vision_parts 的内联放行由 accepts_inline_image 单条件改为
+# 2026-11-10 小欧 - 门控收口: expand_vision_parts 的内联放行由 accepts_inline_image 单条件改为
 #   supports_image_input and accepts_inline_image 双条件, 防切到声明无视觉且未实测的模型后历史图片占位
 #   仍按"未测照发"内联导致整轮 400; 回归 test_vision_expand_gated_by_supports — 小欧-2026-11-10
 # 2026-11-11 小欧 附件能力域: build_user_turn_text/init_history 收口 plans 单参数(native 写占位,
@@ -160,7 +160,7 @@ from app.constants import (
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
-# 2026-11-15 小欧: 目录块标签/引用块标签与条目标识收归 app.wire_prefix(ENV_WS_*/ENV_REFS_*/ITEM_REF), 消除 4.4.3 纪律1 残留 — 小欧-2026-11-15
+# 2026-11-15 小欧: 目录块标签/引用块标签与条目标识收归 app.wire_prefix(ENV_WS_*/ENV_REFS_*/ITEM_REF), 消除纪律残留 — 小欧-2026-11-15
 from app.services.agent.agent_utils import (
     CHARS_PER_TOKEN,
     trim_budget_base,
@@ -207,7 +207,7 @@ from app.services.refs.render import (
 #   ④ 正文原样透传，**不截断不降级**(引用多少发多少)。
 #   2026-10-30 小欧: 渲染实现已迁 services/refs/render.py(首发/插话共用), 本模块只调用。
 
-# 2026-10-13 小欧 - 北京老陈裁定：文件引用格式约定**条件注入系统提示**，禁止常驻。
+# 2026-10-13 小欧 - 北京老陈定案：文件引用格式约定**条件注入系统提示**，禁止常驻。
 #   实测常驻成本 88 token，占整份系统提示 70.3%（125 token 中占 70）。改为：
 #   仅当本轮 refs 非空（即用户在文件页点过「发送到输入框」）时，随本轮 sys_prompt 追加，
 #   平时零成本。放在 system 角色而非 user 消息里 —— 它是行为准则，不是用户的话。
@@ -620,7 +620,7 @@ class MessageBuilder:
         self._cap_temp_history()
         # 惰性补 _msg_id(单点): conversation_history 内尚未打标的消息在此统一分配自增 id;
         # dict 引用全程稳定(trim/inject/rebuild 不复制), 补一次永久携带; 新增消息每轮被此处兜住
-        # — 单点化(北京老陈 裁定:A/B 独立化最小侵入) — 小欧 2026-08-23
+        # — 单点化(北京老陈定案: A/B 独立化最小侵入) — 小欧 2026-08-23
         for _m in self.conversation_history:
             if "_msg_id" not in _m:
                 _m["_msg_id"] = self._msg_id_counter
@@ -631,7 +631,7 @@ class MessageBuilder:
         # 剥离内部标记防止泄漏到 LLM 请求(_temp_reasoning/_temp_same_tool_warn) — 小欧 2026-07-19 / 2026-08-08 通用前缀
         # 2026-08-17 - 小健 - S5(compaction): 一并剥离 compaction 内部标记(_summary/_pruned/_compressed/_raw/_truncated),
         #   因 _pruned/_summary 现为短下划线而非 _temp_ 前缀(compaction 模块落地备用后这些标记留 bool/短名前缀),
-        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
+        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐剥离要求)。纯剥离不存在的字段零影响。
         # 2026-09-20 - 小欧 - B组(锚演进): 一并剥离 user_message_id(锚), conversation_history 源保留锚供 assistant 回复配对落库,
         #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
         # 2026-10-31 小欧: 补 _args_raw —— tool_calls.arguments 原文(与 content 的 _raw 分字段存), 同属内部标记
@@ -813,7 +813,7 @@ class MessageBuilder:
                 if j > prefix and hist[j].get("role") == "user":
                     tail_start = j
             else:
-                # 2026-10-30 小欧 修复(三堂会审发现, 实测 12 个旧轮被一次清空): 未溢窗、只是"阈值×系数²"
+                # 2026-10-30 小欧 修复(复核发现, 实测 12 个旧轮被一次清空): 未溢窗、只是"阈值×系数²"
                 #   这个偏保守的队列预算不够 → 原 else 直接按"丢光队列"处理, 与本文档第 6 条"预算不足时
                 #   保留原历史直接返回"相反, 属过度裁剪。改为退回硬剩余预算(budget_base - 保护区)再判:
                 #   留得下就留, 仍留不下才 tail_start=prefix(早退保留原历史) — 小欧-2026-10-30
@@ -826,7 +826,7 @@ class MessageBuilder:
             #   保护区   = hist[keep_from:]              倒数N轮(保留)
             #   裁剪区   = hist[prefix:tail_start]      旧消息(丢弃)
             #   rebuilt = 头部 + 队列剩余 + 保护区
-            # 2026-10-30 小欧 三堂会审撤销接线(北京老陈令): 队列幸存者语义替换(use_tool_summary)已摘除——
+            # 2026-10-30 小欧 复核撤销接线(北京老陈令): 队列幸存者语义替换(use_tool_summary)已摘除——
             #   实测工具 _summary 只是一行状态/计数, 替换会把长观察正文换成"读文件成功", 信息灭失;
             #   trim 回归"只裁剪、不改写保留消息"的原语义 — 小欧-2026-10-30
             if tail_start <= prefix:
