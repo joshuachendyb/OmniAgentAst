@@ -24,6 +24,10 @@
 //   「本会话」→「本会话附件」(附件台账行)、「最近用过」→「他会话附件」(限近30天·其它对话发送过)、
 //   「任务产物」→「本会话产物」(真源换 chat_tasks.artifacts 任务产出物, 不再取 attachments 恒空栏);
 //   产物行加入本轮 = 根内引用源文件 / 根外存为附件; 右栏补口径副标题, 每栏回答一个唯一问题 — 小欧-2026-11-13
+
+// 编辑历史: 2026-11-14 小欧 - 类型文案收敛(doc38 P3/P4): 删 typeLabel 本地 mime/后缀第3份分类,
+//   次行与产物行改查后端 kind_options 中文短名(单一真源, 补音频分支); 产物行 caps 未加载先落「文件」不闪 unknown — 小欧-2026-11-14
+
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -195,20 +199,17 @@ function sortEntries(nodes: FileNode[]): FileNode[] {
   });
 }
 
-/** 次行「类型」标签：优先扩展名，其次 mime 大类 */
-function typeLabel(mime: string, name: string): string {
-  const ext = (name.split('.').pop() || '').toUpperCase();
-  if (mime === 'application/pdf') return 'PDF';
-  if (mime.startsWith('image/')) return ext || '图片';
-  if (mime.startsWith('video/')) return ext || '视频';
-  if (mime.startsWith('text/') || mime.includes('json')) return ext || '文本';
-  return ext || '文件';
+/** 次行「类型」标签: rec.kind 查后端 kind_options 中文短名(单一真源, 前端零本地分类);
+ *   未知 kind 回落「文件」。原 typeLabel 本地 mime/后缀判断已删(与徽标/图标三份分叉, doc38 P3)。 */
+function kindLabel(kind: string | undefined, caps: AttachmentCapabilities | null): string {
+  const hit = caps?.kind_options?.find((o) => o.value === kind);
+  return hit?.label || '文件';
 }
 
 /** 列表行次行：类型 · 大小 · 来源 · 相对时间 · 抽取态(text/richdoc 真抽取回显) */
-function metaOf(rec: AttachmentRecord, from: string): string {
+function metaOf(rec: AttachmentRecord, from: string, caps: AttachmentCapabilities | null): string {
   const parts = [
-    typeLabel(rec.mime, rec.original_name),
+    kindLabel(rec.kind, caps),
     formatBytes(rec.size),
     from,
     formatRelativeTime(rec.last_used_at ?? rec.created_at),
@@ -1000,7 +1001,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         return {
           key: rec.id,
           name: rec.original_name,
-          meta: metaOf(rec, SCOPE_FROM[scope]),
+          meta: metaOf(rec, SCOPE_FROM[scope], caps),
           mime: rec.mime,
           kind: rec.kind,
           // 2026-11-14 小欧 - 行内引用质量徽标(ref_quality_map 只读索引, 查不到不显示) — 小欧-2026-11-14
@@ -1041,8 +1042,11 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       .filter((a) => match(a.name))
       .map((a) => {
         const inRoot = !!a.rel_path;
-        // 类型按文件名后缀推导(artifacts.type 无点且可能缺省), 与后端 suffix_kind 词典对齐
+        // 类型按后端 suffix_kind→kind_options 单链查中文短名(与附件行同源, doc38 P4);
+        //   caps 未加载时该段先落「文件」, 不再闪 unknown
         const ext = `.${(a.name.split('.').pop() || '').toLowerCase()}`;
+        const aKind = caps?.suffix_kind?.[ext];
+        const aKindLabel = kindLabel(aKind, caps);
         const added = inRoot
           ? refs.some((r) => r.path === a.rel_path && r.kind !== 'attachment')
           : false;
@@ -1050,12 +1054,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           key: `${a.task_id}:${a.path}`,
           name: a.name,
           meta: [
-            ext.slice(1).toUpperCase() || '文件',
+            aKindLabel,
             a.tool_name || 'AI 产出',
             formatRelativeTime(a.task_created_at),
             inRoot ? '可引用' : '在项目根外',
           ].join(' · '),
-          kind: caps?.suffix_kind?.[ext] ?? 'unknown',
+          kind: aKind ?? 'unknown',
           added,
           invalid: !a.exists,
           starDisabled: true,
