@@ -11,6 +11,7 @@
 #   反推, DTO 不再设); ChatRequest.refs 增 max_length=MAX_REFS(条数上限, 与 limits 单一真源双保险) — 小欧-2026-10-29
 # 2026-11-06 小欧 - ChatRef 附件字段(重建): kind 描述补 attachment, 增 attachment_id(附件记录 ID,
 #   kind=attachment 时必填, 注入按 id 查表) 与 mime(MIME 展示/能力探测) — 小欧-2026-11-06
+# 2026-11-14 小欧 - 第7章7.1: kind 描述串删 log/message(死来源), 收敛 file/selection/attachment/url — 小欧-2026-11-14
 
 """
 models — 从 chat_router.py 拷出
@@ -41,7 +42,7 @@ class ChatRef(BaseModel):
     （chat_user_message.content 保持干净），由 resolver 在编排层读盘后拼入。
     2026-10-29 小欧 - 读取权收归后端: content 字段删除(wire 不承载正文, 见 2.3-8)。
     """
-    kind: str = Field(default="file", description="来源类型: file/selection/log/message/attachment")
+    kind: str = Field(default="file", description="来源类型: file/selection/attachment/url")
     label: str = Field(default="", description="展示名（文件名 / 选区说明）")
     path: Optional[str] = Field(default=None, description="相对项目根的路径")
     size: Optional[int] = Field(default=None, description="字节数（仅展示）")

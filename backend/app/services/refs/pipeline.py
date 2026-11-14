@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-30 小欧 新建: 引用"解析→体积裁决→回执汇集"唯一流水线, 首发与插话共用 — 小欧-2026-10-30
+#
+# 2026-11-14 小欧 第7章7.4 阶段B: prepare_refs 增 llm_model 透传 resolver(本地媒体物化判定) — 小欧-2026-11-14
 
 """services.refs.pipeline — 引用处理流水线(首发/插话唯一实现)
 
@@ -27,6 +29,7 @@ async def prepare_refs(
     limits: RefLimits,
     scope: str,
     session_id: Optional[str] = None,
+    llm_model: Any = None,
     sanitized_dropped: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """解析 + 体积裁决, 返回 (放行条目, 回执条目)。
@@ -34,9 +37,10 @@ async def prepare_refs(
     回执条目顺序固定: resolver 丢弃 → resolver 提示(截断/区间裁剪) → budget 裁决 →
     入口过滤丢弃(sanitize)。条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决。
     session_id: 会话归属透传给 resolver(附件注入校验, B-03; None 时附件 fail-closed 折算 missing)。
+    llm_model: 目标模型身份快照, 透传 resolver 供本地 image/audio 原生物化判定(缺省无原生能力)。
     """
     resolved, r_dropped, r_notices = await resolve_refs(
-        refs, limits=limits, session_id=session_id)
+        refs, limits=limits, session_id=session_id, llm_model=llm_model)
     final, b_notices = budget_refs(resolved, limits=limits, scope=scope)
     notices = list(r_dropped) + list(r_notices) + list(b_notices) + list(sanitized_dropped or ())
     return final, notices

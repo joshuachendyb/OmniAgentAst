@@ -125,6 +125,10 @@
 #
 # 2026-11-14 小欧 bug挖掘修复: build_user_turn_text 的 slot 分支补占位构造空串回落 —— make 返回
 #   空串(如附件 id 形态非法不写占位)时该条目回落文本块, 消"判 slot 却无处写"的静默丢条目 — 小欧-2026-11-14
+# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): build_interject_text 增 plans 形参并透传 4 处
+#   build_user_turn_text 调用, 消插话恒降级文本的断点(编排层已计算 _iplans) — 小欧-2026-11-14
+# 2026-11-14 小欧 第7章7.4 阶段B: 写槽改用 slot_writer(file/selection 复用附件槽); expand_attachment_parts
+#   增 session_id 透传(附件记录会话收权) — 小欧-2026-11-14
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -167,7 +171,7 @@ from app.services.agent.agent_utils import (
 #   删除 source_kind 字面量分派; 无槽来源(native 判定已在前置排除)恒走文本块不丢正文 — 小欧-2026-11-14
 from app.services.agent.attachment_wire import expand_attachment_slots
 from app.attachments import contract
-from app.ref_slots import SLOT_WRITERS
+from app.ref_slots import slot_writer
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER,
     COOLDOWN_ROUNDS,
@@ -237,7 +241,8 @@ def build_user_turn_text(user_input: str, refs: Optional[list] = None,
         plan = plans[i] if plans and i < len(plans) else None
         delivery = contract.QUALITY_TO_DELIVERY[plan.quality] if plan is not None else "text"
         if delivery == "slot":
-            wire = SLOT_WRITERS[plan.source_kind].make(r)
+            writer = slot_writer(plan.source_kind)
+            wire = writer.make(r) if writer else ""
             if wire:
                 wire_lines.append(wire)
             else:
@@ -429,7 +434,8 @@ class MessageBuilder:
         self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text, plans))
 
     def build_interject_text(self, user_input: str, refs: Optional[list] = None,
-                             ws_text: str = "") -> Tuple[str, str]:
+                             ws_text: str = "",
+                             plans: Optional[list] = None) -> Tuple[str, str]:
         """插话侧装配: 与首发同源, 按历史决定目录块是否重复注入 — 小欧-2026-10-31
 
         多块并存语义(块不落库, 只在本进程历史里):
@@ -441,19 +447,22 @@ class MessageBuilder:
         2026-10-31 小欧 - ws_text 由编排层渲染后传入(与日志/回执同一份),
           本层只做历史判重与作废; 返回 (正文, 动作) —— 动作由编排层写进唯一一行汇总日志
           (inject 注入 / skip_dup 未变不重复 / invalidate 变了并作废旧块)。
+
+        2026-11-14 小欧 - plans 由编排层计划器算出后传入(与首发同源), 4 处装配均透传,
+          与首发走同一 quality→delivery 分流; plans 缺省为 None 时全部按文本块(既有行为)。
         """
         if not ws_text:
-            return build_user_turn_text(user_input, refs), "skip_none"
+            return build_user_turn_text(user_input, refs, plans=plans), "skip_none"
         current = ws_text.rstrip("\n")
         existing = [m.group(0) for msg in self.conversation_history
                     if msg.get("role") == "user" and isinstance(msg.get("content"), str)
                     for m in _WS_BLOCK_RE.finditer(msg["content"])]
         if current in existing:
-            return build_user_turn_text(user_input, refs), "skip_dup"
+            return build_user_turn_text(user_input, refs, plans=plans), "skip_dup"
         if existing:
             self._invalidate_ws_blocks(len(existing))
-            return build_user_turn_text(user_input, refs, ws_text), "invalidate"
-        return build_user_turn_text(user_input, refs, ws_text), "inject"
+            return build_user_turn_text(user_input, refs, ws_text, plans=plans), "invalidate"
+        return build_user_turn_text(user_input, refs, ws_text, plans=plans), "inject"
 
     def _invalidate_ws_blocks(self, count: int) -> None:
         """把历史中的旧目录块正文就地替换为作废文案(只改内存) — 小欧-2026-10-31
@@ -646,16 +655,19 @@ class MessageBuilder:
         return messages
 
     async def expand_attachment_parts(
-        self, messages: List[Dict[str, Any]], llm_model: Any
+        self, messages: List[Dict[str, Any]], llm_model: Any,
+        session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """wire 专属: 把各 user 消息的附件/URL 占位展开成 OpenAI parts（原地改浅拷贝）。
+        """wire 专属: 把各 user 消息的附件/URL 占位展开成 OpenAI parts（原地改浅副本）。
 
         消息级遍历; 占位级展开归 attachment_wire.expand_attachment_slots。
-        展开期自描述零请求期依赖: transport 由 capability.profile 按当前 llm_model 重算。
+        展开期自描述零请求期依赖: transport 由 capability.profile 按当前 llm_model 重算;
+        session_id 用于附件记录会话收权(跨会话 id 回落降级文本)。
         """
         for msg in messages:
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                msg["content"] = await expand_attachment_slots(msg["content"], llm_model)
+                msg["content"] = await expand_attachment_slots(
+                    msg["content"], llm_model, session_id)
         return messages
 
     def _cap_temp_history(self):

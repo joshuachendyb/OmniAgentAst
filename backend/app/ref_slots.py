@@ -9,10 +9,14 @@
 #
 # 2026-11-14 小欧 bug挖掘修复: attachment_slot 按 SLOT_ATTACHMENT_RE 全匹配校验 id 形态,
 #   非 32hex id 不再写出正则不可识别的占位原样泄漏给模型(返回空串, 装配层回落文本块) — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 第7章7.4 阶段B: file/selection 物化后携带 attachment_id, 写槽复用 attachment 写入器;
+#   新增 SLOT_ALIASES + slot_writer 单一查表(别名不进 SLOT_WRITERS, 矩阵/扫描口径保持保守) — 小欧-2026-11-14
 """ref_slots — 引用槽位注册表: 来源 → (正则, 占位构造器)。
 
 SLOT_WRITERS.keys() 是"可写原生槽来源"的唯一真源; make(ref) 恒返回一行 wire 文本
 (占位或占位失败时的降级链接文本), 装配层直接拼接, 不再按 source_kind 分派。
+SLOT_ALIASES 仅做写入器复用(file/selection 物化后与 attachment 同槽), 不参与"原生来源"判定。
 """
 import base64
 import re
@@ -71,3 +75,11 @@ SLOT_WRITERS: Dict[str, SlotWriter] = {
     "attachment": SlotWriter(SLOT_ATTACHMENT_RE, _make_attachment),
     "url": SlotWriter(SLOT_URL_RE, _make_url),
 }
+
+# 写入器复用别名: 本地来源物化后即为附件记录, 与 attachment 同槽(不扩 SLOT_WRITERS 的判定口径)
+SLOT_ALIASES: Dict[str, str] = {"file": "attachment", "selection": "attachment"}
+
+
+def slot_writer(source_kind: str) -> SlotWriter | None:
+    """按来源取写入器: 登记来源直取, 本地来源经别名复用附件槽; 无槽返回 None。"""
+    return SLOT_WRITERS.get(SLOT_ALIASES.get(source_kind, source_kind))

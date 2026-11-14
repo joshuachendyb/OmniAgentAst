@@ -45,6 +45,12 @@
 #   带 path 的 file 来源不再被 url 字段劫持; 分类只依赖 url 本身(单参 classify_url), 与 wire 展开期
 #   同源同判, 消 suffixless URL 计划 native/运行时降级分叉; ②未知来源 kind 回落 file 路由,
 #   单条脏引用不再 KeyError 崩溃整轮首发装配 — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 第7章7.1 死契约删除: SOURCE_KINDS 去 log/message, 删 _INTERNAL_TEXT_SOURCES
+#   常量与 _build_contract/classify_ref 内部来源特判, 契约矩阵收敛为 4 来源(无生产方不可达) — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 第7章7.4 阶段B: _plan_of 增 has_slot 形参, 实例已物化(attachment_id)按条目判 native;
+#   矩阵投影 (has_slot=None) 只认登记槽, 保持"矩阵低承诺、实例高兑现"分层 — 小欧-2026-11-14
 
 
 """attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
@@ -88,7 +94,7 @@ __all__ = [
 
 _MAX_URLS = 8   # 单次引用 URL 条数上限(本方案新增, 无既有真源, 就此定点)
 
-SOURCE_KINDS = ("file", "selection", "attachment", "url", "log", "message")
+SOURCE_KINDS = ("file", "selection", "attachment", "url")
 CONTENT_KINDS = ("text", "image", "video", "audio", "richdoc", "binary", "unknown")
 MODALITIES = ("image", "audio", "video", "file")
 # 质量四值(保真结果); 投递动作由 QUALITY_TO_DELIVERY 单表派生, 不另设枚举双真源。
@@ -129,16 +135,11 @@ _URL_OVERRIDE: Dict[str, KindRoute] = {
 }
 
 
-_INTERNAL_TEXT_SOURCES = ("log", "message")   # 内部来源恒为文本语义
-
-
 def _build_contract() -> Dict[Tuple[str, str], KindRoute]:
     table: Dict[Tuple[str, str], KindRoute] = {}
     for source in SOURCE_KINDS:
         for content in CONTENT_KINDS:
-            if source in _INTERNAL_TEXT_SOURCES:
-                table[(source, content)] = _BASE["text"]
-            elif source == "url":
+            if source == "url":
                 table[(source, content)] = _URL_OVERRIDE.get(content, _BASE[content])
             else:
                 table[(source, content)] = _BASE[content]
@@ -157,12 +158,10 @@ class ItemPlan:
 
 def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     """唯一分类点(纯识别, 不读模型): 返回 (source_kind, content_kind)。
-    log/message 恒映射 text; url 走 classify_url; 其余复用 extract.classify。"""
+    url 走 classify_url; 其余复用 extract.classify。"""
     src = str(item.get("kind") or "file")
     if src not in SOURCE_KINDS:
         src = "file"
-    if src in _INTERNAL_TEXT_SOURCES:
-        return src, "text"
     # url 来源判定只依赖 url 本身(与 wire 展开期 classify_url(url) 单参同源):
     #   带 path 的非 url 来源不被 url 字段劫持; 无 kind 的 url 引用(无 path)仍回落 url。
     if src == "url" or (item.get("url") and not item.get("path")):
@@ -173,14 +172,16 @@ def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
 
 
 def _plan_of(source_kind: str, content_kind: str,
-             prof: Dict[str, Any]) -> str:
+             prof: Dict[str, Any], has_slot: Optional[bool] = None) -> str:
     """quality 唯一判定: 计划器与矩阵投影共用, 禁止第二处派生。
 
-    关键: 来源能否写原生槽(SLOT_WRITERS) 参与判定 —— 模型声明支持但来源无槽
-    (file/selection 的 image 等) 不得判 native, 否则装配层无处可写。"""
+    关键: 来源能否写原生槽(SLOT_WRITERS, 或实例已物化携 attachment_id) 参与判定 ——
+    模型声明支持但来源无槽(file/selection 未物化) 不得判 native, 否则装配层无处可写。
+    has_slot=None 为矩阵投影口径(只认登记槽, 保持保守下界); 实例判定传条目 attachment_id。"""
     route = KIND_CONTRACT[(source_kind, content_kind)]
     cap = prof.get(route.native_modality) if route.native_modality else None
-    if source_kind in SLOT_WRITERS and cap and cap.native:
+    _slot = (source_kind in SLOT_WRITERS) if has_slot is None else (has_slot or source_kind in SLOT_WRITERS)
+    if _slot and cap and cap.native:
         return "native"
     # fallback_quality 与 quality 同域直取: 缺键即契约漂移, 立即 KeyError 暴露, 不用默认值掩盖
     return route.fallback_quality
@@ -192,9 +193,14 @@ def quality_of(source_kind: str, content_kind: str, prof: Dict[str, Any]) -> str
 
 
 def plan_refs(items: Optional[List[Dict[str, Any]]], prof: Dict[str, Any]) -> List[ItemPlan]:
-    """来源无关计划器(纯函数): 投递动作 = QUALITY_TO_DELIVERY[quality], 装配层单表派生。"""
-    return [ItemPlan(src, ck, _plan_of(src, ck, prof))
-            for src, ck in (classify_ref(it) for it in items or [])]
+    """来源无关计划器(纯函数): 投递动作 = QUALITY_TO_DELIVERY[quality], 装配层单表派生。
+    实例已物化(携 attachment_id)时按条目判槽, 与矩阵投影的保守下界分层。"""
+    plans: List[ItemPlan] = []
+    for it in items or []:
+        src, ck = classify_ref(it)
+        plans.append(ItemPlan(src, ck, _plan_of(src, ck, prof,
+                                               has_slot=bool(it.get("attachment_id")))))
+    return plans
 
 
 def ref_quality_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:

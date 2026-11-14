@@ -22,6 +22,9 @@
 #
 # 2026-11-14 小欧 bug挖掘修复: expand_attachment_slots 收尾折叠补非 text 单 part 分支 —— 消息仅含
 #   一个原生 part 时原返回 None 丢整个消息内容, 现原样返回 parts; 空展开原样返回 text — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 第7章7.4 阶段B 收权: expand_attachment_slots/_expand_one/_EXPANDERS 增 session_id
+#   透传, _expand_attachment 改 get_attachment_scoped(跨会话 id 拒绝, 与 resolver 同口径) — 小欧-2026-11-14
 
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
@@ -56,16 +59,19 @@ _SLOT_RE = re.compile("|".join(w.pattern.pattern for w in SLOT_WRITERS.values())
 _EXPANDERS: Dict[str, Any] = {}
 
 
-async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
+async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "",
+                      session_id: str | None = None) -> Tuple[Any, str]:
     """单个占位 → (wire part, 失败降级文字)。不抛异常断轮。"""
     name = m.lastgroup
-    return await _EXPANDERS[name](m.group(name), prof, model)
+    return await _EXPANDERS[name](m.group(name), prof, model, session_id)
 
 
-async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
+async def expand_attachment_slots(text: str, llm_model: Any,
+                                  session_id: str | None = None) -> Any:
     """占位级展开: 识别全部 ATTACHMENT/URL_ITEM 占位, 按当前模型画像分流。
     url → build_url_part 直传; inline → ensure_payload → to_wire_part;
-    none → 占位原位替换为降级文本。无占位原样返回 str。"""
+    none → 占位原位替换为降级文本。无占位原样返回 str。
+    session_id: 附件记录会话收权(跨会话 id 回落降级文本, 与 resolver 同口径)。"""
     if not _SLOT_RE.search(text or ""):
         return text
     prof = capability.profile(llm_model)
@@ -74,7 +80,7 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     cursor = 0
     for m in _SLOT_RE.finditer(text):
         pending.append(text[cursor:m.start()])
-        part, fallback = await _expand_one(m, prof, str(llm_model))
+        part, fallback = await _expand_one(m, prof, str(llm_model), session_id)
         if part:
             if pending:
                 parts.append({"type": "text", "text": "".join(pending)})
@@ -94,10 +100,11 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     return parts
 
 
-async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
-    from app.attachments.attachment_service import get_attachment  # 延迟导入防循环
+async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "",
+                             session_id: str | None = None) -> Tuple[Any, str]:
+    from app.attachments.attachment_service import get_attachment_scoped  # 延迟导入防循环
 
-    att = get_attachment(aid)
+    att = get_attachment_scoped(aid, session_id)
     if not att:
         return None, f"[附件未发送: {aid} — 附件记录已失效]"
     stored = str(att.get("stored_path") or att.get("path") or "")
@@ -131,7 +138,8 @@ def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
         return f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
 
 
-async def _expand_url(token: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
+async def _expand_url(token: str, prof: Dict[str, Any], model: str = "",
+                      session_id: str | None = None) -> Tuple[Any, str]:
     url = decode_url_item(token)
     ck = classify_url(url)
     route = contract.KIND_CONTRACT[("url", ck)]

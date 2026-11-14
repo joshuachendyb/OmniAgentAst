@@ -271,6 +271,10 @@
 #   ③续跑竞态注入补 bind_message_to_task(执行期归属), 注入/落库失败补偿删除 system_notice 消息;
 #   ④agent 协程改为自登记句柄(runner 首行), 删除启动路径 create_task 后的 await(断连窗口不再把
 #   已交接快照当未交接关闭); ⑤起跑前退出(早退/异常/断连/生成器关闭)统一在 finally 回收注册与缓冲 — 商量-2026-11-14
+# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): prepare_refs 后就地算 _iplans(plan_refs+profile, 与首发同源),
+#   build_interject_text 与降级 build_user_turn_text 两调用点补 plans=_iplans, 消插话恒降级文本 — 小欧-2026-11-14
+# 2026-11-14 小欧 第7章7.4 阶段B: 首发/插话 prepare_refs 补 llm_model(任务级模型快照),
+#   供 resolver 本地 image/audio 原生物化判定 — 小欧-2026-11-14
 
 
 
@@ -311,6 +315,9 @@ from app.monitoring.agent_telemetry import (
 )
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.services.agent.agent_runner import run_agent_in_background
+# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): 计划器与首发同源, 编排层算 _iplans 后透传装配 — 小欧-2026-11-14
+from app.attachments.contract import plan_refs
+from app.services.agent.capability import profile
 
 # 2026-10-31 小欧 - 注入装配单一化: 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
 #   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
@@ -704,7 +711,11 @@ async def chat_stream_orchestrator(
             _ilimits = resolve_limits(_tgt_ctx, "interject")
             _ifinal, _iall_notices = await prepare_refs(
                 _start_kept, limits=_ilimits, scope="interject",
-                session_id=session_id, sanitized_dropped=_s_dropped)
+                session_id=session_id, llm_model=getattr(_tgt_agent, "_task_llm_model", None),
+                sanitized_dropped=_s_dropped)
+            # 2026-11-14 小欧 插话计划裁决(第7章7.2): 与首发同源, 送装配层写原生占位;
+            #   无 refs 时 plans=[] 不产生槽位, 行为与现状一致 — 小欧-2026-11-14
+            _iplans = plan_refs(_ifinal, profile(getattr(_tgt_agent, "_task_llm_model", None)))
             _ibuf = get_stream_buffer(_active_tid)
 
             async def _emit_to_target(payload: dict):
@@ -755,11 +766,11 @@ async def chat_stream_orchestrator(
             _builder = getattr(_tgt_agent, "message_builder", None)
             if _builder is not None:
                 _inject_text, _ws_action = _builder.build_interject_text(
-                    user_input, _ifinal, _ws_block.text)
+                    user_input, _ifinal, _ws_block.text, plans=_iplans)
             else:
                 # 目标任务 agent 已不可达(注册表回收): 无历史可判重, 直接全量装配
                 logger.warning(f"[chat] 插话取不到目标任务 agent, 目录块按无历史装配: target={_active_tid}")
-                _inject_text = build_user_turn_text(user_input, _ifinal, _ws_block.text)
+                _inject_text = build_user_turn_text(user_input, _ifinal, _ws_block.text, plans=_iplans)
                 _ws_action = "inject"
             report_ws_block("interject", _ws_block, _ws_snap, _ws_action)
             if _ws_block.skipped:
@@ -981,7 +992,8 @@ async def chat_stream_orchestrator(
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
         _final_refs, _notices = await prepare_refs(
             _start_kept, limits=_limits, scope="first",
-            session_id=session_id, sanitized_dropped=_s_dropped)
+            session_id=session_id, llm_model=getattr(agent, "_task_llm_model", None),
+            sanitized_dropped=_s_dropped)
         # 2026-10-30 小欧 引用进 loop 前可观测(北京老陈令): 汇总/日志/notice 共用一份数字。
         #   原只在 _notices 非空时打一行 info(无 notices 的成功路径零痕迹, 查错无从下手),
         #   现改为"有引用就留痕": 1 行汇总(控制台+文件) + ≤5 行明细(文件) + SSE notice。

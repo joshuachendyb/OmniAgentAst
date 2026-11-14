@@ -404,7 +404,10 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     )
 
     # 2026-11-08 小欧: 落盘/日志已取占位原文, 此处才展开图片 parts(避免 base64 入库/入日志); 覆盖全部 user 消息
-    messages = await agent.message_builder.expand_attachment_parts(messages, _task_llm)
+    # 2026-11-14 小欧 第7章7.4: 传 session_id 供附件记录会话收权(跨会话 id 回落降级文本)
+    messages = await agent.message_builder.expand_attachment_parts(
+        messages, _task_llm,
+        session_id=(getattr(agent, "_start_meta", None) or {}).get("session_id"))
 
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")
