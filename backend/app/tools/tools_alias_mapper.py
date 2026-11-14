@@ -24,6 +24,12 @@
 #   判据收紧(三堂会审, 反例实证): ①承载错位的字段名本身须是已知参数名(否则 write_xlsx.data 等合法dict参数被误展开);
 #   ②XML串须提取出≥2个参数且含自身规范名(否则编辑含 "</path>" 的代码时 new_string 被吞);
 #   ③_EXTRA_KNOWN_KEYS 补 edit.replaceAll(不在别名表, 丢则静默只替换首处)
+# 2026-11-14 - 商量 - 参数归位(更名自"错位参数展开", 名不符实: 实为把错位包装的参数解析归位到
+#   schema 式顶层排布, 不是什么展开): 修重大bug — 原 expanded 从空dict起步+update()无条件覆盖,
+#   顶层正确 path 被包装垃圾顶掉(HITL弹窗 path 错乱实证, 且污染信任落库); 改为: 顶层原样起步,
+#   归位产物只补缺失键绝不覆盖权威值 + 承载键取解析出的自身规范值(原值是包装本体) +
+#   顶层已齐全(schema式正确参数表)整体跳过零改动直返; 归位仍在键名归一化之前(错位形态下归一化
+#   无意义), 产物键名经参数表直映规范名, 后续归一化对其幂等, 归一化仍是全参数唯一权威 — 商量-2026-11-14
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -436,12 +442,12 @@ _XML_CLOSE_SPLIT = re.compile(r"</([A-Za-z_$][\w]*)>")
 _XML_OPEN_PREFIX = re.compile(r"^<[^>]+>")
 
 # 显式参数但不在 PARAM_ALIASES 的工具键: edit.replaceAll 由 normalize_params 跨键特判(true→mode:all),
-# 无别名条目; 错位展开时须一并识别, 否则该键被丢弃后只替换第一处而非全部(静默错误比失败更糟) — 商量 2026-11-13
+# 无别名条目; 归位时须一并识别, 否则该键被丢弃后只替换第一处而非全部(静默错误比失败更糟) — 商量 2026-11-13
 _EXTRA_KNOWN_KEYS = {"edit": {"replaceAll"}}
 
 
-def _extract_xml_tag_params(value: str, known_keys: set, aliases: dict) -> Dict[str, str]:
-    """从 XML 标签串中提取参数键值对(宽容: 允许无开标签, 如 'text</newString>')
+def _parse_xml_packed_params(value: str, known_keys: set, aliases: dict) -> Dict[str, str]:
+    """从 XML 标签包装串中解析参数键值对(宽容: 允许无开标签, 如 'text</newString>') — 商量 2026-11-13
 
     LLM 偶尔把 edit 参数序列化成 XML 标签串塞进单个字段:
       '### 1.6...</newString><old_string>### 1.5...</old_string><path>F:\\...</path>'
@@ -461,25 +467,30 @@ def _extract_xml_tag_params(value: str, known_keys: set, aliases: dict) -> Dict[
     return result
 
 
-def expand_misplaced_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
-    """展开 LLM 幻觉的错位参数(嵌套 dict / XML 标签串 → 顶层平铺) — 商量 2026-11-13
+def restore_misplaced_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+    """参数归位: LLM 幻觉把参数对象错位塞进单个参数字段(嵌套 dict / XML 标签包装)时,
+    解析归位回 schema 式顶层平铺 — 商量 2026-11-14(更名自"错位参数展开", 名不符实)
 
-    实证形态(edit, deepseek-v4.1-flash, session 37dcf0a6):
+    实证形态(edit, deepseek-v4.1-flash, session 37dcf0a6, 59次edit中17次失败/29%轮次浪费):
     1. 嵌套 dict: {'new_string': {'old_string':..., 'path':..., '$text':...}}
-       LLM 把整个 edit 对象塞进 new_string 字段, $text 是臆想键(=替换后文本)
     2. XML 标签串: {'new_string': 'val</newString><old_string>...</old_string><path>...</path>'}
-       LLM 把参数序列化成 XML 文本塞进单个字段
 
-    判据(防误伤合法内容, 实证反例: 编辑含 "</path>" 的代码时 new_string 曾被吞掉):
-      ① 承载错位的字段名本身必须是已知参数名 —— 该参数本应收到标量, 却收到 dict/标签串才叫错位;
-         否则其他 tool 的合法 dict 参数(如 write_xlsx.data 内含 path 字段)会被误展开。
-      ② XML 串须提取出 ≥2 个参数, 且含该字段自身的规范名 —— 错位串必然以自身闭标签分段;
-         单个 "</xxx>" 只是代码里的字符串字面量, 不构成错位。
+    铁律(2026-11-14 商量, 用户实证 HITL 弹窗 path 错乱):
+      ① 顶层正确参数是权威: 归位产物只补顶层缺失键, 绝不覆盖已有顶层值
+         (原 expanded.update() 无条件覆盖把正确 path 顶成垃圾, 属重大bug);
+      ② 顶层已齐全(schema 式正确参数表)不需归位, 直接原样返回零改动;
+         XML 分支额外须有顶层缺失键佐证(字符串本可能是合法正文, 编辑正文恰含
+         完整参数标签字面量时不得误吞); dict 装进字符串参数恒为错位, 无需佐证;
+      ③ 承载键自身取解析出的自身规范值(原值是包装本体, 不是合法参数值);
+         别名承载键(如 newString)归位后须移除原键(包装本体不留残, 否则归一化把
+         别名键再映回规范键造成二次污染), 且顶层已有正确规范值时不覆盖(铁律①)。
 
-    通用设计: 从 PARAM_ALIASES 推导参数名集合(别名+规范名), 其他 tool 有 PARAM_ALIASES 条目即自动获得能力。
+    顺序契约: 归位在键名归一化之前(错位形态下键名归一化无意义); 归位用 PARAM_ALIASES
+    参数表识别键名并直映规范名, 产物键名已规范, 后续键名归一化对其幂等(规范键原样通过),
+    归一化仍是全参数唯一权威。
 
     Returns:
-        (expanded_params, has_expansion) — 无需展开时原样返回 (params, False)
+        (restored_params, has_restore) — 无需归位时原样返回 (params, False)
     """
     if not params or tool_name not in PARAM_ALIASES:
         return params, False
@@ -487,41 +498,52 @@ def expand_misplaced_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dic
     aliases = PARAM_ALIASES[tool_name]
     known_keys = set(aliases.keys()) | set(aliases.values()) | _EXTRA_KNOWN_KEYS.get(tool_name, set())
 
-    expanded = {}
-    has_expansion = False
+    restored = dict(params)  # 判据①前提: 顶层原样起步, 正确参数零改动
+    has_restore = False
     mapped = []
 
     for key, value in params.items():
+        if key not in known_keys:            # 只有已知参数键才可能承载错位(防误伤合法dict参数)
+            continue
         canonical_key = aliases.get(key, key)
-        # 承载错位的字段本身须是已知参数名(判据①)
-        if isinstance(value, dict) and key in known_keys:
-            inner = {
+        if isinstance(value, dict):
+            # dict 装进字符串参数恒为错位, 无需缺失佐证(承载键归位由下方 ek==canonical_key 承担)
+            extracted = {
                 aliases.get(k, k): v
                 for k, v in value.items()
                 if k in known_keys
             }
-            if inner:
-                expanded.update(inner)
-                mapped.extend(f"{key}.{k}" for k in value if k in known_keys)
-                has_expansion = True
-            else:
-                expanded[key] = value
-        elif isinstance(value, str) and "</" in value and key in known_keys:
-            xml_params = _extract_xml_tag_params(value, known_keys, aliases)
-            # 判据②: ≥2 参数且含自身规范名, 才是错位标签串
-            if len(xml_params) >= 2 and canonical_key in xml_params:
-                expanded.update(xml_params)
-                mapped.extend(f"{key}<{k}>" for k in xml_params)
-                has_expansion = True
-            else:
-                expanded[key] = value
+        elif isinstance(value, str) and "</" in value:
+            extracted = _parse_xml_packed_params(value, known_keys, aliases)
+            # XML 判据: ≥2 参数且含自身规范名(单个 "</xxx>" 只是正文里的字面量);
+            # 且须有顶层缺失键佐证 — 字符串本可能是合法正文, 顶层齐全时不得动它
+            if len(extracted) < 2 or canonical_key not in extracted:
+                continue
+            if not any(ek != canonical_key and ek not in restored for ek in extracted):
+                continue
         else:
-            expanded[key] = value
+            continue
+        if not extracted:
+            continue                          # dict 内无可识别键: 不归位不删键(fail-visible 留原样)
+        for ek, ev in extracted.items():
+            if ek == canonical_key and (key == canonical_key or ek not in restored):
+                # 判据③: 承载键归位(原值是包装本体); 别名承载键且顶层已有正确规范值时不覆盖(铁律①)
+                restored[ek] = ev
+                mapped.append(f"{key}→{ek}")
+                has_restore = True
+            elif ek != canonical_key and ek not in restored:
+                # 判据①: 只补缺失, 绝不覆盖顶层权威值
+                restored[ek] = ev
+                mapped.append(f"{key}→{ek}")
+                has_restore = True
+        if key != canonical_key:
+            restored.pop(key, None)           # 判据③: 别名承载键包装本体移除(防归一化二次映回污染)
+            has_restore = True
 
-    if has_expansion:
-        logger.info(f"[param_expand] {tool_name}: 错位参数展开 {mapped}")
-
-    return expanded, has_expansion
+    if not has_restore:
+        return params, False                 # 铁律②: 无归位原样直返(原引用, 正确参数表零改动)
+    logger.info(f"[param_restore] {tool_name}: 错位参数归位 {mapped}")
+    return restored, has_restore
 
 
 def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
@@ -540,8 +562,9 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
     if not params:
         return params, False
 
-    # 错位参数展开(嵌套 dict / XML 标签串 → 顶层平铺), 在键名映射之前 — 商量 2026-11-13
-    params, _ = expand_misplaced_params(tool_name, params)
+    # 参数归位(嵌套 dict / XML 标签包装 → schema 式顶层平铺), 在键名映射之前:
+    #   错位形态下键名归一化无意义, 必须先归位; 归位产物键名已规范, 下方映射对其幂等 — 商量 2026-11-14
+    params, _ = restore_misplaced_params(tool_name, params)
 
     if tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES:
         return params, False
