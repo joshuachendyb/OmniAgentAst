@@ -2,7 +2,7 @@
 # 2026-11-04 小欧 新建: 附件五分类 + 五张档案卡注入文本(纯函数, 零 DB) — 小欧-2026-11-04
 # 2026-11-06 小欧 补 classify 文本分支: 文本扩展名(如 .txt/.md/.py)先于"任意后缀 → binary"判定,
 #   否则文本文件落 binary, 文本档案卡用不上 — 小欧-2026-11-06
-# 2026-11-06 小欧 S1: text 分支从 _text_card 换成 _text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
+# 2026-11-06 小欧 S1: text 分支从 _text_card 换成 text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
 # 2026-11-07 小欧 - 修复: _read_head_and_count 补 latin-1 兜底(与 _read_text_full 编码能力对齐),
 #   消除同文件 ≤/≥256KB 两侧解码不一致致的档案头乱码 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3/S4: richdoc 真抽取(复用工具层四读取器) + video ffprobe 元数据(缺失降级) — 小欧-2026-11-09
@@ -14,9 +14,9 @@
 
 类型轴分层(每个阶段只替换一个函数, 分派结构不动):
   S0 全部     → 档案卡(本文件即完成; 任何类型上传后都能发送)
-  S1 text     → _text_card 换成 _text_body(≤256KB 全文 / 超限档案头)
+  S1 text     → _text_card 换成 text_body(≤256KB 全文 / 超限档案头)
   S2 image    → 卡片只服务非视觉模型(视觉模型由 services/agent/vision.py 走 parts, 不经过本文件)
-  S3 richdoc  → _richdoc_body(真抽取, 失败抛异常由 resolver 折算)
+  S3 richdoc  → richdoc_body(真抽取, 失败抛异常由 resolver 折算)
   S4 video    → _video_meta(ffprobe 元数据; 缺失则降级, 不抛错)
 
 零 DB、零状态: 入参是 attachments 表的一行(dict), 返回 str。
@@ -102,7 +102,7 @@ def scan_text_urls(text: str) -> list[str]:
     return out[:MAX_REMOTE_IMAGES]
 
 
-def _link_body(url: str) -> str:
+def link_body(url: str) -> str:
     """URL 降级文本出口(fallback_quality='link'): 仅链接文本, 零内容。"""
     return f"[链接]\n地址: {url}\n说明: 当前模型仅收到链接文本, 未获取内容。"
 
@@ -133,7 +133,7 @@ def classify(stored_path: Path, mime: str, size: int) -> str:
         return "richdoc"
     if size <= 0:
         return "binary"
-    # 文本扩展名: 命中即判 text（S1 起据此走 _text_body 读正文）。
+    # 文本扩展名: 命中即判 text（S1 起据此走 text_body 读正文）。
     #   注意: 此分支须在"有扩展名但不在任何白名单 → binary"之前,
     #   否则 .txt/.py/.md 等文本会落 binary, 文本档卡永远用不上。
     if sfx in TEXT_SUFFIXES:
@@ -167,12 +167,12 @@ def _head(att: dict[str, Any]) -> str:
             f"大小: {int(att.get('size') or 0)} 字节")
 
 
-def _text_body(att: dict[str, Any]) -> str:
-    """S1: 文本附件真读正文(path 入口; 字节入口见 _text_body_from_bytes)。"""
-    return _text_body_from_bytes(att, None)
+def text_body(att: dict[str, Any]) -> str:
+    """S1: 文本附件真读正文(path 入口; 字节入口见 text_body_from_bytes)。"""
+    return text_body_from_bytes(att, None)
 
 
-def _text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
+def text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
     """raw=None 走读盘(附件); raw=bytes 走直抽(URL 下载后), 两入口同一实现。"""
     stored = Path(str(att.get("stored_path") or att.get("path") or att.get("original_name") or "attachment"))
     size = len(raw) if raw is not None else int(att.get("size") or 0)
@@ -240,23 +240,23 @@ def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
     return head, total
 
 
-def _image_card(att: dict[str, Any]) -> str:
+def image_card(att: dict[str, Any]) -> str:
     return (f"[附件档案卡·图片]\n{_head(att)}\n"
             f"说明: 当前模型无视觉能力，无法查看图片内容。"
             f"如需识别图中信息，请用文字描述或改用可读的文本/表格文件。")
 
 
-def _richdoc_body(att: dict[str, Any]) -> str:
+def richdoc_body(att: dict[str, Any]) -> str:
     """富格式正文(S3): 复用工具层四个读取实现(pdf/docx/xlsx/pptx), 不另写解析器(DRY)。
 
     失败一律抛异常 —— 由 resolver 折算成 attachment_failed 回执,
     不在本层吞掉(否则模型会收到半截内容却以为完整)。
     """
     stored = Path(att["stored_path"])
-    return _richdoc_body_path(att, stored)
+    return richdoc_body_path(att, stored)
 
 
-def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
+def richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
                              filename: str = "") -> str:
     """字节入口(URL 下载后直抽): 按文件名后缀落临时文件, 复用 path 同一实现。"""
     suffix = Path(filename or str(att.get("original_name") or "")).suffix.lower()
@@ -266,7 +266,7 @@ def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
         fh.write(raw)
         tmp = Path(fh.name)
     try:
-        return _richdoc_body_path(att, tmp, label_suffix=suffix)
+        return richdoc_body_path(att, tmp, label_suffix=suffix)
     finally:
         try:
             tmp.unlink()
@@ -274,7 +274,7 @@ def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
             pass
 
 
-def _richdoc_body_path(att: dict[str, Any], stored: Path, label_suffix: str = "") -> str:
+def richdoc_body_path(att: dict[str, Any], stored: Path, label_suffix: str = "") -> str:
     suffix = label_suffix or stored.suffix.lower()
     text = _extract_richdoc(stored, suffix)
     label = _RICH_LABEL.get(suffix, "文档")
@@ -398,7 +398,7 @@ def _audio_meta(stored: Path) -> dict[str, Any] | None:
     return _ffprobe_meta(stored, "audio")
 
 
-def _video_card(att: dict[str, Any]) -> str:
+def video_card(att: dict[str, Any]) -> str:
     meta = _video_meta(Path(att["stored_path"]))
     if meta:
         detail = (f"\n时长: {meta.get('duration') or '未知'} 秒"
@@ -410,7 +410,7 @@ def _video_card(att: dict[str, Any]) -> str:
             f"说明: 当前不支持视频内容理解；如需处理请用文件工具按需读取。")
 
 
-def _audio_card(att: dict[str, Any]) -> str:
+def audio_card(att: dict[str, Any]) -> str:
     """音频档案卡: ffprobe 元数据(仅元数据, 无内容理解), 失败降级为档案卡。"""
     meta = _audio_meta(Path(att["stored_path"]))
     if meta:
@@ -428,6 +428,6 @@ def _audio_card(att: dict[str, Any]) -> str:
             f"说明: 仅注入元数据, 不包含音频内容；如需处理请用文件工具按需读取。")
 
 
-def _binary_card(att: dict[str, Any]) -> str:
+def binary_card(att: dict[str, Any]) -> str:
     return (f"[附件档案卡·二进制]\n{_head(att)}\n"
             f"说明: 非文本内容，无法注入正文；如需处理请用文件工具按需读取。")

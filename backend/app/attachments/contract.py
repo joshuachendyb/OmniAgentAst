@@ -20,12 +20,34 @@
 #   (image/video/audio/richdoc)在矩阵永远显不出 native, 与 plan_refs 只看 cap.native
 #   的运行时口径分叉(视觉模型图片格错显元信息注入)。native 判定统一只看画像声明 — 小欧-2026-11-12
 
+
+# 2026-11-14 小欧 状态模型正交化(quality/delivery/reason) + 槽位注册表单源:
+#   state 一枚举背"能力可达/投递方式/保真档"三义, 凭 state 装配必然漏投(file/selection 文本被判
+#   native 却无占位 → 首发正文整条消失)。拆为 quality(保真, 不驱动装配)与 delivery(装配动作),
+#   可写原生槽来源只由 ref_slots.SLOT_WRITERS.keys() 提供, _plan_of 纳入 has_slot 判定;
+#   删 state_of/aggregate_state/ref_capability_map/STATES 与死字段 on_native_fail/transport;
+#   fallback_quality 与 quality 同域(text_full|meta_only|link_only) 直取, 不再二次翻译 — 小欧-2026-11-14
+
+
+# 2026-11-14 小欧 三堂会审整改(14条违规修复): ①ItemPlan 收敛为 (source_kind, content_kind,
+#   quality) 最小面, 删死字段 key/reason 与 delivery(投递由 QUALITY_TO_DELIVERY 单表派生);
+#   ②删 _reason/reason 死链路, _plan_of 直返 quality 单值; ③删 KIND_MODALITY/QUALITIES/
+#   DELIVERIES 死导出与 dedup_key 死函数(全仓零消费); ④内部来源 ("log","message") 收敛为
+#   _INTERNAL_TEXT_SOURCES 单常量; ⑤URL 路由 fetch 语义化: 文本抓取标 "text", 媒体内联
+#   由 ensure_payload 自理不再标 optional, 消 attachment_wire 双判据 — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 三堂会审整改(第2批): extract 私名出口转公开(text_body/link_body/
+#   image_card/video_card/audio_card/binary_card/richdoc_body/*_from_bytes), 消契约跨模块
+#   消费私有名; _plan_of 收敛为 quality 单值返回, 投递动作由 QUALITY_TO_DELIVERY 单表派生,
+#   ItemPlan 删 key/delivery/reason 三死字段, 内部来源收敛 _INTERNAL_TEXT_SOURCES — 小欧-2026-11-14
+
+
 """attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
 单一契约表 KIND_CONTRACT[(source_kind, content_kind)] → KindRoute:
 类型×来源 → 原生模态/降级质量/文本出口/失败回退。前后端与守门测试共用其投影。
 """
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -35,25 +57,26 @@ from app.attachments.extract import (
     RICH_SUFFIXES,
     TEXT_SUFFIXES,
     VIDEO_SUFFIXES,
-    _audio_card,
-    _binary_card,
-    _image_card,
-    _link_body,
-    _richdoc_body,
-    _text_body,
-    _video_card,
+    audio_card,
+    binary_card,
+    image_card,
+    link_body,
+    richdoc_body,
+    text_body,
+    video_card,
     classify,
     classify_url,
     scan_text_urls,
 )
 from app.constants import MAX_REMOTE_IMAGES
+from app.ref_slots import SLOT_WRITERS
 
 # 对外重导出词典与识别函数(契约消费方禁止再去 extract 复制一份)
 __all__ = [
-    "KIND_CONTRACT", "KIND_MODALITY", "KindRoute", "ItemPlan", "SOURCE_KINDS",
-    "CONTENT_KINDS", "MODALITIES", "STATES", "classify_ref", "dedup_key", "state_of",
-    "plan_refs", "aggregate_state", "ref_capability_map", "limits", "kind_options",
-    "suffix_kind",
+    "KIND_CONTRACT", "KindRoute", "ItemPlan", "SOURCE_KINDS",
+    "CONTENT_KINDS", "MODALITIES", "QUALITY_TO_DELIVERY",
+    "classify_ref", "quality_of", "plan_refs", "ref_quality_map",
+    "limits", "kind_options", "suffix_kind",
     "AUDIO_SUFFIXES", "IMAGE_SUFFIXES", "RICH_SUFFIXES", "TEXT_SUFFIXES", "VIDEO_SUFFIXES",
     "classify_url", "scan_text_urls",
 ]
@@ -63,42 +86,52 @@ _MAX_URLS = 8   # 单次引用 URL 条数上限(本方案新增, 无既有真源
 SOURCE_KINDS = ("file", "selection", "attachment", "url", "log", "message")
 CONTENT_KINDS = ("text", "image", "video", "audio", "richdoc", "binary", "unknown")
 MODALITIES = ("image", "audio", "video", "file")
-STATES = ("native", "degraded", "opaque")
+# 质量四值(保真结果); 投递动作由 QUALITY_TO_DELIVERY 单表派生, 不另设枚举双真源。
+# fallback_quality 与 quality 同域(text_full | meta_only | link_only), 直取不翻译;
+#   解析失败已在 resolver 层 dropped, 计划器只处理可用条目 — 小欧-2026-11-14
+QUALITY_TO_DELIVERY = {
+    "native": "slot", "text_full": "text",
+    "meta_only": "text", "link_only": "text",
+}
 
 
 @dataclass(frozen=True)
 class KindRoute:
     native_modality: Optional[str]          # 可尝试的原生模态; None=恒走文本
-    fallback_quality: str                   # content | metadata | card | link
+    fallback_quality: str                   # text_full | meta_only | link_only (与 quality 同域)
     extractor: Callable[..., str]          # 永远成功的文本出口
-    on_native_fail: str                    # reuse_text | link_text | notice
     fetch: str = "none"                    # none | optional | required (URL 来源)
 
 
 _BASE: Dict[str, KindRoute] = {
-    "text":    KindRoute(None,    "content",  _text_body,    "reuse_text"),
-    "richdoc": KindRoute("file",  "content",  _richdoc_body, "reuse_text"),
-    "image":   KindRoute("image", "card",     _image_card,   "reuse_text"),
-    "video":   KindRoute("video", "metadata", _video_card,  "reuse_text"),
-    "audio":   KindRoute("audio", "metadata", _audio_card,   "reuse_text"),
-    "binary":  KindRoute(None,    "card",     _binary_card,  "reuse_text"),
-    "unknown": KindRoute(None,    "link",     _link_body,    "notice"),
+    "text":    KindRoute(None,    "text_full", text_body),
+    "richdoc": KindRoute("file",  "text_full", richdoc_body),
+    "image":   KindRoute("image", "meta_only", image_card),
+    "video":   KindRoute("video", "meta_only", video_card),
+    "audio":   KindRoute("audio", "meta_only", audio_card),
+    "binary":  KindRoute(None,    "meta_only", binary_card),
+    "unknown": KindRoute(None,    "link_only", link_body),
 }
+# URL 路由 fetch 语义: "text"=文本抓取进正文(_expand_url 走 _fetch_extract_text);
+#   "none"=不做 wire 层抓取(媒体内联载荷由 ensure_payload 按 transport 自理) — 小欧-2026-11-14
 _URL_OVERRIDE: Dict[str, KindRoute] = {
-    "text":    KindRoute(None,    "link",    _link_body, "link_text", fetch="optional"),
-    "image":   KindRoute("image", "link", _link_body, "link_text", fetch="optional"),
-    "video":   KindRoute("video", "link", _link_body, "link_text", fetch="optional"),
-    "audio":   KindRoute("audio", "link", _link_body, "link_text", fetch="optional"),
-    "richdoc": KindRoute("file",  "link", _link_body, "link_text", fetch="optional"),
-    "binary":  KindRoute(None,    "link", _link_body, "link_text"),
+    "text":    KindRoute(None,    "link_only", link_body, fetch="text"),
+    "image":   KindRoute("image", "link_only", link_body),
+    "video":   KindRoute("video", "link_only", link_body),
+    "audio":   KindRoute("audio", "link_only", link_body),
+    "richdoc": KindRoute("file",  "link_only", link_body, fetch="text"),
+    "binary":  KindRoute(None,    "link_only", link_body),
 }
+
+
+_INTERNAL_TEXT_SOURCES = ("log", "message")   # 内部来源恒为文本语义
 
 
 def _build_contract() -> Dict[Tuple[str, str], KindRoute]:
     table: Dict[Tuple[str, str], KindRoute] = {}
     for source in SOURCE_KINDS:
         for content in CONTENT_KINDS:
-            if source in ("log", "message"):        # 内部来源恒为文本语义
+            if source in _INTERNAL_TEXT_SOURCES:
                 table[(source, content)] = _BASE["text"]
             elif source == "url":
                 table[(source, content)] = _URL_OVERRIDE.get(content, _BASE[content])
@@ -108,24 +141,20 @@ def _build_contract() -> Dict[Tuple[str, str], KindRoute]:
 
 
 KIND_CONTRACT: Dict[Tuple[str, str], KindRoute] = _build_contract()
-KIND_MODALITY = {k: r.native_modality for k, r in _BASE.items()}
 
 
 @dataclass(frozen=True)
 class ItemPlan:
-    key: str            # dedup_key(item)
     source_kind: str
     content_kind: str
-    state: str          # native | degraded | opaque
-    transport: str      # inline | url | none
-    reason: str
+    quality: str        # native | text_full | meta_only | link_only
 
 
 def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     """唯一分类点(纯识别, 不读模型): 返回 (source_kind, content_kind)。
     log/message 恒映射 text; url 走 classify_url; 其余复用 extract.classify。"""
     src = str(item.get("kind") or "file")
-    if src in ("log", "message"):
+    if src in _INTERNAL_TEXT_SOURCES:
         return src, "text"
     if src == "url" or item.get("url"):
         return "url", classify_url(str(item.get("url") or ""), str(item.get("content_type") or ""))
@@ -134,70 +163,34 @@ def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     return src, classify(Path(path), str(item.get("mime") or ""), size)
 
 
-def dedup_key(item: Dict[str, Any]) -> str:
-    """去重键单一真源: 附件按 attachment_id, 文件按归一 path, URL 按归一 url。"""
-    if item.get("attachment_id"):
-        return f"att:{item['attachment_id']}"
-    if item.get("url"):
-        return f"url:{str(item['url']).rstrip('/').lower()}"
-    return f"file:{str(item.get('path') or '').replace(chr(92), '/').lower()}"
+def _plan_of(source_kind: str, content_kind: str,
+             prof: Dict[str, Any]) -> str:
+    """quality 唯一判定: 计划器与矩阵投影共用, 禁止第二处派生。
 
-
-def state_of(source_kind: str, content_kind: str, prof: Dict[str, Any]) -> str:
-    """唯一状态函数(C9): degraded 仅在"有原生模态但未走原生"时成立;
-    native_modality 为 None 的路由无降级可言, 直接按 fallback_quality 定档
-    (content→native 全文注入, card/metadata→degraded, link→opaque)。
-    native 判定只看画像声明(与 plan_refs 同口径): transport 可用性是逐条目
-    运行时事实, 不属于模型能力投影, 二维投影不得掺入。"""
+    关键: 来源能否写原生槽(SLOT_WRITERS) 参与判定 —— 模型声明支持但来源无槽
+    (file/selection 的 image 等) 不得判 native, 否则装配层无处可写。"""
     route = KIND_CONTRACT[(source_kind, content_kind)]
     cap = prof.get(route.native_modality) if route.native_modality else None
-    if cap and cap.native:
+    if source_kind in SLOT_WRITERS and cap and cap.native:
         return "native"
-    if route.native_modality is None:
-        return "native" if route.fallback_quality == "content" else (
-            "degraded" if route.fallback_quality == "metadata" else "opaque")
-    if route.fallback_quality in ("content", "metadata"):
-        return "degraded"
-    return "opaque"
+    # fallback_quality 与 quality 同域直取: 缺键即契约漂移, 立即 KeyError 暴露, 不用默认值掩盖
+    return route.fallback_quality
 
 
-def _reason(route: KindRoute, cap: Any) -> str:
-    if not route.native_modality:
-        return "该类型无原生通道"
-    return "模型未声明该输入模态" if not (cap and cap.native) else "载荷不可获取"
-
-
-def _pick_transport(cap: Any) -> str:
-    return "url" if "url" in cap.transport else "inline"
+def quality_of(source_kind: str, content_kind: str, prof: Dict[str, Any]) -> str:
+    """二维质量投影单值(矩阵/前端只读): 与 plan_refs 同源(均经 _plan_of)。"""
+    return _plan_of(source_kind, content_kind, prof)
 
 
 def plan_refs(items: Optional[List[Dict[str, Any]]], prof: Dict[str, Any]) -> List[ItemPlan]:
-    """来源无关计划器(纯函数): native→占位/native part, 其余→文本块。"""
-    plans: List[ItemPlan] = []
-    for it in items or []:
-        src, ck = classify_ref(it)
-        route = KIND_CONTRACT[(src, ck)]
-        cap = prof.get(route.native_modality) if route.native_modality else None
-        base = ItemPlan(dedup_key(it), src, ck, "", "none", "")
-        if cap and cap.native:
-            plans.append(replace(base, state="native", transport=_pick_transport(cap)))
-        else:
-            plans.append(replace(base, state=state_of(src, ck, prof),
-                                 reason=_reason(route, cap)))
-    return plans
+    """来源无关计划器(纯函数): 投递动作 = QUALITY_TO_DELIVERY[quality], 装配层单表派生。"""
+    return [ItemPlan(src, ck, _plan_of(src, ck, prof))
+            for src, ck in (classify_ref(it) for it in items or [])]
 
 
-def aggregate_state(states: List[str]) -> str:
-    """最差状态聚合(native < degraded < opaque), 供 [23] preflight 复用。"""
-    for worst in ("opaque", "degraded", "native"):
-        if worst in states:
-            return worst
-    return "native"
-
-
-def ref_capability_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-    """二维只读投影 {source_kind: {content_kind: state}}, 前端/23 只读索引。"""
-    return {s: {c: state_of(s, c, prof) for c in CONTENT_KINDS}
+def ref_quality_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    """二维只读投影 {source_kind: {content_kind: quality}}, 前端徽标/矩阵只读索引。"""
+    return {s: {c: quality_of(s, c, prof) for c in CONTENT_KINDS}
             for s in SOURCE_KINDS}
 
 

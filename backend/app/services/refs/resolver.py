@@ -30,6 +30,16 @@
 #   (kind 来自附件记录, 失败可定位到 kind) — 小欧-2026-11-11
 
 
+
+# 2026-11-14 小欧 非文本引用文本出口: file/selection 的 image/video/audio/richdoc 原落 read_text_file
+#   被 415 丢弃(首发正文整条消失)。改在 path 校验后按契约文本出口产卡/抽取正文, 复用唯一实现,
+#   产物过 clip_text 预算闸门; 单条解析失败折 unsupported 不阻断整批。binary/unknown 仍走原读取
+#   语义(避免未知后缀文本被误判)。附件真抽取态判据随契约 fallback_quality 改名 text_full — 小欧-2026-11-14
+
+# 2026-11-14 小欧 三堂会审整改: 删 _read_attachment 内 KIND_CONTRACT 重复延迟导入(模块头已有
+#   同名导入); url 分支改用 extract.link_body 公名(消私有名跨模块消费) — 小欧-2026-11-14
+
+
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
 为何独立: 读取分流在 quote.ts:34-36(有外部/根内分流)与 refresh.ts:35(没有)的历史
@@ -39,12 +49,14 @@
 import asyncio
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from fastapi import HTTPException
 
 # 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
 from app.attachments import extract
+from app.attachments.contract import KIND_CONTRACT
 from app.attachments.attachment_service import (
     get_attachment_scoped,
     mark_extract_result,
@@ -144,11 +156,10 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
         metric("extract_fail", "attachment", att.get("kind") or "binary", reason=type(e).__name__)
         return ResolvedRef(ref=ref, truncated=False,
                            note=f"err:attachment_failed:{type(e).__name__}")
-    # 仅"真抽取正文"(契约 fallback_quality=content)成功才回填 ok —— 档案卡/元数据不改变抽取态,
+    # 仅"真抽取正文"(契约 fallback_quality=text_full)成功才回填 ok —— 档案卡/元数据不改变抽取态,
     #   避免占住 extract_status='none' 导致真抽取永久无法回填。前缀属实现细节, 不得作判据。
-    from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
     _route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
-    if _route.fallback_quality == "content":
+    if _route.fallback_quality == "text_full":
         mark_extract_result(att["id"], len(text), True)
         metric("extract_ok", "attachment", att.get("kind") or "binary")
     touch_usage(att["id"])
@@ -161,6 +172,32 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
     return ResolvedRef(ref={**ref, "content": text, "size": att.get("size")},
                        truncated=bool(omitted),
                        note=f"已省略 {omitted} 字符" if omitted else "")
+
+
+
+def _read_nontext(ref: Dict[str, Any], path: str, content_kind: str,
+                  limits: RefLimits) -> ResolvedRef:
+    """非文本引用按契约文本出口产出(元信息卡/抽取正文), 复用唯一抽取实现(DRY)。
+    失败折算 unsupported, 该条 dropped 但不影响其余引用。同步读盘由调用方 to_thread 卸载。"""
+    route = KIND_CONTRACT[("file", content_kind)]
+    att = {
+        "stored_path": path,
+        "path": path,
+        "original_name": Path(path).name,
+        "mime": ref.get("mime") or "",
+        "size": int(ref.get("size") or 0),
+        "kind": content_kind,
+    }
+    try:
+        body = route.extractor(att)
+    except Exception as e:  # noqa: BLE001 — 单条解析失败不阻断整批
+        return ResolvedRef(ref=ref, truncated=False,
+                           note=f"err:unsupported:{type(e).__name__}")
+    body, omitted = clip_text(body, limits.read_max_bytes)
+    return ResolvedRef(ref={**ref, "content": body},
+                       truncated=bool(omitted),
+                       note=f"已省略 {omitted} 字符" if omitted else "")
+
 
 
 async def _read_one(ref: Dict[str, Any], limits: RefLimits,
@@ -184,7 +221,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
         if reason:
             return ResolvedRef(ref=ref, truncated=False,
                                note=f"err:url_rejected:{reason}")
-        return ResolvedRef(ref={**ref, "content": extract._link_body(url)},
+        return ResolvedRef(ref={**ref, "content": extract.link_body(url)},
                            truncated=False, note="")
     if ref.get("kind") == "attachment":
         # 2026-11-06 小欧: DB 查表(get_attachment)为同步阻塞 IO, 须 to_thread 卸载出事件循环,
@@ -193,6 +230,11 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     path = (ref.get("path") or "").strip()
     if not path:
         return ResolvedRef(ref=ref, truncated=False, note="no_path")
+    # 媒体/富文档引用先按契约文本出口产卡, 不再落入 read_text_file 的 415 门;
+    #   binary/unknown 不在此拦截(保留既有文本读取语义, 避免未知后缀文本被误判为二进制卡)。
+    _ck = extract.classify(Path(path), str(ref.get("mime") or ""), int(ref.get("size") or 0))
+    if _ck in ("image", "video", "audio", "richdoc"):
+        return await asyncio.to_thread(_read_nontext, ref, path, _ck, limits)
     lr = ref.get("lineRange") or {}
     offset = lr.get("start")
     limit = (lr.get("end", lr.get("start")) - lr.get("start") + 1) if lr.get("start") else None

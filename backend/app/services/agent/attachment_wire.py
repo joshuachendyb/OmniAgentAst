@@ -7,6 +7,20 @@
 # 2026-11-11 小欧 P5 指标埋点: 展开结果逐项 [cap-metric](native/degraded/native_fail) +
 #   降级/失败 WARNING 留痕(原先静默, 排障无迹) — 小欧-2026-11-11
 
+
+# 2026-11-14 小欧 槽位函数/正则迁出: 编解码与正则移入 ref_slots/wire_prefix 单一真源, 本模块
+#   改为再导出+消费(既有 import 路径不变), 展开逻辑不变 — 小欧-2026-11-14
+
+# 2026-11-14 小欧 扫描正则改由 SLOT_WRITERS 注册表派生(4.4.3 纪律3): 组合正则不再手写
+#   re.compile, 新增来源加注册表一条即自动纳入扫描, 消扩展点漏改 — 小欧-2026-11-14
+
+# 2026-11-14 小欧 三堂会审整改: ①删 attachment_slot/url_item_slot 兼容再导出(禁止 backward,
+#   消费方一律走 ref_slots 单源); ②占位展开改 _EXPANDERS 注册表按 m.lastgroup 派发
+#   (wire_prefix 正则命名组名=注册表键), 删 group(1)/group(2) 硬编码分组号, 新增来源漏配
+#   展开器 KeyError 响亮暴露不再静默错位; ③URL 文本抓取改契约单判据 route.fetch=="text",
+#   删 ck in ("text","richdoc") 双判据 — 小欧-2026-11-14
+
+
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
 
 设计边界:
@@ -18,7 +32,6 @@
   4. 展开失败(记录没了/载荷超限/读不出)退化为一行说明文字, 不阻断本轮;
   5. 占位自描述: 展开期按当前模型画像重算 transport, 无请求期状态依赖。
 """
-import base64
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -31,36 +44,26 @@ from app.logger import logger
 from app.services.agent import capability
 from app.services.agent.media_payload import build_logical_part, ensure_payload, to_wire_part
 
-ATTACHMENT_SLOT_RE = re.compile(r"\[\[ATTACHMENT:([0-9a-f]{32})\]\]")
-URL_SLOT_RE = re.compile(r"\[\[URL_ITEM:([A-Za-z0-9_\-=]+)\]\]")
-_SLOT_RE = re.compile(f"{ATTACHMENT_SLOT_RE.pattern}|{URL_SLOT_RE.pattern}")
-_URL_ITEM_MAX = 512          # b64url 编码上限; 超长不写占位, 装配期降级链接文本
+from app.ref_slots import SLOT_WRITERS, decode_url_item
+
+_SLOT_RE = re.compile("|".join(w.pattern.pattern for w in SLOT_WRITERS.values()))
+
+# 展开器注册表: 键 = SLOT_WRITERS 键 = wire_prefix 正则命名组名, 绑定见模块底部。
+# _expand_one 按 m.lastgroup 派发, 新增来源漏配展开器即 KeyError 响亮暴露, 不静默错位。
+_EXPANDERS: Dict[str, Any] = {}
 
 
-def attachment_slot(ref: Dict[str, Any]) -> str:
-    aid = str(ref.get("attachment_id") or "")
-    return f"[[ATTACHMENT:{aid}]]" if aid else ""
-
-
-def url_item_slot(item: Dict[str, Any]) -> Tuple[str, str]:
-    """URL → (占位, 链接文本)。编码超 512B 返回 ("", 链接文本) —— 不产生坏占位。"""
-    url = str(item.get("url") or "")
-    enc = base64.urlsafe_b64encode(url.encode("utf-8")).decode("ascii").rstrip("=")
-    if len(enc.encode("ascii")) > _URL_ITEM_MAX:
-        return "", url
-    return f"[[URL_ITEM:{enc}]]", url
-
-
-def decode_url_item(token: str) -> str:
-    pad = "=" * (-len(token) % 4)
-    return base64.urlsafe_b64decode(token + pad).decode("utf-8", errors="replace")
+async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
+    """单个占位 → (wire part, 失败降级文字)。不抛异常断轮。"""
+    name = m.lastgroup
+    return await _EXPANDERS[name](m.group(name), prof, model)
 
 
 async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     """占位级展开: 识别全部 ATTACHMENT/URL_ITEM 占位, 按当前模型画像分流。
     url → build_url_part 直传; inline → ensure_payload → to_wire_part;
     none → 占位原位替换为降级文本。无占位原样返回 str。"""
-    if not (ATTACHMENT_SLOT_RE.search(text or "") or URL_SLOT_RE.search(text or "")):
+    if not _SLOT_RE.search(text or ""):
         return text
     prof = capability.profile(llm_model)
     parts: List[Dict[str, Any]] = []
@@ -82,13 +85,6 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
         parts.append({"type": "text", "text": "".join(pending)})
     parts = [p for p in parts if p.get("text") or p.get("type") != "text"]
     return parts if len(parts) > 1 else (parts[0].get("text") if parts else text)
-
-
-async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
-    """单个占位 → (wire part, 失败降级文字)。不抛异常断轮。"""
-    if m.group(1):
-        return await _expand_attachment(m.group(1), prof, model)
-    return await _expand_url(decode_url_item(m.group(2)), prof, model)
 
 
 async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
@@ -128,16 +124,17 @@ def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
         return f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
 
 
-async def _expand_url(url: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
+async def _expand_url(token: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:
+    url = decode_url_item(token)
     ck = classify_url(url)
     route = contract.KIND_CONTRACT[("url", ck)]
-    if route.fetch != "none" and ck in ("text", "richdoc"):
+    if route.fetch == "text":   # 契约单判据: 文本抓取进正文; 媒体内联由 ensure_payload 自理
         return await _fetch_extract_text(url, ck, model)
     cap = prof.get(route.native_modality) if route.native_modality else None
     if not (cap and cap.native):
         logger.warning("[wire] URL 降级 kind=%s model=%s url=%s reason=无原生通道", ck, model, url)
         metric("degraded", "url", ck, model, "无原生通道")
-        return None, extract._link_body(url)
+        return None, extract.link_body(url)
     transport = "url" if "url" in cap.transport else "inline"
     logical, reason = await ensure_payload({"url": url, "content_kind": ck}, transport)
     if not logical:
@@ -162,14 +159,19 @@ async def _fetch_extract_text(url: str, ck: str, model: str = "") -> Tuple[Any, 
         name = Path(urlsplit(url).path).name or url
         att = {"original_name": name, "url": url}
         try:
-            body = (extract._text_body_from_bytes(att, raw) if ck == "text"
-                    else extract._richdoc_body_from_bytes(att, raw, filename=name))
+            body = (extract.text_body_from_bytes(att, raw) if ck == "text"
+                    else extract.richdoc_body_from_bytes(att, raw, filename=name))
             metric("native", "url", ck, model, "fetched_text")
             return {"type": "text", "text": body}, ""
         except Exception as e:  # noqa: BLE001 — 解析失败退链接文本
             logger.warning("[wire] URL 正文抽取失败 kind=%s url=%s err=%s", ck, url, type(e).__name__)
             metric("extract_fail", "url", ck, model, f"解析失败:{type(e).__name__}")
-    link = extract._link_body(url)
+    link = extract.link_body(url)
     if reason:
         metric("degraded", "url", ck, model, f"获取正文失败:{reason}")
     return None, (f"{link}\n(自动获取正文失败: {reason})" if reason else link)
+
+
+# 展开器注册表绑定(键 = SLOT_WRITERS 键 = wire_prefix 正则命名组名)
+_EXPANDERS["attachment"] = _expand_attachment
+_EXPANDERS["url"] = _expand_url

@@ -158,13 +158,13 @@ from app.services.agent.agent_utils import (
     trim_queue_budget,
 )
 
-# 2026-11-11 小欧: 附件/URL 占位 wire 展开(attachment_slot/url_item_slot 组装占位,
-#   expand_attachment_slots 在 wire 边界换 parts); 能力判定由 plan_refs 预分流
-from app.services.agent.attachment_wire import (
-    attachment_slot,
-    expand_attachment_slots,
-    url_item_slot,
-)
+# 2026-11-11 小欧: 附件/URL 占位 wire 展开(expand_attachment_slots 在 wire 边界换 parts);
+#   能力判定由 plan_refs 预分流 — 小欧-2026-11-11
+# 2026-11-14 小欧: 装配按 plan.quality 经 QUALITY_TO_DELIVERY 单表派生投递动作, 占位统一由 SLOT_WRITERS 注册表产出,
+#   删除 source_kind 字面量分派; 无槽来源(native 判定已在前置排除)恒走文本块不丢正文 — 小欧-2026-11-14
+from app.services.agent.attachment_wire import expand_attachment_slots
+from app.attachments import contract
+from app.ref_slots import SLOT_WRITERS
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER,
     COOLDOWN_ROUNDS,
@@ -220,25 +220,24 @@ _WS_BLOCK_RE = re.compile(
 def build_user_turn_text(user_input: str, refs: Optional[list] = None,
                          ws_text: str = "",
                          plans: Optional[list] = None) -> str:
-    """装配本轮 user 消息正文: [引用文本块][原生占位][事项目录块][用户原话] — 小欧-2026-10-31
+    """装配本轮 user 消息正文: [引用文本块/槽位行][事项目录块][用户原话]。
 
-    纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
-    (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
-    plans 决定每项"写占位还是写文本块": native 项按来源写占位(附件→ATTACHMENT,
-    URL→URL_ITEM), 其余项走既有 refs 文本块渲染(ref.content 由 resolver 提前产出)。
-    refs 与 plans 同序一一对应(plan_refs 保序生成), native 项跳过文本块渲染防双写。
+    纯装配(零 IO / 零状态)。quality 经 QUALITY_TO_DELIVERY 单表派生投递动作:
+      slot → 交 SLOT_WRITERS[plan.source_kind].make(ref) 写原生占位;
+      text → 收集进 refs 文本块, 由 render_refs_block 渲染。
+    plans 缺失时全部按 text 处理(插话路径无计划), 与正文不丢的既有行为一致。
+    不可用条目已在 resolver 层 dropped, 故无第三种投递态。
     """
-    native = {id(r) for r, p in zip(refs or [], plans or []) if p.state == "native"}
-    text_refs = [r for r in (refs or []) if id(r) not in native] if plans is not None else refs
-    refs_block = render_refs_block(text_refs)
-    for r, p in zip(refs or [], plans or []):
-        if p.state != "native":
-            continue
-        if p.source_kind == "attachment":
-            refs_block += f"附件: {attachment_slot(r)}\n"
-        elif p.source_kind == "url":
-            slot, link = url_item_slot(r)
-            refs_block += f"链接: {slot or ('(链接文本) ' + link)}\n"
+    text_refs: List[dict] = []
+    wire_lines: List[str] = []
+    for i, r in enumerate(refs or []):
+        plan = plans[i] if plans and i < len(plans) else None
+        delivery = contract.QUALITY_TO_DELIVERY[plan.quality] if plan is not None else "text"
+        if delivery == "slot":
+            wire_lines.append(SLOT_WRITERS[plan.source_kind].make(r))
+        else:
+            text_refs.append(r)
+    refs_block = render_refs_block(text_refs) + "".join(wire_lines)
     return "".join(p for p in (refs_block, ws_text) if p) + user_input
 
 
