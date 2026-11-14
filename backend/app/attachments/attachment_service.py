@@ -36,6 +36,10 @@
 #   2) session 作用域恢复为全部本会话台账行(存为附件的副本归此, 与「AI 产出的」不重叠);
 #   3) recent 作用域加约束: 限近 RECENT_WINDOW_DAYS 天窗 + 排除本会话 + 排除全局资产,
 #      原判据仅 use_count>0 无时间窗, 「最近」名不副实; — 小欧-2026-11-13
+#
+# 2026-11-14 小欧 修: save_bytes 并发同 sha 回查分支在 with 块外调用 _decorate_global,
+#   连接已关闭 → ProgrammingError("Cannot operate on a closed database") 且未删本次孤儿文件;
+#   回查+装饰收进同一 with 块, 命中即返复用行 — 小欧-2026-11-14
 
 
 
@@ -267,10 +271,10 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
                 f"SELECT {_COLS} FROM attachments WHERE session_id = ? AND sha256 = ? LIMIT 1",
                 (session_id, sha),
             ).fetchone()
-        if dup:
-            d = _row_to_dict(dup)
-            _decorate_global(conn, [d])
-            return d
+            if dup:
+                d = _row_to_dict(dup)
+                _decorate_global(conn, [d])
+                return d
         fail(ATTACHMENT_UNAVAILABLE, "附件登记后读取失败")
     return rec
 

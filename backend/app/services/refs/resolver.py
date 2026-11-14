@@ -38,6 +38,15 @@
 
 # 2026-11-14 小欧 三堂会审整改: 删 _read_attachment 内 KIND_CONTRACT 重复延迟导入(模块头已有
 #   同名导入); url 分支改用 extract.link_body 公名(消私有名跨模块消费) — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 第7章7.4 阶段B 物化: resolve_refs/_read_one 增 llm_model 透传; 本地 image/audio
+#   在模型声明原生 + 大小≤内联上限 + 音频容器 wav/mp3 时, _materialize_media 经 save_bytes 入附件库
+#   (继承单文件/会话总量/sha 去重/会话归属), ref 补 attachment_id 后由计划器判 native; 失败回落文本出口 — 小欧-2026-11-14
+#   (根内相对路径经 browse._resolve_within_root 解析, 与读取同口径, 不按进程 CWD 误读) — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 阶段B 物化失败回执: _materialize_media 改返回 (attachment_id, reason, detail),
+#   无会话/超内联上限/落库异常分别回 materialize_no_session/materialize_too_large/materialize_failed;
+#   回落文本出口成功时随 ResolvedRef.notices 下发 warn 级回执, 文本出口自身失败仍只报 dropped — 小欧-2026-11-14
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -48,7 +57,7 @@
 """
 import asyncio
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -60,12 +69,14 @@ from app.attachments.contract import KIND_CONTRACT
 from app.attachments.attachment_service import (
     get_attachment_scoped,
     mark_extract_result,
+    save_bytes,
     touch_usage,
 )
 from app.attachments.observability import metric
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源
 from app.file_browse import browse_service as browse
 from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
+from app.logger import logger
 from app.services.refs.clip import (
     clip_text,  # 2026-10-30 小欧: 字符级头尾摘录公共实现(与 budget 共用)
 )
@@ -84,6 +95,7 @@ class ResolvedRef:
     ref: Dict[str, Any]   # 原始 ref(已填好 content/size; 失败时为原始引用)
     truncated: bool       # 是否因读取上限被截断(直读截断或头尾摘录)
     note: str             # 失败标记或回执 detail("err:missing:FileNotFoundError"/"已省略 N 行"/"range_clipped"); 文件更新提示由前端本地 mtime 比对, 不出后端回执
+    notices: List[Dict[str, str]] = field(default_factory=list)  # 非阻断回执(物化失败等), 随放行条目一并下发
 
 
 async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
@@ -174,11 +186,48 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
                        note=f"已省略 {omitted} 字符" if omitted else "")
 
 
+_AUDIO_NATIVE_EXTS = {".wav", ".mp3"}
+
+
+def _native_modality(llm_model: Any, modality: str) -> bool:
+    """模型画像是否声明该模态原生(能力判定归 capability, 本层只问结果)。"""
+    if not modality:
+        return False
+    from app.services.agent import capability  # 延迟导入防循环
+    cap = capability.profile(llm_model).get(modality)
+    return bool(cap and cap.native)
+
+
+def _materialize_media(ref: Dict[str, Any], path: str, content_kind: str,
+                       session_id: str | None) -> Tuple[str | None, str | None, str]:
+    """本地媒体物化入附件库(第7章7.4 阶段B): 复用 save_bytes 自动继承单文件/会话总量/同 sha 去重。
+    返回 (attachment_id, reason, detail); 成功时 reason/detail 为 None/""。无会话/超内联上限/
+    落库异常均回落文本出口, 由调用方按 reason 补一条非阻断回执, 不阻断本轮。
+    session_id 即附件会话归属, 展开期 get_attachment_scoped 按同一归属收权。"""
+    if not session_id:
+        return None, "materialize_no_session", ""
+    from app.services.agent.media_payload import inline_limit_bytes  # 延迟导入防循环
+    try:
+        # 根内相对路径经 browse 根解析(与读取同口径), 外部盘符路径直接用; 不可达抛错回落文本
+        src = Path(path) if browse._is_abs_drive_path(path) \
+            else browse._resolve_within_root(path)[0]
+        if os.path.getsize(src) > inline_limit_bytes():
+            return None, "materialize_too_large", ""
+        raw = src.read_bytes()
+        att = save_bytes(session_id, src.name, raw,
+                         mime=ref.get("mime") or None, source_path=path)
+        return att.get("id"), None, ""
+    except Exception as e:  # noqa: BLE001 — 物化失败回落文本出口, 不阻断本轮
+        logger.warning("[refs] 媒体物化失败 path=%s kind=%s err=%s", path, content_kind, e)
+        return None, "materialize_failed", type(e).__name__
+
+
 
 def _read_nontext(ref: Dict[str, Any], path: str, content_kind: str,
                   limits: RefLimits) -> ResolvedRef:
     """非文本引用按契约文本出口产出(元信息卡/抽取正文), 复用唯一抽取实现(DRY)。
-    失败折算 unsupported, 该条 dropped 但不影响其余引用。同步读盘由调用方 to_thread 卸载。"""
+    失败折算 unsupported, 该条 dropped 但不影响其余引用。同步读盘由调用方 to_thread 卸载。
+    (第7章7.4 阶段B 起, image/audio 原生可达时由 _read_media 物化, 本函数只留文本出口。)"""
     route = KIND_CONTRACT[("file", content_kind)]
     att = {
         "stored_path": path,
@@ -201,7 +250,7 @@ def _read_nontext(ref: Dict[str, Any], path: str, content_kind: str,
 
 
 async def _read_one(ref: Dict[str, Any], limits: RefLimits,
-                    session_id: str | None) -> ResolvedRef:
+                    session_id: str | None, llm_model: Any = None) -> ResolvedRef:
     """按标识读单条正文。同步读盘经 asyncio.to_thread 卸载出事件循环(仓库既有范式)。
 
     读法矩阵:
@@ -234,6 +283,26 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     #   binary/unknown 不在此拦截(保留既有文本读取语义, 避免未知后缀文本被误判为二进制卡)。
     _ck = extract.classify(Path(path), str(ref.get("mime") or ""), int(ref.get("size") or 0))
     if _ck in ("image", "video", "audio", "richdoc"):
+        # 第7章7.4 阶段B: 本地 image/audio 且模型声明原生、大小在上限内、音频容器为 wav/mp3 时,
+        #   物化入附件库并补 attachment_id, 由计划器判 native 走原生槽; 其余回落契约文本出口。
+        if (_ck in ("image", "audio")
+                and _native_modality(llm_model, KIND_CONTRACT[("file", _ck)].native_modality)
+                and (_ck != "audio" or Path(path).suffix.lower() in _AUDIO_NATIVE_EXTS)):
+            _aid, _mreason, _mdetail = await asyncio.to_thread(
+                _materialize_media, ref, path, _ck, session_id)
+            if _aid:
+                return ResolvedRef(ref={**ref, "attachment_id": _aid, "content": ""},
+                                   truncated=False, note="")
+            _rr = await asyncio.to_thread(_read_nontext, ref, path, _ck, limits)
+            # 文本出口成功才补物化失败回执; 文本出口自身失败已入 dropped, 不再叠一条噪声
+            if _mreason and not _rr.note.startswith("err:"):
+                _rr.notices = [{
+                    "label": ref.get("label") or path,
+                    "path": path,
+                    "reason": _mreason,
+                    "detail": _mdetail,
+                }]
+            return _rr
         return await asyncio.to_thread(_read_nontext, ref, path, _ck, limits)
     lr = ref.get("lineRange") or {}
     offset = lr.get("start")
@@ -314,6 +383,7 @@ async def resolve_refs(
     *,
     limits: RefLimits,
     session_id: str | None = None,
+    llm_model: Any = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]], List[Dict[str, str]]]:
     """并发读全部引用(信号量限流 + 超时), 返回 (resolved, dropped, notices)。
 
@@ -322,6 +392,8 @@ async def resolve_refs(
     notices 元素 = {label, path, reason, detail}(非阻断提示); 条目 level 由
     notice.build_notice 统一查 REASON_LEVELS 补齐(单一裁决点, resolver/budget 不碰 level)。
     session_id: 会话归属(附件注入按此校验; None 时附件一律折算 missing, fail-closed)。
+    llm_model: 目标模型身份快照(第7章7.4 阶段B: 本地 image/audio 原生可达时物化入附件库;
+      缺省 None 视为无原生能力, 全部回落文本出口)。
     """
     sem = asyncio.Semaphore(REF_READ_CONCURRENCY)
 
@@ -333,7 +405,7 @@ async def resolve_refs(
         async with sem:
             try:
                 return await asyncio.wait_for(
-                    _read_one(ref, limits, session_id), timeout=REF_READ_TIMEOUT)
+                    _read_one(ref, limits, session_id, llm_model), timeout=REF_READ_TIMEOUT)
             except asyncio.TimeoutError:
                 return ResolvedRef(ref=ref, truncated=False, note="timeout")
 
@@ -366,6 +438,8 @@ async def resolve_refs(
                 "reason": "truncated" if rr.truncated else "range_clipped",
                 "detail": rr.note,
             })
+        # 条目自带的非阻断回执(如物化失败), 与截断/压缩同级点名, 不影响放行
+        notices.extend(rr.notices)
         # 放行条目统一在此追加(原实现 elif/else 两条分支各写一次, 同一语句两处 — 2026-10-30 小欧)
         resolved.append(rr.ref)
     # 同 path 已在读取前去重, 此处不再二次合并
