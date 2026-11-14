@@ -121,6 +121,7 @@
 #   仍按"未测照发"内联导致整轮 400; 回归 test_vision_expand_gated_by_supports — 小欧-2026-11-10
 # 2026-11-11 小欧 附件能力域: build_user_turn_text/init_history 收口 plans 单参数(native 写占位,
 #   其余走 refs 文本块); expand_vision_parts → expand_attachment_parts(占位级展开归 attachment_wire) — 小欧-2026-11-11
+# 2026-11-14 商量 设计[34] H7/P0: prepare_messages_for_llm 加注释锚 — 严禁按 msg_kind/creation_source 过滤当前轮, 系统通知当前轮仍以 role=user 进 wire; 瞬态裁剪单点在 history_loader(H9) — 商量-2026-11-14
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -590,6 +591,9 @@ class MessageBuilder:
         """准备发给LLM的完整消息列表 — 合并原split+merge+assemble
 
         不再拆出last_message再拼回,整个history作为一个List[Dict]贯穿流程。
+        2026-11-14 商量(设计[34] H7/P0): 本函数严禁读 msg_kind/creation_source 做过滤 —
+        B1a/B1b 系统通知的当前轮必须以 role=user 进 wire; msg_kind 只服务前端渲染与历史语义
+        (瞬态裁剪单点在 history_loader.py:245-248, H9), 两处职责分离不得互相越界。
         注入点(tools/summary/schema)在第一个非system消息前或末尾操作。
 
         MSG-001 小沈 2026-05-24: temp_history加入字符容量限制,从最旧开始移除

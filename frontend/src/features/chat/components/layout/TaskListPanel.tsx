@@ -42,6 +42,9 @@
 // 编辑历史: 2026-11-13 商量 - 字号/字重归位令牌: 12→FontSize.SECONDARY(4处)/11→SMALL(2处)/10→CAPTION(4处)
 //   /fontWeight 500→MEDIUM/400→REGULAR, 遵守 2026-11-12 stepStyles 7档阶梯"唯一真源"铁律(11-12整改只收了13px, 本文件漏网);
 //   fontSize:6 状态点●为装饰图形非文字, 不入阶梯(加注释说明); lineHeight 无令牌暂留数字 — 商量-2026-11-13
+// 编辑历史: 2026-11-14 商量 - merged_inputs 契约升级 {content,msg_kind}[] 后同槽异标(B1a「系统通知」/C1「插话」),
+//   B1b 头/尾加「系统通知 · 续跑」小标; 系统通知判定收敛为单一谓词; 更正旧「msg_kind=system_notice ⇔
+//   creation_source=system_resume」等价误述(B1a 任务来源仍 user 但消息 msg_kind=system_notice) — 商量-2026-11-14
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -97,6 +100,11 @@ const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
   failed: { name: '失败', color: '#ff4d4f' },
   cancelled: { name: '已取消', color: Colors.TEXT.TERTIARY },
 };
+
+// 2026-11-14 商量(设计[34] 4.2/5.2): 系统通知/插话单一判定谓词 — 全文件判定收敛于此, 禁止散写 msg_kind 判断
+const isSystemResumeTask = (t: SessionTaskItem) => t.creation_source === 'system_resume'; // B1b 主判定
+const isNoticeInput = (m: { msg_kind: string }) => m.msg_kind === 'system_notice';        // B1a(merged_inputs 项)
+const isInjectionInput = (m: { msg_kind: string }) => m.msg_kind === 'user';              // C1(merged_inputs 项)
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
@@ -415,7 +423,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               })()}
 
               {/* 续跑徽标(后台命令完成自动唤醒的任务) — 商量-2026-11-13 */}
-              {t.creation_source === 'system_resume' && (
+              {isSystemResumeTask(t) && (
                 <span
                   style={{
                     fontSize: FontSize.CAPTION,
@@ -455,9 +463,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   fontWeight: FontWeight.MEDIUM,
                   lineHeight: 1.5,
                   wordBreak: 'break-word',
-                  // 2026-11-13 商量 - 系统通知样式: 续跑任务的消息体是系统通知(msg_kind=system_notice ⇔
-                  //   creation_source=system_resume, 设计[33] 8.6 两维标记), 不按用户问题样式渲染
-                  ...(t.creation_source === 'system_resume'
+                  // 2026-11-14 商量(设计[34] 修订⑥): 续跑任务(creation_source=system_resume)按系统通知样式渲染;
+                  //   注意 system_notice 与 system_resume 非等价 — B1a 任务来源仍 user 但消息 msg_kind=system_notice
+                  ...(isSystemResumeTask(t)
                     ? {
                         color: Colors.TEXT.SECONDARY,
                         fontWeight: FontWeight.REGULAR,
@@ -469,6 +477,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     : {}),
                 }}
               >
+                {isSystemResumeTask(t) && (
+                  <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, display: 'block', marginBottom: 2 }}>系统通知 · 续跑</span>
+                )}
                 <CollapsibleText text={t.user_input} />
                 {/* 2026-09-09 小欧 复制按钮: 用户输入右上角, hover时显示 */}
                 <button
@@ -481,6 +492,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 >
                   <CopyOutlined />
                 </button>
+                {isSystemResumeTask(t) && (
+                  <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, display: 'block' }}>— 系统通知 · 续跑 —</span>
+                )}
               </div>
             )}
 
@@ -521,7 +535,16 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                         borderRadius: '0 3px 3px 0',
                       }}
                     >
-                      <CollapsibleText text={m} />
+                      {/* 2026-11-14 商量(设计[34] 4.2/5.2, 修订⑥): 同槽异标 — B1a「系统通知」小标;
+                          C1 恒加「插话」轻标(正文前缀块不入库, 不按正文猜来源)。
+                          注: msg_kind 仅 user/system_notice 两值, 新增枚举须同步补标签 */}
+                      {isNoticeInput(m) && (
+                        <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, marginRight: 4 }}>系统通知</span>
+                      )}
+                      {isInjectionInput(m) && (
+                        <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, marginRight: 4 }}>插话</span>
+                      )}
+                      <CollapsibleText text={m.content} />
                     </div>
                   ))}
               </div>

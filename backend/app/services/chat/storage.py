@@ -139,6 +139,7 @@
 #   list_session_tasks SELECT 补 creation_source 供前端续跑徽标; 存量行 DEFAULT 兜底 — 商量-2026-11-13
 # 2026-11-14 商量 - 新增 delete_user_message: 未投递消息补偿删除唯一出口(续跑失败/注入未命中),
 #   与 task_registry.inject_system_notice 共用, 不留用户可见但 agent 未读的 system_notice — 商量-2026-11-14
+# 2026-11-14 商量 - list_session_tasks merged_inputs 升级 {content,msg_kind}[](设计[34]): B1a/C1 同槽异标, SELECT 补 msg_kind 显式列
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -1179,8 +1180,9 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     ).fetchall()
     # 会话内注入行一次取回按任务分组 2026-09-28 小欧 (原 N+1)
     _inj_by_task: Dict[str, list] = {}
+    # 2026-11-14 商量(设计[34] 5.3): SELECT 补 msg_kind 显式列 — B1a「系统通知」小标数据源(H8, 禁 SELECT *)
     for _m in conn.execute(
-            """SELECT id, task_id, content FROM chat_user_message
+            """SELECT id, task_id, content, msg_kind FROM chat_user_message
                WHERE session_id=? AND task_id IS NOT NULL ORDER BY id ASC""",
             (session_id,)).fetchall():
         _inj_by_task.setdefault(_m["task_id"], []).append(_m)
@@ -1196,9 +1198,11 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
         d["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
         d["provider"] = _sm.provider if _sm else None
         _reg_uid = d.pop("user_message_id", None)     # 首条 uid 仅用于排除, 不进返回契约 — 小欧 2026-09-28
-        # 追加注入消息(cum.task_id 单一路由: bind_message_to_task 执行期绑定; 排除任务登记首条 uid)
+        # 2026-11-14 商量(设计[34] 4.2/4.3④/5.3): merged_inputs 由 string[] 升级为 {content,msg_kind}[]
+        #   — B1a/C1 同槽异标; 禁 backward 双读, 消费方同步见 6.5/6.6/6.8; cum.task_id 单一路由不变
         d["merged_inputs"] = [
-            _m["content"] for _m in _inj_by_task.get(d["task_id"], [])
+            {"content": _m["content"], "msg_kind": _m["msg_kind"]}
+            for _m in _inj_by_task.get(d["task_id"], [])
             if _m["id"] != _reg_uid
         ]
         out.append(d)

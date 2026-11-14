@@ -107,6 +107,7 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14.4 必改: send_chat 增可选形参 link_enabled 并入 POST /chat/stream
 #   payload, 以覆盖"会话 link 开关值随消息携带"这条新链路(默认 None=不携带, 后端沿用会话现值,
 #   故其余 76 个 case 行为不变) — 小欧-2026-10-03
+# 2026-11-14 商量 - _fetch_injected_messages 随 list_session_tasks.merged_inputs 契约升级 {content,msg_kind}[] 同步取 content(禁 backward 双读, 设计[34] 5.3) — 商量-2026-11-14
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -1139,8 +1140,10 @@ def _fetch_injected_messages(session_id: Optional[str]) -> List[str]:
     _out: List[str] = []
     for _t in (_d.get("tasks") or []):
         for _m in (_t.get("merged_inputs") or []):
-            if isinstance(_m, str) and _m:
-                _out.append(_m)
+            # 2026-11-14 商量(设计[34] 5.3): 契约升级 {content,msg_kind}[], 直接取 content(禁 backward 双读)
+            _c = _m.get("content", "")
+            if _c:
+                _out.append(_c)
     return _out
 
 

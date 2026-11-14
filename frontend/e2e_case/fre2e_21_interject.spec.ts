@@ -42,7 +42,11 @@ type MsgResp = {
   allow_interject?: boolean;
   messages: Array<{ role: string; content: string }>;
 };
-type TaskItem = { task_id: string; merged_inputs?: string[] };
+type TaskItem = {
+  task_id: string;
+  // 2026-11-14 商量(设计[34] 5.3): merged_inputs 契约升级 {content,msg_kind}[](禁 backward 双读)
+  merged_inputs?: { content: string; msg_kind: string }[];
+};
 
 async function readSession(
   page: import('@playwright/test').Page
@@ -192,7 +196,7 @@ test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏回�
   expect(merged.length, '左栏下挂的「追加N条」应恰有 3 条').toBe(N);
   for (let i = 1; i <= N; i += 1) {
     expect(
-      merged.some((m) => m.includes(mark(i))),
+      merged.some((m) => m.content.includes(mark(i))),
       `下挂回显应含第${i}条`
     ).toBe(true);
   }
