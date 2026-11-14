@@ -1,60 +1,60 @@
-// 编辑历史: 2026-08-26 小欧 - 8.4.9 实施: 消息流水线渲染器, 按事件seq序产出段, 相邻同类合并, 实时与回放共用(4.4.2①/3.7.6)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 消除map自增副作用, 预计算lastThink判定光标(11)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审去框: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
-// 编辑历史: 2026-08-28 小欧 - ④A/a1: 左线令牌化 Colors.BORDER.VERTICAL
+// 编辑历史: 2026-08-26 小欧 - 实施: 消息流水线渲染器, 按事件seq序产出段, 相邻同类合并, 实时与回放共用
+// 编辑历史: 2026-08-27 小欧 - 复核修复: 消除map自增副作用, 预计算lastThink判定光标
+// 编辑历史: 2026-08-27 小欧 - 复核: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 去框: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
+// 编辑历史: 2026-08-28 小欧 - 左线令牌化 Colors.BORDER.VERTICAL
 // 编辑历史: 2026-08-30 小欧 - 设计文档实施(设计文档落码, 北京老陈 2026-08-30 批准): 正文 text 段接入 TextStream 打字机(预计算 lastText 作实时累积段); 容器 paddingLeft→Spacing.LG、marginTop→Spacing.XS、obs 失孤行 margin→Spacing.MD 去魔法数字 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈 标注修正(step之间8/step内部文字6/观察折叠内4): text 段同 step 后续标记 sameStep(thought的reasoning+thought), 主段 step 间距收敛 MD(8), 同 step 内文字块走 compact(6) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): stepMargin(false)=(MD-2)=6 统一 step 段距(obs 孤儿行同步), 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - final段修复: 流式不渲染(chunks已展示), 历史回放渲染reasoning+response两字段(此前仅response遗漏reasoning)
-// 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 光标/打字机判定末段化(修复旧思考段光标常亮); 新增waiting判定, 末段非thinking/text且streaming时渲染SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈); 首chunk到达末段变content段waiting即消失, 内容从同一首列打字机接管, 等待符号禁止常驻
+// 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计定案): 光标/打字机判定末段化(修复旧思考段光标常亮); 新增waiting判定, 末段非thinking/text且streaming时渲染SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈); 首chunk到达末段变content段waiting即消失, 内容从同一首列打字机接管, 等待符号禁止常驻
 // 编辑历史: 2026-09-02 小欧 - 修复final段失败终态不显原因(北京老陈反馈: 失败任务右栏最后仅"任务执行失败"无原因):
 //   final段历史回放渲染 outcome=failed 时补 error_type/error_message 红字行(⚠[llm_error] 具体原因, 对齐StatusLine红字小字样式);
 //   数据链路本就贯通(sseParser:119-120 已解析outcome/error_type/error_message, FinalStep.to_dict输出:111-112原样透传),
 //   此前仅渲染 response/reasoning 二字段漏了错误字段; second修订: outcome三态显式分支(completed正常/failed红字原因行/cancelled弱化"已取消") - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - HIT三处修复C: waiting判定加highlightToolName保活, HIT高亮时保持等待可见消确认后闪消 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 三堂会审定稿(北京老陈驱动, 根治等待圈三处丢失窗口): waiting判定由 streaming 单一依赖改
+// 编辑历史: 2026-09-02 小欧 - 定稿(北京老陈驱动, 根治等待圈三处丢失窗口): waiting判定由 streaming 单一依赖改
 //   taskActive = streaming||highlight||badge(running/paused), badge 复用 useTaskInfo 权威派生(paused→running 回推已实现,
 //   useTaskInfo.ts:109-170), 渲染器不重造业务判断; 覆盖: ①首屏 serverTaskId→activeTaskId 同步窗口 streaming=false 圈不亮
 //   (startinfo 已到且 receiving → badge=running 撑圈) ②HIT挂起>60s 空闲超时重连 disconnect isReceiving=false 圈闪失
 //   (badge 仍 paused/running 撑圈) ③HIT confirm 后 resumed 前 highlight 已清 null 圈闪失(badge 仍 paused 撑圈);
 //   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 三堂会审task005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
+// 编辑历史: 2026-09-02 小欧 - 复核修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
+// 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动复核): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
 // 编辑历史: 2026-09-03 小欧 修复: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载
-// 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留
+// 编辑历史: 2026-09-03 小欧 waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留
 // 编辑历史: 2026-09-03 小欧 修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存)
 // 编辑历史: 2026-09-03 小欧 修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义
 // 编辑历史: 2026-09-03 小沈 修复修正: buildSegments action去重改不可变更新(原existingTool.action=s原地突变违反不可变原则)
 // 编辑历史: 2026-09-03 小沈 thought/action等待图标修复: 修正小欧方向反转(第29行)/第27行)——
 //   tool有obs(工具完成等待LLM下一轮thought)应保留绿圈(observations.length>0), tool无obs(action执行中由ToolCallLine齿轮承载)应排除;
 //   obs孤儿观察段(结果已到等待LLM下一轮)应保留绿圈(去掉obs排除); 场景穷举6种: 无段✅thinking/text✅tool无obs✅tool有obs✅obs✅final/error✅ - 小沈-2026-09-03
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 observation统一存obs段, 不挂tool
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 showGreenCircle正向判断替代6条件否定式
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 waiting变量改名showGreenCircle语义更清晰
+// 编辑历史: 2026-09-03 小欧/北京老陈 observation统一存obs段, 不挂tool
+// 编辑历史: 2026-09-03 小欧/北京老陈 showGreenCircle正向判断替代多条件否定式
+// 编辑历史: 2026-09-03 小欧/北京老陈 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
+// 编辑历史: 2026-09-03 小欧/北京老陈 waiting变量改名showGreenCircle语义更清晰
 // 编辑历史: 2026-09-04 小欧 - 修复 observation 重复显示(单/多工具并行时孤儿与 ToolCallLine 重复): toolStepSet 抑制已消费孤儿渲染 - 小欧-2026-09-04
 // 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案: action先于弹窗发): blocked 工具也进 action.tools(无 obs), toolDenied 判定纳入 blocked 停齿轮防空转 - 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - B2三思三省修订(北京老陈驱动): interrupted 由"任一error存在"改"整批计数判定"——未执行工具数(blocked/user_rejected/timeout)>=tools总数才停齿轮; 修"1拒+1执行中"短暂误灰字缝隙 - 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝独立type="user_rejected"事件+error blocked/timeout两路实时聚合deniedSteps(Map step→计数),
+// 编辑历史: 2026-09-06 小欧 - 方案(北京老陈定案): 拒绝独立type="user_rejected"事件+error blocked/timeout两路实时聚合deniedSteps(Map step→计数),
 //   interrupted 整批计数判定数据源从"error段"换deniedSteps(erro事件不入liveSteps=原计数永远0=死代码); ToolCallLine传replay=!streaming(回放免齿轮) - 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2(J1缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
+// 编辑历史: 2026-09-06 小欧 - 方案(缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
 //   canonical后覆盖, candidateCount取预览候选总数并保留; allDenied分母由seg.action.tools(被canonical覆盖后缩为执行集)改为
-//   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"裁定), 改后1<2齿轮保持 — 小欧-2026-09-06
-// 编辑历史: 2026-09-07 小欧 - 4.4.2 thought-start→waiting 段(时序根治 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
+//   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"定案), 改后1<2齿轮保持 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - thought-start→waiting 段(时序根治, 按前端消息分类处理分析定案):
 //   ①union 新增 {kind:'waiting', step?} 段——thought-start 由"break 丢弃"改为落段(信号真正驱动图标, 取代条件推断);
 //   ②appendToLast 就地覆盖 waiting——首个内容(chunk/thought)到达, waiting 段原位变 thinking/text, 图标位变文字(内容覆盖制);
 //   ③渲染分支门控: waiting 仅"末段+taskActive"亮圈(非末段/历史回放 taskActive=false 自动灭, 杜绝常驻);
 //   UI 观感机制不变(该亮照亮、内容到即消失), showGreenCircle 保留(空容器/obs 窗口), waiting 为末段时其条件不成立无双圈 — 小欧-2026-09-07
-// 编辑历史: 2026-09-07 小欧 - 4.4.2 DRY 重构(北京老陈审查, 10大规范): 等待图标 SVG markup 两处重复
-//   (waiting 段渲染分支 + showGreenCircle 兜底) → 抽唯一 WaitingIcon 组件共用; 行为零变化(测试全绿前提下, 设计3.4原则七) — 小欧-2026-09-07
-// 编辑历史: 2026-09-07 小欧 - 4.4.2 旧逻辑清理(北京老陈定案, 设计3.4原则七"showGreenCircle 去留"):
+// 编辑历史: 2026-09-07 小欧 - DRY 重构(北京老陈审查, 10大规范): 等待图标 SVG markup 两处重复
+//   (waiting 段渲染分支 + showGreenCircle 兜底) → 抽唯一 WaitingIcon 组件共用; 行为零变化(测试全绿前提下) — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 旧逻辑清理(北京老陈定案, "showGreenCircle 去留"):
 //   删除 showGreenCircle 双条件推断(!lastSeg || lastSeg.kind==='obs')整段 —— 等待图标改由 thought-start 信号唯一驱动
 //   (每可见轮 LLM 请求前必发, 产 waiting 段, 内容覆盖制); 空容器首圈由首信号到达即亮, obs 后等待由紧邻 thought-start
 //   (waiting 段)承接, 同批 SSE 无缝隙, 不再双机制并行; 相关旧注释块一并清除 — 小欧-2026-09-07
-// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
+// 编辑历史: 2026-09-06 小欧 - 方案(被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
 //   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
 // 编辑历史: 2026-09-09 小欧 - A2修复(跨任务 step 号回绕互踩): buildSegments tool 段去重升级——同 step 仅允许
 //   preview+canonical 各一次合一(保持 UI 一行契约, candidateCount 以预览全量为准), 第三次起的同 step action
@@ -77,11 +77,11 @@
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 复核修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 修改: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
 // 编辑历史: 2026-09-30 14:30 小欧 - 传 ToolCallLine 的 deniedEntries 过滤 tool 存在者（无名条目会渲染 undefined 点名行）
-// 编辑历史: 2026-10-05 小欧 - 接「思考排版」「推理内容」两开关(文档[9] §5.8); 三堂会审: thinking段key 去文本切片(流式前16字内每chunk换key致折叠态被弹回); 等待期把标题行提到绿圈上一行(§5.14.2) — 小欧-2026-10-05
-// 编辑历史: 2026-10-05 小欧 - 第2轮会审: 段key改「下标+步号」双因子(修切任务折叠态/打字机串味); 撤ready门控(致正文消失、打破waiting-segment-442断言); 等待段传text=" "不传cursor(去多余▍与误打CURSOR T) — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 接「思考排版」「推理内容」两开关; 复核: thinking段key 去文本切片(流式前16字内每chunk换key致折叠态被弹回); 等待期把标题行提到绿圈上一行 — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 第2轮复核: 段key改「下标+步号」双因子(修切任务折叠态/打字机串味); 撤ready门控(致正文消失、打破waiting-segment-442断言); 等待段传text=" "不传cursor(去多余▍与误打CURSOR T) — 小欧-2026-10-05
 // 编辑历史: 2026-10-28 小欧 - P2 前端懒渲染优化(5477步DOM冻结根治):
 //   ①useMemo 包裹 buildSegments/toolStepSet/lastThink,lastText,thinkEndIdx(steps引用不变时复用,消每次渲染重算)
 //   ②渐进式渲染: 抽 useLazyRender hook(分批调度职责单一, IO 细情封装在 hook 内, 不混入渲染层);
@@ -89,7 +89,7 @@
 //     流式模式全量渲染(打字机/等待图标依赖末段位); 派生值仍基于全量 segs 计算(末段判定不受分批影响)
 //   ③segs.length-1 → visibleSegs.length-1(3处: waiting/thinking/text 末段判定, 基于实际渲染段而非全量)
 //   ④RightViewer splitSteps 同步 useMemo 包裹(确保 steps 引用稳定, 使 PipelineRenderer useMemo 生效)
-//   三堂会审修复(复核3遍):
+//   复核修复(复核3遍):
 //     #1 SRP: 渐进式加载职责从渲染器抽出 → useLazyRender hook;
 //     #2 SLAP: IntersectionObserver DOM 细节下沉 hook, 组件体只调三件套;
 //     #3 KISS-DIRECT: 消除 isLazyMode/effectiveVisibleCount 等多余中间变量, streaming 分支收敛到 hook;
@@ -109,8 +109,8 @@
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
- * 【小欧 2026-08-26 8.4.9 / 修正】按事件到达序产出"段"，相邻同类合并，
- * 不做分组重排（4.4.2① 流水线顺序=事件 seq 顺序）；实时与回放共用（3.7.6）。
+ * 【小欧 2026-08-26 修正】按事件到达序产出"段"，相邻同类合并，
+ * 不做分组重排（流水线顺序=事件 seq 顺序）；实时与回放共用。
  * 段类型：thinking / text / final / tool(含挂接 observations) / obs(孤儿观察) / error。
  *
  * @author 小欧
@@ -125,8 +125,8 @@ import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
-import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
-// 2026-10-05 小欧 - step 渲染显示偏好(文档[9] §5.8) — 小欧-2026-10-05
+import { TextStream } from './TextStream'; // 正文打字机 — 小欧 2026-08-30
+// 2026-10-05 小欧 - step 渲染显示偏好 — 小欧-2026-10-05
 import { useStepRenderPrefs } from './useStepRenderPrefs';
 import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 修改: 中文标签映射复用, 失败细节行英文枚举转中文 — 小欧-2026-09-17
@@ -153,14 +153,14 @@ export type PipelineSegment =
     }
   | { kind: 'obs'; step: ExecutionStep }
   | { kind: 'error'; step: ExecutionStep }
-  | { kind: 'waiting'; step?: number }; // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
+  | { kind: 'waiting'; step?: number }; // (2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
 
-// 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
+// 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 复核: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
 
 // 2026-10-07 小欧 - "结束思考"的段种类(模块级单一真源): 这些段一出现即说明模型已想完,
 //   推理图标不该再转。提模块级避免每次渲染重建, 策略不藏在 JSX 堆里(KISS/SLAP)。
-//   北京老陈 2026-10-07 裁定: 推理图标自 thought-start 起转, 到 text(正文)/工具调用/终态出现才停
+//   北京老陈 2026-10-07 定案: 推理图标自 thought-start 起转, 到 text(正文)/工具调用/终态出现才停
 //   (模型只推理不输出正文、直接调工具时, 由 tool 段满足该终止条件)。 — 小欧-2026-10-07
 const THINK_END_KINDS: ReadonlySet<PipelineSegment['kind']> = new Set([
   'text',
@@ -173,7 +173,7 @@ const THINK_END_KINDS: ReadonlySet<PipelineSegment['kind']> = new Set([
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   const segs: PipelineSegment[] = [];
-  // A2(2026-09-09 小欧): preview 槽位制——后端 B2 时序约定"每个 action 必先发 preview(tools=全量候选)、
+  // preview 槽位制——后端时序约定"每个 action 必先发 preview(tools=全量候选)、
   //   再发 canonical(tools=执行集, 落库)", 二者同 step 属同一轮双保险, 合一为单 tool 段:
   //   canonical 仅允许覆盖"最后一个未配对的 preview 段", 覆盖后槽位清空;
   //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 兜底绝不让历史段被篡改 — 小欧-2026-09-09
@@ -184,7 +184,7 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
     step?: number
   ): TextishSegment => {
     const last = segs[segs.length - 1];
-    // 4.4.2(2026-09-07 小欧): 末段为 waiting(首列等待图标)时, 首个内容就地覆盖接管(图标位变文字)
+    // (2026-09-07 小欧): 末段为 waiting(首列等待图标)时, 首个内容就地覆盖接管(图标位变文字)
     if (last && last.kind === 'waiting') {
       const updated = { kind, text, step } as TextishSegment;
       segs[segs.length - 1] = updated;
@@ -217,8 +217,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         else appendToLast('text', s.content ?? '', s.step);
         break;
       case 'thought': {
-        // 13.6① 两字段契约：reasoning 在前(thinking 灰斜体)、thought 在后(text 正体)；s.content 永不下发不使用
-        // 13.6 三堂会审(2026-08-30): 同 step reasoning+thought 两段标 sameStep→compact(6); 单段只按 step 间距 MD(8)
+        // 两字段契约：reasoning 在前(thinking 灰斜体)、thought 在后(text 正体)；s.content 永不下发不使用
+        // 复核(2026-08-30): 同 step reasoning+thought 两段标 sameStep→compact; 单段只按 step 间距 MD(8)
         const hasReasoning = !!s.reasoning && s.reasoning !== s.thought;
         const hasBoth = hasReasoning && !!s.thought;
         // reasoning 合并进旧段(跨 step 相邻 thinking)时非本 step 新建 → 不标 compact, 保持 step 间 MD(8)
@@ -260,9 +260,9 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
       case 'action': {
         // 2026-09-03 小欧 修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
         // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与不可变更新原则一致(防污染调用方缓存)
-        // 2026-09-06 小欧 B2(J1修复): 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
+        // 2026-09-06 小欧 缝隙修复: 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
         //   candidateCount取以致小者优先的预览候选总数, canonical覆盖时保留, 供allDenied作分母(不得用执行集) — 小欧-2026-09-06
-        // A2(2026-09-09 小欧): preview 槽位制——preview action 登记"待正式化槽位"并新增 tool 段;
+        // (2026-09-09 小欧): preview 槽位制——preview action 登记"待正式化槽位"并新增 tool 段;
         //   canonical action 仅当存在未配对 preview 槽位时覆盖之(合一为单 tool 段), 覆盖后槽位清空;
         //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 历史 tool 段永不被篡改 — 小欧-2026-09-09
         if (s.preview) {
@@ -380,12 +380,12 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   // 2026-10-28 小欧 - P2: useMemo 包裹 buildSegments, 避免每次渲染重算(steps 引用不变时复用)
   const segs = useMemo(() => buildSegments(steps), [steps]);
   const taskActive = computeTaskActive(highlightToolName, badge);
-  // 2026-10-05 小欧 - step 渲染显示偏好(文档[9] 方案设计 §5.8 / 北京老陈裁定「两个独立开关」):
+  // 2026-10-05 小欧 - step 渲染显示偏好(北京老陈定案「两个独立开关」):
   //   hook 顶层调一次取值(Rules of Hooks: 严禁写在 segs.map 回调内), 经 prop 各下其位:
   //   ①thoughtMarkdown(设置页标签「思考排版」)→ text 段 = thought 块(TextStream)的 Markdown 渲染
   //   ②reasoningVisible(设置页标签「推理内容」)→ thinking 段 = reasoning 块(ThinkingStream)的折叠初值
   //   两块两开关, 各自独立互不干涉。
-  //   2026-10-05 小欧 三堂会审撤除 ready 门控: 曾用 `ready &&` 让"真值到手前按关渲染", 但设置在
+  //   2026-10-05 小欧 复核撤除 ready 门控: 曾用 `ready &&` 让"真值到手前按关渲染", 但设置在
   //   服务端只能异步取, 门控会让**首帧 reasoning 正文整段不渲染**(已打破既有测试
   //   src/tests/reality/waiting-segment-442.test.tsx: "expected '推理内容...' to contain ..."),
   //   且历史回放时正文先消失再撑开、下方内容整体位移。改为**跟随**语义: 首帧按占位值渲染(与改动前
@@ -406,8 +406,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     [segs]
   );
   // 2026-10-07 小欧 - 单趟扫描同时取三个下标(原为两次同型 reduce, 属 DRY 欠账且多扫一遍):
-  //   lastThink 打字机光标位(末段 thinking, 2026-08-27 三堂会审: 消除map内自增副作用与额外filter)
-  //   lastText  正文打字机位(13.8: 最后一个 text 段为实时累积段, 前序已完成段静态呈现)
+  //   lastThink 打字机光标位(末段 thinking, 2026-08-27 复核: 消除map内自增副作用与额外filter)
+  //   lastText  正文打字机位(最后一个 text 段为实时累积段, 前序已完成段静态呈现)
   //   thinkEndIdx 推理图标停转位(北京老陈 2026-10-07: 下标大于它的 thinking/waiting 段即仍在转) — 小欧-2026-10-07
   // 2026-10-28 小欧 - P2: useMemo 包裹 reduce, 避免每次渲染重扫(segs 不变时复用)
   const { lastThink, lastText, thinkEndIdx } = useMemo(
@@ -451,7 +451,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         //   否则向上扩批时既有段下标整体漂移 → key 变化 → 组件重挂载(折叠态/打字机进度丢失) — 小欧-2026-10-30
         const gi = startIndex + i;
         if (seg.kind === 'waiting') {
-          // 4.4.2(2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
+          // (2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
           //   final/error/停止后非末段自动灭, 杜绝常驻
           if (i !== visibleSegs.length - 1 || !taskActive) return null;
           return (
@@ -482,11 +482,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             streaming && gi === lastThink && i === visibleSegs.length - 1;
           return (
             <ThinkingStream
-              // 2026-10-05 小欧 三堂会审修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
+              // 2026-10-05 小欧 复核修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
               //   切片随流式增长而变 → 前 16 字内每收一个 chunk 就换 key → 组件卸载重建 →
               //   用户刚点开的折叠态被弹回初值(表现为"点了没反应"), 10~16 次后才稳定。
               //   段身份由下标 i 唯一确定(流式只追加段, 不前插, i 稳定); 换段即换 key 天然重建。
-              //   第2轮会审再修: 纯下标 key 切任务时会串味(RightViewer 不加 key → 实例复用, i=0 被
+              //   第2轮复核再修: 纯下标 key 切任务时会串味(RightViewer 不加 key → 实例复用, i=0 被
               //   新任务复用), 折叠态跨任务残留。改用 下标+段归属步号 双因子(与 text 段同构)。
               key={`thinking-${gi}-${seg.step ?? gi}`}
               text={seg.text}
@@ -503,11 +503,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             streaming && gi === lastText && i === visibleSegs.length - 1;
           return (
             <TextStream
-              // 2026-10-05 小欧 三堂会审修复(与 thinking 段同类缺陷, 此前只修了一半):
+              // 2026-10-05 小欧 复核修复(与 thinking 段同类缺陷, 此前只修了一半):
               //   原 key 带 seg.text.slice(0,16) → 流式前 16 字内每收一个 chunk 就换 key →
               //   TextStream 卸载重建 → 打字机进度 shown 归零(前 16 字反复从头打; 整段不足 16 字则
               //   完全没有打字机效果)。段身份同样由下标 i 唯一确定。 — 小欧-2026-10-05
-              //   第2轮会审再修: 纯下标 key 在**切任务**时会串味(RightViewer 不加 key → 组件实例复用,
+              //   第2轮复核再修: 纯下标 key 在**切任务**时会串味(RightViewer 不加 key → 组件实例复用,
               //   i=0 被新任务复用), 表现为折叠态与打字机进度跨任务残留。改用 下标+段归属步号 双因子。
               key={`text-${gi}-${seg.step ?? gi}`}
               text={seg.text}
@@ -569,7 +569,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 s.kind === 'obs' && s.step.step === seg.action.step
             )
             .map((s) => s.step);
-          // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): action 先于弹窗发→被拒/拦截/超时工具无 observation, 齿轮需停转;
+          // 2026-09-06 小欧(方案, 北京老陈定案): action 先于弹窗发→被拒/拦截/超时工具无 observation, 齿轮需停转;
           //   interrupted 由 deniedSteps 实时聚合判定(step→denied计数, 两路来源: 独立 user_rejected 事件 + error
           //   blocked/timeout), 整批计数语义与 09-06 三思三省修订一致——denied 计数 >= 候选工具总数才停齿轮防空转,
           //   部分拒+部分执行中 -> denied 数 < 候选总数 -> 齿轮保持(还有工具在跑), 有 obs 则真实执行不停转;
@@ -596,7 +596,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
               // 2026-09-30 小欧 - 过滤掉无名条目（tool 缺失）。
               //   因 P2-7 改为"deniedEntries 单一真源 + deniedSteps 派生"后，无 tool 的条目也必须入表
-              //   （守护 2026-09-17 会审 V3 裁定的"tool 缺失时齿轮仍须停转"），故在**渲染侧**过滤，
+              //   （守护复核定案的"tool 缺失时齿轮仍须停转"），故在**渲染侧**过滤，
               //   使"无名工具只参与计数、不进点名文本"——计数与显示分层职责，不丢硬约束。
               deniedEntries
                 ?.get(seg.action.step as number)
