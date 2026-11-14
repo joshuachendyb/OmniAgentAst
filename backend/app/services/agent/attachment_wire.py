@@ -25,6 +25,8 @@
 #
 # 2026-11-14 小欧 第7章7.4 阶段B 收权: expand_attachment_slots/_expand_one/_EXPANDERS 增 session_id
 #   透传, _expand_attachment 改 get_attachment_scoped(跨会话 id 拒绝, 与 resolver 同口径) — 小欧-2026-11-14
+# 2026-11-15 小欧 语义前缀归一: 降级说明文案字面量收归 app.wire_prefix(INLINE_ATT_UNSENT/INLINE_URL_UNSENT),
+#   消除散落字面量 — 小欧-2026-11-15
 
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
@@ -51,6 +53,7 @@ from app.services.agent import capability
 from app.services.agent.media_payload import build_logical_part, ensure_payload, to_wire_part
 
 from app.ref_slots import SLOT_WRITERS, decode_url_item
+from app.wire_prefix import INLINE_ATT_UNSENT, INLINE_URL_UNSENT
 
 _SLOT_RE = re.compile("|".join(w.pattern.pattern for w in SLOT_WRITERS.values()))
 
@@ -106,7 +109,7 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "",
 
     att = get_attachment_scoped(aid, session_id)
     if not att:
-        return None, f"[附件未发送: {aid} — 附件记录已失效]"
+        return None, INLINE_ATT_UNSENT.format(why=f"{aid} — 附件记录已失效")
     stored = str(att.get("stored_path") or att.get("path") or "")
     kind = att.get("kind") or classify(Path(stored), str(att.get("mime") or ""),
                                        int(att.get("size") or 0))
@@ -120,12 +123,12 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "",
     if not logical:
         logger.warning("[wire] 附件原生载荷失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
         metric("native_fail", "attachment", kind, model, reason)
-        return None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]"
+        return None, INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — {reason}")
     part, reason = to_wire_part(logical)
     if not part:
         logger.warning("[wire] 附件原生方言失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
         metric("native_fail", "attachment", kind, model, reason)
-        return None, f"[附件未发送: {att.get('original_name') or aid} — {reason}]"
+        return None, INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — {reason}")
     metric("native", "attachment", kind, model)
     return part, ""
 
@@ -135,7 +138,7 @@ def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
     try:
         return extract.build_inject_text(att)
     except Exception:  # noqa: BLE001 — 文本出口失败不抛, 退一行说明不断轮
-        return f"[附件未发送: {att.get('original_name') or aid} — 当前模型无原生通道]"
+        return INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — 当前模型无原生通道")
 
 
 async def _expand_url(token: str, prof: Dict[str, Any], model: str = "",
@@ -155,12 +158,12 @@ async def _expand_url(token: str, prof: Dict[str, Any], model: str = "",
     if not logical:
         logger.warning("[wire] URL 原生载荷失败 kind=%s model=%s url=%s reason=%s", ck, model, url, reason)
         metric("native_fail", "url", ck, model, reason)
-        return None, f"[链接未转发: {url} — {reason}]"
+        return None, INLINE_URL_UNSENT.format(why=f"{url} — {reason}")
     part, reason = to_wire_part(logical)
     if not part:
         logger.warning("[wire] URL 原生方言失败 kind=%s model=%s url=%s reason=%s", ck, model, url, reason)
         metric("native_fail", "url", ck, model, reason)
-        return None, f"[链接未转发: {url} — {reason}]"
+        return None, INLINE_URL_UNSENT.format(why=f"{url} — {reason}")
     metric("native", "url", ck, model)
     return part, ""
 

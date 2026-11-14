@@ -47,6 +47,8 @@
 # 2026-11-14 小欧 阶段B 物化失败回执: _materialize_media 改返回 (attachment_id, reason, detail),
 #   无会话/超内联上限/落库异常分别回 materialize_no_session/materialize_too_large/materialize_failed;
 #   回落文本出口成功时随 ResolvedRef.notices 下发 warn 级回执, 文本出口自身失败仍只报 dropped — 小欧-2026-11-14
+# 2026-11-15 小欧 7.4.2 selection 入口类型保护: selection 语义为文本行区间, 指向 image/video/audio/richdoc
+#   时显式 dropped(selection_not_text), 不物化、不产元信息卡 — 小欧-2026-11-15
 
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
@@ -283,6 +285,11 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
     #   binary/unknown 不在此拦截(保留既有文本读取语义, 避免未知后缀文本被误判为二进制卡)。
     _ck = extract.classify(Path(path), str(ref.get("mime") or ""), int(ref.get("size") or 0))
     if _ck in ("image", "video", "audio", "richdoc"):
+        # 7.4.2: selection 语义是文本行区间, 非文本 selection 无生产入口; 显式拒绝并回执,
+        #   不物化、不产元信息卡, 防止异常构造的跨类型引用被当成可投递媒体。
+        if ref.get("kind") == "selection":
+            return ResolvedRef(ref=ref, truncated=False,
+                               note="err:selection_not_text:NonTextSelection")
         # 第7章7.4 阶段B: 本地 image/audio 且模型声明原生、大小在上限内、音频容器为 wav/mp3 时,
         #   物化入附件库并补 attachment_id, 由计划器判 native 走原生槽; 其余回落契约文本出口。
         if (_ck in ("image", "audio")

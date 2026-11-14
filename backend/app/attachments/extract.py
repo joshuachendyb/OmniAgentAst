@@ -9,6 +9,9 @@
 # 2026-11-10 小欧 ffprobe 子进程补 CREATE_NO_WINDOW: 无控制台部署(打包版/服务态)跑视频元数据防闪黑窗 — 小欧-2026-11-10
 # 2026-11-11 小欧 附件能力域升级: 音频分类/URL 七类识别/链接文本出口/统一截断尾注/字节入口;
 #   build_inject_text 改契约查表分派; 视频与音频共用 ffprobe 探测实现 — 小欧-2026-11-11
+# 2026-11-15 小欧 语义前缀归一: 档案头/档案卡/正文·文本等同义异构词统一为 [主体·形态] 范式
+#   ([附件·正文]/[附件·正文·预览]/[附件·元信息·{类型}]), 字面量收归 app.wire_prefix 单一真源,
+#   消除散落字面量 — 小欧-2026-11-15
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -33,6 +36,13 @@ from urllib.parse import urlsplit
 
 from app.constants import MAX_REMOTE_IMAGES
 from app.file_browse import browse_service as browse
+from app.wire_prefix import (
+    INLINE_ATT_BODY,
+    INLINE_ATT_BODY_KIND,
+    INLINE_ATT_META,
+    INLINE_ATT_PREVIEW,
+    INLINE_LINK,
+)
 
 TEXT_INLINE_MAX = 256 * 1024      # 文本内联上限 256KB（超限走头尾摘录）
 ARCHIVE_HEAD_LINES = 40           # 档案头预览行数
@@ -104,7 +114,7 @@ def scan_text_urls(text: str) -> list[str]:
 
 def link_body(url: str) -> str:
     """URL 降级文本出口(fallback_quality='link'): 仅链接文本, 零内容。"""
-    return f"[链接]\n地址: {url}\n说明: 当前模型仅收到链接文本, 未获取内容。"
+    return f"{INLINE_LINK}\n地址: {url}\n说明: 当前模型仅收到链接文本, 未获取内容。"
 
 
 def with_completeness(body: str, *, shown: int, total: int, unit: str, path: str) -> str:
@@ -179,7 +189,7 @@ def text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
 
     if size <= TEXT_INLINE_MAX:
         content = _decode_text_bytes(raw) if raw is not None else _read_text_full(stored)
-        return f"[附件正文·文本]\n{_head(att)}\n正文:\n{content}"
+        return f"{INLINE_ATT_BODY}\n{_head(att)}\n正文:\n{content}"
 
     # > 256KB: 单遍扫描取前 N 行 + 总行数(不整篇入 prompt)
     if raw is not None:
@@ -188,7 +198,7 @@ def text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
         head_lines, total = _read_head_and_count(stored, ARCHIVE_HEAD_LINES)
     preview = "\n".join(head_lines)
     return with_completeness(
-        f"[附件档案头]\n{_head(att)}\n预览(前{ARCHIVE_HEAD_LINES}行):\n{preview}\n总行数: {total}",
+        f"{INLINE_ATT_PREVIEW}\n{_head(att)}\n预览(前{ARCHIVE_HEAD_LINES}行):\n{preview}\n总行数: {total}",
         shown=ARCHIVE_HEAD_LINES, total=total, unit="行", path=str(stored),
     )
 
@@ -241,7 +251,7 @@ def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
 
 
 def image_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·图片]\n{_head(att)}\n"
+    return (f"{INLINE_ATT_META.format(kind='图片')}\n{_head(att)}\n"
             f"说明: 当前模型无视觉能力，无法查看图片内容。"
             f"如需识别图中信息，请用文字描述或改用可读的文本/表格文件。")
 
@@ -278,7 +288,7 @@ def richdoc_body_path(att: dict[str, Any], stored: Path, label_suffix: str = "")
     suffix = label_suffix or stored.suffix.lower()
     text = _extract_richdoc(stored, suffix)
     label = _RICH_LABEL.get(suffix, "文档")
-    return (f"[附件正文·{label}]\n{_head(att)}\n"
+    return (f"{INLINE_ATT_BODY_KIND.format(label=label)}\n{_head(att)}\n"
             f"抽取说明: 以下为自动抽取文本, 版式/图片可能丢失; "
             f"需要精确页码/整表请用文件工具读取上面的路径。\n"
             f"正文:\n{text}")
@@ -406,7 +416,7 @@ def video_card(att: dict[str, Any]) -> str:
                   f"\n编码: {meta.get('codec') or '未知'}")
     else:
         detail = "\n元数据: 未读取(本机无 ffprobe 或解析失败, 不影响其余功能)"
-    return (f"[附件档案卡·视频]\n{_head(att)}{detail}\n"
+    return (f"{INLINE_ATT_META.format(kind='视频')}\n{_head(att)}{detail}\n"
             f"说明: 当前不支持视频内容理解；如需处理请用文件工具按需读取。")
 
 
@@ -424,10 +434,10 @@ def audio_card(att: dict[str, Any]) -> str:
                 detail += f"\n码率: {bitrate}"
     else:
         detail = "\n元数据: 未读取(本机无 ffprobe 或解析失败, 不影响其余功能)"
-    return (f"[附件档案卡·音频]\n{_head(att)}{detail}\n"
+    return (f"{INLINE_ATT_META.format(kind='音频')}\n{_head(att)}{detail}\n"
             f"说明: 仅注入元数据, 不包含音频内容；如需处理请用文件工具按需读取。")
 
 
 def binary_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·二进制]\n{_head(att)}\n"
+    return (f"{INLINE_ATT_META.format(kind='二进制')}\n{_head(att)}\n"
             f"说明: 非文本内容，无法注入正文；如需处理请用文件工具按需读取。")

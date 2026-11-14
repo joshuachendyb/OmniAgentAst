@@ -15,3 +15,15 @@ SLOT_URL_RE = re.compile(r"\[\[URL_ITEM:(?P<url>[A-Za-z0-9_\-=]+)\]\]")
 
 SLOT_LABEL_ATTACHMENT = "附件"
 SLOT_LABEL_URL = "链接"
+
+# INLINE 层: 模型可见的可读标签(仅提示词语义, 无机器解析依赖)。
+# 统一范式 [主体·形态(·第三段)], 主体∈{附件,链接}, 形态∈{正文,元信息,未发送,未转发,抽取失败};
+# 禁止"档案头/档案卡/正文·文本"等同义异构词。产出点唯一, 各模块只引用本处常量 — 小欧-2026-11-15
+INLINE_LINK = "[链接]"
+INLINE_ATT_BODY = "[附件·正文]"
+INLINE_ATT_BODY_KIND = "[附件·正文·{label}]"
+INLINE_ATT_PREVIEW = "[附件·正文·预览]"
+INLINE_ATT_META = "[附件·元信息·{kind}]"
+INLINE_ATT_UNSENT = "[附件·未发送: {why}]"
+INLINE_URL_UNSENT = "[链接·未转发: {why}]"
+INLINE_EXTRACT_FAIL = "[附件·抽取失败({err})]"

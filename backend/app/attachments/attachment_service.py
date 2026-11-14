@@ -40,6 +40,7 @@
 # 2026-11-14 小欧 修: save_bytes 并发同 sha 回查分支在 with 块外调用 _decorate_global,
 #   连接已关闭 → ProgrammingError("Cannot operate on a closed database") 且未删本次孤儿文件;
 #   回查+装饰收进同一 with 块, 命中即返复用行 — 小欧-2026-11-14
+# 2026-11-15 小欧 语义前缀归一: 预览失败说明文案收归 app.wire_prefix(INLINE_EXTRACT_FAIL) — 小欧-2026-11-15
 
 
 
@@ -86,6 +87,7 @@ from app.file_browse.errors import (
 from app.logger import logger
 from app.services.chat.workspace_service import reconcile_session_workspaces
 from app.utils.time_utils import get_local_iso_timestamp
+from app.wire_prefix import INLINE_EXTRACT_FAIL
 
 # ── 配额 ────────────────────────────────────────────────────────────────
 MAX_IMAGE_BYTES = browse.MAX_IMAGE_BYTES        # 10MB: 直接引用图片预览口径, 不重写数值(DRY)
@@ -598,4 +600,5 @@ def read_inject_text(attachment_id: str, session_id: str) -> str:
     try:
         return extract.build_inject_text(att)
     except Exception as e:  # noqa: BLE001 — S3改抛异常后预览兜底: 抽取失败降级说明文本不再HTTP 500, 与resolver失败折算同口径
-        return f"[附件抽取失败({type(e).__name__})] 预览不可用。原文可通过下载查看; 发送引用时该附件按失败回执处理。"
+        return (INLINE_EXTRACT_FAIL.format(err=type(e).__name__)
+                + " 预览不可用。原文可通过下载查看; 发送引用时该附件按失败回执处理。")
