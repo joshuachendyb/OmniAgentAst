@@ -6,12 +6,16 @@ DRY: 从write_text_file/read_text_file/edit_text_file提取 — 小欧 2026-06-3
       私有实现为公共版, 统一替换符阈值+mojibake检查); _looks_like_mojibake 迁入本模块
       2026-10-21 - 小欧 - read_file_with_encodings 增 max_bytes（读前闸门，防 OOM）：
                   不给=全量读（既有行为不变）；给了=只读前 N 字节，不整文件进内存 — 小欧-2026-10-21
+      2026-11-14 - 小欧 - safe_read_lines 流式化重构(8100 grep 假死事故同类处置):
+                  编码探测改头部64KB采样(原chardet全量read_bytes超大文件OOM), 逐行yield内存O(行),
+                  G级log可查; 整文件统一 errors='replace' 容错流式读取(采样strict验证编码后,
+                  中途个别非法字节不抛UnicodeDecodeError, 否则整个grep搜索失败) — 小欧-2026-11-14
 """
 
 import asyncio
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from app.logger import logger
 from app.tools.tool_constants import READ_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
@@ -24,61 +28,69 @@ _ENCODING_PRIORITY = [
 ]
 
 
-def safe_read_lines(file_path: Path, max_size: int = 0) -> Optional[List[str]]:
-    """安全读取文件行,自动编码检测+多编码尝试+replace兜底 — 小沈 2026-07-05
-    Args:
-        file_path: 文件路径
-        max_size: 最大文件字节数(0=不限制)
-    Returns:
-        文件行列表,读取失败返回 None
-    """
-    try:
-        if max_size and file_path.stat().st_size > max_size:
-            return None
-    except OSError:
-        return None
+_ENCODING_SAMPLE_BYTES = 64 * 1024  # 编码探测采样字节: 编码特征在文件头部, 64KB 足够判定
 
-    # chardet 自动检测
-    detected_enc = None
+
+def _detect_encodings_from_sample(file_path: Path) -> List[str]:
+    """头64KB采样探测编码候选列表 — 2026-11-14 小欧
+    原实现 chardet 全量 read_bytes, 超大文件(百M/G级log)探测本身就 OOM; 改采样探测, 与文件大小无关。"""
+    try:
+        with file_path.open("rb") as fb:
+            raw = fb.read(_ENCODING_SAMPLE_BYTES)
+    except OSError:
+        return []
+    enc_list = []
     try:
         import chardet as _chardet
-        raw = file_path.read_bytes()
         det = _chardet.detect(raw)
         if det and det.get("encoding") and det.get("confidence", 0) > 0.5:
-            detected_enc = det["encoding"]
+            enc_list.append(det["encoding"])
     except Exception:
         pass
-
-    # 构建编码列表: chardet 结果优先
-    enc_list = []
-    if detected_enc:
-        enc_list.append(detected_enc)
     for enc in _ENCODING_PRIORITY:
         if enc not in enc_list:
             enc_list.append(enc)
+    return enc_list
 
-    # 精确解码
+
+def safe_read_lines(file_path: Path) -> Optional[Iterator[str]]:
+    """流式逐行读取,自动编码检测+多编码尝试+replace兜底 — 小沈 2026-07-05
+    2026-11-14 小欧 - 流式化重构(不设大小限制也能正常工作):
+      原实现 chardet 全量 read_bytes + readlines 全量载入内存, 超大文件 OOM;
+      改为: 头64KB采样探测编码 → 严格解码采样选定首个可用编码 → 逐行流式 yield。
+      内存占用 O(行), G级 log 可查; 采样严格解码失败自动降级下一候选编码(保持多编码回退语义),
+      全部候选失败则以首个候选 errors='replace' 流式兜底。
+    Returns:
+        行迭代器; 文件不可读返回 None(调用方迭代前判空)
+    """
+    enc_list = _detect_encodings_from_sample(file_path)
+    if not enc_list:
+        return None
+
+    def _stream(enc: str) -> Iterator[str]:
+        # 2026-11-14 小欧 - 统一 errors='replace' 流式读取(容错): 采样已 strict 验证编码,
+        #   整文件用 replace 保证中途个别非法字节不抛 UnicodeDecodeError(否则整个 grep 搜索失败,
+        #   原实现 strict 全量失败会降级 replace 兜底, 流式无法回溯故直接 replace 等价兜底)
+        with file_path.open("r", encoding=enc, errors="replace") as f:
+            yield from f
+
+    # 采样严格解码: 选定首个能无损解码头64KB的编码(整文件解码错误概率与采样一致)
+    chosen = None
+    try:
+        with file_path.open("rb") as fb:
+            sample = fb.read(_ENCODING_SAMPLE_BYTES)
+    except OSError:
+        return None
     for enc in enc_list:
         try:
-            with file_path.open("r", encoding=enc) as f:
-                return f.readlines()
+            sample.decode(enc)
+            chosen = enc
+            break
         except (UnicodeDecodeError, LookupError):
             continue
-
-    # replace 兜底 + 质量检查(替换率 >5% 则跳过)
-    for enc in enc_list:
-        try:
-            with file_path.open("r", encoding=enc, errors="replace") as f:
-                lines = f.readlines()
-            total_chars = sum(len(line) for line in lines)
-            if total_chars > 0:
-                replace_count = sum(line.count("\ufffd") for line in lines)
-                if replace_count / total_chars > 0.05:
-                    continue
-            return lines
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return None
+    if chosen is not None:
+        return _stream(chosen)
+    return _stream(enc_list[0])
 
 
 def get_file_encoding(file_path: str) -> Dict[str, Any]:

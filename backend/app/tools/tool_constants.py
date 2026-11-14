@@ -3,6 +3,8 @@
 # 2026-10-19 - 小欧 - 敏感键集合单一真相源移至全局层 secret_utils.SENSITIVE_PARAM_KEYS,
 #   本文件不再另持派生集合; 落盘出口(日志/落库)经 redact_* 遮蔽, SSE/HITL 展示原文。
 # 2026-10-27 - 小欧 - SHELL_OUTLIMIT_STDOUT_MAX_CHARS 50000→10000, SHELL_OUTLIMIT_STDERR_MAX_CHARS 20000→2000(成功10K/失败2K不对称设计: 成功输出可能长需大空间, 失败信息本来就短); 同步订正 execute_shell_command.py 注释
+# 2026-11-14 - 小欧 - 新增 GREP_INPUT_MATCH_TIMEOUT_SECONDS=5(单次正则匹配超时秒): grep 匹配引擎换 regex 库后
+#   每次 finditer 传 timeout, 防灾难回溯正则烧死事件循环(8100假死事故根因, 单行回溯50.9s+); 值取5s, 正常行匹配毫秒级 — 小欧-2026-11-14
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -285,6 +287,9 @@ XLSX_OUTLIMIT_CELL_CHARS: int = 500                   # 使用对象: read_xlsx.
 GREP_OUTLIMIT_MATCHES_MAX: int = 2000                 # 使用对象: grep_file_content.py(匹配条目数上限, 超此截断)
 GREP_OUTLIMIT_MATCH_CONTENT_CHARS: int = 1000         # 使用对象: grep_file_content.py(单条匹配 content/before/after 字符串字符上限, 超此截断)
 GREP_OUTLIMIT_MATCHED_CHARS: int = 500                # 使用对象: grep_file_content.py(单条匹配 matched 字符串字符上限, 超此截断; matched 只是关键词, 500 足够)
+# 2026-11-14 小欧 - 单次正则匹配超时(秒): re 引擎对灾难回溯正则无保护(8100假死事故实证: 单行回溯50.9s+),
+#   grep 匹配引擎换 regex 库(已装)后每次 finditer 传 timeout, 超时置截断; 值取5s, 正常行匹配毫秒级
+GREP_INPUT_MATCH_TIMEOUT_SECONDS: int = 5             # 使用对象: grep_file_content.py(regex.finditer 每次调用超时)
 # network
 FETCHPAGE_OUTLIMIT_BODY_BYTES: int = 2 * 1024 * 1024 # 使用对象: fetch_webpage.py(流式读取正文上限, 超则截断)
 HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES: int = 500 * 1024   # 使用对象: http_request.py(JSON body 预览截断; 原2MB, 500KB够看结构)

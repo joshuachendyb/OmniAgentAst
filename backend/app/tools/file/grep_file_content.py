@@ -33,6 +33,14 @@
 # 2026-11-13 商量 - glob 支持花括号多扩展名: fnmatch 不认 {a,b}(shell 展开特性), LLM 常写
 #   "*.{py,ts,tsx}" 表达多扩展名过滤, 原实现直接匹配必然 0 命中(表现为"明明有文件却搜不到"且无报错)。
 #   改走单源 expand_braces 展开后任一模式命中即算命中(保持 fnmatch 原有大小写语义不变)。
+# 2026-11-14 - 小欧 - 修单文件内正则灾难回溯导致的整服务假死(8100事故): deadline 原只在文件间(os.walk循环)
+#   检查, re 引擎 finditer 对 (a|a)* 类回溯无超时保护且不可打断(实证: 单行回溯50.9s+, tool-sync线程卡死
+#   20+分钟, HTTP全部无响应)。修法两层兜底: ①匹配引擎 re→regex 库(已装, 语法兼容, 对回溯有优化且支持
+#   timeout, 每次finditer传 GREP_INPUT_MATCH_TIMEOUT_SECONDS=5s, 超时置 _deadline_exceeded 截止);
+#   ②_search_one_file 逐行检查 deadline(防海量行慢循环)。超时走既有 truncated/warning 收口, 不新增分支。
+# 2026-11-14 - 小欧 - 第二批治理(不设限制也能正常工作): ①safe_read_lines 流式化(头64KB采样探测编码+
+#   逐行 yield, 内存 O(行), G级 log 可查; context>0 时才物化为列表供随机访问) ②删 _REDOS_PATTERNS
+#   静态检测死代码(2条规则既漏报又误报, regex+timeout 已是真兜底, 超时收口唯一化)。
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -46,7 +54,7 @@ F7: grep_file_content — 搜索文件内容
 import asyncio
 import fnmatch as fnm
 import os
-import re as re_mod
+import regex as _regex_mod  # 2026-11-14 小欧 - 匹配引擎换regex库: 支持timeout防灾难回溯(事故根因), 语法兼容re
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional
@@ -55,6 +63,7 @@ from app.tools.file.file_encoding import safe_read_lines
 from app.tools.tool_constants import (
     BINARY_EXTENSIONS,
     ERR_FILE_CONTENT_SEARCH_FAILED,
+    GREP_INPUT_MATCH_TIMEOUT_SECONDS,
     GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
     GREP_OUTLIMIT_MATCHED_CHARS,
     GREP_OUTLIMIT_MATCHES_MAX,
@@ -73,13 +82,6 @@ from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性�
     OpCategory,
     check_path_four_level,
 )
-
-# 模块级 ReDoS 检测常量 — 小沈 2026-07-05
-_REDOS_PATTERNS = frozenset({
-    r"\([^)]*[+*][^)]*\)[+*]",       # (a+)+ 或 (a*)* 嵌套量词
-    r"\([^)]*[+*][^)]*\){[0-9,]+}",  # (a+){2,} 量词嵌套
-})
-
 
 class GrepSyncResult(NamedTuple):
     """_grep_files_sync 返回值 — 小沈 2026-07-05 — 小欧 2026-07-07 加truncated_by_deadline"""
@@ -155,7 +157,7 @@ def _build_grep_file_content_llm_data(
 
 def _grep_files_sync(
     path: Path,
-    regex: re_mod.Pattern,
+    regex: _regex_mod.Pattern,
     glob_filter: Optional[str],
     deadline: float,
     context: int = 0,
@@ -172,7 +174,9 @@ def _grep_files_sync(
     glob_patterns = expand_braces(glob_filter) if glob_filter else None
 
     def _search_one_file(fpath: Path) -> None:
-        nonlocal total_matches, total_files
+        # 2026-11-14 小欧 - 单文件内也可超限截止: deadline 原只在文件间检查,
+        #   单行灾难性回溯正则(finditer)会无限旋转拖死事件循环(8100假死事故根因), 逐行检查兜底。
+        nonlocal total_matches, total_files, _deadline_exceeded
         # 检查是否为二进制文件 — 小健 2026-06-24 — 小欧 2026-06-24 扩展名已知直接跳过，未知才读内容
         # — 小欧 2026-07-12 灰区后缀与无后缀二进制也计入skipped_binary_files,消除静默跳过无提示
         suffix = fpath.suffix.lower()
@@ -191,12 +195,25 @@ def _grep_files_sync(
                 skipped_binary_files.append(str(fpath))
                 return
 
-        lines = safe_read_lines(fpath)
-        if not lines:
+        lines_iter = safe_read_lines(fpath)
+        if lines_iter is None:
             return
+        # 2026-11-14 小欧 - safe_read_lines 流式化: context 需随机访问(lines[i])仅此时物化为列表,
+        #   否则流式逐行消费, 内存 O(行), G级 log 可查
+        lines = list(lines_iter) if context > 0 else lines_iter
         file_matched = False
         for line_no, line in enumerate(lines, 1):
-            matches_in_line = list(regex.finditer(line))
+            if _time_mod.monotonic() > deadline:
+                _deadline_exceeded = True
+                break
+            try:
+                matches_in_line = list(regex.finditer(line, timeout=GREP_INPUT_MATCH_TIMEOUT_SECONDS))
+            except TimeoutError:
+                # 2026-11-14 小欧 - 单行匹配超时(灾难回溯): 截止本文件, 走既有truncated/warning收口
+                #   注意: regex 库超时抛的是内置 TimeoutError(实测 regex 模块无 TimeoutError 属性,
+                #   _regex_mod.TimeoutError 求值会抛 AttributeError 导致超时不被捕获而整个搜索报错)
+                _deadline_exceeded = True
+                break
             if not matches_in_line:
                 continue
             matched_texts = [m.group(0) for m in matches_in_line]
@@ -295,19 +312,13 @@ async def grep(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail="搜索模式不能为空", hint="请提供搜索关键词", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
-    # ReDoS 检测 — 小沈 2026-07-05 — 小欧 2026-07-20 pattern 恒为正则,始终检测
-    for redos_p in _REDOS_PATTERNS:
-        if re_mod.search(redos_p, pattern):
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词，可能触发ReDoS：{pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case)
-            return build_error(data={}, llm_data=llm_data)
-
-
     # pattern 为正则表达式,直接编译(忽略大小写由 ignore_case 控制)
+    # 2026-11-14 小欧 - 编译引擎 re→regex(语法兼容): regex 引擎对 (a|a)* 类灾难回溯有优化(实证 50.9s→0.0s),
+    #   且每次匹配可传 timeout 兜底; re 引擎无任何超时保护, 是 8100 假死事故根因
     effective_pattern = pattern
     try:
-        regex = re_mod.compile(effective_pattern, re_mod.IGNORECASE if ignore_case else 0)
-    except re_mod.error as e:
+        regex = _regex_mod.compile(effective_pattern, _regex_mod.IGNORECASE if ignore_case else 0)
+    except _regex_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效：{e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
