@@ -40,6 +40,11 @@
 #   image_card/video_card/audio_card/binary_card/richdoc_body/*_from_bytes), 消契约跨模块
 #   消费私有名; _plan_of 收敛为 quality 单值返回, 投递动作由 QUALITY_TO_DELIVERY 单表派生,
 #   ItemPlan 删 key/delivery/reason 三死字段, 内部来源收敛 _INTERNAL_TEXT_SOURCES — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 bug挖掘修复: ①classify_ref 判定收口 —— url 来源只认 "kind=url 或 (有url且无path)",
+#   带 path 的 file 来源不再被 url 字段劫持; 分类只依赖 url 本身(单参 classify_url), 与 wire 展开期
+#   同源同判, 消 suffixless URL 计划 native/运行时降级分叉; ②未知来源 kind 回落 file 路由,
+#   单条脏引用不再 KeyError 崩溃整轮首发装配 — 小欧-2026-11-14
 
 
 """attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
@@ -154,10 +159,14 @@ def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     """唯一分类点(纯识别, 不读模型): 返回 (source_kind, content_kind)。
     log/message 恒映射 text; url 走 classify_url; 其余复用 extract.classify。"""
     src = str(item.get("kind") or "file")
+    if src not in SOURCE_KINDS:
+        src = "file"
     if src in _INTERNAL_TEXT_SOURCES:
         return src, "text"
-    if src == "url" or item.get("url"):
-        return "url", classify_url(str(item.get("url") or ""), str(item.get("content_type") or ""))
+    # url 来源判定只依赖 url 本身(与 wire 展开期 classify_url(url) 单参同源):
+    #   带 path 的非 url 来源不被 url 字段劫持; 无 kind 的 url 引用(无 path)仍回落 url。
+    if src == "url" or (item.get("url") and not item.get("path")):
+        return "url", classify_url(str(item.get("url") or ""))
     path = str(item.get("stored_path") or item.get("path") or "")
     size = int(item.get("size") or 0)
     return src, classify(Path(path), str(item.get("mime") or ""), size)

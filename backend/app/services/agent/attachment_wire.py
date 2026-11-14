@@ -19,6 +19,9 @@
 #   (wire_prefix 正则命名组名=注册表键), 删 group(1)/group(2) 硬编码分组号, 新增来源漏配
 #   展开器 KeyError 响亮暴露不再静默错位; ③URL 文本抓取改契约单判据 route.fetch=="text",
 #   删 ck in ("text","richdoc") 双判据 — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 bug挖掘修复: expand_attachment_slots 收尾折叠补非 text 单 part 分支 —— 消息仅含
+#   一个原生 part 时原返回 None 丢整个消息内容, 现原样返回 parts; 空展开原样返回 text — 小欧-2026-11-14
 
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
@@ -84,7 +87,11 @@ async def expand_attachment_slots(text: str, llm_model: Any) -> Any:
     if pending:
         parts.append({"type": "text", "text": "".join(pending)})
     parts = [p for p in parts if p.get("text") or p.get("type") != "text"]
-    return parts if len(parts) > 1 else (parts[0].get("text") if parts else text)
+    if not parts:
+        return text
+    if len(parts) == 1 and parts[0].get("type") == "text":
+        return parts[0]["text"]
+    return parts
 
 
 async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "") -> Tuple[Any, str]:

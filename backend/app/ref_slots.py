@@ -6,6 +6,9 @@
 #
 # 2026-11-14 小欧 三堂会审整改: url_item_slot 删 str.encode('ascii') 冗余转码(b64 产物
 #   本就是 ASCII str, len(str) 即字节数), 消双重解析 — 小欧-2026-11-14
+#
+# 2026-11-14 小欧 bug挖掘修复: attachment_slot 按 SLOT_ATTACHMENT_RE 全匹配校验 id 形态,
+#   非 32hex id 不再写出正则不可识别的占位原样泄漏给模型(返回空串, 装配层回落文本块) — 小欧-2026-11-14
 """ref_slots — 引用槽位注册表: 来源 → (正则, 占位构造器)。
 
 SLOT_WRITERS.keys() 是"可写原生槽来源"的唯一真源; make(ref) 恒返回一行 wire 文本
@@ -28,7 +31,9 @@ _URL_ITEM_MAX = 512  # b64url 编码上限; 超长不写占位, 装配期降级�
 
 def attachment_slot(ref: dict) -> str:
     aid = str(ref.get("attachment_id") or "")
-    return f"[[ATTACHMENT:{aid}]]" if aid else ""
+    # 占位必须可被 SLOT_ATTACHMENT_RE 识别: 非 32hex id 不写占位(装配层回落文本块), 防原样泄漏
+    return (f"[[ATTACHMENT:{aid}]]"
+            if SLOT_ATTACHMENT_RE.fullmatch(f"[[ATTACHMENT:{aid}]]") else "")
 
 
 def url_item_slot(item: dict) -> Tuple[str, str]:

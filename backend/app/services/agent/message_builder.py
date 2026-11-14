@@ -122,6 +122,9 @@
 # 2026-11-11 小欧 附件能力域: build_user_turn_text/init_history 收口 plans 单参数(native 写占位,
 #   其余走 refs 文本块); expand_vision_parts → expand_attachment_parts(占位级展开归 attachment_wire) — 小欧-2026-11-11
 # 2026-11-14 商量 设计[34] H7/P0: prepare_messages_for_llm 加注释锚 — 严禁按 msg_kind/creation_source 过滤当前轮, 系统通知当前轮仍以 role=user 进 wire; 瞬态裁剪单点在 history_loader(H9) — 商量-2026-11-14
+#
+# 2026-11-14 小欧 bug挖掘修复: build_user_turn_text 的 slot 分支补占位构造空串回落 —— make 返回
+#   空串(如附件 id 形态非法不写占位)时该条目回落文本块, 消"判 slot 却无处写"的静默丢条目 — 小欧-2026-11-14
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -234,7 +237,12 @@ def build_user_turn_text(user_input: str, refs: Optional[list] = None,
         plan = plans[i] if plans and i < len(plans) else None
         delivery = contract.QUALITY_TO_DELIVERY[plan.quality] if plan is not None else "text"
         if delivery == "slot":
-            wire_lines.append(SLOT_WRITERS[plan.source_kind].make(r))
+            wire = SLOT_WRITERS[plan.source_kind].make(r)
+            if wire:
+                wire_lines.append(wire)
+            else:
+                # 占位构造失败(如附件 id 形态非法)回落文本块, 不静默丢条目
+                text_refs.append(r)
         else:
             text_refs.append(r)
     refs_block = render_refs_block(text_refs) + "".join(wire_lines)
