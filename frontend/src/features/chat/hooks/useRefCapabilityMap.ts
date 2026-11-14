@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from 'react';
 
-import { attachmentApi } from '@/services/api/attachment.api';
+import { loadCapabilities } from '@/services/api/attachment.api';
 import { configApi } from '@/services/api/config.api';
 import { modelApi } from '@/services/api/model.api';
 import { sessionApi } from '@/services/api/session.api';
@@ -31,7 +31,7 @@ let _suffixKind: Record<string, string> | null = null;
 export async function ensureSuffixKind(): Promise<void> {
   if (_suffixKind) return;
   try {
-    const caps = await attachmentApi.capabilities();
+    const caps = await loadCapabilities();
     _suffixKind = caps.suffix_kind ?? {};
   } catch {
     _suffixKind = {};

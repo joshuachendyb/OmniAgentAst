@@ -71,6 +71,7 @@ import {
 
 import {
   attachmentApi,
+  loadCapabilities,
   type AttachmentCapabilities,
   type AttachmentRecord,
 } from '@/services/api/attachment.api';
@@ -100,11 +101,11 @@ import {
   enqueue,
   uploadAttachments,
   MAX_BATCH,
-  ATTACHMENT_RULES,
+  attachmentRules,
 } from '@/features/refs/uploadAttachment';
 import { quoteFile } from '@/features/refs/quote';
 import { getLocalCapability, importLocal } from '@/features/refs/localImport';
-import { refLimitText, setMaxRefs, type ComposerRef } from '@/features/refs/store';
+import { refLimitText, setMaxRefs, setAttachmentByteLimits, type ComposerRef } from '@/features/refs/store';
 import {
   showMessage,
   showSuccess,
@@ -331,12 +332,12 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    void attachmentApi
-      .capabilities()
+    void loadCapabilities()
       .then((c) => {
         if (!alive) return;
         setCaps(c);
         setMaxRefs(c.limits.max_refs);
+        setAttachmentByteLimits(c.limits.max_image_bytes, c.limits.max_file_bytes);
       })
       .catch(() => void 0);
     return () => {
@@ -1409,7 +1410,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       title={
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           附件
-          <Tooltip title={ATTACHMENT_RULES}>
+          <Tooltip title={attachmentRules()}>
             <InfoCircleOutlined
               style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.CAPTION }}
               aria-label="附件规则说明"

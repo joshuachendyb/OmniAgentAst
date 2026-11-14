@@ -7,6 +7,8 @@
 //   根除"落库成功却入不了队"的服务端孤儿附件记录 — 小欧-2026-11-07
 // 编辑历史: 2026-11-10 小欧 - 新增 ATTACHMENT_RULES 规则文案常量(单一真源): 按钮 Tooltip 与抽屉帮助图标共用 — 小欧-2026-11-10
 // 编辑历史: 2026-11-11 小欧 - 容量预检与规则文案改读 getMaxRefs()(上限单真源后端) — 小欧-2026-11-11
+// 编辑历史: 2026-11-14 小欧 - 上限改读后端 capabilities.limits(max_image_bytes/max_file_bytes),
+//   删前端硬编码 10MB/20MB(双真源); 规则文案补「音频」并改由后端上限派生 — 小欧-2026-11-14
 /**
  * uploadAttachment —— 「把文件送进引用区」的唯一实现（附件域）
  *
@@ -26,22 +28,31 @@ import {
   handleApiError,
   ErrorType,
 } from '@/services/error/handler';
-import { composerRefStore, newRefId, refLimitText, getMaxRefs } from './store';
+import {
+  composerRefStore,
+  newRefId,
+  refLimitText,
+  getMaxRefs,
+  getAttachSizeBytes,
+  getAttachSizeMB,
+} from './store';
 import { quoteFile } from './quote';
 
-/** 单批选择上限（10 = 一次选择上限；入队总上限仍是 MAX_REFS=20） */
+/** 单批选择上限（10 = 一次选择上限；入队总上限见后端 max_refs） */
 export const MAX_BATCH = 10;
-/** 2026-11-06 小欧 三堂会审(DRY): 上限数值单一真源, 字节换算与文案派生共用(原文案两处硬编码) — 小欧-2026-11-06 */
-export const MAX_IMAGE_MB = 10;
-export const MAX_FILE_MB = 20;
 
-/** 附件规则说明(单一真源): 按钮 Tooltip 与抽屉标题帮助图标共用, 与后端白名单/上限同口径 */
-export const ATTACHMENT_RULES =
-  '支持图片、视频、PDF / Word / Excel / PPT、文本与代码文件；' +
-  `图片 ≤${MAX_IMAGE_MB}MB、其他 ≤${MAX_FILE_MB}MB，一次最多 ${MAX_BATCH} 个、共 ${getMaxRefs()} 项；` +
-  '其余类型（如 zip/exe）会被拒绝。';
-const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
-const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+/**
+ * 附件规则说明(单一真源): 按钮 Tooltip 与抽屉标题帮助图标共用。
+ * 类型清单与白名单同口径(含音频); 大小上限取 store 分档上限(后端 capabilities 写入)。
+ */
+export function attachmentRules(): string {
+  const mb = getAttachSizeMB();
+  return (
+    '支持图片、视频、音频、PDF / Word / Excel / PPT、文本与代码文件；' +
+    `图片 ≤${mb.image}MB、其他 ≤${mb.other}MB，一次最多 ${MAX_BATCH} 个、共 ${getMaxRefs()} 项；` +
+    '其余类型（如 zip/exe）会被拒绝。'
+  );
+}
 
 export interface UploadOptions {
   /** 当前会话 ID；为空表示新会话（选中文件后才建会话） */
@@ -55,17 +66,15 @@ export interface UploadResult {
   failed: number;
 }
 
-/** 前置闸门：单批数量 + 单文件大小（类型白名单由后端裁决） */
+/** 前置闸门：单批数量 + 单文件大小（类型白名单由后端裁决；上限取 store 分档口径） */
 function rejectReason(files: File[]): string | null {
   if (files.length > MAX_BATCH) {
     return `一次最多选择 ${MAX_BATCH} 个文件`;
   }
+  const mb = getAttachSizeMB();
   for (const f of files) {
-    const limit = f.type.startsWith('image/')
-      ? MAX_IMAGE_BYTES
-      : MAX_FILE_BYTES;
-    if (f.size > limit) {
-      return `「${f.name}」超过大小限制（图片 ${MAX_IMAGE_MB}MB / 其他 ${MAX_FILE_MB}MB）`;
+    if (f.size > getAttachSizeBytes(f.type)) {
+      return `「${f.name}」超过大小限制（图片 ${mb.image}MB / 其他 ${mb.other}MB）`;
     }
   }
   return null;

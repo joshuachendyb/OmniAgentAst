@@ -12,6 +12,9 @@
 #   ②_URL_OVERRIDE["text"] 的 fallback_quality 由 content 改 link(实际出口
 #   _link_body 只注入链接地址), 判 opaque 档 — 判定对齐运行时实际, 纠错非兼容改动
 
+# 2026-11-14 小欧 - 修: limits() 下发 max_image_bytes/max_file_bytes(引 attachment_service 配额常量),
+#   上限唯一真源在后端, 前端预检/文案改读此口径, 消前端写死 10MB/20MB 双真源 — 小欧-2026-11-14
+
 # 2026-11-12 小欧 删 state_of 的 transport_ok 死参数: plan_refs 仅在非 native 分支调用,
 #   该参数在判定式中恒不起作用; ref_capability_map 投影传 False 致有原生模态路由
 #   (image/video/audio/richdoc)在矩阵永远显不出 native, 与 plan_refs 只看 cap.native
@@ -201,11 +204,14 @@ def ref_capability_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
 def limits() -> Dict[str, int]:
     """上限单一真源(C8): max_refs 引既有 services/refs/limits.MAX_REFS(20),
     max_url_images 引既有 app.constants.MAX_REMOTE_IMAGES(4);
+    max_image_bytes/max_file_bytes 引 attachment_service 配额常量(上传分档口径);
     max_urls 为本方案新增上限(单次引用 URL 条数), 无既有真源, 就此定点声明。
     MAX_REFS 延迟导入: refs.limits→agent 包初始化→react_loop→contract 会成环。"""
     from app.services.refs.limits import MAX_REFS
+    from app.attachments.attachment_service import MAX_FILE_BYTES, MAX_IMAGE_BYTES
     return {"max_refs": MAX_REFS, "max_urls": _MAX_URLS,
-            "max_url_images": MAX_REMOTE_IMAGES}
+            "max_url_images": MAX_REMOTE_IMAGES,
+            "max_image_bytes": MAX_IMAGE_BYTES, "max_file_bytes": MAX_FILE_BYTES}
 
 
 def suffix_kind() -> Dict[str, str]:

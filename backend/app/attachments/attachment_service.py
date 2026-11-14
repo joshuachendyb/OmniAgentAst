@@ -28,6 +28,9 @@
 # 2026-11-11 小欧 - 增 reextract 真抽取手动重跑: 重置抽取态后按契约文本出口重算回填
 #   (仅 fallback_quality=content 的 kind, 失败折算 failed 不抛异常) — 小欧-2026-11-11
 # 2026-11-11 小欧 - P5 指标埋点: reextract 成功/失败补 [cap-metric] extract_ok/extract_fail — 小欧-2026-11-11
+# 2026-11-14 小欧 - 修: 上传白名单补 extract.AUDIO_SUFFIXES —— accept 与白名单同引 extract 词典组合,
+#   遗漏 audio 造成 accept 放行却 415(音频应支持上传, 后端档案卡链路本就齐备) — 小欧-2026-11-14
+# 2026-11-14 小欧 - 修: UNSUPPORTED_TYPE 报错文案补"音频" —— 白名单已含音频, 文案同步口径 — 小欧-2026-11-14
 # 2026-11-13 小欧 - 来源栏判据重构(标签名副其实, 各栏唯一真源/互斥):
 #   1) 删 ai 作用域(任务产物真源是 chat_tasks.artifacts, 用附件台账判据取该清单恒为空);
 #   2) session 作用域恢复为全部本会话台账行(存为附件的副本归此, 与「AI 产出的」不重叠);
@@ -98,7 +101,8 @@ _INSERT_COLS = ("id, session_id, original_name, stored_path, mime, size, sha256,
 # 上传白名单 = extract 五分类词典的组合(类型轴唯一真源, 免两份名单漂移)。
 # 视频后缀 S0 即放行(可传可发, 注入走档案卡); 纯 binary(.zip/.exe 等)一律 415。
 _ALLOWED_SUFFIXES = (extract.IMAGE_SUFFIXES | extract.VIDEO_SUFFIXES
-                     | extract.RICH_SUFFIXES | extract.TEXT_SUFFIXES)
+                     | extract.AUDIO_SUFFIXES | extract.RICH_SUFFIXES
+                     | extract.TEXT_SUFFIXES)
 
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _RESERVED_NAMES = {
@@ -211,7 +215,7 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
     safe = _sanitize_name(name)
     suffix = Path(safe).suffix.lower()
     if suffix not in _ALLOWED_SUFFIXES:
-        fail(UNSUPPORTED_TYPE, "该文件类型暂不支持（支持图片、文本、PDF、Word、Excel、PowerPoint、视频；纯二进制如 zip/exe 仅可经「存为附件」进入）")
+        fail(UNSUPPORTED_TYPE, "该文件类型暂不支持（支持图片、文本、音频、PDF、Word、Excel、PowerPoint、视频；纯二进制如 zip/exe 仅可经「存为附件」进入）")
 
     size = len(data)
     if size > (MAX_IMAGE_BYTES if suffix in extract.IMAGE_SUFFIXES else MAX_FILE_BYTES):

@@ -74,7 +74,14 @@ export interface ListOptions {
 /** 上传白名单/上限/类型选项唯一出口(C8); 前端禁止写死后缀/大小/上限 — 小欧-2026-11-11 */
 export interface AttachmentCapabilities {
   accept: string;
-  limits: { max_refs: number; max_urls: number; max_url_images: number };
+  limits: {
+    max_refs: number;
+    max_urls: number;
+    max_url_images: number;
+    /** 单文件字节上限(后端配额单一真源, 前端预检/文案禁用硬编码) */
+    max_image_bytes: number;
+    max_file_bytes: number;
+  };
   kind_options: Array<{ value: string; label: string }>;
   /** 后缀→content_kind 词典(单一真源后端 extract, 前端禁止再写死后缀表) */
   suffix_kind: Record<string, string>;
@@ -289,6 +296,21 @@ export const attachmentApi = {
     return res.data;
   },
 };
+
+/**
+ * 能力协商结果模块级一次性缓存: 白名单/上限/后缀词典多处消费, 共享同一请求。
+ * 失败不缓存(下次重试), 调用方各自兜底。
+ */
+let _capsPromise: Promise<AttachmentCapabilities> | null = null;
+export function loadCapabilities(): Promise<AttachmentCapabilities> {
+  if (!_capsPromise) {
+    _capsPromise = attachmentApi.capabilities().catch((e) => {
+      _capsPromise = null;
+      throw e;
+    });
+  }
+  return _capsPromise;
+}
 
 /** ③ 存为附件双形态（与 backend/app/attachments/collect.py 返回同构） */
 export type CollectResult =
