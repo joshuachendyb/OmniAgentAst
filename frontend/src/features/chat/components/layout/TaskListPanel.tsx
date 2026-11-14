@@ -45,6 +45,11 @@
 // 编辑历史: 2026-11-14 商量 - merged_inputs 契约升级 {content,msg_kind}[] 后同槽异标(B1a「系统通知」/C1「插话」),
 //   B1b 头/尾加「系统通知 · 续跑」小标; 系统通知判定收敛为单一谓词; 更正旧「msg_kind=system_notice ⇔
 //   creation_source=system_resume」等价误述(B1a 任务来源仍 user 但消息 msg_kind=system_notice) — 商量-2026-11-14
+
+// 编辑历史: 2026-11-14 商量 - 按用户反馈移除追加块内 B1a「系统通知」/C1「插话」两个冗余小标:
+//   系统通知正文自带「[系统通知]」前缀(消息头)可区分, 追加块上下文已明示为追加输入, 双标签意义不大;
+//   谓词 isNoticeInput/isInjectionInput 失去唯一消费点一并删除, 续跑徽标「系统通知 · 续跑」保留 — 商量-2026-11-14
+
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -101,10 +106,8 @@ const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
   cancelled: { name: '已取消', color: Colors.TEXT.TERTIARY },
 };
 
-// 2026-11-14 商量(设计[34] 4.2/5.2): 系统通知/插话单一判定谓词 — 全文件判定收敛于此, 禁止散写 msg_kind 判断
+// 2026-11-14 商量(设计[34] 4.2/5.2): 系统通知判定单一谓词 — 全文件收敛于此, 禁止散写判定
 const isSystemResumeTask = (t: SessionTaskItem) => t.creation_source === 'system_resume'; // B1b 主判定
-const isNoticeInput = (m: { msg_kind: string }) => m.msg_kind === 'system_notice';        // B1a(merged_inputs 项)
-const isInjectionInput = (m: { msg_kind: string }) => m.msg_kind === 'user';              // C1(merged_inputs 项)
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
@@ -530,20 +533,16 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                         // 2026-10-08 小欧 - 逐条独立成块, 多条不连成串
                         marginTop: 6,
                         padding: '4px 8px',
+                        // 2026-11-14 商量 - 追加块正文定阶 SECONDARY(12): 不设则继承默认14(PRIMARY)偏大,
+                        //   且与「↳追加N条」按钮、上方用户问题区(SECONDARY)一致, 输入侧次要与密集区协调
+                        fontSize: FontSize.SECONDARY,
                         backgroundColor: '#fafafa',
                         borderLeft: '2px solid #d9d9d9',
                         borderRadius: '0 3px 3px 0',
                       }}
                     >
-                      {/* 2026-11-14 商量(设计[34] 4.2/5.2, 修订⑥): 同槽异标 — B1a「系统通知」小标;
-                          C1 恒加「插话」轻标(正文前缀块不入库, 不按正文猜来源)。
-                          注: msg_kind 仅 user/system_notice 两值, 新增枚举须同步补标签 */}
-                      {isNoticeInput(m) && (
-                        <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, marginRight: 4 }}>系统通知</span>
-                      )}
-                      {isInjectionInput(m) && (
-                        <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, marginRight: 4 }}>插话</span>
-                      )}
+                      {/* 2026-11-14 商量 - 追加块内不再标「系统通知」/「插话」小标: 系统通知正文自带
+                          「[系统通知]」前缀可区分, 追加块上下文已明示为追加输入, 双标签冗余(用户反馈) */}
                       <CollapsibleText text={m.content} />
                     </div>
                   ))}
