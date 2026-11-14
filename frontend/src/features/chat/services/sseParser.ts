@@ -1,23 +1,23 @@
-// 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
-// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端设计定案): paused帧 onAuthorizationRequired 透传四字段——
+// 编辑历史: 2026-08-30 小欧 - usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复(北京老陈定案, 后端设计定案): paused帧 onAuthorizationRequired 透传四字段——
 //   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ㉒/㉗镜像 assignTimeout(合法0保留) + auto_confirm严格判断(防"false"误判), 与 useAuthorization 语义一致 — 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')，与normalizeIsReasoning同策略，防bypass误判 - 小欧-2026-09-03
-// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝独立 type="user_rejected" 单独发(不占 error 通道/liveErrorText),
+// 编辑历史: 2026-09-03 小欧: normalizeAutoConfirm四态归一(true/'true'/1/'1')，与normalizeIsReasoning同策略，防bypass误判 - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 - 方案(北京老陈定案): 拒绝独立 type="user_rejected" 单独发(不占 error 通道/liveErrorText),
 //   新增独立回调 onDenied(step,message) 供 useChatStreaming 聚合 deniedStepSet 停齿轮 — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 解析 preview 标记(后端 preview=True, 仅SSE齿轮先行预览行),
 //   刷新恢复时剔除, 与 DB 回放语义一致 — 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
+// 编辑历史: 2026-09-06 小欧 - 方案(被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
 //   (step,message,toolName)——user_rejected 事件透传 rawData.tool_name 供聚合被拒工具点名条; ②error blocked/timeout
-//   构造对象补 tool_name(rawData.tool_name, 后端 6.2 事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
+//   构造对象补 tool_name(rawData.tool_name, 后端事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
 // 编辑历史: 2026-09-18 小欧 - 实施: paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
-// 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
+// 编辑历史: 2026-09-07 小欧 - 取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
-// 编辑历史: 2026-09-07 小欧 - 4.4.3 start/startinfo 双信号拆分(前端消息分类处理分析及设计-小欧-2026-09-06.md):
+// 编辑历史: 2026-09-07 小欧 - start/startinfo 双信号拆分(按前端消息分类处理分析定案):
 //   startinfo 合并入 start——后端 start 现已自带 ai_message_id, 删除 case 'startinfo' 分支;
 //   case 'start' 合并写入 contextSummary + startTimestamp + startInfo(含 ai_message_id),
 //   徽标(running/idle)/过程条首行/计时/概况支付行为全不变(startInfo 到达提前到 start, 徽章 running 只更早亮) — 小欧-2026-09-07
-// 编辑历史: 2026-09-08 小欧 - 六章6.3.1/6.3.4(北京老陈裁定回归总原则): error case onError 构造对象无条件打
+// 编辑历史: 2026-09-08 小欧 - 回归总原则(北京老陈定案): error case onError 构造对象无条件打
 //   from_backend=true(来源判据, 不做类型匹配) + request_level=rawData.step===0(层级判据, 读原始值禁stepNum归一;
 //   请求级step=0为真, 执行级step≥1/缺失为false) — useChatCallbacks 据此分道只进第三类; step/tool_name 仍照传(聚合源不变) — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
@@ -48,34 +48,34 @@
 // 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖配套: thought/chunk/final/action/observation/paused六处去掉外层
 //   setTimeout(() => { saveStepsToStorage?.(newSteps); }, 0), 改为直接调用(防抖已在useSSE内部处理),
 //   消除N个事件→N个宏任务排队→O(N²)主线程阻塞 — 小欧-2026-09-09
-// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: processSSEData签名删除未使用形参_isProcessingRef — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - S12批量commit: thought-start/thought/chunk/action/observation/paused/resumed六处改push+scheduleFlush,
+// 编辑历史: 2026-09-10 小欧 - 阶段一批清死代码: processSSEData签名删除未使用形参_isProcessingRef — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 批量commit: thought-start/thought/chunk/action/observation/paused/resumed六处改push+scheduleFlush,
 //   零同步序列化消除O(N²)主线程阻塞; final分支同步flush防组件卸载前丢尾; handlers新增pendingStepsRef/scheduleFlush — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - S15并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
-// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.14): 加merged分支+onMerged回调 — 小欧-2026-09-28
-// 编辑历史: 2026-09-10 小欧 - S3 seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - 阶段三S12.2残留死参清理(v2.17): handlers删saveStepsToStorage字段(:78)+解构(:133,
+// 编辑历史: 2026-09-10 小欧 - 并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged分支+onMerged回调 — 小欧-2026-09-28
+// 编辑历史: 2026-09-10 小欧 - seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三残留死参清理: handlers删saveStepsToStorage字段(:78)+解构(:133,
 //   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - 阶段三final分支ref权威源修复(v2.17, 与useSSE flushPendingSteps同款):
-//   原实现函数式updater(prev=>[...prev,...batch])且updater内含写ref副作用, 违反T11更新器零副作用(StrictMode双执行双写ref);
+// 编辑历史: 2026-09-10 小欧 - 阶段三final分支ref权威源修复(与useSSE flushPendingSteps同款):
+//   原实现函数式updater(prev=>[...prev,...batch])且updater内含写ref副作用, 违反更新器零副作用(StrictMode双执行双写ref);
 //   且原ref先行只补当前step、漏早前未flush的pending, onComplete读ref缺失早前步骤。
 //   改非函数式set: batch全量+ref权威源展开, ref同步赋值后再setState, StrictMode幂等 — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - [C1/C2]终态后作废守卫(北京老陈排查35失败): handlers新增可选中terminalSeqRef,
+// 编辑历史: 2026-09-10 小欧 - 终态后作废守卫(北京老陈排查失败): handlers新增可选中terminalSeqRef,
 //   final/error分支记录终态seq, 入口层拦截终态后到达的更高seq晚到帧(防pendingSteps被污染);
 //   start/final_stats/usage元信息帧放行(终态统计仍需落) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - TS类型修复: final/error分支 terminalSeqRef.current 赋值由 step.step 改
 //   stepNum——step.step 类型为 number|undefined, stepNum 经 Number(rawData.step)||1 保证 number,
 //   消除类型安全隐患, 终态 seq 记录值语义不变 — 小欧-2026-09-10
-// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB executionSteps),
+// 编辑历史: 2026-09-11 小欧 - 契约化(北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB executionSteps),
 //   实时 SSE 永不发(后端 stream_reader 经 _SSE_EXCLUDE_TYPES 过滤)。case 'thought' 改为纯防御分支——
 //   原实时收集 thought 入 executionSteps 为历史错逻辑(实时+DB 双通道重复根因), 现收到即丢弃仅打日志 — 小欧-2026-09-11
-// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(归一化/数值化两项): normalizeIsReasoning/normalizeAutoConfirm同名同体合并为
+// 编辑历史: 2026-09-12 小欧 - 复核修复(归一化/数值化两项): normalizeIsReasoning/normalizeAutoConfirm同名同体合并为
 //   normalizeBoolean(DRY); Number(rawData.step)||1 十处重复抽 toStepNumber helper(DRY, SLAP) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(error分支归一化/终态补字段): ①error分支step.step改toStepNumber归一化(原直接赋string致终态seq守卫string/number比较失效);
+// 编辑历史: 2026-09-12 小欧 - 复核修复(error分支归一化/终态补字段): ①error分支step.step改toStepNumber归一化(原直接赋string致终态seq守卫string/number比较失效);
 //   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致调试日志恒undefined — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(usage帧taskLike单源): usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts 同源) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(action分支删死字段): action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - 问题1实施(北京老陈批准, 作废守卫退役): 删终态后作废守卫全部残留——
+// 编辑历史: 2026-09-12 小欧 - 复核修复(usage帧taskLike单源): usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts 同源) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 复核修复(action分支删死字段): action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 实施(北京老陈批准, 作废守卫退役): 删终态后作废守卫全部残留——
 //   接口定义/解构/入口拦截块/ final·error分支终态seq记录 五处删除(第二套度量衡退役, event_log seq全局连续单调+TCP有序
 //   +final后无业务帧 ⇒ 晚到高seq帧物理不存在, 守卫零拦截量, YAGNI纯删除)。useSSE侧S904 B2空流判定改用lastSeqRef
 //   (见useSSE.ts编辑历史, done权威置位在后final先publish, 判定语义等价)。编辑历史注释保留可追溯 — 小欧-2026-09-12
@@ -86,13 +86,13 @@
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调接口; ②新增 case 'rejected' 分支, 调用 onRejected + 兼容调用 onDenied; ③onRejected 接收 {step,message,tool_name,reject_type,from_backend} - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 会审V3更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
-//   同日会审V3已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 复核更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
+//   同日复核已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
-// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.15 HITL 单源化: 删 resumed 帧带 confirm_id 时的
+// 编辑历史: 2026-09-29 21:37:55 小欧 - HITL 单源化: 删 resumed 帧带 confirm_id 时的
 //   window.dispatchEvent('authorization_resumed') 兜底派发(原 :180-186 小沈 2026-09-03 加的防御兜底)。
-//   S1 超时放行现走 5.3 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
-//   快照 effect 关弹窗(5.15 上块); window 派发端双删之一(另一处 useChatCallbacks
+//   超时放行现走 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
+//   快照 effect 关弹窗(上块); window 派发端双删之一(另一处 useChatCallbacks
 //   onAuthorizationRequired), 防双源复活 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 解析/业务分层兜底；未知 type 不推进 seq 保留 onBiz；final 提前收尾；删零消费成员
 // 编辑历史: 2026-10-04 小欧 - context_overview 摘要键修正 summary→content(帧的权威文本字段是 content,
@@ -101,14 +101,14 @@
 //   供 taskinfo「占窗率 = 本轮P/窗口」; 窗口为常量, 无新值时沿用上一帧(prev.contextWindow)
 // 编辑历史: 2026-10-04 小欧 - history_context 帧仅在 truncated 时入 executionSteps(供行尾事件列表派生"历史对话已裁剪"),
 //   事件派生与现有 9 类同源且取帧内真实 timestamp; 非裁剪帧不入, 免影响 RightViewer 步骤数比较
-// 编辑历史: 2026-10-08 小欧 北京老陈裁定"不能误导用户"(与 ContextOverviewCard 同批): contextOverview 帧
+// 编辑历史: 2026-10-08 小欧 北京老陈定案"不能误导用户"(与 ContextOverviewCard 同批): contextOverview 帧
 //   解析改 compressed/compress_saved_pct 两字段, 删 injected_ratio —— 该值>1 才代表压缩生效但标签叫"压缩比"
 //   方向相反, 且未压缩时≠1.0(装入含 system+本轮提问), 会让用户误读。
-// 编辑历史: 2026-10-10 小欧[20]  history_context: contextOverview 改整→
+// 编辑历史: 2026-10-10 小欧:  history_context: contextOverview 改整→
 //   原样透出(原白名单重建只留少数 → 会静默丢字段并逼出下游形状兼容); 裁剪读法改走 utils/contextFrame;
 //   「steps 门补 hasSummary — 「summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 「if(trimmed)
 //   把唯一携带 summary 的帧挡在 steps 外 → 致压缩事件永不产出」
-// 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
+// 2026-10-10 北京老陈定案: 帧读侧唯一真源(禁在本文件重判形状)
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: case 'rejected' 在 onRejected 回调外补 pushAndFlush 入 executionSteps(透传 reject_type/tool_name), 使 useTaskInfo 能从 steps 派生 rejected 过程事件; 改前只调回调不入流, 事件列表永无 rejected — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 小欧 - rejected 帧补传 confirm_id(北京老陈令): 原不传致 onRejected 拿不到 id,
 //   关窗分支不成立, 确认作废后弹窗永留屏幕(实测 e95d2ceb) — 小欧-2026-10-11
@@ -224,7 +224,7 @@ const processSSEData = (
     ) => void;
     onError?: (error: string | SSEError) => void;
     // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected;
-    // 2026-09-17 小欧 会审V3: onDenied 回调整链删除(YAGNI, 唯一调用方 useChatStreaming 已传 undefined, 零消费者);
+    // 2026-09-17 小欧 复核: onDenied 回调整链删除(YAGNI, 唯一调用方 useChatStreaming 已传 undefined, 零消费者);
     //   from_backend 硬编码字段删除(YAGNI, 全链透传零消费) — 小欧-2026-09-17
     onRejected?: (data: {
       step: number;
@@ -277,7 +277,7 @@ const processSSEData = (
     // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
     pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
     scheduleFlush?: () => void;
-    // 【小欧 2026-08-26 8.4.14】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
+    // 【小欧 2026-08-26】元信息帧状态注入（useSSE 闭包 state/ref 透传进模块级 processSSEData）
     setMetaFrames?: React.Dispatch<React.SetStateAction<TaskMetaFrames>>;
     usageAccumRef?: React.MutableRefObject<{
       prompt: number;
@@ -396,7 +396,7 @@ const processSSEData = (
       onSeq(rawData.seq);
     }
 
-    // 小欧 2026-09-29: [63] P3 Journal 降级标记读取（后端 event payload 的 persistence_degraded）。
+    // 小欧 2026-09-29: Journal 降级标记读取（后端 event payload 的 persistence_degraded）。
     //   该帧 Journal 写入失败，故降级事实由后续帧粘滞携带；此处仅 console 观测（UI 提示通路待接，
     //   不预埋无调用方的回调钩子——YAGNI）。
     if (
@@ -463,7 +463,7 @@ const processSSEData = (
       outcome: rawData.outcome,
       error_type: rawData.error_type,
       action: rawData.action, // 执行动作名称，与后端一致
-      // 2026-10-04 小欧 文档[8]§4.1.4 死字段清理: 删 observation(thought分支"保留原始对象用于调试"的赋值,
+      // 2026-10-04 小欧 死字段清理: 删 observation(thought分支"保留原始对象用于调试"的赋值,
       //   全仓零读取, 且 observation 的正式载体是 tool_result 数组) — 小欧-2026-10-04
       result: rawData.result, // simplify_observation处理后的文本
       action_input: rawData.action_input, // 工具调用参数
@@ -482,12 +482,12 @@ const processSSEData = (
     }
 
     switch (rawData.type) {
-      // 【小欧 2026-08-26 8.4.3】start/startinfo 拆双（4.9.2.7）；
-      // 2026-09-07 小欧 4.4.3: startinfo 合并入 start——start 自带 ai_message_id,
+      // 【小欧 2026-08-26】start/startinfo 拆双；
+      // 2026-09-07 小欧: startinfo 合并入 start——start 自带 ai_message_id,
       //  - start.content=context_summary -> 元信息帧 contextSummary（任务信息条上下文概况，三分归位③）+
       //    元信息帧 startInfo（驱动状态徽标），同样不入步骤列表；
-      //    不进右侧查看区流水线（4.4.4）；user_message 对话界面已可见不重复渲染（4.9.1）；
-      //    model/provider 由顶栏徽标承载（4.8.3-A）。
+      //    不进右侧查看区流水线；user_message 对话界面已可见不重复渲染；
+      //    model/provider 由顶栏徽标承载。
       case 'start': {
         // 2026-09-08 小欧 修复: 后端 StartStep.get_content() 返回 context_summary 对象(非字符串),
         //   原 typeof==='string' 三元把对象丢弃为 '' → contextSummary 空白(任务信息条上下文概况退化)。
@@ -613,13 +613,13 @@ const processSSEData = (
           typeof rawData.content === 'string' ? rawData.content : '';
         const _conv = pickConv(rawData);
         const trimmed = _conv?.truncated === true;
-        // 2026-10-10 北京老陈裁定[20]: 首帧也入 steps —— summary 只在 step==0 首帧写入(后端 agent_telemetry),
+        // 2026-10-10 北京老陈定案: 首帧也入 steps —— summary 只在 step==0 首帧写入(后端 agent_telemetry),
         //   压缩事件唯一派生源是 steps 扫描; 原门只有 trimmed 才入, 首帧 linked 时 conv.truncated=false
         //   → 首帧被挡在 steps 外 → 压缩事件永不产生(EVENT_ICON_MAP.context_compressed 是死分支)
         const _inj = pickInject(rawData);
         const hasSummary =
           typeof _inj?.summary === 'string' && _inj.summary !== '';
-        // 2026-10-10 北京老陈裁定[20]: 整帧原封不动透出, 不重塑不补键 —— 定稿结构原样传递。
+        // 2026-10-10 北京老陈定案: 整帧原封不动透出, 不重塑不补键 —— 定稿结构原样传递。
         //   白名单式重建会静默丢字段, 且逼出下游各自做形状兼容(backward 双写法)
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
@@ -627,7 +627,7 @@ const processSSEData = (
         }));
         // 2026-10-04 小欧: 仅裁剪轮入 steps(北京老陈令: truncated=1 要在行尾事件列表留一条); 事件派生与现有 9 类同源(走 steps 扫描),
         //   取帧内真实 timestamp; 非裁剪帧不入, 免每5轮里程碑灌入无用帧影响步骤数比较; 该类型已在 META_STEP_TYPES 不进业务流水线
-        // 2026-10-09 小欧[20]: 入 steps 帧带两组字段(useTaskInfo 裁剪/压缩事件从 steps 派生, 不带永不触发)
+        // 2026-10-09 小欧: 入 steps 帧带两组字段(useTaskInfo 裁剪/压缩事件从 steps 派生, 不带永不触发)
         if (trimmed || hasSummary) {
           pushAndFlush(handlers, {
             type: 'history_context',
@@ -635,7 +635,7 @@ const processSSEData = (
             step: toStepNumber(rawData.step),
             timestamp: timestampValue,
             truncated: trimmed,
-            // 2026-10-10 小欧[20] 读侧真源收敛: 复用上方已算好的 pickConv/pickInject 结果,
+            // 2026-10-10 小欧 读侧真源收敛: 复用上方已算好的 pickConv/pickInject 结果,
             //   不再 rawData.conv_context / rawData.inject_context 直取 —— 后者绕过 contextFrame
             //   唯一真源, 同一帧两条读路径, pick 逻辑一改必分叉。
             conv_context: _conv,
@@ -764,11 +764,11 @@ const processSSEData = (
 
         const displayName = rawData.display_name;
 
-        // 小欧 2026-09-10 S12.2.1: final 分支同步 flush，防组件卸载前丢尾
+        // 小欧 2026-09-10: final 分支同步 flush，防组件卸载前丢尾
         handlers.pendingStepsRef?.current.push(step);
-        // v2.17 修复(小欧 2026-09-10): 与 useSSE flushPendingSteps 同款 ref 权威源等价值计算——
+        // 修复(小欧 2026-09-10): 与 useSSE flushPendingSteps 同款 ref 权威源等价值计算——
         //   原实现用函数式 updater（setExecutionSteps(prev => [...prev, ...batch])）且 updater 内含写 ref 副作用
-        //   （T11 要求 updater 零副作用, StrictMode 下 updater 双执行即双写 ref）; 且原 ref 先行只补 step
+        //   （要求 updater 零副作用, StrictMode 下 updater 双执行即双写 ref）; 且原 ref 先行只补 step
         //   而 batch 含早前未 flush 的 pending, 此时 onComplete 读 ref 缺失早前步骤。改非函数式 set:
         //   batch 全量 + ref 权威源展开, ref 同步赋值后再 setState, StrictMode 幂等, updater 彻底消失
         const batch = handlers.pendingStepsRef?.current.splice(0) ?? [step];
@@ -799,7 +799,7 @@ const processSSEData = (
         logTypeArrival('error', stepNum); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
 
         // 【小强修复 2026-04-15】后端error类型只有以下字段，只解析后端存在的字段
-        // 【小欧 2026-08-18 三堂会审】error 文本统一由 MetaStep.content 承载(新)，
+        // 【小欧 2026-08-18】error 文本统一由 MetaStep.content 承载(新)，
         //   兼容读 content，再回退旧 ErrorStep 的 error_message，杜绝实时显示退化为'未知错误'
         const errorMsg = rawData.content || rawData.error_message || '未知错误';
         step.content = errorMsg;
@@ -807,7 +807,7 @@ const processSSEData = (
         step.error_type = rawData.error_type || '';
 
         // 解析后端存在的字段
-        // 2026-09-12 小欧 三堂会审修复: 原直接赋值rawData.step(string)致终态seq守卫string/number比较失效, 统一Number()归一化 — 小欧-2026-09-12
+        // 2026-09-12 小欧 复核修复: 原直接赋值rawData.step(string)致终态seq守卫string/number比较失效, 统一Number()归一化 — 小欧-2026-09-12
         if (rawData.step) {
           step.step = toStepNumber(rawData.step);
         }
@@ -837,20 +837,20 @@ const processSSEData = (
         if (rawData.timestamp) {
           step.timestamp = rawData.timestamp;
         }
-        // 【小欧 2026-08-26 8.4】error 收敛为事件通知：不进执行步骤列表、不落库不回放
-        // （4.9.2.6）；失败态展示 = 任务信息条状态徽标(final.outcome=failed) + RightViewer
-        // 经 onError→liveErrorText 直渲错误行（8.10，非 StatusLine）+ 静态统计块错误项。
+        // 【小欧 2026-08-26】error 收敛为事件通知：不进执行步骤列表、不落库不回放
+        // ；失败态展示 = 任务信息条状态徽标(final.outcome=failed) + RightViewer
+        // 经 onError→liveErrorText 直渲错误行（非 StatusLine）+ 静态统计块错误项。
         // 文本读 content（已收敛），回退 error_message。
         // 【小沈修改2026-04-15】传递完整的错误对象，统一使用error_message，删除code字段
         onError?.({
           type: 'error',
           error_type: rawData.error_type || 'unknown_error',
           error_message: errorMsg,
-          step: stepNum, // 2026-09-06 小欧 B2(方案C): 错误透传所属执行轮 step, 前端按 blocked/timeout 聚合 deniedStepSet — 小欧-2026-09-06
-          tool_name: rawData.tool_name, // 2026-09-06 小欧 B2(6.4): 透传被拒工具名(blocked/timeout), 供被拒工具点名条 — 小欧-2026-09-06
+          step: stepNum, // 2026-09-06 小欧(方案): 错误透传所属执行轮 step, 前端按 blocked/timeout 聚合 deniedStepSet — 小欧-2026-09-06
+          tool_name: rawData.tool_name, // 2026-09-06 小欧: 透传被拒工具名(blocked/timeout), 供被拒工具点名条 — 小欧-2026-09-06
           // 2026-09-08 小欧 落码: 后端 error 事件无条件打来源标 —— useChatCallbacks 据此分道只进第三类不弹窗 — 小欧-2026-09-08
           from_backend: true, // 判据=来源(事件由 SSE 解析而来)而非类型匹配
-          // 2026-09-08 小欧 6.3.4: 层级标记读原始 rawData.step===0(禁 stepNum 归一, 恒≥1判不出请求级) — 小欧-2026-09-08
+          // 2026-09-08 小欧: 层级标记读原始 rawData.step===0(禁 stepNum 归一, 恒≥1判不出请求级) — 小欧-2026-09-08
           request_level: rawData.step === 0,
           model: rawData.model,
           provider: rawData.provider,
@@ -861,16 +861,16 @@ const processSSEData = (
           context: rawData.context,
           timestamp: rawData.timestamp || timestampValue,
         });
-        // 【小强修复 2026-04-09】关键：不再调用onComplete（和v0.8.75一致），error步骤由onError处理
-        // v0.8.75版本没有调用onComplete，UI显示正常
+        // 【小强修复 2026-04-09】关键：不再调用onComplete，error步骤由onError处理
+        // 历史版本没有调用onComplete，UI显示正常
         // 2026-09-30 小欧 - 删此处 setIsReceiving/setIsConnected(false)：终态收尾已由
         //   transport onError 的 markDisconnected 统一承担；非终态业务错误流仍在跑，误关即 Bug
-        // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
+        // 编辑历史: 2026-09-12 16:28 小欧 - 实施: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
-      // 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发 —
-      //   2026-09-17 小欧 会审V3: 该 case 已删除(后端 2026-09-16 起统一发 type="rejected", user_rejected 永不到达,
+      // 2026-09-06 小欧(北京老陈定案): 拒绝不是error事件, 后端独立 type="user_rejected" 单独发 —
+      //   2026-09-17 小欧 复核: 该 case 已删除(后端 2026-09-16 起统一发 type="rejected", user_rejected 永不到达,
       //   禁止backward 残留死代码清理) — 小欧-2026-09-17
 
       // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected
@@ -903,8 +903,8 @@ const processSSEData = (
         break;
       }
 
-      // 【小欧 2026-08-26 8.4】action 新结构：exec_type(single/multi) + tools 数组
-      // 单工具也是一个元素不做特判（4.9.2.9）；禁止保留 旧动作类型名 兼容分支
+      // 【小欧 2026-08-26】action 新结构：exec_type(single/multi) + tools 数组
+      // 单工具也是一个元素不做特判；禁止保留 旧动作类型名 兼容分支
       case 'action': {
         step.exec_type = rawData.exec_type === 'multi' ? 'multi' : 'single';
         const tools: Array<{
@@ -925,7 +925,7 @@ const processSSEData = (
             )
           : [];
         step.tools = tools;
-        // 2026-09-12 小欧 三堂会审修复: 补赋值 tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 与 step.content 同源 —
+        // 2026-09-12 小欧 复核修复: 补赋值 tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 与 step.content 同源 —
         //   原从未赋值致 debug 日志 [DBG-6] 恒打印 undefined; 下游 ToolCallLine 单工具场景读 tool_name 亦受益 — 小欧-2026-09-12
         step.tool_name =
           tools.length === 1
@@ -934,7 +934,7 @@ const processSSEData = (
         step.content = tools
           .map((t) => (t.target ? `${t.tool}(${t.target})` : t.tool))
           .join(' + ');
-        // 【小欧 2026-09-06 方案C观察点1/2根治】preview 仅SSE预览行标记(后端 preview=True):
+        // 【小欧 2026-09-06 观察点根治】preview 仅SSE预览行标记(后端 preview=True):
         //   刷新恢复时剔除, 与 DB 回放语义一致(拦截/拒绝 action 本就不落库) — 小欧-2026-09-06
         step.preview = rawData.preview === true;
 
@@ -963,8 +963,8 @@ const processSSEData = (
 
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
         // 先检查null（typeof null === 'object'是历史bug）
-        // 2026-08-27 小欧 三堂会审: 适配后端08-18新契约 — observation步骤仅携带rawData.tool_result数组(顶层), 无observation字段
-        // 2026-10-04 小欧 文档[8]§4.1.4 死派生字段清理(零消费, 禁backward不留兼容壳): 删 execution_result/execution_status/
+        // 2026-08-27 小欧 复核: 适配后端08-18新契约 — observation步骤仅携带rawData.tool_result数组(顶层), 无observation字段
+        // 2026-10-04 小欧 死派生字段清理(零消费, 禁backward不留兼容壳): 删 execution_result/execution_status/
         //   tool_params/parallel_results/observation/return_direct 六处赋值——后三个读的是后端根本不存在的键(恒空壳);
         //   execution_result 虽曾被 ToolResultRenderer 当兜底, 但它只在 tool_result 非空分支内赋值, 该兜底永不可达。
         //   连带删仅服务于 execution_result 的 JSON.parse(data_text)(实测 0/2306 可解析, 解析必失败)。
@@ -987,7 +987,7 @@ const processSSEData = (
           const rawItems = (rawData.content_items ??
             rawData.contentItems) as unknown;
           step.contentItems = Array.isArray(rawItems) ? rawItems : [];
-          // 2026-10-04 小欧 文档[8]§4.1.4: 删 step.content = step.summary(名不副实——顶着"正文"名字装的是摘要副本,
+          // 2026-10-04 小欧: 删 step.content = step.summary(名不副实——顶着"正文"名字装的是摘要副本,
           //   后端真正正文是 tool_result[i].data_text, 从未进过 content); 孤儿 obs 段只读 summary, 兜底链同步收敛 — 小欧-2026-10-04
         } else {
           // 2026-09-30 小欧 - 原先此处还有一层"兼容旧格式（observation 为对象）"分支（约 57 行），
@@ -1008,7 +1008,7 @@ const processSSEData = (
       }
 
       // 【北京老陈 2026-07-12 小欧】直接处理 paused/resumed/retrying 类型
-      // 2026-09-07 小欧 4.4.1: 删 cancelled——取消终态由 type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件
+      // 2026-09-07 小欧: 删 cancelled——取消终态由 type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件
       case 'paused':
       case 'resumed':
       case 'retrying': {
@@ -1047,10 +1047,10 @@ const processSSEData = (
             }
             break;
           case 'resumed':
-            // [63] 5.15 v1.29：authorization_resumed window 兜底派发删除（HITL 单源化）——
-            //   S1 超时放行链路走 5.3 onResumed（emitEvent + 清 Store.pendingAuthorization）
+            // authorization_resumed window 兜底派发删除（HITL 单源化）——
+            //   超时放行链路走 onResumed（emitEvent + 清 Store.pendingAuthorization）
             //   → useAuthorization 快照 effect 关弹窗
-            onResumed?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10 S15: 传 confirmId
+            onResumed?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10: 传 confirmId
             break;
           case 'retrying':
             // 小欧 2026-07-13: 同上, 读取后端 content 字段作为重试提示文本。
