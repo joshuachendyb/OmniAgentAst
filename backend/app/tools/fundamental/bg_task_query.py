@@ -5,10 +5,10 @@
 # (初版)
 # 2026-11-13 商量 - 改名: bash_result 改名 task_query(通用后台任务查询), 描述特别指明当前支持 bash background=true 的 Shell 后台命令
 # 2026-11-13 商量 - 再改名: task_query 改名 bg_task_query, 与 SYSTEM 计划任务三件套(create/list/delete_task)语义区分
-# 2026-11-13 商量 - 三堂会审根治: (1)读输出改"有界尾读"——仅读文件末尾 max_chars*4 字节再解码取尾,
+# 2026-11-13 商量 - 根治: (1)读输出改"有界尾读"——仅读文件末尾 max_chars*4 字节再解码取尾,
 #   峰值内存有界(原全量 f.read() 对 64MiB 文件峰值翻倍); (2)取尾巴而非头截断, 完成态能看到最新结果,
 #   契合"中途看进度"意图; (3)output_file 直查加输出目录边界校验, 关闭任意文件读取口子
-# 2026-11-13 商量 - 10轮三堂会审增量: 终态语义字段 timed_out 改 outcome(completed/failed/timeout/
+# 2026-11-13 商量 - 增量整改: 终态语义字段 timed_out 改 outcome(completed/failed/timeout/
 #   oversize/killed), 与后台模块统一, 查询方可区分"超时被杀/输出超限被杀/命令失败"三种终态
 """
 S: bg_task_query — 查询后台任务执行状态与输出

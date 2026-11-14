@@ -7,7 +7,7 @@
 //   (生产构建命中缓存即 return, 不补则镜像恒 false —— dev 因 DEBUG_LOAD_FROM_API 短路不可达, 故 dev 全绿 prod 假绿);
 //   ③写入点 saveSessionToCache 补 linkEnabled(3 处写入点中的第 1 处)。 — 小欧-2026-10-03
 // 编辑历史: 2026-11-13 商量 - parseMessage 透传 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
-//   新增字段): 后台续跑通知(设计[33] 8.7)种类在解析层保真, 系统通知样式渲染消费
+//   新增字段): 后台续跑通知种类在解析层保真, 系统通知样式渲染消费
 /**
  * 聊天历史工具函数
  *

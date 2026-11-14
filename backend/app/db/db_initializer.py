@@ -103,7 +103,7 @@
 #   UNIQUE, 存量库重建表(幂等); 唯一性改由两个部分索引承担(session 行按会话+sha / global 行按 sha)
 # 2026-11-07 小欧 - 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
 #   —— global 行 session_id 恒 NULL, 会话删除不带走全局资产 — 小欧-2026-11-07
-# 2026-11-13 商量 - 后台命令续跑两维标记(设计[33] 8.6): chat_tasks 加 creation_source
+# 2026-11-13 商量 - 后台命令续跑两维标记: chat_tasks 加 creation_source
 #   (任务级来源 user/system_resume) + chat_user_message 加 msg_kind(消息级 user/system_notice);
 #   新建 DDL 与存量库 _ensure_column 幂等补列同源, 存量行 DEFAULT 兜底(零退化)。
 

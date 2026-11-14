@@ -29,14 +29,14 @@
 #   fallback_quality 与 quality 同域(text_full|meta_only|link_only) 直取, 不再二次翻译 — 小欧-2026-11-14
 
 
-# 2026-11-14 小欧 三堂会审整改(14条违规修复): ①ItemPlan 收敛为 (source_kind, content_kind,
+# 2026-11-14 小欧 整改: ①ItemPlan 收敛为 (source_kind, content_kind,
 #   quality) 最小面, 删死字段 key/reason 与 delivery(投递由 QUALITY_TO_DELIVERY 单表派生);
 #   ②删 _reason/reason 死链路, _plan_of 直返 quality 单值; ③删 KIND_MODALITY/QUALITIES/
 #   DELIVERIES 死导出与 dedup_key 死函数(全仓零消费); ④内部来源 ("log","message") 收敛为
 #   _INTERNAL_TEXT_SOURCES 单常量; ⑤URL 路由 fetch 语义化: 文本抓取标 "text", 媒体内联
 #   由 ensure_payload 自理不再标 optional, 消 attachment_wire 双判据 — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 三堂会审整改(第2批): extract 私名出口转公开(text_body/link_body/
+# 2026-11-14 小欧 整改(第2批): extract 私名出口转公开(text_body/link_body/
 #   image_card/video_card/audio_card/binary_card/richdoc_body/*_from_bytes), 消契约跨模块
 #   消费私有名; _plan_of 收敛为 quality 单值返回, 投递动作由 QUALITY_TO_DELIVERY 单表派生,
 #   ItemPlan 删 key/delivery/reason 三死字段, 内部来源收敛 _INTERNAL_TEXT_SOURCES — 小欧-2026-11-14
@@ -46,10 +46,10 @@
 #   同源同判, 消 suffixless URL 计划 native/运行时降级分叉; ②未知来源 kind 回落 file 路由,
 #   单条脏引用不再 KeyError 崩溃整轮首发装配 — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 第7章7.1 死契约删除: SOURCE_KINDS 去 log/message, 删 _INTERNAL_TEXT_SOURCES
+# 2026-11-14 小欧 死契约删除: SOURCE_KINDS 去 log/message, 删 _INTERNAL_TEXT_SOURCES
 #   常量与 _build_contract/classify_ref 内部来源特判, 契约矩阵收敛为 4 来源(无生产方不可达) — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 第7章7.4 阶段B: _plan_of 增 has_slot 形参, 实例已物化(attachment_id)按条目判 native;
+# 2026-11-14 小欧 附件物化: _plan_of 增 has_slot 形参, 实例已物化(attachment_id)按条目判 native;
 #   矩阵投影 (has_slot=None) 只认登记槽, 保持"矩阵低承诺、实例高兑现"分层 — 小欧-2026-11-14
 
 

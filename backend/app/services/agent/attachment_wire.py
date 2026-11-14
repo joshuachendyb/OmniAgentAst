@@ -14,7 +14,7 @@
 # 2026-11-14 小欧 扫描正则改由 SLOT_WRITERS 注册表派生(4.4.3 纪律3): 组合正则不再手写
 #   re.compile, 新增来源加注册表一条即自动纳入扫描, 消扩展点漏改 — 小欧-2026-11-14
 
-# 2026-11-14 小欧 三堂会审整改: ①删 attachment_slot/url_item_slot 兼容再导出(禁止 backward,
+# 2026-11-14 小欧 整改: ①删 attachment_slot/url_item_slot 兼容再导出(禁止 backward,
 #   消费方一律走 ref_slots 单源); ②占位展开改 _EXPANDERS 注册表按 m.lastgroup 派发
 #   (wire_prefix 正则命名组名=注册表键), 删 group(1)/group(2) 硬编码分组号, 新增来源漏配
 #   展开器 KeyError 响亮暴露不再静默错位; ③URL 文本抓取改契约单判据 route.fetch=="text",
@@ -23,7 +23,7 @@
 # 2026-11-14 小欧 bug挖掘修复: expand_attachment_slots 收尾折叠补非 text 单 part 分支 —— 消息仅含
 #   一个原生 part 时原返回 None 丢整个消息内容, 现原样返回 parts; 空展开原样返回 text — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 第7章7.4 阶段B 收权: expand_attachment_slots/_expand_one/_EXPANDERS 增 session_id
+# 2026-11-14 小欧 附件物化收权: expand_attachment_slots/_expand_one/_EXPANDERS 增 session_id
 #   透传, _expand_attachment 改 get_attachment_scoped(跨会话 id 拒绝, 与 resolver 同口径) — 小欧-2026-11-14
 # 2026-11-15 小欧 语义前缀归一: 降级说明文案字面量收归 app.wire_prefix(INLINE_ATT_UNSENT/INLINE_URL_UNSENT),
 #   消除散落字面量 — 小欧-2026-11-15

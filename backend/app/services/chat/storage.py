@@ -134,12 +134,12 @@
 #   "Expression tree too large"; 返回结构与单查一致 _strip_thought_content) — 小欧-2026-10-27
 # 2026-11-03 - 小欧 - 新增 list_running_tasks/get_task_status(跨会话在跑任务 + 单任务轻量读, 带 24h 僵尸年龄窗);
 #   update_task 增 status 词表校验(非法值打 ERROR 并 fail-safe 落 failed); 三处状态字面量改引 constants.ChatTaskStatus — 小欧-2026-11-03
-# 2026-11-13 商量 - 后台续跑两维标记(设计[33] 8.6): insert_task 增 creation_source 入参落
+# 2026-11-13 商量 - 后台续跑两维标记: insert_task 增 creation_source 入参落
 #   chat_tasks.creation_source(默认 user); insert_user_message 增 msg_kind(默认 user);
 #   list_session_tasks SELECT 补 creation_source 供前端续跑徽标; 存量行 DEFAULT 兜底 — 商量-2026-11-13
 # 2026-11-14 商量 - 新增 delete_user_message: 未投递消息补偿删除唯一出口(续跑失败/注入未命中),
 #   与 task_registry.inject_system_notice 共用, 不留用户可见但 agent 未读的 system_notice — 商量-2026-11-14
-# 2026-11-14 商量 - list_session_tasks merged_inputs 升级 {content,msg_kind}[](设计[34]): B1a/C1 同槽异标, SELECT 补 msg_kind 显式列
+# 2026-11-14 商量 - list_session_tasks merged_inputs 升级 {content,msg_kind}[], 同槽异标, SELECT 补 msg_kind 显式列
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -1180,7 +1180,7 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     ).fetchall()
     # 会话内注入行一次取回按任务分组 2026-09-28 小欧 (原 N+1)
     _inj_by_task: Dict[str, list] = {}
-    # 2026-11-14 商量(设计[34] 5.3): SELECT 补 msg_kind 显式列 — B1a「系统通知」小标数据源(H8, 禁 SELECT *)
+    # 2026-11-14 商量: SELECT 补 msg_kind 显式列 — 「系统通知」小标数据源(禁 SELECT *)
     for _m in conn.execute(
             """SELECT id, task_id, content, msg_kind FROM chat_user_message
                WHERE session_id=? AND task_id IS NOT NULL ORDER BY id ASC""",
@@ -1198,8 +1198,8 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
         d["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
         d["provider"] = _sm.provider if _sm else None
         _reg_uid = d.pop("user_message_id", None)     # 首条 uid 仅用于排除, 不进返回契约 — 小欧 2026-09-28
-        # 2026-11-14 商量(设计[34] 4.2/4.3④/5.3): merged_inputs 由 string[] 升级为 {content,msg_kind}[]
-        #   — B1a/C1 同槽异标; 禁 backward 双读, 消费方同步见 6.5/6.6/6.8; cum.task_id 单一路由不变
+        # 2026-11-14 商量: merged_inputs 由 string[] 升级为 {content,msg_kind}[]
+        #   — 同槽异标; 禁 backward 双读, 消费方同步升级; cum.task_id 单一路由不变
         d["merged_inputs"] = [
             {"content": _m["content"], "msg_kind": _m["msg_kind"]}
             for _m in _inj_by_task.get(d["task_id"], [])

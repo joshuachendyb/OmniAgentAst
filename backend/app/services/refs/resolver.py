@@ -36,10 +36,10 @@
 #   产物过 clip_text 预算闸门; 单条解析失败折 unsupported 不阻断整批。binary/unknown 仍走原读取
 #   语义(避免未知后缀文本被误判)。附件真抽取态判据随契约 fallback_quality 改名 text_full — 小欧-2026-11-14
 
-# 2026-11-14 小欧 三堂会审整改: 删 _read_attachment 内 KIND_CONTRACT 重复延迟导入(模块头已有
+# 2026-11-14 小欧 整改: 删 _read_attachment 内 KIND_CONTRACT 重复延迟导入(模块头已有
 #   同名导入); url 分支改用 extract.link_body 公名(消私有名跨模块消费) — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 第7章7.4 阶段B 物化: resolve_refs/_read_one 增 llm_model 透传; 本地 image/audio
+# 2026-11-14 小欧 附件物化: resolve_refs/_read_one 增 llm_model 透传; 本地 image/audio
 #   在模型声明原生 + 大小≤内联上限 + 音频容器 wav/mp3 时, _materialize_media 经 save_bytes 入附件库
 #   (继承单文件/会话总量/sha 去重/会话归属), ref 补 attachment_id 后由计划器判 native; 失败回落文本出口 — 小欧-2026-11-14
 #   (根内相对路径经 browse._resolve_within_root 解析, 与读取同口径, 不按进程 CWD 误读) — 小欧-2026-11-14
@@ -290,7 +290,7 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits,
         if ref.get("kind") == "selection":
             return ResolvedRef(ref=ref, truncated=False,
                                note="err:selection_not_text:NonTextSelection")
-        # 第7章7.4 阶段B: 本地 image/audio 且模型声明原生、大小在上限内、音频容器为 wav/mp3 时,
+        # 附件物化: 本地 image/audio 且模型声明原生、大小在上限内、音频容器为 wav/mp3 时,
         #   物化入附件库并补 attachment_id, 由计划器判 native 走原生槽; 其余回落契约文本出口。
         if (_ck in ("image", "audio")
                 and _native_modality(llm_model, KIND_CONTRACT[("file", _ck)].native_modality)

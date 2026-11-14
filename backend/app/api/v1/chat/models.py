@@ -11,7 +11,7 @@
 #   反推, DTO 不再设); ChatRequest.refs 增 max_length=MAX_REFS(条数上限, 与 limits 单一真源双保险) — 小欧-2026-10-29
 # 2026-11-06 小欧 - ChatRef 附件字段(重建): kind 描述补 attachment, 增 attachment_id(附件记录 ID,
 #   kind=attachment 时必填, 注入按 id 查表) 与 mime(MIME 展示/能力探测) — 小欧-2026-11-06
-# 2026-11-14 小欧 - 第7章7.1: kind 描述串删 log/message(死来源), 收敛 file/selection/attachment/url — 小欧-2026-11-14
+# 2026-11-14 小欧 - kind 描述串删 log/message(死来源), 收敛 file/selection/attachment/url — 小欧-2026-11-14
 
 """
 models — 从 chat_router.py 拷出

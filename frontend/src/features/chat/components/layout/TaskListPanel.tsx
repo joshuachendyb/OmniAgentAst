@@ -37,16 +37,16 @@
 //   (随后直接导航, 原页 toast 无意义), 失败由它统一点名(含"超上限", 原实现漏该分支误报"读取失败") — 小欧-2026-10-30
 // 编辑历史: 2026-11-13 商量 - 新增"续跑"徽标: creation_source=system_resume 时显示, 区分后台命令完成唤醒的任务 — 商量-2026-11-13
 // 编辑历史: 2026-11-13 商量 - 用户问题区域按系统通知样式渲染: 续跑任务的消息体是系统通知
-//   (msg_kind=system_notice ⇔ creation_source=system_resume, 设计[33] 8.6 两维标记),
+//   (msg_kind=system_notice ⇔ creation_source=system_resume, 两维标记),
 //   灰字+SUCCESS左条+浅底, 不再按用户问题强样式渲染
 // 编辑历史: 2026-11-13 商量 - 字号/字重归位令牌: 12→FontSize.SECONDARY(4处)/11→SMALL(2处)/10→CAPTION(4处)
 //   /fontWeight 500→MEDIUM/400→REGULAR, 遵守 2026-11-12 stepStyles 7档阶梯"唯一真源"铁律(11-12整改只收了13px, 本文件漏网);
 //   fontSize:6 状态点●为装饰图形非文字, 不入阶梯(加注释说明); lineHeight 无令牌暂留数字 — 商量-2026-11-13
-// 编辑历史: 2026-11-14 商量 - merged_inputs 契约升级 {content,msg_kind}[] 后同槽异标(B1a「系统通知」/C1「插话」),
-//   B1b 头/尾加「系统通知 · 续跑」小标; 系统通知判定收敛为单一谓词; 更正旧「msg_kind=system_notice ⇔
-//   creation_source=system_resume」等价误述(B1a 任务来源仍 user 但消息 msg_kind=system_notice) — 商量-2026-11-14
+// 编辑历史: 2026-11-14 商量 - merged_inputs 契约升级 {content,msg_kind}[] 后同槽异标(「系统通知」/「插话」),
+//   头/尾加「系统通知 · 续跑」小标; 系统通知判定收敛为单一谓词; 更正旧「msg_kind=system_notice ⇔
+//   creation_source=system_resume」等价误述(任务来源仍 user 但消息 msg_kind=system_notice) — 商量-2026-11-14
 
-// 编辑历史: 2026-11-14 商量 - 按用户反馈移除追加块内 B1a「系统通知」/C1「插话」两个冗余小标:
+// 编辑历史: 2026-11-14 商量 - 按用户反馈移除追加块内「系统通知」/「插话」两个冗余小标:
 //   系统通知正文自带「[系统通知]」前缀(消息头)可区分, 追加块上下文已明示为追加输入, 双标签意义不大;
 //   谓词 isNoticeInput/isInjectionInput 失去唯一消费点一并删除, 续跑徽标「系统通知 · 续跑」保留 — 商量-2026-11-14
 
@@ -106,7 +106,7 @@ const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
   cancelled: { name: '已取消', color: Colors.TEXT.TERTIARY },
 };
 
-// 2026-11-14 商量(设计[34] 4.2/5.2): 系统通知判定单一谓词 — 全文件收敛于此, 禁止散写判定
+// 2026-11-14 商量: 系统通知判定单一谓词 — 全文件收敛于此, 禁止散写判定
 const isSystemResumeTask = (t: SessionTaskItem) => t.creation_source === 'system_resume'; // B1b 主判定
 
 interface TaskListPanelProps {
@@ -466,8 +466,8 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   fontWeight: FontWeight.MEDIUM,
                   lineHeight: 1.5,
                   wordBreak: 'break-word',
-                  // 2026-11-14 商量(设计[34] 修订⑥): 续跑任务(creation_source=system_resume)按系统通知样式渲染;
-                  //   注意 system_notice 与 system_resume 非等价 — B1a 任务来源仍 user 但消息 msg_kind=system_notice
+                  // 2026-11-14 商量: 续跑任务(creation_source=system_resume)按系统通知样式渲染;
+                  //   注意 system_notice 与 system_resume 非等价 — 任务来源仍 user 但消息 msg_kind=system_notice
                   ...(isSystemResumeTask(t)
                     ? {
                         color: Colors.TEXT.SECONDARY,

@@ -259,7 +259,7 @@
 # 2026-11-04 - 小欧 - get_task_field 改从 task_state 直连真源(registry 不再再导出) — 小欧-2026-11-04
 # 2026-11-04 - 小欧 - bind_message_to_task 的 atxn 补 retry_locked=3: 每消息高频写, 5 会话并发实测撞锁
 #   (database.py:293 ×4), atxn 已有退避仅显式开启不扩面 — 小欧-2026-11-04
-# 2026-11-13 商量 - 后台命令完成唤醒(设计[33] 8.7/8.8): 抽 _create_and_launch_task(落库+writer+
+# 2026-11-13 商量 - 后台命令完成唤醒: 抽 _create_and_launch_task(落库+writer+
 #   create_task 打包, 创建来源显式传入); 新增 resume_session_with_notice(无活跃任务时以
 #   SYSTEM_RESUME 续跑, 通知消息 msg_kind=system_notice, 恒 linked 继承链根) — 商量-2026-11-13
 # 2026-11-14 商量 - 根治首发起跑 TypeError: 落库+建协程收口后, 首发调用点仍残留 context_link_mode/
@@ -271,9 +271,9 @@
 #   ③续跑竞态注入补 bind_message_to_task(执行期归属), 注入/落库失败补偿删除 system_notice 消息;
 #   ④agent 协程改为自登记句柄(runner 首行), 删除启动路径 create_task 后的 await(断连窗口不再把
 #   已交接快照当未交接关闭); ⑤起跑前退出(早退/异常/断连/生成器关闭)统一在 finally 回收注册与缓冲 — 商量-2026-11-14
-# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): prepare_refs 后就地算 _iplans(plan_refs+profile, 与首发同源),
+# 2026-11-14 小欧 插话 plans 贯通: prepare_refs 后就地算 _iplans(plan_refs+profile, 与首发同源),
 #   build_interject_text 与降级 build_user_turn_text 两调用点补 plans=_iplans, 消插话恒降级文本 — 小欧-2026-11-14
-# 2026-11-14 小欧 第7章7.4 阶段B: 首发/插话 prepare_refs 补 llm_model(任务级模型快照),
+# 2026-11-14 小欧 附件物化: 首发/插话 prepare_refs 补 llm_model(任务级模型快照),
 #   供 resolver 本地 image/audio 原生物化判定 — 小欧-2026-11-14
 
 
@@ -315,7 +315,7 @@ from app.monitoring.agent_telemetry import (
 )
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.services.agent.agent_runner import run_agent_in_background
-# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): 计划器与首发同源, 编排层算 _iplans 后透传装配 — 小欧-2026-11-14
+# 2026-11-14 小欧 插话 plans 贯通: 计划器与首发同源, 编排层算 _iplans 后透传装配 — 小欧-2026-11-14
 from app.attachments.contract import plan_refs
 from app.services.agent.capability import profile
 
@@ -713,7 +713,7 @@ async def chat_stream_orchestrator(
                 _start_kept, limits=_ilimits, scope="interject",
                 session_id=session_id, llm_model=getattr(_tgt_agent, "_task_llm_model", None),
                 sanitized_dropped=_s_dropped)
-            # 2026-11-14 小欧 插话计划裁决(第7章7.2): 与首发同源, 送装配层写原生占位;
+            # 2026-11-14 小欧 插话计划与首发同源: 送装配层写原生占位;
             #   无 refs 时 plans=[] 不产生槽位, 行为与现状一致 — 小欧-2026-11-14
             _iplans = plan_refs(_ifinal, profile(getattr(_tgt_agent, "_task_llm_model", None)))
             _ibuf = get_stream_buffer(_active_tid)

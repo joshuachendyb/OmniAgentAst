@@ -4,13 +4,13 @@
 #   keys 提供, 计划器(contract)与装配层(message_builder)同源取用, 消除"哪些来源有原生槽"的
 #   第二份硬编码。仅依赖 app.wire_prefix 与 stdlib, 不依赖 contract/attachment_wire(防止循环) — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 三堂会审整改: url_item_slot 删 str.encode('ascii') 冗余转码(b64 产物
+# 2026-11-14 小欧 整改: url_item_slot 删 str.encode('ascii') 冗余转码(b64 产物
 #   本就是 ASCII str, len(str) 即字节数), 消双重解析 — 小欧-2026-11-14
 #
 # 2026-11-14 小欧 bug挖掘修复: attachment_slot 按 SLOT_ATTACHMENT_RE 全匹配校验 id 形态,
 #   非 32hex id 不再写出正则不可识别的占位原样泄漏给模型(返回空串, 装配层回落文本块) — 小欧-2026-11-14
 #
-# 2026-11-14 小欧 第7章7.4 阶段B: file/selection 物化后携带 attachment_id, 写槽复用 attachment 写入器;
+# 2026-11-14 小欧 附件物化: file/selection 物化后携带 attachment_id, 写槽复用 attachment 写入器;
 #   新增 SLOT_ALIASES + slot_writer 单一查表(别名不进 SLOT_WRITERS, 矩阵/扫描口径保持保守) — 小欧-2026-11-14
 """ref_slots — 引用槽位注册表: 来源 → (正则, 占位构造器)。
 

@@ -45,7 +45,7 @@
 # 2026-11-05 小欧 - 回放聚合注释纠偏: ThoughtStep构建层兜底已废, 取键thought/reasoning经构建点显式传参仍成立(纯注释)
 # 2026-11-13 商量 - get_session_messages 消息读取出口补 msg_kind: MessageResponse 新增可选字段,
 #   user 行取 pairs 已回传的 msg_kind(user/system_notice), assistant 行恒 None;
-#   后台续跑通知(设计[33] 8.7)在前端可按它渲染系统通知样式, 不再与用户发言混同
+#   后台续跑通知在前端可按它渲染系统通知样式, 不再与用户发言混同
 """
 message_service — 消息业务服务(services/chat)
 

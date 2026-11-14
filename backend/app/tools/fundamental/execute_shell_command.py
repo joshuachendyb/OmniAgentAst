@@ -160,7 +160,7 @@
 # 2026-11-13 商量 - 新增 background 参数: 后台运行命令并立即返回; 后台分支复用全部前置(校验/预处理/
 #   三路检测/语法修复/安全检查), 仅执行段改走 shell_background.run_shell_background(popen_factory 注入
 #   四种 shell 启动装配, DRY), 前台路径零改动; 中风险命令后台一律拒绝不弹窗; 后台默认无超时(显式 timeout 生效)
-# 2026-11-13 商量 - 三堂会审根治: (1)cmd 后台启动脚本路径改走 shell_background.bat_sidecar_path, 与清理侧
+# 2026-11-13 商量 - 根治: (1)cmd 后台启动脚本路径改走 shell_background.bat_sidecar_path, 与清理侧
 #   同一单源(原 outfile[:-4]+".bat" 与清理 output_file+".bat" 不一致致 .bat 永不被删); (2)Popen 后即关父进程
 #   写句柄(子进程已继承, 父侧不关会拖住产物删除); (3)success_codes 传入后台, 成功判定与前台一致
 """

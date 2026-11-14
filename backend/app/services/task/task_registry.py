@@ -41,10 +41,10 @@
 # 2026-11-03 小欧 - uid 非法拒绝注入 WARNING→DEBUG(调用方参数非法) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删 8 个零使用的 task_state 再导出 + 未用 TASK_TIMEOUT(死导入);
 #   门面/调用方改直连 task_state 真源 — 小欧-2026-11-04
-# 2026-11-13 商量 - 后台命令续跑(设计[33] 8.3/8.4): 新增 get_task_session(任务→会话反查) +
+# 2026-11-13 商量 - 后台命令续跑: 新增 get_task_session(任务→会话反查) +
 #   inject_system_notice(锁内检查存活+落 system_notice 消息+投 inbox 原子完成, 供后台完成唤醒);
 #   cleanup_task/cleanup_expired_tasks 删除任务前 terminate 未退出后台进程, 生命周期绑定不留孤儿 — 商量-2026-11-13
-# 2026-11-13 商量 - 三堂会审复核修正4项: ①删 get_task_session(内存注册表查不到已清理任务, 会话反查
+# 2026-11-13 商量 - 复核修正4项: ①删 get_task_session(内存注册表查不到已清理任务, 会话反查
 #   改走 chat_tasks DB 真源, bg_shell_notifier 直查); ②inject_system_notice 锁内 await 违反锁内禁挂起
 #   纪律, 改两段锁(锁内校验→锁外落库→二次锁内校验+投递, 窗口终态删消息补偿不留脏数据);
 #   ③task_cleanup 增 terminal_status 判据, 正常完成不杀后台进程(否则完成后唤醒续跑被掐死),

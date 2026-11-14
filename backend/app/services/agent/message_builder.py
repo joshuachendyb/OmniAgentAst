@@ -121,13 +121,13 @@
 #   仍按"未测照发"内联导致整轮 400; 回归 test_vision_expand_gated_by_supports — 小欧-2026-11-10
 # 2026-11-11 小欧 附件能力域: build_user_turn_text/init_history 收口 plans 单参数(native 写占位,
 #   其余走 refs 文本块); expand_vision_parts → expand_attachment_parts(占位级展开归 attachment_wire) — 小欧-2026-11-11
-# 2026-11-14 商量 设计[34] H7/P0: prepare_messages_for_llm 加注释锚 — 严禁按 msg_kind/creation_source 过滤当前轮, 系统通知当前轮仍以 role=user 进 wire; 瞬态裁剪单点在 history_loader(H9) — 商量-2026-11-14
+# 2026-11-14 商量 prepare_messages_for_llm 加注释锚 — 严禁按 msg_kind/creation_source 过滤当前轮, 系统通知当前轮仍以 role=user 进 wire; 瞬态裁剪单点在 history_loader — 商量-2026-11-14
 #
 # 2026-11-14 小欧 bug挖掘修复: build_user_turn_text 的 slot 分支补占位构造空串回落 —— make 返回
 #   空串(如附件 id 形态非法不写占位)时该条目回落文本块, 消"判 slot 却无处写"的静默丢条目 — 小欧-2026-11-14
-# 2026-11-14 小欧 插话 plans 贯通(第7章7.2): build_interject_text 增 plans 形参并透传 4 处
+# 2026-11-14 小欧 插话 plans 贯通: build_interject_text 增 plans 形参并透传 4 处
 #   build_user_turn_text 调用, 消插话恒降级文本的断点(编排层已计算 _iplans) — 小欧-2026-11-14
-# 2026-11-14 小欧 第7章7.4 阶段B: 写槽改用 slot_writer(file/selection 复用附件槽); expand_attachment_parts
+# 2026-11-14 小欧 附件物化: 写槽改用 slot_writer(file/selection 复用附件槽); expand_attachment_parts
 #   增 session_id 透传(附件记录会话收权) — 小欧-2026-11-14
 # 2026-11-15 小欧 - 块标签归单一真源: 目录块/引用块标签改引 app.wire_prefix(ENV_WS_OPEN/ENV_WS_CLOSE),
 #   本模块不再自持字面量与再导出 — 小欧-2026-11-15

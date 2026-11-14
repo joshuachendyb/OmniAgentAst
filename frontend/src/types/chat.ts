@@ -27,7 +27,7 @@
 //   否则 uploadAttachment 构造 kind:'attachment' 编译不过; 正文由 resolver 附件分支读) — 小欧-2026-11-06
 
 // 编辑历史: 2026-11-13 商量 - Message 增 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
-//   新增字段): 后台续跑通知(设计[33] 8.7)种类在 UI 消息层保真, 系统通知样式渲染消费
+//   新增字段): 后台续跑通知种类在 UI 消息层保真, 系统通知样式渲染消费
 
 /**
  * 流式API响应类型定义
@@ -338,7 +338,7 @@ export interface Message extends ChatMessage {
   provider?: string;
   display_name?: string;
   is_reasoning?: boolean;
-  // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知(设计[33] 8.7)渲染系统通知样式消费
+  // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知渲染系统通知样式消费
   msg_kind?: string;
 }
 
