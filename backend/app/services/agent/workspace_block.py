@@ -5,6 +5,7 @@
 #   标签与块内用语统一为「事项目录」 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 渲染与观测补全: 渲染结果改 WsBlock(text/kept/skipped), 渲染一次即得
 #   观测数字; 新增 report_ws_block(注入汇总日志) 与 build_ws_notice(超限轻提示, 复用 notice 信封) — 小欧-2026-10-31
+# 2026-11-15 小欧 - 标签字面量收归 app.wire_prefix(ENV_WS_OPEN/CLOSE), 消除 4.4.3 纪律1 残留 — 小欧-2026-11-15
 """services.agent.workspace_block — 事项目录注入块(渲染 + 观测)
 
 为何独立: 目录块原先在编排层拼字符串, 只有首发路径调用, 插话必然漏注;
@@ -30,11 +31,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 from app.logger import logger
+from app.wire_prefix import ENV_WS_OPEN, ENV_WS_CLOSE
 
 WS_INJECT_MAX_CHARS = 4096     # 注入块总字符上限(与目录数上限共同约束最坏体积)
-
-WS_TAG_OPEN = "<事项目录>"
-WS_TAG_CLOSE = "</事项目录>"
 
 # 旧块作废文案: 插话更新目录后, 历史里的旧块保留标签但清空正文 —
 #   多份同类清单并存时模型没有可靠的版本比较能力, 只留一份有效清单是确定性做法。
@@ -103,11 +102,11 @@ def render_workspace_block(snapshot) -> WsBlock:
         return WsBlock("", 0, 0)
     body = "\n".join(lines)
     block = (
-        f"{WS_TAG_OPEN}\n"
+        f"{ENV_WS_OPEN}\n"
         "以下是你可用的事项目录：\n"
         f"{body}\n"
         "要求生成临时/中间文件，请写入事项目录。\n"
-        f"{WS_TAG_CLOSE}\n\n"
+        f"{ENV_WS_CLOSE}\n\n"
     )
     return WsBlock(block, kept, skipped)
 
@@ -145,8 +144,8 @@ def build_ws_notice(scope: str, block: WsBlock) -> Dict[str, Any]:
 
 __all__ = [
     "WS_INJECT_MAX_CHARS",
-    "WS_TAG_OPEN",
-    "WS_TAG_CLOSE",
+    "ENV_WS_OPEN",
+    "ENV_WS_CLOSE",
     "WS_INVALIDATED",
     "WsBlock",
     "select_ws_lines",

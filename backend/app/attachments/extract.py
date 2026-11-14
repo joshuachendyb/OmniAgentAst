@@ -12,6 +12,7 @@
 # 2026-11-15 小欧 语义前缀归一: 档案头/档案卡/正文·文本等同义异构词统一为 [主体·形态] 范式
 #   ([附件·正文]/[附件·正文·预览]/[附件·元信息·{类型}]), 字面量收归 app.wire_prefix 单一真源,
 #   消除散落字面量 — 小欧-2026-11-15
+# 2026-11-15 小欧 截断尾注收归 app.wire_prefix(INLINE_TRUNCATED), 与 ENV/ITEM 层同源 — 小欧-2026-11-15
 
 """attachments.extract — 按类型把附件变成注入文本。
 
@@ -42,6 +43,7 @@ from app.wire_prefix import (
     INLINE_ATT_META,
     INLINE_ATT_PREVIEW,
     INLINE_LINK,
+    INLINE_TRUNCATED,
 )
 
 TEXT_INLINE_MAX = 256 * 1024      # 文本内联上限 256KB（超限走头尾摘录）
@@ -121,8 +123,7 @@ def with_completeness(body: str, *, shown: int, total: int, unit: str, path: str
     """截断统一尾注: 未截断原样返回; 截断时追加唯一格式说明。"""
     if shown >= total:
         return body
-    return (f"{body}\n[已截断：仅呈现 {shown}/{total} {unit}；"
-            f"完整内容请用文件工具读取 {path}]")
+    return body + "\n" + INLINE_TRUNCATED.format(shown=shown, total=total, unit=unit, path=path)
 
 
 def classify(stored_path: Path, mime: str, size: int) -> str:

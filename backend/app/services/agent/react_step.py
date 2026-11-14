@@ -190,6 +190,7 @@
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 # 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
 # 2026-11-11 小欧 展开调用更名 expand_vision_parts → expand_attachment_parts(附件/URL 占位泛化) — 小欧-2026-11-11
+# 2026-11-15 小欧 - 块标志改用 app.wire_prefix(ENV_WS_OPEN/ENV_REFS_OPEN), 消除对 workspace_block/render 的字面量再导出依赖 — 小欧-2026-11-15
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -228,11 +229,11 @@ from app.services.agent.react_inference import (
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed, set_status
 from app.services.agent.steps import ChunkStep, FinalStep, MetaStep, ObservationStep
 from app.services.agent.tool_cache_manager import get_openai_tools
-from app.services.agent.workspace_block import WS_TAG_OPEN
+from app.wire_prefix import ENV_WS_OPEN
 from app.services.chat import storage
 
 # 2026-10-31 小欧 - 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
-from app.services.refs.render import REF_TAG_OPEN
+from app.wire_prefix import ENV_REFS_OPEN
 
 
 async def _absorb_inbox(agent) -> int:
@@ -272,7 +273,7 @@ async def _absorb_inbox(agent) -> int:
     if len(_merged) > _max_chars:
         # 2026-10-31 小欧 - 保尾必然牺牲前置块, 按块标志点名, 不静默 — 小欧-2026-10-31
         _dropped = _merged[:-_max_chars]
-        _cut = [name for tag, name in ((WS_TAG_OPEN, "事项目录块"), (REF_TAG_OPEN, "引用块"))
+        _cut = [name for tag, name in ((ENV_WS_OPEN, "事项目录块"), (ENV_REFS_OPEN, "引用块"))
                 if tag in _dropped]
         logger.warning(f"[B] 注入合并超长({len(_merged)}>{_max_chars}), 保留尾部"
                        + (f", 前置块被截: {'/'.join(_cut)}" if _cut else ""))

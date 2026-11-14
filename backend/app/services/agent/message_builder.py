@@ -158,6 +158,7 @@ from app.constants import (
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
+# 2026-11-15 小欧: 目录块标签/引用块标签与条目标识收归 app.wire_prefix(ENV_WS_*/ENV_REFS_*/ITEM_REF), 消除 4.4.3 纪律1 残留 — 小欧-2026-11-15
 from app.services.agent.agent_utils import (
     CHARS_PER_TOKEN,
     trim_budget_base,
@@ -189,11 +190,8 @@ from app.services.agent.fc_message_types import (
     UserMessage,
     message_to_dict,
 )
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
-    WS_INVALIDATED,
-    WS_TAG_CLOSE,
-    WS_TAG_OPEN,
-)
+from app.services.agent.workspace_block import WS_INVALIDATED  # 作废文案单一真源
+from app.wire_prefix import ENV_WS_OPEN, ENV_WS_CLOSE  # 目录块标签单一真源(4.4.1)
 from app.services.refs.render import (
     render_refs_block,  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
 )
@@ -221,7 +219,7 @@ _FILE_REF_RULES = """【文件引用】
 #   原两条通道(refs 在 agent 层前置、目录块在编排层尾置)造成插话漏注目录块;
 #   装配下沉本层后, 首发与插话共用同一份顺序与格式。 — 小欧-2026-10-31
 _WS_BLOCK_RE = re.compile(
-    re.escape(WS_TAG_OPEN) + r".*?" + re.escape(WS_TAG_CLOSE), re.S)
+    re.escape(ENV_WS_OPEN) + r".*?" + re.escape(ENV_WS_CLOSE), re.S)
 
 
 def build_user_turn_text(user_input: str, refs: Optional[list] = None,
@@ -470,10 +468,10 @@ class MessageBuilder:
         多份同类清单并存时模型没有可靠的版本比较能力, 最常见的失败是按第一份执行;
         故全任务只留一份有效清单, 旧块保留标签但清空正文。
         """
-        dead = f"{WS_TAG_OPEN}\n{WS_INVALIDATED}\n{WS_TAG_CLOSE}"
+        dead = f"{ENV_WS_OPEN}\n{WS_INVALIDATED}\n{ENV_WS_CLOSE}"
         for msg in self.conversation_history:
             content = msg.get("content")
-            if msg.get("role") == "user" and isinstance(content, str) and WS_TAG_OPEN in content:
+            if msg.get("role") == "user" and isinstance(content, str) and ENV_WS_OPEN in content:
                 msg["content"] = _WS_BLOCK_RE.sub(dead, content)
         logger.info(f"[ws] 插话目录块作废旧块 {count} 处(正文置为覆盖提示)")
 
