@@ -82,6 +82,16 @@
 // 编辑历史: 2026-11-03 小欧 - handleGetNotFound/observeByPolling 的终态赋值删 `as StreamStatus` 断言,
 //   改走 toStreamStatus 归一(DB 词表 executing 不再原样落前端字段) — 小欧-2026-11-03
 
+// 编辑历史: 2026-11-14 商量 - 修顶栏胶囊卡「待确认」到 final(用户实测反馈):
+//   ① resumeFromPaused 单一出口: 业务推进帧(thought-start/action/observation/chunk)到达即证 agent
+//   在推进, status='paused' 兜底回 active — resumed 帧丢失/不发时(后端 hitl_gateway: 真 HITL
+//   rejected/expired 不发 resumed)胶囊不再卡死; 对齐 useTaskInfo 2026-09-01 同根因修法
+//   (badge 已修, 胶囊 2026-11-02 新建时漏同步该防御);
+//   ② hitlWaitingKeys 泄漏清理: onRejected 删 confirm_id + onAuthorizationRequired 顶替分支删
+//   被顶替 key — 后端拒绝不发 resumed, 残留 key 令 onResumed 的 size===0 判定永假, 并发/顶替
+//   场景 status 卡 paused; 两处删除幂等(后端若补发 user_rejected 帧再删一次无副作用) — 商量-2026-11-14
+
+
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
   classifyError,
@@ -928,12 +938,38 @@ function refHandlers(s: ChatStreamSession) {
 }
 
 /** handler 组②：帧事件广播 + onComplete 的终态守卫（只管"把帧转成事件投出去"）。 */
+
+/** 2026-11-14 商量 - paused 业务推进兜底恢复(单一出口, onStep/onChunk 共用):
+ *  resumed 帧丢失/不发(后端 hitl_gateway: 真 HITL rejected/expired 不发 resumed)时,
+ *  status 卡 'paused', 顶栏胶囊随之卡「待确认」到 final。业务推进帧到达即证 agent 在推进,
+ *  兜底回 active — 对齐 useTaskInfo 2026-09-01 同根因修法(badge 已修, 胶囊 2026-11-02 新建时漏同步)。
+ *  commit 无 no-op 检测(每 commit 必 bump+persist), 故 status 判断前置在 commit 外, 非 paused 期零开销。 */
+function resumeFromPaused(s: ChatStreamSession): void {
+  if (s.status !== 'paused') return;
+  commit(s, (d) => {
+    if (d.status === 'paused') d.status = 'active';
+  });
+}
+
 function broadcastHandlers(s: ChatStreamSession) {
   return {
-    onStep: (step: ExecutionStep, isReasoning?: boolean) =>
-      emitEvent(s, 'step', { step, isReasoning }),
-    onChunk: (chunk: string, isReasoning?: boolean) =>
-      emitEvent(s, 'chunk', { chunk, isReasoning }),
+    onStep: (step: ExecutionStep, isReasoning?: boolean) => {
+      // 2026-11-14 商量 - 仅业务推进帧触发恢复(thought-start/action/observation), 与 useTaskInfo
+      //   兜底同口径; paused/resumed/retrying/notice 等控制帧也走 onStep 但不证明 agent 在推进。
+      //   sseParser 内 onStep 先于 onPaused/onResumed 调用, 各帧自身随后重置 status, 净效果不变。
+      if (
+        step.type === 'thought-start' ||
+        step.type === 'action' ||
+        step.type === 'observation'
+      ) {
+        resumeFromPaused(s);
+      }
+      emitEvent(s, 'step', { step, isReasoning });
+    },
+    onChunk: (chunk: string, isReasoning?: boolean) => {
+      resumeFromPaused(s); // chunk 恒为 LLM 业务输出, 直接恢复(status 前置判断, 非 paused 期零开销)
+      emitEvent(s, 'chunk', { chunk, isReasoning });
+    },
     // 2026-10-30 小欧 批2序12: 引用回执帧 → refNoticeStore(chip 5 态唯一写入口)。
     //   按 path 键控: chips 归 useComposerRefs 本地态, per-ref 直改够不到(5.4.6 裁定)。
     onRefsNotice: (data: {
@@ -1025,6 +1061,12 @@ function hitlHandlers(s: ChatStreamSession) {
           .catch(() => undefined);
       }
       commit(s, (d) => {
+        // 2026-11-14 商量 - 顶替泄漏清理: 被顶替的 confirm_id 已对后端发 confirm(false),
+        //   后端对其不发 resumed(拒绝路径), 该 key 若不删则永留集合, 污染 onResumed 的
+        //   size===0 判定(与 onRejected 的删除幂等一致)。
+        if (prev && prev.confirm_id !== data.confirm_id) {
+          d.hitlWaitingKeys.delete(prev.confirm_id);
+        }
         d.pendingAuthorization = { ...data };
         d.hitlWaitingKeys.add(data.confirm_id);
         d.status = 'paused';
@@ -1070,6 +1112,10 @@ function hitlHandlers(s: ChatStreamSession) {
         ) {
           d.pendingAuthorization = null;
         }
+        // 2026-11-14 商量 - 泄漏清理: 后端真 HITL 拒绝不发 resumed(hitl_gateway:145), 该 confirm_id
+        //   若不删则永留集合, 后续正常确认时 onResumed 的 size===0 判定被残留污染而卡 paused。
+        //   与后端补发的 user_rejected 幂等(重复 delete 无副作用)。
+        if (data.confirm_id) d.hitlWaitingKeys.delete(data.confirm_id);
       });
       emitEvent(s, 'rejected', {
         step: data.step,
