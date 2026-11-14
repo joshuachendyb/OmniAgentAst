@@ -1,3 +1,84 @@
+v1.7.0
+发布时间: 2026-11-15 01:27:16 - 小欧-2026-11-15
+## v1.6.9以来 变更汇总(71个commit: feat8/fix19/refactor9/docs33/chore1/test1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-15
+[2026-11-15 01:27:16 小欧] 范围=v1.6.9..HEAD 全部commit(71个, merge提交除外); 说明=①引用/附件域第7章落地: 死契约log/message来源收敛、插话plans贯通编排层与首发同源、阶段B物化(llm_model透传/file-selection复用附件槽/跨会话收权)、ref_slots与wire_prefix槽位注册表单源、契约收敛ItemPlan三字段、P1状态投影前端Capability→Quality改名、附件矩阵三堂会审整改, 8100事故连带修复semantic前缀归一与selection入口类型保护; ②8100假死根治: grep匹配引擎re换regex+单行finditer超时+逐行deadline, 同步工具有界执行器16隔离; ③bash后台命令: 通知唤醒/会话串行/前端解耦, msg_kind消息种类链路(user/system_notice), bash_result改名bg_task_query, 后台输出目录归get_output_dir单源, 三堂会审14项违规修复; ④前端规格/主题/附件抽屉/阅读区/外观: 字号字重令牌全仓归位, spacing.ts唯一真源, 附件抽屉四栏重构, 阅读区行宽放开, 外观偏好与控件刻度统一, topbar token K/M折算; ⑤工具适配: tools_alias_mapper参数归位restore_misplaced_params, 错位参数展开嵌套dict/XML还原, grep/find花括号通配; ⑥本轮升MINOR因8项feat为跨模块新增功能链路(引用第7章/msg_kind/bash后台/附件抽屉等), 非纯补丁。注: 维持向后不兼容清理(死契约与死字段删除), 按语义化版本升MINOR v1.7.0。
+### 1.7.0.1 功能新增
+[附件] feat a8daacdd7 refs/attachments 第7章落地 7.1死契约删除(log/message来源收敛)+7.2插话plans贯通(编排层与首发同源)+7.4阶段B物化(llm_model透传/file-selection复用附件槽/跨会话收权)+ref_slots与wire_prefix槽位注册表单源 - 小欧-2026-11-14
+[前端] feat f397f30b1 frontend P1状态投影同步 CapabilityBadge→QualityBadge+useRefQualityMap+ModelTabRefQuality, DTO改ref_quality_map四值, attachment_service/model_service配套 - 小欧-2026-11-14
+[顶栏] feat 895e0ee86 topbar顶栏token数字改K/M折算显示 - 商量-2026-11-13
+[工具] feat 0240c8a98 grep/find 工具支持花括号通配模式 - 商量-2026-11-13
+[后台] feat 12ba61493 msg_kind消息种类链路+bg_task_query改名+后台输出目录归口 ①MessageResponse增msg_kind(user/system_notice)随读取出口下发,前端ApiMessage/Message/parseMessage透传,TaskListPanel续跑任务渲染系统通知样式②bash_result.py改名bg_task_query.py及注册/schema/前端task.api同步③shell后台输出目录改走get_output_dir()单源,不再落%TEMP%\omni_bg_shell - 商量-2026-11-13
+[附件] feat fc75fd2b5 附件抽屉四栏重构(本会话附件/本会话产物/他会话附件/已收藏判据互斥+30天窗+ai scope下线)+AI产出的改名本会话产物+最近其他会话附件改名他会话附件 - 小欧-2026-11-13
+[阅读] feat c9e8a1d85 阅读区行宽放开(统一单栏+固定窄边距24px+上限1800px)+解40em钉根容器致代码块宽表被卡560px(留白恒定不贴边不忽大忽小,流水线零视觉变化) - 小欧-2026-11-13
+[外观] feat eb7a4b4a2 外观偏好与控件刻度统一(阅读区字号阶梯落地+界面密度只切档位+控件高三档24/28/32唯一真源+禁用antd缺省与派生值+Markdown排版单一真源) - 小欧-2026-11-12
+### 1.7.0.2 缺陷修复
+[附件] fix 089370df4 attachments 附件引用能力矩阵三堂会审整改(state_of公式级纠错删transport_ok死参数统一native口径+ACTION词表补text/unknown opaque键+矩阵url列按档位条件取词+degraded档位名改降级注入+Badge单源收口) - 小欧-2026-11-12
+[外观] fix 74e9fa0c1 外观预览小卡按[31]§4.5重做为密度双档+字号三档双区(ErrorDetail字号归位13px清零+预览小卡按真实密度参数渲染) - 小欧-2026-11-12
+[引用] fix cbc46cb42 引用镜像改useLayoutEffect消除预检在途漏发新引用(React18被动effect异步调度致镜像落后一拍+清空vitest全量排除清单) - 小欧-2026-11-13
+[外观] fix ba9150ab5 外观预览卡读侧收口useAppearancePrefs消双真源+圆角对齐[32]全档4+裸数字归位READING_LINE_HEIGHT/FontSize.SMALL/BorderWidth.THIN+外观键表LOCAL_PREF_SETTING_KEYS单点消三元硬编码+Tooltip色值归令牌+StreamPhase注释9态纠偏 - 小欧-2026-11-13
+[后台] fix 215ce9545 bash后台运行 三堂会审14项违规修复(V1-V14): 正常完成不杀后台进程/通知改DB反查会话/msg_kind外露装载/删假轮转配置/锁外落库/续跑链根继承/删USER死分支/撤NOTICE死登记/timeout语义归一/cmd后台bat惰性清理/协程提交失败清理/幂等注释如实化 - 商量-2026-11-13
+[后台] fix b513381ee shell_background 后台命令缺陷根治与防卡死加固 - 商量-2026-11-13
+[后台] fix 6a714839e shell_background 10轮三堂会审增量整改与文档入库 - 商量-2026-11-13
+[概览] fix df45f10fa 概览行时间范围改用任务自身权威时刻根治错位 - 商量-2026-11-13
+[任务] fix 42d134c91 taskinfo实时耗时改服务器时钟锚口径根治压缩期不走字与实时终态对不上 - 商量-2026-11-13
+[工具] fix d403702a7 tools 错位参数展开 嵌套dict与XML标签串还原顶层 - 商量-2026-11-14
+[后台] fix d6e4c8108 chat 后台命令续跑 落库单一真源与竞态补偿 - 商量-2026-11-14
+[会话] fix c7a0cdffd chat 任务面板与续跑竞态修复 - 商量-2026-11-14
+[SSE] fix ced6d132f chatStreamTransport 修顶栏胶囊卡待确认到final — resumeFromPaused业务帧兜底恢复+hitlWaitingKeys泄漏清理(onRejected/顶替删key) - 商量-2026-11-14
+[工具] fix 6fcff7f88 tools_alias_mapper 参数归位修复(restore_misplaced_params) 三条铁律:顶层正确参数权威/顶层齐全零改动直返/别名承载键移除;known_keys判据防误伤write_xlsx.data等合法dict参数 - 商量-2026-11-14
+[附件] fix 52221d757 attachment 上传白名单补音频、上限单真源后端下发 - 小欧-2026-11-14
+[附件] fix ec1057744 attachments 5缺陷修复 url字段劫持判定收口+分类单参同源+未知kind回落+单原生part折叠+脏id装配回落文本块 - 小欧-2026-11-14
+[附件] fix 2151e9342 refs/attachment 阶段B物化失败reason回执贯通(resolver/notice/前端chip)+save_bytes并发回查连接关闭缺陷修复 - 小欧-2026-11-14
+[前端] fix 044261c2a frontend 附件抽屉类型文案单源化 删typeLabel本地第3份分类与产物行ext重复造轮子, 附件行/产物行统一查后端kind_options中文短名(补音频词) - 小欧-2026-11-14
+[工具] fix e6947dc44 grep 8100假死事故根治 匹配引擎re换regex+单行finditer超时(GREP_INPUT_MATCH_TIMEOUT_SECONDS=5)+逐行deadline检查+同步工具有界执行器泛化(_TOOL_EXECUTOR 16隔离,不侵蚀默认executor) - 小欧-2026-11-15
+### 1.7.0.3 重构
+[前端] refactor 509e017fd session-composer 输入帮助分层与底部停靠区留白收口 - 商量-2026-11-13
+[前端] refactor e384e97f3 chat 控件规格收口 内距/焦点环/圆角走唯一真源, 并补禁antd规格铁律 - 商量-2026-11-13
+[主题] refactor 8afb2b923 theme 新增间距与行高唯一真源 spacing.ts 并立间距铁律, 消除gap与margin双份记账 - 商量-2026-11-13
+[UI] refactor 3fb59b857 ui 折叠箭头尺寸三档令牌化(FoldArrow SM12/MD14/LG16)并统一思考内容文案 - 商量-2026-11-14
+[任务] refactor 941aaad2f TaskListPanel 移除追加块冗余小标(系统通知/插话)并按SECONDARY定字号 - 商量-2026-11-14
+[前端] refactor 8484b1f6e frontend 字号字重令牌全仓归位收口: chatTokens.fontSM/fontMD 改派生自 FontSize 阶梯消除双真源; 42处硬编码fontSize归入7档阶梯; 13处硬编码fontWeight归位FontWeight - 商量-2026-11-13
+[附件] refactor 18fe240d3 attachments 契约收敛ItemPlan三字段+私名转公开+注册表lastgroup派发+QUALITY_TO_DELIVERY单表投递 - 小欧-2026-11-14
+[引用] refactor 5fe81a4e1 wire前缀归一与selection入口保护 [附件·…]语义前缀收归wire_prefix单一真源,selection指向非文本资源显式dropped不物化不产卡 - 小欧-2026-11-15
+[引用] refactor 3c309c27d wire_prefix 补全 ENV/ITEM/TRUNCATED 常量并收归块标签字面量 - 小欧-2026-11-15
+### 1.7.0.4 文档
+[文档] docs b6b1cf42e [28][29]附件引用能力矩阵优化方案(六动作词表+state_of两处错判修正+三堂会审整改)与附件引用概念辨析 - 小欧-2026-11-12
+[文档] docs a409275d4 [28]服务管理框架设计 服务管理框架设计定稿v1.2(ext_service目录即服务·接入契约分级·状态机·Job隔离) - 小欧-2026-11-12
+[文档] docs 8f86ba0aa [28]服务管理框架设计 v1.3全文顺序重构(契约章前移至七)+stop语义三处统一等一致性修订 - 小欧-2026-11-12
+[文档] docs b201faa2d [30]服务管理框架设计 编号顺延修正(远端[28][29]已被附件能力矩阵文档占用,避免双[28]撞号;含文档头同步) - 小欧-2026-11-12
+[文档] docs 77d55c0c4 [30]服务管理框架设计 v1.4第四章重构为总体设计双架构(后端架构x前端UI架构对应映射)+操作模型三主操作附加操作+操作反馈铁律+UI简约原则 - 小欧-2026-11-12
+[文档] docs b6f8ce652 [30]服务管理框架设计 v1.5新增前端UI界面示意图四幅(主页面卡片网格/详情抽屉过程状态/操作反馈三拍/附加操作确认) - 小欧-2026-11-12
+[文档] docs a81ca42a7 [30][31]Markdown排版场景分级与全局字号阶梯规范(离散阶梯+场景取用区间+两设置项定案+已定决策与验收线) - 小欧-2026-11-12
+[文档] docs 506987332 前端控件规格铁律落到前端公用函数清单(控件规格唯一定义点+禁沿用UI库缺省与派生值+密度只切档位+字号恒14+流水线零变化+数字只在TS一处) - 小欧-2026-11-12
+[文档] docs 4eaed3d27 [30][31]补落地实施章节(14项/10项落地清单逐项结果+预览小卡实施细节+13px归位补正+落位路径更正+验收线核对) - 小欧-2026-11-12
+[文档] docs 9cabe21f5 [30][31]补回归清尾章节(基线27项失败全部处置+全量151文件1601项零失败+产品缺陷1处与过时用例12处清单) - 小欧-2026-11-13
+[文档] docs 54faadd9f bash后台background参数设计 opencode源码实证+OmniAgent落地方案(通知唤醒/会话串行/前端解耦) - 商量-2026-11-13
+[文档] docs cd04a8fc3 bash后台background详细设计第8章 逐文件代码清单(3新增+5修改后端+3处前端渲染) - 商量-2026-11-13
+[文档] docs 8234cfcb0 bash后台background设计修订⑤ 续跑任务link属性继承方案(跟会话link开关走+抽_resolve_link_context两路共用DRY)+user_input语义澄清(系统通知文本非用户输入) - 商量-2026-11-13
+[文档] docs 88f44c368 bash后台background设计修订⑥ 修正修订⑤错判 续跑任务link恒linked继承原任务链根与开关无关+撤销_resolve_link_context两路共用 - 商量-2026-11-13
+[文档] docs 1acbc7c8b bash后台background设计修订⑦ 新增8.11架构设计-任务创建来源维度creation_source(续跑恒linked/定时恒independent/USER跟开关,link判定=f(来源)统一入口resolve_link_context按来源分派,持久化ALTER加列,显式传参不隐式推断) - 商量-2026-11-13
+[文档] docs 89833d8fa bash后台background设计修订⑧ 8.11补通用性强化-creation_source按关联语义分类不绑定shell+与trigger正交分离 - 商量-2026-11-13
+[文档] docs c001a560f bash后台background设计修订⑩ 修正usermessage结构化标记-chat_user_message加msg_kind+chat_tasks加creation_source两级正交字段,弃零DDL靠前缀方案,8.11升首版即实施 - 商量-2026-11-13
+[文档] docs a3bbe87d7 bash后台background设计修订⑪ 三堂会审关联核查修正4处(续跑create_task_stream_buffer漏journal_sink/_create_and_launch_task缺user_input形参/msg_kind消费路径误判/补insert_task写侧diff) - 商量-2026-11-13
+[文档] docs 1371407a2 bash后台background设计修订⑫ 关联核查补充:场景A/A'注入无独立任务属性、续跑恒linked仅限任务自身属性不回写会话link开关 - 商量-2026-11-13
+[文档] docs 9348430cd [33]bash后台运行设计文档 补第九章实施收口对照: 落档5项实施与初稿差异(删假轮转/撤NOTICE死登记/bash_result改名bg_task_query/通知路由上移services/会话反查走DB真源)+notice_id定稿说明 - 商量-2026-11-13
+[文档] docs 8ee6105ee user角色消息四族分类与统一裁决设计方案 三堂会审修订⑥ 8项据实纠错 - 商量-2026-11-14
+[文档] docs f8fde0342 user消息四族方案 实施后据实回写 修订⑦ 补前端e2e消费方S6b与用例落位订正 - 商量-2026-11-14
+[文档] docs b60b024b8 服务管理框架设计文档更新 - 小欧-2026-11-14
+[文档] docs a04706e49 输入框引用正文丢失根因分析 新增第10章状态模型与wire前缀治理规范 - 商量-2026-11-14
+[文档] docs 67034bd87 输入框引用正文丢失根因分析 精简重组为五章单线 - 商量-2026-11-14
+[文档] docs fac7f10dc 输入框引用正文丢失根因分析 新增第5章详细设计(修改清单+真实diff+三堂会审) 厘清第3章仅应急 - 商量-2026-11-14
+[文档] docs d3fa1744b 输入框引用正文丢失根因分析 新增第7章下一阶段立项(log-message接线与插话plans贯通) 修正str约束表述 - 商量-2026-11-14
+[文档] docs 7c0b4d691 输入框引用正文丢失根因分析 新增4.2.6命名规范化基线(quality四值定名/收回两名一义/删死字段/前端Quality系改名) - 商量-2026-11-14
+[文档] docs d9fbc15d6 输入框引用正文丢失根因分析 落实v7.3最终命名基线(quality四值native/text_full/meta_only/link_only;删on_native_fail与_QUALITY_BY_FALLBACK;前端QualityBadge/useRefQualityMap按quality单表) - 商量-2026-11-14
+[文档] docs 974da25b1 doc39 第7章三议题复核与方案(7.1死契约删除/7.2plans贯通/7.4阶段B物化+视频provider门控) - 商量-2026-11-14
+[文档] docs 24e4e6112 doc37 question与schedule工具设计 + doc38 附件类型多口径核查与36文档关系判定 - 小欧-2026-11-14
+[文档] docs ddb5fd268 doc36/38/39/40 实施完成情况核查与8100事故分析说明 新增[40]8100服务假死事故分析与解决方法说明+doc36第8章/doc38第6章/doc39第5章实施核查;清理一次性PASSED测试记录E2E-INJ-03 - 小欧-2026-11-15
+[文档] docs 49190f360 doc36/39 未实施项清零 补齐P2语义前缀归一/会话工作目录核查/守门测试#1#2/selection入口类型保护并同步结论 - 小欧-2026-11-15
+### 1.7.0.5 杂项与测试
+[依赖] chore e78f671d8 requirements 补regex依赖声明 代码直接import regex(单行finditer超时/回溯限制)但未声明, 现靠dateparser间接带入, 干净环境会缺装 - 小欧-2026-11-15
+[测试] test 53a53b697 conftest 测试侧建表DDL与生产schema同步: chat_tasks加creation_source列/chat_user_message加msg_kind列(对齐db_initializer,消除测试环境no such column) - 商量-2026-11-13
+
 v1.6.9
 发布时间: 2026-11-12 13:55:00 - 小欧-2026-11-12
 ## v1.6.8以来 变更汇总(32个commit: feat10/fix9/refactor5/docs8, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-12
