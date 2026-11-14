@@ -24,6 +24,8 @@ history_loader — 会话历史加载(多轮上下文DB读取)
 
 小健 2026-09-05 自 stream_reader.py 搬迁: 历史加载(DB IO)与 SSE 转发各归其位(SRP);
 与 storage.py 同层邻居, 复用 fetch_session_user_message_pairs(chat_messages 只写铁律同一来源)。
+2026-11-13 商量 - 后台通知不装 user 轮: msg_kind=system_notice 的后台通知属系统消息, 不装入 user 轮,
+  只保留真实用户发言, 免得模型把通知当成自己上轮说过的话 — 商量-2026-11-13
 """
 import json
 from typing import Any, Dict, List, Optional

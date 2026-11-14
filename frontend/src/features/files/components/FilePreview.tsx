@@ -25,6 +25,9 @@
 //   setErr/showMessage 给出局部可见提示，全局 toast 属重复且文案更含糊；probeRef 不传（无局部反馈）— 小欧-2026-10-30
 // 2026-11-03 小欧 - 复制路径/文件名 Tooltip 弃用 deprecated 的 overlayInnerStyle, 改 styles.body
 //   (同一常量喂 4 处, 不折行与自适应宽度不变) — 小欧-2026-11-03
+// 2026-11-12 小欧 - 阅读排版消费外观偏好的字号与间距档: MarkdownSlot 传 scene="preview" 与 base(当前字号档),
+//   预览区随设置档位变化, 流水线正文不消费(作用域限定) — 小欧-2026-11-12
+// 2026-11-13 商量 - 字重归位: 硬编码 fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *

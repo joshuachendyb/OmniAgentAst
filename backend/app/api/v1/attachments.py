@@ -18,6 +18,8 @@
 # 2026-11-11 小欧 新增 POST /attachments/id/{id}/reextract 真抽取手动重跑(文件页重试入口) — 小欧-2026-11-11
 
 # 2026-11-11 小欧 三堂会审整改: capabilities 出口补 suffix_kind 词典下发(消前端后缀表双真源) — 小欧-2026-11-11
+# 2026-11-13 小欧 - 附件列表四栏重构配套: scope 收敛为 session/recent/global(删 ai 档, AI 产出改走会话产物端点),
+#   recent 档时间窗由后端下发 — 小欧-2026-11-13
 
 """attachments_routes — 附件 API 路由薄壳。
 

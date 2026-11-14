@@ -1,4 +1,5 @@
 // 编辑历史: 2026-11-09 小欧 - 新建：设置页提示呈现层（HelpLabel 虚线可点标签 + TipContent 多行提示容器），消除页面内 4 份同款内联样式 — 小欧-2026-11-09
+// 编辑历史: 2026-11-13 商量 - 字重归位: 硬编码 fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
 import React from 'react';
 import { Tooltip } from 'antd';
 import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';

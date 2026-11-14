@@ -28,6 +28,8 @@
 # 2026-11-02 小欧 - 删死类 _SessionCreate(私有、全仓零引用, 端点直接吃 SessionCreate) — 小欧-2026-11-02
 # 2026-11-03 小欧 - 新增 GET /sessions/tasks/running(跨会话在跑任务, 历史页角标/顶栏浮层权威来源)
 #   + GET /sessions/tasks/{task_id}(退订后 60s 复核的单任务轻量读, 替代拉整会话任务正文) — 小欧-2026-11-03
+# 2026-11-13 小欧 - 新增 GET /sessions/{session_id}/artifacts(会话产物清单: chat_tasks.artifacts 真源, 任务时间倒序);
+#   产物是任务级产物(工作区内产物走引用模式, 不落附件台账), 故与附件列表分立独立出口 — 小欧-2026-11-13
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)

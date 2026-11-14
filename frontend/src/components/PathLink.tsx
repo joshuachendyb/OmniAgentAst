@@ -12,6 +12,7 @@
 //   可见性用同一次 resolvePathTarget 结果判定（已链接且非目录），调用方不自判 — 小欧-2026-11-02
 // 2026-11-02 小欧 - 恢复无 Router 兜底（设置页安全Tab 独立渲染场景，旧 FileRefChip 行为）：
 //   已链接时保持链接形态，点击走 resolveChipUrlFresh 现取根，判不过不跳 — 小欧-2026-11-02
+// 编辑历史: 2026-11-13 商量 - 字号与字重归位: fontSize 10 → FontSize.CAPTION, fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
 /**
  * PathLink —— 路径 → 文件页链接的**唯一** UI 组件。
  *

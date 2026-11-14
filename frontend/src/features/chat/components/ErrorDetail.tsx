@@ -12,6 +12,8 @@
 // 编辑历史: 2026-11-08 小欧 - quota_exceeded 中文标签 `配额超限`→`限额超限`(用户裁定"限额"措辞更准, 与后端 429·限额 对齐) — 小欧-2026-11-08
 // 2026-11-12 小欧 - 字号归位: 13px×5 全部废除, 同文件 14/15/12px 裸值一并改引 FontSize 阶梯
 //   (label→SECONDARY / value→PRIMARY「值>label」/ 错误类型码与堆栈→CODE / 标题 15px 游离半档→SUBHEAD) — 小欧-2026-11-12
+// 编辑历史: 2026-11-13 商量 - 字重与字号归位: fontWeight 600 → FontWeight.BOLD, fontSize 14 → FontSize.PRIMARY,
+//   import 同步补 FontWeight — 商量-2026-11-13
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
 import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';

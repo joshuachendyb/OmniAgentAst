@@ -121,6 +121,8 @@
 //   onRefsNotice, 只投回调不进步骤列表) — 小欧-2026-10-30
 // 编辑历史: 2026-11-07 小欧 - final_stats tool_stats 扁平化: SSE 嵌套 {tool:{call_count,error_count,
 //   latency}} 与 DB 扁平 {tool:call_count} 两种格式统一为扁平, 修复 React error #31(对象渲染为子节点) — 小欧-2026-11-07
+// 编辑历史: 2026-11-13 商量 - 服务器时钟锚落地: 记录最新帧的服务器时刻与到达时刻, 实时秒表按
+//   服务器锚 + 客户端增量计算, 消除压缩期不走字与终态对不上 — 商量-2026-11-13
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13

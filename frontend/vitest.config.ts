@@ -2,6 +2,8 @@
  * Vitest Configuration
  *    2026-11-06 小欧 - 附件域测试用例遵循项目既有约定落 src/tests/unit/
  *     (与全仓 .test.ts 统一), vitest include 维持只收录 src/tests/** — 小欧-2026-11-06
+ * 2026-11-13 小欧 - 清空全量回归排除清单: 4 个长期红项用例的失败根因是用例过时而非产品缺陷,
+ *   排除即掩盖; 恢复后仍只排除 e2e 与依赖目录 — 小欧-2026-11-13
  * @author 小新
  * @description Testing configuration for frontend unit tests
  */

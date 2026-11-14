@@ -51,6 +51,9 @@
 //   结果视图不接（raw_data 回显路径不属工具参数声明域）— 小欧-2026-10-23
 // 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink）：判据/图标/点击口径/降级
 //   收在组件内，本文件只透传 rawPath/dirHint/projectRoot — 小欧-2026-11-02
+// 2026-11-12 小欧 - 补控件规格推导注释: 分组切换器若走 antd 派生(基线 28 → small 21px), 紧凑态会被一并拉到 21,
+//   流水线变形; 本组件控件规格走本项目刻度真源, 禁沿用库缺省与派生值 — 小欧-2026-11-12
+// 2026-11-14 商量 - 折叠箭头尺寸走令牌: size 14 → FoldArrow.SM(12, 内容区密集小控件区), 消除魔法数字 — 商量-2026-11-14
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数

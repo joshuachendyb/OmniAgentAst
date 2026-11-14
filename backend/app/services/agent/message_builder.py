@@ -129,6 +129,8 @@
 #   build_user_turn_text 调用, 消插话恒降级文本的断点(编排层已计算 _iplans) — 小欧-2026-11-14
 # 2026-11-14 小欧 第7章7.4 阶段B: 写槽改用 slot_writer(file/selection 复用附件槽); expand_attachment_parts
 #   增 session_id 透传(附件记录会话收权) — 小欧-2026-11-14
+# 2026-11-15 小欧 - 块标签归单一真源: 目录块/引用块标签改引 app.wire_prefix(ENV_WS_OPEN/ENV_WS_CLOSE),
+#   本模块不再自持字面量与再导出 — 小欧-2026-11-15
 """
 MessageBuilder — conversation_history 状态管理器
 

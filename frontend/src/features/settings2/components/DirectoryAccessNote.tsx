@@ -16,6 +16,10 @@
 //   行为零变更：壳默认 discard 关闭语义 + destroyOnHidden，与原裸 Modal 的默认值完全一致；
 //   宽度仍走 settingsModalWidth.display 令牌，footer={null}（只读说明，无操作键）保持。
 // 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 说明入口由通用 Button 改文档卡片(图标 FileText/Branches + 标题 + 描述, POPUPS 同源派生, hover 边框+阴影反馈); Modal 标题同步加图标; 弹框内容包 .doc-body 作用域容器(样式见 index.css, 只依赖 markdown 结构标签, 后端文案改动不失效) — 小欧-2026-10-11
+// 编辑历史: 2026-11-12 小欧 - 阅读排版消费外观偏好的字号与间距档: MarkdownSlot 传 scene="doc" 与 base(当前字号档),
+//   说明框随设置档位变化, 流水线正文不消费(作用域限定) — 小欧-2026-11-12
+// 编辑历史: 2026-11-13 商量 - 字号归位: fontSize 20 → FontSize.TITLE, 16 → FontSize.SUBHEAD,
+//   import 同步补 FontSize — 商量-2026-11-13
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Spin } from 'antd';
 import { BranchesOutlined, FileTextOutlined } from '@ant-design/icons';

@@ -206,8 +206,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-11 小欧 - _models_of 下发 ref_capability_map 二维投影(contract 生成, DTO 只透传) — 小欧-2026-11-11
 # 2026-11-14 小欧 - 投影改名 ref_quality_map: 状态模型正交化后下发 quality 四值(native/text_full/
 #   meta_only/link_only), 与装配层 delivery 解耦, 前端按 quality 单表出文案 — 小欧-2026-11-14
-  2026-11-14 - 商量 - 视频内联注记(_probe_messages 视频腿): 当前只探 video_url 直传; provider 声明
-    支持视频内联(如 Gemini inline_data video/mp4)时补内联探测腿, 待视频功能实现时扩展
+#   2026-11-14 - 商量 - 视频内联注记(_probe_messages 视频腿): 当前只探 video_url 直传; provider 声明
+#     支持视频内联(如 Gemini inline_data video/mp4)时补内联探测腿, 待视频功能实现时扩展
 """
 import base64
 import os

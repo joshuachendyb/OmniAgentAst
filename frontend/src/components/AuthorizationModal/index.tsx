@@ -88,6 +88,9 @@
 // 编辑历史: 2026-10-11 00:55:20 小欧 - HTL危险确认列出具体变更+后果提示; 计时钟移标题行右侧并缩至44(辅助信息退位, 主内容优先); CountdownRing 直径可调配套 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 07:18:01 小欧 - 计时钟44px定稿 + 秒数去重(环内已有数字, 文字只讲到点会怎样); confirmTimeout=0(禁倒计时)不渲染环, 改显式文案「不自动拒绝(倒计时已禁用)」— 小欧-2026-10-11
 // 编辑历史: 2026-11-02 小欧 - truncatePath/truncateDir 的分隔符归一改调 projectPath.norm，删本文件自建 replace — 小欧-2026-11-02
+// 编辑历史: 2026-11-12 小欧 - 字号归位: 工具名字号 13 → FontSize.PRIMARY(13px 档废除), import 同步补 FontSize — 小欧-2026-11-12
+// 编辑历史: 2026-11-13 商量 - 字重与字号归位: fontWeight 600 → FontWeight.BOLD, fontSize 12 → FontSize.SECONDARY,
+//   标题 16 → FontSize.SUBHEAD, import 同步补 FontWeight — 商量-2026-11-13
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
 import {

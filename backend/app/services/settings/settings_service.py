@@ -66,6 +66,8 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
     2026-09-27 - 小欧 - 根因修复：存在性判据改 has_dotted（原 `is not None` 恒真，
       缺键也标 'yaml'）；白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
     2026-09-28 - 小欧 - 内部读键 range_→range 随 registry 键名统一（边界校验两处）
+    2026-11-12 - 小欧 - 读回值按档位吸附: range 项(step>1)读取时向最近档位就近归一, 禁 13/15 这类游离半档落盘;
+      连续型 range(step=1)不吸附, 严守既有行为。
 """
 import json
 import math

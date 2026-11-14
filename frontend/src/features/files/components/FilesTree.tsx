@@ -28,6 +28,7 @@
 // 2026-10-23 小欧 - 外部目录图标琥珀金（Colors.WARNING #AD6800），与根内蓝色文件夹视觉区分；
 //   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
 // 2026-11-02 小欧 - joinAbsPath 改从 utils/projectPath 引入（已由 utils/fileTree 迁入）— 小欧-2026-11-02
+// 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';

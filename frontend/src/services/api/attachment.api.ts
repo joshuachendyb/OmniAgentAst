@@ -13,6 +13,10 @@
 // 编辑历史: 2026-11-11 小欧 - P5 指标: AttachmentMetrics 类型 + metrics() 只读聚合接口 — 小欧-2026-11-11
 
 // 编辑历史: 2026-11-11 小欧 - 三堂会审整改: AttachmentCapabilities 补 suffix_kind(后端下发后缀→类型词典, 消前端复制后缀表双真源) — 小欧-2026-11-11
+// 编辑历史: 2026-11-13 小欧 - 附件列表四栏重构配套: scope 收敛为 session/recent/global(删 ai 档, AI 产出改走会话产物端点),
+//   recent 档时间窗由后端下发 recent_window_days(前端不写死天数), 附件记录增 taskId — 小欧-2026-11-13
+// 编辑历史: 2026-11-14 小欧 - 上传上限单真源后端下发: limits 增 max_image_bytes/max_file_bytes, 前端预检与文案禁用硬编码;
+//   能力协商结果模块级一次性缓存, 失败不缓存下次重试 — 小欧-2026-11-14
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *

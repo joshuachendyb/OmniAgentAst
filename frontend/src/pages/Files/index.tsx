@@ -80,6 +80,9 @@
 // 2026-11-02 小欧 - 末轮三堂会审：深链 effect 的「绝对路径等根」改读 target.pending（原重写一遍
 //   isDriveAbsPath && !projectRoot，与解析函数内同一判据重复）；openExternalDir 去掉重复的
 //   setLinkErr(null)（唯一调用方 openExternalTarget 已写，两处同写同一状态）— 小欧-2026-11-02
+// 2026-11-12 小欧 - 控件刻度归唯一真源: 本页 ConfigProvider 原硬编码 controlHeight=28 覆盖全站档位
+//   (密度切档时本页对档位无效), 改走 pageControlTokens(density) 按密度取档; 禁沿用库缺省与派生值 — 小欧-2026-11-12
+// 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）

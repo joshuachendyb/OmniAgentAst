@@ -12,6 +12,7 @@
 // 编辑历史: 2026-11-02 小欧 - SRP拆分新建: menuItems/handleMenuClick/renderNavContent(646~744)自index.tsx原样迁入 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 版本号真源化+防覆盖: appVersion改由后端health.version(version.txt首行)props下发(原手写死v2.1.0删除); 底条bottom抬到触发条上方治"桌面端从未显示" - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 魔法数字收口: 43=Size.HEADER_HEIGHT, 12=Spacing.LG, 16/8/20=Spacing.XL/MD/XXL, #e8e8e8=Colors.BORDER.VERTICAL; 13px字档无同值令牌零视差保留 — 小欧-2026-11-02
+// 编辑历史: 2026-11-12 小欧 - 字号归位: 版本条 fontSize 13 → FontSize.SECONDARY(13px 档已废除, 原为无同值可替的妥协), import 同步补 FontSize — 小欧-2026-11-12
 import React from 'react';
 import { Badge, Menu } from 'antd';
 import type { MenuProps } from 'antd';

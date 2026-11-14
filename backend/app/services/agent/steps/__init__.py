@@ -25,6 +25,8 @@ Updated: 2026-10-30 小欧 - NOTICE_KINDS 补 "refs_ready"(引用处置汇总, �
 Updated: 2026-10-31 小欧 - NOTICE_KINDS 补 "ws_inject"(事项目录块超限省略提示, 同走 notice 信封) — 小欧 2026-10-31
 Updated: 2026-11-13 商量 - 撤销同日误登的 NOTICE_KINDS "bg_shell_done"(后台完成走注入/续跑业务流,
   不产生 notice 信封帧, 登记为死配置; 撤销依据三堂会审复核) — 商量 2026-11-13
+Updated: 2026-11-13 商量 - 后台完成通知改走注入/续跑业务流: 不再登记 NOTICE_KINDS(死配置已撤),
+  后台命令结果由续跑任务注入消息承载 — 商量 2026-11-13
 """
 from .action_step import ActionStep
 from .base import MetaStep, ReasoningStep

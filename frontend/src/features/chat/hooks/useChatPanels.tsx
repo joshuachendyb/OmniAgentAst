@@ -54,6 +54,7 @@
 
 // 编辑历史: 2026-11-06 小欧 - 附件建会话单一来源下传: ensureSession 纯透传(本 hook 不解业务, 只把
 //   ChatPage 的 ensureSessionForUpload 经 opts 下传 ChatInput) — 小欧-2026-11-06
+// 编辑历史: 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 
 import { useMemo } from 'react';
 import { Typography } from 'antd';

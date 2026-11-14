@@ -9,6 +9,8 @@
 // 编辑历史: 2026-09-17 小沈 - 截断字数 10→20→15, 顶栏标题截断15字 - 小沈-2026-09-17
 // 编辑历史: 2026-08-28 小欧 - 修复卸载触发blur双发: 保存成功后标记本次编辑已落库, 拦截Input卸载时的blur二度保存 - 小欧-2026-08-28
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: handleSaveTitle改调updateSessionTitle(只发title+version), 与切模型解耦 - 小欧-2026-10-24
+// 编辑历史: 2026-11-13 商量 - 字号与字重归位: fontSize 14 → FontSize.PRIMARY, fontWeight 500/400 → FontWeight.MEDIUM/REGULAR,
+//   副标题 12 → FontSize.SECONDARY, import 同步补 FontSize/FontWeight — 商量-2026-11-13
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  *

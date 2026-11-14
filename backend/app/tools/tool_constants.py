@@ -72,6 +72,8 @@
 #   本文件只放常量, 构造函数 build_missing_dep_error 住 tool_response.py 与 build_error/build_warning 同居。
 # 2026-11-04 小欧 - SUBPROCESS_TIMEOUT_SHORT 注释去掉 taskkill 字样(树杀已改 psutil+proc.kill, 不建进程);
 #   配置派生值(如 shell 并发上限)不进本文件: 常量模块保持纯数据, 由 tool_retry_engine/shell_engine 各自按配置计算 — 小欧-2026-11-04
+# 2026-11-15 小欧 - 新增 GREP_INPUT_MATCH_TIMEOUT_SECONDS=5(单次正则匹配超时上限, 引擎换 regex 后每次
+#   finditer 传 timeout, 防御灾难回溯卡死; 见 grep_file_content.py) — 小欧-2026-11-15
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 

@@ -41,6 +41,8 @@
 # 2026-11-14 - 小欧 - 第二批治理(不设限制也能正常工作): ①safe_read_lines 流式化(头64KB采样探测编码+
 #   逐行 yield, 内存 O(行), G级 log 可查; context>0 时才物化为列表供随机访问) ②删 _REDOS_PATTERNS
 #   静态检测死代码(2条规则既漏报又误报, regex+timeout 已是真兜底, 超时收口唯一化)。
+# 2026-11-15 小欧 - 匹配引擎换 regex 库(支持单次 finditer 超时), 每次匹配传
+#   GREP_INPUT_MATCH_TIMEOUT_SECONDS=5s, 逐行检查 deadline; 超时走既有 truncated/warning 收口 — 小欧-2026-11-15
 """
 F7: grep_file_content — 搜索文件内容
 

@@ -105,6 +105,7 @@
 //   ③段位判定/段 key 改用绝对下标(startIndex+i), 使向上扩批次时既有段 key 不漂移(不重挂载、折叠态不丢) — 小欧-2026-10-30
 // 2026-11-03 小欧 - 等待图标计时器解耦: 步骤级计时从等待图标解剖为独立文字数码(WaitTimerText), 三个等待图标位置/动画零改动,
 //   ThoughtWaitingIcon/ToolWaitingIcon 只留图标, 计时读数挂首行右端; 蓝色波纹留句尾 — 小欧-2026-11-03
+// 编辑历史: 2026-11-12 小欧 - 字号档归位: FontSize.TERTIARY → FontSize.SECONDARY(同值两档, 阶梯收敛为单一真源) — 小欧-2026-11-12
 /**
  * PipelineRenderer - 消息流水线渲染器
  *

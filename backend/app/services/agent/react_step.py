@@ -190,6 +190,7 @@
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 # 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
 # 2026-11-11 小欧 展开调用更名 expand_vision_parts → expand_attachment_parts(附件/URL 占位泛化) — 小欧-2026-11-11
+# 2026-11-14 小欧 - 附件展开透传 session_id: 附件记录按会话收权(跨会话引用时 id 回落降级为文本) — 小欧-2026-11-14
 # 2026-11-15 小欧 - 块标志改用 app.wire_prefix(ENV_WS_OPEN/ENV_REFS_OPEN), 消除对 workspace_block/render 的字面量再导出依赖 — 小欧-2026-11-15
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")

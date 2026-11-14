@@ -10,6 +10,8 @@ DRY: 从write_text_file/read_text_file/edit_text_file提取 — 小欧 2026-06-3
                   编码探测改头部64KB采样(原chardet全量read_bytes超大文件OOM), 逐行yield内存O(行),
                   G级log可查; 整文件统一 errors='replace' 容错流式读取(采样strict验证编码后,
                   中途个别非法字节不抛UnicodeDecodeError, 否则整个grep搜索失败) — 小欧-2026-11-14
+2026-11-15 小欧 - safe_read_lines 改迭代器形态: 逐行 yield(内存 O(行))替代整表返回,
+  供 grep 大文件流式扫描, G级文件不再整份进内存 — 小欧-2026-11-15
 """
 
 import asyncio

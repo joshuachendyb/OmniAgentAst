@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、字符串字面量统一单引号, 防止格式再次出错
+// 编辑历史: 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 import React, { useState, useEffect } from 'react';
 import { Card, Tag, Button, Input } from 'antd';
 import { FontSize } from '@/utils/stepStyles';

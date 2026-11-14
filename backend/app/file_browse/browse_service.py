@@ -38,6 +38,8 @@
 #   _count_content_lines 委托 text_utils.count_lines(与引用压缩同行数口径) — 小欧-2026-10-30
 # 2026-11-06 小欧 - sanitize_refs 附件豁免(重建): kind=attachment 注入按 attachment_id 查表,
 #   path 仅作展示/回执键(项目根切换后可能失效, id 不会), 不参与路径越界校验 — 小欧-2026-11-06
+# 2026-11-13 小欧 - 新增 root_relative: 绝对路径 → 项目根相对 posix 路径(根外返回 None), 与附件侧同根换算法,
+#   供附件台账引用与根外内容判定复用 — 小欧-2026-11-13
 
 """文件浏览服务：项目根目录内的只读浏览。
 
