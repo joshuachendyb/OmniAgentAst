@@ -204,6 +204,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-11-11 小欧 - 勘误: 上条"w3school 788KB mp4"实为 test-videos.co.uk 991KB mp4(实测 w3school GET>30s 超时,
 #   已改 test-videos.co.uk 全球 CDN 完整 GET≈3s; 音频 runoob 29KB 正确) — 小欧-2026-11-11
 # 2026-11-11 小欧 - _models_of 下发 ref_capability_map 二维投影(contract 生成, DTO 只透传) — 小欧-2026-11-11
+# 2026-11-14 小欧 - 投影改名 ref_quality_map: 状态模型正交化后下发 quality 四值(native/text_full/
+#   meta_only/link_only), 与装配层 delivery 解耦, 前端按 quality 单表出文案 — 小欧-2026-11-14
 """
 import base64
 import os
@@ -219,7 +221,7 @@ from fastapi import HTTPException
 
 # 2026-11-09 小欧 - 生成端点单点（探测腿与 Phase B 真业务共用唯一 HTTP 出口）— 小欧-2026-11-09
 # 2026-11-11 小欧: 附件能力二维投影下发(前端徽标只读索引, DTO 只透传)
-from app.attachments.contract import ref_capability_map
+from app.attachments.contract import ref_quality_map
 from app.config import (
     get_config,  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 )
@@ -327,8 +329,8 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "context_length": meta.get("context_length"),
             "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
             "media": meta.get("media") or {},  # 媒体传输探测结果(实测), 供模型库展示 — 小欧-2026-11-08
-            # 附件/文件引用能力二维投影(source_kind → content_kind → 三态), 前端只读索引 — 小欧-2026-11-11
-            "ref_capability_map": ref_capability_map(profile_of(provider, m)),
+            # 附件/文件引用质量二维投影(source_kind → content_kind → quality 四值), 前端只读索引 — 小欧-2026-11-14
+            "ref_quality_map": ref_quality_map(profile_of(provider, m)),
             # 上次验证回执(含未定结论的原因), 只给界面常驻显示, 不参与能力判定 — 小欧-2026-11-09
             "last_probe": meta.get("last_probe") or {},
         })

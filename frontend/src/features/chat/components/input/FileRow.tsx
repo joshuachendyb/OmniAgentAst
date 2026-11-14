@@ -5,7 +5,7 @@
 // 编辑历史: 2026-11-07 小欧: 色值令牌化 —— 选中底改 Colors.BG.SELECTED, 收藏星改 Colors.WARNING(与全站警告色同源),
 //   消两处硬编码 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
-// 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 CapabilityBadge(state/contentKind) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 QualityBadge(quality) — 小欧-2026-11-14
 // 编辑历史: 2026-11-14 小欧 - iconOf 修 PDF 图标死代码: 原 PDF 分支在 richdoc 之后永不达; 改为按
 //   mime/文件名先判 PDF, 补 name 入参(产物行无 mime 时靠 .pdf 后缀识别) — 小欧-2026-11-14
 /**
@@ -36,7 +36,8 @@ import {
 } from '@ant-design/icons';
 
 import { Colors, FontSize } from '@/utils/stepStyles';
-import { CapabilityBadge, type CapabilityState } from './CapabilityBadge';
+import { QualityBadge } from './QualityBadge';
+import type { RefQuality } from '@/services/api/model.api';
 
 /** 是否 PDF: mime 优先, 产物行无 mime 时退回文件名后缀 */
 const isPdf = (mime: string, name: string): boolean =>
@@ -60,8 +61,8 @@ export interface FileRowProps {
   mime?: string;
   /** 附件权威类型(七类), mime 仅兜底 — 小欧-2026-11-11 */
   kind?: string;
-  /** 当前模型对该内容类型的能力状态(ref_capability_map 只读索引) — 小欧-2026-11-11 */
-  capState?: CapabilityState;
+  /** 当前模型对该内容类型的引用质量(ref_quality_map 只读索引) — 小欧-2026-11-14 */
+  capQuality?: RefQuality;
   /** 已加入本轮 */
   added?: boolean;
   /** 已收藏（同 sha 存在全局行） */
@@ -93,7 +94,7 @@ const FileRow: React.FC<FileRowProps> = ({
   meta,
   mime = '',
   kind,
-  capState,
+  capQuality,
   added = false,
   favorited = false,
   invalid = false,
@@ -174,7 +175,7 @@ const FileRow: React.FC<FileRowProps> = ({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {meta}
             {added ? ' · 已加入' : ''}
-            {capState && <CapabilityBadge state={capState} contentKind={kind} />}
+            {capQuality && <QualityBadge quality={capQuality} />}
           </span>
         )}
       </div>

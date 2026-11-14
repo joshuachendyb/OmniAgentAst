@@ -1,14 +1,16 @@
-// 编辑历史: 2026-11-11 小欧 新建: 生效模型(L2 会话覆盖 ?? L1 全局)的附件能力二维投影 hook,
+// 编辑历史: 2026-11-11 小欧 新建: 生效模型(L2 会话覆盖 ?? L1 全局)的附件引用质量二维投影 hook,
 //   chip/文件行徽标唯一数据源(只读索引, 不在前端推导能力) — 小欧-2026-11-11
 // 编辑历史: 2026-11-11 小欧 三堂会审整改: 删前端复制的后缀正则表(与后端 extract 词典双真源漂移),
 //   改消费后端 capabilities.suffix_kind 词典(模块级一次拉取缓存); mime 兜底保留(HTTP 标准前缀, 非词典) — 小欧-2026-11-11
+// 编辑历史: 2026-11-14 小欧 状态模型正交化: 后端下发 ref_quality_map(quality 四值), 前端直接取档,
+//   不再按 content_kind 二次翻译; chipCapState→chipQuality, 类型改 RefQuality — 小欧-2026-11-14
 
 /**
- * useRefCapabilityMap —— 当前生效模型的 ref_capability_map 只读索引。
+ * useRefQualityMap —— 当前生效模型的 ref_quality_map 只读索引。
  *
  * 数据链: sessionApi.getSession(L2) ?? configApi.getFullConfig(L1) → modelApi.getModels()
- *   → ModelEntry.ref_capability_map(后端 contract.ref_capability_map 生成)。
- * chipCapState: 按 chip 的 kind/path/mime 投影出 (source_kind, content_kind) 查表。
+ *   → ModelEntry.ref_quality_map(后端 contract.ref_quality_map 生成)。
+ * chipQuality: 按 chip 的 kind/path/mime 投影出 (source_kind, content_kind) 查表。
  */
 import { useEffect, useState } from 'react';
 
@@ -16,13 +18,10 @@ import { loadCapabilities } from '@/services/api/attachment.api';
 import { configApi } from '@/services/api/config.api';
 import { modelApi } from '@/services/api/model.api';
 import { sessionApi } from '@/services/api/session.api';
-import type { CapabilityState } from '@/features/chat/components/input/CapabilityBadge';
+import type { RefQuality } from '@/services/api/model.api';
 import type { ComposerRef } from '@/features/refs/store';
 
-export type RefCapabilityMap = Record<
-  string,
-  Record<string, 'native' | 'degraded' | 'opaque'>
->;
+export type RefQualityMap = Record<string, Record<string, RefQuality>>;
 
 /** 后端 suffix_kind 词典模块缓存(一次拉取, 拉取失败降级为仅 mime 兜底) */
 let _suffixKind: Record<string, string> | null = null;
@@ -50,23 +49,23 @@ export function contentKindOf(path: string, mime?: string): string {
   return 'binary';
 }
 
-/** chip → (source_kind, content_kind) 查表; map 缺该格返回 undefined(不显示徽标)。 */
-export function chipCapState(
-  map: RefCapabilityMap | null,
+/** chip → (source_kind, content_kind) 查表, 直接得 quality; 缺格返回 undefined(不显示徽标)。 */
+export function chipQuality(
+  map: RefQualityMap | null,
   r: Pick<ComposerRef, 'kind' | 'path' | 'mime'>
-): CapabilityState | undefined {
+): RefQuality | undefined {
   if (!map) return undefined;
   const source = r.kind === 'attachment' ? 'attachment' : 'file';
   const row = map[source];
   if (!row) return undefined;
-  const state = row[contentKindOf(r.path ?? '', r.mime)];
-  return (state as CapabilityState) || undefined;
+  const quality = row[contentKindOf(r.path ?? '', r.mime)];
+  return quality || undefined;
 }
 
-export function useRefCapabilityMap(
+export function useRefQualityMap(
   sessionId?: string | null
-): RefCapabilityMap | null {
-  const [map, setMap] = useState<RefCapabilityMap | null>(null);
+): RefQualityMap | null {
+  const [map, setMap] = useState<RefQualityMap | null>(null);
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -101,7 +100,7 @@ export function useRefCapabilityMap(
         const entry = (resp.providers ?? [])
           .find((p) => p.name === prov)
           ?.models.find((m) => m.name === name);
-        if (alive) setMap(entry?.ref_capability_map ?? null);
+        if (alive) setMap(entry?.ref_quality_map ?? null);
       } catch {
         if (alive) setMap(null);
       }

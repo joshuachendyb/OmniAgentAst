@@ -479,7 +479,7 @@ def mark_extract_result(attachment_id: str, chars: int, ok: bool) -> None:
 def reextract(attachment_id: str) -> dict[str, Any] | None:
     """手动重跑真抽取: 重置抽取态后按契约文本出口重算并回填。
 
-    仅 fallback_quality=content 的 kind(text/richdoc)有真抽取态可回填;
+    仅 fallback_quality=text_full 的 kind(text/richdoc)有真抽取态可回填;
     卡/元数据类原样返回(无重试意义)。失败折算 extract_status='failed', 不抛异常。
     """
     att = get_attachment(attachment_id)
@@ -487,7 +487,7 @@ def reextract(attachment_id: str) -> dict[str, Any] | None:
         return None
     from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
     route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
-    if route.fallback_quality != "content":
+    if route.fallback_quality != "text_full":
         return att
     with db.get_conn("chat") as conn:
         conn.execute(

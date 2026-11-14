@@ -117,11 +117,11 @@ import { formatBytes } from '@/utils/format';
 import { formatRelativeTime } from '@/utils/time';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { FileRow, type FileRowProps } from './FileRow';
-// 2026-11-11 小欧 - 行内能力徽标(ref_capability_map 只读索引) — 小欧-2026-11-11
+// 2026-11-14 小欧 - 行内引用质量徽标(ref_quality_map 只读索引) — 小欧-2026-11-14
 import {
-  chipCapState,
-  useRefCapabilityMap,
-} from '@/features/chat/hooks/useRefCapabilityMap';
+  chipQuality,
+  useRefQualityMap,
+} from '@/features/chat/hooks/useRefQualityMap';
 import { PreviewDrawer } from './PreviewDrawer';
 import { MaterialPackSaveForm } from './MaterialPackSaveForm';
 
@@ -443,8 +443,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const refreshAfterWrite = useCallback(async (): Promise<void> => {
     await Promise.all([refreshAll(), reloadPacks()]);
   }, [refreshAll, reloadPacks]);
-  // 2026-11-11 小欧 - 行内能力徽标数据源 + 真抽取手动重跑(text/richdoc) — 小欧-2026-11-11
-  const capMap = useRefCapabilityMap(sessionId);
+  // 2026-11-14 小欧 - 行内引用质量徽标数据源 + 真抽取手动重跑(text/richdoc) — 小欧-2026-11-14
+  const capMap = useRefQualityMap(sessionId);
   const retryExtract = useCallback(
     async (rec: AttachmentRecord) => {
       if (!sessionId) return;
@@ -1003,9 +1003,9 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           meta: metaOf(rec, SCOPE_FROM[scope]),
           mime: rec.mime,
           kind: rec.kind,
-          // 2026-11-11 小欧 - 行内能力徽标(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
-          capState: capMap
-            ? chipCapState(capMap, {
+          // 2026-11-14 小欧 - 行内引用质量徽标(ref_quality_map 只读索引, 查不到不显示) — 小欧-2026-11-14
+          capQuality: capMap
+            ? chipQuality(capMap, {
                 kind: 'attachment',
                 path: rec.original_name,
                 mime: rec.mime,

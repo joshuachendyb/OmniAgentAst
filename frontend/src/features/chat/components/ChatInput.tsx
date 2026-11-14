@@ -73,8 +73,8 @@
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
-// 编辑历史: 2026-11-11 小欧 - chip 增能力徽标: useRefCapabilityMap(生效模型 ref_capability_map 只读索引)
-//   + CapabilityBadge, 查不到不显示 — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - chip 增引用质量徽标: useRefQualityMap(生效模型 ref_quality_map 只读索引)
+//   + QualityBadge, 查不到不显示 — 小欧-2026-11-14
 // 2026-11-13 商量 - 输入帮助分层 + 落位: 输入框内只留核心 placeholder, 非常用输入方式收进「输入技巧」
 //   浮层; 微图例(@ 引用 · 拖入文件 · 粘贴图片)并入 placeholder 尾段(空态零额外高度),
 //   「输入技巧」入口经 SubmitBar.middleExtra 放在按钮行中段, 与按钮同高 → 输入区零额外高度 — 商量-2026-11-13
@@ -161,12 +161,12 @@ import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送
 import { Colors, FontSize, Radius, Spacing } from '@/utils/stepStyles';
 import { Gap, LineHeight } from '@/theme/spacing';
 import { CONTROL_PADDING } from '@/theme/controlScale';
-// 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
+// 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
 import {
-  chipCapState,
-  useRefCapabilityMap,
-} from '../hooks/useRefCapabilityMap';
-import { CapabilityBadge } from './input/CapabilityBadge';
+  chipQuality,
+  useRefQualityMap,
+} from '../hooks/useRefQualityMap';
+import { QualityBadge } from './input/QualityBadge';
 
 /** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
 const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
@@ -221,8 +221,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     add,
     setAll,
   } = useComposerRefs();
-  // 2026-11-11 小欧 - chip 能力徽标数据源(生效模型 ref_capability_map) — 小欧-2026-11-11
-  const capMap = useRefCapabilityMap(sessionId);
+  // 2026-11-14 小欧 - chip 引用质量徽标数据源(生效模型 ref_quality_map) — 小欧-2026-11-14
+  const capMap = useRefQualityMap(sessionId);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -787,8 +787,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             const notice = noticeOf(r, refNotices);
             const tone = CHIP_TONE_STYLE[chipToneOf(state)];
             const detail = noticeDetailText(notice);
-            // 2026-11-11 小欧 - 能力徽标状态(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
-            const capState = capMap ? chipCapState(capMap, r) : undefined;
+            // 2026-11-14 小欧 - 引用质量徽标(ref_quality_map 只读索引, 查不到不显示) — 小欧-2026-11-14
+            const capQuality = capMap ? chipQuality(capMap, r) : undefined;
             return (
               <span
                 key={r.id}
@@ -828,8 +828,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
               >
                 <FileOutlined style={{ color: chatTokens.colorPrimary }} />
                 {r.label}
-                {/* 2026-11-11 小欧 - 能力徽标: 按 ref_capability_map[source][content] 只读索引 — 小欧-2026-11-11 */}
-                {capState && <CapabilityBadge state={capState} />}
+                {/* 2026-11-14 小欧 - 引用质量徽标: 按 ref_quality_map[source][content] 只读索引 — 小欧-2026-11-14 */}
+                {capQuality && <QualityBadge quality={capQuality} />}
                 {chipStateText(state, notice)}
                 {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
                 <button
