@@ -14,7 +14,7 @@
 #   搬运纪律: 能复制不重写, 全部代码逐字搬迁, 只改 import 与函数名。
 # 2026-11-03 小欧 - 池快照缺失退化提示 WARNING→INFO(退化兜底非故障, 仍留日志可查)
 # 2026-11-15 小欧 - 两处误拦修复: ①_CIM_KILL_RE 只认裸词 invoke-cimmethod, Invoke-CimMethod -MethodName Create(启动进程)被误判成杀 → 收紧为必须 -MethodName terminate|kill; ②_unscoped 方法杀兜底对单变量目标($p.Kill(), 对象唯一有界)不再硬拦 → $_/foreach 批量形态仍拦, 单变量让路 HITL
-# 2026-11-15 小欧 - 根治重构(三堂会审九处误拦/漏拦定罪: 三段全文正则各自为政+三套 PID 提取并存):
+# 2026-11-15 小欧 - 根治重构(复核九处误拦/漏拦判定: 三段全文正则各自为政+三套 PID 提取并存):
 #   判定层改消费解析层 shell_parse.parse_kill 的 ProcessAction 目标三态
 #   (literal/bounded_dynamic/unbounded/opaque), 与路径防护 PathAction 同构。
 #   删除: _UNCONTAINABLE_RE/_PID_TARGET_RES/_KILL_NAME_RES/_PIPE_KILL_RE/_HELPISH_RE/
@@ -29,7 +29,7 @@
 #   与服务杀转 HITL; 其余杀进程(用户程序/第三方/变量/混淆形态)一律放行不提示, 杀不杀由 LLM 依
 #   返回信息自决。shell_has_hidden_kill 正名 shell_kill_needs_hitl(只答"目标是否系统关键"), 旧名零残留。
 
-# 2026-11-15 小欧 - 三堂会审整改(按 10 规范): 删生产零消费者的 SHELL_HIDDEN_KILL_VERBS 与
+# 2026-11-15 小欧 - 规范整改(按 10 规范): 删生产零消费者的 SHELL_HIDDEN_KILL_VERBS 与
 #   shell_extract_kill_target_pids/names(YAGNI/DRY, 词表与提取单一真源在解析层); 清 F401 未用导入
 #   (BOUNDED/ProcessAction/_strip_quotes); strip_quotes 在解析层转正后本模块不再跨层引用私有符号。
 

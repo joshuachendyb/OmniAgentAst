@@ -120,9 +120,9 @@ key 全局唯一，加载自检重复直接拒启。
       tuning.shell_bg_log_max_mb(输出文件轮转阈值) + tuning.shell_bg_result_retain_hours(结果保留时长) — 商量-2026-11-13
     2026-11-13 商量 - 复核撤销 shell_bg_log_max_mb(轮转从未实现, 纯假配置; 保留 shell_bg_result_retain_hours),
       后台命令配置项实为 2 项 — 商量-2026-11-13
-    2026-11-13 商量 - 三堂会审补 tuning.shell_bg_max_output_mb(输出上限, 超限杀进程防磁盘写满),
+    2026-11-13 商量 - 复核补 tuning.shell_bg_max_output_mb(输出上限, 超限杀进程防磁盘写满),
       后台命令配置项 3 项 — 商量-2026-11-13
-    2026-11-13 商量 - 10轮三堂会审: 后台输出上限默认值定为 512MB(并发5条峰值2.5GB, 守住系统级红线;
+    2026-11-13 商量 - 10轮复核: 后台输出上限默认值定为 512MB(并发5条峰值2.5GB, 守住系统级红线;
       原 2048MB 峰值 10GB 与"防磁盘写满"初衷相悖), 并发上限提示补"需重启生效" — 商量-2026-11-13
     2026-11-12 小欧 - 外观组增两项: appearance.fontSize 改阅读区字号档(range 12/14/16, step=2 禁半档),
       增 appearance.density 界面密度档(comfortable/compact), 密度只切控件档位不动字号与流水线正文 — 小欧-2026-11-12

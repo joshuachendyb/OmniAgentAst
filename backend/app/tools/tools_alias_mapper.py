@@ -21,7 +21,7 @@
 # 2026-11-13 - 商量 - 错位参数展开(expand_misplaced_params): LLM幻觉把整个edit对象塞进new_string字段(嵌套dict或XML标签串),
 #   外层缺path/old_string致ERR_MISSING_PARAM; 日志实证59次edit中17次失败(29%轮次浪费), 展开后可直接执行省一轮重试;
 #   $text→new_string 经PARAM_ALIASES统一映射(无特判); 通用设计: 其他tool有PARAM_ALIASES条目即自动获得展开能力。
-#   判据收紧(三堂会审, 反例实证): ①承载错位的字段名本身须是已知参数名(否则 write_xlsx.data 等合法dict参数被误展开);
+#   判据收紧(复核, 反例实证): ①承载错位的字段名本身须是已知参数名(否则 write_xlsx.data 等合法dict参数被误展开);
 #   ②XML串须提取出≥2个参数且含自身规范名(否则编辑含 "</path>" 的代码时 new_string 被吞);
 #   ③_EXTRA_KNOWN_KEYS 补 edit.replaceAll(不在别名表, 丢则静默只替换首处)
 # 2026-11-14 - 商量 - 参数归位(更名自"错位参数展开", 名不符实: 实为把错位包装的参数解析归位到

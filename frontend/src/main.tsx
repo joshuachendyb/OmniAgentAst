@@ -20,7 +20,7 @@
 //      密度只改控件高一个维度。
 //   ④删 --density-pad CSS 变量: 全仓零消费方(阅读区间隔由 utils/markdownStyles.ts 在 TS 侧解算),
 //      留着即死代码 + 双真源。规范见文档[32]。
-// 编辑历史: 2026-11-13 小欧 - 三堂会审: Tooltip 色值归令牌(裸 '#ffffff'/'#595959' →
+// 编辑历史: 2026-11-13 小欧 - 复核: Tooltip 色值归令牌(裸 '#ffffff'/'#595959' →
 //   Colors.BG.PRIMARY/Colors.TEXT.PRIMARY, 同像素零视觉差)。 — 小欧-2026-11-13
 import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';

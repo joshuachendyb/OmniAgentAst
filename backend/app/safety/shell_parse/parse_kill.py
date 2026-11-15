@@ -15,7 +15,7 @@
   无条件并入(管道+开关双杀漏拦); ⑤服务杀动词一律 bounded 转确认(服务名非进程名, 静态不可证实);
   ⑥killall/-name 首字符禁 -(防 -9 开关被当目标名); ⑦-InputObject $p 补 bounded; ⑧bash/sh -c
   引号藏杀补 opaque; ⑨pkill 正则模式名补 regex 语义命中(py.* 实杀 python)。
-2026-11-15 - 小欧 - 三堂会审整改: ①kill/pkill/killall 仅命令位(段首/&、(后/包装命令后)认动词,
+2026-11-15 - 小欧 - 复核整改: ①kill/pkill/killall 仅命令位(段首/&、(后/包装命令后)认动词,
   除 `Select-String -Pattern kill` 误拦(参数值不是命令); ②_strip_quotes 转正 strip_quotes(公开,
   解跨层私有导入); ③动词表按"PowerShell/服务类"与"bash 裸动词"两组分治。
 
@@ -65,7 +65,7 @@ def _edge_alt(verbs: Tuple[str, ...]) -> str:
 
 # 2026-11-15 小欧 严格测试整改: "wmic process" 从动词表移除(裸 wmic process list/get 是查询,
 #  误拦日常运维); 只由 _WMIC_MASS_RE(须 delete / call terminate)认杀。
-# 2026-11-15 三堂会审: 可被 &/引号/拼接/[char] 混淆包裹的 PowerShell/服务类动词视字面出现即认;
+# 2026-11-15 复核: 可被 &/引号/拼接/[char] 混淆包裹的 PowerShell/服务类动词视字面出现即认;
 #  bash 裸动词只在命令位认(段首 / &、( 后 / 包装命令后) —— `Select-String -Pattern kill` 的
 #  kill 是参数值, 按命令位区分可除误拦。
 _PWSH_VERBS = ("stop-process", "taskkill", "stop-service", "restart-service")
@@ -99,9 +99,10 @@ _ECHO_RE = re.compile(
     r"^\s*(?:echo\.?|write-host|write-output|write-debug|write-verbose|write-information|printf)\b",
     re.IGNORECASE)
 
-# 静态不可见: -EncodedCommand / iex 内嵌 / bash -c 引号藏杀 —— 内容不可枚举, 转 HITL 为残留风险
-# 2026-11-15 严格测试整改: bash/sh -c 的引号内是可执行脚本(`bash -c "kill -9 $$"`), 引号
-#  对动词识别是盲区, 必须按 opaque 转确认。
+# 静态不可见: -EncodedCommand / iex 内嵌 / bash -c 引号藏杀 —— 目标不可枚举, 分类为 opaque 交判定层。
+# 2026-11-15 口径收敛(用户令): 判定层对 opaque 不硬拦不转确认, 杀不杀由 LLM 依返回信息自决。
+# bash/sh -c 的引号内是可执行脚本(`bash -c "kill -9 $$"`), 引号对动词识别是盲区, 须按 opaque
+#  分类, 不冒充已解析。
 _OPAQUE_RE = re.compile(
     r"(?<![a-z0-9_-])-(?:encodedcommand|enc)\b|(?<![a-z0-9_-])(?:iex|invoke-expression)\b"
     r"|(?<![a-z0-9_-])(?:ba)?sh\s+-c\b",
@@ -274,7 +275,8 @@ def parse_kill_actions(command: str, shell_type: Optional[str] = None) -> List[P
             if _ECHO_RE.search(blanked):
                 continue                      # 数据提及段: 非杀动作
             if _OPAQUE_RE.search(blanked):
-                # 静态不可见(-EncodedCommand/iex): 见到即转 HITL, 不冒充已解析(2026-10-10 口径)
+                # 静态不可见(-EncodedCommand/iex): 分类为 opaque 交判定层, 不冒充已解析;
+                # 判定层按口径收敛令(2026-11-15)放行, 杀不杀由 LLM 自决
                 m = _OPAQUE_RE.search(blanked)
                 actions.append(ProcessAction(m.group(0).lower(), OPAQUE))
                 continue
