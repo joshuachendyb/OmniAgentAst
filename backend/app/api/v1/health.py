@@ -29,6 +29,9 @@
 # 2026-11-04 小欧 - 新增 spawn 字段(闸门指标): 运行期 thread_start 数、等锁超限次数、CreateProcess 最长持锁,
 #   把"正在接近卡死"变成可观测/可告警, 不必等全站僵死再 py-spy — 小欧-2026-11-04
 # 2026-11-04 小欧 - DB 探测加 2s 上限: 灾时(线程池/闸门被占)健康检查必须自己先活, 不能跟着一起挂 — 小欧-2026-11-04
+# 2026-11-15 小欧 - L1-3: DB 探测改后台刷新 + 读缓存(start_db_status_refresher/stop_db_status_refresher):
+#   原实现每次 /health 都提交线程池, 卡死时健康检查自身排队致观测失效; 现 /health 零等待返回上一轮缓存值,
+#   unknown 不计为故障(首轮未完成), 刷新任务异常不退出且保留上次值 — 小欧-2026-11-15
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -39,6 +42,7 @@ import os
 import socket
 import time
 from functools import lru_cache
+from typing import Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -47,6 +51,7 @@ from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁�
 from app.db import db
 from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
+from app.utils.background_tasks import spawn_bg  # 强引用防 GC; shutdown 按引用 cancel — 2026-11-15 小欧
 from app.utils.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
@@ -87,6 +92,54 @@ def _server_lan_ip() -> str:
 _STARTED_AT = time.monotonic()
 
 
+# DB 健康缓存 — 2026-11-15 小欧
+#   病根: 原实现每次 /health 都 await db.atxn(线程池), 卡死时健康检查自己先挂, 观测失效。
+#   方案: 常驻后台任务定期探测并写缓存, /health 只读缓存立即返回(允许是上一轮旧值)。
+#   任务用 spawn_bg 持强引用: 裸 create_task 只被事件循环弱引用, 挂起中可能被 GC 销毁。
+_DB_PROBE_INTERVAL_S = 5.0
+_DB_PROBE_TIMEOUT_S = 2.0
+_db_status_cache: dict = {"status": "unknown"}   # unknown=首轮未完成, 既非健康也非故障
+_db_refresher: Optional[asyncio.Task] = None
+
+
+async def _probe_db_once() -> str:
+    for db_name in ("chat", "operations", "task_tracker"):
+        try:
+            await asyncio.wait_for(
+                db.atxn(db_name, lambda conn: conn.execute("SELECT 1")),
+                timeout=_DB_PROBE_TIMEOUT_S)
+        except Exception:
+            logger.warning(f"[health] DB {db_name} 连接失败")
+            return "degraded"
+    return "healthy"
+
+
+async def _db_status_refresher() -> None:
+    while True:
+        try:
+            _db_status_cache["status"] = await _probe_db_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:          # 刷新任务绝不能因单次异常退出
+            logger.warning(f"[health] DB 刷新异常(保留上次值): {e!r}")
+        await asyncio.sleep(_DB_PROBE_INTERVAL_S)
+
+
+def start_db_status_refresher() -> None:
+    """启动期拉起 DB 健康刷新任务(幂等) — 2026-11-15 小欧"""
+    global _db_refresher
+    if _db_refresher is None or _db_refresher.done():
+        _db_refresher = spawn_bg(_db_status_refresher())
+
+
+def stop_db_status_refresher() -> None:
+    """shutdown 取消刷新任务(幂等) — 2026-11-15 小欧"""
+    global _db_refresher
+    if _db_refresher is not None and not _db_refresher.done():
+        _db_refresher.cancel()
+    _db_refresher = None
+
+
 async def _loop_lag_ms() -> float:
     """事件循环调度延迟(点采样, 毫秒) — 2026-11-02 小欧
 
@@ -119,19 +172,11 @@ class EchoResponse(BaseModel):
     timestamp: str
 
 async def build_health_response(host: str) -> HealthResponse:
-    """组装健康响应 — 共用: /api/v1/health 与 main.py 裸 /health 别名同源一份真 JSON — 2026-11-03 小欧"""
-    db_status = "healthy"
-    for db_name in ["chat", "operations", "task_tracker"]:
-        try:
-            # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24): 被动 /health 不再因 loop 被占而超时
-            # 2026-11-04 小欧 - 加 2s 上限: 线程池/闸门被占时健康检查自己先活, 拿不到 DB 就报 degraded
-            await asyncio.wait_for(
-                db.atxn(db_name, lambda conn: conn.execute("SELECT 1")), timeout=2.0)
-        except Exception:
-            logger.warning(f"[health] DB {db_name} 连接失败")
-            db_status = "degraded"
+    """组装健康响应 — 共用: /api/v1/health 与 main.py 裸 /health 别名同源一份真 JSON — 2026-11-03 小欧
+    2026-11-15 小欧: DB 状态改为读后台刷新缓存, 本函数不再提交线程池; 卡死时仍能立即返回。"""
+    db_status = _db_status_cache["status"]
     return HealthResponse(
-        status="healthy" if db_status == "healthy" else "degraded",
+        status="degraded" if db_status == "degraded" else "healthy",   # unknown 不计为故障
         timestamp=get_local_iso_timestamp(),
         version=get_app_version(),
         db_status=db_status,

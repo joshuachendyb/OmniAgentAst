@@ -6,6 +6,8 @@
 #   (原静默丢孙进程晚到输出, 与 communicate 的 EOF 语义不一致)
 # 2026-11-04 - 小欧 - 红队 P21/P23 修复: drain_until_exit 增 truncated 回传 + TRUNCATED_NOTE(截断对调用方可见,
 #   4s 晚到输出不再静默丢); 已关闭流(ValueError)按 EOF 处理(清理链不得因句柄提前关闭而中断)
+# 2026-11-15 - 小欧 - run() 增 creationflags 透传(与 subprocess.run 同名同义): 调用方可在零线程读取下
+#   继续用 CREATE_NO_WINDOW 防打包版闪黑窗, 无需退回 subprocess.run 的 _readerthread 建线程路径
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04
 
 【为什么自研】`Popen.communicate()` 每次调用都会 `Thread.start()` 1~3 条 `_readerthread`
@@ -148,16 +150,17 @@ def _decode(data: bytes, encoding, errors):
 
 
 def run(args, *, timeout=None, cwd=None, env=None, shell=False,
-        encoding=None, errors=None, text=False, capture_output=True):
+        encoding=None, errors=None, text=False, capture_output=True, creationflags=0):
     """`subprocess.run` 的零线程等价(只覆盖本库实际用到的参数) — 2026-11-04 小欧
 
     capture_output 仅为签名兼容(恒为 True: 本函数的价值就是接管管道读取)。
     超时语义与 subprocess.run 一致: 杀进程树后抛 TimeoutExpired(携带已读输出)。
+    creationflags 透传(如 CREATE_NO_WINDOW), 与 subprocess.run 同名同义 — 2026-11-15 小欧
     """
     if text and encoding is None:
         encoding = locale.getpreferredencoding(False)
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            cwd=cwd, env=env, shell=shell)
+                            cwd=cwd, env=env, shell=shell, creationflags=creationflags)
     out_b, err_b, timed_out, truncated = drain_until_exit(
         proc, timeout if timeout is not None else float("inf"))
     if truncated:

@@ -163,6 +163,10 @@
 # 2026-11-13 商量 - 根治: (1)cmd 后台启动脚本路径改走 shell_background.bat_sidecar_path, 与清理侧
 #   同一单源(原 outfile[:-4]+".bat" 与清理 output_file+".bat" 不一致致 .bat 永不被删); (2)Popen 后即关父进程
 #   写句柄(子进程已继承, 父侧不关会拖住产物删除); (3)success_codes 传入后台, 成功判定与前台一致
+# 2026-11-15 小欧 - L1-5: _auto_fix_bash_syntax 由整条 replace('\\','/') 改为引号感知的路径 token 转换
+#   (引号段整体/嵌套一层/引号外命令位三规则, 见 _fix_paths_in), 原实现把引号内正则 \b/\d/\s、awk \t、
+#   printf \n 一并摧毁且替换后仍合法致 rc=0 静默丢行; L1-6: bash 启动改非登录 shell(--noprofile --norc),
+#   免 profile/rc 加载, PATH 由 bash.exe 内置默认保证
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -220,7 +224,7 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
        └── shell_type="bash" ────────────────────────────────────
            │
            ├── [入] subprocess.Popen 直接传递命令字符串
-           │    使用 -l 登录 shell, 自动加载 .bashrc
+           │    使用 --noprofile --norc 非登录 shell, 不加载 profile/rc
            │
            ├── [子进程] env 同主进程(无需设置PYTHONIOENCODING)
            │    Git Bash: /usr/bin/bash.exe
@@ -833,18 +837,45 @@ def _auto_fix_powershell_syntax(command: str) -> str:
     return command
 
 
+# Windows 路径 token 转换 — 2026-11-15 小欧
+#   规则1 引号段整体判定: 内容以盘符 X:\ / UNC \\ 开头才转换(容忍空格, 如 "C:\Program Files");
+#   规则2 引号内非路径文本递归一层(覆盖 python -c "print('D:\a\b')" 这类嵌套引号);
+#   规则3 引号外只转换"命令位"上的路径(前导为行首/空白/=/(/逗号/分号),
+#   避免把 awk 的 /\\/、sed 的 s/\\//g 误当 UNC 路径。
+_QUOTED_SPAN_RE = re.compile(r'("[^"\r\n]*"|\'[^\'\r\n]*\')')   # 捕获组: split 后奇数位即引号段
+_BARE_PATH_RE = re.compile(r'(?:^|(?<=[\s=(,;]))(?:[A-Za-z]:\\|\\\\)[^\s\'"]*')
+_QUOTED_PATH_HEAD_RE = re.compile(r'^["\'](?:[A-Za-z]:\\|\\\\)')
+
+
+def _fix_paths_in(text: str, depth: int = 0) -> str:
+    parts = _QUOTED_SPAN_RE.split(text)
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:                      # 引号外
+            out.append(_BARE_PATH_RE.sub(lambda m: m.group(0).replace('\\', '/'), part))
+        elif _QUOTED_PATH_HEAD_RE.match(part):
+            out.append(part.replace('\\', '/'))          # 整段引号路径
+        elif depth == 0:
+            q = part[0]
+            out.append(q + _fix_paths_in(part[1:-1], 1) + q)   # 仅下探一层
+        else:
+            out.append(part)
+    return ''.join(out)
+
+
 def _auto_fix_bash_syntax(command: str) -> str:
     """自动修复LLM生成的Bash命令中已知错误模式 — 小欧 2026-07-28; 2026-08-06 精简
 
     当前覆盖：
-    - Windows反斜杠 → 正斜杠（Git Bash下反斜杠是转义符, C:\\Users 中 \\U 被吃掉致路径损坏）
+    - Windows 路径 token 的反斜杠 → 正斜杠（Git Bash 下 \\ 是转义符, C:\\Users 的 \\U 会被吃掉）
+    - 2026-11-15 小欧: 原 fixed.replace('\\','/') 对整条命令无差别替换, 把引号内正则
+      \\b/\\d/\\s、awk 的 \\t、printf 的 \\n 一并摧毁, 替换后仍是合法正则 → rc=0 静默丢结果。
+      改为按引号感知只转换 Windows 路径形态 token(盘符 X:\\ 或 UNC \\\\server), 其余字符一律不动。
 
     注: python3→python 已在 stage 1.0a 统一处理，此处不再重复（DRY）"""
     if not command or sys.platform != "win32":
         return command
-    fixed = command
-    # 路径分隔符：Windows反斜杠 → 正斜杠（Git Bash下\是转义符, \U→U致路径损坏, 改/让bash识别）
-    fixed = fixed.replace('\\', '/')
+    fixed = _fix_paths_in(command)
     if fixed != command:
         logger.warning(f"[Shell] 自动修复bash语法: 路径转换\\→/, cmd={command[:100]}")
         return fixed
@@ -1140,7 +1171,7 @@ def shell(
     #                - bash    → _auto_fix_bash_syntax
     #                - ps7/ps5 → _auto_fix_powershell_syntax（保留，优于文档）
     #   stage 2    安全检查
-    #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash登录shell，三路无嵌套检测）
+    #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash 非登录 shell，三路无嵌套检测）
     #   stage 4    后处理
     #
     # ── 阶段 1.1【通用】: 三路类型检测 + 路由 ── 小欧 2026-07-29; 2026-08-06 位置修正 ──
@@ -1252,7 +1283,7 @@ def shell(
                     if not bash_exe:
                         logger.error("[bg_shell] bash 解释器未找到")
                         return None
-                    return subprocess.Popen([bash_exe, "-l", "-c", cmd],
+                    return subprocess.Popen([bash_exe, "--noprofile", "--norc", "-c", cmd],
                         stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
                 finally:
                     _out.close()
@@ -1353,7 +1384,7 @@ def shell(
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
 
-        else:  # ── 【bash专属】: subprocess + 登录shell ──
+        else:  # ── 【bash专属】: subprocess + 非登录 shell(免 profile/rc 加载) ──
             bash_exe = _find_bash()
             if not bash_exe:
                 d = int((_time_mod.perf_counter() - t0) * 1000)
@@ -1363,7 +1394,7 @@ def shell(
                 return build_error(data={}, llm_data=llm)
             child_env = _sanitize_env()
             proc = subprocess.Popen(
-                [bash_exe, "-l", "-c", processed_command],
+                [bash_exe, "--noprofile", "--norc", "-c", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=child_env,
             )

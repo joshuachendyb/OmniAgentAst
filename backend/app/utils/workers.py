@@ -2,6 +2,8 @@
 # 编辑历史:
 # 2026-11-04 - 小欧 - 新建: 统一常驻线程池(WorkerPool/ThreadLeasePool), 取代 serial_worker.py 与两处私有池实现
 # 2026-11-05 - 小欧 - 修复 submit/lease 丢 ContextVar: 常驻线程不继承调用方上下文, 改为提交时绑定 copy_context, 与 asyncio.to_thread 同语义
+# 2026-11-15 - 小欧 - 新增 WorkerSlots/SlotLease: 有界并发闸门显式记账"在途"与"随线程永久损耗",
+#   取代 BoundedSemaphore 在不可中断原生调用卡死时永久占用且无法区分持有者的问题; 凭证一次性, 迟到回调幂等
 """workers — 常驻线程池(运行期零 Thread.start) — 小欧 2026-11-04
 
 【为什么要有这个模块】Windows 上 `Thread.start()` 内部 `self._started.wait()` 无超时, 新线程
@@ -21,11 +23,11 @@ import contextvars
 import functools
 import queue
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from app.logger import logger
 
-__all__ = ["WorkerPool", "ThreadLeasePool"]
+__all__ = ["WorkerPool", "SlotLease", "WorkerSlots", "ThreadLeasePool"]
 
 
 class WorkerPool:
@@ -58,6 +60,73 @@ class WorkerPool:
         # 2026-11-05 小欧 - 常驻线程不继承 ContextVar(task_id/session_id/hooks): 提交时绑定调用方上下文, 否则齐丢
         self._q.put((functools.partial(contextvars.copy_context().run, fn), fut))
         return fut
+
+
+class SlotLease:
+    """一次槽位占用的凭证(一次性) — 2026-11-15 小欧
+
+    为什么需要凭证: 只用计数器无法区分"哪个请求持有哪一格"。一旦某请求被判损耗,
+    它迟到的 done_callback 若仍执行 release(), 会把**别人**正在用的槽位减掉,
+    造成容量虚增(比原信号量泄漏更危险)。凭证的 _active 一次性置 False,
+    release/mark_lost 幂等, 迟到回调永远只作用于自己的账。
+    """
+
+    __slots__ = ("_slots", "_active")
+
+    def __init__(self, slots: "WorkerSlots") -> None:
+        self._slots = slots
+        self._active = True
+
+    def release(self) -> None:
+        if self._active:
+            self._active = False
+            self._slots._settle(lost=False)
+
+    def mark_lost(self) -> None:
+        if self._active:
+            self._active = False
+            self._slots._settle(lost=True)
+
+
+class WorkerSlots:
+    """有界并发闸门: 区分"在途"与"随线程永久损耗" — 2026-11-15 小欧
+
+    BoundedSemaphore 只能表达占用/空闲; 执行体卡死在不可中断的原生调用里时, 线程永久报废,
+    其 done_callback 永不触发, 信号量却永久占用 —— 计数与真实可用线程从此错位(exp1 实测)。
+    本类把损耗显式记账: mark_lost() 把一次持有转为永久损耗, 可用量随之下调,
+    失败信息能说出真实原因, 不再表现成"莫名其妙拿不到 worker"。
+    """
+
+    def __init__(self, size: int):
+        self.size = size
+        self._cond = threading.Condition()
+        self._in_use = 0
+        self._lost = 0
+
+    def acquire(self) -> Optional[SlotLease]:
+        """非阻塞占位; 满则返回 None(排队由调用方在 event loop 里做, 不阻塞线程)。"""
+        with self._cond:
+            if self._in_use + self._lost >= self.size:
+                return None
+            self._in_use += 1
+            return SlotLease(self)
+
+    def _settle(self, lost: bool) -> None:
+        with self._cond:
+            if self._in_use > 0:
+                self._in_use -= 1
+            if lost:
+                self._lost += 1
+
+    @property
+    def lost(self) -> int:
+        with self._cond:
+            return self._lost
+
+    @property
+    def available(self) -> int:
+        with self._cond:
+            return max(0, self.size - self._in_use - self._lost)
 
 
 class ThreadLeasePool:

@@ -5,6 +5,8 @@
 #   卡死超 HOLD_LIMIT 即强制回收并落盘全线程栈, 单线程卡死不再拖垮全站; 新增持有者诊断/运行期建线程调用栈留证
 # 2026-11-04 - 小欧 - 红队 L05 修复: 全线程栈落盘改投常驻 worker(_DUMP_POOL), 原在看门狗线程内同步
 #   faulthandler 写盘, 写盘期间巡检停摆(实测 12 次连发只回收 9 次) — 安全网不得阻塞在取证上
+# 2026-11-15 - 小欧 - 新增严格模式(OMNI_SPAWN_STRICT=1): 启动完成后的任何 Thread.start 直接 RuntimeError,
+#   把"计数为 0"的软判定升级为硬失败(实验用, 生产默认关闭); 违规次数入 snapshot.strict_violations
 """spawn_gate — 进程创建 × 线程创建 互斥闸门 — 小欧 2026-11-04
 
 【问题】Windows 上 `CreateProcessW` 与新建线程的原生启动(DLL_THREAD_ATTACH/LdrpInitializeThread)
@@ -154,6 +156,8 @@ _install_lock = threading.Lock()
 _stop_event = threading.Event()
 _installed = False
 _runtime_started = False
+# 严格模式: 启动期一次性判定(env 解析不进热路径); 运行期建线程即硬失败 — 2026-11-15 小欧
+_STRICT = os.environ.get("OMNI_SPAWN_STRICT") == "1"
 
 _stats: Dict[str, Any] = {
     "popen_calls": 0,           # 累计 CreateProcess 次数
@@ -161,6 +165,7 @@ _stats: Dict[str, Any] = {
     "runtime_thread_starts": 0, # 启动完成之后的 Thread.start 次数 —— 必须为 0, 否则暴露漏网点
     "gate_timeouts": 0,         # 等锁超上限次数(每次都是一次"本会僵死"的现场)
     "forced_reclaims": 0,       # 看门狗强制回收次数 —— 必须为 0
+    "strict_violations": 0,     # 严格模式下运行期建线程被拒次数 —— 必须为 0
     "wait_max_ms": 0.0,         # 等锁最长耗时
     "popen_max_ms": 0.0,        # CreateProcess 持锁最长耗时(≈ loader lock 窗口)
     "last_forced": None,        # 最近一次强制回收的持有者信息
@@ -265,6 +270,10 @@ def install_spawn_gate() -> None:
         if _runtime_started:
             _stats["runtime_thread_starts"] += 1
             _record_runtime_start(self.name)
+            if _STRICT:
+                _stats["strict_violations"] += 1
+                raise RuntimeError(
+                    f"严格模式拒绝运行期建线程: {self.name} @ {_sample_stack()}")
         _stats["thread_start_calls"] += 1
         ticket = _acquire("Thread.start", self.name)
         try:

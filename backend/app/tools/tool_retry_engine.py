@@ -88,6 +88,10 @@
 
 # 2026-11-15 小欧 - 参数提示补齐: 新增 _MISSING_PARAM_HINTS(edit/write/read/grep/find/copy 缺失参数的可行动
 #   指引), 缺失分支按 tool+参数 查表拼接取代统一套话; _INVALID_PARAM_HINTS 补 copy.pattern 误用纠正。
+# 2026-11-15 小欧 - L1-1 槽位对账: _SHELL_SLOTS/_TOOL_SLOTS 由 BoundedSemaphore 换 WorkerSlots,
+#   超时未归还的 worker 记永久损耗(available=size-in_use-lost), 迟到回调经 SlotLease 幂等释放;
+#   BoundedSemaphore 在不可中断原生调用卡死时永久占用且无法区分持有者, 导致容量与实际可用线程静默错位。
+#   顺带删除因换实现而失效的 threading 死导入。
 
 """
 统一工具重试引擎 — 工具的外部重试机制
@@ -107,7 +111,6 @@ Author: 小沈 - 2026-05-27
 
 import asyncio
 import inspect
-import threading
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
@@ -129,7 +132,7 @@ from app.utils.json_utils import (  # coerce_json: 反向类型容错复用(DRY,
     coerce_json,
     safe_json_dumps,
 )
-from app.utils.workers import WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现(取代各文件私有池)
+from app.utils.workers import WorkerPool, WorkerSlots  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
@@ -190,7 +193,7 @@ _SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execut
 # 执行器容量: 2026-11-06 小欧 - 去池化后 shell 每命令独立子进程, 执行器线程数固定 32(不再从已删的 shell_pool_max_per_type 派生)
 _SHELL_EXECUTOR_MAX = 32
 _SHELL_EXECUTOR = WorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
-_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 执行器线程级并发闸门(与 execute_shell_command 的进程级 _SHELL_PROC_SEM 分层)
+_SHELL_SLOTS = WorkerSlots(_SHELL_EXECUTOR_MAX)   # 执行器线程级并发闸门(与 execute_shell_command 的进程级 _SHELL_PROC_SEM 分层)
 
 # 非shell同步工具有界执行器 — 2026-11-14 小欧 (8100 grep 假死事故根治)
 # 病根: 非shell同步工具仍走 asyncio.to_thread → 事件循环默认 executor, wait_for 超时后
@@ -199,7 +202,7 @@ _SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 执行器线�
 #   不侵蚀默认 executor(DNS/getaddrinfo 等短任务不受牵连); 排队占不到位明确失败。
 _TOOL_EXECUTOR_MAX = 16
 _TOOL_EXECUTOR = WorkerPool(_TOOL_EXECUTOR_MAX, "tool-exec")
-_TOOL_SLOTS = threading.BoundedSemaphore(_TOOL_EXECUTOR_MAX)
+_TOOL_SLOTS = WorkerSlots(_TOOL_EXECUTOR_MAX)
 
 # ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)
@@ -288,28 +291,42 @@ class ToolRetryEngine:
 
     async def _execute_in_bounded_executor(self, tool: Callable, params: Dict[str, Any],
                                            timeout: float,
-                                           executor: WorkerPool, slots: threading.BoundedSemaphore) -> Any:
+                                           executor: WorkerPool, slots: WorkerSlots) -> Any:
         """同步工具有界执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
         2026-11-14 小欧 - 由 shell 专用泛化为通用(非shell同步工具同样隔离, 8100 grep 假死事故根治):
           卡死线程只占本池槽位, 默认 executor 只留给 DNS/文件等短任务。
+        2026-11-15 小欧 - 信号量换 WorkerSlots: 超时未归还记永久损耗, 容量随真实可用线程收缩,
+          迟到回调经凭证幂等释放, 不会误减他人槽位。
 
         单一 deadline: 排队与执行共享同一个 timeout 预算。原实现排队等 timeout、执行再等
         timeout, 实际最坏 2×timeout, 把"保险丝"这个外部上限撑破一倍 — 现排队只消耗剩余额度。"""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while not slots.acquire(blocking=False):
+        lease = slots.acquire()
+        while lease is None:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise TimeoutError(
-                    f"工具专用执行器无空闲 worker(前序同步工具调用卡死未归还), 等待{timeout:.0f}s → 明确失败")
+                    f"工具专用执行器无空闲 worker(前序同步工具调用卡死未归还), "
+                    f"可用{slots.available}/损耗{slots.lost}/{slots.size}, 等待{timeout:.0f}s → 明确失败")
             await asyncio.sleep(min(0.05, remaining))
+            lease = slots.acquire()
         try:
             fut = executor.submit(lambda: tool(**params))
         except BaseException:
-            slots.release()
+            lease.release()
             raise
-        fut.add_done_callback(lambda _f: slots.release())
-        result = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
+        fut.add_done_callback(lambda _f, _l=lease: _l.release())   # 迟到完成也幂等
+        try:
+            result = await asyncio.wait_for(
+                asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
+        except asyncio.TimeoutError:
+            if not fut.done():          # 线程未归还: 记永久损耗(归还时回调只会释放自己那格)
+                lease.mark_lost()
+                logger.error(
+                    f"[工具执行器] worker 超时未归还 → 记永久损耗 (lost={slots.lost}/{slots.size}): "
+                    f"action={getattr(tool, '__name__', '?')}")
+            raise
         if inspect.iscoroutine(result):
             return await asyncio.wait_for(result, timeout=max(0.0, deadline - loop.time()))
         return result

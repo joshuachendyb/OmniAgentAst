@@ -86,6 +86,8 @@
 #   惰性清理覆盖不到致磁盘残留) — 商量-2026-11-13
 # 注: shell_background 必须"函数体内 import"——该模块 import 时即创建 WorkerPool 常驻线程
 #   (有副作用), 提到文件顶部会让任何 import main 的场景(测试/脚本)连带起线程, 副作用外泄
+# 2026-11-15 小欧 - L1-3: startup 拉起 DB 健康刷新任务, shutdown 取消(app.api.v1.health
+#   start/stop_db_status_refresher); /health 由"每次提交线程池"改为"读后台缓存", 卡死时自身仍可答
 import asyncio
 import sys
 import threading
@@ -665,6 +667,9 @@ async def startup_event():
     warn_startup_checks()
     logger.info(f"[启动耗时] warn_startup_checks: {time.time()-_t3:.3f}s")
     logger.info(f"[启动耗时] startup_event 合计: {time.time()-_t0:.3f}s")
+    # 2026-11-15 小欧: DB 健康缓存后台刷新, 首个 /health 即可读到可信值(只建协程, 不占启动耗时)
+    from app.api.v1.health import start_db_status_refresher
+    start_db_status_refresher()
     # 启动期结束: 之后任何 Thread.start 都计入 runtime_thread_starts(/health 暴露), 应为 0 — 2026-11-04 小欧
     mark_runtime_started()
     from app.logger.console_writer import (
@@ -694,6 +699,8 @@ async def shutdown_event():
         _monitoring_retention_ref.cancel()
     if _log_watcher_ref is not None and not _log_watcher_ref.done():   # 2026-10-25 小欧: 日志级别热重载任务同生命周期
         _log_watcher_ref.cancel()
+    from app.api.v1.health import stop_db_status_refresher
+    stop_db_status_refresher()   # 2026-11-15 小欧: DB 刷新任务随服务关闭取消
     # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
     from app.services.lifecycle import shutdown
     await shutdown()
