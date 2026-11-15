@@ -1,3 +1,31 @@
+v1.7.2
+发布时间: 2026-11-16 06:58:13 - 小欧-2026-11-16
+## v1.7.1以来 变更汇总(20个commit: feat2/fix4/refactor3/docs11, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
+[2026-11-16 06:58:13 小欧] 范围=v1.7.1..HEAD 全部commit(20个, merge提交除外); 说明=①卡死根治链路落地: [42]P0 frozen启动FreeConsole+stdio重定向(console_mode.py)/P2 运行代码指纹落盘与/health.build暴露(build_fingerprint.py)/P4 五处Popen统一隔离参数出口, 子进程控制台隔离止血(CREATE_NO_WINDOW+stdin=DEVNULL+STARTF_USESTDHANDLES切断conhost句柄继承致GetConsoleMode IOCTL不释放GIL的全解释器冻结), 阶段1(L1六项)读缓存/库探活后台线程/SlotLease槽位凭证/子进程零线程读取/spawn_gate严格模式/spawn无锁单次to_thread/bash非登录shell; ②workers超时mark_lost后槽位容量永久泄漏与并发双扣修复(SlotLease held/released/lost状态机); ③[23]阶段A输入即能力落地(api/v1/inputs.py+services/inputs/preflight能力协商+refs/render引用正文渲染+前端输入能力协商与urlCapture); ④execute_shell_command删除stage1.2文本级auto_fix只留确定性映射, proc_spawn.py并入proc_io.py消除单函数模块; ⑤build_spa打包脚本补齐package.json/lock变更触发npm install并删永假死分支; ⑥[41][42][23][22][23]方案文档多轮修订。维持PATCH v1.7.2。
+### 1.7.2.1 功能新增
+[卡死] feat 36a7a78cf [42]P0+P2+P4 同批实施: P0 frozen启动FreeConsole+stdio重定向(console_mode.py); P2 运行代码指纹落盘+/health.build暴露(build_fingerprint.py); P4 五处Popen统一隔离参数出口(proc_spawn.py, DRY); 另修[42]附录A探针bug(p.returncode→p.pid+补conhost打印) - 小欧-2026-11-15
+[输入] feat a26024128 [23]阶段A输入即能力落地:新增api/v1/inputs.py与services/inputs/(preflight能力协商),refs/render引用正文渲染接入,前端ChatInput/InputCore输入能力协商与urlCapture/inputs.api,同步[23]方案文档 - 小欧-2026-11-15
+### 1.7.2.2 缺陷修复
+[打包] fix d339bce31 build_spa 三堂会审整改: 删永假的needWebCopy分支(needFrontendBuild仅前端变更时置真,原条件恒false死代码)+package.json/package-lock.json变更补npm install触发(原仅npm run build不装依赖,致依赖变更后拿旧node_modules打包); AST+提取真实Get-ChangeClassification跑8场景全过 - 小欧-2026-11-16
+[卡死] fix f47aa502f [42]三堂会审整改: 删proc_spawn.spawn死代码(YAGNI,暂无调用方)+debug命令行日志; 删execute_shell_command遗留重复import; /health db_status契约测试同步L1-3 unknown口径(该失败为前批遗留,非本批引入); 冒烟+pytest复验全绿 - 小欧-2026-11-15
+[SHELL] fix 353f3116a execute_shell_command 子进程控制台隔离止血:新增_child_console_isolation_kwargs,前台ps/cmd/bash与后台_popen_factory三路共6处Popen注入CREATE_NO_WINDOW+stdin=DEVNULL+STARTF_USESTDHANDLES,切断console=True下conhost句柄继承致CreateProcessW在GetConsoleMode IOCTL内不释放GIL的全解释器冻结 - 小欧-2026-11-15
+[并发] fix b36ae2340 workers 修复超时mark_lost后槽位容量永久泄漏与并发双扣: SlotLease改held/released/lost状态机,lost->released迟到归还回收损耗 - 小欧-2026-11-15
+### 1.7.2.3 重构
+[卡死] refactor dc04887f7 backend 卡死根治阶段1(L1六项):health读缓存+库探活后台线程/槽位凭证SlotLease+正确释放/子进程统一proc_io零线程读取/spawn_gate严格模式/spawn无锁+单次to_thread/bash非登录shell - 小欧-2026-11-15
+[SHELL] refactor 4d1bd0636 execute_shell_command 删除stage1.2全部文本级auto_fix只留确定性映射+路由留痕改shelltype口径并尾注summary - 小欧-2026-11-15
+[卡死] refactor a4af26ac5 backend proc_spawn.py并入proc_io.py: 单函数独立模块违反KISS且proc_io本是其调用方; isolation_kwargs迁入+5处调用方import统一改自proc_io+run()内函数级import绕路消除; 指纹清单同步移除proc_spawn条目; py_compile+冒烟+pytest135项全绿 - 小欧-2026-11-16
+### 1.7.2.4 文档
+[文档] docs 25161886d [42]卡死根治实施方案:运行旧代码事故分析(pid412栈行号+locals实证+copy2致mtime失证)与四层方案P0启动FreeConsole/P1打包console=False/P2运行代码指纹闭环/P3shell宿主外置含五处Popen统一出口diff - 小欧-2026-11-15
+[文档] docs 35c79ee37 doc-11月优化 [41]卡死根治方案v1.5.2 全部分层小节就地标注实施状态+第7章各表逐行加状态列 - 小欧-2026-11-15
+[文档] docs 0cfe60421 doc-11月优化 [41]卡死根治方案v1.5.1 逐章一致性复核修正26处(5.2槽位与L3口径矛盾/STRICT默认0/2.1进程点重盘14行7文件+17处12文件/5套改4套/broker规模6/行号5处/版本history) - 小欧-2026-11-15
+[文档] docs f49804d52 doc-11月优化 [41]卡死根治方案v1.5 修正broker 9处代码缺陷(槽位凭证/socket硬超时/就绪文件/半帧丢弃/进程表回收/异常回帧/Job失败杀进程/creationflags/CtrlC收口)+新增第7章保留改造删除新增零改动四态总表与六阶段实施及落盘自检 - 小欧-2026-11-15
+[文档] docs f9c77123d doc-11月优化 [23]§9改写为TDD实施说明(44场景A12/B6/C10/D11/E5+守门G1~G26,覆盖§8全部14实现文件) - 商量-2026-11-15
+[文档] docs 890045f17 doc-11月优化 [23]§8遗漏错乱核查(补render.py到阶段A+复用清单补全ref_slots/wire_prefix/constants/sanitize/media_payload) - 商量-2026-11-15
+[文档] docs e60584db9 doc-11月优化 [23]§8.1补UI页面归属核查(无新页面,现有页面修改)+修正useRefQualityMap位置 - 商量-2026-11-15
+[文档] docs 02bec0343 doc-11月优化 [23]§8分期路线核查补全(§8.0需求汇总31条+§8.1核查+各阶段代码清单) - 商量-2026-11-15
+[文档] docs a0fd61839 doc-11月优化 [23]输入能力域v2.0统一设计优化对齐修订(基于[36][38][39]正交化) - 商量-2026-11-15
+[文档] docs 297d057eb doc-11月优化 [22][23]实施核查标注(已实现/未实现逐项+结论) - 商量-2026-11-15
+[文档] docs bad67b2ac 注释 剥离会审禁词14处+parse_kill opaque口径注释纠偏(零逻辑) - opencode-2026-11-15
 v1.7.1
 发布时间: 2026-11-15 12:29:27 - 小欧-2026-11-15
 ## v1.7.0以来 变更汇总(16个commit: feat1/refactor2/fix4/docs9, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-15
