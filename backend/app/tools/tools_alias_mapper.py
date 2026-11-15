@@ -30,6 +30,10 @@
 #   归位产物只补缺失键绝不覆盖权威值 + 承载键取解析出的自身规范值(原值是包装本体) +
 #   顶层已齐全(schema式正确参数表)整体跳过零改动直返; 归位仍在键名归一化之前(错位形态下归一化
 #   无意义), 产物键名经参数表直映规范名, 后续归一化对其幂等, 归一化仍是全参数唯一权威 — 商量-2026-11-14
+# 2026-11-15 - 小欧 - 参数容错补齐(日志实证): grep 增 include→glob 键名别名; 新增 PARAM_DROP(grep 丢弃
+#   limit/head_limit/head/output_mode/-n, read 丢弃误传的 content)与 PARAM_INVERT_ALIASES(grep
+#   caseSensitive 取反归 ignore_case); 键名统一剥离前导 '/' (LLM 传 /shell_type 的序列化残留)。
+
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -111,6 +115,7 @@ PARAM_ALIASES = {
         "folder": "path",
         "search_dir": "path",
         "search_path": "path",
+        "include": "glob",  # 2026-11-15 小欧 - 官方Grep/Claude习惯键 include(文件名过滤) → glob
     },
     # 路径参数统一为path/dest后,旧规范名(source/destination)及同义别名降级为别名 — 小欧 2026-07-12
     "compress": {
@@ -360,6 +365,23 @@ PARAM_VALUE_ALIASES = {
 }
 
 
+# 容错丢弃: LLM 按其它产品(Claude/Grep)习惯传入、本系统无对应语义的参数键 —
+#   归一化阶段直接剔除, 避免被 _validate_params 判"含非法参数"而白废一轮 — 小欧 2026-11-15
+#   grep: limit/head_limit/head=结果条数上限(本工具有意不设条数上限), output_mode=输出模式(恒返回content),
+#         -n=行号开关(结果恒带行号); read: content=write 的正文键误传(读工具无此参数)
+PARAM_DROP = {
+    "grep": {"limit", "head_limit", "head", "output_mode", "-n"},
+    "read": {"content"},
+}
+
+
+# 反向布尔别名: 语义相反的键取反后归位到本系统参数 — 小欧 2026-11-15
+#   grep.caseSensitive=True ⇔ ignore_case=False (官方Grep 默认区分大小写, 与本系统默认忽略相反)
+PARAM_INVERT_ALIASES = {
+    "grep": {"caseSensitive": "ignore_case"},
+}
+
+
 # 工具名别名: LLM生成的自然语言变体→注册名 — 小欧 2026-08-07
 # 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
 # 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
@@ -566,29 +588,57 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
     #   错位形态下键名归一化无意义, 必须先归位; 归位产物键名已规范, 下方映射对其幂等 — 商量 2026-11-14
     params, _ = restore_misplaced_params(tool_name, params)
 
-    if tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES:
+    if (tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES
+            and tool_name not in PARAM_DROP and tool_name not in PARAM_INVERT_ALIASES):
         return params, False
 
     aliases = PARAM_ALIASES.get(tool_name, {})
+    drop_keys = PARAM_DROP.get(tool_name, set())
+    invert_aliases = PARAM_INVERT_ALIASES.get(tool_name, {})
     normalized = {}
     has_mapping = False
     mapped_keys = []
+    dropped_keys = []
 
     for key, value in params.items():
-        if key in aliases:
-            normalized_key = aliases[key]
-            if normalized_key in params and normalized_key != key:
+        # 键名清洗: 剥离 LLM 序列化残留的前导 '/' (如 /shell_type → shell_type)
+        clean_key = key[1:] if isinstance(key, str) and key.startswith("/") else key
+        if clean_key != key:
+            has_mapping = True
+            mapped_keys.append(f"{key}→{clean_key}")
+        # 无对应语义的键(含 -n 等短选项): 丢弃, 不让其进入 schema 校验
+        if clean_key in drop_keys or (isinstance(clean_key, str) and clean_key.startswith("-")):
+            dropped_keys.append(clean_key)
+            has_mapping = True
+            continue
+        # 语义相反的键: 取反后归位(如 caseSensitive → ignore_case); 规范键已存在时不覆盖并丢弃该键
+        if clean_key in invert_aliases:
+            target = invert_aliases[clean_key]
+            if target in params:
+                continue
+            normalized[target] = not bool(value)
+            has_mapping = True
+            mapped_keys.append(f"{clean_key}→{target}(取反)")
+            continue
+        if clean_key in aliases:
+            normalized_key = aliases[clean_key]
+            if normalized_key in params and normalized_key != clean_key:
                 logger.debug(
-                    f"[param_alias] {tool_name}: 参数 '{key}' 被忽略，"
+                    f"[param_alias] {tool_name}: 参数 '{clean_key}' 被忽略，"
                     f"因为规范名称 '{normalized_key}' 已存在"
                 )
                 continue
 
             normalized[normalized_key] = value
             has_mapping = True
-            mapped_keys.append(f"{key}→{normalized_key}")
+            mapped_keys.append(f"{clean_key}→{normalized_key}")
         else:
-            normalized[key] = value
+            normalized[clean_key] = value
+
+    if dropped_keys:
+        logger.info(
+            f"[param_alias] {tool_name}: 丢弃无对应语义参数 {dropped_keys}"
+        )
 
     if has_mapping:
         logger.info(

@@ -85,6 +85,10 @@
 #   默认 worker 被占死, HTTP 全部无响应)。修法: _execute_in_shell_executor 泛化为
 #   _execute_in_bounded_executor(executor/slots 参数化), 新增 _TOOL_EXECUTOR(16,tool-exec)/
 #   _TOOL_SLOTS, 全部同步工具统一走有界执行器; "同步工具返回协程"语义保留(结果后置 await 同预算)。
+
+# 2026-11-15 小欧 - 参数提示补齐: 新增 _MISSING_PARAM_HINTS(edit/write/read/grep/find/copy 缺失参数的可行动
+#   指引), 缺失分支按 tool+参数 查表拼接取代统一套话; _INVALID_PARAM_HINTS 补 copy.pattern 误用纠正。
+
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -208,6 +212,25 @@ _TOOL_SLOTS = threading.BoundedSemaphore(_TOOL_EXECUTOR_MAX)
 _INVALID_PARAM_HINTS = {
     ("grep", "type"): "grep 无 type 参数；文件名过滤请用 glob，按文件/目录类型搜索请改用 find 工具(type=file/directory)",
     ("find", "top_n"): "find 无 top_n 参数；如需限制结果数量请用 offset 分页",
+    ("copy", "pattern"): "copy 无 pattern 参数；按文件名查找请改用 find，复制文件请提供 path(源)与 dest(目标)",
+}
+
+# 缺失必需参数的可行动提示 — 小欧 2026-11-15
+# 日志实证 edit 缺 path+old_string 达 210 次、write 缺 content 21 次；统一套话 LLM 难自纠，按 tool+参数点名补全方式。
+# 未登记的 (tool, 参数) 回落通用类型提示(不臆造业务语义)。
+_MISSING_PARAM_HINTS = {
+    ("edit", "path"): "edit 须提供 path(目标文件绝对路径)",
+    ("edit", "old_string"): "edit 须提供 old_string(待替换/锚点旧文本，须与文件原文精确匹配含缩进)",
+    ("write", "path"): "write 须提供 path(目标文件绝对路径)",
+    ("write", "content"): "write 须提供 content(要写入的正文；写空文件也要传空串 '')",
+    ("read", "path"): "read 须提供 path(要读取的文件绝对路径)",
+    ("grep", "path"): "grep 须提供 path(搜索的文件或目录绝对路径)",
+    ("grep", "pattern"): "grep 须提供 pattern(正则搜索模式)",
+    ("find", "path"): "find 须提供 path(搜索起始目录绝对路径)",
+    ("find", "pattern"): "find 须提供 pattern(文件名匹配模式，如 *.py)",
+    ("copy", "path"): "copy 须提供 path(源文件绝对路径)",
+    ("copy", "dest"): "copy 须提供 dest(目标绝对路径)",
+    ("fetchpage", "url"): "fetchpage 须提供 url(要抓取的网页地址，含 http/https 协议头)",
 }
 
 
@@ -551,13 +574,19 @@ class ToolRetryEngine:
                 missing = [p for p in required if p not in params]
                 if missing:
                     props = input_schema.get("properties", {})
-                    _types = "; ".join(f"{p}(期望类型={props.get(p, {}).get('type', '?')})" for p in missing)
+                    _hints = []
+                    for p in missing:
+                        _h = _MISSING_PARAM_HINTS.get((action, p))
+                        if _h:
+                            _hints.append(_h)
+                        else:
+                            _hints.append(f"{p}(期望类型={props.get(p, {}).get('type', '?')})")
                     return self._build_retry_error(
                         ERR_MISSING_PARAM,
                         f"缺少必需参数: {action}, 缺失: {missing}",
                         0, error_type="missing_param",
                         action_name=action, action_params=params,
-                        hint=f"缺少参数 {missing}：{_types}。工具必需参数不可缺，请提供完整的参数后再试",  # task007-欧阳: 提示缺失参数的类型 — 小欧 2026-07-23
+                        hint=f"缺少参数：{'；'.join(_hints)}。工具必需参数不可缺，请提供完整的参数后再试",  # task007-欧阳: 提示缺失参数的类型 — 小欧 2026-07-23
                     )
                 # 非必填参数的None值自动丢弃(欧阳报告), 类型校验前做 — 小沈 2026-07-26
                 _none_discarded = []
