@@ -295,8 +295,8 @@ class ToolRetryEngine:
         """同步工具有界执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
         2026-11-14 小欧 - 由 shell 专用泛化为通用(非shell同步工具同样隔离, 8100 grep 假死事故根治):
           卡死线程只占本池槽位, 默认 executor 只留给 DNS/文件等短任务。
-        2026-11-15 小欧 - 信号量换 WorkerSlots: 超时未归还记永久损耗, 容量随真实可用线程收缩,
-          迟到回调经凭证幂等释放, 不会误减他人槽位。
+        2026-11-15 小欧 - 信号量换 WorkerSlots: 超时未归还暂记损耗、真正卡死则永久扣减, 迟到归还
+          由凭证回收(容量随真实可用线程收缩), 不会误减他人槽位。
 
         单一 deadline: 排队与执行共享同一个 timeout 预算。原实现排队等 timeout、执行再等
         timeout, 实际最坏 2×timeout, 把"保险丝"这个外部上限撑破一倍 — 现排队只消耗剩余额度。"""
@@ -321,10 +321,10 @@ class ToolRetryEngine:
             result = await asyncio.wait_for(
                 asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
         except asyncio.TimeoutError:
-            if not fut.done():          # 线程未归还: 记永久损耗(归还时回调只会释放自己那格)
+            if not fut.done():          # 线程未归还: 记损耗(真正卡死则永久扣减, 迟到归还由 release 回收)
                 lease.mark_lost()
                 logger.error(
-                    f"[工具执行器] worker 超时未归还 → 记永久损耗 (lost={slots.lost}/{slots.size}): "
+                    f"[工具执行器] worker 超时未归还 → 暂记损耗(线程迟到归还则回收) (lost={slots.lost}/{slots.size}): "
                     f"action={getattr(tool, '__name__', '?')}")
             raise
         if inspect.iscoroutine(result):

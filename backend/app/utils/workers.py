@@ -4,6 +4,9 @@
 # 2026-11-05 - 小欧 - 修复 submit/lease 丢 ContextVar: 常驻线程不继承调用方上下文, 改为提交时绑定 copy_context, 与 asyncio.to_thread 同语义
 # 2026-11-15 - 小欧 - 新增 WorkerSlots/SlotLease: 有界并发闸门显式记账"在途"与"随线程永久损耗",
 #   取代 BoundedSemaphore 在不可中断原生调用卡死时永久占用且无法区分持有者的问题; 凭证一次性, 迟到回调幂等
+# 2026-11-15 - 小欧 - 修复槽位容量永久泄漏: 超时 mark_lost 后线程迟到归还时回收已记损耗(原 _active 单标志
+#   使迟到回调空操作, 瞬时超时反复发生会把 available 永久侵蚀到 0); SlotLease 状态机 held/released/lost
+#   与计数在同一把 cond 锁内原子推进, 消除 mark_lost(事件循环线程)与 release(worker 线程)并发双扣
 """workers — 常驻线程池(运行期零 Thread.start) — 小欧 2026-11-04
 
 【为什么要有这个模块】Windows 上 `Thread.start()` 内部 `self._started.wait()` 无超时, 新线程
@@ -67,25 +70,24 @@ class SlotLease:
 
     为什么需要凭证: 只用计数器无法区分"哪个请求持有哪一格"。一旦某请求被判损耗,
     它迟到的 done_callback 若仍执行 release(), 会把**别人**正在用的槽位减掉,
-    造成容量虚增(比原信号量泄漏更危险)。凭证的 _active 一次性置 False,
-    release/mark_lost 幂等, 迟到回调永远只作用于自己的账。
+    造成容量虚增(比原信号量泄漏更危险)。凭证状态机 held/released/lost 保证每次
+    持有只结算一次; 且迟到归还(超时后才真正返回)会回收先前记的永久损耗,
+    避免瞬时超时反复发生把 available 永久侵蚀到 0。状态与计数同锁内原子推进。
     """
 
-    __slots__ = ("_slots", "_active")
+    _HELD, _RELEASED, _LOST = "held", "released", "lost"
+
+    __slots__ = ("_slots", "_state")
 
     def __init__(self, slots: "WorkerSlots") -> None:
         self._slots = slots
-        self._active = True
+        self._state = self._HELD
 
     def release(self) -> None:
-        if self._active:
-            self._active = False
-            self._slots._settle(lost=False)
+        self._slots._settle(self, lost=False)
 
     def mark_lost(self) -> None:
-        if self._active:
-            self._active = False
-            self._slots._settle(lost=True)
+        self._slots._settle(self, lost=True)
 
 
 class WorkerSlots:
@@ -111,12 +113,26 @@ class WorkerSlots:
             self._in_use += 1
             return SlotLease(self)
 
-    def _settle(self, lost: bool) -> None:
+    def _settle(self, lease: "SlotLease", *, lost: bool) -> None:
+        """原子结算一次持有 — 2026-11-15 小欧
+        held  -> released : 正常归还, 在途 -1
+        held  -> lost     : 超时未归还, 在途 -1 且损耗 +1(容量随之下调)
+        lost  -> released : 迟到归还(线程实际已返回), 回收先前记的损耗, 容量回归
+        状态与计数同锁内推进, mark_lost(事件循环线程)与 release(worker 线程)并发亦不双扣。
+        """
         with self._cond:
-            if self._in_use > 0:
+            state = lease._state
+            if state == SlotLease._HELD:
                 self._in_use -= 1
-            if lost:
-                self._lost += 1
+                if lost:
+                    lease._state = SlotLease._LOST
+                    self._lost += 1
+                else:
+                    lease._state = SlotLease._RELEASED
+            elif state == SlotLease._LOST and not lost:
+                lease._state = SlotLease._RELEASED
+                self._lost -= 1
+            # 其余情况(已 released / 已 lost 再次 lost): 幂等忽略
 
     @property
     def lost(self) -> int:
