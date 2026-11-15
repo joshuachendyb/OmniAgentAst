@@ -32,6 +32,8 @@
 # 2026-11-15 小欧 - L1-3: DB 探测改后台刷新 + 读缓存(start_db_status_refresher/stop_db_status_refresher):
 #   原实现每次 /health 都提交线程池, 卡死时健康检查自身排队致观测失效; 现 /health 零等待返回上一轮缓存值,
 #   unknown 不计为故障(首轮未完成), 刷新任务异常不退出且保留上次值 — 小欧-2026-11-15
+# 2026-11-15 小欧 - P2 纪律([42]): /health 新增 build 字段(运行代码指纹): 关键模块 sha256
+#   +frozen+app_root, 与部署目录比对即可判定运行的是否为新代码; 病根见 doc-11月优化/[42]
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -52,6 +54,7 @@ from app.db import db
 from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
 from app.utils.background_tasks import spawn_bg  # 强引用防 GC; shutdown 按引用 cancel — 2026-11-15 小欧
+from app.utils.build_fingerprint import build_snapshot  # 2026-11-15 小欧: 运行代码指纹
 from app.utils.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
@@ -163,6 +166,7 @@ class HealthResponse(BaseModel):
     uptime_s: float = 0.0  # 2026-11-02 小欧 - 进程已存活秒数(重启即归零, 与 pid 变化互相印证)
     loop_lag_ms: float = 0.0  # 2026-11-02 小欧 - 事件循环调度延迟点采样, 区分网络慢与循环被占死
     spawn: dict = {}  # 2026-11-04 小欧 - 闸门指标: runtime_thread_starts 应为0, gate_timeouts/popen_max_ms 暴露卡死前兆
+    build: dict = {}  # 2026-11-15 小欧 - 运行代码指纹: 与部署目录比对, 判定"跑的是不是新代码"([42] P2)
 
 class EchoRequest(BaseModel):
     message: str
@@ -188,6 +192,7 @@ async def build_health_response(host: str) -> HealthResponse:
         uptime_s=round(time.monotonic() - _STARTED_AT, 3),
         loop_lag_ms=await _loop_lag_ms(),
         spawn=spawn_snapshot(),
+        build=build_snapshot(),  # 2026-11-15 小欧 - 运行代码指纹([42] P2)
     )
 
 @router.get("/health", response_model=HealthResponse)

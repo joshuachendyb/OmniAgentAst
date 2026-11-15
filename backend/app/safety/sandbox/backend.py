@@ -61,8 +61,11 @@ class JobObjectBackend:
         logger.info(f"[sandbox][backend] run 启动: timeout={timeout_sec}s, workspace={workspace}, command_head={command[:120]!r}")
         try:
             self._job = SandboxJob()
+            # 2026-11-15 小欧 - 统一隔离参数([42] P4): 不继承父控制台
+            from app.utils.proc_spawn import isolation_kwargs
             self._proc = subprocess.Popen(argv, cwd=str(workspace),
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          **isolation_kwargs())
             self._job.assign(self._proc)               # 提权进程收编失败 → 上抛(R3 非静默)
             # 2026-11-04 小欧: 零线程轮询读(原 communicate 每次起 _readerthread, 与 CreateProcess 抢 loader lock)
             out_b, err_b, timed_out, truncated = drain_until_exit(self._proc, timeout_sec)

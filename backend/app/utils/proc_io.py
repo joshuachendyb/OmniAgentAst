@@ -159,8 +159,13 @@ def run(args, *, timeout=None, cwd=None, env=None, shell=False,
     """
     if text and encoding is None:
         encoding = locale.getpreferredencoding(False)
+    # 2026-11-15 小欧 - 统一走 proc_spawn 隔离参数([42] P4); 调用方显式 creationflags 优先
+    from app.utils.proc_spawn import isolation_kwargs
+    spawn_kwargs = isolation_kwargs()
+    flags = creationflags or spawn_kwargs.pop("creationflags", 0)
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            cwd=cwd, env=env, shell=shell, creationflags=creationflags)
+                            cwd=cwd, env=env, shell=shell, creationflags=flags,
+                            **spawn_kwargs)
     out_b, err_b, timed_out, truncated = drain_until_exit(
         proc, timeout if timeout is not None else float("inf"))
     if truncated:

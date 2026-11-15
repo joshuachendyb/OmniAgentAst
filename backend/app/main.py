@@ -88,6 +88,8 @@
 #   (有副作用), 提到文件顶部会让任何 import main 的场景(测试/脚本)连带起线程, 副作用外泄
 # 2026-11-15 小欧 - L1-3: startup 拉起 DB 健康刷新任务, shutdown 取消(app.api.v1.health
 #   start/stop_db_status_refresher); /health 由"每次提交线程池"改为"读后台缓存", 卡死时自身仍可答
+# 2026-11-15 小欧 - P2 纪律([42]): 启动第一件事 log_build_fingerprint() 落运行代码指纹,
+#   /health 新增 build 字段; dev/打包/部署三处比对可判定"跑的是不是新代码" — 小欧-2026-11-15
 import asyncio
 import sys
 import threading
@@ -179,6 +181,7 @@ from app.utils.spawn_gate import (  # 2026-11-04 小欧: 进程×线程创建闸
     install_spawn_gate,
     mark_runtime_started,
 )
+from app.utils.build_fingerprint import log_build_fingerprint  # 2026-11-15 小欧: 运行代码指纹
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
@@ -584,6 +587,8 @@ async def startup_event():
     # 2026-11-03 小欧 - 删函数内 `import time as _time`(模块级已有 import time, 重复导入违反 DRY):
     #   本函数内 13 处调用同步改回 time.* — 小欧-2026-11-03
     _t0 = time.time()
+    # 2026-11-15 小欧 - 启动第一件事: 落运行代码指纹(部署核对用, 与 /health.build 同源)
+    log_build_fingerprint()
     # 2026-11-04 小欧 - 进程×线程创建闸门: 必须在任何运行期并发开始前装好(有界等待, 超限快速失败)
     install_spawn_gate()
     # 2026-11-13 商量 - 缓存主事件循环 + 注册后台完成通知路由(services 层回调, 防 tools→services 越层)

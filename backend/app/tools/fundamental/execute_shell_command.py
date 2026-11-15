@@ -183,10 +183,14 @@
 #   _shell_type_switch 改 `...，shelltype 改为 bash（原 ps7；仅切换执行器，命令文本未改）` 口径;
 #   附加切换说明追加到 summary 尾部(前台三态 + 后台 llm_data summary), metrics 仍结构化保留
 # 2026-11-15 小欧 - 子进程控制台隔离(止血): 6 处 Popen(前台 ps/cmd/bash + 后台 _popen_factory 三路)统一注入
-#   _child_console_isolation_kwargs(): CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES;
+#   _isolation_kwargs(): CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES;
 #   根因: 打包版 console=True 绑定 conhost, 子进程默认继承该控制台句柄, CreateProcessW 在
 #   GetConsoleMode 的 IOCTL 内可无限阻塞且不释放 GIL(全解释器冻结, 看门狗/心跳一并停摆);
 #   隔离后建立进程与 conhost 零交互, 命令文本与读取链路零改动
+# 2026-11-15 小欧 - 加 [iso] 启动指纹 log(文件md5前8位), 验证运行进程加载的是否最新代码
+# 2026-11-15 小欧 - P4 统一出口([42]): 隔离参数迁出到 app/utils/proc_spawn.py(全仓唯一出口, DRY),
+#   _child_console_isolation_kwargs 删除, 3 处调用改用 isolation_kwargs(); 语义零改动;
+#   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -289,6 +293,7 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
+from app.utils.proc_spawn import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.file.file_encoding import get_file_encoding
@@ -358,25 +363,7 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return result
 
 
-def _child_console_isolation_kwargs() -> Dict[str, Any]:
-    """子进程脱离父控制台所需的 Popen 公共参数(仅 Windows 返回非空) — 小欧 2026-11-15
-
-    根因: 打包版 console=True 启动即绑定 conhost; 子进程默认继承该控制台句柄,
-    CreateProcessW 在控制台设备 IOCTL(GetConsoleMode)内可无限阻塞且全程不释放 GIL,
-    解释器整体冻结 —— 租约回收/看门狗/健康检查全部停摆, 只能杀进程。
-    CREATE_NO_WINDOW: 子进程不设控制台句柄, 建立时与 conhost 零交互;
-    stdin=DEVNULL: 不继承控制台输入句柄(控制台输入缓冲区串行独占, 读到即挂);
-    STARTF_USESTDHANDLES: 标准句柄只认调用方给的管道/NUL, 不回落父控制台。
-    """
-    if sys.platform != "win32":
-        return {}
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESTDHANDLES
-    return {
-        "stdin": subprocess.DEVNULL,
-        "creationflags": subprocess.CREATE_NO_WINDOW,
-        "startupinfo": startupinfo,
-    }
+from app.utils.proc_spawn import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除
 
 
 # ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
@@ -1223,7 +1210,7 @@ def shell(
         def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
             """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)。
             Popen 返回后立即关闭父进程写句柄: 子进程已继承独立句柄, 父侧不关会拖住产物删除。"""
-            _iso = _child_console_isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
+            _iso = _isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
             try:
                 _out = open(outfile, "ab")
                 try:
@@ -1290,7 +1277,7 @@ def shell(
         _slot_acquired = True
         _remaining = timeout - (_time_mod.perf_counter() - t0)  # 2026-11-06 小欧: 排队耗时后重算剩余, drain 用此值(总时长≤timeout)
 
-        _iso = _child_console_isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
+        _iso = _isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
         if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5】: 一次性子进程 — 2026-11-06 小欧 去池化
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)

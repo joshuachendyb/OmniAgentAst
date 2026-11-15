@@ -57,6 +57,10 @@
 #   2026-11-12 小欧 - uvicorn.run log_level "info"→None: 该值在 uvicorn Config.configure_logging 中
 #     会 setLevel 强覆盖 uvicorn.error/access/asgi, 与 setup_uvicorn_loggers 设的总闸 DEBUG 冲突
 #     (原来靠 startup 二次纠正才恢复, 属多余绕路); 置 None 后由本系统 handler 阈值统一裁决 — 小欧-2026-11-12
+#   2026-11-15 小欧 - P0 止血([42]): main() 第一条语句 detach_console_if_needed(),
+#     frozen 启动即 FreeConsole + stdio 重定向到 logs/boot_*.log; 父进程不持有控制台,
+#     子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失;
+#     排障开关 OMNI_KEEP_CONSOLE=1 可保留控制台
 # ============================================================================
 import argparse
 import shutil
@@ -279,6 +283,10 @@ def _ensure_config(base: Path) -> None:
 
 def main() -> None:
     freeze_support()
+    # 2026-11-15 小欧 - 先脱离控制台再干别的(P0 止血): 父进程不持有控制台,
+    #   子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失
+    from app.utils.console_mode import detach_console_if_needed
+    detach_console_if_needed()
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
     parser.add_argument("--host", default="127.0.0.1")
     # 2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(代码库占惯例 :8000 不动):
