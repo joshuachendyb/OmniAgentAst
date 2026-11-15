@@ -62,7 +62,7 @@ from app.services.model.config_helpers import (
     write_yaml_config,
 )
 from app.services.model.resolver import get_ai_config_resolver
-from app.utils.proc_spawn import isolation_kwargs  # 2026-11-15 小欧: 统一出口([42] P4)
+from app.utils.proc_io import isolation_kwargs  # 2026-11-15 小欧: 统一出口([42] P4); 2026-11-16 并入 proc_io
 from app.utils.response_utils import (
     api_success,  # open_config_folder 在用，别删（见文件头"别再删的坑"）
 )

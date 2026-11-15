@@ -191,6 +191,7 @@
 # 2026-11-15 小欧 - P4 统一出口([42]): 隔离参数迁出到 app/utils/proc_spawn.py(全仓唯一出口, DRY),
 #   _child_console_isolation_kwargs 删除, 3 处调用改用 isolation_kwargs(); 语义零改动;
 #   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
+# 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.utils.proc_io(函数本体的迁移史见其 docstring)
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -293,7 +294,7 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
-from app.utils.proc_spawn import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除
+from app.utils.proc_io import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.file.file_encoding import get_file_encoding

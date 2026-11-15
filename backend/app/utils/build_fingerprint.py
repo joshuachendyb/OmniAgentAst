@@ -24,7 +24,6 @@ _KEY_MODULES = (
     "tools/fundamental/shell_background.py",
     "utils/spawn_gate.py",
     "utils/proc_io.py",
-    "utils/proc_spawn.py",
     "utils/console_mode.py",
 )
 

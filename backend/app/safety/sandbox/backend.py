@@ -62,7 +62,7 @@ class JobObjectBackend:
         try:
             self._job = SandboxJob()
             # 2026-11-15 小欧 - 统一隔离参数([42] P4): 不继承父控制台
-            from app.utils.proc_spawn import isolation_kwargs
+            from app.utils.proc_io import isolation_kwargs
             self._proc = subprocess.Popen(argv, cwd=str(workspace),
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                           **isolation_kwargs())

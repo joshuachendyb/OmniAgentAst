@@ -8,6 +8,9 @@
 #   4s 晚到输出不再静默丢); 已关闭流(ValueError)按 EOF 处理(清理链不得因句柄提前关闭而中断)
 # 2026-11-15 - 小欧 - run() 增 creationflags 透传(与 subprocess.run 同名同义): 调用方可在零线程读取下
 #   继续用 CREATE_NO_WINDOW 防打包版闪黑窗, 无需退回 subprocess.run 的 _readerthread 建线程路径
+# 2026-11-16 - 小欧 - proc_spawn.py 并入: isolation_kwargs 迁入本模块(proc_io 本是其调用方, 单函数独立模块
+#   违反 KISS); 消掉 run() 内函数级 import 绕路; 5 处调用方统一 from app.utils.proc_io import isolation_kwargs
+
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04
 
 【为什么自研】`Popen.communicate()` 每次调用都会 `Thread.start()` 1~3 条 `_readerthread`
@@ -24,18 +27,41 @@
 import locale
 import os
 import subprocess
+import sys
 import time
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app.logger import logger  # 截断告警: 有界静默不得变成静默丢数据 — 2026-11-04 小欧
 
-__all__ = ["drain_until_exit", "drain_after_exit", "run"]
+__all__ = ["drain_until_exit", "drain_after_exit", "run", "isolation_kwargs"]
 
 POLL_MIN = 0.001        # 有数据时的下一次轮询间隔(秒)
 POLL_MAX = 0.05         # 无数据时退避上限(秒), 防忙轮询吃 CPU
 IDLE_AFTER_EXIT = 2.5   # 进程已退出但管道未 EOF(孙进程/后台作业持写端)时的收尾等待(秒): 覆盖 `start /b` 惯常延迟, 再长则截断并告警
 # 截断留痕: 有界等待必然丢掉"晚到输出", 必须让调用方/模型看见, 不得只写日志 — 2026-11-04 小欧
 TRUNCATED_NOTE = "\n[proc_io] 管道未EOF(后台/孙进程仍持写端), 已截断残留输出\n".encode("utf-8")
+
+
+def isolation_kwargs() -> Dict[str, Any]:
+    """子进程不继承父控制台的 Popen 公共参数(仅 Windows 非空) — 2026-11-15 小欧, 原 proc_spawn.py
+
+    1) CREATE_NO_WINDOW: 不显示窗口(仍会分配隐藏控制台, 故只是必要条件不是充分条件);
+    2) stdin=DEVNULL: 不继承控制台输入句柄(输入缓冲区串行独占, 读到即挂);
+    3) STARTF_USESTDHANDLES: 标准句柄只认调用方给的管道/NUL, 不回落父控制台。
+    父进程无控制台(P0/P1)时这组参数退化为普通创建, 无副作用。
+    新增子进程调用必须带 **isolation_kwargs(), 不得再裸调 subprocess.Popen。
+    (注: 曾设计 spawn() 统一包装, 因暂无调用方按 YAGNI 删除; 首个新调用方出现时再引入)
+    """
+    if sys.platform != "win32":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESTDHANDLES
+    return {
+        "stdin": subprocess.DEVNULL,
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+        "startupinfo": startupinfo,
+    }
+
 
 
 def _raw_stream(stream):
@@ -159,8 +185,7 @@ def run(args, *, timeout=None, cwd=None, env=None, shell=False,
     """
     if text and encoding is None:
         encoding = locale.getpreferredencoding(False)
-    # 2026-11-15 小欧 - 统一走 proc_spawn 隔离参数([42] P4); 调用方显式 creationflags 优先
-    from app.utils.proc_spawn import isolation_kwargs
+    # 2026-11-16 小欧 - isolation_kwargs 已并入本模块([42] P4); 调用方显式 creationflags 优先
     spawn_kwargs = isolation_kwargs()
     flags = creationflags or spawn_kwargs.pop("creationflags", 0)
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
