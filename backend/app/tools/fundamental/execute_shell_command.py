@@ -182,6 +182,11 @@
 # 2026-11-15 小欧 - 路由文案与留痕位置: _route_reason 改 `command 命令是 bash 特征` 口径;
 #   _shell_type_switch 改 `...，shelltype 改为 bash（原 ps7；仅切换执行器，命令文本未改）` 口径;
 #   附加切换说明追加到 summary 尾部(前台三态 + 后台 llm_data summary), metrics 仍结构化保留
+# 2026-11-15 小欧 - 子进程控制台隔离(止血): 6 处 Popen(前台 ps/cmd/bash + 后台 _popen_factory 三路)统一注入
+#   _child_console_isolation_kwargs(): CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES;
+#   根因: 打包版 console=True 绑定 conhost, 子进程默认继承该控制台句柄, CreateProcessW 在
+#   GetConsoleMode 的 IOCTL 内可无限阻塞且不释放 GIL(全解释器冻结, 看门狗/心跳一并停摆);
+#   隔离后建立进程与 conhost 零交互, 命令文本与读取链路零改动
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -351,6 +356,27 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
             continue
         result[k] = v
     return result
+
+
+def _child_console_isolation_kwargs() -> Dict[str, Any]:
+    """子进程脱离父控制台所需的 Popen 公共参数(仅 Windows 返回非空) — 小欧 2026-11-15
+
+    根因: 打包版 console=True 启动即绑定 conhost; 子进程默认继承该控制台句柄,
+    CreateProcessW 在控制台设备 IOCTL(GetConsoleMode)内可无限阻塞且全程不释放 GIL,
+    解释器整体冻结 —— 租约回收/看门狗/健康检查全部停摆, 只能杀进程。
+    CREATE_NO_WINDOW: 子进程不设控制台句柄, 建立时与 conhost 零交互;
+    stdin=DEVNULL: 不继承控制台输入句柄(控制台输入缓冲区串行独占, 读到即挂);
+    STARTF_USESTDHANDLES: 标准句柄只认调用方给的管道/NUL, 不回落父控制台。
+    """
+    if sys.platform != "win32":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESTDHANDLES
+    return {
+        "stdin": subprocess.DEVNULL,
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+        "startupinfo": startupinfo,
+    }
 
 
 # ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
@@ -1197,6 +1223,7 @@ def shell(
         def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
             """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)。
             Popen 返回后立即关闭父进程写句柄: 子进程已继承独立句柄, 父侧不关会拖住产物删除。"""
+            _iso = _child_console_isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
             try:
                 _out = open(outfile, "ab")
                 try:
@@ -1208,20 +1235,23 @@ def shell(
                         exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
                               or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
                         return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
-                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                            **_iso)
                     if shell_type == "cmd":
                         # 启动脚本路径走 shell_background.bat_sidecar_path(与清理侧同一单源)
                         bat_path = shell_background.bat_sidecar_path(outfile)
                         with open(bat_path, "w", encoding=locale.getpreferredencoding(), errors="replace") as f:
                             f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
                         return subprocess.Popen(f'"{bat_path}"', shell=True,
-                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                            **_iso)
                     bash_exe = _find_bash()
                     if not bash_exe:
                         logger.error("[bg_shell] bash 解释器未找到")
                         return None
                     return subprocess.Popen([bash_exe, "--noprofile", "--norc", "-c", cmd],
-                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env())
+                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                        **_iso)
                 finally:
                     _out.close()
             except Exception as e:
@@ -1260,6 +1290,7 @@ def shell(
         _slot_acquired = True
         _remaining = timeout - (_time_mod.perf_counter() - t0)  # 2026-11-06 小欧: 排队耗时后重算剩余, drain 用此值(总时长≤timeout)
 
+        _iso = _child_console_isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
         if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5】: 一次性子进程 — 2026-11-06 小欧 去池化
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)
@@ -1279,6 +1310,7 @@ def shell(
                 [pwsh_exe, "-NoProfile", "-Command", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=_sanitize_env(),
+                **_iso,
             )
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
@@ -1307,7 +1339,7 @@ def shell(
                 child_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
                 proc = subprocess.Popen(
                     f'"{bat_path}"', shell=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
+                    stderr=subprocess.PIPE, cwd=cwd, env=child_env, **_iso)
                 # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
                 # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
                 # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
@@ -1343,6 +1375,7 @@ def shell(
                 [bash_exe, "--noprofile", "--norc", "-c", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=child_env,
+                **_iso,
             )
             # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
