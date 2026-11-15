@@ -44,7 +44,7 @@ type MsgResp = {
 };
 type TaskItem = {
   task_id: string;
-  // 2026-11-14 商量(设计[34] 5.3): merged_inputs 契约升级 {content,msg_kind}[](禁 backward 双读)
+  // 2026-11-14 商量: merged_inputs 契约升级 {content,msg_kind}[](禁 backward 双读)
   merged_inputs?: { content: string; msg_kind: string }[];
 };
 
