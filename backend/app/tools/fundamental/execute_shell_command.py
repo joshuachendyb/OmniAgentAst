@@ -363,9 +363,6 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return result
 
 
-from app.utils.proc_spawn import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除
-
-
 # ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
 # 2026-10-05 小欧: 尾15→20、预算50→150(头自动130) — 小欧 2026-10-05
 # 2026-10-05 小欧 总预算150→130: 头变为110(尾20不变) — 小欧 2026-10-05

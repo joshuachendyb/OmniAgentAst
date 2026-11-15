@@ -3,16 +3,15 @@
 # 2026-11-15 - 小欧 - 新建: 子进程创建唯一出口; 隔离参数自 execute_shell_command 迁入(DRY)
 """proc_spawn — 子进程创建唯一出口 — 小欧 2026-11-15
 
-唯一职责: 给所有 Popen 注入同一组"不继承父控制台"的参数, 并提供唯一的 spawn 包装
-(留统一日志与指标)。新增子进程调用一律走 spawn(), 不得再直接 subprocess.Popen。
+唯一职责: 给所有 Popen 注入同一组"不继承父控制台"的参数(isolation_kwargs)。
+新增子进程调用必须带 **isolation_kwargs(), 不得再裸调 subprocess.Popen。
+(注: 曾设计 spawn() 统一包装, 因暂无调用方按 YAGNI 删除; 首个新调用方出现时再引入)
 """
 import subprocess
 import sys
 from typing import Any, Dict
 
-from app.logger import logger
-
-__all__ = ["isolation_kwargs", "spawn"]
+__all__ = ["isolation_kwargs"]
 
 
 def isolation_kwargs() -> Dict[str, Any]:
@@ -32,11 +31,3 @@ def isolation_kwargs() -> Dict[str, Any]:
         "creationflags": subprocess.CREATE_NO_WINDOW,
         "startupinfo": startupinfo,
     }
-
-
-def spawn(args, **kwargs):
-    """唯一 Popen 出口: 自动补齐隔离参数, 其余参数原样透传。"""
-    merged = isolation_kwargs()
-    merged.update(kwargs)              # 调用方显式参数优先(如自己的 creationflags)
-    logger.debug(f"[proc_spawn] {args!r}")
-    return subprocess.Popen(args, **merged)
