@@ -37,6 +37,8 @@
 // 2026-11-13 商量 - ① 能力提示并入 placeholder 尾段(PLACEHOLDER_HINTS: @ 引用 · 拖入文件 · 粘贴图片):
 //   空态自带说明, minRows=2 已预留两行 → 零额外高度, 打字即隐不干扰;
 //   ② 上下留白取视觉下限, 水平内距与 overlay 左缘同源 — 统一由 controlScale 的 CONTROL_PADDING 下发 — 商量-2026-11-13
+// 2026-11-15 小欧 - 能力提示扩全类型 图片/视频/音频/文档(本地或链接), 不写死上限数字
+//   (上限唯一来自后端 capabilities.limits); URL 成为一等输入项后提示"链接"入口 — 小欧-2026-11-15
 
 // 2026-11-13 商量 - textarea 显式行高 HINT_LINE_HEIGHT(1.4), 与 overlay 提示同源:
 //   原走 AntD 缺省 1.5714 致两者基线差约 1px、折行位置不一致; 统一后空态高度同步压缩 — 商量-2026-11-13
@@ -75,7 +77,7 @@ const { TextArea } = Input;
 const PLACEHOLDER_TEXT = '输入文本消息，Shift+Enter 换行，Enter 提交';
 // 能力提示尾段(2026-11-13 商量): 极简符号 + 短词, 只在空态露出; minRows=2 已预留两行,
 //   长文案也不额外增高(打字即隐), 是"零成本的能力发现位"。
-const PLACEHOLDER_HINTS = '@ 引用 · 拖入文件 · 粘贴图片';
+const PLACEHOLDER_HINTS = '@ 引用 · 拖入/粘贴 图片·视频·音频·文档（本地或链接）';
 // 测试定位锚点 testid(原生 placeholder 交还给 textarea)
 const HINT_TESTID = 'chat-input-textarea';
 

@@ -405,6 +405,10 @@ _mount(attachments_router, "attachments")
 _mount(material_packs_router, "material-packs")
 # 2026-11-07 小欧 - 同机文件系统(磁盘/授权目录); 端点内部再判同机, 跨机 403 — 小欧-2026-11-07
 _mount(fs_router, "fs")
+# 2026-11-15 小欧 - 输入预检路由([23] 阶段A: POST /inputs/preflight, 建议性不阻断) — 小欧-2026-11-15
+from app.api.v1.inputs import router as inputs_router
+_mount(inputs_router, "inputs")
+
 
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──

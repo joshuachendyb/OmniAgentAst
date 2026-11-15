@@ -278,7 +278,7 @@ export interface ChatRequest {
  */
 
 export interface ChatRefPayload {
-  kind: 'file' | 'selection' | 'attachment';
+  kind: 'file' | 'selection' | 'attachment' | 'url';
   label: string;
   path: string;
   size?: number;
@@ -287,7 +287,16 @@ export interface ChatRefPayload {
   /** 附件 mime(展示/预检用, 不参与正文裁决) */
   mime?: string;
   lineRange?: { start: number; end: number } | null;
+  /** [23]阶段A: URL 一等引用 —— kind='url' 时必填, 与后端 contract.SOURCE_KINDS 三方一致(守门#1) */
+  url?: string;
+  /** 后端 preflight 下发的来源种类(与 kind 同域), chip 徽标只读不二次翻译 */
+  source_kind?: string;
+  /** 后端能力判定: 该条必须原生投递(native)才有效, 降级时 chip 显黄标 */
+  must_native?: boolean;
 }
+
+/** 引用种类词表: 与后端 app/attachments/contract.SOURCE_KINDS 同序同值(单一真源镜像, 改动须双侧同步) */
+export const SOURCE_KINDS = ['file', 'selection', 'attachment', 'url'] as const;
 
 /**
  * API响应基础类型

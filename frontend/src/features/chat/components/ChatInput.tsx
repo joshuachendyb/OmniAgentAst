@@ -120,6 +120,8 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { ShortcutHelp } from './input/ShortcutHelp'; // 2026-11-13 商量 - 输入帮助浮层+单行微图例
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
+// 2026-11-15 小欧 - URL 一等引用采集层(粘贴/拖拽文本 → 后端预检 → chip/即拒)
+import { captureUrlsFromText } from '@/features/refs/urlCapture';
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
 import {
   chipStateOf,
@@ -696,6 +698,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
     [sessionId, ensureSession]
   );
 
+  /** 2026-11-15 小欧 - URL 采集唯一接线: 整段文本交后端预检(识别真源在后端),
+   *  ok 项入队 chip(配额内), 被拒/超限合并一条 toast 点名;
+   *  strip = 命中纯 URL 内容时从正文撤出该段(原生粘贴场景, 按 caret 精确撤出);
+   *  预检失败: 粘贴场景正文已原生落位, 静默放行不吞文本; 拖拽场景点名失败。 */
+  const handleUrlText = useCallback(
+    (text: string, strip?: (draft: string) => string): void => {
+      void captureUrlsFromText(text, getMaxRefs() - getRefs().length)
+        .then(({ accepted, rejected, overflow, urlOnly }) => {
+          if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化
+          if (strip) setDraft(strip);
+          for (const r of accepted) add(r);
+          const msgs = rejected.map((r) => `${r.url}（${r.reason}）`);
+          if (overflow > 0) msgs.push(refLimitText());
+          if (msgs.length > 0)
+            showMessage(ErrorType.UNKNOWN, `链接未加入：${msgs.join('、')}`);
+        })
+        .catch(() => {
+          if (!strip)
+            showMessage(ErrorType.UNKNOWN, '链接预检失败，请重试');
+        });
+    },
+    [add, getRefs, setDraft]
+  );
+
   /** 只接管"带文件"的拖拽; 拖文本、拖链接一律放行, 不打扰浏览器默认行为 */
   const hasFiles = (dt: DataTransfer | null): boolean =>
     !!dt && Array.from(dt.types).includes('Files');
@@ -718,19 +744,49 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const onDrop = (e: React.DragEvent): void => {
-    if (!hasFiles(e.dataTransfer)) return;
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragOver(false);
-    handleFiles(filesFromDataTransfer(e.dataTransfer));
+    if (hasFiles(e.dataTransfer)) {
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      handleFiles(filesFromDataTransfer(e.dataTransfer));
+      return;
+    }
+    // 2026-11-15 小欧 - 拖入链接: uri-list 是浏览器拖拽链接必带的拖拽数据类型
+    //   (类型判据, 非 URL 识别); 交后端预检 chip 化, 其余文本拖拽放行浏览器默认
+    if (Array.from(e.dataTransfer.types).includes('text/uri-list')) {
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      handleUrlText(
+        e.dataTransfer.getData('text/uri-list') ||
+          e.dataTransfer.getData('text/plain')
+      );
+    }
   };
 
   /** 粘贴截图: 只有剪贴板里真有文件才接管; 纯文本粘贴不 preventDefault(否则正文粘不进来) */
   const onPaste = (e: React.ClipboardEvent): void => {
     const files = filesFromDataTransfer(e.clipboardData);
-    if (files.length === 0) return;
-    e.preventDefault();
-    handleFiles(files);
+    if (files.length > 0) {
+      e.preventDefault();
+      handleFiles(files);
+      return;
+    }
+    // 2026-11-15 小欧 - 粘贴文本: 不前端判 URL(识别真源在后端)。正文先按原生粘贴
+    //   落位(零延迟/光标不跳), 后端预检判出纯 URL 内容再按 caret 撤出该段改挂 chip;
+    //   混排/纯文本原样保留, 预检失败静默放行(正文已在, 不吞文本不误拒)
+    const pasteText = e.clipboardData.getData('text/plain');
+    if (!pasteText) return;
+    const caret = inputRef.current?.selectionStart ?? null;
+    handleUrlText(pasteText, (prev) => {
+      if (caret === null) return prev;
+      if (prev.slice(caret, caret + pasteText.length) === pasteText)
+        return prev.slice(0, caret) + prev.slice(caret + pasteText.length);
+      const at = prev.indexOf(pasteText); // 粘贴后有并发编辑: 兜底按首个完整匹配撤出
+      return at >= 0
+        ? prev.slice(0, at) + prev.slice(at + pasteText.length)
+        : prev;
+    });
   };
 
   return (
@@ -815,6 +871,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
                   //   不跳文件页（否则点开一个空 path 的死链），仅作展示
                   if (!r.path) return;
+                  // 2026-11-15 小欧 - URL chip: path 载的是外链, 直接新开, 不走
+                  //   文件路径解析(否则外链被当项目内路径, 文件页必报找不到)
+                  if (r.kind === 'url') {
+                    window.open(r.url ?? r.path, '_blank', 'noopener');
+                    return;
+                  }
                   // 2026-11-02 小欧 - 改走唯一路径解析（点击实时取根），不再直接拼内部深链：
                   //   根外路径原实现会生成无 ext=1 的内部深链 → 文件页必报找不到 — 小欧-2026-11-02
                   void resolveChipUrlFresh(r.path, r.lineRange ?? null).then(
