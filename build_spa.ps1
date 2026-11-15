@@ -10,6 +10,9 @@
 #     上次打包 commit 记录在 build\.build_commit, 首次打包或记录缺失则完整打包。
 #   2026-11-12 小欧 - 提示信息重新设计: 阶段标题简洁明确, 技术用词准确,
 #     增量/完整判定结果清晰展示, 操作反馈精确(做了什么/耗时/产出)。
+#   2026-11-16 小欧 - 三堂会审整改: ①删除永假的 needWebCopy 分支(needFrontendBuild 仅在前端变更时置真,
+#     该条件恒 false 属死代码); ②frontend/package.json|package-lock.json 变更原仅触发 npm run build 不装依赖,
+#     补 needNpmInstall 先 npm install 再构建, 杜绝依赖变更后拿旧 node_modules 打包。
 # 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1
 #       powershell -ExecutionPolicy Bypass -File build_spa.ps1 -Full   # 强制完整打包
 #       或双击 build_spa.bat
@@ -61,6 +64,7 @@ function Get-ChangeClassification {
         needAppCopy = $false
         needWebCopy = $false
         needConfigCopy = $false
+        needNpmInstall = $false
         changedFiles = @()
         reason = ""
     }
@@ -132,6 +136,7 @@ function Get-ChangeClassification {
 
     $hasBackendAppChange = $false
     $hasFrontendSrcChange = $false
+    $hasFrontendDepsChange = $false
     $hasConfigChange = $false
     $hasFullBuildChange = $false
 
@@ -142,6 +147,10 @@ function Get-ChangeClassification {
         }
         if ($f -match '^backend/app/') {
             $hasBackendAppChange = $true
+            continue
+        }
+        if ($f -match '^frontend/(package\.json|package-lock\.json)$') {
+            $hasFrontendDepsChange = $true
             continue
         }
         if ($f -match '^frontend/') {
@@ -159,6 +168,11 @@ function Get-ChangeClassification {
         $result.needFrontendBuild = $true
         $result.reason = "入口/依赖/spec 变更 → 必须完整 PyInstaller 重新构建"
     } else {
+        if ($hasFrontendDepsChange) {
+            $result.needNpmInstall = $true
+            $result.needFrontendBuild = $true
+            $result.needWebCopy = $true
+        }
         if ($hasFrontendSrcChange) {
             $result.needFrontendBuild = $true
             $result.needWebCopy = $true
@@ -169,10 +183,8 @@ function Get-ChangeClassification {
         if ($hasConfigChange) {
             $result.needConfigCopy = $true
         }
-        if ($result.needFrontendBuild -and -not $hasFrontendSrcChange) {
-            $result.needWebCopy = $true
-        }
         $parts = @()
+        if ($result.needNpmInstall) { $parts += "前端依赖安装" }
         if ($result.needFrontendBuild) { $parts += "前端构建" }
         if ($result.needAppCopy) { $parts += "app/ 源码同步" }
         if ($result.needWebCopy) { $parts += "web/ 产物同步" }
@@ -287,7 +299,7 @@ Write-Host ""
 Write-Host "  判定结果: $($change.reason)" -ForegroundColor White
 
 # 无需任何操作 — 跳过构建阶段, 直接进入部署选择
-$skipBuild = -not $change.needFullBuild -and -not $change.needFrontendBuild -and -not $change.needAppCopy -and -not $change.needWebCopy -and -not $change.needConfigCopy
+$skipBuild = -not $change.needFullBuild -and -not $change.needFrontendBuild -and -not $change.needAppCopy -and -not $change.needWebCopy -and -not $change.needConfigCopy -and -not $change.needNpmInstall
 if ($skipBuild) {
     Write-Host ""
     Write-Phase "产物已是最新 — 无需重新打包"
@@ -298,9 +310,21 @@ if ($skipBuild) {
 if (-not $skipBuild) {
 if ($change.needFrontendBuild) {
     Write-Step "阶段 2/4: 前端构建 (Vite 生产构建)"
+    $stepStart = Get-Date
+    if ($change.needNpmInstall) {
+        Write-Info "依赖变更 (package.json/package-lock.json) → 先安装依赖"
+        Push-Location $frontend
+        try {
+            npm install
+            if ($LASTEXITCODE -ne 0) { throw "npm install 退出码 $LASTEXITCODE" }
+        } catch {
+            Write-Err "前端依赖安装失败: $_"
+            Pop-Location; exit 1
+        } finally { Pop-Location }
+        Write-OK "前端依赖安装完成"
+    }
     Write-Info "命令: npm run build (tsc 类型检查 + vite build 打包)"
     Write-Info "输出: frontend/dist/"
-    $stepStart = Get-Date
     Push-Location $frontend
     try {
         npm run build
