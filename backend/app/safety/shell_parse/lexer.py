@@ -36,6 +36,9 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
   正则模式串或解析污染。三处判据(_relative_tokens/pathish/refpath_like)对相对候选排除之,
   防拼 cwd 出假路径被 _malformed 误拦(实测 5 起 grep 交替正则全部误拦)。
   绝对路径(盘符开头)不排除 —— 真路径含污染(如 del "C:\Windows\a|b")保留交 _malformed 兜底硬拦。
+2026-11-15 - 小欧 - 严格测试整改: build_var_map 值部正则遇引号即截断, `$v='Stop'+'-Process'`
+  只捕到 'Stop' 且错值照填代回(动词被拆没, 漏拦自杀命令)。值部扩为字面量拼接链并折叠
+  (_flatten_concat_literal): 拼接字面量仍是确定性字面量, 折叠后入表; 表达式赋值仍不入表。
 """
 import os
 import re
@@ -245,6 +248,10 @@ def shell_extract_abs_win_paths(text: str) -> List[str]:
     且 failed_path 报错路径)。裸路径不得跨空白, 否则 `C:\a C:\b` 会被吞成一个路径。
     去重保序。2026-10-18 小欧: 裸路径支持多模式(盘符含 `\\?\` 前缀 / 反斜杠 UNC / 正斜杠 UNC)。
     2026-10-19 小欧: 撤销 UNC 抽取(网络类不纳入覆盖), 裸路径只留盘符路径。
+    2026-11-15 小欧 - 误杀整改(实测 2026-11-13 bash 跑 Python here-string 脚本被硬拦):
+      引号区正则 [^"]* 可跨行, 命令内嵌脚本时把多行代码片段吞成"路径"(含换行/管道符),
+      被 _malformed 硬拦错杀整条命令。合法 Windows 路径永不含换行(系统保留字符 0x0A/0x0D),
+      跨行片段必是解析污染 —— 含 \\r/\\n 的抽取结果一律剔除, 不交判定。
     """
     quoted: List[str] = [m.strip("\"'")
                         for rx in _SHELL_ABS_WIN_PATH_RES[:3] for m in rx.findall(text)]
@@ -257,6 +264,9 @@ def shell_extract_abs_win_paths(text: str) -> List[str]:
         p = p.strip().rstrip("\\")
         if not p:
             continue
+        # 2026-11-15 小欧: 跨行片段必是脚本文本污染非路径(合法路径无换行), 剔除防错杀
+        if "\n" in p or "\r" in p:
+            continue
         # 裸盘符根 `C:\` rstrip 后退化为 `C:`, 补回分隔符(避免与盘符相对 `C:xxx` 混淆)
         if re.fullmatch(r"[a-zA-Z]:", p):
             p += "\\"
@@ -268,11 +278,21 @@ def shell_extract_abs_win_paths(text: str) -> List[str]:
 #: 变量赋值形态: $var="字面量" / ${var}="字面量" / $var='字面量'。值只取纯字面量。
 #:   值部必须容许反斜杠(Windows 路径全含 \) —— 用 (?:[^"\\]|\\.)* 逐字符吞,
 #:   不能写 [^"\\]* 那类"排除反斜杠"的写法, 否则 E:\test_dir\x 永远匹配不上(实测踩过)。
+#: 2026-11-15 小欧 严格测试整改: 值部补"字面量拼接链"('Stop'+'-Process') — 旧正则遇引号
+#:   即截断, $v='Stop'+'-Process' 只捕到 'Stop' 且错值照填代回(动词被拆没, 漏拦自杀命令);
+#:   拼接字面量仍是确定性字面量, 属"纯字面量"范畴, 折叠后入表。
+_VAR_LITERAL = r"(?:\"(?:[^\"\\]|\\.)*\"|'[^']*')"
 _VAR_ASSIGN_RE = re.compile(
     r"""\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))\s*=\s*"""
-    r"""(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""")
+    r"""(""" + _VAR_LITERAL + r"(?:\s*\+\s*" + _VAR_LITERAL + r")*)")
 
 _VAR_USE_RE = re.compile(r"\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)")
+
+
+def _flatten_concat_literal(value: str) -> str:
+    """'Stop'+'-Process' → Stop-Process(拼接字面量折叠; 单字面量原样去引号) — 小欧 2026-11-15"""
+    parts = re.findall(r"\"((?:[^\"\\]|\\.)*)\"|'([^']*)'", value or "")
+    return "".join(a or b for a, b in parts) if parts else (value or "")
 
 
 def build_var_map(command: str) -> Dict[str, str]:
@@ -286,8 +306,8 @@ def build_var_map(command: str) -> Dict[str, str]:
     宁可解析不出走放行, 也不猜一个值填进去(猜错会把删除指向错误目标)。
     """
     out: Dict[str, str] = {}
-    for braced, bare, dq, sq in _VAR_ASSIGN_RE.findall(command or ""):
-        out[braced or bare] = dq or sq
+    for braced, bare, value in _VAR_ASSIGN_RE.findall(command or ""):
+        out[braced or bare] = _flatten_concat_literal(value)
     return out
 
 

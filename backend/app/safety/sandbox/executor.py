@@ -32,6 +32,8 @@
 #   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。
 # 2026-10-14 - 小欧 - 本文件=权限信任框架之沙箱预检(pre_execute 影子副本执行, 上游 sandbox_gate.run_sandbox_gate, 总闸见 safety_checker 的 sandbox_required 置位)
 # 2026-10-14 - 小欧 - 命令文本处理与工具分类符号迁出本模块(shell_static_guard 单一真源), 删本地定义改 import; 同批删已无引用的 re
+# 2026-11-15 小欧 - 口径收敛(用户令): shell_has_hidden_kill 正名 shell_kill_needs_hitl — 保护范围最小化,
+#   只对"目标为系统关键进程/服务"的杀转 HITL, 其余杀进程放行由 LLM 自决; 守卫2判定语义随正名更新。
 import asyncio
 import os
 import tempfile
@@ -51,7 +53,7 @@ from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
 #   shell_sandbox_tables(越界表) / shell_readonly(只读白名单) / shell_tool_classify(工具分类) /
 #   shell_text_atoms(文本原子) / shell_parse(动作解析); 下方 import 即现行真源。
 from app.safety.shell_process_guard import (
-    shell_has_hidden_kill,  # 2026-10-16: 自杀检查已归并 guard(不可隔离动词同源)
+    shell_kill_needs_hitl,  # 2026-11-15: 自杀检查已归并 guard; 口径收敛后只答"目标是否系统关键进程/服务"
 )
 from app.safety.shell_readonly import is_shell_readonly_whitelisted
 from app.safety.shell_sandbox_tables import (
@@ -118,8 +120,8 @@ def _scan_command_danger_intent(command: str) -> bool:
     词表一漏即防线自破。两类一律只转 HITL 不判等级, 词表为持续维护项。
     重定向 `>`/`>>` 目标与写动词参数走同一套越界判定, 堵死
     `Get-Date > D:\\evil.ps1` 无写动词穿透全链路的逃逸(白名单侧已堵, 此为扫描器侧)。"""
-    if shell_has_hidden_kill(command):
-        return True                         # 2026-10-08 小欧: 杀进程/停服务绝不进 run(预检真跑=防线自破)
+    if shell_kill_needs_hitl(command):
+        return True                         # 2026-11-15 口径收敛: 系统关键进程/服务杀不进 run(预检真跑=防线自破)
     for match in SHELL_WRITE_INTENT_RE.finditer(command):
         if match.group(0).rstrip().lower() in SHELL_REGISTRY_SYSTEM_VERBS:   # rstrip 双保险
             return True                     # 注册表/系统配置写无法被沙箱隔离, 命中即转裁决
