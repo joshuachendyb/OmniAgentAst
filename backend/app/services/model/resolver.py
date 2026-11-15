@@ -54,6 +54,8 @@
 # 2026-11-01 19:28 小欧 - 同 provider 换模型也按目标 provider+model 重解析: parse_model_params 收敛为唯一入口
 #   (3 元组含用户 max_tokens), inherit_missing=False 未配回落默认, 根治沿用旧模型参数 — 小欧-2026-11-01
 # 2026-11-02 - 小欧 - validate_config 4元组: ④models列表警告归warnings不再计入errors判死(列表漏维护≠不可用), 唯一调用方validate_chat_config同步 - 小欧-2026-11-02
+
+# 2026-11-15 小欧 - BaseAIService 类型注解改类型检查期导入: 注解为字符串形式, 运行时无需该类, 避免引入运行期依赖
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -61,7 +63,7 @@ AI配置解析器 — 直接读配置,无效就报错
 Author: 小沈 - 2026-06-07
 """
 
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from app.config import Config, get_config
 from app.db import db
@@ -71,6 +73,10 @@ from app.services.chat.storage import get_session_model
 
 # 2026-09-26 小欧 - 密钥空白判定收口到公用函数（与 lifecycle/validation.py 同一权威）
 from app.utils.secret_utils import is_blank_secret
+
+if TYPE_CHECKING:
+    # 2026-11-15 小欧 - BaseAIService 仅用于类型注解(字符串注解), 仅类型检查期导入, 避免运行时循环依赖
+    from app.llm.base_service import BaseAIService
 
 
 class ProviderKeyMissingError(Exception):

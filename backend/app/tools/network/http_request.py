@@ -28,6 +28,8 @@
 #   【病根】line355仅对Timeout/RequestError等httpx异常raise交引擎重试, anyio.EndOfStream不属httpx体系被漏过, 落到catch-all记致命ERROR(语义错误, 属瞬时连接故障)
 #   【改法】line355重抛元组追加 anyio.EndOfStream, 归入瞬时故障抛ToolRetryEngine重试(重试耗尽则返回结构化错误+warning, 不再记ERROR), 与Timeout/RequestError同处理
 # 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
+
+# 2026-11-15 小欧 - HTTP 错误详情并入响应体摘要(截断 200 字): 原取出即丢弃, LLM 只知状态码不知服务端原因
 """
 N1: httpget — 发起HTTP请求
 
@@ -339,10 +341,13 @@ async def httpget(
                         error_body = e.response.text
                     except Exception:
                         error_body = None
+                    # 2026-11-15 小欧 - 响应体摘要并入错误详情(原取出后丢弃, LLM 只知状态码不知服务端原因): 截断 200 字防大响应撑爆观察
+                    error_snippet = " ".join((error_body or "").split())[:200]
+                    detail = f"HTTP {status_code}" + (f": {error_snippet}" if error_snippet else "")
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                     llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
                                                           err_code=ERR_NETWORK_HTTP_ERROR,
-                                                          detail=f"HTTP {status_code}",
+                                                          detail=detail,
                                                           hint=_hint,
                                                           timeout=timeout, proxy=proxy, headers=headers, body=body)
                     return build_error(

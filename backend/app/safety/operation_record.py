@@ -18,6 +18,8 @@
 #   backup_to_recycle_bin 导入上移顶部; 本文件只保留记录职责(record/collect/update/execute_with_safety)
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-13 - 小欧 - 三堂会审修复#26: collect_file_info 对目录 os.stat().st_size(Windows 常为0)
+
+# 2026-11-15 小欧 - 执行时间戳单点化: executed_at 本已算出却被丢弃, 落库改复用该值(不再二次取时), 成功与统计口径同源
 #   → DELETE 空间回收统计 space_impact=0 失真; 改目录 size 递归求和(长路径rglob), 遍历失败回退原值
 """
 operation_record — 操作记录和DB状态管理
@@ -223,7 +225,7 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> T
                      str(backup_path) if backup_path else None,
                      to_local_iso(datetime.now() + timedelta(days=config.BACKUP_RETENTION_DAYS)) if backup_path else None,
                      info.get("size"), info.get("hash"), info.get("is_directory", False),
-                     info.get("extension"), duration_ms, space_impact, get_local_iso_timestamp(), operation_id),
+                     info.get("extension"), duration_ms, space_impact, executed_at, operation_id),
                 )
                 logger.debug(f"Operation executed successfully: {operation_id}")
                 return True, None

@@ -45,6 +45,8 @@
 #   model_meta.context_length(厂商声明), 使模型库勾选保存的窗口真正生效 — 小欧-2026-11-01
 # 2026-11-01 13:30 小欧 - parse_model_params 增窗口来源留痕(ctx_source)打一行 [窗口] 日志, 会话当场核对运行时窗口值 — 小欧-2026-11-01
 # 2026-11-01 19:28 小欧 - max_tokens 单写入口: parse_model_params 增第三出口 user_max_tokens(不随 extra_body 出网);
+
+# 2026-11-15 小欧 - get_service_for_model 去掉未使用的 ai_config 取值: 该取值纯读配置无副作用, provider 实际配置取自 get_service_config
 #   _resolve_max_tokens 收为 min(provider级/模型级用户值/厂商声明) 唯一算法, provider 级配置必须生效 — 小欧-2026-11-01
 """
 service — 服务创建与获取
@@ -418,7 +420,6 @@ def get_service_for_model(model_ref: ModelRef):
     """
     from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
-    ai_config = resolver.get_ai_config()
 
     provider_config = resolver.get_service_config(model_ref.provider, model_ref.model)
 

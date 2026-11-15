@@ -15,6 +15,8 @@
 # 2026-10-20 05:27 小欧 - FIX: top_n/sort_by 两参数原为空操作(统计先于截取, df.head(top_n)为死赋值;
 #   统计与序无关致 sort_by 无效, 实测 top_n=1/2/None 输出全同); 正确语义=统计范围取"按 sort_by
 #   升序后的前 top_n 行", 无 top_n 全量统计, result.row_count 同步反映分析范围
+
+# 2026-11-15 小欧 - pandas 类型注解改类型检查期导入: 注解为字符串形式, 运行时无需该库
 """
 analyze_data  对数据集进行统计分析
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -24,7 +26,7 @@ analyze_data  对数据集进行统计分析
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import time as _time_mod
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from app.tools.dataanalysis.data_loader import convert_pd_value, load_data_to_df, validate_top_n
 from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
@@ -36,6 +38,10 @@ from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性�
     OpCategory,
     check_path_four_level,
 )
+
+if TYPE_CHECKING:
+    # 2026-11-15 小欧 - pandas 仅用于类型注解(字符串注解), 仅类型检查期导入, 避免运行时强依赖
+    import pandas as pd
 
 
 def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List[str],
