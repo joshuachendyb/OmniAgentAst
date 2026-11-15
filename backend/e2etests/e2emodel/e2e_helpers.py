@@ -107,7 +107,7 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14.4 必改: send_chat 增可选形参 link_enabled 并入 POST /chat/stream
 #   payload, 以覆盖"会话 link 开关值随消息携带"这条新链路(默认 None=不携带, 后端沿用会话现值,
 #   故其余 76 个 case 行为不变) — 小欧-2026-10-03
-# 2026-11-14 商量 - _fetch_injected_messages 随 list_session_tasks.merged_inputs 契约升级 {content,msg_kind}[] 同步取 content(禁 backward 双读, 设计[34] 5.3) — 商量-2026-11-14
+# 2026-11-14 商量 - _fetch_injected_messages 随 list_session_tasks.merged_inputs 契约升级 {content,msg_kind}[] 同步取 content(禁 backward 双读) — 商量-2026-11-14
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -186,7 +186,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple  # 2026-09-29 小欧: inject_rows 注解用 Tuple — 小欧-2026-09-29
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -1140,7 +1140,7 @@ def _fetch_injected_messages(session_id: Optional[str]) -> List[str]:
     _out: List[str] = []
     for _t in (_d.get("tasks") or []):
         for _m in (_t.get("merged_inputs") or []):
-            # 2026-11-14 商量(设计[34] 5.3): 契约升级 {content,msg_kind}[], 直接取 content(禁 backward 双读)
+            # 2026-11-14 商量: 契约升级 {content,msg_kind}[], 直接取 content(禁 backward 双读)
             _c = _m.get("content", "")
             if _c:
                 _out.append(_c)
@@ -2224,11 +2224,10 @@ def write_test_record(
     # 3. tool问题必须记录在测试记录中
     # ============================================================
     final_event = result.get("final_event")
-    has_error = result.get("has_error", False)
     # 2026-07-18 小欧 响应 FinalStep 多态重构: 终态统一 type=final, 由 outcome 声明结果,
     # 失败/取消不再发 error 事件, 故须读 final.outcome 判终态, 否则失败任务被误判 PASSED
     _final_outcome = final_event.get("outcome", "completed") if isinstance(final_event, dict) else "completed"
-    end_type = assert_stream_ended(result)
+    assert_stream_ended(result)
 
     # 提取回复内容（统一在if/else外初始化）
     resp = result.get("response_text", "")
@@ -2281,7 +2280,6 @@ def write_test_record(
                 passed = False
     tool_calls = result.get("tool_calls", [])
     tool_names = [t.get("tool_name", "") for t in tool_calls]
-    event_types = result.get("event_types", [])
     events = result.get("events", [])
     logical_events = [e for e in events if e.get("type") != "chunk"]
     unique_step_nums = len({e.get("step") for e in events if e.get("step") is not None})
@@ -2490,16 +2488,16 @@ def write_test_record(
         _dur = _final_stats.get("duration")
         _arts = _final_stats.get("artifacts") or []
         # 表1: 执行耗时 + 产出物数量
-        lines.append(f"| 指标 | 值 |")
-        lines.append(f"|------|-----|")
+        lines.append("| 指标 | 值 |")
+        lines.append("|------|-----|")
         if _dur is not None:
             lines.append(f"| 执行耗时(duration) | {_dur}秒 |")
         lines.append(f"| 产出物数量(artifacts) | {len(_arts)}个 |")
         lines.append("")
         # 表2: 产出物明细（4字段: tool_name/name/path/type — 小欧 2026-08-22 取值对齐新结构）
         if _arts:
-            lines.append(f"| 序号 | 工具(tool_name) | 文件名(name) | 类型(type) | 路径(path) |")
-            lines.append(f"|------|------|------|------|------|")
+            lines.append("| 序号 | 工具(tool_name) | 文件名(name) | 类型(type) | 路径(path) |")
+            lines.append("|------|------|------|------|------|")
             for _ai, _a in enumerate(_arts):
                 _tname = _a.get("tool_name", "")
                 _name = _a.get("name", "")
@@ -2681,7 +2679,7 @@ def write_test_record(
                         _round_order.append(_sn)
             _allowed_rounds = set(_round_order[:10])
             _extra_rounds = len(_round_order) - len(_allowed_rounds)
-            lines.append(f"### 5.3 步骤数据内容(action/observation 按轮配对, 前10轮)")
+            lines.append("### 5.3 步骤数据内容(action/observation 按轮配对, 前10轮)")
             lines.append("")
             _obs_by_step: Dict[Any, List[Dict[str, Any]]] = {}
             for _o in obs_steps:
@@ -2809,7 +2807,7 @@ def write_test_record(
             lines.append("**ERROR日志**:")
             lines.append("")
             for err in log_errors:
-                lines.append(f"```")
+                lines.append("```")
                 lines.append(err)
                 lines.append("```")
             lines.append("")
@@ -2817,7 +2815,7 @@ def write_test_record(
             lines.append("**异常堆栈**:")
             lines.append("")
             for tb in log_tracebacks:
-                lines.append(f"```")
+                lines.append("```")
                 lines.append(tb[:500])
                 lines.append("```")
             lines.append("")
@@ -2934,7 +2932,7 @@ def write_test_record(
         chain = " -> ".join(tool_names)
         print(f"  [CALL CHAIN] {chain}")
     else:
-        print(f"  [CALL CHAIN] (无工具调用)")
+        print("  [CALL CHAIN] (无工具调用)")
 
     # 正常完成，移除待写入记录 + 清理 marker
     remove_pending_record(test_id)
