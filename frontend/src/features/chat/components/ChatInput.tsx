@@ -100,6 +100,8 @@
 
 // 2026-11-16 小欧 bug猎修: 路由建议的会话级状态(autoSwitchedRef 去重集/回退快照/已忽略建议键)
 //   随 sessionId 复位 —— 组件跨会话复用, 原状态不重置会致新会话同键建议不自动切换、回退指向旧会话模型
+// 2026-11-16 小欧 - 删除按钮行「指令」入口: CommandPanel 按钮无实际价值, 移除装配与 import,
+//   快捷指令能力改由顶部 ShortcutPanel 承载 — 小欧-2026-11-16
 
 /**
  * ChatInput - 输入框组合根（六组件组合）
@@ -127,7 +129,6 @@ import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
-import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
 import { AttachmentArea } from './input/AttachmentArea'; // 2026-11-06 小欧 - 附件入口(插槽装配)
 import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 动作按钮组(与 SubmitBar 拆出; 2026-10-25 回迁 SubmitBar 行右端)
@@ -184,10 +185,7 @@ import { Colors, Radius, Spacing } from '@/utils/stepStyles';
 import { Gap } from '@/theme/spacing';
 // 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
 // 2026-11-16 小欧 [23]阶段B: QualityBadge 徽标渲染迁入 RefChip 统一组件, 本文件只投影 quality 值
-import {
-  chipQuality,
-  useRefQualityMap,
-} from '../hooks/useRefQualityMap';
+import { chipQuality, useRefQualityMap } from '../hooks/useRefQualityMap';
 
 interface ChatInputProps {
   loading: boolean;
@@ -820,8 +818,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             showMessage(ErrorType.UNKNOWN, `链接未加入：${msgs.join('、')}`);
         })
         .catch(() => {
-          if (!strip)
-            showMessage(ErrorType.UNKNOWN, '链接预检失败，请重试');
+          if (!strip) showMessage(ErrorType.UNKNOWN, '链接预检失败，请重试');
         });
     },
     [add, getRefs, setDraft, modelId, modelProvider, routingMode]
@@ -1104,9 +1101,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 clearRecentInputs();
                 setRecents([]);
               }}
-            />
-            <CommandPanel
-              onPick={(c) => setDraft((d) => (d ? `${d}\n${c}` : c))}
             />
             <TaskTypeToggle checked={linkEnabled} onChange={onToggleLink} />
           </Space>
