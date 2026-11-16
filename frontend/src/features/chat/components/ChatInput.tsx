@@ -111,6 +111,9 @@
  *
  * @author 小欧
  * @date 2026-08-26
+ *
+ * 编辑历史 2026-11-16 opencode 修正: URL 采集回执的场景提示仅在纯 URL 接管时给出,
+ *   混排正文命中非法链接不再误提示(链接仍留在正文)。
  */
 
 import React, {
@@ -807,8 +810,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
         .then(({ accepted, rejected, overflow, urlOnly }) => {
           // 2026-11-16 小欧 [23]阶段B: 场景提示数据落定(非法链接), 供 HintLine 展示;
           // 阶段D D12: 推荐切换/auto 切换统一由 Composer 级重算(preflight hook)承载 — 小欧-2026-11-16
+          if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化, 不做接管类提示
           setUrlHint(rejected.length > 0 ? 'invalid-url' : undefined);
-          if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化
           if (strip) setDraft(strip);
           for (const r of accepted) add(r);
           const msgs = rejected.map((r) => `${r.url}（${r.reason}）`);

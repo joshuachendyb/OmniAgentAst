@@ -31,6 +31,9 @@
 //   仅附件作用域显示) + 顶部组合显示; 类型/作用域变化经 refreshAll 以 offset=0 重拉(服务端筛选+分页唯一口径);
 //   空态区分"作用域真空"与"该类型无结果"; kindLabel 导出供守门用例直测 — 小欧-2026-11-16
 
+// 编辑历史: 2026-11-16 opencode 修正: 上传入口在 capabilities 未加载前置灰, 避免 accept 为空时
+//   选择器放开全部类型而由后端 415 兜底(体验兜底, 白名单真源仍在后端)。
+
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -1479,7 +1482,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
             multiple
             accept={caps?.accept}
             showUploadList={false}
-            disabled={disabled || busy > 0}
+            disabled={disabled || busy > 0 || !caps}
             beforeUpload={beforeUpload}
           >
             <Button icon={<UploadOutlined />} loading={busy > 0}>

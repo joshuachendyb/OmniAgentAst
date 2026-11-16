@@ -67,7 +67,7 @@ from fastapi import HTTPException
 
 # 附件注入文本唯一产生点(extract 纯函数 + service 查表), 读盘在 extract 内走 browse
 from app.attachments import extract
-from app.attachments.contract import KIND_CONTRACT
+from app.attachments.contract import AUDIO_NATIVE_EXTS, KIND_CONTRACT
 from app.attachments.attachment_service import (
     get_attachment_scoped,
     mark_extract_result,
@@ -188,7 +188,7 @@ def _read_attachment(ref: Dict[str, Any], limits: RefLimits,
                        note=f"已省略 {omitted} 字符" if omitted else "")
 
 
-_AUDIO_NATIVE_EXTS = {".wav", ".mp3"}
+_AUDIO_NATIVE_EXTS = AUDIO_NATIVE_EXTS
 
 
 def _native_modality(llm_model: Any, modality: str) -> bool:

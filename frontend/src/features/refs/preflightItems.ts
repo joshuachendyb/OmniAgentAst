@@ -5,6 +5,9 @@
 
 // 2026-11-16 小欧 修正: 投影与签名跳过 pending 占位项(未落定条目不上送)
 
+// 2026-11-16 opencode 修正: 投影补 lineRange, preflightItemKey 拼入行区间, 与后端去重键同口径;
+//   同一文件的不同选区不再同键互标重复。
+
 
 /**
  * preflightItems —— 引用条 → 输入预检 items 的纯投影(单一实现)
@@ -33,14 +36,16 @@ export const refsToPreflightItems = (
             mime: r.mime,
             size: r.size,
           }
-        : { kind: r.kind, path: r.path, mime: r.mime, size: r.size }
+        : { kind: r.kind, path: r.path, mime: r.mime, size: r.size, lineRange: r.lineRange }
   );
 
-/** 条目去重键: 与后端 preflight._item_key 同口径(url→url; 其余 path/attachment_id/label) */
-export const preflightItemKey = (r: ComposerRef): string =>
-  r.kind === 'url'
-    ? String(r.url ?? r.path ?? '')
-    : String(r.path || r.attachment_id || r.label || '');
+/** 条目去重键: 与后端 preflight._item_key 同口径(url→url; 其余 path/attachment_id/label+行区间) */
+export const preflightItemKey = (r: ComposerRef): string => {
+  if (r.kind === 'url') return String(r.url ?? r.path ?? '');
+  const base = String(r.path || r.attachment_id || r.label || '');
+  const stamp = r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : '';
+  return base && stamp ? `${base}#${stamp}` : base;
+};
 
 /** 重算触发签名: 归一 key 排序串(条目增删/替换/占位落定即变, 逐项 quality 回写不触发) */
 export const refsSignature = (refs: ComposerRef[]): string =>

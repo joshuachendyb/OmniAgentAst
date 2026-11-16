@@ -7,6 +7,8 @@
 // 2026-11-16 小欧 修正: 无生效模型时不发预检(画像无从判定, 避免误报降级); 去掉无用 sessionId 入参;
 //   modelKey 无 provider 时不再拼前导斜杠
 
+// 2026-11-16 opencode 修正: 逐项 quality 回写跳过空串, 防重复项(空 quality)覆盖首条已判定徽标。
+
 import { useEffect, useRef, useState } from 'react';
 import { preflightInput } from '@/services/api/inputs.api';
 import type { RoutingAdvice } from '@/types/chat';
@@ -75,7 +77,7 @@ export function useInputPreflight({
         .then((res) => {
           if (seq !== seqRef.current) return;
           const qualityByKey: Record<string, string> = {};
-          for (const it of res.items) qualityByKey[it.key] = it.quality;
+          for (const it of res.items) if (it.quality) qualityByKey[it.key] = it.quality;
           setState({
             worstQuality: res.worst_quality,
             routingAdvice:

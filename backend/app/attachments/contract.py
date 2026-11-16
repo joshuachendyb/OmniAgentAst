@@ -59,6 +59,10 @@
 # 2026-11-16 小欧 bug猎修: ①_MAX_URLS 改引 extract.MAX_TEXT_URLS 单一真源(消 4/8 双真源);
 #   ②quality_of 增 has_slot 透传(实例口径), 预检对已物化条目与运行时 plan_refs 同判,
 #   消"预检报降级、运行时走原生槽"的口径分叉误报
+
+# 2026-11-16 opencode 修正: ①URL text/richdoc 运行时 fetch="text" 恒下载抽取正文, 预检档由
+#   link_only 校正为 text_full(仅对齐真实投递); richdoc 无原生直传路径, native_modality 置 None,
+#   避免预检报 native 而运行时走文本。②新增 AUDIO_NATIVE_EXTS 单一真源供预检/resolver 共用。
 """
 attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
@@ -93,7 +97,7 @@ from app.ref_slots import SLOT_WRITERS
 # 对外重导出词典与识别函数(契约消费方禁止再去 extract 复制一份)
 __all__ = [
     "KIND_CONTRACT", "KindRoute", "ItemPlan", "SOURCE_KINDS",
-    "CONTENT_KINDS", "MODALITIES", "QUALITY_TO_DELIVERY",
+    "CONTENT_KINDS", "MODALITIES", "QUALITY_TO_DELIVERY", "AUDIO_NATIVE_EXTS",
     "classify_ref", "quality_of", "plan_refs", "ref_quality_map",
     "limits", "kind_options", "suffix_kind", "expand_kind", "KIND_ALL",
     "AUDIO_SUFFIXES", "IMAGE_SUFFIXES", "RICH_SUFFIXES", "TEXT_SUFFIXES", "VIDEO_SUFFIXES",
@@ -104,6 +108,8 @@ _MAX_URLS = MAX_TEXT_URLS   # 单次引用 URL 条数上限(真源=extract.MAX_T
 
 SOURCE_KINDS = ("file", "selection", "attachment", "url")
 CONTENT_KINDS = ("text", "image", "video", "audio", "richdoc", "binary", "unknown")
+# 可物化为原生音频的容器白名单(预检与 resolver 物化前置共用, 单一真源)
+AUDIO_NATIVE_EXTS = frozenset({".wav", ".mp3"})
 KIND_ALL = "all"    # 类型筛选的"全部"哨兵值(等于不过滤; 与前端筛选选项同口径)
 MODALITIES = ("image", "audio", "video", "file")
 # 质量四值(保真结果); 投递动作由 QUALITY_TO_DELIVERY 单表派生, 不另设枚举双真源。
@@ -135,11 +141,11 @@ _BASE: Dict[str, KindRoute] = {
 # URL 路由 fetch 语义: "text"=文本抓取进正文(_expand_url 走 _fetch_extract_text);
 #   "none"=不做 wire 层抓取(媒体内联载荷由 ensure_payload 按 transport 自理) — 小欧-2026-11-14
 _URL_OVERRIDE: Dict[str, KindRoute] = {
-    "text":    KindRoute(None,    "link_only", link_body, fetch="text"),
+    "text":    KindRoute(None,    "text_full", link_body, fetch="text"),
     "image":   KindRoute("image", "link_only", link_body),
     "video":   KindRoute("video", "link_only", link_body),
     "audio":   KindRoute("audio", "link_only", link_body),
-    "richdoc": KindRoute("file",  "link_only", link_body, fetch="text"),
+    "richdoc": KindRoute(None,    "text_full", link_body, fetch="text"),
     "binary":  KindRoute(None,    "link_only", link_body),
 }
 
