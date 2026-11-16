@@ -91,6 +91,8 @@
 # 2026-11-15 小欧 - P2 纪律([42]): 启动第一件事 log_build_fingerprint() 落运行代码指纹,
 #   /health 新增 build 字段; dev/打包/部署三处比对可判定"跑的是不是新代码" — 小欧-2026-11-15
 # 2026-11-16 小欧 - 优雅停机入口: 挂载 system_routes(POST /api/v1/shutdown, 走 _mount 默认 token 鉴权), 置 uvicorn Server.should_exit 触发既有 lifespan shutdown; Server 引用由 run_server 编程式启动时挂到 app.state.uvicorn_server — 小欧-2026-11-16
+# 2026-11-16 小欧 - 启动摘要(当前版本/LLM 配置)补文件留痕: 打包态 console 镜像随 detach 旁路, 原仅
+#   console_put 会从所有日志消失; 改为 logger.info(落 app 文件) + console_put(真控制台上屏) 双通道 — 小欧-2026-11-16
 import asyncio
 import sys
 import threading
@@ -688,9 +690,14 @@ async def startup_event():
     from app.logger.console_writer import (
         console_put,  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     )
+    # 2026-11-16 小欧 - 启动摘要补文件留痕: console 镜像在 detached(打包态)时整体旁路,
+    #   原仅 console_put 会使摘要从所有日志消失; 改为 logger.info 落 app 文件 + console_put 上屏
+    #   (真控制台时) 双通道, 排障仍可确认版本与模型。 — 小欧-2026-11-16
+    logger.info(f"当前版本: {app_version}")
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()
     _ref = _cfg.get('ai.model_ref') or {}
+    logger.info(f"LLM 配置: provider={_ref.get('provider')}, model={_ref.get('model')}")
     console_put(f"LLM 配置: provider={_ref.get('provider')}, model={_ref.get('model')}")
 
 

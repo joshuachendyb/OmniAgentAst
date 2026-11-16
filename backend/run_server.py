@@ -66,6 +66,8 @@
 #     detach 之前(原先 FreeConsole 致占用提示落 boot 日志看不到), 失败用 MessageBox 弹窗; ③就绪后
 #     自动开浏览器; ④uvicorn 改 Config+Server 编程式启动并把 Server 挂 app.state, 供 /api/v1/shutdown
 #     优雅停机; ⑤--no-browser/--no-single-instance 供自动化与并行调试。 — 小欧-2026-11-16
+#   2026-11-16 小欧 - _open_browser_when_ready 可观测性: 原只调 webbrowser.open 不查返回值不落日志,
+#     开浏览器成败全静默无法排障; 现成功/失败/异常均写 boot 日志, 并以 open() 返回值判成败。 — 小欧-2026-11-16
 # ============================================================================
 import argparse
 import shutil
@@ -299,12 +301,27 @@ def _wait_http_ready(host: str, port: int, timeout: float = 60.0) -> bool:
 
 
 def _open_browser_when_ready(host: str, port: int, timeout: float = 60.0) -> bool:
-    """等后端 HTTP 就绪后打开默认浏览器, 返回是否已打开 — 小欧 2026-11-16"""
+    """等后端 HTTP 就绪后打开默认浏览器, 返回是否已打开 — 小欧 2026-11-16
+
+    2026-11-16 小欧 - 增可观测性: 原实现不检查 webbrowser.open 返回值也不落任何日志,
+    开没开成功全静默, 双击用户的"没反应"无从定位。现成功/失败均写入 boot 日志(此时 stdio
+    已重定向), 并以 open() 的真实返回值作为成功判据。
+    """
     import webbrowser
 
+    url = f"http://{_shown_host(host)}:{port}"
     if not _wait_http_ready(host, port, timeout):
+        print(f"[run_server] ⚠️ {url} 在 {timeout:.0f}s 内未就绪, 未打开浏览器", flush=True)
         return False
-    webbrowser.open(f"http://{_shown_host(host)}:{port}")
+    try:
+        opened = webbrowser.open(url)
+    except Exception as e:
+        print(f"[run_server] ⚠️ 打开浏览器异常: {e} (请手动访问 {url})", flush=True)
+        return False
+    if not opened:
+        print(f"[run_server] ⚠️ 系统未找到可用浏览器, 请手动访问 {url}", flush=True)
+        return False
+    print(f"[run_server] 已打开浏览器: {url}", flush=True)
     return True
 
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-11-15 - 小欧 - 新建: frozen 启动即 FreeConsole + stdio 重定向, 取消父进程持有控制台这一前提
+# 2026-11-16 小欧 - 新增 _detached 标志与 is_console_detached(): 供 console_writer 探测"是否已无真实控制台"。原 stdio 重定向到 boot 日志后, sys.stdout 仍是可写文件对象, _probe_console 误判为有效控制台 → 控制台镜像把 app 运行日志全灌进 boot 日志(污染, 含整段会话历史); 现由本标志唯一判定, detach 后镜像整体旁路 — 小欧-2026-11-16
 """console_mode — 运行期控制台调度 — 小欧 2026-11-15
 
 【问题】打包版 console=True 启动即绑定 conhost; 子进程默认继承该控制台句柄,
@@ -23,6 +24,7 @@ import time
 from pathlib import Path
 
 _applied = False
+_detached = False
 
 
 def _boot_log_path():
@@ -46,7 +48,7 @@ def _redirect_stdio():
 
 def detach_console_if_needed() -> None:
     """frozen 且有控制台时脱离控制台(幂等); 返回后所有 print 落 boot 日志。"""
-    global _applied
+    global _applied, _detached
     if _applied or sys.platform != "win32":
         return
     _applied = True
@@ -57,5 +59,16 @@ def detach_console_if_needed() -> None:
     if not ctypes.windll.kernel32.FreeConsole():
         return      # 本来就没有控制台(或已脱离): 不碰 stdio
     _redirect_stdio()
+    _detached = True
     print("[console_mode] 已脱离父控制台, stdio 重定向到 boot 日志", flush=True)
     print(f"[console_mode] path={_boot_log_path()}", flush=True)
+
+
+def is_console_detached() -> bool:
+    """是否已脱离控制台并把 stdio 重定向到 boot 日志 — 小欧-2026-11-16
+
+    供 console_writer._probe_console 判定"当前无真实控制台": stdio 虽被换成可写文件对象,
+    但那只是 boot 日志, 控制台镜像若继续写只会污染 boot 日志, 故 detach 后镜像整体旁路。
+    非 frozen / OMNI_KEEP_CONSOLE=1 / 未 detach 时恒 False(控制台仍有效)。
+    """
+    return _detached
