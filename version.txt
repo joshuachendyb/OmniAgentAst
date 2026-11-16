@@ -1,3 +1,25 @@
+v1.7.3
+发布时间: 2026-11-16 15:08:08 - 小欧-2026-11-16
+## v1.7.2以来 变更汇总(14个commit: feat5/fix6/docs3, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
+[2026-11-16 15:08:08 小欧] 范围=v1.7.2..HEAD 全部commit(14个, merge提交除外); 说明=①输入能力域[23]阶段B/C/D与D12连续落地: 输入框RefChip四类chip统一与HintLine发送前提示、附件抽屉分类筛选(contract.expand_kind值域/kind IN参数化/前端kind_options零词典)、capability_router能力路由真源+preflight三态routing_advice与会话routingMode持久化、Composer级useInputPreflight全量重算; ②引用质量口径对齐: 裸模型名反查provider取画像、未知模型不判降级不路由、URL text/richdoc预检按运行时text_full校正、未物化图像/音频按resolver物化前置判原生、前后端去重键同口径补选区行区间、逐项quality回写跳空、纯URL判定按长度降序移除、能力契约未加载上传置灰; ③预检边界兜底/候选脏值容错/跨会话状态复位/会话版本同源, bug猎修8根因(session出口version真值补list/create、url_reject_reason规范点分IP与十六进制/八进制/缩写/尾点6变体SSRF面、裸链正则不吞尾随句且消binary误判、扫描上限单源MAX_TEXT_URLS、quality_of透传has_slot与plan_refs同判、build_candidates单模型画像异常隔离), 三堂会审P0~P3整改(SessionResponse补version真值根治409回读污染/need_of跳过失败项/route补provider比对/候选构建异常降级空候选/auto切换防回环/回退入口独立revertFrom/RoutingMode与RoutingAdvice收敛types/删死字段死参死分支/preflightItems过滤pending占位/无生效模型不预检); ④后端优雅停机接口backend_service_stop(POST /api/v1/system路由+token鉴权+单实例Mutex与端口预检+busy_timeout30s)与前端停机按钮、CloseOmniAgent.bat兜底; ⑤thought等待图标四角星呼吸闪烁(ArcWaitingIcon留库/StarWaitingIcon新增/prefers-reduced-motion停闪); ⑥boot日志污染根治与开浏览器可观测性、启动摘要落文件。维持PATCH v1.7.3。
+### 1.7.3.1 功能新增
+[输入] feat 3f4398411 输入能力域[23]阶段D与D12(后端capability_router能力路由真源+preflight三态routing_advice与会话routingMode持久化; 前端RecommendationBar推荐条/RoutingModePicker/switchSessionModel切换收口; D12用useInputPreflight做Composer级全量重算, worst_quality与逐项徽标直展后端原值) - 小欧-2026-11-16
+[附件] feat 162e0bc46 附件抽屉分类筛选[23]阶段C(contract.expand_kind值域=CONTENT_KINDS+list_attachments参数化kind IN+GET /attachments kind参数; FileDrawer类型筛选行选项由kind_options下发且顶部组合显示, 类型/作用域变化offset=0重拉, 空态区分作用域真空与类型无结果, 前端零词典) - 小欧-2026-11-16
+[输入] feat 1c43fc23e 输入框体验统一[23]阶段B(RefChip四类chip统一渲染+HintLine发送前提示行; 徽标双源只读后端真源URL逐项preflight quality/附件ref_quality_map投影, 前端零派生; URL逐项quality内存态落存且不进wire) - 小欧-2026-11-16
+[等待] feat 0b2aeca93 WaitingIcons thought等待图标换型为四角星呼吸闪烁(原绿270°弧线旋转实体改名ArcWaitingIcon留库备用, 新增StarWaitingIcon绿实心四角星+index.css .waiting-twinkle 1.8s呼吸覆盖基础旋转, prefers-reduced-motion停闪, 调用方零改动) - 小欧-2026-11-16
+[服务] feat 1c87c7ca8 backend_service_stop后端优雅停机接口(POST /api/v1/system路由/token鉴权/非编程式启动返回503)+run_server单实例Mutex与端口预检+启动迁移busy_timeout30s; 前端设置卡与侧栏版本标签下方停机按钮(共用useShutdown)+CloseOmniAgent.bat兜底 - 小欧-2026-11-16
+### 1.7.3.2 缺陷修复
+[输入] fix 4e6e99311 inputs,attachments,refs 预检口径对齐运行时与引用呈现修正(裸模型名反查provider取画像/未知模型不判降级不路由/URL text-richdoc预检按text_full且richdoc无原生直传/未物化图像音频按resolver物化前置判原生/前后端去重键同口径补选区行区间/逐项quality回写跳空/纯URL判定按长度降序移除/场景提示置后消混排误提示/能力契约未加载上传置灰) - opencode-2026-11-16
+[输入] fix b664056d4 inputs,capability_router,chat 预检边界兜底/候选脏值容错/跨会话状态复位/会话版本同源 - 小欧-2026-11-16
+[输入] fix 36eb00ef9 bug猎修8根因(session出口version真值补list/create防锁基准空窗; url_reject_reason拦非规范点分IP字面量整数/十六进制/八进制/缩写点分/尾点6变体SSRF面; 裸链接正则不吞尾随句读消binary误判; 扫描上限单源MAX_TEXT_URLS消4/8双真源静默丢条目; quality_of透传has_slot实例口径与plan_refs同判消预检误报降级; build_candidates单模型画像异常隔离不覆没全部候选) - 小欧-2026-11-16
+[输入] fix cdd4ede11 三堂会审整改(P0:SessionResponse补version真值根治409回读污染; P1:need_of跳过失败项/route补provider比对/候选构建异常降级空候选/auto切换防回环/回退入口独立revertFrom; P2/P3:RoutingMode与RoutingAdvice收敛types/chat唯一类型源/删死字段死参死分支/preflightItems过滤pending占位/update_session只回success+version/无生效模型不预检) - 小欧-2026-11-16
+[附件] fix 9b08bc50d 阶段C三堂会审整改(kind=all改为不过滤防漏词表外历史行+新增contract.KIND_ALL收敛前后端哨兵; 切作用域只拉当前作用域并收口scopeOfSource单一映射; 删服务层同条件死分支; all字面量抽KIND_ALL常量) - 小欧-2026-11-16
+[启动] fix 2c8558241 boot日志污染根治+开浏览器可观测性+启动摘要落文件(detach后console镜像旁路: console_mode新增is_console_detached与_probe_console纳入判定, 根治app运行日志灌入boot日志含会话历史; _open_browser_when_ready检查webbrowser.open返回值并成功/失败/异常均写boot日志; main启动摘要当前版本/LLM配置补logger.info落app文件防旁路丢失) - 小欧-2026-11-16
+### 1.7.3.3 文档
+[文档] docs 1ea108e21 doc-11月优化 [44]多媒体输入与理解能力实现说明补序号入库 - 小欧-2026-11-16
+[文档] docs d82f6b9b3 doc-11月优化 [22]补第13章前缺陷D1–D6真伪复核与预检一致性修正记录 - opencode-2026-11-16
+[文档] docs 85014e7c3 doc-11月优化 [23]阶段D实施前校准(§6.1 must_native语义与代码冲突勘误+定案二选一; §6.4 routing_advice形状统一为action字段; §8阶段D补mode入参/会话级模式设置/候选模型来源三行; §9.5补9条与实码不符校准清单含测试路径失效/组件不存在/断言错位) - 小欧-2026-11-16
+
 v1.7.2
 发布时间: 2026-11-16 06:58:13 - 小欧-2026-11-16
 ## v1.7.1以来 变更汇总(20个commit: feat2/fix4/refactor3/docs11, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
