@@ -41,6 +41,11 @@
 //   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
 // 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案沿既有两段;
 //   删输入框下方旧提示块消除双提示并存; testid 保 overlay 内层以保既有 e2e 不断 — 小欧-2026-10-26
+// 编辑历史: 2026-11-16 小欧 [23]阶段B(输入框体验统一): ①refs.map 内联 chip 抽为统一组件
+//   RefChip(features/refs/, 四类引用同一渲染体, 样式/点击/回执态零改动);
+//   ②徽标双源: URL 逐项只读 preflight quality(采集层落存), 附件/文件只读 ref_quality_map;
+//   ③新增发送前提示行 HintLine(降级/超限/非法链接/推荐切换, 互不串扰, 引用行下);
+//   ④worst_quality 前端聚合与后端 preflight 同口径(任一非 native 即 degraded) — 小欧-2026-11-16
 
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
@@ -123,17 +128,13 @@ import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-11-15 小欧 - URL 一等引用采集层(粘贴/拖拽文本 → 后端预检 → chip/即拒)
 import { captureUrlsFromText } from '@/features/refs/urlCapture';
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import {
-  chipStateOf,
-  chipStateText,
-  chipToneOf,
-  noticeOf,
-  noticeDetailText,
-} from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射
 import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填信号 — 小欧-2026-10-30
 // 2026-10-30 18:42:49 小欧 - 会话使用目录的唯一真源(徽标只订阅其 list.length) — 小欧-2026-10-30
 import { workspaceStore } from '../services/sessionWorkspaceStore';
-import type { ChipTone } from '@/features/refs/notice';
+// 2026-11-16 小欧 [23]阶段B: chip 5 态/回执映射迁入 RefChip 组件内(本文件不再直连 notice);
+//   chip 统一组件 + 发送前提示行 — 小欧-2026-11-16
+import { RefChip } from '@/features/refs/RefChip';
+import { HintLine } from '@/features/refs/HintLine';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
@@ -142,13 +143,12 @@ import {
   type ComposerRef,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
-import { resolveChipUrlFresh } from '@/hooks/useProjectRoot';
 import { isLinkableRelPath } from '@/utils/projectPath';
 // 2026-11-07 小欧 - 本轮文件条显示总大小: 复用公用 formatBytes(不新造格式化) — 小欧-2026-11-07
 import { formatBytes } from '@/utils/format';
 // 2026-11-02 小欧 - 引用 chip 点击改 SPA 导航（与 PathLink/FileTrailPanel 同一口径，且避开
 //   await 后再 window.open 被浏览器当弹窗拦截）— 小欧-2026-11-02
-import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+// 2026-11-16 小欧 [23]阶段B: SPA 导航随 chip 点击逻辑一并迁入 RefChip, 本文件不再用 nav
 import { showMessage, ErrorType } from '../../../services/error/handler';
 import { chatTokens } from '@/theme/tokens';
 import { FOCUS_RING_WIDTH, FOCUS_RING_OFFSET } from '@/theme/controlScale';
@@ -160,22 +160,14 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors, FontSize, Radius, Spacing } from '@/utils/stepStyles';
-import { Gap, LineHeight } from '@/theme/spacing';
-import { CONTROL_PADDING } from '@/theme/controlScale';
+import { Colors, Radius, Spacing } from '@/utils/stepStyles';
+import { Gap } from '@/theme/spacing';
 // 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
+// 2026-11-16 小欧 [23]阶段B: QualityBadge 徽标渲染迁入 RefChip 统一组件, 本文件只投影 quality 值
 import {
   chipQuality,
   useRefQualityMap,
 } from '../hooks/useRefQualityMap';
-import { QualityBadge } from './input/QualityBadge';
-
-/** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
-const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
-  danger: { bg: Colors.ERROR_BG, border: Colors.ERROR_BORDER },
-  warn: { bg: Colors.WARNING_BG, border: Colors.WARNING },
-  normal: { bg: chatTokens.colorPrimaryBg, border: chatTokens.colorBorder },
-};
 
 interface ChatInputProps {
   loading: boolean;
@@ -225,6 +217,25 @@ const ChatInput: React.FC<ChatInputProps> = ({
   } = useComposerRefs();
   // 2026-11-14 小欧 - chip 引用质量徽标数据源(生效模型 ref_quality_map) — 小欧-2026-11-14
   const capMap = useRefQualityMap(sessionId);
+  // 2026-11-16 小欧 [23]阶段B: 徽标双源投影 — URL 逐项只读 preflight quality(采集层落存),
+  //   附件/文件只读 ref_quality_map 投影; 同一函数供 chip 徽标与 worst 聚合共用(单一实现) — 小欧-2026-11-16
+  const qualityOf = useCallback(
+    (r: ComposerRef) =>
+      r.kind === 'url' ? r.quality : capMap ? chipQuality(capMap, r) : undefined,
+    [capMap]
+  );
+  // 2026-11-16 小欧 [23]阶段B: worst_quality 前端聚合(与后端 preflight 同口径: 任一非 native 即 degraded),
+  //   逐项值仍是后端真源, 此处只做"有没有非 native"的存在性判断 — 小欧-2026-11-16
+  const worstQuality: 'native' | 'degraded' = refs.some((r) => {
+    const q = qualityOf(r);
+    return q != null && q !== 'native';
+  })
+    ? 'degraded'
+    : 'native';
+  // 2026-11-16 小欧 [23]阶段B: URL 采集回执的场景提示(非法链接/推荐切换), 下次采集刷新 — 小欧-2026-11-16
+  const [urlHint, setUrlHint] = useState<
+    'invalid-url' | 'switch' | undefined
+  >(undefined);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -300,8 +311,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-11-06 小欧 - 拖拽高亮 + 拖入深度计数(子元素间移动不闪)
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
-  // 2026-11-02 小欧 - 引用 chip 点击的唯一跳转口（有 Router 走 SPA，无 Router 整页跳）— 小欧-2026-11-02
-  const nav = useOptionalNavigate();
   useEffect(() => {
     const was = wasBlockedRef.current;
     wasBlockedRef.current = sendBlocked;
@@ -705,7 +714,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleUrlText = useCallback(
     (text: string, strip?: (draft: string) => string): void => {
       void captureUrlsFromText(text, getMaxRefs() - getRefs().length)
-        .then(({ accepted, rejected, overflow, urlOnly }) => {
+        .then(({ accepted, rejected, overflow, urlOnly, routingAdvice }) => {
+          // 2026-11-16 小欧 [23]阶段B: 场景提示数据落定(非法链接/推荐切换), 供 HintLine 展示 — 小欧-2026-11-16
+          setUrlHint(
+            rejected.length > 0
+              ? 'invalid-url'
+              : routingAdvice.action === 'switch'
+                ? 'switch'
+                : undefined
+          );
           if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化
           if (strip) setDraft(strip);
           for (const r of accepted) add(r);
@@ -833,97 +850,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
           >
             本轮文件 · {refs.length} 个 · 共 {formatBytes(totalSize)}
           </span>
-          {refs.map((r) => {
-            /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
-               红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking;
-               批3: 配色改查色表(原背景/边框各写一遍三层嵌套三元, 6 处分支)
-               R9: 文案拼回执 detail(省略多少)/中文原因, 标题同样带原因 —— 用户能分清
-               "文件不存在""选区越界""整批被拒" — 小欧-2026-10-30 */
-            const state = chipStateOf(r, refNotices);
-            const notice = noticeOf(r, refNotices);
-            const tone = CHIP_TONE_STYLE[chipToneOf(state)];
-            const detail = noticeDetailText(notice);
-            // 2026-11-14 小欧 - 引用质量徽标(ref_quality_map 只读索引, 查不到不显示) — 小欧-2026-11-14
-            const capQuality = capMap ? chipQuality(capMap, r) : undefined;
-            return (
-              <span
-                key={r.id}
-                title={`${r.path ?? ''}${
-                  r.lineRange
-                    ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
-                    : ''
-                }${detail ? `｜${detail}` : ''}`}
-                style={{
-                  /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
-                  background: tone.bg,
-                  color: Colors.TEXT.STRONG,
-                  border: `1px solid ${tone.border}`,
-                  borderRadius: chatTokens.radius,
-                  padding: `${CONTROL_PADDING.CHIP_Y}px ${CONTROL_PADDING.CHIP_X}px`,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: Gap.ROW,
-                  // chip 文字行高取全站行高标准 LOOSE(14px×1.5714≈22px), 配合 chip 上下内距 1px 得 24px 行盒
-                  lineHeight: LineHeight.LOOSE,
-                }}
-                onClick={() => {
-                  // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
-                  //   不跳文件页（否则点开一个空 path 的死链），仅作展示
-                  if (!r.path) return;
-                  // 2026-11-15 小欧 - URL chip: path 载的是外链, 直接新开, 不走
-                  //   文件路径解析(否则外链被当项目内路径, 文件页必报找不到)
-                  if (r.kind === 'url') {
-                    window.open(r.url ?? r.path, '_blank', 'noopener');
-                    return;
-                  }
-                  // 2026-11-02 小欧 - 改走唯一路径解析（点击实时取根），不再直接拼内部深链：
-                  //   根外路径原实现会生成无 ext=1 的内部深链 → 文件页必报找不到 — 小欧-2026-11-02
-                  void resolveChipUrlFresh(r.path, r.lineRange ?? null).then(
-                    // 点击时实时判不过 → 不跳空链；跳转口径与 PathLink 一致（SPA 导航 + internal 标记）
-                    // 2026-11-02 小欧 - 补 internal:true：缺它文件页不清外部预览态，点 chip 像没反应 — 小欧-2026-11-02
-                    (url) => {
-                      if (url) nav(url, { state: { internal: true } });
-                    }
-                  );
-                }}
-              >
-                <FileOutlined style={{ color: chatTokens.colorPrimary }} />
-                {r.label}
-                {/* 2026-11-14 小欧 - 引用质量徽标: 按 ref_quality_map[source][content] 只读索引 — 小欧-2026-11-14 */}
-                {capQuality && <QualityBadge quality={capQuality} />}
-                {chipStateText(state, notice)}
-                {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(r.id); // 小欧-2026-10-22 改用 hook.remove
-                  }}
-                  aria-label={`删除引用 ${r.label}`}
-                  title="移除该引用"
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    padding: `0 ${CONTROL_PADDING.CHIP_X}px`,
-                    // 删除按钮与 chip 文字同字号同行高(不再单写 16px), 靠颜色区分主次
-                    fontSize: FontSize.PRIMARY,
-                    lineHeight: LineHeight.LOOSE,
-                    color: Colors.TEXT.SECONDARY,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            );
-          })}
+          {refs.map((r) => (
+            /* 2026-11-16 小欧 [23]阶段B: chip 统一组件(四类引用同一渲染体), 自内联 span 抽出 — 小欧-2026-11-16 */
+            <RefChip
+              key={r.id}
+              r={r}
+              notices={refNotices}
+              quality={qualityOf(r)}
+              onRemove={remove}
+            />
+          ))}
         </div>
       )}
       {refsPending && (
         <div style={{ color: Colors.WAIT_ACTION, fontSize: chatTokens.fontSM }}>
           引用内容正在载入，稍候即可发送
         </div>
+      )}
+      {/* 2026-11-16 小欧 [23]阶段B: 发送前提示行(引用行下): 超限/非法链接/推荐切换优先,
+          其余看 worst_quality; 无提示不占行 — 小欧-2026-11-16 */}
+      {refs.length > 0 && (
+        <HintLine
+          worstQuality={worstQuality}
+          mode={refs.length >= getMaxRefs() ? 'over-limit' : urlHint}
+        />
       )}
       {/* 2026-10-21 小杨 - 候选面板改为**浮层**（absolute）
           原实现是普通文档流 → 每打开一次就把下方内容整体下推，输入区位置跳动。

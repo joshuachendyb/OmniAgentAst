@@ -5,9 +5,11 @@
 // 2026-11-15 小欧 三堂会审整改: 删 isUrlOnlyText(前端自写 URL 正则属第二套识别口径,
 //   且接管判据改由 ChatInput 以"原生粘贴落位+命中后撤出"实现, 识别单一真源在后端);
 //   上限裁决移入本层(room 入参), 调用方不再自行切片 — 小欧-2026-11-15
+// 2026-11-16 小欧 [23]阶段B: accepted chip 落存 preflight 逐项 quality(徽标双源之 URL 源,
+//   只读不派生); outcome 透传 routing_advice(推荐切换提示数据源) — 小欧-2026-11-16
 
 import { preflightInput } from '@/services/api/inputs.api';
-import { newRefId, type ComposerRef } from './store';
+import { newRefId, type ComposerRef, type RefQualityValue } from './store';
 
 export interface RejectedUrl {
   url: string;
@@ -21,6 +23,8 @@ export interface UrlCaptureOutcome {
   overflow: number;
   /** 后端判定: 正文去掉扫描到的 URL 后只剩空白(纯 URL 内容才接管撤出正文) */
   urlOnly: boolean;
+  /** preflight routing_advice 原值透传(推荐切换提示数据源, 零翻译) — 2026-11-16 小欧 */
+  routingAdvice: { action: string; reason: string };
 }
 
 /**
@@ -52,6 +56,8 @@ export const captureUrlsFromText = async (
       url: it.url,
       source_kind: it.source_kind,
       must_native: it.must_native,
+      // 阶段B: preflight 逐项 quality 原值落存(徽标只读, 前端零派生) — 2026-11-16 小欧
+      quality: it.quality as RefQualityValue,
     });
   }
   const overflow = Math.max(0, accepted.length - Math.max(0, room));
@@ -60,5 +66,6 @@ export const captureUrlsFromText = async (
     rejected,
     overflow,
     urlOnly: result.text_url_only,
+    routingAdvice: result.routing_advice,
   };
 };
