@@ -90,6 +90,7 @@
 #   start/stop_db_status_refresher); /health 由"每次提交线程池"改为"读后台缓存", 卡死时自身仍可答
 # 2026-11-15 小欧 - P2 纪律([42]): 启动第一件事 log_build_fingerprint() 落运行代码指纹,
 #   /health 新增 build 字段; dev/打包/部署三处比对可判定"跑的是不是新代码" — 小欧-2026-11-15
+# 2026-11-16 小欧 - 优雅停机入口: 挂载 system_routes(POST /api/v1/shutdown, 走 _mount 默认 token 鉴权), 置 uvicorn Server.should_exit 触发既有 lifespan shutdown; Server 引用由 run_server 编程式启动时挂到 app.state.uvicorn_server — 小欧-2026-11-16
 import asyncio
 import sys
 import threading
@@ -411,6 +412,9 @@ _mount(fs_router, "fs")
 # 2026-11-15 小欧 - 输入预检路由([23] 阶段A: POST /inputs/preflight, 建议性不阻断) — 小欧-2026-11-15
 from app.api.v1.inputs import router as inputs_router
 _mount(inputs_router, "inputs")
+# 2026-11-16 小欧 - 优雅停机路由(POST /shutdown, 走 token 鉴权): 前端"关闭服务"按钮/自动化调用
+from app.api.v1.system_routes import router as system_router
+_mount(system_router, "system")
 
 
 

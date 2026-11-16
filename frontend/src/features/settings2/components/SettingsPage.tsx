@@ -3,6 +3,7 @@
 // 2026-11-09 小欧 - 删 saveGroup 返回值的冗余类型断言（SaveResult.ok 已是 boolean）— 小欧-2026-11-09
 // 2026-11-11 小欧 - Image_URL 即存链(probeUrlDraft/saveProbeUrl)移除: 三个验证素材地址已回媒体页直接编辑(走组保存),
 //   ModelTab 不再接收 probeUrlDraft/onProbeUrlChange/onProbeUrlSave props — 小欧-2026-11-11
+// 2026-11-16 小欧 - 设置页底部挂 ShutdownCard(服务卡, 提供「关闭服务」优雅停机入口) — 小欧-2026-11-16
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -19,6 +20,7 @@ import { ModelModals } from './ModelModals';
 import { CurrentModelRefCard } from './CurrentModelRefCard';
 import { ModelLibraryTab } from './ModelLibraryTab';
 import { ModelTab } from './ModelTab';
+import { ShutdownCard } from './ShutdownCard'; // 2026-11-16 小欧 - 设置页「关闭服务」入口
 import {
   buildDangerChanges,
   buildDangerHints,
@@ -216,6 +218,7 @@ const SettingsPage: React.FC = () => {
         highlightKey={s.highlightKey}
         onChange={s.setValue}
       />
+      <ShutdownCard />
     </div>
   );
 

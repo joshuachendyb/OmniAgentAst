@@ -1,5 +1,5 @@
 /**
- * NavContent - 侧边导航内容(Logo区 + 导航菜单 + 窄模式CSS注入 + 底部版本信息)
+ * NavContent - 侧边导航内容(Logo区 + 导航菜单 + 窄模式CSS注入 + 底部版本/关闭服务区)
  *
  * 功能：
  * - 菜单items配置与点击分发(快捷指令开面板/对话任务回当前会话/其余navigate)
@@ -13,6 +13,7 @@
 // 编辑历史: 2026-11-02 小欧 - 版本号真源化+防覆盖: appVersion改由后端health.version(version.txt首行)props下发(原手写死v2.1.0删除); 底条bottom抬到触发条上方治"桌面端从未显示" - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 魔法数字收口: 43=Size.HEADER_HEIGHT, 12=Spacing.LG, 16/8/20=Spacing.XL/MD/XXL, #e8e8e8=Colors.BORDER.VERTICAL; 13px字档无同值令牌零视差保留 — 小欧-2026-11-02
 // 编辑历史: 2026-11-12 小欧 - 字号归位: 版本条 fontSize 13 → FontSize.SECONDARY(13px 档已废除, 原为无同值可替的妥协), import 同步补 FontSize — 小欧-2026-11-12
+// 编辑历史: 2026-11-16 小欧 - 底部信息区重构: 版本标签下方、折叠触发条上方新增「关闭服务」按钮(高危低频, 灰字常驻/hover 显危险红), 与设置卡共用 useShutdown — 小欧-2026-11-16
 import React from 'react';
 import { Badge, Menu } from 'antd';
 import type { MenuProps } from 'antd';
@@ -22,13 +23,23 @@ import {
   FolderOutlined,
   HistoryOutlined,
   MessageOutlined,
+  PoweroffOutlined,
   SettingOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { LogoGridIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
 import { showMessage, ErrorType } from '@/services/error/handler';
-import { Colors, FontSize, Spacing, Size } from '../../utils/stepStyles';
+import { useShutdown } from '@/hooks/useShutdown';
+import { CONTROL_HEIGHT_SM } from '@/theme/controlScale';
+import {
+  Colors,
+  FontSize,
+  FontWeight,
+  Radius,
+  Spacing,
+  Size,
+} from '../../utils/stepStyles';
 
 type MenuItem = Required<MenuProps>['items'][number];
 
@@ -56,6 +67,7 @@ const NavContent: React.FC<{
 }) => {
   const navigate = useNavigate();
   const { sessionCount } = useApp();
+  const { loading: shuttingDown, requestShutdown } = useShutdown();
   // appVersion 由 Shell 取自后端真源(health.version=version.txt首行)经props下发, 本组件只渲染
 
   /**
@@ -199,7 +211,7 @@ const NavContent: React.FC<{
         }}
       />
 
-      {/* 底部信息 - 优化底部信息, 添加点击查看版本详情 */}
+      {/* 底部信息区：版本标签在上, 关闭服务按钮在下, 整体抬到折叠触发条上方 */}
       <div
         style={{
           position: 'absolute',
@@ -207,38 +219,92 @@ const NavContent: React.FC<{
           bottom: isMobile ? 0 : SIDER_TRIGGER_HEIGHT,
           left: 0,
           right: 0,
-          // 2026-10-27 小欧 - 窄菜单模式下减少左右padding, 防止文字被截断; 2026-11-02 收口: 16=Spacing.XL, 8=Spacing.MD, 20=Spacing.XXL — 小欧-2026-10-27
-          padding:
-            sidebarMode === 'narrow'
-              ? `${Spacing.XL}px ${Spacing.MD}px`
-              : `${Spacing.XL}px ${Spacing.XXL}px`,
+          background: Colors.BG.SECONDARY,
           // 2026-11-02 小欧 - 收口: #e8e8e8=Colors.BORDER.VERTICAL(同值零视差) — 小欧-2026-11-02
           borderTop: `1px solid ${Colors.BORDER.VERTICAL}`,
-          // 2026-11-12 小欧 - 归位 SECONDARY(12): 侧栏底部「关于/版本」触发条属低频次要信息,
-          //   归次要正文档。原 13px 裸值是「当年只有 14/12 二档、无同值可替」的妥协, 随阶梯扩充而失效
-          fontSize: FontSize.SECONDARY,
-          color: Colors.TEXT.MUTED,
-          background: Colors.BG.SECONDARY,
-          textAlign: isMobile || collapsed ? 'center' : 'left',
-          cursor: 'pointer',
-          transition: 'background 0.3s ease',
-        }}
-        onClick={() =>
-          showMessage(
-            ErrorType.INFO,
-            `OmniAgentAst ${appVersion || '—'} - 事务工作助手`
-          )
-        }
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = Colors.BG.HOVER;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = Colors.BG.SECONDARY;
         }}
       >
-        {isMobile || collapsed
-          ? appVersion || '—'
-          : `版本 ${appVersion || '—'}`}
+        {/* 版本条：点击查看版本详情 */}
+        <div
+          style={{
+            // 2026-10-27 小欧 - 窄菜单模式下减少左右padding, 防止文字被截断; 2026-11-02 收口: 16=Spacing.XL, 8=Spacing.MD, 20=Spacing.XXL — 小欧-2026-10-27
+            padding:
+              sidebarMode === 'narrow'
+                ? `${Spacing.MD}px ${Spacing.MD}px`
+                : `${Spacing.MD}px ${Spacing.XXL}px`,
+            // 2026-11-12 小欧 - 归位 SECONDARY(12): 侧栏底部「关于/版本」触发条属低频次要信息,
+            //   归次要正文档。原 13px 裸值是「当年只有 14/12 二档、无同值可替」的妥协, 随阶梯扩充而失效
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.MUTED,
+            textAlign: isMobile || collapsed ? 'center' : 'left',
+            cursor: 'pointer',
+            transition: 'background 0.3s ease',
+          }}
+          onClick={() =>
+            showMessage(
+              ErrorType.INFO,
+              `OmniAgentAst ${appVersion || '—'} - 事务工作助手`
+            )
+          }
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = Colors.BG.HOVER;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = Colors.BG.SECONDARY;
+          }}
+        >
+          {isMobile || collapsed
+            ? appVersion || '—'
+            : `版本 ${appVersion || '—'}`}
+        </div>
+
+        {/* 关闭服务：高危低频动作, 常驻低强调(灰字), hover 才显危险红语义, 避免常亮红色喧宾夺主 */}
+        <div
+          style={{
+            padding: collapsed
+              ? `${Spacing.SM}px 0`
+              : `${Spacing.SM}px ${
+                  sidebarMode === 'narrow' ? Spacing.MD : Spacing.XXL
+                }px`,
+            borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+          }}
+        >
+          <button
+            type="button"
+            title={collapsed || isMobile ? '关闭后端服务' : undefined}
+            disabled={shuttingDown}
+            onClick={requestShutdown}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              gap: Spacing.SM,
+              width: '100%',
+              height: CONTROL_HEIGHT_SM,
+              padding: collapsed ? 0 : `0 ${Spacing.MD}px`,
+              border: 'none',
+              borderRadius: Radius.SM,
+              background: 'transparent',
+              color: Colors.TEXT.MUTED,
+              fontSize: FontSize.SECONDARY,
+              fontWeight: FontWeight.MEDIUM,
+              cursor: shuttingDown ? 'not-allowed' : 'pointer',
+              opacity: shuttingDown ? 0.6 : 1,
+              transition: 'background 0.2s ease, color 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = Colors.ERROR_BG;
+              e.currentTarget.style.color = Colors.ERROR_TEXT;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = Colors.TEXT.MUTED;
+            }}
+          >
+            <PoweroffOutlined />
+            {!collapsed && <span>关闭服务</span>}
+          </button>
+        </div>
       </div>
     </>
   );

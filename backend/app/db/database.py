@@ -23,6 +23,7 @@
 # 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
 # 2026-08-21 - 小欧 - 差异设计落地: ①删observer条目+删init_observer方法(零调用方); ②_db_paths加timers条目(timers.db独立库); ③import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
 # 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
+# 2026-11-16 - 小欧 - 启动迁移连接放宽 busy_timeout: get_conn 新增 busy_timeout_ms 参数(默认 500ms 行为不变), init() 的迁移连接传 30000ms — 双击并发初始化撞写锁时不再立即抛 database is locked 崩启动; 运行期仍 500ms+指数退避。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -88,6 +89,12 @@ _INIT_BY_DB = {
 #   长工具占满池时落库排队, 延迟反压到 SSE 与 REST。DB 写本就被 SQLite 文件锁串行化,
 #   池开大只空转, 故单独给 4 个 worker(够并发起跑的多会话排队, 又不与工具抢池)。
 _DB_TXN_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db-txn")
+
+# 启动期迁移连接 busy_timeout — 小欧 2026-11-16
+# 迁移(建表/去重/建索引)是长事务, 撞写锁时若沿用运行期 500ms 会立即抛 database is locked
+# 直接崩掉启动(logs 实证: 双击两次并发 init_chat_db)。迁移是单次启动期动作, 可安全等写锁:
+# 30s 内拿到锁就继续, 拿不到才失败(此时确有异常持锁者)。运行期 get_conn 仍用 500ms+指数重试。
+_MIGRATION_BUSY_TIMEOUT_MS = 30000
 
 
 class _ParamSafeConnection:
@@ -185,7 +192,8 @@ class DatabaseManager:
         self._db_overrides: Dict[str, Any] = {}
 
     @contextmanager
-    def get_conn(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:
+    def get_conn(self, db_name: str = "chat", max_retries: int = 3,
+                 busy_timeout_ms: int = 500) -> Iterator[sqlite3.Connection]:
         """获取数据库连接(上下文管理器) — 统一入口(含locked指数退避重试)
         
         使用方式:
@@ -230,7 +238,7 @@ class DatabaseManager:
                 #   2026-07-17 E2E验证暴露DELETE模式在chat_message_steps膨胀185万行/2.7GB时写I/O拥塞(每次写journal+fsync),
                 #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
                 conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
+                conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")  # 默认500ms(快速失败+应用层指数退避); 启动迁移传 30s 等写锁 — 小欧 2026-07-23 / 2026-11-16
                 # 外键约束: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
                 conn.execute("PRAGMA foreign_keys=ON")
                 break  # 连接成功
@@ -386,20 +394,25 @@ class DatabaseManager:
         """初始化所有数据库(应用启动时调用)"""
         import time as _time
         logger.info("Initializing all databases...")
+
+        def _migration_conn(db_name: str = "chat"):
+            # 启动期迁移用较长 busy_timeout 等写锁, 避免瞬时锁竞争直接崩启动 — 小欧 2026-11-16
+            return self.get_conn(db_name, busy_timeout_ms=_MIGRATION_BUSY_TIMEOUT_MS)
+
         _ta = _time.time()
-        init_chat_db(self.get_conn)
+        init_chat_db(_migration_conn)
         logger.info(f"[启动耗时] init_chat_db: {_time.time()-_ta:.3f}s")
         _tb = _time.time()
-        init_operations_db(self.get_conn)
+        init_operations_db(_migration_conn)
         logger.info(f"[启动耗时] init_operations_db: {_time.time()-_tb:.3f}s")
         _tt = _time.time()
-        init_timers_db(self.get_conn)
+        init_timers_db(_migration_conn)
         logger.info(f"[启动耗时] init_timers_db: {_time.time()-_tt:.3f}s")
         _tc = _time.time()
-        init_task_tracker_db(self.get_conn)
+        init_task_tracker_db(_migration_conn)
         logger.info(f"[启动耗时] init_task_tracker_db: {_time.time()-_tc:.3f}s")
         _tm = _time.time()
-        init_monitoring_db(self.get_conn)
+        init_monitoring_db(_migration_conn)
         logger.info(f"[启动耗时] init_monitoring_db: {_time.time()-_tm:.3f}s")
         logger.info(f"[启动耗时] db.init 合计: {_time.time()-_ta:.3f}s")
         logger.info("All databases initialized successfully")

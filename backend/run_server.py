@@ -61,6 +61,11 @@
 #     frozen 启动即 FreeConsole + stdio 重定向到 logs/boot_*.log; 父进程不持有控制台,
 #     子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失;
 #     排障开关 OMNI_KEEP_CONSOLE=1 可保留控制台
+#   2026-11-16 小欧 - 单实例与关闭入口: ①命名 Mutex 抢锁(抢不到=已有实例, 等就绪后开浏览器退出),
+#     堵死双击两次并发初始化同一 SQLite 库致 database is locked 的 TOCTOU 窗口; ②端口预检前移到
+#     detach 之前(原先 FreeConsole 致占用提示落 boot 日志看不到), 失败用 MessageBox 弹窗; ③就绪后
+#     自动开浏览器; ④uvicorn 改 Config+Server 编程式启动并把 Server 挂 app.state, 供 /api/v1/shutdown
+#     优雅停机; ⑤--no-browser/--no-single-instance 供自动化与并行调试。 — 小欧-2026-11-16
 # ============================================================================
 import argparse
 import shutil
@@ -120,49 +125,6 @@ def _port_owner(port: int) -> Optional[Tuple[int, str, str]]:
     except Exception:
         return None
     return None
-
-
-def _explain_port_busy(host: str, port: int) -> None:
-    """端口占用的人话说明: 是谁占的 + 两条出路(直接用/清理或换端口) — 小欧 2026-11-04"""
-    owner = _port_owner(port)
-    pid, name, exe = owner if owner else (0, "", "")
-    is_self = "omniagent" in name.lower() or "omniagent" in exe.lower()
-    shown_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-    rule = "=" * 68
-
-    print(f"\n{rule}", flush=True)
-    print(f"[run_server] ❌ 端口 {port} 已被占用, 本次启动终止(未改动任何文件)", flush=True)
-    print(rule, flush=True)
-    if pid:
-        print(f"  占用者: PID {pid}  {name or '未知进程'}", flush=True)
-        if exe:
-            print(f"          {exe}", flush=True)
-    else:
-        print("  占用者: 未识别(可能权限不足, 或被系统进程占用)", flush=True)
-
-    if is_self:
-        print("\n  ✅ 判断: 本程序已经在运行, 不用再开一个 —— 浏览器直接访问:", flush=True)
-        print(f"     👉 http://{shown_host}:{port}", flush=True)
-        print("\n  只有确认要重启时才需要结束它:", flush=True)
-    else:
-        print("\n  要用本程序, 先清理占用者(或换个端口):", flush=True)
-
-    if pid:
-        print("\n  ① 结束占用进程", flush=True)
-        print(f"     PowerShell:  Stop-Process -Id {pid} -Force", flush=True)
-        print(f"     CMD:         taskkill /F /PID {pid}", flush=True)
-    else:
-        print("\n  ① 查出是谁占的", flush=True)
-        print(f"     PowerShell:  Get-NetTCPConnection -LocalPort {port} -State Listen", flush=True)
-        print(f"                  Get-NetTCPConnection -LocalPort {port} -State Listen"
-              f" | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}", flush=True)
-        print(f"     CMD:         netstat -ano | findstr :{port}", flush=True)
-        print(f"                  for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port}"
-              f" ^| findstr LISTENING') do taskkill /F /PID %a", flush=True)
-    print("  ② 再双击本程序", flush=True)
-    print("\n  不想清理也可以直接换端口启动(两种命令行相同):", flush=True)
-    print(f"     OmniAgentBackend.exe --port {port + 1}", flush=True)
-    print(f"{rule}\n", flush=True)
 
 
 def _wait_before_close(seconds: int = 30) -> None:
@@ -281,12 +243,108 @@ def _ensure_config(base: Path) -> None:
         print(f"[run_server] 已由 config.yaml.example 生成 {target}", flush=True)
 
 
+# ── 单实例与关闭入口支撑(2026-11-16 小欧) ───────────────────────────────────
+_SINGLE_INSTANCE_MUTEX = "OmniAgentBackend_SingleInstance"
+
+
+def _acquire_single_instance_mutex():
+    """抢占命名 Mutex(须活到进程结束); 成功返回 (True, handle), 已有实例返回 (False, 0) — 小欧 2026-11-16
+
+    与端口预检互补: 预检存在"检查时空闲→初始化期才 bind"的 TOCTOU 窗口, 双击两次时两实例
+    都能过预检, 随后并发初始化同一 SQLite 库撞写锁(logs 实证 database is locked)。Mutex 在任何
+    初始化之前原子抢锁, 堵死该窗口。名字不加 Global\\ 前缀, 按会话隔离, 免普通用户缺
+    SeCreateGlobalPrivilege 而失败。
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    handle = kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX)
+    if not handle:
+        return False, 0
+    ERROR_ALREADY_EXISTS = 183
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return False, 0
+    return True, handle
+
+
+def _shown_host(host: str) -> str:
+    """通配地址(0.0.0.0/::)给浏览器时回落 127.0.0.1 — 小欧 2026-11-16"""
+    return "127.0.0.1" if host in ("0.0.0.0", "::") else host
+
+
+def _wait_http_ready(host: str, port: int, timeout: float = 60.0) -> bool:
+    """轮询 GET /health 直到 200 或超时, 返回是否就绪 — 小欧 2026-11-16
+
+    用真实 HTTP 而非"端口可连": uvicorn 先 bind 再跑 lifespan, 端口已开但数据库/迁移尚未
+    就绪时打开浏览器会看到错误页。
+    """
+    import time
+    import urllib.request
+
+    url = f"http://{_shown_host(host)}:{port}/health"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return False
+
+
+def _open_browser_when_ready(host: str, port: int, timeout: float = 60.0) -> bool:
+    """等后端 HTTP 就绪后打开默认浏览器, 返回是否已打开 — 小欧 2026-11-16"""
+    import webbrowser
+
+    if not _wait_http_ready(host, port, timeout):
+        return False
+    webbrowser.open(f"http://{_shown_host(host)}:{port}")
+    return True
+
+
+def _show_messagebox(title: str, text: str, error: bool = True) -> None:
+    """无控制台时用系统弹窗把失败原因呈现给用户 — 小欧 2026-11-16
+
+    FreeConsole 后 stdout 落 boot 日志, 双击启动的用户看不到; MessageBoxW 不依赖控制台,
+    是唯一可靠的"人可见"通道。
+    """
+    import ctypes
+
+    MB_ICONERROR = 0x00000010
+    MB_ICONWARNING = 0x00000030
+    ctypes.windll.user32.MessageBoxW(
+        None, text, title, MB_ICONERROR if error else MB_ICONWARNING)
+
+
+def _port_busy_text(host: str, port: int) -> str:
+    """端口占用的人话说明(MessageBox 与 print 共用) — 小欧 2026-11-16"""
+    owner = _port_owner(port)
+    pid, name, exe = owner if owner else (0, "", "")
+    if pid:
+        who = f"占用者: PID {pid}  {name or '未知进程'}"
+        if exe:
+            who += f"\n{exe}"
+    else:
+        who = "占用者: 未识别(可能权限不足或被系统进程占用)"
+    shown = _shown_host(host)
+    return (
+        f"端口 {port} 已被占用, 本次启动终止(未改动任何文件)。\n\n"
+        f"{who}\n\n"
+        f"若本程序已在运行, 浏览器直接访问 http://{shown}:{port}\n"
+        f"只有确认要重启时才需要结束它: 关闭OmniAgent.bat"
+        + (f"  或  taskkill /F /PID {pid}" if pid else "")
+        + f"\n\n不想清理也可换端口启动:  程序 --port {port + 1}"
+    )
+
+
 def main() -> None:
     freeze_support()
-    # 2026-11-15 小欧 - 先脱离控制台再干别的(P0 止血): 父进程不持有控制台,
-    #   子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失
-    from app.utils.console_mode import detach_console_if_needed
-    detach_console_if_needed()
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
     parser.add_argument("--host", default="127.0.0.1")
     # 2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(代码库占惯例 :8000 不动):
@@ -300,7 +358,33 @@ def main() -> None:
     parser.add_argument(
         "--no-wait", action="store_true",
         help="端口被占用时打印提示后立即退出, 不等 30 秒(供脚本/自动化调用)")
+    parser.add_argument(
+        "--no-browser", action="store_true",
+        help="服务就绪后不自动打开浏览器(供脚本/自动化调用)")
+    parser.add_argument(
+        "--no-single-instance", action="store_true",
+        help="跳过命名 Mutex 单实例互斥(供并行调试)")
     args = parser.parse_args()
+
+    is_frozen = getattr(sys, "frozen", False)
+
+    # ① 单实例互斥(2026-11-16 小欧): 抢在端口预检/DB 初始化之前, 堵死双击两次的并发窗口。
+    #    仅打包版启用, 免与源码调试/并行 E2E 抢同一把会话级锁。
+    if is_frozen and not args.no_single_instance:
+        _got, _handle = _acquire_single_instance_mutex()
+        if not _got:
+            # 已有实例是正常现象, 不报错: 先脱离控制台免窗口驻留, 再等它就绪后开浏览器。
+            from app.utils.console_mode import detach_console_if_needed
+            detach_console_if_needed()
+            if not args.no_browser and not _open_browser_when_ready(args.host, args.port):
+                _show_messagebox(
+                    "OmniAgent",
+                    f"检测到已有实例在运行, 但 60 秒内未就绪。\n"
+                    f"请稍后手动打开 http://{_shown_host(args.host)}:{args.port}\n"
+                    f"或查看程序目录 logs/ 下的日志。",
+                    error=False,
+                )
+            sys.exit(0)
 
     if args.forwarded_allow_ips.strip() == "*":
         # 不是禁止启动（部署者可能知情），但必须让风险可见 —— 应用层会因无法区分
@@ -308,12 +392,35 @@ def main() -> None:
         print("[run_server] ⚠️ 警告：--forwarded-allow-ips=* 会信任所有来源，"
               "客户端可伪造来源 IP，本机访问将不再自动豁免口令。", flush=True)
 
-    # 端口预检: 被占则说明是谁占的并给出出路后退出, 不进入 _deploy_resources/app.main 初始化 — 小欧 2026-11-04
+    # ② 端口预检(2026-11-16 小欧: 前移到 detach 之前, 提示可见; 失败按 frozen 弹 MessageBox)。
+    #    预检被占: 不进入 _deploy_resources/app.main 初始化, 直接给出出路。
     if _port_busy(args.host, args.port):
-        _explain_port_busy(args.host, args.port)
-        if not args.no_wait:
+        owner = _port_owner(args.port)
+        onm = owner or (0, "", "")
+        if "omniagent" in (onm[1] or "").lower() or "omniagent" in (onm[2] or "").lower():
+            # 被本程序旧实例占用(无 Mutex 的旧版/另一端口配置): 当已在运行处理
+            from app.utils.console_mode import detach_console_if_needed
+            detach_console_if_needed()
+            if not args.no_browser and not _open_browser_when_ready(args.host, args.port):
+                _show_messagebox(
+                    "OmniAgent",
+                    f"检测到本程序已在运行, 但 60 秒内未就绪。\n"
+                    f"请稍后手动打开 http://{_shown_host(args.host)}:{args.port}",
+                    error=False,
+                )
+            sys.exit(0)
+        msg = _port_busy_text(args.host, args.port)
+        print(msg, flush=True)
+        if is_frozen:
+            _show_messagebox("OmniAgent 启动失败", msg, error=True)
+        elif not args.no_wait:
             _wait_before_close()
         sys.exit(1)
+
+    # ③ 通过全部前置检查后才脱离控制台(P0 止血逻辑与前提不变): 父进程不持有控制台,
+    #   子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失
+    from app.utils.console_mode import detach_console_if_needed
+    detach_console_if_needed()
 
     base = _exe_dir()
     _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
@@ -322,11 +429,11 @@ def main() -> None:
     # 打包版: 创建 KILL_ON_JOB_CLOSE Job Object, 保证关 console 窗口时子进程树(shell 等)
     #   随主进程自动终止, 不留孤儿锁 DLL(重新部署时 MSVCP140.dll 等被锁无法覆盖) — 小欧-2026-11-07
     _job_handle = 0
-    if getattr(sys, "frozen", False):
+    if is_frozen:
         from app.utils.win_job_object import assign_current_to_kill_on_close_job
         _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
 
-    import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
+    import app.main as _app_main  # 供PyInstaller静态收集业务第三方依赖, 同时取 app 对象供编程式启动
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
     #   应用层原先自己读 FORWARDED_ALLOW_IPS 环境变量，与 uvicorn 各读一次可能不一致
     #   （命令行启动时应用层读不到、只看到默认值）。改为同源注入，两边不可能分叉，
@@ -338,9 +445,26 @@ def main() -> None:
     # 2026-11-12 小欧 - log_level=None: 不在 uvicorn 侧设级别, 交由本系统 handler 阈值裁决(原因见文件头历史)。
     from app.logger.shared_handler import setup_uvicorn_loggers
     setup_uvicorn_loggers()
+
+    # ④ 编程式启动(2026-11-16 小欧): 建 Config+Server 并把 Server 挂 app.state, 供
+    #   /api/v1/shutdown 置 should_exit 触发优雅停机(裸 uvicorn.run 无法从应用内拿到 Server)。
     import uvicorn
-    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level=None,
-                log_config=None, forwarded_allow_ips=args.forwarded_allow_ips)
+    config = uvicorn.Config(
+        _app_main.app, host=args.host, port=args.port,
+        log_level=None, log_config=None,
+        forwarded_allow_ips=args.forwarded_allow_ips)
+    server = uvicorn.Server(config)
+    _app_main.app.state.uvicorn_server = server
+
+    # ⑤ 就绪后自动开浏览器: 后台线程轮询 /health, 避免先于服务就绪打开错误页。
+    if not args.no_browser:
+        import threading
+        threading.Thread(
+            target=_open_browser_when_ready,
+            args=(args.host, args.port),
+            daemon=True).start()
+
+    server.run()
 
 
 if __name__ == "__main__":
