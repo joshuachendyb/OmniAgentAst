@@ -42,6 +42,10 @@
 # 2026-10-24 - 小欧 - create_session 标题截断200字符: useChatSend 把完整消息内容当标题, SessionCreate.title 无长度限制致超长标题入库, 后续 update_session 的 SessionUpdate.title max_length=200 校验必422。在此截断根治。
 # 2026-11-16 - 小欧 - [23]阶段D: SessionUpdate/SessionResponse/update_session/list_sessions/get_session_info 增 routingMode
 #   (会话级能力路由模式 suggest/auto/strict; 存量 NULL 读出归一 suggest) — 小欧-2026-11-16
+
+# 2026-11-16 - 小欧 - 修正: get_session_info 输出乐观锁 version 真值(此前单会话 GET 不返回, 前端 409
+#   回读恒兜底为 1 反污染共享版本); update_session 只回 success+version, 不再回显请求入参值
+
 """
 session_service — 会话业务服务(services/chat)
 
@@ -234,8 +238,7 @@ def update_session(session_id: str, update_data: SessionUpdate):
             new_version = session["version"] + 1
         _sm_out = provided.get("sessionModel")
         logger.info(f"更新会话成功: id={session_id}, title={provided.get('title')}, sessionModel={_sm_out}, routingMode={provided.get('routingMode')}, version={new_version}")
-        return {"success": True, "title": provided.get("title"), "sessionModel": _sm_out,
-                "routingMode": provided.get("routingMode"), "version": new_version}
+        return {"success": True, "version": new_version}
     except HTTPException:
         raise
     except Exception as e:
@@ -372,13 +375,13 @@ def get_session_titles_batch(session_ids: str):
 
 
 def get_session_info(session_id: str):
-    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel) + 真值消息数。
+    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel/routingMode/version) + 真值消息数。
     使用场景: 设置界面读取会话级信息(8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26
     message_count 改真值(计数器退役) — 小欧 2026-09-30"""
     with db.get_conn("chat") as conn:
         row = conn.execute(
             "SELECT id, title, created_at, updated_at, is_valid, "
-            "sessionModel, routingMode "
+            "sessionModel, routingMode, COALESCE(version, 1) as version "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
@@ -394,4 +397,5 @@ def get_session_info(session_id: str):
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
         routingMode=row['routingMode'] or "suggest",
+        version=row['version'],
     )

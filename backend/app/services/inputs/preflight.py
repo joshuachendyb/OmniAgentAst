@@ -9,6 +9,9 @@
 #   时经 capability_router(need_of→route)产出 routing_advice(degraded_ok=(mode!=strict)),
 #   preflight 永不阻断(strict 也只出建议, 阻断在发送侧) — 小欧-2026-11-16
 
+# 2026-11-16 小欧 修正: route 的 keep 判定补 provider 比对; 无候选/入参异常的隔离在调用侧(候选为空即可)
+
+
 """services.inputs.preflight — 输入预检(厚后端核心, 纯判定零副作用)。
 
 两阶段管线(单一管道, 不另设旁路):

@@ -7,8 +7,12 @@
 #   .build_candidates 唯一真源=模型库)下传, 路由建议由 preflight 经 capability_router 产出 — 小欧-2026-11-16
 # 2026-11-16 小欧 [23]阶段D: routing_advice 增 provider(前端一键切换落 L2 需 provider+model) — 小欧-2026-11-16
 
+# 2026-11-16 小欧 修正: 删除未使用的 session_id 预留字段(预检无状态, 避免死参); 候选构建失败
+#   降级为空候选(预检永不阻断), 模型库/YAML 异常不再放大为 500 返回
+
+
 """inputs_routes — 输入预检 API 路由薄壳。挂载走 main.py 的 _mount()(唯一入口)。"""
-from typing import Any, List, Optional
+from typing import Any, List
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -20,7 +24,6 @@ router = APIRouter()
 
 
 class PreflightIn(BaseModel):
-    session_id: Optional[str] = Field(default=None, description="会话 ID(预留溯源, 预检无状态)")
     model_id: str = Field(default="", description="目标模型 ID(provider/model 或 model)")
     text: str = Field(default="", description="消息正文(扫描其中 URL)")
     items: List[dict] = Field(default_factory=list, description="显式输入项(kind/url/path 等)")
@@ -33,7 +36,13 @@ def run_preflight(payload: PreflightIn) -> dict[str, Any]:
     永不阻断: 不含 limits/accepted; 不下载、不触发二次抽取。"""
     mode = payload.mode if payload.mode in ("suggest", "auto", "strict") else "suggest"
     # 未指定目标模型时不做路由: 画像无从判定, 避免对未知模型误报"推荐切换"; 且不触模型库 I/O。
-    candidates = build_candidates() if payload.model_id else None
+    # 候选构建失败(如模型库/YAML 异常)降级为空: 预检永不阻断, 前端静默退化为无建议。
+    candidates = None
+    if payload.model_id:
+        try:
+            candidates = build_candidates()
+        except Exception:
+            candidates = None
     return result_to_dict(preflight(text=payload.text, items=payload.items,
                                     model_id=payload.model_id, mode=mode,
                                     candidates=candidates))

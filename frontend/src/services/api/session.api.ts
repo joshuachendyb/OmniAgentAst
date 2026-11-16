@@ -15,12 +15,15 @@
 // 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
 //   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
 // 编辑历史: 2026-11-16 小欧 - [23]阶段D: Session 增 routingMode; 新增 updateSessionRoutingMode(会话级路由模式唯一写口) — 小欧-2026-11-16
+
+// 编辑历史: 2026-11-16 小欧 - 修正: getSession 现已取后端真实 version(不再恒兜底 1); routingMode 复用 RoutingMode
+
 // 编辑历史: 2026-11-13 商量 - ApiMessage 补 msg_kind(后端 MessageResponse 新增可选字段, user/system_notice):
 //   后台续跑通知消息的种类在 wire 上保真, 前端按它渲染系统通知样式, 不再与用户发言混同
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
-import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
+import type { SessionModelOverride, WorkspacesResponse, RoutingMode } from '@/types/chat';
 
 export interface Session {
   session_id: string;
@@ -34,8 +37,8 @@ export interface Session {
   message_count: number;
   is_valid: boolean;
   sessionModel?: SessionModelOverride | null;
-  /** 2026-11-16 小欧 [23]阶段D: 会话级能力路由模式(后端缺省归一 suggest) */
-  routingMode?: 'suggest' | 'auto' | 'strict';
+  /** 2026-11-16 小欧 阶段D: 会话级能力路由模式(后端缺省归一 suggest) */
+  routingMode?: RoutingMode;
 }
 
 export interface SessionListResponse {
@@ -98,13 +101,13 @@ export interface UpdateSessionRequest {
 
 export interface UpdateSessionResponse {
   success: boolean;
-  title: string;
+  title?: string | null;
   version?: number;
   title_locked?: boolean;
   title_updated_at?: string;
   sessionModel?: SessionModelOverride | null;
-  /** 2026-11-16 小欧 [23]阶段D: 会话级路由模式(写回值) */
-  routingMode?: 'suggest' | 'auto' | 'strict' | null;
+  /** 2026-11-16 小欧 阶段D: 会话级路由模式(写回值; 后端仅回 success+version, 其余字段可选) */
+  routingMode?: RoutingMode | null;
 }
 
 export interface BatchTitleResponse {

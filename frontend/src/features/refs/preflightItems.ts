@@ -3,6 +3,9 @@
 //   (零识别/零质量判定, 分类与质量仍由 contract 唯一裁决);
 //   preflightItemKey 与后端 preflight._item_key 同口径, 供按 key 回写逐项 quality — 小欧-2026-11-16
 
+// 2026-11-16 小欧 修正: 投影与签名跳过 pending 占位项(未落定条目不上送)
+
+
 /**
  * preflightItems —— 引用条 → 输入预检 items 的纯投影(单一实现)
  *
@@ -13,11 +16,13 @@
 import type { ComposerRef } from './store';
 import { refKeyOf } from './identity';
 
-/** 投影为后端 PreflightIn.items 形态(字段与 contract.classify_ref 入参对齐) */
+/** 投影为后端 PreflightIn.items 形态(字段与 contract.classify_ref 入参对齐); 跳过未落定占位项 */
 export const refsToPreflightItems = (
   refs: ComposerRef[]
 ): Array<Record<string, unknown>> =>
-  refs.map((r) =>
+  refs
+    .filter((r) => !r.pending)
+    .map((r) =>
     r.kind === 'url'
       ? { kind: 'url', url: r.url ?? r.path }
       : r.kind === 'attachment'
@@ -37,9 +42,10 @@ export const preflightItemKey = (r: ComposerRef): string =>
     ? String(r.url ?? r.path ?? '')
     : String(r.path || r.attachment_id || r.label || '');
 
-/** 重算触发签名: 归一 key 排序串(条目增删/替换即变, 逐项 quality 回写不触发) */
+/** 重算触发签名: 归一 key 排序串(条目增删/替换/占位落定即变, 逐项 quality 回写不触发) */
 export const refsSignature = (refs: ComposerRef[]): string =>
   refs
+    .filter((r) => !r.pending)
     .map(refKeyOf)
     .sort()
     .join('\n');

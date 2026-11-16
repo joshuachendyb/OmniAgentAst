@@ -2,6 +2,9 @@
 // 2026-11-16 小欧 新建: [23]阶段D —— 会话级路由模式(suggest/auto/strict)唯一读写 hook。
 //   读: GET /sessions/{id}(后端缺省归一 suggest); 写: updateSessionRoutingMode(乐观锁 409 回读) — 小欧-2026-11-16
 
+// 2026-11-16 小欧 修正: setMode 乐观更新即时反馈, 失败回滚到切换前(409 回读失败也回滚)
+
+
 /**
  * useRoutingMode —— 会话级能力路由模式。
  *
@@ -10,8 +13,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { sessionApi } from '@/services/api/session.api';
 import { showSaveError } from '@/utils/chatMessages';
+import type { RoutingMode } from '@/types/chat';
 
-export type RoutingMode = 'suggest' | 'auto' | 'strict';
+export type { RoutingMode };
 
 const normalize = (v: unknown): RoutingMode =>
   v === 'auto' || v === 'strict' ? v : 'suggest';
@@ -46,6 +50,8 @@ export function useRoutingMode(
   const setMode = useCallback(
     async (next: RoutingMode) => {
       if (!sessionId) return;
+      const prev = mode;
+      setModeState(next); // 乐观更新即时反馈, 失败回滚
       setSaving(true);
       try {
         const res = await sessionApi.updateSessionRoutingMode(
@@ -54,7 +60,6 @@ export function useRoutingMode(
           version
         );
         if (res.version) setVersion(res.version);
-        setModeState(next);
       } catch (err: unknown) {
         const status = (err as { response?: { status: number } })?.response
           ?.status;
@@ -64,16 +69,17 @@ export function useRoutingMode(
             if (s.version) setVersion(s.version);
             setModeState(normalize(s.routingMode));
           } catch {
-            // 回读失败保持当前值
+            setModeState(prev); // 回读失败回滚到切换前
           }
         } else {
+          setModeState(prev);
           showSaveError('切换路由模式失败，请重试');
         }
       } finally {
         setSaving(false);
       }
     },
-    [sessionId, version, setVersion]
+    [sessionId, version, setVersion, mode]
   );
 
   return { mode, setMode, saving };

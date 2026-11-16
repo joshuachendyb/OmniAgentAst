@@ -94,6 +94,10 @@
 // 2026-11-16 小欧 [23]阶段D D12 - Composer 级预检重算: 引用增删即整体重算(useInputPreflight,
 //   seq 丢弃迟到), worst/逐项 quality/routing_advice 全走后端真源, chip 徽标与最差聚合收敛单一投影;
 //   URL 采集层不再单独缓存建议, auto 切换迁至建议 effect — 小欧-2026-11-16
+
+// 2026-11-16 小欧 修正: 推荐条回退入口独立于当前建议(revertFrom 单独驱动, 自动切换后建议重算为 keep
+//   不再吞掉回退按钮); auto 自动切换按建议键去重防回环; 输入变更清除陈旧回执提示
+
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -168,7 +172,7 @@ import {
   clearRecentInputs,
   type RecentInput,
 } from '../utils/recentInputs';
-import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
+import type { SendOpts, RoutingMode } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors, Radius, Spacing } from '@/utils/stepStyles';
 import { Gap } from '@/theme/spacing';
@@ -197,7 +201,7 @@ interface ChatInputProps {
   /** 2026-11-16 小欧 [23]阶段D: 生效模型(provider/model)与路由模式, 供 preflight 路由判定 */
   modelId?: string;
   modelProvider?: string;
-  routingMode?: 'suggest' | 'auto' | 'strict';
+  routingMode?: RoutingMode;
   /** 推荐条一键切换(由调用方落 L2 并同步模型层) */
   onSwitchModel?: (provider: string, model: string) => void;
 }
@@ -243,7 +247,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     modelId,
     modelProvider,
     routingMode,
-    sessionId,
   });
   const worstQuality = preflight.worstQuality;
   // 2026-11-16 小欧 [23]阶段B: 徽标双源投影 — URL 逐项只读 preflight quality(采集层落存),
@@ -262,9 +265,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     [preflight.qualityByKey, capMap]
   );
   // 2026-11-16 小欧 [23]阶段B: URL 采集回执的场景提示(非法链接), 下次采集刷新 — 小欧-2026-11-16
-  const [urlHint, setUrlHint] = useState<
-    'invalid-url' | 'switch' | undefined
-  >(undefined);
+  const [urlHint, setUrlHint] = useState<'invalid-url' | undefined>(undefined);
   // 2026-11-16 小欧 [23]阶段D: 能力路由建议直读 preflight(routing_advice), auto 切换前模型快照作回退 — 小欧-2026-11-16
   const routingAdvice = preflight.routingAdvice;
   // 手动切换/回退后本条建议即时隐藏, 不依赖模型层回传时序(下一次重算给出新建议) — 小欧-2026-11-16
@@ -280,6 +281,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     provider: string;
     model: string;
   } | null>(null);
+  // 已自动切换过的建议键: 回退到原模型后同一建议重算仍成立, 不再二次自动切换(防回环)
+  const autoSwitchedRef = useRef<Set<string>>(new Set());
   // 2026-11-16 小欧 [23]阶段D: auto 模式点击外自动切换(带去重守卫防回路), 切换前快照供回退 — 小欧-2026-11-16
   useEffect(() => {
     if (
@@ -296,6 +299,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
       routingAdvice.provider === (modelProvider ?? '')
     )
       return;
+    if (autoSwitchedRef.current.has(adviceKey)) return;
+    autoSwitchedRef.current.add(adviceKey);
     setRevertFrom(
       modelId ? { provider: modelProvider ?? '', model: modelId } : null
     );
@@ -651,6 +656,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
    */
   const handleInputChange = useCallback(
     (v: string) => {
+      setUrlHint(undefined); // 用户继续编辑即视为已知悉, 清除上次采集的陈旧回执提示
       setDraft(v);
       if (histIdx >= 0) exitHistory();
       const el = inputRef.current;
@@ -946,13 +952,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       )}
       {/* 2026-11-16 小欧 [23]阶段D: 能力路由推荐条(可操作): switch 一键落 L2;
           auto 模式自动切换后展示回退入口; keep 不占位 — 小欧-2026-11-16 */}
-      {visibleAdvice && (
+      {(visibleAdvice || revertFrom) && (
         <RecommendationBar
           advice={visibleAdvice}
           onSwitch={
             onSwitchModel
               ? (m) => {
-                  onSwitchModel(visibleAdvice.provider ?? '', m);
+                  onSwitchModel(visibleAdvice?.provider ?? '', m);
                   setDismissedAdvice(adviceKey);
                 }
               : undefined

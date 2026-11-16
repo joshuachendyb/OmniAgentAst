@@ -12,6 +12,9 @@
 #   后台续跑通知消息此前在消息读取出口丢失种类信息, 前端无法区分用户发言与系统通知;
 #   值取自 fetch_session_user_message_pairs 已回传的 msg_kind, assistant 行恒 None
 # 2026-11-16 - 小欧 - [23]阶段D: SessionResponse 增 routingMode(会话级路由模式 suggest/auto/strict) — 小欧-2026-11-16
+
+# 2026-11-16 - 小欧 - SessionResponse 增 version(乐观锁版本真值, 供前端 409 回读) — 小欧-2026-11-16
+
 """
 聊天数据模型 (Chat Data Models)
 
@@ -75,6 +78,9 @@ class SessionResponse(BaseModel):
     sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2)，空=跟随全局")
     routingMode: Optional[str] = Field(None, description="会话级能力路由模式: suggest/auto/strict(空=默认 suggest)")
     is_valid: Optional[bool] = Field(None, description="是否为有效会话")
+    # 2026-11-16 小欧 - 输出乐观锁版本真值: 此前单会话 GET 不返回 version, 前端 409 回读
+    #   只能兜底成 1, 反把共享 version 污染为 1, 后续更新反复 409
+    version: Optional[int] = Field(None, description="乐观锁版本号(409 回读真值来源)")
 
 
 class SessionListResponse(BaseModel):

@@ -9,8 +9,13 @@
 //   只读不派生); outcome 透传 routing_advice(推荐切换提示数据源) — 小欧-2026-11-16
 // 2026-11-16 小欧 [23]阶段D: 增 opts(modelId/mode) 透传 preflight, 使 routing_advice 参与判定 — 小欧-2026-11-16
 
+// 2026-11-16 小欧 修正: 投影/签名跳过 pending 占位项(未落定条目不上送, 落定后签名变化触发重算);
+//   routingAdvice 复用 types/chat 的 RoutingAdvice 类型
+
+
 import { preflightInput } from '@/services/api/inputs.api';
 import { newRefId, type ComposerRef, type RefQualityValue } from './store';
+import type { RoutingAdvice, RoutingMode } from '@/types/chat';
 
 export interface RejectedUrl {
   url: string;
@@ -25,19 +30,14 @@ export interface UrlCaptureOutcome {
   /** 后端判定: 正文去掉扫描到的 URL 后只剩空白(纯 URL 内容才接管撤出正文) */
   urlOnly: boolean;
   /** preflight routing_advice 原值透传(推荐切换提示数据源, 零翻译) — 2026-11-16 小欧 */
-  routingAdvice: {
-    action: string;
-    model?: string;
-    reason: string;
-    provider?: string;
-  };
+  routingAdvice: RoutingAdvice;
 }
 
 export interface UrlCaptureOpts {
   /** 当前生效模型(provider/model 或 model); 缺省不路由(后端画像无从判定) */
   modelId?: string;
   /** 会话级路由模式, 缺省 suggest */
-  mode?: 'suggest' | 'auto' | 'strict';
+  mode?: RoutingMode;
 }
 
 /**

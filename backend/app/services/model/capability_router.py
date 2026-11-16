@@ -6,6 +6,11 @@
 #   build_candidates 从模型库 get_models() 逐模型取 profile_of 原生模态(唯一真源) — 小欧-2026-11-16
 # 2026-11-16 小欧 [23]阶段D: RoutingAdvice 增 provider(前端一键切换落 L2 需 provider+model) — 小欧-2026-11-16
 
+# 2026-11-16 小欧 修正: need_of 跳过 ok=false/duplicate_of 条目(失败项不产生流转需求); route 的 keep
+#   判定补 provider 比对(同名模型异 provider 不再误判为 keep); InputNeed 去掉冗余 degraded_ok 字段
+#   (需求域已由入参二选一表达); build_candidates 增短 TTL 缓存(模型库读盘不必每次重建)
+
+
 """services.model.capability_router — 能力路由(纯函数, 零落库)。
 
 只消费能力画像(profile_of)聚合出的 Candidate 与 preflight 逐项质量, 不判 accept、不发请求。
@@ -13,17 +18,22 @@ need_of: 输入项 → 原生需求(required/optional 按 degraded_ok 互斥归�
 route:  需求 + 候选 → RoutingAdvice(keep|switch|degrade), 裁决链见 [23] §6.2。
 """
 from dataclasses import dataclass
-from typing import Any, Dict, FrozenSet, Iterable, List, Optional
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
+import time
 
 # content_kind → 原生处理所需模态(text/binary/unknown 无原生模态, 不产生需求)
 _CONTENT_MODALITY = {"image": "image", "video": "video", "audio": "audio", "richdoc": "file"}
+
+# 候选表进程内缓存: 模型库读盘(get_models→YAML)相对昂贵, 预检高频调用不宜每次重建。
+# 按短 TTL 过期, 兼顾配置改动可见性与重复 I/O 开销。
+_CANDIDATES_TTL_SECONDS = 30.0
+_candidates_cache: Optional[Tuple[float, List["Candidate"]]] = None
 
 
 @dataclass(frozen=True)
 class InputNeed:
     required_native: FrozenSet[str] = frozenset()
     optional_native: FrozenSet[str] = frozenset()
-    degraded_ok: bool = True
 
 
 @dataclass(frozen=True)
@@ -63,16 +73,16 @@ def need_of(items: Optional[Iterable[Any]], degraded_ok: bool = True) -> InputNe
     """
     mods = set()
     for it in items or []:
+        if not _field(it, "ok", True) or _field(it, "duplicate_of", ""):
+            continue
         modality = _CONTENT_MODALITY.get(str(_field(it, "content_kind", "") or ""))
         quality = str(_field(it, "quality", "") or "")
         if modality and quality and quality != "native":
             mods.add(modality)
     wanted = frozenset(mods)
     if degraded_ok:
-        return InputNeed(required_native=frozenset(), optional_native=wanted,
-                         degraded_ok=True)
-    return InputNeed(required_native=wanted, optional_native=frozenset(),
-                     degraded_ok=False)
+        return InputNeed(required_native=frozenset(), optional_native=wanted)
+    return InputNeed(required_native=wanted, optional_native=frozenset())
 
 
 def _rank_key(wanted: FrozenSet[str], current_provider: str):
@@ -98,7 +108,9 @@ def route(need: InputNeed, current_model: str = "",
                                  reason="无候选模型原生支持必需能力，将降级处理")
         return RoutingAdvice("keep")          # optional 无候选: 降级可接受, 静默
     best = min(feasible, key=_rank_key(wanted, current_provider))
-    if best.model == current_model:
+    same_model = best.model == current_model
+    same_provider = (not current_provider) or best.provider == current_provider
+    if same_model and same_provider:
         return RoutingAdvice("keep")
     return RoutingAdvice("switch", model=best.model, provider=best.provider,
                          reason=f"推荐切换至 {best.model}"
@@ -113,6 +125,11 @@ def build_candidates() -> List[Candidate]:
     """
     from app.services.agent.capability import profile_of
     from app.services.model.model_service import get_models
+
+    global _candidates_cache
+    now = time.monotonic()
+    if _candidates_cache is not None and now - _candidates_cache[0] < _CANDIDATES_TTL_SECONDS:
+        return _candidates_cache[1]
 
     out: List[Candidate] = []
     order = 0
@@ -132,4 +149,5 @@ def build_candidates() -> List[Candidate]:
                                  native=native, measured=measured,
                                  context_length=int(ctx) if ctx else 0, order=order))
             order += 1
+    _candidates_cache = (now, out)
     return out

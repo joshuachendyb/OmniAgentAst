@@ -362,6 +362,18 @@ export interface SessionModelOverride {
   display_name?: string;
 }
 
+/** 会话级能力路由模式(唯一类型真源, 各消费方 import 不写字面量) */
+export type RoutingMode = 'suggest' | 'auto' | 'strict';
+
+/** 能力路由建议(后端 preflight.routing_advice 原值, 前端零翻译直读) */
+export interface RoutingAdvice {
+  action: 'keep' | 'switch' | 'degrade';
+  model?: string;
+  reason?: string;
+  /** 切换目标 provider(一键切换落 L2 需要) */
+  provider?: string;
+}
+
 // 2026-08-27 小欧 : 模型列表项结构, 与后端/config/models返回对齐
 export interface ModelListItem {
   provider: string;

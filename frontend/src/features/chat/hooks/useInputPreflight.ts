@@ -3,17 +3,20 @@
 //   取代"仅 URL 采集时预检": 引用条增删(签名变化)防抖后整体重算, 一次响应同时供
 //   worst_quality 聚合、逐项 quality 回写、routing_advice 展示;
 //   seq 递增丢弃迟到响应(防慢的旧请求覆盖新的) — 小欧-2026-11-16
+
+// 2026-11-16 小欧 修正: 无生效模型时不发预检(画像无从判定, 避免误报降级); 去掉无用 sessionId 入参;
+//   modelKey 无 provider 时不再拼前导斜杠
+
 import { useEffect, useRef, useState } from 'react';
-import { preflightInput, type PreflightResultDTO } from '@/services/api/inputs.api';
+import { preflightInput } from '@/services/api/inputs.api';
+import type { RoutingAdvice } from '@/types/chat';
 import type { ComposerRef } from '../../refs/store';
 import {
   refsSignature,
   refsToPreflightItems,
 } from '../../refs/preflightItems';
 
-export type RoutingAdvice = NonNullable<
-  PreflightResultDTO['routing_advice']
->;
+export type { RoutingAdvice };
 
 export interface InputPreflightState {
   /** 后端聚合 worst_quality(无引用/未返回时为 native) */
@@ -29,7 +32,6 @@ export interface UseInputPreflightOpts {
   modelId?: string;
   modelProvider?: string;
   routingMode?: 'suggest' | 'auto' | 'strict';
-  sessionId?: string | null;
   /** 防抖窗口(ms), 仅在签名变化后触发 */
   delayMs?: number;
 }
@@ -45,7 +47,6 @@ export function useInputPreflight({
   modelId,
   modelProvider,
   routingMode = 'suggest',
-  sessionId,
   delayMs = 150,
 }: UseInputPreflightOpts): InputPreflightState {
   const [state, setState] = useState<InputPreflightState>(EMPTY);
@@ -54,18 +55,19 @@ export function useInputPreflight({
   refsRef.current = refs;
 
   const sig = refsSignature(refs);
-  const modelKey = modelId ? `${modelProvider ?? ''}/${modelId}` : '';
+  const modelKey = modelId
+    ? (modelProvider ? `${modelProvider}/${modelId}` : modelId)
+    : '';
 
   useEffect(() => {
-    if (!sig) {
+    if (!sig || !modelKey) {
       setState(EMPTY);
       return;
     }
     const seq = ++seqRef.current;
     const timer = window.setTimeout(() => {
       void preflightInput({
-        session_id: sessionId ?? undefined,
-        model_id: modelKey || undefined,
+        model_id: modelKey,
         text: '',
         items: refsToPreflightItems(refsRef.current),
         mode: routingMode,
@@ -88,7 +90,7 @@ export function useInputPreflight({
         });
     }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [sig, modelKey, routingMode, sessionId, delayMs]);
+  }, [sig, modelKey, routingMode, delayMs]);
 
   return state;
 }
