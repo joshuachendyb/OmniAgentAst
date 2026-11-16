@@ -184,6 +184,34 @@
   }
 }
 
+/* 2026-11-16 小欧 - thought等待图标换型: 新增四角星呼吸闪烁(北京老陈令选21号)。
+   .waiting-cursor 基础动画是弧线旋转(waiting-spin, 供备用 ArcWaitingIcon);
+   StarWaitingIcon 以双类 .waiting-cursor.waiting-twinkle 覆盖为呼吸闪烁(不旋转),
+   特异性 0,2,0 高于基础 0,1,0, 无需改基础规则。节奏放缓到 1.8s 且 scale 仅 0.8↔1,
+   避免像故障灯/通知心跳 — 小欧-2026-11-16 */
+@keyframes waiting-twinkle {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.waiting-cursor.waiting-twinkle {
+  transform-origin: center;
+  animation: waiting-twinkle 1.8s ease-in-out infinite;
+}
+
+/* 尊重减少动效: 星形停闪, 保持静态全亮(颜色不依赖动画可读) — 小欧-2026-11-16 */
+@media (prefers-reduced-motion: reduce) {
+  .waiting-cursor.waiting-twinkle {
+    animation: none;
+  }
+}
+
 .tool-waiting-cursor {
   display: inline-block;
   vertical-align: baseline;

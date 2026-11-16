@@ -15,12 +15,17 @@
 //   图标本身位置与动画一字未动(北京老陈定案: 图标不动, 只把钟面拔出来) — 小欧-2026-11-03
 // 编辑历史: 2026-11-14 商量 - SpinSquareIcon(ReasoningIcon 别名)方框描边外缘 0..18 收到 1..17(视觉 14px, 盒子仍 Icon.BOX=16):
 //   方形轮廓在 16px 盒内读感比齿轮/水滴大一圈, 视觉收一号与齿轮同档; 盒子尺寸不动 → 行首图标左边缘与文字起始 x 仍同一条竖线 — 商量-2026-11-14
+// 编辑历史: 2026-11-16 小欧 - thought等待图标换型(北京老陈令选21号四角星闪烁): 原绿270°弧线旋转实体改名 ArcWaitingIcon 留库备用;
+//   新增 StarWaitingIcon(SUCCESS绿实心四角星, .waiting-twinkle 1.8s 呼吸覆盖基础旋转), ThoughtWaitingIcon 改为别名取 StarWaitingIcon;
+//   调用方(PipelineRenderer)零改动, 换回备用只改别名一行 — 小欧-2026-11-16
 import React from 'react';
 import { Colors, Icon } from '@/utils/stepStyles';
 
 /**
- * ThoughtWaitingIcon — 绿色270°弧线旋转
+ * ArcWaitingIcon — 绿色270°弧线旋转（备用）
  * 用途：thought-start到达后、首个thinking chunk到达前的等待状态
+ * 现状：已被四角星闪烁(StarWaitingIcon)替换为 ThoughtWaitingIcon 取值, 本实体留库备用;
+ *       换回只改下方 ThoughtWaitingIcon 别名取值, 调用方零改动
  * 原位置：PipelineRenderer.tsx 内联 const WaitingIcon（私有）
  */
 // 2026-09-17 小欧 实施: 等待图标(类型身份: 绿=思考) 与钟面(等待时长) 并存, 语义正交 — 小欧-2026-09-17
@@ -29,7 +34,7 @@ import { Colors, Icon } from '@/utils/stepStyles';
 //   原 width="1.4em"(em 相对父字号, 实测父14→27.67px 父12→23.72px 会漂移), 且与 index.css
 //   的 .waiting-cursor svg{width:1.4em} 重复两处(CSS 类选择器赢, 改一处漏一处)。
 //   现尺寸真源唯一在本 SVG 属性, CSS 只留 display/animation/vertical-align。— 小欧-2026-10-08
-export const ThoughtWaitingIcon: React.FC = () => (
+export const ArcWaitingIcon: React.FC = () => (
   <span className="waiting-cursor" aria-label="等待思考输出">
     <svg
       width={Icon.BOX}
@@ -44,6 +49,33 @@ export const ThoughtWaitingIcon: React.FC = () => (
     </svg>
   </span>
 );
+
+/**
+ * StarWaitingIcon — 绿色四角星呼吸闪烁（ThoughtWaitingIcon 当前取值, 北京老陈令选21号）
+ * 取形：四角星(星芒)实心 SUCCESS 绿, 与 Tool 橙齿轮 / Action 蓝波纹形成 实心 vs 描边 的三角色区分
+ * 动画：opacity 0.4↔1 + scale 0.8↔1, 1.8s ease-in-out, 不旋转; 节奏真源 index.css @keyframes waiting-twinkle
+ *       (基础 .waiting-cursor 为弧线旋转, 本图标加双类 .waiting-twinkle 覆盖为闪烁)
+ * 尺寸：Icon.BOX, viewBox 24 → 图形填满盒子, 与相邻图标同左缘/中线
+ */
+export const StarWaitingIcon: React.FC = () => (
+  <span className="waiting-cursor waiting-twinkle" aria-label="等待思考输出">
+    <svg
+      width={Icon.BOX}
+      height={Icon.BOX}
+      viewBox="0 0 24 24"
+      fill={Colors.SUCCESS}
+      stroke="none"
+    >
+      <path d="M12 2 C13.2 8 16 10.8 22 12 C16 13.2 13.2 16 12 22 C10.8 16 8 13.2 2 12 C8 10.8 10.8 8 12 2 Z" />
+    </svg>
+  </span>
+);
+
+/**
+ * ThoughtWaitingIcon = StarWaitingIcon — thought 等待图标当前取值(四角星闪烁)
+ * 取值赋值非包装: 换图标只改这一行, 调用方(PipelineRenderer)零改动 — 同 ReasoningIcon 别名约定
+ */
+export const ThoughtWaitingIcon = StarWaitingIcon;
 
 /**
  * ToolWaitingIcon — 橙色8臂loader旋转
