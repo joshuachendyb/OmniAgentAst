@@ -20,6 +20,7 @@
 # 2026-11-11 小欧 三堂会审整改: capabilities 出口补 suffix_kind 词典下发(消前端后缀表双真源) — 小欧-2026-11-11
 # 2026-11-13 小欧 - 附件列表四栏重构配套: scope 收敛为 session/recent/global(删 ai 档, AI 产出改走会话产物端点),
 #   recent 档时间窗由后端下发 — 小欧-2026-11-13
+# 2026-11-16 小欧 [23]阶段C: GET /attachments 增 kind 查询参数(单值), 透传服务层类型筛选 — 小欧-2026-11-16
 
 """attachments_routes — 附件 API 路由薄壳。
 
@@ -95,13 +96,15 @@ def list_attachments(
     session_id: str | None = Query(None, description="会话 ID（scope=session / recent 时必填）"),
     scope: str = Query("session", description="session | recent | global"),
     q: str | None = Query(None, description="按文件名过滤"),
+    kind: str | None = Query(None, description="按类型筛选（all 或七类，与服务端筛选同口径）"),
     limit: int = Query(attach.MAX_LIST_ITEMS, ge=1, le=attach.MAX_LIST_ITEMS),
     offset: int = Query(0, ge=0),
 ) -> list[dict[str, Any]]:
-    """附件列表（作用域: 我上传的 / 最近发送 / 已收藏）。"""
+    """附件列表（作用域: 我上传的 / 最近发送 / 已收藏；kind 类型筛选）。"""
     if scope not in ("session", "recent", "global"):
         fail(INVALID_PARAM, "scope 只支持 session / recent / global")
-    return attach.list_attachments(session_id, scope=scope, q=q, limit=limit, offset=offset)
+    return attach.list_attachments(session_id, scope=scope, q=q, kind=kind,
+                                   limit=limit, offset=offset)
 
 
 @router.get("/attachments/id/{attachment_id}")

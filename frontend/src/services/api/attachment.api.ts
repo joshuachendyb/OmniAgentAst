@@ -17,6 +17,7 @@
 //   recent 档时间窗由后端下发 recent_window_days(前端不写死天数), 附件记录增 taskId — 小欧-2026-11-13
 // 编辑历史: 2026-11-14 小欧 - 上传上限单真源后端下发: limits 增 max_image_bytes/max_file_bytes, 前端预检与文案禁用硬编码;
 //   能力协商结果模块级一次性缓存, 失败不缓存下次重试 — 小欧-2026-11-14
+// 编辑历史: 2026-11-16 小欧 [23]阶段C: ListOptions 增 kind, list 透传后端类型筛选(expand_kind 单一真源) — 小欧-2026-11-16
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -71,6 +72,8 @@ export interface AttachmentRecord {
 export interface ListOptions {
   scope?: AttachmentScope;
   q?: string;
+  /** 类型筛选（'all' 或七类，后端 expand_kind 单一真源；undefined=不筛） */
+  kind?: string;
   limit?: number;
   offset?: number;
 }
@@ -134,9 +137,9 @@ export const attachmentApi = {
     sessionId?: string | null,
     opts?: ListOptions
   ): Promise<AttachmentRecord[]> => {
-    const { scope = 'session', q, limit, offset } = opts ?? {};
+    const { scope = 'session', q, kind, limit, offset } = opts ?? {};
     const cfg: ApiRequestConfig = {
-      params: { session_id: sessionId || undefined, scope, q, limit, offset },
+      params: { session_id: sessionId || undefined, scope, q, kind, limit, offset },
       _silent: true,
     };
     return (await api.get<AttachmentRecord[]>('/attachments', cfg)).data;

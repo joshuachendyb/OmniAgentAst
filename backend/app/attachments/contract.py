@@ -53,7 +53,10 @@
 #   矩阵投影 (has_slot=None) 只认登记槽, 保持"矩阵低承诺、实例高兑现"分层 — 小欧-2026-11-14
 
 
-"""attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
+# 2026-11-16 小欧 [23]阶段C: 新增 expand_kind(筛选值→content_kind 集合, 值域=CONTENT_KINDS;
+#   'all' 展全类, 未知值空集交由服务层点名非法), 供附件列表类型筛选参数化 IN —— 小欧-2026-11-16
+"""
+attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
 单一契约表 KIND_CONTRACT[(source_kind, content_kind)] → KindRoute:
 类型×来源 → 原生模态/降级质量/文本出口/失败回退。前后端与守门测试共用其投影。
@@ -87,7 +90,7 @@ __all__ = [
     "KIND_CONTRACT", "KindRoute", "ItemPlan", "SOURCE_KINDS",
     "CONTENT_KINDS", "MODALITIES", "QUALITY_TO_DELIVERY",
     "classify_ref", "quality_of", "plan_refs", "ref_quality_map",
-    "limits", "kind_options", "suffix_kind",
+    "limits", "kind_options", "suffix_kind", "expand_kind",
     "AUDIO_SUFFIXES", "IMAGE_SUFFIXES", "RICH_SUFFIXES", "TEXT_SUFFIXES", "VIDEO_SUFFIXES",
     "classify_url", "scan_text_urls",
 ]
@@ -236,3 +239,14 @@ def kind_options() -> List[Dict[str, str]]:
     labels = {"text": "文本", "image": "图片", "video": "视频", "audio": "音频",
               "richdoc": "富文档", "binary": "二进制", "unknown": "未知"}
     return [{"value": c, "label": labels[c]} for c in CONTENT_KINDS]
+
+
+def expand_kind(kind: str) -> Tuple[str, ...]:
+    """筛选值 → 可用于 `kind IN (...)` 的 content_kind 集合(单一真源, 值域=CONTENT_KINDS)。
+
+    'all' 展开全类; 未知值返回空集 —— 由服务层点名非法, 不静默放大成"全量不过滤"
+    (薄前端铁律: 筛选是唯一口径, 非法输入必须显式报错)。
+    """
+    if kind == "all":
+        return CONTENT_KINDS
+    return (kind,) if kind in CONTENT_KINDS else ()

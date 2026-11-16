@@ -27,6 +27,9 @@
 
 // 编辑历史: 2026-11-14 小欧 - 类型文案收敛(doc38 P3/P4): 删 typeLabel 本地 mime/后缀第3份分类,
 //   次行与产物行改查后端 kind_options 中文短名(单一真源, 补音频分支); 产物行 caps 未加载先落「文件」不闪 unknown — 小欧-2026-11-14
+// 编辑历史: 2026-11-16 小欧 [23]阶段C: 类型筛选行(Segmented, 选项由 caps.kind_options 下发, 前端零词典;
+//   仅附件作用域显示) + 顶部组合显示; 类型/作用域变化经 refreshAll 以 offset=0 重拉(服务端筛选+分页唯一口径);
+//   空态区分"作用域真空"与"该类型无结果"; kindLabel 导出供守门用例直测 — 小欧-2026-11-16
 
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
@@ -57,6 +60,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Segmented,
   Spin,
   Tag,
   Tooltip,
@@ -201,7 +205,7 @@ function sortEntries(nodes: FileNode[]): FileNode[] {
 
 /** 次行「类型」标签: rec.kind 查后端 kind_options 中文短名(单一真源, 前端零本地分类);
  *   未知 kind 回落「文件」。原 typeLabel 本地 mime/后缀判断已删(与徽标/图标三份分叉, doc38 P3)。 */
-function kindLabel(kind: string | undefined, caps: AttachmentCapabilities | null): string {
+export function kindLabel(kind: string | undefined, caps: AttachmentCapabilities | null): string {
   const hit = caps?.kind_options?.find((o) => o.value === kind);
   return hit?.label || '文件';
 }
@@ -252,7 +256,13 @@ interface FileDrawerProps {
   disabled?: boolean;
 }
 
-const emptyTextOf = (scope: ScopeKey, hasSession: boolean): string => {
+const emptyTextOf = (
+  scope: ScopeKey,
+  hasSession: boolean,
+  kindText?: string
+): string => {
+  // 类型筛选下无结果: 与"该作用域本来就没有"区分(§5.2); kindText 由调用方查 kind_options 得出
+  if (kindText) return `暂无${kindText}`;
   if (scope === 'session') {
     return hasSession
       ? '本次对话还没有附件；上传、导入或存为附件的文件会列在这里'
@@ -276,6 +286,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   disabled = false,
 }) => {
   const [source, setSource] = useState<SourceKey>('session');
+  /** 类型筛选('all' | content_kind); 选项由 caps.kind_options 下发, 前端零词典 — 小欧-2026-11-16 */
+  const [kindFilter, setKindFilter] = useState<string>('all');
   const [keyword, setKeyword] = useState('');
   /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07） */
   const [treeLoading, setTreeLoading] = useState(false);
@@ -381,6 +393,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           scope,
           limit: PAGE,
           offset,
+          kind: kindFilter === 'all' ? undefined : kindFilter,
         });
         setErrScopes((prev) => ({ ...prev, [scope]: false }));
         applyScope(scope, items, append, items.length >= PAGE);
@@ -392,7 +405,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         setScopeLoading((prev) => (prev === scope ? null : prev));
       }
     },
-    [sessionId, applyScope]
+    [sessionId, kindFilter, applyScope]
   );
 
   /** 四个作用域全刷（收藏/删除/上传后保持各处标记一致） */
@@ -463,7 +476,6 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   useEffect(() => {
     if (!open) return;
     void getLocalCapability().then(setCanLocal);
-    void refreshAll();
     void reloadPacks();
     void materialPackApi
       .limits()
@@ -471,7 +483,16 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       .catch(() => {
         /* 限额加载失败不阻断抽屉使用, 后端仍会校验 */
       });
-  }, [open, refreshAll, reloadPacks]);
+  }, [open, reloadPacks]);
+
+  // 2026-11-16 小欧 [23]阶段C: 附件作用域(本会话/他会话/收藏)按当前类型筛选刷新;
+  //   类型变化 → 该作用域 offset 归 0 重拉第一页, 作用域变化同理(服务端筛选+分页唯一口径)
+  const attachSource =
+    source === 'session' || source === 'recent' || source === 'fav';
+  useEffect(() => {
+    if (!open || !attachSource) return;
+    void refreshAll();
+  }, [open, attachSource, source, kindFilter, refreshAll]);
 
   useEffect(() => {
     if (!open) return;
@@ -1339,7 +1360,11 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={emptyTextOf(currentScope as ScopeKey, !!sessionId)}
+          description={emptyTextOf(
+            currentScope as ScopeKey,
+            !!sessionId,
+            kindFilter === 'all' ? undefined : kindLabel(kindFilter, caps)
+          )}
         />
       );
     }
@@ -1619,6 +1644,13 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
                   {paneHint()}
                 </Typography.Text>
               )}
+              {attachSource && (
+                <Typography.Text style={{ ...metaStyle, fontSize: FontSize.CAPTION }}>
+                  {`${paneTitle()} · ${
+                    kindFilter === 'all' ? '全部' : kindLabel(kindFilter, caps)
+                  } · ${rows.length} 项`}
+                </Typography.Text>
+              )}
               {source === 'recent' && lists.recent.length > 0 && (
                 <Popconfirm
                   title="清空最近使用记录？"
@@ -1743,6 +1775,22 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* 2026-11-16 小欧 [23]阶段C: 类型筛选行(选项由 kind_options 下发, 前端零词典);
+                仅附件台账作用域(本会话/他会话/收藏)显示, 其余来源无类型语义 */}
+            {attachSource && (
+              <div style={{ marginBottom: Spacing.XS }}>
+                <Segmented
+                  size="small"
+                  value={kindFilter}
+                  onChange={(v) => setKindFilter(String(v))}
+                  options={[
+                    { value: 'all', label: '全部' },
+                    ...(caps?.kind_options ?? []),
+                  ]}
+                />
               </div>
             )}
 

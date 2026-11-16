@@ -41,6 +41,8 @@
 #   连接已关闭 → ProgrammingError("Cannot operate on a closed database") 且未删本次孤儿文件;
 #   回查+装饰收进同一 with 块, 命中即返复用行 — 小欧-2026-11-14
 # 2026-11-15 小欧 语义前缀归一: 预览失败说明文案收归 app.wire_prefix(INLINE_EXTRACT_FAIL) — 小欧-2026-11-15
+# 2026-11-16 小欧 [23]阶段C: list_attachments 增 kind 类型筛选(单值), 经 contract.expand_kind
+#   展开为参数化 IN 条件(禁止字符串拼接), 与 scope/q/分页同口径; 非法 kind 点名 400 — 小欧-2026-11-16
 
 
 
@@ -68,7 +70,7 @@ from typing import Any
 
 from fastapi import UploadFile
 
-from app.attachments import extract
+from app.attachments import contract, extract
 from app.attachments.observability import metric
 from app.db import db
 from app.db.database import resolve_db_dir
@@ -314,11 +316,13 @@ RECENT_WINDOW_DAYS = 30
 
 
 def list_attachments(session_id: str | None = None, *, scope: str = "session",
-                     q: str | None = None, limit: int = MAX_LIST_ITEMS,
-                     offset: int = 0) -> list[dict[str, Any]]:
+                     q: str | None = None, kind: str | None = None,
+                     limit: int = MAX_LIST_ITEMS, offset: int = 0) -> list[dict[str, Any]]:
     """附件列表（作用域唯一实现）— 小欧-2026-11-07
 
     scope: session(我上传的) / recent(最近发送) / global(已收藏)。
+    kind: 类型筛选(单值, 'all' 或七类) —— 值域唯一来自 contract.CONTENT_KINDS,
+      经 contract.expand_kind 展开为参数化 IN 条件(禁止字符串拼接), 与服务端分页同口径。
     每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
     """
     scope_row = _SCOPE_FILTER.get(scope)
@@ -339,6 +343,12 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
     if q and q.strip():
         where += " AND original_name LIKE ?"
         params.append(f"%{q.strip()}%")
+    kinds = contract.expand_kind(kind) if kind else ()
+    if kind and not kinds:
+        fail(INVALID_PARAM, f"kind 只支持 all / {'/'.join(contract.CONTENT_KINDS)}")
+    if kinds:
+        where += f" AND kind IN ({','.join('?' * len(kinds))})"
+        params.extend(kinds)
     limit = max(1, min(int(limit or MAX_LIST_ITEMS), MAX_LIST_ITEMS))
     offset = max(0, int(offset or 0))
     with db.get_conn("chat") as conn:
