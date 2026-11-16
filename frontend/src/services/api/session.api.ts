@@ -14,6 +14,7 @@
 //   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
 //   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
+// 编辑历史: 2026-11-16 小欧 - [23]阶段D: Session 增 routingMode; 新增 updateSessionRoutingMode(会话级路由模式唯一写口) — 小欧-2026-11-16
 // 编辑历史: 2026-11-13 商量 - ApiMessage 补 msg_kind(后端 MessageResponse 新增可选字段, user/system_notice):
 //   后台续跑通知消息的种类在 wire 上保真, 前端按它渲染系统通知样式, 不再与用户发言混同
 
@@ -32,6 +33,9 @@ export interface Session {
   updated_at: string;
   message_count: number;
   is_valid: boolean;
+  sessionModel?: SessionModelOverride | null;
+  /** 2026-11-16 小欧 [23]阶段D: 会话级能力路由模式(后端缺省归一 suggest) */
+  routingMode?: 'suggest' | 'auto' | 'strict';
 }
 
 export interface SessionListResponse {
@@ -99,6 +103,8 @@ export interface UpdateSessionResponse {
   title_locked?: boolean;
   title_updated_at?: string;
   sessionModel?: SessionModelOverride | null;
+  /** 2026-11-16 小欧 [23]阶段D: 会话级路由模式(写回值) */
+  routingMode?: 'suggest' | 'auto' | 'strict' | null;
 }
 
 export interface BatchTitleResponse {
@@ -274,6 +280,27 @@ export const sessionApi = {
       version,
       updated_by: 'user',
       sessionModel,
+    };
+    const response = await api.put<UpdateSessionResponse>(
+      `/sessions/${sessionId}`,
+      body
+    );
+    return response.data;
+  },
+
+  /**
+   * 2026-11-16 小欧 [23]阶段D: 会话级路由模式唯一写口(suggest/auto/strict)。
+   * 与 updateSessionModel 同端点同乐观锁, 只发 routingMode+version — 小欧-2026-11-16
+   */
+  updateSessionRoutingMode: async (
+    sessionId: string,
+    routingMode: 'suggest' | 'auto' | 'strict',
+    version: number
+  ): Promise<UpdateSessionResponse> => {
+    const body: Record<string, unknown> = {
+      version,
+      updated_by: 'user',
+      routingMode,
     };
     const response = await api.put<UpdateSessionResponse>(
       `/sessions/${sessionId}`,

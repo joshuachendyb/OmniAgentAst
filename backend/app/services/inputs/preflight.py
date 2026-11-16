@@ -5,6 +5,9 @@
 #   产出逐项 key/source_kind/content_kind/ok/reason/quality/delivery/must_native/
 #   duplicate_of + worst_quality + routing_advice。建议性预览: 不含 limits/accepted,
 #   不下载、不触发二次抽取 — 小欧-2026-11-15
+# 2026-11-16 小欧 [23]阶段D: 增 mode(suggest/auto/strict)与 candidates 入参; 传入 candidates
+#   时经 capability_router(need_of→route)产出 routing_advice(degraded_ok=(mode!=strict)),
+#   preflight 永不阻断(strict 也只出建议, 阻断在发送侧) — 小欧-2026-11-16
 
 """services.inputs.preflight — 输入预检(厚后端核心, 纯判定零副作用)。
 
@@ -69,7 +72,9 @@ def _item_key(source_kind: str, data: Dict[str, Any]) -> str:
 
 
 def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
-              model_id: str = "", profile: Optional[Dict[str, Any]] = None
+              model_id: str = "", profile: Optional[Dict[str, Any]] = None,
+              mode: str = "suggest",
+              candidates: Optional[List[Any]] = None
               ) -> PreflightResult:
     """输入预检(纯函数): 识别无条件执行 → 能力判定读画像 → 逐项产出建议。
 
@@ -111,6 +116,16 @@ def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
         result.items.append(item)
     if any(it.quality and it.quality != "native" for it in result.items):
         result.worst_quality = "degraded"
+    # 2026-11-16 小欧 [23]阶段D: 传入 candidates 才路由(不传则保持默认 keep, 保纯核心零 I/O);
+    #   strict → degraded_ok=False(缺必需能力缺可为 degrade), suggest/auto → True(降级可接受)。
+    if candidates is not None:
+        from app.services.model.capability_router import need_of, route
+        current_provider, _, current_model = model_id.partition("/")
+        advice = route(need_of(result.items, degraded_ok=(mode != "strict")),
+                       current_model=current_model or model_id,
+                       candidates=candidates,
+                       current_provider=current_provider if current_model else "")
+        result.routing_advice = advice.to_dict()
     return result
 
 

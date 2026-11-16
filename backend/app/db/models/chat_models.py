@@ -11,6 +11,7 @@
 # 2026-11-13 - 商量 - MessageResponse 增 msg_kind 可选字段(chat_user_message.msg_kind, user/system_notice):
 #   后台续跑通知消息此前在消息读取出口丢失种类信息, 前端无法区分用户发言与系统通知;
 #   值取自 fetch_session_user_message_pairs 已回传的 msg_kind, assistant 行恒 None
+# 2026-11-16 - 小欧 - [23]阶段D: SessionResponse 增 routingMode(会话级路由模式 suggest/auto/strict) — 小欧-2026-11-16
 """
 聊天数据模型 (Chat Data Models)
 
@@ -72,6 +73,7 @@ class SessionResponse(BaseModel):
     updated_at: str = Field(..., description="更新时间")
     message_count: int = Field(..., description="消息数量")
     sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2)，空=跟随全局")
+    routingMode: Optional[str] = Field(None, description="会话级能力路由模式: suggest/auto/strict(空=默认 suggest)")
     is_valid: Optional[bool] = Field(None, description="是否为有效会话")
 
 

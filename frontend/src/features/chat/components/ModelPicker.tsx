@@ -11,6 +11,7 @@
 // 编辑历史: 2026-11-02 小欧 - 选中框minWidth:180改width:180定宽: 长模型名不再撑框挤占顶栏横排(flex gap8布局), 溢出走antd省略号+外层Tooltip见全名; 下拉弹层popupMatchSelectWidth=false自适应宽不动 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 会话级模型框宽度归常量SESSION_MODEL_SELECT_WIDTH=180(调宽只改一行),与顶部Layout各自持常量互不共享隔离 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 北京老陈令: 底部选中框回归minWidth下限语义(不许改定宽width),常量仅作minWidth下限,其余不动 - 小欧-2026-11-02
+// 编辑历史: 2026-11-16 小欧 - [23]阶段D: 切换写库/409回读抽 switchSessionModel 公共实现(推荐条共用) — 小欧-2026-11-16
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -27,13 +28,9 @@
 import React, { useEffect, useState } from 'react';
 import { Select, Tooltip } from 'antd';
 import { DownOutlined } from '@ant-design/icons';
-import { sessionApi } from '../../../services/api/session.api';
 import { configApi } from '../../../services/api/config.api';
 import type { SessionModelOverride, ModelListItem } from '../../../types/chat';
-import {
-  showSaveError,
-  showSessionConflict,
-} from '../../../utils/chatMessages';
+import { switchSessionModel } from '../utils/switchSessionModel';
 
 interface ModelPickerProps {
   sessionId: string | null;
@@ -93,34 +90,16 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
         }
       : null;
     if (!next && val !== FOLLOW_GLOBAL) return;
-    const prev = sessionModelOverride;
     setLoading(true);
     try {
-      const res = await sessionApi.updateSessionModel(
+      // 2026-11-16 小欧 [23]阶段D: 切换写库/409 回读收口 switchSessionModel(推荐条共用唯一实现) — 小欧-2026-11-16
+      await switchSessionModel({
         sessionId,
         next,
-        sessionVersion
-      ); // 2026-10-24 小欧 - SRP拆分: 只发 sessionModel+version, 不发标题(长标题触发422的根因)
-      if (res.version) setSessionVersion(res.version);
-      setSessionModelOverride(next);
-    } catch (err: unknown) {
-      const e = err as { response?: { status: number } };
-      if (e?.response?.status === 409) {
-        showSessionConflict();
-        try {
-          const sd = await sessionApi.getSessionMessages(sessionId);
-          if (sd.version) setSessionVersion(sd.version);
-          if (sd.sessionModel !== undefined)
-            setSessionModelOverride(
-              sd.sessionModel as SessionModelOverride | null
-            );
-        } catch {
-          // 回读失败时保持当前状态，静默处理 — 小欧 2026-08-22
-        }
-      } else {
-        showSaveError('切换模型失败，请重试');
-        setSessionModelOverride(prev);
-      }
+        version: sessionVersion,
+        setSessionVersion,
+        setSessionModelOverride,
+      });
     } finally {
       setLoading(false);
     }

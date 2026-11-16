@@ -7,6 +7,7 @@
 //   上限裁决移入本层(room 入参), 调用方不再自行切片 — 小欧-2026-11-15
 // 2026-11-16 小欧 [23]阶段B: accepted chip 落存 preflight 逐项 quality(徽标双源之 URL 源,
 //   只读不派生); outcome 透传 routing_advice(推荐切换提示数据源) — 小欧-2026-11-16
+// 2026-11-16 小欧 [23]阶段D: 增 opts(modelId/mode) 透传 preflight, 使 routing_advice 参与判定 — 小欧-2026-11-16
 
 import { preflightInput } from '@/services/api/inputs.api';
 import { newRefId, type ComposerRef, type RefQualityValue } from './store';
@@ -24,7 +25,19 @@ export interface UrlCaptureOutcome {
   /** 后端判定: 正文去掉扫描到的 URL 后只剩空白(纯 URL 内容才接管撤出正文) */
   urlOnly: boolean;
   /** preflight routing_advice 原值透传(推荐切换提示数据源, 零翻译) — 2026-11-16 小欧 */
-  routingAdvice: { action: string; reason: string };
+  routingAdvice: {
+    action: string;
+    model?: string;
+    reason: string;
+    provider?: string;
+  };
+}
+
+export interface UrlCaptureOpts {
+  /** 当前生效模型(provider/model 或 model); 缺省不路由(后端画像无从判定) */
+  modelId?: string;
+  /** 会话级路由模式, 缺省 suggest */
+  mode?: 'suggest' | 'auto' | 'strict';
 }
 
 /**
@@ -36,9 +49,14 @@ export interface UrlCaptureOutcome {
  */
 export const captureUrlsFromText = async (
   text: string,
-  room: number
+  room: number,
+  opts: UrlCaptureOpts = {}
 ): Promise<UrlCaptureOutcome> => {
-  const result = await preflightInput({ text });
+  const result = await preflightInput({
+    text,
+    model_id: opts.modelId,
+    mode: opts.mode,
+  });
   const accepted: ComposerRef[] = [];
   const rejected: RejectedUrl[] = [];
   for (const it of result.items) {

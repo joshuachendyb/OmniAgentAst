@@ -89,6 +89,11 @@
 //   "不可发送"提示, 空态下两者叠加) — 商量-2026-11-13
 // 2026-11-13 商量 - 间距归一: 全站间距语义档(theme/spacing.ts 的 Gap)落地, gap 改用语义名;
 //   chip 内距/删除钮内距改走 controlScale 的 CONTROL_PADDING, 行高改走 LineHeight — 商量-2026-11-13
+// 2026-11-16 小欧 [23]阶段D - 能力路由闭环: URL 预检透传生效模型/路由模式, 渲染可操作推荐条;
+//   switch 一键落 L2(switchSessionModel), auto 自动切换并保留回退入口, keep 不占位 — 小欧-2026-11-16
+// 2026-11-16 小欧 [23]阶段D D12 - Composer 级预检重算: 引用增删即整体重算(useInputPreflight,
+//   seq 丢弃迟到), worst/逐项 quality/routing_advice 全走后端真源, chip 徽标与最差聚合收敛单一投影;
+//   URL 采集层不再单独缓存建议, auto 切换迁至建议 effect — 小欧-2026-11-16
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -135,12 +140,17 @@ import { workspaceStore } from '../services/sessionWorkspaceStore';
 //   chip 统一组件 + 发送前提示行 — 小欧-2026-11-16
 import { RefChip } from '@/features/refs/RefChip';
 import { HintLine } from '@/features/refs/HintLine';
+import { RecommendationBar } from './input/RecommendationBar';
+// 2026-11-16 小欧 [23]阶段D D12: Composer 级输入预检重算(引用增删即整体重算, 后端统一裁决) — 小欧-2026-11-16
+import { useInputPreflight } from '../hooks/useInputPreflight';
+import { preflightItemKey } from '@/features/refs/preflightItems';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
   getMaxRefs,
   refLimitText,
   type ComposerRef,
+  type RefQualityValue,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { isLinkableRelPath } from '@/utils/projectPath';
@@ -184,6 +194,12 @@ interface ChatInputProps {
   onToggleInterject: (enabled: boolean) => void;
   // 2026-11-06 小欧 - 附件上传前确保会话存在(由 ChatPage 注入) — 小欧-2026-11-06
   ensureSession?: () => Promise<string | null>;
+  /** 2026-11-16 小欧 [23]阶段D: 生效模型(provider/model)与路由模式, 供 preflight 路由判定 */
+  modelId?: string;
+  modelProvider?: string;
+  routingMode?: 'suggest' | 'auto' | 'strict';
+  /** 推荐条一键切换(由调用方落 L2 并同步模型层) */
+  onSwitchModel?: (provider: string, model: string) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -200,6 +216,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   allowInterject, // 2026-10-07 小欧 - 插话开关
   onToggleInterject,
   ensureSession, // 2026-11-06 小欧 - 附件建会话
+  modelId, // 2026-11-16 小欧 [23]阶段D - 生效模型与路由模式
+  modelProvider,
+  routingMode = 'suggest',
+  onSwitchModel,
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
@@ -217,25 +237,71 @@ const ChatInput: React.FC<ChatInputProps> = ({
   } = useComposerRefs();
   // 2026-11-14 小欧 - chip 引用质量徽标数据源(生效模型 ref_quality_map) — 小欧-2026-11-14
   const capMap = useRefQualityMap(sessionId);
+  // 2026-11-16 小欧 [23]阶段D D12: 引用增删即整体重算, worst_quality 直读后端聚合值 — 小欧-2026-11-16
+  const preflight = useInputPreflight({
+    refs,
+    modelId,
+    modelProvider,
+    routingMode,
+    sessionId,
+  });
+  const worstQuality = preflight.worstQuality;
   // 2026-11-16 小欧 [23]阶段B: 徽标双源投影 — URL 逐项只读 preflight quality(采集层落存),
   //   附件/文件只读 ref_quality_map 投影; 同一函数供 chip 徽标与 worst 聚合共用(单一实现) — 小欧-2026-11-16
   const qualityOf = useCallback(
-    (r: ComposerRef) =>
-      r.kind === 'url' ? r.quality : capMap ? chipQuality(capMap, r) : undefined,
-    [capMap]
+    (r: ComposerRef) => {
+      // 2026-11-16 小欧 [23]阶段D D12: 逐项 quality 由 Full preflight 回写覆盖(后端真源),
+      //   未返回前回退既有投影(URL 采集层落存 / 附件·文件 ref_quality_map) — 小欧-2026-11-16
+      const key = preflightItemKey(r);
+      return (
+        (preflight.qualityByKey[key] as RefQualityValue | undefined) ||
+        r.quality ||
+        (capMap ? chipQuality(capMap, r) : undefined)
+      );
+    },
+    [preflight.qualityByKey, capMap]
   );
-  // 2026-11-16 小欧 [23]阶段B: worst_quality 前端聚合(与后端 preflight 同口径: 任一非 native 即 degraded),
-  //   逐项值仍是后端真源, 此处只做"有没有非 native"的存在性判断 — 小欧-2026-11-16
-  const worstQuality: 'native' | 'degraded' = refs.some((r) => {
-    const q = qualityOf(r);
-    return q != null && q !== 'native';
-  })
-    ? 'degraded'
-    : 'native';
-  // 2026-11-16 小欧 [23]阶段B: URL 采集回执的场景提示(非法链接/推荐切换), 下次采集刷新 — 小欧-2026-11-16
+  // 2026-11-16 小欧 [23]阶段B: URL 采集回执的场景提示(非法链接), 下次采集刷新 — 小欧-2026-11-16
   const [urlHint, setUrlHint] = useState<
     'invalid-url' | 'switch' | undefined
   >(undefined);
+  // 2026-11-16 小欧 [23]阶段D: 能力路由建议直读 preflight(routing_advice), auto 切换前模型快照作回退 — 小欧-2026-11-16
+  const routingAdvice = preflight.routingAdvice;
+  // 手动切换/回退后本条建议即时隐藏, 不依赖模型层回传时序(下一次重算给出新建议) — 小欧-2026-11-16
+  const [dismissedAdvice, setDismissedAdvice] = useState('');
+  const adviceKey = routingAdvice
+    ? `${routingAdvice.action}:${routingAdvice.provider ?? ''}:${
+        routingAdvice.model ?? ''
+      }`
+    : '';
+  const visibleAdvice =
+    routingAdvice && adviceKey !== dismissedAdvice ? routingAdvice : null;
+  const [revertFrom, setRevertFrom] = useState<{
+    provider: string;
+    model: string;
+  } | null>(null);
+  // 2026-11-16 小欧 [23]阶段D: auto 模式点击外自动切换(带去重守卫防回路), 切换前快照供回退 — 小欧-2026-11-16
+  useEffect(() => {
+    if (
+      routingMode !== 'auto' ||
+      !routingAdvice ||
+      routingAdvice.action !== 'switch' ||
+      !routingAdvice.model ||
+      !routingAdvice.provider ||
+      !onSwitchModel
+    )
+      return;
+    if (
+      routingAdvice.model === modelId &&
+      routingAdvice.provider === (modelProvider ?? '')
+    )
+      return;
+    setRevertFrom(
+      modelId ? { provider: modelProvider ?? '', model: modelId } : null
+    );
+    onSwitchModel(routingAdvice.provider, routingAdvice.model);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routingAdvice, routingMode, modelId, modelProvider]);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -713,16 +779,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
    *  预检失败: 粘贴场景正文已原生落位, 静默放行不吞文本; 拖拽场景点名失败。 */
   const handleUrlText = useCallback(
     (text: string, strip?: (draft: string) => string): void => {
-      void captureUrlsFromText(text, getMaxRefs() - getRefs().length)
-        .then(({ accepted, rejected, overflow, urlOnly, routingAdvice }) => {
-          // 2026-11-16 小欧 [23]阶段B: 场景提示数据落定(非法链接/推荐切换), 供 HintLine 展示 — 小欧-2026-11-16
-          setUrlHint(
-            rejected.length > 0
-              ? 'invalid-url'
-              : routingAdvice.action === 'switch'
-                ? 'switch'
-                : undefined
-          );
+      void captureUrlsFromText(text, getMaxRefs() - getRefs().length, {
+        // 后端以 provider/model 定位画像; 仅有 model 时退化按 model 解析 — 小欧-2026-11-16
+        modelId: modelId
+          ? modelProvider
+            ? `${modelProvider}/${modelId}`
+            : modelId
+          : undefined,
+        mode: routingMode,
+      })
+        .then(({ accepted, rejected, overflow, urlOnly }) => {
+          // 2026-11-16 小欧 [23]阶段B: 场景提示数据落定(非法链接), 供 HintLine 展示;
+          // 阶段D D12: 推荐切换/auto 切换统一由 Composer 级重算(preflight hook)承载 — 小欧-2026-11-16
+          setUrlHint(rejected.length > 0 ? 'invalid-url' : undefined);
           if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化
           if (strip) setDraft(strip);
           for (const r of accepted) add(r);
@@ -736,7 +805,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             showMessage(ErrorType.UNKNOWN, '链接预检失败，请重试');
         });
     },
-    [add, getRefs, setDraft]
+    [add, getRefs, setDraft, modelId, modelProvider, routingMode]
   );
 
   /** 只接管"带文件"的拖拽; 拖文本、拖链接一律放行, 不打扰浏览器默认行为 */
@@ -873,6 +942,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
         <HintLine
           worstQuality={worstQuality}
           mode={refs.length >= getMaxRefs() ? 'over-limit' : urlHint}
+        />
+      )}
+      {/* 2026-11-16 小欧 [23]阶段D: 能力路由推荐条(可操作): switch 一键落 L2;
+          auto 模式自动切换后展示回退入口; keep 不占位 — 小欧-2026-11-16 */}
+      {visibleAdvice && (
+        <RecommendationBar
+          advice={visibleAdvice}
+          onSwitch={
+            onSwitchModel
+              ? (m) => {
+                  onSwitchModel(visibleAdvice.provider ?? '', m);
+                  setDismissedAdvice(adviceKey);
+                }
+              : undefined
+          }
+          revertModel={revertFrom?.model}
+          onRevert={
+            revertFrom && onSwitchModel
+              ? () => {
+                  onSwitchModel(revertFrom.provider, revertFrom.model);
+                  setRevertFrom(null);
+                  setDismissedAdvice(adviceKey);
+                }
+              : undefined
+          }
         />
       )}
       {/* 2026-10-21 小杨 - 候选面板改为**浮层**（absolute）

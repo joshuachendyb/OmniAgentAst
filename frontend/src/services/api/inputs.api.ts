@@ -27,7 +27,13 @@ export interface PreflightResultDTO {
   worst_quality: 'native' | 'degraded';
   /** 正文去掉扫描到的 URL 后只剩空白(纯 URL 粘贴/拖拽的接管判据, 识别真源在后端) */
   text_url_only: boolean;
-  routing_advice: { action: string; reason: string };
+  /** 2026-11-16 小欧 [23]阶段D: 能力路由建议 {action, model?, reason, provider?}(后端 capability_router 产出) */
+  routing_advice: {
+    action: 'keep' | 'switch' | 'degrade';
+    model?: string;
+    reason: string;
+    provider?: string;
+  };
 }
 
 export interface PreflightPayload {
@@ -35,6 +41,8 @@ export interface PreflightPayload {
   model_id?: string;
   text?: string;
   items?: Array<Record<string, unknown>>;
+  /** 2026-11-16 小欧 [23]阶段D: 路由模式 suggest|auto|strict(缺省 suggest) */
+  mode?: 'suggest' | 'auto' | 'strict';
 }
 
 /** 输入预检(永不阻断): 识别无条件执行, 能力判定读模型画像 */

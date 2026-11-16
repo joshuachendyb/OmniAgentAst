@@ -399,6 +399,8 @@ def init_chat_db(get_conn):
                 except Exception:
                     pass
         _ensure_column(conn, "chat_sessions", "sessionModel", "TEXT")    # L2 会话级模型覆盖落库点
+        # [23]阶段D: 会话级路由模式(suggest/auto/strict), 存量行 NULL = 默认 suggest — 小欧 2026-11-16
+        _ensure_column(conn, "chat_sessions", "routingMode", "TEXT")
         # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
         _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")

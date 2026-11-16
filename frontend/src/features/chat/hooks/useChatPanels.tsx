@@ -55,14 +55,18 @@
 // 编辑历史: 2026-11-06 小欧 - 附件建会话单一来源下传: ensureSession 纯透传(本 hook 不解业务, 只把
 //   ChatPage 的 ensureSessionForUpload 经 opts 下传 ChatInput) — 小欧-2026-11-06
 // 编辑历史: 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
+// 编辑历史: 2026-11-16 小欧 - [23]阶段D: 装配路由模式选择器(useRoutingMode)与推荐条一键切换(switchSessionModel), 透传 ChatInput — 小欧-2026-11-16
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
 import { ChatInput } from '../components/ChatInput';
 import ChatHeader from '../components/ChatHeader';
 import ChatToolbar from '../components/ChatToolbar';
 import ModelPicker from '../components/ModelPicker';
+import { RoutingModePicker } from '../components/input/RoutingModePicker';
+import { useRoutingMode } from './useRoutingMode';
+import { switchSessionModel } from '../utils/switchSessionModel';
 import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
@@ -197,6 +201,26 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     status: streamStatus,
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
+
+  // 2026-11-16 小欧 [23]阶段D: 会话级路由模式(唯一读写 hook) + 推荐条一键切换(落 L2 唯一实现) — 小欧-2026-11-16
+  const {
+    mode: routingMode,
+    setMode: setRoutingMode,
+    saving: routingSaving,
+  } = useRoutingMode(sessionId, sessionVersion, setSessionVersion);
+  const handleSwitchModel = useCallback(
+    (provider: string, model: string) => {
+      if (!sessionId) return;
+      void switchSessionModel({
+        sessionId,
+        next: { provider, model },
+        version: sessionVersion,
+        setSessionVersion,
+        setSessionModelOverride,
+      });
+    },
+    [sessionId, sessionVersion, setSessionVersion, setSessionModelOverride]
+  );
 
   return useMemo<SessionPanel[]>(
     () => [
@@ -371,17 +395,33 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             onToggleLink={onToggleLink}
             allowInterject={allowInterject}
             onToggleInterject={onToggleInterject}
+            // 2026-11-16 小欧 [23]阶段D: 路由判定入参(生效模型/模式) + 一键切换回调 — 小欧-2026-11-16
+            modelId={effective?.model}
+            modelProvider={effective?.provider}
+            routingMode={routingMode}
+            onSwitchModel={handleSwitchModel}
             // 2026-10-30 18:42:49 小欧 - 会话目录不再经此处透传：ChatInput 内部直接订阅
             //   workspaceStore（只取 list.length），本 memo 依赖不再含目录数据，
             //   一次目录保存不再让右栏 RightViewer 等 7 个面板连带重算。
             modelPickerSlot={
-              <ModelPicker
-                sessionId={sessionId}
-                sessionVersion={sessionVersion}
-                sessionModelOverride={sessionModelOverride}
-                setSessionModelOverride={setSessionModelOverride}
-                setSessionVersion={setSessionVersion}
-              />
+              <span
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+              >
+                <ModelPicker
+                  sessionId={sessionId}
+                  sessionVersion={sessionVersion}
+                  sessionModelOverride={sessionModelOverride}
+                  setSessionModelOverride={setSessionModelOverride}
+                  setSessionVersion={setSessionVersion}
+                />
+                {/* 2026-11-16 小欧 [23]阶段D: 路由模式三档(会话级持久化) — 小欧-2026-11-16 */}
+                <RoutingModePicker
+                  value={routingMode}
+                  onChange={setRoutingMode}
+                  disabled={!sessionId}
+                  loading={routingSaving}
+                />
+              </span>
             }
           />
         ),
@@ -442,6 +482,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       latestTaskRef, // 2026-09-01 小欧 方案C
       rightOpen, // 2026-09-30 小欧 [81]v1.4-H1: TaskListPanel 模型标签按 rightOpen 派生(折叠显 provider 前缀), 不入依赖则开合不重算
       ensureSession, // 2026-11-06 小欧 - 附件建会话(渲染依赖, 漏=回调换新后面板仍用旧闭包)
+      routingMode, // 2026-11-16 小欧 [23]阶段D: 模式变化需重算面板(透传 ChatInput/选择器) — 小欧-2026-11-16
+      setRoutingMode,
+      routingSaving,
+      handleSwitchModel,
     ]
   );
 }

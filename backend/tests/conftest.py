@@ -13,6 +13,7 @@ tests/conftest.py — 全局测试夹具
   2026-10-15 - 小欧 - [33] 4.2 落地(测试侧对齐 TTL 新列): chat_session_trust 建表补 expires_at TEXT; UNIQUE 由 (session_id,tool_name) 改 (session_id,tool_name,path)——原唯一键会让"同工具同路径两条不同 session 行"互相冲突, 且与生产 trust_db.insert_session_trust 语义对齐 — 小欧-2026-10-15 link_enabled 列), 供第5章新增 case 复用; 存量 7 份副本刻意不动(YAGNI)。
   2026-11-13 商量 - 测试侧建表 DDL 与生产 schema 对齐: chat_tasks 补 creation_source 列,
     chat_user_message 补 msg_kind 列(对齐 db_initializer), 消除测试环境 no such column — 商量-2026-11-13
+  2026-11-16 小欧 - [23]阶段D: chat_sessions 补 routingMode 列(对齐 db_initializer 补列) — 小欧-2026-11-16
 
 背景：第九章给 12 个 router 挂了统一 token 鉴权（`app/api/v1/deps.verify_token`），
   凡未带口令的请求一律 401。项目内用 `fastapi.testclient.TestClient` 的测试
@@ -58,6 +59,7 @@ def _build_schema(conn) -> None:
             message_count INTEGER DEFAULT 0, is_deleted BOOLEAN DEFAULT FALSE, is_valid BOOLEAN DEFAULT FALSE,
             title_locked BOOLEAN DEFAULT FALSE, title_updated_at TEXT, version INTEGER DEFAULT 1,
             sessionModel TEXT,
+            routingMode TEXT,
             link_enabled BOOLEAN DEFAULT FALSE
         );
         CREATE TABLE chat_messages (
