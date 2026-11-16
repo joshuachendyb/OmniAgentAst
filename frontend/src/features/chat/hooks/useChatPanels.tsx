@@ -56,6 +56,9 @@
 //   ChatPage 的 ensureSessionForUpload 经 opts 下传 ChatInput) — 小欧-2026-11-06
 // 编辑历史: 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 // 编辑历史: 2026-11-16 小欧 - [23]阶段D: 装配路由模式选择器(useRoutingMode)与推荐条一键切换(switchSessionModel), 透传 ChatInput — 小欧-2026-11-16
+// 编辑历史: 2026-11-16 小欧 - [45]会话列表性能优化 P1: TaskListPanel 面板定义独立 memo(拆分巨型 useMemo),
+//   tasks/tasksLoading/latestTaskId/latestTaskRef/rightOpen/handleSelectTask 迁出主 memo 依赖;
+//   activeTaskId/executionSteps 因 RightViewer/TaskInfoBar 也消费仍保留在主 memo。行为零逻辑变更 — 小欧-2026-11-16
 
 import { useCallback, useMemo } from 'react';
 import { Typography } from 'antd';
@@ -222,6 +225,43 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     [sessionId, sessionVersion, setSessionVersion, setSessionModelOverride]
   );
 
+  // 2026-11-16 小欧 - [45] P1: TaskListPanel 面板定义独立 memo, 只依赖其真正所需
+  //   依赖(tasks/activeTaskId/handleSelectTask/tasksLoading/latestTaskId/latestTaskRef/rightOpen/sessionId/executionSteps),
+  //   使其不被主 memo 中其余面板(RightViewer/TaskInfoBar 等)的专属高频状态(如 waitClock/streamStatus)连带重划;
+  //   activeTaskId/executionSteps 因 RightViewer/TaskInfoBar 也消费故仍保留在主 memo 依赖(见下方说明) — 小欧-2026-11-16
+  const taskListPanel = useMemo<SessionPanel>(
+    () => ({
+      slot: 'left',
+      key: 'left.taskList',
+      component: (
+        <TaskListPanel
+          tasks={tasks}
+          activeTaskId={activeTaskId}
+          onSelect={handleSelectTask}
+          loading={tasksLoading}
+          latestTaskId={latestTaskId}
+          latestTaskRef={latestTaskRef}
+          rightOpen={rightOpen}
+          // 2026-10-21 小杨 - 新增两项透传（可选，缺省即不渲染那两行）
+          sessionId={sessionId}
+          steps={executionSteps}
+        />
+      ),
+      defaultVisible: true,
+    }),
+    [
+      tasks,
+      activeTaskId,
+      handleSelectTask,
+      tasksLoading,
+      latestTaskId,
+      latestTaskRef,
+      rightOpen,
+      sessionId,
+      executionSteps,
+    ]
+  );
+
   return useMemo<SessionPanel[]>(
     () => [
       {
@@ -261,7 +301,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
               >
                 <Typography.Text
                   type="secondary"
-                  style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.PRIMARY }}
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    color: Colors.TEXT.PRIMARY,
+                  }}
                 >
                   {effective.display_name ||
                     `${effective.provider} (${effective.model})`}
@@ -278,7 +321,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
                     display: 'inline-block',
                   }}
                 />
-                <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: FontSize.SECONDARY }}
+                >
                   {effective.source === 'session' ? '会话' : '全局'}
                 </Typography.Text>
               </span>
@@ -293,25 +339,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         component: <ChatToolbar onNewSession={handleNewSession} />,
         defaultVisible: true,
       },
-      {
-        slot: 'left',
-        key: 'left.taskList',
-        component: (
-          <TaskListPanel
-            tasks={tasks}
-            activeTaskId={activeTaskId}
-            onSelect={handleSelectTask}
-            loading={tasksLoading}
-            latestTaskId={latestTaskId}
-            latestTaskRef={latestTaskRef}
-            rightOpen={rightOpen}
-            // 2026-10-21 小杨 - 新增两项透传（可选，缺省即不渲染那两行）
-            sessionId={sessionId}
-            steps={executionSteps}
-          />
-        ),
-        defaultVisible: true,
-      },
+      taskListPanel,
       {
         slot: 'right',
         key: 'right.viewer',
@@ -445,15 +473,12 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       sessionModelOverride,
       setSessionModelOverride,
       total,
-      tasksLoading,
       sessionTokens, // 2026-09-01 小欧: 实时/静态双源更新需入依赖, 否则useMemo缓存旧值TopbarStats不刷新
       chainTokens,
       sessionTimes,
       effective,
       handleNewSession,
-      tasks,
       activeTaskId,
-      handleSelectTask,
       serverTaskId,
       isReceiving,
       executionSteps,
@@ -478,9 +503,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       recentConfirmedTool,
       refreshTasks,
       updateTaskResponse, // 2026-09-15 小欧: RightViewer 透传写 final.response — 小欧-2026-09-15
-      latestTaskId, // 2026-09-01 小欧 方案C
-      latestTaskRef, // 2026-09-01 小欧 方案C
-      rightOpen, // 2026-09-30 小欧 [81]v1.4-H1: TaskListPanel 模型标签按 rightOpen 派生(折叠显 provider 前缀), 不入依赖则开合不重算
+      taskListPanel, // 2026-11-16 小欧 [45] P1: TaskListPanel 独立 memo 结果引用 — 小欧-2026-11-16
       ensureSession, // 2026-11-06 小欧 - 附件建会话(渲染依赖, 漏=回调换新后面板仍用旧闭包)
       routingMode, // 2026-11-16 小欧 [23]阶段D: 模式变化需重算面板(透传 ChatInput/选择器) — 小欧-2026-11-16
       setRoutingMode,

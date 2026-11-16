@@ -16,6 +16,8 @@
 // 编辑历史: 2026-10-05 小欧 - 加可选 renderExpanded: 展开态渲染由调用方注入(左列 task 卡 response 传 MarkdownSlot);
 //   不传则展开仍显纯文本, 折叠态与其余 4 处调用零变化 — 小欧-2026-10-05
 // 编辑历史: 2026-11-14 商量 - 折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
+// 编辑历史: 2026-11-16 小欧 - [45]会话列表性能优化 P3: overflow 用 indexOf 计行替代 split 全量分割
+//   (先 length 快速否决短文本), shown 首2行截取同样用 indexOf 定位; 行为与结果与原 split 逐字等价 — 小欧-2026-11-16
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -68,9 +70,19 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
       _prevTextKeyRef.current = _textKey;
     }
   }, [_textKey, setExpanded]); // 2026-10-05 小欧: setExpanded 来自 useState 恒稳定, 列入依赖消 exhaustive-deps 告警(实际零重跑) — 小欧-2026-10-05
+  // 2026-11-16 小欧 - [45] P3: 用 indexOf 计数替代 split 全量分割; 先 length 快速否决(短文本直接命中) — 小欧-2026-11-16
   const overflow = useMemo(() => {
-    const lineCount = text.split('\n').length;
-    return lineCount > maxLines || text.length > maxChars;
+    if (text.length <= maxChars) {
+      let lines = 1;
+      let pos = text.indexOf('\n');
+      while (pos !== -1) {
+        lines++;
+        if (lines > maxLines) return true;
+        pos = text.indexOf('\n', pos + 1);
+      }
+      return false;
+    }
+    return true;
   }, [text, maxLines, maxChars]);
 
   const shown = useMemo(() => {
@@ -78,10 +90,11 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     if (!overflow || expanded) {
       return expanded && renderExpanded ? renderExpanded(text) : text;
     }
-    const lines = text.split('\n');
-    // 2026-08-27 小欧 修复: 多行内容优先取首2行摘要(BUG-G), 单行超长无换行才按字符截断(修复#7)
-    if (lines.length > 1) {
-      const preview = lines.slice(0, 2).join('\n');
+    // 2026-11-16 小欧 - [45] P3: 取首2行用 indexOf 定位, 不 split 全量; 单行(无换行)才按字符截断 — 小欧-2026-11-16
+    const firstNL = text.indexOf('\n');
+    if (firstNL !== -1) {
+      const secondNL = text.indexOf('\n', firstNL + 1);
+      const preview = secondNL !== -1 ? text.slice(0, secondNL) : text;
       if (preview.length > maxChars) return preview.slice(0, maxChars) + '…';
       return preview;
     }

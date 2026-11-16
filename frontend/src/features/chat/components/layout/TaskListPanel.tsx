@@ -45,10 +45,12 @@
 // 编辑历史: 2026-11-14 商量 - merged_inputs 契约升级 {content,msg_kind}[] 后同槽异标(「系统通知」/「插话」),
 //   头/尾加「系统通知 · 续跑」小标; 系统通知判定收敛为单一谓词; 更正旧「msg_kind=system_notice ⇔
 //   creation_source=system_resume」等价误述(任务来源仍 user 但消息 msg_kind=system_notice) — 商量-2026-11-14
-
 // 编辑历史: 2026-11-14 商量 - 按用户反馈移除追加块内「系统通知」/「插话」两个冗余小标:
 //   系统通知正文自带「[系统通知]」前缀(消息头)可区分, 追加块上下文已明示为追加输入, 双标签意义不大;
 //   谓词 isNoticeInput/isInjectionInput 失去唯一消费点一并删除, 续跑徽标「系统通知 · 续跑」保留 — 商量-2026-11-14
+// 编辑历史: 2026-11-16 小欧 - [45]会话列表性能优化: 抽离 TaskItem 组件包 React.memo(字段级比较),
+//   TaskListPanel 外层包 memo, ledger/推荐行预计算到 useMemo(消除 render 期间每任务同步调 store),
+//   SSE 流式/父级高频重渲时既得任务不再全量重建 DOM。行为零逻辑变更 — 小欧-2026-11-16
 
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
@@ -107,7 +109,8 @@ const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
 };
 
 // 2026-11-14 商量: 系统通知判定单一谓词 — 全文件收敛于此, 禁止散写判定
-const isSystemResumeTask = (t: SessionTaskItem) => t.creation_source === 'system_resume'; // B1b 主判定
+const isSystemResumeTask = (t: SessionTaskItem) =>
+  t.creation_source === 'system_resume'; // B1b 主判定
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
@@ -123,6 +126,362 @@ interface TaskListPanelProps {
   /** 本轮 steps（计算「被工具动过 ≥2 次」） */
   steps?: ExecutionStep[];
 }
+
+// ──────────────────────────────────────────────────────────────
+// TaskItem — 单任务项（memo 化，仅在自身数据变化时重渲）
+// 2026-11-16 小欧 - [45] P0: 从 TaskListPanel 的 tasks.map 内抽离, 包 React.memo +
+//   字段级自定义比较; SSE 流式/父级高频重渲时既得任务不再全量重建 DOM — 小欧-2026-11-16
+// ──────────────────────────────────────────────────────────────
+interface TaskItemProps {
+  task: SessionTaskItem;
+  active: boolean;
+  isLatest: boolean;
+  rightOpen: boolean;
+  groupNo: number | undefined;
+  expanded: boolean;
+  onToggleExpanded: (taskId: string) => void;
+  onSelect: (taskId: string) => void;
+  onCopy: (text: string, type: '问题' | '回复') => void;
+  anchorRef?: React.MutableRefObject<HTMLDivElement | null>;
+  // 推荐行与台账行: 由外层预计算后传入(避免每个 TaskItem 都调 hook/store)
+  recommendTags?: React.ReactNode;
+  ledgerTags?: React.ReactNode;
+}
+
+const TaskItem: React.FC<TaskItemProps> = ({
+  task: t,
+  active,
+  isLatest,
+  rightOpen,
+  groupNo,
+  expanded,
+  onToggleExpanded,
+  onSelect,
+  onCopy,
+  anchorRef,
+  recommendTags,
+  ledgerTags,
+}) => {
+  return (
+    <div
+      key={t.task_id}
+      ref={isLatest ? anchorRef : undefined}
+      className={`task-list-item${active ? ' active' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      aria-label={`任务 ${t.task_id} ${t.status}`}
+      onClick={() => onSelect(t.task_id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(t.task_id);
+        }
+      }}
+      style={{
+        padding: '8px 10px', // 2026-10-27 小欧 v1.1: 10px/12px→8px/10px，更紧凑
+        cursor: 'pointer',
+        backgroundColor: active ? '#e6f4ff' : 'transparent', // 2026-09-09 小欧 优化: 选中态浅蓝背景
+        borderLeft: active
+          ? `3px solid ${Colors.PRIMARY}` // 2026-09-09 小欧 优化: 选中左边框2→3px，更醒目
+          : '3px solid transparent', // 非选中: 透明占位保持对齐
+        borderRadius: active ? '0 4px 4px 0' : 0, // 2026-09-09 小欧 优化: 选中态微圆角
+        overflowWrap: 'break-word',
+        wordBreak: 'break-word',
+        textAlign: 'left',
+        outline: 'none',
+      }}
+    >
+      {/* 2026-09-09 小欧 优化: 元信息行(时间/模型/状态)置顶，先概览后详情 */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6, // 2026-10-27 小欧 v1.1: 8→6，更紧凑
+          marginBottom: 4, // 2026-10-27 小欧 v1.1: 6→4，更紧凑
+          flexWrap: 'wrap', // 窄屏时换行
+        }}
+      >
+        {/* 时间标签 */}
+        <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
+          {formatTime(t.created_at)}
+        </span>
+
+        {/* 模型标签: 右侧折叠时显示provider前缀, 展开时只显示model */}
+        {t.model && (
+          <span
+            style={{
+              fontSize: FontSize.CAPTION,
+              color: Colors.TEXT.PRIMARY,
+              backgroundColor: '#f5f5f5',
+              padding: '1px 5px',
+              borderRadius: 3,
+            }}
+          >
+            {!rightOpen && t.provider ? `${t.provider}/` : ''}
+            {t.model}
+          </span>
+        )}
+
+        {/* 状态标签 */}
+        {/* 2026-09-30 小欧 - 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
+        {(() => {
+          const st = TASK_STATUS_LABEL[t.status];
+          return (
+            <span
+              style={{
+                fontSize: FontSize.SMALL,
+                color: st ? st.color : Colors.TEXT.TERTIARY,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 6 /* 状态点装饰图形, 非文字, 不入字号阶梯 */,
+                }}
+              >
+                ●
+              </span>
+              {st ? st.name : t.status}
+            </span>
+          );
+        })()}
+
+        {/* 上下文链接链号徽标(仅链长>1时显示, 独立任务不成链不贴标) */}
+        {(() => {
+          if (groupNo === undefined) return null; // 独立任务不成链, 不贴标
+          return (
+            <span
+              style={{
+                fontSize: FontSize.CAPTION,
+                color: Colors.INFO,
+                backgroundColor: '#f5f5f5',
+                padding: '1px 5px',
+                borderRadius: 3,
+              }}
+            >
+              链{groupNo}
+            </span>
+          );
+        })()}
+
+        {/* 续跑徽标(后台命令完成自动唤醒的任务) — 商量-2026-11-13 */}
+        {isSystemResumeTask(t) && (
+          <span
+            style={{
+              fontSize: FontSize.CAPTION,
+              color: Colors.SUCCESS,
+              backgroundColor: '#f5f5f5',
+              padding: '1px 5px',
+              borderRadius: 3,
+            }}
+          >
+            续跑
+          </span>
+        )}
+
+        {/* 轮次标签（显示LLM调用轮次） */}
+        {t.llm_call_count > 0 && (
+          <span
+            style={{
+              fontSize: FontSize.CAPTION,
+              color: Colors.TEXT.PRIMARY,
+              backgroundColor: '#f5f5f5',
+              padding: '1px 5px',
+              borderRadius: 3,
+            }}
+          >
+            {t.llm_call_count}轮
+          </span>
+        )}
+      </div>
+
+      {/* 用户问题区域 */}
+      {t.user_input && (
+        <div
+          className="task-text-block" // position:relative由CSS .task-text-block定义，不重复内联(DRY)
+          style={{
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.STRONG, // 强文本，问题突出
+            fontWeight: FontWeight.MEDIUM,
+            lineHeight: 1.5,
+            wordBreak: 'break-word',
+            // 2026-11-14 商量: 续跑任务(creation_source=system_resume)按系统通知样式渲染;
+            //   注意 system_notice 与 system_resume 非等价 — 任务来源仍 user 但消息 msg_kind=system_notice
+            ...(isSystemResumeTask(t)
+              ? {
+                  color: Colors.TEXT.SECONDARY,
+                  fontWeight: FontWeight.REGULAR,
+                  padding: '4px 8px',
+                  backgroundColor: '#fafafa',
+                  borderLeft: `2px solid ${Colors.SUCCESS}`,
+                  borderRadius: '0 3px 3px 0',
+                }
+              : {}),
+          }}
+        >
+          {isSystemResumeTask(t) && (
+            <span
+              style={{
+                fontSize: FontSize.CAPTION,
+                color: Colors.TEXT.TERTIARY,
+                display: 'block',
+                marginBottom: 2,
+              }}
+            >
+              系统通知 · 续跑
+            </span>
+          )}
+          <CollapsibleText text={t.user_input} />
+          {/* 2026-09-09 小欧 复制按钮: 用户输入右上角, hover时显示 */}
+          <button
+            className="task-copy-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy(t.user_input, '问题');
+            }}
+            aria-label="复制问题"
+          >
+            <CopyOutlined />
+          </button>
+          {isSystemResumeTask(t) && (
+            <span
+              style={{
+                fontSize: FontSize.CAPTION,
+                color: Colors.TEXT.TERTIARY,
+                display: 'block',
+              }}
+            >
+              — 系统通知 · 续跑 —
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 2026-09-28 小欧: 追加注入消息 — 语义属输入侧, 故置于问题区与回复区之间;
+          默认收起(不撑条目高度), 展开看全文。 */}
+      {t.merged_inputs && t.merged_inputs.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpanded(t.task_id);
+            }}
+            aria-expanded={expanded}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.TERTIARY,
+            }}
+          >
+            <CaretDownOutlined rotate={expanded ? 180 : 0} /> ↳ 追加{' '}
+            {t.merged_inputs.length} 条
+          </button>
+          {expanded &&
+            t.merged_inputs.map((m, i) => (
+              <div
+                key={i}
+                style={{
+                  // 2026-10-08 小欧 - 逐条独立成块, 多条不连成串
+                  marginTop: 6,
+                  padding: '4px 8px',
+                  // 2026-11-14 商量 - 追加块正文定阶 SECONDARY(12): 不设则继承默认14(PRIMARY)偏大,
+                  //   且与「↳追加N条」按钮、上方用户问题区(SECONDARY)一致, 输入侧次要与密集区协调
+                  fontSize: FontSize.SECONDARY,
+                  backgroundColor: '#fafafa',
+                  borderLeft: '2px solid #d9d9d9',
+                  borderRadius: '0 3px 3px 0',
+                }}
+              >
+                {/* 2026-11-14 商量 - 追加块内不再标「系统通知」/「插话」小标: 系统通知正文自带
+                    「[系统通知]」前缀可区分, 追加块上下文已明示为追加输入, 双标签冗余(用户反馈) */}
+                <CollapsibleText text={m.content} />
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* 回复区域 */}
+      {t.response && (
+        <div
+          className="task-text-block" // position:relative由CSS .task-text-block定义，不重复内联(DRY)
+          style={{
+            marginTop: 8, // 与问题区域保持间距
+            paddingLeft: 10, // 左侧缩进
+            borderLeft: '2px solid #d9d9d9', // 2026-09-09 小欧 优化: 左边框加粗1→2px
+            backgroundColor: '#fafafa', // 2026-09-09 小欧 优化: 浅灰背景，层次清晰
+            borderRadius: '0 3px 3px 0', // 微圆角
+            padding: '8px 10px', // 内边距，内容不贴边
+          }}
+        >
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.PRIMARY, // 主文本，比问题稍浅
+              lineHeight: 1.6, // 回复正文行高略大，阅读舒适
+              wordBreak: 'break-word',
+            }}
+          >
+            {/* 2026-10-05 小欧 北京老陈指令: response 展开态按 Markdown 渲染, 折叠态维持原首2行纯文本。
+                renderExpanded 只在"已展开"时被 CollapsibleText 调用(不传则原样显示全文),
+                故折叠表现与改动前逐字一致; markdown 恒 true —— 本处不受「思考排版」设置开关控制。 */}
+            <CollapsibleText
+              text={t.response}
+              renderExpanded={(expandedText) => (
+                <MarkdownSlot text={expandedText} markdown scene="task" />
+              )}
+            />
+          </div>
+          {/* 2026-09-09 小欧 复制按钮: 回复区域右上角, hover时显示 */}
+          <button
+            className="task-copy-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy(t.response!, '回复');
+            }}
+            aria-label="复制回复"
+          >
+            <CopyOutlined />
+          </button>
+        </div>
+      )}
+
+      {/* 2026-10-21 小杨 - 推荐行 + 引用台账行（由外层预计算传入） */}
+      {recommendTags}
+      {ledgerTags}
+    </div>
+  );
+};
+
+// 2026-11-16 小欧 - 自定义比较: 覆盖全部展示字段(优先级优先于引用比较) + 交互态;
+//   任一展示字段变化才重渲, 不被父组件因其它状态(SSE 流式/右侧/工具执行)变化波及 — 小欧-2026-11-16
+const TaskItemMemo = React.memo(TaskItem, (prev, next) => {
+  const pt = prev.task;
+  const nt = next.task;
+  if (pt.task_id !== nt.task_id) return false;
+  if (pt.response !== nt.response) return false;
+  if (pt.status !== nt.status) return false;
+  if (pt.user_input !== nt.user_input) return false;
+  if (pt.llm_call_count !== nt.llm_call_count) return false;
+  if (pt.merged_inputs !== nt.merged_inputs) return false;
+  if (pt.created_at !== nt.created_at) return false;
+  if (pt.model !== nt.model) return false;
+  if (pt.provider !== nt.provider) return false;
+  if (pt.creation_source !== nt.creation_source) return false;
+  if (prev.active !== next.active) return false;
+  if (prev.isLatest !== next.isLatest) return false;
+  if (prev.rightOpen !== next.rightOpen) return false;
+  if (prev.groupNo !== next.groupNo) return false;
+  if (prev.expanded !== next.expanded) return false;
+  if (prev.recommendTags !== next.recommendTags) return false;
+  if (prev.ledgerTags !== next.ledgerTags) return false;
+  return true;
+});
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
   tasks,
@@ -173,14 +532,6 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
         .slice(0, 3),
     [recentFiles, roundHits]
   );
-  /** 引用台账：按任务精确取（store 侧 transient 列表，不入库；start 帧已绑定真实 taskId）— 小杨-2026-10-21 */
-  const ledgerForTask = React.useCallback(
-    (taskId: string) => {
-      if (!sessionId) return [];
-      return chatStreamStore.getSentRefLedger(sessionId, taskId);
-    },
-    [sessionId]
-  );
   /** 台账恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(
     async (path: string, lineRange?: { start: number; end: number }) => {
@@ -220,14 +571,15 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   const [expandedTasks, setExpandedTasks] = React.useState<Set<string>>(
     new Set()
   );
-  const toggleExpanded = (taskId: string) => {
+  // 2026-11-16 小欧 - [45] 包 useCallback 稳定化, 供 TaskItem 复用不触发额外重渲 — 小欧-2026-11-16
+  const toggleExpanded = useCallback((taskId: string) => {
     setExpandedTasks((prev) => {
       const next = new Set(prev);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
       return next;
     });
-  };
+  }, []);
 
   // 2026-09-01 小欧 方案C: 新任务诞生(latestTaskId变化)且不在可视区时, 滚动带进视野; 可视区内不动不打扰
   const prevLatestIdRef = useRef<string | null>(null);
@@ -272,6 +624,67 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     window.addEventListener('task_merged', onTaskMerged);
     return () => window.removeEventListener('task_merged', onTaskMerged);
   }, [latestTaskId, anchorRef]);
+
+  // [45] P2 台账预计算(消除 render 期间每任务同步调 store): key=taskId, value=渲染节点;
+  //   tasks 未变化时 useMemo 缓存命中, SSE 流式期间不再每 tick 重算 — 小欧-2026-11-16
+  const ledgerByTask = React.useMemo(() => {
+    if (!sessionId) return new Map<string, React.ReactNode>();
+    const m = new Map<string, React.ReactNode>();
+    for (const t of tasks) {
+      const entries = chatStreamStore.getSentRefLedger(sessionId, t.task_id);
+      if (entries.length === 0) continue;
+      m.set(
+        t.task_id,
+        <div style={{ fontSize: chatTokens.fontSM, marginTop: 2 }}>
+          ↩ 本轮引用：
+          {entries.map((e) => (
+            <Tag
+              key={e.path + e.ts}
+              style={{ cursor: 'pointer' }}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                void quoteAfterReread(e.path, e.lineRange);
+              }}
+            >
+              <FileOutlined style={{ marginRight: 4 }} /> {e.label}
+              {e.lineRange ? ` L${e.lineRange.start}-${e.lineRange.end}` : ''}
+            </Tag>
+          ))}
+        </div>
+      );
+    }
+    return m;
+  }, [sessionId, tasks, quoteAfterReread]);
+
+  // [45] 推荐行预计算(只对最新任务): 稳定引用供 TaskItemMemo 比较 — 小欧-2026-11-16
+  const recommendNode = React.useMemo(() => {
+    if (!sessionId || recommend.length === 0 || !latestTaskId) return null;
+    return (
+      <div
+        style={{
+          color: Colors.TEXT.SECONDARY,
+          fontSize: chatTokens.fontSM,
+          marginTop: 4,
+        }}
+      >
+        <PaperClipOutlined style={{ marginRight: 4 }} />{' '}
+        本轮涉及的文件，点击作为引用继续追问：
+        {recommend.map((r) => (
+          <Tag
+            key={r.path}
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              void quoteAfterReread(r.path);
+            }}
+          >
+            {r.path}
+          </Tag>
+        ))}
+      </div>
+    );
+  }, [sessionId, recommend, latestTaskId, quoteAfterReread]);
+
   if (loading && tasks.length === 0) {
     return (
       <div style={{ padding: '16px 8px' }}>
@@ -284,7 +697,10 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
-          <Typography.Text type="secondary" style={{ fontSize: FontSize.SECONDARY }}>
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: FontSize.SECONDARY }}
+          >
             暂无任务
           </Typography.Text>
         }
@@ -309,6 +725,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     }
   }
 
+  // [45] P0 渲染: map 内只调 TaskItemMemo, 不再内联全部 JSX — 小欧-2026-11-16
   return (
     <div
       style={{
@@ -319,333 +736,35 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       }}
     >
       {tasks.map((t) => {
-        const active = t.task_id === activeTaskId;
-        const isLatest = t.task_id === latestTaskId; // 2026-09-01 小欧 方案C: 最新任务项挂锚点ref(供滚动定位)
+        const active = t.task_id === activeTaskId; // 2026-09-01 小欧 方案C: 最新任务项挂锚点ref(供滚动定位)
+        const isLatest = t.task_id === latestTaskId;
+        const root = t.context_root_task_id ?? t.task_id;
+        const groupNo = groupNoOf.get(root);
         return (
-          <div
+          <TaskItemMemo
             key={t.task_id}
-            ref={isLatest ? anchorRef : undefined}
-            className={`task-list-item${active ? ' active' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-pressed={active}
-            aria-label={`任务 ${t.task_id} ${t.status}`}
-            onClick={() => onSelect(t.task_id)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(t.task_id);
-              }
-            }}
-            style={{
-              padding: '8px 10px', // 2026-10-27 小欧 v1.1: 10px/12px→8px/10px，更紧凑
-              cursor: 'pointer',
-              backgroundColor: active ? '#e6f4ff' : 'transparent', // 2026-09-09 小欧 优化: 选中态浅蓝背景
-              borderLeft: active
-                ? `3px solid ${Colors.PRIMARY}` // 2026-09-09 小欧 优化: 选中左边框2→3px，更醒目
-                : '3px solid transparent', // 非选中: 透明占位保持对齐
-              borderRadius: active ? '0 4px 4px 0' : 0, // 2026-09-09 小欧 优化: 选中态微圆角
-              overflowWrap: 'break-word',
-              wordBreak: 'break-word',
-              textAlign: 'left',
-              outline: 'none',
-            }}
-          >
-            {/* 2026-09-09 小欧 优化: 元信息行(时间/模型/状态)置顶，先概览后详情 */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6, // 2026-10-27 小欧 v1.1: 8→6，更紧凑
-                marginBottom: 4, // 2026-10-27 小欧 v1.1: 6→4，更紧凑
-                flexWrap: 'wrap', // 窄屏时换行
-              }}
-            >
-              {/* 时间标签 */}
-              <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
-                {formatTime(t.created_at)}
-              </span>
-
-              {/* 模型标签: 右侧折叠时显示provider前缀, 展开时只显示model */}
-              {t.model && (
-                <span
-                  style={{
-                    fontSize: FontSize.CAPTION,
-                    color: Colors.TEXT.PRIMARY,
-                    backgroundColor: '#f5f5f5',
-                    padding: '1px 5px',
-                    borderRadius: 3,
-                  }}
-                >
-                  {!rightOpen && t.provider ? `${t.provider}/` : ''}
-                  {t.model}
-                </span>
-              )}
-
-              {/* 状态标签 */}
-              {/* 2026-09-30 小欧 - 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
-              {(() => {
-                const st = TASK_STATUS_LABEL[t.status];
-                return (
-                  <span
-                    style={{
-                      fontSize: FontSize.SMALL,
-                      color: st ? st.color : Colors.TEXT.TERTIARY,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 2,
-                    }}
-                  >
-                    <span style={{ fontSize: 6 /* 状态点装饰图形, 非文字, 不入字号阶梯 */ }}>●</span>
-                    {st ? st.name : t.status}
-                  </span>
-                );
-              })()}
-
-              {/* 上下文链接链号徽标(仅链长>1时显示, 独立任务不成链不贴标) */}
-              {(() => {
-                const root = t.context_root_task_id ?? t.task_id;
-                const groupNo = groupNoOf.get(root);
-                if (groupNo === undefined) return null; // 独立任务不成链, 不贴标
-                return (
-                  <span
-                    style={{
-                      fontSize: FontSize.CAPTION,
-                      // 2026-10-03 小欧 视觉修正: 原背景 #e6f4ff 与激活行背景同色(#e6f4ff),
-                      // 激活行上徽标底色与行背景融为一体、丢了分层感 → 改与同行轮次标签一致 #f5f5f5,
-                      // 字色仍用 Colors.INFO(#096dd9) 强调"链"语义; 对比度 #096dd9 on #f5f5f5 ≈ 4.9:1 达 WCAG AA
-                      color: Colors.INFO,
-                      backgroundColor: '#f5f5f5',
-                      padding: '1px 5px',
-                      borderRadius: 3,
-                    }}
-                  >
-                    链{groupNo}
-                  </span>
-                );
-              })()}
-
-              {/* 续跑徽标(后台命令完成自动唤醒的任务) — 商量-2026-11-13 */}
-              {isSystemResumeTask(t) && (
-                <span
-                  style={{
-                    fontSize: FontSize.CAPTION,
-                    color: Colors.SUCCESS,
-                    backgroundColor: '#f5f5f5',
-                    padding: '1px 5px',
-                    borderRadius: 3,
-                  }}
-                >
-                  续跑
-                </span>
-              )}
-
-              {/* 轮次标签（显示LLM调用轮次） */}
-              {t.llm_call_count > 0 && (
-                <span
-                  style={{
-                    fontSize: FontSize.CAPTION,
-                    color: Colors.TEXT.PRIMARY,
-                    backgroundColor: '#f5f5f5',
-                    padding: '1px 5px',
-                    borderRadius: 3,
-                  }}
-                >
-                  {t.llm_call_count}轮
-                </span>
-              )}
-            </div>
-
-            {/* 用户问题区域 */}
-            {t.user_input && (
-              <div
-                className="task-text-block" // position:relative由CSS .task-text-block定义，不重复内联(DRY)
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.STRONG, // 强文本，问题突出
-                  fontWeight: FontWeight.MEDIUM,
-                  lineHeight: 1.5,
-                  wordBreak: 'break-word',
-                  // 2026-11-14 商量: 续跑任务(creation_source=system_resume)按系统通知样式渲染;
-                  //   注意 system_notice 与 system_resume 非等价 — 任务来源仍 user 但消息 msg_kind=system_notice
-                  ...(isSystemResumeTask(t)
-                    ? {
-                        color: Colors.TEXT.SECONDARY,
-                        fontWeight: FontWeight.REGULAR,
-                        padding: '4px 8px',
-                        backgroundColor: '#fafafa',
-                        borderLeft: `2px solid ${Colors.SUCCESS}`,
-                        borderRadius: '0 3px 3px 0',
-                      }
-                    : {}),
-                }}
-              >
-                {isSystemResumeTask(t) && (
-                  <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, display: 'block', marginBottom: 2 }}>系统通知 · 续跑</span>
-                )}
-                <CollapsibleText text={t.user_input} />
-                {/* 2026-09-09 小欧 复制按钮: 用户输入右上角, hover时显示 */}
-                <button
-                  className="task-copy-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopy(t.user_input, '问题');
-                  }}
-                  aria-label="复制问题"
-                >
-                  <CopyOutlined />
-                </button>
-                {isSystemResumeTask(t) && (
-                  <span style={{ fontSize: FontSize.CAPTION, color: Colors.TEXT.TERTIARY, display: 'block' }}>— 系统通知 · 续跑 —</span>
-                )}
-              </div>
-            )}
-
-            {/* 2026-09-28 小欧: 追加注入消息 — 语义属输入侧, 故置于问题区与回复区之间;
-                默认收起(不撑条目高度), 展开看全文。 */}
-            {t.merged_inputs && t.merged_inputs.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleExpanded(t.task_id);
-                  }}
-                  aria-expanded={expandedTasks.has(t.task_id)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: FontSize.SECONDARY,
-                    color: Colors.TEXT.TERTIARY,
-                  }}
-                >
-                  <CaretDownOutlined
-                    rotate={expandedTasks.has(t.task_id) ? 180 : 0}
-                  />{' '}
-                  ↳ 追加 {t.merged_inputs.length} 条
-                </button>
-                {expandedTasks.has(t.task_id) &&
-                  t.merged_inputs.map((m, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        // 2026-10-08 小欧 - 逐条独立成块, 多条不连成串
-                        marginTop: 6,
-                        padding: '4px 8px',
-                        // 2026-11-14 商量 - 追加块正文定阶 SECONDARY(12): 不设则继承默认14(PRIMARY)偏大,
-                        //   且与「↳追加N条」按钮、上方用户问题区(SECONDARY)一致, 输入侧次要与密集区协调
-                        fontSize: FontSize.SECONDARY,
-                        backgroundColor: '#fafafa',
-                        borderLeft: '2px solid #d9d9d9',
-                        borderRadius: '0 3px 3px 0',
-                      }}
-                    >
-                      {/* 2026-11-14 商量 - 追加块内不再标「系统通知」/「插话」小标: 系统通知正文自带
-                          「[系统通知]」前缀可区分, 追加块上下文已明示为追加输入, 双标签冗余(用户反馈) */}
-                      <CollapsibleText text={m.content} />
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {/* 回复区域 */}
-            {t.response && (
-              <div
-                className="task-text-block" // position:relative由CSS .task-text-block定义，不重复内联(DRY)
-                style={{
-                  marginTop: 8, // 与问题区域保持间距
-                  paddingLeft: 10, // 左侧缩进
-                  borderLeft: '2px solid #d9d9d9', // 2026-09-09 小欧 优化: 左边框加粗1→2px
-                  backgroundColor: '#fafafa', // 2026-09-09 小欧 优化: 浅灰背景，层次清晰
-                  borderRadius: '0 3px 3px 0', // 微圆角
-                  padding: '8px 10px', // 内边距，内容不贴边
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: FontSize.SECONDARY,
-                    color: Colors.TEXT.PRIMARY, // 主文本，比问题稍浅
-                    lineHeight: 1.6, // 回复正文行高略大，阅读舒适
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {/* 2026-10-05 小欧 北京老陈指令: response 展开态按 Markdown 渲染, 折叠态维持原首2行纯文本。
-                      renderExpanded 只在"已展开"时被 CollapsibleText 调用(不传则原样显示全文),
-                      故折叠表现与改动前逐字一致; markdown 恒 true —— 本处不受「思考排版」设置开关控制。 */}
-                  <CollapsibleText
-                    text={t.response}
-                    renderExpanded={(expandedText) => (
-                      <MarkdownSlot text={expandedText} markdown scene="task" />
-                    )}
-                  />
-                </div>
-                {/* 2026-09-09 小欧 复制按钮: 回复区域右上角, hover时显示 */}
-                <button
-                  className="task-copy-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopy(t.response!, '回复');
-                  }}
-                  aria-label="复制回复"
-                >
-                  <CopyOutlined />
-                </button>
-              </div>
-            )}
-
-            {/* 2026-10-21 小杨 - 本轮引用过的文件两行能力
-                ① 追问推荐：本轮被工具动过 ≥2 次且可预览的文件（取最近 3 条）
-                ② 引用台账：本任务引用过的文件（现场重读恢复，不存旧快照） */}
-            {sessionId && isLatestTaskId(t.task_id) && recommend.length > 0 && (
-              <div
-                style={{
-                  color: Colors.TEXT.SECONDARY,
-                  fontSize: chatTokens.fontSM,
-                  marginTop: 4,
-                }}
-              >
-                <PaperClipOutlined style={{ marginRight: 4 }} />{' '}
-                本轮涉及的文件，点击作为引用继续追问：
-                {recommend.map((r) => (
-                  <Tag
-                    key={r.path}
-                    style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void quoteAfterReread(r.path);
-                    }}
-                  >
-                    {r.path}
-                  </Tag>
-                ))}
-              </div>
-            )}
-            {sessionId && ledgerForTask(t.task_id).length > 0 && (
-              <div style={{ fontSize: chatTokens.fontSM, marginTop: 2 }}>
-                ↩ 本轮引用：
-                {ledgerForTask(t.task_id).map((e) => (
-                  <Tag
-                    key={e.path + e.ts}
-                    style={{ cursor: 'pointer' }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      void quoteAfterReread(e.path, e.lineRange);
-                    }}
-                  >
-                    <FileOutlined style={{ marginRight: 4 }} /> {e.label}
-                    {e.lineRange
-                      ? ` L${e.lineRange.start}-${e.lineRange.end}`
-                      : ''}
-                  </Tag>
-                ))}
-              </div>
-            )}
-          </div>
+            task={t}
+            active={active}
+            isLatest={isLatest}
+            rightOpen={rightOpen}
+            groupNo={groupNo}
+            expanded={expandedTasks.has(t.task_id)}
+            onToggleExpanded={toggleExpanded}
+            onSelect={onSelect}
+            onCopy={handleCopy}
+            anchorRef={isLatest ? anchorRef : undefined}
+            recommendTags={
+              isLatestTaskId(t.task_id) ? recommendNode : undefined
+            }
+            ledgerTags={ledgerByTask.get(t.task_id)}
+          />
         );
       })}
     </div>
   );
 };
 
-export { TaskListPanel };
+// 2026-11-16 小欧 - [45] P0: 外层也包 memo, props 不变化时不重渲 — 小欧-2026-11-16
+const TaskListPanelMemo = React.memo(TaskListPanel);
+
+export { TaskListPanelMemo as TaskListPanel };
