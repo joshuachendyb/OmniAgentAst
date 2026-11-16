@@ -10,6 +10,9 @@
 #   判定补 provider 比对(同名模型异 provider 不再误判为 keep); InputNeed 去掉冗余 degraded_ok 字段
 #   (需求域已由入参二选一表达); build_candidates 增短 TTL 缓存(模型库读盘不必每次重建)
 
+# 2026-11-16 小欧 bug猎修: build_candidates 单模型画像异常只跳过该模型, 不覆没全部候选
+#   (此前一条脏数据致全系统路由建议静默失效)
+
 
 """services.model.capability_router — 能力路由(纯函数, 零落库)。
 
@@ -125,6 +128,7 @@ def build_candidates() -> List[Candidate]:
     """
     from app.services.agent.capability import profile_of
     from app.services.model.model_service import get_models
+    from app.logger import logger
 
     global _candidates_cache
     now = time.monotonic()
@@ -139,7 +143,13 @@ def build_candidates() -> List[Candidate]:
             model_name = str(model.get("name") or "")
             if not model_name:
                 continue
-            caps = profile_of(provider_name, model_name)
+            try:
+                caps = profile_of(provider_name, model_name)
+            except Exception as e:
+                # 单模型画像异常只跳过该模型, 不覆没全部候选(其余照常可推荐) — 小欧-2026-11-16
+                logger.warning(f"[capability_router] 模型画像构建失败, 跳过: "
+                               f"{provider_name}/{model_name}: {e}")
+                continue
             native = frozenset(k for k, cap in caps.items() if getattr(cap, "native", False))
             measured = frozenset(
                 k for k, cap in caps.items()

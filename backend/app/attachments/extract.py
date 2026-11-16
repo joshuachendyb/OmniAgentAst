@@ -17,6 +17,10 @@
 #   subprocess.run→communicate 每次起 2~3 条 _readerthread, 与 CreateProcess 抢 loader lock;
 #   行为等价(非零退出返回 CompletedProcess 不抛, 超时仍抛 TimeoutExpired 被子类捕获), CREATE_NO_WINDOW 保留
 
+# 2026-11-16 小欧 bug猎修: ①裸链接正则不再吞尾随 ASCII 标点(句号/逗号是句读不是 URL 组成,
+#   此前 "https://a.com/x." 判成 binary 抓取错址); ②扫描上限单源化为 MAX_TEXT_URLS(=8,
+#   与 contract.max_urls 同一常量, 消 4/8 双真源致预检静默丢条目)
+
 """attachments.extract — 按类型把附件变成注入文本。
 
 类型轴分层(每个阶段只替换一个函数, 分派结构不动):
@@ -38,7 +42,6 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from app.constants import MAX_REMOTE_IMAGES
 from app.file_browse import browse_service as browse
 from app.utils import proc_io
 from app.wire_prefix import (
@@ -74,8 +77,11 @@ TEXT_SUFFIXES = {
 
 # URL 识别词典(自视觉通道迁入并泛化, 唯一真源): 七类 content_kind 全覆盖, 不读模型
 _MD_URL_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+# 裸链接: 尾随 ASCII 句读(.,;:!?)不是 URL 组成, 用非贪婪+排除集防吞尾标点 — 小欧-2026-11-16
 _BARE_URL_RE = re.compile(
-    r"https?://[^\s()\[\]<>{}\"'|，。；：？！]+", re.IGNORECASE)
+    r"https?://[^\s()\[\]<>{}\"'|，。；：？！]*[^\s()\[\]<>{}\"'|，。；：？！.,;:!?]",
+    re.IGNORECASE)
+MAX_TEXT_URLS = 8   # 单次正文扫描 URL 上限(唯一真源, contract.max_urls 引用同一常量)
 
 
 def classify_url(url: str, content_type: str = "") -> str:
@@ -115,7 +121,7 @@ def scan_text_urls(text: str) -> list[str]:
     for url in found:
         if url not in out:
             out.append(url)
-    return out[:MAX_REMOTE_IMAGES]
+    return out[:MAX_TEXT_URLS]
 
 
 def link_body(url: str) -> str:

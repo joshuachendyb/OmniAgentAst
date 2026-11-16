@@ -11,6 +11,9 @@
 
 # 2026-11-16 小欧 修正: route 的 keep 判定补 provider 比对; 无候选/入参异常的隔离在调用侧(候选为空即可)
 
+# 2026-11-16 小欧 bug猎修: 能力判定改实例口径(quality_of 透传 has_slot), 已物化条目
+#   (attachment_id)与运行时 plan_refs 同判, 消预检误报降级并错误建议切模型
+
 
 """services.inputs.preflight — 输入预检(厚后端核心, 纯判定零副作用)。
 
@@ -112,7 +115,9 @@ def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
         else:
             if key:
                 seen[key] = item.key
-            quality = contract.quality_of(source_kind, content_kind, prof)
+            # 实例口径: 已物化条目(attachment_id)与运行时 plan_refs 同判, 预检不再误报降级
+            quality = contract.quality_of(source_kind, content_kind, prof,
+                                          has_slot=bool(data.get("attachment_id")))
             item.quality = quality
             item.delivery = contract.QUALITY_TO_DELIVERY[quality]
             item.must_native = quality == "native"

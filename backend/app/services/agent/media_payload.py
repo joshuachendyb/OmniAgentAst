@@ -16,6 +16,9 @@
 # 2026-11-14 小欧 音频格式不猜: to_wire_part 按 mime 精确映射 wav/mp3(mpeg→mp3), 非白名单容器
 #   返回失败由调用方回落文本卡, 消原"其它容器默认标 wav"误标 — 小欧-2026-11-14
 
+# 2026-11-16 小欧 bug猎修: url_reject_reason 拦非规范点分 IP 字面量(整数/十六进制/八进制/
+#   缩写点分/尾点变体此前全部放行, 实际指向本机/内网)
+
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
 设计边界:
@@ -142,6 +145,14 @@ def url_reject_reason(url: str) -> str:
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
+        # 非规范点分形式的 IP 字面量(整数/十六进制/八进制/缩写点分/尾点)同样指向内网,
+        # 必须拦: 逐段纯数字或 0x 十六进制段即判编码 IP, 不解析不翻案 — 小欧-2026-11-16
+        stripped = host.rstrip(".")
+        parts = stripped.split(".")
+        if stripped.isdigit() or all(
+                p.isdigit() or (p[:2].lower() == "0x" and all(c in "0123456789abcdef" for c in p[2:]))
+                for p in parts if p):
+            return "不接受内网/保留地址"
         return ""  # 域名放行(不解析)
     # is_global 一处覆盖回环/内网/链路本地/保留/CGNAT(100.64/10); 组播单独判(224/4 的 is_global 为真) — 小欧-2026-11-08
     if ip.is_multicast or not ip.is_global:

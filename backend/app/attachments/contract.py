@@ -55,6 +55,10 @@
 
 # 2026-11-16 小欧 [23]阶段C: 新增 expand_kind(筛选值→content_kind 集合, 值域=CONTENT_KINDS;
 #   'all' 展全类, 未知值空集交由服务层点名非法), 供附件列表类型筛选参数化 IN —— 小欧-2026-11-16
+
+# 2026-11-16 小欧 bug猎修: ①_MAX_URLS 改引 extract.MAX_TEXT_URLS 单一真源(消 4/8 双真源);
+#   ②quality_of 增 has_slot 透传(实例口径), 预检对已物化条目与运行时 plan_refs 同判,
+#   消"预检报降级、运行时走原生槽"的口径分叉误报
 """
 attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
@@ -68,6 +72,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.attachments.extract import (
     AUDIO_SUFFIXES,
     IMAGE_SUFFIXES,
+    MAX_TEXT_URLS,
     RICH_SUFFIXES,
     TEXT_SUFFIXES,
     VIDEO_SUFFIXES,
@@ -95,7 +100,7 @@ __all__ = [
     "classify_url", "scan_text_urls",
 ]
 
-_MAX_URLS = 8   # 单次引用 URL 条数上限(本方案新增, 无既有真源, 就此定点)
+_MAX_URLS = MAX_TEXT_URLS   # 单次引用 URL 条数上限(真源=extract.MAX_TEXT_URLS, 消双真源)
 
 SOURCE_KINDS = ("file", "selection", "attachment", "url")
 CONTENT_KINDS = ("text", "image", "video", "audio", "richdoc", "binary", "unknown")
@@ -191,9 +196,11 @@ def _plan_of(source_kind: str, content_kind: str,
     return route.fallback_quality
 
 
-def quality_of(source_kind: str, content_kind: str, prof: Dict[str, Any]) -> str:
-    """二维质量投影单值(矩阵/前端只读): 与 plan_refs 同源(均经 _plan_of)。"""
-    return _plan_of(source_kind, content_kind, prof)
+def quality_of(source_kind: str, content_kind: str, prof: Dict[str, Any],
+               has_slot: Optional[bool] = None) -> str:
+    """二维质量投影单值(矩阵/前端只读): 与 plan_refs 同源(均经 _plan_of)。
+    has_slot 透传实例口径(条目已物化判 native), 缺省 None=矩阵保守下界。"""
+    return _plan_of(source_kind, content_kind, prof, has_slot=has_slot)
 
 
 def plan_refs(items: Optional[List[Dict[str, Any]]], prof: Dict[str, Any]) -> List[ItemPlan]:

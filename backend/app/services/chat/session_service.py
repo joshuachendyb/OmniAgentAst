@@ -45,6 +45,8 @@
 
 # 2026-11-16 - 小欧 - 修正: get_session_info 输出乐观锁 version 真值(此前单会话 GET 不返回, 前端 409
 #   回读恒兜底为 1 反污染共享版本); update_session 只回 success+version, 不再回显请求入参值
+# 2026-11-16 - 小欧 - bug猎修: list_sessions/create_session 补 version 真值出口(此前仅 get_session_info
+#   返回, 列表刷新/新建后前端无锁基准, 乐观锁保护出现空窗)
 
 """
 session_service — 会话业务服务(services/chat)
@@ -134,7 +136,8 @@ def create_session(session_create):
         created_at=local_time,
         updated_at=local_time,
         message_count=0,
-        is_valid=is_valid
+        is_valid=is_valid,
+        version=1,
     )
 
 
@@ -155,7 +158,8 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel, routingMode "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel, routingMode, "
+            f"COALESCE(version, 1) as version "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
@@ -173,7 +177,8 @@ def list_sessions(
             message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
             sessionModel=parse_session_model(row['sessionModel']),
-            routingMode=row['routingMode'] or "suggest"
+            routingMode=row['routingMode'] or "suggest",
+            version=row['version'],
         )
         for row in rows
     ]
