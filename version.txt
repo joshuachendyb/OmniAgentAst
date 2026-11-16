@@ -1,3 +1,12 @@
+v1.7.4
+发布时间: 2026-11-16 22:08:57 - 小欧-2026-11-16
+## v1.7.3以来 变更汇总(2个commit: perf1/feat1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
+[2026-11-16 22:08:57 小欧] 范围=v1.7.3..HEAD 全部commit(2个, merge提交除外); 说明=①[45]会话任务列表渲染性能优化: TaskItem抽离并包React.memo(字段级比较覆盖 task_id/response/status/user_input/llm_call_count/merged_inputs/created_at/model/provider/creation_source)+TaskListPanel外层memo, ledger引用台账与推荐行预计算到useMemo(消render期间每任务同步调chatStreamStore.filter), useChatPanels拆分巨型useMemo将TaskListPanel面板定义独立(仅迁出TaskListPanel独占依赖 tasks/tasksLoading/latestTaskId/latestTaskRef/rightOpen/handleSelectTask; activeTaskId/executionSteps因RightViewer/TaskInfoBar也消费故保留主依赖), CollapsibleText用indexOf计行替代split('\n')全量分割且先length快速否决短文本并补单行回落分支; SSE流式/父级高频重渲时既得任务不再全量重建DOM, 20+条任务刷新/切换会话/切回页面明显提速; ②ModelPicker/RoutingModePicker模型tip样式归令牌消除魔法值+路由选择器宽度收窄对齐附件+移除指令按钮及死代码。维持PATCH v1.7.4。
+### 1.7.4.1 性能优化
+[前端] perf 726b1b75f [45]会话任务列表渲染性能优化(TaskItem抽离React.memo字段级比较/TaskListPanel外层memo/ledger与推荐行预计算useMemo消render内20+同步store调用/useChatPanels拆分巨型useMemo将TaskListPanel独立/activeTaskId与executionSteps因RightViewer.TaskInfoBar消费保留主依赖/CollapsibleText用indexOf计行替代split全量分割含单行回落) - 小欧-2026-11-16
+### 1.7.4.2 功能新增
+[输入] feat 584bf8e60 ModelPicker,RoutingModePicker 模型tip样式归令牌消除魔法值/路由选择器宽度收窄对齐附件/移除指令按钮及死代码 - 小欧-2026-11-16
+
 v1.7.3
 发布时间: 2026-11-16 15:08:08 - 小欧-2026-11-16
 ## v1.7.2以来 变更汇总(14个commit: feat5/fix6/docs3, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
