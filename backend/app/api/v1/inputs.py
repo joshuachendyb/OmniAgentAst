@@ -10,17 +10,22 @@
 # 2026-11-16 小欧 修正: 删除未使用的 session_id 预留字段(预检无状态, 避免死参); 候选构建失败
 #   降级为空候选(预检永不阻断), 模型库/YAML 异常不再放大为 500 返回
 
+# 2026-11-16 小欧 bug猎修: 预检整体加边界兜底 —— 脏 items(如 size 非数值触发 classify_ref
+#   int()/画像读取异常)此前会冒泡为 500, 违背"预检永不阻断"契约; 捕获后降级为空结果并告警
+
 
 """inputs_routes — 输入预检 API 路由薄壳。挂载走 main.py 的 _mount()(唯一入口)。"""
+import logging
 from typing import Any, List
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.services.inputs.preflight import preflight, result_to_dict
+from app.services.inputs.preflight import preflight, result_to_dict, PreflightResult
 from app.services.model.capability_router import build_candidates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PreflightIn(BaseModel):
@@ -43,6 +48,12 @@ def run_preflight(payload: PreflightIn) -> dict[str, Any]:
             candidates = build_candidates()
         except Exception:
             candidates = None
-    return result_to_dict(preflight(text=payload.text, items=payload.items,
-                                    model_id=payload.model_id, mode=mode,
-                                    candidates=candidates))
+    try:
+        result = preflight(text=payload.text, items=payload.items,
+                           model_id=payload.model_id, mode=mode,
+                           candidates=candidates)
+    except Exception as exc:
+        # 预检为建议性预览, 永不阻断: 脏 items/画像读取异常降级为空结果, 不放大为 500
+        logger.warning("[inputs.preflight] 预检降级为空结果: %s", exc)
+        result = PreflightResult()
+    return result_to_dict(result)

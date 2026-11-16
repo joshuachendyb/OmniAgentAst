@@ -13,6 +13,9 @@
 # 2026-11-16 小欧 bug猎修: build_candidates 单模型画像异常只跳过该模型, 不覆没全部候选
 #   (此前一条脏数据致全系统路由建议静默失效)
 
+# 2026-11-16 小欧 bug猎修: ①context_length 改安全解析(脏值如 "128k" 此前 int() 抛错在逐模型
+#   try 之外, 一条坏模型击穿整个候选构建); ②缓存改存 tuple 并返回 tuple, 杜绝外泄可变 list 被篡改
+
 
 """services.model.capability_router — 能力路由(纯函数, 零落库)。
 
@@ -30,7 +33,7 @@ _CONTENT_MODALITY = {"image": "image", "video": "video", "audio": "audio", "rich
 # 候选表进程内缓存: 模型库读盘(get_models→YAML)相对昂贵, 预检高频调用不宜每次重建。
 # 按短 TTL 过期, 兼顾配置改动可见性与重复 I/O 开销。
 _CANDIDATES_TTL_SECONDS = 30.0
-_candidates_cache: Optional[Tuple[float, List["Candidate"]]] = None
+_candidates_cache: Optional[Tuple[float, Tuple["Candidate", ...]]] = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,7 @@ def need_of(items: Optional[Iterable[Any]], degraded_ok: bool = True) -> InputNe
     """输入项(PreflightItem 或同名字典) → 原生需求聚合, 不做能力判定。
 
     content_kind∈{image,video,audio,richdoc} 且 quality 非 native(当前模型已降级)
-      → 该模态计入需求域; quality=native/text/binary/unknown → 不产生需求。
+      → 该模态计入需求域; quality=native 或空(未判定) → 不产生需求。
     需求域按 degraded_ok 二选一: True→optional_native(降级可接受), False→required_native。
     """
     mods = set()
@@ -120,7 +123,7 @@ def route(need: InputNeed, current_model: str = "",
                                 f"（原生支持 {'/'.join(sorted(wanted))}）")
 
 
-def build_candidates() -> List[Candidate]:
+def build_candidates() -> Tuple[Candidate, ...]:
     """候选唯一真源 = 模型库 get_models(); 逐模型经 capability.profile_of 取原生模态。
 
     native 来自 profile 的声明原生模态; measured 取 NativeCap.source=="measured" 的模态,
@@ -154,10 +157,16 @@ def build_candidates() -> List[Candidate]:
             measured = frozenset(
                 k for k, cap in caps.items()
                 if getattr(cap, "native", False) and getattr(cap, "source", "") == "measured")
-            ctx = model.get("context_length")
+            try:
+                ctx_len = int(model.get("context_length") or 0)
+            except (TypeError, ValueError):
+                # 脏 context_length(如 "128k")只降级为排序末位, 不丢弃该模型、更不击穿全部候选
+                logger.warning(f"[capability_router] 非法 context_length, 按 0 处理: "
+                               f"{provider_name}/{model_name}={model.get('context_length')!r}")
+                ctx_len = 0
             out.append(Candidate(model=model_name, provider=provider_name,
                                  native=native, measured=measured,
-                                 context_length=int(ctx) if ctx else 0, order=order))
+                                 context_length=ctx_len, order=order))
             order += 1
-    _candidates_cache = (now, out)
-    return out
+    _candidates_cache = (now, tuple(out))
+    return _candidates_cache[1]

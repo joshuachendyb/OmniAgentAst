@@ -98,6 +98,9 @@
 // 2026-11-16 小欧 修正: 推荐条回退入口独立于当前建议(revertFrom 单独驱动, 自动切换后建议重算为 keep
 //   不再吞掉回退按钮); auto 自动切换按建议键去重防回环; 输入变更清除陈旧回执提示
 
+// 2026-11-16 小欧 bug猎修: 路由建议的会话级状态(autoSwitchedRef 去重集/回退快照/已忽略建议键)
+//   随 sessionId 复位 —— 组件跨会话复用, 原状态不重置会致新会话同键建议不自动切换、回退指向旧会话模型
+
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -283,6 +286,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   } | null>(null);
   // 已自动切换过的建议键: 回退到原模型后同一建议重算仍成立, 不再二次自动切换(防回环)
   const autoSwitchedRef = useRef<Set<string>>(new Set());
+  // 2026-11-16 小欧 bug猎修: 会话切换复位路由建议的会话级状态(去重集/回退快照/已忽略键),
+  //   避免跨会话残留导致新会话不自动切换、回退指向旧会话模型
+  useEffect(() => {
+    autoSwitchedRef.current.clear();
+    setRevertFrom(null);
+    setDismissedAdvice('');
+  }, [sessionId]);
   // 2026-11-16 小欧 [23]阶段D: auto 模式点击外自动切换(带去重守卫防回路), 切换前快照供回退 — 小欧-2026-11-16
   useEffect(() => {
     if (

@@ -29,6 +29,8 @@
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: updateSessionTitle改调updateSessionTitle(只发title+version), 与切模型解耦 - 小欧-2026-10-24
 //   (偏离原设计"在 applySessionState 逐调用点塞 GET"——实读该函数有 10+ 调用点, 逐点塞必漏;
 //    改单点覆盖切换/新建/复位/清空, 天然带竞态守卫; 失败置空不断链)
+// 编辑历史: 2026-11-16 小欧 bug猎修: 新建会话版本号取 createSession 响应 response.version ?? 1,
+//   不再写死 1(与后端 SessionResponse.version 同源, 消双真源)
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -608,7 +610,7 @@ export const useChatSession = (
         applySessionState({
           sessionId: newSessionId,
           title: newTitle,
-          version: 1,
+          version: response.version ?? 1,
           titleLocked: false,
           sessionModel: null,
           linkEnabled: false,

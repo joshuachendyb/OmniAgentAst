@@ -21,6 +21,9 @@
 // 编辑历史: 2026-11-13 商量 - ApiMessage 补 msg_kind(后端 MessageResponse 新增可选字段, user/system_notice):
 //   后台续跑通知消息的种类在 wire 上保真, 前端按它渲染系统通知样式, 不再与用户发言混同
 
+// 编辑历史: 2026-11-16 小欧 bug猎修: createSession 响应补 version(此前类型未声明且调用侧写死 1),
+//   与其余会话响应统一归一 version ?? 1, 消除版本号双真源
+
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride, WorkspacesResponse, RoutingMode } from '@/types/chat';
@@ -149,6 +152,7 @@ export const sessionApi = {
     created_at: string;
     updated_at: string;
     message_count: number;
+    version?: number;
   }> => {
     const response = await api.post<{
       session_id: string;
@@ -156,6 +160,7 @@ export const sessionApi = {
       created_at: string;
       updated_at: string;
       message_count: number;
+      version?: number;
     }>('/sessions', { title, is_valid: true });
     return response.data;
   },
