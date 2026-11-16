@@ -13,9 +13,11 @@
 #   2026-11-16 小欧 - 三堂会审整改: ①删除永假的 needWebCopy 分支(needFrontendBuild 仅在前端变更时置真,
 #     该条件恒 false 属死代码); ②frontend/package.json|package-lock.json 变更原仅触发 npm run build 不装依赖,
 #     补 needNpmInstall 先 npm install 再构建, 杜绝依赖变更后拿旧 node_modules 打包。
-# 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1
-#       powershell -ExecutionPolicy Bypass -File build_spa.ps1 -Full   # 强制完整打包
-#       或双击 build_spa.bat
+#   2026-11-16 小欧 - 增交互式模式选择: 未传 -Full 参数时弹出 [1]智能检测/[2]全编译 菜单,
+#     用户显式选择而非默认走智能检测; -Full 参数跳过菜单直接全编译 — 小欧-2026-11-16
+# 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1          # 交互选择模式
+#       powershell -ExecutionPolicy Bypass -File build_spa.ps1 -Full     # 跳过菜单, 直接全编译
+#       或双击 build_spa.bat                                             # 交互选择模式
 # ============================================================================
 param([switch]$Full)
 
@@ -263,6 +265,21 @@ function Sync-UserDoc {
 #  前端 (Vite) + 后端 (PyInstaller) → 单目录可执行产物
 # ════════════════════════════════════════════════════════════
 Write-Phase "OmniAgent SPA 打包"
+
+# ── 构建模式选择 (未传 -Full 时交互询问) ──
+if (-not $Full) {
+    Write-Host ""
+    Write-Host "  请选择构建模式:" -ForegroundColor White
+    Write-Host "    [1] 智能检测模式 (默认 — 仅构建变更部分, 秒级完成)" -ForegroundColor Cyan
+    Write-Host "    [2] 全编译模式   (完整 PyInstaller 重新构建, 分钟级)" -ForegroundColor Cyan
+    $modeChoice = Read-Host "  输入 1 或 2 (默认 1)"
+    if ($modeChoice -eq '2') {
+        $Full = $true
+        Write-Host "  已选择: 全编译模式" -ForegroundColor Yellow
+    } else {
+        Write-Host "  已选择: 智能检测模式" -ForegroundColor Green
+    }
+}
 
 # ── 阶段 0: 环境前置检查 ──
 Write-Step "阶段 0/4: 环境前置检查"
