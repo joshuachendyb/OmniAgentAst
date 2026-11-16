@@ -343,10 +343,11 @@ def list_attachments(session_id: str | None = None, *, scope: str = "session",
     if q and q.strip():
         where += " AND original_name LIKE ?"
         params.append(f"%{q.strip()}%")
-    kinds = contract.expand_kind(kind) if kind else ()
-    if kind and not kinds:
-        fail(INVALID_PARAM, f"kind 只支持 all / {'/'.join(contract.CONTENT_KINDS)}")
-    if kinds:
+    # kind 筛选: 'all' = 不过滤(不加条件), 具体类型 = 参数化 IN(禁止字符串拼接)
+    if kind and kind != contract.KIND_ALL:
+        kinds = contract.expand_kind(kind)
+        if not kinds:
+            fail(INVALID_PARAM, f"kind 只支持 {contract.KIND_ALL} / {'/'.join(contract.CONTENT_KINDS)}")
         where += f" AND kind IN ({','.join('?' * len(kinds))})"
         params.extend(kinds)
     limit = max(1, min(int(limit or MAX_LIST_ITEMS), MAX_LIST_ITEMS))

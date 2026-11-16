@@ -90,7 +90,7 @@ __all__ = [
     "KIND_CONTRACT", "KindRoute", "ItemPlan", "SOURCE_KINDS",
     "CONTENT_KINDS", "MODALITIES", "QUALITY_TO_DELIVERY",
     "classify_ref", "quality_of", "plan_refs", "ref_quality_map",
-    "limits", "kind_options", "suffix_kind", "expand_kind",
+    "limits", "kind_options", "suffix_kind", "expand_kind", "KIND_ALL",
     "AUDIO_SUFFIXES", "IMAGE_SUFFIXES", "RICH_SUFFIXES", "TEXT_SUFFIXES", "VIDEO_SUFFIXES",
     "classify_url", "scan_text_urls",
 ]
@@ -99,6 +99,7 @@ _MAX_URLS = 8   # 单次引用 URL 条数上限(本方案新增, 无既有真源
 
 SOURCE_KINDS = ("file", "selection", "attachment", "url")
 CONTENT_KINDS = ("text", "image", "video", "audio", "richdoc", "binary", "unknown")
+KIND_ALL = "all"    # 类型筛选的"全部"哨兵值(等于不过滤; 与前端筛选选项同口径)
 MODALITIES = ("image", "audio", "video", "file")
 # 质量四值(保真结果); 投递动作由 QUALITY_TO_DELIVERY 单表派生, 不另设枚举双真源。
 # fallback_quality 与 quality 同域(text_full | meta_only | link_only), 直取不翻译;
@@ -246,7 +247,9 @@ def expand_kind(kind: str) -> Tuple[str, ...]:
 
     'all' 展开全类; 未知值返回空集 —— 由服务层点名非法, 不静默放大成"全量不过滤"
     (薄前端铁律: 筛选是唯一口径, 非法输入必须显式报错)。
+    注意: 服务层对 'all' 不加过滤条件(它等于"不过滤"), 不能靠本函数的返回集实现 ——
+    IN(七类) 会把词表外历史行一并丢弃, "全部"就会漏数据。
     """
-    if kind == "all":
+    if kind == KIND_ALL:
         return CONTENT_KINDS
     return (kind,) if kind in CONTENT_KINDS else ()

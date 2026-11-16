@@ -165,6 +165,13 @@ const SCOPE_FROM: Record<ScopeKey, string> = {
   global: '跨会话收藏',
 };
 
+/** 左栏来源 → 附件台账作用域(唯一映射; 非附件来源返回 null —— 项目树/本机/产物/合集无类型语义) */
+const scopeOfSource = (s: SourceKey): ScopeKey | null =>
+  s === 'fav' ? 'global' : s === 'session' || s === 'recent' ? s : null;
+
+/** 类型筛选的"全部"哨兵值(等于不过滤; 与后端 contract.KIND_ALL 同口径) */
+const KIND_ALL = 'all';
+
 /** 项目根文件树拍平为文件列表（目录只用于展开，不占行） */
 function flattenFiles(nodes: FileNode[], out: FileNode[] = []): FileNode[] {
   for (const n of nodes) {
@@ -287,7 +294,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 }) => {
   const [source, setSource] = useState<SourceKey>('session');
   /** 类型筛选('all' | content_kind); 选项由 caps.kind_options 下发, 前端零词典 — 小欧-2026-11-16 */
-  const [kindFilter, setKindFilter] = useState<string>('all');
+  const [kindFilter, setKindFilter] = useState<string>(KIND_ALL);
   const [keyword, setKeyword] = useState('');
   /** 项目树加载（独立状态, 不再与合集加载互踩清 spinner — 2026-11-07） */
   const [treeLoading, setTreeLoading] = useState(false);
@@ -393,7 +400,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
           scope,
           limit: PAGE,
           offset,
-          kind: kindFilter === 'all' ? undefined : kindFilter,
+          kind: kindFilter === KIND_ALL ? undefined : kindFilter,
         });
         setErrScopes((prev) => ({ ...prev, [scope]: false }));
         applyScope(scope, items, append, items.length >= PAGE);
@@ -486,13 +493,13 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   }, [open, reloadPacks]);
 
   // 2026-11-16 小欧 [23]阶段C: 附件作用域(本会话/他会话/收藏)按当前类型筛选刷新;
-  //   类型变化 → 该作用域 offset 归 0 重拉第一页, 作用域变化同理(服务端筛选+分页唯一口径)
-  const attachSource =
-    source === 'session' || source === 'recent' || source === 'fav';
+  //   类型变化 → 该作用域 offset 归 0 重拉第一页, 作用域变化同理(服务端筛选+分页唯一口径);
+  //   只拉当前作用域(不重拉其它栏), 避免每次切栏三连请求
+  const attachScope = scopeOfSource(source);
   useEffect(() => {
-    if (!open || !attachSource) return;
-    void refreshAll();
-  }, [open, attachSource, source, kindFilter, refreshAll]);
+    if (!open || !attachScope) return;
+    void loadScope(attachScope);
+  }, [open, attachScope, kindFilter, loadScope]);
 
   useEffect(() => {
     if (!open) return;
@@ -1178,12 +1185,7 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const atPackLimit =
     packLimits !== null && packs.length >= packLimits.max_packs;
 
-  const currentScope: ScopeKey | null =
-    source === 'project' || source === 'local' || source === 'pack' || source === 'ai'
-      ? null
-      : source === 'fav'
-        ? 'global'
-        : source;
+  const currentScope: ScopeKey | null = scopeOfSource(source);
 
   // 键盘：↑↓ 移动焦点、Space 加入/移出、Enter 预览、Backspace 移出
   useEffect(() => {
@@ -1644,10 +1646,10 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
                   {paneHint()}
                 </Typography.Text>
               )}
-              {attachSource && (
+              {attachScope && (
                 <Typography.Text style={{ ...metaStyle, fontSize: FontSize.CAPTION }}>
                   {`${paneTitle()} · ${
-                    kindFilter === 'all' ? '全部' : kindLabel(kindFilter, caps)
+                    kindFilter === KIND_ALL ? '全部' : kindLabel(kindFilter, caps)
                   } · ${rows.length} 项`}
                 </Typography.Text>
               )}
@@ -1780,14 +1782,14 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
 
             {/* 2026-11-16 小欧 [23]阶段C: 类型筛选行(选项由 kind_options 下发, 前端零词典);
                 仅附件台账作用域(本会话/他会话/收藏)显示, 其余来源无类型语义 */}
-            {attachSource && (
+            {attachScope && (
               <div style={{ marginBottom: Spacing.XS }}>
                 <Segmented
                   size="small"
                   value={kindFilter}
                   onChange={(v) => setKindFilter(String(v))}
                   options={[
-                    { value: 'all', label: '全部' },
+                    { value: KIND_ALL, label: '全部' },
                     ...(caps?.kind_options ?? []),
                   ]}
                 />
