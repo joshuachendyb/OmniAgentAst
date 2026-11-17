@@ -15,10 +15,12 @@
 **严禁以测试代码作为锁死错误系统逻辑的修改借口**  测试用例只用于发现问题，严禁以测试代码为借口去固化错误的系统逻辑或容忍烂代码。
 
 
-## 1.2 <三堂会审>修改代码后,提交前--代码落盘前和落盘后审核 合规\合理\关联逻辑审查
+## 1.2 <三堂会审>合规合理关联的 5步规范
+**熟读代码全文** 读取最新本地代码 熟读10遍, 复核3遍---三堂会审
 **合规审查**  核查代码中的每一处 修改违反了代码10大规范哪些规范?
 **合理审查**  挖掘逻辑流程是否最优雅/最佳? 从系统全局流程和逻辑高度, 是不是最差,绕来绕去
-**关联审查**  核查相关上上下下,前前后后代码逻辑,哪些是退化的?哪些是很差的逻辑流程.
+**关联审查**  核查相关上上下下,前前后后代码逻辑,哪些是退化的?哪些是很差的逻辑流程.复查的要求,功能只能正确\增强\优化, 杜绝退化
+**后端为主**: 前端薄后端厚,前端迎合后端的策略,前端逻辑和参数对应后端设计和修改.
 
 *10大规范**  日常6条 + 重构4条:
 
@@ -58,253 +60,70 @@
 上述原则是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
 ## 1.3 公用函数规范（必须遵守）
-
+前端共享函数清单 frontend/FUNCTIONS_FRONT.md
+后端公用函数清单`backend/FUNCTIONS.md`
 | 规则 | 说明 |
 |------|------|
-| **先查后建** | 写代码前先查`backend/FUNCTIONS.md`清单，有则复用，无则新建 |
-|前端 共享函数|  前端共享函数代码frontend\FUNCTIONS_FRONT.md清单，有则复用，无则新建|
-| **分层存放** | 全局层`app/utils/`、Agent层`agent_utils/`、工具层`toolhelper/` |
+| **先查后建** | 写代码前先查共享函数清单，有则复用，无则新建 |
+| **分层存放** | 全局层`app/utils/`Agent层`agent_utils/`、工具层`toolhelper/` |
 | **禁止重复** | 相同逻辑禁止重复实现，必须使用已有公用函数 |
 | **及时更新** | 新建公用函数后必须添加到FUNCTIONS.md清单 |
 
-##1.4 拆分\重构代码**规范（必须遵守）
+## 1.4 拆分\重构代码**规范（必须遵守）
 **核心心原则**：能复制就复制，不重写
 **拆分大文件/函数时** 最安全的做法是**复制原代码逻辑，只改导入路径，不改业务逻辑**。重写会引入新错误，复制能保证行为不变。
 
-## 1.5 前后端相关逻辑和参数规范（必须遵守）
+## 1.5 文档的<一致性>审查规范（必须遵守）
 
-**后端为主**: 前端迎合后端的策略,逻辑和参数对应进行设计和修改
-## 1.6 代码复核 复查纪律
-1. 读取最新本地代码 熟读10遍, 复核3遍---三堂会审
-2. 复查的要求,功能只能正确\增强\优化, 杜绝退化
-3. 合规检查和合理检查
+**读取**  读取文档全文
+**通顺**  全文上下内容逻辑必须按照人类编写理解的内容逻辑通顺,不能跳跃,混乱
+**章节**  序号是为内容排列服务的,章节序号必须根据内容的新增\删除\修改进行合理调整,不能硬插
 
-## System & Platform
+
+## 2.1 System & Platform
 
 - **OS**: Windows only. Use PowerShell. No Linux/macOS commands.
 - **Shell**: PowerShell 7+. Use `Select-String` instead of `grep`.
 - **Python**: 3.13 at `E:\Appsw\python31311\`
- **Prompt logging**: 
-`backend/logs/`
-`backend/logs/prompt-logs/`
 
 ---
 
-## Commands
+## 2.2 Backend (workdir=`backend/`)
 
-### Backend (workdir=`backend/`)
-
-```bash
-# 开发服务: 两种启动方式, 见下方《后端开发服务启动: 两种方式》
-watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port 8100" app   # 方式一(推荐)
-python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100  # 方式二(旧, 会卡死)
-
-pytest                                            # all tests
-pytest -x --tb=short                              # fast fail
-pytest -k test_name                               # match by name
-
-ruff check --select F <改动文件>                    # 提交前必过: F 类存量已清零, 零容忍 — 小欧-2026-11-03
-ruff check --select ARG,RET,SIM,PIE <改动文件>       # 附加参考: 该四类存量 15 条, 只判断新增 — 小欧-2026-11-03
-```
-
-#### 后端开发服务启动: 两种方式 — 小欧-2026-11-02 21:21:40
-
-**方式一(日常开发用这个)**: 双击 `backend\start_watch.bat`(等效 `start_uvicorn.bat watch`), 或执行 `powershell -ExecutionPolicy Bypass -File backend\start_dev.ps1 -Reloader watch`。
-内部就是 `watchfiles --filter python -- "python run_server.py --host 0.0.0.0 --port $env:BACKEND_PORT" app` —— watchfiles 本身就是 reload 运行器: 盯 `app/` 目录, 文件一变就**杀掉子进程重开**; Windows 上走 `TerminateProcess`, 不依赖控制台事件, 不会像 uvicorn 那样停不下来。
-
-**方式二(现为 `start_uvicorn.bat` 默认, 会卡死)**: `python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8100`。
-uvicorn 的 `restart()` 在 Windows 上用 `os.kill(子进程, CTRL_C_EVENT)` 停子进程, 子进程收不到 → 父进程卡死在 `basereload.py:98 self.process.join()`; 从第一次保存文件起热重载永久失效, 而 worker 照常应答, 极易误判"服务正常"。上游 0.54 仍未修, 升级无效。
-
-**判定方式二是否已死**: `py-spy dump --pid <父进程>`, 栈停在 `basereload.py:98` 即死; 表现是改代码不生效、Ctrl+C 也退不掉, 只能 kill。
-
-**方式一必须走 `run_server.py`**, 不用裸 `python -m uvicorn`: 后者不注入 `forwarded_allow_ips`, 后端会报"伪造 X-Forwarded-For 可冒充本机免口令"告警。
-
-两者都监听 `0.0.0.0:8100`(端口单源 = env `BACKEND_PORT`, 缺省 8100), 与前端 `vite.config.ts` 的 `proxy['/api'] → http://localhost:8100` 对应; 改端口只改该变量(前端 proxy/E2E 均读同一 env)。
-
-**为什么不再是 8000(2026-11-08 小欧)**: OpenCode 桌面版内置 vLLM provider 的 base_url 写死 `http://127.0.0.1:8000`, 每 30s 探 `GET /v1/models` → 我们后端 404 刷日志。挪到 8100 后探测直接连接失败, 日志干净。打包链 `run_server.py` 不读该 env(仍 `--port`, 默认 8500), 防止用户机器残留变量静默改端口。
-
-`backend/start_uvicorn.bat`、`backend/start_watch.bat`、`backend/start_e2e.bat` 均已改为调用 `backend/start_dev.ps1`; `start_dev.ps1` 用 UTF-8 with BOM 保存(PowerShell 5.1 需要), `start_e2e.bat` 用 GBK 保存(控制台中文)。
-
-**双入口(2026-11-08 小欧, 用户指定默认 uvicorn)**: `start_uvicorn.bat` → 方式二 `python -m uvicorn ... --reload --forwarded-allow-ips 127.0.0.1,::1`; `start_watch.bat`(或 `start_uvicorn.bat watch`)→ 方式一 watchfiles; `start_e2e.bat` 固定传 `watch`(E2E 铁律不变)。
-方式二卡死的结论不变: 本机实测首改文件即卡在 `basereload.py:98`(日志停在 `Reloading...`, worker 照常应答), 卡住就换 `start_watch.bat`。uvicorn 模式下 app 层收不到 `forwarded_allow_ips` 注入(子进程不执行 `run_server.py`), 启动打印一条该告警属预期。— 小欧-2026-11-08
-
-**关窗不级联(2026-11-08 小欧)**: 关闭 console 窗口只终结该控制台的进程组, uvicorn `--reload` 派出的子进程不挂在你的控制台上(detached), 关窗后它们仍在运行并抢同一端口(SO_REUSEADDR — 本机实测三实例同绑 8100, 请求随机分发到旧代码)。start_dev.ps1 已改为**启动前按端口清残留树**(同端口监听者+direct 子进程, 其它进程不动), 任由关窗残留, 重起即自愈; 受控关闭优先走 `Get-NetTCPConnection -LocalPort <端口> -State Listen` 取 OwningProcess 按端口杀。— 小欧-2026-11-08
-
-### Frontend (workdir=`frontend/`)
-
-```bash
-npm run dev          # Vite dev server (port 5173)
-npm run test         # Vitest
-npm run test -- --run <name>  # single test
-  npm run lint         # ESLint
-  npm run lint:e2e     # ESLint (e2e_case / e2e_front_lib / src/tests/support)
-  npm run typecheck     # tsc -p tsconfig.json      (仅 src)
-  npm run typecheck:e2e # tsc -p tsconfig.e2e.json  (e2e_case / e2e_front_lib)
-  npm run format:check # Prettier
-  npm run check        # lint + format:check（不含 typecheck）
-  npm run check:full   # typecheck + typecheck:e2e + lint + lint:e2e + format:check
-                       # ← 提交前跑这条。npm run check 不含任何 typecheck,
-                       #   而 tsconfig.json 只 include ["src"], e2e_case/ 与 e2e_front_lib/
-                       #   不在其内(Playwright/Vitest 走 esbuild 转译, 不做类型检查),
-                       #   故漏跑 typecheck:e2e 时 e2e 的类型错误在构建期完全不可见。
-  npm run test:e2e     # Playwright
-```
+- 开发服务启动、测试与检查命令详见后端手册 `[1]全链路E2E测试手册-小健-2026-05-23.md`
+- 提交前必过：ruff 检查（F 类零容忍）
+- 开发服务用 watchfiles 方式（`start_watch.bat`），勿用 `uvicorn --reload`（Windows 上会卡死）
 
 ---
 
-## E2E 全链路测试（核心要点）
+## 2.3 E2E 全链路测试
 
-> 后端完整流程见 `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md`（v2.19）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
+- 后端手册 `[1]全链路E2E测试手册-小健-2026-05-23.md`（v2.20）
+- 前端手册 `[3]前端Playwright E2E隔离测试实操手册-小欧-2026-11-16.md`
 
-**配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
-- **数据隔离铁律（2026-09-30 修订）**：上一条只管住了 `config.yaml`，**管不到 SQLite** —— `app/db/database.py` 原在 `__init__` 硬编码 `Path.home()/".omniagent"`，且 `db=DatabaseManager()` 在导入期即构造、路径被冻结，故任何裸用 `db.get_conn()` 的测试都直写真库（实测污染真库：空会话 / `hello` / `v2` 垃圾会话，每跑一次全量单测多几个）。**修订**：
-  - 数据目录唯一解析点 = `app/db/database.py` 的 `resolve_db_dir()`，认环境变量 `OMNIAGENT_DATA_DIR`，未设则回落 `~/.omniagent`；**在 `get_conn` 内惰性解析**，不在 `__init__` 冻结（db 单例导入期构造，冻结会受导入顺序影响，conftest 来不及设 env）
-  - `isolated_config_dir` 现在**同时**设 `OMNIAGENT_DATA_DIR` 指向同一临时目录，teardown 一并还原
-  - 测试要指向任意库（含 `_DB_FILES` 之外的库名，如 `test_db_atxn` 的 `"test"`）走 `db._db_overrides` 覆盖口，**禁止改生产解析逻辑迁就测试**
-  - **效果**：任何走 `db.get_conn()` 的测试自动"够不到"真库，无需逐个 patch，也不会漏掉将来新增的测试。**E2E 不受影响** —— E2E 走 HTTP 打后端进程，库路径由后端进程 env 决定，与测试进程无关
+**配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**。
 
-### 后端 E2E（pytest + 真实后端 + 真实 LLM）
+**数据隔离铁律**：数据目录唯一解析点 = `app/db/database.py` 的 `resolve_db_dir()`，认 `OMNIAGENT_DATA_DIR`；在 `get_conn` 内惰性解析，不在导入期冻结；测试要指向任意库走 `db._db_overrides` 覆盖口，**禁止改生产解析逻辑迁就测试**。任何走 `db.get_conn()` 的测试自动"够不到"真库。
 
-**定位**：验证 API→Agent→LLM→Tool→DB→SSE 全链路，深度校验 DB 记录完整性、SSE-DB 一致性、prompt 日志对齐、token 用量追踪。76 个 case（P0-P5/PAR/重连/复合），核心 helper `e2e_helpers.py`（32 函数，2350 行）。
-
-#### 启动后端（每次测试前必做）
-
-1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8100).OwningProcess -Force`
-2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
-   `Start-Process powershell -ArgumentList "-NoExit","-ExecutionPolicy","Bypass","-Command","& 'F:\OmniAgentAs-01\backend\start_e2e.bat'" -WindowStyle Normal`
-   （`start_e2e.bat` 内设 `LOG_LEVEL=WARNING` 后调 `start_dev.ps1`=watchfiles 热重载；**勿用 `uvicorn --reload`**，Windows 上首次改文件即卡死）
-3. 验证：`Invoke-RestMethod http://127.0.0.1:8100/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
-
-#### 执行脚本（铁律）
-
-- **一次只跑一个 case**，严禁批量；核心脚本默认超时 2000s，**严禁给启动脚本另设超时**
-- E2E 调真实 LLM，单次常 >120s；OpenCode bash 工具会强杀进程 → **必须用 subprocess.Popen 方式**，禁止直接 bash `python -m pytest`
-- 方式：用 Python 内联脚本调 `subprocess.Popen`，bash tool timeout 设 `9007199254740991`，pytest 自行管理超时（`--timeout=2900`）；stdout/stderr 落盘 `tests/output/XXX_stdout.txt` / `XXX_stderr.txt`，结果查 junitxml
-  ```
-  python -c "
-  import subprocess, sys, os, time
-  out_dir = 'tests/output'
-  os.makedirs(out_dir, exist_ok=True)
-  p = subprocess.Popen(
-      [sys.executable, '-m', 'pytest', 测试文件, '--timeout=2900', '-x', '--tb=short', '-v',
-       f'--junitxml={out_dir}/XXX_result.xml'],
-      stdout=open(f'{out_dir}/XXX_stdout.txt', 'w'),
-      stderr=open(f'{out_dir}/XXX_stderr.txt', 'w'))
-  deadline = time.time() + 3000
-  while p.poll() is None and time.time() < deadline: time.sleep(10)
-  if p.poll() is None: p.kill(); print('TIMEOUT')
-  else: print(f'EXIT_CODE={p.returncode}')
-  with open(f'{out_dir}/XXX_stdout.txt') as f: print(f.read())
-  with open(f'{out_dir}/XXX_stderr.txt') as f:
-      e = f.read()
-      if e.strip(): print(e)
-  "
-  ```
-
-#### 执行检查（手动，逐项验证）
-
-按 3 项验证，全过才进入下一个 case：
-1. **代码错误异常检查（最高优先级）**：查日志 traceback/ERROR、SSE 是否有 error 事件 → 有则立即停，走修复
-2. **调用链分析**：工具选择/顺序/LLM 次数是否合理，输出 `[CALL CHAIN]`
-3. **参数正确性**：路径/关键词等是否准确
-
----
-
-### 前端 E2E（Playwright + 真实浏览器 + 真实后端）
-
-**定位**：验证浏览器 UI→SSE 流→UI 渲染→断线重连全链路。8 个 case（fre2e_01~08），公共库 `e2e_front_lib/`（4 模块：POM/进程控制/SSE 诊断/普通会话封装）。
-
-#### 架构特点
-
-| 角色 | 进程 | 职责 |
-|------|------|------|
-| 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀** |
-| 后端代理 B | `e2e_case/api-proxy.ts :9000→8100` | 页面 API/SSE 直连目标（断线测试用） |
-| 后端 C | uvicorn `:8100` | 内存任务持有者 |
-
-断线测试原理：`killPort(9000)` 杀 B → 浏览器↔A 完好、仅 API 链路断（真 TCP RST）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=` 断点续传。
-
-#### 执行方式
-
-```bash
-npx playwright test fre2e_01_reconnect_ui.spec.ts --headed --reporter=line   # 单 case
-npm run test:e2e      # 整组（先 lint + format）
-npm run test:e2e:ui   # UI 模式
-npm run test:e2e:debug # 调试模式
-```
-
-#### 关键机制
-
-| 机制 | 说明 |
-|------|------|
-| 日志对账防假通过 | `logBaseOf` 记基线 → `readLogSince` 只读本轮新增 → 断言重连端点 `after_seq>0` |
-| 真进程断流 | `killPort(9000)` 产生真实 TCP RST；禁 `setOffline`（无法断 in-flight SSE） |
-| run-on 检测 | `hasAdjacentDup` 逐行检测行内相邻重复（6~30 步滑动窗口） |
-| 诊断挂满+失败即打 | 开头必 `attachStreamDiag`；任何一步失败先 `printDiag` 打全量证据链再 throw |
-
----
-
-### 测试的铁律（前后端共用）
-
+**测试的铁律（前后端共用）**：
 - 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
-- 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
----
-
-## Request Flow
-
-FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` → `UniversalAgent.run_react_cycle()` → SSE。详细架构见 `README.md` 二~六章。
-
----## Key Dependencies
-
-| Layer | Tech | Notes |
-|-------|------|-------|
-| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `~/.omniagent/chat_history.db` |
-| | **httpx==0.26.0, httpcore==1.0.1** | **LOCKED** — 0.28.1 breaks TLS |
-| | Pydantic v2 | Tool schemas |
-| Frontend | React 18, TypeScript 5, Vite | |
-| | Ant Design 5, Axios, React Router | |
-| | Vitest, Playwright, ESLint, Prettier | |
-
-**Server URLs**: Backend `http://127.0.0.1:8100`（dev，env `BACKEND_PORT` 可覆盖；打包版默认 8500） | API docs `http://127.0.0.1:8100/docs` | Frontend `http://localhost:5173`
+- 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite，**禁止 Mock**
 
 ---
 
-## Known Pitfalls
+## 2.4 Request Flow&Key Dependencies
 
-| Pitfall | Detail |
-|---------|--------|
-| **httpx version lock** | `httpx==0.26.0` required. Don't upgrade — 0.28.1+ upgrades httpcore which breaks TLS. |
-| **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
-| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, FILE}`. |
-| **config 真源与同步** | 新增配置键三同步：`backend/config.yaml.example`（唯一 git 跟踪模板）+ `settings_registry.py` + `config/config.yaml`（**仓库根**，gitignore 运行副本，唯一被 `get_config_path()` 实读）。**`backend/config/config.yaml` 属历史双轨遗留，2026-11-03 决定删除，禁止再创建** — 小欧-2026-11-03 |
+详细架构见 `README.md` 二~六章。
+技术栈与依赖版本详见 `README.md`。
 
-## Shell 卡死取证（偶发，必读）
+---
 
-症状：SSE 空闲超时 60 秒 + 日志停写 + `/health` 超时（**端口在监听 ≠ 服务活着**）。
+## 2.5 Known Pitfalls
 
-```powershell
-py-spy dump --pid (Get-NetTCPConnection -LocalPort 8100 -State Listen).OwningProcess   # 唯一可靠定位手段
-Get-NetTCPConnection -LocalPort 8100 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }   # 重启: --reload 双进程，只 kill 父进程无效
-```
+常见坑点与规避详见后端手册 `[1]全链路E2E测试手册-小健-2026-05-23.md`。
 
-根因结构：`shell_engine` 同步 `exec()` 跑在事件循环里（挂死→全服务僵死）、完成信号靠临时文件轮询（进程半死则永不到达）、常驻池锁跨任务共享。根治＝`to_thread` 卸载 + 只读命令改独立子进程。详见 `doc-9月优化/[53]`。
-
-
-
-## Git Workflow
-
-```bash
-# Commit format: <type>:<文件名> <description> - <签名>-<日期>
-# types: feat/fix/refactor/perf/test/docs
-
-# Tag (PATCH only without asking):
-# 1. Insert 从上一个tag以来的所有commit summary into version.txt (project root, append at top)
-# 2. git tag v{major}.{minor}.{patch+1}
-```
-
-`version.txt` is append-only, oldest at bottom.
-
----## Code Conventions
+---
+## 2.6 Code Conventions
 
 ### Python
 - snake_case functions/vars, PascalCase classes, UPPER_SNAKE_CASE constants
@@ -317,6 +136,4 @@ Get-NetTCPConnection -LocalPort 8100 -State Listen | ForEach-Object { Stop-Proce
 - kebab-case filenames (`my-component.tsx`)
 - No default exports for components
 - Use `@/` alias for absolute imports
-- Run `npm run check:full` before commit — 2026-10-01 小欧 修订：`check` 只含 `lint` + `format:check`，**不含任何 typecheck**；而 `tsconfig.json` 只 `include ["src"]`、`tsconfig.e2e.json` 才管 `e2e_case/`+`e2e_front_lib/`，故漏跑 `typecheck:e2e` 时 e2e 类型错误在构建期完全不可见（2026-10-01 实测：4 处漏补 import + 1 处传错参数，全靠 `typecheck:e2e` 抓出，`tsc --noEmit` 抓不到）
-
--
+- 提交前跑 `npm run check:full`（含 typecheck + typecheck:e2e + lint + lint:e2e + format:check）

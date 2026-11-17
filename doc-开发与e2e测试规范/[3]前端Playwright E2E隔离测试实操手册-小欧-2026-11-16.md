@@ -1,6 +1,6 @@
-# [48] 前端 Playwright E2E 隔离测试实操手册
+# [3] 前端 Playwright E2E 隔离测试实操手册
 
-> 文档名称：[48]前端Playwright E2E隔离测试实操手册-小欧-2026-11-16
+> 文档名称：[3]前端Playwright E2E隔离测试实操手册-小欧-2026-11-16
 > 类型：可执行指导手册（唯一标准，前端所有测试验证按此执行）
 > 基线：`F:\OmniAgentAs-01`（frontend/），提交 `e03f373a6`
 
@@ -10,7 +10,7 @@
 
 - 本手册是前端 **Playwright 真浏览器** E2E 隔离测试的**唯一执行标准**。
 - 端口以**当前代码**为准：主后端 `8100`（`BACKEND_PORT` 缺省），非旧文档的 8000。
-- 废弃旧《全链路E2E测试手册》中 8000 端口描述，以其断流进程分离思想为本手册 M-B 依据。
+- 废弃 [1]全链路E2E测试手册 中 8000 端口描述，以其断流进程分离思想为本手册 M-B 依据。
 
 ---
 
@@ -31,10 +31,10 @@
 
 | 模式 | 页面 vite | API | 后端 | 数据隔离 | 入口 | 典型 |
 |---|---|---|---|---|---|---|
-| **M-A 普通** | 5173(默认) | vite proxy `/api` | 8100 | 无 | `startNormalUiEnv` | fre2e_02~07,13~23 |
+| **M-A 普通** | 5173(默认) | vite proxy `/api` | 8100 | 无 | `startNormalUiEnv` | fre2e_02~05,07,13~20,22~23 |
 | **M-B 断流** | 5173(hmr:false) | 独立代理 `9000` | 8100 | 无 | `startDevServer`+`startProxyServer` | fre2e_01,06 |
-| **M-C 配置隔离** | 5174(hmr:false) | 独立代理 `9001` | `8898` | ✅ 临时config副本 | `isolatedEnvHooks` | fre2e_08~12 |
-| **M-D 临时** | 5273(hmr:false) | 独立代理 `9002` | 8010 | 独立 | `vite.interject.config` | 临时验证 |
+| **M-C 配置隔离** | 5174(hmr:false) | proxy 9001→8898 / request 直连 8898 | `8898` | ✅ 临时config副本 | `isolatedEnvHooks` | fre2e_08~12 |
+| **M-D 临时** | 5273(hmr:false) | 独立代理 `9002` | 8010 | 独立 | `vite.interject.config`+`playwright.interject.config` | 临时验证 |
 
 **端口单源铁律**：
 - 主后端端口：`BACKEND_PORT` 环境变量，缺省 **8100**（`vite.config.ts` 与 `backend/start_dev.ps1` 同源）。
@@ -138,4 +138,4 @@ const { profile } = await cdp.send('Profiler.stop'); // 解析self-time定位热
 ---
 
 > 编写人：小欧；日期：2026-11-16
-> 关联：[47]隔离方法固化标准（端口一致），[46]性能优化方案（性能测量方法）
+> 关联：[2]隔离方法固化标准（端口一致），[46]性能优化方案（性能测量方法）
