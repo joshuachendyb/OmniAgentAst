@@ -1,6 +1,6 @@
 # opencli gateway 使用说明 — 小欧 2026-11-09
 
-**来源版本**：opencode2api **v1.4.8**（上游 commit `159d7fdf`，2026-11-16 释出；上一版 v1.4.7 / `b296a61d`）。完整台账、校验值与回滚包见 2.1。
+**来源**：https://github.com/jasonxu114514/opencode2api — opencode2api **v1.4.8**（上游 commit `159d7fdf`，2026-11-16 释出；上一版 v1.4.7 / `b296a61d`，2026-11-05）。完整台账、校验值与回滚包见 2.1。
 
 **本次更新（2026-11-17，小欧）**
 
@@ -16,8 +16,7 @@
 | 日期 | 更新人 | 内容 |
 |------|--------|------|
 | 2026-11-09 | 小欧 | 初稿：网关模式与链路、部署、配置字段、WARP 出口池实测 |
-| 2026-11-12 | 小欧 | 增第 9 章外网出口（配套服务 OmniVPN）；第 1、8 章补 WARP 观测点重校结论 |
-| 2026-11-17 | 小欧 | 网关升至 v1.4.8；源码快照前移到 `159d7fdf` 并改由本地编译产出；管理台 listen 收紧；新增 2.1 台账；7.8／7.13／第 1 章补充 |
+| 2026-11-17 | 小欧 | 网关升至 v1.4.8；源码快照前移到 `159d7fdf` 并改由本地编译产出；管理台 listen 收紧；新增 2.1 台账；7.8／7.13／第 1 章补充；第 9 章外网出口内容收拢到 `OmniVPN\OmniVPN使用说明.md` 后移除该章（连带第 10 章） |
 
 ---
 
@@ -70,6 +69,7 @@ opencli 网关 (opencode2api.exe, 只听 127.0.0.1:8080, 管理台 8081)
 | 项 | 值 |
 |----|----|
 | 现用版本 | **v1.4.8** |
+| 上游仓库 | https://github.com/jasonxu114514/opencode2api （Release：https://github.com/jasonxu114514/opencode2api/releases/tag/v1.4.8） |
 | 上游 commit | `159d7fdf0fa30274cac6ea0112cd827833819e2c`（2026-11-16T21:28:09Z） |
 | 上游释出 | 2026-11-16T21:34Z（北京 11-17 05:34） |
 | 源码快照 | `backup\opencli_gateway-src_源码转存_20261117\gateway-src\`（全源码去 .git，125 个文件；钉版细节见该目录 `PINNED.md`，20261109 旧快照保留） |
@@ -109,6 +109,7 @@ v1.4.8 对本套部署的实际影响（只列有关的三条，其余为 Respon
 拷 5 个文件到任意目录：opencode2api.exe、config.json、opencli_gateway_start.bat、opencli_gateway_stop.bat、opencli_gateway_stop.ps1。
 出网放行 UDP 2408（仅重新启用 warp 出口池时需要，当前 warp 已关闭，直连部署用不到；warp 详见第 8 章）。
 config.json.*.json 是自动生成的状态缓存，不用拷，删了会自动重建（冷启动多等 ~12 秒）。
+启动壳会先把自己所在目录切为当前目录，所以换机器、换部署路径都不必改配置；注入给上游的环境块也随之指向新位置（详见 7.8）。
 
 ## 5 启动与停止
 
@@ -173,7 +174,36 @@ proxies 的 direct = 网关进程直连上游（走裸线出口），warp 关闭
 
 anonymous 是我们的上游；zen 那个参与状态文件名指纹，勿改。
 
-v1.4.8 起可选的 `prompt_environment`（`working_directory`／`workspace_root`／`platform`／`is_git_repo`）能覆写注入给上游的环境信息，并连带改写 shell 工具描述里的平台说法。我们不设即保持原行为（平台按网关所在主机推断，本机 Windows → win32）。该字段只能经配置 JSON 或配置 API 写入，WebUI 无独立输入框；两个路径字段禁止控制字符、行分隔符与尖括号，`platform` 只认 linux/darwin/win32（`windows` 自动规范为 `win32`），覆写值需与真实工作环境一致，否则等于自造假环境。
+网关冒充官方客户端时，system prompt 里带一段环境块：
+
+```
+<env>
+  Working directory: ...
+  Workspace root folder: ...
+  Is directory a git repo: yes
+  Platform: win32
+  Today's date: ...
+</env>
+```
+
+除日期外，其余四项都可被 v1.4.8 新增的可选项 `prompt_environment`（`working_directory`／`workspace_root`／`platform`／`is_git_repo`）覆写。默认值全部运行时算出，不落在配置里：`working_directory` 与 `workspace_root` 取网关进程启动时的当前目录（`os.Getwd()`，每进程只算一次，取不到才回落 `/workspace`）；`is_git_repo` 恒为 `yes`，照官方客户端文本写死，与实际是不是仓库无关；`platform` 取 `runtime.GOOS`，Windows 归一为 `win32`。
+
+因为跟着启动目录走，**换机器或换部署目录都不用改配置**：两个启动壳开头的 `cd /d "%~dp0"` 会把当前目录切到脚本所在处，环境块随之自动指向新位置。只有从计划任务、服务、快捷方式或任意目录直接拉起 exe 时，当前目录可能是 `C:\Windows\System32` 之类，环境块就会写成那个目录。
+
+需要钉死时（上一种启动方式，或想让它指向真正干活的后端目录）写：
+
+```json
+"upstream": {
+  "prompt_environment": {
+    "working_directory": "D:\\NDOOmniAgent",
+    "workspace_root": "D:\\NDOOmniAgent"
+  }
+}
+```
+
+`platform` 留空则按主机推断；`is_git_repo` 留空或写 `true` 都是 `yes`，写 `false` 才是 `no`。本机默认值里只有工作目录与实际不符（默认指向 `opencli\`，真正干活的是后端所在的仓库根），改不改都行——这段只影响模型对环境与路径的认知，不影响路由、额度、重试与 429 处置；写错方向反而更糟：`platform` 写成 `linux` 而实际是 Windows，模型就会给 bash 命令。
+
+该字段只能经配置 JSON 或配置 API 写入，WebUI 无独立输入框；两个路径字段禁止控制字符、行分隔符与尖括号，`platform` 只认 linux/darwin/win32（写 `windows` 自动规范为 `win32`）。
 
 ### 7.9 retry（上游重试）
 
@@ -238,87 +268,3 @@ ipv4 栈换桶无效。Cloudflare 永远分配同一个共享 NAT 地址 104.28.
 [2] stack 固定用 ipv6（ipv4 换不出新桶，没有使用价值）；
 [3] 出网需放行 UDP 2408（见第 4 章部署）；
 [4] 定位是备用车道：OmniVPN 仍是日常主车道，WARP 适合在裸线网段配额打光、OmniVPN 换桶无效时兜底。是否启用由用户决策。
-
-## 9 外网出口(代理) — 配套服务 OmniVPN — 小欧 2026-11-12
-
-网关的外网出口代理已整体收拢到配套目录 `OmniVPN\`（唯一维护且入库的目录），内核、配置、脚本、文档全部自洽其中，原 `hooks\` 与 `vpn-trial\` 旧目录已删除。权威说明见 **`OmniVPN\OmniVPN使用说明.md`**（mihomo 内核能力、组件职责、命令用法、排错全在）；本节只列网关视角的要点。
-
-### 9.1 内核与它提供的能力
-
-内核是 mihomo 自编精简版 `OmniVPN\mihomo\mihomo-slim.exe`（Clash Meta 延续版，tag v1.19.34，单文件绿色程序，无安装动作）。它提供四项能力：本地 HTTP 混合代理口 7890（浏览器、系统代理、命令行程序共用）；外部控制器 API 9090（列组/切节点/逐节点测活，是换桶机制的支点，切换不重启进程）；节点内联配置（`mihomo\config.yaml`，绑 WLAN 裸线，与系统上其它全局路由/代理工具可并行运行）；选中节点记忆（cache.db，重启恢复旧选择，无害）。
-
-### 9.2 双击脚本（都在 OmniVPN\）
-
-| 双击 | 作用 | 何时用 |
-|------|------|--------|
-| `OmniVPN\proxy-on.bat` | 启动 mihomo + 设系统代理 7890 + 打印直连/代理出口对照 | 开始干活前 |
-| `OmniVPN\proxy-switch.bat` | 换出口桶，最多 4 轮自动跳失联节点，全失败引导重建节点池 | 撞 429 时 |
-| `OmniVPN\proxy-off.bat` | 取消系统代理 + 停止 mihomo（bat 固定带 `-Stop`） | 收工/回直连 |
-| `OmniVPN\rebuild-pool.bat` | 重建节点池（11 步约 15~20 分钟，含死点池复活/结算，跑完自动重启 mihomo；步骤实现在 nodepool\） | 整池死透时 |
-| `OmniVPN\update-pool-quick.bat` | 轻量巡检：现池复验 + 死点复活结算（约 1~2 分钟，临时端口不影响在跑的 mihomo） | 换桶后自动带跑/想看池健康度时 |
-
-mihomo 是独立后台进程，关掉窗口不影响代理运行；出口查询每步 3~8 秒，别在查询中途关窗。
-
-### 9.3 proxy-on 只开代理，不换桶
-
-`proxy-on.bat` 只做三件事：启动内核 → 设系统代理 `127.0.0.1:7890` → 打印直连与代理出口对照。**换桶必须显式双击 `proxy-switch.bat`**。
-
-默认走 mihomo 的原因：7890 是 HTTP 混合口，命令行工具的 HTTP 客户端可直接用；SOCKS 口（7891）bun/undici 这类 HTTP 客户端会报 `UnsupportedProxyProtocol`。换节点只调控制器 API（约 5 秒），不重启核心。
-
-### 9.4 换桶判定口径与返回码
-
-上游免费层配额按出口 IP 网段记账。判桶的硬标准只有一条：前缀变没变（IPv4 折 /24、IPv6 折 /48）——前缀变了就是新桶；loc 是随行的地区标注，不单独作判桶依据；同前缀只换尾号仍算同一个桶。观测点为 Cloudflare trace，`ip=` 即服务端所见地址。
-
-| 返回码 | 含义 | 处置 |
-|--------|------|------|
-| 0 | 已换出新桶 | 恢复发请求 |
-| 1 | 桶指纹未变（候选同桶或失联） | proxy-switch 自动再试；4 轮全失败引导重建 |
-| 2 | 控制器不可达/参数缺失/切换失败 | 查现场（9090 是否在听），别当成功 |
-
-### 9.5 命令行等价用法
-
-```powershell
-# 体检 + 查当前出口桶(两段连跑, 首选)
-python OmniVPN\exit_probe.py
-
-# 开 / 关
-powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-on.ps1
-powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-off.ps1 -Stop
-
-# 换桶 / 只查出口
-python OmniVPN\exit_rotator.py --target mihomo --group PROXY --wait --proxy http://127.0.0.1:7890
-python OmniVPN\exit_rotator.py --verify --proxy http://127.0.0.1:7890
-```
-
-（相对路径命令的执行前提是站在仓库根 `D:\NDOOmniAgent` 下；改用绝对路径则任意目录可用。）
-
-### 9.6 给命令行程序喂代理
-
-系统代理只覆盖认它的程序（浏览器、Electron 桌面版）。命令行程序要自己给环境变量，且 bun / undici 这类 HTTP 客户端只认 `http://`：
-
-```powershell
-$env:HTTP_PROXY  = 'http://127.0.0.1:7890'
-$env:HTTPS_PROXY = 'http://127.0.0.1:7890'
-$env:ALL_PROXY   = 'http://127.0.0.1:7890'
-```
-
-不要用 SOCKS5 端口（`7891`），这类 fetch 会报 `UnsupportedProxyProtocol`。
-
-### 9.7 节点池的定位与重建
-
-节点池是公开免费节点（存活率约 1.2%，死节点多、会集体抖动），只作应急通道；节点生生死死属常态，探活与轮换会自动跳过失联节点。整池死透时按 proxy-switch 的引导重建（nodepool 11 步流水线，含死点池复活与结算，约 15~20 分钟）。v2rayN、gost、WARP 隧道等旧通道已于 2026-11-11 移除，exit_rotator 仅保留 mihomo 一种 target。
-
-### 9.8 日常流程
-
-```
-不动             → 直连
-撞 429           → 双击 proxy-on.bat       （第一次，开代理）
-还 429，换出口   → 双击 proxy-switch.bat   （每撞一次双击一次）
-不折腾了         → 双击 proxy-off.bat      （恢复直连）
-```
-
-要点：换桶后不必重启浏览器或程序——系统代理仍是 `127.0.0.1:7890`，变的只是 mihomo 背后的出口 IP；只想关系统代理、保留内核运行，用 `OmniVPN\proxy-off.ps1`（不带 `-Stop`）。
-
-## 10 详细文档
-
-doc-11月优化：[17] 运行手册与模块分析、[18] 技术原理。
