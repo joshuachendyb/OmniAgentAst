@@ -29,6 +29,10 @@
 //   RightViewer 的 messages 兜底显式传 true 拉步骤, 右栏详情不受裁剪影响 — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - 历史页批量清理: 新增 preview/execute 会话清理接口与类型
 //   (mode=invalid|older, days 默认30) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - [46/46b] 会审整改: ①getSessionMessages 三个开关统一按"是否显式给出"
+//   判空(原 include_steps 取真值 → 首屏 false 被丢掉, 后端缺省 true, 裁剪形同虚设); ②total 兜底
+//   ?? 0(不再用本页条数冒充总条数, 否则 has_more 算错); ③SessionCleanupPreview.session_ids 注明
+//   预览恒为 [] — 小欧-2026-11-18
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -100,6 +104,7 @@ export interface SessionCleanupPreview {
   count: number;
   skipped_active: number;
   sample_titles: string[];
+  /** 预览恒为 []（只预览不删, 不可据此清前端 Store）；执行结果看 SessionCleanupResult */
   session_ids: string[];
   deleted: number;
 }
@@ -230,12 +235,17 @@ export const sessionApi = {
   ): Promise<GetSessionMessagesResponse> => {
     // [46] P0/P1: 仅首屏路径(loadHistoryMessages)传分页 opts; 右栏详情兜底显式 include_steps=true;
     //   RightViewer/切模型等其它直接调用仍不带参数=后端全量(兼容)
+    // 2026-11-18 - 小欧 - 会审整改: 三开关统一按"是否显式给出"判空(原 include_steps 取真值 →
+    //   首屏的 false 被丢掉, 后端缺省 True, 首屏裁剪形同虚设) — 小欧-2026-11-18
     const params =
-      opts && (opts.limit != null || opts.offset || opts.include_steps)
+      opts &&
+      (opts.limit != null || opts.offset != null || opts.include_steps != null)
         ? {
             ...(opts.limit != null ? { limit: opts.limit } : {}),
             ...(opts.offset != null ? { offset: opts.offset } : {}),
-            ...(opts.include_steps ? { include_steps: true } : {}),
+            ...(opts.include_steps != null
+              ? { include_steps: opts.include_steps }
+              : {}),
           }
         : undefined;
     const response = await api.get<GetSessionMessagesResponse>(
@@ -250,7 +260,8 @@ export const sessionApi = {
       version: response.data.version ?? 1,
       link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
       allow_interject: response.data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
-      total: response.data.total ?? response.data.messages?.length ?? 0,
+      // 2026-11-18 小欧 会审整改: 后端恒下发 total; 不用本页条数冒充总量(否则 has_more 算错)
+      total: response.data.total ?? 0,
       has_more: response.data.has_more ?? false,
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,

@@ -13,6 +13,8 @@
 //   loadHistoryMessages, 唯一调用方 useChatSession 场景3 上抛编排后成死码) — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: 新增 FIRST_SCREEN_MESSAGE_LIMIT=50, loadHistoryMessages
 //   增 {limit,offset} 首屏分页参数, 返回 hasMore/total(pairs 口径); useCache 原语义不变 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - [46] 会审整改: ①首屏显式 include_steps=false 真正裁剪(后端缺省已改全量兼容);
+//   ②缓存分支不再伪造 hasMore=false / total=本页条数 —— 缓存只有一页, 代表不了会话总量, 两字段留未知 — 小欧-2026-11-18
 /**
  * 聊天历史工具函数
  *
@@ -241,18 +243,19 @@ export const loadHistoryMessages = async (
             sessionModel: state.sessionModel ?? null,
             linkEnabled: state.linkEnabled === true,
             allowInterject: state.allowInterject === true, // 2026-10-07 小欧 - 写入点②(读侧还原)
-            // [46] P0: 缓存态是完整快照, 无更早可拉
-            hasMore: false,
-            total: state.messages?.length ?? 0,
+            // 2026-11-18 小欧 会审整改: 缓存里只有当前这一页 messages, 代表不了会话总条数与
+            //   "还有更早", 故 hasMore/total 留缺省(未知), 不伪造成 false / 本页条数 — 小欧-2026-11-18
           };
         }
       }
     }
 
     // 从数据库读取([46] P0: 首屏走分页窗口, 后端 SQL 级限窗)
+    // [46] P1: 首屏显式 include_steps=false 主动裁剪(后端缺省是全量兼容), 详情链路另走 getTaskDetail
     const sessionData = await sessionApi.getSessionMessages(sessionId, {
       limit,
       offset,
+      include_steps: false,
     });
 
     // 检查是否有消息 - 空会话（无消息但有标题）也要返回有效结果

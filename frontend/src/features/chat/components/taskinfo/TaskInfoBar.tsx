@@ -94,6 +94,8 @@
 // 编辑历史: 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: final 帧回填事件列表时第3参捎带台账快照
 //   chatStreamStore.getSentRefLedger(sessionId, taskId)(feature 层取参传 api 层, 不在 service 层依赖 store;
 //   sessionId 缺省不携带), 随既有 process-events 端点直写后端 ref_ledger_json 列, 冷启动台账数据源就绪 — 小欧-2026-11-17
+// 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 台账为空不再携带第3参(原空数组也进请求体, 等于上传
+//   空快照, 与"不携带=不覆盖"混同) — 小欧-2026-11-18
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -232,13 +234,18 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     if (!taskId || !_hasFinal) return;
     if (_sentRef.current === taskId) return;
     _sentRef.current = taskId;
+    // [46b] P2b 小欧 2026-11-17: 第3参捎带台账快照(feature 层取参传 api 层, 不进 service 层);
+    //   send 幂等仍由 _sentRef+final 守卫保证。
+    // 2026-11-18 小欧 会审整改: 台账为空一律不携带 —— [] 是 truthy, 原写法会把空数组塞进请求体,
+    //   语义上等于"上传空快照", 与"不携带=不覆盖"混同 — 小欧-2026-11-18
+    const _ledger = sessionId
+      ? chatStreamStore.getSentRefLedger(sessionId, taskId)
+      : [];
     executionApi
-      // [46b] P2b 小欧 2026-11-17: 第3参捎带台账快照(feature 层取参传 api 层, 不进 service 层);
-      //   sessionId 缺省不携带(后端不覆盖台账列); send 幂等仍由 _sentRef+final 守卫保证
       .saveTaskProcessEvents(
         taskId,
         _latestRef.current,
-        sessionId ? chatStreamStore.getSentRefLedger(sessionId, taskId) : undefined
+        _ledger.length ? _ledger : undefined
       )
       .catch((e) => {
         console.warn('[TaskInfoBar] 事件列表快照回填失败(不阻断):', e);

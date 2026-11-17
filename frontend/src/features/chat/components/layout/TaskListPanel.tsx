@@ -53,6 +53,8 @@
 //   SSE 流式/父级高频重渲时既得任务不再全量重建 DOM。行为零逻辑变更 — 小欧-2026-11-16
 // 编辑历史: 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: 台账行双源(store 实时优先, 冷启动取接口 ref_ledger 快照兜底, 根治冷启动台账缺失);
 //   roundHits 双源(steps 实时优先, steps 无产出时取接口 tool_paths 快照兜底, 冷启动推荐行恢复, steps 有产出时避免同路径双源重复计数) — 小欧-2026-11-17
+// 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 推荐行快照源只取最新任务的 tool_paths(原全会话累加,
+//   旧任务触达凑数), 并去掉"实时源为空才用快照"的全有全无闸门, 改按路径各判 — 小欧-2026-11-18
 
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
@@ -517,11 +519,15 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   //   → recommend 恒为空 → **推荐行永远不渲染**（功能未交付）。
   //   现用与后端同口径的归一（绝对→相对 root、反斜杠→正斜杠）后再计数。
   const projectRoot = useProjectRoot();
+  // [46b] P2b 小欧 2026-11-17: 双源——①实时源: 本轮 steps(store 内存态, 任务运行中即时,
+  //   与原口径一致: 被工具动过次数); ②快照源: 最新任务的 tool_paths(冷启动 store 无 steps 时
+  //   接口兜底, 后端收尾已同口径派生归一)。
+  // 2026-11-18 小欧 会审整改: ①快照源只取最新任务 —— 原遍历全会话所有任务的 tool_paths 累加,
+  //   同一路径在几个旧任务出现过就凑够 2 次进推荐, 与"本轮触达"语义不符(推荐行本来只对最新任务显示);
+  //   ②去掉 m.size===0 的全有全无闸门 —— 只要有一条实时路径, 快照源就整片失效, 冷启动任务
+  //   永远补不齐; 现按路径各判: 实时已知次数以次数为准, 实时无此路径而快照有时按"本轮触达"计入。
   const roundHits = React.useMemo(() => {
     const m = new Map<string, number>();
-    // [46b] P2b 小欧 2026-11-17: 双源——①实时源: 本轮 steps(store 内存态, 任务运行中即时,
-    //   与原口径一致: 被工具动过次数); ②快照源: tasks[].tool_paths(冷启动 store 无 steps 时
-    //   接口兜底, 后端收尾已同口径派生归一)。steps 有产出时只用实时源, 避免同一路径双源重复计数。
     for (const s of steps) {
       if (s.type !== 'action') continue;
       for (const tool of s.tools ?? []) {
@@ -532,23 +538,27 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
         m.set(p, (m.get(p) ?? 0) + 1);
       }
     }
-    if (m.size === 0) {
-      for (const t of tasks) {
-        for (const p of t.tool_paths ?? []) {
-          m.set(p, (m.get(p) ?? 0) + 1);
-        }
-      }
-    }
     return m;
-  }, [steps, tasks, projectRoot]);
+  }, [steps, projectRoot]);
+  /** 最新任务已触达路径快照(无次数信息): 冷启动/切换后 steps 为空时的推荐依据 */
+  const latestTouchedPaths = React.useMemo(() => {
+    const t = latestTaskId
+      ? tasks.find((x) => x.task_id === latestTaskId)
+      : undefined;
+    return new Set<string>(t?.tool_paths ?? []);
+  }, [tasks, latestTaskId]);
   const recommend = React.useMemo(
     () =>
       recentFiles
-        .filter(
-          (x) => (roundHits.get(x.path) ?? 0) >= 2 && x.preview === 'text'
-        )
+        .filter((x) => {
+          if (x.preview !== 'text') return false;
+          const hits = roundHits.get(x.path) ?? 0;
+          // 两源同出 steps, 不叠加(相加等于重复计数): 实时已知次数以次数为准;
+          // 实时未登记而快照有 → 本轮只触达过、次数不可知, 按命中计入
+          return hits >= 2 || (hits === 0 && latestTouchedPaths.has(x.path));
+        })
         .slice(0, 3),
-    [recentFiles, roundHits]
+    [recentFiles, roundHits, latestTouchedPaths]
   );
   /** 台账恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(

@@ -489,12 +489,12 @@ const HistoryPage: React.FC = () => {
               <HistoryOutlined /> 历史会话
             </Title>
             <Space>
-              {/* 2026-11-18 小欧 - 批量清理两入口, 共用"预览→确认"弹窗 */}
+              {/* 2026-11-18 小欧 - 批量清理两入口, 共用"预览→确认"弹窗; invalid 即空壳会话 */}
               <Button
                 icon={<DeleteOutlined />}
                 onClick={() => setCleanupMode('invalid')}
               >
-                清理无效会话
+                清理空壳会话
               </Button>
               <Button
                 icon={<ClockCircleOutlined />}

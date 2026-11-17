@@ -84,8 +84,8 @@ export const SessionCleanupModal = ({
   return (
     <Modal
       open={open}
-      title={isInvalid ? '清理无效会话' : '清理旧会话'}
-      okText={isInvalid ? '确认清理无效会话' : '确认清理旧会话'}
+      title={isInvalid ? '清理空壳会话' : '清理旧会话'}
+      okText={isInvalid ? '确认清理空壳会话' : '确认清理旧会话'}
       cancelText="取消"
       okButtonProps={{
         danger: true,
@@ -98,7 +98,7 @@ export const SessionCleanupModal = ({
     >
       <Typography.Paragraph type="secondary">
         {isInvalid
-          ? '无效会话 = is_valid 为 false，或没有任何用户消息/任务的空壳会话。'
+          ? '空壳会话 = 没有任何用户消息、也没有任何任务的会话。'
           : '旧会话 = 最后一次活动早于所选天数之前的会话。'}
       </Typography.Paragraph>
       {!isInvalid && (

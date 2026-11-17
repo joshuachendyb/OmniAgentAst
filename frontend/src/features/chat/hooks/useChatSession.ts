@@ -34,6 +34,8 @@
 // 编辑历史: 2026-11-18 小欧 - [46] P2a 任务/消息解耦: 场景1(URL)在 await loadHistoryMessages 前先用
 //   urlSessionId 写 state 定会话; 场景3(最近会话)改用 resolveInitialSessionId 先定会话再载消息
 //   (删 loadLatestHistoryMessages 透传壳) → tasks 不再被 messages 串行拖慢(根因③) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - [46] 会审整改: 场景1 先定会话时同步清空 messages —— 只换 sessionId
+//   会把上一会话的消息挂到新会话下渲染(跨会话串台) — 小欧-2026-11-18
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -407,7 +409,9 @@ export const useChatSession = (
         // [46] P2a 小欧 2026-11-18: URL 会话 ID 在进入页最早时刻即可得——先写 state 定会话,
         //   useSessionTasks 随 sessionId 变化立即拉 tasks(278KB 秒出), 不再被 73MB messages
         //   串行拖慢(根因③)。messages 仍由 await 完成后的 applySessionState 全量填充, 重复写同值幂等。
-        applySessionState({ sessionId: urlSessionId });
+        // 2026-11-18 小欧 会审整改: 同时把 messages 清空 —— 只换 sessionId 不动消息列表, 会把上一个
+        //   会话的消息挂在新会话下渲染(跨会话内容串台); 清空后到 await 回来之间是空列表, 语义正确 — 小欧-2026-11-18
+        applySessionState({ sessionId: urlSessionId, messages: [] });
 
         try {
           const result = await loadHistoryMessages(urlSessionId);

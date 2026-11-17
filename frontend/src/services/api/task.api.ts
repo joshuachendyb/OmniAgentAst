@@ -14,6 +14,9 @@
 // 编辑历史: 2026-11-14 商量 - SessionTaskItem.merged_inputs 由 string[] 升级 {content,msg_kind}[], 供同槽异标; 禁 backward 双读 — 商量-2026-11-14
 // 编辑历史: 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: SessionTaskItem 补 ref_ledger/tool_paths 两快照字段(后端 /tasks 一次携带, 冷启动台账/推荐行数据源);
 //   saveTaskProcessEvents 增可选第3参 refLedger 随 process-events 捎带台账快照(feature 层调用点传参, service 层不依赖 feature store) — 小欧-2026-11-17
+// 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 抽 RefLedgerWireEntry 供读侧(ref_ledger 快照)与写侧
+//   (saveTaskProcessEvents 第3参)共用一种形状 —— 原写侧 path 可选、读侧必有值, 同一实体两套形状;
+//   空台账不再请求携带(空数组等价不携带) — 小欧-2026-11-18
 import api from './client';
 import type { ApiRequestConfig } from './client';
 
@@ -90,6 +93,21 @@ export const taskControlApi = {
 // 【小欧 2026-08-26 8.2/8.5/8.7/8.C】任务清单/任务详情/执行步骤/信任
 // ============================================================
 
+/**
+ * 引用台账 wire 条目(读写共用一种形状) — 小欧 2026-11-18
+ *
+ * 读侧: SessionTaskItem.ref_ledger(后端 chat_tasks.ref_ledger_json 快照);
+ * 写侧: saveTaskProcessEvents 第3参(前端 final 帧上交)。
+ * UI 台账条目(SentRefLedgerEntry)另带 taskId, 是本形状 + 归属任务的投影。
+ */
+export interface RefLedgerWireEntry {
+  label: string;
+  /** 可点开的相对 posix 路径; 缺 path 的条目在入台账/落库前即被丢弃, 故写侧必有值 */
+  path: string;
+  lineRange?: { start: number; end: number };
+  ts: number;
+}
+
 export interface SessionTaskItem {
   task_id: string;
   user_input: string;
@@ -110,12 +128,7 @@ export interface SessionTaskItem {
   // 任务创建来源(后端 chat_tasks.creation_source): user=用户, system_resume=后台命令完成续跑 — 商量-2026-11-13
   creation_source?: 'user' | 'system_resume' | 'system_triggered';
   /** [46b] P2b 小欧 2026-11-17: 本任务引用台账快照(后端持久化, 冷启动不缺失; 上线前存量为 []) */
-  ref_ledger?: Array<{
-    label: string;
-    path: string;
-    lineRange?: { start: number; end: number };
-    ts: number;
-  }>;
+  ref_ledger?: RefLedgerWireEntry[];
   /** [46b] P2b 小欧 2026-11-17: 本任务工具触达的相对 posix 路径(去重, 推荐行 roundHits 依据) */
   tool_paths?: string[];
 }
@@ -267,17 +280,14 @@ export const executionApi = {
     events: import('@/features/chat/hooks/useTaskInfo').ProcessEvent[],
     // [46b] P2b 小欧 2026-11-17: 收尾捎带台账快照(可选第3参, feature 层调用点取好后传入,
     //   service 层不依赖 feature store); 缺省不携带, 后端不覆盖台账列
-    refLedger?: Array<{
-      label: string;
-      path?: string;
-      lineRange?: { start: number; end: number };
-      ts: number;
-    }>
+    // 2026-11-18 小欧 会审整改: 改用 RefLedgerWireEntry(与读侧 ref_ledger 同一种形状, 原 path 可选
+    //   与读侧必有值自相矛盾); 调用方传空数组等价于不携带
+    refLedger?: RefLedgerWireEntry[]
   ): Promise<{ success: boolean; count: number }> =>
     api
       .post(`/chat/execution/task/${taskId}/process-events`, {
         events,
-        ...(refLedger ? { ref_ledger: refLedger } : {}),
+        ...(refLedger?.length ? { ref_ledger: refLedger } : {}),
       })
       .then((r) => r.data),
 };

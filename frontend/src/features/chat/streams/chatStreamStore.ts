@@ -84,6 +84,8 @@
 //   历史页角标仍走 getActiveSessionStatusList 独立表达 — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 16:40 小欧 - 状态词表收口: 新增 toStreamStatus 归一 DB 词表(executing→active), 删
 //   activeSessions/others 与 releasedAt 判据(改 settledAt), 复核改轻量单任务读+预算, maxAgeMs 用 Infinity — 小欧-2026-11-03
+// 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: pushSentRefs 丢弃无 path 的引用(原补 '' 入台账,
+//   渲染出点不动的空 chip 并随快照上传后端空 path 条目) — 小欧-2026-11-18
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -1169,13 +1171,18 @@ export const chatStreamStore = {
    * 口径：新者前，≤50 条截断；只存路径不存正文。
    */
   pushSentRefs(sessionId: string, taskId: string, refs: SentRefInput[]): void {
-    if (!refs.length) return;
+    // 2026-11-18 小欧 会审整改: 无 path 的引用不入台账 —— 台账条目是"点开即定位的文件引用",
+    //   缺 path 点不动; 原先补 '' 塞进去会渲染出空 chip, 并被当成快照上传后端(ref_ledger 空 path 条目)
+    const valid = refs.filter(
+      (r): r is SentRefInput & { path: string } => !!r.path
+    );
+    if (!valid.length) return;
     const s = this.ensureSession(sessionId);
     commit(s, (d) => {
       d.sentRefLedger = [
-        ...refs.map((r) => ({
+        ...valid.map((r) => ({
           label: r.label,
-          path: r.path ?? '',
+          path: r.path,
           lineRange: r.lineRange ?? undefined,
           taskId,
           ts: Date.now(),
