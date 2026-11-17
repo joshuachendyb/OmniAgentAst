@@ -225,6 +225,40 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     [sessionId, sessionVersion, setSessionVersion, setSessionModelOverride]
   );
 
+  // 2026-11-17 小欧 - 流式期无关面板重渲治理: 模型选择器插槽独立 memo
+  //   原插槽 JSX 构造在主 memo 内, 每个 SSE chunk 都产生新元素引用 → ChatInput 的 memo 永远命中不了;
+  //   拆出后引用只在模型/路由相关状态变化时更新 — 小欧-2026-11-17
+  const modelPickerSlot = useMemo(
+    () => (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <ModelPicker
+          sessionId={sessionId}
+          sessionVersion={sessionVersion}
+          sessionModelOverride={sessionModelOverride}
+          setSessionModelOverride={setSessionModelOverride}
+          setSessionVersion={setSessionVersion}
+        />
+        {/* 2026-11-16 小欧 [23]阶段D: 路由模式三档(会话级持久化) — 小欧-2026-11-16 */}
+        <RoutingModePicker
+          value={routingMode}
+          onChange={setRoutingMode}
+          disabled={!sessionId}
+          loading={routingSaving}
+        />
+      </span>
+    ),
+    [
+      sessionId,
+      sessionVersion,
+      sessionModelOverride,
+      setSessionModelOverride,
+      setSessionVersion,
+      routingMode,
+      setRoutingMode,
+      routingSaving,
+    ]
+  );
+
   // 2026-11-16 小欧 - [45] P1: TaskListPanel 面板定义独立 memo, 只依赖其真正所需
   //   依赖(tasks/activeTaskId/handleSelectTask/tasksLoading/latestTaskId/latestTaskRef/rightOpen/sessionId/executionSteps),
   //   使其不被主 memo 中其余面板(RightViewer/TaskInfoBar 等)的专属高频状态(如 waitClock/streamStatus)连带重划;
@@ -431,26 +465,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             // 2026-10-30 18:42:49 小欧 - 会话目录不再经此处透传：ChatInput 内部直接订阅
             //   workspaceStore（只取 list.length），本 memo 依赖不再含目录数据，
             //   一次目录保存不再让右栏 RightViewer 等 7 个面板连带重算。
-            modelPickerSlot={
-              <span
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-              >
-                <ModelPicker
-                  sessionId={sessionId}
-                  sessionVersion={sessionVersion}
-                  sessionModelOverride={sessionModelOverride}
-                  setSessionModelOverride={setSessionModelOverride}
-                  setSessionVersion={setSessionVersion}
-                />
-                {/* 2026-11-16 小欧 [23]阶段D: 路由模式三档(会话级持久化) — 小欧-2026-11-16 */}
-                <RoutingModePicker
-                  value={routingMode}
-                  onChange={setRoutingMode}
-                  disabled={!sessionId}
-                  loading={routingSaving}
-                />
-              </span>
-            }
+            modelPickerSlot={modelPickerSlot}
           />
         ),
         defaultVisible: true,
@@ -470,8 +485,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       setEditingTitle,
       setTitleInput,
       setSessionVersion,
-      sessionModelOverride,
-      setSessionModelOverride,
       total,
       sessionTokens, // 2026-09-01 小欧: 实时/静态双源更新需入依赖, 否则useMemo缓存旧值TopbarStats不刷新
       chainTokens,
@@ -506,9 +519,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       taskListPanel, // 2026-11-16 小欧 [45] P1: TaskListPanel 独立 memo 结果引用 — 小欧-2026-11-16
       ensureSession, // 2026-11-06 小欧 - 附件建会话(渲染依赖, 漏=回调换新后面板仍用旧闭包)
       routingMode, // 2026-11-16 小欧 [23]阶段D: 模式变化需重算面板(透传 ChatInput/选择器) — 小欧-2026-11-16
-      setRoutingMode,
-      routingSaving,
       handleSwitchModel,
+      modelPickerSlot, // 2026-11-17 小欧 - 插槽独立 memo 结果引用(引用不变则 ChatInput memo 命中) — 小欧-2026-11-17
     ]
   );
 }

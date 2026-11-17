@@ -1152,4 +1152,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   );
 };
 
-export { ChatInput };
+// 2026-11-17 小欧 - 流式期无关面板重渲治理: 外层包 memo — 入参都是会话级开关/回调/生效模型,
+//   插槽由调用方独立 memo 提供稳定引用, 故 SSE chunk 期间 props 恒稳, 命 memo 即不重渲 — 小欧-2026-11-17
+const ChatInputMemo = React.memo(ChatInput);
+
+export { ChatInputMemo as ChatInput };

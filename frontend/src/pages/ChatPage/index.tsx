@@ -105,11 +105,29 @@ const ChatPage: React.FC = () => {
   // 2026-10-08 小欧 - refreshTasks 在本组件下方(useSessionTasks)才声明, 而 onTasksChanged
   //   要在 useChatFacade 入参里给 → 用 ref 中转(同 useChatCallbacks 的 onSuccessRef 模式, 解闭包陈旧)
   const refreshTasksRef = useRef<() => void>(() => undefined);
+  // 2026-11-17 小欧 - 注入回调定身份: 原为内联箭头, 每次本组件渲染都换引用 → onUrlSessionChange
+  //   经 useChatSend 的 handleSend 依赖传染到 ChatInput props, 使其 memo 在流式期永不命中。
+  //   改 useCallback 后引用恒稳, 面板 memo 才能生效 — 小欧-2026-11-17
+  const handleLiveError = useCallback(
+    (liveError: LiveError) => setLiveError(liveError),
+    []
+  );
+  const handleStreamSuccess = useCallback(() => {
+    setLiveError(null);
+    void refreshTasksRef.current();
+  }, []);
+  const handleTasksChanged = useCallback(() => refreshTasksRef.current(), []);
+  const handleUrlSessionChange = useCallback(
+    (id: string | null) => {
+      setSearchParams(id ? { session_id: id } : {});
+    },
+    [setSearchParams]
+  );
   // 2026-11-02 小欧 - 流状态常驻 Store，本组件只订阅，不拥有流的生命周期
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
     sessionId: urlSessionId ?? undefined, // 未解析出真实 sessionId 时不 ensureSession
-    onError: (liveError: LiveError) => setLiveError(liveError),
+    onError: handleLiveError,
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
     // 2026-10-28 小欧 - 补 refreshTasks 兜底: 任务完成后刷新左栏任务状态(executing→completed)。
     //   根因: refresh 原只靠 useChainTokens 的 hasFinalStats(final_stats 帧)信号触发, 但 final_stats 帧
@@ -117,23 +135,27 @@ const ChatPage: React.FC = () => {
     //   → refresh 不触发 → 左栏状态永久卡 executing。onSuccess 是流结束的可靠信号(final 帧在后端 DB
     //   落库后补发, onComplete 时 DB 已落 status), 此处兜底 refresh 拉最新 status。refresh 幂等, 与
     //   finalStats 路径重复无害。经 ref 调用避免闭包陈旧。
-    onSuccess: () => {
-      setLiveError(null);
-      void refreshTasksRef.current();
-    },
+    onSuccess: handleStreamSuccess,
     // 2026-10-08 小欧 - 文档[11]: 插话被后端并入后重取左栏, 否则「追加N条」停在旧快照不出现
-    onTasksChanged: () => refreshTasksRef.current(),
+    onTasksChanged: handleTasksChanged,
     // 2026-09-30 小欧 - URL 写入唯一出口：本页是唯一与 Router 接触处。原生 pushState 不派发
     //   popstate、Router v7 只监听 popstate → urlSessionId 陈旧 → 写错会话
-    onUrlSessionChange: (id: string | null) => {
-      setSearchParams(id ? { session_id: id } : {});
-    },
+    onUrlSessionChange: handleUrlSessionChange,
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
+  // 2026-11-17 小欧 - 发送实现单独取出: 依赖收窄到函数本体, 不入整个 chatSend 对象
+  //   (useChatSend 每次渲染返回新对象字面量, 入它即等于每次换引用) — 小欧-2026-11-17
+  const sendHandler = chatSend.handleSend;
   const { sessionId } = chatState;
   // 2026-11-06 小欧 - 附件建会话写入(解构到组件作用域, 供 ensureSessionForUpload 依赖,
   //   避免 useCallback 内访问 chatState 触发 react-hooks/exhaustive-deps warning) — 小欧-2026-11-06
   const { setSessionId } = chatState;
+  // 2026-11-17 小欧 - 插话开关写入口定身份(同上): 原内联箭头每次渲染换引用, ChatInput memo 失效 — 小欧-2026-11-17
+  const { setAllowInterject } = chatState;
+  const handleToggleInterject = useCallback(
+    (v: boolean) => setAllowInterject(v),
+    [setAllowInterject]
+  );
   // 2026-11-03 小欧 - 顶栏主语发布(会话页口径): URL 不是权威(`/` 无 session_id 时顶栏报"无任务"), 本页显示哪个就报哪个。
   //   用 useLayoutEffect 而非 useEffect: 后者绘制后跑, 首帧会闪一次"别的会话/后台任务"的状态。
   useLayoutEffect(() => {
@@ -233,9 +255,11 @@ const ChatPage: React.FC = () => {
     async (content: string, opts: SendOpts) => {
       setLiveError(null);
       setRightOpen(true); // 2026-11-02 小欧 - 发送即展开右侧 step 面板（唯一发送入口，直线调用）
-      await chatSend.handleSend(content, opts);
+      await sendHandler(content, opts);
     },
-    [chatSend, setLiveError, setRightOpen]
+    // 2026-11-17 小欧 - 依赖收敛到真正调用的 handleSend: 原依赖整个 chatSend 对象, 而 useChatSend
+    //   每次渲染返回新对象字面量 → 本回调每渲染必换引用 → ChatInput 的 memo 永不命中 — 小欧-2026-11-17
+    [sendHandler, setLiveError, setRightOpen]
   );
 
   // 会话级 link 开关 — 纯本地态。值随消息落库, 勾选无需请求; 无 sessionId 也能勾选, 发消息时携带。
@@ -312,7 +336,7 @@ const ChatPage: React.FC = () => {
     handleSend,
     onToggleLink: handleToggleLink,
     allowInterject: chatState.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: 透传给 useChatPanels→ChatInput
-    onToggleInterject: (v: boolean) => chatState.setAllowInterject(v), // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatPage 是开关本地态唯一写入口
+    onToggleInterject: handleToggleInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatPage 是开关本地态唯一写入口
     // 2026-11-06 小欧 - 附件建会话
     ensureSession: ensureSessionForUpload,
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传

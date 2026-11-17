@@ -184,8 +184,9 @@ export const useChatFacade = (options?: {
       setLoading: chatState.setLoading,
       setIsPaused: chatState.setIsPaused,
       // [63] 5.14 连带：chatStreaming.setIsReceiving 已被 5.8 删除，改直连 Store
-      setIsReceiving: (v: boolean) =>
-        chatStreamStore.setReceiving(storeSessionId ?? '', v),
+      // 2026-11-17 小欧 - 复用 chatCallbacksStreaming.setIsReceiving(同一 storeSessionId 闭包),
+      //   原内联箭头每次渲染换引用 → resetUiFlags→handleCancel 级联失效, 面板 memo 命不中 — 小欧-2026-11-17
+      setIsReceiving: chatCallbacksStreaming.setIsReceiving,
     },
     states: {
       isPaused: chatState.isPaused,

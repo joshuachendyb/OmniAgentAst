@@ -239,4 +239,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
 ChatHeader.displayName = 'ChatHeader';
 
-export default ChatHeader;
+// 2026-11-17 小欧 - 流式期无关面板重渲治理: 外层包 memo — 标题/编辑态都是低频状态,
+//   流式 chunk 期间 props 恒稳, 命 memo 即不再随每个 chunk 重渲 — 小欧-2026-11-17
+const ChatHeaderMemo = React.memo(ChatHeader);
+
+export default ChatHeaderMemo;

@@ -77,4 +77,8 @@ const TopbarStats: React.FC<TopbarStatsProps> = ({
   );
 };
 
-export { TopbarStats };
+// 2026-11-17 小欧 - 流式期无关面板重渲治理: 外层包 memo — 顶栏统计的 5 个入参都是原始值/state 引用,
+//   SSE chunk 期间恒稳, 命 memo 即不再随每个 chunk 重渲 — 小欧-2026-11-17
+const TopbarStatsMemo = React.memo(TopbarStats);
+
+export { TopbarStatsMemo as TopbarStats };
