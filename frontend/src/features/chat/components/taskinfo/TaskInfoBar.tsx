@@ -91,6 +91,9 @@
 //   ②断线重连回放该帧会抹掉已流逝时间。taskStarted 门同步纳入权威起点(压缩期即走表) — 商量-2026-11-13
 // 2026-11-13 商量 - 间距归一: 组内 gap 改走全站间距语义档 Gap, 删子元素 marginLeft 叠加(改由父 gap 承担),
 //   事件行行高改走全站标准 LineHeight.DENSE — 商量-2026-11-13
+// 编辑历史: 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: final 帧回填事件列表时第3参捎带台账快照
+//   chatStreamStore.getSentRefLedger(sessionId, taskId)(feature 层取参传 api 层, 不在 service 层依赖 store;
+//   sessionId 缺省不携带), 随既有 process-events 端点直写后端 ref_ledger_json 列, 冷启动台账数据源就绪 — 小欧-2026-11-17
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -127,6 +130,8 @@ import { Gap, LineHeight } from '@/theme/spacing';
 import { formatTimeHMS, formatDurationHMS, parseTimeSafe } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18; 2026-11-13 商量: 实时秒表服务器时钟锚解析 — 商量-2026-11-13
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
+// [46b] P2b 小欧 2026-11-17: final 帧收尾上交台账快照(权威源在 store, 经调用点取参传 api 层)
+import { chatStreamStore } from '../../streams/chatStreamStore';
 import { TrustPanel } from '../config/TrustPanel';
 import { EllipsisTip } from './EllipsisTip';
 import { MetricItem } from './MetricItem';
@@ -228,11 +233,17 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     if (_sentRef.current === taskId) return;
     _sentRef.current = taskId;
     executionApi
-      .saveTaskProcessEvents(taskId, _latestRef.current)
+      // [46b] P2b 小欧 2026-11-17: 第3参捎带台账快照(feature 层取参传 api 层, 不进 service 层);
+      //   sessionId 缺省不携带(后端不覆盖台账列); send 幂等仍由 _sentRef+final 守卫保证
+      .saveTaskProcessEvents(
+        taskId,
+        _latestRef.current,
+        sessionId ? chatStreamStore.getSentRefLedger(sessionId, taskId) : undefined
+      )
       .catch((e) => {
         console.warn('[TaskInfoBar] 事件列表快照回填失败(不阻断):', e);
       });
-  }, [taskId, _hasFinal, detail]);
+  }, [taskId, _hasFinal, detail, sessionId]);
   // 2026-10-04 小欧: 占窗率=本轮 P / 运行时窗口(usage 帧的 context_window); 窗口缺失(历史任务/未收到帧)→ null 不显
   const windowUsePct =
     info.contextWindow && info.roundUsage

@@ -140,6 +140,10 @@
 # 2026-11-14 商量 - 新增 delete_user_message: 未投递消息补偿删除唯一出口(续跑失败/注入未命中),
 #   与 task_registry.inject_system_notice 共用, 不留用户可见但 agent 未读的 system_notice — 商量-2026-11-14
 # 2026-11-14 商量 - list_session_tasks merged_inputs 升级 {content,msg_kind}[], 同槽异标, SELECT 补 msg_kind 显式列
+# 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: update_task 白名单/JSON 序列化集合补
+#   ref_ledger/tool_paths 两字段(沿用 artifacts 模式, 缺省不覆盖); 新增 derive_tool_paths_from_steps
+#   派生单一真源(收尾落库与存量回填共用); list_session_tasks SELECT 带出两快照列并解析透出
+#   (前端零拼凑, 冷启动台账/推荐行数据源就绪)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -366,6 +370,30 @@ def _strip_thought_content(steps: list) -> list:
     ]
 
 
+# [46b] P2b 小欧 2026-11-17: 工具触达路径派生单一真源 — agent_runner 收尾落库与
+#   存量回填脚本共用(复用优先), 归一口径与 browse.root_relative 一致(根内得相对 posix, 根外跳过)
+def derive_tool_paths_from_steps(steps: list) -> list:
+    """[46b] P2b 小欧 2026-11-17: 从 execution_steps 派生工具触达的相对 posix 路径(去重保序)。
+    与前端 roundHits 同口径: 只取 type=action 步的 tools[].params.path, 经 browse.root_relative
+    归一为项目根相对路径(与 recentFiles.path 同键), 根外路径跳过; 项目根由 browse.root_relative
+    内部读 get_config().get_project_root()(`browse_service.py:217`), 无需外部传参。
+    收尾时调用一次, 替代前端 store 实时计算, 使推荐行冷启动不缺失。"""
+    out: list = []
+    seen: set = set()
+    for s in steps or []:
+        if not isinstance(s, dict) or s.get("type") != "action":
+            continue
+        for tool in s.get("tools") or []:
+            raw = tool.get("params", {}).get("path") if isinstance(tool, dict) else None
+            if not raw or not isinstance(raw, str):
+                continue
+            rel = browse.root_relative(raw)
+            if rel and rel not in seen:
+                seen.add(rel)
+                out.append(rel)
+    return out
+
+
 def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional[str] = None) -> Optional[list]:
     """从 chat_task_steps 表组装步骤列表（v2.0: 不再回退读 chat_messages.execution_steps）
     返回结构与原签名完全一致：命中返回 list[step_dict]（按 step_index 升序），未命中返回 []，
@@ -503,6 +531,7 @@ def update_task(
     total_steps: Optional[int] = None, retry_count: Optional[int] = None,
     error_type: Optional[str] = None, error_message: Optional[str] = None,
     artifacts: Optional[list] = None,
+    ref_ledger: Optional[list] = None, tool_paths: Optional[list] = None,
 ) -> None:
     """chat_tasks 任务终态 UPDATE（随任务结束，agent_runner finally 落库）— 幂等、缺省字段不覆盖 — 小欧 2026-08-16
     2026-11-03 小欧 - 补 status 词表校验: 非法值打 ERROR 并 fail-safe 落 failed(同 _STATUS_MAP 原则), 不阻断主链路。"""
@@ -517,10 +546,15 @@ def update_task(
                      ("duration", duration), ("accumulated_usage", accumulated_usage),
                      ("llm_call_count", llm_call_count), ("total_steps", total_steps),
                      ("retry_count", retry_count), ("error_type", error_type),
-                     ("error_message", error_message), ("artifacts", artifacts)):
+                     ("error_message", error_message), ("artifacts", artifacts),
+                     # [46b] P2b 小欧 2026-11-17: 补两渲染要素快照字段
+                     ("ref_ledger", ref_ledger), ("tool_paths", tool_paths)):
         if _val is not None:
-            _f.append(f"{_k} = ?")
-            _v.append(safe_json_dumps(_val) if _k in ("accumulated_usage", "artifacts") else _val)
+            # [46b] P2b 小欧 2026-11-17: 快照字段与列异名映射(ref_ledger→ref_ledger_json 等),
+            #   其余字段同名直写
+            _col = {"ref_ledger": "ref_ledger_json", "tool_paths": "tool_paths_json"}.get(_k, _k)
+            _f.append(f"{_col} = ?")
+            _v.append(safe_json_dumps(_val) if _k in ("accumulated_usage", "artifacts", "ref_ledger", "tool_paths") else _val)
     if not _f:
         return
     _f.append("updated_at = ?"); _v.append(get_local_iso_timestamp())
@@ -1174,7 +1208,9 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     rows = conn.execute(
         """SELECT task_id, user_input, response, status, duration, sessionModel,
                   total_steps, llm_call_count, context_link_mode, context_root_task_id, user_message_id,
-                  creation_source, created_at, updated_at
+                  creation_source, created_at, updated_at,
+                  -- [46b] P2b 小欧 2026-11-17: 带出渲染要素快照两列(任务接口一次携带, 前端零拼凑)
+                  ref_ledger_json, tool_paths_json
            FROM chat_tasks WHERE session_id=? ORDER BY id ASC""",
         (session_id,),
     ).fetchall()
@@ -1205,6 +1241,10 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
             for _m in _inj_by_task.get(d["task_id"], [])
             if _m["id"] != _reg_uid
         ]
+        # [46b] P2b 小欧 2026-11-17: 快照列解析为契约字段(与 artifacts 同款解析模式;
+        #   解析失败降级空数组, 不阻断列表)
+        d["ref_ledger"] = parse_json(d.pop("ref_ledger_json"), label="ref_ledger") or []
+        d["tool_paths"] = parse_json(d.pop("tool_paths_json"), label="tool_paths") or []
         out.append(d)
     latest_task_id = out[-1]["task_id"] if out else None   # ASC 后最末行为最新任务, 显式锚点 — 小欧 2026-08-30
     return out, total, latest_task_id

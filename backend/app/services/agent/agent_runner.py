@@ -199,6 +199,10 @@
 #   start_time 为 epoch 秒, 转 ISO 需 ×1000(格式化函数按毫秒) — 商量-2026-11-13
 # 2026-11-14 商量 - 协程句柄自登记: 首行 set_agent_task(task_id, current_task()), 取消可直达;
 #   编排层不再在 create_task 后 await 注册, 消除该窗口内断连导致快照被提前关闭 — 商量-2026-11-14
+# 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: 收尾 _finalize_task_db 从 current_execution_steps
+#   派生工具触达路径(tool_paths, 后端权威, 与前端 roundHits 同源同口径)经 update_task 落
+#   tool_paths_json 列; ref_ledger 权威源在前端 store, 不经此 finally 汇合(前端经扩展
+#   process-events 端点直写该列, 消"前端 POST 晚于 finally"时序竞态)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -232,7 +236,10 @@ from app.monitoring.agent_telemetry import (  # total_steps 口径单一真源(�
 )
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed
 from app.services.agent.steps import FinalStep  # 小欧 2026-07-18: 加 FinalStep（多态自包含终态）
-from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
+from app.services.chat.storage import (
+    derive_tool_paths_from_steps,
+    update_user_message_final,  # v2.0 改动2 — 小欧 2026-08-19; [46b] P2b 收尾派生 tool_paths — 小欧 2026-11-17
+)
 from app.services.chat.stream_event_journal import (
     append as journal_append,  # [63] 3.6.5 直连兜底注入 Journal sink
 )
@@ -843,6 +850,10 @@ async def run_agent_in_background(
                     _err_type, _err_msg = str(_last.get("error_type") or ""), str(_last.get("error_message") or "")
                 # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24): DB 部分(update_task+回填chat_user_message)进 atxn 子线程
                 def _finalize_task_db(conn):
+                    # [46b] P2b 小欧 2026-11-17: 收尾从 steps 派生工具触达路径(后端权威,
+                    #   与前端 roundHits 同源同口径), 经 update_task 写 tool_paths_json 列;
+                    #   ref_ledger 不经此处(前端 final 帧经扩展 process-events 端点直写, 消时序竞态)
+                    _tool_paths = derive_tool_paths_from_steps(current_execution_steps)
                     db_ops.update_task(
                         conn, status=_terminal_status, response=_terminal,
                         end_time=get_local_iso_timestamp(),
@@ -851,6 +862,7 @@ async def run_agent_in_background(
                         llm_call_count=getattr(agent, "llm_call_count", 0),
                         total_steps=_total, retry_count=getattr(agent, "_retry_count", 0),
                         error_type=_err_type, error_message=_err_msg,
+                        tool_paths=_tool_paths,
                         artifacts=getattr(getattr(agent, "telemetry", None), "_artifacts", None))
 
                     # 核心改动: 任务完成后回填 chat_user_message final 字段 — 小欧 2026-08-19

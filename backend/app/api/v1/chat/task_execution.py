@@ -2,10 +2,13 @@
 # v2.0 C1/C2 任务级回放与统计接口 — 小欧 2026-08-19
 # 2026-08-29 - 小沈 - 修复#17: 两端点读库由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 POST /chat/execution/task/{task_id}/process-events 端点 + ProcessEventsBody(不设条数上限/不校验 kind, 送什么存什么); 落库经 db.atxn offload(同文件 C1/C2 范式), 存在性用轻量 SELECT 1(不用 get_task_detail 避白跑解析), 404 显式回抛、其余异常只记日志不阻断 — 小欧-2026-10-11
+# 2026-11-17 - 小欧 - [46b] P2b 任务列表数据契约对齐: ProcessEventsBody 增可选 ref_ledger(前端 final 帧上交的引用台账 wire 快照, 权威源在前端 store), 端点在 save_process_events 后直写 chat_tasks.ref_ledger_json 列(任务已终态, 幂等覆盖, 只写本列不触其他字段) — 小欧-2026-11-17
 """
 task_execution — C1 任务详情统计 + C2 按 task_id 步骤回放
 落在 chat 域（与 execution_stream C3 同域）
 """
+from typing import Optional  # [46b] P2b: ProcessEventsBody.ref_ledger 可选字段
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -18,6 +21,7 @@ from app.services.chat.storage import (
     load_user_message_by_task,
     save_process_events,
 )
+from app.utils.json_utils import safe_json_dumps  # [46b] P2b: 台账快照列与 artifacts 同模式序列化
 
 router = APIRouter()
 
@@ -31,6 +35,8 @@ class ProcessEventsBody(BaseModel):
     typescript 侧对应: TaskDetail.process_events(历史回放读侧) — 小欧-2026-10-11
     """
     events: list = Field(default_factory=list)
+    # [46b] P2b 小欧 2026-11-17: 可选引用台账快照(wire 形态, 前端 final 帧上交, 只存路径不存正文)
+    ref_ledger: Optional[list] = None
 
 
 @router.get("/chat/execution/task/{task_id}")
@@ -84,6 +90,11 @@ async def save_task_process_events_endpoint(task_id: str, body: ProcessEventsBod
         if not exists:
             raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
         save_process_events(conn, task_id, body.events)
+        # [46b] P2b 小欧 2026-11-17: 台账快照同通道直写列(前端 POST 时任务已终态, 无需
+        #   finally 汇合, 幂等覆盖; 只写本列, 不经 update_task 避免误触其他字段)
+        if body.ref_ledger is not None:
+            conn.execute("UPDATE chat_tasks SET ref_ledger_json=? WHERE task_id=?",
+                         (safe_json_dumps(body.ref_ledger), task_id))
     try:
         await db.atxn("chat", _write)
     except HTTPException:

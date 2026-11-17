@@ -106,6 +106,9 @@
 # 2026-11-13 商量 - 后台命令续跑两维标记: chat_tasks 加 creation_source
 #   (任务级来源 user/system_resume) + chat_user_message 加 msg_kind(消息级 user/system_notice);
 #   新建 DDL 与存量库 _ensure_column 幂等补列同源, 存量行 DEFAULT 兜底(零退化)。
+# 2026-11-17 小欧 - [46b]任务列表数据契约对齐: chat_tasks 加 ref_ledger_json/tool_paths_json
+#   两个 JSON 快照列(新建 DDL 与存量库 _ensure_column 幂等补列同源, DEFAULT '[]' 存量行零退化);
+#   快照列零 JOIN/零额外查询, 任务接口一次携带, 台账/推荐行冷启动数据源就绪
 
 """
 db_initializer — 数据库初始化
@@ -179,6 +182,12 @@ def init_chat_db(get_conn):
                 llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
                 retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   -- 最大步骤数上限（文档2 3.5.3）
                 error_type TEXT, error_message TEXT,
+                -- [46b] P2b 小欧 2026-11-17: 任务渲染要素快照两列(数据契约对齐)。
+                --   ref_ledger_json: 本任务引用台账 wire 快照(前端收尾上交, 只存路径不存正文);
+                --   tool_paths_json: 本任务工具触达相对 posix 路径去重数组(后端从 steps 派生, 推荐行依据)。
+                --   快照列而非新表: 仅任务点查无跨任务聚合需求(YAGNI), 零 JOIN 零 N+1。
+                ref_ledger_json TEXT DEFAULT '[]',
+                tool_paths_json TEXT DEFAULT '[]',
                  ai_message_id INTEGER,  -- v2.0 改动9新增: task→assistant 消息直达（与 user_message_id 对称），与 chat_task_steps.ai_message_id 同名贯通 — 小欧 2026-08-19
                 creation_source TEXT NOT NULL DEFAULT 'user',  -- 任务创建来源(user/system_resume/system_triggered) — 商量 2026-11-13
                 created_at TEXT, updated_at TEXT,
@@ -416,6 +425,9 @@ def init_chat_db(get_conn):
         # 任务创建来源(续跑/系统触发判定)与消息类型(系统通知语义), 存量行 DEFAULT 兜底 — 商量 2026-11-13
         _ensure_column(conn, "chat_tasks", "creation_source", "TEXT NOT NULL DEFAULT 'user'")
         _ensure_column(conn, "chat_user_message", "msg_kind", "TEXT NOT NULL DEFAULT 'user'")
+        # [46b] P2b 小欧 2026-11-17: 渲染要素快照两列, 存量行 DEFAULT '[]' = 无台账/无推荐依据(零退化)
+        _ensure_column(conn, "chat_tasks", "ref_ledger_json", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "chat_tasks", "tool_paths_json", "TEXT DEFAULT '[]'")
         # 2026-10-15 小欧 - 会话信任 TTL 落列(存量库幂等补)。无 DEFAULT,
         #   历史行读出 NULL = 不过期, 语义与改动前一致(存量信任不被误杀)。— 小欧-2026-10-15
         _ensure_column(conn, "chat_session_trust", "expires_at", "TEXT")
