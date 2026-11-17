@@ -808,7 +808,8 @@
   color: var(--md-color-text);
 }
 
-/* 行内代码: 浅灰底 + 深色字(对比约 11.7:1, 远超 AA) + 2px 品牌色左线作品牌标识 */
+/* 行内代码: 浅灰底 + 深色字(对比约 11.7:1, 远超 AA);
+   左标识线 2px 仍在, 色值取 --md-color-code-accent, 2026-11-17 起为 transparent(线不可见, 声明保留) */
 .md-body code {
   font-family: var(--md-font-mono);
   font-size: var(--md-fs-inline-code);
