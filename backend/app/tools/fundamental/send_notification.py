@@ -30,6 +30,7 @@ from app.tools.tool_constants import (
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_error, build_success
 from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
+from app.utils.proc_io import isolation_kwargs  # 2026-11-15 小欧: 统一出口([42] P4); 2026-11-16 并入 proc_io
 
 
 def _check_module(module_name: str) -> bool:
@@ -76,7 +77,7 @@ def _show_toast_detached(title: str, message: str, duration: int) -> None:
         [sys.executable, "-c", code],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
+        **isolation_kwargs(),   # 2026-11-15 小欧: 统一出口([42] P4), 含 stdin=DEVNULL + startupinfo
     )
 
 

@@ -10,6 +10,8 @@
 // 编辑历史: 2026-10-30 小欧 - 现场证据(北京老陈): 任务运行期间前端每 5s 轮询 listTasks,
 //   用户没做任何操作却弹「后端响应超时，请重试」; 后台轮询不是用户动作(他不知道、也无法"重试"),
 //   故本端点置 _silent 不弹全局 toast, 失败由各调用方自行收口自愈 — 小欧-2026-10-30
+// 编辑历史: 2026-11-13 商量 - SessionTaskItem 补 creation_source(后端 chat_tasks 新列), 供 TaskListPanel 续跑徽标判定 — 商量-2026-11-13
+// 编辑历史: 2026-11-14 商量 - SessionTaskItem.merged_inputs 由 string[] 升级 {content,msg_kind}[], 供同槽异标; 禁 backward 双读 — 商量-2026-11-14
 import api from './client';
 import type { ApiRequestConfig } from './client';
 
@@ -89,8 +91,8 @@ export const taskControlApi = {
 export interface SessionTaskItem {
   task_id: string;
   user_input: string;
-  /** 2026-09-28 小欧: 本任务吸收的追加注入消息(loop 中用户又发的消息) */
-  merged_inputs?: string[];
+  /** 2026-11-14 商量: 契约升级 {content,msg_kind}[] — 同槽异标; 禁 backward 双读 */
+  merged_inputs?: { content: string; msg_kind: string }[];
   response?: string;
   status: string;
   duration: number | null;
@@ -103,6 +105,8 @@ export interface SessionTaskItem {
   context_link_mode?: 'linked' | 'independent';
   // 本任务所属对话组根任务ID(后端已返回)。TaskListPanel 组号徽标的唯一分组键(落库恒非空)。
   context_root_task_id?: string;
+  // 任务创建来源(后端 chat_tasks.creation_source): user=用户, system_resume=后台命令完成续跑 — 商量-2026-11-13
+  creation_source?: 'user' | 'system_resume' | 'system_triggered';
 }
 
 export interface SessionTasksResponse {

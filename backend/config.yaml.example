@@ -533,6 +533,11 @@ media:
 #       (开=显示代码变更对比; 关=隐藏Diff视图)
 # 四个开关互不干涉: 各自控制独立渲染维度 — 小欧-2026-10-26
 appearance:
+  # 阅读区字号(px): 只作用长文阅读区(文件预览 md 美显 / 设置页说明弹框), 可选 12/14/16;
+  #   不影响流水线正文与任务卡回复区。缺省 14。
+  fontSize: 14
+  # 界面密度: comfortable(舒适, 默认) / compact(紧凑) —— 控件高与阅读区间距, 不改字号。
+  density: comfortable
   step_render:
     thoughtMarkdown: true
     reasoningVisible: true
@@ -623,10 +628,15 @@ tuning:
     max_keepalive: 5               # 空闲保留连接条数供复用;0=用完即断
     stream_total_timeout: 500      # 单次回答从头到尾总时长上限,到点强制掐断(与间隔超时分工:本管总长)
 
-  # 并发配额（2 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  # 并发配额（3 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   concurrency:
     soft_pool_wait_timeout: 30.0   # 排队最多等N秒,超时不排了照样放行(防任务卡死)
     shell_max_processes: 10        # 同时执行的shell子进程总数上限(每个约40MB),跑完即销毁不常驻 — 小欧-2026-11-06
+    shell_max_background: 5        # 后台命令并发上限(超出拒绝并提示稍后);后台命令无超时,完成自动通知续跑 — 商量-2026-11-13
+
+  # 后台命令结果文件（2 键）— 商量-2026-11-13
+  shell_bg_max_output_mb: 512    # 单条后台命令输出上限MB,超限强杀防磁盘写满;并发5条峰值约2.5GB;0=不限
+  shell_bg_result_retain_hours: 24 # 后台命令结果文件保留N小时,到期惰性清理
 
   # Agent 循环参数（2 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   agent:

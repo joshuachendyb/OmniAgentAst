@@ -1,7 +1,10 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置2版页面入口（同旧页骨架，白底 Card + Tabs 由 SettingsPage 承载）
 // 2026-10-10 22:50 小欧 - 控件高度覆盖为 28（北京老陈指令：不许拿 UI 库默认高度当标准）。
-//   推导与依据全部写在 settingsTokens.ts 的 SETTINGS_CONTROL_HEIGHT 注释里，此处只做落地。
+//   推导与依据写在 settingsTokens.ts 的 SETTINGS_CONTROL_HEIGHT 注释里，此处只做落地。
 //   作用域刻意只包设置页：聊天侧/其他页控件密度诉求不同，不被这一刀连带影响。
+//   ⚠ 2026-11-12 小欧 - 该常量的推导正文已随控件规格迁至 theme/controlScale.ts（文档[32]：
+//     控件规格是**全站**规格, 留在设置页令牌里会造成跨域反向依赖; 且控件高要随密度变化,
+//     常量表达不了 → 由 controlScale 的 token 构造器按密度解算）。本行仅存历史说明。
 // 2026-10-10 23:05 小欧 - 圆角统一 4px + 开关改 40x18（北京老陈指令：antd 各组件各自默认圆角/开关尺寸，
 //   必须全量核查统一，不许沿用库的缺省值）。审计实测原状：
 //   圆角 Input6/Select4/Btn默认4/Btn主键6/Btn链接6/Checkbox4/Tag4；开关 44x22 且带 1px 边框。
@@ -12,12 +15,16 @@
 import React from 'react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+
 import SettingsPage from '@/features/settings2/components/SettingsPage';
-import {
-  SETTINGS_CONTROL_HEIGHT,
-  SETTINGS_RADIUS,
-  SETTINGS_SWITCH,
-} from '@/theme/settingsTokens';
+import { SETTINGS_SWITCH } from '@/theme/settingsTokens';
+// 2026-11-12 小欧 - 控件高改随界面密度(文档[32] 全站控件刻度统一):
+//   本页 ConfigProvider 原硬写 controlHeight=28 + SETTINGS_RADIUS=4, 会**覆盖**根下发的
+//   密度值 → 密度对本页无效; 且控件高/圆角真源散落两处(本页 + 根)。
+//   现统一读 pageControlTokens(density): 控件高取全站刻度(normal 随密度), 圆角取本页
+//   逐页审计结论(全档 4, 须显式补发 LG, 否则继承全局 8)。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
+import { pageControlTokens } from '@/theme/controlScale';
 
 /**
  * 开关轨道精确覆盖 —— 为什么必须用 CSS 而非 antd token：
@@ -65,25 +72,20 @@ const switchCss = `
 .ant-switch { align-self: center; }
 `;
 
-const Settings2: React.FC = () => (
-  <ConfigProvider
-    locale={zhCN}
-    theme={{
-      token: {
-        // 28px / 4px 均为本项目设置页设计值，推导见 settingsTokens，非库默认 32 / 6
-        controlHeight: SETTINGS_CONTROL_HEIGHT,
-        // 2026-10-10 23:15 小欧 - 按钮高度统一：实测「检查服务」(size=small) 24px 与
-        //   「保存全部」(默认) 28px 并排时底边不齐。本页 15 处 size="small" 均无"更紧凑"的
-        //   独立诉求（都是行内操作/表单尾部），故把 small 档也拉到 28，全页按钮只留一个高度。
-        //   （此 token 的正确用法是统一按钮；开关另走下方 CSS，两者不混用。）
-        controlHeightSM: SETTINGS_CONTROL_HEIGHT,
-        borderRadius: SETTINGS_RADIUS,
-      },
-    }}
-  >
-    <style>{switchCss}</style>
-    <SettingsPage />
-  </ConfigProvider>
-);
+const Settings2: React.FC = () => {
+  // 2026-11-12 小欧 - 控件高随密度(全站刻度, 文档[32])
+  const { density } = useAppearancePrefs();
+  return (
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        token: pageControlTokens(density),
+      }}
+    >
+      <style>{switchCss}</style>
+      <SettingsPage />
+    </ConfigProvider>
+  );
+};
 
 export default Settings2;

@@ -1,0 +1,56 @@
+// 编辑历史:
+// 2026-11-16 小欧 新建: [23]阶段D D12 —— 引用 chips → 后端 preflight items 纯投影
+//   (零识别/零质量判定, 分类与质量仍由 contract 唯一裁决);
+//   preflightItemKey 与后端 preflight._item_key 同口径, 供按 key 回写逐项 quality — 小欧-2026-11-16
+
+// 2026-11-16 小欧 修正: 投影与签名跳过 pending 占位项(未落定条目不上送)
+
+// 2026-11-16 opencode 修正: 投影补 lineRange, preflightItemKey 拼入行区间, 与后端去重键同口径;
+//   同一文件的不同选区不再同键互标重复。
+
+
+/**
+ * preflightItems —— 引用条 → 输入预检 items 的纯投影(单一实现)
+ *
+ * 目的: D12 全量重算把"仅 URL 采集时预检"升级为"Composer 级重算"——把既有 chips
+ *   投影成后端 items, 由后端 preflight 统一裁决逐项 quality/worst_quality/routing_advice。
+ *   本模块不做识别、不做质量判定、不发请求。
+ */
+import type { ComposerRef } from './store';
+import { refKeyOf } from './identity';
+
+/** 投影为后端 PreflightIn.items 形态(字段与 contract.classify_ref 入参对齐); 跳过未落定占位项 */
+export const refsToPreflightItems = (
+  refs: ComposerRef[]
+): Array<Record<string, unknown>> =>
+  refs
+    .filter((r) => !r.pending)
+    .map((r) =>
+    r.kind === 'url'
+      ? { kind: 'url', url: r.url ?? r.path }
+      : r.kind === 'attachment'
+        ? {
+            kind: 'attachment',
+            attachment_id: r.attachment_id,
+            path: r.path,
+            mime: r.mime,
+            size: r.size,
+          }
+        : { kind: r.kind, path: r.path, mime: r.mime, size: r.size, lineRange: r.lineRange }
+  );
+
+/** 条目去重键: 与后端 preflight._item_key 同口径(url→url; 其余 path/attachment_id/label+行区间) */
+export const preflightItemKey = (r: ComposerRef): string => {
+  if (r.kind === 'url') return String(r.url ?? r.path ?? '');
+  const base = String(r.path || r.attachment_id || r.label || '');
+  const stamp = r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : '';
+  return base && stamp ? `${base}#${stamp}` : base;
+};
+
+/** 重算触发签名: 归一 key 排序串(条目增删/替换/占位落定即变, 逐项 quality 回写不触发) */
+export const refsSignature = (refs: ComposerRef[]): string =>
+  refs
+    .filter((r) => !r.pending)
+    .map(refKeyOf)
+    .sort()
+    .join('\n');

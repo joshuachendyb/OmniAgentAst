@@ -7,6 +7,17 @@
 #   新增 _read_capped/_b64; 压缩/缓存/外链准入原样保留 — 小欧-2026-11-11
 # 2026-11-11 小欧 增 URL 直传方言: build_url_part 按 content_kind 分派 video_url/audio_url;
 #   to_wire_part 补 video/audio 外链 part(内联仍按原降级口径) — 小欧-2026-11-11
+#
+# 2026-11-14 商量 视频内联注记: 本地 video 默认回落文本卡。原因非配额限制, 而是方言边界——
+#   OpenAI 兼容 chat 无视频内联 part, video_url 需厂商侧可直连 GET(私有本地文件无公网地址)。
+#   待实现视频功能时按 provider 定制: provider 声明支持视频内联(如 Gemini inline_data video/mp4)
+#   则在此产 inline part, 能力判定复用 probe_model_media 三态, 不做一刀切 — 商量-2026-11-14
+#
+# 2026-11-14 小欧 音频格式不猜: to_wire_part 按 mime 精确映射 wav/mp3(mpeg→mp3), 非白名单容器
+#   返回失败由调用方回落文本卡, 消原"其它容器默认标 wav"误标 — 小欧-2026-11-14
+
+# 2026-11-16 小欧 bug猎修: url_reject_reason 拦非规范点分 IP 字面量(整数/十六进制/八进制/
+#   缩写点分/尾点变体此前全部放行, 实际指向本机/内网)
 
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
@@ -38,6 +49,7 @@ def media_config() -> Dict[str, Any]:
 
 
 def inline_limit_bytes() -> int:
+    # 本机可调阈值(media.inline_limit_mb, 默认 2MB), 非外部协议上限; 单机自有资源可放宽。
     try:
         mb = float(media_config().get("inline_limit_mb") or 2)
     except (TypeError, ValueError):
@@ -133,6 +145,14 @@ def url_reject_reason(url: str) -> str:
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
+        # 非规范点分形式的 IP 字面量(整数/十六进制/八进制/缩写点分/尾点)同样指向内网,
+        # 必须拦: 逐段纯数字或 0x 十六进制段即判编码 IP, 不解析不翻案 — 小欧-2026-11-16
+        stripped = host.rstrip(".")
+        parts = stripped.split(".")
+        if stripped.isdigit() or all(
+                p.isdigit() or (p[:2].lower() == "0x" and all(c in "0123456789abcdef" for c in p[2:]))
+                for p in parts if p):
+            return "不接受内网/保留地址"
         return ""  # 域名放行(不解析)
     # is_global 一处覆盖回环/内网/链路本地/保留/CGNAT(100.64/10); 组播单独判(224/4 的 is_global 为真) — 小欧-2026-11-08
     if ip.is_multicast or not ip.is_global:
@@ -208,12 +228,19 @@ def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Option
     if modality == "video":
         if url:
             return {"type": "video_url", "video_url": {"url": url}}, ""
+        # provider 定制点: chat 方言无视频内联 part; 待视频功能落地时, 对声明支持视频内联的
+        #   provider(如 Gemini inline_data video/mp4)在此产内联 part, 其余仍回落文本卡。
         return None, "该传输方言不支持视频内联"
     if modality == "audio":
         if url:
             return {"type": "audio_url", "audio_url": {"url": url}}, ""
         mime = str(logical.get("mime") or "")
-        fmt = mime.rpartition("/")[2] if mime.rpartition("/")[2] in ("wav", "mp3") else "wav"
+        sub = mime.rpartition("/")[2].lower()
+        fmt = {"wav": "wav", "wave": "wav", "x-wav": "wav",
+               "mpeg": "mp3", "mp3": "mp3"}.get(sub)
+        if not fmt:
+            # 不猜格式: 非 wav/mp3 容器显式回落, 防把 ogg/m4a 误标 wav 交给厂商
+            return None, "不支持的音频容器(仅 wav/mp3 可原生投递)"
         return {"type": "input_audio",
                 "input_audio": {"data": _b64(logical.get("data")), "format": fmt}}, ""
     return None, f"该模态无 {dialect} 方言实现"

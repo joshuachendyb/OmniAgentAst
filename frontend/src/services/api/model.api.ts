@@ -94,6 +94,11 @@ export interface ModalityProbeRec {
   source?: string;
 }
 
+
+/** 引用质量四值(与后端 contract.QUALITIES 同源, 前端禁止再派生) — 小欧-2026-11-14 */
+export type RefQuality = 'native' | 'text_full' | 'meta_only' | 'link_only';
+
+
 export interface ModelEntry {
   name: string;
   label: string;
@@ -114,9 +119,9 @@ export interface ModelEntry {
   max_output_length?: number | null;
   /** 媒体传输探测结果(实测得出，非厂商声明)；未探测 → undefined。 — 小欧-2026-11-08 */
   media?: MediaProbe;
-  /** 附件/文件引用能力二维投影(source_kind → content_kind → 三态)；
-   *  后端 contract.ref_capability_map 生成, 徽标只读索引不推导 — 小欧-2026-11-11 */
-  ref_capability_map?: Record<string, Record<string, 'native' | 'degraded' | 'opaque'>>;
+  /** 附件/文件引用质量二维投影(source_kind → content_kind → quality 四值)；
+   *  后端 contract.ref_quality_map 生成, 徽标只读索引不推导 — 小欧-2026-11-14 */
+  ref_quality_map?: Record<string, Record<string, RefQuality>>;
   /** 上次验证回执(未定结论也记原因)；与 media 分键，只供界面常驻显示 — 小欧-2026-11-09 */
   last_probe?: ProbeLastMap;
 }

@@ -25,6 +25,9 @@
 //   setErr/showMessage 给出局部可见提示，全局 toast 属重复且文案更含糊；probeRef 不传（无局部反馈）— 小欧-2026-10-30
 // 2026-11-03 小欧 - 复制路径/文件名 Tooltip 弃用 deprecated 的 overlayInnerStyle, 改 styles.body
 //   (同一常量喂 4 处, 不折行与自适应宽度不变) — 小欧-2026-11-03
+// 2026-11-12 小欧 - 阅读排版消费外观偏好的字号与间距档: MarkdownSlot 传 scene="preview" 与 base(当前字号档),
+//   预览区随设置档位变化, 流水线正文不消费(作用域限定) — 小欧-2026-11-12
+// 2026-11-13 商量 - 字重归位: 硬编码 fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -64,12 +67,17 @@ import { chatTokens } from '@/theme/tokens';
 import {
   Colors,
   FontFamily,
+  FontSize,
+  FontWeight,
   MonoLineHeight,
   Spacing,
 } from '@/utils/stepStyles';
 // 2026-10-21 小杨 - md 双模与代码高亮：md 复用系统唯一 markdown 渲染入口
 //   （聊天/设置页同源 MarkdownSlot）；代码高亮走同目录 highlight 单点（prismjs）
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
+// 2026-11-12 小欧 - 阅读区排版消费外观偏好(阅读区字号/界面密度): 文件预览是阅读区场景,
+//   字号与间距随设置项变; 流水线不消费(见 utils/markdownStyles 的作用范围)。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
 import { highlightLine, langOf } from './highlight';
 import { PreviewNoticeCard } from './PreviewNoticeCard';
 
@@ -134,6 +142,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
 }) => {
   const [text, setText] = useState<ReadResponse | null>(null);
   const projectRoot = useProjectRoot();
+  // 2026-11-12 小欧 - 阅读区外观偏好(字号/密度): 本组件是 preview 场景消费点
+  const appearance = useAppearancePrefs();
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
@@ -659,7 +669,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               style={{
                 color: Colors.ERROR,
                 fontSize: chatTokens.fontMD,
-                fontWeight: 600,
+                fontWeight: FontWeight.BOLD,
                 border: `1px solid ${Colors.ERROR}`,
                 borderRadius: 4,
                 padding: '1px 8px',
@@ -682,7 +692,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               style={{
                 color: Colors.TEXT.STRONG,
                 fontSize: chatTokens.fontMD,
-                fontWeight: 600,
+                fontWeight: FontWeight.BOLD,
                 maxWidth: '10em',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -800,7 +810,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           }}
         >
           {/* 美显模式同样限行：markdown 渲染 2MB 全文会卡死页面（文本模式已限 2000 行） */}
-          <MarkdownSlot text={beautyText} markdown />
+          <MarkdownSlot
+            text={beautyText}
+            markdown
+            scene="preview"
+            base={appearance.fontSize}
+            density={appearance.density}
+          />
           {beautyTruncated && (
             <div style={{ color: Colors.WARNING, fontSize: chatTokens.fontSM }}>
               美显模式只渲染前 {visibleLines}{' '}
@@ -820,7 +836,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             //   在 Windows 上 ui-monospace 实解析为浏览器默认等宽(Courier New), 与仓库其余代码文本
             //   两套字形并存 → 统一到令牌(Sarasa Mono SC 栈首)。 — 小欧-2026-10-22
             fontFamily: FontFamily.MONO,
-            fontSize: 13,
+            // 2026-11-12 小欧 - 归位 CODE(12): 文件「文本/代码模式」等宽代码区, 与仓内其余 37 处
+            //   FontSize.CODE 统一(原 13px 裸值是 13px 半档禁令未落地的残留)
+            fontSize: FontSize.CODE,
             // 2026-10-22 小欧 - 行高 1.6 → MonoLineHeight(1.1): 原 1.6 时 │ 等框线字符的墨迹高
             //   (1.12–1.17em)不够, 行间留缝 → 文本模式里的框线竖线断成虚线 — 小欧-2026-10-22
             lineHeight: MonoLineHeight,

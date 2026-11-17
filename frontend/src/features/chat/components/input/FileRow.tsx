@@ -1,11 +1,13 @@
 // 编辑历史: 2026-11-02 小欧 - 尺寸令牌: Spacing.XXL=20/Radius.CONTAINER=12/Size.HEADER_HEIGHT=43(Layout壳/NavContent/LayoutSkeleton跨文件同值收口, 零视觉差) — 小欧-2026-11-02
 // 编辑历史: 2026-11-07 小欧 - Colors.BG 新增 SELECTED=#e6f4ff(antd blue-1): 文件抽屉列表行「已加入」底与左栏导航选中底共用(收口两处硬编码) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧: 附件列表行统一组件(勾位/类型图标/文件名/次行/☆ 收藏/⋯ 更多),
-//   供「最近用过/本会话/已收藏/任务产物/合集」复用; 键盘焦点态由 active 传入; 点文件名回调预览 — 小欧-2026-11-07
+//   供「本会话附件/他会话附件/已收藏/本会话产物/合集」复用; 键盘焦点态由 active 传入; 点文件名回调预览 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧: 色值令牌化 —— 选中底改 Colors.BG.SELECTED, 收藏星改 Colors.WARNING(与全站警告色同源),
 //   消两处硬编码 — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/修复序号/评审引用等过期标识, 注释语义不变 — 小欧-2026-11-07
-// 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 CapabilityBadge(state/contentKind) — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 QualityBadge(quality) — 小欧-2026-11-14
+// 编辑历史: 2026-11-14 小欧 - iconOf 修 PDF 图标死代码: 原 PDF 分支在 richdoc 之后永不达; 改为按
+//   mime/文件名先判 PDF, 补 name 入参(产物行无 mime 时靠 .pdf 后缀识别) — 小欧-2026-11-14
 /**
  * FileRow —— 文件抽屉的列表行（唯一实现）
  *
@@ -34,16 +36,21 @@ import {
 } from '@ant-design/icons';
 
 import { Colors, FontSize } from '@/utils/stepStyles';
-import { CapabilityBadge, type CapabilityState } from './CapabilityBadge';
+import { QualityBadge } from './QualityBadge';
+import type { RefQuality } from '@/services/api/model.api';
 
-/** 按 kind 取类型图标（record.kind 权威，mime 仅兜底；线性图标，无 emoji） */
-function iconOf(kind: string | undefined, mime: string): React.ReactNode {
-  const k = kind || (mime.startsWith('image/') ? 'image' : mime === 'application/pdf' ? 'richdoc' : '');
+/** 是否 PDF: mime 优先, 产物行无 mime 时退回文件名后缀 */
+const isPdf = (mime: string, name: string): boolean =>
+  mime === 'application/pdf' || name.toLowerCase().endsWith('.pdf');
+
+/** 按 kind 取类型图标（record.kind 权威，mime/文件名仅兜底；线性图标，无 emoji） */
+function iconOf(kind: string | undefined, mime: string, name: string): React.ReactNode {
+  const k = kind || (mime.startsWith('image/') ? 'image' : isPdf(mime, name) ? 'richdoc' : '');
   if (k === 'image') return <FileImageOutlined />;
   if (k === 'video') return <VideoCameraOutlined />;
   if (k === 'audio') return <CustomerServiceOutlined />;
+  if (isPdf(mime, name)) return <FilePdfOutlined />;
   if (k === 'richdoc' || k === 'text') return <FileTextOutlined />;
-  if (mime === 'application/pdf') return <FilePdfOutlined />;
   return <FileOutlined />;
 }
 
@@ -54,8 +61,8 @@ export interface FileRowProps {
   mime?: string;
   /** 附件权威类型(七类), mime 仅兜底 — 小欧-2026-11-11 */
   kind?: string;
-  /** 当前模型对该内容类型的能力状态(ref_capability_map 只读索引) — 小欧-2026-11-11 */
-  capState?: CapabilityState;
+  /** 当前模型对该内容类型的引用质量(ref_quality_map 只读索引) — 小欧-2026-11-14 */
+  capQuality?: RefQuality;
   /** 已加入本轮 */
   added?: boolean;
   /** 已收藏（同 sha 存在全局行） */
@@ -87,7 +94,7 @@ const FileRow: React.FC<FileRowProps> = ({
   meta,
   mime = '',
   kind,
-  capState,
+  capQuality,
   added = false,
   favorited = false,
   invalid = false,
@@ -139,7 +146,7 @@ const FileRow: React.FC<FileRowProps> = ({
       {invalid ? (
         <WarningOutlined style={{ color: Colors.ERROR_TEXT }} />
       ) : (
-        iconOf(kind, mime)
+        iconOf(kind, mime, name)
       )}
     </span>
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -168,7 +175,7 @@ const FileRow: React.FC<FileRowProps> = ({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {meta}
             {added ? ' · 已加入' : ''}
-            {capState && <CapabilityBadge state={capState} contentKind={kind} />}
+            {capQuality && <QualityBadge quality={capQuality} />}
           </span>
         )}
       </div>

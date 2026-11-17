@@ -40,6 +40,14 @@
 #   该端点前端零调用, 即零消费死端点, 与 5.7.5/5.7.6 同类同判据(YAGNI)。写入口收敛为唯一一条:
 #   消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
 # 2026-10-24 - 小欧 - create_session 标题截断200字符: useChatSend 把完整消息内容当标题, SessionCreate.title 无长度限制致超长标题入库, 后续 update_session 的 SessionUpdate.title max_length=200 校验必422。在此截断根治。
+# 2026-11-16 - 小欧 - [23]阶段D: SessionUpdate/SessionResponse/update_session/list_sessions/get_session_info 增 routingMode
+#   (会话级能力路由模式 suggest/auto/strict; 存量 NULL 读出归一 suggest) — 小欧-2026-11-16
+
+# 2026-11-16 - 小欧 - 修正: get_session_info 输出乐观锁 version 真值(此前单会话 GET 不返回, 前端 409
+#   回读恒兜底为 1 反污染共享版本); update_session 只回 success+version, 不再回显请求入参值
+# 2026-11-16 - 小欧 - bug猎修: list_sessions/create_session 补 version 真值出口(此前仅 get_session_info
+#   返回, 列表刷新/新建后前端无锁基准, 乐观锁保护出现空窗)
+
 """
 session_service — 会话业务服务(services/chat)
 
@@ -48,7 +56,7 @@ API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
 import json
 import uuid
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -81,6 +89,7 @@ class SessionUpdate(BaseModel):
     version: Optional[int] = Field(None, ge=1, description="乐观锁版本号")
     updated_by: Optional[str] = Field(None, description="修改者")
     sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2, 结构化 provider+model), None/不带=不改动; 显式传 null=清空跟随全局")
+    routingMode: Optional[Literal["suggest", "auto", "strict"]] = Field(None, description="会话级能力路由模式, None/不带=不改动; 显式传 null=清空回默认 suggest")
 
 
 def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
@@ -127,7 +136,8 @@ def create_session(session_create):
         created_at=local_time,
         updated_at=local_time,
         message_count=0,
-        is_valid=is_valid
+        is_valid=is_valid,
+        version=1,
     )
 
 
@@ -148,7 +158,8 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel, routingMode, "
+            f"COALESCE(version, 1) as version "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
@@ -165,7 +176,9 @@ def list_sessions(
             updated_at=format_timestamp(row['updated_at']),
             message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
-            sessionModel=parse_session_model(row['sessionModel'])
+            sessionModel=parse_session_model(row['sessionModel']),
+            routingMode=row['routingMode'] or "suggest",
+            version=row['version'],
         )
         for row in rows
     ]
@@ -180,8 +193,9 @@ def update_session(session_id: str, update_data: SessionUpdate):
     用 exclude_unset 区分"未提供/显式清空/设置": 仅用户实际传入的字段进 SET; sessionModel 以 JSON 结构化落库;
     version 仅自增一次; 乐观锁(version 提供且不符则 409)。"""
     provided = update_data.model_dump(exclude_unset=True)
-    if "title" not in provided and "sessionModel" not in provided:
-        raise HTTPException(status_code=400, detail="标题或模型覆盖至少提供一个")
+    if ("title" not in provided and "sessionModel" not in provided
+            and "routingMode" not in provided):
+        raise HTTPException(status_code=400, detail="标题、模型覆盖或路由模式至少提供一个")
     try:
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
@@ -211,6 +225,9 @@ def update_session(session_id: str, update_data: SessionUpdate):
                 set_parts.append("sessionModel = ?")
                 sm = provided["sessionModel"]  # dict 或 None(显式清空)
                 params.append(json.dumps(sm, ensure_ascii=False) if sm else None)
+            if "routingMode" in provided:
+                set_parts.append("routingMode = ?")
+                params.append(provided["routingMode"])  # 值或 None(显式清空回默认)
             set_parts.append("updated_at = ?")
             params.append(local_time)
             set_parts.append("version = COALESCE(version, 1) + 1")
@@ -225,8 +242,8 @@ def update_session(session_id: str, update_data: SessionUpdate):
                 raise HTTPException(status_code=409, detail="会话已被其他用户修改,请刷新后重试")
             new_version = session["version"] + 1
         _sm_out = provided.get("sessionModel")
-        logger.info(f"更新会话成功: id={session_id}, title={provided.get('title')}, sessionModel={_sm_out}, version={new_version}")
-        return {"success": True, "title": provided.get("title"), "sessionModel": _sm_out, "version": new_version}
+        logger.info(f"更新会话成功: id={session_id}, title={provided.get('title')}, sessionModel={_sm_out}, routingMode={provided.get('routingMode')}, version={new_version}")
+        return {"success": True, "version": new_version}
     except HTTPException:
         raise
     except Exception as e:
@@ -363,13 +380,13 @@ def get_session_titles_batch(session_ids: str):
 
 
 def get_session_info(session_id: str):
-    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel) + 真值消息数。
+    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel/routingMode/version) + 真值消息数。
     使用场景: 设置界面读取会话级信息(8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26
     message_count 改真值(计数器退役) — 小欧 2026-09-30"""
     with db.get_conn("chat") as conn:
         row = conn.execute(
             "SELECT id, title, created_at, updated_at, is_valid, "
-            "sessionModel "
+            "sessionModel, routingMode, COALESCE(version, 1) as version "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
@@ -384,4 +401,6 @@ def get_session_info(session_id: str):
         message_count=message_count,
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
+        routingMode=row['routingMode'] or "suggest",
+        version=row['version'],
     )

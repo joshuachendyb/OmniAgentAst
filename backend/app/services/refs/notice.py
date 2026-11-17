@@ -21,6 +21,9 @@
 # 2026-11-07 小欧 _tokens_text 改调 agent_utils.fmt_tok(DRY 收口): 原私有只到 k 档/单位 tokens,
 #   与 start_step 摘要提示、react_step 裁剪 notice 三处 token 体积文案各自实现; 统一为 fmt_tok
 #   公有 K/M 两档, 单位 tok。文案由"约 1.2k tokens"变"约 1.2Ktok"(前端原样显示, 可读性等价) — 小欧-2026-11-07
+#
+# 2026-11-14 小欧 补物化失败 reason 级别: materialize_no_session/too_large/failed → warn,
+#   与 resolver 阶段B 回落文本出口时产出的回执条目一一对应(单一真源仍在本表) — 小欧-2026-11-14
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 
@@ -64,6 +67,9 @@ REASON_LEVELS: Dict[str, str] = {
     # 2026-11-06 小欧 三堂会审: 补附件专用 reason(原重建缺漏, 靠默认 warn 兜底) — 与 resolver 产出的
     #   attachment_missing/attachment_failed 一一对应, 符合文档10 §3.13 显式单一真源
     "attachment_missing": "warn", "attachment_failed": "warn",
+    # 阶段B 物化失败: 已回落文本出口, 属非阻断降级 — 小欧-2026-11-14
+    "materialize_no_session": "warn", "materialize_too_large": "warn",
+    "materialize_failed": "warn",
     "timeout": "warn", "range_out": "warn", "no_path": "warn",
     "compressed": "warn", "rejected": "error",
 }

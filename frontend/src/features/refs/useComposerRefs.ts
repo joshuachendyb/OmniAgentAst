@@ -8,6 +8,8 @@
 //   (上限判定真源); ②回声动作从 mergeIncoming 迁出(store 投递不再回声, 否则 refs_blocked 重建
 //   会抹掉刚下发的回执), 改由 push 与 add 各自承担; ③新增 getRefs() 读最新 chips —— 预检返回后
 //   按 id 合并、@ 补全写回前复核占位是否还在, 都要读"异步窗口后的真值" — 小欧-2026-10-30
+// 编辑历史: 2026-11-13 小欧 - 引用镜像改用 useLayoutEffect: React18 被动 effect 为异步调度, 镜像落后一拍;
+//   改布局期同步发布, 消除"刚新增的引用不出现在镜像里" — 小欧-2026-11-13
 /**
  * useComposerRefs —— 引用（refs）的唯一状态托管点
  *
@@ -25,6 +27,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -68,10 +71,17 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     refNoticeStore.getSnapshot
   );
 
-  /** 最新 chips 镜像(异步窗口读真值) — 2026-10-30 小欧 */
+  /** 最新 chips 镜像(异步窗口读真值) — 2026-10-30 小欧
+   *  2026-11-12 小欧 - 镜像改用 useLayoutEffect: 被动 effect 在 React 18 里是**异步调度**的,
+   *    存在「DOM 已显示新 chip、但镜像仍是旧数组」的窗口 —— 预检在途时用户新增的引用会被漏发
+   *    (refs-real-scenarios R2-1 复现: 芯片已出现在界面上, 发出去的上行 refs 里却没有它)。
+   *    layout effect 与 DOM 提交**同刻**执行 → 镜像与界面永远一致, 不存在这一窗口。
+   *    setLive(配额记账)仍留被动 effect: 它只写 store, 不在读路径上, 无需同刻。 */
   const refsRef = useRef<ComposerRef[]>([]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     refsRef.current = refs;
+  }, [refs]);
+  useEffect(() => {
     // 上限判定真源: store 需要知道"已入队多少条"(队列只是一次性投递通道)
     composerRefStore.setLive(refs);
   }, [refs]);

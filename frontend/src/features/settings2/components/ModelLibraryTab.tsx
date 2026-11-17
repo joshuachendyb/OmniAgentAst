@@ -48,6 +48,7 @@
 // 2026-11-08 小欧 - 图片接收列与行内实测整体撤除（实测迁至②选中模型参数）；本表只留厂商声明维度 — 小欧-2026-11-08
 // 2026-11-09 小欧 - 输出模态列「音频生成」补位(实库 kilo/lyria out=[text,audio]), OUTPUT_LABEL 增 audio 中文标签 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 本地 OUTPUT_LABEL 撤除改用 modelUtils 单源映射, 标签去「生成」后缀与输入侧同词 — 小欧-2026-11-09
+// 2026-11-12 小欧 - 字号档归位: FontSize.TERTIARY → FontSize.SECONDARY(同值两档, 阶梯收敛为单一真源) — 小欧-2026-11-12
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -1008,7 +1009,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
       <Text
         type="secondary"
         style={{
-          fontSize: FontSize.TERTIARY,
+          fontSize: FontSize.SECONDARY,
           display: 'block',
           textAlign: 'right',
         }}

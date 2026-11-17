@@ -15,6 +15,8 @@ screen_capture — 屏幕截图
 # 2026-07-31 - 小欧 - 修复B3:Pillow缺失时hint误导为装mss/pyautogui,改单独提示安装Pillow
 # 2026-07-31 - 小欧 - 修复B23:data去掉"display": None冗余键(截图模式display_val为空)
 # 2026-08-05 - 小欧 - 修复#5: dest=""空串绕过主函数校验后 Path("").mkdir() 报含糊错误, _screenshot/_snapshot 的 if dest is None 统一改 if not dest(空串也走临时路径)
+
+# 2026-11-15 小欧 - 截图失败时回传失败参数: 原取出即丢弃, LLM 拿不到失败入参无法自纠, 现随错误体回传
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -182,7 +184,8 @@ def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] 
         else:
             hint = "请检查屏幕截图参数和系统权限"
         llm_data = _build_screen_capture_llm_data("error", duration_ms, dest=dest, region=region, display=display, err_code=err_code, detail=error_detail, hint=hint)
-        return build_error(data={}, llm_data=llm_data)
+        # 2026-11-15 小欧 - 失败参数随错误体回传(原取出后丢弃, LLM 无法据失败参数自纠): 与网络请求工具错误体口径一致
+        return build_error(data={"error_detail": error_detail, "params": err_params}, llm_data=llm_data)
 
     image_path = result.pop("image_path", "")
     region_val = result.pop("region", None)

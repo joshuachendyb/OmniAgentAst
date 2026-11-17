@@ -15,6 +15,8 @@
 //   多个图/重渲染时互相覆盖且重复初始化。现用模块级 Promise 缓存, 首次并发调用也只初始化一次。
 import { useEffect, useId, useRef, useState } from 'react';
 import { Colors, FontFamily, FontSize } from '@/utils/stepStyles';
+// 2026-11-12 小欧 - 代码块限高/滚动的单一真源(文档[32] 顺带收口: 数字不再写在 CSS)
+import { codeBlockStyle } from '@/utils/markdownStyles';
 
 interface MermaidBlockProps {
   /** mermaid 源码(已从 ```mermaid 围栏中剥出) */
@@ -96,6 +98,12 @@ export function MermaidBlock({ chart }: MermaidBlockProps) {
         style={{
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          // 2026-11-12 小欧 - 限高与滚动沿用代码块的同一真源(utils/markdownStyles.codeBlockStyle):
+          //   本 <pre> 落在 .md-body 作用域内, 原先 max-height/overflow 由 index.css 的
+          //   .md-body pre 提供; 该规则已把这两项收敛到 TS 单一真源(数字不再写在 CSS),
+          //   故此处显式取同一数值 —— 否则 mermaid 渲染失败的降级原文会撑破容器(观感回退)。
+          maxHeight: codeBlockStyle.maxHeight,
+          overflow: codeBlockStyle.overflow,
           // 2026-10-22 小欧 - 字体栈收敛到 FontFamily.MONO 令牌(原裸 'monospace' → Windows 上
           //   实解析为浏览器默认等宽 Courier New, 与全应用其余代码文本两套字形并存) — 小欧-2026-10-22
           fontFamily: FontFamily.MONO,

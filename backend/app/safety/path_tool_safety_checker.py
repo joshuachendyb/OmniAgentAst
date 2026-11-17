@@ -98,6 +98,12 @@
 #   也保证未注册工具仍先被硬拦(注册判定在前)。范围门唯一落点=本层, safety_gate 的入口名单门同日删除。
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 4 处硬拦截(未注册/自杀/危险命令/权限)显式传 level="WARNING",
 #   安全拦截不受控制台级别静音, 与进度类(默认 DEBUG)分流 — 小欧-2026-11-03
+# 2026-11-15 小欧 - 自杀拦截文案订正: 原"系统保护进程，禁止终止"对无目标杀进程形态是错话(真实原因是目标静态抽不出/无上界), 改为如实双层表述; 逻辑与分级不变
+
+# 2026-11-15 小欧 - 复核整改: ①自杀拦截文案与口径同步(受保护进程→杀自己人/无边界杀进程);
+#   ②_SHELL_TOOLS 硬编码三名单(含两个已不存在的旧名、缺合法别名 shell)改用 is_shell_tool 单源,
+#   别名 shell 调用确认标签重新按命令内实际动作取档。
+
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -154,6 +160,9 @@ from app.safety.shell_parse import (
 from app.safety.shell_process_guard import (
     check_shell_self_kill,  # 2026-10-16 小欧: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
 )
+from app.safety.shell_tool_classify import (
+    is_shell_tool,  # 2026-11-15 小欧: shell 工具判定单源(含别名归一)
+)
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import (
     PATH_TOOLS,  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
@@ -196,8 +205,6 @@ def _confirm_ok(tool_name: str) -> bool:
     return True if key is None else safety_switch(key)
 
 
-_SHELL_TOOLS = frozenset({"bash", "execute_shell_command", "execute_command"})
-
 #: 命令动作 → 确认标签。取值为 shell_parse.action.ACTION_KINDS 的**全部 3 种**(read/write/delete,
 #:   闭合枚举, PathAction.__post_init__ 对枚举外值 raise, 故不存在第 4 种动作)。
 #:   多动作并存时取最严一档(删 > 写 > 读), 与 shell_path_check._judge_actions 的判定优先级同序。
@@ -234,7 +241,7 @@ def confirm_level_for(tool_name: str, params: Optional[dict]) -> str:
     bypass 分支与主 return 两处共用本函数, 避免同一表达式写两遍(DRY)导致两处漂移。
     """
     _p = params or {}
-    if tool_name in _SHELL_TOOLS:
+    if is_shell_tool(tool_name):
         return shell_confirm_level(_p.get("command"), _p.get("shell_type"), _p.get("cwd"))
     return _TOOL_CONFIRM_LEVEL.get(tool_name, TOOL_CONFIRM_DEFAULT)
 
@@ -447,7 +454,7 @@ class PathToolSafetyChecker:
         命中受保护 PID/进程名/无目标兜底即 blocked，直返不经确认分流。
         """
         if check_shell_self_kill(cmd, pool_pids):
-            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", safety_level=SafetyLevel.BLOCK_COMMAND)
+            return SafetyResult(blocked=True, message="命中进程自杀防护(杀自己人或无边界杀进程)，禁止执行", safety_level=SafetyLevel.BLOCK_COMMAND)
         return None
 
     @staticmethod

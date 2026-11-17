@@ -8,6 +8,7 @@
 //   经 rel_to_root 异常回退时为空串, 原 if(it.path) 为 false 直接丢弃 → chip 无黄/红标;
 //   改无条件 set(空串经 normalizePath 归一后作 key, 与 noticeOf 的 r.path??'' 口径一致) — 小欧-2026-11-07
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
+// 编辑历史: 2026-11-14 小欧 补阶段B 物化失败 reason 文案(materialize_no_session/too_large/failed) — 小欧-2026-11-14
 
 /**
  * notice —— 引用回执 → chip 状态机(5 态)唯一映射
@@ -89,6 +90,10 @@ const DROP_REASON_TEXT: Record<string, string> = {
   // 2026-11-06 小欧 - 附件专用(后端 reason 一一对应, 单一真源在后端) — 小欧-2026-11-06
   attachment_missing: '附件已失效，请在本轮文件里移除后再发送',
   attachment_failed: '附件内容读取失败，请重试或换一个文件',
+  // 2026-11-14 小欧 - 阶段B 物化失败回落文本出口(后端 reason 一一对应) — 小欧-2026-11-14
+  materialize_no_session: '未物化为附件，已按文本内容注入',
+  materialize_too_large: '文件超出内联上限，已按文本内容注入',
+  materialize_failed: '附件物化失败，已按文本内容注入',
 };
 
 /**

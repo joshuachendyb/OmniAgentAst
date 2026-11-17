@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): 段距改走 stepMargin(false)=(MD-2)=6, 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 错误态去⚠️emoji前缀改纯文本, 样式令牌化增强——
 //   padding(XS,SM)/background Colors.ERROR_BG/border Colors.ERROR_BORDER/borderRadius Radius.SM/lineHeight=字号+Spacing.XS — 小欧-2026-09-15
+// 编辑历史: 2026-11-12 小欧 - 字号档归位: FontSize.TERTIARY → FontSize.SECONDARY(同值两档, 阶梯收敛为单一真源) — 小欧-2026-11-12
 /**
  * StatusLine - 状态行（仅 error 渲染）
  *
@@ -35,8 +36,8 @@ const StatusLine: React.FC<StatusLineProps> = ({ step }) => {
     <div
       style={{
         color: Colors.ERROR,
-        fontSize: FontSize.TERTIARY,
-        lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+        fontSize: FontSize.SECONDARY,
+        lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
         margin: stepMargin(false),
         padding: `${Spacing.XS}px ${Spacing.SM}px`,
         background: Colors.ERROR_BG,

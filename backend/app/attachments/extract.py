@@ -2,21 +2,32 @@
 # 2026-11-04 小欧 新建: 附件五分类 + 五张档案卡注入文本(纯函数, 零 DB) — 小欧-2026-11-04
 # 2026-11-06 小欧 补 classify 文本分支: 文本扩展名(如 .txt/.md/.py)先于"任意后缀 → binary"判定,
 #   否则文本文件落 binary, 文本档案卡用不上 — 小欧-2026-11-06
-# 2026-11-06 小欧 S1: text 分支从 _text_card 换成 _text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
+# 2026-11-06 小欧 S1: text 分支从 _text_card 换成 text_body(≤256KB 全文 / >256KB 档案头) — 小欧-2026-11-06
 # 2026-11-07 小欧 - 修复: _read_head_and_count 补 latin-1 兜底(与 _read_text_full 编码能力对齐),
 #   消除同文件 ≤/≥256KB 两侧解码不一致致的档案头乱码 — 小欧-2026-11-07
 # 2026-11-09 小欧 S3/S4: richdoc 真抽取(复用工具层四读取器) + video ffprobe 元数据(缺失降级) — 小欧-2026-11-09
 # 2026-11-10 小欧 ffprobe 子进程补 CREATE_NO_WINDOW: 无控制台部署(打包版/服务态)跑视频元数据防闪黑窗 — 小欧-2026-11-10
 # 2026-11-11 小欧 附件能力域升级: 音频分类/URL 七类识别/链接文本出口/统一截断尾注/字节入口;
 #   build_inject_text 改契约查表分派; 视频与音频共用 ffprobe 探测实现 — 小欧-2026-11-11
+# 2026-11-15 小欧 语义前缀归一: 档案头/档案卡/正文·文本等同义异构词统一为 [主体·形态] 范式
+#   ([附件·正文]/[附件·正文·预览]/[附件·元信息·{类型}]), 字面量收归 app.wire_prefix 单一真源,
+#   消除散落字面量 — 小欧-2026-11-15
+# 2026-11-15 小欧 截断尾注收归 app.wire_prefix(INLINE_TRUNCATED), 与 ENV/ITEM 层同源 — 小欧-2026-11-15
+# 2026-11-15 小欧 L1-2: _ffprobe_meta 由 subprocess.run 改 app.utils.proc_io.run(零线程读取),
+#   subprocess.run→communicate 每次起 2~3 条 _readerthread, 与 CreateProcess 抢 loader lock;
+#   行为等价(非零退出返回 CompletedProcess 不抛, 超时仍抛 TimeoutExpired 被子类捕获), CREATE_NO_WINDOW 保留
+
+# 2026-11-16 小欧 bug猎修: ①裸链接正则不再吞尾随 ASCII 标点(句号/逗号是句读不是 URL 组成,
+#   此前 "https://a.com/x." 判成 binary 抓取错址); ②扫描上限单源化为 MAX_TEXT_URLS(=8,
+#   与 contract.max_urls 同一常量, 消 4/8 双真源致预检静默丢条目)
 
 """attachments.extract — 按类型把附件变成注入文本。
 
 类型轴分层(每个阶段只替换一个函数, 分派结构不动):
   S0 全部     → 档案卡(本文件即完成; 任何类型上传后都能发送)
-  S1 text     → _text_card 换成 _text_body(≤256KB 全文 / 超限档案头)
+  S1 text     → _text_card 换成 text_body(≤256KB 全文 / 超限档案头)
   S2 image    → 卡片只服务非视觉模型(视觉模型由 services/agent/vision.py 走 parts, 不经过本文件)
-  S3 richdoc  → _richdoc_body(真抽取, 失败抛异常由 resolver 折算)
+  S3 richdoc  → richdoc_body(真抽取, 失败抛异常由 resolver 折算)
   S4 video    → _video_meta(ffprobe 元数据; 缺失则降级, 不抛错)
 
 零 DB、零状态: 入参是 attachments 表的一行(dict), 返回 str。
@@ -31,8 +42,16 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from app.constants import MAX_REMOTE_IMAGES
 from app.file_browse import browse_service as browse
+from app.utils import proc_io
+from app.wire_prefix import (
+    INLINE_ATT_BODY,
+    INLINE_ATT_BODY_KIND,
+    INLINE_ATT_META,
+    INLINE_ATT_PREVIEW,
+    INLINE_LINK,
+    INLINE_TRUNCATED,
+)
 
 TEXT_INLINE_MAX = 256 * 1024      # 文本内联上限 256KB（超限走头尾摘录）
 ARCHIVE_HEAD_LINES = 40           # 档案头预览行数
@@ -58,8 +77,11 @@ TEXT_SUFFIXES = {
 
 # URL 识别词典(自视觉通道迁入并泛化, 唯一真源): 七类 content_kind 全覆盖, 不读模型
 _MD_URL_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+# 裸链接: 尾随 ASCII 句读(.,;:!?)不是 URL 组成, 用非贪婪+排除集防吞尾标点 — 小欧-2026-11-16
 _BARE_URL_RE = re.compile(
-    r"https?://[^\s()\[\]<>{}\"'|，。；：？！]+", re.IGNORECASE)
+    r"https?://[^\s()\[\]<>{}\"'|，。；：？！]*[^\s()\[\]<>{}\"'|，。；：？！.,;:!?]",
+    re.IGNORECASE)
+MAX_TEXT_URLS = 8   # 单次正文扫描 URL 上限(唯一真源, contract.max_urls 引用同一常量)
 
 
 def classify_url(url: str, content_type: str = "") -> str:
@@ -99,20 +121,19 @@ def scan_text_urls(text: str) -> list[str]:
     for url in found:
         if url not in out:
             out.append(url)
-    return out[:MAX_REMOTE_IMAGES]
+    return out[:MAX_TEXT_URLS]
 
 
-def _link_body(url: str) -> str:
+def link_body(url: str) -> str:
     """URL 降级文本出口(fallback_quality='link'): 仅链接文本, 零内容。"""
-    return f"[链接]\n地址: {url}\n说明: 当前模型仅收到链接文本, 未获取内容。"
+    return f"{INLINE_LINK}\n地址: {url}\n说明: 当前模型仅收到链接文本, 未获取内容。"
 
 
 def with_completeness(body: str, *, shown: int, total: int, unit: str, path: str) -> str:
     """截断统一尾注: 未截断原样返回; 截断时追加唯一格式说明。"""
     if shown >= total:
         return body
-    return (f"{body}\n[已截断：仅呈现 {shown}/{total} {unit}；"
-            f"完整内容请用文件工具读取 {path}]")
+    return body + "\n" + INLINE_TRUNCATED.format(shown=shown, total=total, unit=unit, path=path)
 
 
 def classify(stored_path: Path, mime: str, size: int) -> str:
@@ -133,7 +154,7 @@ def classify(stored_path: Path, mime: str, size: int) -> str:
         return "richdoc"
     if size <= 0:
         return "binary"
-    # 文本扩展名: 命中即判 text（S1 起据此走 _text_body 读正文）。
+    # 文本扩展名: 命中即判 text（S1 起据此走 text_body 读正文）。
     #   注意: 此分支须在"有扩展名但不在任何白名单 → binary"之前,
     #   否则 .txt/.py/.md 等文本会落 binary, 文本档卡永远用不上。
     if sfx in TEXT_SUFFIXES:
@@ -167,19 +188,19 @@ def _head(att: dict[str, Any]) -> str:
             f"大小: {int(att.get('size') or 0)} 字节")
 
 
-def _text_body(att: dict[str, Any]) -> str:
-    """S1: 文本附件真读正文(path 入口; 字节入口见 _text_body_from_bytes)。"""
-    return _text_body_from_bytes(att, None)
+def text_body(att: dict[str, Any]) -> str:
+    """S1: 文本附件真读正文(path 入口; 字节入口见 text_body_from_bytes)。"""
+    return text_body_from_bytes(att, None)
 
 
-def _text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
+def text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
     """raw=None 走读盘(附件); raw=bytes 走直抽(URL 下载后), 两入口同一实现。"""
     stored = Path(str(att.get("stored_path") or att.get("path") or att.get("original_name") or "attachment"))
     size = len(raw) if raw is not None else int(att.get("size") or 0)
 
     if size <= TEXT_INLINE_MAX:
         content = _decode_text_bytes(raw) if raw is not None else _read_text_full(stored)
-        return f"[附件正文·文本]\n{_head(att)}\n正文:\n{content}"
+        return f"{INLINE_ATT_BODY}\n{_head(att)}\n正文:\n{content}"
 
     # > 256KB: 单遍扫描取前 N 行 + 总行数(不整篇入 prompt)
     if raw is not None:
@@ -188,7 +209,7 @@ def _text_body_from_bytes(att: dict[str, Any], raw: Optional[bytes]) -> str:
         head_lines, total = _read_head_and_count(stored, ARCHIVE_HEAD_LINES)
     preview = "\n".join(head_lines)
     return with_completeness(
-        f"[附件档案头]\n{_head(att)}\n预览(前{ARCHIVE_HEAD_LINES}行):\n{preview}\n总行数: {total}",
+        f"{INLINE_ATT_PREVIEW}\n{_head(att)}\n预览(前{ARCHIVE_HEAD_LINES}行):\n{preview}\n总行数: {total}",
         shown=ARCHIVE_HEAD_LINES, total=total, unit="行", path=str(stored),
     )
 
@@ -240,23 +261,23 @@ def _read_head_and_count(path: Path, n: int) -> tuple[list[str], int]:
     return head, total
 
 
-def _image_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·图片]\n{_head(att)}\n"
+def image_card(att: dict[str, Any]) -> str:
+    return (f"{INLINE_ATT_META.format(kind='图片')}\n{_head(att)}\n"
             f"说明: 当前模型无视觉能力，无法查看图片内容。"
             f"如需识别图中信息，请用文字描述或改用可读的文本/表格文件。")
 
 
-def _richdoc_body(att: dict[str, Any]) -> str:
+def richdoc_body(att: dict[str, Any]) -> str:
     """富格式正文(S3): 复用工具层四个读取实现(pdf/docx/xlsx/pptx), 不另写解析器(DRY)。
 
     失败一律抛异常 —— 由 resolver 折算成 attachment_failed 回执,
     不在本层吞掉(否则模型会收到半截内容却以为完整)。
     """
     stored = Path(att["stored_path"])
-    return _richdoc_body_path(att, stored)
+    return richdoc_body_path(att, stored)
 
 
-def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
+def richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
                              filename: str = "") -> str:
     """字节入口(URL 下载后直抽): 按文件名后缀落临时文件, 复用 path 同一实现。"""
     suffix = Path(filename or str(att.get("original_name") or "")).suffix.lower()
@@ -266,7 +287,7 @@ def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
         fh.write(raw)
         tmp = Path(fh.name)
     try:
-        return _richdoc_body_path(att, tmp, label_suffix=suffix)
+        return richdoc_body_path(att, tmp, label_suffix=suffix)
     finally:
         try:
             tmp.unlink()
@@ -274,11 +295,11 @@ def _richdoc_body_from_bytes(att: dict[str, Any], raw: Optional[bytes],
             pass
 
 
-def _richdoc_body_path(att: dict[str, Any], stored: Path, label_suffix: str = "") -> str:
+def richdoc_body_path(att: dict[str, Any], stored: Path, label_suffix: str = "") -> str:
     suffix = label_suffix or stored.suffix.lower()
     text = _extract_richdoc(stored, suffix)
     label = _RICH_LABEL.get(suffix, "文档")
-    return (f"[附件正文·{label}]\n{_head(att)}\n"
+    return (f"{INLINE_ATT_BODY_KIND.format(label=label)}\n{_head(att)}\n"
             f"抽取说明: 以下为自动抽取文本, 版式/图片可能丢失; "
             f"需要精确页码/整表请用文件工具读取上面的路径。\n"
             f"正文:\n{text}")
@@ -366,10 +387,10 @@ def _ffprobe_meta(stored: Path, codec_type: str) -> dict[str, Any] | None:
     if not exe:
         return None
     try:
-        out = subprocess.run(
+        out = proc_io.run(
             [exe, "-v", "error", "-print_format", "json",
              "-show_format", "-show_streams", str(stored)],
-            capture_output=True, timeout=FFPROBE_TIMEOUT, check=False,
+            timeout=FFPROBE_TIMEOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,  # 无控制台部署(打包版/服务态)防闪黑窗 — 小欧-2026-11-10
         )
         if out.returncode != 0:
@@ -398,7 +419,7 @@ def _audio_meta(stored: Path) -> dict[str, Any] | None:
     return _ffprobe_meta(stored, "audio")
 
 
-def _video_card(att: dict[str, Any]) -> str:
+def video_card(att: dict[str, Any]) -> str:
     meta = _video_meta(Path(att["stored_path"]))
     if meta:
         detail = (f"\n时长: {meta.get('duration') or '未知'} 秒"
@@ -406,11 +427,11 @@ def _video_card(att: dict[str, Any]) -> str:
                   f"\n编码: {meta.get('codec') or '未知'}")
     else:
         detail = "\n元数据: 未读取(本机无 ffprobe 或解析失败, 不影响其余功能)"
-    return (f"[附件档案卡·视频]\n{_head(att)}{detail}\n"
+    return (f"{INLINE_ATT_META.format(kind='视频')}\n{_head(att)}{detail}\n"
             f"说明: 当前不支持视频内容理解；如需处理请用文件工具按需读取。")
 
 
-def _audio_card(att: dict[str, Any]) -> str:
+def audio_card(att: dict[str, Any]) -> str:
     """音频档案卡: ffprobe 元数据(仅元数据, 无内容理解), 失败降级为档案卡。"""
     meta = _audio_meta(Path(att["stored_path"]))
     if meta:
@@ -424,10 +445,10 @@ def _audio_card(att: dict[str, Any]) -> str:
                 detail += f"\n码率: {bitrate}"
     else:
         detail = "\n元数据: 未读取(本机无 ffprobe 或解析失败, 不影响其余功能)"
-    return (f"[附件档案卡·音频]\n{_head(att)}{detail}\n"
+    return (f"{INLINE_ATT_META.format(kind='音频')}\n{_head(att)}{detail}\n"
             f"说明: 仅注入元数据, 不包含音频内容；如需处理请用文件工具按需读取。")
 
 
-def _binary_card(att: dict[str, Any]) -> str:
-    return (f"[附件档案卡·二进制]\n{_head(att)}\n"
+def binary_card(att: dict[str, Any]) -> str:
+    return (f"{INLINE_ATT_META.format(kind='二进制')}\n{_head(att)}\n"
             f"说明: 非文本内容，无法注入正文；如需处理请用文件工具按需读取。")

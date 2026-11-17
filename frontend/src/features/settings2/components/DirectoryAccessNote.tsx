@@ -16,10 +16,17 @@
 //   行为零变更：壳默认 discard 关闭语义 + destroyOnHidden，与原裸 Modal 的默认值完全一致；
 //   宽度仍走 settingsModalWidth.display 令牌，footer={null}（只读说明，无操作键）保持。
 // 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 说明入口由通用 Button 改文档卡片(图标 FileText/Branches + 标题 + 描述, POPUPS 同源派生, hover 边框+阴影反馈); Modal 标题同步加图标; 弹框内容包 .doc-body 作用域容器(样式见 index.css, 只依赖 markdown 结构标签, 后端文案改动不失效) — 小欧-2026-10-11
+// 编辑历史: 2026-11-12 小欧 - 阅读排版消费外观偏好的字号与间距档: MarkdownSlot 传 scene="doc" 与 base(当前字号档),
+//   说明框随设置档位变化, 流水线正文不消费(作用域限定) — 小欧-2026-11-12
+// 编辑历史: 2026-11-13 商量 - 字号归位: fontSize 20 → FontSize.TITLE, 16 → FontSize.SUBHEAD,
+//   import 同步补 FontSize — 商量-2026-11-13
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Spin } from 'antd';
 import { BranchesOutlined, FileTextOutlined } from '@ant-design/icons';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
+// 2026-11-12 小欧 - 阅读区排版消费外观偏好(阅读区字号/界面密度): 说明弹框是 doc 场景,
+//   字号与间距随设置项变; 流水线不消费(见 utils/markdownStyles 的作用范围)。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
 import { SettingsModal } from '@/theme/SettingsModal';
 import {
   settingsApi,
@@ -54,6 +61,8 @@ type PopupKey = (typeof POPUPS)[number]['key'];
 export function DirectoryAccessNote() {
   const [docs, setDocs] = useState<SecurityDocsResponse | null>(null);
   const [error, setError] = useState('');
+  // 2026-11-12 小欧 - 阅读区外观偏好(字号/密度): 本组件是 doc 场景消费点
+  const appearance = useAppearancePrefs();
   const [openKey, setOpenKey] = useState<PopupKey | null>(null);
   // 2026-10-11 小欧 - 文档卡片 hover 态(单值, 两卡互斥高亮)
   const [hovered, setHovered] = useState<PopupKey | null>(null);
@@ -102,7 +111,14 @@ export function DirectoryAccessNote() {
       ) : !docs ? (
         <Spin />
       ) : (
-        <MarkdownSlot text={docs.classification} markdown fixedTable />
+        <MarkdownSlot
+          text={docs.classification}
+          markdown
+          fixedTable
+          scene="doc"
+          base={appearance.fontSize}
+          density={appearance.density}
+        />
       )}
 
       {/* 两个说明弹框入口: 文档卡片(北京老陈令「按人类设计师设计优化」)。
@@ -139,7 +155,7 @@ export function DirectoryAccessNote() {
             >
               <span
                 style={{
-                  fontSize: 20,
+                  fontSize: FontSize.TITLE,
                   lineHeight: '20px',
                   color: _hover ? Colors.BORDER.ACCENT : Colors.TEXT.SECONDARY,
                   flexShrink: 0,
@@ -190,7 +206,7 @@ export function DirectoryAccessNote() {
               gap: Spacing.SM,
             }}
           >
-            <span style={{ color: Colors.BORDER.ACCENT, fontSize: 16 }}>
+            <span style={{ color: Colors.BORDER.ACCENT, fontSize: FontSize.SUBHEAD }}>
               {current.icon}
             </span>
             {current.title}
@@ -202,12 +218,16 @@ export function DirectoryAccessNote() {
         bodyMaxHeight="78vh"
       >
         {docs && (
-          // 2026-10-11 小欧 北京老陈令「按人类设计师设计优化」: .doc-body 作用域样式
-          //   (index.css) 只作用于本弹框的 markdown 渲染结果, 不影响全局 MarkdownText。
-          //   样式只依赖结构标签(h2/ol/ul/code/p/strong), 后端文案改动不会失效。
-          <div className="doc-body">
-            <MarkdownSlot text={docs[current.key]} markdown />
-          </div>
+          // 2026-11-12 小欧 - .doc-body 作用域样式随旧排版块一并移除(该块是死规则:
+          //   类样式被 MarkdownText 内联样式压死), 现由 .md-body 作用域统管排版;
+          //   样式只依赖结构标签(h1..h6/ol/ul/code/p/strong/table), 后端文案改动不会失效。
+          <MarkdownSlot
+            text={docs[current.key]}
+            markdown
+            scene="doc"
+            base={appearance.fontSize}
+            density={appearance.density}
+          />
         )}
       </SettingsModal>
     </div>

@@ -14,10 +14,19 @@
 //   浏览类调用(历史页/文件页)零副作用 — 小欧-2026-11-02
 // 编辑历史: 2026-11-03 小欧 - 新增 listRunningTasks(跨会话在跑任务) + getTaskStatus(单任务轻量读),
 //   为历史页角标/顶栏浮层/退订后 60s 复核提供后端权威来源 — 小欧-2026-11-03
+// 编辑历史: 2026-11-16 小欧 - [23]阶段D: Session 增 routingMode; 新增 updateSessionRoutingMode(会话级路由模式唯一写口) — 小欧-2026-11-16
+
+// 编辑历史: 2026-11-16 小欧 - 修正: getSession 现已取后端真实 version(不再恒兜底 1); routingMode 复用 RoutingMode
+
+// 编辑历史: 2026-11-13 商量 - ApiMessage 补 msg_kind(后端 MessageResponse 新增可选字段, user/system_notice):
+//   后台续跑通知消息的种类在 wire 上保真, 前端按它渲染系统通知样式, 不再与用户发言混同
+
+// 编辑历史: 2026-11-16 小欧 bug猎修: createSession 响应补 version(此前类型未声明且调用侧写死 1),
+//   与其余会话响应统一归一 version ?? 1, 消除版本号双真源
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
-import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
+import type { SessionModelOverride, WorkspacesResponse, RoutingMode } from '@/types/chat';
 
 export interface Session {
   session_id: string;
@@ -30,6 +39,9 @@ export interface Session {
   updated_at: string;
   message_count: number;
   is_valid: boolean;
+  sessionModel?: SessionModelOverride | null;
+  /** 2026-11-16 小欧 阶段D: 会话级能力路由模式(后端缺省归一 suggest) */
+  routingMode?: RoutingMode;
 }
 
 export interface SessionListResponse {
@@ -67,6 +79,8 @@ export interface ApiMessage {
   // 2026-10-01 小欧 - 后端 MessageResponse 新增该字段(配对任务ID): 此前消息只带 execution_steps 无归属,
   //   跨任务降级会把别的任务步骤当本任务显示 — 小欧-2026-10-01
   task_id?: string | null;
+  // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知按它渲染系统通知样式
+  msg_kind?: string | null;
 }
 
 export interface GetSessionMessagesResponse {
@@ -90,11 +104,13 @@ export interface UpdateSessionRequest {
 
 export interface UpdateSessionResponse {
   success: boolean;
-  title: string;
+  title?: string | null;
   version?: number;
   title_locked?: boolean;
   title_updated_at?: string;
   sessionModel?: SessionModelOverride | null;
+  /** 2026-11-16 小欧 阶段D: 会话级路由模式(写回值; 后端仅回 success+version, 其余字段可选) */
+  routingMode?: RoutingMode | null;
 }
 
 export interface BatchTitleResponse {
@@ -107,6 +123,26 @@ export interface BatchTitleResponse {
   }>;
 }
 
+/** 会话任务产出物条目(「本会话产物」行) — 后端 chat_tasks.artifacts 真源 */
+export interface SessionArtifactItem {
+  task_id: string;
+  task_created_at: string;
+  name: string;
+  path: string;
+  /** 项目根相对 posix 路径(根内有值, 可直接作文件引用上行; 根外为 null) */
+  rel_path: string | null;
+  type: string;
+  tool_name: string;
+  /** 产物文件是否还在（失效行仍可见，不可加入本轮） */
+  exists: boolean;
+}
+
+export interface SessionArtifactsResponse {
+  session_id: string;
+  total: number;
+  artifacts: SessionArtifactItem[];
+}
+
 export const sessionApi = {
   createSession: async (
     title?: string
@@ -116,6 +152,7 @@ export const sessionApi = {
     created_at: string;
     updated_at: string;
     message_count: number;
+    version?: number;
   }> => {
     const response = await api.post<{
       session_id: string;
@@ -123,6 +160,7 @@ export const sessionApi = {
       created_at: string;
       updated_at: string;
       message_count: number;
+      version?: number;
     }>('/sessions', { title, is_valid: true });
     return response.data;
   },
@@ -258,6 +296,27 @@ export const sessionApi = {
     return response.data;
   },
 
+  /**
+   * 2026-11-16 小欧 [23]阶段D: 会话级路由模式唯一写口(suggest/auto/strict)。
+   * 与 updateSessionModel 同端点同乐观锁, 只发 routingMode+version — 小欧-2026-11-16
+   */
+  updateSessionRoutingMode: async (
+    sessionId: string,
+    routingMode: 'suggest' | 'auto' | 'strict',
+    version: number
+  ): Promise<UpdateSessionResponse> => {
+    const body: Record<string, unknown> = {
+      version,
+      updated_by: 'user',
+      routingMode,
+    };
+    const response = await api.put<UpdateSessionResponse>(
+      `/sessions/${sessionId}`,
+      body
+    );
+    return response.data;
+  },
+
   getSession: async (sessionId: string): Promise<Session> => {
     const r = await api.get<Session>(`/sessions/${sessionId}`);
     const d = r.data;
@@ -307,6 +366,17 @@ export const sessionApi = {
       `/sessions/tasks/${encodeURIComponent(taskId)}`
     );
     return response.data.task;
+  },
+
+  // 2026-11-13 小欧 - 会话任务产出物清单(「本会话产物」唯一真源): 读 chat_tasks.artifacts,
+  //   跨任务按任务时间倒序; 产出物是任务产物, 不是附件台账行(工作区内产物走引用模式不落库)
+  listSessionArtifacts: async (
+    sessionId: string
+  ): Promise<SessionArtifactsResponse> => {
+    const response = await api.get<SessionArtifactsResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/artifacts`
+    );
+    return response.data;
   },
 
   // 2026-11-02 小欧 - 会话目录读口: prune=true 才清库(面板主动请求), 默认纯读零副作用;

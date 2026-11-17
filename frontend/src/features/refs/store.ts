@@ -27,6 +27,11 @@
 // 编辑历史: 2026-11-07 小欧 - F-01: composerRefStore 导出 occupancy()(当前占用条数),
 //   供上传方发起请求前判容量, 不产生孤儿附件记录 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - 删 MAX_REFS 常量, 改 maxRefs 模块缓存 + setMaxRefs/getMaxRefs(上限唯一来自后端 capabilities) — 小欧-2026-11-11
+// 编辑历史: 2026-11-14 小欧 - 上限单真源扩到上传分档: 增 maxImageBytes/maxFileBytes 模块缓存 +
+//   set/get + getAttachSizeBytes(按 mime 分档取字节上限, 不自建后缀表), 后端 capabilities.limits 下发,
+//   前端不再写死 10MB/20MB — 小欧-2026-11-14
+// 编辑历史: 2026-11-16 小欧 - [23]阶段B: ComposerRef 增 quality 前端内存态(URL 引用逐项落存
+//   preflight items[].quality 原值, 徽标只读不派生); toWireRef 白名单投影自动剥离, 不进 wire — 小欧-2026-11-16
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -44,14 +49,41 @@ import type { ChatRefPayload } from '../../types/chat';
 import { normalizePath, refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
 import type { NoticeMap } from './notice';
 
+/** 后端 contract 质量四值(与 QUALITY_META/quality_of 同词表, 前端只透传不派生) — 2026-11-16 小欧 */
+export type RefQualityValue = 'native' | 'text_full' | 'meta_only' | 'link_only';
+
 // 2026-11-11 小欧 - 删 MAX_REFS 常量(C8): 上限唯一来自后端 contract.limits(),
 //   经 GET /attachments/capabilities 下发; 前端禁止再写死(双保险改为单真源)。
 let maxRefs = 20;      // 模块缓存: capabilities 拉取成功前沿用保守缺省, 拉取后覆写
 export const setMaxRefs = (n: number): void => { maxRefs = n > 0 ? n : maxRefs; };
 export const getMaxRefs = (): number => maxRefs;
 
+// 2026-11-14 小欧 - 上传分档字节上限: 后端 contract.limits(max_image_bytes/max_file_bytes) 单一真源,
+//   FileDrawer 拉 capabilities 后 setAttachmentByteLimits 写入; 未下发时沿用保守缺省(与后端现行口径同值)。
+let maxImageBytes = 10 * 1024 * 1024;
+let maxFileBytes = 20 * 1024 * 1024;
+export const setAttachmentByteLimits = (image: number, file: number): void => {
+  if (image > 0) maxImageBytes = image;
+  if (file > 0) maxFileBytes = file;
+};
+/** 按 mime 分档取单文件字节上限: 图片档(image/*) 用 image, 其余一律 file 档
+ *  (不在此自建后缀表, 避免与后端 suffix_kind 双真源漂移; 空 mime 归 file 档, 超限由后端兜底) */
+export const getAttachSizeBytes = (mime?: string): number =>
+  ((mime || '').toLowerCase().startsWith('image/') ? maxImageBytes : maxFileBytes);
+/** 分档上限 MB(文案展示用): {image, other} */
+export const getAttachSizeMB = (): { image: number; other: number } => ({
+  image: Math.floor(maxImageBytes / (1024 * 1024)),
+  other: Math.floor(maxFileBytes / (1024 * 1024)),
+});
+
 export type ComposerRef = ChatRefPayload & {
   id: string;
+  /**
+   * [23]阶段B(2026-11-16 小欧) - URL 引用逐项能力档(preflight items[].quality 原值落存,
+   * 徽标只读不派生; 附件/文件徽标走 ref_quality_map, 不落此字段)。
+   * ⚠ 前端内存态(同 pending/invalid/mtime), toWireRef 白名单投影自动剥离, 不进 wire。
+   */
+  quality?: RefQualityValue;
   /**
    * `@` 补全在途占位（正文尚未读到位，content 为空）。
    * 发送闸门据此阻断（防发出 content:''），token 渲染据此显示"载入中"。

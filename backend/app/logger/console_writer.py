@@ -52,6 +52,10 @@
 #   控制台文字会暂停该控制台全部输出, _console_worker 的 w.write/flush 永久阻塞 → 队列堆满丢弃 → 控制台
 #   从此不再出字(文件日志、事件循环、SSE 均不受影响, 故表象是"控制台断流但程序照跑")。导入期对 STD_INPUT_HANDLE
 #   关闭 ENABLE_QUICK_EDIT_MODE(同时置 ENABLE_EXTENDED_FLAGS), 选中不再冻结输出; 非 Windows/无控制台/失败静默跳过。 — 小欧-2026-11-11
+# 2026-11-16 小欧 - 根治 boot 日志污染: detach 后 stdio 已重定向到 boot 日志, 原 _probe_console 仅判
+#   "stdout 可写"→ 把 boot 文件当控制台, 控制台镜像(console_put/ConsoleMirrorHandler)把 app 全量运行
+#   日志(含整段会话历史)灌进 boot 日志, boot 日志失去排障价值。现 _probe_console 纳入 is_console_detached():
+#   detached → _CONSOLE_OK=False, 镜像整体旁路; boot 日志只剩 run_server 引导输出与崩溃 traceback。 — 小欧-2026-11-16
 """
 console_writer — 控制台镜像输出(事件循环线程零同步 stdout 写)
 编写人 小欧 2026-08-30
@@ -63,11 +67,20 @@ import sys
 import threading
 from typing import Optional
 
+from app.utils.console_mode import is_console_detached
+
 _console_queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=512)
 
 
 def _probe_console() -> bool:
-    """探测 stdout 是否有效; PyInstaller --noconsole 时 stdout=None 则 False — 小欧 2026-10-25"""
+    """探测是否存在真实控制台; PyInstaller --noconsole 时 stdout=None 则 False — 小欧 2026-10-25
+
+    2026-11-16 小欧 - 追加 detached 判据: detach 后 stdio 被重定向到 boot 日志, sys.stdout
+    仍是可写文件对象(有 write/buffer), 原判据会误判为"有控制台" → 镜像写进 boot 日志。
+    真实控制台已被 FreeConsole 摘除, 镜像毫无意义且污染 boot 日志, 故 detached 时直接 False。
+    """
+    if is_console_detached():
+        return False
     out = sys.stdout
     return out is not None and callable(getattr(out, "write", None))
 

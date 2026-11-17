@@ -28,6 +28,8 @@
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
+// 编辑历史: 2026-11-13 商量 - 任务起点与服务器时钟锚下发: 增 taskStartTime(后端权威任务起点, 与终态 duration 同源)
+//   与 serverClock(最新帧的服务器时刻 + 到达客户端时刻), 供实时秒表单一真源 — 商量-2026-11-13
 export interface StartInfoFrame {
   task_id?: string;
   display_name?: string;
@@ -115,6 +117,13 @@ export interface TaskMetaFrames {
   finalStats: FinalStatsFrame | null;
   contextOverview: ContextOverviewFrame | null; // 保留上一帧
   truncated: { content: string; severity: 'info' | 'warn' | 'error' } | null;
+  // 2026-11-13 商量 - 任务起点信号(首个 thought-start 帧携带, 仅SSE, 在历史加载/摘要压缩之前发出):
+  //   taskStartTime = 后端权威任务起点(本地ISO; 与终态 duration=end-start_time 同一真源)。
+  taskStartTime?: string | null;
+  serverClock?: {
+    ts: string;   // 最新一帧的**服务器**时刻(本地ISO)
+    recvAt: number; // 该帧到达客户端的时刻(毫秒) —— 之后秒表按客户端增量继续走
+  } | null;
 }
 export const emptyMetaFrames = (): TaskMetaFrames => ({
   contextSummary: '',

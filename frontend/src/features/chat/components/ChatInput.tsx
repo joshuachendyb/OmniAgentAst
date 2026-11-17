@@ -41,6 +41,11 @@
 //   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
 // 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案沿既有两段;
 //   删输入框下方旧提示块消除双提示并存; testid 保 overlay 内层以保既有 e2e 不断 — 小欧-2026-10-26
+// 编辑历史: 2026-11-16 小欧 [23]阶段B(输入框体验统一): ①refs.map 内联 chip 抽为统一组件
+//   RefChip(features/refs/, 四类引用同一渲染体, 样式/点击/回执态零改动);
+//   ②徽标双源: URL 逐项只读 preflight quality(采集层落存), 附件/文件只读 ref_quality_map;
+//   ③新增发送前提示行 HintLine(降级/超限/非法链接/推荐切换, 互不串扰, 引用行下);
+//   ④worst_quality 前端聚合与后端 preflight 同口径(任一非 native 即 degraded) — 小欧-2026-11-16
 
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
@@ -73,9 +78,30 @@
 //   装配会话/上传回调; 拖拽/粘贴落点挂整个输入区(含引用区与按钮行); ensureSession 经 useChatPanels 透传 — 小欧-2026-11-06
 // 编辑历史: 2026-11-07 小欧 注释清理: 去除文档号/章节号/修复序号等过期标识, 注释语义不变 — 小欧-2026-11-07
 // 编辑历史: 2026-11-11 小欧 - @补全入队限流改读 getMaxRefs()(上限单真源后端 capabilities) — 小欧-2026-11-11
-// 编辑历史: 2026-11-11 小欧 - chip 增能力徽标: useRefCapabilityMap(生效模型 ref_capability_map 只读索引)
-//   + CapabilityBadge, 查不到不显示 — 小欧-2026-11-11
+// 编辑历史: 2026-11-11 小欧 - chip 增引用质量徽标: useRefQualityMap(生效模型 ref_quality_map 只读索引)
+//   + QualityBadge, 查不到不显示 — 小欧-2026-11-14
+// 2026-11-13 商量 - 输入帮助分层 + 落位: 输入框内只留核心 placeholder, 非常用输入方式收进「输入技巧」
+//   浮层; 微图例(@ 引用 · 拖入文件 · 粘贴图片)并入 placeholder 尾段(空态零额外高度),
+//   「输入技巧」入口经 SubmitBar.middleExtra 放在按钮行中段, 与按钮同高 → 输入区零额外高度 — 商量-2026-11-13
+//   入口在打字后/受阻态(placeholder 被隐藏)仍常驻, 承担能力发现的持续性 — 商量-2026-11-13
+// 2026-11-13 商量 - 底部纵向留白收口: 根 gap 8→6(输入区内部节奏, 按钮行归输入框工具条);
+//   删引用行 marginBottom 4(与父 gap 重复计), 删 sendBlocked 灰字行(与 InputCore executingHint 同为
+//   "不可发送"提示, 空态下两者叠加) — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 全站间距语义档(theme/spacing.ts 的 Gap)落地, gap 改用语义名;
+//   chip 内距/删除钮内距改走 controlScale 的 CONTROL_PADDING, 行高改走 LineHeight — 商量-2026-11-13
+// 2026-11-16 小欧 [23]阶段D - 能力路由闭环: URL 预检透传生效模型/路由模式, 渲染可操作推荐条;
+//   switch 一键落 L2(switchSessionModel), auto 自动切换并保留回退入口, keep 不占位 — 小欧-2026-11-16
+// 2026-11-16 小欧 [23]阶段D D12 - Composer 级预检重算: 引用增删即整体重算(useInputPreflight,
+//   seq 丢弃迟到), worst/逐项 quality/routing_advice 全走后端真源, chip 徽标与最差聚合收敛单一投影;
+//   URL 采集层不再单独缓存建议, auto 切换迁至建议 effect — 小欧-2026-11-16
 
+// 2026-11-16 小欧 修正: 推荐条回退入口独立于当前建议(revertFrom 单独驱动, 自动切换后建议重算为 keep
+//   不再吞掉回退按钮); auto 自动切换按建议键去重防回环; 输入变更清除陈旧回执提示
+
+// 2026-11-16 小欧 bug猎修: 路由建议的会话级状态(autoSwitchedRef 去重集/回退快照/已忽略建议键)
+//   随 sessionId 复位 —— 组件跨会话复用, 原状态不重置会致新会话同键建议不自动切换、回退指向旧会话模型
+// 2026-11-16 小欧 - 删除按钮行「指令」入口: CommandPanel 按钮无实际价值, 移除装配与 import,
+//   快捷指令能力改由顶部 ShortcutPanel 承载 — 小欧-2026-11-16
 
 /**
  * ChatInput - 输入框组合根（六组件组合）
@@ -87,6 +113,9 @@
  *
  * @author 小欧
  * @date 2026-08-26
+ *
+ * 编辑历史 2026-11-16 opencode 修正: URL 采集回执的场景提示仅在纯 URL 接管时给出,
+ *   混排正文命中非法链接不再误提示(链接仍留在正文)。
  */
 
 import React, {
@@ -100,7 +129,6 @@ import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
-import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
 import { AttachmentArea } from './input/AttachmentArea'; // 2026-11-06 小欧 - 附件入口(插槽装配)
 import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 动作按钮组(与 SubmitBar 拆出; 2026-10-25 回迁 SubmitBar 行右端)
@@ -110,59 +138,54 @@ import {
 } from '@/features/refs/uploadAttachment'; // 2026-11-06 小欧 - 拖拽/粘贴统一落点
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
+import { ShortcutHelp } from './input/ShortcutHelp'; // 2026-11-13 商量 - 输入帮助浮层+单行微图例
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
+// 2026-11-15 小欧 - URL 一等引用采集层(粘贴/拖拽文本 → 后端预检 → chip/即拒)
+import { captureUrlsFromText } from '@/features/refs/urlCapture';
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import {
-  chipStateOf,
-  chipStateText,
-  chipToneOf,
-  noticeOf,
-  noticeDetailText,
-} from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射
 import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填信号 — 小欧-2026-10-30
 // 2026-10-30 18:42:49 小欧 - 会话使用目录的唯一真源(徽标只订阅其 list.length) — 小欧-2026-10-30
 import { workspaceStore } from '../services/sessionWorkspaceStore';
-import type { ChipTone } from '@/features/refs/notice';
+// 2026-11-16 小欧 [23]阶段B: chip 5 态/回执映射迁入 RefChip 组件内(本文件不再直连 notice);
+//   chip 统一组件 + 发送前提示行 — 小欧-2026-11-16
+import { RefChip } from '@/features/refs/RefChip';
+import { HintLine } from '@/features/refs/HintLine';
+import { RecommendationBar } from './input/RecommendationBar';
+// 2026-11-16 小欧 [23]阶段D D12: Composer 级输入预检重算(引用增删即整体重算, 后端统一裁决) — 小欧-2026-11-16
+import { useInputPreflight } from '../hooks/useInputPreflight';
+import { preflightItemKey } from '@/features/refs/preflightItems';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检
 import {
   newRefId,
   getMaxRefs,
   refLimitText,
   type ComposerRef,
+  type RefQualityValue,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
-import { resolveChipUrlFresh } from '@/hooks/useProjectRoot';
 import { isLinkableRelPath } from '@/utils/projectPath';
 // 2026-11-07 小欧 - 本轮文件条显示总大小: 复用公用 formatBytes(不新造格式化) — 小欧-2026-11-07
 import { formatBytes } from '@/utils/format';
 // 2026-11-02 小欧 - 引用 chip 点击改 SPA 导航（与 PathLink/FileTrailPanel 同一口径，且避开
 //   await 后再 window.open 被浏览器当弹窗拦截）— 小欧-2026-11-02
-import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+// 2026-11-16 小欧 [23]阶段B: SPA 导航随 chip 点击逻辑一并迁入 RefChip, 本文件不再用 nav
 import { showMessage, ErrorType } from '../../../services/error/handler';
 import { chatTokens } from '@/theme/tokens';
+import { FOCUS_RING_WIDTH, FOCUS_RING_OFFSET } from '@/theme/controlScale';
 import {
   loadRecentInputs,
   addRecentInput,
   clearRecentInputs,
   type RecentInput,
 } from '../utils/recentInputs';
-import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
+import type { SendOpts, RoutingMode } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors } from '@/utils/stepStyles';
-// 2026-11-11 小欧 - chip 能力徽标: 生效模型 ref_capability_map 只读索引 — 小欧-2026-11-11
-import {
-  chipCapState,
-  useRefCapabilityMap,
-} from '../hooks/useRefCapabilityMap';
-import { CapabilityBadge } from './input/CapabilityBadge';
-
-/** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
-const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
-  danger: { bg: Colors.ERROR_BG, border: Colors.ERROR_BORDER },
-  warn: { bg: Colors.WARNING_BG, border: Colors.WARNING },
-  normal: { bg: chatTokens.colorPrimaryBg, border: chatTokens.colorBorder },
-};
+import { Colors, Radius, Spacing } from '@/utils/stepStyles';
+import { Gap } from '@/theme/spacing';
+// 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
+// 2026-11-16 小欧 [23]阶段B: QualityBadge 徽标渲染迁入 RefChip 统一组件, 本文件只投影 quality 值
+import { chipQuality, useRefQualityMap } from '../hooks/useRefQualityMap';
 
 interface ChatInputProps {
   loading: boolean;
@@ -179,6 +202,12 @@ interface ChatInputProps {
   onToggleInterject: (enabled: boolean) => void;
   // 2026-11-06 小欧 - 附件上传前确保会话存在(由 ChatPage 注入) — 小欧-2026-11-06
   ensureSession?: () => Promise<string | null>;
+  /** 2026-11-16 小欧 [23]阶段D: 生效模型(provider/model)与路由模式, 供 preflight 路由判定 */
+  modelId?: string;
+  modelProvider?: string;
+  routingMode?: RoutingMode;
+  /** 推荐条一键切换(由调用方落 L2 并同步模型层) */
+  onSwitchModel?: (provider: string, model: string) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -195,6 +224,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   allowInterject, // 2026-10-07 小欧 - 插话开关
   onToggleInterject,
   ensureSession, // 2026-11-06 小欧 - 附件建会话
+  modelId, // 2026-11-16 小欧 [23]阶段D - 生效模型与路由模式
+  modelProvider,
+  routingMode = 'suggest',
+  onSwitchModel,
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
@@ -210,8 +243,81 @@ const ChatInput: React.FC<ChatInputProps> = ({
     add,
     setAll,
   } = useComposerRefs();
-  // 2026-11-11 小欧 - chip 能力徽标数据源(生效模型 ref_capability_map) — 小欧-2026-11-11
-  const capMap = useRefCapabilityMap(sessionId);
+  // 2026-11-14 小欧 - chip 引用质量徽标数据源(生效模型 ref_quality_map) — 小欧-2026-11-14
+  const capMap = useRefQualityMap(sessionId);
+  // 2026-11-16 小欧 [23]阶段D D12: 引用增删即整体重算, worst_quality 直读后端聚合值 — 小欧-2026-11-16
+  const preflight = useInputPreflight({
+    refs,
+    modelId,
+    modelProvider,
+    routingMode,
+  });
+  const worstQuality = preflight.worstQuality;
+  // 2026-11-16 小欧 [23]阶段B: 徽标双源投影 — URL 逐项只读 preflight quality(采集层落存),
+  //   附件/文件只读 ref_quality_map 投影; 同一函数供 chip 徽标与 worst 聚合共用(单一实现) — 小欧-2026-11-16
+  const qualityOf = useCallback(
+    (r: ComposerRef) => {
+      // 2026-11-16 小欧 [23]阶段D D12: 逐项 quality 由 Full preflight 回写覆盖(后端真源),
+      //   未返回前回退既有投影(URL 采集层落存 / 附件·文件 ref_quality_map) — 小欧-2026-11-16
+      const key = preflightItemKey(r);
+      return (
+        (preflight.qualityByKey[key] as RefQualityValue | undefined) ||
+        r.quality ||
+        (capMap ? chipQuality(capMap, r) : undefined)
+      );
+    },
+    [preflight.qualityByKey, capMap]
+  );
+  // 2026-11-16 小欧 [23]阶段B: URL 采集回执的场景提示(非法链接), 下次采集刷新 — 小欧-2026-11-16
+  const [urlHint, setUrlHint] = useState<'invalid-url' | undefined>(undefined);
+  // 2026-11-16 小欧 [23]阶段D: 能力路由建议直读 preflight(routing_advice), auto 切换前模型快照作回退 — 小欧-2026-11-16
+  const routingAdvice = preflight.routingAdvice;
+  // 手动切换/回退后本条建议即时隐藏, 不依赖模型层回传时序(下一次重算给出新建议) — 小欧-2026-11-16
+  const [dismissedAdvice, setDismissedAdvice] = useState('');
+  const adviceKey = routingAdvice
+    ? `${routingAdvice.action}:${routingAdvice.provider ?? ''}:${
+        routingAdvice.model ?? ''
+      }`
+    : '';
+  const visibleAdvice =
+    routingAdvice && adviceKey !== dismissedAdvice ? routingAdvice : null;
+  const [revertFrom, setRevertFrom] = useState<{
+    provider: string;
+    model: string;
+  } | null>(null);
+  // 已自动切换过的建议键: 回退到原模型后同一建议重算仍成立, 不再二次自动切换(防回环)
+  const autoSwitchedRef = useRef<Set<string>>(new Set());
+  // 2026-11-16 小欧 bug猎修: 会话切换复位路由建议的会话级状态(去重集/回退快照/已忽略键),
+  //   避免跨会话残留导致新会话不自动切换、回退指向旧会话模型
+  useEffect(() => {
+    autoSwitchedRef.current.clear();
+    setRevertFrom(null);
+    setDismissedAdvice('');
+  }, [sessionId]);
+  // 2026-11-16 小欧 [23]阶段D: auto 模式点击外自动切换(带去重守卫防回路), 切换前快照供回退 — 小欧-2026-11-16
+  useEffect(() => {
+    if (
+      routingMode !== 'auto' ||
+      !routingAdvice ||
+      routingAdvice.action !== 'switch' ||
+      !routingAdvice.model ||
+      !routingAdvice.provider ||
+      !onSwitchModel
+    )
+      return;
+    if (
+      routingAdvice.model === modelId &&
+      routingAdvice.provider === (modelProvider ?? '')
+    )
+      return;
+    if (autoSwitchedRef.current.has(adviceKey)) return;
+    autoSwitchedRef.current.add(adviceKey);
+    setRevertFrom(
+      modelId ? { provider: modelProvider ?? '', model: modelId } : null
+    );
+    onSwitchModel(routingAdvice.provider, routingAdvice.model);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routingAdvice, routingMode, modelId, modelProvider]);
   // 2026-11-07 小欧 - 本轮文件条总大小(≤20 项, 直接求和; 复用公用 formatBytes) — 小欧-2026-11-07
   const totalSize = refs.reduce((sum, r) => sum + (r.size ?? 0), 0);
   // 2026-10-21 小杨 - @ 补全状态
@@ -287,8 +393,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-11-06 小欧 - 拖拽高亮 + 拖入深度计数(子元素间移动不闪)
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
-  // 2026-11-02 小欧 - 引用 chip 点击的唯一跳转口（有 Router 走 SPA，无 Router 整页跳）— 小欧-2026-11-02
-  const nav = useOptionalNavigate();
   useEffect(() => {
     const was = wasBlockedRef.current;
     wasBlockedRef.current = sendBlocked;
@@ -563,6 +667,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
    */
   const handleInputChange = useCallback(
     (v: string) => {
+      setUrlHint(undefined); // 用户继续编辑即视为已知悉, 清除上次采集的陈旧回执提示
       setDraft(v);
       if (histIdx >= 0) exitHistory();
       const el = inputRef.current;
@@ -685,6 +790,40 @@ const ChatInput: React.FC<ChatInputProps> = ({
     [sessionId, ensureSession]
   );
 
+  /** 2026-11-15 小欧 - URL 采集唯一接线: 整段文本交后端预检(识别真源在后端),
+   *  ok 项入队 chip(配额内), 被拒/超限合并一条 toast 点名;
+   *  strip = 命中纯 URL 内容时从正文撤出该段(原生粘贴场景, 按 caret 精确撤出);
+   *  预检失败: 粘贴场景正文已原生落位, 静默放行不吞文本; 拖拽场景点名失败。 */
+  const handleUrlText = useCallback(
+    (text: string, strip?: (draft: string) => string): void => {
+      void captureUrlsFromText(text, getMaxRefs() - getRefs().length, {
+        // 后端以 provider/model 定位画像; 仅有 model 时退化按 model 解析 — 小欧-2026-11-16
+        modelId: modelId
+          ? modelProvider
+            ? `${modelProvider}/${modelId}`
+            : modelId
+          : undefined,
+        mode: routingMode,
+      })
+        .then(({ accepted, rejected, overflow, urlOnly }) => {
+          // 2026-11-16 小欧 [23]阶段B: 场景提示数据落定(非法链接), 供 HintLine 展示;
+          // 阶段D D12: 推荐切换/auto 切换统一由 Composer 级重算(preflight hook)承载 — 小欧-2026-11-16
+          if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化, 不做接管类提示
+          setUrlHint(rejected.length > 0 ? 'invalid-url' : undefined);
+          if (strip) setDraft(strip);
+          for (const r of accepted) add(r);
+          const msgs = rejected.map((r) => `${r.url}（${r.reason}）`);
+          if (overflow > 0) msgs.push(refLimitText());
+          if (msgs.length > 0)
+            showMessage(ErrorType.UNKNOWN, `链接未加入：${msgs.join('、')}`);
+        })
+        .catch(() => {
+          if (!strip) showMessage(ErrorType.UNKNOWN, '链接预检失败，请重试');
+        });
+    },
+    [add, getRefs, setDraft, modelId, modelProvider, routingMode]
+  );
+
   /** 只接管"带文件"的拖拽; 拖文本、拖链接一律放行, 不打扰浏览器默认行为 */
   const hasFiles = (dt: DataTransfer | null): boolean =>
     !!dt && Array.from(dt.types).includes('Files');
@@ -707,19 +846,49 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const onDrop = (e: React.DragEvent): void => {
-    if (!hasFiles(e.dataTransfer)) return;
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragOver(false);
-    handleFiles(filesFromDataTransfer(e.dataTransfer));
+    if (hasFiles(e.dataTransfer)) {
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      handleFiles(filesFromDataTransfer(e.dataTransfer));
+      return;
+    }
+    // 2026-11-15 小欧 - 拖入链接: uri-list 是浏览器拖拽链接必带的拖拽数据类型
+    //   (类型判据, 非 URL 识别); 交后端预检 chip 化, 其余文本拖拽放行浏览器默认
+    if (Array.from(e.dataTransfer.types).includes('text/uri-list')) {
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      handleUrlText(
+        e.dataTransfer.getData('text/uri-list') ||
+          e.dataTransfer.getData('text/plain')
+      );
+    }
   };
 
   /** 粘贴截图: 只有剪贴板里真有文件才接管; 纯文本粘贴不 preventDefault(否则正文粘不进来) */
   const onPaste = (e: React.ClipboardEvent): void => {
     const files = filesFromDataTransfer(e.clipboardData);
-    if (files.length === 0) return;
-    e.preventDefault();
-    handleFiles(files);
+    if (files.length > 0) {
+      e.preventDefault();
+      handleFiles(files);
+      return;
+    }
+    // 2026-11-15 小欧 - 粘贴文本: 不前端判 URL(识别真源在后端)。正文先按原生粘贴
+    //   落位(零延迟/光标不跳), 后端预检判出纯 URL 内容再按 caret 撤出该段改挂 chip;
+    //   混排/纯文本原样保留, 预检失败静默放行(正文已在, 不吞文本不误拒)
+    const pasteText = e.clipboardData.getData('text/plain');
+    if (!pasteText) return;
+    const caret = inputRef.current?.selectionStart ?? null;
+    handleUrlText(pasteText, (prev) => {
+      if (caret === null) return prev;
+      if (prev.slice(caret, caret + pasteText.length) === pasteText)
+        return prev.slice(0, caret) + prev.slice(caret + pasteText.length);
+      const at = prev.indexOf(pasteText); // 粘贴后有并发编辑: 兜底按首个完整匹配撤出
+      return at >= 0
+        ? prev.slice(0, at) + prev.slice(at + pasteText.length)
+        : prev;
+    });
   };
 
   return (
@@ -734,10 +903,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
-        outline: dragOver ? `2px dashed ${Colors.PRIMARY}` : 'none',
-        outlineOffset: 2,
-        borderRadius: 8,
+        // 2026-11-13 商量 - 纵向节奏取 Gap.STACK: 输入区内部区块间用同层兄弟档, 按钮行是输入框的
+        //   工具条, 不应与"上下区块"共用同一档; 引用行/提示行、输入框与按钮行的留白同步收紧
+        gap: Gap.STACK,
+        // 2026-11-13 商量 - 拖拽高亮外框规格走全站焦点环令牌(FOCUS_RING), 圆角走 Radius.LG:
+        //   原 2px/2/8 为裸字面量, 现由 controlScale 统一; antd 只作渲染, 不提供任何规格 — 商量-2026-11-13
+        outline: dragOver
+          ? `${FOCUS_RING_WIDTH}px dashed ${Colors.PRIMARY}`
+          : 'none',
+        outlineOffset: FOCUS_RING_OFFSET,
+        borderRadius: Radius.LG,
       }}
     >
       {/* 2026-10-21 小杨 - 引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}
@@ -747,8 +922,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            gap: 6,
-            marginBottom: 4,
+            gap: Gap.INLINE,
           }}
         >
           {/* 2026-10-21 小杨 - 给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
@@ -761,82 +935,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
           >
             本轮文件 · {refs.length} 个 · 共 {formatBytes(totalSize)}
           </span>
-          {refs.map((r) => {
-            /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
-               红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking;
-               批3: 配色改查色表(原背景/边框各写一遍三层嵌套三元, 6 处分支)
-               R9: 文案拼回执 detail(省略多少)/中文原因, 标题同样带原因 —— 用户能分清
-               "文件不存在""选区越界""整批被拒" — 小欧-2026-10-30 */
-            const state = chipStateOf(r, refNotices);
-            const notice = noticeOf(r, refNotices);
-            const tone = CHIP_TONE_STYLE[chipToneOf(state)];
-            const detail = noticeDetailText(notice);
-            // 2026-11-11 小欧 - 能力徽标状态(ref_capability_map 只读索引, 查不到不显示) — 小欧-2026-11-11
-            const capState = capMap ? chipCapState(capMap, r) : undefined;
-            return (
-              <span
-                key={r.id}
-                title={`${r.path ?? ''}${
-                  r.lineRange
-                    ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
-                    : ''
-                }${detail ? `｜${detail}` : ''}`}
-                style={{
-                  /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
-                  background: tone.bg,
-                  color: Colors.TEXT.STRONG,
-                  border: `1px solid ${tone.border}`,
-                  borderRadius: chatTokens.radius,
-                  padding: '1px 4px 1px 6px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-                onClick={() => {
-                  // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
-                  //   不跳文件页（否则点开一个空 path 的死链），仅作展示
-                  if (!r.path) return;
-                  // 2026-11-02 小欧 - 改走唯一路径解析（点击实时取根），不再直接拼内部深链：
-                  //   根外路径原实现会生成无 ext=1 的内部深链 → 文件页必报找不到 — 小欧-2026-11-02
-                  void resolveChipUrlFresh(r.path, r.lineRange ?? null).then(
-                    // 点击时实时判不过 → 不跳空链；跳转口径与 PathLink 一致（SPA 导航 + internal 标记）
-                    // 2026-11-02 小欧 - 补 internal:true：缺它文件页不清外部预览态，点 chip 像没反应 — 小欧-2026-11-02
-                    (url) => {
-                      if (url) nav(url, { state: { internal: true } });
-                    }
-                  );
-                }}
-              >
-                <FileOutlined style={{ color: chatTokens.colorPrimary }} />
-                {r.label}
-                {/* 2026-11-11 小欧 - 能力徽标: 按 ref_capability_map[source][content] 只读索引 — 小欧-2026-11-11 */}
-                {capState && <CapabilityBadge state={capState} />}
-                {chipStateText(state, notice)}
-                {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(r.id); // 小欧-2026-10-22 改用 hook.remove
-                  }}
-                  aria-label={`删除引用 ${r.label}`}
-                  title="移除该引用"
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    padding: '0 4px',
-                    fontSize: 14,
-                    lineHeight: '16px',
-                    color: Colors.TEXT.SECONDARY,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            );
-          })}
+          {refs.map((r) => (
+            /* 2026-11-16 小欧 [23]阶段B: chip 统一组件(四类引用同一渲染体), 自内联 span 抽出 — 小欧-2026-11-16 */
+            <RefChip
+              key={r.id}
+              r={r}
+              notices={refNotices}
+              quality={qualityOf(r)}
+              onRemove={remove}
+            />
+          ))}
         </div>
       )}
       {refsPending && (
@@ -844,10 +952,38 @@ const ChatInput: React.FC<ChatInputProps> = ({
           引用内容正在载入，稍候即可发送
         </div>
       )}
-      {sendBlocked && refs.length > 0 && (
-        <div style={{ color: Colors.TEXT.WEAK, fontSize: chatTokens.fontSM }}>
-          当前正在生成，请等待本轮结束后编辑并发送
-        </div>
+      {/* 2026-11-16 小欧 [23]阶段B: 发送前提示行(引用行下): 超限/非法链接/推荐切换优先,
+          其余看 worst_quality; 无提示不占行 — 小欧-2026-11-16 */}
+      {refs.length > 0 && (
+        <HintLine
+          worstQuality={worstQuality}
+          mode={refs.length >= getMaxRefs() ? 'over-limit' : urlHint}
+        />
+      )}
+      {/* 2026-11-16 小欧 [23]阶段D: 能力路由推荐条(可操作): switch 一键落 L2;
+          auto 模式自动切换后展示回退入口; keep 不占位 — 小欧-2026-11-16 */}
+      {(visibleAdvice || revertFrom) && (
+        <RecommendationBar
+          advice={visibleAdvice}
+          onSwitch={
+            onSwitchModel
+              ? (m) => {
+                  onSwitchModel(visibleAdvice?.provider ?? '', m);
+                  setDismissedAdvice(adviceKey);
+                }
+              : undefined
+          }
+          revertModel={revertFrom?.model}
+          onRevert={
+            revertFrom && onSwitchModel
+              ? () => {
+                  onSwitchModel(revertFrom.provider, revertFrom.model);
+                  setRevertFrom(null);
+                  setDismissedAdvice(adviceKey);
+                }
+              : undefined
+          }
+        />
       )}
       {/* 2026-10-21 小杨 - 候选面板改为**浮层**（absolute）
           原实现是普通文档流 → 每打开一次就把下方内容整体下推，输入区位置跳动。
@@ -886,7 +1022,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               top: '100%',
               left: 0,
               right: 0,
-              marginTop: 4,
+              marginTop: Gap.ROW,
               zIndex: 20,
               border: `1px solid ${chatTokens.colorBorder}`,
               borderRadius: chatTokens.radius,
@@ -907,7 +1043,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   void pickAtItem(h);
                 }}
                 style={{
-                  padding: '4px 8px',
+                  padding: `${Gap.ROW}px ${Spacing.MD}px`,
                   cursor: 'pointer',
                   background: i === atIndex ? Colors.BG.TERTIARY : undefined,
                 }}
@@ -941,6 +1077,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       <SubmitBar
         modelPickerSlot={modelPickerSlot ?? null}
+        /* 2026-11-13 商量 - 微图例下沉到按钮行中段(零额外高度), 见 ShortcutHelp 头注 */
+        middleExtra={<ShortcutHelp />}
         leftExtra={
           <Space
             size={8}
@@ -963,9 +1101,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 clearRecentInputs();
                 setRecents([]);
               }}
-            />
-            <CommandPanel
-              onPick={(c) => setDraft((d) => (d ? `${d}\n${c}` : c))}
             />
             <TaskTypeToggle checked={linkEnabled} onChange={onToggleLink} />
           </Space>

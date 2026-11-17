@@ -13,6 +13,11 @@
 // 编辑历史: 2026-11-11 小欧 - P5 指标: AttachmentMetrics 类型 + metrics() 只读聚合接口 — 小欧-2026-11-11
 
 // 编辑历史: 2026-11-11 小欧 - 三堂会审整改: AttachmentCapabilities 补 suffix_kind(后端下发后缀→类型词典, 消前端复制后缀表双真源) — 小欧-2026-11-11
+// 编辑历史: 2026-11-13 小欧 - 附件列表四栏重构配套: scope 收敛为 session/recent/global(删 ai 档, AI 产出改走会话产物端点),
+//   recent 档时间窗由后端下发 recent_window_days(前端不写死天数), 附件记录增 taskId — 小欧-2026-11-13
+// 编辑历史: 2026-11-14 小欧 - 上传上限单真源后端下发: limits 增 max_image_bytes/max_file_bytes, 前端预检与文案禁用硬编码;
+//   能力协商结果模块级一次性缓存, 失败不缓存下次重试 — 小欧-2026-11-14
+// 编辑历史: 2026-11-16 小欧 [23]阶段C: ListOptions 增 kind, list 透传后端类型筛选(expand_kind 单一真源) — 小欧-2026-11-16
 /**
  * 附件 API 封装（同 file.api / session.api 范式）
  *
@@ -28,8 +33,8 @@ import api, {
 } from './client'; // api 只有默认导出（同 file.api）
 import type { ApiRequestConfig } from './client';
 
-/** 列表作用域: 本会话 / 最近用过 / 已收藏 / 任务产物(scope=ai) */
-export type AttachmentScope = 'session' | 'recent' | 'global' | 'ai';
+/** 列表作用域: 本会话附件(session) / 他会话附件(recent) / 已收藏(global) */
+export type AttachmentScope = 'session' | 'recent' | 'global';
 
 export interface AttachmentRecord {
   id: string;
@@ -67,6 +72,8 @@ export interface AttachmentRecord {
 export interface ListOptions {
   scope?: AttachmentScope;
   q?: string;
+  /** 类型筛选（'all' 或七类，后端 expand_kind 单一真源；undefined=不筛） */
+  kind?: string;
   limit?: number;
   offset?: number;
 }
@@ -74,10 +81,19 @@ export interface ListOptions {
 /** 上传白名单/上限/类型选项唯一出口(C8); 前端禁止写死后缀/大小/上限 — 小欧-2026-11-11 */
 export interface AttachmentCapabilities {
   accept: string;
-  limits: { max_refs: number; max_urls: number; max_url_images: number };
+  limits: {
+    max_refs: number;
+    max_urls: number;
+    max_url_images: number;
+    /** 单文件字节上限(后端配额单一真源, 前端预检/文案禁用硬编码) */
+    max_image_bytes: number;
+    max_file_bytes: number;
+  };
   kind_options: Array<{ value: string; label: string }>;
   /** 后缀→content_kind 词典(单一真源后端 extract, 前端禁止再写死后缀表) */
   suffix_kind: Record<string, string>;
+  /** 「他会话附件」时间窗(天, 后端唯一真源): 标签文案按此渲染, 前端不写死天数 */
+  recent_window_days: number;
 }
 
 /** P5 运行指标(GET /attachments/metrics): 逐事件计数 + 三比率, 可定位到 source/kind */
@@ -115,15 +131,15 @@ export const attachmentApi = {
   /**
    * 附件列表（作用域唯一入口）。
    * 2026-11-07 小欧: 原 `list(sessionId)` 扩为选项对象；session 作用域仍按会话取，
-   *   recent/global/ai 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
+   *   recent/global 跨会话共享（后端判定，前端不参与）— 小欧-2026-11-07
    */
   list: async (
     sessionId?: string | null,
     opts?: ListOptions
   ): Promise<AttachmentRecord[]> => {
-    const { scope = 'session', q, limit, offset } = opts ?? {};
+    const { scope = 'session', q, kind, limit, offset } = opts ?? {};
     const cfg: ApiRequestConfig = {
-      params: { session_id: sessionId || undefined, scope, q, limit, offset },
+      params: { session_id: sessionId || undefined, scope, q, kind, limit, offset },
       _silent: true,
     };
     return (await api.get<AttachmentRecord[]>('/attachments', cfg)).data;
@@ -234,14 +250,17 @@ export const attachmentApi = {
   /**
    * ③ 存为附件（S0）：工作区内产物 → referenced（不复制，直接可引用）；
    * 工作区外 → copied（复制进 attachments/ 并返回完整记录）。
+   * taskId: 来源任务溯源（可选）—— 断链修复, 产物溯源行据此落 source_task_id。
    */
   collect: async (
     sessionId: string,
-    sourcePath: string
+    sourcePath: string,
+    taskId?: string | null
   ): Promise<CollectResult> => {
     const res = await api.post<CollectResult>('/attachments/collect', {
       session_id: sessionId,
       source_path: sourcePath,
+      task_id: taskId ?? null,
     });
     return res.data;
   },
@@ -284,6 +303,21 @@ export const attachmentApi = {
     return res.data;
   },
 };
+
+/**
+ * 能力协商结果模块级一次性缓存: 白名单/上限/后缀词典多处消费, 共享同一请求。
+ * 失败不缓存(下次重试), 调用方各自兜底。
+ */
+let _capsPromise: Promise<AttachmentCapabilities> | null = null;
+export function loadCapabilities(): Promise<AttachmentCapabilities> {
+  if (!_capsPromise) {
+    _capsPromise = attachmentApi.capabilities().catch((e) => {
+      _capsPromise = null;
+      throw e;
+    });
+  }
+  return _capsPromise;
+}
 
 /** ③ 存为附件双形态（与 backend/app/attachments/collect.py 返回同构） */
 export type CollectResult =

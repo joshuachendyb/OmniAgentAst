@@ -80,6 +80,19 @@
 # 2026-11-04 小欧 - shell 卡死根治(执行器层): 删私有 _ShellWorkerPool 改 app.utils.workers.WorkerPool(同一实现,
 #   构造期建满 N 线程, 运行期 submit 只入队); 容量 _SHELL_EXECUTOR_MAX 按 tuning 配置在池构造处计算(不塞进
 #   tool_constants 纯常量表); 排队与执行共用单一 deadline(原各等 timeout, 最坏 2×timeout 撑破保险丝) — 小欧-2026-11-04
+# 2026-11-14 小欧 - 同步工具有界执行器泛化(8100 grep 假死事故根治): 非shell同步工具原走 asyncio.to_thread
+#   → 事件循环默认 executor, wait_for 超时后卡死线程永久占位(8100事故: grep 单行灾难回溯 20+分钟,
+#   默认 worker 被占死, HTTP 全部无响应)。修法: _execute_in_shell_executor 泛化为
+#   _execute_in_bounded_executor(executor/slots 参数化), 新增 _TOOL_EXECUTOR(16,tool-exec)/
+#   _TOOL_SLOTS, 全部同步工具统一走有界执行器; "同步工具返回协程"语义保留(结果后置 await 同预算)。
+
+# 2026-11-15 小欧 - 参数提示补齐: 新增 _MISSING_PARAM_HINTS(edit/write/read/grep/find/copy 缺失参数的可行动
+#   指引), 缺失分支按 tool+参数 查表拼接取代统一套话; _INVALID_PARAM_HINTS 补 copy.pattern 误用纠正。
+# 2026-11-15 小欧 - L1-1 槽位对账: _SHELL_SLOTS/_TOOL_SLOTS 由 BoundedSemaphore 换 WorkerSlots,
+#   超时未归还的 worker 记永久损耗(available=size-in_use-lost), 迟到回调经 SlotLease 幂等释放;
+#   BoundedSemaphore 在不可中断原生调用卡死时永久占用且无法区分持有者, 导致容量与实际可用线程静默错位。
+#   顺带删除因换实现而失效的 threading 死导入。
+
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -92,11 +105,12 @@
 
 负责统一处理工具执行的重试逻辑,消除双重实现
 Author: 小沈 - 2026-05-27
+2026-11-15 小欧 - 同步工具有界执行器泛化: 非 shell 同步工具原走 asyncio.to_thread, 卡死线程永久占位
+  (grep 单行灾难回溯 20+分钟致 HTTP 全无响应); 改走独立有界执行器(16 槽位), 不侵蚀默认 executor
 """
 
 import asyncio
 import inspect
-import threading
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
@@ -118,7 +132,7 @@ from app.utils.json_utils import (  # coerce_json: 反向类型容错复用(DRY,
     coerce_json,
     safe_json_dumps,
 )
-from app.utils.workers import WorkerPool  # 2026-11-04 小欧: 常驻线程池统一实现(取代各文件私有池)
+from app.utils.workers import WorkerPool, WorkerSlots  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
@@ -179,7 +193,16 @@ _SHELL_TOOL_NAMES = frozenset({"bash", "shell", "execute_shell_command", "execut
 # 执行器容量: 2026-11-06 小欧 - 去池化后 shell 每命令独立子进程, 执行器线程数固定 32(不再从已删的 shell_pool_max_per_type 派生)
 _SHELL_EXECUTOR_MAX = 32
 _SHELL_EXECUTOR = WorkerPool(_SHELL_EXECUTOR_MAX, "shell-exec")
-_SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 执行器线程级并发闸门(与 execute_shell_command 的进程级 _SHELL_PROC_SEM 分层)
+_SHELL_SLOTS = WorkerSlots(_SHELL_EXECUTOR_MAX)   # 执行器线程级并发闸门(与 execute_shell_command 的进程级 _SHELL_PROC_SEM 分层)
+
+# 非shell同步工具有界执行器 — 2026-11-14 小欧 (8100 grep 假死事故根治)
+# 病根: 非shell同步工具仍走 asyncio.to_thread → 事件循环默认 executor, wait_for 超时后
+#   卡死线程永久占位(8100事故: grep 单行灾难回溯 20+分钟, 默认 worker 被占死)。
+# 方案: 与 shell 同构 — 专用常驻 WorkerPool + 有界闸门, 卡死最多占满本池,
+#   不侵蚀默认 executor(DNS/getaddrinfo 等短任务不受牵连); 排队占不到位明确失败。
+_TOOL_EXECUTOR_MAX = 16
+_TOOL_EXECUTOR = WorkerPool(_TOOL_EXECUTOR_MAX, "tool-exec")
+_TOOL_SLOTS = WorkerSlots(_TOOL_EXECUTOR_MAX)
 
 # ============================================================
 # 非法参数智能提示表 — 小欧 2026-08-09 (task007)
@@ -192,6 +215,25 @@ _SHELL_SLOTS = threading.BoundedSemaphore(_SHELL_EXECUTOR_MAX)   # 执行器线�
 _INVALID_PARAM_HINTS = {
     ("grep", "type"): "grep 无 type 参数；文件名过滤请用 glob，按文件/目录类型搜索请改用 find 工具(type=file/directory)",
     ("find", "top_n"): "find 无 top_n 参数；如需限制结果数量请用 offset 分页",
+    ("copy", "pattern"): "copy 无 pattern 参数；按文件名查找请改用 find，复制文件请提供 path(源)与 dest(目标)",
+}
+
+# 缺失必需参数的可行动提示 — 小欧 2026-11-15
+# 日志实证 edit 缺 path+old_string 达 210 次、write 缺 content 21 次；统一套话 LLM 难自纠，按 tool+参数点名补全方式。
+# 未登记的 (tool, 参数) 回落通用类型提示(不臆造业务语义)。
+_MISSING_PARAM_HINTS = {
+    ("edit", "path"): "edit 须提供 path(目标文件绝对路径)",
+    ("edit", "old_string"): "edit 须提供 old_string(待替换/锚点旧文本，须与文件原文精确匹配含缩进)",
+    ("write", "path"): "write 须提供 path(目标文件绝对路径)",
+    ("write", "content"): "write 须提供 content(要写入的正文；写空文件也要传空串 '')",
+    ("read", "path"): "read 须提供 path(要读取的文件绝对路径)",
+    ("grep", "path"): "grep 须提供 path(搜索的文件或目录绝对路径)",
+    ("grep", "pattern"): "grep 须提供 pattern(正则搜索模式)",
+    ("find", "path"): "find 须提供 path(搜索起始目录绝对路径)",
+    ("find", "pattern"): "find 须提供 pattern(文件名匹配模式，如 *.py)",
+    ("copy", "path"): "copy 须提供 path(源文件绝对路径)",
+    ("copy", "dest"): "copy 须提供 dest(目标绝对路径)",
+    ("fetchpage", "url"): "fetchpage 须提供 url(要抓取的网页地址，含 http/https 协议头)",
 }
 
 
@@ -239,36 +281,55 @@ class ToolRetryEngine:
         #   禁止把shell()改成async def — 改协程会走本分支直调, 卸载被取消, 阻塞回到事件循环(功能退化)。
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+        # 2026-11-14 小欧 - 全部同步工具统一走有界执行器(泛化自shell方案, DRY):
+        #   卡死线程只占本池槽位, 不侵蚀默认 executor; 超时明确失败
         if action in _SHELL_TOOL_NAMES:
-            return await self._execute_in_shell_executor(tool, normalized_input, timeout)
-        result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
-        )
-        if inspect.iscoroutine(result):
-            return await asyncio.wait_for(result, timeout=timeout)
-        return result
+            return await self._execute_in_bounded_executor(
+                tool, normalized_input, timeout, _SHELL_EXECUTOR, _SHELL_SLOTS)
+        return await self._execute_in_bounded_executor(
+            tool, normalized_input, timeout, _TOOL_EXECUTOR, _TOOL_SLOTS)
 
-    async def _execute_in_shell_executor(self, tool: Callable, params: Dict[str, Any],
-                                         timeout: float) -> Any:
-        """shell 专用执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
+    async def _execute_in_bounded_executor(self, tool: Callable, params: Dict[str, Any],
+                                           timeout: float,
+                                           executor: WorkerPool, slots: WorkerSlots) -> Any:
+        """同步工具有界执行器提交：有界排队 + 有界执行, 绝不触碰默认 executor — 2026-11-04 小欧
+        2026-11-14 小欧 - 由 shell 专用泛化为通用(非shell同步工具同样隔离, 8100 grep 假死事故根治):
+          卡死线程只占本池槽位, 默认 executor 只留给 DNS/文件等短任务。
+        2026-11-15 小欧 - 信号量换 WorkerSlots: 超时未归还暂记损耗、真正卡死则永久扣减, 迟到归还
+          由凭证回收(容量随真实可用线程收缩), 不会误减他人槽位。
 
         单一 deadline: 排队与执行共享同一个 timeout 预算。原实现排队等 timeout、执行再等
         timeout, 实际最坏 2×timeout, 把"保险丝"这个外部上限撑破一倍 — 现排队只消耗剩余额度。"""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while not _SHELL_SLOTS.acquire(blocking=False):
+        lease = slots.acquire()
+        while lease is None:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise TimeoutError(
-                    f"shell 专用执行器无空闲 worker(前序 shell 调用卡死未归还), 等待{timeout:.0f}s → 明确失败")
+                    f"工具专用执行器无空闲 worker(前序同步工具调用卡死未归还), "
+                    f"可用{slots.available}/损耗{slots.lost}/{slots.size}, 等待{timeout:.0f}s → 明确失败")
             await asyncio.sleep(min(0.05, remaining))
+            lease = slots.acquire()
         try:
-            fut = _SHELL_EXECUTOR.submit(lambda: tool(**params))
+            fut = executor.submit(lambda: tool(**params))
         except BaseException:
-            _SHELL_SLOTS.release()
+            lease.release()
             raise
-        fut.add_done_callback(lambda _f: _SHELL_SLOTS.release())
-        return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
+        fut.add_done_callback(lambda _f, _l=lease: _l.release())   # 迟到完成也幂等
+        try:
+            result = await asyncio.wait_for(
+                asyncio.wrap_future(fut), timeout=max(0.0, deadline - loop.time()))
+        except asyncio.TimeoutError:
+            if not fut.done():          # 线程未归还: 记损耗(真正卡死则永久扣减, 迟到归还由 release 回收)
+                lease.mark_lost()
+                logger.error(
+                    f"[工具执行器] worker 超时未归还 → 暂记损耗(线程迟到归还则回收) (lost={slots.lost}/{slots.size}): "
+                    f"action={getattr(tool, '__name__', '?')}")
+            raise
+        if inspect.iscoroutine(result):
+            return await asyncio.wait_for(result, timeout=max(0.0, deadline - loop.time()))
+        return result
 
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
@@ -530,13 +591,19 @@ class ToolRetryEngine:
                 missing = [p for p in required if p not in params]
                 if missing:
                     props = input_schema.get("properties", {})
-                    _types = "; ".join(f"{p}(期望类型={props.get(p, {}).get('type', '?')})" for p in missing)
+                    _hints = []
+                    for p in missing:
+                        _h = _MISSING_PARAM_HINTS.get((action, p))
+                        if _h:
+                            _hints.append(_h)
+                        else:
+                            _hints.append(f"{p}(期望类型={props.get(p, {}).get('type', '?')})")
                     return self._build_retry_error(
                         ERR_MISSING_PARAM,
                         f"缺少必需参数: {action}, 缺失: {missing}",
                         0, error_type="missing_param",
                         action_name=action, action_params=params,
-                        hint=f"缺少参数 {missing}：{_types}。工具必需参数不可缺，请提供完整的参数后再试",  # task007-欧阳: 提示缺失参数的类型 — 小欧 2026-07-23
+                        hint=f"缺少参数：{'；'.join(_hints)}。工具必需参数不可缺，请提供完整的参数后再试",  # task007-欧阳: 提示缺失参数的类型 — 小欧 2026-07-23
                     )
                 # 非必填参数的None值自动丢弃(欧阳报告), 类型校验前做 — 小沈 2026-07-26
                 _none_discarded = []

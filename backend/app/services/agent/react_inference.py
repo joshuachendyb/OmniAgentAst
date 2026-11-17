@@ -11,6 +11,8 @@
 #   经 message_builder.get_last_tool_summary() 取末条 role:tool 摘要注入(SRP: 读走 message_builder 不裸扫);
 #   ②注释/docstring "assistant role" 改 "user role"(实现本为 user, 注释写错) — 小欧-2026-10-24
 # 2026-11-03 小欧 - log_and_print 增 level 参数: [Loop] 同签名纠偏日志显式传 level="WARNING"(默认档可见) — 小欧-2026-11-03
+# 2026-11-15 小欧 - 同签名判定收紧两点: ①签名仅取主调用, 并行pending不再参与重复判定(批次重复由主调用代表);
+#   ②tool_params 序列化前剔除易变键(timestamp/req_id/uuid/tmp/nonce/random), 防时间戳/随机值使同参调用签名永不相同 — 小欧-2026-11-15
 
 """react_inference — 状态推断基元(常量 + 守卫判定函数群)
 
@@ -111,16 +113,15 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
 
 
 def _tool_call_signature(llm_response: Dict) -> str:
-    """计算action响应的工具调用签名(全部调用含并行) — 小欧 2026-08-08
+    """计算action响应的工具调用签名(仅主调用) — 小欧 2026-08-08
     用于相同工具调用死循环检测: 签名=tool_name+规范化tool_params的排序JSON,
-    连续多步完全相同签名即判死循环。sort_keys保证字典顺序无关, 参数内容变化即签名变化。"""
-    calls = []
-    _primary = (llm_response.get("tool_name", "") or "",
-                llm_response.get("tool_params") or {})
-    calls.append(_primary)
-    for _pc in llm_response.get("_pending_calls") or []:
-        calls.append((_pc.get("tool_name", "") or "", _pc.get("tool_params") or {}))
-    return json.dumps(calls, sort_keys=True, ensure_ascii=False)
+    连续多步完全相同签名即判死循环。sort_keys保证字典顺序无关, 参数内容变化即签名变化。
+    2026-11-15 收紧: 并行pending不参与(批次重复由主调用代表)。
+    2026-11-15 复核: 曾剔除易变参数键, 但全部工具输入schema均无时间戳/随机类参数,
+    纯臆造防御且会误杀未来同名的合法参数, 按YAGNI移除, 签名回归全参数。"""
+    params = llm_response.get("tool_params") or {}
+    return json.dumps([llm_response.get("tool_name", "") or "", params],
+                      sort_keys=True, ensure_ascii=False)
 
 
 def _check_same_tool_loop(agent, llm_response: Dict) -> int:

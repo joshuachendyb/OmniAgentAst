@@ -51,9 +51,17 @@ import {
 } from '@ant-design/icons';
 import {
   settingsModalWidth,
-  SETTINGS_CONTROL_HEIGHT,
-  SETTINGS_RADIUS,
 } from '@/theme/settingsTokens';
+// 2026-11-12 小欧 - 控件高改读全站刻度(文档[32]):
+//   本面板原写死 controlHeight(28) 于 14 处, 且 ConfigProvider 内又硬写
+//   controlHeight=28 + borderRadius=4 → 密度对面板无效, 且控件规格真源散落三处。
+//   现统一: 面板内控件高取刻度 normal 档(随密度), 圆角取逐页审计结论(全档 4);
+//   Modal 的确定/取消按钮在面板 ConfigProvider **之外**渲染, 必须显式给密度感知的高度。
+import { useAppearancePrefs } from '@/hooks/useAppearancePrefs';
+import {
+  controlHeightByDensity,
+  pageControlTokens,
+} from '@/theme/controlScale';
 import {
   Spacing,
   FontSize,
@@ -202,6 +210,10 @@ export default function SessionWorkspacePanel({
   onClose,
 }: Props) {
   const [entries, setEntries] = useState<WsDraft[]>([]);
+  // 2026-11-12 小欧 - 面板控件高取全站刻度 normal 档(随密度); Modal 底栏按钮在面板
+  //   ConfigProvider 之外渲染, 故此处取同一数值显式下发(文档[32])。
+  const { density } = useAppearancePrefs();
+  const controlHeight = controlHeightByDensity(density).normal;
   const [projectRoot, setProjectRoot] = useState('');
   const [allowedDirs, setAllowedDirs] = useState<string[]>([]);
   // 新增区
@@ -506,17 +518,19 @@ export default function SessionWorkspacePanel({
       onCancel={requestClose}
       okButtonProps={{
         disabled: loadState !== 'ready' || badCount > 0,
-        style: { height: SETTINGS_CONTROL_HEIGHT },
+        style: { height: controlHeight },
       }}
-      cancelButtonProps={{ style: { height: SETTINGS_CONTROL_HEIGHT } }}
+      cancelButtonProps={{ style: { height: controlHeight } }}
       styles={{ body: { paddingTop: Spacing.MD } }}
     >
       <ConfigProvider
         theme={{
-          token: {
-            controlHeight: SETTINGS_CONTROL_HEIGHT, // 控件高 28（单点收口）
-            borderRadius: SETTINGS_RADIUS, // 圆角 4（单点收口）
-          },
+          // 2026-11-12 小欧 - 面板控件规格读全站刻度(文档[32]):
+          //   原硬写 controlHeight=28 + borderRadius=4, 密度对面板无效, 且缺派生档位
+          //   (antd 按 0.75×/1.25× 派生 → small 21px 低于「文字不被压」22px 底线)。
+          //   现用页面级预设: normal 随密度、small 与 normal 齐平(逐页审计同源结论)、
+          //   圆角全档 4(须显式补发 LG, 否则继承全局 8)。
+          token: pageControlTokens(density),
         }}
       >
         {/* 只读区：两行常驻（项目根 / 授权目录）。标签列定宽 → 值列同列起；
@@ -567,7 +581,7 @@ export default function SessionWorkspacePanel({
               <Button
                 type="text"
                 size="small"
-                style={{ height: SETTINGS_CONTROL_HEIGHT, flexShrink: 0 }}
+                style={{ height: controlHeight, flexShrink: 0 }}
                 onClick={discardRecovered}
               >
                 放弃修改
@@ -677,7 +691,7 @@ export default function SessionWorkspacePanel({
             <Button
               size="small"
               type="text"
-              style={{ height: SETTINGS_CONTROL_HEIGHT, flexShrink: 0 }}
+              style={{ height: controlHeight, flexShrink: 0 }}
               onClick={() => void load()}
             >
               重试
@@ -702,7 +716,7 @@ export default function SessionWorkspacePanel({
                     ghost
                     type="primary"
                     size="small"
-                    style={{ height: SETTINGS_CONTROL_HEIGHT }}
+                    style={{ height: controlHeight }}
                     onClick={() => addPathRef.current?.focus()}
                   >
                     添加目录
@@ -794,14 +808,14 @@ export default function SessionWorkspacePanel({
                             <Button
                               type="primary"
                               size="small"
-                              style={{ height: SETTINGS_CONTROL_HEIGHT }}
+                              style={{ height: controlHeight }}
                               onClick={saveEdit}
                             >
                               保存
                             </Button>
                             <Button
                               size="small"
-                              style={{ height: SETTINGS_CONTROL_HEIGHT }}
+                              style={{ height: controlHeight }}
                               onClick={cancelEdit}
                             >
                               取消
@@ -902,7 +916,7 @@ export default function SessionWorkspacePanel({
                               aria-label="复制路径"
                               style={{
                                 color: Colors.TEXT.SECONDARY,
-                                height: SETTINGS_CONTROL_HEIGHT,
+                                height: controlHeight,
                                 width: 32,
                               }}
                               onClick={() => void copyPath(e.path)}
@@ -921,7 +935,7 @@ export default function SessionWorkspacePanel({
                               aria-label="编辑目录"
                               style={{
                                 color: Colors.TEXT.SECONDARY,
-                                height: SETTINGS_CONTROL_HEIGHT,
+                                height: controlHeight,
                                 width: 32,
                               }}
                               onClick={() => startEdit(e)}
@@ -936,7 +950,7 @@ export default function SessionWorkspacePanel({
                                 aria-label="移除目录"
                                 style={{
                                   color: Colors.TEXT.SECONDARY,
-                                  height: SETTINGS_CONTROL_HEIGHT,
+                                  height: controlHeight,
                                   width: 32,
                                 }}
                                 onClick={() => remove(e.path)}

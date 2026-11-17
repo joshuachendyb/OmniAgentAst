@@ -5,9 +5,10 @@
 //     tree     app/tools/file/tree.py:115-122  {tree:{name,path,type,children[]}, statistics:{file_count,dir_count,total_size}}
 //     listdir  app/tools/file/list_directory.py:48-51,127-134  {entries:[{name,type,mtime,[size]}], truncated}
 //   注册名依据 app/tools/file/file_register.py:84 的注册清单(AGENTS 铁规指明的单一真源)。
+// 编辑历史: 2026-11-14 商量 - 目录树节点折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
 import React, { useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
-import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FoldArrow, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
 import { formatTimestamp } from '@/utils/time';
 import { formatBytes } from '@/utils/format';
 
@@ -102,7 +103,7 @@ const DirNode: React.FC<{
         title={path}
       >
         <CircleArrow
-          size={14}
+          size={FoldArrow.SM}
           color={Colors.PRIMARY}
           expanded={open}
           animated={false}

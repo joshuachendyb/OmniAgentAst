@@ -51,6 +51,9 @@
 //   结果视图不接（raw_data 回显路径不属工具参数声明域）— 小欧-2026-10-23
 // 2026-11-02 小欧 - 路径值改走唯一链接组件 PathLink（原 pipeline/PathLink）：判据/图标/点击口径/降级
 //   收在组件内，本文件只透传 rawPath/dirHint/projectRoot — 小欧-2026-11-02
+// 2026-11-12 小欧 - 补控件规格推导注释: 分组切换器若走 antd 派生(基线 28 → small 21px), 紧凑态会被一并拉到 21,
+//   流水线变形; 本组件控件规格走本项目刻度真源, 禁沿用库缺省与派生值 — 小欧-2026-11-12
+// 2026-11-14 商量 - 折叠箭头尺寸走令牌: size 14 → FoldArrow.SM(12, 内容区密集小控件区), 消除魔法数字 — 商量-2026-11-14
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
@@ -70,6 +73,7 @@ import { CopyButton } from '@/components/markdown/CopyButton';
 import {
   BorderWidth,
   Colors,
+  FoldArrow,
   FontFamily,
   FontSize,
   Radius,
@@ -202,6 +206,10 @@ const VIEW_OPTIONS = [
  * 面板头控件统一盒: 与 antd `Segmented size="small"` 同高(controlHeightSM=24)。
  * 2026-10-13 小欧 - 实测截图: Segmented 24px / CopyButton≈20px / ✕≈16px 三者直接并排,
  *   顶端与底端都不齐, 观感粗糙。统一包成 24px 居中盒后三者基线对齐(内容居中, 盒高一致)。
+ * 2026-11-12 小欧 - 流水线零变化锚点(文档[32]): 24 不再是「碰巧等于 antd 由 32 派生的
+ *   controlHeightSM」, 而是**根 ConfigProvider 显式钉死**的全站 small 档值(24/28/32 阶梯的
+ *   小档, 两档密度同值)。故无论密度怎么切, 本盒与 Segmented 恒为 24 → 流水线像素零变化;
+ *   若放任 antd 派生(基线 28 → small 21px), 本盒与 Segmented 会一起被拖到 21, 流水线即变形。
  */
 const HEADER_CTRL_BOX: React.CSSProperties = {
   display: 'inline-flex',
@@ -250,6 +258,7 @@ const CATEGORY_META: ReadonlyArray<{
  */
 // 2026-10-21 小杨 - PATH_KEYS / isPathLike 已抽到 ./paramCategories
 //   （ParamsPanel 与 ParamsTree 双入口共用同一判据，见该文件头注）—— 本文件不再持有副本。
+// 编辑历史: 2026-11-14 商量 - 参数分组行折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
 
 /**
  * 巨型值判定 = **值含换行**(如 content 的多行代码块)。
@@ -574,7 +583,7 @@ const ValueToggle: React.FC<{
       }}
     >
       <CircleArrow
-        size={14}
+        size={FoldArrow.SM}
         color={Colors.PRIMARY}
         expanded={open}
         animated={false}

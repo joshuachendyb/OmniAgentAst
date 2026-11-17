@@ -3,10 +3,12 @@
 // 编辑历史: 2026-09-16 小欧 - 修复: React.FC+memo内联解构致react/prop-types误报2error, 对齐ErrorDetail.tsx惯例文件级disable - 小欧-2026-09-16
 // 编辑历史: 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 回退a59aaff8e的扁平纯文本, 恢复Progress circle饼环+双层格式化div嵌套, 恢复confirmTimeout prop - 小欧-2026-09-18
 // 编辑历史: 2026-10-11 00:55:20 小欧 - 直径可调(北京老陈「计时钟不能删除但可以改变位置」配套): 新增 size prop(默认 60), 数字随环缩放, 供标题行右侧 44px 调用(见 index.tsx 同批) — 小欧-2026-10-11
+// 编辑历史: 2026-11-13 商量 - 字重与字号归位: fontWeight 600 → FontWeight.BOLD, 字号 11 → FontSize.SMALL, import 同步补 FontWeight — 商量-2026-11-13
 /* eslint-disable react/prop-types */
 
 import React from 'react';
 import { Progress } from 'antd';
+import { FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface CountdownRingProps {
   countdown: number;
@@ -42,7 +44,7 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
               <div
                 style={{
                   fontSize: numFont,
-                  fontWeight: 600,
+                  fontWeight: FontWeight.BOLD,
                   color: countdown <= 3 ? '#fa541c' : '#333',
                   animation:
                     countdown <= 3 ? 'pulse 0.8s ease-in-out infinite' : 'none',
@@ -50,7 +52,7 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
               >
                 {countdown}
               </div>
-              <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
+              <div style={{ fontSize: FontSize.SMALL, color: '#8c8c8c' }}>秒</div>
             </div>
           )}
         />

@@ -28,6 +28,8 @@
 # 2026-11-02 小欧 - 删死类 _SessionCreate(私有、全仓零引用, 端点直接吃 SessionCreate) — 小欧-2026-11-02
 # 2026-11-03 小欧 - 新增 GET /sessions/tasks/running(跨会话在跑任务, 历史页角标/顶栏浮层权威来源)
 #   + GET /sessions/tasks/{task_id}(退订后 60s 复核的单任务轻量读, 替代拉整会话任务正文) — 小欧-2026-11-03
+# 2026-11-13 小欧 - 新增 GET /sessions/{session_id}/artifacts(会话产物清单: chat_tasks.artifacts 真源, 任务时间倒序);
+#   产物是任务级产物(工作区内产物走引用模式, 不落附件台账), 故与附件列表分立独立出口 — 小欧-2026-11-13
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
@@ -52,6 +54,7 @@ from app.services.chat.storage import (
     delete_session_trust,
     get_task_status,
     list_running_tasks,
+    list_session_task_artifacts,
     list_session_tasks,
     list_session_trust,
 )
@@ -116,6 +119,18 @@ def list_session_tasks_endpoint(session_id: str):
     with db.get_conn("chat") as conn:
         tasks, total, latest_task_id = list_session_tasks(conn, session_id)
     return {"session_id": session_id, "total": total, "tasks": tasks, "latest_task_id": latest_task_id}
+
+
+@router.get("/sessions/{session_id}/artifacts")
+def list_session_artifacts_endpoint(session_id: str):
+    """本会话全部任务的产出物清单（chat_tasks.artifacts 真源，任务时间倒序）。
+
+    「AI 产出的」唯一真源：产出物是任务产物，工作区内产物走引用模式从不落 attachments
+    表 —— 用附件台账判据取该清单恒为空，故独立读口。
+    """
+    with db.get_conn("chat") as conn:
+        artifacts = list_session_task_artifacts(conn, session_id)
+    return {"session_id": session_id, "total": len(artifacts), "artifacts": artifacts}
 
 
 @router.get("/sessions/{session_id}/trust")

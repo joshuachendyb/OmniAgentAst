@@ -16,6 +16,7 @@
 //   表现为"开关开了却一点不起作用"; ②**删除 CollapsibleText 长文折叠** —— 原 >5行/>200字 折叠,
 //   接入 Markdown 后折叠态与展开态都只能是纯文本(=把刚在 MarkdownText 删掉的同一坏行为搬回来),
 //   故一并删除: 答复全文渲染, 不折叠(用户裁定"那就不折叠")。— 小欧-2026-10-05
+// 编辑历史: 2026-11-12 小欧 - 答复段接入 MarkdownSlot 场景参数 scene="chat": 阅读排版按场景分级 — 小欧-2026-11-12
 /**
  * ResponseStream - 最终答复流（纯正文）
  *
@@ -65,7 +66,7 @@ const ResponseStream: React.FC<ResponseStreamProps> = ({
                           = 把 MarkdownText 里刚删掉的同一坏行为搬回来, 故不折叠);
           markdown=false → **保留原 CollapsibleText 长文折叠**, 与本次改动前逐字一致, 零退化。 */}
       {markdown ? (
-        <MarkdownSlot text={clean} markdown />
+        <MarkdownSlot text={clean} markdown scene="chat" />
       ) : (
         <CollapsibleText text={clean} />
       )}

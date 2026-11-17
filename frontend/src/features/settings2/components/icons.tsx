@@ -7,6 +7,7 @@
 // 2026-11-01 小欧 - 新增 TabDirtyDot（Tab 组级脏点，北京老陈批准主案）：沿用 DirtyDot 的 6px 圆点规格，
 //   亮=ORANGE_RED（功能色，与行级 PRIMARY 点区分层级）；不带文字——组级只报方位，计数归保存按钮 — 小欧-2026-11-01
 // 2026-11-08 小欧 - 媒体 Tab：SettingIcon 加 media + FileImageOutlined — 小欧-2026-11-08
+// 2026-11-13 商量 - 字号归位: 硬编码 fontSize 14 → FontSize.PRIMARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
 import React from 'react';
 import {
   ApiOutlined,
@@ -26,7 +27,7 @@ import type { TabKey } from '../types';
 
 // 2026-09-21 小欧 - 定案：Tab 图标 fontSize=14（文档明确规格，不随 Tabs 主题缩放，Tabs 集成）
 const TAB_ICON_STYLE: React.CSSProperties = {
-  fontSize: 14,
+  fontSize: FontSize.PRIMARY,
 };
 
 // 2026-09-22 小欧 - tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined

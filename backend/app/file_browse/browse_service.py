@@ -38,6 +38,10 @@
 #   _count_content_lines 委托 text_utils.count_lines(与引用压缩同行数口径) — 小欧-2026-10-30
 # 2026-11-06 小欧 - sanitize_refs 附件豁免(重建): kind=attachment 注入按 attachment_id 查表,
 #   path 仅作展示/回执键(项目根切换后可能失效, id 不会), 不参与路径越界校验 — 小欧-2026-11-06
+# 2026-11-13 小欧 - 新增 root_relative: 绝对路径 → 项目根相对 posix 路径(根外返回 None), 与附件侧同根换算法,
+#   供附件台账引用与根外内容判定复用 — 小欧-2026-11-13
+# 2026-11-15 小欧 - 截断标志归一: _read_truncated 的 truncated 局部量改由返回值直接消费(原重复算同一表达式,
+#   局部量赋值后未用致 F 类零容忍门禁不过); 行为不变, 截断仍按 st_size 与已读字节数比较 — 小欧-2026-11-15
 
 """文件浏览服务：项目根目录内的只读浏览。
 
@@ -199,6 +203,22 @@ def _is_abs_drive_path(p: str) -> bool:
     if p.startswith(("\\\\", "\\", "/")):
         return False
     return bool(Path(p).is_absolute())
+
+
+# 2026-11-13 小欧 - 新增 root_relative: 绝对路径 → 项目根相对 posix 路径(根外返 None),
+#   与 attachments.rel_to_root 同根同算法收口一处; 附件台账的「根内可引用/根外须复制」判据复用它 — 小欧-2026-11-13
+def root_relative(abs_path: str) -> Optional[str]:
+    """绝对路径 → 项目根相对 posix 路径；根外/异常返回 None。
+
+    与 attachments 的 rel_to_root 同根同算法（单一真源），但根外返回 None 而非回落
+    绝对路径 —— 调用方需要区分「根内可作文件引用」与「根外只能复制固化」时用它。
+    """
+    try:
+        root = Path(get_config().get_project_root()).resolve()
+        return Path(abs_path).resolve().relative_to(root).as_posix()
+    except Exception:  # noqa: BLE001 — 根外/不可解析 → 无根内相对路径
+        return None
+
 
 
 def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
@@ -1143,7 +1163,7 @@ def _read_truncated(
         # 2026-10-21 小欧 - 截断如实告知：truncated=True 时 content 只是前 MAX_TEXT_BYTES，
         #   total_size 是文件真实字节数，loaded_size 是本次实际读到的字节数
         #   （前端提示用 loaded_size，否则会写成"共 8.4MB，已加载前 8.4MB"这种自相矛盾的话）。
-        "truncated": st.st_size > len(raw),
+        "truncated": truncated,
         "total_size": st.st_size,
         "loaded_size": len(raw),
     })

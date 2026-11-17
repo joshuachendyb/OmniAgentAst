@@ -12,6 +12,7 @@
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop, 打字机末位波纹光标 ActionWaitingIcon 挂钟面并存 - 小欧-2026-09-17
 // 编辑历史: 2026-10-05 小欧 - 新增 markdown prop 接「思考排版」开关(文档[9] §5.8): 开=按Markdown 渲染本段, 关=原样纯文本(旧行为不变); 打字机切片在前、渲染在后, 两层不干涉 — 小欧-2026-10-05
 // 编辑历史: 2026-11-03 07:52:00 小欧 - 删 waitClock: 蓝波纹光标只留图形, 其计时改由顶栏钟面承接(北京老陈定案) — 小欧-2026-11-03
+// 编辑历史: 2026-11-12 小欧 - 正文段接入 MarkdownSlot 场景参数 scene="chat": 阅读排版按场景分级, 流水线正文只消费 chat 场景规则 — 小欧-2026-11-12
 /**
  * TextStream - 正文打字机（真逐字 + 末位光标）
  *
@@ -94,6 +95,7 @@ const TextStream: React.FC<TextStreamProps> = ({
       <MarkdownSlot
         text={clean.slice(0, typing ? shown : clean.length)}
         markdown={markdown}
+        scene="chat"
       />
       {/* 2026-11-03 小欧 - 蓝波纹光标留在句尾不动, 只把钟面拆走(计时归顶栏) — 小欧-2026-11-03 */}
       {cursor && typing && <ActionWaitingIcon />}{' '}

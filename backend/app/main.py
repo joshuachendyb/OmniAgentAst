@@ -79,6 +79,20 @@
 # 2026-11-08 小欧 - startup 接老 capabilities 一次性迁移(幂等, 无残留零改动; 先于配置读取) — 小欧-2026-11-08
 # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server.py 同一收口
 #   (只落盘不上屏); 否者 dictConfig console handler 残留 + 10s 热重载刷 DEBUG 必刷屏 — 小欧-2026-11-08
+# 2026-11-13 商量 - startup 缓存主事件循环给 shell_background(工作线程后台命令完成后
+#   run_coroutine_threadsafe 提交回主循环唤醒) — 商量-2026-11-13
+# 2026-11-13 商量 - shutdown_event 关闭前杀全部后台进程树(主循环关闭致等待协程被取消,
+#   不主动杀则子进程脱离父进程存活成孤儿); startup 清理上一世后台结果产物(重启后注册表为空,
+#   惰性清理覆盖不到致磁盘残留) — 商量-2026-11-13
+# 注: shell_background 必须"函数体内 import"——该模块 import 时即创建 WorkerPool 常驻线程
+#   (有副作用), 提到文件顶部会让任何 import main 的场景(测试/脚本)连带起线程, 副作用外泄
+# 2026-11-15 小欧 - L1-3: startup 拉起 DB 健康刷新任务, shutdown 取消(app.api.v1.health
+#   start/stop_db_status_refresher); /health 由"每次提交线程池"改为"读后台缓存", 卡死时自身仍可答
+# 2026-11-15 小欧 - P2 纪律([42]): 启动第一件事 log_build_fingerprint() 落运行代码指纹,
+#   /health 新增 build 字段; dev/打包/部署三处比对可判定"跑的是不是新代码" — 小欧-2026-11-15
+# 2026-11-16 小欧 - 优雅停机入口: 挂载 system_routes(POST /api/v1/shutdown, 走 _mount 默认 token 鉴权), 置 uvicorn Server.should_exit 触发既有 lifespan shutdown; Server 引用由 run_server 编程式启动时挂到 app.state.uvicorn_server — 小欧-2026-11-16
+# 2026-11-16 小欧 - 启动摘要(当前版本/LLM 配置)补文件留痕: 打包态 console 镜像随 detach 旁路, 原仅
+#   console_put 会从所有日志消失; 改为 logger.info(落 app 文件) + console_put(真控制台上屏) 双通道 — 小欧-2026-11-16
 import asyncio
 import sys
 import threading
@@ -170,6 +184,7 @@ from app.utils.spawn_gate import (  # 2026-11-04 小欧: 进程×线程创建闸
     install_spawn_gate,
     mark_runtime_started,
 )
+from app.utils.build_fingerprint import log_build_fingerprint  # 2026-11-15 小欧: 运行代码指纹
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 
@@ -396,6 +411,13 @@ _mount(attachments_router, "attachments")
 _mount(material_packs_router, "material-packs")
 # 2026-11-07 小欧 - 同机文件系统(磁盘/授权目录); 端点内部再判同机, 跨机 403 — 小欧-2026-11-07
 _mount(fs_router, "fs")
+# 2026-11-15 小欧 - 输入预检路由([23] 阶段A: POST /inputs/preflight, 建议性不阻断) — 小欧-2026-11-15
+from app.api.v1.inputs import router as inputs_router
+_mount(inputs_router, "inputs")
+# 2026-11-16 小欧 - 优雅停机路由(POST /shutdown, 走 token 鉴权): 前端"关闭服务"按钮/自动化调用
+from app.api.v1.system_routes import router as system_router
+_mount(system_router, "system")
+
 
 
 # ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──
@@ -571,8 +593,21 @@ async def startup_event():
     # 2026-11-03 小欧 - 删函数内 `import time as _time`(模块级已有 import time, 重复导入违反 DRY):
     #   本函数内 13 处调用同步改回 time.* — 小欧-2026-11-03
     _t0 = time.time()
+    # 2026-11-15 小欧 - 启动第一件事: 落运行代码指纹(部署核对用, 与 /health.build 同源)
+    log_build_fingerprint()
     # 2026-11-04 小欧 - 进程×线程创建闸门: 必须在任何运行期并发开始前装好(有界等待, 超限快速失败)
     install_spawn_gate()
+    # 2026-11-13 商量 - 缓存主事件循环 + 注册后台完成通知路由(services 层回调, 防 tools→services 越层)
+    from app.services.chat.bg_shell_notifier import notify_bg_shell_done
+    from app.tools.fundamental.shell_background import set_main_loop, set_notify_router
+    set_main_loop(asyncio.get_running_loop())
+    set_notify_router(notify_bg_shell_done)
+    # 2026-11-13 商量 - 启动期清理上一世后台结果产物: 结果惰性清理只走注册表, 重启后注册表为空,
+    #   上一世的 .log/.bat 永不会被清 → 磁盘残留泄漏; 此处一次性收口(只动 bgsh_* 命名空间)
+    from app.tools.fundamental import shell_background as _shell_bg
+    _n_orphan = _shell_bg.cleanup_orphan_artifacts(time.time())
+    if _n_orphan:
+        logger.info(f"[启动] 清理后台孤儿结果产物 {_n_orphan} 个")
     # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
     install_access_noise_filter()
     # 2026-11-08 小欧 - startup 补调 setup_uvicorn_loggers(): 裸 uvicorn 与 run_server 同一收口(只落盘不上屏),
@@ -647,20 +682,34 @@ async def startup_event():
     warn_startup_checks()
     logger.info(f"[启动耗时] warn_startup_checks: {time.time()-_t3:.3f}s")
     logger.info(f"[启动耗时] startup_event 合计: {time.time()-_t0:.3f}s")
+    # 2026-11-15 小欧: DB 健康缓存后台刷新, 首个 /health 即可读到可信值(只建协程, 不占启动耗时)
+    from app.api.v1.health import start_db_status_refresher
+    start_db_status_refresher()
     # 启动期结束: 之后任何 Thread.start 都计入 runtime_thread_starts(/health 暴露), 应为 0 — 2026-11-04 小欧
     mark_runtime_started()
     from app.logger.console_writer import (
         console_put,  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     )
+    # 2026-11-16 小欧 - 启动摘要补文件留痕: console 镜像在 detached(打包态)时整体旁路,
+    #   原仅 console_put 会使摘要从所有日志消失; 改为 logger.info 落 app 文件 + console_put 上屏
+    #   (真控制台时) 双通道, 排障仍可确认版本与模型。 — 小欧-2026-11-16
+    logger.info(f"当前版本: {app_version}")
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()
     _ref = _cfg.get('ai.model_ref') or {}
+    logger.info(f"LLM 配置: provider={_ref.get('provider')}, model={_ref.get('model')}")
     console_put(f"LLM 配置: provider={_ref.get('provider')}, model={_ref.get('model')}")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数; 补充 cancel 清理循环 小欧 2026-07-15"""
+    # 2026-11-13 商量 - 关闭先杀全部后台进程树: 主循环关闭会使等待协程被取消, 不主动杀则子进程
+    #   脱离父进程继续存活(Windows 父死子不重挂)→ 跨重启孤儿; 同步收口, shutdown 允许短暂阻塞
+    from app.tools.fundamental.shell_background import kill_all_background
+    _n_bg = kill_all_background("shutdown")
+    if _n_bg:
+        logger.warning(f"[shutdown] 已终止 {_n_bg} 个后台进程, 防孤儿跨重启")
     global _cleanup_task_ref
     if _cleanup_task_ref is not None and not _cleanup_task_ref.done():
         _cleanup_task_ref.cancel()
@@ -670,6 +719,8 @@ async def shutdown_event():
         _monitoring_retention_ref.cancel()
     if _log_watcher_ref is not None and not _log_watcher_ref.done():   # 2026-10-25 小欧: 日志级别热重载任务同生命周期
         _log_watcher_ref.cancel()
+    from app.api.v1.health import stop_db_status_refresher
+    stop_db_status_refresher()   # 2026-11-15 小欧: DB 刷新任务随服务关闭取消
     # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
     from app.services.lifecycle import shutdown
     await shutdown()

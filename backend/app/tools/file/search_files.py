@@ -10,6 +10,8 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 搜索文件→搜文件
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 # 2026-10-20 小欧 - find 搜索根类型校验: EXISTS→LIST_DIR(must_be=dir), 文件当搜索根原空匹配误报成功, 现报"不是目录"
+# 2026-11-13 商量 - 文件名匹配模式支持花括号多扩展名: fnmatch 不认 {a,b}, LLM 写 "*.{py,ts,tsx}"
+#   必然 0 命中; 改走单源 expand_braces 展开后任一模式命中即算命中(与 grep 工具同一单源, 不重复实现)
 
 import asyncio
 import fnmatch
@@ -22,6 +24,7 @@ from app.logger import logger
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED, TOOL_TIMEOUTS
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.glob_pattern import expand_braces  # 2026-11-13 商量 - 花括号展开(单源)
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
     check_path_four_level,
@@ -34,10 +37,18 @@ _SKIP_DIRS = frozenset({
 
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
-    """统一封装fnmatch — 小健 2026-05-25 — 小欧 2026-06-22"""
-    if ignore_case:
-        return fnmatch.fnmatch(name.lower(), pattern.lower())
-    return fnmatch.fnmatch(name, pattern)
+    """统一封装fnmatch(含花括号展开) — 小健 2026-05-25 — 小欧 2026-06-22 — 商量 2026-11-13 补花括号
+
+    花括号 "{a,b}" 是 shell 展开特性, fnmatch 不认 → 直接匹配必然 0 命中;
+    展开后任一模式命中即算命中(与 grep 工具同一单源 expand_braces)。
+    """
+    for p in expand_braces(pattern):
+        if ignore_case:
+            if fnmatch.fnmatch(name.lower(), p.lower()):
+                return True
+        elif fnmatch.fnmatch(name, p):
+            return True
+    return False
 
 
 def _collect_entry_result(relative_path: str, name: str, fpath: Path,

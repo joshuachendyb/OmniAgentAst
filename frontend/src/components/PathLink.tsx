@@ -12,6 +12,7 @@
 //   可见性用同一次 resolvePathTarget 结果判定（已链接且非目录），调用方不自判 — 小欧-2026-11-02
 // 2026-11-02 小欧 - 恢复无 Router 兜底（设置页安全Tab 独立渲染场景，旧 FileRefChip 行为）：
 //   已链接时保持链接形态，点击走 resolveChipUrlFresh 现取根，判不过不跳 — 小欧-2026-11-02
+// 编辑历史: 2026-11-13 商量 - 字号与字重归位: fontSize 10 → FontSize.CAPTION, fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
 /**
  * PathLink —— 路径 → 文件页链接的**唯一** UI 组件。
  *
@@ -32,7 +33,7 @@ import { resolveChipUrlFresh, useProjectRoot } from '@/hooks/useProjectRoot';
 //   此处只并列渲染，与旧 components/markdown/FileRefChip 的依赖方向一致 — 小欧-2026-11-02
 import { QuoteButton } from '@/features/refs/QuoteButton';
 import { chatTokens } from '@/theme/tokens';
-import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontFamily, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 
 export interface PathLinkProps {
   /** 原始路径（绝对或相对项目根，原样展示） */
@@ -88,8 +89,8 @@ const monoStyle: React.CSSProperties = {
 
 /** 徽标（目录/根外共用一个规格） */
 const badgeStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 600,
+  fontSize: FontSize.CAPTION,
+  fontWeight: FontWeight.BOLD,
 };
 
 /** 链接外壳的输入：只含渲染所需，不含判定参数（判定在 PathLink 内做一次） */

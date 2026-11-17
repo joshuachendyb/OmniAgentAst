@@ -5,6 +5,7 @@
 # 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源), 默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源; 与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
 # 2026-10-02 - 小欧 - 归组调整: category 改读 TOOL_CATEGORY_OVERRIDE(extract/compress/readmedia 归 DOCUMENT) — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名收敛: write→write, edit→edit, read→read(仅对外注册名, 函数名/Schema类名不动)
+# 2026-11-13 商量 - grep 示例补花括号用法({"glob": "*.{py,ts,tsx}"}), 让 LLM 从示例学到多扩展名过滤能力
 """
 File Register - 文件工具注册点 v3.0
 
@@ -165,6 +166,7 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "def read", "path": "D:/backend"},
         {"pattern": "TODO", "path": "D:/src"},
         {"pattern": "class.*Component", "path": "D:/src", "glob": "*.py"},
+        {"pattern": "TODO", "path": "D:/src", "glob": "*.{py,ts,tsx}"},
         {"pattern": "def run", "path": "D:/backend", "context": 2},
         {"pattern": "error", "path": "D:/logs/app.log"},
     ],

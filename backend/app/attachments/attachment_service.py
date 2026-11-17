@@ -28,6 +28,21 @@
 # 2026-11-11 小欧 - 增 reextract 真抽取手动重跑: 重置抽取态后按契约文本出口重算回填
 #   (仅 fallback_quality=content 的 kind, 失败折算 failed 不抛异常) — 小欧-2026-11-11
 # 2026-11-11 小欧 - P5 指标埋点: reextract 成功/失败补 [cap-metric] extract_ok/extract_fail — 小欧-2026-11-11
+# 2026-11-14 小欧 - 修: 上传白名单补 extract.AUDIO_SUFFIXES —— accept 与白名单同引 extract 词典组合,
+#   遗漏 audio 造成 accept 放行却 415(音频应支持上传, 后端档案卡链路本就齐备) — 小欧-2026-11-14
+# 2026-11-14 小欧 - 修: UNSUPPORTED_TYPE 报错文案补"音频" —— 白名单已含音频, 文案同步口径 — 小欧-2026-11-14
+# 2026-11-13 小欧 - 来源栏判据重构(标签名副其实, 各栏唯一真源/互斥):
+#   1) 删 ai 作用域(任务产物真源是 chat_tasks.artifacts, 用附件台账判据取该清单恒为空);
+#   2) session 作用域恢复为全部本会话台账行(存为附件的副本归此, 与「AI 产出的」不重叠);
+#   3) recent 作用域加约束: 限近 RECENT_WINDOW_DAYS 天窗 + 排除本会话 + 排除全局资产,
+#      原判据仅 use_count>0 无时间窗, 「最近」名不副实; — 小欧-2026-11-13
+#
+# 2026-11-14 小欧 修: save_bytes 并发同 sha 回查分支在 with 块外调用 _decorate_global,
+#   连接已关闭 → ProgrammingError("Cannot operate on a closed database") 且未删本次孤儿文件;
+#   回查+装饰收进同一 with 块, 命中即返复用行 — 小欧-2026-11-14
+# 2026-11-15 小欧 语义前缀归一: 预览失败说明文案收归 app.wire_prefix(INLINE_EXTRACT_FAIL) — 小欧-2026-11-15
+# 2026-11-16 小欧 [23]阶段C: list_attachments 增 kind 类型筛选(单值), 经 contract.expand_kind
+#   展开为参数化 IN 条件(禁止字符串拼接), 与 scope/q/分页同口径; 非法 kind 点名 400 — 小欧-2026-11-16
 
 
 
@@ -49,14 +64,14 @@ import mimetypes
 import re
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
 
-from app.attachments import extract
+from app.attachments import contract, extract
 from app.attachments.observability import metric
-from app.config import get_config
 from app.db import db
 from app.db.database import resolve_db_dir
 from app.file_browse import browse_service as browse
@@ -74,6 +89,7 @@ from app.file_browse.errors import (
 from app.logger import logger
 from app.services.chat.workspace_service import reconcile_session_workspaces
 from app.utils.time_utils import get_local_iso_timestamp
+from app.wire_prefix import INLINE_EXTRACT_FAIL
 
 # ── 配额 ────────────────────────────────────────────────────────────────
 MAX_IMAGE_BYTES = browse.MAX_IMAGE_BYTES        # 10MB: 直接引用图片预览口径, 不重写数值(DRY)
@@ -93,7 +109,8 @@ _INSERT_COLS = ("id, session_id, original_name, stored_path, mime, size, sha256,
 # 上传白名单 = extract 五分类词典的组合(类型轴唯一真源, 免两份名单漂移)。
 # 视频后缀 S0 即放行(可传可发, 注入走档案卡); 纯 binary(.zip/.exe 等)一律 415。
 _ALLOWED_SUFFIXES = (extract.IMAGE_SUFFIXES | extract.VIDEO_SUFFIXES
-                     | extract.RICH_SUFFIXES | extract.TEXT_SUFFIXES)
+                     | extract.AUDIO_SUFFIXES | extract.RICH_SUFFIXES
+                     | extract.TEXT_SUFFIXES)
 
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _RESERVED_NAMES = {
@@ -125,11 +142,8 @@ def _sanitize_name(name: str) -> str:
 
 def rel_to_root(stored_path: str) -> str:
     """绝对路径 → 当前项目根相对 posix 路径(上行 refs 用)。根外/异常回落 posix 绝对路径。"""
-    try:
-        root = Path(get_config().get_project_root()).resolve()
-        return Path(stored_path).resolve().relative_to(root).as_posix()
-    except Exception:  # noqa: BLE001 — 取不到根不影响附件本身可用
-        return Path(stored_path).as_posix()
+    rel = browse.root_relative(stored_path)
+    return rel if rel is not None else Path(stored_path).as_posix()
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -209,7 +223,7 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
     safe = _sanitize_name(name)
     suffix = Path(safe).suffix.lower()
     if suffix not in _ALLOWED_SUFFIXES:
-        fail(UNSUPPORTED_TYPE, "该文件类型暂不支持（支持图片、文本、PDF、Word、Excel、PowerPoint、视频；纯二进制如 zip/exe 仅可经「存为附件」进入）")
+        fail(UNSUPPORTED_TYPE, "该文件类型暂不支持（支持图片、文本、音频、PDF、Word、Excel、PowerPoint、视频；纯二进制如 zip/exe 仅可经「存为附件」进入）")
 
     size = len(data)
     if size > (MAX_IMAGE_BYTES if suffix in extract.IMAGE_SUFFIXES else MAX_FILE_BYTES):
@@ -261,10 +275,10 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
                 f"SELECT {_COLS} FROM attachments WHERE session_id = ? AND sha256 = ? LIMIT 1",
                 (session_id, sha),
             ).fetchone()
-        if dup:
-            d = _row_to_dict(dup)
-            _decorate_global(conn, [d])
-            return d
+            if dup:
+                d = _row_to_dict(dup)
+                _decorate_global(conn, [d])
+                return d
         fail(ATTACHMENT_UNAVAILABLE, "附件登记后读取失败")
     return rec
 
@@ -288,37 +302,54 @@ async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:
 
 
 _SCOPE_FILTER = {
-    # 本会话: 会话归属行, 排除任务产物溯源行(归 ai 栏)消双栏重叠; global 行 session_id 恒 NULL 天然不进本栏
-    "session": ("session_id = ? AND (source_task_id IS NULL OR source_task_id = '')", "created_at DESC"),
-    # 最近用过: 发送注入过(use_count>0), 跨会话共享
-    "recent": ("use_count > 0", "last_used_at DESC"),
+    # 本会话附件: 本会话的附件台账行(上传/导入/存为附件的副本都在此); global 行 session_id 恒 NULL 天然不进本栏
+    "session": ("session_id = ?", "created_at DESC"),
+    # 最近发送: 别的对话里发送过(use_count>0) 且在时间窗内; 排除本会话(归「本会话附件」)与全局资产(归「已收藏」)
+    "recent": ("scope = 'session' AND session_id IS NOT NULL AND session_id <> ? "
+               "AND use_count > 0 AND last_used_at >= ?", "last_used_at DESC"),
     # 已收藏: 全局资产
     "global": ("scope = 'global'", "COALESCE(last_used_at, created_at) DESC"),
-    # 任务产物(scope 键沿用 ai): 「存为附件」copied 模式的溯源行
-    "ai": ("source_task_id IS NOT NULL AND source_task_id <> ''", "created_at DESC"),
 }
+
+# 「最近发送」时间窗(天): 超过窗口的发送记录不再出现在该栏, 防"最近"名不副实
+RECENT_WINDOW_DAYS = 30
 
 
 def list_attachments(session_id: str | None = None, *, scope: str = "session",
-                     q: str | None = None, limit: int = MAX_LIST_ITEMS,
-                     offset: int = 0) -> list[dict[str, Any]]:
+                     q: str | None = None, kind: str | None = None,
+                     limit: int = MAX_LIST_ITEMS, offset: int = 0) -> list[dict[str, Any]]:
     """附件列表（作用域唯一实现）— 小欧-2026-11-07
 
-    scope: session(本会话) / recent(最近用过) / global(已收藏) / ai(任务产物)。
+    scope: session(我上传的) / recent(最近发送) / global(已收藏)。
+    kind: 类型筛选(单值, 'all' 或七类) —— 值域唯一来自 contract.CONTENT_KINDS,
+      经 contract.expand_kind 展开为参数化 IN 条件(禁止字符串拼接), 与服务端分页同口径。
     每行补 favorited/global_id（同 sha 的全局行 id），前端据此 1 击收藏/取消收藏。
     """
     scope_row = _SCOPE_FILTER.get(scope)
     if not scope_row:
-        fail(INVALID_PARAM, "scope 只支持 session / recent / global / ai")
+        fail(INVALID_PARAM, "scope 只支持 session / recent / global")
     where, order = scope_row
     params: list[Any] = []
     if scope == "session":
         if not session_id:
             return []
         params.append(session_id)
+    if scope == "recent":
+        if not session_id:
+            return []
+        # 排除本会话(本会话的行归「我上传的」) + 时间窗起点(本地时区, 与 last_used_at 写入同源)
+        cutoff = (datetime.now() - timedelta(days=RECENT_WINDOW_DAYS)).isoformat()
+        params.extend([session_id, cutoff])
     if q and q.strip():
         where += " AND original_name LIKE ?"
         params.append(f"%{q.strip()}%")
+    # kind 筛选: 'all' = 不过滤(不加条件), 具体类型 = 参数化 IN(禁止字符串拼接)
+    if kind and kind != contract.KIND_ALL:
+        kinds = contract.expand_kind(kind)
+        if not kinds:
+            fail(INVALID_PARAM, f"kind 只支持 {contract.KIND_ALL} / {'/'.join(contract.CONTENT_KINDS)}")
+        where += f" AND kind IN ({','.join('?' * len(kinds))})"
+        params.extend(kinds)
     limit = max(1, min(int(limit or MAX_LIST_ITEMS), MAX_LIST_ITEMS))
     offset = max(0, int(offset or 0))
     with db.get_conn("chat") as conn:
@@ -465,7 +496,7 @@ def mark_extract_result(attachment_id: str, chars: int, ok: bool) -> None:
 def reextract(attachment_id: str) -> dict[str, Any] | None:
     """手动重跑真抽取: 重置抽取态后按契约文本出口重算并回填。
 
-    仅 fallback_quality=content 的 kind(text/richdoc)有真抽取态可回填;
+    仅 fallback_quality=text_full 的 kind(text/richdoc)有真抽取态可回填;
     卡/元数据类原样返回(无重试意义)。失败折算 extract_status='failed', 不抛异常。
     """
     att = get_attachment(attachment_id)
@@ -473,7 +504,7 @@ def reextract(attachment_id: str) -> dict[str, Any] | None:
         return None
     from app.attachments.contract import KIND_CONTRACT  # 延迟导入防循环
     route = KIND_CONTRACT[("attachment", att.get("kind") or "binary")]
-    if route.fallback_quality != "content":
+    if route.fallback_quality != "text_full":
         return att
     with db.get_conn("chat") as conn:
         conn.execute(
@@ -580,4 +611,5 @@ def read_inject_text(attachment_id: str, session_id: str) -> str:
     try:
         return extract.build_inject_text(att)
     except Exception as e:  # noqa: BLE001 — S3改抛异常后预览兜底: 抽取失败降级说明文本不再HTTP 500, 与resolver失败折算同口径
-        return f"[附件抽取失败({type(e).__name__})] 预览不可用。原文可通过下载查看; 发送引用时该附件按失败回执处理。"
+        return (INLINE_EXTRACT_FAIL.format(err=type(e).__name__)
+                + " 预览不可用。原文可通过下载查看; 发送引用时该附件按失败回执处理。")

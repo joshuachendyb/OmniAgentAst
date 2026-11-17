@@ -85,6 +85,12 @@
 //   6 任务token
 //   7 耗时     8 上下文  9 占窗率  10 信任    11 事件
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+// 编辑历史: 2026-11-13 商量 - 实时秒表改「服务器时钟锚」口径: 起点=后端权威任务起点(首个 thought-start 携带的
+//   task_start_time, 与终态 duration=end-start_time 同一真源), 走表=(最新帧服务器时刻−起点)+(客户端增量)。
+//   根治: ①摘要压缩期秒表不走字(原锚 start 帧到达时刻, 而 start 帧在压缩后才发)且实时值比终态少一个摘要耗时;
+//   ②断线重连回放该帧会抹掉已流逝时间。taskStarted 门同步纳入权威起点(压缩期即走表) — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 组内 gap 改走全站间距语义档 Gap, 删子元素 marginLeft 叠加(改由父 gap 承担),
+//   事件行行高改走全站标准 LineHeight.DENSE — 商量-2026-11-13
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -117,7 +123,8 @@ import {
   type TaskDetail,
 } from '../../../../services/api/task.api';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // 硬码数字全令牌化
-import { formatTimeHMS, formatDurationHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18
+import { Gap, LineHeight } from '@/theme/spacing';
+import { formatTimeHMS, formatDurationHMS, parseTimeSafe } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18; 2026-11-13 商量: 实时秒表服务器时钟锚解析 — 商量-2026-11-13
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
 import { TrustPanel } from '../config/TrustPanel';
@@ -247,20 +254,55 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   //   startInfo 非空(任务已开始) && finalStats 空(尚未终态落库)=执行中走廊, 走表;
   //   断连窗/错误中间态(旧 receiving=false 缺陷窗口)继续走表=进化, final 到达(hasFinalStats)归零回退 duration;
   //   与 RightViewer hasFinalStats/isCurrentLive 同源, 连接级 isReceiving 只留 ChatInput 消费 — 小欧-2026-09-14
-  const taskStarted = frames.startInfo !== null;
+  // 2026-11-13 商量 - 实时秒表改「服务器时钟锚」口径(根治两处误差):
+  //   ①原锚 frames.startTimestamp(=客户端收到 start 帧的时刻), 而 start 帧在摘要压缩之后才发 →
+  //     摘要压缩期秒表不走字, 且秒表终点比终态 duration 少一个摘要耗时(实时与终态两个数对不上);
+  //   ②原锚是"客户端到达时刻", 断线重连回放该帧会把已流逝时间整段抹掉。
+  //   现口径: 起点 = 后端权威任务起点(首个 thought-start 携带的 task_start_time, 与终态 duration=end-start_time 同源),
+  //   走表 = (最新帧服务器时刻 − 起点) + (客户端当前时刻 − 该帧到达时刻):
+  //     服务器已流逝走服务器时钟(免疫客户端时钟偏移与重连回放), 客户端只补增量(帧间平滑走动)。
+  const taskStarted = frames.startInfo !== null || frames.taskStartTime != null;
   const taskFinished = !!frames.finalStats;
   const [liveElapsed, setLiveElapsed] = useState(0);
+  // 权威起点与时钟锚用 ref 持有(每次渲染同步最新值): 定时器回调读 ref 不闭包过期 frames,
+  //   且 frames 有意不入 effect 依赖(防每帧重置定时器, 见下方 eslint 说明)。
+  const anchorRef = useRef<{
+    startIso: string | null;
+    clock: { ts: string; recvAt: number } | null;
+  }>({ startIso: null, clock: null });
+  anchorRef.current = {
+    startIso: frames.taskStartTime ?? null,
+    clock: frames.serverClock ?? null,
+  };
   const startRef = useRef<number | null>(null); // 2026-08-27 小欧 三堂会审: 仅首次锚定start, 防计时抖动
   useEffect(() => {
     if (!detail && taskStarted && !taskFinished) {
       // 2026-09-06 小欧 去 info.badge==='running' 依赖 — 小欧-2026-09-06
+      // 2026-11-13 商量: 服务器时钟锚口径(权威起点 + 最新帧服务器时刻 + 客户端增量); 缺权威起点时回落兜底锚
+      const elapsedByServerClock = (): number | null => {
+        const { startIso, clock } = anchorRef.current;
+        if (!startIso || !clock) return null;
+        const s = parseTimeSafe(startIso);
+        const c = parseTimeSafe(clock.ts);
+        if (!s || !c) return null;
+        const sec =
+          (c.getTime() - s.getTime() + (Date.now() - clock.recvAt)) / 1000;
+        return Number.isFinite(sec) ? Math.max(0, sec) : null;
+      };
       if (startRef.current == null) {
         startRef.current = frames.startTimestamp || Date.now(); // 2026-08-27 小欧 三堂会审: 首次锚定
       }
       const start = startRef.current;
+      setLiveElapsed(
+        elapsedByServerClock() ??
+          Math.max(0, Math.round((Date.now() - start) / 1000))
+      );
       const t = setInterval(
         () =>
-          setLiveElapsed(Math.max(0, Math.round((Date.now() - start) / 1000))),
+          setLiveElapsed(
+            elapsedByServerClock() ??
+              Math.max(0, Math.round((Date.now() - start) / 1000))
+          ),
         1000
       );
       return () => clearInterval(t);
@@ -294,9 +336,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: Spacing.MD,
+              gap: Gap.SECTION,
               fontSize: FontSize.SECONDARY,
-              lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+              // 行高取全站行高标准(原为"字号+间距"拼算, 混用了两种量纲)
+              lineHeight: LineHeight.DENSE,
             }}
           >
             {/* 左列: 时间 HH:MM:SS + 均长竖线(3.6 定案, 不编码间隔) */}
@@ -321,6 +364,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
+                // 图标与文本之间的距离由本容器 gap 唯一承担(原靠子元素 marginLeft)
+                gap: Gap.INLINE,
               }}
             >
               {e.kind === 'notice'
@@ -331,7 +376,6 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                   长文本折行完整可见, 不再省略; wordBreak 确保长英文/路径可断 — 小欧-2026-10-29 */}
               <span
                 style={{
-                  marginLeft: Spacing.XS,
                   minWidth: 0,
                   whiteSpace: 'normal',
                   wordBreak: 'break-word',
@@ -371,7 +415,6 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             : m.kind === 'notice' && m.notice_phase === 'failed'
               ? Colors.ERROR // notice failed: 红色
               : Colors.WARNING, // retrying/truncated/warning/notice-start: #AD6800 (对比度≥4.5:1)
-        marginLeft: Spacing.XS,
       }}
     >
       {m.kind === 'retrying' ? (
@@ -412,7 +455,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         padding: `${Spacing.XS}px 0 0`, // 8px → Spacing.MD; 2026-09-15 小欧: MD→XS 压回一行 — 小欧-2026-09-15
         display: 'flex',
         flexDirection: 'column',
-        gap: Spacing.MD,
+        gap: Gap.SECTION,
         textAlign: 'left',
       }}
     >
@@ -423,7 +466,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: Spacing.LG,
+          gap: Gap.GROUP,
           cursor: 'default',
           flexWrap: 'wrap',
           userSelect: 'text', // 3.9: 文本可选中, 点击不触发任何折叠
@@ -435,7 +478,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             display: 'flex',
             alignItems: 'center',
             // v4.4: gap 硬码 8 → Spacing.MD — 小欧-2026-09-09
-            gap: Spacing.MD,
+            gap: Gap.SECTION,
             flexShrink: 0,
           }}
         >
@@ -461,7 +504,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: Spacing.MD,
+            gap: Gap.SECTION,
             flex: 1,
             minWidth: 0,
             justifyContent: 'center',
@@ -508,7 +551,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: Spacing.MD,
+            gap: Gap.SECTION,
             flexShrink: 0,
             marginLeft: 'auto',
           }}
@@ -570,6 +613,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                   count={info.processEventCount}
                   overflowCount={99}
                   style={{
+                    // 铁律三例外②: Badge 紧跟文字, 位于行内文本流(非 flex 兄弟), 无法用 gap
                     marginLeft: Spacing.XS,
                     fontSize: FontSize.CAPTION,
                     fontWeight: FontWeight.BOLD,

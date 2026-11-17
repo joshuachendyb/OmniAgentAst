@@ -16,6 +16,7 @@
  *   2026-11-02 小欧 - 错误类型严格分类：showAuthError 改用 classifyError（401/403/网络/超时/服务端
  *     各归其类），UNKNOWN（400 等业务错误）兜底为 BACKEND_ERROR，不再一律报 AUTH_401。
  *     测试改为部分 mock（保留真实 classifyError/extractErrorMessage，只拦 showMessage）。
+ * 2026-11-13 商量 - 字号与字重归位: fontSize 20 → FontSize.TITLE, fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
  *
  * 背景：服务绑 0.0.0.0（多机部署硬前提不可收窄），鉴权前局域网任意设备可直调任何接口
  *   （读走全部 provider 明文密钥 / 改擦密钥 / 越权读会话）。本页是口令录入入口：
@@ -37,7 +38,7 @@ import {
   extractErrorMessage,
   showMessage,
 } from '@/services/error/handler';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 // 2026-09-26 小欧 - 首次设置/查状态走 authApi
 import { authApi } from '@/services/api/settings.api';
 
@@ -211,7 +212,7 @@ const LoginPage: React.FC = () => {
 
       {(view.kind === 'login' || view.kind === 'firstSetup') && (
         <>
-          <div style={{ fontSize: 20, fontWeight: 600 }}>
+          <div style={{ fontSize: FontSize.TITLE, fontWeight: FontWeight.BOLD }}>
             {view.kind === 'firstSetup'
               ? '首次使用，请设置访问口令'
               : '请输入访问口令'}

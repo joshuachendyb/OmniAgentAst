@@ -26,6 +26,9 @@
 // 编辑历史: 2026-11-06 小欧 - ChatRefPayload 扩 kind 'attachment' + attachment_id/mime(契约先行,
 //   否则 uploadAttachment 构造 kind:'attachment' 编译不过; 正文由 resolver 附件分支读) — 小欧-2026-11-06
 
+// 编辑历史: 2026-11-13 商量 - Message 增 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
+//   新增字段): 后台续跑通知种类在 UI 消息层保真, 系统通知样式渲染消费
+
 /**
  * 流式API响应类型定义
  *
@@ -275,7 +278,7 @@ export interface ChatRequest {
  */
 
 export interface ChatRefPayload {
-  kind: 'file' | 'selection' | 'attachment';
+  kind: 'file' | 'selection' | 'attachment' | 'url';
   label: string;
   path: string;
   size?: number;
@@ -284,7 +287,16 @@ export interface ChatRefPayload {
   /** 附件 mime(展示/预检用, 不参与正文裁决) */
   mime?: string;
   lineRange?: { start: number; end: number } | null;
+  /** [23]阶段A: URL 一等引用 —— kind='url' 时必填, 与后端 contract.SOURCE_KINDS 三方一致(守门#1) */
+  url?: string;
+  /** 后端 preflight 下发的来源种类(与 kind 同域), chip 徽标只读不二次翻译 */
+  source_kind?: string;
+  /** 后端能力判定: 该条必须原生投递(native)才有效, 降级时 chip 显黄标 */
+  must_native?: boolean;
 }
+
+/** 引用种类词表: 与后端 app/attachments/contract.SOURCE_KINDS 同序同值(单一真源镜像, 改动须双侧同步) */
+export const SOURCE_KINDS = ['file', 'selection', 'attachment', 'url'] as const;
 
 /**
  * API响应基础类型
@@ -335,6 +347,8 @@ export interface Message extends ChatMessage {
   provider?: string;
   display_name?: string;
   is_reasoning?: boolean;
+  // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知渲染系统通知样式消费
+  msg_kind?: string;
 }
 
 /**
@@ -346,6 +360,18 @@ export interface SessionModelOverride {
   model: string;
   api_base?: string;
   display_name?: string;
+}
+
+/** 会话级能力路由模式(唯一类型真源, 各消费方 import 不写字面量) */
+export type RoutingMode = 'suggest' | 'auto' | 'strict';
+
+/** 能力路由建议(后端 preflight.routing_advice 原值, 前端零翻译直读) */
+export interface RoutingAdvice {
+  action: 'keep' | 'switch' | 'degrade';
+  model?: string;
+  reason?: string;
+  /** 切换目标 provider(一键切换落 L2 需要) */
+  provider?: string;
 }
 
 // 2026-08-27 小欧 : 模型列表项结构, 与后端/config/models返回对齐

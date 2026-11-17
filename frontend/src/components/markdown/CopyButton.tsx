@@ -6,8 +6,12 @@
 // 编辑历史: 2026-10-13 小欧 - /D-9: 新增可选 prop inline?: boolean(默认 false, 禁 backward):
 //   默认 false 时 position/top/right 原样保留, 既有 2 处调用(MarkdownText.tsx:384 / MarkdownBody.tsx:144)行为零变化;
 //   true 时取消绝对定位, 供浮层面板头等常规流内位置使用(否则按钮脱离文档流压住标题) — 小欧-2026-10-13
+
+// 编辑历史: 2026-11-13 小欧 - 字号归位: 裸 fontSize 11 → FontSize.SMALL(全局阶梯, 同像素零视觉差);
+//   lineHeight/padding/top 为本组件单点局部规格, 无双源不强改。 — 小欧-2026-11-13
+
 import React, { useState } from 'react';
-import { BorderWidth, Colors, Radius, Spacing } from '@/utils/stepStyles';
+import { BorderWidth, Colors, FontSize, Radius, Spacing } from '@/utils/stepStyles';
 
 interface CopyButtonProps {
   /** 点击复制的原文(必须由调用方保证不含按钮自身的文本) */
@@ -46,7 +50,9 @@ const CopyButton: React.FC<CopyButtonProps> = ({ text, inline = false }) => {
               top: Spacing.XS - 2,
               right: Spacing.XS,
             }),
-        fontSize: 11,
+        // 2026-11-13 小欧 - 字号归位: 裸 11 → FontSize.SMALL(全局阶梯标签级, 同像素零视觉差);
+        //   lineHeight '14px'/padding '2px 6px'/top 为本组件单点局部规格(全仓唯一, 无双源), 不强造档位换算。
+        fontSize: FontSize.SMALL,
         lineHeight: '14px',
         padding: '2px 6px',
         border: `${BorderWidth.THIN}px solid ${Colors.BORDER.DEFAULT}`,

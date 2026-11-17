@@ -18,6 +18,22 @@
 # 2026-11-11 - 小欧 - 官方edit签名收编(camelCase): opencli上游OpenCode harness教的键名oldString/newString→
 #   old_string/new_string(Pydantic默认忽略extra键, 无别名则old_string必填缺失, opencli模型的edit每条废一轮schema反馈);
 #   replaceAll(bool)属跨键映射(true→mode:all/false→删键不设, EditInput缺省即once), 在normalize_params键名映射后特判
+# 2026-11-13 - 商量 - 错位参数展开(expand_misplaced_params): LLM幻觉把整个edit对象塞进new_string字段(嵌套dict或XML标签串),
+#   外层缺path/old_string致ERR_MISSING_PARAM; 日志实证59次edit中17次失败(29%轮次浪费), 展开后可直接执行省一轮重试;
+#   $text→new_string 经PARAM_ALIASES统一映射(无特判); 通用设计: 其他tool有PARAM_ALIASES条目即自动获得展开能力。
+#   判据收紧(复核, 反例实证): ①承载错位的字段名本身须是已知参数名(否则 write_xlsx.data 等合法dict参数被误展开);
+#   ②XML串须提取出≥2个参数且含自身规范名(否则编辑含 "</path>" 的代码时 new_string 被吞);
+#   ③_EXTRA_KNOWN_KEYS 补 edit.replaceAll(不在别名表, 丢则静默只替换首处)
+# 2026-11-14 - 商量 - 参数归位(更名自"错位参数展开", 名不符实: 实为把错位包装的参数解析归位到
+#   schema 式顶层排布, 不是什么展开): 修重大bug — 原 expanded 从空dict起步+update()无条件覆盖,
+#   顶层正确 path 被包装垃圾顶掉(HITL弹窗 path 错乱实证, 且污染信任落库); 改为: 顶层原样起步,
+#   归位产物只补缺失键绝不覆盖权威值 + 承载键取解析出的自身规范值(原值是包装本体) +
+#   顶层已齐全(schema式正确参数表)整体跳过零改动直返; 归位仍在键名归一化之前(错位形态下归一化
+#   无意义), 产物键名经参数表直映规范名, 后续归一化对其幂等, 归一化仍是全参数唯一权威 — 商量-2026-11-14
+# 2026-11-15 - 小欧 - 参数容错补齐(日志实证): grep 增 include→glob 键名别名; 新增 PARAM_DROP(grep 丢弃
+#   limit/head_limit/head/output_mode/-n, read 丢弃误传的 content)与 PARAM_INVERT_ALIASES(grep
+#   caseSensitive 取反归 ignore_case); 键名统一剥离前导 '/' (LLM 传 /shell_type 的序列化残留)。
+
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -31,6 +47,7 @@
 5. 有日志记录：记录映射情况，便于监控LLM行为
 """
 
+import re
 from typing import Any, Dict, Tuple
 
 from app.logger import logger
@@ -60,6 +77,7 @@ PARAM_ALIASES = {
         "file_name": "path",
         "oldString": "old_string",  # 2026-11-11 小欧: 官方edit camelCase键收编(OpenCode签名, 详见头部编辑历史)
         "newString": "new_string",
+        "$text": "new_string",  # 2026-11-13 商量: LLM幻觉键(嵌套dict内$text=替换后文本), 经PARAM_ALIASES统一映射无特判
         "model": "mode",  # 键名混淆实证: session 12b317fe 6连发全废(model:"once"), 语义唯一指向mode — 2026-11-04 小欧
     },
     "readmedia": {
@@ -97,6 +115,7 @@ PARAM_ALIASES = {
         "folder": "path",
         "search_dir": "path",
         "search_path": "path",
+        "include": "glob",  # 2026-11-15 小欧 - 官方Grep/Claude习惯键 include(文件名过滤) → glob
     },
     # 路径参数统一为path/dest后,旧规范名(source/destination)及同义别名降级为别名 — 小欧 2026-07-12
     "compress": {
@@ -346,6 +365,23 @@ PARAM_VALUE_ALIASES = {
 }
 
 
+# 容错丢弃: LLM 按其它产品(Claude/Grep)习惯传入、本系统无对应语义的参数键 —
+#   归一化阶段直接剔除, 避免被 _validate_params 判"含非法参数"而白废一轮 — 小欧 2026-11-15
+#   grep: limit/head_limit/head=结果条数上限(本工具有意不设条数上限), output_mode=输出模式(恒返回content),
+#         -n=行号开关(结果恒带行号); read: content=write 的正文键误传(读工具无此参数)
+PARAM_DROP = {
+    "grep": {"limit", "head_limit", "head", "output_mode", "-n"},
+    "read": {"content"},
+}
+
+
+# 反向布尔别名: 语义相反的键取反后归位到本系统参数 — 小欧 2026-11-15
+#   grep.caseSensitive=True ⇔ ignore_case=False (官方Grep 默认区分大小写, 与本系统默认忽略相反)
+PARAM_INVERT_ALIASES = {
+    "grep": {"caseSensitive": "ignore_case"},
+}
+
+
 # 工具名别名: LLM生成的自然语言变体→注册名 — 小欧 2026-08-07
 # 实测: com-test 03中LLM调用"write_text"(带下划线)被系统以"工具未注册"误拦截3次致任务失败。
 # 与 PARAM_ALIASES 同款集中映射模式, 只收录实际发生+对称高频变体(YAGNI)。
@@ -423,6 +459,115 @@ def normalize_tool_name(tool_name: str) -> str:
     return tool_name
 
 
+# XML 闭标签分割: 按 </tag> 切串, 奇数段=文本(去开标签后即值), 偶数段=标签名 — 商量 2026-11-13
+_XML_CLOSE_SPLIT = re.compile(r"</([A-Za-z_$][\w]*)>")
+_XML_OPEN_PREFIX = re.compile(r"^<[^>]+>")
+
+# 显式参数但不在 PARAM_ALIASES 的工具键: edit.replaceAll 由 normalize_params 跨键特判(true→mode:all),
+# 无别名条目; 归位时须一并识别, 否则该键被丢弃后只替换第一处而非全部(静默错误比失败更糟) — 商量 2026-11-13
+_EXTRA_KNOWN_KEYS = {"edit": {"replaceAll"}}
+
+
+def _parse_xml_packed_params(value: str, known_keys: set, aliases: dict) -> Dict[str, str]:
+    """从 XML 标签包装串中解析参数键值对(宽容: 允许无开标签, 如 'text</newString>') — 商量 2026-11-13
+
+    LLM 偶尔把 edit 参数序列化成 XML 标签串塞进单个字段:
+      '### 1.6...</newString><old_string>### 1.5...</old_string><path>F:\\...</path>'
+    按 </tag> 分割后, 每段文本(去掉开标签前缀)即对应参数值, 标签名经 aliases 映射为规范名。
+    只收标签名命中已知参数名的段, 其余段丢弃(防未知键泄漏到顶层触发非法参数)。
+    """
+    parts = _XML_CLOSE_SPLIT.split(value)
+    result = {}
+    for i in range(0, len(parts) - 1, 2):
+        text = parts[i]
+        tag = parts[i + 1]
+        if tag in known_keys or tag in aliases:
+            target = aliases.get(tag, tag)
+            text = _XML_OPEN_PREFIX.sub("", text)  # 去掉开标签(如有)
+            if text:
+                result[target] = text
+    return result
+
+
+def restore_misplaced_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
+    """参数归位: LLM 幻觉把参数对象错位塞进单个参数字段(嵌套 dict / XML 标签包装)时,
+    解析归位回 schema 式顶层平铺 — 商量 2026-11-14(更名自"错位参数展开", 名不符实)
+
+    实证形态(edit, deepseek-v4.1-flash, session 37dcf0a6, 59次edit中17次失败/29%轮次浪费):
+    1. 嵌套 dict: {'new_string': {'old_string':..., 'path':..., '$text':...}}
+    2. XML 标签串: {'new_string': 'val</newString><old_string>...</old_string><path>...</path>'}
+
+    铁律(2026-11-14 商量, 用户实证 HITL 弹窗 path 错乱):
+      ① 顶层正确参数是权威: 归位产物只补顶层缺失键, 绝不覆盖已有顶层值
+         (原 expanded.update() 无条件覆盖把正确 path 顶成垃圾, 属重大bug);
+      ② 顶层已齐全(schema 式正确参数表)不需归位, 直接原样返回零改动;
+         XML 分支额外须有顶层缺失键佐证(字符串本可能是合法正文, 编辑正文恰含
+         完整参数标签字面量时不得误吞); dict 装进字符串参数恒为错位, 无需佐证;
+      ③ 承载键自身取解析出的自身规范值(原值是包装本体, 不是合法参数值);
+         别名承载键(如 newString)归位后须移除原键(包装本体不留残, 否则归一化把
+         别名键再映回规范键造成二次污染), 且顶层已有正确规范值时不覆盖(铁律①)。
+
+    顺序契约: 归位在键名归一化之前(错位形态下键名归一化无意义); 归位用 PARAM_ALIASES
+    参数表识别键名并直映规范名, 产物键名已规范, 后续键名归一化对其幂等(规范键原样通过),
+    归一化仍是全参数唯一权威。
+
+    Returns:
+        (restored_params, has_restore) — 无需归位时原样返回 (params, False)
+    """
+    if not params or tool_name not in PARAM_ALIASES:
+        return params, False
+
+    aliases = PARAM_ALIASES[tool_name]
+    known_keys = set(aliases.keys()) | set(aliases.values()) | _EXTRA_KNOWN_KEYS.get(tool_name, set())
+
+    restored = dict(params)  # 判据①前提: 顶层原样起步, 正确参数零改动
+    has_restore = False
+    mapped = []
+
+    for key, value in params.items():
+        if key not in known_keys:            # 只有已知参数键才可能承载错位(防误伤合法dict参数)
+            continue
+        canonical_key = aliases.get(key, key)
+        if isinstance(value, dict):
+            # dict 装进字符串参数恒为错位, 无需缺失佐证(承载键归位由下方 ek==canonical_key 承担)
+            extracted = {
+                aliases.get(k, k): v
+                for k, v in value.items()
+                if k in known_keys
+            }
+        elif isinstance(value, str) and "</" in value:
+            extracted = _parse_xml_packed_params(value, known_keys, aliases)
+            # XML 判据: ≥2 参数且含自身规范名(单个 "</xxx>" 只是正文里的字面量);
+            # 且须有顶层缺失键佐证 — 字符串本可能是合法正文, 顶层齐全时不得动它
+            if len(extracted) < 2 or canonical_key not in extracted:
+                continue
+            if not any(ek != canonical_key and ek not in restored for ek in extracted):
+                continue
+        else:
+            continue
+        if not extracted:
+            continue                          # dict 内无可识别键: 不归位不删键(fail-visible 留原样)
+        for ek, ev in extracted.items():
+            if ek == canonical_key and (key == canonical_key or ek not in restored):
+                # 判据③: 承载键归位(原值是包装本体); 别名承载键且顶层已有正确规范值时不覆盖(铁律①)
+                restored[ek] = ev
+                mapped.append(f"{key}→{ek}")
+                has_restore = True
+            elif ek != canonical_key and ek not in restored:
+                # 判据①: 只补缺失, 绝不覆盖顶层权威值
+                restored[ek] = ev
+                mapped.append(f"{key}→{ek}")
+                has_restore = True
+        if key != canonical_key:
+            restored.pop(key, None)           # 判据③: 别名承载键包装本体移除(防归一化二次映回污染)
+            has_restore = True
+
+    if not has_restore:
+        return params, False                 # 铁律②: 无归位原样直返(原引用, 正确参数表零改动)
+    logger.info(f"[param_restore] {tool_name}: 错位参数归位 {mapped}")
+    return restored, has_restore
+
+
 def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
     """
     规范化参数名 - 将LLM返回的参数名映射为Schema要求的参数名
@@ -439,29 +584,61 @@ def normalize_params(tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, 
     if not params:
         return params, False
 
-    if tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES:
+    # 参数归位(嵌套 dict / XML 标签包装 → schema 式顶层平铺), 在键名映射之前:
+    #   错位形态下键名归一化无意义, 必须先归位; 归位产物键名已规范, 下方映射对其幂等 — 商量 2026-11-14
+    params, _ = restore_misplaced_params(tool_name, params)
+
+    if (tool_name not in PARAM_ALIASES and tool_name not in PARAM_VALUE_ALIASES
+            and tool_name not in PARAM_DROP and tool_name not in PARAM_INVERT_ALIASES):
         return params, False
 
     aliases = PARAM_ALIASES.get(tool_name, {})
+    drop_keys = PARAM_DROP.get(tool_name, set())
+    invert_aliases = PARAM_INVERT_ALIASES.get(tool_name, {})
     normalized = {}
     has_mapping = False
     mapped_keys = []
+    dropped_keys = []
 
     for key, value in params.items():
-        if key in aliases:
-            normalized_key = aliases[key]
-            if normalized_key in params and normalized_key != key:
+        # 键名清洗: 剥离 LLM 序列化残留的前导 '/' (如 /shell_type → shell_type)
+        clean_key = key[1:] if isinstance(key, str) and key.startswith("/") else key
+        if clean_key != key:
+            has_mapping = True
+            mapped_keys.append(f"{key}→{clean_key}")
+        # 无对应语义的键(含 -n 等短选项): 丢弃, 不让其进入 schema 校验
+        if clean_key in drop_keys or (isinstance(clean_key, str) and clean_key.startswith("-")):
+            dropped_keys.append(clean_key)
+            has_mapping = True
+            continue
+        # 语义相反的键: 取反后归位(如 caseSensitive → ignore_case); 规范键已存在时不覆盖并丢弃该键
+        if clean_key in invert_aliases:
+            target = invert_aliases[clean_key]
+            if target in params:
+                continue
+            normalized[target] = not bool(value)
+            has_mapping = True
+            mapped_keys.append(f"{clean_key}→{target}(取反)")
+            continue
+        if clean_key in aliases:
+            normalized_key = aliases[clean_key]
+            if normalized_key in params and normalized_key != clean_key:
                 logger.debug(
-                    f"[param_alias] {tool_name}: 参数 '{key}' 被忽略，"
+                    f"[param_alias] {tool_name}: 参数 '{clean_key}' 被忽略，"
                     f"因为规范名称 '{normalized_key}' 已存在"
                 )
                 continue
 
             normalized[normalized_key] = value
             has_mapping = True
-            mapped_keys.append(f"{key}→{normalized_key}")
+            mapped_keys.append(f"{clean_key}→{normalized_key}")
         else:
-            normalized[key] = value
+            normalized[clean_key] = value
+
+    if dropped_keys:
+        logger.info(
+            f"[param_alias] {tool_name}: 丢弃无对应语义参数 {dropped_keys}"
+        )
 
     if has_mapping:
         logger.info(

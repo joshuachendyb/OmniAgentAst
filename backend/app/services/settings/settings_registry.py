@@ -116,6 +116,17 @@ key 全局唯一，加载自检重复直接拒启。
     2026-11-11 小欧 - 三个验证素材地址(probe_image_url/probe_video_url/probe_audio_url)由 hidden 回媒体页直接显示:
       原 probe_image_url 迁②Image_URL 行就地配置、probe_video_url/probe_audio_url 无就地入口致"无处可配"(既不在媒体页也不在就地行);
       现统一去掉 hidden 回 media 组「外链图片」小节直接编辑(SettingRow text 渲染, 走组保存), 与 remote_url_passthrough 同节 — 小欧-2026-11-11
+    2026-11-13 商量 - 新增后台命令 3 项: tuning.concurrency.shell_max_background(并发上限) +
+      tuning.shell_bg_log_max_mb(输出文件轮转阈值) + tuning.shell_bg_result_retain_hours(结果保留时长) — 商量-2026-11-13
+    2026-11-13 商量 - 复核撤销 shell_bg_log_max_mb(轮转从未实现, 纯假配置; 保留 shell_bg_result_retain_hours),
+      后台命令配置项实为 2 项 — 商量-2026-11-13
+    2026-11-13 商量 - 复核补 tuning.shell_bg_max_output_mb(输出上限, 超限杀进程防磁盘写满),
+      后台命令配置项 3 项 — 商量-2026-11-13
+    2026-11-13 商量 - 10轮复核: 后台输出上限默认值定为 512MB(并发5条峰值2.5GB, 守住系统级红线;
+      原 2048MB 峰值 10GB 与"防磁盘写满"初衷相悖), 并发上限提示补"需重启生效" — 商量-2026-11-13
+    2026-11-12 小欧 - 外观组增两项: appearance.fontSize 改阅读区字号档(range 12/14/16, step=2 禁半档),
+      增 appearance.density 界面密度档(comfortable/compact), 密度只切控件档位不动字号与流水线正文 — 小欧-2026-11-12
+    2026-11-14 商量 - 标签与提示文案纠偏: 推理内容(thinking)与思考排版(text)两名一义, 标签与 notice 同步改名消歧 — 商量-2026-11-14
 
 """
 from typing import Any, Dict, List, Optional
@@ -426,16 +437,28 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               options=["zh-CN", "en-US"], restart=True),
         _item("app.theme", "readonly", "主题", "light", readonly=True,
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
-        _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
+        # 2026-11-12 小欧 - **阅读区字号**(文档[31] §4.2/§4.3/§7.1 定案):
+        #   label 明确「阅读区」, notice 写清作用范围(只管长文阅读区, 不影响流水线正文与任务卡);
+        #   range 收窄为 [12,16] step 2 —— 三档全落在全局字号阶梯上, 不产生 13/15 这类游离半档
+        #   (13px 当年被废正是因半档游离)。已存的越界/非阶梯值由读取侧钳制(夹紧 + 向下吸附)。
+        _item("appearance.fontSize", "range", "阅读区字号(px)", 14, range_=[12, 16], step=2,
+              notice="长文阅读区的正文档位（文件预览的 Markdown 美显、设置页说明弹框），可选 12 / 14 / 16 三档。不影响流水线正文与任务卡回复区（那两处是信息流，节奏固定）。"),
+        # 2026-11-12 小欧 - **界面密度**(文档[31] §4.2/§7.1 定案): 全局密度, 管控件高与排布松紧。
+        #   此前前端 useSettings 引用了 appearance.density 但 registry 无此键 → 彻底死分支(永不触发);
+        #   本次正式注册, 前端写入侧零改动即自动生效(键名沿用 localStorage 的 density 字段)。
+        _item("appearance.density", "select", "界面密度", "comfortable",
+              options=["comfortable", "compact"],
+              notice="全局排布松紧：紧凑 = 控件更矮、阅读区间距更紧；舒适 = 默认。字号与流水线正文节奏不受此影响。"),
         # 2026-10-05 小欧 - step 渲染显示选项(两个独立开关):
         #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"归组吞掉;
         #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节
-        #   思考排版=thought 段(text)是否按 Markdown 语法渲染; 推理内容=reasoning 段折叠初值, 两者互不干涉
-        #   顺序=推理内容 在前、思考排版 在后 — 小欧-2026-10-05
-        _item("appearance.step_render.reasoningVisible", "bool", "推理内容", True,
-              notice="推理内容折叠开关：开=每段思考进来就展开；关=新出现的推理段默认只显示标题行，点标题行的箭头可单独展开/收起"),
+        #   思考排版=thought 段(text)是否按 Markdown 语法渲染; 思考内容=reasoning 段折叠初值, 两者互不干涉
+        #   顺序=思考内容 在前、思考排版 在后 — 小欧-2026-10-05
+        # 2026-11-14 商量 - 标签「推理内容」→「思考内容」, 与流水线标题行文案统一(思考内容... 同名同义)
+        _item("appearance.step_render.reasoningVisible", "bool", "思考内容", True,
+              notice="思考内容折叠开关：开=每段思考进来就展开；关=新出现的思考段默认只显示标题行，点标题行的箭头可单独展开/收起"),
         _item("appearance.step_render.thoughtMarkdown", "bool", "思考排版", True,
-              notice="思考内容(thought)用 Markdown 语法渲染的开关：开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
+              notice="思考排版开关：thought 段用 Markdown 语法渲染；开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
         _item("appearance.step_render.contentRender", "bool", "Content渲染", True,
               notice="步骤内容(content)渲染开关：开=正常渲染步骤内容，关=隐藏步骤内容"),
         _item("appearance.step_render.diffRender", "bool", "Diff渲染", True,
@@ -471,11 +494,17 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="请求结束后先留着不断开的连接条数，下次请求直接复用、省去重新连的时间；0=用完就断（更省资源，但下次会慢一点）"),
         _item("tuning.llm_net.stream_total_timeout", "int", "单次总时长上限(秒)", 500, range_=[60, 3600],
               notice="一次回答从开始到结束的总时间上限，到点强制掐断（防模型卡住永远不出结果）。与上面「等待回复间隔」分工：本项管总时长，上面管字与字的间隔"),
-        # --- concurrency: 并发配额（2 键）---
+        # --- concurrency: 并发配额（3 键）---
         _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
         _item("tuning.concurrency.shell_max_processes", "int", "shell并发进程上限", 10, range_=[2, 64],
               notice="同时执行的 shell 子进程总数上限（每个约40MB内存）：到顶后新命令排队等空位，等不到就提示稍后重试。每条命令跑完即销毁，不常驻"),
+        _item("tuning.concurrency.shell_max_background", "int", "后台命令并发上限", 5, range_=[1, 32],
+              notice="后台运行的命令最多同时几条；到顶后新后台命令直接拒绝并提示稍后。后台命令无超时，完成后自动通知并续跑。（改本项需重启服务生效）"),
+        _item("tuning.shell_bg_max_output_mb", "int", "后台输出上限(MB)", 512, range_=[0, 8192],
+              notice="单条后台命令输出文件最多写多少 MB；超过即强制终止该命令，防日志狂写把磁盘写满拖垮系统。默认512MB（并发5条时峰值约2.5GB）。0=不限制（不建议）"),
+        _item("tuning.shell_bg_result_retain_hours", "int", "后台结果保留(小时)", 24, range_=[1, 720],
+              notice="后台命令结束后结果文件保留多久；到期在新后台命令启动时顺带清理"),
         # --- agent: Agent 循环参数（2 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),

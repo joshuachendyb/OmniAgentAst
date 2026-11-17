@@ -157,6 +157,41 @@
 # 2026-11-06 小欧 - 三堂会审修正: drain_until_exit 改用剩余时间 max(1,int(_remaining)) 非全 timeout(总时长≤timeout); docstring 改"去池化版"
 # 2026-11-06 小欧 - 三路检测引号感知: 新增 _strip_quoted_content 剥离引号内内容, _looks_like_* 不再匹配字符串字面量命令名(如 echo "grep" 不误路由)
 # 2026-11-06 小欧 - truncated路径杀孙进程: 根退出但孙持管道写端(Start-Process/Start-Job)时, kill_process_tree杀孙防僵尸
+# 2026-11-13 商量 - 新增 background 参数: 后台运行命令并立即返回; 后台分支复用全部前置(校验/预处理/
+#   三路检测/语法修复/安全检查), 仅执行段改走 shell_background.run_shell_background(popen_factory 注入
+#   四种 shell 启动装配, DRY), 前台路径零改动; 中风险命令后台一律拒绝不弹窗; 后台默认无超时(显式 timeout 生效)
+# 2026-11-13 商量 - 根治: (1)cmd 后台启动脚本路径改走 shell_background.bat_sidecar_path, 与清理侧
+#   同一单源(原 outfile[:-4]+".bat" 与清理 output_file+".bat" 不一致致 .bat 永不被删); (2)Popen 后即关父进程
+#   写句柄(子进程已继承, 父侧不关会拖住产物删除); (3)success_codes 传入后台, 成功判定与前台一致
+# 2026-11-15 小欧 - L1-5: _auto_fix_bash_syntax 由整条 replace('\\','/') 改为引号感知的路径 token 转换
+#   (引号段整体/嵌套一层/引号外命令位三规则, 见 _fix_paths_in), 原实现把引号内正则 \b/\d/\s、awk \t、
+#   printf \n 一并摧毁且替换后仍合法致 rc=0 静默丢行; L1-6: bash 启动改非登录 shell(--noprofile --norc),
+#   免 profile/rc 加载, PATH 由 bash.exe 内置默认保证
+# 2026-11-15 小欧 - 删除 stage 1.2 全部文本级 auto_fix(猜测式纠错), 只保留确定性映射:
+#   - 删 _auto_fix_bash_syntax/_fix_paths_in/_QUOTED_SPAN_RE/_BARE_PATH_RE/_QUOTED_PATH_HEAD_RE:
+#     路径\\→/ 覆盖不全(相对路径/%VAR%/管道位全漏)且会误伤引用内容, 半吊子纠错比不纠更危险;
+#   - 删 _auto_fix_cmd_syntax: &&→& 把条件链降级为无条件链, 且改坏引号内文本;
+#   - 删 _auto_fix_powershell_syntax: 块内 .Property→$_.Property 无引号感知, 会改字符串字面量;
+#   - 保留 stage 1.0a python3→python(名称映射) 与 stage 1.1 三路路由(只改 shell_type);
+#   - 保留 _translate_powershell_operators/_fix_ps7_assignment_operators/_close_if_blocks:
+#     属执行前装配(ps5 无 &&/||, ps7 运算符后接 $var= 为解析错误), 引号感知且语义实测正确, 非纠错
+# 2026-11-15 小欧 - 三路路由结果回报: 路由改 shell_type 后向 LLM 留痕(此前仅 logger.info,
+#   LLM 只看到回显的最终 shell_type, 无法区分"自己选对了"还是"被自动切换"), 否则同命令反复猜错且学不会对应关系;
+#   params 增 shell_type_requested(LLM 原值), metrics 增 shell_type_switch(ps7 → bash + 触发原因, 单条 <100 字符);
+#   前台各 build 调用与后台 llm_data 注入点同口径; 仅切换执行器, 命令文本零改动
+# 2026-11-15 小欧 - 路由文案与留痕位置: _route_reason 改 `command 命令是 bash 特征` 口径;
+#   _shell_type_switch 改 `...，shelltype 改为 bash（原 ps7；仅切换执行器，命令文本未改）` 口径;
+#   附加切换说明追加到 summary 尾部(前台三态 + 后台 llm_data summary), metrics 仍结构化保留
+# 2026-11-15 小欧 - 子进程控制台隔离(止血): 6 处 Popen(前台 ps/cmd/bash + 后台 _popen_factory 三路)统一注入
+#   _isolation_kwargs(): CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES;
+#   根因: 打包版 console=True 绑定 conhost, 子进程默认继承该控制台句柄, CreateProcessW 在
+#   GetConsoleMode 的 IOCTL 内可无限阻塞且不释放 GIL(全解释器冻结, 看门狗/心跳一并停摆);
+#   隔离后建立进程与 conhost 零交互, 命令文本与读取链路零改动
+# 2026-11-15 小欧 - 加 [iso] 启动指纹 log(文件md5前8位), 验证运行进程加载的是否最新代码
+# 2026-11-15 小欧 - P4 统一出口([42]): 隔离参数迁出到 app/utils/proc_spawn.py(全仓唯一出口, DRY),
+#   _child_console_isolation_kwargs 删除, 3 处调用改用 isolation_kwargs(); 语义零改动;
+#   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
+# 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.utils.proc_io(函数本体的迁移史见其 docstring)
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -214,7 +249,7 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
        └── shell_type="bash" ────────────────────────────────────
            │
            ├── [入] subprocess.Popen 直接传递命令字符串
-           │    使用 -l 登录 shell, 自动加载 .bashrc
+           │    使用 --noprofile --norc 非登录 shell, 不加载 profile/rc
            │
            ├── [子进程] env 同主进程(无需设置PYTHONIOENCODING)
            │    Git Bash: /usr/bin/bash.exe
@@ -259,9 +294,12 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
+from app.utils.proc_io import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.file.file_encoding import get_file_encoding
+from app.tools.context import get_current_task_id
+from app.tools.fundamental import shell_background
 from app.tools.fundamental.shell_engine import (
     _replace_python3_safe,  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
 )
@@ -596,46 +634,54 @@ def _build_execute_shell_command_llm_data(
     output_len: int = 0, stderr_len: int = 0, hint: str = "",
     *,
     cmd_short: str,
+    shell_type_requested: str = "",
+    shell_type_switch: str = "",
 ) -> Dict[str, Any]:
     """execute_shell_command 的 llm_data 构建函数
-    cmd_short: 命令预览（由调用者构造传入）"""
+    cmd_short: 命令预览（由调用者构造传入）
+    shell_type_requested/shell_type_switch: 三路路由改变了 shell_type 时的原值与切换说明(空=未切换)"""
     logger.debug(f"[Shell] _build llm: cmd_len={len(command)}, exec_code={exec_code}, rc={returncode}")
     # 2026-10-05 小欧: params存完整command(原存cmd_short缩写致LLM无法核对命令) — 小欧 2026-10-05
     _act_params = {"command": command}
     if shell_type:
         _act_params["shell_type"] = shell_type
+    if shell_type_switch and shell_type_requested:
+        _act_params["shell_type_requested"] = shell_type_requested
     if timeout:
         _act_params["timeout"] = timeout
     if cwd:
         _act_params["cwd"] = cwd
+    _switch_metric = {"shell_type_switch": {"text": shell_type_switch}} if shell_type_switch else {}
+    # 2026-11-15 小欧 - 切换说明追加到 summary 尾部(用户要求留痕附加信息放 summary 尾巴)
+    _switch_suffix = f"；{shell_type_switch}" if shell_type_switch else ""
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
-            "summary": f"执行Shell命令{cmd_short}，失败",
+            "summary": f"执行Shell命令{cmd_short}，失败{_switch_suffix}",
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
-            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
+            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, **_switch_metric},
         }
     if exec_code == "warning":
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
         # 2026-10-05 小欧 - 单通道去冗余: summary 不再嵌 _warn_msg, 统一 `执行Shell命令{cmd_short}，成功`;
         #   stderr 长度入 metrics 结构化承接, _warn_msg 仍由 detail 承载(⚠ 警告行)
         return {
-            "summary": f"执行Shell命令{cmd_short}，部分成功：{_warn_msg}",  # 2026-10-14 小欧 - summary 统一口径: 去",提示说明", 警告信息保留 — 小欧-2026-10-14
+            "summary": f"执行Shell命令{cmd_short}，部分成功：{_warn_msg}{_switch_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 去",提示说明", 警告信息保留 — 小欧-2026-10-14
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": "成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
-            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "stderr_len": {"value": stderr_len, "text": f"stderr {stderr_len}字符"}},
+            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "stderr_len": {"value": stderr_len, "text": f"stderr {stderr_len}字符"}, **_switch_metric},
         }
     # 2026-10-05 小欧 - 单通道去数字化: summary 去 `退出码{returncode}，输出{output_len}字符`,
     #   统一 `执行Shell命令{cmd_short}，成功`; 两数在 metrics 统计段呈现(通用渲染)
     return {
-        "summary": f"执行Shell命令{cmd_short}，成功",
+        "summary": f"执行Shell命令{cmd_short}，成功{_switch_suffix}",
         "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "output_len": {"value": output_len, "text": f"输出{output_len}字符"}},
+        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "output_len": {"value": output_len, "text": f"输出{output_len}字符"}, **_switch_metric},
     }
 
 
@@ -785,62 +831,6 @@ def _strip_quoted_content(command: str) -> str:
         result.append(ch)
     return ''.join(result)
 
-
-
-def _auto_fix_cmd_syntax(command: str) -> str:
-    """自动修复LLM生成的CMD命令中已知错误模式 — 小欧 2026-07-27
-
-    当前覆盖：
-    - $env:VAR → %VAR%（LLM常把PS环境变量语法带到CMD）
-    - && → &（链式操作符）
-    - $PWD → %CD%（当前目录）
-    - $HOME → %USERPROFILE%（用户目录）"""
-    if not command:
-        return command
-    fixed = command
-    fixed = re.sub(r'\$env:(\w+)', r'%\1%', fixed)
-    fixed = re.sub(r'(?<![>&])&&(?![&>])', '&', fixed)
-    fixed = re.sub(r'\$PWD', '%CD%', fixed, flags=re.IGNORECASE)
-    fixed = re.sub(r'\$HOME', '%USERPROFILE%', fixed, flags=re.IGNORECASE)
-    if fixed != command:
-        logger.warning(f"[Shell] 自动修复CMD语法: $env:VAR→%VAR%, &&→&, $PWD→%CD%, $HOME→%USERPROFILE%, cmd={command[:100]}")
-        return fixed
-    return command
-
-
-def _auto_fix_powershell_syntax(command: str) -> str:
-    """自动修复LLM生成的PowerShell命令中已知错误模式 — 小沈 2026-07-26
-
-    当前覆盖：
-    - 脚本块{...}内 .Property → $_.Property（LLM常漏写$_）"""
-    if not command:
-        return command
-    # { .Property → { $_.Property (花括号开头的.缺$_)
-    # 必须排除 {{.Name}} 转义双花括号(模板语法),用(?<!\{)\{(?!\{)确保仅匹配单{ — 小沈 2026-07-26
-    if re.search(r'(?<!\{)\{(?!\{)\s*\.\w+', command):
-        fixed = re.sub(r'(?<!\{)\{(?!\{)\s*\.(\w+)', r'{ $_.\1', command)
-        if fixed != command:
-            logger.warning(f"[Shell] 自动修复PS语法: 块内.Property→$_.Property, cmd={command[:100]}")
-            return fixed
-    return command
-
-
-def _auto_fix_bash_syntax(command: str) -> str:
-    """自动修复LLM生成的Bash命令中已知错误模式 — 小欧 2026-07-28; 2026-08-06 精简
-
-    当前覆盖：
-    - Windows反斜杠 → 正斜杠（Git Bash下反斜杠是转义符, C:\\Users 中 \\U 被吃掉致路径损坏）
-
-    注: python3→python 已在 stage 1.0a 统一处理，此处不再重复（DRY）"""
-    if not command or sys.platform != "win32":
-        return command
-    fixed = command
-    # 路径分隔符：Windows反斜杠 → 正斜杠（Git Bash下\是转义符, \U→U致路径损坏, 改/让bash识别）
-    fixed = fixed.replace('\\', '/')
-    if fixed != command:
-        logger.warning(f"[Shell] 自动修复bash语法: 路径转换\\→/, cmd={command[:100]}")
-        return fixed
-    return command
 
 
 def _find_bash() -> Optional[str]:
@@ -1046,23 +1036,31 @@ def _looks_like_cmd(command: str) -> bool:
 
 def shell(
     command: str, shell_type: Literal["ps7", "ps5", "cmd", "bash", None] = "ps7",
-    timeout: int = 60, cwd: Optional[str] = None,
+    timeout: Optional[int] = None, cwd: Optional[str] = None,
     success_codes: Optional[list[int]] = None,
+    background: bool = False,
 ) -> Dict[str, Any]:
     """执行 Shell 命令（去池化版: 每命令独立子进程跑完即销毁）
 
     参数:
         command:     命令字符串
         shell_type:  "ps7"(默认), "ps5", "cmd" 或 "bash"
-        timeout:     超时秒数，默认 60，范围 1-600
+        timeout:     超时秒数, 范围 1-600; None=未显式传(前台兜底60秒, 后台无超时) — 商量-2026-11-13
         cwd:         工作目录绝对路径
+        background:  True=后台运行并立即返回(默认无超时, 显式 timeout 才生效)
 
     返回:
         build_success / build_error / build_warning 标准格式
         data: {stdout, stderr}（原始输出; returncode/shell_type/duration_ms 仅在 llm_data, 不在 data）
+        background=true 时: data={shell_id, output_file, status}
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1【通用】: 参数校验 ──
+    # 2026-11-13 商量(复核修正): timeout 语义归一 — None=未显式传(前台兜底60秒, 后台无超时),
+    #   不再用 "60 即默认" 的魔法值猜测; 显式传 60 的后台命令照常生效60秒超时。
+    _timeout_explicit = timeout is not None
+    if not _timeout_explicit:
+        timeout = 60   # 前台默认(后台分支按 _timeout_explicit 判定无超时)
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "bash")
     t0 = _time_mod.perf_counter()
     _cmd_limit = EXECUTE_SHELL_OUTPARM_LIMIT_CMD
@@ -1115,21 +1113,21 @@ def shell(
     if cwd and not os.path.isdir(cwd):
         cwd = _resolve_safe_cwd(cwd)
 
-    # ── 阶段总览 ── 小欧 2026-08-06
+    # ── 阶段总览 ── 小欧 2026-08-06; 2026-11-15 删除 stage 1.2
     #   stage 1.0  参数校验
-    #   stage 1.0a 通用预处理（python3→python，仅此一处）
-    #   stage 1.1  三路检测+路由（所有 shell_type 统一、先路由后校正）
-    #   stage 1.2  按最终 shell_type 校正：
-    #                - cmd     → _auto_fix_cmd_syntax
-    #                - bash    → _auto_fix_bash_syntax
-    #                - ps7/ps5 → _auto_fix_powershell_syntax（保留，优于文档）
+    #   stage 1.0a 通用预处理（python3→python 确定性名称映射，仅此一处）
+    #   stage 1.1  三路检测+路由（所有 shell_type 统一；只改 shell_type，不碰命令文本）
     #   stage 2    安全检查
-    #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash登录shell，三路无嵌套检测）
+    #   stage 3    执行（ps7/ps5引擎 / cmd.bat / bash 非登录 shell，三路无嵌套检测）
     #   stage 4    后处理
     #
     # ── 阶段 1.1【通用】: 三路类型检测 + 路由 ── 小欧 2026-07-29; 2026-08-06 位置修正 ──
     #  以LLM选的shell_type为"第一猜测"，匹配则直接执行；不匹配则尝试其他类型。
-    #  路由只改shell_type，不做语法校正（交由 stage 1.2）；"都不像"保持原type让LLM承担。
+    #  路由只改 shell_type，不改命令文本；"都不像"保持原 type 让 LLM 承担。
+    #  路由结果必须回报给LLM(params.shell_type_requested + metrics.shell_type_switch):
+    #  否则同命令下次仍按原 type 猜错, LLM也无法学习"命令特征→执行器"的对应关系。
+    _requested_shell_type = shell_type
+    _route_reason = ""
     if shell_type in ("ps7", "ps5"):
         # ── PS分支：最接近PS，其次CMD，最后Bash ──
         if _looks_like_ps(processed_command):
@@ -1137,9 +1135,11 @@ def shell(
         elif _looks_like_cmd(processed_command):
             logger.info(f"[Shell] 三路检测: PS→CMD, cmd={cmd_short}")
             shell_type = "cmd"
+            _route_reason = "command 命令是 cmd 特征"
         elif _looks_like_bash(processed_command) and _find_bash():
             logger.info(f"[Shell] 三路检测: PS→Bash, cmd={cmd_short}")
             shell_type = "bash"
+            _route_reason = "command 命令是 bash 特征"
     elif shell_type == "cmd":
         # ── CMD分支：最接近CMD，其次Bash，最后PS ──
         if _looks_like_cmd(processed_command):
@@ -1147,9 +1147,11 @@ def shell(
         elif _looks_like_bash(processed_command) and _find_bash():
             logger.info(f"[Shell] 三路检测: CMD→Bash, cmd={cmd_short}")
             shell_type = "bash"
+            _route_reason = "command 命令是 bash 特征"
         elif _looks_like_ps(processed_command):
             logger.info(f"[Shell] 三路检测: CMD→PS, cmd={cmd_short}")
             shell_type = "ps7"
+            _route_reason = "command 命令是 PowerShell 特征"
     elif shell_type == "bash":
         # ── Bash分支：最接近Bash，其次CMD，最后PS ──
         if _looks_like_bash(processed_command) and _find_bash():
@@ -1157,24 +1159,15 @@ def shell(
         elif _looks_like_cmd(processed_command):
             logger.info(f"[Shell] 三路检测: Bash→CMD, cmd={cmd_short}")
             shell_type = "cmd"
+            _route_reason = "command 命令是 cmd 特征"
         elif _looks_like_ps(processed_command):
             logger.info(f"[Shell] 三路检测: Bash→PS, cmd={cmd_short}")
             shell_type = "ps7"
+            _route_reason = "command 命令是 PowerShell 特征"
 
-    # ── 阶段 1.2【通用】: 语法自动修复（按最终shell_type校正，路由已完成） ──
-    # PS校正保留: {.Property→$_.Property}模式极精准(仅匹配{ .word缺$_)，LLM高频错误，收益>风险
-    if shell_type in ("ps7", "ps5"):
-        _fixed = _auto_fix_powershell_syntax(processed_command)
-        if _fixed != processed_command:
-            processed_command = _fixed
-    elif shell_type == "cmd":
-        _fixed = _auto_fix_cmd_syntax(processed_command)
-        if _fixed != processed_command:
-            processed_command = _fixed
-    elif shell_type == "bash":
-        _fixed = _auto_fix_bash_syntax(processed_command)
-        if _fixed != processed_command:
-            processed_command = _fixed
+    _shell_type_switch = ""
+    if _requested_shell_type and _requested_shell_type != shell_type:
+        _shell_type_switch = f"{_route_reason}，shelltype 改为 {shell_type}（原 {_requested_shell_type}；仅切换执行器，命令文本未改）"
 
     # ── 阶段 2【通用】: 安全检查 ──
     # 2026-10-16: 危险层与中风险层已独立, 两层都查取最严(危险层优先)。
@@ -1187,10 +1180,82 @@ def shell(
         if safety.blocked:
             llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                 shell_type, ERR_SHELL_INJECTION, safety.message,
-                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截，可缩小操作范围后重试", cmd_short=cmd_short)  # 2026-10-14 小欧 - hint 修事实复述: 原只说"被拦截"(detail 已讲规则), 补换策略 — 小欧-2026-10-14
+                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截，可缩小操作范围后重试", cmd_short=cmd_short,
+                shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)  # 2026-10-14 小欧 - hint 修事实复述: 原只说"被拦截"(detail 已讲规则), 补换策略 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm)
         if safety.needs_confirm:
             logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
+
+    # ── 阶段 2.5【后台专属】: 安全收紧 — 商量 2026-11-13 ──
+    #  后台命令天然长驻/高影响: 中风险(需确认)命令在无值守场景弹窗会挂死,
+    #  故后台分支对 needs_confirm 一律拒绝(仅白名单级放行), 不弹窗。
+    if background and safety and safety.needs_confirm:
+        d = int((_time_mod.perf_counter() - t0) * 1000)
+        llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
+            shell_type, ERR_SHELL_INJECTION, f"后台命令安全等级不足: {safety.message}",
+            timeout=timeout, cwd=cwd or "",
+            hint="该命令需人工确认, 不支持后台运行; 请去掉 background 参数前台执行",
+            cmd_short=cmd_short,
+            shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
+        return build_error(data={}, llm_data=llm)
+
+    # ── 阶段 2.9【后台专属】: 转后台执行并立即返回 — 商量 2026-11-13 ──
+    #  不占 _SHELL_PROC_SEM(前台并发槽), 不进 drain_until_exit(阻塞读);
+    #  timeout 语义: 后台默认无超时, 显式传则生效(对齐 opencode)
+    if background:
+        _task_id = get_current_task_id() or ""
+
+        def _popen_factory(cmd: str, workdir: Optional[str], outfile: str):
+            """四种 shell 的后台启动装配(与前台同款命令行, stdout/stderr 改指 outfile)。
+            Popen 返回后立即关闭父进程写句柄: 子进程已继承独立句柄, 父侧不关会拖住产物删除。"""
+            _iso = _isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
+            try:
+                _out = open(outfile, "ab")
+                try:
+                    if shell_type in ("ps7", "ps5"):
+                        if shell_type == "ps5":
+                            cmd = _translate_powershell_operators(cmd)
+                        else:
+                            cmd = _fix_ps7_assignment_operators(cmd)
+                        exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") \
+                              or shutil.which("powershell.exe" if shell_type == "ps7" else "pwsh.exe")
+                        return subprocess.Popen([exe, "-NoProfile", "-Command", cmd],
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                            **_iso)
+                    if shell_type == "cmd":
+                        # 启动脚本路径走 shell_background.bat_sidecar_path(与清理侧同一单源)
+                        bat_path = shell_background.bat_sidecar_path(outfile)
+                        with open(bat_path, "w", encoding=locale.getpreferredencoding(), errors="replace") as f:
+                            f.write('@echo off\r\n' + cmd + '\r\n' + 'exit /b %errorlevel%\r\n')
+                        return subprocess.Popen(f'"{bat_path}"', shell=True,
+                            stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                            **_iso)
+                    bash_exe = _find_bash()
+                    if not bash_exe:
+                        logger.error("[bg_shell] bash 解释器未找到")
+                        return None
+                    return subprocess.Popen([bash_exe, "--noprofile", "--norc", "-c", cmd],
+                        stdout=_out, stderr=subprocess.STDOUT, cwd=workdir, env=_sanitize_env(),
+                        **_iso)
+                finally:
+                    _out.close()
+            except Exception as e:
+                logger.error(f"[bg_shell] Popen 装配失败: {e}", exc_info=True)
+                return None
+
+        result = shell_background.run_shell_background(
+            processed_command, shell_type, cwd, _task_id, cmd_short, _popen_factory,
+            timeout=(timeout if _timeout_explicit else None),  # None=后台默认无超时, 显式传才生效 — 商量-2026-11-13
+            success_codes=success_codes)
+        if result is not None and result.get("llm_data"):
+            result["llm_data"]["action"]["params"]["timeout"] = timeout  # 留痕原始入参供历史核对
+            if _shell_type_switch:
+                # 后台分支 llm_data 由 shell_background 构建, 在此补路由留痕(与前台同口径)
+                result["llm_data"]["action"]["params"]["shell_type_requested"] = _requested_shell_type
+                result["llm_data"].setdefault("metrics", {})["shell_type_switch"] = {"text": _shell_type_switch}
+                if result["llm_data"].get("summary"):
+                    result["llm_data"]["summary"] += f"；{_shell_type_switch}"
+        return result
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     # 2026-11-06 小欧 - 去池化: 每条命令独立子进程跑完即销毁; 全局一个并发信号量管内存,
@@ -1204,11 +1269,13 @@ def shell(
             llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                 shell_type, ERR_SHELL_EXCEPTION,
                 f"全局 shell 并发已达上限({_SHELL_MAX_PROCESSES}), 请稍后重试或减少并发",
-                timeout=timeout, cwd=cwd or "", hint="宿主并发限流, 非命令本身错误", cmd_short=cmd_short)
+                timeout=timeout, cwd=cwd or "", hint="宿主并发限流, 非命令本身错误", cmd_short=cmd_short,
+                shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
             return build_error(data={}, llm_data=llm)
         _slot_acquired = True
         _remaining = timeout - (_time_mod.perf_counter() - t0)  # 2026-11-06 小欧: 排队耗时后重算剩余, drain 用此值(总时长≤timeout)
 
+        _iso = _isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
         if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5】: 一次性子进程 — 2026-11-06 小欧 去池化
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)
@@ -1221,12 +1288,14 @@ def shell(
                 d = int((_time_mod.perf_counter() - t0) * 1000)
                 llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                     shell_type, ERR_SHELL_EXCEPTION, "未找到 pwsh.exe/powershell.exe",
-                    timeout=timeout, cwd=cwd or "", hint="请确认 PowerShell 已安装并在 PATH 中", cmd_short=cmd_short)
+                    timeout=timeout, cwd=cwd or "", hint="请确认 PowerShell 已安装并在 PATH 中", cmd_short=cmd_short,
+                    shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
                 return build_error(data={}, llm_data=llm)
             proc = subprocess.Popen(
                 [pwsh_exe, "-NoProfile", "-Command", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=_sanitize_env(),
+                **_iso,
             )
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
             if truncated:
@@ -1255,7 +1324,7 @@ def shell(
                 child_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
                 proc = subprocess.Popen(
                     f'"{bat_path}"', shell=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, cwd=cwd, env=child_env,)
+                    stderr=subprocess.PIPE, cwd=cwd, env=child_env, **_iso)
                 # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
                 # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
                 # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
@@ -1277,19 +1346,21 @@ def shell(
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
             returncode = proc.returncode if proc.returncode is not None else -1
 
-        else:  # ── 【bash专属】: subprocess + 登录shell ──
+        else:  # ── 【bash专属】: subprocess + 非登录 shell(免 profile/rc 加载) ──
             bash_exe = _find_bash()
             if not bash_exe:
                 d = int((_time_mod.perf_counter() - t0) * 1000)
                 llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                     shell_type, ERR_SHELL_EXCEPTION, "bash解释器未找到(Git Bash/WSL)",
-                    timeout=timeout, cwd=cwd or "", hint="请检查Git Bash或WSL是否安装", cmd_short=cmd_short)
+                    timeout=timeout, cwd=cwd or "", hint="请检查Git Bash或WSL是否安装", cmd_short=cmd_short,
+                    shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
                 return build_error(data={}, llm_data=llm)
             child_env = _sanitize_env()
             proc = subprocess.Popen(
-                [bash_exe, "-l", "-c", processed_command],
+                [bash_exe, "--noprofile", "--norc", "-c", processed_command],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=cwd, env=child_env,
+                **_iso,
             )
             # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
             stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
@@ -1387,6 +1458,7 @@ def shell(
             timeout=timeout, cwd=cwd or "",
             output_len=_stdout_orig_len, stderr_len=_stderr_orig_len, hint=_hint,
             cmd_short=cmd_short,
+            shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch,
         )
         if _exec_code == "error":
             return build_error(data=data, llm_data=llm)
@@ -1398,7 +1470,8 @@ def shell(
         d = int((_time_mod.perf_counter() - t0) * 1000)
         llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
             shell_type, ERR_SHELL_EXCEPTION, str(e),
-            timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境", cmd_short=cmd_short)
+            timeout=timeout, cwd=cwd or "", hint="命令执行异常,请检查命令和系统环境", cmd_short=cmd_short,
+            shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
         return build_error(data={}, llm_data=llm)
     finally:
         if _slot_acquired:

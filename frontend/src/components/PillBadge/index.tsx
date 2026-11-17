@@ -2,10 +2,11 @@
 // 编辑历史: 2026-09-15 小欧 - 扫光keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令):
 //   删本地injectShine重复注入逻辑, 改调 injectKeyframes('pillShine') 单例注入(DRY) — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: 默认色引 Colors.SUCCESS 去硬编码 + 字号 FontSize.SECONDARY 收敛 — 小欧-2026-09-15
+// 编辑历史: 2026-11-13 商量 - 字重归位: fontWeight 500 → FontWeight.MEDIUM(与字号同源单一真源), import 同步补 FontWeight — 商量-2026-11-13
 import React from 'react';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons) — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
 interface PillBadgeProps {
   /** 标签文本 */
@@ -40,7 +41,7 @@ const PillBadge: React.FC<PillBadgeProps> = ({
         borderRadius: 11,
         color: '#fff',
         fontSize: FontSize.SECONDARY,
-        fontWeight: 500,
+        fontWeight: FontWeight.MEDIUM,
         padding: '0 10px',
         ...(shine
           ? {

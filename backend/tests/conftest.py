@@ -11,6 +11,9 @@ tests/conftest.py — 全局测试夹具
   2026-09-26 - 小欧 - [72]第九章(9.6-3) 新建。**统一为 TestClient 请求注入访问口令**。
   2026-10-03 - 小欧 - 文档[4] 5.11.1 P0: 新增共享内存库夹具 conn+chat_db(建表脚本逐字搬运自 test_s2_s4_review_bugs 并补
   2026-10-15 - 小欧 - [33] 4.2 落地(测试侧对齐 TTL 新列): chat_session_trust 建表补 expires_at TEXT; UNIQUE 由 (session_id,tool_name) 改 (session_id,tool_name,path)——原唯一键会让"同工具同路径两条不同 session 行"互相冲突, 且与生产 trust_db.insert_session_trust 语义对齐 — 小欧-2026-10-15 link_enabled 列), 供第5章新增 case 复用; 存量 7 份副本刻意不动(YAGNI)。
+  2026-11-13 商量 - 测试侧建表 DDL 与生产 schema 对齐: chat_tasks 补 creation_source 列,
+    chat_user_message 补 msg_kind 列(对齐 db_initializer), 消除测试环境 no such column — 商量-2026-11-13
+  2026-11-16 小欧 - [23]阶段D: chat_sessions 补 routingMode 列(对齐 db_initializer 补列) — 小欧-2026-11-16
 
 背景：第九章给 12 个 router 挂了统一 token 鉴权（`app/api/v1/deps.verify_token`），
   凡未带口令的请求一律 401。项目内用 `fastapi.testclient.TestClient` 的测试
@@ -56,6 +59,7 @@ def _build_schema(conn) -> None:
             message_count INTEGER DEFAULT 0, is_deleted BOOLEAN DEFAULT FALSE, is_valid BOOLEAN DEFAULT FALSE,
             title_locked BOOLEAN DEFAULT FALSE, title_updated_at TEXT, version INTEGER DEFAULT 1,
             sessionModel TEXT,
+            routingMode TEXT,
             link_enabled BOOLEAN DEFAULT FALSE
         );
         CREATE TABLE chat_messages (
@@ -79,12 +83,13 @@ def _build_schema(conn) -> None:
             context_link_mode TEXT, context_root_task_id TEXT, sessionModel TEXT NOT NULL,
             accumulated_usage TEXT DEFAULT '{}', llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
             retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0, error_type TEXT, error_message TEXT,
-            ai_message_id INTEGER, created_at TEXT, updated_at TEXT
+            ai_message_id INTEGER, creation_source TEXT NOT NULL DEFAULT 'user', created_at TEXT, updated_at TEXT
         );
         CREATE TABLE chat_user_message (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, content TEXT NOT NULL,
             task_id TEXT, response TEXT, reasoning TEXT, outcome TEXT, chat_model TEXT,
-            accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT, created_at TEXT
+            accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT,
+            msg_kind TEXT NOT NULL DEFAULT 'user', created_at TEXT
         );
         -- 2026-10-05 小欧(③b): 消息 id 单一序列(生产侧 db_initializer 12.2-C4)。
         -- 测试侧须同步, 否则 storage.insert_user_message 会在 no such table: id_sequence 处红(环境错, 无效 Red)

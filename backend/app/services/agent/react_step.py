@@ -32,7 +32,7 @@
 #   【病根】超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
 #          (write写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
 #          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
-#   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
+#   【方案】_tool_call_signature计算action调用签名(仅主调用, 并行pending不参与); _check_same_tool_loop返回int连续计数(count=第N次),
 #           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入user role纠偏消息尝试唤醒, count>=5硬终止failed;
 #           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
 # 2026-08-08 小欧 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
@@ -190,6 +190,9 @@
 #   append_conv_blocks/log_llm_call 之后调 expand_vision_parts(防 base64 入库/入日志) — 小欧-2026-11-08
 # 2026-11-08 小欧 设计[15]落码: payload type=="pause" 帧 → emit_notice(rate_limit_wait, start/done)(前端 pause 倒计时, 可中断), 与 retrying 同机理
 # 2026-11-11 小欧 展开调用更名 expand_vision_parts → expand_attachment_parts(附件/URL 占位泛化) — 小欧-2026-11-11
+# 2026-11-14 小欧 - 附件展开透传 session_id: 附件记录按会话收权(跨会话引用时 id 回落降级为文本) — 小欧-2026-11-14
+# 2026-11-15 小欧 - 块标志改用 app.wire_prefix(ENV_WS_OPEN/ENV_REFS_OPEN), 消除对 workspace_block/render 的字面量再导出依赖 — 小欧-2026-11-15
+# 2026-11-15 小欧 - 同签名判定两处方案注释同步: 签名改仅主调用(并行pending不参与重复判定), 实现收敛于 react_inference._tool_call_signature — 小欧-2026-11-15
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
@@ -228,11 +231,11 @@ from app.services.agent.react_inference import (
 from app.services.agent.status_table import AgentStatus, set_cancelled, set_failed, set_status
 from app.services.agent.steps import ChunkStep, FinalStep, MetaStep, ObservationStep
 from app.services.agent.tool_cache_manager import get_openai_tools
-from app.services.agent.workspace_block import WS_TAG_OPEN
+from app.wire_prefix import ENV_WS_OPEN
 from app.services.chat import storage
 
 # 2026-10-31 小欧 - 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
-from app.services.refs.render import REF_TAG_OPEN
+from app.wire_prefix import ENV_REFS_OPEN
 
 
 async def _absorb_inbox(agent) -> int:
@@ -272,7 +275,7 @@ async def _absorb_inbox(agent) -> int:
     if len(_merged) > _max_chars:
         # 2026-10-31 小欧 - 保尾必然牺牲前置块, 按块标志点名, 不静默 — 小欧-2026-10-31
         _dropped = _merged[:-_max_chars]
-        _cut = [name for tag, name in ((WS_TAG_OPEN, "事项目录块"), (REF_TAG_OPEN, "引用块"))
+        _cut = [name for tag, name in ((ENV_WS_OPEN, "事项目录块"), (ENV_REFS_OPEN, "引用块"))
                 if tag in _dropped]
         logger.warning(f"[B] 注入合并超长({len(_merged)}>{_max_chars}), 保留尾部"
                        + (f", 前置块被截: {'/'.join(_cut)}" if _cut else ""))
@@ -404,7 +407,10 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     )
 
     # 2026-11-08 小欧: 落盘/日志已取占位原文, 此处才展开图片 parts(避免 base64 入库/入日志); 覆盖全部 user 消息
-    messages = await agent.message_builder.expand_attachment_parts(messages, _task_llm)
+    # 2026-11-14 小欧 附件物化: 传 session_id 供附件记录会话收权(跨会话 id 回落降级文本)
+    messages = await agent.message_builder.expand_attachment_parts(
+        messages, _task_llm,
+        session_id=(getattr(agent, "_start_meta", None) or {}).get("session_id"))
 
     if not openai_tools:
         logger.error("[_process_single_step] 无可用工具")
@@ -649,7 +655,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(write写同一diff_tool.py),
     #          每次工具执行均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具调用"空转, 本模式漏检,
     #          致死循环直抵max_steps=10000(约40+分钟)。
-    #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),
+    #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 仅主调用, 并行pending不参与),
     #          _check_same_tool_loop返回int连续计数(count=第N次), 双阈值:
     #          count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)各注入user role纠偏消息(尝试唤醒调整, 最多3条);
     #          count>=5(_MAX_CONSECUTIVE_SAME_TOOL_CALLS)判定死循环硬终止failed。

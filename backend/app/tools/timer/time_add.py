@@ -6,6 +6,8 @@ time_add — 时间加减运算
 编辑历史:
 # 2026-08-05 - 小欧 - 修复: months单位统一按30天/月近似计算,移除dateutil强依赖(两条路径精度不一致)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 时间加减→加减时间
+
+# 2026-11-15 小欧 - 星期信息入 metrics: 原算出即丢弃, 补星期与周序, 结果日是周几对 LLM 可直接使用
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -21,7 +23,7 @@ from app.tools.tool_fc_helper import parse_datetime_any as _parse_datetime_any
 from app.tools.tool_response import build_error, build_success
 
 
-def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str, unit: str, delta: float, detail: str = "", hint: str = "", user_start: Optional[str] = None) -> dict:
+def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str, unit: str, delta: float, detail: str = "", hint: str = "", user_start: Optional[str] = None, weekday: str = "", isoweekday: int = 0) -> dict:
     """time_add的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 补start参数 + detail透传 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"delta": delta, "unit": unit}
     if user_start is not None:
@@ -39,7 +41,8 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
         "action": {"tool": "timeadd", "tool_zh": "加减时间", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{result_time}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {},
+        # 2026-11-15 小欧 - 星期信息入 metrics(原先算出即丢弃, LLM 拿不到结果日是周几): 仅在成功分支给出
+        "metrics": {"weekday": {"value": isoweekday, "text": weekday}},
     }
 
 
@@ -82,7 +85,7 @@ def timeadd(delta: float, start: Optional[str] = None, unit: Literal["days", "ho
         isoweekday = dt_parsed.isoweekday() if dt_parsed else 0
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_time_add_llm_data("success", duration_ms, result_time_str, unit_lower, delta, user_start=start)
+        llm_data = _build_time_add_llm_data("success", duration_ms, result_time_str, unit_lower, delta, user_start=start, weekday=weekday, isoweekday=isoweekday)
         return build_success(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -1,36 +1,36 @@
-// 编辑历史: 2026-08-26 小欧 - 修复B1: 观察摘要优先tool_result(4.9.3),兜底summary/content
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删tool_params误用(8)/摘要tool_result优先(9)/展开渲染tool_result优先(10)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审边距/去框: margin6px0→8px0; 常态去radius改borderLeft2px#e8e8e8左线分态(highlight才#faad14+radius6); 主色#1890ff→#1677ff
+// 编辑历史: 2026-08-26 小欧 - 修复: 观察摘要优先tool_result,兜底summary/content
+// 编辑历史: 2026-08-27 小欧 - 修复: 删tool_params误用/摘要tool_result优先/展开渲染tool_result优先
+// 编辑历史: 2026-08-27 小欧 - 修复: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 边距/去框: margin6px0→8px0; 常态去radius改borderLeft2px#e8e8e8左线分态(highlight才#faad14+radius6); 主色#1890ff→#1677ff
 // 编辑历史: 2026-08-27 小欧 - 修复chat-C: 新契约 tool_result 数组取首项 summary/llm_data.summary, 不再回落字面量[工具结果]
 // 编辑历史: 2026-08-28 小强 - 修复: getObsSummary空数组回落丢失, parts为空时fallback到o.summary/content - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小强 - 修复: tool_result含空数组走错分支, 改条件为数组且长度>0 - 小强-2026-08-28
-// 编辑历史: 2026-08-28 小欧 - ④A/a2: 高亮1px→2px + WARNING_BG令牌化, 左线统一2px
-// 编辑历史: 2026-08-29 小强 - 修复#22: 展开观察区支持字符串tool_result渲染(与数组/兜底content并列) - 小强-2026-08-29
+// 编辑历史: 2026-08-28 小欧 - 高亮1px→2px + WARNING_BG令牌化, 左线统一2px
+// 编辑历史: 2026-08-29 小强 - 修复: 展开观察区支持字符串tool_result渲染(与数组/兜底content并列) - 小强-2026-08-29
 // 编辑历史: 2026-08-30 小欧 - 设计文档实施(设计文档落码, 北京老陈 2026-08-30 批准): 全文件魔法数字收敛——margin(MD)/padding(XS·MD组合=4/8/4/10)/marginLeft(SM)/展开区 marginTop(XS)+paddingLeft(LG)+marginBottom(XS)/观察块 marginTop(XS) 全部落 Spacing; 常态去掉自带左线(borderLeft=undefined, 去双线, 流水线容器左线唯一), HITL 高亮态 THIN 黄线保留 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): 折叠展开内(展开区 marginTop/参数标头 marginBottom/观察块 marginTop/观察标头 marginBottom)一律 Spacing.XS-2=2, 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 间距统一收口: 工具行自身 margin Spacing.MD(8)→stepMargin(false)(=MD-2=6), 与思考/正文/状态 step 段距同值, 杜绝工具行与文本行段距不一致 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 根容器 lineHeight=字号+Spacing.XS(4) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案: 字体留白全0 / step间6(SM) / step内文字4(XS折不折同) / obs标签4(XS) / 段内折不折2(XS-2): 观察块间4 标签4 段内2，工具行段距 SM6 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 工具观察按工具维度组织: 单/多统一结构, 第一行集合名+同行工具名列表, 内层每工具子行(独立参数+状态+摘要, 按索引与tool_result配对); 修多工具只显首项结果; 修参数结果挤一行 - 小欧-2026-09-01
-// 编辑历史: 2026-09-01 小欧 - 修复重构退化(BUG#22): 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 #22修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 修复重构退化: 展开区兜底恢复字符串tool_result渲染(与数组ToolResultRenderer/兜底content并列, 恢复2026-08-29 修复逻辑), results仅认数组致字符串tool_result被忽略 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 统一折叠三角：▲▼改▸▾、大小14(PRIMARY)、颜色PRIMARY、位置参数后，方法补role/aria/keyboard与TrustPanel一致 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①合并多observation(flatMap)防首项丢失② JSON.stringify加try/catch防循环引用白屏③ expanded随action重置防跨任务泄漏④tParamText加try/catch — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - 工具执行UI优化(设计文档v1.8): 摘要头先显, 同容器挂齿轮+扳手组合动画(results===0)与工具子行(results>0)互斥, 覆盖动画位置
 // 编辑历史: 2026-09-03 小欧 - Bug修复: ②results兼容字符串tool_result(防齿轮常驻) ③等待30s超时兜底降级提示(动画不再无限旋转) ④tools空/结果空显示占位防空壳 ⑧整批observation涌入前minHeight:32占位防页面晃动
-// 编辑历史: 2026-09-03 小欧 D2-04: hasResult/tools空分支计数改hasResult口径(字符串场景0→1)
-// 编辑历史: 2026-09-03 小欧 D2-05: timedOut计时改hasResult口径防字符串空转，D2-06: 依赖action→action.step防频繁重建
-// 编辑历史: 2026-09-03 小欧/老杨 17.2: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真）
+// 编辑历史: 2026-09-03 小欧: hasResult/tools空分支计数改hasResult口径(字符串场景0→1)
+// 编辑历史: 2026-09-03 小欧: timedOut计时改hasResult口径防字符串空转; 依赖action→action.step防频繁重建
+// 编辑历史: 2026-09-03 小欧/老杨: 去冗余三元hasResult?(results.length||1):0 → results.length||1（外层已保真）
 // 编辑历史: 2026-09-03 小欧 修复: 超时文案由"工具执行超时未返回结果,请重试或查看日志"改为"工具执行等待超时(30s),结果可能仍在处理中", 分流LLM ReadTimeout与前端30s计时器
 // 编辑历史: 2026-09-03 小欧 修复: 并行工具子行按tool_name配对查找结果, 乱序到达不串味, 无tool_name回退索引
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删timedOut状态和超时分支, 扳手只靠!hasResult&&tools.length>0
-// 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删超时文案"工具执行等待超时(30s)"分支, 只保留扳手动画
-// 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案): interrupted 语义覆盖 blocked(被安全拦截也无 obs), 灰字文案改"未获用户允许/被安全拦截/确认超时" - 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 新增 replay prop(回放免齿轮动画——历史数据不需要齿轮转动), 齿轮分支条件补 !replay - 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): 占位与中断两处提示文字改 Colors.ORANGE_RED 火山橘红#fa541c(未执行/被安全拦截/确认超时), 与 AuthorizationModal 告急色一致, 与齿轮橘同色带 — 小欧-2026-09-06
+// 编辑历史: 2026-09-03 小欧/北京老陈 删timedOut状态和超时分支, 扳手只靠!hasResult&&tools.length>0
+// 编辑历史: 2026-09-03 小欧/北京老陈 删超时文案"工具执行等待超时(30s)"分支, 只保留扳手动画
+// 编辑历史: 2026-09-06 小欧 - 时序(北京老陈定案): interrupted 语义覆盖 blocked(被安全拦截也无 obs), 灰字文案改"未获用户允许/被安全拦截/确认超时" - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - 新增 replay prop(回放免齿轮动画——历史数据不需要齿轮转动), 齿轮分支条件补 !replay - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - 占位与中断两处提示文字改 Colors.ORANGE_RED 火山橘红#fa541c(未执行/被安全拦截/确认超时), 与 AuthorizationModal 告急色一致, 与齿轮橘同色带 — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": 等待动画 SVG 由"齿轮+扳手组合"改标准单齿轮(Feather settings)——
 //   stroke线框风格/橙#fa8c16/1em旋转CSS(.tool-waiting-cursor)全部不变, 仅去掉扳手 path 换纯齿轮图标 — 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedTools prop(本执行轮被拒
+// 编辑历史: 2026-09-06 小欧 - 新增 deniedTools prop(本执行轮被拒
 //   工具点名条 [{tool,reason}]), 对被拒工具显火山橘红灰字点名单(对齐子行缩进/分支线, reason=拒绝理由);
 //   有结果时在 tools.map 后收尾、无结果时独立成行——全拒/部分拒被拒工具均点名留痕; 点名接管时占位/聚合灰字隐藏不重复 — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 图标换型(北京老陈令): 齿轮(settings)旋转视觉不明显→换Feather loader弧段,
@@ -39,40 +39,41 @@
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: 三级折叠三角▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消三角字符 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 老杨 - 水滴图标 DropletIcon/DropletStatus 替代成功/失败字符符号, 复用组件消字符 — 老杨-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedTools 类型新增 reject_type 字段; ②根据 reject_type 显示不同图标+文字标签(🔒[安全]/⏱️[超时]/🚫[拒绝]/🛡️[沙箱]); ③拒绝工具不再显示水滴图标; ④视觉分层优化(标签橘红/工具名深灰加粗/原因浅灰弱化) - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 复核整改: 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop, 齿轮 ToolWaitingIcon 挂钟面并存(回放/中断/有结果守卫条件不变) - 小欧-2026-09-17
 // 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 内联类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
-// 编辑历史: 2026-10-13 小欧 - 文档[29]参数区 UI 优化落地(工具调用行侧 6 处):
+// 编辑历史: 2026-10-13 小欧 - 参数区 UI 优化落地(工具调用行侧 6 处):
 //   ①import 补 ParamsTree/ParamsPanel/FloatingEntry/CodeOutlined/Size;②新增模块级 PARAMS_CARD_STYLE
 //   (fit-content + minWidth 320 + maxWidth min(640,100vw-32px) + padding 0, 后者抵消 antd Popover 的 12px 内距防"框中框");
-//   ③删 paramsOpen/PARAMS_FOLD_THRESHOLD 死状态, 增 openPanelIndex 作浮层单例互斥(DC-07/DC-18);
+//   ③删 paramsOpen/PARAMS_FOLD_THRESHOLD 死状态, 增 openPanelIndex 作浮层单例互斥;
 //   ④删 tools.map 内的 paramRows 派生(渲染期 JSON.stringify 归零, 序列化下沉子组件 SLAP);
-//   ⑤工具行尾部追加「浮层参数」按钮(D2 乙): FloatingEntry 传 trigger=['click'] 去悬停弹出与 B5 首击被吃(D-7),
-//     按钮文字色走 var(--taskinfo-entry-active, 状态色) 复刻系统既有机制(保 T20 状态编码又不压掉 hover 反馈),
-//     CodeOutlined 内联 transform:none 抵住 .taskinfo-entry[data-open] 的 180° 翻转(T35), 外裹 flexShrink:0 保外层盒子;
-//   ⑥删内联参数区(:361-437)并把 ParamsTree 挂到 role="button" 容器**之外**(D-1 结构性根治 B1, 点节点不再误折叠整行) — 小欧-2026-10-13
-// 编辑历史: 2026-10-13 小欧 - 结果摘要 sum 由 CSS 单行省略改为**折行完整显示**(北京老陈裁定「不许截断」):
+//   ⑤工具行尾部追加「浮层参数」按钮: FloatingEntry 传 trigger=['click'] 去悬停弹出, 首击不被吃掉,
+//     按钮文字色走 var(--taskinfo-entry-active, 状态色) 复刻系统既有机制(保状态色编码又不压掉 hover 反馈),
+//     CodeOutlined 内联 transform:none 抵住 .taskinfo-entry[data-open] 的 180° 翻转, 外裹 flexShrink:0 保外层盒子;
+//   ⑥删内联参数区并把 ParamsTree 挂到 role="button" 容器**之外**(结构性根治, 点节点不再误折叠整行) — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 小欧 - 结果摘要 sum 由 CSS 单行省略改为**折行完整显示**(不许截断):
 //   删 overflow:hidden + textOverflow:ellipsis + whiteSpace:nowrap, 补 minWidth:0 + pre-wrap + break-word。
-//   注: 本条与文档[29]§2.6「结果摘要单行省略为保留不动项」冲突, 属需用户确认的越界改动, 已单独报备 — 小欧-2026-10-13
-// 编辑历史: 2026-10-13 小欧 - 文档[29]§6.10 浮层透传 result(= observation.tool_result[i].raw_data):
+//   注: 本条与「结果摘要单行省略为保留不动项」的原约定冲突, 属需用户确认的越界改动, 已单独报备 — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 小欧 - 浮层透传 result(= observation.tool_result[i].raw_data):
 //   ① 配对沿用**同一下标 i**(params 来自 action.tools[i], result 来自 tool_result[i], 浮层本就挂在 i 上),
 //      不新增错位面; result 可选 prop, 既有调用方只传 params 时零影响;
-//   ② 缺结果传 undefined → ParamsPanel 结果视图空白, **不兜底**(文档[29]§6.1.3/§6.8);
+//   ② 缺结果传 undefined → ParamsPanel 结果视图空白, **不兜底**;
 //   ③ PARAMS_CARD_STYLE.minWidth 由固定 320 改为 min(Size.PARAMS_PANEL_MIN_W, 100vw-32):
-//      CSS 中 min-width 优先于 max-width, 固定值会在 <492px 视口撑破视口(此坑见 [29] v2.4 第⑩项);
+//      CSS 中 min-width 优先于 max-width, 固定值会在 <492px 视口撑破视口(此坑见参数区记录的该项);
 //      原注释"下限仍 320"已过期(令牌同日由 320 抬至 460), 本次审计一并更正 — 小欧-2026-10-13
-// 编辑历史: 2026-10-14 小欧 - 浮层改纵向居中(北京老陈裁定): FloatingEntry 传 centered, 横向仍贴按钮;
-//   另订正 D-11 注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
+// 编辑历史: 2026-10-14 小欧 - 浮层改纵向居中: FloatingEntry 传 centered, 横向仍贴按钮;
+//   另订正注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
 //   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除 — 小欧-2026-10-14
 // 2026-10-23 小欧 - 参数树传 tool 名（ParamsTree 的 tool prop），目录类工具的 path 按目录渲染 — 小欧-2026-10-23
 // 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改挂首行右端文字数码(WaitTimerText, 齿轮位置动画不动);
 //   门控与齿轮同源(已出结果/被拦截/回放不挂) — 小欧-2026-11-03
+// 编辑历史: 2026-11-14 商量 - 工具子行折叠箭头尺寸走令牌 FoldArrow.MD(16→14 并禁裸数字) — 商量-2026-11-14
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
- * 【小欧 2026-08-26 8.4.11】4.4.3 工具调用行内联弱化：工具名 + 参数摘要 + 结果摘要
+ * 【小欧 2026-08-26】工具调用行内联弱化：工具名 + 参数摘要 + 结果摘要
  * 一行弱化(灰小字)，不再卡片包裹；点开展开 params/observation 详情；命中 HITL 挂起
- * 时整行呼吸边框(.hitl-border)。ToolResultRenderer 已去卡片边框(4.9.1③)。
+ * 时整行呼吸边框(.hitl-border)。ToolResultRenderer 已去卡片边框。
  *
  * @author 小欧
  * @date 2026-08-26
@@ -82,7 +83,7 @@ import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
-// 2026-10-13 小欧 - 文档[29]§4.6: 新增两组件与浮层壳/尺寸令牌 — 小欧 2026-10-13
+// 2026-10-13 小欧 - 新增两组件与浮层壳/尺寸令牌 — 小欧 2026-10-13
 import { ParamsTree } from './ParamsTree';
 import { ParamsPanel } from './ParamsPanel';
 import { FloatingEntry } from '../taskinfo/FloatingEntry';
@@ -99,6 +100,7 @@ import {
 import {
   Colors,
   BorderWidth,
+  FoldArrow,
   FontSize,
   FontWeight,
   Spacing,
@@ -121,8 +123,8 @@ interface ToolCallLineProps {
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(2026-11-03 改挂首行右端) — 小欧-2026-09-17
 }
 
-// 2026-09-17 小欧 会审V3(#8): 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
-//   (#6): 按项目全局定案(infoMaps.tsx 注释"过程事件统一 antd SVG 图标、禁 emoji")emoji 换 antd SVG 图标,
+// 2026-09-17 小欧 复核整改: 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
+//   按项目全局定案(infoMaps.tsx 注释"过程事件统一 antd SVG 图标、禁 emoji")emoji 换 antd SVG 图标,
 //   无圆底(开发文档声称的圆底从未实现, 以实际实现为准) — 小欧-2026-09-17
 // 导出版本供测试断言真实映射(替代测试内本地模拟, 防实现与断言脱钩)
 export const REJECT_LABEL_MAP: Readonly<Record<string, string>> = {
@@ -140,10 +142,10 @@ export const REJECT_ICON_MAP: Readonly<Record<string, React.ReactNode>> = {
 };
 export const REJECT_DEFAULT_ICON = <StopOutlined />;
 
-// 2026-10-13 小欧 - 文档[29]§4.6/§4.5: 浮层卡片纯 CSS 响应式三件套(替代断点矩阵 JS 方案 D-5)
+// 2026-10-13 小欧 - 浮层卡片纯 CSS 响应式三件套(替代断点矩阵 JS 方案)
 //   width 撑满上限 + maxWidth 随视口收 + minWidth 保底; 无 resize 监听、无重渲染 — 小欧 2026-10-13
 const PARAMS_CARD_STYLE: React.CSSProperties = {
-  // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 720(同日 23:20 由 640 加宽)。
+  // 2026-10-13 小欧 - 北京老陈定案: 面板宽改为**按内容收缩**, 上限 720(同日 23:20 由 640 加宽)。
   //   原固定 640 时, 短参数(如 6 个短键)只用到 ~450px, 右侧空 30% 视觉重心偏左。
   //   fit-content = min(内容宽, 可用宽); 上限取 min(720, 视口-32) 一次表达两个约束;
   //   下限走 Size.PARAMS_PANEL_MIN_W(2026-10-13 23:20 由 320 抬至 460, 标题 nowrap + 三标签所需),
@@ -151,7 +153,7 @@ const PARAMS_CARD_STYLE: React.CSSProperties = {
   width: 'fit-content',
   minWidth: `min(${Size.PARAMS_PANEL_MIN_W}px, calc(100vw - 32px))`,
   maxWidth: `min(${Size.PARAMS_PANEL_MAX_W}px, calc(100vw - 32px))`,
-  // 2026-10-13 小欧 - 文档[29]D-11: 归零卡片自身内距, 避免与卡片底/边框/圆角嵌套成"框中框"(DC-19)。
+  // 2026-10-13 小欧 - 归零卡片自身内距, 避免与卡片底/边框/圆角嵌套成"框中框"。
   // ⚠️ 2026-10-14 小欧 订正: 此处**去不掉** .ant-popover-inner 的 12px(外层元素), 残留 24px
   //   外壳开销由 ParamsPanel 的 maxHeight 扣除(calc(100vh - 58px))。
   padding: 0,
@@ -168,9 +170,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
-  // 2026-10-13 小欧 - 文档[29]§3.2: 顶层"参数(N项)"折叠已被 ParamsTree 的"顶层键默认折叠"
-  //   取代(DC-04), paramsOpen/PARAMS_FOLD_THRESHOLD 一并删除(死状态 YAGNI);
-  //   新增 openPanelIndex 作浮层单例互斥(DC-07), 与 expanded 互不牵连(DC-18) — 小欧 2026-10-13
+  // 2026-10-13 小欧 - 顶层"参数(N项)"折叠已被 ParamsTree 的"顶层键默认折叠"
+  //   取代, paramsOpen/PARAMS_FOLD_THRESHOLD 一并删除(死状态 YAGNI);
+  //   新增 openPanelIndex 作浮层单例互斥, 与 expanded 互不牵连 — 小欧 2026-10-13
   const [openPanelIndex, setOpenPanelIndex] = useState<number | null>(null);
   useEffect(() => {
     setExpanded([]);
@@ -201,11 +203,11 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     : `调用 1 个工具`;
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
-  // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(本执行轮被拒工具名+理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  // 2026-09-06 小欧: 被拒工具点名条(本执行轮被拒工具名+理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
   const deniedList = Array.isArray(deniedTools) ? deniedTools : [];
   const deniedCount = deniedList.length;
-  // 2026-10-04 小欧 修同名工具串味(文档[8]第六章第3条): 改为按数组下标配对, 删按 tool_name find —
-  //   后端保证 tool_result[i] ↔ action.tools[i] 严格对齐(tool_runner 按下标回填 + zip_longest 位置配对, 文档[8]§3.4),
+  // 2026-10-04 小欧 修同名工具串味: 改为按数组下标配对, 删按 tool_name find —
+  //   后端保证 tool_result[i] ↔ action.tools[i] 严格对齐(tool_runner 按下标回填 + zip_longest 位置配对),
   //   按名 find 在并行同名工具(如两个 read)时两个子行都命中首个 → 串味显示别人的结果。
   const getResultForIndex = (
     idx: number
@@ -251,7 +253,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         //   实测两列盒左 25 vs 15 → 图标左边缘锯齿。垂直内边距(4/6)保留不动。
         padding: `${Spacing.XS}px ${Spacing.SM}px ${Spacing.XS}px 0px`,
         borderRadius: highlight ? 6 : 0,
-        // 13.10.4: 常态去掉自带左线(去双线, 容器总轴线唯一); HITL 高亮态 THIN 黄线保留
+        // 常态去掉自带左线(去双线, 容器总轴线唯一); HITL 高亮态 THIN 黄线保留
         borderLeft: highlight
           ? `${BorderWidth.THIN}px solid ${Colors.WARNING}`
           : undefined,
@@ -318,7 +320,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {hasResult &&
             tools.length > 0 &&
             tools.map((t, i) => {
-              // 2026-10-13 小欧 - 文档[29]§3.3: 只传原始入参, 序列化/格式化下沉到子组件(SLAP) — 小欧 2026-10-13
+              // 2026-10-13 小欧 - 只传原始入参, 序列化/格式化下沉到子组件(SLAP) — 小欧 2026-10-13
               const paramEntries = Object.entries(
                 (t.params ?? {}) as Record<string, unknown>
               );
@@ -338,7 +340,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   return next;
                 });
               };
-              // 2026-10-13 小欧 - 浮层开合(DC-07 单例互斥 + DC-18 不牵连 expanded) — 小欧 2026-10-13
+              // 2026-10-13 小欧 - 浮层开合(单例互斥, 与 expanded 不牵连) — 小欧 2026-10-13
               const onPanelOpenChange = (o: boolean) =>
                 setOpenPanelIndex(o ? i : null);
               const closePanel = () => setOpenPanelIndex(null);
@@ -399,7 +401,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       )}
                       {/* 展开箭头 */}
                       <CircleArrow
-                        size={16}
+                        size={FoldArrow.MD}
                         color={Colors.TEXT.PRIMARY}
                         expanded={isOpen}
                         animated={false}
@@ -421,7 +423,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           onOpenChange={onPanelOpenChange}
                           placement="bottomRight"
                           trigger={['click']}
-                          // 2026-10-13 小欧 - 北京老陈裁定: 仅工具行参数浮层改视口居中(见 index.css
+                          // 2026-10-13 小欧 - 北京老陈定案: 仅工具行参数浮层改视口居中(见 index.css
                           //   .popover-viewport-centered 注释)。「上下文概览」「事件」两个浮层不传 centered, 行为零变化。
                           centered
                           cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
@@ -433,12 +435,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               params={
                                 (t.params ?? {}) as Record<string, unknown>
                               }
-                              // 2026-10-13 23:00 小欧 - 文档[29]§6.10: 传 raw_data 供「结果」标签渲染。
-                              //   配对沿用同一下标 i —— 与 §6.10 约定一致(params 来自 action.tools[i],
+                              // 2026-10-13 23:00 小欧 - 传 raw_data 供「结果」标签渲染。
+                              //   配对沿用同一下标 i —— 与既定约定一致(params 来自 action.tools[i],
                               //   result 来自 observations[].tool_result[i], 浮层本就挂在 i 上, 不新增错位面)。
                               //   类型收 unknown: 面板侧做非 dict 防御(见 ParamsPanel.visibleResultEntries 注释)
                               result={_resForTool?.raw_data ?? undefined}
-                              // 2026-10-14 小欧 - 北京老陈裁定: raw_data 为空时显「本次工具执行：<summary>」,
+                              // 2026-10-14 小欧 - 北京老陈定案: raw_data 为空时显「本次工具执行：<summary>」,
                               //   而非空白。summary 取 llm_data.summary(每条 tool_result 都带)。
                               resultSummary={
                                 (
@@ -457,7 +459,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: Spacing.XS,
-                              // 2026-10-13 小欧 - B4 决策: 字号锁定 SECONDARY(12), 与**同行**摘要 12px 同层
+                              // 2026-10-13 小欧 - 字号锁定 SECONDARY(12), 与**同行**摘要 12px 同层
                               //   (就近基准)。系统另两档: 上下文概览 MetricItem label=11/数值=12、事件=10;
                               //   若改 10/11 会比旁边摘要小一号、视觉失衡, 故取 12
                               fontSize: FontSize.SECONDARY,
@@ -465,7 +467,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               //   (index.css:261,269), 直接内联硬色会**压掉 hover 反馈**(内联优先级高于 class)
                               //   → 照搬系统既有机制(MetricItem.tsx:56-58 同款): color 走 CSS 变量,
                               //   .taskinfo-entry:hover 注入 --taskinfo-entry-active 即覆盖, 无 !important。
-                              //   关闭回落 SECONDARY、打开回落 PRIMARY(DC-12/T20), hover 仍变蓝与另两个入口一致
+                              //   关闭回落 SECONDARY、打开回落 PRIMARY, hover 仍变蓝与另两个入口一致
                               color: `var(--taskinfo-entry-active, ${
                                 openPanelIndex === i
                                   ? Colors.PRIMARY
@@ -518,7 +520,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
             全拒无结果时独立成行; 与执行工具子行同缩进/分支线, reason=拒绝理由链(用户拒绝/拦截/超时) — 小欧-2026-09-06 */}
           {deniedCount > 0 &&
             deniedList.map((d) => {
-              // 2026-09-17 小欧 会审V3(#8): 由模块级常量映射取标签/图标(不再每次渲染重建) — 小欧-2026-09-17
+              // 2026-09-17 小欧 复核整改: 由模块级常量映射取标签/图标(不再每次渲染重建) — 小欧-2026-09-17
               const rejectLabel =
                 REJECT_LABEL_MAP[d.reject_type ?? ''] ?? REJECT_DEFAULT_LABEL;
               const rejectIcon =
