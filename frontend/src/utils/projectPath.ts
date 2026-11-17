@@ -45,6 +45,17 @@
 // 2026-11-02 小欧 - 北京老陈定案（仅正文）：PATH_ABS_NOTAIL 放宽为 ≥1 段——盘符+单段无尾
 //   无扩展名（F:\a、C:\Windows）同样按目录出 chip；toFileRefMarkdown 补「路径==根自身不转」守卫
 //   （与点击层 S44 口径一致，关联合规审查：防误报的空格 run 截半防御在 resolveAbsCand 独立保留） — 小欧-2026-11-02
+
+// 2026-11-17 商量 - 修复正文识别误判 glob 通配符（e2e_case/vite.*.config.ts 被识别为文件引用并加引用别针）:
+//   根因 PATH_REL/isFileLikePath 未排除 `*?`（Windows 非法文件名字符且不在 PATH_STOP，会被含进 token）；
+//   isBadPath 补 hasGlobChar 单点拦截（toFileRefMarkdown 首行即调，一处生效全链路）；
+//   只排 `*?` 不排 `[]`：`a[1].md` 文件名含方括号是既有测试支持的真实路径，[] 在 PATH_STOP 已作终止符；
+//   点击层走 hasCtrlChar 直接判断不受影响 — 商量-2026-11-17
+
+// 2026-11-17 小欧 - 行内代码不再转文件引用链接：toWholePathLink 恒返回 null（行内代码多为代码片段/
+//   变量名/符号, 转链接后 PathLink 渲染蓝色别针/括号干扰 Step 面板阅读）; 裸路径识别(convertRuns④⑤)不受影响;
+//   参数改 _code/_projectRoot 消 eslint 未使用告警 — 小欧-2026-11-17
+
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
  *
@@ -79,6 +90,10 @@ const hasCtrlChar = (p: string): boolean => /[\r\n\t\0]/.test(p);
 /** 含 `..` 段 = 越界穿越 */
 const hasParentTraversal = (p: string): boolean =>
   p.split(/[\\/]/).includes('..');
+/** 含 glob 通配符 `*?` = 不是可定位的真实路径（`e2e_case/vite.*.config.ts` 等伪路径不再被识别为文件引用）。
+ * 只排 `*?`：二者是 Windows 非法文件名字符且不在 PATH_STOP（会被含进路径 token）；
+ * `[]` 在文件名合法（`a[1].md` 既有测试支持），且 PATH_STOP 已含 `[]` 作终止符，不在此列。 */
+const hasGlobChar = (p: string): boolean => /[*?]/.test(p);
 
 /**
  * 路径末段（文件名/目录名）—— **唯一实现**：原 4 处各写 `split(/[\\/]/).pop()`，
@@ -528,9 +543,9 @@ interface FileRefTokenGroups {
 /** label 里的方括号与反斜杠要转义，否则 markdown 链接解析被截断 */
 const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
 
-/** 形态/安全门槛：控制字符与 `..` 穿越不是可链接路径（绝对路径同样适用） */
+/** 形态/安全门槛：控制字符、`..` 穿越、glob 通配符不是可链接路径（绝对路径同样适用） */
 const isBadPath = (p: string): boolean =>
-  !p || hasCtrlChar(p) || hasParentTraversal(p);
+  !p || hasCtrlChar(p) || hasParentTraversal(p) || hasGlobChar(p);
 
 /**
  * 中文粘连剥离：token 尾部紧贴中文（无空格，如 `…563e目录：`）时把中文串还回正文。
@@ -703,42 +718,24 @@ const convertRuns = (text: string, projectRoot?: string): string => {
   return out + text.slice(pos);
 };
 
-/**
- * 行内代码的**形态**门槛：整段无空白且末段是字母开头扩展名（`a.md` / `x.json`）。
- * 排除版本号（`1.2.3`）、无扩展名片段（`dsh-root`）；@/# 前缀统一由 toFileRefMarkdown 拒。
- * 2026-11-02 小欧 - 原名 isPathLike，与 paramCategories.isPathLike（判参数值）同名异义，改名消歧 — 小欧-2026-11-02
- */
-const LAST_SEGMENT_FILE_RE = new RegExp(
-  `\\.[A-Za-z][A-Za-z0-9]{0,${EXT_MAX - 1}}$`
-);
-const isInlineCodePath = (raw: string): boolean => {
-  if (!raw || /\s/.test(raw)) return false;
-  // 2026-10-23 小欧 - 行内代码里的目录只认盘符绝对（相对目录不自动识别）— 小欧-2026-10-23
-  if (isDirPath(raw)) return isDriveAbsPath(raw);
-  return LAST_SEGMENT_FILE_RE.test(baseName(raw));
-};
-
 const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 
-/** 行内代码整段就是一个路径时才转链接；夹带其他文字一律原样，避免把示例改成可点链接 */
-const toWholePathLink = (code: string, projectRoot?: string): string | null => {
-  const raw = code.trim();
-  if (isInlineCodePath(raw)) return toFileRefMarkdown(raw, projectRoot);
-  // 2026-11-01 小欧 - 行内代码里的**无扩展名盘符目录**（`` `F:\a\b` ``）：反引号已是天然界碑，
-  //   语义唯一 → 按目录转（此前只认带尾 `\`，Agent 常写 `` `F:\test_dir\2026...`目录 `` 一直不识别）— 小欧-2026-11-01
-  if (isAbsDirLikePath(raw))
-    return toFileRefMarkdown(raw, projectRoot, false, null, true);
-  // 2026-11-01 小欧 - 带空格盘符路径（文件/目录同规则）：整段即路径才转，有残余 = 语义不唯一 → 原文 — 小欧-2026-11-01
-  if (!isDriveAbsPath(raw) || !/\s/.test(raw)) return null;
-  const cand = spacedPath(raw);
-  if (!cand || cand.rest) return null;
-  return toFileRefMarkdown(
-    cand.path,
-    projectRoot,
-    false,
-    null,
-    isAbsDirLikePath(cand.path)
-  );
+/**
+ * 行内代码不再转为文件引用链接。
+ *
+ * 原因：行内代码通常是代码片段、变量名、函数名、符号（如 `agent_runner.py`、`==`、`->`），
+ * 不应被当成文件路径点击跳转。转成链接后，MarkdownText 的 a 组件会渲染 PathLink（带 pin），
+ * PathLink 在链接前后渲染蓝色图标（FileOutlined / QuoteButton PaperClipOutlined），在 Step 面板
+ * 等渲染区出现大量蓝色括号/别针符号，干扰阅读。
+ *
+ * 2026-11-17 小欧 - 根治：toWholePathLink 恒返回 null，行内代码保持原样，不产生 /file-ref? 链接，
+ * 从而不渲染 PathLink 及其蓝色图标。裸路径识别（convertRuns 的 ④⑤ 分支）不受影响，继续转链接。
+ */
+const toWholePathLink = (
+  _code: string,
+  _projectRoot?: string
+): string | null => {
+  return null;
 };
 
 /** 行内代码段按整段路径转换，其余文字走裸路径识别 */
