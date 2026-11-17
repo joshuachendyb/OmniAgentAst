@@ -23,6 +23,8 @@
 
 // 编辑历史: 2026-11-16 小欧 bug猎修: createSession 响应补 version(此前类型未声明且调用侧写死 1),
 //   与其余会话响应统一归一 version ?? 1, 消除版本号双真源
+// 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: getSessionMessages 增可选 opts{limit,offset}, 响应补
+//   total/has_more(pairs 口径); 缺省不带参数仍走后端全量, 兼容 RightViewer 等直接调用方 — 小欧-2026-11-18
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -93,6 +95,10 @@ export interface GetSessionMessagesResponse {
   sessionModel?: SessionModelOverride | null;
   link_enabled: boolean; // 会话 link 开关真源, 随会话加载主路径下发(唯一读取点)
   allow_interject: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关真源(同 link_enabled, 唯一读取点)
+  /** [46] P0 消息历史分页: 总条数(消息对口径, 不等于渲染气泡数) */
+  total?: number;
+  /** [46] P0 是否还有更早的可加载(供"加载更早"显隐) */
+  has_more?: boolean;
   messages: ApiMessage[];
 }
 
@@ -190,10 +196,17 @@ export const sessionApi = {
   },
 
   getSessionMessages: async (
-    sessionId: string
+    sessionId: string,
+    opts?: { limit?: number; offset?: number }
   ): Promise<GetSessionMessagesResponse> => {
+    // [46] P0: 仅首屏路径(loadHistoryMessages)传 opts; RightViewer/切模型等直接调用仍不带参数=后端全量
+    const params =
+      opts && (opts.limit != null || opts.offset)
+        ? { limit: opts.limit, offset: opts.offset }
+        : undefined;
     const response = await api.get<GetSessionMessagesResponse>(
-      `/sessions/${sessionId}/messages`
+      `/sessions/${sessionId}/messages`,
+      { params }
     );
     return {
       ...response.data,
@@ -203,6 +216,8 @@ export const sessionApi = {
       version: response.data.version ?? 1,
       link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
       allow_interject: response.data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
+      total: response.data.total ?? response.data.messages?.length ?? 0,
+      has_more: response.data.has_more ?? false,
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,
         thought:

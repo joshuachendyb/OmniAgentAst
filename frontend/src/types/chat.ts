@@ -28,6 +28,8 @@
 
 // 编辑历史: 2026-11-13 商量 - Message 增 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
 //   新增字段): 后台续跑通知种类在 UI 消息层保真, 系统通知样式渲染消费
+// 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: HistoryLoadResult 补 hasMore/total(消息对口径,
+//   由 getSessionMessages 响应 has_more/total 透传) — 小欧-2026-11-18
 
 /**
  * 流式API响应类型定义
@@ -394,6 +396,10 @@ export interface HistoryLoadResult {
   // 会话级 link 开关镜像(后端真源, 随会话加载下发)
   linkEnabled?: boolean;
   allowInterject?: boolean; // 2026-10-06 小欧 - 历史读取结果镜像
+  /** [46] P0: 是否还有更早的消息对可加载(消息对口径) */
+  hasMore?: boolean;
+  /** [46] P0: 会话消息对总数(与会话列表 message_count 口径不同, 不得混用) */
+  total?: number;
 }
 
 /**

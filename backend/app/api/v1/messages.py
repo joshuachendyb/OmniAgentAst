@@ -11,6 +11,8 @@
 #   services/chat/message_service.py, 本文件降为路由薄壳(DTO+路由+调service)。display_name_cache 归属 message_service 独占。
 # 2026-08-21 - 小欧 - 新增 GET /sessions/{session_id}/user_messages 从 chat_user_message 读取（替代 chat_messages）— 小欧 2026-08-21
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: MessageCreate 补 allow_interject(开关随消息携带, 后端插话判定必须用它)
+# 2026-11-18 - 小欧 - [46] P0 首屏提速: GET /sessions/{id}/messages 增 limit/offset 查询参数透传
+#   (缺省=全量兼容旧调用方), 服务层返回 total/has_more 一并由路由透传 — 小欧-2026-11-18
 
 """
 消息管理API路由(薄壳)
@@ -23,7 +25,7 @@ A7 后: 路由 + MessageCreate DTO → 调 message_service(方案4.7.3)
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from app.db import db
@@ -48,8 +50,12 @@ class MessageCreate(BaseModel):
 
 
 @router.get("/sessions/{session_id}/messages")
-def get_session_messages_endpoint(session_id: str):
-    return get_session_messages(session_id)
+def get_session_messages_endpoint(
+    session_id: str,
+    limit: Optional[int] = Query(None, ge=1, le=500, description="返回消息对数上限(缺省=全量)"),
+    offset: int = Query(0, ge=0, description="从最近往早的偏移(消息对口径)"),
+):
+    return get_session_messages(session_id, limit=limit, offset=offset)
 
 
 @router.post("/sessions/{session_id}/messages")

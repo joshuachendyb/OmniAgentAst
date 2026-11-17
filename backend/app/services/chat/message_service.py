@@ -46,12 +46,17 @@
 # 2026-11-13 商量 - get_session_messages 消息读取出口补 msg_kind: MessageResponse 新增可选字段,
 #   user 行取 pairs 已回传的 msg_kind(user/system_notice), assistant 行恒 None;
 #   后台续跑通知在前端可按它渲染系统通知样式, 不再与用户发言混同
+# 2026-11-18 - 小欧 - [46] P0 首屏提速: get_session_messages 增 limit/offset 分页——SQL 级窗口
+#   复用 fetch_session_user_message_pairs 的 lower_id/upper_id 锚点(不内存切片), 返回 total/has_more;
+#   默认 limit=None 全量兼容既有调用方, 仅首屏路径传 limit=50, 消息对(pair)口径 — 小欧-2026-11-18
 """
 message_service — 消息业务服务(services/chat)
 
 职责(方案4.7.3, 小欧 2026-08-13): 会话消息历史读取/保存 + display_name 缓存(独占)。
 API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
+from typing import Optional
+
 from app.config import get_config
 from app.constants import MAX_CACHE_SIZE as _D_CACHE_SIZE
 from app.db import db
@@ -86,8 +91,17 @@ def delete_session_display_names(session_id: str) -> None:
     display_name_cache.delete(session_id)
 
 
-def get_session_messages(session_id: str):
-    """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入"""
+def get_session_messages(
+    session_id: str, limit: Optional[int] = None, offset: int = 0
+):
+    """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入
+
+    [46] P0 小欧 2026-11-18: 加 limit/offset 分页。默认(limit=None)返回全量, 兼容既有调用方;
+    首屏传 limit=50 只取最近 50 对。改 SQL 级窗口——复用 fetch_session_user_message_pairs
+    既有 lower_id/upper_id 锚点(storage.py:1081), 不先全量拉出再内存切片。
+    limit/offset/total 均为消息对(pair)口径(一 user + 其配对 assistant 计 1), 渲染气泡数在
+    limit~2*limit 间浮动; has_more 表示是否还有更早的 pair。
+    """
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
@@ -107,7 +121,33 @@ def get_session_messages(session_id: str):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
         # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
-        pairs = fetch_session_user_message_pairs(conn, session_id)
+        # [46] P0 v2: SQL 级窗口分页(复用 lower_id/upper_id 锚点, 不在 Python 内存切片)。
+        #   total 为 pairs 口径, 与会话列表 message_count(pairs + 任务数)不同, 字段名不得混用。
+        if limit is not None and limit > 0:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM chat_user_message WHERE session_id=?",
+                (session_id,),
+            ).fetchone()[0]
+            _bounds = conn.execute(
+                "SELECT id FROM chat_user_message WHERE session_id=? "
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
+                (session_id, limit, offset),
+            ).fetchall()
+            if _bounds:
+                pairs = fetch_session_user_message_pairs(
+                    conn,
+                    session_id,
+                    lower_id=_bounds[-1][0],  # 本页最早 id(闭区间下界)
+                    upper_id=_bounds[0][0] + 1,  # 本页最新 id+1(upper_id 为 < 开区间语义)
+                )
+            else:
+                pairs = []  # offset 超范围 → 空页, 无负切片缺陷
+            has_more = (offset + len(pairs)) < total
+        else:
+            pairs = fetch_session_user_message_pairs(conn, session_id)  # 全量(默认兼容)
+            total = len(pairs)
+            has_more = False
+        window = pairs
 
         # assistant 合并渲染载体(设计[76]决策2, 小欧 2026-09-28 三堂会审): 每 ai_id 仅渲 1 次,
         # 落在首个有内容行(配首条会渲空正文且真答案被跳过); 全空回落首见行(steps 兜底)。
@@ -119,7 +159,7 @@ def get_session_messages(session_id: str):
         # 注: conversation_history 侧的合并(为 OpenAI user/assistant 交替性)仍在 _absorb_inbox, 与渲染层无关。
         _first_row: dict = {}
         _carrier: dict = {}
-        for _i, _p in enumerate(pairs):
+        for _i, _p in enumerate(window):
             _aid = _p.get("ai_message_id")
             if _aid is None:
                 continue
@@ -131,15 +171,15 @@ def get_session_messages(session_id: str):
 
         # P1-① 消除 N+1（小欧 2026-10-27）：批量预加载所有 (ai_message_id, task_id) 的步骤，
         #   一次查询替代循环内 N 次 load_execution_steps。keys 直接取自 carrier 渲染载体
-        #   （{ai_id: index}，仅实际渲染 assistant 气泡的 ai_id），经 pairs[index] 取 task_id。
+        #   （{ai_id: index}，仅实际渲染 assistant 气泡的 ai_id），经 window[index] 取 task_id。
         _batch_keys = [
-            (_aid, pairs[_i].get("pair_task_id"))
+            (_aid, window[_i].get("pair_task_id"))
             for _aid, _i in _carrier.items()
         ]
         _steps_cache = load_execution_steps_batch(conn, _batch_keys)
 
         messages = []
-        for _i, p in enumerate(pairs):
+        for _i, p in enumerate(window):
             # 2026-10-01 小欧: 任务归属以 pair_task_id 为准(LEFT JOIN 配对结果, 注入行与起始行已归一,
             #   见 fetch_session_user_message_pairs 文档); cum.task_id 是消息侧原值, 起始消息可能为 NULL。
             _p_tid = p.get('pair_task_id')
@@ -203,6 +243,9 @@ def get_session_messages(session_id: str):
             "link_enabled": bool(session['link_enabled']),
             # 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关随会话下发(唯一读真源, 同 link_enabled)
             "allow_interject": bool(session['allow_interject']),
+            # [46] P0: total/has_more 供首屏判断"是否还有更早可加载"(pairs 口径)
+            "total": total,
+            "has_more": has_more,
             "messages": messages,
         }
 

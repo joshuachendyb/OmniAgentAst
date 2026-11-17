@@ -11,6 +11,8 @@
 // 编辑历史: 2026-11-18 小欧 - [46] P2a 任务/消息解耦: 新增 resolveInitialSessionId(轻量先定会话, 首屏
 //   立即确定 sessionId 以并行拉 tasks); 删 loadLatestHistoryMessages 透传壳(内部即 listSessions(1,1)+
 //   loadHistoryMessages, 唯一调用方 useChatSession 场景3 上抛编排后成死码) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: 新增 FIRST_SCREEN_MESSAGE_LIMIT=50, loadHistoryMessages
+//   增 {limit,offset} 首屏分页参数, 返回 hasMore/total(pairs 口径); useCache 原语义不变 — 小欧-2026-11-18
 /**
  * 聊天历史工具函数
  *
@@ -39,6 +41,8 @@ import type { ExecutionStep } from '../types/execution';
 export const SESSION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
 export const STORAGE_KEY = 'chat_session_state';
 export const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
+// [46] P0 小欧 2026-11-18: 首屏消息历史最大拉取条数(消息对口径, 兼顾渲染负担与"最近对话可见")
+export const FIRST_SCREEN_MESSAGE_LIMIT = 50;
 
 // ============================================================
 // 缓存 schema 单一来源(DRY: 写侧4处 + 读侧1处共用, 杜绝"漏字段"重复发生)
@@ -203,8 +207,11 @@ export const parseMessage = (rawMessage: unknown): Message => {
  */
 export const loadHistoryMessages = async (
   sessionId: string,
-  options?: { useCache?: boolean }
+  options?: { useCache?: boolean; limit?: number; offset?: number }
 ): Promise<HistoryLoadResult | null> => {
+  // [46] P0: 首屏只拉最近 50 对; 需要更早历史时由调用方传 offset 增量拉取(hasMore 指示是否还有)
+  const limit = options?.limit ?? FIRST_SCREEN_MESSAGE_LIMIT;
+  const offset = options?.offset ?? 0;
   try {
     // 先尝试从缓存读取（如果启用且不在DEBUG模式）
     if (options?.useCache !== false && !DEBUG_LOAD_FROM_API) {
@@ -234,13 +241,19 @@ export const loadHistoryMessages = async (
             sessionModel: state.sessionModel ?? null,
             linkEnabled: state.linkEnabled === true,
             allowInterject: state.allowInterject === true, // 2026-10-07 小欧 - 写入点②(读侧还原)
+            // [46] P0: 缓存态是完整快照, 无更早可拉
+            hasMore: false,
+            total: state.messages?.length ?? 0,
           };
         }
       }
     }
 
-    // 从数据库读取
-    const sessionData = await sessionApi.getSessionMessages(sessionId);
+    // 从数据库读取([46] P0: 首屏走分页窗口, 后端 SQL 级限窗)
+    const sessionData = await sessionApi.getSessionMessages(sessionId, {
+      limit,
+      offset,
+    });
 
     // 检查是否有消息 - 空会话（无消息但有标题）也要返回有效结果
     if (!sessionData.messages || sessionData.messages.length === 0) {
@@ -255,6 +268,8 @@ export const loadHistoryMessages = async (
           sessionModel: sessionData.sessionModel ?? null,
           linkEnabled: sessionData.link_enabled ?? false,
           allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - (空会话分支)
+          hasMore: sessionData.has_more ?? false, // [46] P0
+          total: sessionData.total ?? 0,
         };
       }
       return null;
@@ -275,6 +290,8 @@ export const loadHistoryMessages = async (
       sessionModel: sessionData.sessionModel ?? null,
       linkEnabled: sessionData.link_enabled ?? false,
       allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - (有消息分支)
+      hasMore: sessionData.has_more ?? false, // [46] P0: 透传"还有更早"
+      total: sessionData.total ?? 0,
     };
   } catch (error) {
     // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
