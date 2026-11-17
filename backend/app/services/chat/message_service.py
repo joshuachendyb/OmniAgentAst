@@ -49,6 +49,9 @@
 # 2026-11-18 - 小欧 - [46] P0 首屏提速: get_session_messages 增 limit/offset 分页——SQL 级窗口
 #   复用 fetch_session_user_message_pairs 的 lower_id/upper_id 锚点(不内存切片), 返回 total/has_more;
 #   默认 limit=None 全量兼容既有调用方, 仅首屏路径传 limit=50, 消息对(pair)口径 — 小欧-2026-11-18
+# 2026-11-18 - 小欧 - [46] P1 首屏裁剪: get_session_messages 增 include_steps(默认 False)——首屏不下发
+#   execution_steps 全文; thought 改从 pairs 的 ai_reasoning 派生、display_name 去 steps 依赖(缺 provider/model
+#   回落稳定占位"助手"), 渲染/两模式一致; 右栏详情用 getTaskDetail 独立链路不受影响 — 小欧-2026-11-18
 """
 message_service — 消息业务服务(services/chat)
 
@@ -75,7 +78,7 @@ from app.services.task.task_registry import (
     has_active_task_in_session,  # 2026-10-07 小欧 - 文档[11] 3.4.5.1
 )
 from app.utils.cache import LRUCache
-from app.utils.display_utils import build_display_name, extract_display_name_from_steps
+from app.utils.display_utils import build_display_name
 from app.utils.time_utils import (  # 小欧 2026-08-08 全程统一本地时区
     format_timestamp,
     get_local_iso_timestamp,
@@ -92,7 +95,10 @@ def delete_session_display_names(session_id: str) -> None:
 
 
 def get_session_messages(
-    session_id: str, limit: Optional[int] = None, offset: int = 0
+    session_id: str,
+    limit: Optional[int] = None,
+    offset: int = 0,
+    include_steps: bool = False,
 ):
     """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入
 
@@ -101,6 +107,8 @@ def get_session_messages(
     既有 lower_id/upper_id 锚点(storage.py:1081), 不先全量拉出再内存切片。
     limit/offset/total 均为消息对(pair)口径(一 user + 其配对 assistant 计 1), 渲染气泡数在
     limit~2*limit 间浮动; has_more 表示是否还有更早的 pair。
+    [46] P1: include_steps 默认 False 首屏不下发完整 execution_steps(chunk/thought 全文);
+    thought 与 display_name 均改从 pair 落库字段派生, 与 steps 彻底解耦。
     """
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
@@ -175,8 +183,8 @@ def get_session_messages(
         _batch_keys = [
             (_aid, window[_i].get("pair_task_id"))
             for _aid, _i in _carrier.items()
-        ]
-        _steps_cache = load_execution_steps_batch(conn, _batch_keys)
+        ] if include_steps else []
+        _steps_cache = load_execution_steps_batch(conn, _batch_keys) if include_steps else {}
 
         messages = []
         for _i, p in enumerate(window):
@@ -202,22 +210,17 @@ def get_session_messages(
             # P1-① 小欧 2026-10-27: 改从批量预加载 _steps_cache 取值(键=(ai_id, task_id)),
             #   未命中(该 ai_id 无步骤)兜底 []，行为与 load_execution_steps 一致。
             _s_key = (ai_id, _p_tid)
-            steps = _steps_cache.get(_s_key, [])
-            display_name = build_display_name(p['provider'], p['model']) if p['provider'] or p['model'] else None
-            if not display_name and steps:
-                display_name = extract_display_name_from_steps(steps)
-            # thought 派生: 从 execution_steps 的 thought 类型步骤取(北京老陈 2026-08-22: 不读 chat_messages)
-            # 2026-10-01 小欧: 取键改 thought/reasoning(解 [1] E11 连带)——content 已被
-            #   _strip_thought_content 剥除(回显只取 thought/reasoning); reasoning-only 分支的
-            #   正文落在 thought/reasoning 键上(构建点显式传参, 2026-11-05 构建层兜底已废),
-            #   原式 "content or reasoning" 两键皆空 → 消息级 thought 退化为 None, 历史回放推理区空白。
-            thought = None
-            if steps:
-                for s in steps:
-                    if isinstance(s, dict) and s.get("type") == "thought":
-                        thought = s.get("thought") or s.get("reasoning")
-                        if thought:
-                            break
+            # [46] P1: 默认不带完整 steps(首屏消息体极小); 仅详情链路显式 include_steps=True 才加载
+            steps = _steps_cache.get(_s_key, []) if include_steps else []
+            # [46] P1: display_name 彻底与 steps 解耦——权威源是 pair 的 provider/model
+            #   (chat_user_message.chat_model 落库字段); 存量缺字段用稳定占位, 不再依赖读 steps 的函数。
+            display_name = (
+                build_display_name(p['provider'], p['model'])
+                if p['provider'] or p['model'] else "助手"
+            )
+            # [46] P1: thought 从 pairs 的 ai_reasoning(cum.reasoning)取, 与 steps 完全解耦
+            #   ——裁剪 steps 后思考区照常工作, 且 include_steps 两模式取值一致。
+            thought = p.get('ai_reasoning') or None
 
             messages.append(MessageResponse(
                 id=ai_id, session_id=session_id,

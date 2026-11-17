@@ -13,6 +13,8 @@
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: MessageCreate 补 allow_interject(开关随消息携带, 后端插话判定必须用它)
 # 2026-11-18 - 小欧 - [46] P0 首屏提速: GET /sessions/{id}/messages 增 limit/offset 查询参数透传
 #   (缺省=全量兼容旧调用方), 服务层返回 total/has_more 一并由路由透传 — 小欧-2026-11-18
+# 2026-11-18 - 小欧 - [46] P1 首屏裁剪: GET /sessions/{id}/messages 增 include_steps(默认 False),
+#   首屏不下发完整 execution_steps; 进详情按需拉时显式传 true — 小欧-2026-11-18
 
 """
 消息管理API路由(薄壳)
@@ -54,8 +56,11 @@ def get_session_messages_endpoint(
     session_id: str,
     limit: Optional[int] = Query(None, ge=1, le=500, description="返回消息对数上限(缺省=全量)"),
     offset: int = Query(0, ge=0, description="从最近往早的偏移(消息对口径)"),
+    include_steps: bool = Query(False, description="是否附带完整 execution_steps(进详情才传true)"),
 ):
-    return get_session_messages(session_id, limit=limit, offset=offset)
+    return get_session_messages(
+        session_id, limit=limit, offset=offset, include_steps=include_steps
+    )
 
 
 @router.post("/sessions/{session_id}/messages")

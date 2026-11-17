@@ -148,6 +148,8 @@
 //   ③PipelineRenderer 以 taskKey=activeTaskId 绑定任务 —— 分批窗口是任务级视图状态, 切任务即复位窗口,
 //     不再用"数组引用变化"猜任务切换; 不用 React key 重挂载(会令 useStepRenderPrefs 重拉设置,
 //     reasoningVisible/thoughtMarkdown 闪回默认值) — 小欧-2026-10-30
+// 编辑历史: 2026-11-18 小欧 - [46] P1 首屏裁剪: messages 默认不带 execution_steps, 右栏 messages 兜底
+//   显式传 include_steps=true, 保住 getTaskSteps 返回空时的历史步骤兜底链路 — 小欧-2026-11-18
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -516,7 +518,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
             setHistorySteps(toExecutionSteps(s.steps)); // 2026-08-27 小欧 : 收窄unknown[]→ExecutionStep[]
             writeFinalResponse(s.steps);
           } else if (sessionId) {
-            const msgResp = await sessionApi.getSessionMessages(sessionId);
+            // [46] P1: messages 默认裁掉 execution_steps, 兜底链路需显式拉全
+            const msgResp = await sessionApi.getSessionMessages(sessionId, {
+              include_steps: true,
+            });
             if (cancelled) return;
             const fallback: ExecutionStep[] = [];
             for (const m of msgResp.messages) {

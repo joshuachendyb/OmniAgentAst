@@ -25,6 +25,8 @@
 //   与其余会话响应统一归一 version ?? 1, 消除版本号双真源
 // 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: getSessionMessages 增可选 opts{limit,offset}, 响应补
 //   total/has_more(pairs 口径); 缺省不带参数仍走后端全量, 兼容 RightViewer 等直接调用方 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - [46] P1 首屏裁剪: opts 增 include_steps(默认 false 不下发 execution_steps);
+//   RightViewer 的 messages 兜底显式传 true 拉步骤, 右栏详情不受裁剪影响 — 小欧-2026-11-18
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -197,12 +199,17 @@ export const sessionApi = {
 
   getSessionMessages: async (
     sessionId: string,
-    opts?: { limit?: number; offset?: number }
+    opts?: { limit?: number; offset?: number; include_steps?: boolean }
   ): Promise<GetSessionMessagesResponse> => {
-    // [46] P0: 仅首屏路径(loadHistoryMessages)传 opts; RightViewer/切模型等直接调用仍不带参数=后端全量
+    // [46] P0/P1: 仅首屏路径(loadHistoryMessages)传分页 opts; 右栏详情兜底显式 include_steps=true;
+    //   RightViewer/切模型等其它直接调用仍不带参数=后端全量(兼容)
     const params =
-      opts && (opts.limit != null || opts.offset)
-        ? { limit: opts.limit, offset: opts.offset }
+      opts && (opts.limit != null || opts.offset || opts.include_steps)
+        ? {
+            ...(opts.limit != null ? { limit: opts.limit } : {}),
+            ...(opts.offset != null ? { offset: opts.offset } : {}),
+            ...(opts.include_steps ? { include_steps: true } : {}),
+          }
         : undefined;
     const response = await api.get<GetSessionMessagesResponse>(
       `/sessions/${sessionId}/messages`,
