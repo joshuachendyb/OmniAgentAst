@@ -334,6 +334,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `reconcile_orphaned_tasks` | 启动期僵尸任务收尾(2026-09-29 L0 新增, 零 DDL 零新状态值; 启动时把崩溃遗留的 status='executing' 残行改 failed + error_type=task_interrupted; 按 start_time<boot_iso 判归属以降低多 worker 误伤; 幂等, duration 不补算) | conn, boot_iso | int(受影响行数) |
 | `get_chain_summary_anchor` | linked 增量摘要锚点(2026-10-14 小欧新增): 取同链最近一条 task_summary 非空任务行(task_id/summary/uid+增量下界), 无则 None 走老路 | conn, context_root_task_id, current_task_id | dict 或 None |
 | `save_chain_cover_summary` | linked 增量摘要写回单一出口(2026-10-14 小欧新增): 摘要写链内上一个任务行(下次锚点); 空摘要/无覆盖行/影响行≠1 返 None 仅告警 | conn, context_root_task_id, current_task_id, summary | task_id 或 None |
+| `get_task_detail` | C1 任务详情读口: `SELECT *` 后统一把内部快照列解析为契约字段(artifacts/process_events/`ref_ledger`/`tool_paths`), 内部 `*_json` 列不对外漏出; sessionModel 经 `parse_session_model` 派生 model/provider | conn, task_id | Optional[dict] |
 
 ### 3.2.1 事件 Journal（stream_event_journal.py，P3 新增 — [63] 3.6.3）
 
@@ -474,6 +475,17 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `url_reject_reason` | 外链准入：本机/内网/保留/CGNAT/组播/非图片后缀 → 非空原因 | url: str | str |
 | `build_url_part` | 外链 part 构造（只放 URL，不下载不转码） | url: str | Tuple[Optional[Dict], str] |
 | `build_media_part` | 媒体 part 唯一构造：外链直传/压缩/内联/文字降级 | kind: str, attachment: Dict | Tuple[Optional[Dict], str] |
+
+### 3.12 会话清理与工具路径派生（`services/chat/session_service.py` + `storage.py`）(2026-11-18 新增 §, 小欧)
+
+历史页批量清理与「工具触达路径」快照的公用函数。派生口径与前端 `toRelativePath` 对齐（根内得相对 posix、根外/URL/越界段丢弃），在线收尾落库与存量回填脚本共用同一实现。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `_tool_path_relative` | 工具入参路径 → 项目根相对 posix 路径**唯一归一口径**：绝对路径走 `browse.root_relative`（根外 None），相对路径归一不按进程 CWD 解析；URL/scheme/控制字符/`..` 越界段一律 None | raw: str | Optional[str] |
+| `derive_tool_paths_from_steps` | 从 execution_steps 派生工具触达相对路径（去重保序）：只取 `type=action` 步的 `tools[].params.path`，经 `_tool_path_relative` 归一；agent_runner 收尾落库与 `backfill_tool_paths` 共用（DRY） | steps: list | list[str] |
+| `_active_session_ids` | 在跑任务所属会话集合：内存 `running_tasks`(running/paused) ∪ `list_running_tasks(conn)`（含重启遗留任务），`None` 剔除。清理时"宁少删不误删"的唯一判据 | conn | set[str] |
+| `cleanup_sessions` | 历史页批量软删：`invalid`=空壳会话（无用户消息且无任务；`is_valid` 只是创建入参+存消息后自愈置真，不作判据，否则会连有消息但标记未翻真的会话一起删）、`older`=updated_at 早于 N 天；命中集先扣活跃会话，执行前二次取活跃集；`preview=True` 只统计且 `session_ids` 返回空（未删的 id 不得给前端清 Store）；`deleted` 按 UPDATE rowcount 累计 | mode: str, days: int, preview: bool | dict |
 
 ---
 
@@ -835,6 +847,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.37 | 2026-11-18 | [46/46b] 三堂会审整改补登(§1.3): 新增 §3.12 `_tool_path_relative`(工具路径归一口径唯一真源, 与前端 toRelativePath 同口径) / `derive_tool_paths_from_steps`(派生单一真源, 收尾落库与存量回填共用) / `_active_session_ids`(在跑会话=内存∪DB 在跑行) / `cleanup_sessions`(空壳会话判据去 is_valid 死分支, 预览不下发 ids, deleted 按 rowcount); §3.2 补 `get_task_detail`(内部 `*_json` 快照列解析为契约字段) | 小欧 |
 | v5.36 | 2026-11-14 | 后台命令续跑补登(AGENTS §1.3): storage.py `delete_user_message`(未投递消息补偿删除唯一出口, 续跑失败/注入未命中/系统通知终态窗口共用); 同批登记本轮根因修正: `_create_and_launch_task` 落库字段单一真源归 db_ops 闭包(删 creation_source 重复入参, 消双真源漂移)、`resume_session_with_notice` 竞态注入补 bind + 失败补偿删消息、`agent_runner.run_agent_in_background` 首行 `set_agent_task` 自登记(编排层不再 create_task 后 await)、`bg_shell_notifier` 注入失败按"仍活跃/已终态"分流 | 商量 |
 | v5.35 | 2026-11-13 | **§4.2.1 新增错位参数展开**(商量): `expand_misplaced_params` 展开 LLM 幻觉的错位参数——嵌套 dict（`{'new_string': {'old_string':..., '$text':...}}`）和 XML 标签串（`'val</newString><old_string>...</old_string><path>...</path>'`）→ 顶层平铺；`normalize_params` 开头调用（键名映射之前）；通用设计从 `PARAM_ALIASES` 推导参数名集合，其他 tool 有条目即自动获得能力；`PARAM_ALIASES["edit"]` 增 `$text→new_string`（LLM 幻觉键）；日志实证 59 次 edit 中 17 次失败（29% 轮次浪费），展开后可直接执行省一轮重试。**三堂会审判据收紧**（反例实证 3 类退化）：①承载错位的字段名须是已知参数名（否则 `write_xlsx.data` 等合法 dict 参数被误展开、数据损坏）；②XML 串须提取 ≥2 参数且含自身规范名（否则编辑含 `"</path>"`/`"</old_string>"` 的代码时 `new_string` 被吞、可成功的编辑变失败）；③`_EXTRA_KNOWN_KEYS` 补 `edit.replaceAll`（不在别名表，丢则静默只替换首处）。验证：反例 14 项 + 正例 23 项 + replaceAll 4 项，现有单测 141+51 项全绿 | 商量 |
 | v5.34 | 2026-11-13 | **§1.22 新登记通配模式花括号展开**(商量): 新建 `app/utils/glob_pattern.py` 的 `expand_braces`——fnmatch 不认 `{a,b}`(shell 展开特性), LLM 写 `"*.{py,ts,tsx}"` 过滤多扩展名必然 0 命中且工具层无报错(表现为"明明有文件却搜不到"); 本模块只做展开不做匹配(保留各调用点原有大小写语义), 支持嵌套/无逗号字面量/未配对花括号不报错/展开上限 64 防组合爆炸; 消费点两处共用同一单源: grep 工具 `glob` 参数(`grep_file_content.py`)、find 工具 `pattern` 参数(`search_files.py`); 同步 schema 描述(LLM 可见)与 grep 示例, 补登记于 FUNCTIONS.md §1.22 | 商量 |

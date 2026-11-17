@@ -52,6 +52,10 @@
 # 2026-11-18 - 小欧 - [46] P1 首屏裁剪: get_session_messages 增 include_steps(默认 False)——首屏不下发
 #   execution_steps 全文; thought 改从 pairs 的 ai_reasoning 派生、display_name 去 steps 依赖(缺 provider/model
 #   回落稳定占位"助手"), 渲染/两模式一致; 右栏详情用 getTaskDetail 独立链路不受影响 — 小欧-2026-11-18
+# 2026-11-18 - 小欧 - [46/46b] 会审整改: ①include_steps 缺省改 True(与"分页缺省=全量"同向, 未带参数的
+#   旧调用方不再静默丢 steps); ②thought 只在详情模式下发, 真正兑现首屏减包; ③分页下界回退到任务组首行,
+#   根治页缝把同一 ai_message_id 的 carrier 切到上一页(空 assistant 气泡); ④steps 预加载/取值去双重
+#   include_steps 判断, 空缓存天然退化为 [] — 小欧-2026-11-18
 """
 message_service — 消息业务服务(services/chat)
 
@@ -98,17 +102,17 @@ def get_session_messages(
     session_id: str,
     limit: Optional[int] = None,
     offset: int = 0,
-    include_steps: bool = False,
+    include_steps: bool = True,
 ):
     """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入
 
     [46] P0 小欧 2026-11-18: 加 limit/offset 分页。默认(limit=None)返回全量, 兼容既有调用方;
     首屏传 limit=50 只取最近 50 对。改 SQL 级窗口——复用 fetch_session_user_message_pairs
     既有 lower_id/upper_id 锚点(storage.py:1081), 不先全量拉出再内存切片。
-    limit/offset/total 均为消息对(pair)口径(一 user + 其配对 assistant 计 1), 渲染气泡数在
-    limit~2*limit 间浮动; has_more 表示是否还有更早的 pair。
-    [46] P1: include_steps 默认 False 首屏不下发完整 execution_steps(chunk/thought 全文);
-    thought 与 display_name 均改从 pair 落库字段派生, 与 steps 彻底解耦。
+    limit/offset/total 均为 chat_user_message 行口径(一行 = 一条用户消息/系统通知, 与其配对的
+    assistant 同属该行), 渲染气泡数在 limit~2*limit 间浮动; has_more 表示是否还有更早的行。
+    [46] P1: include_steps 缺省 True 与分页缺省同取"全量兼容", 首屏显式传 False 才裁剪
+    execution_steps(chunk/thought 全文); 详情模式(True)下 thought 从 pair 落库字段派生, 与 steps 解耦。
     """
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
@@ -130,7 +134,7 @@ def get_session_messages(
 
         # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
         # [46] P0 v2: SQL 级窗口分页(复用 lower_id/upper_id 锚点, 不在 Python 内存切片)。
-        #   total 为 pairs 口径, 与会话列表 message_count(pairs + 任务数)不同, 字段名不得混用。
+        #   total 为 chat_user_message 行数(会话列表 message_count 含任务数, 两者不同口径, 字段名不得混用)。
         if limit is not None and limit > 0:
             total = conn.execute(
                 "SELECT COUNT(*) FROM chat_user_message WHERE session_id=?",
@@ -142,10 +146,22 @@ def get_session_messages(
                 (session_id, limit, offset),
             ).fetchall()
             if _bounds:
+                # 2026-11-18 - 小欧 - 页缝对齐任务组: 同一 ai_message_id 可挂多条用户行(插话/注入),
+                #   渲染载体(carrier)取该组首个有内容行; 裸行窗口会把 carrier 切到上一页, 本页随即
+                #   出现空 assistant 气泡且真答案丢失。下界回退到本行所属任务的首行, 整组恒同页。
+                _lo = _bounds[-1][0]  # 本页最早 id
+                _lo_task = conn.execute(
+                    "SELECT task_id FROM chat_user_message WHERE id=?", (_lo,)
+                ).fetchone()[0]
+                if _lo_task:
+                    _lo = conn.execute(
+                        "SELECT MIN(id) FROM chat_user_message WHERE session_id=? AND task_id=?",
+                        (session_id, _lo_task),
+                    ).fetchone()[0]
                 pairs = fetch_session_user_message_pairs(
                     conn,
                     session_id,
-                    lower_id=_bounds[-1][0],  # 本页最早 id(闭区间下界)
+                    lower_id=_lo,  # 任务组首行(闭区间下界)
                     upper_id=_bounds[0][0] + 1,  # 本页最新 id+1(upper_id 为 < 开区间语义)
                 )
             else:
@@ -180,11 +196,14 @@ def get_session_messages(
         # P1-① 消除 N+1（小欧 2026-10-27）：批量预加载所有 (ai_message_id, task_id) 的步骤，
         #   一次查询替代循环内 N 次 load_execution_steps。keys 直接取自 carrier 渲染载体
         #   （{ai_id: index}，仅实际渲染 assistant 气泡的 ai_id），经 window[index] 取 task_id。
-        _batch_keys = [
-            (_aid, window[_i].get("pair_task_id"))
-            for _aid, _i in _carrier.items()
-        ] if include_steps else []
-        _steps_cache = load_execution_steps_batch(conn, _batch_keys) if include_steps else {}
+        _steps_cache = (
+            load_execution_steps_batch(
+                conn,
+                [(aid, window[i].get("pair_task_id")) for aid, i in _carrier.items()],
+            )
+            if include_steps
+            else {}
+        )
 
         messages = []
         for _i, p in enumerate(window):
@@ -211,16 +230,16 @@ def get_session_messages(
             #   未命中(该 ai_id 无步骤)兜底 []，行为与 load_execution_steps 一致。
             _s_key = (ai_id, _p_tid)
             # [46] P1: 默认不带完整 steps(首屏消息体极小); 仅详情链路显式 include_steps=True 才加载
-            steps = _steps_cache.get(_s_key, []) if include_steps else []
+            steps = _steps_cache.get(_s_key, [])
             # [46] P1: display_name 彻底与 steps 解耦——权威源是 pair 的 provider/model
             #   (chat_user_message.chat_model 落库字段); 存量缺字段用稳定占位, 不再依赖读 steps 的函数。
             display_name = (
                 build_display_name(p['provider'], p['model'])
                 if p['provider'] or p['model'] else "助手"
             )
-            # [46] P1: thought 从 pairs 的 ai_reasoning(cum.reasoning)取, 与 steps 完全解耦
-            #   ——裁剪 steps 后思考区照常工作, 且 include_steps 两模式取值一致。
-            thought = p.get('ai_reasoning') or None
+            # [46] P1 会审整改 2026-11-18: thought 只在详情模式下发 —— 首屏裁剪本身就是为甩掉
+            #   reasoning 长文本, 两模式都带等于把减包目标打折; 详情/首屏取值同源(ai_reasoning)。
+            thought = (p.get('ai_reasoning') or None) if include_steps else None
 
             messages.append(MessageResponse(
                 id=ai_id, session_id=session_id,

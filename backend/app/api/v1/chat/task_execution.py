@@ -3,11 +3,14 @@
 # 2026-08-29 - 小沈 - 修复#17: 两端点读库由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 POST /chat/execution/task/{task_id}/process-events 端点 + ProcessEventsBody(不设条数上限/不校验 kind, 送什么存什么); 落库经 db.atxn offload(同文件 C1/C2 范式), 存在性用轻量 SELECT 1(不用 get_task_detail 避白跑解析), 404 显式回抛、其余异常只记日志不阻断 — 小欧-2026-10-11
 # 2026-11-17 - 小欧 - [46b] P2b 任务列表数据契约对齐: ProcessEventsBody 增可选 ref_ledger(前端 final 帧上交的引用台账 wire 快照, 权威源在前端 store), 端点在 save_process_events 后直写 chat_tasks.ref_ledger_json 列(任务已终态, 幂等覆盖, 只写本列不触其他字段) — 小欧-2026-11-17
+# 2026-11-18 - 小欧 - [46b] 会审整改: ref_ledger 收口到 update_task 唯一写路径(原裸 UPDATE 绕开白名单/
+#   序列化/0 行告警, 同一列两套写法); 并补 wire schema 校验(条目形状/长度/条数上限), 空 path 条目落库前丢弃;
+#   空数组不再覆盖已有快照 — 小欧-2026-11-18
 """
 task_execution — C1 任务详情统计 + C2 按 task_id 步骤回放
 落在 chat 域（与 execution_stream C3 同域）
 """
-from typing import Optional  # [46b] P2b: ProcessEventsBody.ref_ledger 可选字段
+from typing import List, Optional  # [46b] P2b: ProcessEventsBody.ref_ledger 可选字段
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -20,10 +23,29 @@ from app.services.chat.storage import (
     load_steps_by_task,
     load_user_message_by_task,
     save_process_events,
+    update_task,
 )
-from app.utils.json_utils import safe_json_dumps  # [46b] P2b: 台账快照列与 artifacts 同模式序列化
 
 router = APIRouter()
+
+
+class LineRange(BaseModel):
+    """台账条目的行区间 — 小欧 2026-11-18"""
+    start: int = Field(..., ge=0)
+    end: int = Field(..., ge=0)
+
+
+class RefLedgerEntry(BaseModel):
+    """引用台账 wire 条目 — 小欧 2026-11-18
+
+    与前端 task.api.ts RefLedgerWireEntry 同形。path 缺省空串用于兼容存量快照(旧版写过 ''),
+    落库前统一丢弃空 path 条目 —— 点不动的台账行没有展示意义。
+    """
+    label: str = Field(..., max_length=300)
+    path: str = Field("", max_length=1024)
+    lineRange: Optional[LineRange] = None
+    ts: int
+
 
 class ProcessEventsBody(BaseModel):
     """事件列表快照请求体 — 小欧 2026-10-11
@@ -36,7 +58,8 @@ class ProcessEventsBody(BaseModel):
     """
     events: list = Field(default_factory=list)
     # [46b] P2b 小欧 2026-11-17: 可选引用台账快照(wire 形态, 前端 final 帧上交, 只存路径不存正文)
-    ref_ledger: Optional[list] = None
+    # 2026-11-18 - 小欧 - 补形状/条数校验: 台账是前端上交的外部输入, 无上限入库会撑爆行且前端渲染无界
+    ref_ledger: Optional[List[RefLedgerEntry]] = Field(None, max_length=100)
 
 
 @router.get("/chat/execution/task/{task_id}")
@@ -90,11 +113,12 @@ async def save_task_process_events_endpoint(task_id: str, body: ProcessEventsBod
         if not exists:
             raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
         save_process_events(conn, task_id, body.events)
-        # [46b] P2b 小欧 2026-11-17: 台账快照同通道直写列(前端 POST 时任务已终态, 无需
-        #   finally 汇合, 幂等覆盖; 只写本列, 不经 update_task 避免误触其他字段)
-        if body.ref_ledger is not None:
-            conn.execute("UPDATE chat_tasks SET ref_ledger_json=? WHERE task_id=?",
-                         (safe_json_dumps(body.ref_ledger), task_id))
+        # [46b] P2b 小欧 2026-11-17: 台账快照随任务终态快照落库(幂等覆盖)
+        # 2026-11-18 - 小欧 - 会审整改: 改走 update_task 唯一写路径(白名单/序列化/0 行告警同源),
+        #   不再裸 UPDATE; 空数组不覆盖已有快照(冷启动空 store 上传 [] 会擦掉真实数据)
+        _refs = [e.model_dump() for e in body.ref_ledger or [] if e.path]
+        if _refs:
+            update_task(conn, task_id=task_id, ref_ledger=_refs)
     try:
         await db.atxn("chat", _write)
     except HTTPException:

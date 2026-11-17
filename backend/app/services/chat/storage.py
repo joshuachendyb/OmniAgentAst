@@ -144,6 +144,9 @@
 #   ref_ledger/tool_paths 两字段(沿用 artifacts 模式, 缺省不覆盖); 新增 derive_tool_paths_from_steps
 #   派生单一真源(收尾落库与存量回填共用); list_session_tasks SELECT 带出两快照列并解析透出
 #   (前端零拼凑, 冷启动台账/推荐行数据源就绪)
+# 2026-11-18 小欧 - [46b] 会审整改: ①derive_tool_paths_from_steps 补相对路径归一(_tool_path_relative,
+#   与前端 toRelativePath 同口径) + params 非 dict 防御, 原地注释"与 root_relative 一致"的失真声明作废;
+#   ②get_task_detail 的 ref_ledger_json/tool_paths_json 改 pop+parse 为契约字段, 不再以裸串下发 — 小欧-2026-11-18
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -372,10 +375,30 @@ def _strip_thought_content(steps: list) -> list:
 
 # [46b] P2b 小欧 2026-11-17: 工具触达路径派生单一真源 — agent_runner 收尾落库与
 #   存量回填脚本共用(复用优先), 归一口径与 browse.root_relative 一致(根内得相对 posix, 根外跳过)
+# 2026-11-18 - 小欧 - [46b] 会审整改: 原只走 browse.root_relative(仅吃绝对路径), 工具常传相对路径
+#   (backend/app/x.py) → 按后端进程 CWD 解析成 backend/backend/app/x.py 或 None, 与前端 toRelativePath
+#   (接受相对路径) 并非同口径; 现补相对路径归一 + params 非 dict 防御 — 小欧-2026-11-18
+def _tool_path_relative(raw: str) -> Optional[str]:
+    """工具入参路径 → 项目根相对 posix 路径(与前端 toRelativePath 同口径) — 小欧 2026-11-18
+
+    绝对路径交 browse.root_relative(根外返 None); 相对路径归一后直接返回, 不按后端进程 CWD 解析;
+    URL/自定义 scheme/控制字符/含 .. 越界段一律丢弃(不造假链接)。
+    """
+    p = raw.strip()
+    if not p or any(ord(c) < 32 for c in p):
+        return None
+    if Path(p).is_absolute():
+        return browse.root_relative(p)
+    if "://" in p or (len(p) > 1 and p[1] == ":" and p[0].isalpha()):
+        return None
+    segs = [s for s in p.replace("\\", "/").split("/") if s not in ("", ".")]
+    return "/".join(segs) if segs and ".." not in segs else None
+
+
 def derive_tool_paths_from_steps(steps: list) -> list:
     """[46b] P2b 小欧 2026-11-17: 从 execution_steps 派生工具触达的相对 posix 路径(去重保序)。
-    与前端 roundHits 同口径: 只取 type=action 步的 tools[].params.path, 经 browse.root_relative
-    归一为项目根相对路径(与 recentFiles.path 同键), 根外路径跳过; 项目根由 browse.root_relative
+    与前端 roundHits 同口径: 只取 type=action 步的 tools[].params.path, 经 _tool_path_relative
+    归一为项目根相对路径(与 recentFiles.path 同键), 绝对根外路径跳过; 项目根由 browse.root_relative
     内部读 get_config().get_project_root()(`browse_service.py:217`), 无需外部传参。
     收尾时调用一次, 替代前端 store 实时计算, 使推荐行冷启动不缺失。"""
     out: list = []
@@ -384,10 +407,11 @@ def derive_tool_paths_from_steps(steps: list) -> list:
         if not isinstance(s, dict) or s.get("type") != "action":
             continue
         for tool in s.get("tools") or []:
-            raw = tool.get("params", {}).get("path") if isinstance(tool, dict) else None
+            params = tool.get("params") if isinstance(tool, dict) else None
+            raw = params.get("path") if isinstance(params, dict) else None
             if not raw or not isinstance(raw, str):
                 continue
-            rel = browse.root_relative(raw)
+            rel = _tool_path_relative(raw)
             if rel and rel not in seen:
                 seen.add(rel)
                 out.append(rel)
@@ -1094,7 +1118,7 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     2026-09-20 小欧 E-4修复: 一条 user 消息仅取最新 task 的配对(chat_tasks 按 user_message_id 取 MAX(id) 行),
     杜绝陈旧 _user_msg_id 复用导致的一对多(前端重复气泡 + 旧终态被覆写)
     2026-09-20 小欧 D-1兜底: 会话级模糊兜底(fb)
-    2026-09-28 小欧 精确归属(设计文档[76] 6.5): 删会话级 fb 兜底, 改单条精确 JOIN 
+    2026-09-28 小欧 精确归属(设计文档[76] 6.5): 删会话级 fb 兜底, 改单条精确 JOIN
       注入消息凭 cum.task_id(bind_message_to_task 执行期绑)归任务, 起始消息凭 cum.id=ct.user_message_id 归任务,
       二者归一; MAX(id) 兼容同 task 多行(取最新)。删 COALESCE 后无跨任务错配(原兜底可能把消息配到会话最后任务)。
       注: 存量 task_id=NULL 注入副本已按 5.3 一次性 DELETE 清理, 查询走单一路由。"""
@@ -1152,6 +1176,11 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
         return None
     _r = dict(row)
     _r["artifacts"] = parse_json(_r.get("artifacts")) if _r.get("artifacts") else []
+    # 2026-11-18 - 小欧 - [46b] 会审整改: ref_ledger_json/tool_paths_json 是内部快照列, 原先随 SELECT *
+    #   以裸 JSON 字符串下发(与 /sessions/{id}/tasks 的解析后 ref_ledger/tool_paths 同概念两形状);
+    #   现与 list_session_tasks 同款 pop+parse, 只暴露契约字段, 不再漏内部列 — 小欧-2026-11-18
+    _r["ref_ledger"] = parse_json(_r.pop("ref_ledger_json", None), label="ref_ledger") or []
+    _r["tool_paths"] = parse_json(_r.pop("tool_paths_json", None), label="tool_paths") or []
     # 2026-10-11 小欧 - 事件列表快照回放(令): 与 artifacts 同款解析, 原样透传不加工。
     #   前端收到 final 帧时回填的 processEvents(条目本体{kind,text,time}, 已排除 heartbeat),
     #   历史任务由前端 useTaskInfo 第三参 detail 读回直接渲染, 不重跑派生逻辑。
