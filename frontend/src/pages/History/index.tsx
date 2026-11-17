@@ -46,6 +46,8 @@
 //   删逐会话 subscribe 的 tick(会让 store 以为有人在看, 后台 SSE 永不释放), TAG 收窄穷尽, 一览条不限条数 — 小欧-2026-11-03
 // 编辑历史: 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY, 11 → FontSize.SMALL,
 //   import 同步补 FontSize(阶梯唯一真源) — 商量-2026-11-13
+// 编辑历史: 2026-11-18 小欧 - 历史页批量清理: 工具栏加"清理无效会话/清理旧会话"两入口, 共用
+//   SessionCleanupModal 预览确认弹窗, 执行后清 Store/选中态并刷新列表 — 小欧-2026-11-18
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -75,7 +77,12 @@ import {
   LoadingOutlined,
   FolderOutlined,
 } from '@ant-design/icons';
-import { sessionApi, type Session } from '../../services/api/session.api';
+import {
+  sessionApi,
+  type Session,
+  type SessionCleanupMode,
+} from '../../services/api/session.api';
+import { SessionCleanupModal } from './components/SessionCleanupModal';
 import type { WorkspaceEntry } from '@/types/chat';
 // [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
 import {
@@ -137,6 +144,10 @@ const HistoryPage: React.FC = () => {
   );
   // 2026-08-27 小欧 修复: 真实总会话数(totalSessions)，与过滤命中数(pagination.total)区分，用于清空守卫与顶部 Badge
   const [totalSessions, setTotalSessions] = useState(0);
+  // 2026-11-18 小欧 - 批量清理弹窗模式: null=关闭, 其余为入口按钮指定的清理模式
+  const [cleanupMode, setCleanupMode] = useState<SessionCleanupMode | null>(
+    null
+  );
 
   // 2026-11-03 小欧 - 在跑任务唯一读口(后端快照 ∪ 内存新任务, 1s 采样): 原"逐会话 subscribe"的 tick 已删
   //   (会让 store 以为有人在看, 后台 SSE 永不释放); 列表每次重载再向后端对齐, 刷新后角标不凭空消失。
@@ -340,6 +351,27 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
+   * 批量清理完成: 清 Store/选中态 + 关闭弹窗 + 刷新列表
+   * 2026-11-18 小欧 - 与单删/批删同款 Store 清理语义(4.6.2), 防止后端已删而前端残留
+   */
+  const handleCleanupDone = useCallback(
+    (deletedIds: string[]) => {
+      deletedIds.forEach((id) => chatStreamStore.destroySession(id));
+      if (deletedIds.length > 0) {
+        setSelectedSessions((prev) => {
+          if (prev.size === 0) return prev;
+          const next = new Set(prev);
+          deletedIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+      setCleanupMode(null);
+      void loadSessions(paginationRef.current.current, keywordRef.current);
+    },
+    [loadSessions]
+  );
+
+  /**
    * 清空所有会话 - 从小新代修改：从 Settings 页面迁移过来
    */
   const handleClearAllSessions = async () => {
@@ -457,6 +489,19 @@ const HistoryPage: React.FC = () => {
               <HistoryOutlined /> 历史会话
             </Title>
             <Space>
+              {/* 2026-11-18 小欧 - 批量清理两入口, 共用"预览→确认"弹窗 */}
+              <Button
+                icon={<DeleteOutlined />}
+                onClick={() => setCleanupMode('invalid')}
+              >
+                清理无效会话
+              </Button>
+              <Button
+                icon={<ClockCircleOutlined />}
+                onClick={() => setCleanupMode('older')}
+              >
+                清理旧会话
+              </Button>
               {/* 清空所有会话按钮 - 从小新代修改：从 Settings 页面迁移 */}
               <Popconfirm
                 title="确定要清空所有会话吗？"
@@ -840,6 +885,15 @@ const HistoryPage: React.FC = () => {
           )}
         </Space>
       </Card>
+      {/* 2026-11-18 小欧 - 批量清理弹窗(两入口共用): 预览命中数/样例+勾选确认后执行 */}
+      {cleanupMode !== null && (
+        <SessionCleanupModal
+          open
+          mode={cleanupMode}
+          onCancel={() => setCleanupMode(null)}
+          onDone={handleCleanupDone}
+        />
+      )}
     </div>
   );
 };

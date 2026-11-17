@@ -30,11 +30,13 @@
 #   + GET /sessions/tasks/{task_id}(退订后 60s 复核的单任务轻量读, 替代拉整会话任务正文) — 小欧-2026-11-03
 # 2026-11-13 小欧 - 新增 GET /sessions/{session_id}/artifacts(会话产物清单: chat_tasks.artifacts 真源, 任务时间倒序);
 #   产物是任务级产物(工作区内产物走引用模式, 不落附件台账), 故与附件列表分立独立出口 — 小欧-2026-11-13
+# 2026-11-18 - 小欧 - 历史页批量清理: POST /sessions/cleanup/preview(只统计) + POST /sessions/cleanup(执行软删除),
+#   mode=invalid|older, days=30 默认; 置于动态 /sessions/{session_id} 路由之前避免遮蔽 — 小欧-2026-11-18
 
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -43,6 +45,7 @@ from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionListResponse  # noqa: F401 DTO 透传
 from app.services.chat.session_service import (
     SessionUpdate,
+    cleanup_sessions,
     create_session,
     delete_session,
     get_session_info,
@@ -75,6 +78,24 @@ def list_sessions_endpoint(
     is_valid: Optional[bool] = Query(None)
 ):
     return list_sessions(page, page_size, keyword, is_valid)
+
+
+class SessionCleanupRequest(BaseModel):
+    """批量清理请求 — 小欧 2026-11-18: invalid=无效/空壳会话, older=N 天前未活动的会话"""
+    mode: Literal["invalid", "older"]
+    days: int = Field(30, ge=1, le=3650, description="older 模式的天数阈值, 默认 30")
+
+
+@router.post("/sessions/cleanup/preview")
+def preview_session_cleanup_endpoint(body: SessionCleanupRequest):
+    """只统计命中数量与样例标题, 不写库 — 供清理弹窗预览"""
+    return cleanup_sessions(body.mode, days=body.days, preview=True)
+
+
+@router.post("/sessions/cleanup")
+def cleanup_sessions_endpoint(body: SessionCleanupRequest):
+    """执行批量软删除, 返回被删 session_ids 供前端清 Store"""
+    return cleanup_sessions(body.mode, days=body.days, preview=False)
 
 
 @router.put("/sessions/{session_id}")

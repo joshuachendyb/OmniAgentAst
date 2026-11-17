@@ -27,6 +27,8 @@
 //   total/has_more(pairs 口径); 缺省不带参数仍走后端全量, 兼容 RightViewer 等直接调用方 — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - [46] P1 首屏裁剪: opts 增 include_steps(默认 false 不下发 execution_steps);
 //   RightViewer 的 messages 兜底显式传 true 拉步骤, 右栏详情不受裁剪影响 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - 历史页批量清理: 新增 preview/execute 会话清理接口与类型
+//   (mode=invalid|older, days 默认30) — 小欧-2026-11-18
 
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -85,6 +87,31 @@ export interface ApiMessage {
   task_id?: string | null;
   // 2026-11-13 商量 - 消息种类(user/system_notice): 后台续跑通知按它渲染系统通知样式
   msg_kind?: string | null;
+}
+
+/** [历史页清理] invalid=无效/空壳会话, older=N 天前未活动的会话 */
+export type SessionCleanupMode = 'invalid' | 'older';
+
+/** [历史页清理] 预览结果(只统计不写库) */
+export interface SessionCleanupPreview {
+  mode: SessionCleanupMode;
+  days: number;
+  cutoff: string | null;
+  count: number;
+  skipped_active: number;
+  sample_titles: string[];
+  session_ids: string[];
+  deleted: number;
+}
+
+/** [历史页清理] 执行结果 */
+export interface SessionCleanupResult {
+  mode: SessionCleanupMode;
+  days: number;
+  count: number;
+  deleted: number;
+  skipped_active: number;
+  session_ids: string[];
 }
 
 export interface GetSessionMessagesResponse {
@@ -278,6 +305,30 @@ export const sessionApi = {
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
     const response = await api.delete<{ success: boolean }>(
       `/sessions/${sessionId}`
+    );
+    return response.data;
+  },
+
+  /** [历史页清理] 预览命中数与样例, 不写库 */
+  previewCleanupSessions: async (
+    mode: SessionCleanupMode,
+    days: number = 30
+  ): Promise<SessionCleanupPreview> => {
+    const response = await api.post<SessionCleanupPreview>(
+      '/sessions/cleanup/preview',
+      { mode, days }
+    );
+    return response.data;
+  },
+
+  /** [历史页清理] 执行批量软删除, 返回被删 ID 供前端清 Store */
+  cleanupSessions: async (
+    mode: SessionCleanupMode,
+    days: number = 30
+  ): Promise<SessionCleanupResult> => {
+    const response = await api.post<SessionCleanupResult>(
+      '/sessions/cleanup',
+      { mode, days }
     );
     return response.data;
   },

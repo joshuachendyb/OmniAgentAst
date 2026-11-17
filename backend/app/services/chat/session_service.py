@@ -47,6 +47,9 @@
 #   回读恒兜底为 1 反污染共享版本); update_session 只回 success+version, 不再回显请求入参值
 # 2026-11-16 - 小欧 - bug猎修: list_sessions/create_session 补 version 真值出口(此前仅 get_session_info
 #   返回, 列表刷新/新建后前端无锁基准, 乐观锁保护出现空窗)
+# 2026-11-18 - 小欧 - 历史页批量清理: 新增 cleanup_sessions(mode=invalid|older, days, preview)——
+#   invalid=is_valid=false 或无消息/任务的空壳会话; older=updated_at 早于 N 天前;
+#   在跑任务所属会话跳过, 软删除+清 workspace+清内存缓存, 预览只统计不写 — 小欧-2026-11-18
 
 """
 session_service — 会话业务服务(services/chat)
@@ -56,6 +59,7 @@ API 层仅路由薄壳 + DTO, 业务逻辑单一归属本服务(SRP)。
 """
 import json
 import uuid
+from datetime import datetime, timedelta
 from typing import List, Literal, Optional, Tuple
 
 from fastapi import HTTPException
@@ -277,6 +281,80 @@ def delete_session(session_id: str):
     forget_session_message_ids(session_id)  # D-2(2026-09-20 小欧): 清理内存消息ID缓存, 防驻留/陈旧复活
     logger.info(f"删除会话成功: id={session_id}")
     return {"success": True, "message": "会话删除成功"}
+
+
+def cleanup_sessions(mode: str, days: int = 30, preview: bool = False) -> dict:
+    """批量清理会话(软删除) — 小欧 2026-11-18
+
+    mode='invalid': is_valid=false 或 无任何用户消息/任务的空壳会话;
+    mode='older': updated_at 早于「现在 - days 天」(本地 ISO 字符串同格式可比)。
+    在跑(running/paused)任务所属会话一律跳过并计入 skipped_active, 防止误删正在执行的任务。
+    preview=True 只统计不写库; 执行时软删除 + 清 workspace 行 + 清 display_name/消息ID 内存缓存。
+    返回 count/sample_titles/session_ids/skipped_active/cutoff/deleted。
+    """
+    # 延迟导入避环(与 _cancel_cascade 同款)
+    from app.services.task.task_state import running_tasks
+
+    active_ids = {
+        meta.get("session_id")
+        for meta in list(running_tasks.values())
+        if meta.get("status") in ("running", "paused")
+    }
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    where = "is_deleted = FALSE"
+    params: list = []
+    if mode == "invalid":
+        where += (
+            " AND (COALESCE(is_valid, 0) = 0 OR ("
+            " NOT EXISTS(SELECT 1 FROM chat_user_message u WHERE u.session_id = chat_sessions.id)"
+            " AND NOT EXISTS(SELECT 1 FROM chat_tasks t WHERE t.session_id = chat_sessions.id)))"
+        )
+    elif mode == "older":
+        where += " AND updated_at IS NOT NULL AND updated_at < ?"
+        params.append(cutoff)
+    else:
+        raise HTTPException(status_code=400, detail=f"未知清理模式: {mode}")
+
+    with db.get_conn("chat") as conn:
+        rows = conn.execute(
+            f"SELECT id, title FROM chat_sessions WHERE {where} ORDER BY updated_at ASC",
+            params,
+        ).fetchall()
+        all_rows = [(r["id"], r["title"]) for r in rows]
+        targets = [(sid, title) for sid, title in all_rows if sid not in active_ids]
+        result = {
+            "mode": mode,
+            "days": days,
+            "cutoff": cutoff if mode == "older" else None,
+            "count": len(targets),
+            "skipped_active": len(all_rows) - len(targets),
+            "sample_titles": [title for _, title in targets[:5]],
+            "session_ids": [sid for sid, _ in targets],
+            "deleted": 0,
+        }
+        if not preview and targets:
+            now = get_local_iso_timestamp()
+            ids = result["session_ids"]
+            # 分批 UPDATE 避开 SQLite 变量上限(999)
+            for start in range(0, len(ids), 400):
+                chunk = ids[start:start + 400]
+                ph = ",".join("?" for _ in chunk)
+                conn.execute(
+                    f"UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id IN ({ph})",
+                    [now] + chunk,
+                )
+                conn.execute(
+                    f"DELETE FROM chat_session_workspaces WHERE session_id IN ({ph})",
+                    chunk,
+                )
+            result["deleted"] = len(ids)
+
+    if not preview and result["deleted"]:
+        for sid in result["session_ids"]:
+            delete_session_display_names(sid)
+            forget_session_message_ids(sid)
+        logger.info(f"批量清理会话成功: mode={mode} count={result['deleted']}")
+    return result
 
 
 def _cancel_cascade(session_id: str) -> None:
