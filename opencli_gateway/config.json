@@ -73,7 +73,7 @@
                 },
     "webui":  {
                   "enabled":  true,
-                  "listen":  "0.0.0.0:8081",
+                  "listen":  "127.0.0.1:8081",
                   "username":  "admin",
                   "password_hash":  "$argon2id$v=19$m=65536,t=3,p=2$O1tZHSiHtRw1iQ6w7QZanA$yZNUTlNsCyolBxgJo/elfkf26v0+xsMfchQrIZcKVMo",
                   "session_ttl_minutes":  720

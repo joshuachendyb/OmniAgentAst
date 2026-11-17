@@ -13,6 +13,10 @@
 // 2026-11-02 小欧 - 恢复无 Router 兜底（设置页安全Tab 独立渲染场景，旧 FileRefChip 行为）：
 //   已链接时保持链接形态，点击走 resolveChipUrlFresh 现取根，判不过不跳 — 小欧-2026-11-02
 // 编辑历史: 2026-11-13 商量 - 字号与字重归位: fontSize 10 → FontSize.CAPTION, fontWeight 600 → FontWeight.BOLD, import 同步补 FontWeight — 商量-2026-11-13
+// 编辑历史: 2026-11-17 opencode - chip 形态去掉前置文件/目录图标(FileOutlined/FolderOutlined):
+//   路径本体已能区分(文件带扩展名, 目录另有「目录」文字徽标), 图标与徽标/路径重复提示, 视觉上像多挂一个符号;
+//   行内形态(工具参数/产出物清单/文件足迹)无文字徽标, 图标是目录与文件的唯一区别, 故只在 !isChip 时渲染。
+//   图标样式随之从 LinkBody 内的三元收成模块级 INLINE_ICON_STYLE(只剩一处用途)。别针(pin)不受影响 — opencode-2026-11-17
 /**
  * PathLink —— 路径 → 文件页链接的**唯一** UI 组件。
  *
@@ -20,8 +24,9 @@
  * hooks/useProjectRoot.resolveChipUrlFresh（点击态，现取根）。本组件不做任何路径判定。
  *
  * 两种外观：
- *  - `chip`：正文/卡片形态（背景框 + 目录/根外徽标 + 行号后缀），Agent 输出的文件引用；
- *  - `inline`：行内下划线形态（工具参数、产出物清单）。
+ *  - `chip`：正文/卡片形态（背景框 + 目录/根外文字徽标 + 行号后缀，**无前置图标**），
+ *    Agent 输出的文件引用；
+ *  - `inline`：行内下划线形态（工具参数、产出物清单、文件足迹），前置文件/目录图标区分类型。
  */
 import React from 'react';
 import { FileOutlined, FolderOutlined } from '@ant-design/icons';
@@ -93,6 +98,13 @@ const badgeStyle: React.CSSProperties = {
   fontWeight: FontWeight.BOLD,
 };
 
+/** 行内形态的文件/目录图标规格（chip 形态不出图标，理由见 LinkBody 内注释） */
+const INLINE_ICON_STYLE: React.CSSProperties = {
+  color: Colors.PRIMARY,
+  flexShrink: 0,
+  fontSize: 12,
+};
+
 /** 链接外壳的输入：只含渲染所需，不含判定参数（判定在 PathLink 内做一次） */
 interface LinkBodyProps {
   rawPath: string;
@@ -107,7 +119,7 @@ interface LinkBodyProps {
   isExternal: boolean;
 }
 
-/** 唯一链接外壳：<a> + 图标 + 徽标（两种外观共用） */
+/** 唯一链接外壳：<a> + 徽标 + 可选图标（两种外观共用） */
 const LinkBody: React.FC<LinkBodyProps & { onGo: () => void }> = ({
   rawPath,
   lineRange,
@@ -125,13 +137,6 @@ const LinkBody: React.FC<LinkBodyProps & { onGo: () => void }> = ({
     : `${isExternal ? '根外文件 ' : ''}打开文件 ${rawPath}${
         lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
       }`;
-  // 2026-11-02 小欧 - 图标规格单点：原文件/目录两分支各写一遍同一份 style — 小欧-2026-11-02
-  const iconStyle: React.CSSProperties = {
-    color: Colors.PRIMARY,
-    flexShrink: 0,
-    fontSize: isChip ? undefined : 12,
-  };
-
   const anchor = (
     <a
       href={url}
@@ -159,11 +164,15 @@ const LinkBody: React.FC<LinkBodyProps & { onGo: () => void }> = ({
         onGo();
       }}
     >
-      {isDir ? (
-        <FolderOutlined aria-hidden style={iconStyle} />
-      ) : (
-        <FileOutlined aria-hidden style={iconStyle} />
-      )}
+      {/* 2026-11-17 opencode - chip 形态不再出文件/目录图标: 路径本体已可辨(文件带扩展名, 目录另有
+          「目录」文字徽标 + 根外另有「根外」字样), 前置图标纯属重复提示;
+          行内形态(工具参数/产出物/文件足迹)没有文字徽标, 图标是目录与文件的唯一区别, 必须保留 */}
+      {!isChip &&
+        (isDir ? (
+          <FolderOutlined aria-hidden style={INLINE_ICON_STYLE} />
+        ) : (
+          <FileOutlined aria-hidden style={INLINE_ICON_STYLE} />
+        ))}
       {isChip && isDir && (
         <span style={{ ...badgeStyle, color: Colors.TEXT.SECONDARY }}>
           目录

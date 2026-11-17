@@ -16,6 +16,10 @@
 //
 //   密度(界面密度设置项)只作用于**阅读区**(preview/doc)的间隔, **绝不触碰流水线**(chat/task):
 //   流水线的段距/行高是老陈定案的信息流节奏, 属不可动项。
+// 编辑历史: 2026-11-17 opencode - 行内代码左标识线置透明: --md-color-code-accent 由 Colors.BORDER.ACCENT(#69b1ff)
+//   改为 transparent。原 2px 高饱和蓝线配合 4px 圆角, 两端内收后在短标识符上形似半个括号;
+//   中段试验过 Colors.BORDER.LIGHT(#f0f0f0), 与浅灰底过近仍留痕迹, 故按"线彻底消失"定案。
+//   线宽/圆角/底色/CSS 声明全部保留, 本变量即该线唯一开关, 改回任一色值即恢复。
 
 import type { CSSProperties } from 'react';
 import {
@@ -462,9 +466,9 @@ export const mdStyles = (
     '--md-color-code': Colors.TEXT.STRONG,
     '--md-color-code-bg': dec.inlineCodeBg ? Colors.BG.TERTIARY : 'transparent',
     '--md-color-code-block-bg': Colors.BG.SECONDARY,
-    '--md-color-code-accent': dec.inlineCodeBg
-      ? Colors.BORDER.ACCENT
-      : 'transparent',
+    // 2026-11-17 opencode - 行内代码左标识线置 transparent: 原 BORDER.ACCENT 高饱和, 2px 线配 4px 圆角
+    //   两端内收, 在短标识符上形似半个括号。本变量即该线的唯一开关, 改回任一色值即恢复显示。
+    '--md-color-code-accent': 'transparent',
     '--md-color-quote-bg': dec.quoteBg ? Colors.BG.SECONDARY : 'transparent',
     '--md-color-border': Colors.BORDER.DEFAULT,
     '--md-color-divider': Colors.BORDER.LIGHT,
