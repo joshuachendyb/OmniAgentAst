@@ -31,6 +31,9 @@
 //    改单点覆盖切换/新建/复位/清空, 天然带竞态守卫; 失败置空不断链)
 // 编辑历史: 2026-11-16 小欧 bug猎修: 新建会话版本号取 createSession 响应 response.version ?? 1,
 //   不再写死 1(与后端 SessionResponse.version 同源, 消双真源)
+// 编辑历史: 2026-11-18 小欧 - [46] P2a 任务/消息解耦: 场景1(URL)在 await loadHistoryMessages 前先用
+//   urlSessionId 写 state 定会话; 场景3(最近会话)改用 resolveInitialSessionId 先定会话再载消息
+//   (删 loadLatestHistoryMessages 透传壳) → tasks 不再被 messages 串行拖慢(根因③) — 小欧-2026-11-18
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -61,7 +64,7 @@ import { generateNewSessionTitle } from '@/utils/sessionTitle';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import {
   loadHistoryMessages,
-  loadLatestHistoryMessages,
+  resolveInitialSessionId,
   STORAGE_KEY,
 } from '../../../utils/chatHistory';
 import {
@@ -361,7 +364,7 @@ export const useChatSession = (
    * 处理三种互斥场景：
    * 1. URL指定会话 -> loadHistoryMessages
    * 2. 缓存恢复 -> restoreState
-   * 3. 最近会话 -> loadLatestHistoryMessages
+   * 3. 最近会话 -> resolveInitialSessionId + loadHistoryMessages
    */
   const initializeSession = useCallback(
     async (
@@ -400,6 +403,11 @@ export const useChatSession = (
         // 2026-10-08 小欧 - 减锁(文档[19] 3.5): 删 loading 锁早退与上锁。重复调用由代际守卫作废旧结果,
         //   不再需要这把锁(它与代际号互斥, 正是历史会话进不去的病根)。
         onLoadingStart();
+
+        // [46] P2a 小欧 2026-11-18: URL 会话 ID 在进入页最早时刻即可得——先写 state 定会话,
+        //   useSessionTasks 随 sessionId 变化立即拉 tasks(278KB 秒出), 不再被 73MB messages
+        //   串行拖慢(根因③)。messages 仍由 await 完成后的 applySessionState 全量填充, 重复写同值幂等。
+        applySessionState({ sessionId: urlSessionId });
 
         try {
           const result = await loadHistoryMessages(urlSessionId);
@@ -518,13 +526,22 @@ export const useChatSession = (
       onLoadingStart();
 
       try {
-        const result = await loadLatestHistoryMessages();
+        // [46] P2a 小欧 2026-11-18: 先定会话再载消息——resolveInitialSessionId 拿到最近会话 ID
+        //   即先写 state → tasks 立即刷新; 再用同一 ID 载 messages(与原 loadLatestHistoryMessages
+        //   内部两步等价, 该透传壳随之删除)。代际守卫保留: 旧代异步结果一律作废。
+        const latestSid = await resolveInitialSessionId();
+        if (generation !== generationRef.current)
+          return { loaded: false, fromCache: false, hasUrlSession: false };
+        if (latestSid) {
+          applySessionState({ sessionId: latestSid });
+        }
+        const result = latestSid ? await loadHistoryMessages(latestSid) : null;
         if (generation !== generationRef.current)
           return { loaded: false, fromCache: false, hasUrlSession: false };
         if (result) {
           // 2026-10-05 小欧(文档[10]): 收口走 applySessionState, 并补上历史缺失字段 sessionModel
           //   (本分支此前漏注 → 走"最近会话"进入时模型选择器同样误显示跟随全局;
-          //    数据源 loadLatestHistoryMessages 内部即 loadHistoryMessages, 必带 sessionModel)。
+          //    数据源即本分支的 loadHistoryMessages, 必带 sessionModel)。
           //   version/titleLocked 保留原"!== undefined 才写"的条件写入语义。
           applySessionState({
             sessionId: result.sessionId,

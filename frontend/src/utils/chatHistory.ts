@@ -8,6 +8,9 @@
 //   ③写入点 saveSessionToCache 补 linkEnabled(3 处写入点中的第 1 处)。 — 小欧-2026-10-03
 // 编辑历史: 2026-11-13 商量 - parseMessage 透传 msg_kind(消息种类 user/system_notice, 后端 MessageResponse
 //   新增字段): 后台续跑通知种类在解析层保真, 系统通知样式渲染消费
+// 编辑历史: 2026-11-18 小欧 - [46] P2a 任务/消息解耦: 新增 resolveInitialSessionId(轻量先定会话, 首屏
+//   立即确定 sessionId 以并行拉 tasks); 删 loadLatestHistoryMessages 透传壳(内部即 listSessions(1,1)+
+//   loadHistoryMessages, 唯一调用方 useChatSession 场景3 上抛编排后成死码) — 小欧-2026-11-18
 /**
  * 聊天历史工具函数
  *
@@ -284,29 +287,17 @@ export const loadHistoryMessages = async (
 };
 
 /**
- * 加载最近会话的历史消息
+ * [46] P2a 轻量"先定会话"(小欧 2026-11-18): 只解析最近会话 ID，不载消息。
+ *   供 useChatSession 在 await messages 之前即写 sessionId → 左栏任务列表立即刷新，
+ *   解除 tasks(278KB) 被 messages(73MB) 串行拖慢的白屏根因(根因③)。
+ *   仅"无 URL 会话"的兜底路径使用；异常照旧冒泡，由调用方统一收口(不吞成"无会话")。
  */
-export const loadLatestHistoryMessages =
-  async (): Promise<HistoryLoadResult | null> => {
-    try {
-      const response = await sessionApi.listSessions(1, 1, undefined, true);
-      if (response.sessions && response.sessions.length > 0) {
-        const latestSession = response.sessions[0];
-        const result = await loadHistoryMessages(latestSession.session_id);
-        if (result) {
-          return { ...result, sessionId: latestSession.session_id };
-        }
-      }
-      return null;
-    } catch (error) {
-      // 2026-09-30 小欧 - 与 loadHistoryMessages 同因：异常冒泡，不再吞成 null。
-      //   病根：调用方把 null 一律当"没有找到任何会话"→ setMessages([])+setSessionId(null)，
-      //   故弱网/5xx 进聊天页会清空正在看的内容。这里吞异常即等于误报"用户没有任何会话"。
-      //   "确实没有会话"由上面 listSessions 返回空列表表达，不需要异常来表达。
-      console.error('加载最近会话失败:', error);
-      throw error;
-    }
-  };
+export const resolveInitialSessionId = async (): Promise<string | null> => {
+  const response = await sessionApi.listSessions(1, 1, undefined, true);
+  return response.sessions && response.sessions.length > 0
+    ? response.sessions[0].session_id
+    : null;
+};
 
 /**
  * 保存会话到缓存
