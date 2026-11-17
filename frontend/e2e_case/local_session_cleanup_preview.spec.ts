@@ -43,10 +43,10 @@ test('[历史页清理] 清理弹窗预览只读 + 天数切换重算', async ({
   const okButton = page.locator('.ant-modal-footer button.ant-btn-primary');
   await expect(okButton).toBeDisabled();
 
-  // 关闭弹窗后再验"无效会话"入口也能预览
+  // 关闭弹窗后再验"空壳会话"入口也能预览
   // antd 两字按钮渲染为"取 消"(中间自动加空格), 用 footer 首位按钮定位
   await page.locator('.ant-modal-footer button').first().click();
-  await page.getByRole('button', { name: '清理无效会话' }).click();
+  await page.getByRole('button', { name: '清理空壳会话' }).click();
   await expect(
     page.getByTestId('cleanup-preview-count')
   ).toBeVisible({ timeout: 15000 });
