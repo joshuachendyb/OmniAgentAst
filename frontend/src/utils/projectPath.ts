@@ -55,6 +55,11 @@
 // 2026-11-17 小欧 - 行内代码不再转文件引用链接：toWholePathLink 恒返回 null（行内代码多为代码片段/
 //   变量名/符号, 转链接后 PathLink 渲染蓝色别针/括号干扰 Step 面板阅读）; 裸路径识别(convertRuns④⑤)不受影响;
 //   参数改 _code/_projectRoot 消 eslint 未使用告警 — 小欧-2026-11-17
+// 2026-11-17 小欧 - 撤销上一条的一刀切：恒 null 把行内代码里完整路径的跳转与引用入口一并删除，
+//   正文表格/清单里的路径退化成不可点死文本，且与裸路径同内容不同结果（带反引号不可点、不带可点）。
+//   toWholePathLink 恢复转换，判据只认完整路径三档（盘符绝对文件、盘符绝对目录、根相对带目录文件）；
+//   代码片段/符号/裸文件名/相对目录/glob 伪路径仍留原文；链接构造复用 toFileRefMarkdown 单一真源。
+//   — 小欧-2026-11-17
 
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
@@ -721,21 +726,41 @@ const convertRuns = (text: string, projectRoot?: string): string => {
 const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 
 /**
- * 行内代码不再转为文件引用链接。
+ * 行内代码整段就是一个**完整路径**时转引用链接（反引号是天然界碑，语义唯一）。
  *
- * 原因：行内代码通常是代码片段、变量名、函数名、符号（如 `agent_runner.py`、`==`、`->`），
- * 不应被当成文件路径点击跳转。转成链接后，MarkdownText 的 a 组件会渲染 PathLink（带 pin），
- * PathLink 在链接前后渲染蓝色图标（FileOutlined / QuoteButton PaperClipOutlined），在 Step 面板
- * 等渲染区出现大量蓝色括号/别针符号，干扰阅读。
+ * 完整路径三档，链接构造统一交 toFileRefMarkdown（与裸路径识别同一真源）：
+ *   - 盘符绝对文件：`E:\test_dir\a.py`；
+ *   - 盘符绝对目录：`E:\test_dir`、`E:\test_dir\`（无扩展名的盘符绝对路径按目录认）；
+ *   - 项目根相对且带目录的文件：`backend/app/main.py`。
  *
- * 2026-11-17 小欧 - 根治：toWholePathLink 恒返回 null，行内代码保持原样，不产生 /file-ref? 链接，
- * 从而不渲染 PathLink 及其蓝色图标。裸路径识别（convertRuns 的 ④⑤ 分支）不受影响，继续转链接。
+ * 以下一律留原文，不出链接：代码片段与符号（`==`、`->`）、裸文件名（`agent_runner.py`，
+ * 无目录无从精确定位）、相对目录（定案：目录只认盘符绝对）、glob 伪路径（`vite.*.config.ts`，
+ * 由 isBadPath 拦）、`@`/`#` 前缀。带空格的盘符路径要求整段正好是一条路径
+ * （spacedPath 给出的残余必须为空，否则语义不唯一）。
  */
-const toWholePathLink = (
-  _code: string,
-  _projectRoot?: string
-): string | null => {
-  return null;
+const toWholePathLink = (code: string, projectRoot?: string): string | null => {
+  const raw = code.trim();
+  if (isBadPath(raw)) return null;
+  // 含空白：整段必须正好是一条带盘符的路径（残余非空说明还混着散文/命令行），否则语义不唯一
+  if (/\s/.test(raw)) {
+    const cand = spacedPath(raw);
+    if (!cand || cand.rest) return null;
+    return toFileRefMarkdown(
+      cand.path,
+      projectRoot,
+      false,
+      null,
+      isAbsDirLikePath(cand.path)
+    );
+  }
+  // 无空白：整段交单一真源裁决（相对路径末段须带扩展名、须有目录、==根自身不转等全在下游）
+  return toFileRefMarkdown(
+    raw,
+    projectRoot,
+    false,
+    null,
+    isAbsDirLikePath(raw)
+  );
 };
 
 /** 行内代码段按整段路径转换，其余文字走裸路径识别 */
