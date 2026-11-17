@@ -4,12 +4,12 @@
 
 **本次更新（2026-11-17，小欧）**
 
-- 网关本体 v1.4.7 → **v1.4.8**。走"换官方 Release exe"路径：`opencode2api_v1.4.8_windows_amd64.zip` 下载后与官方 SHA-256 比对通过，解出 exe 替换母本 `opencli_gateway\` 与运行目录 `opencli\` 两份（同哈希，13,897,728 B）。
+- 网关本体 v1.4.7 → **v1.4.8**。分两步走：先换官方 Release `opencode2api_v1.4.8_windows_amd64.zip`（与官方 SHA-256 比对通过）验证通路，再把源码快照前移到 `159d7fdf`、用这棵树本地编译后替换——**最终装机的是本地编译产物**（Go 1.25.6，13,972,480 B），母本 `opencli_gateway\` 与运行目录 `opencli\` 两份同哈希。
+- 源码快照前移：全源码去 .git 落库 `backup\opencli_gateway-src_源码转存_20261117\gateway-src\`（125 个文件），20261109 旧快照保留不动。审计链由此恢复为"exe 由入库源码编出"，钉版信息见该目录 `PINNED.md`。
 - 管理台收紧：`webui.listen` 由 `0.0.0.0:8081` 改为 `127.0.0.1:8081`。理由：v1.4.8 给管理台新增 OAuth 授权管理接口与 `go_subscription` 凭据字段，管理面不再对局域网开放。
 - 文档补四处：新增 2.1 版本台账与升级记录；7.8 补 `upstream.prompt_environment`；7.13 补 `password_hash` 口令存储说明；第 1 章重试段补"重试失败保留真实 HTTP 状态与 `Retry-After`"。
 - 车道、出口、重试、轮换、令牌配置**一项未动**，旧 config.json 原样跑新 exe。
-- 落地验证：`/healthz` 报 `version=v1.4.8` 且 `ready=true`，`/v1/models` 仍 12 个；普通对话 2 秒返回，带 tools 请求 3 秒返回且工具名完整还原。
-- 遗留：源码快照仍停在 1.4.7，与现用 exe 隔 3 个 commit、37 个文件，审计链待补（见 2.1 待办）。
+- 落地验证（对最终装机的本地编译 exe 重跑）：`/healthz` 报 `version=v1.4.8` 且 `ready=true`，`/v1/models` 仍 12 个；普通对话 2 秒返回，带 tools 请求 3 秒返回且工具名完整还原。
 
 **编辑历史**
 
@@ -17,7 +17,7 @@
 |------|--------|------|
 | 2026-11-09 | 小欧 | 初稿：网关模式与链路、部署、配置字段、WARP 出口池实测 |
 | 2026-11-12 | 小欧 | 增第 9 章外网出口（配套服务 OmniVPN）；第 1、8 章补 WARP 观测点重校结论 |
-| 2026-11-17 | 小欧 | 网关升至 v1.4.8；管理台 listen 收紧；新增 2.1 台账；7.8／7.13／第 1 章补充 |
+| 2026-11-17 | 小欧 | 网关升至 v1.4.8；源码快照前移到 `159d7fdf` 并改由本地编译产出；管理台 listen 收紧；新增 2.1 台账；7.8／7.13／第 1 章补充 |
 
 ---
 
@@ -53,7 +53,7 @@ opencli 网关 (opencode2api.exe, 只听 127.0.0.1:8080, 管理台 8081)
 
 ## 2 代码介绍
 
-**opencode2api.exe** 是网关本体：预编译单文件程序（v1.4.8 版 13.3MB），开箱即用，免安装免运行库。它是 Go 程序，源码来自上游 GitHub 仓库 **https://github.com/jasonxu114514/opencode2api**（README 与 Release 下载都在该仓库）。当前版本、上游 commit、exe 来源与校验值见 2.1 台账。铁律：源码只读钉版、禁止手改，所有运行定制都通过 `config.json` 完成（车道/出口/轮换/限速这类配置能表达的定制不进源码）；升级时从该仓库 Releases 换新版 exe，或按新 commit 重新钉版转存并编译。
+**opencode2api.exe** 是网关本体：单文件程序（v1.4.8 版 13.3MB，由入库钉版源码本地编译产出），开箱即用，免安装免运行库。它是 Go 程序，源码来自上游 GitHub 仓库 **https://github.com/jasonxu114514/opencode2api**（README 与 Release 下载都在该仓库）。当前版本、上游 commit、exe 来源与校验值见 2.1 台账。铁律：源码只读钉版、禁止手改，所有运行定制都通过 `config.json` 完成（车道/出口/轮换/限速这类配置能表达的定制不进源码）；升级时按新 tag 重新钉版转存并本地编译（官方 Release 包可先用来验证通路）。
 
 仓库里这套东西存了两份，职责不同：
 
@@ -72,14 +72,17 @@ opencli 网关 (opencode2api.exe, 只听 127.0.0.1:8080, 管理台 8081)
 | 现用版本 | **v1.4.8** |
 | 上游 commit | `159d7fdf0fa30274cac6ea0112cd827833819e2c`（2026-11-16T21:28:09Z） |
 | 上游释出 | 2026-11-16T21:34Z（北京 11-17 05:34） |
-| exe 来源 | 官方 Release `opencode2api_v1.4.8_windows_amd64.zip`（CI 构建，Go 1.24.13） |
-| 包 SHA-256 | `ed77549a28b7922b24b39988f0803c1b088a75cae15306583ce116f1c79803f2`（下载后已比对通过） |
-| exe SHA-256 | `a211589e4c4d7dfcc05bb007f69e09c907fbd20b2f9ed83864c551172cfb2d81`（13,897,728 B） |
+| 源码快照 | `backup\opencli_gateway-src_源码转存_20261117\gateway-src\`（全源码去 .git，125 个文件；钉版细节见该目录 `PINNED.md`，20261109 旧快照保留） |
+| exe 来源 | **本地编译**：上述快照 + Go 1.25.6 `go build -trimpath -buildvcs=false -ldflags="-s -w -X main.version=v1.4.8" ./cmd/opencode2api`（参数与上游 `release.yml` 对齐） |
+| exe SHA-256 | `b5b7c6b3f8bd77a7e992358977708561037b381a7b8121e8d223168465e093fc`（13,972,480 B） |
+| 官方参考包 | `opencode2api_v1.4.8_windows_amd64.zip`，包 SHA-256 `ed77549a28b7922b24b39988f0803c1b088a75cae15306583ce116f1c79803f2`（下载后已比对通过），包内 exe `a211589e…2d81`／13,897,728 B／Go 1.24.13。**仅用于先验证通路，未最终装机** |
 | 升级日期 | 2026-11-17，执行人 小欧 |
 | 升级前版本 | v1.4.7（commit `b296a61d`，2026-11-05），exe 19,396,608 B，SHA-256 `15801b5d…b4c9` |
 | 回滚包 | `backup\opencli_gateway\v1.4.7_before_upgrade_v1.4.8_20261117_134639\`（母本 exe/config + 运行目录 exe/config 四件） |
 
-升级走的是"换官方 Release exe"（本章许可的两条路之一）。**源码转存仍是 1.4.7 的 `b296a61d`，与现用 exe 之间隔着 3 个 commit、37 个文件——审计链有缺口，待补**：按新 commit `159d7fdf` 重新钉版转存并本地编译后，才恢复到"exe 由入库源码编出"的可追溯状态。补齐前查实现，以上游仓库该 commit 为准。
+升级分两步走：先换官方 Release 包（本章许可的两条路之一）验证 v1.4.8 通路，再把源码快照前移到 `159d7fdf` 并本地编译替换。**审计链已恢复**——现在装机的 exe 就是拿 2.1 那个快照、按表里那条命令编出来的，"exe 由入库源码编出"成立，查实现不必再跑去上游仓库翻 commit。
+
+本地 Go 1.25.6 与官方 CI 的 Go 1.24.13 编出的体积与哈希不同（13,972,480 B vs 13,897,728 B），属工具链差异，不是源码差异：`gateway-src\` 内容与 tag `v1.4.8` 一致（`git clone --depth 1 --branch v1.4.8` 后剔 `.git`，未改一行）。`-X main.version=v1.4.8` 是必带项，省了二进制自报 `dev`，`/healthz` 就分不出跑的是哪一版。
 
 v1.4.8 对本套部署的实际影响（只列有关的三条，其余为 Responses 协议整形、legacy `functions` 转换、Go 订阅 OAuth 登录，与本部署无关）：
 
@@ -89,7 +92,7 @@ v1.4.8 对本套部署的实际影响（只列有关的三条，其余为 Respon
 | 重试保留最近一次上游 HTTP 响应、状态码与 `Retry-After`；重试前释放旧连接与 WARP lease | 三次重试若全为传输失败，不再被通用网络错误掩盖——日志里能拿到真实 429，判"该换桶"还是"模型挂了"终于有据 |
 | 新增可选 `upstream.prompt_environment` 与顶层 `go_subscription` | 两项均 `omitempty`，不填即保持原行为；**旧 config.json 原样可跑新 exe**，本次未改任何车道/重试/出口配置 |
 
-升级后的落地验证（2026-11-17）：启动日志与 `/healthz` 均报 `version=v1.4.8`、`ready=true`；`/v1/models` 返回 12 个暴露模型（与升级前一致）；`deepseek-v4.1-flash-free` 普通对话 2 秒返回；带 `tools` 的请求 3 秒返回 `finish_reason=tool_calls`，工具名与参数完整还原。
+升级后的落地验证（2026-11-17，两次都跑过：官方包一次、最终装机的本地编译 exe 再跑一次，结论一致）：启动日志与 `/healthz` 均报 `version=v1.4.8`、`ready=true`、`exposed=12`；`/v1/models` 返回 12 个暴露模型（与升级前一致）；`deepseek-v4.1-flash-free` 普通对话 2 秒返回 `pong`；带 `tools` 的请求 3 秒返回 `finish_reason=tool_calls`，工具名与参数完整还原。验证完即停掉进程，8080／8081 不留占用。
 
 ## 3 使用场景
 
