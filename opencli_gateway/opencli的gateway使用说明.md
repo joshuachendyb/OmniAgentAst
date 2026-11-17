@@ -8,8 +8,9 @@
 - 源码快照前移：全源码去 .git 落库 `backup\opencli_gateway-src_源码转存_20261117\gateway-src\`（125 个文件），20261109 旧快照保留不动。审计链由此恢复为"exe 由入库源码编出"，钉版信息见该目录 `PINNED.md`。
 - 管理台收紧：`webui.listen` 由 `0.0.0.0:8081` 改为 `127.0.0.1:8081`。理由：v1.4.8 给管理台新增 OAuth 授权管理接口与 `go_subscription` 凭据字段，管理面不再对局域网开放。
 - 文档补四处：新增 2.1 版本台账与升级记录；7.8 补 `upstream.prompt_environment`；7.13 补 `password_hash` 口令存储说明；第 1 章重试段补"重试失败保留真实 HTTP 状态与 `Retry-After`"。
-- 车道、出口、重试、轮换、令牌配置**一项未动**，旧 config.json 原样跑新 exe。
-- 落地验证（对最终装机的本地编译 exe 重跑）：`/healthz` 报 `version=v1.4.8` 且 `ready=true`，`/v1/models` 仍 12 个；普通对话 2 秒返回，带 tools 请求 3 秒返回且工具名完整还原。
+- 除上面两项（`webui.listen`、`warp.enabled`）外，其它配置一项未改：车道、重试、轮换、令牌保持原值，旧 config.json 原样跑新 exe。
+- 出口另作一次独立改动：`warp.enabled` 由 false 改为 **true**（母本与运行目录两份 config.json 同改），anonymous 车道的上游请求改走网关内置 WARP 出口池，不再经 `proxies`。理由、复验数据与代价见第 8 章。
+- 落地验证（对最终装机的本地编译 exe 重跑，当时 `warp.enabled=false` 走裸线直连）：`/healthz` 报 `version=v1.4.8` 且 `ready=true`，`/v1/models` 仍 12 个；普通对话 2 秒返回，带 tools 请求 3 秒返回且工具名完整还原。启用 WARP 后的延迟另见 8.3。
 
 **编辑历史**
 
@@ -17,6 +18,7 @@
 |------|--------|------|
 | 2026-11-09 | 小欧 | 初稿：网关模式与链路、部署、配置字段、WARP 出口池实测 |
 | 2026-11-17 | 小欧 | 网关升至 v1.4.8；源码快照前移到 `159d7fdf` 并改由本地编译产出；管理台 listen 收紧；新增 2.1 台账；7.8／7.13／第 1 章补充；第 9 章外网出口内容收拢到 `OmniVPN\OmniVPN使用说明.md` 后移除该章（连带第 10 章） |
+| 2026-11-17 | 小欧 | `warp.enabled` 默认改为 true：anonymous 车道改走内置 WARP 出口池（ipv6 双出口 /64 轮换，启动一次成功，实测请求一次通过、延迟 6~16 秒）；第 1 章出口转发、第 3 章场景与场景边界、第 4 章出网放行、7.6 同步改写；第 8 章补 8.3 启用复验、8.4 启用状态与回退；第 2 章运行目录维护口径与 6.2 重启步骤措辞对齐 |
 
 ---
 
@@ -44,7 +46,7 @@ opencli 网关 (opencode2api.exe, 只听 127.0.0.1:8080, 管理台 8081)
 
 **模型别名轮换**。请求模型名可以是别名（如 `sota`/`sweet`），网关按 `rotation.order` 列表接力：上游对列表中某个模型不可用时自动切下一个。宿主点名具体模型（如 deepseek-v4.1-flash-free）时绕过别名直呼，不参与轮换。
 
-**出口转发**。网关发出的上游请求经 `proxies`/`warp` 字段描述的出口路径走出。direct = 直连；`warp` 是网关自带的 WARP 出口池（2026-11-12 重验：12 个暴露模型 11 个可用、仅 beam-free 地域限制，启用障碍是隧道稳定性，维持关闭，实测依据见第 8 章）；现行出口方案是配套服务 OmniVPN（见第 9 章）——网关管应用层转发，OmniVPN 管网络层出口，两层各司其职。
+**出口转发**。网关发出的上游请求经 `proxies`/`warp` 字段描述的出口路径走出。direct = 直连；`warp` 是网关自带的 WARP 出口池，2026-11-17 起 `enabled=true` 默认启用，anonymous 免费车道的上游请求全部改走进程内 WireGuard 隧道（Cloudflare 出口），不再经过 `proxies`。网关管应用层出口与上游重试，整机网络层出口归配套的 OmniVPN（见 `OmniVPN\OmniVPN使用说明.md`），两层各司其职。WARP 的机制、复验数据与代价见第 8 章。
 
 **上游重试与判死**。`retry.max_attempts=3` 上游失败重试三次；`first_output_seconds=30` 上游 30 秒未吐首帧判死；`retry.timeout_seconds=300` 与宿主侧超时对齐，避免两边等待窗口错位。v1.4.8 起重试失败会保留最近一次上游 HTTP 响应与 `Retry-After`，不再以通用传输错误掩盖，排障以日志里的真实状态码为准。
 
@@ -52,13 +54,13 @@ opencli 网关 (opencode2api.exe, 只听 127.0.0.1:8080, 管理台 8081)
 
 ## 2 代码介绍
 
-**opencode2api.exe** 是网关本体：单文件程序（v1.4.8 版 13.3MB，由入库钉版源码本地编译产出），开箱即用，免安装免运行库。它是 Go 程序，源码来自上游 GitHub 仓库 **https://github.com/jasonxu114514/opencode2api**（README 与 Release 下载都在该仓库）。当前版本、上游 commit、exe 来源与校验值见 2.1 台账。铁律：源码只读钉版、禁止手改，所有运行定制都通过 `config.json` 完成（车道/出口/轮换/限速这类配置能表达的定制不进源码）；升级时按新 tag 重新钉版转存并本地编译（官方 Release 包可先用来验证通路）。
+**opencode2api.exe** 是网关本体：单文件程序（v1.4.8 版 13.3MB，由入库钉版源码本地编译产出），开箱即用，免安装免运行库。它是 Go 程序，源码来自上游 GitHub 仓库 **https://github.com/jasonxu114514/opencode2api**（README 与 Release 下载都在该仓库）。当前版本、上游 commit、exe 来源与校验值见 2.1 台账。铁律：源码只读钉版、禁止手改，所有运行定制都通过 `config.json` 完成（车道/出口/轮换/模型目录这类配置能表达的定制不进源码）；升级时按新 tag 重新钉版转存并本地编译（官方 Release 包可先用来验证通路）。
 
 仓库里这套东西存了两份，职责不同：
 
 `opencli_gateway\` 是**入库母本**，git 跟踪五个文件：opencode2api.exe（网关程序）、config.json（配置基准）、opencli_gateway_start.bat（启动壳）、opencli_gateway_stop.bat（停止壳）、opencli_gateway_stop.ps1（停止逻辑，被停止壳调用），外加本文档。它回答"这套东西的定义是什么"，**是唯一维护对象**。
 
-`opencli\` 是**部署后的运行目录**（母本拷出去跑起来的那份），运行期还会自动生成状态缓存（`config.json.models.catalog.json`、`config.json.*.availability.json`、`config.json.rotation.json` 等）。该目录及其内容**不在维护范围**——本文档与维护动作只针对母本，运行目录里有什么、改了什么，一律不管。
+`opencli\` 是**部署后的运行目录**（母本拷出去跑起来的那份），运行期还会自动生成状态缓存（`config.json.models.catalog.json`、`config.json.*.availability.json`、`config.json.rotation.json` 等）。该目录及其内容**不在维护范围**——本文档与维护动作只针对母本；运行目录里的状态缓存既不进版本库也不记录，母本 config.json 改动后按同值覆盖运行目录那一份即可，两份保持同值，不分别维护。
 
 两个 bat 都是启动壳：opencli_gateway_start.bat 先查重（端口 8080 已监听则提示已在运行、不重复启动），否则前台拉起 `opencode2api.exe -config config.json`，窗口先列出服务端点/管理台/配置/停止方式再显示运行日志，关窗即停，进程意外退出时给出排查提示；opencli_gateway_stop.bat 按端口 8080/8081 找到监听进程，逐进程列出端口/角色/pid 后结束，杀完复检端口并给出明确结论（已停止/未在运行/未完全停止）。
 
@@ -90,24 +92,24 @@ v1.4.8 对本套部署的实际影响（只列有关的三条，其余为 Respon
 |------|-------------|
 | 工具线上名由 `clint_` 改为 `mcp_` 命名空间（上游 PR #182） | 直接冲着免费层被拒的 `429 FreeUsageLimitError` 去的，我们跑 anonymous 车道正是吃这条修复。网关在中间改名、回程还原，宿主看到的工具名不变（实测带 tools 的请求往返后仍是客户端声明的名字） |
 | 重试保留最近一次上游 HTTP 响应、状态码与 `Retry-After`；重试前释放旧连接与 WARP lease | 三次重试若全为传输失败，不再被通用网络错误掩盖——日志里能拿到真实 429，判"该换桶"还是"模型挂了"终于有据 |
-| 新增可选 `upstream.prompt_environment` 与顶层 `go_subscription` | 两项均 `omitempty`，不填即保持原行为；**旧 config.json 原样可跑新 exe**，本次未改任何车道/重试/出口配置 |
+| 新增可选 `upstream.prompt_environment` 与顶层 `go_subscription` | 两项均 `omitempty`，不填即保持原行为；**旧 config.json 原样可跑新 exe**，升级当时未改任何车道/重试/出口配置（`warp.enabled` 另在 2026-11-17 单独改为 true，见第 8 章） |
 
-升级后的落地验证（2026-11-17，两次都跑过：官方包一次、最终装机的本地编译 exe 再跑一次，结论一致）：启动日志与 `/healthz` 均报 `version=v1.4.8`、`ready=true`、`exposed=12`；`/v1/models` 返回 12 个暴露模型（与升级前一致）；`deepseek-v4.1-flash-free` 普通对话 2 秒返回 `pong`；带 `tools` 的请求 3 秒返回 `finish_reason=tool_calls`，工具名与参数完整还原。验证完即停掉进程，8080／8081 不留占用。
+升级后的落地验证（2026-11-17，两次都跑过：官方包一次、最终装机的本地编译 exe 再跑一次，结论一致）：启动日志与 `/healthz` 均报 `version=v1.4.8`、`ready=true`、`exposed=12`；`/v1/models` 返回 12 个暴露模型（与升级前一致）；`deepseek-v4.1-flash-free` 普通对话 2 秒返回 `pong`；带 `tools` 的请求 3 秒返回 `finish_reason=tool_calls`，工具名与参数完整还原。以上是 `warp.enabled=false` 裸线直连下的数据，启用 WARP 后同一套请求的延迟升至 6~16 秒（见 8.3）。验证完即停掉进程，8080／8081 不留占用。
 
 ## 3 使用场景
 
-**场景一：免费车道日常使用（现行主场景）。** 后端 provider 指向网关，全部模型请求走 anonymous 匿名免费车道。免费配额按出口 IP 网段记账，撞 429 时两层手段配合：出口层换桶（双击 `OmniVPN\proxy-switch.bat`，换出口 IP），应用层重试（网关自动重试三次，宿主无感）。网关在链路里提供了单点收口——宿主永远只对一个本地端点说话，上游怎么换、出口怎么换都不需要改宿主配置。
+**场景一：免费车道日常使用（现行主场景）。** 后端 provider 指向网关，全部模型请求走 anonymous 匿名免费车道。免费配额按出口网段记账，撞 429 时两层手段配合：出口层换桶（网关自带的 WARP 出口池，/64 轮换，见第 8 章）、应用层重试（网关自动重试三次，宿主无感）。网关在链路里提供了单点收口——宿主永远只对一个本地端点说话，上游怎么换、出口怎么换都不需要改宿主配置。
 
 **场景二：接入付费键。** 拿到付费 key 时填入 `zen_keys` 或 `go_keys`，`prefer` 改指对应车道即可，宿主侧零改动。键为空时自动回落 anonymous。
 
 **场景三：不用网关的直连形态。** 后端 config.yaml 里不启用 opencli provider（或删掉该 provider 段），宿主直连上游。这是绕开网关的备用形态：少一层转发、少一个常驻进程，代价是失去轮换、重试与令牌收口。排障时可临时切直连判断问题出在网关还是上游。
 
-**场景边界：** 网关只解决"应用层怎么调上游"，不解决"出口 IP 从哪来"。出口受限（429 按网段记账）时需要配套的 OmniVPN 换出口桶，两者是互补关系不是替代关系。
+**场景边界：** 出口分两层：网关的 WARP 出口池管 anonymous 车道的应用层出口（第 8 章，现默认启用），OmniVPN 管整机网络层出口（`OmniVPN\OmniVPN使用说明.md`），两者互补不是替代关系。`warp.enabled=false` 时该车道回落 `proxies`（现为 direct 裸线）。
 
 ## 4 部署
 
 拷 5 个文件到任意目录：opencode2api.exe、config.json、opencli_gateway_start.bat、opencli_gateway_stop.bat、opencli_gateway_stop.ps1。
-出网放行 UDP 2408（仅重新启用 warp 出口池时需要，当前 warp 已关闭，直连部署用不到；warp 详见第 8 章）。
+出网需放行 UDP 2408 与 IPv6 出口（`warp` 现默认启用，anonymous 车道全部走上游 WARP 隧道；放不通网关起不来——初始化是 fail-closed，超时窗口为注册窗口 +30 秒。改 `warp.enabled=false` 才回到裸线直连，详见第 8 章）。
 config.json.*.json 是自动生成的状态缓存，不用拷，删了会自动重建（冷启动多等 ~12 秒）。
 启动壳会先把自己所在目录切为当前目录，所以换机器、换部署路径都不必改配置；注入给上游的环境块也随之指向新位置（详见 7.8）。
 
@@ -136,7 +138,7 @@ Python：python -c "import secrets; print(secrets.token_hex(32))"
 ### 6.2 填入并生效
 
 把新令牌填到两处：本目录 config.json 的 server_keys 和后端 config.yaml 的 opencli.api_key。
-改完 stop.bat → start.bat 重启网关。
+改完先按同值覆盖运行目录那一份（`opencli\config.json`），再按 5.2 → 5.1 的顺序重启网关（opencli_gateway_stop.bat → opencli_gateway_start.bat）。
 
 ## 7 config.json 字段说明
 
@@ -164,7 +166,7 @@ true，我们的车道就靠它。
 
 ### 7.6 warp（网关内置 WARP 出口池）
 
-warp 是网关内置 WARP 出口池的配置段，三个键：enabled（开关）、pool_size（出口池上限）、stack（ipv4/ipv6 栈）。它的机制、实测结论与启用方式自成一体，单独成章，全文见第 8 章。
+warp 是网关内置 WARP 出口池的配置段，分 enabled（开关，现为 true）、pool_size（出口池上限，现为 2）、stack（ipv4/ipv6 栈，现为 ipv6）三项，另有可选的 source_ipv6（出口绑定的外层 IPv6 前缀，留空即用系统默认），本机未用。2026-11-17 按决策默认启用：anonymous 车道整体改走 WARP 出口，`proxies` 对该车道失效。机制、实测结论、复验数据与回退方式见第 8 章。
 
 ### 7.7 proxies / proxyfile（出口路由）
 
@@ -237,15 +239,15 @@ effort=high。
 
 ## 8 网关内置 WARP 出口池
 
-网关的出口有两条路：本章的内置 WARP 出口池，和第 9 章的配套服务 OmniVPN。本章讲内置这条。
+网关的出口有两条路：本章的内置 WARP 出口池，和整机网络层的配套服务 OmniVPN（见 `OmniVPN\OmniVPN使用说明.md`）。本章讲内置这条，它现为默认启用的主出口。
 
 ### 8.1 这是什么
 
-网关进程 opencode2api.exe 自己内置的备用出口，不需要任何外部服务。原理是进程内起 userspace WireGuard 隧道到 Cloudflare（UDP 2408），向 Cloudflare 注册出独立出口 IP；上游回 403/429 时，网关自动换一个新出口再试。
+网关进程 opencode2api.exe 自己内置的出口，不需要任何外部服务。设计上它是主车道之外的备胎，2026-11-17 起默认启用，成为 anonymous 车道的主出口。原理是进程内起 userspace WireGuard 隧道到 Cloudflare（UDP 2408），向 Cloudflare 注册出独立出口 IP；上游回 403/429 时，网关自动换一个新出口再试。
 
-它与 OmniVPN 完全独立：OmniVPN 换的是整机的网络层出口，这个换的是网关自己的应用层出口，可单独用也可叠加用。当前 enabled=false 维持关闭。
+它与 OmniVPN 完全独立：OmniVPN 换的是整机的网络层出口，这个换的是网关自己的应用层出口，可单独用也可叠加用。2026-11-17 之前维持关闭，2026-11-17 起按决策默认启用（`enabled=true`、`pool_size=2`、`stack=ipv6`）。
 
-### 8.2 实测结论
+### 8.2 实测结论（2026-11-12 重验）
 
 此前"上游封锁 WARP、备胎报废"的判定是观测手段错误——在机器外测，请求根本没穿过这条车道。2026-11-12 将观测点全部移到网关进程内部（启动日志出口 IP、/healthz、穿 8080 的真实请求）重验，结论反转如下。
 
@@ -255,16 +257,32 @@ ipv4 栈换桶无效。Cloudflare 永远分配同一个共享 NAT 地址 104.28.
 
 上游 403 是逐模型地域判定，不是封锁，且中招的极少。2026-11-12 把网关暴露的 12 个模型全部穿 WARP 出口逐个实测：11 个 200 成功（big-pickle、deepseek-v4.1-flash-free、flint-40b-free、glm-5.3-flash-free、iceman-free、inkling-2-small-free、longcat-2.5-free、mimo-v2.6-flash-free、minimax-m3.1-flash-free、nemotron-3.5-lightning-free、nemotron-3.5-super-vl-free），只有 beam-free 403（回复 "This model is not available in your country"，跨 3 个不同 /64 测了 5 次全部 403，是稳定的地域限制）。
 
-隧道稳定性差。启动验证成功率约五五开，命中失败即起不来；隧道内自带 DNS 频繁超时，造成请求级 502/504——实测中凡是 502/504 的模型换一次重试全部转为 200，说明是隧道瞬时故障而非模型不可用。这是重新启用要付出的主要代价。
+隧道稳定性差。启动验证成功率约五五开，命中失败即起不来；隧道内自带 DNS 频繁超时，造成请求级 502/504——实测中凡是 502/504 的模型换一次重试全部转为 200，说明是隧道瞬时故障而非模型不可用。当时判定这是重新启用要付出的主要代价。
 
-### 8.3 结论与启用方式
+### 8.3 2026-11-17 启用复验
 
-车道能力结论：模型覆盖接近全量，12 个暴露模型 11 个可用，仅 beam-free 被上游地域限制；ipv6 栈换桶真实，ipv4 栈无效。出口自主：enabled=true 后 anonymous 车道的上游请求全部改走网关内置 WARP 出口（实测 12 个模型请求的尝试链全部是 warp 腿，无一落回直连），不需要 mihomo 在跑、不需要系统代理和环境变量，只要求裸线能发出 UDP 2408、裸线 IPv6 可达（stack=ipv6 启动验证要走通）。就这条车道自身而言，不依赖 OmniVPN。
+2026-11-17 14:47 把 `warp.enabled` 改为 true（`pool_size=2`、`stack=ipv6`）重启实测，8.2 里"启动验证五五开、请求级 502/504"在本机当前网络下没有复现：
 
-但当前不建议用它替代 OmniVPN 当主车道，障碍有三。第一，启动验证成功率约五五开，命中失败网关直接起不来，需重启再试。第二，隧道内自带 DNS 频繁超时，产生请求级 502/504；网关的 max_attempts=3 自动换出口重试能兜住（实测失败请求重试全部转为 200），代价是延迟明显变大——实测 200 成功耗时 2.3~110 秒，OmniVPN 车道正常 1~3 秒。第三，WARP 的 /64 出口是全球 WARP 用户共享的网段，上游配额按网段记账，共享网段上的 429 频率未做长期验证（本次实测未遇到）。
+| 观测项 | 结果 |
+|---|---|
+| 启动注册 | 一次成功。14:47:46 报 `egress … ready at 2a09:bac5:636f:1028::19c:29a`，5 秒后备用出口 `…636e:30c8::4dc:33` 就绪 |
+| 池状态 | `/healthz` 的 `warp` 段：`status=ready`、`stack=ipv6`、`size=2`、`active=2`、`standby=2`、`cooling=0` |
+| 换桶真实 | 两条出口分属不同 /64（`2a09:bac5:636f:1028::/64` 与 `2a09:bac5:636e:30c8::/64`），日志 `legs` 里按请求交替出现 |
+| 请求结果 | 普通对话、带 tools 请求、连发 3 条，全部一次成功（`attempts=1`），未出现 502/504 |
+| 延迟 | 普通对话 6 秒；带 tools 16 秒；连发 10／15／12 秒。同期裸线直连 2~3 秒 |
 
-启用方式：
-[1] config.json 的 warp.enabled 改回 true，重启网关即生效；
-[2] stack 固定用 ipv6（ipv4 换不出新桶，没有使用价值）；
-[3] 出网需放行 UDP 2408（见第 4 章部署）；
-[4] 定位是备用车道：OmniVPN 仍是日常主车道，WARP 适合在裸线网段配额打光、OmniVPN 换桶无效时兜底。是否启用由用户决策。
+代价落在延迟上：每次请求都要多绕一趟 Cloudflare 隧道，工具往返越多增量越明显。本次只有 5 个请求（1 条普通对话、1 条带 tools、3 条连发），属好天气样本，长时段成功率仍需继续观察。
+
+### 8.4 启用状态与回退
+
+车道能力结论不变：模型覆盖接近全量，12 个暴露模型 11 个可用，仅 beam-free 被上游地域限制；ipv6 栈换桶真实，ipv4 栈无效。出口自主：`warp.enabled=true` 后 anonymous 车道的上游请求全部改走网关内置 WARP 出口（实测尝试链全部是 warp 腿，无一落回直连），不需要 mihomo 在跑、不需要系统代理和环境变量，只要求裸线能发出 UDP 2408、裸线 IPv6 可达。
+
+2026-11-17 起默认启用，下列代价要一并记住，按影响排序：
+
+1. **启动是 fail-closed**。注册不到出口网关直接起不来，表现为配置初始化失败、进程退出（超时窗口为注册窗口 +30 秒，源码 `internal/gateway/runtime.go`）。撞上一般是 Cloudflare 侧抖动或裸线 UDP 2408 不通，不是配置写错，重启再试。
+2. **stack=ipv6 依赖本机全局 IPv6**。本机 WLAN 有 `2408:8207:2469:dd80::/64` 全局地址，故可用；换到纯 IPv4 网络会启动失败，届时改 `stack=ipv4`（能起但没有换桶能力）或临时关闭。
+3. **免费车道不再经过 `proxies`**。`OmniVPN\proxy-switch.bat` 换桶对 anonymous 车道已无效，网关只在自己的 WARP 出口池里轮换；OmniVPN 仍可管整机网络层出口。
+4. **延迟上行**。普通对话 2~3 秒 → 6 秒，带 tools 3 秒 → 16 秒，见 8.3。
+5. **出口网段是共享的**。WARP 的 /64 由全球 WARP 用户共用，上游配额按网段记账，撞 429 的频率没有长期数据；`max_attempts=3` 会换出口重试，网段整体被打满时换桶也无效——那时只能临时 `warp.enabled=false` 回裸线（可叠 OmniVPN）换一条出口。
+
+回退只有一步：`warp.enabled` 改回 false 重启，即回裸线直连（延迟恢复 2~3 秒），其它字段不用动。stack 固定 ipv6——ipv4 换不出新桶，没有使用价值。
