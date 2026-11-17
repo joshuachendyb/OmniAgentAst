@@ -460,6 +460,8 @@ const TaskItem: React.FC<TaskItemProps> = ({
 
 // 2026-11-16 小欧 - 自定义比较: 覆盖全部展示字段(优先级优先于引用比较) + 交互态;
 //   任一展示字段变化才重渲, 不被父组件因其它状态(SSE 流式/右侧/工具执行)变化波及 — 小欧-2026-11-16
+// 2026-11-17 小欧 - 补齐回调与 ref 比较(共 21 项): 四项均为恒定引用, 比较零成本,
+//   但回调一旦变为带依赖的 useCallback 就自动重渲, 不依赖外部契约才能保证不陈旧 — 小欧-2026-11-17
 const TaskItemMemo = React.memo(TaskItem, (prev, next) => {
   const pt = prev.task;
   const nt = next.task;
@@ -480,6 +482,10 @@ const TaskItemMemo = React.memo(TaskItem, (prev, next) => {
   if (prev.expanded !== next.expanded) return false;
   if (prev.recommendTags !== next.recommendTags) return false;
   if (prev.ledgerTags !== next.ledgerTags) return false;
+  if (prev.onToggleExpanded !== next.onToggleExpanded) return false;
+  if (prev.onSelect !== next.onSelect) return false;
+  if (prev.onCopy !== next.onCopy) return false;
+  if (prev.anchorRef !== next.anchorRef) return false;
   return true;
 });
 
