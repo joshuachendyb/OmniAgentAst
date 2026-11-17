@@ -1,11 +1,48 @@
 v1.7.4
-发布时间: 2026-11-16 22:08:57 - 小欧-2026-11-16
-## v1.7.3以来 变更汇总(2个commit: perf1/feat1, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-16
-[2026-11-16 22:08:57 小欧] 范围=v1.7.3..HEAD 全部commit(2个, merge提交除外); 说明=①[45]会话任务列表渲染性能优化: TaskItem抽离并包React.memo(字段级比较覆盖 task_id/response/status/user_input/llm_call_count/merged_inputs/created_at/model/provider/creation_source)+TaskListPanel外层memo, ledger引用台账与推荐行预计算到useMemo(消render期间每任务同步调chatStreamStore.filter), useChatPanels拆分巨型useMemo将TaskListPanel面板定义独立(仅迁出TaskListPanel独占依赖 tasks/tasksLoading/latestTaskId/latestTaskRef/rightOpen/handleSelectTask; activeTaskId/executionSteps因RightViewer/TaskInfoBar也消费故保留主依赖), CollapsibleText用indexOf计行替代split('\n')全量分割且先length快速否决短文本并补单行回落分支; SSE流式/父级高频重渲时既得任务不再全量重建DOM, 20+条任务刷新/切换会话/切回页面明显提速; ②ModelPicker/RoutingModePicker模型tip样式归令牌消除魔法值+路由选择器宽度收窄对齐附件+移除指令按钮及死代码。维持PATCH v1.7.4。
-### 1.7.4.1 性能优化
-[前端] perf 726b1b75f [45]会话任务列表渲染性能优化(TaskItem抽离React.memo字段级比较/TaskListPanel外层memo/ledger与推荐行预计算useMemo消render内20+同步store调用/useChatPanels拆分巨型useMemo将TaskListPanel独立/activeTaskId与executionSteps因RightViewer.TaskInfoBar消费保留主依赖/CollapsibleText用indexOf计行替代split全量分割含单行回落) - 小欧-2026-11-16
-### 1.7.4.2 功能新增
+发布时间: 2026-11-17 20:10:46 - 小欧-2026-11-17
+## v1.7.3以来 变更汇总(38个commit: feat4/fix4/perf3/refactor1/chore1/docs22, 另有merge3不计, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-17
+[2026-11-17 20:10:46 小欧] 范围=v1.7.3..HEAD 全部commit(38个, merge提交3个除外后35个); 说明=①[45]首屏与会话性能优化系列: TaskItem抽离React.memo字段级比较+TaskListPanel外层memo+ledger与推荐行预计算useMemo消render内20+同步store调用+useChatPanels拆分巨型useMemo将TaskListPanel独立+CollapsibleText用indexOf计行替代split全量分割, ChatHeader/ChatInput/TopbarStats三面板包React.memo消流式期无关重渲(单轮实测32/32/36→0/2/10)且ChatPage五个注入回调改useCallback收敛依赖, TaskListPanel补齐TaskItem memo回调比较, 配套文档按A/B实测修正收益边界与落地结论; ②引用路径呈现修复: projectPath正文路径识别补hasGlobChar拦glob通配符并恢复行内代码完整路径引用链接与跳转(撤销adc5faaa9恒null一刀切), PathLink正文引用chip去前置图标, markdownStyles行内代码左标识线置transparent; ③opencli_gateway网关升级: opencode2api v1.4.7→v1.4.8(工具线上名clint_→mcp_修免费层429/重试保留真实HTTP状态与Retry-After/管理台listen收紧127.0.0.1)+config.json默认启用warp出口池+网关exe改v1.4.8钉版源码本地编译恢复审计链, 配套使用说明文档多轮补充; ④[46][46b]大任务会话首屏性能优化方案v2三堂会审修订与任务列表数据契约对齐P2b立项设计; ⑤build_spa新增交互式构建模式菜单; ⑥doc目录结构重组(21文件R100纯迁移)+新增[48]前端Playwright E2E隔离测试实操手册+E2E手册编号规范化+E2E规范补充+AGENTS.md与OmniAgent.md按规范精简; ⑦[30]服务管理框架设计文档v1.5→v3.4共12次迭代(章节重排/落点改app.support_services/新增后端详细设计代码/配置处理边界/三堂会审修正); ⑧版本维护chore v1.7.4旧汇总。维持PATCH v1.7.4。
+### 1.7.4.1 功能新增
+[网关] feat 4af580aee opencli_gateway 网关 opencode2api 升级 v1.4.7->v1.4.8(官方Release换包+SHA256校验; 工具线上名clint_->mcp_修复免费层429; 重试保留真实HTTP状态与Retry-After; 管理台listen收紧127.0.0.1; 文档增版本台账与升级记录) - 小欧-2026-11-17
+[网关] feat 11a420a4a opencli_gateway config.json 默认启用 warp 出口池(enabled=true, ipv6 双出口 /64 轮换) + 文档全文口径对齐(第1/2/3/4章、6.2、7.6、第8章新增8.3启用复验与8.4启用回退) - 小欧-2026-11-17
 [输入] feat 584bf8e60 ModelPicker,RoutingModePicker 模型tip样式归令牌消除魔法值/路由选择器宽度收窄对齐附件/移除指令按钮及死代码 - 小欧-2026-11-16
+[打包] feat 766eb860e build_spa 新增交互式构建模式菜单(未传-Full时弹出智能检测/全编译选择, -Full跳过菜单直达全编译) - 小欧-2026-11-16
+### 1.7.4.2 性能优化
+[前端] perf d999a6c74 ChatHeader/ChatInput/TopbarStats 三面板包React.memo消流式期无关重渲(单轮实测32/32/36→0/2/10), 根因治理: ChatPage五个注入回调改useCallback+handleSend依赖收敛+useChatFacade复用已memo的setIsReceiving+模型选择器插槽独立useMemo - 小欧-2026-11-17
+[前端] perf 8f427250e TaskListPanel 补齐 TaskItem memo 回调比较 - 小欧-2026-11-17
+[前端] perf 726b1b75f [45]会话任务列表渲染性能优化(TaskItem抽离React.memo字段级比较/TaskListPanel外层memo/ledger与推荐行预计算useMemo消render内20+同步store调用/useChatPanels拆分巨型useMemo将TaskListPanel独立/CollapsibleText用indexOf计行替代split全量分割含单行回落) - 小欧-2026-11-16
+### 1.7.4.3 缺陷修复
+[引用] fix 685ff430e projectPath 正文行内代码里的完整路径恢复引用链接与跳转(文件/目录), 撤销adc5faaa9恒null一刀切 - 小欧-2026-11-17
+[引用] fix adc5faaa9 projectPath 正文路径识别两处修复(isBadPath补hasGlobChar拦glob通配符根治误判/删死代码isInlineCodePath与LAST_SEGMENT_FILE_RE) - 小欧-2026-11-17
+[引用] fix 150ec86c6 PathLink.tsx 正文引用chip去前置文件/目录图标(保留目录根外文字徽标/行号后缀/回形针, 行内形态图标不变) - opencode-2026-11-17
+[样式] fix 83c310480 markdownStyles,index.css 行内代码左标识线置transparent(去半括号钩子, 线宽圆角底色零改动) - opencode-2026-11-17
+### 1.7.4.4 重构
+[网关] refactor bb1158e34 opencli_gateway 网关 exe 改由 v1.4.8 钉版源码本地编译(源码快照前移落库, 编译参数对齐上游release.yml并注入-X main.version, 审计链恢复; 文档台账与头部同步) - 小欧-2026-11-17
+### 1.7.4.5 文档
+[文档] docs 6447df1a8 [45]补面板级memo落地结论(三面板重渲32/32/36→0/2/10与回调定身份根因, 同步2.0/3.1/4.1/4.3) - 小欧-2026-11-17
+[文档] docs 4027c5d09 [45]按A/B实测修正P1收益边界(流式期topbar仍重渲32次vs列表20次)与4.1校验结论(项重渲100%→~10%) - 小欧-2026-11-17
+[文档] docs 6493080fa 规范文件修改 - 小欧-2026-11-17
+[文档] docs 588851427 opencli的gateway使用说明.md 7.8补prompt_environment默认值来源与固定写法, 第4章部署加指路, 头部来源改上游仓库地址, 编辑历史记第9章并入OmniVPN文档 - 小欧-2026-11-17
+[文档] docs 2de79c13d opencli的gateway使用说明.md 头部增来源版本与本次更新记录(补编辑历史表, 正文标题还原) - 小欧-2026-11-17
+[文档] docs 7630e5a2b [46b]任务列表数据契约对齐-P2b立项设计(chat_tasks新增ref_ledger_json/tool_paths_json两列/后端收尾派生写入/前端双源读取) - 小欧-2026-11-17
+[文档] docs ce4ef224b [46]大任务会话首屏性能优化方案v2三堂会审修订(P2拆分P2a/P2b/P0改SQL级窗口分页/P1 thought改从ai_reasoning派生, 补工程量评估+自动化断言+登记项)+AGENTS/OmniAgent文档修改前后审查规范补充 - 小欧-2026-11-17
+[文档] docs 19a6aa440 AGENTS.md与OmniAgent.md按规范精简+E2E手册编号规范化(全链路→[1]/固化标准→[2]/实操手册→[3]) - 小欧-2026-11-17
+[文档] docs fb777ad46 新增[48]前端Playwright E2E隔离测试实操手册(端口以当前8100为准, 含四种模式/设施速查/CDP性能测量/陷阱清单/落地清单) - 小欧-2026-11-16
+[文档] docs e03f373a6 doc目录结构重组(拆分打包与E2E归档三目录, 21文件R100纯迁移零内容丢失)+doc-开发规范并入+删除测试线框+新增[46]首屏性能优化方案与[47]前端E2E隔离测试固化标准 - 小欧-2026-11-16
+[文档] docs bc100acc1 [30]服务管理框架设计 v3.4 章节重排为九章 - 小欧-2026-11-13
+[文档] docs 29e50b18f [30]服务管理框架设计 v3.3 落点改为app.support_services并校正命名(21文件) - 小欧-2026-11-13
+[文档] docs 51cd5eee9 [30]服务管理框架设计 v3.2 新增8.10后端详细设计代码(17文件, 代码清单+逐文件diff, 已验git apply与编译) - 小欧-2026-11-13
+[文档] docs fa4367315 [30]服务管理框架设计 v3.1 章节序号统一为一套、编辑历史每条一行 - 小欧-2026-11-13
+[文档] docs 62eab8cc6 [30]服务管理框架设计 v3.0 十六章并为十章(合并重复/按主题归位/交叉引用重映射) - 小欧-2026-11-13
+[文档] docs fde44d12f [30]服务管理框架设计 v2.9 新增6.6配置处理边界(Lv1定位/Lv2文本/Lv3归服务) - 小欧-2026-11-13
+[文档] docs d9b462c01 [30]服务管理框架设计 v2.8 第十、十三章复审(配色两面/落位对齐/写回数据区) - 小欧-2026-11-13
+[文档] docs 57342fff3 [30]服务管理框架设计 v2.7 三堂会审修正(分层前置/Job breakaway冲突/策略两档/单实例口径/快照两视图/编码链路) - 小欧-2026-11-13
+[文档] docs f2d044015 [30]服务管理框架设计 v2.6 删除阅读导引与章首概述句 - 小欧-2026-11-13
+[文档] docs f8d26229a [30]服务管理框架设计 v2.5 全文一致性与章节编排复核 - 小欧-2026-11-13
+[文档] docs 740f5c9f8 [30]服务管理框架设计 v2.0 实施顺序改为基础框架→服务1→服务2, 扩展路径移至末章, 删重复与过程性段落 - 小欧-2026-11-12
+[文档] docs 3537524a3 [30]服务管理框架设计 v1.5新增前端UI界面示意图四幅(主页面卡片网格/详情抽屉过程状态/操作反馈三拍/附加操作确认) - 小欧-2026-11-12
+### 1.7.4.6 版本维护
+[版本] chore 136a55ca6 version v1.7.4 汇总自v1.7.3以来2个commit变更信息(旧汇总, 本次已补全为38个) - 小欧-2026-11-16
 
 v1.7.3
 发布时间: 2026-11-16 15:08:08 - 小欧-2026-11-16
