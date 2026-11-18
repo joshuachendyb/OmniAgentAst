@@ -7,6 +7,8 @@
 //   ② 「上一题」在单题面板里永远是禁用态(死控件), 单题不渲染, 把宽度让给「提交」;
 //   ③ 最小化只该剩一条标题栏(它的全部意义就是让位给会话区), 底部三按钮随之收起;
 //   ④ 头部图标按钮改自绘 PanelIconButton(antd 按钮的高/内距/圆角/焦点环是库缺省派生, 见 controlScale 铁律) — 商量-2026-11-18
+// 2026-11-18 商量 - 去通栏: 卡片宽度按字数定量(40 字 × 12px = 480, 与「事件」浮层同档), 窄视口 90vw 兜底。
+//   原实现随锚点容器 left:0/right:0 拉满会话列(实测 826 宽), 宽屏下成一条横幅, 选项行也失去节奏。 — 商量-2026-11-18
 import {
   CheckOutlined,
   CloseOutlined,
@@ -31,6 +33,13 @@ import {
 } from '@/utils/stepStyles';
 import { QuestionCustomInput } from './QuestionCustomInput';
 import { QuestionOption } from './QuestionOption';
+
+/**
+ * 浮层宽度按字数定量 —— 40 字 × 正文 12px = 480, 与「事件」浮层同档(计划 30 / 信任 32)。
+ * 浮层不得通栏: 原实现跟着输入行 left:0/right:0 拉满整个会话列, 宽屏下读成一条横幅,
+ * 选项行被拉长后失去节奏; 窄视口由 90vw 兜底收缩。 — 商量 2026-11-18
+ */
+const CARD_W = 40 * FontSize.SECONDARY;
 
 interface QuestionDockProps {
   controller: QuestionDockController;
@@ -276,6 +285,8 @@ export function QuestionDock({ controller }: QuestionDockProps) {
       data-testid="question-dock"
       className="question-dock"
       tabIndex={0}
+      // 宽度只在本层收敛(锚点容器仍是整行), 卡片左缘与输入框左缘同一轴线
+      style={{ width: CARD_W, maxWidth: '90vw' }}
       onKeyDown={minimized ? undefined : handleKeyDown}
     >
       {card}
