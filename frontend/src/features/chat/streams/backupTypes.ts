@@ -13,6 +13,8 @@
 // 2026-10-22 小欧 - SentRefLedgerEntry 类型自 chatStreamStore 迁入（备份类型单一真源），
 //   sentRefLedger 入 SessionSnapshot → 随 StreamBackup 落盘 + bump 响应式通知 — 小欧-2026-10-22
 // 2026-11-18 opencode - SentRefLedgerEntry 补 kind: url 条目点击开外链, 其余仍按文件重读 — opencode-2026-11-18
+// 2026-11-18 商量 - 新增 QuestionItem/PendingQuestionPayload 与 SessionSnapshot.pendingQuestion: question 阻塞问答快照(切会话恢复)
+import type { QuestionItem } from '@/types/chat';
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
 //   ① TaskMetaFrames 重复 import 两次（文档 v1.29 修订时追加未删旧行）；② SSEError 使用却未 import。
@@ -33,6 +35,13 @@ export interface PendingAuthorizationPayload {
   auto_confirm?: boolean | string | number;
   confirm_timeout?: number | string;
   backend_timeout?: number | string;
+}
+
+/** question 阻塞问询原始载荷: sseParser handlers.onQuestionRequired 的原样入 Store */
+export interface PendingQuestionPayload {
+  question_id: string;
+  questions: QuestionItem[];
+  content?: string;
 }
 
 export type StreamStatus =
@@ -93,6 +102,8 @@ export interface SessionSnapshot {
   status: StreamStatus;
   /** v1.29：raw 形态（见上方类型定义），归一化在消费侧 */
   pendingAuthorization: PendingAuthorizationPayload | null;
+  /** 2026-11-18 商量: question 阻塞问询原始载荷, 归一化在 useQuestionDock 消费侧 */
+  pendingQuestion: PendingQuestionPayload | null;
   reconnectStatus: ReconnectStatus;
   /**
    * 2026-09-29 22:47:10 小欧（[63] 5.4 防退化修复）：最近一次心跳时间戳。

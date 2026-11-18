@@ -8,6 +8,7 @@
 #   不可用工具照样进 LLM 工具列表, LLM 试调才知缺库)。缺库工具仍注册但对 LLM 不可见。
 # 2026-10-19 - 小欧 - 新增 visible_to_llm 属性: "该不该给 LLM 看"的唯一判据(= expose_to_llm and available),
 #   原先各消费方各写双判断, 新增维度需同步改多处, 漏一处即口径分裂。
+# 2026-11-18 - 商量 - 新增 AGENT 分类(order 10): question/schedule 属智能体与用户/与自身计划交互, 不操作文件/网络/硬件, 落现有分类均语义错配
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -47,6 +48,7 @@ class ToolCategory(Enum):
     SYSTEM = ("system", 7, "系统管理工具")
     TIMER = ("timer", 8, "定时器工具")
     WIN_REGISTRY = ("win_registry", 9, "注册表工具")
+    AGENT = ("agent", 10, "智能体交互工具")
 
     def __new__(cls, value, order, name_cn):
         member = object.__new__(cls)

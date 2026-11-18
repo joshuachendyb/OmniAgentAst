@@ -123,6 +123,8 @@
 //   latency}} 与 DB 扁平 {tool:call_count} 两种格式统一为扁平, 修复 React error #31(对象渲染为子节点) — 小欧-2026-11-07
 // 编辑历史: 2026-11-13 商量 - 服务器时钟锚落地: 记录最新帧的服务器时刻与到达时刻, 实时秒表按
 //   服务器锚 + 客户端增量计算, 消除压缩期不走字与终态对不上 — 商量-2026-11-13
+// 编辑历史: 2026-11-18 商量 - KNOWN_EVENT_TYPES + case 增 question_required/question_resolved(阻塞问答成对事件),
+//   handlers 增 onQuestionRequired/onQuestionResolved; 漏白名单则帧被静默丢弃且 seq 不推进 — 商量-2026-11-18
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -150,7 +152,11 @@ const _flattenToolStats = (raw: unknown): Record<string, number> => {
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (k === 'null') continue;
     if (typeof v === 'number') out[k] = v;
-    else if (v && typeof v === 'object' && typeof (v as Record<string, unknown>).call_count === 'number')
+    else if (
+      v &&
+      typeof v === 'object' &&
+      typeof (v as Record<string, unknown>).call_count === 'number'
+    )
       out[k] = (v as Record<string, number>).call_count;
   }
   return out;
@@ -203,6 +209,9 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'notice', // 2026-10-25 小欧: 通知信封(事前/事后统一)
   'refs_notice', // 2026-10-30 小欧: 引用回执(仅 SSE, 不落库; 消费方 chip 5 态)
   'merged',
+  // 2026-11-18 商量 - question 阻塞问答成对事件(漏加则帧在 switch 前被静默丢弃, seq 不推进)
+  'question_required',
+  'question_resolved',
 ]);
 
 const logTypeArrival = (type: string, round?: number) => {
@@ -251,6 +260,21 @@ const processSSEData = (
       }[];
     }) => void;
     onRetry?: (message: string, waitTime?: number) => void;
+    // 2026-11-18 商量 - question 阻塞问答回调(与 onAuthorizationRequired 同层结构)
+    onQuestionRequired?: (data: {
+      question_id: string;
+      questions: {
+        header: string;
+        question: string;
+        options: { label: string; description?: string }[];
+        multiple?: boolean;
+      }[];
+      content?: string;
+    }) => void;
+    onQuestionResolved?: (data: {
+      question_id?: string;
+      outcome?: string;
+    }) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
       tool_name: string;
@@ -438,11 +462,15 @@ const processSSEData = (
         const cur = prev.serverClock;
         if (cur) {
           const curTs = parseTimeSafe(cur.ts)?.getTime() ?? 0;
-          const nextTs = parseTimeSafe(rawData.timestamp as string)?.getTime() ?? 0;
+          const nextTs =
+            parseTimeSafe(rawData.timestamp as string)?.getTime() ?? 0;
           if (!nextTs || nextTs <= curTs) return prev;
           if (nextTs - curTs < 250) return prev;
         }
-        return { ...prev, serverClock: { ts: rawData.timestamp as string, recvAt: _recvAt } };
+        return {
+          ...prev,
+          serverClock: { ts: rawData.timestamp as string, recvAt: _recvAt },
+        };
       });
     }
 
@@ -528,7 +556,9 @@ const processSSEData = (
         //   且此处首值胜出 → 锚点唯一。
         if (rawData.task_start_time) {
           handlers.setMetaFrames?.((prev) =>
-            prev.taskStartTime ? prev : { ...prev, taskStartTime: rawData.task_start_time }
+            prev.taskStartTime
+              ? prev
+              : { ...prev, taskStartTime: rawData.task_start_time }
           );
         }
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
@@ -1112,6 +1142,31 @@ const processSSEData = (
           (rawData.phase as 'start' | 'done' | 'failed') || 'start';
         pushAndFlush(handlers, step);
         onStep?.(step);
+        step.timestamp = timestampValue;
+        break;
+      }
+      // 2026-11-18 商量 - question 阻塞问答成对事件: 解析层只 push 步骤 + 投回调(与 paused/resumed 同范式)
+      case 'question_required':
+      case 'question_resolved': {
+        logTypeArrival(rawData.type, step.step);
+        step.type = rawData.type as ExecutionStep['type'];
+        step.content = rawData.content || '';
+        pushAndFlush(handlers, step);
+        onStep?.(step);
+        if (rawData.type === 'question_required') {
+          handlers.onQuestionRequired?.({
+            question_id: (rawData.question_id as string) || '',
+            questions: (rawData.questions || []) as Parameters<
+              NonNullable<typeof handlers.onQuestionRequired>
+            >[0]['questions'],
+            content: rawData.content as string | undefined,
+          });
+        } else {
+          handlers.onQuestionResolved?.({
+            question_id: rawData.question_id as string | undefined,
+            outcome: rawData.outcome as string | undefined,
+          });
+        }
         step.timestamp = timestampValue;
         break;
       }

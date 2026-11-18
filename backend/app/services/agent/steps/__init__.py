@@ -63,6 +63,8 @@ __all__ = [
 #   登记源同步, 与 stream_orchestrator._SSE_FORWARD_TYPES 白名单/通道路由纪律对齐) — 小欧-2026-09-17
 # 2026-09-28 小欧 活跃任务注入(设计文档[76] 6.7): 新增 "merged"(注入应答, 替代 retrying 语义误用) —
 #   通道路由: SSE✓/DB✗/短信号✗(纯实时提示, 不落库不参与短信号), 仅SSE 组, 自动进 _SSE_FORWARD_TYPES。
+# 2026-11-18 商量 - 新增 question_required / question_resolved(阻塞问答成对事件) —
+#   通道路由: SSE✓/DB✗/短信号✗, 仅SSE 组, 不进持久化/统计; 自动进 _SSE_FORWARD_TYPES。
 ALL_STEP_TYPES = frozenset({
     # SSE + 落库(SSE✓/DB✓)
     "start", "action", "observation", "final", "final_stats",
@@ -70,6 +72,7 @@ ALL_STEP_TYPES = frozenset({
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
     "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
+    "question_required", "question_resolved",  # 2026-11-18 商量: 阻塞问答成对事件(仅SSE, 不落库)
     "rejected", "truncated",
     "notice",  # 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派, 仅SSE不落库
     # 2026-10-30 小欧: 引用回执(部分不可用/压缩/拒绝点名), 仅SSE不落库, 与 "merged" 同类;

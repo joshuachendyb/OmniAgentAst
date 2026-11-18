@@ -1,6 +1,7 @@
 # question 与 schedule 工具设计文档
 
 > 文档号: [37] | 作者: 商量 | 日期: 2026-11-14
+> 更新: 2026-11-18 - 商量 - 复核前端 UI/UE 设计参照系统既有代码范式, 补 §7.4.3 范式对齐结论并同步 §6.4/§12 B5/§13 前端用例
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -321,16 +322,20 @@ AGENT = ("agent", 10, "智能体交互工具")   # 追加在 WIN_REGISTRY=9 之�
 
 > **纪律**: `steps/__init__.py` 头部要求"新增任何 Step/事件类型必须先在此登记, 并携带通道路由表(SSE/DB/短信号)逐行对照"——本事件的通道路由为 **SSE✓ / DB✗ / 短信号✗**。
 
-### 6.4 前端改动点(6 处)
+### 6.4 前端改动点(8 处)
+
+> 复核补正(2026-11-18): 原 6 处漏了 SSE 白名单与快照类型两处, 帧会被静默丢弃/切会话丢状态。以系统既有代码范式为准, 现为 8 处。
 
 | # | 文件 | 改动 |
 |---|---|---|
 | 1 | `types/chat.ts` | `StatusMessage.type` 联合加 `'question_required' \| 'question_resolved'`; 加 `question_id?: string; questions?: QuestionItem[]; outcome?: string` |
-| 2 | `services/sseParser.ts` | `case 'question_required' / 'question_resolved'`, 调 `handlers.onQuestionRequired/onQuestionResolved` |
-| 3 | `streams/chatStreamTransport.ts` | 新增 `questionHandlers` 组: 写 `pendingQuestion` + `hitlWaitingKeys`(复用, 见 6.5) |
-| 4 | `streams/chatStreamStore.ts` | 会话态加 `pendingQuestion`; 进快照(`bump`)+`SNAPSHOT_KEYS`; 加 `acknowledgeQuestion(sessionId)` |
-| 5 | `components/layout/SessionPanelRegistry.ts` | `SlotName` 加 `'question'` |
-| 6 | `hooks/useChatPanels.tsx` | 注册 `question.dock` 槽(参照 `taskinfo.bar`/`input.chat` 注册模式) |
+| 2 | `services/sseParser.ts` | `KNOWN_EVENT_TYPES` 白名单(L185)加两个 type(漏加则帧在 switch 前被丢弃、seq 不推进); 加 `case 'question_required' / 'question_resolved'`, 调 `handlers.onQuestionRequired/onQuestionResolved` |
+| 3 | `streams/backupTypes.ts` | 加 `QuestionItem`/`PendingQuestionPayload` 类型; `SessionSnapshot` 加 `pendingQuestion` 字段 |
+| 4 | `streams/chatStreamTransport.ts` | 新增 `questionHandlers` 组: 写 `pendingQuestion` + `hitlWaitingKeys`(复用, 见 6.5) |
+| 5 | `streams/chatStreamStore.ts` | 会话态加 `pendingQuestion`; 进快照(`bump` 字面量)+`SNAPSHOT_KEYS`+`toBackupOf`; 加 `acknowledgeQuestion(sessionId)` |
+| 6 | `components/layout/SessionPanelRegistry.ts` | `SlotName` 加 `'question'` |
+| 7 | `components/layout/SessionLayout.tsx` | 底部停靠区加 `question` 行, 位置在 `input` 槽上方(对齐 opencode composer 上方) |
+| 8 | `hooks/useChatPanels.tsx` | 注册 `question.dock` 槽(参照 `taskinfo.bar`/`input.chat` 注册模式), 新 props 进 useMemo 依赖数组 |
 
 ### 6.5 状态推导: 复用 `hitlWaitingKeys`, 不新增等待集合
 
@@ -474,10 +479,11 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 
 **目录**: `frontend/src/features/chat/components/question/`(与 taskinfo/config/input 同层, 会话内面板)
 - `QuestionDock.tsx` —— 卡片式底部停靠面板(header/content/footer 三区)
-- `QuestionOption.tsx` —— 单选项(radio/checkbox + 数字快捷键)
-- `QuestionCustomInput.tsx` —— 自定义输入框
-- `useQuestionDock.ts` —— 状态管理(tab/answers/custom/customOn)
-- `QuestionDock.css` —— 视觉(参照 opencode question-prompt.css)
+- `QuestionOption.tsx` —— 单选项(antd `Radio.Group`/`Checkbox` + 数字快捷键)
+- `QuestionCustomInput.tsx` —— 自定义输入框(antd `Input.TextArea`)
+- `useQuestionDock.ts` —— 状态管理(tab/answers/custom/customOn, 经 `useChatStreamSession` 读 `pendingQuestion`)
+
+> 复核补正(2026-11-18): 不建 `QuestionDock.css`。系统既有范式是无 CSS Modules/组件级 CSS 文件, 组件内联 `style={{}}`, 视觉值统一取 TS 设计 token(§7.4.3)。opencode `question-prompt.css` 只作范式参考, 不拷样式。
 
 > **归属依据**: chat 会话内面板(taskinfo/config/input)统一放 `features/chat/components/` 下, 由 `useChatPanels.tsx` 按 slot 注册; `components/` 一级目录仅放页面级全局组件(如 AuthorizationModal, ChatPage 引用)。QuestionDock 是会话内停靠面板, 应归 `features/chat/components/question/`。
 
@@ -502,6 +508,20 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 - Escape=dismiss(cancel)、Ctrl+Enter=next/submit、Alt+Left=back
 - 最小化/恢复(折叠)
 - 状态缓存(questionCache, 防会话切换丢失)
+
+#### 7.4.3 系统前端范式对齐复核(2026-11-18)
+
+> 用户要求"页面 UI/UE 设计参考系统的规范进行", 系统规范 = 前端既有代码范式(非 opencode 样式原文)。逐项复核结论如下, 与 §7.4.2 一起作为实施契约。
+
+| 维度 | 系统既有范式(实证文件) | question 落地约束 |
+|---|---|---|
+| 组件库 | antd 5 (`Button`/`Tag`/`Typography`/`Checkbox`/`Input`/`Progress`), `@ant-design/icons`, 全中文文案, 交互元素带 `aria-label` 与 `data-testid` | `QuestionOption` 用 `Radio.Group`/`Checkbox`, 自定义输入用 `Input.TextArea`, 按钮用 antd `Button`, 不手写原生标签 |
+| 视觉真源 | `utils/stepStyles.ts` 的 `Colors/FontSize/FontWeight/Spacing/Radius/BorderWidth`, `theme/spacing.ts` 的 `Gap/LineHeight`, `theme/controlScale.ts` 的 `CONTROL_HEIGHT*/CONTROL_RADIUS/FOCUS_RING_*`, `theme/tokens.ts` 的 `chatTokens` | 所有颜色/间距/字号/圆角/控件高度/焦点环取 token, 禁裸数字; 全局只有 `--font-mono` 一个 CSS 变量, 不新增组件 CSS 文件 |
+| 停靠区 | `SessionLayout.tsx:219-232` 底部 dock 顺序 taskinfo→config→input, 行容器无边框无高度(高度随内容), 根 gap 分隔 | question 行插在 input 上方; 卡片用 `Colors.BG.PRIMARY` 底 + `Colors.BORDER.LIGHT` 边 + `Radius.LG` + `boxShadow`, 高度受 `Size.PARAMS_PANEL_MAX_H` 类约束不溢出视口 |
+| 数据流 | `useAuthorization.ts`: `useChatStreamSession` 读 store 快照 → 映射为请求态(同 id 去重) → fire-and-forget 调 `taskControlApi` → 成功后 `acknowledge*` 清快照 | `useQuestionDock` 同构: 读 `pendingQuestion` → `QuestionRequest`, 提交经新增 `taskControlApi.answerQuestion`, 收口 `acknowledgeQuestion` |
+| SSE 登记 | `sseParser.ts` `KNOWN_EVENT_TYPES` 白名单 + `case` 双登记, 漏一则帧静默丢弃 | 两个 type 必须同时进白名单与 switch(§6.4 #2) |
+| 快照持久化 | `chatStreamStore.ts` `bump()` 字面量 + `SNAPSHOT_KEYS` + `toBackupOf()` 三处同步, 缺一切会话丢状态/重连不恢复 | `pendingQuestion` 三处齐改(§6.4 #5) |
+| E2E 可测 | `e2e_case/*.spec.ts` 用 `getByTestId`/`getByRole`, `frontend/src/tests/` 被 gitignore | 面板/选项/提交/关闭各给稳定 `data-testid`, 前端用例见 §13.3 B5 |
 
 ### 7.5 超时与降级
 
@@ -729,7 +749,7 @@ tuning:
 | B2 | 超时保险丝特判(§9.4) | question 在 `hitl.timeout=120` 下不被 60s 截杀 |
 | B3 | `question_gateway.py`(create/emit/wait/resolve) + `hitl_question.py` 三原语(对称 `hitl_confirmation`) + `/chat/stream/answer` API | 真实后端: 发问 → SSE 见 `question_required` → API 回答 → 工具拿到 answers |
 | B4 | 事件登记 6 处(§6.3) + `tool_executor` 注入回调 | 全链路 SSE 顺序正确; 断连重连不重复弹 |
-| B5 | 前端 6 处(§6.4) + QuestionDock | e2e: 多问题/多选/自定义/取消/超时五条路径 |
+| B5 | 前端 8 处(§6.4) + QuestionDock(§7.4.2/§7.4.3, antd + 设计 token 内联样式) | `npm run check:full` 0 error; e2e: 多问题/多选/自定义/取消/超时五条路径 |
 
 > **禁止跳步**: B2 必须早于 B3, 否则 120s 等待在 60s 被掐死后会误判成"网关 bug"。
 
@@ -785,13 +805,17 @@ tuning:
 
 | # | 场景 | 期望 |
 |---|---|---|
-| B-T1 | `_compute_fuse("question", {}, 60, 0, 0)` | `= hitl.timeout + 30`(非 60/300) |
+| B-T1 | `_compute_fuse("question", {}, 60, 0, 0)` | `= hitl.timeout + INSURANCE_BUFFER`(当前 15, 非 60/300) |
 | B-T2 | 注册后 `tool_registry.get_tool("question").category` | `ToolCategory.AGENT` |
 | B-T3 | 真实链路: LLM 调 question → 用户答 | SSE 顺序 `question_required` → (answer API) → `question_resolved` → observation |
 | B-T4 | 真实链路: 超时 | `question_resolved(outcome=expired)` + observation 为 error |
 | B-T5 | 并发两条 question | 两个 id 各自独立, 答一个不影响另一个; `hitlWaitingKeys` 剩 1 时 status 仍 `paused` |
 | B-T6 | 会话切走再切回 | QuestionDock 重新出现(读 `pendingQuestion`), 不重复请求后端 |
 | B-T7 | `disabled_tools` 移除 question 后 | LLM 工具列表含 question; 旧配置(含 question)回落仍禁用 |
+| B-T8 | 前端 SSE 白名单 | `KNOWN_EVENT_TYPES` 含两个 type; 帧进 `pendingQuestion` 不丢 seq |
+| B-T9 | 前端 dock 渲染 | `question_required` → QuestionDock 出现在 input 槽上方, 单选/多选/自定义/分页齐全, 样式取设计 token |
+| B-T10 | 前端提交/取消/切会话 | `answerQuestion` 提交后 `question_resolved`→dock 消失; 取消同理; 切走再切回 dock 从快照恢复不重弹 |
+| B-T11 | 前端规范检查 | `npm run check:full`(typecheck + lint + format:check) 0 error |
 
 ---
 
@@ -849,6 +873,7 @@ tuning:
 | 14 | 复用 `hitlWaitingKeys` 承载 question 等待集, 不新增等待集合 | 契约对齐 | 2026-11-18 |
 | 15 | 先工具内核+单测(阶段A), 再注册接系统(阶段B) | 用户 | 2026-11-18 |
 | 16 | schedule 一期不加前端面板, 以 observation 文本呈现(本仓无 metadata 通道) | 契约对齐 | 2026-11-18 |
+| 17 | question 前端 UI/UE 以系统既有代码范式为准(antd 5 + 设计 token 内联样式 + dock 槽), 不建组件 CSS 文件、不拷 opencode 样式 | 用户要求(复核) | 2026-11-18 |
 
 ---
 

@@ -93,6 +93,8 @@
 // 编辑历史: 2026-11-18 opencode - 续跑重锚定统一: resume 锚点纠正分支补清 lastSeq/steps/response
 //   (原只改 taskId 保留旧 lastSeq → after_seq 对不上新任务 seq 0 起的事件, 续跑执行中刷新后不滚动);
 //   与 attachOrphanTask 的清理抽为 reanchorToTask 共用 — opencode-2026-11-18
+// 编辑历史: 2026-11-18 商量 - pendingQuestion 入会话快照(bump/SNAPSHOT_KEYS/toBackupOf/restore)+acknowledgeQuestion,
+//   供 question dock 切会话恢复与提交后清窗 — 商量-2026-11-18
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -391,6 +393,8 @@ const EMPTY_SNAPSHOT: SessionSnapshot = Object.freeze({
   isConnected: false,
   status: 'idle' as StreamStatus,
   pendingAuthorization: null,
+  // 2026-11-18 商量: question 阻塞问询原始载荷(与 HITL 等待语义相同, 快照入参)
+  pendingQuestion: null,
   reconnectStatus: 'idle' as const,
   // 2026-09-29 22:47:10 小欧 - 0 = 未收到心跳（与 ZERO_CLOCK 钟面恒 0 同口径）
   heartbeatTs: 0,
@@ -660,6 +664,8 @@ function bump(s: ChatStreamSession): void {
     isConnected: s.isConnected,
     status: s.status,
     pendingAuthorization: s.pendingAuthorization,
+    // 2026-11-18 商量: question 入快照(bump 比较 + 响应式通知)
+    pendingQuestion: s.pendingQuestion,
     reconnectStatus: s.reconnectStatus,
     heartbeatTs: s.heartbeatTs,
     // 2026-10-22 小欧 - 台账入快照（pushSentRefs 后能触发重渲染）
@@ -682,6 +688,7 @@ const SNAPSHOT_KEYS: (keyof SessionSnapshot)[] = [
   'isConnected',
   'status',
   'pendingAuthorization',
+  'pendingQuestion', // 2026-11-18 商量: question 入快照比较键
   'reconnectStatus',
   'heartbeatTs',
   // 2026-10-22 小欧 - 台账入比较键（引用变化即视为快照变化）
@@ -711,6 +718,8 @@ function toBackupOf(sessionId: string): StreamBackup {
     isConnected: s.isConnected,
     status: s.status,
     pendingAuthorization: s.pendingAuthorization,
+    // 2026-11-18 商量: question 随备份落盘(切会话/刷新恢复 dock)
+    pendingQuestion: s.pendingQuestion,
     hitlWaitingKeys: [...s.hitlWaitingKeys],
     pendingMessage: s.pendingMessage,
     linkEnabled: s.linkEnabled,
@@ -1027,6 +1036,7 @@ export const chatStreamStore = {
       metaFrames: emptyMetaFrames(),
       usageAccum: { prompt: 0, completion: 0, total: 0 },
       pendingAuthorization: null,
+      pendingQuestion: null, // 2026-11-18 商量: 与 HITL 同款会话态初值
       pendingMessage: null,
       linkEnabled: false,
       allowInterject: false, // 2026-10-07 小欧 - EMPTY_SNAPSHOT 默认(与 link 同款)
@@ -1601,6 +1611,15 @@ export const chatStreamStore = {
       });
   },
 
+  /** 2026-11-18 商量: 用户已处理问询(提交/取消)——清 pendingQuestion, 防切回重弹 */
+  acknowledgeQuestion(sessionId: string): void {
+    const s = sessions.get(sessionId);
+    if (s)
+      commit(s, (d) => {
+        d.pendingQuestion = null;
+      });
+  },
+
   setReceiving(sessionId: string, v: boolean): void {
     const s = sessions.get(sessionId);
     if (!s || s.isReceiving === v) return;
@@ -1751,6 +1770,8 @@ export const chatStreamStore = {
         // 2026-10-22 小欧 - 老备份无台账字段 → 显式给空数组，
         //   避免 getSentRefLedger 对 undefined 调 .filter 抛错（展开式恢复会把缺字段原样带入）
         sentRefLedger: b.sentRefLedger ?? [],
+        // 2026-11-18 商量 - 老备份无 question 字段 → 显式 null(展开式会把 undefined 原样带入)
+        pendingQuestion: b.pendingQuestion ?? null,
       })
     );
     return 'ok';

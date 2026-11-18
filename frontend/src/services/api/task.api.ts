@@ -21,6 +21,7 @@
 //   getTrust 走 sharedGet(信任清单只随写变化); 首屏两处各自取数不再叠加重复请求 — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 opencode - RefLedgerWireEntry 补 kind(引用种类随快照落库): 冷启动后
 //   url 台账条目按外链打开, 不再被当文件重读 — opencode-2026-11-18
+// 编辑历史: 2026-11-18 商量 - taskControlApi 新增 answerQuestion(POST /chat/stream/answer), 与 confirm 同构 — 商量-2026-11-18
 import api, { dedupeGet, sharedGet } from './client';
 import type { ApiRequestConfig } from './client';
 
@@ -37,6 +38,12 @@ interface ConfirmRequest {
   confirm_id: string;
   confirmed: boolean;
   trust_session?: boolean;
+}
+
+interface AnswerQuestionRequest {
+  question_id: string;
+  answers: string[][];
+  cancelled?: boolean;
 }
 
 export const taskControlApi = {
@@ -87,6 +94,24 @@ export const taskControlApi = {
     }
     const response = await api.post<TaskControlResponse>(
       '/chat/stream/confirm',
+      body
+    );
+    return response.data;
+  },
+
+  // 2026-11-18 商量 - question 阻塞问答答案收口(与 confirm 同构)
+  answerQuestion: async (
+    questionId: string,
+    answers: string[][],
+    cancelled = false
+  ): Promise<TaskControlResponse> => {
+    const body: AnswerQuestionRequest = {
+      question_id: questionId,
+      answers,
+      cancelled,
+    };
+    const response = await api.post<TaskControlResponse>(
+      '/chat/stream/answer',
       body
     );
     return response.data;

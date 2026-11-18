@@ -17,6 +17,9 @@
 # 2026-10-26 小沈 - 新增 _current_notice_callback ContextVar(get/set/reset): 承载入口层注入的"notice消息回调"
 #   (同 _current_text_task 模式, tool_executor 持 agent 注入 emit_notice 包装闭包)。
 #   工具经 get_current_notice_callback 消费, 未注入时返回 None 由工具自行降级(零越层) — 小沈-2026-10-26
+# 2026-11-18 商量 - 新增 _current_question_callback ContextVar(get/set/reset): 承载入口层注入的"阻塞问询回调"
+#   (同 _current_notice_callback 模式, tool_executor 持 agent 注入 ask_question 包装闭包)。
+#   签名 async (questions: List[Dict]) -> {"answers","cancelled","expired","reason"}; 工具层零越层, 未注入自行降级
 """
 tools/context — 工具层运行上下文
 
@@ -38,6 +41,8 @@ _current_hooks: ContextVar[Optional[ToolSecurityHooks]] = ContextVar("current_ho
 _current_text_task: ContextVar[Optional[object]] = ContextVar("current_text_task", default=None)
 # "notice消息回调": 入口层(tool_executor)持 agent 注入, 签名 async (kind: str, phase: str, content: str) -> None — 小沈 2026-10-26
 _current_notice_callback: ContextVar[Optional[object]] = ContextVar("current_notice_callback", default=None)
+# "阻塞问询回调": 入口层(tool_executor)持 agent 注入, 签名 async (questions: List[Dict]) -> Dict — 商量 2026-11-18
+_current_question_callback: ContextVar[Optional[object]] = ContextVar("current_question_callback", default=None)
 
 def get_current_task_id() -> Optional[str]:
     """获取当前任务的 taskId — 小沈 2026-07-30(迁自 task_context)"""
@@ -114,3 +119,21 @@ def set_current_notice_callback(callback):
 def reset_current_notice_callback(token) -> None:
     """恢复上一个notice回调 — 小沈 2026-10-26"""
     _current_notice_callback.reset(token)
+
+
+def get_current_question_callback() -> Optional[object]:
+    """获取当前作用域的阻塞问询回调(入口层注入) — 商量 2026-11-18
+    返回 None 表示未注入(直接调工具/无agent场景), 由 question 工具自行降级。
+    签名: async (questions: List[Dict]) -> Dict[str, Any]
+    """
+    return _current_question_callback.get()
+
+
+def set_current_question_callback(callback):
+    """设置当前作用域的阻塞问询回调, 返回 token 供 reset — 商量 2026-11-18"""
+    return _current_question_callback.set(callback)
+
+
+def reset_current_question_callback(token) -> None:
+    """恢复上一个阻塞问询回调 — 商量 2026-11-18"""
+    _current_question_callback.reset(token)

@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.3 实施: 面板注册表, 按slot注册, 加功能不动骨架(4.3.7)
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复联合类型行超80字符换行, 防止格式再次出错
+// 编辑历史: 2026-11-18 商量 - SlotName 增 'question': question dock 停靠 input 槽上方, 与 taskinfo/config/input 同层
 /**
  * SessionPanelRegistry - 会话页面板注册表
  *
@@ -24,6 +25,7 @@ export type SlotName =
   | 'rightBottom'
   | 'taskinfo'
   | 'config'
+  | 'question' // 2026-11-18 商量: question 阻塞问答 dock, 停靠 input 上方
   | 'input';
 
 export interface SessionPanel {

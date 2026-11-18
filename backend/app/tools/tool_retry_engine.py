@@ -92,6 +92,8 @@
 #   超时未归还的 worker 记永久损耗(available=size-in_use-lost), 迟到回调经 SlotLease 幂等释放;
 #   BoundedSemaphore 在不可中断原生调用卡死时永久占用且无法区分持有者, 导致容量与实际可用线程静默错位。
 #   顺带删除因换实现而失效的 threading 死导入。
+# 2026-11-18 商量 - _compute_fuse 增 question 特判: 无 timeout 参数的阻塞问答若按常规无inner路径=60s,
+#   会早于 security.hitl.timeout(默认120s)截杀; 改取 HITL 超时 + INSURANCE_BUFFER, 与工具内等待同源。
 
 """
 统一工具重试引擎 — 工具的外部重试机制
@@ -392,7 +394,20 @@ class ToolRetryEngine:
         [原则4] 有 inner → 保险丝 = inner × (max_retries+1) + BUFFER(重试链总预算, 见顶部注释)
         [原则1] 无 timeout 参数工具 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
         try_once 与 _execute_with_retry 共用, 消除两处重复逻辑(DRY)
-        max_retries: 由 _get_retry_config 取得的 per-tool 重试上限, 供计算重试链总预算 — 小欧 2026-10-09"""
+        max_retries: 由 _get_retry_config 取得的 per-tool 重试上限, 供计算重试链总预算 — 小欧 2026-10-09
+
+        2026-11-18 商量 - question 特判: 无 timeout 参数, 常规无inner保险丝=min(base*...,300)=60s,
+        而阻塞等待用 security.hitl.timeout(默认120s, 可配更大) → 用户未答完即被截杀。直接取 HITL 超时 + 缓冲。
+        question 不进 TOOL_RETRY_CONFIG(max_retries=0), 不重复弹问。"""
+        if action == "question":
+            from app.config import get_config
+            from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
+
+            try:
+                _hitl_timeout = int(float(get_config().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
+            except (TypeError, ValueError):
+                _hitl_timeout = _D_HITL_TIMEOUT
+            return _hitl_timeout + INSURANCE_BUFFER
         inner = params.get("timeout")
         if not self._is_positive_number(inner):
             schema_default = self._get_schema_timeout_default(action)

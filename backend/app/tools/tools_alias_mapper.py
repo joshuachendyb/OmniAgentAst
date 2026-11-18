@@ -33,7 +33,7 @@
 # 2026-11-15 - 小欧 - 参数容错补齐(日志实证): grep 增 include→glob 键名别名; 新增 PARAM_DROP(grep 丢弃
 #   limit/head_limit/head/output_mode/-n, read 丢弃误传的 content)与 PARAM_INVERT_ALIASES(grep
 #   caseSensitive 取反归 ignore_case); 键名统一剥离前导 '/' (LLM 传 /shell_type 的序列化残留)。
-
+# 2026-11-18 - 商量 - question 已实现, 从禁用回落名单移除; 新增 question/schedule 参数别名(qs/todos/tasks/plan 等归一)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -355,6 +355,9 @@ PARAM_ALIASES = {
         "key_path": "path",
         "key": "path",
     },
+    # question/schedule 键名归一 — 商量 2026-11-18: LLM 常按 opencode 原名提问/列清单
+    "question": {"qs": "questions"},
+    "schedule": {"todos": "items", "todo": "items", "tasks": "items", "plan": "items"},
 }
 
 
@@ -410,8 +413,9 @@ TOOL_NAME_ALIASES = {
     "webfetch": "fetchpage",  # 2026-11-10 小欧 - 官方webfetch{url,format,timeout}→fetchpage, url必填同名
 }
 
-# 官方13件套中明确禁用的5个工具: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10
-UNAVAILABLE_OFFICIAL_TOOLS = ("question", "skill", "subagent", "patch", "execute")
+# 官方13件套中禁用工具的回落名单: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10
+# 2026-11-18 商量 - question 已实现并注册, 从名单移除(真值源 config.yaml tuning.agent.disabled_tools 同步移除); 余 4 件套维持禁用
+UNAVAILABLE_OFFICIAL_TOOLS = ("skill", "subagent", "patch", "execute")
 
 
 def get_disabled_official_tools() -> tuple:

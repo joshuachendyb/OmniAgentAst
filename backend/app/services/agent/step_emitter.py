@@ -25,6 +25,7 @@ Author: 小沈 - 2026-05-31
 #   信封结构 type="notice" + kind + phase + content, 仅 SSE 不落库(走 SSE_ONLY_TYPES) — 小欧-2026-10-25
 # 2026-10-25 小欧 - emit_notice 内补 log_and_print(北京老陈令): 统一出口记控制台日志, 所有 notice(压缩/装包×start/done/failed)一处覆盖(DRY) — 小欧-2026-10-25
 # 2026-11-03 小欧 - log_and_print 增 level 参数: emit_notice 日志显式传 level="WARNING"(控制台默认档可见通知) — 小欧-2026-11-03
+# 2026-11-18 商量 - 新增 ask_question: 经 question_gateway 发阻塞问询事件(SSE), buffer 判空同 emit_notice, 供 tool_executor 注入回调
 """
 
 import time
@@ -123,6 +124,27 @@ class StepEmitter:
                 await _buf.publish(step.to_dict())
         except Exception as e:        # 播报失败不得影响主链
             logger.warning(f"[StepEmitter] notice 事件播报失败(kind={kind} phase={phase}): {e}")
+
+    async def ask_question(self, questions: list) -> dict:
+        """阻塞问询统一发射器 — 商量 2026-11-18
+
+        延迟导入+buffer 判空同 emit_notice; 超时取 security.hitl.timeout(与工具保险丝同源)。
+        返回 {"answers","cancelled","expired","reason","question_id"}。
+        """
+        from app.config import get_config
+        from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
+        from app.services.agent.handlers.question_gateway import ask_question
+        from app.services.task.task_state import get_stream_buffer
+
+        try:
+            timeout = int(float(get_config().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
+        except (TypeError, ValueError):
+            timeout = _D_HITL_TIMEOUT
+        _buf = get_stream_buffer(self.agent.task_id)
+        if _buf is None:
+            logger.warning("[StepEmitter] ask_question: 无流缓冲区, 无法发射问询事件")
+            return {"answers": [], "cancelled": True, "expired": False, "reason": "no_buffer"}
+        return await ask_question(self.agent, questions, publish=_buf.publish, timeout=timeout)
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""

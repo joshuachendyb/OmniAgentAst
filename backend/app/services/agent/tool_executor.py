@@ -31,6 +31,8 @@ tool_executor — 工具执行逻辑
 #   业务层日志提供模块级上下文(工具名+缺失包列表), 与 emit_notice 基础设施级 log_and_print 互补不冗余 — 小欧-2026-10-25
 # 2026-10-26 小沈 - 注入notice回调(同text_task模式): 持agent注入emit_notice闭包到_current_notice_callback ContextVar;
 #   工具经get_current_notice_callback消费, 未注入返None降级。
+# 2026-11-18 商量 - 注入question阻塞问询回调(同notice模式): 持agent注入发射器ask_question闭包, try/finally reset;
+#   工具层零越层, 未注入自行降级。
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -46,9 +48,11 @@ from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_s
 from app.tools.context import (
     reset_current_hooks,
     reset_current_notice_callback,
+    reset_current_question_callback,
     reset_current_text_task,
     set_current_hooks,
     set_current_notice_callback,  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
+    set_current_question_callback,  # 2026-11-18 商量 - question 阻塞问询回调
     set_current_text_task,
 )
 from app.tools.tool_response import is_success
@@ -118,6 +122,12 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         await agent._step_emitter.emit_notice(kind, phase, content)
 
     _notice_token = set_current_notice_callback(_invoke_notice) if _has_emitter else None
+
+    # 2026-11-18 商量 - 注入 question 阻塞问询回调(同 notice 模式, 发射器挂 ask_question 内部调网关)
+    async def _invoke_question(questions):
+        return await agent._step_emitter.ask_question(questions)
+
+    _question_token = set_current_question_callback(_invoke_question) if _has_emitter else None
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
@@ -135,6 +145,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
             reset_current_text_task(_text_token)
         if _notice_token is not None:  # 2026-10-26 小沈 notice回调token同finally reset
             reset_current_notice_callback(_notice_token)
+        if _question_token is not None:  # 2026-11-18 商量 question回调token同finally reset
+            reset_current_question_callback(_question_token)
     elapsed = time.time() - start
 
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")

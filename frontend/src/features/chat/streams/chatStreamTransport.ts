@@ -90,7 +90,8 @@
 //   ② hitlWaitingKeys 泄漏清理: onRejected 删 confirm_id + onAuthorizationRequired 顶替分支删
 //   被顶替 key — 后端拒绝不发 resumed, 残留 key 令 onResumed 的 size===0 判定永假, 并发/顶替
 //   场景 status 卡 paused; 两处删除幂等(后端若补发 user_rejected 帧再删一次无副作用) — 商量-2026-11-14
-
+// 编辑历史: 2026-11-18 商量 - 新增 questionHandlers: question_required/resolved 写 pendingQuestion 与 hitlWaitingKeys,
+//   与 HITL 等待语义同源(精确 id 删, 不 clear) — 商量-2026-11-18
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -108,6 +109,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { SSEError, SSEMetadata } from '@/types/sse';
 import type {
   PendingAuthorizationPayload,
+  PendingQuestionPayload,
   ResumeResult,
   SessionSnapshot,
 } from './backupTypes';
@@ -1127,6 +1129,39 @@ function hitlHandlers(s: ChatStreamSession) {
   };
 }
 
+/** 2026-11-18 商量 - handler 组③b: question 阻塞问答(与 HITL 等待语义相同, 复用 hitlWaitingKeys) */
+function questionHandlers(s: ChatStreamSession) {
+  return {
+    onQuestionRequired: (data: PendingQuestionPayload) => {
+      commit(s, (d) => {
+        if (
+          d.pendingQuestion &&
+          d.pendingQuestion.question_id !== data.question_id
+        ) {
+          d.hitlWaitingKeys.delete(d.pendingQuestion.question_id);
+        }
+        d.pendingQuestion = { ...data };
+        d.hitlWaitingKeys.add(data.question_id);
+        d.status = 'paused';
+        d.isReceiving = true;
+      });
+    },
+    onQuestionResolved: (data: { question_id?: string; outcome?: string }) => {
+      commit(s, (d) => {
+        if (data.question_id) d.hitlWaitingKeys.delete(data.question_id);
+        if (
+          !data.question_id ||
+          d.pendingQuestion?.question_id === data.question_id
+        ) {
+          d.pendingQuestion = null;
+        }
+        d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
+        d.isReceiving = true;
+      });
+    },
+  };
+}
+
 /** handler 组④：终态裁决——按错误类别决定"是否终止本轮读循环"，并回写 branch 标记。 */
 function errorHandlers(
   s: ChatStreamSession,
@@ -1191,6 +1226,7 @@ function storeHandlers(s: ChatStreamSession) {
       ...refHandlers(s),
       ...broadcastHandlers(s),
       ...hitlHandlers(s),
+      ...questionHandlers(s), // 2026-11-18 商量: question 阻塞问答
       ...errorHandlers(s, (b) => {
         branch = b;
       }),

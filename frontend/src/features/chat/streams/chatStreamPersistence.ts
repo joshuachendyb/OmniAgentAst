@@ -13,6 +13,7 @@
 //   值改 {t,ts} 并兼容旧纯字符串; 清理曾挂在每次按键上(全量扫描 localStorage), 已加 5 秒节流
 // 编辑历史: 2026-10-22 小欧 - legacyToBackup 补 sentRefLedger: []（台账入备份后成为必填字段，
 //   legacy 数据无台账，补空数组）— 小欧-2026-10-22
+// 编辑历史: 2026-11-18 商量 - legacyToBackup 补 pendingQuestion: null(question 入快照后成为必填字段) — 商量-2026-11-18
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
 import type { StreamBackup } from './backupTypes';
@@ -76,6 +77,8 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     isConnected: false,
     status: 'idle',
     pendingAuthorization: null,
+    // 2026-11-18 商量 - legacy 备份无 question 字段, 补 null
+    pendingQuestion: null,
     // 2026-10-22 小欧 - legacy 备份无台账（新增必填字段，补空数组）
     sentRefLedger: [],
   };

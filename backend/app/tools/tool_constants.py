@@ -5,6 +5,8 @@
 # 2026-10-27 - 小欧 - SHELL_OUTLIMIT_STDOUT_MAX_CHARS 50000→10000, SHELL_OUTLIMIT_STDERR_MAX_CHARS 20000→2000(成功10K/失败2K不对称设计: 成功输出可能长需大空间, 失败信息本来就短); 同步订正 execute_shell_command.py 注释
 # 2026-11-14 - 小欧 - 新增 GREP_INPUT_MATCH_TIMEOUT_SECONDS=5(单次正则匹配超时秒): grep 匹配引擎换 regex 库后
 #   每次 finditer 传 timeout, 防灾难回溯正则烧死事件循环(8100假死事故根因, 单行回溯50.9s+); 值取5s, 正常行匹配毫秒级 — 小欧-2026-11-14
+# 2026-11-18 - 商量 - 新增 ERR_QUESTION/ERR_SCHEDULE 错误码(智能体交互工具), 与工具层错误体 llm_data.status.code 对齐;
+#   CATEGORY_MODULES 增 agent→_register_agent_tools 映射(启动注册该分类)
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -418,6 +420,7 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: 
     "fundamental": ("app.tools.fundamental", "_register_fundamental_tools"),
     "win_registry": ("app.tools.win_registry", "_register_registry_tools"),
     "timer": ("app.tools.timer", "_register_timer_tools"),
+    "agent": ("app.tools.agent", "_register_agent_tools"),
 }
 
 # ============================================================
@@ -585,6 +588,8 @@ ERR_TIME_ADD = "ERR_TIME_ADD"
 ERR_TIME_DATE = "ERR_TIME_DATE"
 ERR_TIME_DIFF = "ERR_TIME_DIFF"
 ERR_TIME_NOW = "ERR_TIME_NOW"
+ERR_QUESTION = "ERR_QUESTION"
+ERR_SCHEDULE = "ERR_SCHEDULE"
 
 # --- 网络/URL类 ---
 ERR_INVALID_URL = "ERR_INVALID_URL"

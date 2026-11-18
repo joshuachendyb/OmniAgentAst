@@ -31,6 +31,7 @@
 #   开关真值随消息到达), 关键字传防与编排器后续新增形参错位。
 # 2026-10-30 - 小欧 - 注释缩进修正(零逻辑): refs 关键字透传注释缩进对齐, 无行为变化 — 小欧-2026-10-30
 # 2026-11-03 - 小欧 - [HITL-confirm] 缺 confirm_id / 已处理 两处 WARNING→DEBUG(请求侧参数问题) — 小欧-2026-11-03
+# 2026-11-18 - 商量 - 新增 /chat/stream/answer 端点: question 工具答案收口, 与 confirm 端点同构(必有返回+失效码)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -58,6 +59,7 @@ from app.services.chat.stream_orchestrator import (
     validate_chat_config,
 )
 from app.services.task.hitl_confirmation import resolve_confirmation
+from app.services.task.hitl_question import resolve_question  # 2026-11-18 商量 - question 答案收口
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.task_runtime import cancel_task
 
@@ -130,6 +132,32 @@ async def confirm_stream_endpoint(request: Request):
         return {"success": True}
     except Exception as e:
         _log.error(f"[HITL-confirm] 异常: {e!r}")
+        return {"success": False, "error": str(e)}
+
+
+@task_router.post("/chat/stream/answer")
+async def answer_question_endpoint(request: Request):
+    """question 工具答案收口 — 商量 2026-11-18; 与 confirm 端点同构, 异常必有返回"""
+    from app.logger import logger as _log
+    try:
+        body = await request.json()
+        question_id = body.get("question_id")
+        answers = body.get("answers") or []
+        cancelled = bool(body.get("cancelled", False))
+
+        if not question_id:
+            _log.debug("[question-answer] 缺少 question_id")
+            return {"success": False, "error": "missing question_id"}
+
+        _log.info(f"[question-answer] 收到回答: question_id={question_id}, count={len(answers)}, cancelled={cancelled}")
+        ok = await resolve_question(question_id, answers=answers, cancelled=cancelled)
+        if not ok:
+            _log.debug(f"[question-answer] question_id不存在或已处理: question_id={question_id}")
+            return {"success": False, "error": "question_id not found or already processed", "code": "question_stale"}
+        _log.info(f"[question-answer] 回答成功: question_id={question_id}")
+        return {"success": True}
+    except Exception as e:
+        _log.error(f"[question-answer] 异常: {e!r}")
         return {"success": False, "error": str(e)}
 
 

@@ -13,6 +13,7 @@
 // 编辑历史: 2026-10-04 小欧 - 增 truncated?: boolean(仅 history_context 帧有效, 与 type='truncated' 的输出截断帧无关):
 // 供 useTaskInfo 从 steps 派生"历史对话已裁剪"事件
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: ExecutionStep 补 reject_type?: string(拒绝归因 safety/user/timeout/sandbox, 供 useTaskInfo 生成事件文案前缀); type 成员 'rejected' 本就存在(2026-09-17), 本次只补归因字段 — 小欧-2026-10-11
+// 编辑历史: 2026-11-18 商量 - ExecutionStep.type 补 question_required/question_resolved(阻塞问答成对事件, 仅SSE) — 商量-2026-11-18
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -59,6 +60,8 @@ export interface ExecutionStep {
     | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派
     | 'rejected'
     | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
+    | 'question_required'
+    | 'question_resolved' // 2026-11-18 商量: 阻塞问答成对事件(仅SSE)
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动
   // 且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
   // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 改为**真实数据源**——

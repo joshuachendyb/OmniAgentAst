@@ -20,7 +20,8 @@
  * 【小欧 2026-08-26 8.3】panels 改为 prop 注入（修正：不再读单例，
  * 消除首帧空面板闪屏与闭包过期；注册表只承担组装期"加新功能=注册新面板"）。
  * 4.2.1：顶栏全宽；中部=左列+右侧查看区（收起=仅按钮宽度条/展开≈3/4），中间无主列；
- * 下部依次=任务信息条(taskinfo)/信任操作面板(config，默认收起)/输入区(input)。
+ * 下部依次=任务信息条(taskinfo)/信任操作面板(config，默认收起)/question dock/输入区(input)。
+ * 2026-11-18 商量: question dock 停靠 input 上方, 无问询时组件返回 null, 不占高度。
  *
  * @author 小欧
  * @date 2026-08-26
@@ -225,6 +226,10 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       )}
       {hasVisibleSlot(panels, 'config') && (
         <div>{renderSlot(panels, 'config')}</div>
+      )}
+      {/* 2026-11-18 商量: question dock 停靠 input 上方(对齐 opencode composer 上方) */}
+      {hasVisibleSlot(panels, 'question') && (
+        <div>{renderSlot(panels, 'question')}</div>
       )}
       {hasVisibleSlot(panels, 'input') && (
         <div>{renderSlot(panels, 'input')}</div>

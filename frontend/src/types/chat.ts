@@ -30,6 +30,8 @@
 //   新增字段): 后台续跑通知种类在 UI 消息层保真, 系统通知样式渲染消费
 // 编辑历史: 2026-11-18 小欧 - [46] P0 首屏提速: HistoryLoadResult 补 hasMore/total(消息对口径,
 //   由 getSessionMessages 响应 has_more/total 透传) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 商量 - StatusValue/StatusMessage 增 question_required/resolved 与 question_id/questions/outcome;
+//   新增 QuestionItem/QuestionOptionItem 类型供 question dock 消费 — 商量-2026-11-18
 
 /**
  * 流式API响应类型定义
@@ -158,15 +160,39 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'notice';
+export type StatusValue =
+  | 'paused'
+  | 'resumed'
+  | 'retrying'
+  | 'notice'
+  | 'question_required'
+  | 'question_resolved';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
  * 发送时机：状态变化时（取消/暂停/恢复/重试）
  * 【2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
+export interface QuestionOptionItem {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionItem {
+  header: string;
+  question: string;
+  options: QuestionOptionItem[];
+  multiple?: boolean;
+}
+
 export interface StatusMessage {
-  type: 'paused' | 'retrying' | 'resumed' | 'notice';
+  type:
+    | 'paused'
+    | 'retrying'
+    | 'resumed'
+    | 'notice'
+    | 'question_required'
+    | 'question_resolved';
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -174,6 +200,9 @@ export interface StatusMessage {
   params?: Record<string, unknown>; // 仅 paused(HITL) 时可选
   safety_level?: string; // 仅 paused(HITL) 时可选
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
+  question_id?: string; // 仅 question_required/resolved 时可选
+  questions?: QuestionItem[]; // 仅 question_required 时可选
+  outcome?: string; // 仅 question_resolved: answered/cancelled/expired
 }
 
 // ==================== 联合类型 ====================
@@ -237,7 +266,9 @@ export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
     msg.type === 'paused' ||
     msg.type === 'retrying' ||
     msg.type === 'resumed' ||
-    msg.type === 'notice'
+    msg.type === 'notice' ||
+    msg.type === 'question_required' ||
+    msg.type === 'question_resolved'
   );
 }
 
