@@ -132,10 +132,10 @@ LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输
 #       「llm.context_length_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
 DEFAULT_CONTEXT_LENGTH = 262144  # 【系统级】使用对象: settings_registry(llm.context_length_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
 
-# 单条消息最多转发的图片外链数(防一段文本堆几十个链接把请求撑爆)
-# 使用对象: attachments/extract(截断) + attachments/contract.limits + settings_registry(「转发图片外链」notice 文案同源) — 小欧-2026-11-08
-# 2026-11-11 小欧 三堂会审整改: 使用对象更正, 原 vision 模块已更名收窄为 attachment_wire(非本常量消费方) — 小欧-2026-11-11
-MAX_REMOTE_IMAGES = 4
+# 单条消息最多转发的图片外链数 —— 2026-11-18 opencode: 删该常量。
+#   唯一执行点(原 vision._remote_image_urls 的 out[:MAX_REMOTE_IMAGES])已随 vision 收窄删除,
+#   此后仅剩 contract.limits 导出与设置页文案引用, 无任何代码执行 → 对外承诺的上限并不存在。
+#   现实口径: 单次引用 URL 总数上限 = extract.MAX_TEXT_URLS(8), 图片受同一上限约束。
 
 # ============================================================
 # 3. 网络与超时

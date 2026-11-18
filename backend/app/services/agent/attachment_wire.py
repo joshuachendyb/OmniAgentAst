@@ -28,6 +28,14 @@
 # 2026-11-15 小欧 语义前缀归一: 降级说明文案字面量收归 app.wire_prefix(INLINE_ATT_UNSENT/INLINE_URL_UNSENT),
 #   消除散落字面量 — 小欧-2026-11-15
 
+# 2026-11-18 opencode 修正: ①URL 直传分支改直取逻辑 part(ensure_payload 统一产出), 删对
+#   已删除 build_url_part 的引用; ②文本抓取解包补 mime 位; ③_inject_fallback 补 WARNING 与
+#   指标埋点, 与其余失败分支同口径(原裸捕获静默) — opencode-2026-11-18
+
+# 2026-11-18 opencode 富文档原生通道: 原生载荷/方言失败改按契约降级档收口(_native_fail_fallback):
+#   保真档 text_full(富文档)注入抽取正文, 不再统一退"未发送"一行 —— 否则非 PDF 容器或超文档
+#   内联上限时, 模型明明支持文档输入却整条正文丢失 — opencode-2026-11-18
+
 
 """services.agent.attachment_wire — 附件/URL 占位的 wire 展开(占位级)。
 
@@ -72,8 +80,8 @@ async def _expand_one(m: "re.Match[str]", prof: Dict[str, Any], model: str = "",
 async def expand_attachment_slots(text: str, llm_model: Any,
                                   session_id: str | None = None) -> Any:
     """占位级展开: 识别全部 ATTACHMENT/URL_ITEM 占位, 按当前模型画像分流。
-    url → build_url_part 直传; inline → ensure_payload → to_wire_part;
-    none → 占位原位替换为降级文本。无占位原样返回 str。
+    url → ensure_payload(transport=url) 得逻辑 part; inline → ensure_payload 同上;
+    两者都交 to_wire_part 出方言; none → 占位原位替换为降级文本。无占位原样返回 str。
     session_id: 附件记录会话收权(跨会话 id 回落降级文本, 与 resolver 同口径)。"""
     if not _SLOT_RE.search(text or ""):
         return text
@@ -123,21 +131,37 @@ async def _expand_attachment(aid: str, prof: Dict[str, Any], model: str = "",
     if not logical:
         logger.warning("[wire] 附件原生载荷失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
         metric("native_fail", "attachment", kind, model, reason)
-        return None, INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — {reason}")
+        return None, _native_fail_fallback(route, att, aid, reason)
     part, reason = to_wire_part(logical)
     if not part:
         logger.warning("[wire] 附件原生方言失败 id=%s kind=%s model=%s reason=%s", aid, kind, model, reason)
         metric("native_fail", "attachment", kind, model, reason)
-        return None, INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — {reason}")
+        return None, _native_fail_fallback(route, att, aid, reason)
     metric("native", "attachment", kind, model)
     return part, ""
 
 
+def _native_fail_fallback(route: Any, att: Dict[str, Any], aid: str, reason: str) -> str:
+    """原生通道失败 → 按契约降级档收口: 保真档 text_full(文本/富文档)注入正文,
+    其余(图片/视频/音频只有卡与元信息)退一行"未发送"说明, 不假装送达。
+    富文档典型失败: 容器非 PDF / 超文档内联上限 —— 正文不该因此整条丢失。"""
+    if route.fallback_quality == "text_full":
+        return _inject_fallback(att, aid)
+    return INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — {reason}")
+
+
 def _inject_fallback(att: Dict[str, Any], aid: str) -> str:
-    """无原生通道 → 复用契约文本出口(注入文本); 出口也失败退一行说明。"""
+    """无原生通道 → 复用契约文本出口(注入文本); 出口也失败退一行说明。
+
+    文本出口自身异常原为裸捕获静默返回, 排障无迹; 现补 WARNING + 指标, 与其余失败分支同口径。
+    """
     try:
         return extract.build_inject_text(att)
-    except Exception:  # noqa: BLE001 — 文本出口失败不抛, 退一行说明不断轮
+    except Exception as e:  # noqa: BLE001 — 文本出口失败不抛, 退一行说明不断轮
+        logger.warning("[wire] 附件文本出口失败 id=%s kind=%s err=%s",
+                       aid, att.get("kind"), type(e).__name__)
+        metric("native_fail", "attachment", str(att.get("kind") or "unknown"),
+               "", f"文本出口失败:{type(e).__name__}")
         return INLINE_ATT_UNSENT.format(why=f"{att.get('original_name') or aid} — 当前模型无原生通道")
 
 
@@ -172,7 +196,7 @@ async def _fetch_extract_text(url: str, ck: str, model: str = "") -> Tuple[Any, 
     """text/richdoc URL → 下载字节后按契约文本出口注入正文(与模型视觉能力无关);
     下载/解析失败退链接文本, 不抛异常断轮。"""
     from app.services.agent.remote_fetch import fetch_bytes  # 延迟导入防循环
-    raw, reason = await fetch_bytes(url, ck)
+    raw, _mime, reason = await fetch_bytes(url, ck)
     if raw:
         name = Path(urlsplit(url).path).name or url
         att = {"original_name": name, "url": url}

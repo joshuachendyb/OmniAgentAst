@@ -127,17 +127,26 @@ key 全局唯一，加载自检重复直接拒启。
     2026-11-12 小欧 - 外观组增两项: appearance.fontSize 改阅读区字号档(range 12/14/16, step=2 禁半档),
       增 appearance.density 界面密度档(comfortable/compact), 密度只切控件档位不动字号与流水线正文 — 小欧-2026-11-12
     2026-11-14 商量 - 标签与提示文案纠偏: 推理内容(thinking)与思考排版(text)两名一义, 标签与 notice 同步改名消歧 — 商量-2026-11-14
+    2026-11-18 opencode - 媒体组增 media.doc_inline_limit_mb: 富文档原生投递的单份内联上限
+      (默认 8MB), 与图片压缩口径分列 —— 文档不可压缩, 沿用 2MB 会让真实 PDF 全数降级 — opencode-2026-11-18
+    2026-11-18 opencode - 探测退出注入后的文案纠偏: 图片内联上限对链接图同样生效;
+      media.remote_url_passthrough 改名「转发视频外链」并改述为只作用于视频 — opencode-2026-11-18
+    2026-11-18 opencode - 图片外链实测门文案校正: 内联上限说明补「链接图仅实测证明能抓外链时才
+      直接转发地址」, 转发说明同步图片口径(唯一由实测决定的地方) — opencode-2026-11-18
 
 """
 from typing import Any, Dict, List, Optional
+
+# 2026-11-18 opencode - 外链条数上限改引 extract.MAX_TEXT_URLS: 原引 MAX_REMOTE_IMAGES(4) 已无执行点,
+#   真实上限是单次引用 URL 总数 8, 文案按实报 — opencode-2026-11-18
+from app.attachments.extract import MAX_TEXT_URLS
 
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
 
 # 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
 #   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
-# 2026-11-08 小欧 - 外链条数上限引系统级常量: notice 文案与 vision 截断同源, 改值只改一处
-from app.constants import DEFAULT_CONTEXT_LENGTH, MAX_REMOTE_IMAGES
+from app.constants import DEFAULT_CONTEXT_LENGTH
 
 # 只读免确认白名单的**默认展示值**取自安全层内置清单(services→safety 依赖方向合法, 与本包
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
@@ -241,19 +250,22 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前选用的模型（哪个服务商+哪个模型）；被环境变量强制指定时整行只读",
               env_key="AI_PROVIDER"),
     ]},
-    # 媒体（media）：图片送进模型的上限与压缩参数，只管"怎么送"，不管"能不能看" —
-    #   能不能看图由 vision.supports_image_input 判定(实测优先, 无实测回落 input_modalities) — 小欧-2026-11-08
+    # 媒体（media）：图片/文档送进模型的上限与压缩参数，只管"怎么送"，不管"能不能送" —
+    #   能不能送由 input_modalities 声明判定(capability.profile_of); 实测只在图片外链一处参与
+    #   发送决策(厂商会不会抓公网地址只能实测得知), 本文其余项只管字节口径 — opencode-2026-11-18
     "media": {"label": "媒体", "items": [
         _item("media.inline_limit_mb", "int", "内联图片上限(MB)", 2, range_=[1, 20],
-              notice="内联 = 图片字节经 base64 编进请求体随消息发送。按原始文件大小算，单张超过这个值就不直接发，先按下面三项压缩（压缩开关关掉则直接不发）。外链（只传图片地址、由厂商自己抓取）不走这条，不受本项限制"),
+              notice="内联 = 图片字节经 base64 编进请求体随消息发送。按原始文件大小算，单张超过这个值就不直接发，先按下面三项压缩（压缩开关关掉则直接不发）。链接形式的图片默认也是先下载再按本项判断；只有模型实测证明它能抓外链，才直接转发地址、不下载"),
+        _item("media.doc_inline_limit_mb", "int", "内联文档上限(MB)", 8, range_=[1, 20],
+              notice="富文档（PDF 等）以原始字节编进请求体随消息发送时的单份上限。文档不做压缩（重编码会破坏内容），超过这个值就不走原生文档通道，改为在正文里注入抽取出的文字：内容不丢，版式与图表丢失。只有模型库声明支持文档输入的模型才走原生通道，其余模型恒走文字注入；图片上限见上一项"),
         _item("media.compress_enabled", "bool", "超限自动压缩", True,
               notice="超限的内联图片先在本机等比缩小再编码（JPEG/PNG），原文件不动。关掉则超限图片一律不发，只在对话里留一行说明"),
         _item("media.compress_max_edge", "int", "压缩长边(像素)", 2048, range_=[256, 4096],
               notice="压缩后长边的像素上限，等比缩放。调小更省流量、细节更少；调大更清晰，但可能压不到上限以内而放弃发送"),
         _item("media.compress_jpeg_quality", "int", "JPEG 质量", 85, range_=[1, 95],
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
-        _item("media.remote_url_passthrough", "bool", "转发图片外链", True,
-              notice=f"在消息里明确写出的公网图片地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取。只认两种写法：Markdown 图片 ![](https://…)，或带 .png/.jpg/.jpeg/.gif/.webp/.bmp 后缀的裸链接（?查询参数原样保留）；单条消息最多 {MAX_REMOTE_IMAGES} 个，超出的静默不转发；本机地址、内网/保留地址、以及 .pdf/.html/.zip 等非图片后缀一律不转发，被拒的会在对话里留一行说明。且只有「模型库」实测出外链可用的模型才会真收到，未实测的按外链不可用处理、链接整个忽略不留说明（外链没通时转发会导致整轮请求被拒）。关掉则只发内联"),
+        _item("media.remote_url_passthrough", "bool", "转发视频外链", True,
+              notice=f"在消息里明确写出的公网视频地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取（聊天接口没有视频内联格式，这是视频唯一的投递方式）。只认两种写法：Markdown 链接，或带视频后缀的裸链接（?查询参数原样保留）；单次引用最多 {MAX_TEXT_URLS} 个链接，超出的静默不转发；本机地址、内网/保留地址、以及非视频后缀一律不走直传（文本/富文档改走下载抽取正文，音频下载后内联发送；图片只有该模型实测证明能抓外链时才转发地址，否则也下载后内联），被拒的会在对话里留一行说明。关掉则视频链接只留一行说明、图片改为下载后内联"),
         _item("media.probe_image_url", "text", "图片输入检测外链素材地址",
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
               notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),

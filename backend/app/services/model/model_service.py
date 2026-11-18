@@ -208,6 +208,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   meta_only/link_only), 与装配层 delivery 解耦, 前端按 quality 单表出文案 — 小欧-2026-11-14
 #   2026-11-14 - 商量 - 视频内联注记(_probe_messages 视频腿): 当前只探 video_url 直传; provider 声明
 #     支持视频内联(如 Gemini inline_data video/mp4)时补内联探测腿, 待视频功能实现时扩展
+# 2026-11-18 opencode - 输入探测增 file(文档)腿: 素材内置 595B 最小 PDF(不设配置项, 文档上传本就内联),
+#   part 形状与 media_payload.to_wire_part 的 file 方言同构; 用途是取证"声明了文档输入的模型是否真收",
+#   探不通只写回设置页供人工判断, 不改变请求怎么发(注入条件仍以 input_modalities 声明为准)
+#   — opencode-2026-11-18
 """
 import base64
 import os
@@ -1225,11 +1229,29 @@ _PROBE_AUDIO_TEXT = "这段音频里是什么声音? 只回答一句话。"
 #   (w3school 中国 CDN HEAD 快但 GET 实测 >30s, kilo 抓取 60s 超时根因), 音频 runoob 29KB≈0.5s — 小欧-2026-11-11
 _PROBE_VIDEO_URL_DEFAULT = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
 _PROBE_AUDIO_URL_DEFAULT = "https://www.runoob.com/try/demo_source/horse.mp3"
+_PROBE_DOC_TEXT = "这份文档里的验证码是什么? 只回答验证码。"
+# 文档素材内置(595B 最小 PDF, 单页一行 "Doc probe: OMNI-7731"): 文档上传本身就是内联字节,
+#   没有"公网素材可不可达"这一层, 故不设 probe_file_url 配置项, 也不存在素材下载失败分支。
+_PROBE_DOC_SOURCE = "内置探测 PDF(595B)"
+_PROBE_DOC_DATA_URL = (
+    "data:application/pdf;base64,"
+    "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoK"
+    "PDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUg"
+    "L1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMDAgMTQ0XSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8"
+    "IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1MSA+"
+    "PgpzdHJlYW0KQlQgL0YxIDE0IFRmIDIwIDEwMCBUZCAoRG9jIHByb2JlOiBPTU5JLTc3MzEpIFRqIEVUCmVuZHN0"
+    "cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2"
+    "ZXRpY2EgPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAow"
+    "MDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDAz"
+    "NDIgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0MTIKJSVFT0YK"
+)
 _MEDIA_DELTA_MIN = 8
-_PROBE_KIND_TEXT = {"image": _PROBE_TEXT, "video": _PROBE_VIDEO_TEXT, "audio": _PROBE_AUDIO_TEXT}
-_PROBE_TOKEN_SUFFIX = {"image": "image_tokens", "video": "video_tokens", "audio": "audio_tokens"}
+_PROBE_KIND_TEXT = {"image": _PROBE_TEXT, "video": _PROBE_VIDEO_TEXT,
+                    "audio": _PROBE_AUDIO_TEXT, "file": _PROBE_DOC_TEXT}
+_PROBE_TOKEN_SUFFIX = {"image": "image_tokens", "video": "video_tokens",
+                       "audio": "audio_tokens", "file": "file_tokens"}
 # 取证串 → 人话的模态名(_probe_hint 用)
-_PROBE_HINT_LABEL = {"image": "图像", "video": "视频", "audio": "音频"}
+_PROBE_HINT_LABEL = {"image": "图像", "video": "视频", "audio": "音频", "file": "文档"}
 # 音频素材后缀 → input_audio.format 合法值(OpenAI 兼容协议枚举)
 _AUDIO_SUFFIX_FORMAT = {".mp3": "mp3", ".wav": "wav", ".m4a": "m4a", ".ogg": "ogg", ".flac": "flac", ".webm": "webm"}
 
@@ -1245,13 +1267,18 @@ def _audio_format(url: str) -> str:
 
 def _probe_messages(media: str, kind: str = "image",
                     audio_format: str = "mp3") -> List[Dict[str, Any]]:
-    """探测请求 messages: kind 决定素材 part 形状(image_url / video_url / input_audio) — 小欧-2026-11-11"""
+    """探测请求 messages: kind 决定素材 part 形状(image_url / video_url / input_audio / file)。
+    2026-11-11 小欧 - 泛化 kind; 2026-11-18 opencode - 补 file(文档)腿, part 形状与
+    media_payload.to_wire_part 的 file 方言同构(data URI + filename)。"""
     if kind == "image":
         part: Dict[str, Any] = {"type": "image_url", "image_url": {"url": media}}
     elif kind == "video":
         # provider 定制点: 当前视频腿只探 URL 直传(方言通用); provider 声明支持视频内联
         #   (如 Gemini inline_data video/mp4)时在此补内联探测腿, 待视频功能实现时再扩展。
         part = {"type": "video_url", "video_url": {"url": media}}
+    elif kind == "file":
+        part = {"type": "file",
+                "file": {"filename": "probe.pdf", "file_data": media}}
     else:
         part = {"type": "input_audio", "input_audio": {"data": media, "format": audio_format}}
     return [{"role": "user", "content": [
@@ -1409,10 +1436,10 @@ def _probe_hint(ev: str) -> str:
     if ev.startswith("image_tokens_ambiguous"):
         return "图像 token 增量过小，无法确认读到了图"
     # 2026-11-11 小欧 - 视频/音频取证串同款提示(键名即模态, 不再逐 kind 复制分支) — 小欧-2026-11-11
-    m = re.match(r"no_(video|audio)_token_field$", ev)
+    m = re.match(r"no_(video|audio|file)_token_field$", ev)
     if m:
         return _PROBE_HINT_LABEL[m.group(1)] + " token 无回报，基线差值也取不到"
-    m = re.match(r"(video|audio)_tokens_ambiguous", ev)
+    m = re.match(r"(video|audio|file)_tokens_ambiguous", ev)
     if m:
         return _PROBE_HINT_LABEL[m.group(1)] + " token 增量过小，无法确认读到了素材"
     if ev == "no_output":
@@ -1472,14 +1499,17 @@ async def probe_model_media(name: str, model: str, kind: str = "image") -> Dict[
 
     kind=image: 内联(内置 8x8 PNG) + 外链(media.probe_image_url 配置时) 两腿, accept=both/inline/none;
     kind=video: 单腿 video_url 直传公网素材(内联 base64 体积过大且非通用协议), accept=url/none;
-    kind=audio: 下载素材后 base64 内联 input_audio(OpenAI 兼容协议无音频 URL part), accept=inline/none。
-    视频/音频素材地址由 media.probe_video_url / media.probe_audio_url 配置, 缺省用实测择优的内置默认值。
+    kind=audio: 下载素材后 base64 内联 input_audio(OpenAI 兼容协议无音频 URL part), accept=inline/none;
+    kind=file: 单腿内联内置最小 PDF(file part), accept=inline/none。
+    视频/音频素材地址由 media.probe_video_url / media.probe_audio_url 配置, 缺省用实测择优的内置默认值;
+    文档素材内置, 无配置项。
     只落确定结论(见 _probe_once): 一次 429/5xx/密钥错不得把模型能力写死成 none。
     返回的 message 是给人看的整句结论(界面原样显示, 不自行拼词) — 小欧-2026-11-08
     2026-11-11 小欧 - 泛化 kind(图片行为不变, 视频/音频落 media.{kind} 子块) — 小欧-2026-11-11
     """
     if kind not in _PROBE_KIND_TEXT:
-        raise HTTPException(status_code=400, detail=f"未知探测类型 {kind}(合法: image/video/audio)")
+        raise HTTPException(
+            status_code=400, detail=f"未知探测类型 {kind}(合法: image/video/audio/file)")
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
@@ -1490,7 +1520,7 @@ async def probe_model_media(name: str, model: str, kind: str = "image") -> Dict[
     timeout = float(p.get("timeout") or 60)
     cfg = get_config().get("media") or {}
 
-    if kind in ("video", "audio"):
+    if kind in ("video", "audio", "file"):
         return await _probe_media_single_leg(name, model, kind, api_base, headers, timeout, cfg)
 
     t0 = time.monotonic()
@@ -1551,34 +1581,39 @@ async def probe_model_media(name: str, model: str, kind: str = "image") -> Dict[
     }
 
 
-# 视频/音频探测共用骨架: 单腿(视频=URL 直传, 音频=下载内联), 结果落 media.{kind} 子块 — 小欧-2026-11-11
+# 视频/音频/文档探测共用骨架: 单腿(视频=URL 直传, 音频=下载内联, 文档=内置内联),
+#   结果落 media.{kind} 子块 — 小欧-2026-11-11
 async def _probe_media_single_leg(
     name: str, model: str, kind: str, api_base: str,
     headers: Dict[str, str], timeout: float, cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """单腿探测编排(视频/音频): 取素材 → _probe_once → 落库/回执, 与图片腿同口径。"""
+    """单腿探测编排(视频/音频/文档): 取素材 → _probe_once → 落库/回执, 与图片腿同口径。"""
     label = _PROBE_HINT_LABEL[kind]
-    src = str(cfg.get(f"probe_{kind}_url") or
-              (_PROBE_VIDEO_URL_DEFAULT if kind == "video" else _PROBE_AUDIO_URL_DEFAULT)).strip()
-    if not src:
-        message = f"未测成：未配置{label}素材地址；原有记录未改动"
-        _persist_probe_last(name, model, "media", False, message)
-        return {"ok": False, "provider": name, "model": model, "kind": kind,
-                "accept": None, "conclusive": False, "media": {}, "persisted": False, "message": message}
-
-    if kind == "audio":
-        b64, dl_err = await _fetch_audio_b64(src, timeout)
-        if b64 is None:
-            message = f"未测成：{_probe_hint(dl_err)}；原有记录未改动"
+    t0 = time.monotonic()
+    if kind == "file":
+        src = _PROBE_DOC_SOURCE
+        ok, ev, settled = await _probe_once(
+            api_base, headers, model, _PROBE_DOC_DATA_URL, timeout, kind="file")
+    else:
+        src = str(cfg.get(f"probe_{kind}_url") or
+                  (_PROBE_VIDEO_URL_DEFAULT if kind == "video" else _PROBE_AUDIO_URL_DEFAULT)).strip()
+        if not src:
+            message = f"未测成：未配置{label}素材地址；原有记录未改动"
             _persist_probe_last(name, model, "media", False, message)
             return {"ok": False, "provider": name, "model": model, "kind": kind,
                     "accept": None, "conclusive": False, "media": {}, "persisted": False, "message": message}
-        t0 = time.monotonic()
-        ok, ev, settled = await _probe_once(
-            api_base, headers, model, b64, timeout, kind="audio", audio_format=_audio_format(src))
-    else:
-        t0 = time.monotonic()
-        ok, ev, settled = await _probe_once(api_base, headers, model, src, timeout, kind="video")
+
+        if kind == "audio":
+            b64, dl_err = await _fetch_audio_b64(src, timeout)
+            if b64 is None:
+                message = f"未测成：{_probe_hint(dl_err)}；原有记录未改动"
+                _persist_probe_last(name, model, "media", False, message)
+                return {"ok": False, "provider": name, "model": model, "kind": kind,
+                        "accept": None, "conclusive": False, "media": {}, "persisted": False, "message": message}
+            ok, ev, settled = await _probe_once(
+                api_base, headers, model, b64, timeout, kind="audio", audio_format=_audio_format(src))
+        else:
+            ok, ev, settled = await _probe_once(api_base, headers, model, src, timeout, kind="video")
     ms = int((time.monotonic() - t0) * 1000)
 
     accept = ("url" if kind == "video" else "inline") if ok else "none"

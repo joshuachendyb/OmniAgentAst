@@ -19,18 +19,44 @@
 # 2026-11-16 小欧 bug猎修: url_reject_reason 拦非规范点分 IP 字面量(整数/十六进制/八进制/
 #   缩写点分/尾点变体此前全部放行, 实际指向本机/内网)
 
+# 2026-11-18 opencode 修正: ①删 build_url_part —— 它产方言 part 却被 ensure_payload 当逻辑
+#   part 返回, 调用方 to_wire_part 拿不到 modality, 外链媒体恒失败; URL 直传改由 ensure_payload
+#   产出逻辑 part({modality,url}), 方言统一由 to_wire_part 单点产出 — opencode-2026-11-18
+#   ②内联补齐响应 mime(fetch_bytes 返回值新增), 消远端音频恒降级/远端 JPEG 被标 image/png
+#   ③删 build_logical_part 的 transport 死参数(函数体零使用) — opencode-2026-11-18
+
+# 2026-11-18 opencode 富文档原生通道: ①to_wire_part 补 file 分支(OpenAI 兼容 chat 的
+#   {type:file, file:{filename, file_data:data URI}}), richdoc/file 逻辑 part 的 modality
+#   统一为 "file"(原样把 content_kind 当 modality, 与 to_wire_part 词表对不上);
+#   ②文档内联上限单列 doc_inline_limit_bytes(media.doc_inline_limit_mb, 默认 8MB) —— 图片走
+#   压缩后 2MB 口径, PDF 不能压缩, 沿用图片上限会让几乎所有真实文档落到降级;
+#   ③容器不猜: 仅 PDF 产原生 file part(docx/xlsx/pptx 各家方言不一), 其余显式原因回落文本抽取
+#   — opencode-2026-11-18
+
+# 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
+#   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
+#   一张 10MB 网图会直接以 13MB base64 进请求体; ensure_payload 的 url 直传只保留
+#   视频(方言唯一投递方式)与图片(实测证明厂商能抓外链时才由能力层选到这条),
+#   转发开关关掉时图片回落下载内联而不是丢素材 — opencode-2026-11-18
+
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
 设计边界:
-  1. 选路固定三级: 公网 URL 直传(调用方按实测能力决定) → 压缩/原样内联 → 一行文字说明;
-  2. 失败一律返回 (None, 原因), 调用方退化文字, 不抛异常断轮;
-  3. 压缩只为通过内联上限, 不改原文件, 参数取自 media 配置块;
-  4. data URL 按「文件+上限+压缩参数」复用, 同一任务多轮不重复编码。
+  1. 两级分层固定: build_logical_part/ensure_payload 只产**逻辑 part**(描述语义:
+     modality/mime/data/url), to_wire_part 是唯一把它翻成方言 part 的出口 ——
+     任一环节直接产出方言结构都会让下游拿不到 modality;
+  2. 选路固定: 视频走 URL 直传(方言唯一投递方式); 图片默认下载后内联字节, 仅当实测证明
+     厂商能抓外链(能力层给出的 transport 含 url)才直传地址; 音频/文档恒内联字节,
+     超限压缩(仅图片)后仍超 → 一行文字说明;
+  3. 失败一律返回 (None, 原因), 调用方退化文字, 不抛异常断轮;
+  4. 压缩只为通过内联上限, 不改原文件, 参数取自 media 配置块;
+  5. data URL 按「文件+上限+压缩参数」复用, 同一任务多轮不重复编码。
 """
 import asyncio
 import base64
 import io
 import ipaddress
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -40,6 +66,9 @@ from app.logger import logger
 _DATA_URL_MAX = 8
 _data_url_cache: Dict[Tuple[str, str, int, int, int], str] = {}
 _PRIVATE_HOSTS = {"localhost", "localhost.localdomain"}
+# 原生 file part 的容器白名单: OpenAI 兼容 chat 的 file part 官方口径是 PDF; docx/xlsx/pptx
+# 各家方言不一, 不猜容器, 显式回落文本抽取(richdoc 文本出口保真档 text_full) — opencode-2026-11-18
+NATIVE_DOC_MIMES = frozenset({"application/pdf"})
 
 
 def media_config() -> Dict[str, Any]:
@@ -54,6 +83,19 @@ def inline_limit_bytes() -> int:
         mb = float(media_config().get("inline_limit_mb") or 2)
     except (TypeError, ValueError):
         mb = 2.0
+    return max(1, int(mb)) * 1024 * 1024
+
+
+def doc_inline_limit_bytes() -> int:
+    """文档内联上限(media.doc_inline_limit_mb, 默认 8MB)。
+
+    与图片分开: 图片超限可压缩, 文档不能(重编码即破坏内容), 沿用 2MB 口径会让绝大多数
+    真实 PDF 落到降级。base64 后体积约 ×1.34, 8MB 原文 → 约 10.7MB 请求体, 在主流厂商
+    单请求体量之内。"""
+    try:
+        mb = float(media_config().get("doc_inline_limit_mb") or 8)
+    except (TypeError, ValueError):
+        mb = 8.0
     return max(1, int(mb)) * 1024 * 1024
 
 
@@ -88,6 +130,28 @@ def _compress(raw: bytes, edge: int, quality: int) -> Tuple[bytes, str]:
         return buf.getvalue(), "image/jpeg"
 
 
+def _image_data_uri(raw: bytes, mime: str) -> Tuple[Optional[str], str]:
+    """图片字节 → data URI: 超内联上限按配置压缩, 压完仍超退回原因。
+
+    上限与压缩策略唯一落点 —— 本地附件与链接下载图共用, 否则 media.inline_limit_mb
+    只对本地文件生效, 链接图能绕开额度把大图直接塞进请求体 — opencode-2026-11-18
+    """
+    limit = inline_limit_bytes()
+    if len(raw) <= limit:
+        return f"data:{mime or 'image/png'};base64,{base64.b64encode(raw).decode('ascii')}", ""
+    if not bool(media_config().get("compress_enabled", True)):
+        return None, f"超过 {limit // (1024 * 1024)}MB，且没开自动压缩"
+    edge, quality = _compress_params()
+    try:
+        raw, mime = _compress(raw, edge, quality)
+    except Exception as e:  # noqa: BLE001 — 图片解不开按解析失败退原因
+        logger.warning(f"[media] 压缩失败 err={e}")
+        return None, "图片无法解析"
+    if len(raw) > limit:
+        return None, f"压缩后仍超过 {limit // (1024 * 1024)}MB"
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}", ""
+
+
 async def _image_data_url(attachment: Dict[str, Any]) -> Tuple[Optional[str], str]:
     """附件 → data URI; 超内联上限先压缩, 压完仍超则退回原因。"""
     edge, quality = _compress_params()
@@ -96,23 +160,11 @@ async def _image_data_url(attachment: Dict[str, Any]) -> Tuple[Optional[str], st
     cached = _data_url_cache.get(key)
     if cached:
         return cached, ""
-    compress_on = bool(media_config().get("compress_enabled", True))
 
     def _work() -> Tuple[Optional[str], str]:
         with open(key[0], "rb") as fh:
             raw = fh.read()
-        mime = key[1] or "image/png"
-        if len(raw) > limit:
-            if not compress_on:
-                return None, f"超过 {limit // (1024 * 1024)}MB，且没开自动压缩"
-            try:
-                raw, mime = _compress(raw, edge, quality)
-            except Exception as e:
-                logger.warning(f"[media] 压缩失败 path={key[0]} err={e}")
-                return None, "图片无法解析"
-            if len(raw) > limit:
-                return None, f"压缩后仍超过 {limit // (1024 * 1024)}MB"
-        return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}", ""
+        return _image_data_uri(raw, key[1])
 
     try:
         url, reason = await asyncio.to_thread(_work)
@@ -160,35 +212,48 @@ def url_reject_reason(url: str) -> str:
     return ""
 
 
-def build_url_part(url: str, kind: str = "image") -> Tuple[Optional[Dict[str, Any]], str]:
-    """公网媒体地址 → 直传 part(零字节搬运); 不合法返回 (None, 原因)。
-    方言按 content_kind 分派: image→image_url / video→video_url / audio→audio_url;
-    其余 kind 不产直传 part(文本/富文档走抽取路径)。"""
-    if not media_config().get("remote_url_passthrough", True):
-        return None, "配置里关闭了媒体链接转发"
-    reason = url_reject_reason(url)
-    if reason:
-        return None, reason
-    part_type = {"image": "image_url", "video": "video_url", "audio": "audio_url"}.get(kind)
-    if not part_type:
-        return None, "该类型不支持链接直传"
-    return {"type": part_type, part_type: {"url": url}}, ""
-
-
 def _b64(raw: Optional[bytes]) -> str:
     return base64.b64encode(raw or b"").decode("ascii")
 
 
-async def _read_capped(attachment: Dict[str, Any]) -> Tuple[Optional[bytes], str]:
-    """读附件字节(上限 inline_limit_bytes); 超限/不可读返回 (None, 原因)。"""
+def sniff_mime(raw: Optional[bytes]) -> str:
+    """字节魔数 → 容器 mime(仅媒体白名单); 判不出返回空串, 调用方自行决定口径。
+
+    存在理由: 远端下载的响应头可能缺 content-type, 而内联 part 的容器格式
+    (data:image/*;base64 / input_audio.format)必须准确, 猜错会把 JPEG 标成 PNG
+    或把 m4a 标成 wav 交给厂商 —— 宁可显式失败也不误标。
+    """
+    head = (raw or b"")[:16]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head.startswith(b"BM"):
+        return "image/bmp"
+    if head.startswith(b"RIFF") and head[8:12] == b"WAVE":
+        return "audio/wav"
+    if head.startswith(b"ID3") or head[0:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio/mpeg"
+    if head.startswith(b"%PDF-"):
+        return "application/pdf"
+    return ""
+
+
+async def _read_capped(attachment: Dict[str, Any],
+                       limit: Optional[int] = None) -> Tuple[Optional[bytes], str]:
+    """读附件字节(上限 limit, 缺省取图片内联上限); 超限/不可读返回 (None, 原因)。"""
     path = str(attachment.get("stored_path") or "")
-    limit = inline_limit_bytes()
+    cap = limit or inline_limit_bytes()
 
     def _work() -> Tuple[Optional[bytes], str]:
         with open(path, "rb") as fh:
-            raw = fh.read(limit + 1)
-        if len(raw) > limit:
-            return None, f"超过 {limit // (1024 * 1024)}MB"
+            raw = fh.read(cap + 1)
+        if len(raw) > cap:
+            return None, f"超过 {cap // (1024 * 1024)}MB"
         return raw, ""
 
     try:
@@ -198,30 +263,39 @@ async def _read_capped(attachment: Dict[str, Any]) -> Tuple[Optional[bytes], str
         return None, "文件不可读"
 
 
-async def build_logical_part(kind: str, attachment: Dict[str, Any],
-                             transport: str = "inline") -> Tuple[Optional[Dict[str, Any]], str]:
+async def build_logical_part(kind: str, attachment: Dict[str, Any]
+                             ) -> Tuple[Optional[Dict[str, Any]], str]:
     """本地附件 → 逻辑 part(只描述语义: modality/mime/data/url, 不描述方言)。"""
     if kind == "image":
         url, reason = await _image_data_url(attachment)
         return ({"modality": "image", "mime": attachment.get("mime") or "image/png",
                  "data": None, "url": url}, "") if url else (None, reason)
-    if kind in ("video", "audio", "richdoc", "file"):
+    if kind in ("video", "audio"):
         raw, reason = await _read_capped(attachment)
         return ({"modality": kind, "mime": attachment.get("mime") or "",
+                 "data": raw, "url": None}, "") if raw else (None, reason)
+    if kind in ("richdoc", "file"):
+        # 富文档/文件 → 文档模态: modality 必须是 "file"(to_wire_part 词表), 不能沿用 content_kind;
+        #   filename 进 file part, 部分厂商按后缀判容器, 缺名会退化成无扩展名文档。
+        raw, reason = await _read_capped(attachment, doc_inline_limit_bytes())
+        name = str(attachment.get("original_name") or "") \
+            or Path(str(attachment.get("stored_path") or "")).name
+        return ({"modality": "file", "mime": attachment.get("mime") or "", "name": name,
                  "data": raw, "url": None}, "") if raw else (None, reason)
     return None, "该类型无原生通道"
 
 
 def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Optional[Dict[str, Any]], str]:
     """逻辑 part → 方言 part。chat 产出 OpenAI 兼容结构; responses 由适配器二次转换。
-    video 无标准 chat part: 仅当 provider 适配器显式声明支持才产出, 否则显式原因。"""
+    video 无标准 chat part: 仅当 provider 适配器显式声明支持才产出, 否则显式原因。
+    file(文档)按 NATIVE_DOC_MIMES 白名单产 file part, 容器不在白名单即显式回落文本抽取。"""
     modality, url = logical.get("modality"), logical.get("url")
     if modality == "image":
         if url:
             return {"type": "image_url", "image_url": {"url": url}}, ""
         raw = logical.get("data")
         if raw:
-            mime = str(logical.get("mime") or "image/png")
+            mime = str(logical.get("mime") or "") or sniff_mime(raw) or "image/png"
             return {"type": "image_url",
                     "image_url": {"url": f"data:{mime};base64,{_b64(raw)}"}}, ""
         return None, "图片载荷为空"
@@ -234,7 +308,7 @@ def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Option
     if modality == "audio":
         if url:
             return {"type": "audio_url", "audio_url": {"url": url}}, ""
-        mime = str(logical.get("mime") or "")
+        mime = str(logical.get("mime") or "") or sniff_mime(logical.get("data"))
         sub = mime.rpartition("/")[2].lower()
         fmt = {"wav": "wav", "wave": "wav", "x-wav": "wav",
                "mpeg": "mp3", "mp3": "mp3"}.get(sub)
@@ -243,18 +317,56 @@ def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Option
             return None, "不支持的音频容器(仅 wav/mp3 可原生投递)"
         return {"type": "input_audio",
                 "input_audio": {"data": _b64(logical.get("data")), "format": fmt}}, ""
+    if modality == "file":
+        raw = logical.get("data")
+        if not raw:
+            return None, "文档载荷为空"
+        mime = str(logical.get("mime") or "").split(";")[0].strip().lower() or sniff_mime(raw)
+        if not mime:
+            return None, "文档类型未知(缺少 mime)"
+        if mime not in NATIVE_DOC_MIMES:
+            # 不猜容器: docx/xlsx/pptx 各家方言不一, 误标 mime 等于把错误格式交给厂商
+            return None, "该文档容器无原生 file part(仅 PDF)"
+        return {"type": "file",
+                "file": {"filename": str(logical.get("name") or "") or "document.pdf",
+                         "file_data": f"data:{mime};base64,{_b64(raw)}"}}, ""
     return None, f"该模态无 {dialect} 方言实现"
 
 
 async def ensure_payload(item: Dict[str, Any], transport: str) -> Tuple[Optional[Dict[str, Any]], str]:
-    """载荷可获取性: url 直传; inline 需字节时按 route.fetch 调 remote_fetch。
-    仅媒体模态(image/audio/video)产出逻辑 part; text/richdoc 的 URL 内联走抽取路径。"""
+    """载荷可获取性: url 直传(图片/视频); inline 按 kind 取字节(链接图/音频需先下载)。
+
+    两个运输方式都产**逻辑 part**(modality/mime/data/url), 方言由 to_wire_part 单点产出;
+    仅媒体模态(image/audio/video)可达, text/richdoc 的 URL 走 attachment_wire 抽取路径。
+    关掉 media.remote_url_passthrough 只停"把地址交给厂商": 图片改下载内联(不丢素材),
+    视频无内联 part 只能留一行说明。"""
+    url = str(item.get("url") or "")
+    kind = str(item.get("content_kind") or "") or "image"
     if transport == "url":
-        return build_url_part(str(item.get("url") or ""), str(item.get("content_kind") or "image"))
-    kind = str(item.get("content_kind") or "")
+        if kind not in ("image", "video"):
+            # 音频/文档没有地址型 part: 转发地址除押注厂商抓取外别无收益
+            return None, "该类型不走链接直传"
+        if media_config().get("remote_url_passthrough", True):
+            reason = url_reject_reason(url)
+            if reason:
+                return None, reason
+            return {"modality": kind, "mime": "", "data": None, "url": url}, ""
+        if kind == "video":
+            # 视频在 chat 里没有内联 part, 关掉转发只剩一行说明
+            return None, "配置里关闭了媒体链接转发"
+        # 图片有内联退路: 关掉转发只表示"不把地址交给厂商", 不丢素材 → 落到下面下载内联
     if kind not in ("image", "audio", "video"):
         return None, "该类型无内联媒体载荷(文本/富文档走抽取路径)"
     from app.services.agent.remote_fetch import fetch_bytes  # 延迟导入: 仅 URL 内联需要
-    raw, reason = await fetch_bytes(str(item.get("url") or ""), kind)
-    return ({"modality": kind, "mime": "", "data": raw, "url": None}, "") \
-        if raw else (None, reason)
+    raw, mime, reason = await fetch_bytes(url, kind)
+    if not raw:
+        return None, reason
+    if kind == "image":
+        mime = mime or sniff_mime(raw)
+        # 链接图与本地图同一套上限/压缩策略, 否则内联额度对链接图形同虚设
+        uri, why = await asyncio.to_thread(_image_data_uri, raw, mime)
+        return ({"modality": "image", "mime": mime, "data": None, "url": uri}, "") if uri \
+            else (None, why)
+    # 响应头缺 content-type 时按字节魔数补齐容器格式, 不猜默认值(见 sniff_mime)
+    return {"modality": kind, "mime": mime or sniff_mime(raw),
+            "data": raw, "url": None}, ""

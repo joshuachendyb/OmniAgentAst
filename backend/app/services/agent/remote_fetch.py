@@ -6,13 +6,17 @@
 
 # 2026-11-11 小欧 三堂会审整改: ①下载改流式读(累计超限即断, 防大文件整包进内存);
 #   ②重定向相对 Location 先 urljoin 绝对化再逐跳重判(相对路径原被误判域名无法解析) — 小欧-2026-11-11
+#
+# 2026-11-18 opencode 修正: fetch_bytes 返回值补响应 mime —— 内联 part 的容器格式只能由
+#   服务端 content-type 判定; 原调用方拿不到 mime 只能填空串/猜默认值, 致远端音频恒降级、
+#   远端 JPEG 被标成 image/png — opencode-2026-11-18
 
 """services.agent.remote_fetch — URL 下载唯一出网口。
 
 只为"模型支持内联、不支持外链"的 URL 服务。安全四闸门:
 只收 http/https(复用 media_payload.url_reject_reason) / 重定向≤3 跳逐跳重判 /
 解析后拒私网回环保留地址(防 DNS 指向内网) / 超时 10s + 体积上限。
-失败返回 (None, 原因), 不抛异常断轮。
+失败返回 (None, "", 原因), 不抛异常断轮。
 """
 import asyncio
 import ipaddress
@@ -45,15 +49,18 @@ async def _host_reject_reason(host: str) -> str:
     return ""
 
 
-def _fetch_fail(url: str, kind: str, reason: str) -> Tuple[Optional[bytes], str]:
+def _fetch_fail(url: str, kind: str, reason: str) -> Tuple[Optional[bytes], str, str]:
     """失败出口单点: WARNING 留痕(排障) + fetch_fail 埋点(P5 指标), 不抛异常断轮。"""
     logger.warning("[remote_fetch] 下载失败 url=%s kind=%s reason=%s", url, kind, reason)
     metric("fetch_fail", "url", kind or "unknown", reason=reason)
-    return None, reason
+    return None, "", reason
 
 
-async def fetch_bytes(url: str, kind: str = "") -> Tuple[Optional[bytes], str]:
-    """URL → (字节, ""); 失败 (None, 原因), 不抛异常断轮。
+async def fetch_bytes(url: str, kind: str = "") -> Tuple[Optional[bytes], str, str]:
+    """URL → (字节, 响应 mime, ""); 失败 (None, "", 原因), 不抛异常断轮。
+
+    mime 取服务端 content-type(去 charset 等参数), 缺失返回空串由调用方兜底 ——
+    内联 part 的容器格式(音频 wav/mp3、图片 png/jpeg)只能由此判定, 不能靠 URL 后缀猜。
     上限按目标 kind: 图片 MAX_IMAGE_BYTES, 其余 MAX_FILE_BYTES。"""
     reason = url_reject_reason(url)
     if reason:
@@ -74,13 +81,14 @@ async def fetch_bytes(url: str, kind: str = "") -> Tuple[Optional[bytes], str]:
                     elif resp.status_code >= 400:
                         return _fetch_fail(url, kind, f"下载失败: HTTP {resp.status_code}")
                     else:
+                        mime = str(resp.headers.get("content-type") or "").split(";")[0].strip()
                         # 流式累计, 超限即断(不整包缓冲)
                         buf = bytearray()
                         async for chunk in resp.aiter_bytes():
                             buf += chunk
                             if len(buf) > limit:
                                 return _fetch_fail(url, kind, "超过下载体积上限")
-                        return bytes(buf), ""
+                        return bytes(buf), mime, ""
                 reason = url_reject_reason(current) or await _host_reject_reason(
                     urlsplit(current).hostname or "")
                 if reason:

@@ -28,6 +28,8 @@ from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 import time
 
 # content_kind → 原生处理所需模态(text/binary/unknown 无原生模态, 不产生需求)
+# richdoc → file: 方言层已有 file part(仅 PDF 容器), 声明文档输入的模型可原生收文档,
+#   降级的富文档据此才能推荐"切到支持文档输入的模型" — opencode-2026-11-18
 _CONTENT_MODALITY = {"image": "image", "video": "video", "audio": "audio", "richdoc": "file"}
 
 # 候选表进程内缓存: 模型库读盘(get_models→YAML)相对昂贵, 预检高频调用不宜每次重建。

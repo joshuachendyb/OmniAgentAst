@@ -63,6 +63,17 @@
 # 2026-11-16 opencode 修正: ①URL text/richdoc 运行时 fetch="text" 恒下载抽取正文, 预检档由
 #   link_only 校正为 text_full(仅对齐真实投递); richdoc 无原生直传路径, native_modality 置 None,
 #   避免预检报 native 而运行时走文本。②新增 AUDIO_NATIVE_EXTS 单一真源供预检/resolver 共用。
+
+# 2026-11-18 opencode 修正: ①classify_ref 体积解析容错 —— 外部入参 size 带单位/为 None 时按 0 处理
+#   (size_of 单一口径, 预检与契约共用), 单条脏数据不再抛错清空整份预检;
+#   ②limits 删 max_url_images —— 全仓无执行点(图片条数实际由 max_urls 统一约束), 假上限不对外承诺
+#   — opencode-2026-11-18
+
+# 2026-11-18 opencode 富文档原生通道落地(方言先行, 契约随后): media_payload.to_wire_part 补
+#   file part 且 build_logical_part 富文档 modality 统一为 "file" 后, 富文档附件路由改回
+#   native_modality="file" —— 声明支持文档输入的模型才走原生, 未声明仍文本全文注入。
+#   URL 富文档保持 fetch="text"(下载抽取正文): 远端文档按字节内联既费带宽又受内联上限约束,
+#   文本抽取保真档同为 text_full, 不为此新增一条运输路径 — opencode-2026-11-18
 """
 attachments.contract — 能力协商契约(纯函数, 零 IO 零配置)。
 
@@ -91,7 +102,6 @@ from app.attachments.extract import (
     classify_url,
     scan_text_urls,
 )
-from app.constants import MAX_REMOTE_IMAGES
 from app.ref_slots import SLOT_WRITERS
 
 # 对外重导出词典与识别函数(契约消费方禁止再去 extract 复制一份)
@@ -131,7 +141,9 @@ class KindRoute:
 
 _BASE: Dict[str, KindRoute] = {
     "text":    KindRoute(None,    "text_full", text_body),
-    "richdoc": KindRoute("file",  "text_full", richdoc_body),
+    # 富文档: 声明文档输入的模型走原生 file part(media_payload 白名单仅 PDF), 未声明/容器不支持
+    #   一律回落 richdoc_body 文本全文注入 —— 两条出口保真档同为 text_full, 降级不丢正文
+    "richdoc": KindRoute("file", "text_full", richdoc_body),
     "image":   KindRoute("image", "meta_only", image_card),
     "video":   KindRoute("video", "meta_only", video_card),
     "audio":   KindRoute("audio", "meta_only", audio_card),
@@ -145,6 +157,7 @@ _URL_OVERRIDE: Dict[str, KindRoute] = {
     "image":   KindRoute("image", "link_only", link_body),
     "video":   KindRoute("video", "link_only", link_body),
     "audio":   KindRoute("audio", "link_only", link_body),
+    # 远端富文档不产原生 file part: 内存里下载整份 + base64 的代价高于正文抽取, 两出口同为 text_full
     "richdoc": KindRoute(None,    "text_full", link_body, fetch="text"),
     "binary":  KindRoute(None,    "link_only", link_body),
 }
@@ -171,6 +184,15 @@ class ItemPlan:
     quality: str        # native | text_full | meta_only | link_only
 
 
+def size_of(item: Dict[str, Any]) -> int:
+    """体积安全解析(公开: 预检与契约共用唯一口径): 外部入参 size 可能带单位/为 None,
+    不得抛错, 脏值按 0 处理。0 只表示"体积未知", 各判定点自行决定乐观/保守口径。"""
+    try:
+        return int(item.get("size") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     """唯一分类点(纯识别, 不读模型): 返回 (source_kind, content_kind)。
     url 走 classify_url; 其余复用 extract.classify。"""
@@ -182,8 +204,7 @@ def classify_ref(item: Dict[str, Any]) -> Tuple[str, str]:
     if src == "url" or (item.get("url") and not item.get("path")):
         return "url", classify_url(str(item.get("url") or ""))
     path = str(item.get("stored_path") or item.get("path") or "")
-    size = int(item.get("size") or 0)
-    return src, classify(Path(path), str(item.get("mime") or ""), size)
+    return src, classify(Path(path), str(item.get("mime") or ""), size_of(item))
 
 
 def _plan_of(source_kind: str, content_kind: str,
@@ -228,14 +249,12 @@ def ref_quality_map(prof: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
 
 def limits() -> Dict[str, int]:
     """上限单一真源(C8): max_refs 引既有 services/refs/limits.MAX_REFS(20),
-    max_url_images 引既有 app.constants.MAX_REMOTE_IMAGES(4);
-    max_image_bytes/max_file_bytes 引 attachment_service 配额常量(上传分档口径);
-    max_urls 为本方案新增上限(单次引用 URL 条数), 无既有真源, 就此定点声明。
+    max_urls 引 extract.MAX_TEXT_URLS(单次引用 URL 条数上限, 图片同受此约束);
+    max_image_bytes/max_file_bytes 引 attachment_service 配额常量(上传分档口径)。
     MAX_REFS 延迟导入: refs.limits→agent 包初始化→react_loop→contract 会成环。"""
     from app.services.refs.limits import MAX_REFS
     from app.attachments.attachment_service import MAX_FILE_BYTES, MAX_IMAGE_BYTES
     return {"max_refs": MAX_REFS, "max_urls": _MAX_URLS,
-            "max_url_images": MAX_REMOTE_IMAGES,
             "max_image_bytes": MAX_IMAGE_BYTES, "max_file_bytes": MAX_FILE_BYTES}
 
 

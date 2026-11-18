@@ -3,11 +3,20 @@
 # 2026-11-11 小欧 新建: 模型输入能力画像(声明即首选, 实测仅标注/解锁 url 运输),
 #   profile_of/profile/supports_image_input 薄投影, 零 IO — 小欧-2026-11-11
 
+# 2026-11-18 opencode 文档模态按声明开启(与图片/音视频同口径): 声明 file 即原生 file part,
+#   未声明降级为文本全文注入; 探测只作取证/展示(图片外链门见下条) — opencode-2026-11-18
+
+# 2026-11-18 opencode 运输方式归方言固有能力(_TRANSPORT), 实测只在一处开门: 图片外链。
+#   其余模态(音频/文档内联、视频地址)是方言决定的事实, 不需要探测;(旧「实测外链可用才转发
+#   图片地址」过期后会让厂商抓不到素材且请求不报错 —— 链接图默认下载后内联, 有实测证明才转发)
+#   — opencode-2026-11-18
+
 """services.agent.capability — 模型输入能力画像(纯函数, 零 IO)。
 
-声明模态即首选请求模式: input_modalities 含 m → native=True, transport={"inline"};
-实测 media.accept[m] ∈ {url,both} 仅增补 transport="url"(运输优化)并标注 source=measured。
-实测探针不参与请求判定(样本可能过期/失效), 只影响设置页展示与模型推荐。
+声明模态即首选请求模式: input_modalities 含 m → native=True。
+运输方式由方言固有能力(_TRANSPORT)决定: chat 方言里图片/音频/文档可内联字节, 视频只有
+video_url(无视频内联 part)。唯一例外是图片外链 —— 厂商是否真去抓公网地址无法从声明推断,
+故 media.accept.image ∈ {url, both} 才把 url 加进图片运输集合, 其余情况链接图下载后内联。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet
@@ -25,12 +34,23 @@ def _normalize_modalities(values: Any):
 @dataclass(frozen=True)
 class NativeCap:
     native: bool
-    transport: FrozenSet[str]     # {"inline"} / {"inline","url"} / frozenset()
+    transport: FrozenSet[str]     # {"inline"} / {"url"} / frozenset()
     source: str                   # declared | measured | none (仅展示标注)
 
 
 _MODALITIES = ("image", "audio", "video", "file")
 _EMPTY = frozenset()
+# 运输方式 = 方言固有能力, 不是探测结论: 内联没有任何厂商前置条件, 天然的默认;
+#   视频在 chat 方言里没有内联 part(video_url 是唯一投递方式), 反过来只能走地址。
+_TRANSPORT: Dict[str, FrozenSet[str]] = {
+    "image": frozenset({"inline"}),
+    "audio": frozenset({"inline"}),
+    "video": frozenset({"url"}),
+    "file": frozenset({"inline"}),
+}
+# 实测开门白名单(唯一): 厂商会不会去抓图片外链, 声明里没有这项能力位, 只能实测证明 ——
+#   accept.image 落在 url/both 才允许图片地址直传; 未探测/只收内联/多处失败一律下载后内联。
+_IMAGE_URL_ACCEPT = frozenset({"url", "both"})
 
 
 def _meta_of(provider: str, model: str) -> Dict[str, Any]:
@@ -49,13 +69,15 @@ def profile_of(provider: str, model: str) -> Dict[str, NativeCap]:
     accept = ((meta.get("media") or {}).get("accept") or {}) if isinstance(meta.get("media"), dict) else {}
     caps: Dict[str, NativeCap] = {}
     for m in _MODALITIES:
-        if m in declared:
-            measured = str(accept.get(m) or "")
-            transport = {"inline", "url"} if measured in ("url", "both") else {"inline"}
-            caps[m] = NativeCap(True, frozenset(transport),
-                                "measured" if measured else "declared")
-        else:
+        if m not in declared:
             caps[m] = NativeCap(False, _EMPTY, "none")
+            continue
+        measured = str(accept.get(m) or "").strip().lower()
+        transport = _TRANSPORT[m]
+        if m == "image" and measured in _IMAGE_URL_ACCEPT:
+            transport = transport | frozenset({"url"})
+        # source 只表达"有没有实测记录", 供设置页标注
+        caps[m] = NativeCap(True, transport, "measured" if measured else "declared")
     return caps
 
 

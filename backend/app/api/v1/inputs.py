@@ -13,6 +13,11 @@
 # 2026-11-16 小欧 bug猎修: 预检整体加边界兜底 —— 脏 items(如 size 非数值触发 classify_ref
 #   int()/画像读取异常)此前会冒泡为 500, 违背"预检永不阻断"契约; 捕获后降级为空结果并告警
 
+# 2026-11-18 opencode 修正: ①脏数据已在 preflight 内按条隔离(size 解析容错 + 逐条 try),
+#   单条坏项只影响该条; 本层兜底收窄为"整份链路异常"的最后一道 — opencode-2026-11-18
+#   ②本模块历史注释"strict 拦截只在发送侧 409"与实现不符: 全仓无 strict 发送侧拦截,
+#   该模式只产建议 — opencode-2026-11-18
+
 
 """inputs_routes — 输入预检 API 路由薄壳。挂载走 main.py 的 _mount()(唯一入口)。"""
 import logging
@@ -53,7 +58,8 @@ def run_preflight(payload: PreflightIn) -> dict[str, Any]:
                            model_id=payload.model_id, mode=mode,
                            candidates=candidates)
     except Exception as exc:
-        # 预检为建议性预览, 永不阻断: 脏 items/画像读取异常降级为空结果, 不放大为 500
+        # 最后一道兜底(单条脏数据已由 preflight 逐条隔离): 仅整份链路异常时降级为空结果,
+        # 不放大为 500 —— 预检是建议性预览, 永不阻断
         logger.warning("[inputs.preflight] 预检降级为空结果: %s", exc)
         result = PreflightResult()
     return result_to_dict(result)

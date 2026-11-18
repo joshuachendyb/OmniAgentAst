@@ -70,6 +70,8 @@
     2026-11-08 小欧 - 新增 probe-media 路由: 实测模型接受哪种图片传输并落 model_meta.media — 小欧-2026-11-08
     2026-11-09 小欧 - 新增 probe-output 路由: 生成验证(按输出模态跑图腿 t2i/i2i 与视频腿 t2v/i2v)并落 model_meta.media.generate — 小欧-2026-11-09
     2026-11-11 小欧 - probe-media 增 kind 查询参数(image/video/audio 输入能力验证, 默认 image; 路由透传 svc.probe_model_media) — 小欧-2026-11-11
+    2026-11-18 opencode - probe-media 的 kind 增 file(文档腿): 与其余模态同口径, 实测只做取证/展示,
+      注入条件仍以 input_modalities 声明为准 — opencode-2026-11-18
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -365,10 +367,11 @@ async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
 
 
 # 2026-11-11 小欧 - probe-media 增 kind 查询参数(image/video/audio 输入能力验证) — 小欧-2026-11-11
+# 2026-11-18 opencode - kind 增 file(文档腿): 取证声明了文档输入的模型是否真收, 不改变发送方式
 @router.post("/providers/{name}/models/{model:path}/probe-media")
 @handle_api_errors("探测模型媒体传输")
 async def probe_model_media(name: str, model: str, kind: str = "image"):
-    """实测模型是否接受指定媒体输入(图片=内联+外链两腿, 视频=URL 腿, 音频=内联腿), 结果落 model_meta.<model>.media。
+    """实测模型是否接受指定媒体输入(图片=内联+外链两腿, 视频=URL 腿, 音频/文档=内联腿), 结果落 model_meta.<model>.media。
 
     path 转换器: 模型名可含 '/'（z-ai/glm-4.7 等），单段参数会 404。
     """

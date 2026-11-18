@@ -19,6 +19,13 @@
 #   可原生, 消预检/运行时相反; ③去重键补 lineRange, 不同选区不再互相标重复; ④text_url_only
 #   按 URL 长度降序移除, 消前缀包含残留。
 
+# 2026-11-18 opencode 修正: ①三个反查函数(_lookup_provider/_split_target/_target_known)
+#   各自 get_models() 一次, 裸 model 一次预检要扫库 3 遍 → 合并为 _resolve_target 单扫
+#   (provider/model/known 一次取齐); ②逐条判定加隔离, 单条脏数据只标该条失败,
+#   不再整份预检为空; ③删 must_native(与 quality=="native" 同义且无消费方)与
+#   _QUALITY_ORDER(死常量); ④strict 文案据实修正 —— 发送侧不存在该模式的拦截,
+#   原注释"strict 拦截在发送侧 409"与实现不符 — opencode-2026-11-18
+
 
 """services.inputs.preflight — 输入预检(厚后端核心, 纯判定零副作用)。
 
@@ -30,17 +37,17 @@
 准入判定复用 media_payload.url_reject_reason(与 remote_fetch 四闸门同源同判)。
 
 不做的事(SRP): 不做体积裁决(budget)、不做上限计数(accepted)、不下载、不物化;
-  strict 拦截只在发送侧, 本模块永不阻断。
+  strict 只改"需求域归类"(缺原生能力时给 degrade 建议), 与 suggest/auto 一样**不阻断发送**
+  —— 本仓发送侧不存在该模式的拦截, 要不要换模型由用户点推荐条决定。
 """
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.attachments import contract
 from app.attachments.extract import scan_text_urls
+from app.logger import logger
 from app.services.agent.media_payload import inline_limit_bytes, url_reject_reason
-
-_QUALITY_ORDER = ("native", "text_full", "meta_only", "link_only")
 
 
 @dataclass
@@ -52,7 +59,6 @@ class PreflightItem:
     reason: str = ""
     quality: str = ""
     delivery: str = ""
-    must_native: bool = False
     duplicate_of: str = ""
     url: str = ""
 
@@ -66,36 +72,33 @@ class PreflightResult:
         default_factory=lambda: {"action": "keep", "reason": ""})
 
 
-def _lookup_provider(model: str) -> str:
-    """裸 model 名在模型库反查唯一 provider; 库异常/未命中返回空串(不臆造 provider)。"""
-    if not model:
-        return ""
+def _resolve_target(model_id: str) -> Tuple[str, str, bool]:
+    """model_id → (provider, model, known), 模型库扫一遍取齐(不再各查各的)。
+
+    'p/m': provider/model 直接取, known 另需模型库确有该组合(与"未知模型不判降级"一致);
+    裸 model 名: 扫库反查首个含该模型的 provider, 命中即 known;
+    库异常/未命中 → known=False(不臆造 provider, 不臆判降级, 不产路由建议)。
+    """
+    mid = str(model_id or "")
+    if not mid:
+        return "", "", False
+    provider, sep, model = mid.partition("/")
     from app.services.model.model_service import get_models
     try:
-        for p in (get_models().get("providers") or []):
-            if any(str(m.get("name") or "") == model for m in (p.get("models") or [])):
-                return str(p.get("name") or "")
-    except Exception:  # noqa: BLE001 — 反查失败不阻断预检, 退化为仅按 model 取画像
-        pass
-    return ""
-
-
-def _split_target(model_id: str) -> tuple:
-    """model_id → (provider, model): 'p/m' 按 '/' 切分; 裸 model 反查 provider。"""
-    mid = str(model_id or "")
-    provider, sep, model = mid.partition("/")
+        providers = get_models().get("providers") or []
+    except Exception as e:  # noqa: BLE001 — 反查失败不阻断预检, 退化为未知模型
+        logger.warning("[preflight] 模型库读取失败, 按未知模型处理: %s", e)
+        return (provider if sep else ""), model, False
     if sep:
-        return provider, model
-    return _lookup_provider(mid), mid
-
-
-def _resolve_profile(model_id: str, profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """画像唯一来源: 显式传入优先; 否则 provider/model 解析后取画像(与 capability.profile_of 同源)。"""
-    if profile is not None:
-        return profile
-    from app.services.agent.capability import profile_of
-    provider, model = _split_target(model_id)
-    return profile_of(provider, model)
+        found = any(
+            str(p.get("name") or "") == provider
+            and any(str(m.get("name") or "") == model for m in (p.get("models") or []))
+            for p in providers)
+        return provider, model, bool(provider and model and found)
+    for p in providers:
+        if any(str(m.get("name") or "") == mid for m in (p.get("models") or [])):
+            return str(p.get("name") or ""), mid, True
+    return "", mid, False
 
 
 def _native_slot(source_kind: str, content_kind: str, data: Dict[str, Any],
@@ -112,28 +115,8 @@ def _native_slot(source_kind: str, content_kind: str, data: Dict[str, Any],
     if content_kind == "audio" and Path(str(data.get("path") or "")).suffix.lower() \
             not in contract.AUDIO_NATIVE_EXTS:
         return False
-    try:
-        size = int(data.get("size") or 0)
-    except (TypeError, ValueError):
-        return False
+    size = contract.size_of(data)
     return 0 < size <= inline_limit_bytes()
-
-
-def _target_known(model_id: str) -> bool:
-    """模型是否可解析(用于未知模型不臆判降级): 显式传画像时由调用方保证已知, 此处只判模型库。"""
-    provider, model = _split_target(model_id)
-    if not model:
-        return False
-    from app.services.model.model_service import get_models
-    try:
-        for p in (get_models().get("providers") or []):
-            if provider and str(p.get("name") or "") != provider:
-                continue
-            if any(str(m.get("name") or "") == model for m in (p.get("models") or [])):
-                return True
-    except Exception:  # noqa: BLE001 — 反查失败按未知处理, 不臆判降级
-        return False
-    return False
 
 
 def _item_key(source_kind: str, data: Dict[str, Any]) -> str:
@@ -147,6 +130,26 @@ def _item_key(source_kind: str, data: Dict[str, Any]) -> str:
     return f"{base}#{stamp}" if base and stamp else base
 
 
+def _judge(data: Dict[str, Any], prof: Dict[str, Any], known: bool) -> PreflightItem:
+    """单条判定(识别 + 能力), 不含去重; 异常由调用方按条隔离。"""
+    source_kind, content_kind = contract.classify_ref(data)
+    key = _item_key(source_kind, data)
+    url = str(data.get("url") or "")
+    reason = url_reject_reason(url) if source_kind == "url" else ""
+    item = PreflightItem(key=key or f"{source_kind}:{content_kind}",
+                         source_kind=source_kind, content_kind=content_kind,
+                         ok=not reason, reason=reason, url=url)
+    if not known:
+        return item      # 未知模型不判降级, 与"无模型不路由"同口径
+    # 实例口径: 已物化或可物化的 file 图像/音频与运行时 plan_refs 同判, 消假降级
+    has_slot = bool(data.get("attachment_id")) or _native_slot(
+        source_kind, content_kind, data, prof)
+    quality = contract.quality_of(source_kind, content_kind, prof, has_slot=has_slot)
+    item.quality = quality
+    item.delivery = contract.QUALITY_TO_DELIVERY[quality]
+    return item
+
+
 def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
               model_id: str = "", profile: Optional[Dict[str, Any]] = None,
               mode: str = "suggest",
@@ -156,10 +159,11 @@ def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
 
     返回 PreflightResult(不含 limits/accepted — 上限裁决归发送侧唯一出口)。
     """
-    prof = _resolve_profile(model_id, profile)
-    # 画像已知才做能力判定: 显式传入画像视为已知; 否则模型库须能定位该模型。
-    # 未知模型不判降级、不产生路由建议, 与"无模型不路由"同口径。
-    known = profile is not None or _target_known(model_id)
+    from app.services.agent.capability import profile_of
+    provider, model, known = _resolve_target(model_id)
+    if profile is not None:
+        known = True     # 显式传入画像视为已知
+    prof = profile if profile is not None else profile_of(provider, model)
     scanned = scan_text_urls(text or "")
     raw: List[Dict[str, Any]] = list(items or [])
     raw += [{"kind": "url", "url": u} for u in scanned]
@@ -175,42 +179,32 @@ def preflight(text: str = "", items: Optional[List[Dict[str, Any]]] = None,
     for data in raw:
         if not isinstance(data, dict):
             continue
-        source_kind, content_kind = contract.classify_ref(data)
-        key = _item_key(source_kind, data)
-        url = str(data.get("url") or "")
-        reason = url_reject_reason(url) if source_kind == "url" else ""
-        item = PreflightItem(key=key or f"{source_kind}:{content_kind}",
-                             source_kind=source_kind, content_kind=content_kind,
-                             ok=not reason, reason=reason, url=url)
-        first = seen.get(key)
-        if key and first:
+        try:
+            item = _judge(data, prof, known)
+        except Exception as e:  # noqa: BLE001 — 单条脏数据只标该条失败, 不整份清空
+            logger.warning("[preflight] 单条判定失败(已隔离): kind=%r err=%s",
+                           data.get("kind"), e)
+            item = PreflightItem(
+                key=str(data.get("url") or data.get("path") or data.get("label") or ""),
+                source_kind=str(data.get("kind") or "file"), content_kind="unknown",
+                ok=False, reason=f"预检失败: {type(e).__name__}")
+        first = seen.get(item.key)
+        if item.key and first:
             item.duplicate_of = first      # 去重不剔除: 保留条目并指向首条, 上层自行去重
-        else:
-            if key:
-                seen[key] = item.key
-            if not known:
-                result.items.append(item)
-                continue
-            # 实例口径: 已物化或可物化的 file 图像/音频与运行时 plan_refs 同判, 消假降级
-            has_slot = bool(data.get("attachment_id")) or _native_slot(
-                source_kind, content_kind, data, prof)
-            quality = contract.quality_of(source_kind, content_kind, prof,
-                                          has_slot=has_slot)
-            item.quality = quality
-            item.delivery = contract.QUALITY_TO_DELIVERY[quality]
-            item.must_native = quality == "native"
+        elif item.key:
+            seen[item.key] = item.key
         result.items.append(item)
     if any(it.quality and it.quality != "native" for it in result.items):
         result.worst_quality = "degraded"
     # 2026-11-16 小欧 [23]阶段D: 传入 candidates 才路由(不传则保持默认 keep, 保纯核心零 I/O);
-    #   strict → degraded_ok=False(缺必需能力缺可为 degrade), suggest/auto → True(降级可接受)。
+    #   strict → degraded_ok=False(缺必需能力可为 degrade), suggest/auto → True(降级可接受)。
+    #   strict 只改"需求域归类", 不产生任何拦截 —— 发送侧也不拦(见模块说明), 建议仅供用户决策。
     if candidates is not None and known:
         from app.services.model.capability_router import need_of, route
-        current_provider, current_model = _split_target(model_id)
         advice = route(need_of(result.items, degraded_ok=(mode != "strict")),
-                       current_model=current_model or model_id,
+                       current_model=model or model_id,
                        candidates=candidates,
-                       current_provider=current_provider)
+                       current_provider=provider)
         result.routing_advice = advice.to_dict()
     return result
 
