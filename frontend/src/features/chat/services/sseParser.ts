@@ -125,6 +125,7 @@
 //   服务器锚 + 客户端增量计算, 消除压缩期不走字与终态对不上 — 商量-2026-11-13
 // 编辑历史: 2026-11-18 商量 - KNOWN_EVENT_TYPES + case 增 question_required/question_resolved(阻塞问答成对事件),
 //   handlers 增 onQuestionRequired/onQuestionResolved; 漏白名单则帧被静默丢弃且 seq 不推进 — 商量-2026-11-18
+// 编辑历史: 2026-11-18 商量 - question_required 下发补 backend_timeout(镜像 authorization 的 assignTimeout 归一), 供 dock 倒计时 — 商量-2026-11-18
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -270,6 +271,7 @@ const processSSEData = (
         multiple?: boolean;
       }[];
       content?: string;
+      backend_timeout?: number; // 2026-11-18 商量: 后端窗口秒数, dock 倒计时
     }) => void;
     onQuestionResolved?: (data: {
       question_id?: string;
@@ -1160,6 +1162,7 @@ const processSSEData = (
               NonNullable<typeof handlers.onQuestionRequired>
             >[0]['questions'],
             content: rawData.content as string | undefined,
+            backend_timeout: assignTimeout(rawData.backend_timeout), // 2026-11-18 商量: 镜像 authorization 的超时归一(合法0保留)
           });
         } else {
           handlers.onQuestionResolved?.({

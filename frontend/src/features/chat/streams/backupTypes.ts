@@ -14,6 +14,7 @@
 //   sentRefLedger 入 SessionSnapshot → 随 StreamBackup 落盘 + bump 响应式通知 — 小欧-2026-10-22
 // 2026-11-18 opencode - SentRefLedgerEntry 补 kind: url 条目点击开外链, 其余仍按文件重读 — opencode-2026-11-18
 // 2026-11-18 商量 - 新增 QuestionItem/PendingQuestionPayload 与 SessionSnapshot.pendingQuestion: question 阻塞问答快照(切会话恢复)
+// 2026-11-18 商量 - PendingQuestionPayload 补 backend_timeout(后端问询窗口秒数), dock 倒计时随快照持久
 import type { QuestionItem } from '@/types/chat';
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
@@ -42,6 +43,8 @@ export interface PendingQuestionPayload {
   question_id: string;
   questions: QuestionItem[];
   content?: string;
+  /** 2026-11-18 商量: 后端问询窗口秒数(security.hitl.timeout), dock 倒计时同源 */
+  backend_timeout?: number | string;
 }
 
 export type StreamStatus =

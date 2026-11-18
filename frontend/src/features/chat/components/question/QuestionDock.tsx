@@ -1,5 +1,6 @@
 // 2026-11-18 商量 - question 卡片式底部停靠面板(对齐系统既有 antd + 设计 token 范式, 非 Modal)
 // 2026-11-18 商量 - 三堂会审整改: 提交按钮在无任何作答时禁用(与 canSubmit 守卫同源)
+// 2026-11-18 商量 - 头部增倒计时环(复用 HITL CountdownRing, 后端 backend_timeout 同源), 到 0 仅归零展示, 清窗仍由 question_resolved 收口
 import {
   CheckOutlined,
   CloseOutlined,
@@ -11,6 +12,7 @@ import {
 import { Button, Tag, Typography } from 'antd';
 
 import type { QuestionDockController } from '@/features/chat/hooks/useQuestionDock';
+import CountdownRing from '@/components/AuthorizationModal/CountdownRing';
 import { CONTROL_HEIGHT, CONTROL_RADIUS } from '@/theme/controlScale';
 import { Gap, LineHeight } from '@/theme/spacing';
 import {
@@ -48,6 +50,7 @@ export function QuestionDock({ controller }: QuestionDockProps) {
     toggleMinimize,
     handleKeyDown,
     canSubmit,
+    countdown,
   } = controller;
 
   if (!request) return null;
@@ -71,6 +74,14 @@ export function QuestionDock({ controller }: QuestionDockProps) {
       <Tag style={{ margin: 0, fontSize: FontSize.CAPTION }}>
         第 {tab + 1}/{total} 题
       </Tag>
+      {/* 2026-11-18 商量: 倒计时环(复用 HITL CountdownRing), 后端窗口收口发 question_resolved 清窗, 前端到 0 仅归零展示 */}
+      {countdown > 0 ? (
+        <CountdownRing
+          countdown={countdown}
+          confirmTimeout={request.backendTimeout ?? 0}
+          size={44}
+        />
+      ) : null}
       <span style={{ marginLeft: 'auto', display: 'flex', gap: Gap.INLINE }}>
         <Button
           type="text"

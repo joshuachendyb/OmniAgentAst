@@ -1,5 +1,6 @@
 // 2026-11-18 商量 - 新建 question dock 状态管理(对齐 useAuthorization: 读 store 快照→归一→fire-and-forget 调 API→清快照)
 // 2026-11-18 商量 - 三堂会审整改: 自定义输入框内按键不再触发面板快捷键; 自定义答案单选替换多选追加(防 radio 双值歧义); 新增 canSubmit 空答案守卫
+// 2026-11-18 商量 - 新增倒计时: 读快照 backendTimeout 每秒递减纯展示(到点清窗由后端 question_resolved 收口, 单一权威源)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 
@@ -13,6 +14,7 @@ export interface QuestionRequest {
   questionId: string;
   questions: QuestionItem[];
   content?: string;
+  backendTimeout?: number; // 2026-11-18 商量: 后端问询窗口秒数(已由 sseParser assignTimeout 归一), dock 倒计时
 }
 
 interface CustomState {
@@ -54,9 +56,32 @@ export function useQuestionDock(sessionId: string | null) {
         questionId: pendingQuestion.question_id,
         questions: pendingQuestion.questions || [],
         content: pendingQuestion.content,
+        backendTimeout:
+          typeof pendingQuestion.backend_timeout === 'number'
+            ? pendingQuestion.backend_timeout
+            : undefined,
       };
     });
   }, [pendingQuestion]);
+
+  // 2026-11-18 商量 - 倒计时纯展示: 每秒递减到 0(节奏同 AuthorizationModal: 首 tick 100ms 再 1s interval);
+  //   到点动作不在前端做——后端窗口收口发 question_resolved(expired) 清窗, 单一权威源
+  const [countdown, setCountdown] = useState(0);
+  useEffect(() => {
+    const total = request?.backendTimeout ?? 0;
+    if (!request || total <= 0) {
+      setCountdown(0);
+      return;
+    }
+    setCountdown(total);
+    const tick = () => setCountdown((v) => Math.max(0, v - 1));
+    const iv = window.setInterval(tick, 1000);
+    const first = window.setTimeout(tick, 100);
+    return () => {
+      window.clearInterval(iv);
+      window.clearTimeout(first);
+    };
+  }, [request]);
 
   const questions = request?.questions ?? [];
   const total = questions.length;
@@ -262,6 +287,7 @@ export function useQuestionDock(sessionId: string | null) {
       toggleMinimize,
       handleKeyDown,
       canSubmit,
+      countdown,
     }),
     [
       request,
@@ -282,6 +308,7 @@ export function useQuestionDock(sessionId: string | null) {
       toggleMinimize,
       handleKeyDown,
       canSubmit,
+      countdown,
     ]
   );
 }

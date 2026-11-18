@@ -2,6 +2,7 @@
 # 2026-11-18 商量 - 新建 question 网关(对称 hitl_gateway): create→emit(question_required)→wait→resolve 收口→emit(question_resolved);
 #   两事件仅 SSE 不落库, 与 paused/resumed 成对范式一致
 # 2026-11-18 商量 - 三堂会审整改: 删 wait 返回后的重复 resolve(wait 的 finally 已统一弹出 entry 收口, 该调用必为 entry=None 空转), 顺带清失效 logger 导入
+# 2026-11-18 商量 - question_required 事件补 backend_timeout 字段(与 authorization_required 同名同语义), 供前端 dock 渲染倒计时
 """
 question_gateway — question 工具阻塞问询唯一发射点
 """
@@ -29,6 +30,7 @@ async def ask_question(
         content=f"需要你回答 {len(questions)} 个问题",
         question_id=question_id,
         questions=questions,
+        backend_timeout=timeout,  # 2026-11-18 商量: 前端 dock 倒计时同源(HITL 事件同名同语义)
     ))
     set_status(agent, AgentStatus.SUSPENDED, "等待用户回答")
     await publish(required.to_dict())
