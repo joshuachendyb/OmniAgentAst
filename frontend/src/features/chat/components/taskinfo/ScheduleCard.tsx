@@ -1,0 +1,180 @@
+// 2026-11-18 商量 - 新建: taskinfo 右组的「执行计划」入口 + 浮层卡片
+//   WHY: schedule 工具是纯回显(不落库/不发事件), 清单只存在于步骤流里, 需要一个人能主动点开的位置;
+//   放 taskinfo 右组是因为该组语义就是「当前任务的实时状态与可查信息」, 计划天然属于这一组。
+//   与 question 面板的分叉: question 的锚点是阻塞本身(必须弹出), 本入口的锚点是用户主动查(不打扰)。
+import { CloseOutlined, CheckOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
+import { useEffect, useState } from 'react';
+
+import { PanelCard, PanelChip, PanelRow } from '@/components/PanelCard';
+import type {
+  ScheduleSnapshot,
+  ScheduleStatus,
+} from '@/features/chat/hooks/useScheduleList';
+import { Colors, FontSize, FontWeight, Size } from '@/utils/stepStyles';
+
+import { FloatingEntry } from './FloatingEntry';
+
+const CARD_W = 30 * FontSize.SECONDARY; // 30 汉字宽 ≈ 360px
+
+interface ScheduleCardProps {
+  /** 派生自步骤流的最新清单(TaskInfoBar 用同一份派生值决定分隔点与入口显隐, 故由此传入) */
+  list: ScheduleSnapshot | null;
+  compact?: boolean; // 窄档仅计数, 与 TrustPanel 的窄档口径一致
+}
+
+/** 状态视觉: 一个 12px 定宽字位 + 文字色, 三档"完成/进行中/待办"不靠图标数量堆叠 */
+const STATUS_COLOR: Record<ScheduleStatus, string> = {
+  completed: Colors.TEXT.TERTIARY,
+  in_progress: Colors.TEXT.STRONG,
+  pending: Colors.TEXT.SECONDARY,
+  cancelled: Colors.TEXT.TERTIARY,
+};
+
+/** 状态字形: 已完成=勾, 进行中=实心点, 待开始=空心圈, 已取消=短横 */
+function StatusGlyph({ status }: { status: ScheduleStatus }) {
+  if (status === 'completed') {
+    return <CheckOutlined style={{ fontSize: FontSize.SMALL }} />;
+  }
+  if (status === 'in_progress') {
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          background: Colors.PRIMARY,
+        }}
+      />
+    );
+  }
+  if (status === 'cancelled') {
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          width: 7,
+          height: 1,
+          background: Colors.TEXT.TERTIARY,
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        border: `1px solid ${Colors.BORDER.STRONG}`,
+      }}
+    />
+  );
+}
+
+export function ScheduleCard({ list, compact }: ScheduleCardProps) {
+  const [open, setOpen] = useState(false);
+
+  // 清单消失(清空/换会话/换任务)时同步关闭浮层, 避免留下一个空浮层
+  useEffect(() => {
+    if (!list) setOpen(false);
+  }, [list]);
+
+  if (!list) return null;
+
+  const { items, step } = list;
+  const done = items.filter((it) => it.status === 'completed').length;
+  const total = items.length;
+  const active = items.find((it) => it.status === 'in_progress');
+
+  const content = (
+    <PanelCard
+      title="执行计划"
+      meta={
+        <PanelChip tone={done === total ? 'success' : 'primary'}>
+          {done} / {total} 已完成
+        </PanelChip>
+      }
+      actions={
+        <Button
+          type="text"
+          size="small"
+          aria-label="关闭执行计划"
+          icon={<CloseOutlined />}
+          onClick={() => setOpen(false)}
+        />
+      }
+      gap={0}
+      bodyStyle={{
+        maxHeight: Size.PANEL_LIST_MAX_H,
+        overflowY: 'auto',
+      }}
+      footer={
+        active
+          ? `进行中：${active.content}`
+          : `共 ${total} 项，第 ${step} 步更新`
+      }
+    >
+      {items.map((it, i) => (
+        <PanelRow
+          key={`${i}-${it.content}`}
+          // 计划是有序的, 按原顺序直显(按状态分组会打乱阅读顺序)
+          style={{
+            alignItems: 'center',
+            color: STATUS_COLOR[it.status],
+            textDecoration:
+              it.status === 'cancelled' ? 'line-through' : undefined,
+            fontWeight:
+              it.status === 'in_progress' ? FontWeight.MEDIUM : undefined,
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: FontSize.SECONDARY,
+              flexShrink: 0,
+            }}
+          >
+            <StatusGlyph status={it.status} />
+          </span>
+          <span style={{ minWidth: 0, wordBreak: 'break-word' }}>
+            {it.content}
+          </span>
+        </PanelRow>
+      ))}
+    </PanelCard>
+  );
+
+  return (
+    <FloatingEntry
+      open={open}
+      onOpenChange={setOpen}
+      // 入口在 taskinfo(视口底部), 必须向上弹: 向下展开只剩输入框高度, 长清单必被裁。
+      // 与「事件」浮层同一决策(2026-11-18 小欧实测), 此处沿用 — 商量-2026-11-18
+      placement="topRight"
+      cardId="taskinfo-schedule-card"
+      ariaLabel="执行计划"
+      cardStyle={{ width: CARD_W, maxWidth: '90vw' }}
+      content={content}
+    >
+      <span
+        data-testid="schedule-entry"
+        style={{ fontSize: FontSize.SECONDARY }}
+      >
+        {/* 不叠 Tooltip: 本入口是 hover 即开浮层, 再挂一层悬浮提示会与浮层抢同一触发, 观感上是两个框同时冒出 */}
+        <span
+          style={{
+            color: Colors.TEXT.PRIMARY,
+            fontWeight: FontWeight.MEDIUM,
+          }}
+        >
+          {compact ? `${done}/${total}` : `计划 ${done}/${total}`}
+        </span>
+      </span>
+    </FloatingEntry>
+  );
+}

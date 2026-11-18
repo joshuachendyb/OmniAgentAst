@@ -227,12 +227,30 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
       {hasVisibleSlot(panels, 'config') && (
         <div>{renderSlot(panels, 'config')}</div>
       )}
-      {/* 2026-11-18 商量: question dock 停靠 input 上方(对齐 opencode composer 上方) */}
-      {hasVisibleSlot(panels, 'question') && (
-        <div>{renderSlot(panels, 'question')}</div>
-      )}
+      {/* 2026-11-18 商量 - question 面板改为贴输入框上沿的浮层(锚点容器包住 input 行):
+          原实现是 dock 内的一个流式子项, 卡片一出现就把中部会话区压矮、输入框整体上移 ——
+          用户看到的是"被塞进 taskinfo 与输入框之间", 既没有浮层的层级感, 又白白付出 Modal 的挤压代价。
+          改为 absolute 定位后: 会话区高度不变、输入框不漂移, 且保留"不遮挡上下文 + 可最小化"的原设计意图。
+          锚点由 position:relative 的包裹层提供, 浮层 bottom:100% 即贴在输入行上缘, 不写死像素量。 */}
       {hasVisibleSlot(panels, 'input') && (
-        <div>{renderSlot(panels, 'input')}</div>
+        <div style={{ position: 'relative', minWidth: 0 }}>
+          {hasVisibleSlot(panels, 'question') && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: '100%',
+                // 与输入行之间留一个同列堆叠档, 避免卡片边框和输入框边框贴成一条线
+                paddingBottom: Gap.STACK,
+                zIndex: 20,
+              }}
+            >
+              {renderSlot(panels, 'question')}
+            </div>
+          )}
+          {renderSlot(panels, 'input')}
+        </div>
       )}
     </div>
   </div>

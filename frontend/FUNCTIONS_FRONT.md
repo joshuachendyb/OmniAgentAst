@@ -3,8 +3,8 @@
 **创建时间**: 2026-09-23 14:19:12
 **编写人**: 小欧
 **维护人**: 小欧
-**最后更新时间**: 2026-11-13
-**最近更新**: 2026-11-13 商量 新增 §1.5「间距与行高」（`theme/spacing.ts`）：全站空白维度唯一真源，`Gap` 五档语义（ROW4/STACK6/INLINE6/SECTION8/GROUP12，数值派生自 `Spacing`）+ `LineHeight` 三档（DENSE1.4/BODY1.5/LOOSE1.5714）；立间距铁律——一个距离只归一处（兄弟间距由父 gap 独占，禁 gap+margin 叠加）、padding 只做内容与容器边留白、margin 原则不用（仅绝对定位贴边与行内文本流两种例外且须注释）、数值只从刻度取；原 §1.5–§1.11 顺延为 §1.6–§1.12；落地 ChatInput/InputCore/SubmitBar/ShortcutHelp/InputHistoryPanel/FileTrailPanel/SessionLayout/TaskInfoBar 的 gap 语义化、删多处 margin 叠加、行高归一；2026-11-13 商量 控件规格收口：`controlScale.ts` 新增 `CONTROL_PADDING`（文本输入水平内距 12=4px 网格标准档、上下内距 2=视觉下限）与 `FOCUS_RING_WIDTH`/`FOCUS_RING_OFFSET`（2/2），清除 `InputCore` 的 11px（库缺省内距）与 `ChatInput` 的 `outlineOffset:2`/`borderRadius:8` 裸字面量；`tokens.ts` 的 radius/gap 改派生自 `Radius.DEFAULT`/`Spacing.MD`；`stepStyles.ts`/`tokens.ts`/`controlScale.ts` 顶部补「严禁使用 antd 默认规格属性」铁律横幅；2026-11-13 商量 §4.1 输入框帮助信息分层：撤销 `INPUT_HINTS` 常驻编号清单，输入框仅保留核心 placeholder（能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片` 并入 placeholder，空态零额外高度），其余输入方式由 `ShortcutHelp`（「输入技巧」浮层，按 输入/文件与引用/图片 分组 + 按钮行中段入口）承载，增删改输入方式只改 `SHORTCUT_GROUPS`；`InputCore` 显式下发上下留白 4→2（不沿用 UI 库缺省）；2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
+**最后更新时间**: 2026-11-18
+**最近更新**: 2026-11-18 商量 新增 §1.13「路径处理」（`utils/projectPath.ts` 的 `shortenPath`：长路径**展示**收敛，盘符 + 末段，供信任清单等密集列表用；短路径原样返回）与 §三 `PanelCard` 卡片壳族（壳 + 胶囊/列表行/空态三原子，计划/信任/问询三块浮层共用一套卡片语言）、§四 `useCountdown`（截止时刻采样倒计时，修首秒双减）、§4.1 `useScheduleList` / `ScheduleCard`（执行计划清单派生自步骤流 + taskinfo 右组「计划 N/M」入口）；2026-11-13 商量 新增 §1.5「间距与行高」（`theme/spacing.ts`）：全站空白维度唯一真源，`Gap` 五档语义（ROW4/STACK6/INLINE6/SECTION8/GROUP12，数值派生自 `Spacing`）+ `LineHeight` 三档（DENSE1.4/BODY1.5/LOOSE1.5714）；立间距铁律——一个距离只归一处（兄弟间距由父 gap 独占，禁 gap+margin 叠加）、padding 只做内容与容器边留白、margin 原则不用（仅绝对定位贴边与行内文本流两种例外且须注释）、数值只从刻度取；原 §1.5–§1.11 顺延为 §1.6–§1.12；落地 ChatInput/InputCore/SubmitBar/ShortcutHelp/InputHistoryPanel/FileTrailPanel/SessionLayout/TaskInfoBar 的 gap 语义化、删多处 margin 叠加、行高归一；2026-11-13 商量 控件规格收口：`controlScale.ts` 新增 `CONTROL_PADDING`（文本输入水平内距 12=4px 网格标准档、上下内距 2=视觉下限）与 `FOCUS_RING_WIDTH`/`FOCUS_RING_OFFSET`（2/2），清除 `InputCore` 的 11px（库缺省内距）与 `ChatInput` 的 `outlineOffset:2`/`borderRadius:8` 裸字面量；`tokens.ts` 的 radius/gap 改派生自 `Radius.DEFAULT`/`Spacing.MD`；`stepStyles.ts`/`tokens.ts`/`controlScale.ts` 顶部补「严禁使用 antd 默认规格属性」铁律横幅；2026-11-13 商量 §4.1 输入框帮助信息分层：撤销 `INPUT_HINTS` 常驻编号清单，输入框仅保留核心 placeholder（能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片` 并入 placeholder，空态零额外高度），其余输入方式由 `ShortcutHelp`（「输入技巧」浮层，按 输入/文件与引用/图片 分组 + 按钮行中段入口）承载，增删改输入方式只改 `SHORTCUT_GROUPS`；`InputCore` 显式下发上下留白 4→2（不沿用 UI 库缺省）；2026-11-12 小欧 §使用规则 新增「前端控件规格铁律（强制）」七条（与《开发人员戒律》第八章同源，唯一执行清单；控件规格唯一真源 `theme/controlScale.ts`，文档[32]）；§1.4 新登记 `controlScale.ts`（全站控件刻度唯一真源：控件高三档 × 两档密度 + 圆角三档 + 页面级圆角预设 + 两个 token 构造器；文档[32]）；§1.10 新登记 `markdownStyles.ts` / `appearancePrefs.ts` / `useAppearancePrefs.ts`（Markdown 排版解算 + 外观偏好读取，含 `DENSITY_PAD` 唯一真源与密度词表唯一真源）；§1.4–§1.11 章节序号顺延（原 1.4–1.9 依次后移一位）；2026-11-10 小欧 §4.1 新登记 `INPUT_HINTS`（输入框空态静态帮助清单，`InputCore.tsx`；编号按数组下标自动生成，增删改输入方式只改该数组、无需动 JSX；与动态提示 `executingHint` 互斥不编号）；2026-11-09 小欧 §2.3 `modelApi.probeOutput` 扩为图/视频双腿（视频走异步提交+轮询，显式 30 分钟超时）；2026-09-23 14:19:12 小欧 v1.0 初始版本：登记全局层（utils/theme）、服务层（api/error）、通用组件层、通用 Hooks 层、settings2 特征层；同步登记 [65] 十遍会审新抽公用（settingsControl.actionBtnWidth、KNOWN_CAPABILITY_VALUES、isCapsDirty 排序比）
 
 ---
 
@@ -183,6 +183,14 @@
 | `saveChatState` | 聊天状态本地存 | state: unknown | void |
 | `show*` 消息提示族 | 会话消息提示统一入口：保存/加载/冲突/网络（showSaveSuccess/showSaveError/showLoadError/showNetworkError/showConflictError 等）、任务（showTaskControlMessage/showTaskResultMessage 等）、会话新建（showNewSessionSuccess/showNewSessionError 等）、标题（showTitleSaved/showTitleUpdated 等）、通用（showError/showWarning/showInfo/showSuccess 系） | content/结果入参 | void（部分返回 boolean，如 handleConflictError） |
 
+### 1.13 路径处理（utils/projectPath.ts，路径形态与深链唯一真源）
+
+同文件另有项目根 ⇄ 相对路径转换（`toRelativePath`/`toAbsolutePath`）、路径形态判据（`isDriveAbsPath`/`isExternalAbsPath`/`isUnderRoot`/`isAbsDirLikePath`/`isDirLikePath`）、深链拼装（`buildFileDeepLink`/`resolvePathTarget`）与分隔符归一（`norm`），均属该模块既有职责，改动前先看本文件头注。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `shortenPath` | 路径**展示**收敛：超长时丢弃中间段，保留盘符 + 末 `tail` 段（`E:\test_dir\report\a-task` → `E:\…\report\a-task`）；短路径原样返回。按段裁剪而非纯 CSS 省略号——同一机器前缀几乎相同，右端省略会把最有区分度的末段先吃掉。调用方仍须把完整值挂 `title` 供核对 — 商量 2026-11-18 | p: string, max?: number（默认 40）, tail?: number（默认 2） | string |
+
 ---
 
 ## 二、服务层（src/services/）
@@ -267,6 +275,7 @@
 | `Layout` | 布局壳 | Layout/ |
 | `HealthCheck` | 健康检查 | HealthCheck/ |
 | `AuthorizationModal` | 授权弹窗 | AuthorizationModal/ |
+| `PanelCard` / `PanelChip` / `PanelRow` / `PanelEmpty` | 浮层卡片视觉壳族（计划/信任/问询三块浮层共用一套卡片语言）：`PanelCard` 壳（头部 title/meta/actions + 可选 subheader + 内容区 + 脚注，`raised` 自绘边框投影、`plain` 挂在 Popover 内不叠框）+ `PanelChip` 计数胶囊 + `PanelRow` 列表行（传 `onClick` 才是可点行，`hoverable` 给「行不可点但行内有悬停操作」的浅档底色）+ `PanelEmpty` 空态文案。只收敛**视觉**，业务由调用方注入 — 商量 2026-11-18 | PanelCard/ |
 
 ---
 
@@ -279,6 +288,7 @@
 | `useLoadingMessage` | 加载提示 | options | 加载态 |
 | `useInitializationProgress` | 初始化进度 | 入参 | InitializationProgress |
 | `useSSE` | SSE 流式连接（断线重连+任务轮询兜底+idle 监视；复用 sessionTaskApi.listTasks） | 会话/任务入参 | 连接态+数据 |
+| `useCountdown` | 倒计时唯一实现（纯展示）：开窗时按 `total` 算出截止时刻，之后逐秒采样「真实剩余秒数」而非自减（原自减在 0.1s/1.0s 各触发一次 → 第 1 秒掉 2 格，展示窗口比后端真实窗口短 1 秒）；到点恒为 0，换窗口靠 `resetKey` 重建截止时刻。授权弹窗与问询面板共用 — 商量 2026-11-18 | total: number, resetKey?: string \| null | number |
 
 ### 4.1 chat 特征层公用件（src/features/chat/，小欧 2026-10-05 新增）
 
@@ -292,6 +302,8 @@
 | `EyeIcon` / `SignalBarsIcon` / `SunIcon` / `ApproachDotsIcon` / `SpinSquareIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行图标组：当前在用 1 个（`SpinSquareIcon`）+ 备用 4 个（北京老陈令备用常驻，想用即改 `ReasoningIcon` 别名取值）。`viewBox` 统一收为图形外接框，缩放后填满 `Icon.BOX`、垂直居中；`animating` 条件挂动画类 | `{ size?: number; animating?: boolean }` | JSX |
 | `Icon`（图标规格令牌） | `src/utils/stepStyles.ts` | step 行首图标统一规格：`BOX: 16`(盒子边长) + `STROKE: 2`(统一描边宽)。图标组件 `size` 默认取 `Icon.BOX`、`strokeWidth` 取 `Icon.STROKE`；图形需"填满盒子"时令描边外缘=viewBox 边界 — 小欧 2026-10-07 | — | `{ BOX: 16; STROKE: 2 }` |
 | `ShortcutHelp` / `SHORTCUT_GROUPS` | `components/input/ShortcutHelp.tsx` | 输入帮助分层唯一落点：输入框内只保留核心 placeholder（提交语义 + 能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片`，见 `InputCore.PLACEHOLDER_HINTS`），原常驻编号清单的其余输入方式迁入「输入技巧」浮层（按 输入 / 文件与引用 / 图片 三组归类，可随新增扩展）；入口经 `SubmitBar.middleExtra` 落在底部按钮行中段（右对齐、与按钮同高，输入区零额外高度；打字后/受阻态 placeholder 隐藏时入口仍常驻）。**维护唯一入口**：增删改输入方式只改 `SHORTCUT_GROUPS`，浮层分组自动跟随 — 商量 2026-11-13 | — | `ShortcutGroup[]` / JSX |
+| `useScheduleList` | `hooks/useScheduleList.ts` | 「最新执行计划」派生：倒序扫步骤流取**最后一次** `schedule` 调用，读 `tools[].params.items` 归一为 `{items:[{content,status}], step}`；schedule 语义是整体替换，故最后一次即当前态（空清单/非法参数返回 null，入口据此隐藏）。不新增事件/表/快照槽，切会话与历史回放随步骤自然恢复 — 商量 2026-11-18 | steps: ExecutionStep[] | ScheduleSnapshot \| null |
+| `ScheduleCard` | `components/taskinfo/ScheduleCard.tsx` | taskinfo 右组「执行计划」入口 + 浮层卡片（`计划 N/M`，窄档只显示 `N/M`，无清单不渲染）：条目按 `completed/in_progress/pending/cancelled` 三档着色，脚注点出「进行中：xxx」；与问询面板的分工是**主动查 vs 阻塞弹出**。清单由 `useScheduleList` 派生后传入（入口显隐与卡片共用同一份）— 商量 2026-11-18 | `{list: ScheduleSnapshot \| null, compact?: boolean}` | JSX |
 
 ---
 
@@ -372,3 +384,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.6 | 2026-11-13 | §4.1 登记改为 `ShortcutHelp` / `SHORTCUT_GROUPS`（`components/input/ShortcutHelp.tsx`）：撤销 `INPUT_HINTS` 编号清单常驻输入框的做法，输入框仅保留核心 placeholder；其余输入方式按 输入/文件与引用/图片 三组归入「输入技巧」浮层（原名「全部技巧」）；能力提示尾段并入 placeholder（`@ 引用 · 拖入文件 · 粘贴图片`），入口置于按钮行中段；`InputCore` 显式下发上下留白 4→2；增删改输入方式只改 `SHORTCUT_GROUPS` | 商量 |
 | v1.7 | 2026-11-13 | §1.4 新增 `CONTROL_PADDING`（`TEXT_INPUT_X` 12 / `TEXT_INPUT_Y_TIGHT` 2）与 `FOCUS_RING_WIDTH`/`FOCUS_RING_OFFSET`（2/2）：文本输入水平内距脱离库缺省 11px 改为 4px 网格标准档，焦点环规格集中定义；`InputCore` 删本地 `HINT_LEFT_PX`/`TEXTAREA_PAD_Y`，`ChatInput` 的 `outlineOffset`/`borderRadius` 改走令牌；`tokens.ts` 的 radius/gap 派生自 `Radius.DEFAULT`/`Spacing.MD`；`stepStyles.ts`/`tokens.ts`/`controlScale.ts` 顶部补「严禁使用 antd 默认规格属性」铁律横幅 | 商量 |
 | v1.8 | 2026-11-13 | 新增 §1.5「间距与行高」（`theme/spacing.ts`，全站空白维度唯一真源）：`Gap`（ROW/STACK/INLINE/SECTION/GROUP 五档语义）+ `LineHeight`（DENSE/BODY/LOOSE 三档），并立间距铁律——一个距离只归一处（兄弟间距由父 gap 独占）、padding 只做内容与容器边的留白、margin 原则不用（仅绝对定位贴边与行内文本流两种例外且须注释）；§1.5–§1.11 顺延为 §1.6–§1.12。落地：ChatInput/InputCore/SubmitBar/ShortcutHelp/InputHistoryPanel/FileTrailPanel/SessionLayout/TaskInfoBar 的 gap 改用语义档，删多处 marginBottom/marginLeft 与 padding 叠加，行高改走 LineHeight | 商量 |
+| v1.9 | 2026-11-18 | 三块浮层同一套卡片语言：§三 新登记 `PanelCard`/`PanelChip`/`PanelRow`/`PanelEmpty`（`components/PanelCard/`，只收敛视觉：壳 raised/plain 两形态 + 三原子；`PanelRow` 横向内距归零使行文字与标题同一条左轴线，`hoverable` 给「行不可点但行内有悬停操作」的浅档底色）；§四 新登记 `useCountdown`（`hooks/useCountdown.ts`，按截止时刻采样，修首秒双减，授权弹窗与问询面板共用）；§4.1 新登记 `useScheduleList` + `ScheduleCard`（执行计划清单派生自步骤流 + taskinfo 右组「计划 N/M」入口）；§1.13 新登记 `shortenPath`（`utils/projectPath.ts`，长路径展示收敛，信任清单用；同文件路径转换/判据/深链拼装一并说明）；`Size.PANEL_LIST_MAX_H`(360) 作为浮层列表限高唯一刻度 | 商量 |

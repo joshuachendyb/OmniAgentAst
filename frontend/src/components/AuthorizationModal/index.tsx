@@ -91,6 +91,8 @@
 // 编辑历史: 2026-11-12 小欧 - 字号归位: 工具名字号 13 → FontSize.PRIMARY(13px 档废除), import 同步补 FontSize — 小欧-2026-11-12
 // 编辑历史: 2026-11-13 商量 - 字重与字号归位: fontWeight 600 → FontWeight.BOLD, fontSize 12 → FontSize.SECONDARY,
 //   标题 16 → FontSize.SUBHEAD, import 同步补 FontWeight — 商量-2026-11-13
+// 编辑历史: 2026-11-18 商量 - 删除无调用方的 truncatePath(长路径收敛改由 utils/projectPath.shortenPath 单一实现,
+//   供信任清单使用); 操作范围行 truncateDir 不变 — 商量-2026-11-18
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
 import {
@@ -107,6 +109,8 @@ import {
 import { injectKeyframes } from '../AnimatedIcons/animations';
 // 2026-09-16 老杨 - S3:引入CountdownRing子组件,countdown/progress隔离 - 老杨-2026-09-16
 import CountdownRing from './CountdownRing';
+// 2026-11-18 商量 - 倒计时公用 hook(与 question 面板同一实现, 按截止时刻采样)
+import { useCountdown } from '@/hooks/useCountdown';
 // 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
 // 2026-10-11 02:40 小欧 - 标题改自绘 span 后不再用 Typography.Title（原生 h5 带默认 margin，
 //   在 flex 行里会被挤折行），字重直接给数值 600，与原 h5 视觉一致。
@@ -242,14 +246,6 @@ const TEMP_AUTH_LEVELS = new Set([
   'delete_outside_whitelist',
 ]);
 
-const truncatePath = (p: string): string => {
-  if (!p) return p;
-  const n = norm(p);
-  const parts = n.split('/').filter(Boolean);
-  if (parts.length <= 3) return n;
-  return `…/${parts.slice(-3).join('/')}`;
-};
-
 // 操作范围行只显示目录(去掉末尾文件名, 保留完整目录路径, 不截断)
 const truncateDir = (p: string): string => {
   if (!p) return p;
@@ -269,8 +265,12 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   injectKeyframes('pulse');
   // 2026-09-03 小欧 修复: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
   const [trustSession, setTrustSession] = React.useState(false);
-  const [countdown, setCountdown] = React.useState(
-    () => request?.confirmTimeout ?? 0
+  // 2026-11-18 商量 - 倒计时改公用 hook(按截止时刻采样): 原「首 tick 100ms + 每秒自减」在第 1 秒
+  //   会连掉 2 格, 展示窗口比后端真实窗口短 1 秒; 授权与问询两处共用同一实现。
+  //   本组件由 ChatPage 按 confirmId 作 key 强制重建, 故初值即本请求的真实窗口, 无跨请求残留。
+  const countdown = useCountdown(
+    request?.confirmTimeout ?? 0,
+    request?.confirmId
   );
   const onConfirmRef = React.useRef(onConfirm);
   // 2026-09-03 小欧 修复: submitting 互斥态, 提交中禁用按钮/勾选, 防连点意图翻转
@@ -292,18 +292,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       return '[参数序列化失败]';
     }
   }, [request?.params]);
-
-  React.useEffect(() => {
-    // 2026-09-03 小欧 修复: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
-    if (!visible || !request) return;
-    const tick = () => setCountdown((v) => Math.max(0, v - 1));
-    const t = setInterval(tick, 1000);
-    const first = setTimeout(tick, 100);
-    return () => {
-      clearInterval(t);
-      clearTimeout(first);
-    };
-  }, [visible, request]);
 
   React.useEffect(() => {
     // 2026-09-07 小欧 B3 防御加固: submitting 互斥入守卫——手动确认/已代发一次即锁定, 防 same 实例
@@ -393,7 +381,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </span>
           <Tag
             color={safetyConfig.color}
-            style={{ marginBottom: 0, fontSize: FontSize.SECONDARY, flexShrink: 0 }}
+            style={{
+              marginBottom: 0,
+              fontSize: FontSize.SECONDARY,
+              flexShrink: 0,
+            }}
           >
             {statusTagText}
           </Tag>
@@ -548,7 +540,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             marginBottom: 2,
           }}
         >
-          <Text type="secondary" style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}>
+          <Text
+            type="secondary"
+            style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}
+          >
             工具名称:
           </Text>
           <Text strong style={{ fontSize: FontSize.PRIMARY, color: '#1677ff' }}>

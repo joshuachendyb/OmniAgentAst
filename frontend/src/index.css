@@ -416,6 +416,75 @@
   outline-offset: -1px;
 }
 
+/* 2026-11-18 商量 - 浮层卡片列表行(.panel-row, 由 components/PanelCard 的 PanelRow 挂载):
+   计划清单/信任清单/问询选项三处浮层共用一套行反馈, 避免每个卡片各写一套 hover。
+   规格与 .params-clickable 字面对齐(#f0f0f0 底 + 2px #1677ff outline), 沿用既有色值不新增令牌;
+   走 CSS 而非 React state, hover 零重渲染。选择器只认 [role='button'] —— 纯展示行不出现悬停底色,
+   同一张卡片里既有可点行也有只读行, 不分流会出现"看起来能点其实点不动"。 */
+.panel-row {
+  transition: background 0.15s ease;
+}
+.panel-row[role='button']:hover {
+  background: #f0f0f0;
+}
+.panel-row[role='button']:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -1px;
+}
+
+/* 2026-11-18 商量 - 不可点行的悬停提示(hoverable): 行本身没有点击语义, 但行内有"悬停才现身"的
+   操作(信任清单撤销 ✕)。底色取浅一档 #fafafa(BG.SECONDARY) 与可点行的 #f0f0f0 分档 ——
+   深浅即"能不能点"的信号, 两档不混用, 避免出现"看起来能点其实点不动"。 */
+.panel-row-hover:hover {
+  background: #fafafa;
+}
+
+/* 2026-11-18 商量 - 禁用型二次操作(信任撤销)渐进披露:
+   常驻一排 ✕ 会让只读清单一亮起来就是删除按钮墙; 改为悬停/聚焦该行才现身(操作仍在 DOM,
+   键盘 Tab 可达, :focus-within 保证键盘用户看得见)。触屏无 hover 概念 → 一律常显,
+   否则等于把功能藏死(@media (hover: none) 是能力探测, 不是设备名猜测)。 */
+.panel-del {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.panel-row:hover .panel-del,
+.panel-row:focus-within .panel-del {
+  opacity: 1;
+}
+@media (hover: none) {
+  .panel-del {
+    opacity: 1;
+  }
+}
+
+/* 2026-11-18 商量 - 浮层卡片内容区细滚动条(.panel-scroll, PanelCard 内容区无条件挂载):
+   内容超出限高时才出现。antd/系统的 15px 灰槽在 384px 宽的卡片里过重, 且分栏会挤掉 6px 文字宽;
+   这里只留 6px 拇指、轨道透明, 让"还能往下滚"这件事被看见而不抢内容(firefox 走 scrollbar-width)。 */
+.panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 transparent;
+  overscroll-behavior: contain;
+}
+.panel-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+.panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 2026-11-18 商量 - 问答浮层(贴输入框上沿)的键盘焦点可见性: 面板整体可聚焦以承接
+   1-9 / Ctrl+Enter / Alt+← / Esc 快捷键, 键盘用户必须看得见焦点落在哪里。 */
+.question-dock:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
 /* 2026-10-13 小欧 - 浮层纵向居中(北京老陈裁定)。调用方两处: 工具行参数浮层(bottomRight, 右缘贴按钮)
    + 上下文概览浮层(bottomLeft, 左缘贴按钮)。
    横向**故意不接管**: 不写 left/translateX, 让 rc-trigger 的内联坐标继续按 placement 横向锚定。

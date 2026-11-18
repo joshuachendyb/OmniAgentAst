@@ -132,12 +132,17 @@ import { Gap, LineHeight } from '@/theme/spacing';
 import { formatTimeHMS, formatDurationHMS, parseTimeSafe } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18; 2026-11-13 商量: 实时秒表服务器时钟锚解析 — 商量-2026-11-13
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
+import { useScheduleList } from '../../hooks/useScheduleList'; // 2026-11-18 商量: 计划清单派生(供入口显隐与卡片共用一份)
 // [46b] P2b 小欧 2026-11-17: final 帧收尾上交台账快照(权威源在 store, 经调用点取参传 api 层)
-import { chatStreamStore, isTerminalStatus } from '../../streams/chatStreamStore';
+import {
+  chatStreamStore,
+  isTerminalStatus,
+} from '../../streams/chatStreamStore';
 import { TrustPanel } from '../config/TrustPanel';
 import { EllipsisTip } from './EllipsisTip';
 import { MetricItem } from './MetricItem';
 import { FloatingEntry } from './FloatingEntry'; // v4.2: G6/G8 双浮层入口公共壳(见 6.5.2.4)
+import { ScheduleCard } from './ScheduleCard'; // 2026-11-18 商量: 执行计划入口(派生自步骤流)
 import {
   BADGE_MAP,
   EVENT_ICON_MAP,
@@ -259,6 +264,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 3.9 断点矩阵（v4.4 修复#3）：wide≥1280 / mid 1280~960 / narrow 960~768 / xsmall<768
   const bp = useInfoBreakpoint();
   const isNarrow = bp === 'narrow' || bp === 'xsmall';
+  // 2026-11-18 商量 - 计划清单由步骤流派生(最后一次 schedule 调用=当前清单);
+  //   在此派生一次供「分隔点 + 入口显隐 + 卡片内容」三处共用, 避免入口与卡片各算一份
+  const scheduleList = useScheduleList(steps);
   // 2026-10-04 小欧: 极窄档(<768)备用, 当前两项收窄门统一用 isNarrow; 保留待极窄档单独策略时直接用(北京老陈令留)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 有意保留的备用断点档, 非死代码
   const isXSmall = bp === 'xsmall';
@@ -606,11 +614,20 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 value={`${windowUsePct}%`}
                 tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / 窗口 ${info.contextWindow ?? 0} = ${windowUsePct}%`}
               />
-              <span style={DOT_STYLE}>•</span>
             </>
           )}
-          {/* 10-信任 — G7: TrustPanel触发按钮, 窄档仅计数 */}
+          {/* 10-计划 — 2026-11-18 商量: 执行计划入口, 排在「信任」前(操作类入口留在最右) */}
+          {scheduleList && (
+            <>
+              <span style={DOT_STYLE}>•</span>
+              <ScheduleCard list={scheduleList} compact={isNarrow} />
+            </>
+          )}
+          {/* 11-信任 — G7: TrustPanel触发按钮, 窄档仅计数 */}
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
+          {/* 2026-11-18 商量 - 分隔点改为「每项自带前导点」: 原占窗率块尾部带点, 靠"后面一定是信任"成立;
+              插入计划入口后变成「• •」双点。改为所有可选项一律前缀点, 谁渲染谁带点, 增删项不再影响邻项。 */}
+          <span style={DOT_STYLE}>•</span>
           <TrustPanel sessionId={sessionId} compact={isNarrow} />
           {/* 11-事件 — G8: 浮层②事件卡片, 热区32×32, 开合唯一真源=trigger+onOpenChange */}
           {/* G8 事件入口(v4.1/v4.2, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}

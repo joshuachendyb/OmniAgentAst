@@ -335,20 +335,28 @@ export interface TrustedTool {
   path: string | null;
 }
 
+/** 信任清单接口线上形状(后端 /sessions/{id}/trust 正文) */
+interface TrustWireResponse {
+  session_id: string;
+  total: number;
+  trusted_tools: Array<{ tool_name: string; path: string | null }>;
+}
+
 export const trustApi = {
   getTrust: async (sessionId: string): Promise<TrustedTool[]> => {
     // 2026-11-18 小欧 - 信任清单只随授权/撤销变化(均为写请求), 走共享读; 只取正文(整份
     //   AxiosResponse 含函数, 深拷贝会抛 DataCloneError) — 小欧-2026-11-18
-    const r = await sharedGet(
+    // 2026-11-18 商量 - 修共享读改造遗留的取值层级: sharedGet 拿到的是**正文**,
+    //   原写法继续按 AxiosResponse 取 r.data → 恒 undefined → 清单永远是空(信任入口恒显 0),
+    //   而接口本身返回 total>0。改为直接读正文 trusted_tools — 商量-2026-11-18
+    const r = await sharedGet<TrustWireResponse>(
       `trust:${sessionId}`,
       async () => (await api.get(`/sessions/${sessionId}/trust`)).data
     );
-    return (r.data?.trusted_tools ?? []).map(
-      (t: { tool_name: string; path: string | null }) => ({
-        toolName: t.tool_name,
-        path: t.path ?? null,
-      })
-    );
+    return (r.trusted_tools ?? []).map((t) => ({
+      toolName: t.tool_name,
+      path: t.path ?? null,
+    }));
   },
   revokeTrust: (
     sessionId: string,

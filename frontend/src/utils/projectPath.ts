@@ -64,6 +64,8 @@
 //   宽松判据 isAbsDirLikePath 的「无扩展名即目录」猜测不得覆盖它 —— 否则 `…\etc\hosts`
 //   被当目录补尾分隔符，深链落到 /files 外部树接口被后端 400 拒。新增 PathTargetOptions.fileHint
 //   （仅在调用方确知是文件时传 true），不进 PathTarget、不改 dirHint 语义（后者 false 表示"未知"）— 小欧-2026-11-18
+// 2026-11-18 商量 - 新增 shortenPath：路径**展示**收敛（盘符 + 末段），供信任清单等密集列表用；
+//   原 AuthorizationModal 自建 truncatePath 且已无调用方，改由本文件单一实现 — 商量-2026-11-18
 
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
@@ -110,6 +112,29 @@ const hasGlobChar = (p: string): boolean => /[*?]/.test(p);
  * 2026-11-02 小欧 - 自 features/refs/identity.labelOf 上提，反向由 labelOf 复用 — 小欧-2026-11-02
  */
 export const baseName = (p: string): string => p.split(/[\\/]/).pop() || '';
+
+/**
+ * 路径**展示**收敛（列表/徽标用）：过长时丢弃中间段，保留盘符 + 末 tail 段。
+ *
+ * 为什么不是纯 CSS 省略号：同一台机器上的信任路径前缀几乎一样（`E:\test_dir\report\…`），
+ * 右端省略恰好先吃掉最有区分度的末段，一列看下来全是同一串前缀。
+ * 故按**段**裁剪：`E:\test_dir\report\2026-11-17-network-task` → `E:\…\report\2026-11-17-network-task`。
+ * 盘符必须留（信任范围差在哪个盘是实质区别）；短路径原样返回，不做无意义的改写。
+ *
+ * @param p    原始路径（调用方仍需把完整值挂到 title，供悬停核对）
+ * @param max  原文字符数上限，超过才裁剪
+ * @param tail 保留的末段数
+ */
+export const shortenPath = (p: string, max = 40, tail = 2): string => {
+  const raw = p.trim();
+  if (raw.length <= max) return raw;
+  const sep = raw.includes('\\') ? '\\' : '/';
+  const parts = norm(raw).split('/').filter(Boolean);
+  if (parts.length <= tail + 1) return raw;
+  const drive = /^[A-Za-z]:$/.test(parts[0]) ? parts[0] : '';
+  const kept = parts.slice(-tail).join(sep);
+  return drive ? `${drive}${sep}…${sep}${kept}` : `…${sep}${kept}`;
+};
 
 /** URL（`http://`、`https://` 等带 `//` 的 scheme）不是文件路径 */
 export const isUrlLike = (p: string): boolean =>
@@ -335,7 +360,8 @@ const withDirTail = (absPath: string): string =>
  * 生成端确知是文件时带上, 文件页原样回传给 resolvePathTarget;
  * 否则无扩展名文件(hosts/LICENSE)在页面侧会被「无扩展名即目录」重新猜成目录。
  */
-const fileHintQuery = (fileHint: boolean): string => (fileHint ? '&file=1' : '');
+const fileHintQuery = (fileHint: boolean): string =>
+  fileHint ? '&file=1' : '';
 
 /**
  * `/file-ref?path=…` 的**唯一**拼装点（正文 markdown 内部链接，href 存原文）。
@@ -500,7 +526,9 @@ export const resolvePathTarget = (
     isDir,
     isExternal: false,
     pending: false,
-    url: buildFileDeepLink(rel, isDir ? null : lineRange) + fileHintQuery(fileHint),
+    url:
+      buildFileDeepLink(rel, isDir ? null : lineRange) +
+      fileHintQuery(fileHint),
   };
 };
 

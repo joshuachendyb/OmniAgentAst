@@ -6,6 +6,7 @@ import type { KeyboardEvent } from 'react';
 
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
+import { useCountdown } from '@/hooks/useCountdown';
 import { ErrorType, handleError } from '@/services/error/handler';
 import { taskControlApi } from '@/services/api/task.api';
 import type { QuestionItem } from '@/types/chat';
@@ -13,7 +14,6 @@ import type { QuestionItem } from '@/types/chat';
 export interface QuestionRequest {
   questionId: string;
   questions: QuestionItem[];
-  content?: string;
   backendTimeout?: number; // 2026-11-18 商量: 后端问询窗口秒数(已由 sseParser assignTimeout 归一), dock 倒计时
 }
 
@@ -42,46 +42,36 @@ export function useQuestionDock(sessionId: string | null) {
   const [request, setRequest] = useState<QuestionRequest | null>(null);
   const [state, setState] = useState<DockState>(EMPTY_STATE);
   const submittingRef = useRef(false);
+  // 2026-11-18 商量 - 换题重置改为 ref 门控: 原写法在 setRequest 的更新函数内调 setState,
+  //   更新函数须为纯函数(严格模式下会被调用两次 → 重置执行两次); 用 ref 记录已见 id 后同一处只做一件事
+  const lastQuestionIdRef = useRef<string | null>(null);
 
   // 快照 → 请求态(同 id 去重, 新问询重置分页/答案/自定义)
   useEffect(() => {
-    if (!pendingQuestion?.question_id) {
+    const id = pendingQuestion?.question_id ?? null;
+    if (!id) {
+      lastQuestionIdRef.current = null;
       setRequest(null);
       return;
     }
-    setRequest((prev) => {
-      if (prev?.questionId === pendingQuestion.question_id) return prev;
-      setState(EMPTY_STATE);
-      return {
-        questionId: pendingQuestion.question_id,
-        questions: pendingQuestion.questions || [],
-        content: pendingQuestion.content,
-        backendTimeout:
-          typeof pendingQuestion.backend_timeout === 'number'
-            ? pendingQuestion.backend_timeout
-            : undefined,
-      };
+    if (lastQuestionIdRef.current === id) return;
+    lastQuestionIdRef.current = id;
+    setState(EMPTY_STATE);
+    setRequest({
+      questionId: id,
+      questions: pendingQuestion?.questions || [],
+      backendTimeout:
+        typeof pendingQuestion?.backend_timeout === 'number'
+          ? pendingQuestion.backend_timeout
+          : undefined,
     });
   }, [pendingQuestion]);
 
-  // 2026-11-18 商量 - 倒计时纯展示: 每秒递减到 0(节奏同 AuthorizationModal: 首 tick 100ms 再 1s interval);
-  //   到点动作不在前端做——后端窗口收口发 question_resolved(expired) 清窗, 单一权威源
-  const [countdown, setCountdown] = useState(0);
-  useEffect(() => {
-    const total = request?.backendTimeout ?? 0;
-    if (!request || total <= 0) {
-      setCountdown(0);
-      return;
-    }
-    setCountdown(total);
-    const tick = () => setCountdown((v) => Math.max(0, v - 1));
-    const iv = window.setInterval(tick, 1000);
-    const first = window.setTimeout(tick, 100);
-    return () => {
-      window.clearInterval(iv);
-      window.clearTimeout(first);
-    };
-  }, [request]);
+  // 2026-11-18 商量 - 倒计时纯展示: 到点动作不在前端做 —— 后端窗口收口发 question_resolved(expired) 清窗, 单一权威源
+  const countdown = useCountdown(
+    request?.backendTimeout ?? 0,
+    request?.questionId
+  );
 
   const questions = request?.questions ?? [];
   const total = questions.length;
