@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 2026-11-18 商量 - 新增 question 工具: 阻塞式人机问答; 回调经 tools/context ContextVar 注入(零越层);
 #   开关/超时继承 HITL; 降级/超时/取消统一以 build_error + hint 收口, 不引入异常控制流
+# 2026-11-18 商量 - 三堂会审整改: 双分支镜像 hitl_confirm — HTL关不再立即降级(改由发射器分窗: 短窗要问+到点expired自动过);
+#   降级分支仅保留"回调未注入"(直接调工具/无agent); expired hint 去秒数插值(窗口双分支后工具侧不再自知秒数); 清 get_config/HITL_TIMEOUT 死导入
 """
 question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取实现决策)
 
@@ -11,8 +13,6 @@ question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取
 import time as _time_mod
 from typing import Any, Dict, List, Tuple
 
-from app.config import get_config
-from app.constants import HITL_TIMEOUT
 from app.tools.context import get_current_question_callback
 from app.tools.tool_constants import ERR_QUESTION
 from app.tools.tool_response import build_error, build_success
@@ -103,14 +103,6 @@ def _normalize_answers(raw: Any, count: int) -> List[List[str]]:
     return answers
 
 
-def _hitl_timeout_seconds() -> int:
-    """读取 HITL 超时秒数(question 复用), 异常回落默认值 — 商量 2026-11-18"""
-    try:
-        return int(float(get_config().get("security.hitl.timeout", HITL_TIMEOUT)))
-    except (TypeError, ValueError):
-        return HITL_TIMEOUT
-
-
 def _build_question_llm_data(
     exec_code: str,
     duration_ms: int,
@@ -164,15 +156,14 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
             ),
         )
 
-    enabled = get_config().get("security.hitl.enabled", True)
     callback = get_current_question_callback()
-    if not enabled or callback is None:
+    if callback is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_error(
             data={"answers": [], "questions": normalized},
             llm_data=_build_question_llm_data(
-                "error", duration_ms, detail="人工问答不可用",
-                hint="人工问答已关闭, 请自行决策并说明假设后继续",
+                "error", duration_ms, detail="问询通道未注入",
+                hint="无问询通道(直接调工具/无agent场景), 请自行决策并说明假设后继续",
                 questions=normalized,
             ),
         )
@@ -198,7 +189,7 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
     if cancelled or expired:
         if expired:
             detail = "用户未在规定时间内回答"
-            hint = f"用户未在{_hitl_timeout_seconds()}秒内回答, 请基于最合理假设继续, 不要重新提问"
+            hint = "用户未在规定时间内回答, 请基于最合理假设继续, 不要重新提问"
         else:
             detail = "用户已放弃本次提问"
             hint = "用户已放弃本次提问, 请停止推进并在最终回答中说明已中断"

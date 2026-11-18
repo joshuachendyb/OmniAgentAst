@@ -27,6 +27,7 @@ Author: 小沈 - 2026-05-31
 # 2026-11-03 小欧 - log_and_print 增 level 参数: emit_notice 日志显式传 level="WARNING"(控制台默认档可见通知) — 小欧-2026-11-03
 # 2026-11-18 商量 - 新增 ask_question: 经 question_gateway 发阻塞问询事件(SSE), buffer 判空同 emit_notice, 供 tool_executor 注入回调
 # 2026-11-18 商量 - 三堂会审整改: ask_question 无缓冲区改抛 RuntimeError(经工具层 except 收口为"问询通道异常, 自行决策继续"), 不再伪造 cancelled 误报"用户已放弃"
+# 2026-11-18 商量 - 超时双分支镜像 hitl_confirm: HTL开=security.hitl.timeout 窗, HTL关=bypass 短窗自动过(仍要问), 公式单源复用 _resolve_timeouts
 """
 
 import time
@@ -130,18 +131,20 @@ class StepEmitter:
         """阻塞问询统一发射器 — 商量 2026-11-18
 
         延迟导入同 emit_notice; buffer 缺失抛 RuntimeError(经工具层 except 收口为"问询通道异常")。
-        超时取 security.hitl.timeout(与工具保险丝同源)。
+        超时双分支同 hitl_confirm(HITL开=security.hitl.timeout 窗/HTL关=bypass 短窗自动过), 公式单源 _resolve_timeouts。
         返回 {"answers","cancelled","expired","reason","question_id"}。
         """
         from app.config import get_config
-        from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
         from app.services.agent.handlers.question_gateway import ask_question
         from app.services.task.task_state import get_stream_buffer
 
-        try:
-            timeout = int(float(get_config().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
-        except (TypeError, ValueError):
-            timeout = _D_HITL_TIMEOUT
+        # 2026-11-18 商量 - 双分支镜像 hitl_confirm(超时公式单源复用 _resolve_timeouts):
+        #   HTL开(真人工问询)→backend=security.hitl.timeout(≈120s);
+        #   HTL关(bypass, 同 confirm"要问但自动过")→backend=max(MIN+BYPASS_LEAD, auto_confirm_delay) 短窗(≈10s),
+        #   到点后端收口 expired, 窗内用户仍可抢答
+        _enabled = bool(get_config().get("security.hitl.enabled", True))
+        from app.services.agent.handlers.hitl_gateway import _resolve_timeouts
+        timeout = int((await _resolve_timeouts(not _enabled))[0])
         _buf = get_stream_buffer(self.agent.task_id)
         if _buf is None:
             # 2026-11-18 商量 - 无缓冲区属基础设施异常, 抛错走工具层"问询通道异常"语义(自行决策继续),
