@@ -84,6 +84,7 @@ import { useChatInit } from '../../features/chat/hooks/useChatInit';
 import { useChatLifecycle } from '../../features/chat/hooks/useChatLifecycle';
 import { useChatTitle } from '../../features/chat/hooks/useChatTitle';
 import { useChatPanels } from '../../features/chat/hooks/useChatPanels';
+import { chatStreamStore } from '../../features/chat/streams/chatStreamStore';
 import {
   publishForegroundSession,
   clearForegroundSession,
@@ -208,6 +209,20 @@ const ChatPage: React.FC = () => {
       }
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
+
+  // 2026-11-18 opencode - 续跑任务自动附着轮询: 后台 shell 完成后后端以新 task_id 建续跑任务,
+  //   前端未走 sendMessage → store 锚在旧终态任务 → 不接流(不滚动/事件空/loading 卡死/发不出消息)。
+  //   本页空闲且后端有未锚定的 executing 任务时, attachOrphanTask 重新锚定并接流(内部全守卫, 幂等无副作用)。
+  //   3s 粒度足够(续跑非高频), 只在会话页挂载期间运行; 切走/卸载即停。
+  useEffect(() => {
+    if (!sessionId) return;
+    const attach = () => {
+      void chatStreamStore.attachOrphanTask(sessionId);
+    };
+    attach(); // 挂载/切会话即查一次(覆盖"续跑任务在页面打开期间已完成启动"的窗口)
+    const timer = window.setInterval(attach, 3000);
+    return () => window.clearInterval(timer);
+  }, [sessionId]);
 
   // 2026-11-02 小欧 - 左侧回复区写入：isReceiving 翻 false 时取 executionSteps 中 type=final 的 response 写入，
   // 仅非空才写（completed 正常完成的 final.response 为空，左侧留空，历史回放从 DB 读）。

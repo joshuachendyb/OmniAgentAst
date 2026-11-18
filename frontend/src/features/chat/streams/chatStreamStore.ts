@@ -90,6 +90,9 @@
 //   原仅首发(start 帧)pushSentRefs, 插话引用上行后无台账落点, 任务「本轮引用」缺插话的引用/图片 — opencode-2026-11-18
 // 编辑历史: 2026-11-18 opencode - refs_blocked 被拒引用从台账剔除(dropSentRefs, 同键只删最新一条);
 //   插话台账改为 POST 前入账(阻断帧必能看到条目)、失败回撤; SentRefInput/台账条目补 kind 透传 — opencode-2026-11-18
+// 编辑历史: 2026-11-18 opencode - 续跑重锚定统一: resume 锚点纠正分支补清 lastSeq/steps/response
+//   (原只改 taskId 保留旧 lastSeq → after_seq 对不上新任务 seq 0 起的事件, 续跑执行中刷新后不滚动);
+//   与 attachOrphanTask 的清理抽为 reanchorToTask 共用 — opencode-2026-11-18
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -799,6 +802,29 @@ async function attachActiveTask(
   return detachResumeStream(s);
 }
 
+/** 重锚定到新任务并清空上一任务流态 — 2026-11-18 opencode
+ *  seq 按 task 独立从 0 起(task_state.publish: seq=len(event_log)), 换任务必须清 lastSeq/steps/response,
+ *  否则 after_seq=lastSeq+1 把新任务 seq 0 起的事件全过滤(消息不滚动)。resume 锚点纠正与 attachOrphanTask 共用。 */
+function reanchorToTask(
+  s: ChatStreamSession,
+  taskId: string,
+  createdAt: string
+): void {
+  commit(s, (d) => {
+    d.serverTaskId = taskId;
+    d.serverTaskStartedAt = Date.parse(createdAt) || Date.now();
+    d.lastSeq = -1;
+    d.executionSteps = [];
+    d.currentResponse = '';
+    d.metaFrames = emptyMetaFrames();
+    d.hitlWaitingKeys = new Set();
+    d.status = 'active';
+    d.reconnectStatus = 'idle';
+    d.pendingAuthorization = null;
+  });
+  persistNowOf(s.sessionId);
+}
+
 /** 2026-11-03 小欧 - 续传「建连即返回」: resume 负责决定恢复路径并接上流, 不等任务跑完(原 await pump 直至 SSE 关闭,
  *  使 useChatInit 的历史加载挂在其后 → 恢复中会话长时间空白); 返回 'recovering', 流仍由 resumeStreamRequest 全权负责。 */
 function detachResumeStream(s: ChatStreamSession): ResumeResult {
@@ -1362,13 +1388,8 @@ export const chatStreamStore = {
     //   2026-11-03 小欧 - 不限龄: 长任务(>5min)的锚点同样要按 DB 纠正, 否则提示锚点永远陈旧。
     const live = await findLiveTask(s.sessionId, s.serverTaskId, Infinity);
     if (live && live.task_id !== s.serverTaskId) {
-      const started = Date.parse(live.created_at) || Date.now();
-      commit(s, (d) => {
-        d.serverTaskId = live.task_id;
-        d.serverTaskStartedAt = started;
-        d.status = 'active';
-      });
-      persistNowOf(s.sessionId);
+      // 2026-11-18 opencode - 续跑新任务 seq 从 0 起, 换任务须清 lastSeq/steps(见 reanchorToTask)
+      reanchorToTask(s, live.task_id, live.created_at);
     } else if (live && s.serverTaskStartedAt === 0) {
       // 2026-11-03 小欧 - 锚点相同也要补开跑时刻: 备份不存该字段, 补不上就会在"最新任务"
       //   排序里被当成未知(垫底), 与它是不是最新无关。
@@ -1733,6 +1754,38 @@ export const chatStreamStore = {
       })
     );
     return 'ok';
+  },
+
+  /** 续跑任务自动附着 — opencode 2026-11-18
+   *  后台 shell 完成后后端以新 task_id 创建续跑任务(stream_orchestrator.resume_session_with_notice),
+   *  前端未走 sendMessage → store 仍锚在旧(已终态)任务 → 不接流 → 消息不滚动/事件空/loading 卡死/发不出消息。
+   *  本方法由会话页轮询驱动: 查 DB 该会话最新 executing 任务, 若与本页锚点不同则重新锚定并从 seq 0 接流。
+   *  守卫: 本页在飞工作/有未处理备份/用户正在发消息时一律跳过(不打断正常流), 幂等(锚点相同即空操作)。 */
+  async attachOrphanTask(sessionId: string): Promise<boolean> {
+    if (!sessionId) return false;
+    const s = sessions.get(sessionId);
+    if (!s) return false; // 本页无该会话运行时(未打开过), 不主动造会话
+    if (hasInflightWork(s) || s.reconnectTimeout !== null) return false; // 在飞不打断
+    if (s.isProcessing || s.pendingMessage) return false; // 用户正在发送, 不抢锚点
+    if (isRunningStatus(s.status)) return false; // 本页已跟随一个在跑任务, 无需接管
+
+    // DB 权威: 该会话最新 executing 任务(不限龄, 长任务/续跑仍要认领)
+    let live: Awaited<ReturnType<typeof findLiveTask>>;
+    try {
+      live = await findLiveTask(sessionId, null, Infinity);
+    } catch {
+      return false; // 查询失败静默, 下次轮询自愈
+    }
+    if (!live) return false;
+    if (live.task_id === s.serverTaskId) return false; // 已锚定同一任务
+
+    // 重新锚定到续跑任务(清 lastSeq/steps/response, 置 active), 与 resume 锚点纠正共用 reanchorToTask
+    reanchorToTask(s, live.task_id, live.created_at);
+    detachResumeStream(s); // GET /chat/stream/{新taskId}?after_seq=0 接上续跑流
+    console.info(
+      `[Store] 续跑任务自动附着 session=${sessionId} task=${live.task_id}`
+    );
+    return true;
   },
 
   /** 生成不可变备份快照：lastSeq 与 steps 必须来自同一 revision（原子性要求）。
