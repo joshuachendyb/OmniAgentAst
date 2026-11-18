@@ -1,3 +1,14 @@
+v1.7.6
+发布时间: 2026-11-18 18:23:18 - opencode-2026-11-18
+## v1.7.5以来 变更汇总(4个commit: perf1/fix2/docs1, 不含merge提交与本次version.txt汇总提交本身) - opencode-2026-11-18
+[2026-11-18 18:23:18 opencode] 范围=v1.7.5..HEAD 全部commit(4个); 说明=①打包瘦身: 新增自定义PyInstaller hook(hook-pyarrow.py/hook-matplotlib.py)经spec hookspath覆盖contrib/内置同名hook(USER_HOOKS优先级最高), excludes精确排除pyarrow测试文件57个与matplotlib测试样式1个, 产物57→0/1→0且运行数据完整无损; ②续跑新任务前端接流修复: 新增attachOrphanTask由会话页3s轮询驱动, 后端以新task_id建system_resume任务后前端自动重锚定并从after_seq=0接流(修复不滚动/事件空/loading卡死/发不出消息), resume锚点纠正分支补清lastSeq/steps/response(原保留旧lastSeq致新任务seq0起事件被全过滤), 两处重锚定抽reanchorToTask共用(DRY), 真实浏览器实测主场景通过; ③前端chat插话引用台账/URL外链/设置页URL宽度与tab折叠修复; ④E2E手册新增§4.1本机系统Chrome拉起真实浏览器实测方式(独立context不干扰现有浏览器)。维持PATCH v1.7.6。
+### 1.7.6.1 性能优化
+[打包] perf 7e407dcbf 打包瘦身 自定义hook排除pyarrow/matplotlib测试文件(57→0/1→0) - opencode-2026-11-18
+### 1.7.6.2 缺陷修复
+[前端] fix cd0681bda 续跑 新任务自动重锚接流+resume清lastSeq修复刷新后不滚动 - opencode-2026-11-18
+[前端] fix 78a55d1e3 chat 插话引用台账/URL外链/设置页URL宽度与tab折叠 - 小沈-2026-11-18
+### 1.7.6.3 文档
+[文档] docs ad7a2f3e2 E2E手册 新增§4.1本机系统Chrome拉起真实浏览器实测方式 - opencode-2026-11-18
 v1.7.5
 发布时间: 2026-11-18 08:13:05 - 小欧-2026-11-18
 ## v1.7.4以来 变更汇总(既存20个详见下方; v1.7.5→HEAD 追加8个: feat1/fix4/docs2/test1, 不含merge提交与version.txt汇总提交本身) - opencode-2026-11-18
