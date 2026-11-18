@@ -2,16 +2,32 @@
 //   WHY: schedule 工具是纯回显(不落库/不发事件), 清单只存在于步骤流里, 需要一个人能主动点开的位置;
 //   放 taskinfo 右组是因为该组语义就是「当前任务的实时状态与可查信息」, 计划天然属于这一组。
 //   与 question 面板的分叉: question 的锚点是阻塞本身(必须弹出), 本入口的锚点是用户主动查(不打扰)。
+// 2026-11-18 商量 - 三处纠偏:
+//   ① 行由 alignItems:center 改回首行对齐 —— 多行条目时字形浮在整段中间, 与文字不在一个基线上;
+//   ② 状态字形的 7px/1px 魔法数改令牌(Spacing.MD / BorderWidth.THIN), 刻度外数字不得出现在业务代码;
+//   ③ 脚注「共 N 项，第 M 步更新」把内部步骤计数当说明写给人看, 改成人话(进行中/全部完成) — 商量-2026-11-18
 import { CloseOutlined, CheckOutlined } from '@ant-design/icons';
-import { Button } from 'antd';
 import { useEffect, useState } from 'react';
 
-import { PanelCard, PanelChip, PanelRow } from '@/components/PanelCard';
+import {
+  PanelCard,
+  PanelChip,
+  PanelIconButton,
+  PanelRow,
+} from '@/components/PanelCard';
 import type {
   ScheduleSnapshot,
   ScheduleStatus,
 } from '@/features/chat/hooks/useScheduleList';
-import { Colors, FontSize, FontWeight, Size } from '@/utils/stepStyles';
+import { LineHeight } from '@/theme/spacing';
+import {
+  BorderWidth,
+  Colors,
+  FontSize,
+  FontWeight,
+  Size,
+  Spacing,
+} from '@/utils/stepStyles';
 
 import { FloatingEntry } from './FloatingEntry';
 
@@ -31,18 +47,26 @@ const STATUS_COLOR: Record<ScheduleStatus, string> = {
   cancelled: Colors.TEXT.TERTIARY,
 };
 
+/**
+ * 一行文字的行盒高(= 字号 × 密集行高)。
+ * 字形按**首行行盒**垂直居中: 条目换行成两行时, 字形仍贴第一行, 而不是浮在整段中间。
+ */
+const FIRST_LINE_BOX = FontSize.PRIMARY * LineHeight.DENSE;
+
 /** 状态字形: 已完成=勾, 进行中=实心点, 待开始=空心圈, 已取消=短横 */
 function StatusGlyph({ status }: { status: ScheduleStatus }) {
   if (status === 'completed') {
-    return <CheckOutlined style={{ fontSize: FontSize.SMALL }} />;
+    return (
+      <CheckOutlined style={{ fontSize: FontSize.SMALL, lineHeight: 1 }} />
+    );
   }
   if (status === 'in_progress') {
     return (
       <span
         style={{
           display: 'inline-block',
-          width: 7,
-          height: 7,
+          width: Spacing.MD,
+          height: Spacing.MD,
           borderRadius: '50%',
           background: Colors.PRIMARY,
         }}
@@ -54,8 +78,8 @@ function StatusGlyph({ status }: { status: ScheduleStatus }) {
       <span
         style={{
           display: 'inline-block',
-          width: 7,
-          height: 1,
+          width: Spacing.MD,
+          height: BorderWidth.THIN,
           background: Colors.TEXT.TERTIARY,
         }}
       />
@@ -65,10 +89,10 @@ function StatusGlyph({ status }: { status: ScheduleStatus }) {
     <span
       style={{
         display: 'inline-block',
-        width: 7,
-        height: 7,
+        width: Spacing.MD,
+        height: Spacing.MD,
         borderRadius: '50%',
-        border: `1px solid ${Colors.BORDER.STRONG}`,
+        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.STRONG}`,
       }}
     />
   );
@@ -84,7 +108,7 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
 
   if (!list) return null;
 
-  const { items, step } = list;
+  const { items } = list;
   const done = items.filter((it) => it.status === 'completed').length;
   const total = items.length;
   const active = items.find((it) => it.status === 'in_progress');
@@ -98,10 +122,8 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
         </PanelChip>
       }
       actions={
-        <Button
-          type="text"
-          size="small"
-          aria-label="关闭执行计划"
+        <PanelIconButton
+          ariaLabel="关闭执行计划"
           icon={<CloseOutlined />}
           onClick={() => setOpen(false)}
         />
@@ -112,9 +134,13 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
         overflowY: 'auto',
       }}
       footer={
+        // 脚注只说人话: 有进行中项就点名, 全做完就说全做完, 其余情况不占一行
+        // (原「共 N 项，第 M 步更新」把内部步骤计数当说明, 读者既不知道"第 M 步"指什么, 也用不上)
         active
           ? `进行中：${active.content}`
-          : `共 ${total} 项，第 ${step} 步更新`
+          : done === total
+            ? '全部完成'
+            : undefined
       }
     >
       {items.map((it, i) => (
@@ -122,7 +148,6 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
           key={`${i}-${it.content}`}
           // 计划是有序的, 按原顺序直显(按状态分组会打乱阅读顺序)
           style={{
-            alignItems: 'center',
             color: STATUS_COLOR[it.status],
             textDecoration:
               it.status === 'cancelled' ? 'line-through' : undefined,
@@ -136,6 +161,8 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
               alignItems: 'center',
               justifyContent: 'center',
               width: FontSize.SECONDARY,
+              // 字形只对齐首行行盒: 条目换行时不会漂到整段中间
+              height: FIRST_LINE_BOX,
               flexShrink: 0,
             }}
           >

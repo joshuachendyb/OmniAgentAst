@@ -8,9 +8,25 @@
 //               本组件只排头部/内容/脚注与缩进分割线, 不再叠一层框(叠框是"贴纸感"的来源)。
 // 2026-11-18 商量 - PanelRow 两处调整: ①横向内距归零, 行文字与卡片标题同一条左轴线;
 //   ②新增 hoverable(不可点但行内有悬停才现身的操作时给浅一档底色) — 商量-2026-11-18
-import type { CSSProperties, ReactNode } from 'react';
+// 2026-11-18 商量 - 行距归一到一处 + 新增自绘图标按钮:
+//   ① PanelRow 行高改由自身上下内距独占(XS 4+4 = 相邻两条 8), 调用方一律不再叠 gap/SECTION ——
+//      此前信任清单"组 gap 4 + 行内距 4+4"两处各算一半, 改一处另一处不动(违 theme/spacing.ts 铁律一);
+//   ② 行内二次操作(撤销 ✕)改绝对定位: 它的 24px 盒高原先把 12px 文字行从 25px 撑到 32px,
+//      行距看起来比实际刻度大 7px —— 行高不该被行内一个图标按钮决定;
+//   ③ 新增 PanelIconButton: antd 按钮的高/内距/圆角/焦点环都是库缺省派生(控 theme/controlScale.ts 铁律),
+//      这里自绘 button, 盒高只取本项目控件小档, 且不参与行高计算 — 商量-2026-11-18
+import { forwardRef } from 'react';
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from 'react';
 
-import { CONTROL_PADDING, CONTROL_RADIUS } from '@/theme/controlScale';
+import {
+  CONTROL_HEIGHT_SM,
+  CONTROL_PADDING,
+  CONTROL_RADIUS,
+} from '@/theme/controlScale';
 import { Gap, LineHeight } from '@/theme/spacing';
 import {
   Colors,
@@ -251,7 +267,10 @@ export function PanelRow({
         gap: Gap.INLINE,
         // 横向不留内距: 行文字与卡片标题同一条左轴线(标题在卡片内容区左缘), 悬停底色通栏。
         // 原 8px 让列表比标题右移一格, 一卡之内两条左轴线 = 手写版面的典型痕迹。
-        padding: `${Spacing.SM}px 0`,
+        // 纵向内距是本组件**唯一**的行距归属: 相邻两行看着是 8px, 调用方不得再叠 gap。
+        padding: `${Spacing.XS}px 0`,
+        // 行内二次操作(信任撤销 ✕)走绝对定位, 自身盒高不参与本行高度计算
+        position: 'relative',
         borderRadius: CONTROL_RADIUS.sm,
         lineHeight: LineHeight.DENSE,
         ...style,
@@ -261,6 +280,85 @@ export function PanelRow({
     </div>
   );
 }
+
+/** 图标按钮色调: default = 中性(关/收), danger = 危险动作(放弃问询) */
+type IconTone = 'default' | 'danger';
+
+/** 图标按钮文案色 —— 只取既有语义色, 不新开色值 */
+const ICON_TONE_COLOR: Record<IconTone, string> = {
+  default: Colors.TEXT.SECONDARY,
+  danger: Colors.ERROR,
+};
+
+interface PanelIconButtonProps {
+  icon: ReactNode;
+  ariaLabel: string;
+  testId?: string;
+  onClick?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  tone?: IconTone;
+  /** 图标字号: 行密度高时降到 SECONDARY(12), 免得图标大过同行文字 */
+  fontSize?: number;
+  /** 追加类名(如 .panel-del 的渐进披露) */
+  className?: string;
+  style?: CSSProperties;
+}
+
+/**
+ * 纯图标按钮 —— 自绘 button, 不走 antd Button。
+ *
+ * WHY 自绘: antd 按钮的控件高/内距/圆角/焦点环一律按库缺省派生(0.75×/1.25× 之类),
+ * 拿它当本项目标准违 theme/controlScale.ts 的铁律。这里三项全部取本项目令牌,
+ * 且盒高恒等于控件小档 24 —— 行内放它不会把所在行撑高(信任清单行距曾被撑大 7px)。
+ *
+ * forwardRef: 纯图标按钮几乎都要挂 Tooltip 做说明, antd 的 Tooltip 给子元素下发 ref 取锚点,
+ * 函数组件不转发则拿不到锚点(且 React 报 "Function components cannot be given refs")。
+ */
+export const PanelIconButton = forwardRef<
+  HTMLButtonElement,
+  PanelIconButtonProps
+>(function PanelIconButton(
+  {
+    icon,
+    ariaLabel,
+    testId,
+    onClick,
+    tone = 'default',
+    fontSize = FontSize.PRIMARY,
+    className,
+    style,
+  },
+  ref
+) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className={className ? `panel-icon-btn ${className}` : 'panel-icon-btn'}
+      data-testid={testId}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: CONTROL_HEIGHT_SM,
+        height: CONTROL_HEIGHT_SM,
+        flexShrink: 0,
+        padding: 0,
+        border: 'none',
+        borderRadius: CONTROL_RADIUS.sm,
+        background: 'transparent',
+        color: ICON_TONE_COLOR[tone],
+        fontSize,
+        lineHeight: 1,
+        cursor: 'pointer',
+        ...style,
+      }}
+    >
+      {icon}
+    </button>
+  );
+});
 
 /** 空态 —— 一句话 + 一句引导, 不用插图(插图在密集浮层里是噪声) */
 export function PanelEmpty({ text, hint }: { text: string; hint?: string }) {

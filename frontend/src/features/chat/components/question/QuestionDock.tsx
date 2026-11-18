@@ -2,6 +2,11 @@
 // 2026-11-18 商量 - 三堂会审整改: 提交按钮在无任何作答时禁用(与 canSubmit 守卫同源)
 // 2026-11-18 商量 - 头部增倒计时环(复用 HITL CountdownRing, 后端 backend_timeout 同源), 到 0 仅归零展示, 清窗仍由 question_resolved 收口
 // 2026-11-18 商量 - 删头部重复文案: 后端 content 恒为「需要你回答 N 个问题」, 与标题逐字重复, 题量信息由「第 N/M 题」胶囊承担
+// 2026-11-18 商量 - 排版纠偏:
+//   ① 分段进度条 gap 2 / 高 3 / 圆角 2 是刻度外数字, 改 Gap.ROW / Spacing.XS / Radius.SM 三档令牌;
+//   ② 「上一题」在单题面板里永远是禁用态(死控件), 单题不渲染, 把宽度让给「提交」;
+//   ③ 最小化只该剩一条标题栏(它的全部意义就是让位给会话区), 底部三按钮随之收起;
+//   ④ 头部图标按钮改自绘 PanelIconButton(antd 按钮的高/内距/圆角/焦点环是库缺省派生, 见 controlScale 铁律) — 商量-2026-11-18
 import {
   CheckOutlined,
   CloseOutlined,
@@ -14,19 +19,22 @@ import { Button } from 'antd';
 
 import type { QuestionDockController } from '@/features/chat/hooks/useQuestionDock';
 import CountdownRing from '@/components/AuthorizationModal/CountdownRing';
-import { PanelCard, PanelChip } from '@/components/PanelCard';
+import { PanelCard, PanelChip, PanelIconButton } from '@/components/PanelCard';
 import { CONTROL_HEIGHT } from '@/theme/controlScale';
 import { Gap, LineHeight } from '@/theme/spacing';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontSize,
+  FontWeight,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
 import { QuestionCustomInput } from './QuestionCustomInput';
 import { QuestionOption } from './QuestionOption';
 
 interface QuestionDockProps {
   controller: QuestionDockController;
 }
-
-/** 头部图标按钮统一规格(纯图标, 无文字, 热区按控件小档) */
-const ICON_BTN = { height: CONTROL_HEIGHT.comfortable.small } as const;
 
 export function QuestionDock({ controller }: QuestionDockProps) {
   const {
@@ -72,24 +80,18 @@ export function QuestionDock({ controller }: QuestionDockProps) {
           />
         </span>
       ) : null}
-      <Button
-        type="text"
-        size="small"
-        aria-label={minimized ? '展开问询' : '最小化问询'}
-        data-testid="question-minimize"
+      <PanelIconButton
+        ariaLabel={minimized ? '展开问询' : '最小化问询'}
+        testId="question-minimize"
         icon={minimized ? <PlusOutlined /> : <MinusOutlined />}
         onClick={toggleMinimize}
-        style={ICON_BTN}
       />
-      <Button
-        type="text"
-        size="small"
-        danger
-        aria-label="关闭问询"
-        data-testid="question-close"
+      <PanelIconButton
+        ariaLabel="关闭问询"
+        testId="question-close"
+        tone="danger"
         icon={<CloseOutlined />}
         onClick={cancel}
-        style={ICON_BTN}
       />
     </>
   );
@@ -114,7 +116,8 @@ export function QuestionDock({ controller }: QuestionDockProps) {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 2,
+              // 段与段之间的缝: 走刻度最小档(原 2px 属刻度外数字)
+              gap: Gap.ROW,
               padding: `${Spacing.XS}px ${Spacing.LG}px`,
               borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
             }}
@@ -130,7 +133,8 @@ export function QuestionDock({ controller }: QuestionDockProps) {
                 style={{
                   flex: 1,
                   minWidth: 0,
-                  height: Spacing.MD,
+                  // 可点条高 12 = 4px 进度条 + 上下各 4px 触区(原 8px 条过细, 鼠标容易点空)
+                  height: Spacing.LG,
                   padding: 0,
                   lineHeight: 0,
                 }}
@@ -139,8 +143,9 @@ export function QuestionDock({ controller }: QuestionDockProps) {
                   style={{
                     display: 'block',
                     width: '100%',
-                    height: 3,
-                    borderRadius: 2,
+                    // 条高 4 / 圆角 4: 取刻度最小档, 4px 高的胶囊两端不会出现"半圆被压平"的假角
+                    height: Spacing.XS,
+                    borderRadius: Radius.SM,
                     background: segColor(i),
                   }}
                 />
@@ -152,40 +157,55 @@ export function QuestionDock({ controller }: QuestionDockProps) {
       bodyStyle={{ maxHeight: 'min(360px, 50vh)', overflowY: 'auto' }}
       gap={Spacing.LG}
       footer={
-        <>
-          <Button
-            size="small"
-            data-testid="question-dismiss"
-            onClick={cancel}
-            style={{ height: CONTROL_HEIGHT.comfortable.normal }}
-          >
-            取消
-          </Button>
-          <Button
-            size="small"
-            data-testid="question-prev"
-            icon={<LeftOutlined />}
-            disabled={tab === 0}
-            onClick={prev}
-            style={{ height: CONTROL_HEIGHT.comfortable.normal }}
-          >
-            上一题
-          </Button>
-          <Button
-            type="primary"
-            size="small"
-            data-testid="question-next"
-            icon={tab === total - 1 ? <CheckOutlined /> : <RightOutlined />}
-            onClick={next}
-            disabled={tab === total - 1 && !canSubmit}
+        // 最小化只剩一条标题栏(它的意义就是让位给会话区), 底部动作一并收起;
+        // 「上一题」单题时恒禁用(死控件), 单题不渲染, 宽度让给「提交」
+        minimized ? undefined : (
+          // 脚注容器本身是块级, 里面必须自成一行 flex: 否则 marginLeft:auto 在行内流里不生效,
+          // 主按钮会紧贴「上一题」而不是落在右端
+          <div
             style={{
-              height: CONTROL_HEIGHT.comfortable.normal,
-              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: Gap.INLINE,
             }}
           >
-            {tab === total - 1 ? '提交' : '下一题'}
-          </Button>
-        </>
+            <Button
+              size="small"
+              data-testid="question-dismiss"
+              onClick={cancel}
+              style={{ height: CONTROL_HEIGHT.comfortable.normal }}
+            >
+              取消
+            </Button>
+            {total > 1 ? (
+              <Button
+                size="small"
+                data-testid="question-prev"
+                icon={<LeftOutlined />}
+                disabled={tab === 0}
+                onClick={prev}
+                style={{ height: CONTROL_HEIGHT.comfortable.normal }}
+              >
+                上一题
+              </Button>
+            ) : null}
+            <Button
+              type="primary"
+              size="small"
+              data-testid="question-next"
+              icon={tab === total - 1 ? <CheckOutlined /> : <RightOutlined />}
+              onClick={next}
+              disabled={tab === total - 1 && !canSubmit}
+              style={{
+                height: CONTROL_HEIGHT.comfortable.normal,
+                // 主按钮贴右端: 贴边补偿是 margin 的正当用法(铁律三例外①), 不参与兄弟间距
+                marginLeft: 'auto',
+              }}
+            >
+              {tab === total - 1 ? '提交' : '下一题'}
+            </Button>
+          </div>
+        )
       }
     >
       {minimized ? undefined : (

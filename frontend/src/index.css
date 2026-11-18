@@ -457,6 +457,24 @@
   }
 }
 
+/* 2026-11-18 商量 - 浮层卡片图标按钮(自绘 button, 见 components/PanelCard 的 PanelIconButton):
+   悬停底与焦点环只认本项目色值(#f0f0f0 = Colors.BG.HOVER, #1677ff = Colors.PRIMARY),
+   不继承 antd 按钮的库缺省派生(见 theme/controlScale.ts 铁律)。
+   transition 里带上 opacity —— 撤销 ✕ 同时挂 .panel-del 的渐进披露, 两条过渡不能互相覆盖。 */
+.panel-icon-btn {
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    opacity 0.12s ease;
+}
+.panel-icon-btn:hover {
+  background: #f0f0f0;
+}
+.panel-icon-btn:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
 /* 2026-11-18 商量 - 浮层卡片内容区细滚动条(.panel-scroll, PanelCard 内容区无条件挂载):
    内容超出限高时才出现。antd/系统的 15px 灰槽在 384px 宽的卡片里过重, 且分栏会挤掉 6px 文字宽;
    这里只留 6px 拇指、轨道透明, 让"还能往下滚"这件事被看见而不抢内容(firefox 走 scrollbar-width)。 */

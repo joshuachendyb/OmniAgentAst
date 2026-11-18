@@ -12,6 +12,10 @@
 //   ③ 撤销改「悬停该行才现身」, 常驻一排 ✕ 会让只读清单第一眼就是删除按钮墙(触屏无 hover, 一律常显);
 //   ④ 计数胶囊仅在有内容时给(0 项是噪声), 脚注压成一句人话(原句把实现细节当说明);
 //   ⑤ 内容区限高滚动(Size.PANEL_LIST_MAX_H + .panel-scroll 细滚动条), 长清单不把浮层顶出视口 — 商量-2026-11-18
+// 2026-11-18 商量 - 行距纠偏(用户反馈"path 之间行间距过大"):
+//   ① 病根是行高被行内撤销 ✕ 决定 —— 24px 的按钮把 12px 文字行从 25px 撑到 32px,
+//      再叠组 gap 4, 整列的竖向节奏比刻度大 11px; 现改 ✕ 绝对定位居中(不参与行高), 行距只由
+//      PanelRow 上下内距(4+4)决定, 组内 gap 一并去掉(一处归属) — 商量-2026-11-18
 /**
  * TrustPanel - 会话信任清单入口(集成于 TaskInfoBar 右组)
  *
@@ -24,14 +28,14 @@
  * @author 小欧
  * @date 2026-08-26
  */
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Modal, Tooltip } from 'antd';
+import { Modal, Tooltip } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import {
   PanelCard,
   PanelChip,
   PanelEmpty,
+  PanelIconButton,
   PanelRow,
 } from '@/components/PanelCard';
 import { trustApi, type TrustedTool } from '../../../../services/api/task.api'; // v1.5: TrustedTool 带 path — 小欧 2026-09-02
@@ -44,6 +48,7 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { Gap, LineHeight } from '@/theme/spacing';
+import { CONTROL_HEIGHT_SM } from '@/theme/controlScale';
 import { shortenPath } from '@/utils/projectPath';
 import { FloatingEntry } from '../taskinfo/FloatingEntry';
 
@@ -51,6 +56,13 @@ const CARD_W = 32 * FontSize.SECONDARY; // 32 汉字宽 ≈ 384px
 
 /** 路径展示上限(字符): 384px 卡片内 12px 等宽约容 46 字, 取 44 —— 超长的提前做段级裁剪, 短的原样 */
 const PATH_MAX = 44;
+
+/**
+ * 撤销 ✕ 的站位宽(= 控件小档盒宽 24)。
+ * 按钮绝对定位、自己不参与行高, 但文字必须给它让出站位, 否则长路径会钻到按钮底下;
+ * 预留固定宽度也让长短两条路径落在同一条右轴线上。
+ */
+const DEL_BOX = CONTROL_HEIGHT_SM;
 
 interface TrustGroup {
   toolName: string;
@@ -148,11 +160,9 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
             tools.length ? <PanelChip>{tools.length} 项</PanelChip> : undefined
           }
           actions={
-            <Button
-              type="text"
-              size="small"
-              aria-label="关闭信任清单"
-              data-testid="trust-close"
+            <PanelIconButton
+              ariaLabel="关闭信任清单"
+              testId="trust-close"
               icon={<CloseOutlined />}
               onClick={() => setOpen(false)}
             />
@@ -182,7 +192,9 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: Gap.ROW,
+                  // 组内不设 gap: 行距由 PanelRow 的上下内距独占(相邻两条 8px)。
+                  // 工具名与首行之间只剩首行自己的 4px, 读起来"名字贴着自己的范围",
+                  // 与"行与行"的 8px 形成层级 —— 若组 gap 与行内距各算一半, 两者都是 8px, 分组就散了
                   // 与上一组的距离 = 内容区 gap(上面) + 这里的 paddingTop(下面), 线居中
                   ...(gi > 0
                     ? {
@@ -208,11 +220,10 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
                     testId={`trust-row-${t.toolName}`}
                     hoverable
                     style={{
-                      alignItems: 'center',
-                      paddingTop: Spacing.XS,
-                      paddingBottom: Spacing.XS,
                       // 缩进一级表示"从属于上面那个工具"; 撤销 ✕ 落在行尾, 与标题栏 ✕ 同一条右轴线
                       paddingLeft: Spacing.LG,
+                      // 给绝对定位的 ✕ 让出站位: 路径压不到按钮上, 长短两条同一右轴线
+                      paddingRight: DEL_BOX + Gap.INLINE,
                     }}
                   >
                     <span
@@ -233,14 +244,21 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
                       {t.path ? shortenPath(t.path, PATH_MAX) : '全部路径'}
                     </span>
                     <Tooltip title="撤销信任">
-                      <Button
+                      <PanelIconButton
                         // 悬停该行才现身的二次操作(样式在 index.css 的 .panel-del): 常驻 ✕ 会让
                         // 只读清单第一眼是删除按钮墙; 键盘仍可达, 聚焦时由 :focus-within 显形
                         className="panel-del"
-                        type="text"
-                        size="small"
-                        aria-label={`撤销信任 ${t.toolName}${t.path ? ` ${t.path}` : ''}`}
+                        // 图标降到 12px: 与同行 12px 等宽路径同高, 不喧宾夺主
+                        fontSize={FontSize.SECONDARY}
+                        ariaLabel={`撤销信任 ${t.toolName}${t.path ? ` ${t.path}` : ''}`}
                         icon={<CloseOutlined />}
+                        // 绝对定位居中: 24px 盒高不参与行高计算 —— 行距只由行内距决定
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                        }}
                         onClick={(e) => {
                           e.stopPropagation(); // 6.5.4.2: 行内撤销防冒泡
                           confirmRevoke(t);
