@@ -1,16 +1,20 @@
 v1.7.5
-发布时间: 2026-11-18 05:24:44 - 小欧-2026-11-18
-## v1.7.4以来 变更汇总(13个commit: feat2/perf3/test1/docs7, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-18
-[2026-11-18 05:24:44 小欧] 范围=v1.7.4..HEAD 全部commit(13个); 说明=①[46b]任务列表数据契约对齐P2b实施落地: chat_tasks新增ref_ledger_json/tool_paths_json快照列+update_task白名单异名映射+derive_tool_paths_from_steps派生单一真源+agent_runner收尾落tool_paths+process-events端点直写ref_ledger+backfill_tool_paths存量回填脚本, 前端SessionTaskItem两字段/TaskListPanel台账与roundHits双源/TaskInfoBar收尾上交台账, 存量tool_paths可回填(ref_ledger无持久化源仅新任务累积); ②[46]首屏性能优化三步: P2a任务/消息解耦(URL会话ID在await messages前写state使任务列表秒出)+P0 messages SQL级窗口分页(limit/offset+total/has_more, 首屏只拉最近50对)+P1 execution_steps裁剪(include_steps默认False, thought从ai_reasoning派生, display_name去steps依赖回落"助手", 右栏兜底显式include_steps=true防退化); ③量化收益: 同一48任务会话首屏messages从7.017MB/279ms降到0.140MB/10ms(体量-98%); ④[46]P3慢查询排查: 实测~2s固定开销源自Windows localhost优先解析IPv6 ::1而后端仅绑IPv4, 浏览器经Vite代理仅60~300ms, 排除DB/中间件瓶颈; ⑤[46]文档v3实施回写与P3排查结论笔记; ⑥[46b]存量回填bat包装(dry-run+确认后apply+OMNIAGENT_DB_PATH, CRLF行尾修正goto标签); ⑦[46]四阶段E2E验证用例入库(真实后端+真实库+真实浏览器, 4/4全绿)。维持PATCH v1.7.5。
+发布时间: 2026-11-18 08:13:05 - 小欧-2026-11-18
+## v1.7.4以来 变更汇总(20个commit: feat3/perf3/fix4/docs8/test2, 不含本次version.txt汇总提交本身) - 小欧-2026-11-18
+[2026-11-18 08:13:05 小欧] 范围=v1.7.4..HEAD 全部commit(20个, 不含本次version.txt汇总提交); 说明=①[46b]任务列表数据契约对齐P2b实施落地: chat_tasks新增ref_ledger_json/tool_paths_json快照列+update_task白名单异名映射+derive_tool_paths_from_steps派生单一真源+agent_runner收尾落tool_paths+process-events端点直写ref_ledger+backfill_tool_paths存量回填脚本, 前端SessionTaskItem两字段/TaskListPanel台账与roundHits双源/TaskInfoBar收尾上交台账, 存量tool_paths可回填(ref_ledger无持久化源仅新任务累积); ②[46]首屏性能优化三步: P2a任务/消息解耦(URL会话ID在await messages前写state使任务列表秒出)+P0 messages SQL级窗口分页(limit/offset+total/has_more, 首屏只拉最近50对)+P1 execution_steps裁剪(include_steps默认False, thought从ai_reasoning派生, display_name去steps依赖回落"助手", 右栏兜底显式include_steps=true防退化); ③量化收益: 同一48任务会话首屏messages从7.017MB/279ms降到0.140MB/10ms(体量-98%); ④[46]P3慢查询排查: 实测~2s固定开销源自Windows localhost优先解析IPv6 ::1而后端仅绑IPv4, 浏览器经Vite代理仅60~300ms, 排除DB/中间件瓶颈(该排查笔记文件已按用户要求删除, 结论留存于提交信息); ⑤[46]文档v3实施回写与P3排查结论笔记; ⑥[46b]存量回填bat包装(dry-run+确认后apply+OMNIAGENT_DB_PATH, CRLF行尾修正goto标签); ⑦[46]四阶段E2E验证用例入库(真实后端+真实库+真实浏览器, 4/4全绿); ⑧[历史页]批量清理会话: 清理无效会话/清理N天前会话两入口+预览确认两段式弹窗(默认30天, 可选7/10/30/90天)+在跑任务跳过+后端批量软删并清workspace与缓存+前端Store清理后刷新; ⑨[46/46b]三堂会审23项整改落地: 后端分页任务组对齐/裁剪契约收口/路径归一唯一真源/清理判据与在跑集/回填流式与幂等计数, 前端首屏裁剪显式传导/切会话清消息/台账形状收口/空壳会话文案/推荐行双源判据; ⑩真实浏览器实测15项缺陷修复(窄视口655×606): 文件足迹行被压缩重叠、无扩展名外部文件深链被当目录(生成端带&file=1由文件页回传形态)、token用量跨会话混合口径(后端要求两维度自洽否则400)、终态任务计时不停(停表改三源判据)、切会话任务数与链累计残值、设置页与历史页横向溢出、事件浮层贴底被裁与历史上下文浮层左越界、时间戳裸ISO串统一走formatTimestampSec、首屏重复请求40→21(共享读+在飞合并)、首帧空列表误判空态(改加载骨架); ⑪[46]E2E用例去硬编码会话ID与魔法值, 断言随裁剪与空壳会话契约更新。维持PATCH v1.7.5。
 ### 1.7.5.1 功能新增
 [数据] feat 5be793b46 [46b] 任务列表数据契约对齐P2b实施(CHAT_TASKS加ref_ledger_json/tool_paths_json快照列+update_task白名单异名映射+derive_tool_paths_from_steps派生单一真源+agent_runner收尾落tool_paths+process-events端点直写ref_ledger+backfill_tool_paths存量回填脚本+前端SessionTaskItem两字段+TaskListPanel台账/roundHits双源+TaskInfoBar收尾上交台账) - 小欧-2026-11-17
 [运维] feat 19316b93c [46b] 新增存量tool_paths回填bat包装(dry-run统计+确认后apply+支持OMNIAGENT_DB_PATH显式库路径+CRLF行尾修正goto标签) - 小欧-2026-11-18
+[历史] feat d7c2c4a4c [历史页] 批量清理会话(清理无效会话/清理N天前会话两入口+预览确认两段式弹窗默认30天可选7/10/30/90+在跑任务跳过+后端批量软删清workspace与缓存+Store清理刷新) - 小欧-2026-11-18
 ### 1.7.5.2 性能优化
 [前端] perf d6526d4df [46] P2a任务/消息解耦(URL会话ID在await messages前即写state使任务列表秒出+场景3改resolveInitialSessionId先定会话再载消息删loadLatestHistoryMessages透传壳) - 小欧-2026-11-18
 [后端] perf 3c46dc2d4 [46] P0首屏messages分页(get_session_messages增limit/offset走SQL级窗口复用lower_id/upper_id锚点+返回pairs口径total/has_more+路由Query透传+前端首屏只拉50对并透传hasMore/total) - 小欧-2026-11-18
 [后端] perf 955dc23c0 [46] P1首屏execution_steps裁剪(get_session_messages增include_steps默认False首屏不下发步骤+thought改从pairs的ai_reasoning派生去steps依赖+display_name缺provider/model回落助手+右栏兜底显式include_steps=true防退化) - 小欧-2026-11-18
-### 1.7.5.3 测试
-[测试] test 5789cc9a7 [46] 提交首屏性能四阶段E2E验证用例(P2a任务先于messages渲染/P0分页窗口/P1 steps裁剪与thought保留/P3代理延迟测量, 真实后端真实库无Mock) - 小欧-2026-11-18
+### 1.7.5.3 缺陷修复
+[后端] fix ac3f4c45f [46/46b] 后端会审整改: 分页任务组对齐/裁剪契约收口/路径归一唯一真源/清理判据与在跑集/回填流式与幂等计数 - 小欧-2026-11-18
+[前端] fix 55c477bbe [46/46b] 前端会审整改: 首屏裁剪显式传导/切会话清消息/台账形状收口/空壳会话文案/推荐行双源判据 - 小欧-2026-11-18
+[统计] fix 1be06bda3 token_usage 会话与任务归属不自洽时拒查(400), 杜绝切会话瞬间的跨会话混合口径 - 小欧-2026-11-18
+[前端] fix f9f11213d 15项实测缺陷整改(文件足迹布局/深链文件形态/停表判据/切会话清残值/窄视口溢出/浮层视口内定位/时间格式统一/取数收敛/加载骨架) - 小欧-2026-11-18
 ### 1.7.5.4 文档
 [文档] docs 15ad243d1 [46][46b] 删除风险与回退章节并将风险根治进方案代码, 对齐真实基线标识符与字段命名 - 小欧-2026-11-17
 [文档] docs 82f8f7d3f [46b] 新增第5章实施步骤与顺序逐步执行手册(前置/并行编排/四阶段逐步命令/门禁/全链路联调) - 小欧-2026-11-17
@@ -19,6 +23,10 @@ v1.7.5
 [文档] docs dbd311880 [46b] 实施落地回写文档(update_task列名异名映射+roundHits双源定稿+回填脚本实装代码+验收措辞同步代码) - 小欧-2026-11-17
 [文档] docs b4b8ff89b [46] P3慢查询排查结论笔记(实测所有端点2s固定开销源自Windows localhost优先解析IPv6 ::1而后端仅绑IPv4,浏览器经Vite代理仅60~300ms,排除DB/中间件瓶颈) - 小欧-2026-11-18
 [文档] docs b70bd05f4 [46] v3实施回写(新增第4章记录P2a/P0/P1落地偏差与P3根因结论+量化验收数据,明确示意代码与本地代码以本地为准) - 小欧-2026-11-18
+[文档] docs de23a0e89 删除 notes/调试笔记-2026-11-18.md(P3慢查询排查笔记, 按用户要求移除) - 小欧-2026-11-18
+### 1.7.5.5 测试
+[测试] test 5789cc9a7 [46] 提交首屏性能四阶段E2E验证用例(P2a任务先于messages渲染/P0分页窗口/P1 steps裁剪与thought保留/P3代理延迟测量, 真实后端真实库无Mock) - 小欧-2026-11-18
+[测试] test 7ed8824a1 [46] E2E 用例去硬编码会话ID与魔法值(现场发现数据+关系断言), 断言随裁剪/空壳会话契约更新 - 小欧-2026-11-18
 v1.7.4
 发布时间: 2026-11-17 20:10:46 - 小欧-2026-11-17
 ## v1.7.3以来 变更汇总(38个commit: feat4/fix4/perf3/refactor1/chore1/docs22, 另有merge3不计, 不含本次version.txt汇总提交与tag提交本身) - 小欧-2026-11-17
