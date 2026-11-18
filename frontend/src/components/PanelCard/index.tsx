@@ -181,13 +181,17 @@ export function PanelCard({
 
 // ==================== 原子 ====================
 
-type ChipTone = 'default' | 'primary' | 'success' | 'warning';
+export type ChipTone = 'default' | 'primary' | 'success' | 'warning' | 'danger';
 
 const CHIP_TONE: Record<ChipTone, { bg: string; color: string }> = {
   default: { bg: Colors.BG.TERTIARY, color: Colors.TEXT.MUTED },
   primary: { bg: Colors.BG.SELECTED, color: Colors.PRIMARY },
   success: { bg: '#f6ffed', color: Colors.PILL_SUCCESS },
   warning: { bg: Colors.WARNING_BG, color: Colors.WARNING },
+  // 2026-11-18 商量 - danger 档: 危险级(删除/拦截)用浅红底 + 深红字。字色取 ERROR_TEXT 而非 ERROR ——
+  //   11px 小字用亮红 #ff4d4f 在白底仅 3.0:1 会糊, ERROR_TEXT 在浅红底上仍达 AA。
+  //   与 warning 档一起构成"危险 / 警示 / 中性"三级严重度, 供 HITL 授权弹窗的等级胶囊使用。
+  danger: { bg: Colors.ERROR_BG, color: Colors.ERROR_TEXT },
 };
 
 /** 胶囊标签 —— 计数/进度/状态/题号, 11px 恒定, 不撑高所在行 */

@@ -55,11 +55,13 @@
  * 功能：显示工具执行授权请求，用户可选择允许/拒绝/本会话信任
  *
  * 设计规范：
- * - 宽度: 480px
- * - 边框: 1.5px solid #faad14 (橙色) / 1.5px dashed #1677ff (bypass) + boxShadow
- * - 图标: WarningOutlined (橙色, 32px)
- * - 按钮: "允许执行"（橙色）、"拒绝执行"（danger ghost）/ bypass时保留按钮可点击
- * - 居中对齐
+ * - 宽度: 520px（HITL_TOKENS.MODAL_WIDTH）；内距 Spacing.XXL 由 Modal 壳的 body 一处给出
+ * - 边框: BorderWidth.THIN solid Colors.WAIT_ACTION（琥珀=要你确认）/ dashed Colors.PRIMARY（bypass）
+ * - 图标: WarningOutlined（Colors.WAIT_ACTION, 32px）/ ThunderboltOutlined（bypass, Colors.PRIMARY）
+ * - 等级胶囊: PanelChip（danger / warning / primary 三级严重度，取 Colors.* 语义色）
+ * - 按钮: "允许执行"（Colors.WAIT_ACTION 实底 + Colors.TEXT.STRONG 字，全窗唯一暖色）、"拒绝执行"（danger ghost）/ bypass 时保留按钮可点击
+ * - 纵向节奏: 根节点 flex column 的 gap 独占，各块不写 margin；行高一律显式下发 LineHeight 三档
+ * - 居中对齐（Modal centered）
  *
  * 【v3.4实施 2026-06-09 小沈】
  * - SRP: 只负责显示授权弹窗和回传用户选择
@@ -93,8 +95,24 @@
 //   标题 16 → FontSize.SUBHEAD, import 同步补 FontWeight — 商量-2026-11-13
 // 编辑历史: 2026-11-18 商量 - 删除无调用方的 truncatePath(长路径收敛改由 utils/projectPath.shortenPath 单一实现,
 //   供信任清单使用); 操作范围行 truncateDir 不变 — 商量-2026-11-18
+// 编辑历史: 2026-11-18 商量 - 去 antd 缺省派生 + 裸色值归位(与 HITLModalShell / PanelCard 同批):
+//   ① 等级标签由 antd <Tag color="red|orange|blue|volcano|geekblue"> 改 PanelChip —— 原写法把配色交给
+//      antd 预设色名(底/字/圆角全由库派生), 且与计划/信任/问询三块浮层的胶囊成了两套视觉;
+//      现 SAFETY_LEVEL_CONFIG 的 color 字段改为 tone(danger/warning/primary), 只取 Colors.* 语义色。
+//   ② 裸色值全部改引用令牌: #faad14→WAIT_ACTION(警示琥珀)、#1677ff→PRIMARY、#e6f4ff→BG.SELECTED、
+//      #fffbe6→BG.WARNING_LIGHT、#262626→TEXT.STRONG、#8c8c8c→TEXT.SECONDARY、#fafafa→BG.SECONDARY、
+//      #e8e8e8→BORDER.VERTICAL、#cf1322→ERROR、#fff→BG.PRIMARY。
+//      「允许执行」按钮原为裸值 #faad14 配白字(对比度仅 1.9:1, 远低于 AA); 先试 ACCENT_ORANGE(橙底白字 4.8:1),
+//      截图复核发现它与「拒绝执行」的红框并列时读成第二个危险按钮, 故改 WAIT_ACTION 实底 + TEXT.STRONG 字(5.3:1 达 AA):
+//      全窗只剩一个暖色, 允许与拒绝一眼可分。
+//   ③ 纵向节奏改由父容器 gap 独占: 原先 5 个块各写 marginBottom(6/6/2/4/8), 同一段距离两处补偿;
+//      改后根节点 flex column + Gap.SECTION, 工具名与参数区收成 Gap.ROW 小组(二者是一个单元);
+//      行高全部显式下发(标题 DENSE / 元信息 BODY), 不再继承库缺省行高。
+//   ④ 文本改自绘 span: 原 <Typography.Text type="secondary"> 的灰是 antd 的 secondary 色
+//      (rgba(0,0,0,.45)), 属库缺省色 → Colors.TEXT.SECONDARY, Typography 依赖整体摘除。
+//   ⑤ 参数区高度/行高由裸值 72/18 改为令牌推导(4 行 × 12px 字 × 行高 1.5), 内距/圆角/框宽同样走令牌 — 商量-2026-11-18
 import React from 'react';
-import { Button, Typography, Tag, Checkbox } from 'antd';
+import { Button, Checkbox } from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
@@ -116,12 +134,21 @@ import { useCountdown } from '@/hooks/useCountdown';
 //   在 flex 行里会被挤折行），字重直接给数值 600，与原 h5 视觉一致。
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
 import { norm } from '@/utils/projectPath';
+// 2026-11-18 商量 - 三块浮层同一套胶囊语言: 等级标签改用 PanelChip, 不再借 antd Tag 的预设色名
+import { PanelChip } from '@/components/PanelCard';
+import type { ChipTone } from '@/components/PanelCard';
+// 2026-11-18 商量 - 间距/行高唯一真源: 纵向节奏由父 gap 独占, 行高逐个显式下发
+import { Gap, LineHeight } from '@/theme/spacing';
 // 2026-11-12 小欧 - 字号走全局阶梯令牌: 工具名「值」用 PRIMARY(14), 必大于其 12px label
 //   (原为 13px 裸值 —— 游离半档, 且与 label 只差 1px 层级本就没拉开)
-import { FontSize, FontWeight } from '@/utils/stepStyles';
-
-// 2026-10-11 03:30 小欧 - Title 已彻底不用（03:05 起标题自绘 span），同步摘除解构避免死变量告警
-const { Text } = Typography;
+import {
+  BorderWidth,
+  Colors,
+  FontSize,
+  FontWeight,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
 
 export interface AuthorizationRequest {
   confirmId: string;
@@ -149,70 +176,72 @@ interface AuthorizationModalProps {
 
 const SAFETY_LEVEL_CONFIG: Record<
   string,
-  { color: string; label: string; icon: React.ReactNode }
+  { tone: ChipTone; label: string; icon: React.ReactNode }
 > = {
   // ★ 2026-10-18 小欧: 键集换为后端 SafetyLevel 确认命名空间, 与 SafetyLevel.CONFIRM_LEVELS 必须完全相等。
   //   硬拦命名空间(path_forbidden/block_command/block_path_invalid/block_unregistered)不进弹窗, 故不配。
   //   旧 5 键(path_auth/shellparam/tool_write/tool_delete/tool_execute)与新枚举无一重合, 全部作废。
   // 2026-10-19 小欧 - 目录数组归一化: 四键随 SafetyLevel 改名, 键集仍须与 CONFIRM_LEVELS 完全相等
   // 2026-10-19 小欧 - 删孤儿键 delete_safe(后端无生产者, 随后端 SafetyLevel 一并移除)
+  // 2026-11-18 商量 - color(antd 预设色名) → tone(本仓胶囊色调), 严重度只留三级:
+  //   删除/处置 = danger(红), 写入/命令 = warning(琥珀), 读取/任务 = primary(蓝); default 留给未知等级兜底。
   delete_outside_whitelist: {
-    color: 'red',
+    tone: 'danger',
     label: '白名单外删除授权',
     icon: <WarningOutlined />,
   },
   write_forbidden: {
-    color: 'orange',
+    tone: 'warning',
     label: '非系统禁区写入授权',
     icon: <WarningOutlined />,
   },
   write_outside_whitelist: {
-    color: 'orange',
+    tone: 'warning',
     label: '白名单外写入授权',
     icon: <WarningOutlined />,
   },
   shell_medium_risk: {
-    color: 'orange',
+    tone: 'warning',
     label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
   shell_delete_confirm: {
-    color: 'red',
+    tone: 'danger',
     label: '命令含删除动作',
     icon: <StopOutlined />,
   },
   shell_write_confirm: {
-    color: 'orange',
+    tone: 'warning',
     label: '命令含写入动作',
     icon: <EditOutlined />,
   },
   shell_read_confirm: {
-    color: 'blue',
+    tone: 'primary',
     label: '命令含读取动作',
     icon: <FileSearchOutlined />,
   },
   shell_command_confirm: {
-    color: 'orange',
+    tone: 'warning',
     label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
   sql_execute_confirm: {
-    color: 'volcano',
+    tone: 'danger',
     label: 'SQL 执行确认',
     icon: <ExclamationCircleOutlined />,
   },
   task_deal_confirm: {
-    color: 'geekblue',
+    tone: 'primary',
     label: '任务处理确认',
     icon: <EditOutlined />,
   },
   registry_deal_confirm: {
-    color: 'volcano',
+    tone: 'danger',
     label: '注册表处置确认',
     icon: <ExclamationCircleOutlined />,
   },
   tool_confirm: {
-    color: 'volcano',
+    tone: 'danger',
     label: '工具级确认',
     icon: <WarningOutlined />,
   },
@@ -223,19 +252,22 @@ const SAFETY_LEVEL_CONFIG: Record<
  *
  * 操作范围 / 授权影响 / 授权机制说明 共用同一份样式, 保证:
  *    文字左边界一致(都有图标 + 同宽 gap), 不会出现"有的行缩进有的不缩进"的犬牙交错;
- *    行距一致(6px), 弹窗纵向节奏不跳;
- *    文字色统一 #262626 —— 本文件已定案「目标信息禁灰字」(原 #595959/#8c8c8c 均已订正)。
+ *    行高与文字色一致, 弹窗纵向节奏不跳;
+ *    文字色统一 Colors.TEXT.STRONG —— 本文件已定案「目标信息禁灰字」。
  *
  *  2026-10-18: 文案完整展示即可, 不做行数截断(允许弹窗随内容撑高),
  * 故不再设 WebkitLineClamp; 但仍保留 title 挂全文, 便于 hover 查完整表述。
+ *
+ *  2026-11-18 商量 - 去掉 marginBottom: 行与行之间的距离是"兄弟间距", 归父容器的 gap 独占
+ * （theme/spacing.ts 铁律一); 行内图标与文字的间距取同行档 Gap.INLINE, 行高显式下发 BODY。
  */
 const META_ROW: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 4,
-  marginBottom: 6,
+  gap: Gap.INLINE,
   fontSize: FontSize.SECONDARY,
-  color: '#262626',
+  lineHeight: LineHeight.BODY,
+  color: Colors.TEXT.STRONG,
   textAlign: 'left',
 };
 
@@ -255,6 +287,9 @@ const truncateDir = (p: string): string => {
 
 const truncateValue = (v: string, max = 80): string =>
   v.length > max ? `${v.slice(0, max)}…` : v;
+
+/** 参数区固定行数(2026-09-16 定案 4 行): 高度由它 × 字号 × 行高推导, 不再写死像素 */
+const PARAMS_ROWS = 4;
 
 const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   visible,
@@ -311,7 +346,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   }
 
   const safetyConfig = SAFETY_LEVEL_CONFIG[request.safetyLevel] || {
-    color: 'default',
+    tone: 'default' as ChipTone,
     label: request.safetyLevel,
     icon: null,
   };
@@ -330,21 +365,30 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   };
 
   // 2026-10-11 03:05 小欧 - 标题改短且准确（："标题最好是短且准确"）。
-  //   改前 bypass 态「将自动确认（HTL人工开关已绕开）」17 字，必然被 Tag+环挤到折行/截断。
-  //   拆法：标题只说「现在会发生什么」，「为什么」交给 Tag 承载 —— 语义不丢、字数减半。
+  //   改前 bypass 态「将自动确认（HTL人工开关已绕开）」17 字，必然被 胶囊+环 挤到折行/截断。
+  //   拆法：标题只说「现在会发生什么」，「为什么」交给等级胶囊承载 —— 语义不丢、字数减半。
   const titleText = isBypass ? '将自动确认' : '需要你确认';
-  const statusTagText = isBypass ? 'HTL 已绕过' : safetyConfig.label;
+  const tagText = isBypass ? 'HTL 已绕过' : safetyConfig.label;
 
   return (
     <HITLModalShell open={visible} isBypass={isBypass}>
-      <div>
-        {/* 3.1 单一轴线：图标内联 + 标题左 + Tag + 环 右，共用一条基线 */}
+      {/* 纵向节奏由这一个 gap 独占: 各块不再各写 marginBottom(一处距离一处补偿) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: Gap.SECTION,
+          lineHeight: LineHeight.BODY,
+          color: Colors.TEXT.STRONG,
+          textAlign: 'left',
+        }}
+      >
+        {/* 3.1 单一轴线：图标内联 + 标题左 + 胶囊 + 环 右，共用一条基线 */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            marginBottom: 8,
+            gap: Gap.SECTION,
             minWidth: 0,
           }}
         >
@@ -352,7 +396,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             <ThunderboltOutlined
               style={{
                 fontSize: HITL_TOKENS.ICON_SIZE,
-                color: '#1677ff',
+                color: Colors.PRIMARY,
                 flexShrink: 0,
               }}
             />
@@ -360,7 +404,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             <WarningOutlined
               style={{
                 fontSize: HITL_TOKENS.ICON_SIZE,
-                color: '#faad14',
+                color: Colors.WAIT_ACTION,
                 flexShrink: 0,
               }}
             />
@@ -370,7 +414,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             style={{
               fontSize: FontSize.SUBHEAD,
               fontWeight: FontWeight.BOLD,
-              lineHeight: '22px',
+              lineHeight: LineHeight.DENSE,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -379,16 +423,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           >
             {titleText}
           </span>
-          <Tag
-            color={safetyConfig.color}
-            style={{
-              marginBottom: 0,
-              fontSize: FontSize.SECONDARY,
-              flexShrink: 0,
-            }}
-          >
-            {statusTagText}
-          </Tag>
+          {/* 2026-11-18 商量 - 等级胶囊改 PanelChip: 与计划/信任/问询三块浮层同一套胶囊语言,
+              不再借 antd Tag 的预设色名(底/字/圆角原先全由库派生) */}
+          <PanelChip tone={safetyConfig.tone} style={{ flexShrink: 0 }}>
+            {tagText}
+          </PanelChip>
           <span style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex' }}>
             {/* 计时钟：不删，只改位 + 缩小。confirmTimeout=0 语义为禁倒计时，
                 此时无"到点"可言，显示环与文案都是事实错误，故不渲染。 */}
@@ -406,11 +445,14 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         {request.content && (
           <div
             style={{
-              padding: '5px 10px',
-              marginBottom: 6,
-              borderLeft: `3px solid ${isBypass ? '#1677ff' : '#faad14'}`,
-              backgroundColor: isBypass ? '#e6f4ff' : '#fffbe6',
-              borderRadius: '0 4px 4px 0',
+              padding: `${Spacing.XS}px ${Spacing.MD}px`,
+              borderLeft: `${BorderWidth.THICK}px solid ${
+                isBypass ? Colors.PRIMARY : Colors.WAIT_ACTION
+              }`,
+              backgroundColor: isBypass
+                ? Colors.BG.SELECTED
+                : Colors.BG.WARNING_LIGHT,
+              borderRadius: `0 ${Radius.SM}px ${Radius.SM}px 0`,
               textAlign: 'left',
             }}
           >
@@ -420,7 +462,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               style={{
                 fontSize: FontSize.PRIMARY,
                 fontWeight: FontWeight.BOLD,
-                color: '#262626',
+                lineHeight: LineHeight.BODY,
                 display: '-webkit-box',
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
@@ -430,75 +472,91 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             >
               {/* 规格: content区图标复用 SAFETY_LEVEL_CONFIG — 小欧-2026-09-18 */}
               {safetyConfig.icon && (
-                <span style={{ marginRight: 6 }}>{safetyConfig.icon}</span>
+                <span style={{ marginRight: Spacing.SM }}>
+                  {safetyConfig.icon}
+                </span>
               )}
               {request.content}
             </span>
           </div>
         )}
 
-        {/* trust_path 操作范围展示: 操作目标路径(仅目录, 去文件名) — 小欧-2026-09-18 */}
-        {request.trustPath && (
-          <div style={META_ROW}>
-            <FolderOutlined style={{ color: '#faad14', flexShrink: 0 }} />
-            <span
-              title={`操作范围: ${request.toolName} › ${request.trustPath}${
-                request.toolName.startsWith('registry')
+        {/* 2026-11-18 商量 - 下面三行说明收成一组(都回答"这次操作会碰什么"), 组内比组间紧一档 */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: Gap.STACK,
+            minWidth: 0,
+          }}
+        >
+          {/* trust_path 操作范围展示: 操作目标路径(仅目录, 去文件名) — 小欧-2026-09-18 */}
+          {request.trustPath && (
+            <div style={META_ROW}>
+              <FolderOutlined
+                style={{ color: Colors.WAIT_ACTION, flexShrink: 0 }}
+              />
+              <span
+                title={`操作范围: ${request.toolName} › ${request.trustPath}${
+                  request.toolName.startsWith('registry')
+                    ? '，含子键'
+                    : '，含子目录'
+                }`}
+                style={{ wordBreak: 'break-all' }}
+              >
+                操作范围: {truncateDir(request.trustPath)}
+                {request.toolName.startsWith('registry')
                   ? '，含子键'
-                  : '，含子目录'
-              }`}
-              style={{ wordBreak: 'break-all' }}
-            >
-              操作范围: {truncateDir(request.trustPath)}
-              {request.toolName.startsWith('registry')
-                ? '，含子键'
-                : '，含子目录'}
-            </span>
-          </div>
-        )}
+                  : '，含子目录'}
+              </span>
+            </div>
+          )}
 
-        {/* 2026-10-18 小欧 - 说明行: 授权影响面(后端 SafetyLevel 分档给出, 前端只呈现不做权限判断)
-            紧跟"操作范围"之后 —— 两者同属"这次操作会碰什么"的一组, 顺序不可颠倒。
-            独立成行而非追加进 content, 规避 WebkitLineClamp:2 截断。 */}
-        {request.trustImpact && (
-          <div style={META_ROW}>
-            <WarningOutlined
-              style={{
-                color:
-                  request.trustImpact === 'high'
-                    ? '#cf1322'
-                    : request.trustImpact === 'medium'
-                      ? '#fa8c16'
-                      : '#1677ff',
-                flexShrink: 0,
-              }}
-            />
-            <span
-              title={`授权影响: ${request.trustImpact === 'high' ? '大(删除类, 抹除不可撤销)' : request.trustImpact === 'medium' ? '中(写入类, 可覆写原内容)' : '小(命令级确认, 不直接改文件内容)'}`}
-              style={{ wordBreak: 'break-all' }}
-            >
-              授权影响：
-              {request.trustImpact === 'high'
-                ? '大（删除类，抹除不可撤销）'
-                : request.trustImpact === 'medium'
-                  ? '中（写入类，可覆写原内容）'
-                  : '小（命令级确认，不直接改文件内容）'}
-            </span>
-          </div>
-        )}
+          {/* 2026-10-18 小欧 - 说明行: 授权影响面(后端 SafetyLevel 分档给出, 前端只呈现不做权限判断)
+              紧跟"操作范围"之后 —— 两者同属"这次操作会碰什么"的一组, 顺序不可颠倒。
+              独立成行而非追加进 content, 规避 WebkitLineClamp:2 截断。 */}
+          {request.trustImpact && (
+            <div style={META_ROW}>
+              <WarningOutlined
+                style={{
+                  color:
+                    request.trustImpact === 'high'
+                      ? Colors.ERROR
+                      : request.trustImpact === 'medium'
+                        ? Colors.WAIT_ACTION
+                        : Colors.PRIMARY,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                title={`授权影响: ${request.trustImpact === 'high' ? '大(删除类, 抹除不可撤销)' : request.trustImpact === 'medium' ? '中(写入类, 可覆写原内容)' : '小(命令级确认, 不直接改文件内容)'}`}
+                style={{ wordBreak: 'break-all' }}
+              >
+                授权影响：
+                {request.trustImpact === 'high'
+                  ? '大（删除类，抹除不可撤销）'
+                  : request.trustImpact === 'medium'
+                    ? '中（写入类，可覆写原内容）'
+                    : '小（命令级确认，不直接改文件内容）'}
+              </span>
+            </div>
+          )}
 
-        {/* 2026-10-18 小欧 - 说明行: 临时授权时效(temp_auth 任务级, 结束自动失效; 与"信任此操作"会话级是两套机制) */}
-        {TEMP_AUTH_LEVELS.has(request.safetyLevel) && (
-          <div style={META_ROW}>
-            <ClockCircleOutlined style={{ color: '#8c8c8c', flexShrink: 0 }} />
-            <span
-              title="临时授权仅本任务有效，任务结束自动失效；与下方“信任此操作”（会话级）是两套机制"
-              style={{ wordBreak: 'break-all' }}
-            >
-              临时授权仅本任务有效，任务结束自动失效
-            </span>
-          </div>
-        )}
+          {/* 2026-10-18 小欧 - 说明行: 临时授权时效(temp_auth 任务级, 结束自动失效; 与"信任此操作"会话级是两套机制) */}
+          {TEMP_AUTH_LEVELS.has(request.safetyLevel) && (
+            <div style={META_ROW}>
+              <ClockCircleOutlined
+                style={{ color: Colors.TEXT.SECONDARY, flexShrink: 0 }}
+              />
+              <span
+                title="临时授权仅本任务有效，任务结束自动失效；与下方“信任此操作”（会话级）是两套机制"
+                style={{ wordBreak: 'break-all' }}
+              >
+                临时授权仅本任务有效，任务结束自动失效
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* 2026-10-20 小欧 - 删除"递归删除不授予授权"说明块:
             后端已并入 delete_outside_whitelist(白名单外删除/递归删), 该标签属 TEMP_AUTH_LEVELS,
@@ -507,11 +565,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         {/* 确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
         <div
           style={{
-            marginBottom: 6,
             textAlign: 'left',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: Gap.SECTION,
           }}
         >
           <Checkbox
@@ -525,63 +582,91 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             信任此操作（本次会话）
           </Checkbox>
           {isBypass && (
-            <span style={{ fontSize: FontSize.SMALL, color: '#8c8c8c' }}>
+            <span
+              style={{
+                fontSize: FontSize.SMALL,
+                lineHeight: LineHeight.DENSE,
+                color: Colors.TEXT.SECONDARY,
+              }}
+            >
               自动确认模式下信任不生效
             </span>
           )}
         </div>
 
-        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行 + 参数区单层轻量视觉容器 — 小欧-2026-09-16 */}
+        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行 + 参数区单层轻量视觉容器 — 小欧-2026-09-16
+            2026-11-18 商量 - 标签行与参数框是一个单元(标签说的是下面那块框), 组内用最紧档 Gap.ROW, 与外层块拉开层次 */}
         <div
           style={{
             display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-            marginBottom: 2,
+            flexDirection: 'column',
+            gap: Gap.ROW,
+            minWidth: 0,
           }}
         >
-          <Text
-            type="secondary"
-            style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}
-          >
-            工具名称:
-          </Text>
-          <Text strong style={{ fontSize: FontSize.PRIMARY, color: '#1677ff' }}>
-            {request.toolName}
-          </Text>
-          {paramsStr && (
-            <Text
-              type="secondary"
-              style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}
-            >
-              执行参数:
-            </Text>
-          )}
-        </div>
-        {/* 参数值区域: 固定4行高(height:72=4×18) + 滚动条 + 超长自动换行 + 单层轻量视觉容器; boxSizing:content-box确保border-box下内容区=72px(62+8+2=72); textAlign:left覆盖外层继承的center(否则参数文本居中) — 小欧-2026-09-16 */}
-        <div
-          style={{
-            height: 72,
-            overflow: 'auto',
-            lineHeight: '18px',
-            borderRadius: 4,
-            padding: '4px 6px',
-            backgroundColor: '#fafafa',
-            border: '1px solid #e8e8e8',
-            marginBottom: 4,
-            boxSizing: 'content-box',
-            textAlign: 'left',
-          }}
-        >
-          <span
+          <div
             style={{
-              fontSize: FontSize.SECONDARY,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: Gap.SECTION,
+              minWidth: 0,
             }}
           >
-            {paramsStr}
-          </span>
+            <span
+              style={{
+                fontSize: FontSize.SECONDARY,
+                lineHeight: LineHeight.BODY,
+                color: Colors.TEXT.SECONDARY,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              工具名称:
+            </span>
+            <span
+              style={{
+                fontSize: FontSize.PRIMARY,
+                fontWeight: FontWeight.BOLD,
+                lineHeight: LineHeight.BODY,
+                color: Colors.PRIMARY,
+                wordBreak: 'break-all',
+              }}
+            >
+              {request.toolName}
+            </span>
+            {paramsStr && (
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  lineHeight: LineHeight.BODY,
+                  color: Colors.TEXT.SECONDARY,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                执行参数:
+              </span>
+            )}
+          </div>
+          {/* 参数值区域: 固定 4 行高 + 滚动条 + 超长自动换行 + 单层轻量视觉容器。
+              高度与行高都由令牌推导(4 行 × 12px 字 × 行高 1.5), 不再写 72/18 这类裸值;
+              boxSizing:content-box 保证内容区正好 4 行(边框与内距不占行)—— 小欧-2026-09-16 原注保留 */}
+          <div
+            style={{
+              height: FontSize.SECONDARY * LineHeight.BODY * PARAMS_ROWS,
+              overflow: 'auto',
+              fontSize: FontSize.SECONDARY,
+              lineHeight: LineHeight.BODY,
+              borderRadius: Radius.SM,
+              padding: `${Spacing.XS}px ${Spacing.SM}px`,
+              backgroundColor: Colors.BG.SECONDARY,
+              border: `${BorderWidth.THIN}px solid ${Colors.BORDER.VERTICAL}`,
+              boxSizing: 'content-box',
+              textAlign: 'left',
+            }}
+          >
+            <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {paramsStr}
+            </span>
+          </div>
         </div>
 
         {/* 3.5 单一底轴：倒计时后果文案左、按钮右。
@@ -591,19 +676,19 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: Gap.SECTION,
             width: '100%',
-            marginTop: 8,
           }}
         >
           <span
             style={{
               fontSize: FontSize.SECONDARY,
               fontWeight: FontWeight.REGULAR,
-              color: '#8c8c8c',
+              lineHeight: LineHeight.DENSE,
+              color: Colors.TEXT.SECONDARY,
               // 2026-10-11 03:20 小欧 - 修文案折行：原 flex:1 + minWidth:0 允许文本被按钮挤压到
               //   折成两行（「到点未响应将自动拒/绝」孤字）。改为不参与收缩且禁折，
-              //   富余宽度由「允许执行」(flex:1.4) 吸收 —— 实测 120+8+76+8+余量 << 内容宽422。
+              //   富余宽度由「允许执行」(flex:1.4) 吸收。
               whiteSpace: 'nowrap',
               flexShrink: 0,
             }}
@@ -637,9 +722,14 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             disabled={submitting}
             aria-label="允许执行此工具操作"
             style={{
-              backgroundColor: '#faad14',
-              borderColor: '#faad14',
-              color: '#fff',
+              // 2026-11-18 商量 - 原裸值 #faad14 配白字实测仅 1.9:1(远低于 AA)。
+              //   改走弹窗自己的琥珀色 WAIT_ACTION(#fa8c16) + 深色字(5.3:1 达 AA):
+              //   ① 与边框/图标同色, 弹窗只剩一个暖色, 不再引入第二个相近色;
+              //   ② 深色字而不配白字 —— 亮橙上白字仅 2.4:1, 换成深字才读得清;
+              //   ③ 与「拒绝执行」的红框明显区分, 不会让人把允许误读成危险动作。
+              backgroundColor: Colors.WAIT_ACTION,
+              borderColor: Colors.WAIT_ACTION,
+              color: Colors.TEXT.STRONG,
               flex: 1.4,
             }}
           >
