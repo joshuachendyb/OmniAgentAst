@@ -81,12 +81,14 @@ export interface MediaProbe {
     image?: { t2i?: OutputProbeRec; i2i?: OutputProbeRec };
     video?: { t2v?: OutputProbeRec; i2v?: OutputProbeRec };
   };
-  /** 视频/音频输入能力验证记录(单腿, 2026-11-11)：state 语义同 OutputProbeRec + unverified — 小欧-2026-11-11 */
+  /** 视频/音频/文档输入能力验证记录(单腿, 2026-11-11)：state 语义同 OutputProbeRec + unverified — 小欧-2026-11-11 */
   video?: ModalityProbeRec;
   audio?: ModalityProbeRec;
+  /** 文档输入腿(2026-11-18)：与视频/音频同口径, 声明即发原生, 实测只做展示 — opencode-2026-11-18 */
+  file?: ModalityProbeRec;
 }
 
-/** 视频/音频输入验证单腿记录 — 小欧-2026-11-11 */
+/** 视频/音频/文档输入验证单腿记录 — 小欧-2026-11-11 */
 export interface ModalityProbeRec {
   state: 'ok' | 'none' | 'unverified';
   ms?: number;
@@ -473,12 +475,13 @@ export const modelApi = {
   },
 
   /** 实测模型以哪种方式接收媒体(HTTP 200 且对应模态 token>0 才算真收到)，结果由后端落 model_meta.media。
-   *  kind: image=内联+外链两腿 / video=URL 腿 / audio=内联腿 — 小欧-2026-11-11
+   *  kind: image=内联+外链两腿 / video=URL 腿 / audio·file=内联腿 — 小欧-2026-11-11
+   *  file 腿(2026-11-18): 与其余模态同口径, 实测只做展示与取证 — opencode-2026-11-18
    *  message 是后端给的整句短结论，直接进轻提示，前端不再自行拼词。 */
   probeMedia: async (
     provider: string,
     model: string,
-    kind: 'image' | 'video' | 'audio' = 'image'
+    kind: 'image' | 'video' | 'audio' | 'file' = 'image'
   ): Promise<{
     ok: boolean;
     provider: string;

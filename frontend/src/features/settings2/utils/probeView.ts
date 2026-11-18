@@ -6,6 +6,8 @@
 //   Image_URL 文案"上方「Image_URL」"→"媒体页「外链图片」节"(地址不再模型 Tab 就地行) — 小欧-2026-11-11
 // 2026-11-11 小欧 - 补漏: urlLegText 外链未取证文案"未发起（Image_URL 为空）"→"未发起（媒体页「外链图片」节未填图片地址）"
 //   (上轮漏改该处, Image_URL 行已删, 用户看到旧文案找不到输入框) — 小欧-2026-11-11
+// 2026-11-18 opencode - 图片外链腿写明它参与发送决策: 未取证前链接图一律下载后内联, 取证通过才转发地址
+//   (其余模态的实测行只作展示) — opencode-2026-11-18
 import type {
   MediaProbe,
   ModalityProbeRec,
@@ -32,7 +34,7 @@ export const legColor = (st: LegState): string =>
         ? Colors.WARNING
         : Colors.TEXT.WEAK;
 
-export type InputProbeKind = 'image' | 'video' | 'audio';
+export type InputProbeKind = 'image' | 'video' | 'audio' | 'file';
 
 export interface InputProbeLeg {
   label: string;
@@ -123,8 +125,8 @@ const imageInputView = (
       urlTested
         ? '外链已取证——测试图片地址由厂商接口实际抓取成功，图片地址可随请求转发'
         : urlErr
-          ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；可再点「验证」重试'
-          : '外链未取证——本次验证时媒体页「外链图片」节的图片地址为空，外链腿未发起请求；填好地址再点「验证」即出对/错',
+          ? '外链未取证——外链腿已请求，厂商侧抓图失败（网络超时或不可达），不判对错；未取证前链接图一律下载后内联，可再点「验证」重试'
+          : '外链未取证——本次验证时媒体页「外链图片」节的图片地址为空，外链腿未发起请求；未取证前链接图一律下载后内联，填好地址再点「验证」即出对/错',
     ],
     legs: chatLegMuted
       ? []
@@ -294,22 +296,31 @@ export const genProbeView = (
   };
 };
 
-/** 输入能力验证行视图（图片/视频/音频归一, 2026-11-11）────────────────────────
+/** 输入能力验证行视图（图片/视频/音频/文档归一, 2026-11-11）────────────────────────
  *  注：Image_URL 已回媒体页「外链图片」节直接编辑（不再模型 Tab 就地行），文案指向媒体页 — 小欧-2026-11-11 */
-const MODALITY_LABEL: Record<'video' | 'audio', string> = {
+const MODALITY_LABEL: Record<'video' | 'audio' | 'file', string> = {
   video: '视频',
   audio: '音频',
+  file: '文档',
 };
 
 /** 素材通道说明（行名 tip 内固定交代） */
-const MODALITY_CHANNEL: Record<'video' | 'audio', string> = {
+const MODALITY_CHANNEL: Record<'video' | 'audio' | 'file', string> = {
   video: '视频＝只发公网素材地址，由厂商接口自行抓取（video_url）',
   audio: '音频＝后端先下载素材，再 base64 内联随请求体发送（input_audio）',
+  file: '文档＝后端把文件字节 base64 内联随请求体发送（file part，当前仅 PDF）',
 };
 
-/** 视频/音频行视图：单徽标（视频=URL 腿 / 音频=内联腿）+ 结论词 */
+/** 素材来源说明：视频/音频走可配置外链，文档用内置最小 PDF（文档投递本就是内联，无素材地址层） */
+const MODALITY_SOURCE: Record<'video' | 'audio' | 'file', string> = {
+  video: '素材地址可在后端配置 media.probe_video_url 中修改',
+  audio: '素材地址可在后端配置 media.probe_audio_url 中修改',
+  file: '素材为内置最小 PDF，无地址配置项',
+};
+
+/** 视频/音频/文档行视图：单徽标（视频=URL 腿 / 音频·文档=内联腿）+ 结论词 */
 const modalityInputView = (
-  kind: 'video' | 'audio',
+  kind: 'video' | 'audio' | 'file',
   rec: ModalityProbeRec | undefined,
   opts: { checked: boolean }
 ): InputProbeView => {
@@ -342,7 +353,7 @@ const modalityInputView = (
     methodLines: [
       `真实调用 LLM 发送一段内置测试${label}素材，HTTP 200 且返回对应 token>0（厂商不报时按「带素材输入 token 明显高于纯文本」）才算「输入能力」正常`,
       MODALITY_CHANNEL[kind],
-      `素材地址可在后端配置 media.probe_${kind}_url 中修改`,
+      MODALITY_SOURCE[kind],
     ],
     legs: [{ label, state }],
     verdictWord: checked || rec ? '输入' : null,
@@ -369,13 +380,13 @@ const modalityInputView = (
     buttonBlockedTip: `未勾选「${label}」输入模态，当前不发送${label}素材，无从验证`,
     buttonGoLines: [
       `真实发送一段测试${label}素材，结论写回本行`,
-      `素材地址由后端配置提供（media.probe_${kind}_url）`,
+      MODALITY_SOURCE[kind],
     ],
     memoVisible: !rec,
   };
 };
 
-/** 输入能力验证行唯一分派点：图片走平铺 media，视频/音频走 media[kind] 子记录 */
+/** 输入能力验证行唯一分派点：图片走平铺 media，视频/音频/文档走 media[kind] 子记录 */
 export const inputProbeView = (
   kind: InputProbeKind,
   media: MediaProbe | undefined,

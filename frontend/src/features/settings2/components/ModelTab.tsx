@@ -4,6 +4,7 @@
 //   与 probeUrlStored/probeImageUrlOf 一并移除 — 小欧-2026-11-11
 // 2026-11-11 小欧 - 增 ModelTabRefCapability 附件引用能力矩阵面板(ref_capability_map 只读投影) — 小欧-2026-11-11
 // 2026-11-14 小欧 - 面板改名 ModelTabRefQuality, 数据源改 ref_quality_map(quality 四值) — 小欧-2026-11-14
+// 2026-11-18 opencode - 输入验证增文档腿行(声明 file 模态时渲染): 与视频/音频同口径, 实测只做展示 — opencode-2026-11-18
 import React from 'react';
 import { SectionTitle } from './SectionTitle';
 import { ModelActions } from './ModelActions';
@@ -148,6 +149,19 @@ export const ModelTab: React.FC<Props> = ({
           probing={probe.audioProbing}
           genProbing={probe.genProbing}
           onProbe={() => void probe.runMediaProbe('audio')}
+        />
+      )}
+      {/* 文档腿: 声明 file 才渲染(与视频/音频同口径); 实测仅用于展示, 不决定能否发送 */}
+      {m.inputModalities.includes('file') && (
+        <ModelTabInputProbe
+          kind="file"
+          media={media}
+          lastProbe={selectedEntry?.last_probe?.media}
+          checked
+          saving={s.saving}
+          probing={probe.fileProbing}
+          genProbing={probe.genProbing}
+          onProbe={() => void probe.runMediaProbe('file')}
         />
       )}
       <ModelTabOutputModalities value={m.outputModalities} />
