@@ -1,3 +1,12 @@
+v1.7.9
+发布时间: 2026-11-18 18:52:30 - 商量-2026-11-18
+## v1.7.8以来 变更汇总(2个commit: refactor1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
+[2026-11-18 18:52:30 商量] 范围=v1.7.8..HEAD 全部commit(2个); 说明=①倒计时环去 antd Progress 改自绘 SVG: 原实现把环的直径/环宽/中心内容全交给库的 size/strokeWidth/format 三件套, 三处都是库缺省派生的口径(违 theme/controlScale.ts 铁律); 现用 <circle> + strokeDasharray 直接算弧长(2πr), 起点 12 点整体旋转 -90°, 直径/环宽/数字字号/字色/字重一律取本项目令牌, 环色三档改走既有语义色(主色 → 将到点 WAIT_ACTION 橙 → 临近 ORANGE_RED 红, 原中档为散落的 #faad14 裸色值), 数字与环同色并保到点脉冲; ②顺带删掉外层 marginBottom:4 的假留白 —— 那是为抵库组件基线下沉而加, 导致调用方(问询浮层)要用负 margin 再抵回来, 一处距离两处补偿(违 theme/spacing.ts 铁律一); 现盒子尺寸即直径本身, 行内无需任何补偿; ③共用关系明确并沿用: 本组件同时供 HITL 危险确认弹窗(size 44)与 question 问询浮层(size 40)使用, 环的形状/配色/脉冲只有这一份实现, 两者只在直径上分叉; ④真实链路验证(真后端+真 LLM+真 SQLite+真浏览器, 无 Mock): 问询浮层真跑 question 调用量测到 40px 环 r=18/dash=113.1/数字 14px/环心与两行文字组同轴, 弧长比例随真实倒计时逐秒收缩(25/30 时 ratio=0.833 与 0.8333 相符), 三档环色实测蓝→5s 变 #fa8c16→3s 变 #fa541c 且数字同步转橙并脉冲; 另将 size 临时置 44 实测 HITL 弹窗同参下环 r=20/dash=125.66/数字 16px/环心与标题行同轴居中(测完已还原 40); 共用方 antd Progress 节点已从 DOM 消失(.ant-progress 计数 0); ⑤FUNCTIONS_FRONT v1.10 同步登记 CountdownRing 与上一轮新增的 PanelIconButton, 并明确 PanelRow 是浮层行距唯一归属。维持PATCH v1.7.9。
+### 1.7.9.1 重构
+[浮层] refactor 2ab45beb3 倒计时环去 antd Progress 改自绘 SVG(直径/环宽/字色走本项目令牌, 盒子尺寸即直径并去掉假留白; HITL 弹窗与问询浮层共用不变, 只按直径分叉) - 商量-2026-11-18
+### 1.7.9.2 文档
+[文档] docs bfe221de0 FUNCTIONS_FRONT v1.10 登记 CountdownRing(自绘 SVG 环, HITL 与问询共用)与 PanelIconButton, 明确 PanelRow 是行距唯一归属 - 商量-2026-11-18
+
 v1.7.8
 发布时间: 2026-11-18 18:35:04 - 商量-2026-11-18
 ## v1.7.7以来 变更汇总(1个commit: fix1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
