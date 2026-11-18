@@ -970,3 +970,24 @@
   .ant-badge-status-processing::after {
   border-color: #52c41a;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   设置页 Tab 行 —— 2026-11-18 opencode
+   Tab 栏独占整宽(搜索框已移出为独立工具栏行), 9 组入口平铺约 750px。
+   窄视口下 antd 会把放不下的 Tab 收进「更多」下拉(弱语义, 且会出现行内与
+   下拉重复), 故改为「仅图标」降级: 非选中项隐藏文字只留图标+脏点, 选中项
+   保留图标+文字 —— 全部入口恒可见可点, 不折叠、不横向滚动。
+   阈值 1100px: 扣侧栏后内容区约 880px 起开始紧凑; ≤760px 再收窄 Tab 内边距,
+   9 项(图标+内边距)约 330px, 655px 视口实测可完整容纳。
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .settings-tabs .ant-tabs-tab:not(.ant-tabs-tab-active) .settings-tab-text {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .settings-tabs .ant-tabs-tab {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}

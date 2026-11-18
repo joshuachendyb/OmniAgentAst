@@ -107,6 +107,10 @@
 // 2026-11-16 小欧 - 删除按钮行「指令」入口: CommandPanel 按钮无实际价值, 移除装配与 import,
 //   快捷指令能力改由顶部 ShortcutPanel 承载 — 小欧-2026-11-16
 
+// 2026-11-18 opencode - 插话历史即时入列: 插话 onSend 闭合到插话应答流结束(注入失败降级时会跑完整条
+//   新任务流), 等 await 返回才 addRecentInput 会让用户数分钟内按 ↑ 翻不到刚发的插话; 插话为乐观投递,
+//   提交即记(与首发"成功后才记"并存, addRecentInput 对同文去重) — opencode-2026-11-18
+
 /**
  * ChatInput - 输入框组合根（六组件组合）
  *
@@ -183,7 +187,7 @@ import {
   type RecentInput,
 } from '../utils/recentInputs';
 import type { SendOpts, RoutingMode } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
-import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
+import { isInterjectRoute, isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源; 2026-11-18 opencode 补插话判定复用同一真源
 import { Colors, Radius, Spacing } from '@/utils/stepStyles';
 import { Gap } from '@/theme/spacing';
 // 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
@@ -547,6 +551,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
     //   ——而 onSend 全程闭合到 SSE 终态, 执行中插话会把上一轮引用原样再上行一次。
     const sentIds = new Set(refsToSend.map((r) => r.id));
     removeWhere((r) => sentIds.has(r.id));
+    // 2026-11-18 opencode - 插话提交即记历史(见文件头注): 首发仍等 onSend 成功后再记。
+    //   提交时定格路由, 后续 await 期间接收态变化不改变本条已定的分流。
+    const interjecting = isInterjectRoute(isReceiving, allowInterject);
+    if (interjecting) {
+      addRecentInput(cleanText);
+      setRecents(loadRecentInputs());
+    }
     // 2026-10-13 小欧: 标记提交中, 使 hook 能区分「建会话回填」与「用户真切会话」
     markSubmitted();
     try {
@@ -558,8 +569,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       }); // 对象参数，避免相邻 boolean 位置参数错位 — 小杨-2026-10-21
       // 2026-10-13 13:45 小欧: **提交成功后**才记历史(onSend 抛错 = 提交失败, 不能记; 流式中途报错不 reject,
       //   故面板文案用「最近提交」而非「发送成功」)
-      addRecentInput(cleanText);
-      setRecents(loadRecentInputs());
+      // 2026-11-18 opencode - 插话已在提交时记过(其 onSend 闭合到插话应答读完), 此处只补首发, 避免双写
+      if (!interjecting) {
+        addRecentInput(cleanText);
+        setRecents(loadRecentInputs());
+      }
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
     } catch {
       setDraft(backup);

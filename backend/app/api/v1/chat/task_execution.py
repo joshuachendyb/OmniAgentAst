@@ -6,6 +6,8 @@
 # 2026-11-18 - 小欧 - [46b] 会审整改: ref_ledger 收口到 update_task 唯一写路径(原裸 UPDATE 绕开白名单/
 #   序列化/0 行告警, 同一列两套写法); 并补 wire schema 校验(条目形状/长度/条数上限), 空 path 条目落库前丢弃;
 #   空数组不再覆盖已有快照 — 小欧-2026-11-18
+# 2026-11-18 opencode - RefLedgerEntry 补 kind(引用种类随快照落库): 前端冷启动按 url 开外链;
+#   可选字段, 存量快照无值时按文件处理 — opencode-2026-11-18
 """
 task_execution — C1 任务详情统计 + C2 按 task_id 步骤回放
 落在 chat 域（与 execution_stream C3 同域）
@@ -44,6 +46,9 @@ class RefLedgerEntry(BaseModel):
     label: str = Field(..., max_length=300)
     path: str = Field("", max_length=1024)
     lineRange: Optional[LineRange] = None
+    # 2026-11-18 opencode - 引用种类落库(前端按 url 开外链/其余重读文件); 存量快照无此字段=
+    #   None, 读侧按文件处理, 不改变旧数据行为
+    kind: Optional[str] = Field(None, max_length=20)
     ts: int
 
 

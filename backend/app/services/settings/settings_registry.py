@@ -133,6 +133,10 @@ key 全局唯一，加载自检重复直接拒启。
       media.remote_url_passthrough 改名「转发视频外链」并改述为只作用于视频 — opencode-2026-11-18
     2026-11-18 opencode - 图片外链实测门文案校正: 内联上限说明补「链接图仅实测证明能抓外链时才
       直接转发地址」, 转发说明同步图片口径(唯一由实测决定的地方) — opencode-2026-11-18
+    2026-11-18 opencode - media.probe_image_url/probe_video_url/probe_audio_url 类型 text→url:
+      三项是公网素材地址(数十~上百字符), text 走 inputWidth(180) 只剩尾部不可读, 改 url 类走
+      baseUrlWidth(360), 与 provider api_base 同宽族; 前端 SettingRow 按类型分派宽度, 零键名硬编码
+      — opencode-2026-11-18
 
 """
 from typing import Any, Dict, List, Optional
@@ -266,15 +270,15 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发视频外链", True,
               notice=f"在消息里明确写出的公网视频地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取（聊天接口没有视频内联格式，这是视频唯一的投递方式）。只认两种写法：Markdown 链接，或带视频后缀的裸链接（?查询参数原样保留）；单次引用最多 {MAX_TEXT_URLS} 个链接，超出的静默不转发；本机地址、内网/保留地址、以及非视频后缀一律不走直传（文本/富文档改走下载抽取正文，音频下载后内联发送；图片只有该模型实测证明能抓外链时才转发地址，否则也下载后内联），被拒的会在对话里留一行说明。关掉则视频链接只留一行说明、图片改为下载后内联"),
-        _item("media.probe_image_url", "text", "图片输入检测外链素材地址",
+        _item("media.probe_image_url", "url", "图片输入检测外链素材地址",
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
               notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
         # 2026-11-11 小欧 - 视频/音频输入验证素材地址(默认值=本机实测可达性/速度/体积择优的全球 CDN
         #   小文件(视频 test-videos.co.uk, 音频 runoob; 与图片外链地址同口径) — 小欧-2026-11-11
-        _item("media.probe_video_url", "text", "视频输入检测外链素材地址",
+        _item("media.probe_video_url", "url", "视频输入检测外链素材地址",
               "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
               notice="「视频输入能力验证」腿用的公网视频地址（约 991KB 的 mp4，全球 CDN），原样交给厂商接口抓取。留空 = 用内置默认地址；换成私有地址时保证厂商侧可直连 GET"),
-        _item("media.probe_audio_url", "text", "音频输入检测外链素材地址",
+        _item("media.probe_audio_url", "url", "音频输入检测外链素材地址",
               "https://www.runoob.com/try/demo_source/horse.mp3",
               notice="「音频输入能力验证」腿用的公网音频地址（约 29KB 的 mp3），后端先下载再 base64 内联发送。留空 = 用内置默认地址"),
     ]},

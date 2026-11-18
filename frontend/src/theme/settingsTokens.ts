@@ -16,6 +16,8 @@
 // 2026-11-02 小欧 - settingsModalWidth 增 workspace:720（事项工作区面板档: 内容宽 672 → mono 14 约 80 字符/行） — 小欧-2026-11-02
 // 2026-11-12 小欧 - 控件刻度单一真源归口: 控件高三档与圆角三档迁至 theme/controlScale.ts(全站唯一真源),
 //   本文件只留页面级宽度与布局派生量, 消除控件规格双份记账 — 小欧-2026-11-12
+// 2026-11-18 opencode - searchWidth 260→180: 设置页顶栏搜索框过长(北京老陈指正),
+//   收敛到 inputWidth(180) 同宽族; 该令牌仅设置页全局 SearchBox 使用, 无跨域连带 — opencode-2026-11-18
 import {
   Spacing,
   Radius,
@@ -61,9 +63,9 @@ export const settingsControl = {
   sliderWidth: 140,
   rangeNumberWidth: 80,
   textareaWidth: 180,
-  searchWidth: 260,
-  // 模型库筛选行专用宽度（北京老陈两次指正：搜索条太长）：不复用 searchWidth(260)——
-  // 那是右上角全局 SearchBox 的，两者密度诉求不同；160 与 inputWidth 同宽族 — 小欧 2026-09-29
+  searchWidth: 180,
+  // 模型库筛选行专用宽度（北京老陈两次指正：搜索条太长）：不复用 searchWidth——
+  // 那是设置页顶栏全局 SearchBox 的，两者密度诉求不同；160 与 inputWidth 同宽族 — 小欧 2026-09-29
   filterSearchWidth: 160,
   modelSelectWidth: 180,
   // 2026-10-05 22:16:38 小欧 - 模型库筛选行「上下文」下拉：原复用 modelSelectWidth=180 过长，

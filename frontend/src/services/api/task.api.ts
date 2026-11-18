@@ -19,6 +19,8 @@
 //   空台账不再请求携带(空数组等价不携带) — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - listTasks 走 dedupeGet(只合并同时在飞, 轮询必须每次发新请求)、
 //   getTrust 走 sharedGet(信任清单只随写变化); 首屏两处各自取数不再叠加重复请求 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 opencode - RefLedgerWireEntry 补 kind(引用种类随快照落库): 冷启动后
+//   url 台账条目按外链打开, 不再被当文件重读 — opencode-2026-11-18
 import api, { dedupeGet, sharedGet } from './client';
 import type { ApiRequestConfig } from './client';
 
@@ -107,6 +109,8 @@ export interface RefLedgerWireEntry {
   /** 可点开的相对 posix 路径; 缺 path 的条目在入台账/落库前即被丢弃, 故写侧必有值 */
   path: string;
   lineRange?: { start: number; end: number };
+  /** 2026-11-18 opencode - 种类随快照落库: 冷启动后 url 条目仍按外链打开而非文件重读 */
+  kind?: 'file' | 'selection' | 'attachment' | 'url';
   ts: number;
 }
 
@@ -271,8 +275,9 @@ export const sessionTaskApi = {
 export const executionApi = {
   getTaskDetail: async (taskId: string): Promise<TaskDetail> => {
     // 2026-11-18 小欧 - 首屏两个面板同刻各取一次同一任务详情, 合并同时在飞的请求(轮询另发新请求) — 小欧-2026-11-18
-    const data = await dedupeGet(`task:${taskId}`, async () =>
-      (await api.get(`/chat/execution/task/${taskId}`)).data
+    const data = await dedupeGet(
+      `task:${taskId}`,
+      async () => (await api.get(`/chat/execution/task/${taskId}`)).data
     );
     return adaptTaskDetail(data);
   },
@@ -309,8 +314,9 @@ export const trustApi = {
   getTrust: async (sessionId: string): Promise<TrustedTool[]> => {
     // 2026-11-18 小欧 - 信任清单只随授权/撤销变化(均为写请求), 走共享读; 只取正文(整份
     //   AxiosResponse 含函数, 深拷贝会抛 DataCloneError) — 小欧-2026-11-18
-    const r = await sharedGet(`trust:${sessionId}`, async () =>
-      (await api.get(`/sessions/${sessionId}/trust`)).data
+    const r = await sharedGet(
+      `trust:${sessionId}`,
+      async () => (await api.get(`/sessions/${sessionId}/trust`)).data
     );
     return (r.data?.trusted_tools ?? []).map(
       (t: { tool_name: string; path: string | null }) => ({

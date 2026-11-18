@@ -12,6 +12,7 @@
 //   (保留持久化, 非删除) — 小欧-2026-10-03
 // 2026-10-22 小欧 - SentRefLedgerEntry 类型自 chatStreamStore 迁入（备份类型单一真源），
 //   sentRefLedger 入 SessionSnapshot → 随 StreamBackup 落盘 + bump 响应式通知 — 小欧-2026-10-22
+// 2026-11-18 opencode - SentRefLedgerEntry 补 kind: url 条目点击开外链, 其余仍按文件重读 — opencode-2026-11-18
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
 //   ① TaskMetaFrames 重复 import 两次（文档 v1.29 修订时追加未删旧行）；② SSEError 使用却未 import。
@@ -74,6 +75,8 @@ export interface SentRefLedgerEntry {
   label: string;
   path: string;
   lineRange?: { start: number; end: number };
+  /** 2026-11-18 opencode - 引用种类透传: url 条目点击开外链, 不再当文件重读 */
+  kind?: 'file' | 'selection' | 'attachment' | 'url';
   taskId: string;
   ts: number;
 }

@@ -8,6 +8,10 @@
 //   默认 min-width:auto 使它无法收缩到内容宽度以下 → antd Tabs 拿不到受限宽度, 收不进「更多」,
 //   整行横向溢出被裁(实测 655px 视口第 4 个 Tab 之后不可见/不可点)。补 minWidth:0 + flex 让位,
 //   并把右侧搜索框钉为不压缩 — 小欧-2026-11-18
+// 2026-11-18 opencode - Tab 栏改独占整宽: 上一版靠 antd「更多」折叠藏 Tab, 弱语义且出现
+//   「模型库」行内与下拉重复。现将 SearchBox 移出 Tab 行(置于内容区顶部右对齐工具栏),
+//   Tab 行 100% 宽; 窄视口(≤1100px)按 CSS .settings-tabs 降级为「非选中项仅显图标,
+//   选中项图标+文字」, 保证 9 个入口恒可见可点, 不折叠、不横向滚动 — opencode-2026-11-18
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -253,45 +257,43 @@ const SettingsPage: React.FC = () => {
         onConfirmDelete={actions.confirmDelete}
       />
       <Card>
+        <Tabs
+          type="line"
+          className="settings-tabs"
+          activeKey={state.activeTab}
+          onChange={(k) => requestTab(k as TabKey)}
+          // 归零 antd 自带 16px，避免与 Card padding 叠成大片空白
+          tabBarStyle={{ marginBottom: 0 }}
+          items={s.GROUP_ORDER.map((g) => {
+            // 2026-11-18 opencode - 文字只算一次: 既作正常态标签, 又作窄屏图标态的悬停提示
+            const label = state.schema[g]?.label ?? g;
+            return {
+              key: g,
+              // 组级脏点常显占位：亮=该组有未保存，灭=透明占位保持列宽零跳变
+              label: (
+                <span
+                  title={label}
+                  style={{ display: 'inline-flex', alignItems: 'center' }}
+                >
+                  {SettingIcon[g]}{' '}
+                  {/* 窄视口由 .settings-tabs CSS 隐藏非选中项此段文字(仅留图标, 悬停见 title) */}
+                  <span className="settings-tab-text">{label}</span>
+                  <TabDirtyDot on={s.isGroupDirty(g)} />
+                </span>
+              ),
+            };
+          })}
+        />
+        {/* 搜索框独立成工具栏行: 不再挤占 Tab 宽度(挤占会触发 antd「更多」折叠藏入口) */}
         <div
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            justifyContent: 'flex-end',
+            marginTop: Spacing.SM,
             marginBottom: Spacing.SM,
           }}
         >
-          <span
-            style={{
-              // 2026-11-18 小欧 - Tab 栏必须能收缩: minWidth:0 解除 flex 项的 min-width:auto 下限,
-              //   宽度不足时由 antd Tabs 自己把多余 Tab 收进「更多」— 小欧-2026-11-18
-              flex: '1 1 auto',
-              minWidth: 0,
-            }}
-          >
-            <Tabs
-              type="line"
-              activeKey={state.activeTab}
-              onChange={(k) => requestTab(k as TabKey)}
-              // 归零 antd 自带 16px，避免与 Card padding 叠成大片空白
-              tabBarStyle={{ marginBottom: 0 }}
-              items={s.GROUP_ORDER.map((g) => ({
-                key: g,
-                // 组级脏点常显占位：亮=该组有未保存，灭=透明占位保持列宽零跳变
-                label: (
-                  <span
-                    style={{ display: 'inline-flex', alignItems: 'center' }}
-                  >
-                    {SettingIcon[g]} {state.schema[g]?.label ?? g}
-                    <TabDirtyDot on={s.isGroupDirty(g)} />
-                  </span>
-                ),
-              }))}
-            />
-          </span>
-          <span style={{ flexShrink: 0 }}>
-            <SearchBox schema={state.schema} onJump={jumpTo} />
-          </span>
+          <SearchBox schema={state.schema} onJump={jumpTo} />
         </div>
         {state.activeTab === 'model' ? (
           <ModelTab

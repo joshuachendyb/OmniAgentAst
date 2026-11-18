@@ -86,6 +86,10 @@
 //   activeSessions/others 与 releasedAt 判据(改 settledAt), 复核改轻量单任务读+预算, maxAgeMs 用 Infinity — 小欧-2026-11-03
 // 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: pushSentRefs 丢弃无 path 的引用(原补 '' 入台账,
 //   渲染出点不动的空 chip 并随快照上传后端空 path 条目) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 opencode - interjectMessage 成功后把插话 refs 追加进目标运行任务的台账:
+//   原仅首发(start 帧)pushSentRefs, 插话引用上行后无台账落点, 任务「本轮引用」缺插话的引用/图片 — opencode-2026-11-18
+// 编辑历史: 2026-11-18 opencode - refs_blocked 被拒引用从台账剔除(dropSentRefs, 同键只删最新一条);
+//   插话台账改为 POST 前入账(阻断帧必能看到条目)、失败回撤; SentRefInput/台账条目补 kind 透传 — opencode-2026-11-18
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -116,7 +120,7 @@ import {
   postInterject, // 2026-10-07 小欧 - 插话投递(独立于 sendStreamRequest, 不掐断运行中流)
 } from './chatStreamTransport';
 import { sessionApi } from '@/services/api/session.api'; // 2026-11-03 小欧 - 退订后轻量复核单任务状态
-import { toWireRef } from '@/features/refs/identity'; // wire 投影(与 transport 共用, 归 refs 域) — 小欧 2026-10-30
+import { toWireRef, refKeyOf } from '@/features/refs/identity'; // wire 投影/引用同键(台账剔除被拒引用复用, 归 refs 域) — opencode-2026-11-18
 import {
   composerRefStore,
   newRefId,
@@ -505,6 +509,8 @@ export interface SentRefInput {
   label: string;
   path?: string;
   lineRange?: { start: number; end: number } | null;
+  /** 2026-11-18 opencode - 种类随台账透传(URL 条目点击开外链) */
+  kind?: 'file' | 'selection' | 'attachment' | 'url';
 }
 
 /**
@@ -1184,6 +1190,7 @@ export const chatStreamStore = {
           label: r.label,
           path: r.path,
           lineRange: r.lineRange ?? undefined,
+          kind: r.kind,
           taskId,
           ts: Date.now(),
         })),
@@ -1197,6 +1204,32 @@ export const chatStreamStore = {
     const s = sessions.get(sessionId);
     if (!s) return [];
     return s.sentRefLedger.filter((e) => e.taskId === taskId);
+  },
+
+  /**
+   * 从台账剔除指定任务的引用（同 path+lineRange 只删最新一条）。
+   * 2026-11-18 opencode - refs_blocked 的被拒引用不得留在「本轮引用」；只删最新一条，
+   *   同键重复时更早那条属于先前轮次的合法引用，不能被连带抹掉。
+   */
+  dropSentRefs(sessionId: string, taskId: string, refs: SentRefInput[]): void {
+    const keys = new Set(
+      refs
+        .filter((r) => !!r.path)
+        .map((r) => refKeyOf({ path: r.path, lineRange: r.lineRange }))
+    );
+    if (keys.size === 0) return;
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    commit(s, (d) => {
+      const next = d.sentRefLedger.slice();
+      for (const k of keys) {
+        const i = next.findIndex(
+          (e) => e.taskId === taskId && refKeyOf(e) === k
+        );
+        if (i >= 0) next.splice(i, 1);
+      }
+      d.sentRefLedger = next;
+    });
   },
 
   /**
@@ -1219,6 +1252,12 @@ export const chatStreamStore = {
       d.pendingSentRefs = null;
       d.pendingSentRefsDraft = null;
     });
+    // 2026-11-18 opencode - 被拒引用不得留在「本轮引用」: 首发(draft 非 null)阻断时后端
+    //   未建任务、台账也未入列; 只有插话(draft=null)已把 refs 记到运行任务台账, 需按同键剔除。
+    if (draft === null && s.serverTaskId) {
+      this.dropSentRefs(sessionId, s.serverTaskId, pending);
+      persistNowOf(sessionId);
+    }
     const n = composerRefStore.restore(
       pending.map((r) => ({ id: newRefId(), ...r }))
     );
@@ -1253,6 +1292,19 @@ export const chatStreamStore = {
     });
     persistNowOf(sessionId);
     refNoticeStore.clear(); // 新发货清旧回执, 后续 refs_notice 重新落态
+    // 2026-11-18 opencode - 插话引用入「本轮引用」台账必须在 POST 之前: refs_blocked 帧是
+    //   本次投递的后果, 先入账才能保证阻断剔除(restoreSentRefs)一定看到条目; 投递失败在
+    //   catch 里回撤同一批条目(同键只删最新一条, 不伤先前轮次的同路径引用)。
+    const ledgerRefs: SentRefInput[] = (refs ?? []).map((r) => ({
+      label: r.label,
+      path: r.path,
+      lineRange: r.lineRange ?? null,
+      kind: r.kind,
+    }));
+    if (ledgerRefs.length && s.serverTaskId) {
+      this.pushSentRefs(sessionId, s.serverTaskId, ledgerRefs);
+      persistNowOf(sessionId); // 与首发 start 帧入账后同口径落盘, 刷新/崩溃后台账仍可回看
+    }
     try {
       await postInterject(s, content, refs);
     } catch (e) {
@@ -1263,6 +1315,10 @@ export const chatStreamStore = {
       commit(s, (d) => {
         d.pendingSentRefs = null;
       });
+      if (ledgerRefs.length && s.serverTaskId) {
+        this.dropSentRefs(sessionId, s.serverTaskId, ledgerRefs);
+        persistNowOf(sessionId);
+      }
       throw e;
     }
   },

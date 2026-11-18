@@ -55,6 +55,10 @@
 //   roundHits 双源(steps 实时优先, steps 无产出时取接口 tool_paths 快照兜底, 冷启动推荐行恢复, steps 有产出时避免同路径双源重复计数) — 小欧-2026-11-17
 // 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 推荐行快照源只取最新任务的 tool_paths(原全会话累加,
 //   旧任务触达凑数), 并去掉"实时源为空才用快照"的全有全无闸门, 改按路径各判 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 opencode - 台账行响应式: 插话追加引用不产生新任务、不触发 tasks 刷新,
+//   原 memo 依赖 [sessionId, tasks] 不重算 → 插话引用/图片行不出现; 改订阅快照台账(引用变化才重渲) — opencode-2026-11-18
+// 编辑历史: 2026-11-18 opencode - 台账行三处真问题: ①与 ref_ledger 快照按 path+lineRange 合并
+//   (原 live 非空即全量覆盖, 丢快照里 live 未复现的条目); ②url 条目点击开外链(原来当文件重读必失败) — opencode-2026-11-18
 
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
@@ -94,7 +98,8 @@ import { showSuccess, handleError } from '@/services/error/handler';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 // 2026-10-22 小欧 - 引用入口统一（选区走 quoteSelection，与文件页口径一致）
 import { quoteWithToast } from '@/features/refs/quoteToast';
-import { labelOf } from '@/features/refs/identity';
+import { labelOf, refKeyOf } from '@/features/refs/identity';
+import type { SentRefLedgerEntry } from '../../streams/backupTypes'; // 台账条目类型(与 store 备份同源) — opencode-2026-11-18
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
@@ -653,16 +658,41 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     return () => window.removeEventListener('task_merged', onTaskMerged);
   }, [latestTaskId, anchorRef]);
 
+  // 2026-11-18 opencode - 台账响应式依赖: 插话追加引用不产生新任务, 也不会触发 tasks 刷新,
+  //   原 memo 依赖 [sessionId, tasks] 不重算。订阅会话快照取台账数组(引用未变时引用相同 → 不重渲)。
+  const liveLedger = React.useSyncExternalStore(
+    React.useCallback(
+      (cb: () => void) =>
+        sessionId
+          ? chatStreamStore.subscribe(sessionId, cb)
+          : () => {
+              /* 无会话不订阅 */
+            },
+      [sessionId]
+    ),
+    () =>
+      sessionId ? chatStreamStore.getSnapshot(sessionId).sentRefLedger : null
+  );
+
   // [45] P2 台账预计算(消除 render 期间每任务同步调 store): key=taskId, value=渲染节点;
   //   tasks 未变化时 useMemo 缓存命中, SSE 流式期间不再每 tick 重算 — 小欧-2026-11-16
   const ledgerByTask = React.useMemo(() => {
-    if (!sessionId) return new Map<string, React.ReactNode>();
+    if (!sessionId || !liveLedger) return new Map<string, React.ReactNode>();
     const m = new Map<string, React.ReactNode>();
     for (const t of tasks) {
       // [46b] P2b 小欧 2026-11-17: 台账双源——store 实时态优先(运行中即时),
       //   store 为空(冷启动/刷新)时取任务接口快照(46b 落库)兜底, 根治冷启动台账缺失
-      const live = chatStreamStore.getSentRefLedger(sessionId, t.task_id);
-      const entries = live.length > 0 ? live : (t.ref_ledger ?? []);
+      // 2026-11-18 opencode - 双源合并(原"live 非空即全量覆盖"): 两者口径不同, 覆盖会丢
+      //   快照里 live 未复现的条目(跨轮/跨端); 同 path+lineRange 以 live 为准, 顺序 live 在前。
+      const live = liveLedger.filter((e) => e.taskId === t.task_id);
+      const entries: SentRefLedgerEntry[] = [];
+      const seen = new Set<string>();
+      for (const e of [...live, ...(t.ref_ledger ?? [])]) {
+        const k = refKeyOf(e);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        entries.push(e as SentRefLedgerEntry);
+      }
       if (entries.length === 0) continue;
       m.set(
         t.task_id,
@@ -674,6 +704,12 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               style={{ cursor: 'pointer' }}
               onClick={(ev) => {
                 ev.stopPropagation();
+                // 2026-11-18 opencode - URL 条目不是文件: 当文件重读必失败, 直接开外链
+                //   (与 RefChip 的 URL 点击同口径)
+                if (e.kind === 'url') {
+                  window.open(e.path, '_blank', 'noopener');
+                  return;
+                }
                 void quoteAfterReread(e.path, e.lineRange);
               }}
             >
@@ -685,7 +721,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       );
     }
     return m;
-  }, [sessionId, tasks, quoteAfterReread]);
+  }, [sessionId, tasks, liveLedger, quoteAfterReread]);
 
   // [45] 推荐行预计算(只对最新任务): 稳定引用供 TaskItemMemo 比较 — 小欧-2026-11-16
   const recommendNode = React.useMemo(() => {
