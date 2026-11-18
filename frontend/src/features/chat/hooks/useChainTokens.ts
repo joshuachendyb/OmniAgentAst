@@ -8,6 +8,10 @@
 // 编辑历史: 2026-09-11 小欧 - 三堂会审修复: hasFinalStats effect原deps含tasks, 体内refreshTasks更新tasks引用致自激无限循环; 改key型边界触发器(含session|anchor)防重入, 会话切/新任务到自动复位 — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - 三堂会审修复: ①删私有TokenTriple统一复用stepStyles.ts公用TokenLayer(DRY, 消类型碎片);
 //   ②抽fetchTokens内部函数消除L64-71/L89-97重复的getChainTokens+setState(DRY), 行为等价 — 小欧-2026-09-12
+// 编辑历史: 2026-11-18 小欧 - 链累计跨会话残留修复: 会话切换瞬间 serverTaskId/latestTaskId 可能仍是上一会话的值,
+//   拿它配新 session_id 属矛盾查询(实测 GET /token-usage?session_id=<新>&task_id=<旧会话任务> 返回
+//   会话累计 0 + 旧链累计, 顶栏「链累计」显示上一会话数据); 现只对**属于当前会话任务清单**的锚点发查询
+//   (tasks 即本会话清单, 成员校验=归属校验), 锚点不符就等 tasks 到位再拉, 期间保持 reset 后的 '-' — 小欧-2026-11-18
 import { useEffect, useRef, useState } from 'react';
 import { tokenUsageApi } from '../../../services/api/task.api';
 import type { TaskMetaFrames } from '../../../types/sse';
@@ -19,6 +23,16 @@ import { type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复�
  * - 静止/历史/重进会话：阅读加载补拉 + 任务结束沿拉取 的 DB 落库值
  * - 优先级：实时 metaFrames > 静态拉取。返回 { sessionTokens, chainTokens } 两组 3 字段。
  */
+
+/**
+ * 锚点归属校验：锚点必须出现在本会话的任务清单里才允许查询。
+ * 会话切换瞬间 serverTaskId/latestTaskId 可能仍是上一会话的值，拿它配新 session_id 会得到
+ * 「会话 0 + 旧链累计」的矛盾结果（后端同样拒绝该组合）— 小欧-2026-11-18
+ */
+const anchorInTasks = (
+  taskId: string | null | undefined,
+  tasks: { task_id: string }[]
+): taskId is string => !!taskId && tasks.some((t) => t.task_id === taskId);
 
 export function useChainTokens(
   sessionId: string | null,
@@ -68,7 +82,9 @@ export function useChainTokens(
   //   补一段: 会话切+任务就绪+非接收中 → 主动拉取一次(anchorRef去重防重复), 与任务结束沿并存不退化。
   useEffect(() => {
     const anchorTaskId = serverTaskId ?? latestTaskId ?? tasks[0]?.task_id;
-    if (!sessionId || !anchorTaskId || isReceiving) return;
+    // 2026-11-18 小欧 - 锚点不属于本会话(切会话瞬间的陈旧值)时不发查询: 这是后端会拒的矛盾组合，
+    //   也是「链累计显示上一会话数据」的直接成因; 等 tasks 到位后本 effect 依赖变化会再跑 — 小欧-2026-11-18
+    if (!sessionId || !anchorInTasks(anchorTaskId, tasks) || isReceiving) return;
     const key = `${sessionId}|${anchorTaskId}`;
     if (fetchedAnchorRef.current === key) return;
     fetchedAnchorRef.current = key;
@@ -90,7 +106,9 @@ export function useChainTokens(
     if (_handledFinalStatsKeyRef.current === key) return; // 同一次final沿已处理, 防自激循环
     _handledFinalStatsKeyRef.current = key;
     void refreshTasks();
-    if (sessionId) {
+    // 2026-11-18 小欧 - token 侧同样只认本会话任务: 刷新任务清单这件事与归属无关(照做),
+    //   但拿陈旧跨会话锚点查 token 会得到错误口径 — 小欧-2026-11-18
+    if (sessionId && anchorInTasks(anchor, tasks)) {
       void fetchTokens(sessionId, anchor); // 2026-09-12 小欧: 复用 fetchTokens — 小欧-2026-09-12
     }
   }, [

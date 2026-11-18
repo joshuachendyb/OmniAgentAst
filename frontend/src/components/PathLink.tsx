@@ -17,6 +17,8 @@
 //   路径本体已能区分(文件带扩展名, 目录另有「目录」文字徽标), 图标与徽标/路径重复提示, 视觉上像多挂一个符号;
 //   行内形态(工具参数/产出物清单/文件足迹)无文字徽标, 图标是目录与文件的唯一区别, 故只在 !isChip 时渲染。
 //   图标样式随之从 LinkBody 内的三元收成模块级 INLINE_ICON_STYLE(只剩一处用途)。别针(pin)不受影响 — opencode-2026-11-17
+// 2026-11-18 小欧 - 透传 fileHint（调用方确知是文件时否决「无扩展名即目录」的形态猜测）；
+//   渲染态与点击态共用同一个 ClickShapeOpts，避免两处各列一遍判定参数漏传 — 小欧-2026-11-18
 /**
  * PathLink —— 路径 → 文件页链接的**唯一** UI 组件。
  *
@@ -32,7 +34,7 @@ import React from 'react';
 import { FileOutlined, FolderOutlined } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
-import { resolvePathTarget } from '@/utils/projectPath';
+import { resolvePathTarget, type PathTargetOptions } from '@/utils/projectPath';
 import { resolveChipUrlFresh, useProjectRoot } from '@/hooks/useProjectRoot';
 // 2026-11-02 小欧 - 别针引用入口（pin）：引用实现仍在 features/refs（quote.ts 唯一实现），
 //   此处只并列渲染，与旧 components/markdown/FileRefChip 的依赖方向一致 — 小欧-2026-11-02
@@ -47,6 +49,11 @@ export interface PathLinkProps {
   lineRange?: { start: number; end: number } | null;
   /** 工具语义声明该路径必为目录（listdir/tree/find 的 path） */
   dirHint?: boolean;
+  /**
+   * 调用方**确知**该路径是文件（如文件足迹的 f.type === 'file'）：
+   * 否决「无扩展名即目录」的宽松形态猜测（hosts / LICENSE 这类文件）— 小欧-2026-11-18
+   */
+  fileHint?: boolean;
   /** 严格形态口径：根外无扩展名无尾分隔符的路径不猜目录、不出链接（工具参数用） */
   strictShape?: boolean;
   /** 外观：chip = 卡片（默认），inline = 行内下划线 */
@@ -194,8 +201,12 @@ const LinkBody: React.FC<LinkBodyProps & { onGo: () => void }> = ({
 /** 点击参数（只有路由层需要，外壳不关心） */
 interface RoutedLinkProps extends LinkBodyProps {
   dirHint?: boolean;
+  fileHint?: boolean;
   strictShape?: boolean;
 }
+
+/** 点击态判定参数（与渲染态同一组，防两处口径漂移） */
+type ClickShapeOpts = Pick<PathTargetOptions, 'dirHint' | 'fileHint' | 'strictShape'>;
 
 /**
  * 唯一点击口径：点击时显取根解析 → 判不过不跳；落点由调用方决定（Router 内 SPA 跳 /
@@ -204,7 +215,7 @@ interface RoutedLinkProps extends LinkBodyProps {
 const goFresh = (
   rawPath: string,
   lineRange: { start: number; end: number } | null | undefined,
-  opts: { dirHint?: boolean; strictShape?: boolean },
+  opts: ClickShapeOpts,
   sink: (url: string) => void
 ): void => {
   void resolveChipUrlFresh(rawPath, lineRange, opts).then((u) => {
@@ -217,6 +228,7 @@ const RoutedLink: React.FC<RoutedLinkProps> = ({
   rawPath,
   lineRange,
   dirHint,
+  fileHint,
   strictShape,
   ...body
 }) => {
@@ -227,8 +239,11 @@ const RoutedLink: React.FC<RoutedLinkProps> = ({
       rawPath={rawPath}
       lineRange={lineRange}
       onGo={() =>
-        goFresh(rawPath, lineRange, { dirHint, strictShape }, (u) =>
-          nav(u, { state: { internal: true } })
+        goFresh(
+          rawPath,
+          lineRange,
+          { dirHint, fileHint, strictShape },
+          (u) => nav(u, { state: { internal: true } })
         )
       }
     />
@@ -239,6 +254,7 @@ export const PathLink: React.FC<PathLinkProps> = ({
   rawPath,
   lineRange = null,
   dirHint,
+  fileHint,
   strictShape,
   variant = 'chip',
   tooltip = false,
@@ -253,6 +269,7 @@ export const PathLink: React.FC<PathLinkProps> = ({
   const root = projectRoot || subscribedRoot;
   const target = resolvePathTarget(rawPath, root, {
     dirHint,
+    fileHint,
     strictShape,
     lineRange,
   });
@@ -283,14 +300,22 @@ export const PathLink: React.FC<PathLinkProps> = ({
     isExternal: target.isExternal,
   };
   const link = inRouter ? (
-    <RoutedLink {...linkProps} dirHint={dirHint} strictShape={strictShape} />
+    <RoutedLink
+      {...linkProps}
+      dirHint={dirHint}
+      fileHint={fileHint}
+      strictShape={strictShape}
+    />
   ) : (
     // 无 Router 兜底：同一 LinkBody，落点整页跳（sink 决定，不新开标签页）
     <LinkBody
       {...linkProps}
       onGo={() =>
-        goFresh(rawPath, lineRange, { dirHint, strictShape }, (u) =>
-          window.location.assign(u)
+        goFresh(
+          rawPath,
+          lineRange,
+          { dirHint, fileHint, strictShape },
+          (u) => window.location.assign(u)
         )
       }
     />

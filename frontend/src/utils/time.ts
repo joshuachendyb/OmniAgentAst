@@ -9,6 +9,8 @@
 // 编辑历史: 2026-09-18 小欧 - 新增 formatDurationHMS(耗时秒 → 固定 HH:MM:SS, TaskInfoBar 耗时显示用,
 //   北京老陈令"秒值改时分秒结构显示 00:04:32") — 小欧-2026-09-18
 // 合并来源: timestamp.ts(80行) + timeFormatters.ts(43行) + formatSafeTimestamp.ts(10行) + TaskListPanel.tsx:30 + History/index.tsx:285
+// 编辑历史: 2026-11-18 小欧 - 新增 formatTimestampSec(秒精度, 无小数秒): 后端 ISO 串带微秒,
+//   直接渲染不可读且与全站口径不符; 复用 formatTimestamp 截到秒, 不另写一套拼装 — 小欧-2026-11-18
 
 /** 两位补零辅助(模块私有, 避免三处重复 padStart 管道) — 小欧-2026-09-18 */
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -28,6 +30,13 @@ export const formatTimestamp = (ts: number | string | undefined): string => {
   if (!d) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 };
+
+/**
+ * 秒精度时间戳（`YYYY-MM-DD HH:MM:SS`）：与 formatTimestamp 同源，去掉小数秒。
+ * 后端下发的 ISO 串带微秒（`2026-11-17T20:10:12.288685`），直接渲染既不可读也与全站口径不一致 — 小欧-2026-11-18
+ */
+export const formatTimestampSec = (ts: number | string | undefined): string =>
+  formatTimestamp(ts).slice(0, 19);
 
 export const formatTime = (date: Date | string | number): string => {
   if (date === undefined || date === null || date === '') return '-';

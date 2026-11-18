@@ -4,7 +4,7 @@
  * 功能：
  * - 展示当前全局模型(modelList.current_model 优先, 降落 serviceStatus.model_ref 派生)
  * - 切换写全局配置(switchAndRefreshModel 唯一写链), 切换前登记 attemptedModel 供失败态弹窗联动
- * - 打开下拉框时刷新模型列表获取最新配置; 无模型时降级"暂无模型" Tag
+ * - 打开下拉框时刷新模型列表获取最新配置; 取数中给同宽骨架, 取数结束仍无模型才降级"暂无模型" Tag
  * - 框宽/弹层宽唯一可调点 = TOP_MODEL_SELECT_WIDTH(仅 minWidth 下限), 与会话级 ModelPicker 互不共享隔离
  *
  * @author 小欧
@@ -13,8 +13,10 @@
 // 编辑历史: 2026-11-02 小欧 - SRP拆分新建: 领域逻辑自AppLayout迁入(index.tsx 362~374/448~493/845~876), 逻辑零改动 - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 死字段删除: onSwitchAttempted不再传display_name(接收侧hook从不读该字段) - 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 解钩: onSwitchAttempted prop与attemptedModel登记全删(消费方useValidationFeedback已废) - 小欧-2026-11-02
+// 编辑历史: 2026-11-18 小欧 - 加载态与空态分离: 原实现 modelList 为空即渲染"暂无模型", 首帧(尤其非对话页)
+//   模型接口未回时短暂误报"没有可用模型"; 现取数中(modelListLoading)渲染同宽骨架, 只有取数结束仍空才提示 — 小欧-2026-11-18
 import React from 'react';
-import { Select, Tag } from 'antd';
+import { Select, Skeleton, Tag } from 'antd';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 import { useApp } from '../../contexts/AppContext';
 
@@ -26,6 +28,7 @@ const { Option } = Select;
 export const GlobalModelSelect: React.FC = () => {
   const {
     modelList,
+    modelListLoading,
     serviceStatus,
     switchAndRefreshModel,
     refreshModelList: appRefreshModelList,
@@ -115,6 +118,16 @@ export const GlobalModelSelect: React.FC = () => {
             </Option>
           ))}
         </Select>
+      ) : modelListLoading ? (
+        // 2026-11-18 小欧 - 取数中给同宽骨架: 空列表语义是"没有可用模型", 不能拿它表示"还没回来" — 小欧-2026-11-18
+        <Skeleton.Input
+          active
+          size="small"
+          style={{
+            width: TOP_MODEL_SELECT_WIDTH,
+            minWidth: TOP_MODEL_SELECT_WIDTH,
+          }}
+        />
       ) : (
         <Tag color="warning">暂无模型</Tag>
       )}

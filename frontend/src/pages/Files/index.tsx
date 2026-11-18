@@ -83,6 +83,10 @@
 // 2026-11-12 小欧 - 控件刻度归唯一真源: 本页 ConfigProvider 原硬编码 controlHeight=28 覆盖全站档位
 //   (密度切档时本页对档位无效), 改走 pageControlTokens(density) 按密度取档; 禁沿用库缺省与派生值 — 小欧-2026-11-12
 // 2026-11-13 商量 - 字号归位: 硬编码 fontSize 12 → FontSize.SECONDARY(阶梯唯一真源), import 同步补 FontSize — 商量-2026-11-13
+// 2026-11-18 小欧 - 外部目录取数失败不再静默：loadExternalDir 的 catch 原先只 return null，
+//   后端 400（如把无扩展名文件当目录）时页面一片空白、无任何提示；现落 linkErr 带后端原文，
+//   预览区走 PreviewNoticeCard(kind=failed)。openExternalDir 改为「取数成功才挂树」——原先
+//   setExternalBase 再拉树，失败会留下一个空的假外部根，用户会误判"目录是空的" — 小欧-2026-11-18
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -143,7 +147,12 @@ import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
 import { isMutatedByOps } from '@/utils/fileOps';
 import { readStoredSessionId } from '@/utils/sessionStorage';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import {
+  extractErrorMessage,
+  showMessage,
+  showSuccess,
+  ErrorType,
+} from '@/services/error/handler';
 import { Spacing, Colors, FontSize } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 // 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
@@ -330,8 +339,12 @@ const FilesPage: React.FC = () => {
 
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
-  /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连） */
-  const [linkErr, setLinkErr] = useState<{ path: string } | null>(null);
+  /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连）
+   *  2026-11-18 小欧 - 补 reason：后端原文（有值 = 加载失败，无值 = 未找到该路径）— 小欧-2026-11-18 */
+  const [linkErr, setLinkErr] = useState<{
+    path: string;
+    reason?: string;
+  } | null>(null);
   /**
    * 2026-10-22 小欧 - 滚动定位信号：openPath 命中后递增，FilesTree 在提交后的
    *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
@@ -424,11 +437,15 @@ const FilesPage: React.FC = () => {
           return mergeKids(prev, relKey, prefixKeys(r.nodes, relKey));
         });
         return r.nodes;
-      } catch {
+      } catch (e) {
+        // 2026-11-18 小欧 - 真实失败不再静默（被新请求取代的那条走上面的 seq 早退，属正常取消）：
+        //   原 catch 只 return null，用户看到"点了没反应/一片空白"，无从判断是路径不存在、被后端拒绝
+        //   还是没有权限。这里把后端原文落到预览区提示卡（唯一失败出口）— 小欧-2026-11-18
+        setLinkErr({ path: absDir, reason: extractErrorMessage(e) });
         return null;
       }
     },
-    []
+    [setLinkErr]
   );
 
   /**
@@ -437,25 +454,27 @@ const FilesPage: React.FC = () => {
    */
   const openExternalDir = useCallback(
     async (absDir: string): Promise<void> => {
+      // 2026-11-18 小欧 - 先取数成功再挂树：原实现先 setExternalBase 再拉树，
+      //   后端 400 时留下一个空的假外部根（用户以为"目录是空的"），且错误被 catch 吞掉。
+      //   取数失败由 loadExternalDir 落提示卡，这里直接不动树 — 小欧-2026-11-18
+      const kids = await loadExternalDir(absDir, '.');
+      if (!kids) return;
       setExternalBase(absDir);
       setExpandedKeys((prev) =>
         prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
       );
-      const kids = await loadExternalDir(absDir, '.');
-      if (kids) {
-        const firstLayerDirKeys = kids
-          .filter((k) => k.type === 'dir')
-          .map((k) => `${EXT_KEY}/${k.key}`);
-        setLoadedKeys((prev) =>
-          prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
-        );
-        setExpandedKeys((prev) => {
-          const next = new Set(prev);
-          next.add(EXT_KEY);
-          for (const k of firstLayerDirKeys) next.add(k);
-          return Array.from(next);
-        });
-      }
+      const firstLayerDirKeys = kids
+        .filter((k) => k.type === 'dir')
+        .map((k) => `${EXT_KEY}/${k.key}`);
+      setLoadedKeys((prev) =>
+        prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
+      );
+      setExpandedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(EXT_KEY);
+        for (const k of firstLayerDirKeys) next.add(k);
+        return Array.from(next);
+      });
       if (isNarrow) setNarrowTab('preview');
     },
     [loadExternalDir, isNarrow, setExpandedKeys, setLoadedKeys, setNarrowTab]
@@ -668,7 +687,12 @@ const FilesPage: React.FC = () => {
     // 2026-10-23 小欧 - ext=1 目录（尾分隔符）改挂外部树：fetchExternalTree 拉子层 + 合成 __ext__ 根，
     //   右侧预览不动；ext=1 文件维持 setExternalPath 外部只读预览。— 小欧-2026-10-23
     // 2026-11-02 小欧 - 内外/目录/相对全部来自唯一路径解析函数（本页不再自判）— 小欧-2026-11-02
-    const target = resolvePathTarget(rawPath, projectRoot, { lineRange });
+    const target = resolvePathTarget(rawPath, projectRoot, {
+      lineRange,
+      // 2026-11-18 小欧 - 生成端确知是文件时带 file=1: 无扩展名文件(hosts/LICENSE)不再被
+      //   页面侧重新猜成目录而去拉外部目录树(后端 400 一片空白) — 小欧-2026-11-18
+      fileHint: params.get('file') === '1',
+    });
     // 2026-11-02 小欧 - 外部路径只有一个处理口（原 ext=1 分支与下方 isExternal 分支重复，
     //   且 ext=1 目录/文件与普通深链口径不一致）：目录挂外部树、文件直开外部只读预览。
     //   ext=1 只是生成端标记，归属一律以 target.isExternal 为准 — 小欧-2026-11-02
@@ -934,8 +958,9 @@ const FilesPage: React.FC = () => {
    */
   const linkErrPane = linkErr ? (
     <PreviewNoticeCard
-      kind="notfound"
+      kind={linkErr.reason ? 'failed' : 'notfound'}
       path={linkErr.path}
+      description={linkErr.reason}
       onDismiss={() => setLinkErr(null)}
     />
   ) : null;

@@ -4,6 +4,8 @@
 // 2026-10-23 小欧 - 改名为 PreviewNoticeCard（通用预览区整块提示卡，三堂会审消重）：
 //   统一「未找到 / 加载失败 / 暂不支持预览」三类，仅 kind 驱动标题/图标/色/说明/按钮组。
 //   文件改名 + 语义泛化，原 PathNotFoundPane 删除，避免同抽象两套实现（DRY）。— 小欧-2026-10-23
+// 2026-11-18 小欧 - failed 类补「知道了」：外部目录加载失败时调用方传了 onDismiss 才出，
+//   否则提示卡没有退出路径（原仅 notfound 有）— 小欧-2026-11-18
 /**
  * PreviewNoticeCard —— 文件页右侧预览区「整块提示」统一卡片
  *
@@ -206,7 +208,9 @@ export const PreviewNoticeCard: React.FC<PreviewNoticeCardProps> = ({
               {kind === 'failed' ? '重试' : '刷新'}
             </Button>
           )}
-          {meta.actions.includes('dismiss') && onDismiss && (
+          {/* 2026-11-18 小欧 - failed 也允许「知道了」退出：外部目录/深链加载失败时用户除重选文件外
+              没有第二个出口，提示卡会一直压在预览区 — 小欧-2026-11-18 */}
+          {onDismiss && (meta.actions.includes('dismiss') || kind === 'failed') && (
             <Button size="small" type="primary" onClick={onDismiss}>
               知道了
             </Button>

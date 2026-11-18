@@ -4,6 +4,10 @@
 // 2026-11-11 小欧 - Image_URL 即存链(probeUrlDraft/saveProbeUrl)移除: 三个验证素材地址已回媒体页直接编辑(走组保存),
 //   ModelTab 不再接收 probeUrlDraft/onProbeUrlChange/onProbeUrlSave props — 小欧-2026-11-11
 // 2026-11-16 小欧 - 设置页底部挂 ShutdownCard(服务卡, 提供「关闭服务」优雅停机入口) — 小欧-2026-11-16
+// 2026-11-18 小欧 - 窄视口 Tab 溢出修复: 标题行是 flex 行, 左侧 span 未设 minWidth:0,
+//   默认 min-width:auto 使它无法收缩到内容宽度以下 → antd Tabs 拿不到受限宽度, 收不进「更多」,
+//   整行横向溢出被裁(实测 655px 视口第 4 个 Tab 之后不可见/不可点)。补 minWidth:0 + flex 让位,
+//   并把右侧搜索框钉为不压缩 — 小欧-2026-11-18
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -257,7 +261,14 @@ const SettingsPage: React.FC = () => {
             marginBottom: Spacing.SM,
           }}
         >
-          <span>
+          <span
+            style={{
+              // 2026-11-18 小欧 - Tab 栏必须能收缩: minWidth:0 解除 flex 项的 min-width:auto 下限,
+              //   宽度不足时由 antd Tabs 自己把多余 Tab 收进「更多」— 小欧-2026-11-18
+              flex: '1 1 auto',
+              minWidth: 0,
+            }}
+          >
             <Tabs
               type="line"
               activeKey={state.activeTab}
@@ -278,7 +289,9 @@ const SettingsPage: React.FC = () => {
               }))}
             />
           </span>
-          <SearchBox schema={state.schema} onJump={jumpTo} />
+          <span style={{ flexShrink: 0 }}>
+            <SearchBox schema={state.schema} onJump={jumpTo} />
+          </span>
         </div>
         {state.activeTab === 'model' ? (
           <ModelTab

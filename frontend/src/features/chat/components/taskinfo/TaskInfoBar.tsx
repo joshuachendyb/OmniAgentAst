@@ -133,7 +133,7 @@ import { formatTimeHMS, formatDurationHMS, parseTimeSafe } from '@/utils/time'; 
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
 // [46b] P2b 小欧 2026-11-17: final 帧收尾上交台账快照(权威源在 store, 经调用点取参传 api 层)
-import { chatStreamStore } from '../../streams/chatStreamStore';
+import { chatStreamStore, isTerminalStatus } from '../../streams/chatStreamStore';
 import { TrustPanel } from '../config/TrustPanel';
 import { EllipsisTip } from './EllipsisTip';
 import { MetricItem } from './MetricItem';
@@ -280,7 +280,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   //   走表 = (最新帧服务器时刻 − 起点) + (客户端当前时刻 − 该帧到达时刻):
   //     服务器已流逝走服务器时钟(免疫客户端时钟偏移与重连回放), 客户端只补增量(帧间平滑走动)。
   const taskStarted = frames.startInfo !== null || frames.taskStartTime != null;
-  const taskFinished = !!frames.finalStats;
+  // 2026-11-18 小欧 - 停表判据补全(实测: 任务 2.3s 完成, 台账耗时从 00:00:07 涨到 00:00:20):
+  //   原判据只有 final_stats 帧, 该帧缺失时永远"执行中"; 三源任一成立即停表 ——
+  //   ① final_stats 帧 ② steps 里的 final 步(useTaskInfo 的终态权威) ③ store 已确认的终态 — 小欧-2026-11-18
+  const taskFinished =
+    !!frames.finalStats || _hasFinal || isTerminalStatus(storeStatus);
   const [liveElapsed, setLiveElapsed] = useState(0);
   // 权威起点与时钟锚用 ref 持有(每次渲染同步最新值): 定时器回调读 ref 不闭包过期 frames,
   //   且 frames 有意不入 effect 依赖(防每帧重置定时器, 见下方 eslint 说明)。
@@ -614,7 +618,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           <FloatingEntry
             open={eventsOpen}
             onOpenChange={setEventsOpen}
-            placement="bottomRight" // v4.1: 右缘对齐 G8, 向左展开(3.9)(antd 真值, 见 FloatingEntry)
+            // 2026-11-18 小欧 - 向上弹出(实测: 入口在任务信息带=视口底部, 向下展开只剩 100px 高,
+            //   长事件列表贴住视口底被裁, 且 rc-trigger 的翻转只按初始高度决策, 内容换行变高后不再重算)。
+            //   信息带上方恒是整片会话区, 向上展开永远有空间; autoAdjustOverflow 仍保留作兜底 — 小欧-2026-11-18
+            placement="topRight"
             cardId="taskinfo-events-card"
             ariaLabel="事件序列"
             cardStyle={{ width: EVENT_CARD_W, maxWidth: '90vw' }}

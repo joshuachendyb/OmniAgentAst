@@ -150,6 +150,9 @@
 //     reasoningVisible/thoughtMarkdown 闪回默认值) — 小欧-2026-10-30
 // 编辑历史: 2026-11-18 小欧 - [46] P1 首屏裁剪: messages 默认不带 execution_steps, 右栏 messages 兜底
 //   显式传 include_steps=true, 保住 getTaskSteps 返回空时的历史步骤兜底链路 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - 切会话空态误报修复: 新增 tasksLoading prop, 无选中任务且清单仍在加载时
+//   走加载态(Spin)。原条件只看自身 REST loading, 切会话后 activeTaskId 尚未确定的那一帧
+//   会落到「暂无执行记录」空态, 用户误判该会话没有记录 — 小欧-2026-11-18
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -234,6 +237,8 @@ interface RightViewerProps {
   // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
   //   历史任务加载 steps 后写 final.response 到左侧任务列表(实时任务由 ChatPage R3 effect 写) — 小欧-2026-09-15
   updateTaskResponse?: (taskId: string, response: string) => void;
+  /** 任务清单是否仍在加载：无选中任务且清单未就绪时用加载态，不把"还没确定"当"没有记录" — 小欧-2026-11-18 */
+  tasksLoading?: boolean;
 }
 
 const RightViewer: React.FC<RightViewerProps> = ({
@@ -251,6 +256,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   sessionTokens, // 2026-09-11 小欧 修复: 复用 TokenLayer(类型统一) — 小欧-2026-09-11
   chainTokens,
   updateTaskResponse, // 2026-09-15 小欧: 历史任务 final.response 写入左侧唯一入口 — 小欧-2026-09-15
+  tasksLoading = false, // 2026-11-18 小欧: 清单加载中 → 加载态而非空态 — 小欧-2026-11-18
 }) => {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [historySteps, setHistorySteps] = useState<ExecutionStep[]>([]);
@@ -582,6 +588,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读DB — 小欧-2026-09-11
   const finalStep = displaySteps.find((s) => s.type === 'final');
   const hasSteps = displaySteps.length > 0;
+  // 2026-11-18 小欧 - 任务清单尚未就绪(切会话后 activeTaskId 还是 null, 清单仍在加载):
+  //   此时既没有可回放的任务也没有结论, 属"正在确定", 不是"没有记录" — 小欧-2026-11-18
+  const taskListPending = !activeTaskId && tasksLoading;
   // 2026-10-28 小欧 - P2: useMemo 包裹 splitSteps, 确保 business 步骤引用稳定
   //   使 PipelineRenderer 内部 useMemo(buildSegments) 生效(displaySteps 不变时不重算)
   const businessSteps = useMemo(
@@ -590,7 +599,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   );
 
   return (
-    <Spin spinning={loading && !isCurrentLive}>
+    <Spin spinning={(loading || taskListPending) && !isCurrentLive}>
       {/* 方案一(持久锚点修正, 北京老陈实机复测): 锚点必须是"滚动内容末端"整体——
           外层包裹 right-viewer-body(流水线/空态) 与其后的 TitleBlock/StaticStatsBlock 统计区。
           RO 观察此包裹层: 任一子块增高(含 final 后统计标题渲染完成)都会触发滚底;
@@ -598,7 +607,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
       <div ref={pipelineEndRef}>
         {/* D3 持久锚点: Empty 移入 right-viewer-body 内层使该 div 恒挂载, 空态不卸载 — 小欧-2026-09-17 */}
         <div className="right-viewer-body">
-          {!isCurrentLive && !loading && !hasSteps ? (
+          {!isCurrentLive && !loading && !taskListPending && !hasSteps ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={

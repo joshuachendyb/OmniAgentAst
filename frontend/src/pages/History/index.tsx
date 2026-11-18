@@ -48,6 +48,9 @@
 //   import 同步补 FontSize(阶梯唯一真源) — 商量-2026-11-13
 // 编辑历史: 2026-11-18 小欧 - 历史页批量清理: 工具栏加"清理无效会话/清理旧会话"两入口, 共用
 //   SessionCleanupModal 预览确认弹窗, 执行后清 Store/选中态并刷新列表 — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - 窄视口标题栏溢出修复: 标题行原为不换行的 Space, 四个操作按钮在
+//   655px 视口把「历史会话」标题挤成断行并裁掉右侧按钮; 标题补 flexShrink:0 + nowrap 钉住,
+//   行与按钮组补 flexWrap 让按钮整体换行 — 小欧-2026-11-18
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -483,12 +486,21 @@ const HistoryPage: React.FC = () => {
           style={{ width: '100%', padding: '0 5px' }}
           size="large"
         >
-          {/* 标题栏 */}
-          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-            <Title level={3} style={{ margin: 0 }}>
+          {/* 标题栏
+              2026-11-18 小欧 - 窄视口排版修复: 原 Space 不换行, 四个操作按钮在 655px 视口把标题挤成断行、
+              按钮被裁掉右侧; 补 flexWrap 让按钮组整体折到下一行, 标题钉住不压缩 — 小欧-2026-11-18 */}
+          <Space
+            style={{
+              justifyContent: 'space-between',
+              width: '100%',
+              flexWrap: 'wrap',
+              rowGap: 8,
+            }}
+          >
+            <Title level={3} style={{ margin: 0, flexShrink: 0, whiteSpace: 'nowrap' }}>
               <HistoryOutlined /> 历史会话
             </Title>
-            <Space>
+            <Space style={{ flexWrap: 'wrap', rowGap: 8 }}>
               {/* 2026-11-18 小欧 - 批量清理两入口, 共用"预览→确认"弹窗; invalid 即空壳会话 */}
               <Button
                 icon={<DeleteOutlined />}

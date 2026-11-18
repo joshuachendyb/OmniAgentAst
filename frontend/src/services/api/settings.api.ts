@@ -11,9 +11,11 @@
 //   混一起前端分不清哪个能改) — 小欧-2026-10-06
 // 2026-11-09 小欧 - SettingSchemaItem 补 hidden(响应模型须透出, 设置页组内过滤不再渲染已迁功能行的项) — 小欧-2026-11-09
 // 2026-11-11 小欧 - hidden 注释同步：三个验证素材 URL 已回媒体页直接编辑, 当前无 hidden 项使用, 字段保留作将来扩展 — 小欧-2026-11-11
+// 2026-11-18 小欧 - getAll/getGroup 改走 sharedGet: 首屏设置页与聊天布局同时取设置, 实测同一 URL 各发 2 次,
+//   且两次相隔约 300ms(前一个已完成, 在飞合并接不住); 走"写后失效"的共享读后同一次挂载内只取一次 — 小欧-2026-11-18
 import api from './client';
 import type { ApiRequestConfig } from './client';
-import { setAccessToken } from './client';
+import { setAccessToken, sharedGet } from './client';
 
 /** 2026-09-26 - 小沈(三遍复核): auth 通道的 401 是"口令不对"这一正常分支，一律不触发全局跳登录页 */
 const AUTH_REQ: ApiRequestConfig = { _skip401: true };
@@ -154,21 +156,25 @@ export const settingsApi = {
     return response.data.mtime;
   },
 
-  getAll: async (): Promise<SettingsAll> => {
-    const response = await api.get<SettingsAll>('/settings');
-    return response.data;
-  },
+  getAll: (): Promise<SettingsAll> =>
+    // 2026-11-18 小欧 - 同一次挂载内多处取全量设置只发一次(写请求后自动失效) — 小欧-2026-11-18
+    sharedGet('settings', async () => {
+      const response = await api.get<SettingsAll>('/settings');
+      return response.data;
+    }),
 
-  getGroup: async (
+  getGroup: (
     group: string
   ): Promise<{
     data: Record<string, unknown>;
     sources: Record<string, SettingSource>;
     mtime: number;
-  }> => {
-    const response = await api.get('/settings', { params: { group } });
-    return response.data;
-  },
+  }> =>
+    // 2026-11-18 小欧 - 同组多次取只发一次; key 带 group, 不同组互不影响 — 小欧-2026-11-18
+    sharedGet(`settings?group=${group}`, async () => {
+      const response = await api.get('/settings', { params: { group } });
+      return response.data;
+    }),
 
   updateSettings: async (
     patch: Record<string, unknown>

@@ -20,6 +20,10 @@
 // 编辑历史: 2026-10-30 小欧 - refresh 的 listTasks 已置静默(后台轮询不弹全局 toast), 故本处补 catch 收口:
 //   原实现只有 finally, 失败冒成 unhandledrejection(调用方全是 void refresh()/事件回调, 无人接 reject);
 //   现只 console.warn 并保留上一次列表, 下次触发自然自愈 — 小欧-2026-10-30
+// 编辑历史: 2026-11-18 小欧 - 会话切换陈旧态根治: 原"切会话 → effect 里清空"要等到提交后才生效,
+//   中间有一次渲染仍带着上一会话的 tasks/total/latestTaskId(实测闪现旧会话 48 个任务与「任务数 48」)。
+//   新增 tasksSessionId 记录当前 tasks 属于哪个会话, 渲染期按 sessionId 归属派生对外值——
+//   未归属(切会话那一帧)即空列表 + loading=true, 陈旧态从渲染源头消失 — 小欧-2026-11-18
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -53,11 +57,16 @@ const liveTaskAnswer = (
   return text.trim() ? text : undefined;
 };
 
+/** 空清单常量：未归属当前会话时对外恒用同一实例，避免每次渲染新建数组（下游 memo 失效）— 小欧-2026-11-18 */
+const NO_TASKS: SessionTaskItem[] = [];
+
 export const useSessionTasks = (sessionId: string | null) => {
   const [tasks, setTasks] = useState<SessionTaskItem[]>([]);
   const [total, setTotal] = useState(0);
   const [latestTaskId, setLatestTaskId] = useState<string | null>(null); // 2026-08-30 小欧 v1.103: B1 最新任务锚点
   const [loading, setLoading] = useState(false);
+  // 2026-11-18 小欧 - 当前 tasks 归属的会话（渲染期归属判定用，见文件头编辑历史）— 小欧-2026-11-18
+  const [tasksSessionId, setTasksSessionId] = useState<string | null>(null);
 
   // 2026-10-28 小欧 - 修复左侧终态回复被 refresh() 抹掉: 原 refresh 无条件把 response 置 undefined,
   //   而任务结束沿至少两次调用 refresh(onSuccess 兜底 + useChainTokens 的 final_stats 信号), 都在
@@ -65,26 +74,34 @@ export const useSessionTasks = (sessionId: string | null) => {
   //   改为按 taskId 保留已由 final.response 写入的值: DB 的 chat_tasks.response 仍一律不显示(铁命令不变),
   //   只是不再丢弃内存里已有的终态正文 — 小欧-2026-10-28
   const finalResponsesRef = useRef<Map<string, string>>(new Map());
+  // 2026-11-18 小欧 - 会话当前值镜像（供异步 refresh 判断结果是否已过期）；渲染期赋值即可，
+  //   只用于"最新值比较"，不参与渲染 — 小欧-2026-11-18
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
 
   // 铁命令(北京老陈 2026-09-12): refresh 从 DB 拉任务列表(入列/链token/历史加载);
   //   但 response 字段一律清空——左侧只用 final.step.response 显示, 禁止 chat_tasks.response 显示。 — 小欧-2026-09-15
   const refresh = useCallback(async () => {
-    if (!sessionId) {
+    const sid = sessionId; // 2026-11-18 小欧 - 本次取数归属的会话快照: 结果回来时会话可能已切走 — 小欧-2026-11-18
+    if (!sid) {
       setTasks([]);
       setTotal(0);
       setLatestTaskId(null); // 2026-08-30 小欧 v1.103: 空会话同步清零锚点
+      setTasksSessionId(null);
       return;
     }
     setLoading(true);
     try {
-      const res = await sessionTaskApi.listTasks(sessionId);
+      const res = await sessionTaskApi.listTasks(sid);
+      // 2026-11-18 小欧 - 迟到结果直接丢弃: 否则会把上一会话的清单写进新会话(归属标记也会被改回去) — 小欧-2026-11-18
+      if (sessionRef.current !== sid) return;
       // 2026-09-15 小欧(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
       //   refresh() 从 DB 拉取的 chat_tasks.response(chunk累积内容) 不允许显示在左侧;
       //   2026-10-28 小欧 - 保留已由 updateTaskResponse(final.response) 写入的值(原写法会把它们一并清空,
       //   导致终态回复在 onSuccess/final_stats 两次 refresh 后消失); DB 内容仍不进 response — 小欧-2026-10-28
       //   2026-10-28 小欧 - 再加实时流兜底: final.response 为空(后端短条)时取本会话当前任务的实时正文,
       //   取到即写进同一份缓存, 后续 refresh 与 updateTaskResponse 写入值同等保留 — 小欧-2026-10-28
-      const live = chatStreamStore.getSnapshot(sessionId);
+      const live = chatStreamStore.getSnapshot(sid);
       setTasks(
         res.tasks.map((t) => {
           let response = finalResponsesRef.current.get(t.task_id);
@@ -99,13 +116,15 @@ export const useSessionTasks = (sessionId: string | null) => {
       );
       setTotal(res.total);
       setLatestTaskId(res.latest_task_id ?? null); // 2026-08-30 小欧 v1.103: 后端 null 兜底
+      setTasksSessionId(sid);
     } catch (e) {
       // 2026-10-30 小欧 - 后台轮询端点已置 _silent(不弹全局 toast),
       //   这里必须收口 —— 原实现只有 finally, 失败会冒成 unhandledrejection(控制台红字),
       //   且调用方全是 void refresh()/事件回调, 没人接这个 reject。列表保持上一次结果, 下次 refresh 自愈。
       console.warn('[useSessionTasks] refresh 失败(保留上次列表):', e);
     } finally {
-      setLoading(false);
+      // 2026-11-18 小欧 - 旧会话的收尾不得清掉新会话的 loading(否则新会话的加载态被提前结束) — 小欧-2026-11-18
+      if (sessionRef.current === sid) setLoading(false);
     }
   }, [sessionId]);
 
@@ -117,9 +136,10 @@ export const useSessionTasks = (sessionId: string | null) => {
     setTasks([]);
     setTotal(0);
     setLatestTaskId(null);
+    setTasksSessionId(sessionId); // 2026-11-18 小欧 - 归属同步: 清空动作本身即代表"现在这份空清单属于新会话" — 小欧-2026-11-18
     finalResponsesRef.current.clear(); // 2026-10-28 小欧 - 会话切换同步清空终态正文缓存(任务ID不跨会话) — 小欧-2026-10-28
     void refresh();
-  }, [refresh]);
+  }, [refresh, sessionId]);
 
   // 2026-09-29 小欧 任务列表陈旧根治: refresh 原本只被本标签页的 SSE 派生信号驱动, 任务由别处发起
   //   (E2E/后台批处理/另一标签页)时收不到任何信号, 列表永久冻结在打开那刻的快照(实测 INJ-02 两条注入
@@ -155,5 +175,15 @@ export const useSessionTasks = (sessionId: string | null) => {
     );
   }, []);
 
-  return { tasks, total, loading, refresh, latestTaskId, updateTaskResponse };
+  // 2026-11-18 小欧 - 会话归属派生（渲染期，非 effect）: tasks 属于别的会话时对外一律给空清单 +
+  //   loading=true，切会话那一帧就不再显示上一会话的列表/任务数/最新锚点(实测陈旧态闪现的成因) — 小欧-2026-11-18
+  const owned = tasksSessionId === sessionId;
+  return {
+    tasks: owned ? tasks : NO_TASKS,
+    total: owned ? total : 0,
+    loading: !owned || loading,
+    refresh,
+    latestTaskId: owned ? latestTaskId : null,
+    updateTaskResponse,
+  };
 };

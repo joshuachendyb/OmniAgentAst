@@ -11,6 +11,7 @@
 //   其中 provider_api_keys 字段是设计文档认定的"第二个能擦除密钥的入口"，删除后前后端一致收敛；
 //   切全局模型由 switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）— 小欧-2026-09-26
 import api from './client';
+import { sharedGet } from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
 export interface Config {
@@ -135,10 +136,12 @@ export const configApi = {
     return response.data;
   },
 
-  getFullConfig: async (): Promise<FullConfigResponse> => {
-    const response = await api.get<FullConfigResponse>('/config/full');
-    return response.data;
-  },
+  getFullConfig: (): Promise<FullConfigResponse> =>
+    // 2026-11-18 小欧 - 首屏多处同时取同一份全量配置, 共享读(写请求后自动失效) — 小欧-2026-11-18
+    sharedGet('config/full', async () => {
+      const response = await api.get<FullConfigResponse>('/config/full');
+      return response.data;
+    }),
 
   fixConfig: async (): Promise<ConfigFixResponse> => {
     const response = await api.post<ConfigFixResponse>('/config/fix');

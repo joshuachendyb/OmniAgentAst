@@ -61,6 +61,9 @@
 //   位置2 会永久挂转圈/过期文案与"已取消"徽标冲突; 判据加 badge==='cancelled' — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 - 位置2 的 notice done 收紧为只清自己的 kind: 原无条件清空, 插话的
 //   refs_ready_done 会把主任务"生成摘要中"等位置2提示误抹(任务仍在跑却看不出在干什么) — 小欧-2026-10-30
+// 编辑历史: 2026-11-18 小欧 - 终态耗时与终态判据同源: final 步只取一次, 三个终态判据与 elapsedSec
+//   共用; elapsedSec 补 final 步 duration 兜底 —— 原只认 final_stats 帧, 该帧缺失时终态耗时恒 0
+//   (实时秒表还在涨, 刷新后才回到后端真值) — 小欧-2026-11-18
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -150,19 +153,17 @@ export const useTaskInfo = (
 ) => {
   return useMemo(() => {
     // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
+    // 2026-11-18 小欧 - final 步只取一次, 三个终态判据与终态耗时共用(DRY): 原三处 some 各扫一遍数组 — 小欧-2026-11-18
+    const finalStep = steps.find((s) => s.type === 'final') ?? null;
     const hasFailedFinal =
-      steps.some((s) => s.type === 'final' && s.outcome === 'failed') ||
+      finalStep?.outcome === 'failed' ||
       frames.finalStats?.final_status === 'failed';
     // 2026-09-30 小欧 [81]v1.4-H12修复: detail 分支终态判定改以 steps 中的 final step 为权威
     //   真实终态（completed/cancelled），替代原 `duration>0 || updated_at` 滞后兜底——
     //   updated_at 对运行中任务恒真，致 running 任务被误判「已完成」。final step 到达即证已终态，
     //   steps 未含 final（任务仍执行中）则保持 running
-    const hasCompletedFinal = steps.some(
-      (s) => s.type === 'final' && s.outcome === 'completed'
-    );
-    const hasCancelledFinal = steps.some(
-      (s) => s.type === 'final' && s.outcome === 'cancelled'
-    );
+    const hasCompletedFinal = finalStep?.outcome === 'completed';
+    const hasCancelledFinal = finalStep?.outcome === 'cancelled';
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
     if (detail) {
       const map: Record<string, TaskBadge> = {
@@ -555,7 +556,9 @@ export const useTaskInfo = (
 
     return {
       badge,
-      elapsedSec: frames.finalStats?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
+      elapsedSec: frames.finalStats?.duration ?? finalStep?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
+      // 2026-11-18 小欧 - 补 final 步耗时兜底: final_stats 帧缺失(后端短信号/连接异常)时终态秒表归零，
+      //   而 final 步的 duration 与概览「运行耗时」同源，是同一任务终态的唯一真值 — 小欧-2026-11-18
       stepCount,
       llmCallCount,
       retryCount: stats?.retry_count ?? 0,

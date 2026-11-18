@@ -18,6 +18,12 @@
  *   调试行为零变化。
  * 2026-10-30 小欧 - 请求计时与诊断、超时探活文案、_silent 静默与幂等 GET 单次重试；
  *   新增 HEAVY_READ_TIMEOUT_MS 供重读接口放宽到 120s。
+ * 2026-11-18 小欧 - 新增 dedupeGet(同键并发 GET 合并): 首屏多处组件各自取同一份读数据,
+ *   实测 /config/full ×6、/models ×3、/sessions/{id} ×4、/tasks ×3; 只合并"同时在飞"的请求,
+ *   不引入 TTL 缓存, 写后读仍是后端最新值 — 小欧-2026-11-18
+ * 2026-11-18 小欧 - 新增 sharedGet(静态只读资源共享读): 实测同一 URL 相隔 200~400ms 各发一次,
+ *   "在飞合并"接不住(前一个已完成); 补一层"写请求即失效"的已完成结果复用, 只用于配置/设置/模型/
+ *   项目根/信任清单这类静态只读资源, 轮询类端点(任务/任务详情/链用量)仍走 dedupeGet 每次发新请求 — 小欧-2026-11-18
  */
 import axios from 'axios';
 import type {
@@ -107,6 +113,8 @@ export function getAccessToken(): string | null {
  * 收敛为"读包络 → 合并 → 单次 setItem"三步；写失败抛错（原静默吞掉，调用方无从得知）。
  */
 export function setAccessToken(token: string | null): void {
+  // 2026-11-18 小欧 - 口令变了(含登出): 之前按旧口令取到的共享读状态作废, 不得跨凭证复用 — 小欧-2026-11-18
+  invalidateSharedReads();
   try {
     if (!token) {
       localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -153,6 +161,85 @@ export function setAccessToken(token: string | null): void {
 
 /** 慢请求留痕阈值 — 小欧 2026-10-30: 原实现只有失败才打日志, "慢但没超时"完全不可见 */
 const SLOW_LOG_THRESHOLD_MS = 5000;
+
+/**
+ * 同键并发 GET 合并（single-flight）— 小欧-2026-11-18
+ *
+ * 实测缺陷(首屏 33 次请求中 19 次是同一资源的重复): `/config/full` 6 次、`/models` 3 次、
+ * `/sessions/{id}` 4 次、`/tasks` 3 次……多处组件各自在自己的 effect 里取同一份读数据,
+ * 全部在同一时刻发出。服务端同一时刻只需答一份, 前端也只需一份。
+ *
+ * 语义边界(刻意的):
+ *  - **只在有请求在飞时合并**。请求结束即出表, 下一次调用照常发新请求 —— 不做 TTL 缓存,
+ *    故任何写操作之后读到的仍是后端最新值(不存在"缓存过期").
+ *  - 后续调用方拿**深拷贝**: 合并前每个调用方各有一份独立对象, 合并后也不许出现
+ *    "A 改了响应, B 看到脏数据"。首个调用方直接拿原对象。
+ *
+ * 用法: 只用于**幂等只读**接口, key 必须包含能改变结果的入参(如 group / 分页 / include_steps)。
+ */
+const inflightGet = new Map<string, Promise<unknown>>();
+
+export function dedupeGet<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const hit = inflightGet.get(key);
+  if (hit) {
+    return hit.then((v) => structuredClone(v) as T);
+  }
+  const p = run();
+  inflightGet.set(key, p);
+  const clear = () => {
+    if (inflightGet.get(key) === p) inflightGet.delete(key);
+  };
+  p.then(clear, clear);
+  return p;
+}
+
+/**
+ * 静态只读资源的共享读（在飞合并 + 写后失效）— 小欧-2026-11-18
+ *
+ * 为什么还要第二层: 同一份配置/模型/设置被 3~6 个组件分别在各自 effect 里取,
+ * 实测首屏同一 URL 相隔 200~400ms 各发一次(先到的已完成, 在飞合并接不住),
+ * 于是同一份数据仍是 3~6 次请求。
+ *
+ * 语义边界(刻意的):
+ *  - 只有**静态只读**资源走这里(配置全量/设置/模型清单/项目根/信任清单);
+ *    任务列表、任务详情、链用量等由轮询/流式驱动, 必须每次发新请求, 一律留在 dedupeGet。
+ *  - **任何写请求**(非 GET)一发出就清空, 写完成后再次清空 —— 写后读必是后端最新值;
+ *    写期间启动的读不落缓存(代数不符), 不会被后续读复用。
+ *  - 命中缓存交**深拷贝**: 调用方改自己的副本不影响他人。
+ */
+interface SharedReadEntry {
+  value: unknown;
+  epoch: number;
+}
+
+const sharedReads = new Map<string, SharedReadEntry>();
+let sharedReadEpoch = 0;
+
+/** 清空共享读缓存（写请求拦截器自动调用, 也可由调用方显式作废） */
+export function invalidateSharedReads(): void {
+  sharedReadEpoch += 1;
+  sharedReads.clear();
+}
+
+export function sharedGet<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const hit = sharedReads.get(key);
+  if (hit) return Promise.resolve(structuredClone(hit.value) as T);
+  const epoch = sharedReadEpoch;
+  return dedupeGet(key, run).then((value) => {
+    // 请求期间发生过写 → 本结果可能是写前快照, 不落缓存
+    if (epoch === sharedReadEpoch) {
+      sharedReads.set(key, { value: structuredClone(value), epoch });
+    }
+    return value;
+  });
+}
+
+/** 是否写请求（GET/HEAD 之外的动词都会改变后端状态） */
+const isWriteMethod = (method?: string): boolean => {
+  const m = (method ?? 'get').toLowerCase();
+  return m !== 'get' && m !== 'head';
+};
+
 
 /** 取一个响应头的字符串值 — 小欧 2026-10-30
  *  AxiosHeaders 的键名取决于服务端原始大小写(未命中已有键时按原名存),
@@ -224,6 +311,8 @@ api.interceptors.request.use(
     if ((config as ApiRequestConfig)._startedAt === undefined) {
       (config as ApiRequestConfig)._startedAt = performance.now();
     }
+    // 2026-11-18 小欧 - 写请求一发出就作废共享读缓存: 写后读必须是后端最新值 — 小欧-2026-11-18
+    if (isWriteMethod(config.method)) invalidateSharedReads();
     // _skipAuth 的请求不附带 Authorization。专供登录页"入口查询"：
     //   默认附带的旧口令已作废时会把引导查询打成 401/403；验真查询不带此标记、照常附带口令。
     if ((config as ApiRequestConfig)._skipAuth) return config;
@@ -295,12 +384,16 @@ api.interceptors.response.use(
   (response: AxiosResponse) => {
     // 2026-10-30 小欧 - 成功的慢请求也要留痕(原实现只有失败才打日志)
     logIfSlow(describeRequest(response));
+    // 2026-11-18 小欧 - 写请求落定再作废一次: 写期间启动的读不能被后续复用(其快照可能早于本次写) — 小欧-2026-11-18
+    if (isWriteMethod(response.config.method)) invalidateSharedReads();
     return response;
   },
   // 2026-10-30 小欧 - 错误回调改 async —— 超时分支要 await /health 探测
   async (error) => {
     const cfg = error.config as ApiRequestConfig | undefined;
     const skip401 = cfg?._skip401;
+    // 2026-11-18 小欧 - 写请求失败同样作废共享读缓存: 后端可能已部分落库 — 小欧-2026-11-18
+    if (isWriteMethod(cfg?.method)) invalidateSharedReads();
     // 403 独立处理，不跳登录页、不清口令，原话透传。
     //   403 语义是"你不能做这事"（如非本机要设口令），不是"口令错了"。原实现只认 401，
     //   403 一律落到 handleApiError 的泛化文案，后端返回的「只能在服务端本机进行」被丢弃。

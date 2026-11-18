@@ -60,6 +60,10 @@
 //   toWholePathLink 恢复转换，判据只认完整路径三档（盘符绝对文件、盘符绝对目录、根相对带目录文件）；
 //   代码片段/符号/裸文件名/相对目录/glob 伪路径仍留原文；链接构造复用 toFileRefMarkdown 单一真源。
 //   — 小欧-2026-11-17
+// 2026-11-18 小欧 - 实测缺陷修复：调用方已持有权威文件/目录类型时（文件足迹的 f.type），
+//   宽松判据 isAbsDirLikePath 的「无扩展名即目录」猜测不得覆盖它 —— 否则 `…\etc\hosts`
+//   被当目录补尾分隔符，深链落到 /files 外部树接口被后端 400 拒。新增 PathTargetOptions.fileHint
+//   （仅在调用方确知是文件时传 true），不进 PathTarget、不改 dirHint 语义（后者 false 表示"未知"）— 小欧-2026-11-18
 
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
@@ -327,6 +331,13 @@ const withDirTail = (absPath: string): string =>
   `${absPath.replace(ENDS_WITH_SEP_RE, '')}/`;
 
 /**
+ * 文件形态提示查询串 `&file=1` — 小欧-2026-11-18
+ * 生成端确知是文件时带上, 文件页原样回传给 resolvePathTarget;
+ * 否则无扩展名文件(hosts/LICENSE)在页面侧会被「无扩展名即目录」重新猜成目录。
+ */
+const fileHintQuery = (fileHint: boolean): string => (fileHint ? '&file=1' : '');
+
+/**
  * `/file-ref?path=…` 的**唯一**拼装点（正文 markdown 内部链接，href 存原文）。
  * 2026-11-02 小欧 - 自 FileRefChip.toFileRefMarkdown 迁入：全前端 URL 形态只剩
  *   `/files?...` 与 `/file-ref?...` 两种，且都只在本文件拼 — 小欧-2026-11-02
@@ -366,6 +377,12 @@ export const parseFileRefLink = (href: string): FileRefLinkParts | null => {
 export interface PathTargetOptions {
   /** 工具语义声明该路径必为目录（对「路径==项目根」不生效） */
   dirHint?: boolean;
+  /**
+   * 调用方**确知**该路径是文件（如文件足迹的 f.type === 'file'）。
+   * 2026-11-18 小欧 - 与 dirHint 互不替代：dirHint=false 只表示"未知"，不足以否掉
+   *   宽松判据；只有 fileHint=true 才否决「无扩展名即目录」的形态猜测 — 小欧-2026-11-18
+   */
+  fileHint?: boolean;
   /** 行号区间（目录不带行号） */
   lineRange?: { start: number; end: number } | null;
   /**
@@ -408,6 +425,7 @@ export const resolvePathTarget = (
 ): PathTarget => {
   const raw = rawPath.trim();
   const dirHint = !!opts.dirHint;
+  const fileHint = !!opts.fileHint;
   const strictShape = !!opts.strictShape;
   const lineRange = opts.lineRange ?? null;
   const abs = isDriveAbsPath(raw);
@@ -420,9 +438,11 @@ export const resolvePathTarget = (
   // 目录判据三来源（判据本身仍只调 isDirPath / isAbsDirLikePath，不在此重写形态）：
   //   ① 尾分隔符（唯一可靠形态信号）；② 宽松口径下无扩展名的盘符绝对路径按目录认；
   //   ③ 工具语义声明 dirHint —— 路径等于项目根时不生效（见上方 rootSelf）
+  //   2026-11-18 小欧 - ②是"猜"：调用方确知是文件时（fileHint）必须让位，否则无扩展名文件
+  //   （hosts/LICENSE）被补尾分隔符当目录 — 小欧-2026-11-18
   const isDir =
     isDirPath(raw) ||
-    (!strictShape && isAbsDirLikePath(raw)) ||
+    (!strictShape && !fileHint && isAbsDirLikePath(raw)) ||
     (dirHint && !rootSelf);
   // 形态不成立（空 / 控制字符）时 relRaw 也为 null，但那不是「根外」，故先过形态门
   const shaped = !!raw && !hasCtrlChar(raw);
@@ -445,7 +465,14 @@ export const resolvePathTarget = (
 
   if (isExternal) {
     // 严格形态：无扩展名无尾分隔符又无 dirHint → 前端无法区分文件/目录，不出假链接
-    if (strictShape && !isFileLikePath(raw) && !isDirPath(raw) && !dirHint)
+    // 2026-11-18 小欧 - fileHint 是同等强度的形态信号（调用方已给出权威类型），一并放行 — 小欧-2026-11-18
+    if (
+      strictShape &&
+      !isFileLikePath(raw) &&
+      !isDirPath(raw) &&
+      !dirHint &&
+      !fileHint
+    )
       return miss('不是可识别的文件路径（无扩展名与尾分隔符），未做链接');
     return {
       linked: true,
@@ -456,7 +483,7 @@ export const resolvePathTarget = (
       // 根外目录补尾 `/`（文件页靠尾分隔符判目录），目录不带行号
       url: isDir
         ? buildExternalDeepLink(withDirTail(raw), null)
-        : buildExternalDeepLink(raw, lineRange),
+        : buildExternalDeepLink(raw, lineRange) + fileHintQuery(fileHint),
     };
   }
 
@@ -473,7 +500,7 @@ export const resolvePathTarget = (
     isDir,
     isExternal: false,
     pending: false,
-    url: buildFileDeepLink(rel, isDir ? null : lineRange),
+    url: buildFileDeepLink(rel, isDir ? null : lineRange) + fileHintQuery(fileHint),
   };
 };
 

@@ -31,6 +31,8 @@
  *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding) — 小欧-2026-10-14
  * 编辑历史: 2026-10-26 小沈 - 浮层顶部行(北京老陈令): 加粗显示 timestamp+content(后端首帧写入 userinput[10]+压缩情况),
  *   下接 2px 分隔线与下方信息明显区隔; 「对话上下文」「历史上下文」两个 SectionHead 标题后各带 timestamp — 小沈-2026-10-26
+ * 编辑历史: 2026-11-18 小欧 - 时间戳改走 utils/time 的 formatTimestampSec: 后端给的是带微秒的裸 ISO 串,
+ *   原样渲染与全站口径不一致(同页概览为 HH:MM:SS、足迹为 YYYY-MM-DD HH:MM:SS) — 小欧-2026-11-18
  */
 import React, { useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -41,6 +43,7 @@ import {
   type ContextState,
 } from './infoMaps';
 import { pickConv, pickInject } from '@/utils/contextFrame';
+import { formatTimestampSec } from '@/utils/time';
 import { FloatingEntry } from './FloatingEntry';
 import { MetricItem } from './MetricItem';
 import {
@@ -138,6 +141,9 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const injectTokens = injectCtx?.injected_estimated_tokens ?? '';
   // compressed 是后端成品情况文字, 原样直显不截不断(不拆解不解析不改写)
   const compressedText = injectCtx?.compressed ?? '';
+  // 2026-11-18 小欧 - 时间戳统一走 utils/time 唯一出口: 后端给的是带微秒的裸 ISO 串
+  //   (2026-11-17T20:10:12.288685), 直显与全站「YYYY-MM-DD HH:MM:SS」口径不一致 — 小欧-2026-11-18
+  const timestampText = formatTimestampSec(overview?.timestamp);
   // 2026-10-10 小欧: 历史段状态点只表"有无注入"(有绿/无灰) —— 不解析 compressed 判失败(不拆成品)
 
   // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行; 占窗率=估算 token / 窗口, 窗口缺失则不显
@@ -255,7 +261,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
                   wordBreak: 'break-word',
                 }}
               >
-                {overview?.timestamp ? `${overview.timestamp} ` : ''}
+                {timestampText ? `${timestampText} ` : ''}
                 {overview.content}
               </div>
               <div
@@ -271,14 +277,14 @@ export const ContextOverviewCard: React.FC<Props> = ({
             <>
               {/* 2026-10-10 小欧 本段身份标识读 conv 组 —— 与历史段各读各的, 不再显同一句 */}
               <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
-                {overview?.timestamp && (
+                {timestampText && (
                   <span
                     style={{
                       color: Colors.TEXT.TERTIARY,
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {overview.timestamp}
+                    {timestampText}
                   </span>
                 )}
                 {convContentText && (
@@ -286,7 +292,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
                     style={{
                       color: Colors.TEXT.TERTIARY,
                       whiteSpace: 'nowrap',
-                      marginLeft: overview?.timestamp ? Spacing.MD : 0,
+                      marginLeft: timestampText ? Spacing.MD : 0,
                     }}
                   >
                     {convContentText}
@@ -332,16 +338,16 @@ export const ContextOverviewCard: React.FC<Props> = ({
             {/* 2026-10-10 小欧: 本段右侧 = content_link_mode(身份) + compressed(压缩情况),
                 同行顺序直显(同一 div 内并排, 不被容器 gap 撑开), 均 nowrap 不折行 */}
             <div style={{ display: 'flex', whiteSpace: 'nowrap' }}>
-              {overview?.timestamp && (
+              {timestampText && (
                 <span style={{ color: Colors.TEXT.TERTIARY }}>
-                  {overview.timestamp}
+                  {timestampText}
                 </span>
               )}
               {linkModeText && (
                 <span
                   style={{
                     color: Colors.TEXT.TERTIARY,
-                    marginLeft: overview?.timestamp ? Spacing.MD : 0,
+                    marginLeft: timestampText ? Spacing.MD : 0,
                   }}
                 >
                   {linkModeText}
@@ -351,8 +357,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
                 <span
                   style={{
                     color: Colors.TEXT.SECONDARY,
-                    marginLeft:
-                      linkModeText || overview?.timestamp ? Spacing.MD : 0,
+                    marginLeft: linkModeText || timestampText ? Spacing.MD : 0,
                   }}
                 >
                   {compressedText}

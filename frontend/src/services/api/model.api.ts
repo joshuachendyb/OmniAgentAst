@@ -48,7 +48,9 @@
 // 2026-11-09 小欧 - 生成验证([15]): MediaProbe 扩 generate.image/video 双腿 + probeOutput 接口(视频异步, 显式 1200s 超时) — 小欧-2026-11-09
 // 2026-11-11 小欧 - 注释勘误: 原记录"1200s 超时"实为 1800s(30分钟)，且含②/[15] 章节文档号(铁规禁) — 小欧-2026-11-11
 // 编辑历史: 2026-11-11 小欧 - ModelEntry 增 ref_capability_map 二维投影(后端 contract 生成, 前端只读索引) — 小欧-2026-11-11
-import api from './client';
+// 编辑历史: 2026-11-18 小欧 - getModels 改走 dedupeGet: 首屏顶栏/设置页/模型面板各取一次模型清单,
+//   实测同一时刻发 3 次 GET /models; 只合并同时在飞的请求, 不加缓存 — 小欧-2026-11-18
+import api, { sharedGet } from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
 /** 生成验证单腿记录（图腿 t2i/i2i 或视频腿 t2v/i2v），state 语义见后端 media.generate  - 小欧-2026-11-09 */
@@ -318,8 +320,12 @@ const enc = (s: string): string => encodeURIComponent(s);
 
 export const modelApi = {
   getModels: async (): Promise<ModelsResponse> => {
-    const response = await api.get<ModelsResponse>('/models');
-    return response.data;
+    // 2026-11-18 小欧 - 同一份模型清单被顶栏/设置页/模型面板并发与先后各取, 走共享读(写请求后失效);
+    //   只缓存响应正文(整份 AxiosResponse 含函数, 不能深拷贝) — 小欧-2026-11-18
+    return sharedGet('models', async () => {
+      const response = await api.get<ModelsResponse>('/models');
+      return response.data;
+    });
   },
 
   addModel: async (data: {

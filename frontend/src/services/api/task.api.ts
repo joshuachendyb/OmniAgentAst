@@ -17,7 +17,9 @@
 // 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 抽 RefLedgerWireEntry 供读侧(ref_ledger 快照)与写侧
 //   (saveTaskProcessEvents 第3参)共用一种形状 —— 原写侧 path 可选、读侧必有值, 同一实体两套形状;
 //   空台账不再请求携带(空数组等价不携带) — 小欧-2026-11-18
-import api from './client';
+// 编辑历史: 2026-11-18 小欧 - listTasks 走 dedupeGet(只合并同时在飞, 轮询必须每次发新请求)、
+//   getTrust 走 sharedGet(信任清单只随写变化); 首屏两处各自取数不再叠加重复请求 — 小欧-2026-11-18
+import api, { dedupeGet, sharedGet } from './client';
 import type { ApiRequestConfig } from './client';
 
 // ============================================================
@@ -258,15 +260,21 @@ export const sessionTaskApi = {
   //   超时属"后端忙"的瞬时表现, 下次触发自愈; 弹窗只会让用户以为系统出故障。
   //   静默 ≠ 无痕迹: client.ts 的 [SlowReq] 与 logIfSlow 照旧打 URL+耗时, 取证不丢。
   listTasks: (sessionId: string): Promise<SessionTasksResponse> => {
-    const cfg: ApiRequestConfig = { _silent: true };
-    return api.get(`/sessions/${sessionId}/tasks`, cfg).then((r) => r.data);
+    // 2026-11-18 小欧 - 并发取同一会话任务列表只发一次 — 小欧-2026-11-18
+    return dedupeGet(`tasks:${sessionId}`, () => {
+      const cfg: ApiRequestConfig = { _silent: true };
+      return api.get(`/sessions/${sessionId}/tasks`, cfg).then((r) => r.data);
+    });
   },
 };
 
 export const executionApi = {
   getTaskDetail: async (taskId: string): Promise<TaskDetail> => {
-    const r = await api.get(`/chat/execution/task/${taskId}`);
-    return adaptTaskDetail(r.data);
+    // 2026-11-18 小欧 - 首屏两个面板同刻各取一次同一任务详情, 合并同时在飞的请求(轮询另发新请求) — 小欧-2026-11-18
+    const data = await dedupeGet(`task:${taskId}`, async () =>
+      (await api.get(`/chat/execution/task/${taskId}`)).data
+    );
+    return adaptTaskDetail(data);
   },
   getTaskSteps: (
     taskId: string
@@ -299,7 +307,11 @@ export interface TrustedTool {
 
 export const trustApi = {
   getTrust: async (sessionId: string): Promise<TrustedTool[]> => {
-    const r = await api.get(`/sessions/${sessionId}/trust`);
+    // 2026-11-18 小欧 - 信任清单只随授权/撤销变化(均为写请求), 走共享读; 只取正文(整份
+    //   AxiosResponse 含函数, 深拷贝会抛 DataCloneError) — 小欧-2026-11-18
+    const r = await sharedGet(`trust:${sessionId}`, async () =>
+      (await api.get(`/sessions/${sessionId}/trust`)).data
+    );
     return (r.data?.trusted_tools ?? []).map(
       (t: { tool_name: string; path: string | null }) => ({
         toolName: t.tool_name,

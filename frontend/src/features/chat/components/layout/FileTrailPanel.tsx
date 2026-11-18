@@ -23,6 +23,11 @@
 //     定高 + 说明文案单行省略, 窄栏不折行 — 商量-2026-11-13
 //   2026-11-13 商量 - 间距归一: 文件行之间的距离改由列表容器 gap 承担(删行 padding 叠加),
 //     标题行内元素间距改由父容器 gap 承担(删 span marginLeft) — 商量-2026-11-13
+//   2026-11-18 小欧 - 实测缺陷修复: ①折叠头定高 24px 但标题/计数/收起三处 span 未锁 flexShrink,
+//     父按钮 flex 行宽不足时反被压扁(实测「收起」仅 19×38); 补 flexShrink:0 + nowrap, 让中间说明文案
+//     独占可压缩位 —— 定高才有意义。②文件行仅设 minHeight 未设 flexShrink:0, 定高滚动容器
+//     (#file-trail-body) 垂直空间紧张时按 flex 规则压缩子项(实测行 24px / 内层链接 40px 溢出叠字);
+//     行是滚动内容不是布局弹性项, 补 flexShrink:0 让高度由内容与 minHeight 决定、超出交给滚动 — 小欧-2026-11-18
 
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
@@ -67,6 +72,10 @@ export const OP_LABEL: Record<string, string> = {
   write: '写',
   edit: '改',
 };
+
+/** 折叠头内除说明文案外的元素都不参与压缩：窄栏时只让说明文案省略，
+ *  标题/计数/开关三项恒完整（否则定高 24px 下会被压成断行叠字）— 小欧-2026-11-18 */
+const NO_SHRINK: React.CSSProperties = { flexShrink: 0, whiteSpace: 'nowrap' };
 
 /** 折叠偏好（跨会话继承；默认展开，有数据时用户第一眼就能看到） */
 const EXPAND_KEY = 'file_trail_expanded';
@@ -161,15 +170,16 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         }}
       >
         <CaretRightOutlined
-          style={{ fontSize: FontSize.CAPTION }}
+          style={{ fontSize: FontSize.CAPTION, flexShrink: 0 }}
           rotate={expanded ? 90 : 0}
         />
-        文件足迹
+        <span style={NO_SHRINK}>文件足迹</span>
         <span
           style={{
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
             // 2026-11-13 商量 - 说明文案单行省略: 保证标题行恒为 24px, 窄栏也不折行撑高
+            // 2026-11-18 小欧 - 唯一可压缩项: 定宽不足时由它让位(其余三项 flexShrink:0) — 小欧-2026-11-18
             flex: '1 1 auto',
             minWidth: 0,
             overflow: 'hidden',
@@ -181,6 +191,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         </span>
         <span
           style={{
+            ...NO_SHRINK,
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
           }}
@@ -189,6 +200,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         </span>
         <span
           style={{
+            ...NO_SHRINK,
             marginLeft: 'auto',
             color: Colors.TEXT.SECONDARY,
             fontSize: chatTokens.fontSM,
@@ -239,6 +251,9 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                     // 行内留白只做"内容离行容器边"; 行与行之间的距离由父容器 gap 承担, 不再叠加 padding
                     padding: 0,
                     minHeight: CONTROL_HEIGHT_SM,
+                    // 2026-11-18 小欧 - 行是滚动内容项, 不参与父 flex 高度压缩:
+                    //   缺此项时 #file-trail-body 垂直空间紧时按 flex 规则把行压到小于内容高度, 链接文字溢出叠行 — 小欧-2026-11-18
+                    flexShrink: 0,
                   }}
                 >
                   {/* 键盘目标①：文件路径 = 打开文件。2026-11-02 小欧 - 改复用唯一链接组件 PathLink：
@@ -247,6 +262,9 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                     <PathLink
                       rawPath={f.path}
                       dirHint={f.type === 'dir'}
+                      // 2026-11-18 小欧 - 后端已给权威类型：无扩展名文件（hosts/LICENSE）不得被
+                      //   宽松形态判据猜成目录（原会补尾分隔符 → 外部树接口 400 → 静默空白）— 小欧-2026-11-18
+                      fileHint={f.type === 'file'}
                       variant="inline"
                       tooltip
                     />

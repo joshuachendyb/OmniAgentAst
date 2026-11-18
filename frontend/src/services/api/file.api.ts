@@ -17,6 +17,8 @@
 //   fetchTree/readFile/readExternalFile/fetchExternalTree —— 这四类天生可能慢(网络盘/大仓/2MB 正文)
 // 2026-10-30 小欧 - _silent 分两种: fetchTree/searchFiles 由端点自己置(页面另有局部提示);
 //   readFile/readExternalFile 由调用方传 silent(只有调用方知道自己有没有局部反馈)
+// 2026-11-18 小欧 - fetchRoot 改走 sharedGet: 文件页与路径解析(projectPath)先后各取一次根目录,
+//   共享读在写请求后自动失效, 不在轮询路径上 — 小欧-2026-11-18
 
 /**
  * 文件浏览 API（只读浏览项目根目录）
@@ -29,6 +31,7 @@ import api, {
   getAccessToken,
   API_BASE_URL,
   HEAVY_READ_TIMEOUT_MS,
+  sharedGet,
 } from './client'; // api 只有默认导出（session.api.ts 同款），具名解构必红
 // 2026-10-30 小欧 - _silent 走类型载体, 避免字面量多属性报错
 import type { ApiRequestConfig } from './client';
@@ -148,7 +151,10 @@ const need = (v: string, what: string) => {
 
 export const fileApi = {
   fetchRoot: async (): Promise<RootResponse> =>
-    (await api.get<RootResponse>('/files/root')).data,
+    sharedGet(
+      'files/root',
+      async () => (await api.get<RootResponse>('/files/root')).data
+    ),
 
   fetchTree: async (
     path = '',

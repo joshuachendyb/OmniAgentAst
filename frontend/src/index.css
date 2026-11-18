@@ -51,6 +51,9 @@
  *   tabular-nums 等宽读数, 挂步骤标题行右端/工具首行右端) + 字体栈改引 --font-mono(单一真源) — 小欧-2026-11-03 */
 /* 编辑历史: 2026-11-03 12:31:30 小欧 - 标题圈圈补第 9 档 .title-spin-icon.spin-detached(3s 慢转): 连接已释放但后端任务仍在跑,
  *   无帧可收, 与"流持续(1s)"常态区分; 上方档位说明"8 档"同步订正为"9 档" — 小欧-2026-11-03 */
+/* 编辑历史: 2026-11-18 小欧 - .popover-viewport-centered 横向也接管(left:50% + translate(-50%,-50%)),
+ *   并加 max-width 兜窄视口: 原横向交回 rc-trigger, 卡片宽于按钮到视口边缘的距离时整卡被推出视口
+ *   (实测首行时间戳跑到屏幕外); 两处调用方都已关箭头, 不存在"箭头指按钮"的横向约束 — 小欧-2026-11-18 */
 :root {
   --font-mono:
     'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
@@ -418,14 +421,22 @@
    横向**故意不接管**: 不写 left/translateX, 让 rc-trigger 的内联坐标继续按 placement 横向锚定。
    前提: body 不滚动(根 div height:100% + overflow:hidden), 故文档坐标 == 视口坐标。
    依赖 FloatingEntry 已关 zoom 动效, 否则其 transform 会覆盖本规则。 */
+/* 2026-11-18 小欧 - 横向改为同样居中(实测缺陷: 窄视口下浮层左边界为负, 首行时间戳跑出屏幕):
+   原实现横坐标交回 rc-trigger, 但它按"贴按钮"算出的是未受限坐标 —— 卡片宽(560/params 460+)
+   大于按钮到视口边缘的距离时, 整卡被推出视口, 而 autoAdjustOverflow 只在弹出瞬间做一次移位,
+   卡片内容换行变高后不再重算。两个调用方都已关箭头(arrow=false), 不存在"箭头要指向按钮"的约束,
+   故横向一并按视口居中, 并给外壳 max-width 兜住极窄视口。 */
 .popover-viewport-centered.ant-popover {
   position: fixed !important;
   top: 50% !important;
+  left: 50% !important;
   /* 保险: rc-trigger 的 useAlign 会按 placement 选写 top **或** bottom(bottomRight 走 bottom 分支,
-     见 useAlign.js:494 offsetB)。若它写了内联 bottom, 与我压的 top 同时生效会让元素被上下双向拉伸。
-     归零强制只用 top 一条轴, 与 rc-trigger 选哪条轴无关。 */
+     见 useAlign.js:494 offsetB)。若它写了内联 bottom/right, 与本次压制的 top/left 同时生效会让
+     元素被双向拉伸。归零强制只用 top+left 一条轴, 与 rc-trigger 选哪条轴无关。 */
   bottom: auto !important;
-  transform: translateY(-50%) !important;
+  right: auto !important;
+  transform: translate(-50%, -50%) !important;
+  max-width: calc(100vw - 16px);
 }
 
 /* 2026-09-17 小欧 - 心跳等待感知微型钟面([46]第四章定案):

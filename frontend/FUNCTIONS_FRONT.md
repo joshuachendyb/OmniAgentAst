@@ -116,6 +116,7 @@
 |--------|------|------|--------|
 | `parseTimeSafe` | 安全解析时间为 Date，非法返回 null | Date/string/number | Date\|null |
 | `formatTimestamp` / `formatSafeTimestamp` | 时间戳格式化（安全版空值兜底） | number/string/Date | string |
+| `formatTimestampSec` | 秒精度时间戳（`YYYY-MM-DD HH:MM:SS`，去小数秒；后端 ISO 微秒串直显时用） | number/string/undefined | string |
 | `formatTime` / `formatTimeHMS` / `formatDate` | 时间/时分秒/日期格式化 | Date/string/number | string |
 | `formatRelativeTime` | 相对时间（x 分钟前） | Date/string/number | string |
 | `formatDurationHMS` | 秒数转时分秒时长 | sec: number | string |

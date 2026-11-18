@@ -6,6 +6,8 @@
 // 编辑历史: 2026-11-02 小欧 - 死链删除: validationResult/validationLoading/refreshValidation/refreshAll/ValidationResult五件全清(只被写null+死Tag恒false, 零消费方) — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 状态跟随: refreshAfterModelChange 并刷 refreshServiceStatus(零成本本地校验, 非旧外部AI API验证), 切模型后顶栏胶囊即随新配置 — 小欧-2026-11-02
 // 编辑历史: 2026-11-02 小欧 - 新增 healthStatus/refreshHealth: 顶栏服务胶囊状态源(/health应答与耗时), 与 serviceStatus(配置校验)分立不合流 — 小欧-2026-11-02
+// 编辑历史: 2026-11-18 小欧 - modelListLoading 初值 false→true: 取数由 Layout 挂载后的 initializeApp 触发,
+//   首次绘制到该 effect 之间列表为空且"不在加载", 顶栏模型胶囊会把这段窗口误报成"暂无模型" — 小欧-2026-11-18
 /**
  * 应用全局状态上下文 - AppContext.tsx
  *
@@ -111,7 +113,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
   // 模型列表
   const [modelList, setModelList] = useState<ModelData[]>([]);
-  const [modelListLoading, setModelListLoading] = useState(false);
+  // 2026-11-18 小欧 - 初值 true: 首次取数由 Layout 挂载后触发, 期间属"尚未取到"而非"没有模型" — 小欧-2026-11-18
+  const [modelListLoading, setModelListLoading] = useState(true);
 
   // 服务状态
   const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(

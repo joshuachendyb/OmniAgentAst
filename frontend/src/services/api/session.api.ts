@@ -33,8 +33,10 @@
 //   判空(原 include_steps 取真值 → 首屏 false 被丢掉, 后端缺省 true, 裁剪形同虚设); ②total 兜底
 //   ?? 0(不再用本页条数冒充总条数, 否则 has_more 算错); ③SessionCleanupPreview.session_ids 注明
 //   预览恒为 [] — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 小欧 - getSession/getSessionMessages 改走 dedupeGet: 首屏布局/历史/右栏多处并发
+//   取同一会话与同一页消息(实测 /sessions/{id} 4 次、/messages 2 次); key 含全部入参以免串数据 — 小欧-2026-11-18
 
-import api from './client';
+import api, { dedupeGet } from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride, WorkspacesResponse, RoutingMode } from '@/types/chat';
 
@@ -248,22 +250,31 @@ export const sessionApi = {
               : {}),
           }
         : undefined;
-    const response = await api.get<GetSessionMessagesResponse>(
-      `/sessions/${sessionId}/messages`,
-      { params }
+    const data = await dedupeGet(
+      `messages:${sessionId}:${params?.limit ?? ''}:${params?.offset ?? ''}:${
+        params?.include_steps ?? ''
+      }`,
+      // 2026-11-18 小欧 - 只取正文: 整份 AxiosResponse 含函数, 合并方深拷贝会抛 DataCloneError — 小欧-2026-11-18
+      async () =>
+        (
+          await api.get<GetSessionMessagesResponse>(
+            `/sessions/${sessionId}/messages`,
+            { params }
+          )
+        ).data
     );
     return {
-      ...response.data,
-      title_locked: response.data.title_locked ?? false,
-      title_source: response.data.title_source ?? 'auto',
-      title_updated_at: response.data.title_updated_at ?? null,
-      version: response.data.version ?? 1,
-      link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
-      allow_interject: response.data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
+      ...data,
+      title_locked: data.title_locked ?? false,
+      title_source: data.title_source ?? 'auto',
+      title_updated_at: data.title_updated_at ?? null,
+      version: data.version ?? 1,
+      link_enabled: data.link_enabled ?? false, // 缺省 false(fail-closed)
+      allow_interject: data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
       // 2026-11-18 小欧 会审整改: 后端恒下发 total; 不用本页条数冒充总量(否则 has_more 算错)
-      total: response.data.total ?? 0,
-      has_more: response.data.has_more ?? false,
-      messages: (response.data.messages ?? []).map((m) => ({
+      total: data.total ?? 0,
+      has_more: data.has_more ?? false,
+      messages: (data.messages ?? []).map((m) => ({
         ...m,
         thought:
           m.thought ??
@@ -402,8 +413,10 @@ export const sessionApi = {
   },
 
   getSession: async (sessionId: string): Promise<Session> => {
-    const r = await api.get<Session>(`/sessions/${sessionId}`);
-    const d = r.data;
+    // 2026-11-18 小欧 - 并发取同一会话只发一次; 只取正文(整份 AxiosResponse 含函数, 深拷贝会抛) — 小欧-2026-11-18
+    const d = await dedupeGet(`session:${sessionId}`, async () =>
+      (await api.get<Session>(`/sessions/${sessionId}`)).data
+    );
     return {
       ...d,
       title_locked: d.title_locked ?? false,

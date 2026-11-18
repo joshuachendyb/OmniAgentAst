@@ -11,13 +11,19 @@
 // 编辑历史: 2026-10-13 18:20 小欧 - 修实测缺陷「点浮层 ✕ 连带展开工具行 JSON 树」: 门户内容的 React 冒泡
 //   不经过 trigger 上的 stopPropagation, 直达宿主行 onClick; 改在**卡片根**统一拦截一处, 全调用方受益(DRY 单一真源),
 //   不再由各调用方逐个按钮打补丁(上下文概览 / 事件 及后续注入可交互 content 的调用方同样受益)
+// 编辑历史: 2026-11-18 小欧 - placement 类型补 topLeft/topRight: 事件浮层入口位于视口底部的任务信息带,
+//   向下展开高度不足被裁, 调用方改传 topRight 向上弹 — 小欧-2026-11-18
 import React, { useEffect, useRef } from 'react';
 import { Popover } from 'antd';
 
 export interface FloatingEntryProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  placement: 'bottomLeft' | 'bottomRight'; // antd 真值: bottomLeft=左缘对齐向右展开(上下文概览) / bottomRight=右缘对齐向左展开(事件、工具行参数)
+  /**
+   * antd 真值: bottomLeft=左缘对齐向右展开(上下文概览) / bottomRight=右缘对齐向左展开(工具行参数) /
+   * topRight=右缘对齐向左展开且向上弹(事件, 2026-11-18 小欧: 入口在视口底部, 向下必被裁) — 小欧-2026-11-18
+   */
+  placement: 'bottomLeft' | 'bottomRight' | 'topLeft' | 'topRight';
   /**
    * 2026-10-13 小欧 - 文档[29]§3.5/D-7: 触发方式。默认 ['hover','click'] 保持「上下文概览 / 事件」既有行为**零变化**;
    *   参数区浮层传 ['click'] 去掉悬停弹出与 B5「首击被吃掉」(本文件 :97-105)。

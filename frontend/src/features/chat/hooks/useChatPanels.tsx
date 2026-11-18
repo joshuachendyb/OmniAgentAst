@@ -59,6 +59,8 @@
 // 编辑历史: 2026-11-16 小欧 - [45]会话列表性能优化 P1: TaskListPanel 面板定义独立 memo(拆分巨型 useMemo),
 //   tasks/tasksLoading/latestTaskId/latestTaskRef/rightOpen/handleSelectTask 迁出主 memo 依赖;
 //   activeTaskId/executionSteps 因 RightViewer/TaskInfoBar 也消费仍保留在主 memo。行为零逻辑变更 — 小欧-2026-11-16
+// 编辑历史: 2026-11-18 小欧 - RightViewer 透传 tasksLoading: 切会话后任务清单未就绪的那一帧
+//   右栏用加载态替代「暂无执行记录」空态 — 小欧-2026-11-18
 
 import { useCallback, useMemo } from 'react';
 import { Typography } from 'antd';
@@ -399,6 +401,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
             //   历史任务加载 steps 后写 final.response 到左侧(替代原 onSettledRefresh 从 DB 拉 chat_tasks.response) — 小欧-2026-09-15
             updateTaskResponse={updateTaskResponse}
+            tasksLoading={tasksLoading} // 2026-11-18 小欧 - 切会话窗口不显"暂无执行记录" — 小欧-2026-11-18
           />
         ),
         defaultVisible: true,
