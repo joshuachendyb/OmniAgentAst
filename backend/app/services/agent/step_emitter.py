@@ -28,6 +28,8 @@ Author: 小沈 - 2026-05-31
 # 2026-11-18 商量 - 新增 ask_question: 经 question_gateway 发阻塞问询事件(SSE), buffer 判空同 emit_notice, 供 tool_executor 注入回调
 # 2026-11-18 商量 - 三堂会审整改: ask_question 无缓冲区改抛 RuntimeError(经工具层 except 收口为"问询通道异常, 自行决策继续"), 不再伪造 cancelled 误报"用户已放弃"
 # 2026-11-18 商量 - 超时双分支镜像 hitl_confirm: HTL开=security.hitl.timeout 窗, HTL关=bypass 短窗自动过(仍要问), 公式单源复用 _resolve_timeouts
+# 2026-11-18 商量 - 三堂会审复核: 窗口模式(auto_confirm=not enabled)随调一道下传网关并回传工具层,
+#   消除工具层二次读配置致"窗口与兜底文案错配" — 商量-2026-11-18
 """
 
 import time
@@ -132,7 +134,8 @@ class StepEmitter:
 
         延迟导入同 emit_notice; buffer 缺失抛 RuntimeError(经工具层 except 收口为"问询通道异常")。
         超时双分支同 hitl_confirm(HITL开=security.hitl.timeout 窗/HTL关=bypass 短窗自动过), 公式单源 _resolve_timeouts。
-        返回 {"answers","cancelled","expired","reason","question_id"}。
+        窗口模式一并下传(auto_confirm), 兜底文案判据不落到工具层 — 商量-2026-11-18
+        返回 {"answers","cancelled","expired","reason","question_id","auto_confirm"}。
         """
         from app.config import get_config
         from app.services.agent.handlers.question_gateway import ask_question
@@ -151,7 +154,11 @@ class StepEmitter:
             # 不伪造 cancelled(那会被工具侧误报为"用户已放弃")
             logger.warning("[StepEmitter] ask_question: 无流缓冲区, 无法发射问询事件")
             raise RuntimeError("问询通道不可用: 无流缓冲区")
-        return await ask_question(self.agent, questions, publish=_buf.publish, timeout=timeout)
+        # 窗口模式随事件链一道下传: 网关与工具层都按此布尔取兜底文案, 不再各自重读配置(单一真源) — 商量-2026-11-18
+        return await ask_question(
+            self.agent, questions, publish=_buf.publish,
+            timeout=timeout, auto_confirm=not _enabled,
+        )
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""

@@ -87,11 +87,13 @@ export function useQuestionDock(sessionId: string | null) {
   );
 
   const close = useCallback(() => {
+    const qid = request?.questionId;
     setRequest(null);
     setState(EMPTY_STATE);
     submittingRef.current = false;
-    if (sessionId) chatStreamStore.acknowledgeQuestion(sessionId);
-  }, [sessionId]);
+    // 2026-11-18 商量 - 按 id 收口: 旧问询的关闭回调可能晚于新问询到达, 无守卫会把新问题一起清掉(用户视角"问题自己消失")
+    if (sessionId && qid) chatStreamStore.acknowledgeQuestion(sessionId, qid);
+  }, [sessionId, request?.questionId]);
 
   // 2026-11-18 商量 - 可提交判据: 任一题已有选中项或已填自定义答案(空提交无合法含义, "取消"才是放弃)
   const canSubmit = useMemo(() => {

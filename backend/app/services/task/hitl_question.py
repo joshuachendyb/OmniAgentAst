@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 2026-11-18 商量 - 新建 question 三原语(对称 hitl_confirmation, 无信任语义): create/wait/resolve;
 #   阻塞等待经 Future 收口, 超时/取消/任务取消均以结构化结果返回, 过期清理复用 HITL 同源配置
+# 2026-11-18 商量 - 三堂会审复核: entry=None(已被过期清理摘除)改 expired=True — 三态全假会被上层读成"用户已回答"并空答案成功收口 — 商量-2026-11-18
 """
 hitl_question — question 工具阻塞问询三原语(业务逻辑层)
 
@@ -77,8 +78,10 @@ async def wait_for_question_result(question_id: str, timeout: int = 120) -> Dict
     with _pending_lock:
         entry = _pending_questions.get(question_id)
     if entry is None:
+        # 问询已不在待答表(被 _cleanup_stale_questions 摘除) = 本次等待不可能再拿到答案,
+        # 与"窗口到点未答"同义 → expired, 交兜底作答收口; 三态全假会被上层读成"用户已回答" — 商量-2026-11-18
         logger.debug(f"[question] wait: entry=None question_id={question_id}")
-        return {"answers": [], "cancelled": False, "expired": False, "reason": "stale"}
+        return {"answers": [], "cancelled": False, "expired": True, "reason": "stale"}
 
     try:
         task_id = question_id.split(":")[0] if ":" in question_id else ""

@@ -93,8 +93,7 @@
 // 编辑历史: 2026-11-18 opencode - 续跑重锚定统一: resume 锚点纠正分支补清 lastSeq/steps/response
 //   (原只改 taskId 保留旧 lastSeq → after_seq 对不上新任务 seq 0 起的事件, 续跑执行中刷新后不滚动);
 //   与 attachOrphanTask 的清理抽为 reanchorToTask 共用 — opencode-2026-11-18
-// 编辑历史: 2026-11-18 商量 - pendingQuestion 入会话快照(bump/SNAPSHOT_KEYS/toBackupOf/restore)+acknowledgeQuestion,
-//   供 question dock 切会话恢复与提交后清窗 — 商量-2026-11-18
+// 编辑历史: 2026-11-18 商量 - pendingQuestion 入会话快照+acknowledgeQuestion(供切会话恢复与提交后清窗); 清窗按 questionId 守卫, 防旧问询的异步回调误清新问题 — 商量-2026-11-18
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -1611,10 +1610,11 @@ export const chatStreamStore = {
       });
   },
 
-  /** 2026-11-18 商量: 用户已处理问询(提交/取消)——清 pendingQuestion, 防切回重弹 */
-  acknowledgeQuestion(sessionId: string): void {
+  /** 2026-11-18 商量: 用户已处理问询(提交/取消)——按 questionId 收口清 pendingQuestion, 防切回重弹。
+   *  必须比对 id: 旧问询的异步关闭回调可能晚于新问询落地, 无守卫会把刚弹的新问题一起清掉。 */
+  acknowledgeQuestion(sessionId: string, questionId: string): void {
     const s = sessions.get(sessionId);
-    if (s)
+    if (s && s.pendingQuestion?.question_id === questionId)
       commit(s, (d) => {
         d.pendingQuestion = null;
       });

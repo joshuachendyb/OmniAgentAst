@@ -3,6 +3,7 @@
 #   两事件仅 SSE 不落库, 与 paused/resumed 成对范式一致
 # 2026-11-18 商量 - 三堂会审整改: 删 wait 返回后的重复 resolve(wait 的 finally 已统一弹出 entry 收口, 该调用必为 entry=None 空转), 顺带清失效 logger 导入
 # 2026-11-18 商量 - question_required 事件补 backend_timeout 字段(与 authorization_required 同名同语义), 供前端 dock 渲染倒计时
+# 2026-11-18 商量 - 三堂会审复核: 等待段加 try/finally(抛错不停在 SUSPENDED); auto_confirm 由发射器透传并随结果回传 — 商量-2026-11-18
 """
 question_gateway — question 工具阻塞问询唯一发射点
 """
@@ -21,8 +22,12 @@ async def ask_question(
     questions: List[Dict[str, Any]],
     publish,
     timeout: int = 120,
+    auto_confirm: bool = False,
 ) -> Dict[str, Any]:
-    """阻塞问询: 发 question_required → 等待 → 发 question_resolved — 商量 2026-11-18"""
+    """阻塞问询: 发 question_required → 等待 → 发 question_resolved — 商量 2026-11-18
+    auto_confirm: True=人工干预关(bypass 短窗, 到点按首选项兜底) / False=真人工(到点按专家指令兜底)。
+    窗口模式由调用方(发射器)唯一判定并透传, 网关与工具层都不再自行推导 — 商量-2026-11-18
+    """
     question_id = await create_question(agent.task_id, questions)
     required = agent._step_emitter.emit(MetaStep(
         step=agent.llm_call_count,
@@ -35,8 +40,11 @@ async def ask_question(
     set_status(agent, AgentStatus.SUSPENDED, "等待用户回答")
     await publish(required.to_dict())
 
-    result = await wait_for_question_result(question_id, timeout=timeout)
-    set_status(agent, AgentStatus.EXECUTING, "用户回答完成")
+    try:
+        result = await wait_for_question_result(question_id, timeout=timeout)
+    finally:
+        # 等待正常结束/超时/抛错三条路径都必须掀掉 SUSPENDED, 否则任务终态会被判成 paused — 商量-2026-11-18
+        set_status(agent, AgentStatus.EXECUTING, "用户回答完成")
 
     # 收口唯一入口 = wait_for_question_result 的 finally(弹出 pending entry),
     # 超时/取消/作答三路径均经其收口, 此处不再重复 resolve(必为 entry=None 的空转) — 商量-2026-11-18
@@ -64,6 +72,8 @@ async def ask_question(
         "expired": bool(result.get("expired")),
         "reason": result.get("reason", ""),
         "question_id": question_id,
+        # 兜底文案判据随结果回传(工具层不读配置, 窗口模式单一真源) — 商量-2026-11-18
+        "auto_confirm": auto_confirm,
     }
 
 

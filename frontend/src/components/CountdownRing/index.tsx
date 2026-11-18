@@ -1,4 +1,4 @@
-// CountdownRing.tsx — countdown/progress隔离,防每秒扩散到工具卡/参数卡/按钮
+// CountdownRing — 倒计时环(自绘 SVG, 每秒重渲染隔离在环内)
 // 编辑历史: 2026-09-16 老杨 - 拆分CountdownRing子组件,React.memo隔离重渲染 - 老杨-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 修复: React.FC+memo内联解构致react/prop-types误报2error, 对齐ErrorDetail.tsx惯例文件级disable - 小欧-2026-09-16
 // 编辑历史: 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 回退a59aaff8e的扁平纯文本, 恢复Progress circle饼环+双层格式化div嵌套, 恢复confirmTimeout prop - 小欧-2026-09-18
@@ -12,6 +12,7 @@
 //      调用方(问询浮层)此前要用负 margin 再抵回来, 一处距离两处补偿(违 theme/spacing.ts 铁律一);
 //   ③ 共用关系不变: 本组件同时供 HITL 危险确认弹窗(size 44)与 question 问询浮层(size 40)使用,
 //      两者只在直径上分叉, 环的形状/配色/到点脉冲只有这一份实现 — 商量-2026-11-18
+// 编辑历史: 2026-11-18 商量 - 目录/导出归位: 原在 components/AuthorizationModal/ 且 default export, 两处共用后迁 components/CountdownRing/ 改具名导出 — 商量-2026-11-18
 
 // props 一律由 TS 接口 CountdownRingProps 约束, propTypes 在 TSX 里无意义;
 // react/prop-types 对"memo 包裹的函数组件解构入参"只会误报, 故本文件沿用 ErrorDetail.tsx 的文件级 disable。
@@ -21,7 +22,7 @@ import React from 'react';
 
 import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 
-interface CountdownRingProps {
+export interface CountdownRingProps {
   countdown: number;
   confirmTimeout: number;
   /**
@@ -51,7 +52,7 @@ const ringColor = (countdown: number) =>
       ? Colors.WAIT_ACTION
       : Colors.PRIMARY;
 
-const CountdownRing: React.FC<CountdownRingProps> = React.memo(
+export const CountdownRing: React.FC<CountdownRingProps> = React.memo(
   function CountdownRing({ countdown, confirmTimeout, size = 60 }) {
     const center = size / 2;
     const stroke = ringStroke(size);
@@ -145,4 +146,3 @@ const CountdownRing: React.FC<CountdownRingProps> = React.memo(
 );
 
 CountdownRing.displayName = 'CountdownRing';
-export default CountdownRing;

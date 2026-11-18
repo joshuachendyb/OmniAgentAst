@@ -10,6 +10,7 @@
 // 2026-11-18 商量 - 去通栏: 卡片宽度定为 520(与 HITL 授权弹窗同宽, 产品定宽), 窄视口 90vw 兜底;
 //   卡片左缘贴锚点容器左缘(输入行左缘), 与聊天正文同一根左轴。
 //   原实现随锚点容器 left:0/right:0 拉满会话列(实测 826 宽), 宽屏下成一条横幅, 选项行也失去节奏。 — 商量-2026-11-18
+// 2026-11-18 商量 - 右上 × 走 cancel(中断问询), aria-label 改名符实; 倒计时环改从 components/CountdownRing 具名引入 — 商量-2026-11-18
 import {
   CheckOutlined,
   CloseOutlined,
@@ -21,7 +22,8 @@ import {
 import { Button } from 'antd';
 
 import type { QuestionDockController } from '@/features/chat/hooks/useQuestionDock';
-import CountdownRing from '@/components/AuthorizationModal/CountdownRing';
+// 2026-11-18 商量 - 共享件归位: 倒计时环迁至 components/CountdownRing(具名导出), 授权弹窗与本浮层同一份实现
+import { CountdownRing } from '@/components/CountdownRing';
 import { PanelCard, PanelChip, PanelIconButton } from '@/components/PanelCard';
 import { CONTROL_HEIGHT } from '@/theme/controlScale';
 import { Gap, LineHeight } from '@/theme/spacing';
@@ -98,7 +100,8 @@ export function QuestionDock({ controller }: QuestionDockProps) {
         onClick={toggleMinimize}
       />
       <PanelIconButton
-        ariaLabel="关闭问询"
+        // 名副其实: 本按钮走 cancel(取消本次问询并让模型自行决策继续), 不是"收起/关闭"这类无副作用动作 — 商量-2026-11-18
+        ariaLabel="取消问询(模型自行决策继续)"
         testId="question-close"
         tone="danger"
         icon={<CloseOutlined />}

@@ -8,6 +8,8 @@
 # 2026-11-18 商量 - 兜底作答补收口指令(AUTO_FALLBACK_DIRECTIVE): 原摘要只给结果不给指令, 模型把"系统自动代答/自动决策"
 #   讲给用户听并重新征求确认(实证两轮); 现与结果同行下发"视为用户选择, 不要再重复询问" — 商量-2026-11-18
 # 2026-11-18 商量 - cancelled 分支补传 wait_ms: 原漏传走默认 0, 用户实际等了多久被记成 0ms(遥测失真) — 商量-2026-11-18
+# 2026-11-18 商量 - 三堂会审复核: 兜底文案判据改读回调下发的 auto_confirm(窗口模式单一判定在发射器, 工具层不判安全策略);
+#   异常/取消分支补 wait_ms; 摘要未作答项标「（未作答）」— 商量-2026-11-18
 """
 question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取实现决策)
 
@@ -18,7 +20,6 @@ question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取
 import time as _time_mod
 from typing import Any, Dict, List, Tuple
 
-from app.config import get_config
 from app.tools.context import get_current_question_callback
 from app.tools.tool_constants import ERR_QUESTION
 from app.tools.tool_response import build_error, build_success
@@ -116,13 +117,14 @@ def _normalize_answers(raw: Any, count: int) -> List[List[str]]:
 
 
 def _auto_fallback(
-    normalized: List[Dict[str, Any]], bypass: bool
+    normalized: List[Dict[str, Any]], auto_confirm: bool
 ) -> Tuple[List[List[str]], str]:
     """到点未答的兜底作答(双分支) — 商量 2026-11-18
-    HTL关(bypass短窗)→各题首选项作答(最合理默认); HTL开→专家指令作答(按最合理逻辑处理)。
-    返回 (answers, 说明文案)。
+    auto_confirm=True(人工干预关=bypass 短窗)→各题首选项作答(最合理默认);
+    auto_confirm=False(真人工)→专家指令作答(按最合理逻辑处理)。
+    auto_confirm 由回调下发(窗口模式唯一判定在发射器), 工具层不自行推导配置。返回 (answers, 说明文案)。
     """
-    if bypass:
+    if auto_confirm:
         return (
             [[q["options"][0]["label"]] for q in normalized],
             "问询到点未答, 已按首选项自动作答",
@@ -156,7 +158,8 @@ def _build_question_llm_data(
         pairs = []
         for q, ans in zip(questions, answers):
             title = q.get("header", "") if isinstance(q, dict) else ""
-            value = "、".join(ans)
+            # 未作答项显式标注: 空串会被模型读成"用户选择了空", 与"没答"是两件事 — 商量-2026-11-18
+            value = "、".join(ans) or "（未作答）"
             pairs.append(f'{title}="{value}"')
         if pairs:
             prefix = f"{auto_note}: " if auto_note else "用户已回答 "
@@ -206,10 +209,9 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
             ),
         )
 
+    t_wait = _time_mod.perf_counter()
     try:
-        t_wait = _time_mod.perf_counter()
         result = await callback(normalized)
-        wait_ms = int((_time_mod.perf_counter() - t_wait) * 1000)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_error(
@@ -217,8 +219,10 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
             llm_data=_build_question_llm_data(
                 "error", duration_ms, detail=str(e),
                 hint="问询通道异常, 请自行决策后继续", questions=normalized,
+                wait_ms=int((_time_mod.perf_counter() - t_wait) * 1000),
             ),
         )
+    wait_ms = int((_time_mod.perf_counter() - t_wait) * 1000)
 
     if not isinstance(result, dict):
         result = {}
@@ -237,9 +241,10 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
                 ),
             )
         # 2026-11-18 商量 - 到点未答兜底作答(成功收口, 不再空答案报错):
-        #   HTL关(bypass短窗)→各题首选项; HTL开→专家指令回填答案槽
-        bypass = not bool(get_config().get("security.hitl.enabled", True))
-        fallback, note = _auto_fallback(normalized, bypass)
+        #   auto_confirm(bypass短窗)→各题首选项; 真人工→专家指令回填答案槽;
+        #   auto_confirm 由回调下发(发射器按 security.hitl.enabled 唯一判定窗口模式) — 商量-2026-11-18
+        auto_confirm = bool(result.get("auto_confirm", False))
+        fallback, note = _auto_fallback(normalized, auto_confirm)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_success(
             data={"answers": fallback, "questions": normalized, "auto": True},

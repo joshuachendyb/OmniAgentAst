@@ -126,7 +126,8 @@ import {
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
 // 2026-09-16 老杨 - S3:引入CountdownRing子组件,countdown/progress隔离 - 老杨-2026-09-16
-import CountdownRing from './CountdownRing';
+// 2026-11-18 商量 - 倒计时环与 question 浮层共用, 迁至 components/CountdownRing(具名导出)
+import { CountdownRing } from '@/components/CountdownRing';
 // 2026-11-18 商量 - 倒计时公用 hook(与 question 面板同一实现, 按截止时刻采样)
 import { useCountdown } from '@/hooks/useCountdown';
 // 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16

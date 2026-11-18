@@ -4,13 +4,16 @@
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删META_STEP_TYPES的cancelled条目(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.13): META_STEP_TYPES加merged — 小欧-2026-09-28
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: META_STEP_TYPES 补 'rejected'(meta/业务分流归位, 非新增事件类型; rejected 本就在 ProcessEvent['kind'] 且由后端 rejected 帧驱动), 防 pipeline 把 rejected 当业务步渲染致与 deniedTools 点名条同帧双绘 — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: META_STEP_TYPES 补 'rejected'(meta/业务分流归位, 非新增事件类型; rejected 本就在 ProcessEvent['kind'] 且由后端 rejected 帧驱动), 防 pipeline 把 rejected 当业务步渲染致与 deniedTools 点名条同帧双绘 — 小欧-2026-10-11
+// 编辑历史: 2026-11-18 商量 - META_STEP_TYPES 补 question_required/question_resolved: 原进业务流水线但无渲染分支(零产出), hasSteps 误判致查看区空白 — 商量-2026-11-18
 /**
  * pipeline 分流工具
  *
  * 【小欧 2026-08-26 8.4/8.10】4.4.4 权威过滤：查看区只渲染业务内容步骤
  * chunk/thought/action/observation/final/error；meta 小事件(start/paused/resumed/
- * retrying)与统计类(usage/stats/final_stats/history_context/truncated/startinfo)
- * 归任务信息条。thought-start 是 ThinkingStream 的起始信号标记，保留在业务流。
+ * retrying/question/notice)与统计类(usage/stats/final_stats/history_context/
+ * truncated/startinfo)归任务信息条。thought-start 是 ThinkingStream 的起始信号标记，
+ * 保留在业务流。
  *
  * @author 小欧
  * @date 2026-08-26
@@ -36,6 +39,9 @@ export const META_STEP_TYPES = [
   //   与既有 onRejected→deniedTools 点名条链路**同帧双绘**。归 meta 后业务流分流掉,
   //   只由 useTaskInfo 派生进事件列表, pipeline 侧点名条显示不变(仍走 deniedTools)。
   'rejected',
+  // 2026-11-18 商量: question 成对事件为用户可见态由 QuestionDock 浮层承担, 不进业务流水线
+  'question_required',
+  'question_resolved',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>
