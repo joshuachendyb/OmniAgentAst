@@ -12,6 +12,9 @@
 # 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计
 # 2026-09-03 小欧/北京老陈: token_usage端点补日志: 查询请求/结果/异常三处关键节点, 改前无任何log
 # 2026-09-21 小欧 - v4.20 单源收敛: ?model= 组装 ModelRef 的 provider 改读 ai.model_ref（删扁平 ai.provider）
+# 2026-11-18 小欧 - 任务归属校验: session_id 与 task_id 同时给出时，task_id 必须属于该会话，
+#   否则整条取数按"跨会话矛盾查询"拒绝(400)。原实现两者独立过滤，前端会话切换瞬间拿旧任务的
+#   task_id 配新会话 id 也能取到数 → 返回 会话累计 0 + 旧链累计，顶栏显示上一会话的链值 — 小欧-2026-11-18
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -19,7 +22,7 @@ token_usage — LLM token 用量四维度查询 API（chat 域）
 """
 from typing import Dict, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import db
@@ -73,6 +76,17 @@ async def get_token_usage(session_id: Optional[str] = None,
         _provider = (_get_cfg().get("ai", {}).get("model_ref") or {}).get("provider", "")
         _model_ref = ModelRef(provider=_provider, model=model)
     def _read(conn):
+        # 2026-11-18 小欧 - 归属校验: 两个过滤维度同时给出时必须自洽，否则回的是"两个不同任务的混合口径"
+        #   （前端会话切换瞬间的陈旧锚点就会造成这种查询）— 小欧-2026-11-18
+        if session_id and task_id:
+            _owner = conn.execute(
+                "SELECT session_id FROM chat_tasks WHERE task_id=?", (task_id,)
+            ).fetchone()
+            if _owner and _owner["session_id"] and _owner["session_id"] != session_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="task_id 不属于该会话，token 用量查询要求两个维度自洽",
+                )
         row = query_token_usage(conn, session_id=session_id, task_id=task_id, model_ref=_model_ref)
         # 11.1 新增：读 DB 累计值(复用 storage 查询函数, 统一口径+缺行兜底) + chain 计算派生 — 小欧 2026-08-20
         _task_acc = query_task_accumulation(conn, task_id=task_id) if task_id else None
