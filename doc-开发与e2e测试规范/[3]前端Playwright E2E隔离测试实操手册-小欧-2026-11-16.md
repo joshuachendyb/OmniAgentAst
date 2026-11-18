@@ -94,6 +94,23 @@ const hooks = isolatedEnvHooks(FRONTEND_DIR);   // beforeAll起 / afterAll拆
 | `stream-diag.ts` | 全链路诊断(网络+SSE console) | 失败取证 |
 | `auth.ts`/`global-setup.ts` | 访问口令注入+storageState | 鉴权统一注入 |
 
+### 4.1 本机系统 Chrome 拉起（真实浏览器实测）
+
+本机装有系统 Chrome 且 Playwright 可用。需真实浏览器实测某前端改动、又不走完整 E2E spec 或干扰用户现有浏览器时，直接拉起独立 Chrome 实例：
+
+```ts
+import { chromium } from '@playwright/test';
+const browser = await chromium.launch({ channel: 'chrome', headless: false });
+const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+const page = await ctx.newPage();
+await page.goto('http://localhost:5173/');
+```
+
+- `channel:'chrome'` 用系统 Chrome 而非 Playwright 自带 chromium；`headless:false` 可见过程。
+- `browser.newContext()` 起独立上下文，与用户已在运行的浏览器互不干扰。
+- 取证靠页面事件监听：`page.on('console')` 抓前端日志、`page.on('request')` 抓 SSE/API 请求、`page.on('pageerror')` 抓 JS 异常；配合 `page.screenshot({ path, fullPage:true })` 留截图。
+- 临时脚本与截图写入事项目录，不入库。
+
 ---
 
 ## 5. 性能测量专项（CDP 抓耗时）
@@ -138,4 +155,5 @@ const { profile } = await cdp.send('Profiler.stop'); // 解析self-time定位热
 ---
 
 > 编写人：小欧；日期：2026-11-16
+> 更新人：opencode；日期：2026-11-18；更新内容：新增 §4.1 本机系统 Chrome 拉起方式（真实浏览器实测，独立 context 不干扰现有浏览器）
 > 关联：[2]隔离方法固化标准（端口一致），[46]性能优化方案（性能测量方法）
