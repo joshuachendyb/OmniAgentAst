@@ -39,6 +39,14 @@
 #     openrouter/free、reflection/beam-free) — 小欧-2026-11-01
 #   2026-11-08 小欧 - ai.agnes/ai.sensenova 补双维度 model_meta(能力字段统一为 input/output_modalities;
 #     agnes 三个文本模型实测支持看图, 与真实 config.yaml 同构) — 小欧-2026-11-08
+#   2026-11-18 opencode - media 段补 media.doc_inline_limit_mb: 富文档(PDF 等)原生投递的单份内联上限(默认 8MB,
+#     文档不可压缩, 沿用图片 2MB 会让真实 PDF 全数降级); remote_url_passthrough 注释同步改名「转发视频外链」
+#     并改述为只作用于视频, 与 settings_registry notice 同口径 — opencode-2026-11-18
+#   2026-11-18 opencode - 补齐 settings_registry 已注册但模板漏列的历史键, 使模板键集与运行配置对齐:
+#     llm.sampling.enable_thinking; security.system 5 个硬拦开关(enabled/forbidden_system_path_block/
+#     forbidden_non_system_path_block/white_list_block/shell_danger_block/shell_risk_block);
+#     security.hitl 4 个确认开关(write_confirm/delete_confirm/dual_path_confirm/shell_path_confirm);
+#     sandbox.tool.syntax_check 8 键(总开关 + 7 语言) — opencode-2026-11-18
 #
 #
 # 严禁事项 — 小欧 2026-09-21
@@ -504,16 +512,21 @@ app:
   language: zh-CN
   theme: light
 
-# 媒体附件配置 — 图片走哪条通道由实测能力定，本块只管上限/压缩/外链开关 — 小欧-2026-11-08
-#   inline_limit_mb: 内联上限(MB)。超过先压缩；压缩后仍超或关掉压缩 → 退化为一行文字说明
+# 媒体附件配置 — 送进模型的字节口径；能不能送由模型库 input_modalities 声明定，本块只决定怎么送 — opencode-2026-11-18
+#   inline_limit_mb: 内联图片上限(MB)。按原始文件大小算，单张超过先压缩；压缩后仍超或关掉压缩 → 退化为一行文字说明。
+#     链接图片默认也先下载再按本项判断，只有模型实测证明能抓外链才直接转发地址
+#   doc_inline_limit_mb: 内联文档上限(MB)。富文档(PDF 等)以原始字节随消息发送的单份上限；文档不压缩
+#     (重编码会破坏内容)，超过则改为正文注入抽取文字(内容不丢，版式与图表丢失)
 #   compress_max_edge / compress_jpeg_quality: 压缩只缩不改内容(长边像素、JPEG 质量)
-#   remote_url_passthrough: 实测支持外链的模型，把它在消息里显式给出的公网图片链接直接转发(零字节搬运)
+#   remote_url_passthrough: 「转发视频外链」，消息里明确写出的公网视频地址直接转给模型(零字节搬运，视频唯一投递方式)；
+#     关掉则视频链接只留一行说明、图片改为下载后内联
 #   probe_image_url: 「传输探测」测外链腿用的公网位图地址(在媒体页「外链图片」节编辑)；留空=只测内联
 #     默认取 PNG 而非 ico: 实测 sensenova 对 .ico 返 400 image download failed, agnes 可拉 — 小欧-2026-11-09
 #   probe_video_url / probe_audio_url: 视频/音频输入能力验证腿用的公网素材地址；留空=用内置默认
 #     (视频 test-videos 全球 CDN 991KB mp4 / 音频 runoob 29KB mp3, 本机实测择优) — 小欧-2026-11-11
 media:
   inline_limit_mb: 2
+  doc_inline_limit_mb: 8
   compress_enabled: true
   compress_max_edge: 2048
   compress_jpeg_quality: 85
@@ -574,8 +587,18 @@ logging:
 security:
   system:
     confirm_dangerous_ops: true      # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
+    enabled: true                    # 安全模块总闸: 关=不做路径/命令权限判定, 工具直接执行(参数合法性初查与工具直调兜底仍生效)
+    forbidden_system_path_block: true      # 禁区系统目录拦截: 关=不拦磁盘根与系统保护目录
+    forbidden_non_system_path_block: true  # 禁区非系统目录拦截: 关=不拦代码目录及允许根上级
+    white_list_block: true                 # 白名单外路径拦截: 关=白名单外路径的写/删/递归删直接放行
+    shell_danger_block: true               # bash 高危命令拦截: 关=不拦磁盘写入/关机/执行等
+    shell_risk_block: true                 # bash 中风险命令拦截: 关=不再对中风险命令发起人工确认
   hitl:
     enabled: true                     # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)
+    write_confirm: true               # 写操作确认: 关=需授权路径的写入直接放行(危险写入拦截不受影响)
+    delete_confirm: true              # 删除操作确认: 关=需授权路径的删除直接放行(递归删除硬拦不受影响)
+    dual_path_confirm: true           # 双路径操作确认: 关=copy/move 的授权请求直接放行
+    shell_path_confirm: true          # shell 命令确认: 关=bash 命令内路径授权不判定、直接放行
     auto_confirm_delay: 10            # 自动确认弹窗倒计时(秒), 到时没人点就自动放行
     timeout: 120                      # 人工确认弹窗最长等待(秒), 超时按弹窗设定处理方式收尾
     shell_readonly_prefixes: ""    # 留空=用内置只读免确认名单; 填则覆盖(每行或逗号分隔)
@@ -595,16 +618,27 @@ sandbox:
   process_memory_limit_mb: 2048    # Job Object 进程树内存上限(误杀时调大此值)
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
+  tool:
+    syntax_check:                  # 写代码文件时做语法检测; 开=检出问题只告警不阻断写入
+      enabled: true                # 总开关: 关=不检测任何语言(仅 Write/Edit 生效)
+      python: true                 # .py / .pyw / .pyi
+      json: true                   # .json
+      yaml: true                   # .yaml / .yml
+      toml: true                   # .toml(如 pyproject.toml)
+      xml: true                    # .xml
+      javascript: true             # .js / .mjs / .cjs / .jsx
+      typescript: true             # .ts / .tsx
 
 # ============ 顶层 llm 域（模型无关通用，UI=设置→通用） ============
 llm:
-  sampling:                   # A类 采样/生成控制（5 键）
+  sampling:                   # A类 采样/生成控制（6 键）
     temperature: 0.7          # 采样温度：0=完全确定性，1=默认随机性，2=最高随机性
     max_tokens: 16384         # 单次 LLM 调用最大输出 token 数，超长截断
     top_p: 1.0                # 核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选
     frequency_penalty: 0      # 正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用
     presence_penalty: 0       # 正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用
     reasoning_effort: low     # 全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high).默认low
+    enable_thinking: true     # 思考开关默认值: 开=模型先思考再回答; 关=直接回答。单模型可在模型参数里覆盖
   context_length_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
 
 # 调优配置（前端「调优」Tab 展示；9子组33键，network 已迁顶层）— 小欧-2026-09-23
