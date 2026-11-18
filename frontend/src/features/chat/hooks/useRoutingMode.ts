@@ -4,11 +4,17 @@
 
 // 2026-11-16 小欧 修正: setMode 乐观更新即时反馈, 失败回滚到切换前(409 回读失败也回滚)
 
+// 2026-11-18 opencode 修正: setMode 增会话在途判据 —— 原 await 之后无条件 setVersion/
+//   setModeState, 请求在途时切会话会把旧会话的版本号与模式写到新会话上(且新会话的选择器
+//   会显示旧会话的模式) — opencode-2026-11-18
+
 
 /**
  * useRoutingMode —— 会话级能力路由模式。
  *
  * 无会话时为 suggest 且不可写(选择器置灰); 切会话重新拉取; 写库走唯一薄出口。
+ * isCurrentSession: 由调用方注入的"当前会话仍是我"判据(通常读 currentSessionIdRef),
+ *   在途期间切会话即丢弃回写 —— 副作用只对发起请求的那个会话有效。
  */
 import { useCallback, useEffect, useState } from 'react';
 import { sessionApi } from '@/services/api/session.api';
@@ -23,7 +29,8 @@ const normalize = (v: unknown): RoutingMode =>
 export function useRoutingMode(
   sessionId: string | null,
   version: number,
-  setVersion: (v: number) => void
+  setVersion: (v: number) => void,
+  isCurrentSession?: () => boolean
 ) {
   const [mode, setModeState] = useState<RoutingMode>('suggest');
   const [saving, setSaving] = useState(false);
@@ -50,6 +57,7 @@ export function useRoutingMode(
   const setMode = useCallback(
     async (next: RoutingMode) => {
       if (!sessionId) return;
+      const alive = () => !isCurrentSession || isCurrentSession();
       const prev = mode;
       setModeState(next); // 乐观更新即时反馈, 失败回滚
       setSaving(true);
@@ -59,19 +67,20 @@ export function useRoutingMode(
           next,
           version
         );
-        if (res.version) setVersion(res.version);
+        if (res.version && alive()) setVersion(res.version);
       } catch (err: unknown) {
         const status = (err as { response?: { status: number } })?.response
           ?.status;
         if (status === 409) {
           try {
             const s = await sessionApi.getSession(sessionId);
+            if (!alive()) return;
             if (s.version) setVersion(s.version);
             setModeState(normalize(s.routingMode));
           } catch {
-            setModeState(prev); // 回读失败回滚到切换前
+            if (alive()) setModeState(prev); // 回读失败回滚到切换前
           }
-        } else {
+        } else if (alive()) {
           setModeState(prev);
           showSaveError('切换路由模式失败，请重试');
         }
@@ -79,7 +88,7 @@ export function useRoutingMode(
         setSaving(false);
       }
     },
-    [sessionId, version, setVersion, mode]
+    [sessionId, version, setVersion, isCurrentSession, mode]
   );
 
   return { mode, setMode, saving };

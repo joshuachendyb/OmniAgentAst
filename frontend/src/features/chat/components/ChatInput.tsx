@@ -47,6 +47,10 @@
 //   ③新增发送前提示行 HintLine(降级/超限/非法链接/推荐切换, 互不串扰, 引用行下);
 //   ④worst_quality 前端聚合与后端 preflight 同口径(任一非 native 即 degraded) — 小欧-2026-11-16
 
+// 2026-11-18 opencode 修正: URL 粘贴撤出正文只撤**已入队**的那几个 URL —
+//   原实现整段撤出, 被拒/超限的链接没有 chip 顶替, 正文一撤用户输入就凭空消失;
+//   撤出按每个 URL 的粘贴落点精确定位(连粘多个时逐个撤), 并发编辑兜底撤首个完整匹配 — opencode-2026-11-18
+
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
 //   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
@@ -161,7 +165,6 @@ import {
   getMaxRefs,
   refLimitText,
   type ComposerRef,
-  type RefQualityValue,
 } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { isLinkableRelPath } from '@/utils/projectPath';
@@ -261,7 +264,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       //   未返回前回退既有投影(URL 采集层落存 / 附件·文件 ref_quality_map) — 小欧-2026-11-16
       const key = preflightItemKey(r);
       return (
-        (preflight.qualityByKey[key] as RefQualityValue | undefined) ||
+        preflight.qualityByKey[key] ||
         r.quality ||
         (capMap ? chipQuality(capMap, r) : undefined)
       );
@@ -792,10 +795,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   /** 2026-11-15 小欧 - URL 采集唯一接线: 整段文本交后端预检(识别真源在后端),
    *  ok 项入队 chip(配额内), 被拒/超限合并一条 toast 点名;
-   *  strip = 命中纯 URL 内容时从正文撤出该段(原生粘贴场景, 按 caret 精确撤出);
+   *  strip = 命中纯 URL 内容时把**已入队的 URL**从正文撤出(原生粘贴场景, 按 caret 精确撤出);
+   *  被拒/超限的 URL 没有 chip 顶替, 其原文必须留在输入框 —— 否则用户输入凭空消失。
    *  预检失败: 粘贴场景正文已原生落位, 静默放行不吞文本; 拖拽场景点名失败。 */
   const handleUrlText = useCallback(
-    (text: string, strip?: (draft: string) => string): void => {
+    (text: string, strip?: (draft: string, removeUrls: string[]) => string): void => {
       void captureUrlsFromText(text, getMaxRefs() - getRefs().length, {
         // 后端以 provider/model 定位画像; 仅有 model 时退化按 model 解析 — 小欧-2026-11-16
         modelId: modelId
@@ -810,7 +814,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
           // 阶段D D12: 推荐切换/auto 切换统一由 Composer 级重算(preflight hook)承载 — 小欧-2026-11-16
           if (!urlOnly) return; // 混排/纯文本 → 正文原样保留, 不 chip 化, 不做接管类提示
           setUrlHint(rejected.length > 0 ? 'invalid-url' : undefined);
-          if (strip) setDraft(strip);
+          // 只撤出真正变成 chip 的那几个 URL(混排/被拒/超限的原文保留)
+          const chipped = accepted.map((r) => r.url ?? '');
+          if (strip && chipped.length > 0) setDraft((d) => strip(d, chipped));
           for (const r of accepted) add(r);
           const msgs = rejected.map((r) => `${r.url}（${r.reason}）`);
           if (overflow > 0) msgs.push(refLimitText());
@@ -879,15 +885,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
     //   混排/纯文本原样保留, 预检失败静默放行(正文已在, 不吞文本不误拒)
     const pasteText = e.clipboardData.getData('text/plain');
     if (!pasteText) return;
+    // 粘贴前的光标位置(原生粘贴在此之后才落字) — 多个已入队 URL 依次从该位置撤出
     const caret = inputRef.current?.selectionStart ?? null;
-    handleUrlText(pasteText, (prev) => {
-      if (caret === null) return prev;
-      if (prev.slice(caret, caret + pasteText.length) === pasteText)
-        return prev.slice(0, caret) + prev.slice(caret + pasteText.length);
-      const at = prev.indexOf(pasteText); // 粘贴后有并发编辑: 兜底按首个完整匹配撤出
-      return at >= 0
-        ? prev.slice(0, at) + prev.slice(at + pasteText.length)
-        : prev;
+    handleUrlText(pasteText, (prev, urls) => {
+      let out = prev;
+      for (const u of urls) {
+        if (!u) continue;
+        // 优先按粘贴落点精确撤出(连粘多个时前一个撤出后落点不动); 并发编辑兜底撤首个完整匹配
+        const at =
+          caret !== null && out.slice(caret, caret + u.length) === u
+            ? caret
+            : out.indexOf(u);
+        if (at >= 0) out = out.slice(0, at) + out.slice(at + u.length);
+      }
+      return out;
     });
   };
 

@@ -8,8 +8,12 @@
 // 2026-11-16 小欧 修正: routing_advice 复用 types/chat 的 RoutingAdvice; 删除未使用的 session_id 入参
 
 
+// 2026-11-18 opencode 修正: 删 must_native(与 quality==="native" 同义且全仓无消费方);
+//   quality 收窄为 RefQualityValue|""(后端未知模型时不判定质量, 原 string 使消费方被迫 as 断言) — opencode-2026-11-18
+
 import api from './client';
 import type { RoutingAdvice, RoutingMode } from '@/types/chat';
+import type { RefQualityValue } from '@/features/refs/store';
 
 /** 预检逐项结果(与后端 PreflightItem 字段一一对应, 零翻译) */
 export interface PreflightItemDTO {
@@ -18,9 +22,9 @@ export interface PreflightItemDTO {
   content_kind: string;
   ok: boolean;
   reason: string;
-  quality: string;
+  /** 四态质量; 空串 = 后端未判定(未知模型), 消费方不得据此派生徽标 */
+  quality: RefQualityValue | '';
   delivery: string;
-  must_native: boolean;
   duplicate_of: string;
   url: string;
 }

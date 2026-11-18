@@ -12,9 +12,12 @@
 // 2026-11-16 小欧 修正: 投影/签名跳过 pending 占位项(未落定条目不上送, 落定后签名变化触发重算);
 //   routingAdvice 复用 types/chat 的 RoutingAdvice 类型
 
+// 2026-11-18 opencode 修正: 删 must_native 落存(与 quality==="native" 同义, 全仓无消费方);
+//   quality 直接取 DTO 已收窄的类型, 去掉 as 断言 — opencode-2026-11-18
+
 
 import { preflightInput } from '@/services/api/inputs.api';
-import { newRefId, type ComposerRef, type RefQualityValue } from './store';
+import { newRefId, type ComposerRef } from './store';
 import type { RoutingAdvice, RoutingMode } from '@/types/chat';
 
 export interface RejectedUrl {
@@ -73,9 +76,8 @@ export const captureUrlsFromText = async (
       path: it.url, // refKeyOf 按 path 归一 → 同 URL 天然同 key 原位替换
       url: it.url,
       source_kind: it.source_kind,
-      must_native: it.must_native,
       // 阶段B: preflight 逐项 quality 原值落存(徽标只读, 前端零派生) — 2026-11-16 小欧
-      quality: it.quality as RefQualityValue,
+      quality: it.quality || undefined,
     });
   }
   const overflow = Math.max(0, accepted.length - Math.max(0, room));

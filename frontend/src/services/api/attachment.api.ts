@@ -84,7 +84,6 @@ export interface AttachmentCapabilities {
   limits: {
     max_refs: number;
     max_urls: number;
-    max_url_images: number;
     /** 单文件字节上限(后端配额单一真源, 前端预检/文案禁用硬编码) */
     max_image_bytes: number;
     max_file_bytes: number;

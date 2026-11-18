@@ -66,6 +66,8 @@ interface ModelPickerProps {
   sessionModelOverride: SessionModelOverride | null;
   setSessionModelOverride: (v: SessionModelOverride | null) => void;
   setSessionVersion: (v: number) => void;
+  /** 2026-11-18 opencode: 会话在途判据(切会话后丢弃旧请求回写) — opencode-2026-11-18 */
+  isCurrentSession?: () => boolean;
 }
 
 const FOLLOW_GLOBAL = '__follow_global__';
@@ -263,6 +265,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
   sessionModelOverride,
   setSessionModelOverride,
   setSessionVersion,
+  isCurrentSession,
 }) => {
   const [models, setModels] = useState<ModelOptionMeta[]>([]);
   const [globalEffort, setGlobalEffort] = useState('');
@@ -340,6 +343,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
         version: sessionVersion,
         setSessionVersion,
         setSessionModelOverride,
+        isCurrent: isCurrentSession,
       });
     } finally {
       setLoading(false);

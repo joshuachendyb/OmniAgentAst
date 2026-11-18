@@ -187,6 +187,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     setSessionVersion,
     sessionModelOverride,
     setSessionModelOverride,
+    // 2026-11-18 opencode: 在途请求的会话归属判据(切会话即丢弃回写) — opencode-2026-11-18
+    currentSessionIdRef,
     linkEnabled,
     // allowInterject/onToggleInterject 同组透传, 见上(opts 解构) — 2026-10-07 小欧 - 文档[11] 3.5.4
     loading,
@@ -208,11 +210,21 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
   const { handleCancel, handleTogglePause } = chatTaskControl;
 
   // 2026-11-16 小欧 [23]阶段D: 会话级路由模式(唯一读写 hook) + 推荐条一键切换(落 L2 唯一实现) — 小欧-2026-11-16
+  // 2026-11-18 opencode: 两处写库都带"会话仍是我"判据, 在途期间切会话不回写新会话状态 — opencode-2026-11-18
+  const isCurrentSession = useCallback(
+    () => currentSessionIdRef.current === sessionId,
+    [currentSessionIdRef, sessionId]
+  );
   const {
     mode: routingMode,
     setMode: setRoutingMode,
     saving: routingSaving,
-  } = useRoutingMode(sessionId, sessionVersion, setSessionVersion);
+  } = useRoutingMode(
+    sessionId,
+    sessionVersion,
+    setSessionVersion,
+    isCurrentSession
+  );
   const handleSwitchModel = useCallback(
     (provider: string, model: string) => {
       if (!sessionId) return;
@@ -222,9 +234,16 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         version: sessionVersion,
         setSessionVersion,
         setSessionModelOverride,
+        isCurrent: isCurrentSession,
       });
     },
-    [sessionId, sessionVersion, setSessionVersion, setSessionModelOverride]
+    [
+      sessionId,
+      sessionVersion,
+      setSessionVersion,
+      setSessionModelOverride,
+      isCurrentSession,
+    ]
   );
 
   // 2026-11-17 小欧 - 流式期无关面板重渲治理: 模型选择器插槽独立 memo
@@ -239,6 +258,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
           sessionModelOverride={sessionModelOverride}
           setSessionModelOverride={setSessionModelOverride}
           setSessionVersion={setSessionVersion}
+          isCurrentSession={isCurrentSession}
         />
         {/* 2026-11-16 小欧 [23]阶段D: 路由模式三档(会话级持久化) — 小欧-2026-11-16 */}
         <RoutingModePicker
@@ -255,6 +275,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       sessionModelOverride,
       setSessionModelOverride,
       setSessionVersion,
+      isCurrentSession,
       routingMode,
       setRoutingMode,
       routingSaving,

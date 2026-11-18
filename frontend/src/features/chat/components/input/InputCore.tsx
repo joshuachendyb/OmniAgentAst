@@ -37,6 +37,10 @@
 // 2026-11-13 商量 - ① 能力提示并入 placeholder 尾段(PLACEHOLDER_HINTS: @ 引用 · 拖入文件 · 粘贴图片):
 //   空态自带说明, minRows=2 已预留两行 → 零额外高度, 打字即隐不干扰;
 //   ② 上下留白取视觉下限, 水平内距与 overlay 左缘同源 — 统一由 controlScale 的 CONTROL_PADDING 下发 — 商量-2026-11-13
+// 2026-11-18 opencode 修正: TextArea 的 ref 改为解析真 DOM(textarea) 后再给 taRef/inputRef。
+//   antd/rc-textarea 的 ref 是实例对象 {resizableTextArea:{textArea}}, 当 HTMLTextAreaElement 用会静默失效:
+//   粘贴纯链接的"按 caret 撤出正文"判据恒 null(正文永不撤出, 链接既成 chip 又留在正文)、
+//   focusKey 的 focus() 不存在(发送后焦点不回归) — opencode-2026-11-18
 // 2026-11-15 小欧 - 能力提示扩全类型 图片/视频/音频/文档(本地或链接), 不写死上限数字
 //   (上限唯一来自后端 capabilities.limits); URL 成为一等输入项后提示"链接"入口 — 小欧-2026-11-15
 
@@ -56,8 +60,9 @@
  * @date 2026-08-26
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Input } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Colors, Radius, BorderWidth, FontSize } from '@/utils/stepStyles';
 import { CONTROL_PADDING } from '@/theme/controlScale';
 import { LineHeight } from '@/theme/spacing';
@@ -119,11 +124,26 @@ const InputCore: React.FC<InputCoreProps> = ({
   executingHint,
 }) => {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  // 2026-10-21 小杨 - 外部 ref 同步（@ 补全取真实光标位置用）
-  useEffect(() => {
-    if (!inputRef) return;
-    inputRef.current = taRef.current;
-  }, [inputRef]);
+  /**
+   * 真 DOM 节点绑定(唯一取节点处)。
+   *
+   * antd TextArea 的 ref 不是 textarea 节点, 而是 rc-textarea 的实例
+   * {resizableTextArea: {textArea}}(见 rc-textarea TextArea/ResizableTextArea 的
+   * useImperativeHandle)。直接当 HTMLTextAreaElement 用会**静默失效**:
+   *   - selectionStart 恒 undefined → 粘贴纯链接时"按 caret 撤出正文"判据恒为 null, 正文永不撤出;
+   *   - focus() 不存在 → focusKey 聚焦失效。
+   * 故在此一次解析出节点, 上游(taRef/inputRef)只拿 DOM, 不再各自猜实例结构。
+   */
+  const bindTa = useCallback(
+    (inst: TextAreaRef | null) => {
+      const dom =
+        (inst as unknown as { resizableTextArea?: { textArea?: HTMLTextAreaElement } })
+          ?.resizableTextArea?.textArea ?? null;
+      taRef.current = dom;
+      if (inputRef) inputRef.current = dom;
+    },
+    [inputRef]
+  );
   // 2026-10-13 14:20 小欧: focusKey 自增 → 聚焦
   useEffect(() => {
     if (focusKey === undefined) return;
@@ -137,7 +157,7 @@ const InputCore: React.FC<InputCoreProps> = ({
   return (
     <div style={{ position: 'relative' }}>
       <TextArea
-        ref={taRef}
+        ref={bindTa}
         data-testid={HINT_TESTID}
         value={value}
         onChange={(e) => onChange(e.target.value)}

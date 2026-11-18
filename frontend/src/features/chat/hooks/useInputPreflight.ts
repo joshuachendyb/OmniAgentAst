@@ -9,10 +9,13 @@
 
 // 2026-11-16 opencode 修正: 逐项 quality 回写跳过空串, 防重复项(空 quality)覆盖首条已判定徽标。
 
+// 2026-11-18 opencode 修正: routingMode 改用 types/chat 的 RoutingMode(原处自写同值字面量,
+//   与真源重复); qualityByKey 收窄为 RefQualityValue(原 string 使消费方被迫 as 断言) — opencode-2026-11-18
+
 import { useEffect, useRef, useState } from 'react';
 import { preflightInput } from '@/services/api/inputs.api';
-import type { RoutingAdvice } from '@/types/chat';
-import type { ComposerRef } from '../../refs/store';
+import type { RoutingAdvice, RoutingMode } from '@/types/chat';
+import type { ComposerRef, RefQualityValue } from '../../refs/store';
 import {
   refsSignature,
   refsToPreflightItems,
@@ -25,15 +28,15 @@ export interface InputPreflightState {
   worstQuality: 'native' | 'degraded';
   /** 能力路由建议(keep 归一为 null, 不展示) */
   routingAdvice: RoutingAdvice | null;
-  /** 逐项 quality, 按 preflightItemKey 键控(供 chip 徽标回写) */
-  qualityByKey: Record<string, string>;
+  /** 逐项 quality, 按 preflightItemKey 键控(供 chip 徽标回写); 未判定的项不入表 */
+  qualityByKey: Record<string, RefQualityValue>;
 }
 
 export interface UseInputPreflightOpts {
   refs: ComposerRef[];
   modelId?: string;
   modelProvider?: string;
-  routingMode?: 'suggest' | 'auto' | 'strict';
+  routingMode?: RoutingMode;
   /** 防抖窗口(ms), 仅在签名变化后触发 */
   delayMs?: number;
 }
@@ -76,7 +79,7 @@ export function useInputPreflight({
       })
         .then((res) => {
           if (seq !== seqRef.current) return;
-          const qualityByKey: Record<string, string> = {};
+          const qualityByKey: Record<string, RefQualityValue> = {};
           for (const it of res.items) if (it.quality) qualityByKey[it.key] = it.quality;
           setState({
             worstQuality: res.worst_quality,

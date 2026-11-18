@@ -7,6 +7,9 @@
 // 2026-11-16 小欧 - 宽度收窄: 原 minWidth 96 与同排「附件」按钮宽窄不齐, 改为小控件定宽对齐附件按钮 - 小欧-2026-11-16
 // 2026-11-16 小欧 - tip 样式归令牌: 行高/间距/字重改引 LineHeight/Gap/FontWeight, 限宽与同区附件提示卡同口径 - 小欧-2026-11-16
 
+// 2026-11-18 opencode 修正: 严格档文案据实(实际仍降级投递, 原"不静默降级"与实现不符);
+//   RoutingMode 改引 types/chat 真源 — opencode-2026-11-18
+
 /**
  * RoutingModePicker —— 建议/自动/严格 三档路由模式选择。
  *
@@ -16,7 +19,7 @@ import React from 'react';
 import { Select, Tooltip } from 'antd';
 import { FontWeight } from '@/utils/stepStyles';
 import { Gap, LineHeight } from '@/theme/spacing';
-import type { RoutingMode } from '../../hooks/useRoutingMode';
+import type { RoutingMode } from '@/types/chat';
 
 const MODE_LABEL: Record<RoutingMode, string> = {
   suggest: '提示',
@@ -27,7 +30,9 @@ const MODE_LABEL: Record<RoutingMode, string> = {
 const MODE_DESC: Record<RoutingMode, string> = {
   suggest: '能力不足时只提示，不切换当前模型（默认）',
   auto: '能力不足时自动切到更合适的模型，可一键回退',
-  strict: '把原生能力视为必需，缺能力时明确提示，不静默降级',
+  // 严格档只影响"缺能力时给不给阻断式建议", 不改投递方式、也不拦截发送 ——
+  //   原文案"不静默降级"与实现不符(实际仍走文本注入降级) — opencode-2026-11-18
+  strict: '把原生能力视为必需，缺能力时明确提示（不自动切换，也不拦截发送）',
 };
 
 // 宽度与小号「附件」按钮视觉等宽: Select 文本 28 + 箭头 12 + 内距 7×2 + 边框 2 ≈ 66
