@@ -34,7 +34,8 @@
 #   limit/head_limit/head/output_mode/-n, read 丢弃误传的 content)与 PARAM_INVERT_ALIASES(grep
 #   caseSensitive 取反归 ignore_case); 键名统一剥离前导 '/' (LLM 传 /shell_type 的序列化残留)。
 # 2026-11-18 - 商量 - question 已实现, 从禁用回落名单移除; 新增 question/schedule 参数别名(qs/todos/tasks/plan 等归一);
-#   TOOL_NAME_ALIASES 增 opencode todoWrite 变体→schedule(LLM 按原名调用时归一到注册名)
+#   TOOL_NAME_ALIASES 增 opencode todoWrite 变体→schedule(LLM 按原名调用时归一到注册名);
+#   新增 PARAM_DROP question.title(整次调用的标题, 本工具无此槽位, 实证 LLM 反复附带致每轮判非法)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -373,9 +374,12 @@ PARAM_VALUE_ALIASES = {
 #   归一化阶段直接剔除, 避免被 _validate_params 判"含非法参数"而白废一轮 — 小欧 2026-11-15
 #   grep: limit/head_limit/head=结果条数上限(本工具有意不设条数上限), output_mode=输出模式(恒返回content),
 #         -n=行号开关(结果恒带行号); read: content=write 的正文键误传(读工具无此参数)
+#   question: title=整次调用的标题(本工具有问必带 header, 无整次标题槽位), 实证 LLM 反复附带致每轮被拒
+#   (日志: "question 含非法参数, keys=['questions','title']"), 丢弃不影响任何语义 — 商量 2026-11-18
 PARAM_DROP = {
     "grep": {"limit", "head_limit", "head", "output_mode", "-n"},
     "read": {"content"},
+    "question": {"title"},
 }
 
 

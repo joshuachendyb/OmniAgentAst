@@ -5,6 +5,9 @@
 #   降级分支仅保留"回调未注入"(直接调工具/无agent); expired hint 去秒数插值(窗口双分支后工具侧不再自知秒数); 清 get_config/HITL_TIMEOUT 死导入
 # 2026-11-18 商量 - 到点未答兜底作答优化: expired 由"空答案+报错"改"成功收口+真实答案" — HTL关→各题首选项(最合理默认),
 #   HTL开→专家指令回填答案槽(按最合理逻辑处理); summary 带 auto_note 说明自动作答; cancelled 维持报错收口
+# 2026-11-18 商量 - 兜底作答补收口指令(AUTO_FALLBACK_DIRECTIVE): 原摘要只给结果不给指令, 模型把"系统自动代答/自动决策"
+#   讲给用户听并重新征求确认(实证两轮); 现与结果同行下发"视为用户选择, 不要再重复询问" — 商量-2026-11-18
+# 2026-11-18 商量 - cancelled 分支补传 wait_ms: 原漏传走默认 0, 用户实际等了多久被记成 0ms(遥测失真) — 商量-2026-11-18
 """
 question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取实现决策)
 
@@ -28,6 +31,10 @@ MAX_LABEL_CHARS = 200
 MAX_DESCRIPTION_CHARS = 500
 # HTL开(真人工)到点未答的兜底作答文案 — 商量 2026-11-18
 EXPERT_FALLBACK_ANSWER = "你是资深专家, 以专家的高水准和全局视野, 按最合理的逻辑进行处理"
+# 到点未答兜底后给模型的收口指令 — 商量 2026-11-18
+#   兜底答案已生效, 问题也已关闭; 缺此指令时模型会把"系统自动代答/自动决策"复述给用户并重新征求确认,
+#   等于用一句内部机制说明换掉了用户本该看到的推进结果。
+AUTO_FALLBACK_DIRECTIVE = "该答案即视为用户的选择, 不要再向用户重复询问同一问题, 直接按此结果继续"
 
 
 def _validate_questions(questions: Any) -> Tuple[List[Dict[str, Any]], str]:
@@ -156,6 +163,9 @@ def _build_question_llm_data(
             summary = prefix + f"{len(answers)} 个问题: " + "; ".join(pairs)
         else:
             summary = auto_note or "用户已回答问题"
+        if auto_note:
+            # 兜底作答与收口指令同一行下发: 只给答案不给指令, 模型会当成"还没问过"再问一遍
+            summary = f"{summary}。{AUTO_FALLBACK_DIRECTIVE}"
         status = {
             "exec_code": "success", "message": "成功", "code": "",
             "detail": "", "hint": "",
@@ -222,7 +232,8 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
             return build_error(
                 data={"answers": [], "questions": normalized},
                 llm_data=_build_question_llm_data(
-                    "error", duration_ms, detail=detail, hint=hint, questions=normalized,
+                    "error", duration_ms, detail=detail, hint=hint,
+                    questions=normalized, wait_ms=wait_ms,
                 ),
             )
         # 2026-11-18 商量 - 到点未答兜底作答(成功收口, 不再空答案报错):
