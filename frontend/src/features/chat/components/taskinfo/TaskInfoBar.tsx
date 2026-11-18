@@ -79,11 +79,11 @@
 //   信任前; 序号同步 任务token6/耗时7/上下文8/占窗率9; 11位置对照表同步。 小欧-2026-10-29
 // 编辑历史: 2026-10-30 小欧 - storeStatus 改必填 StreamStatus(取消终态帧未送达时的徽标兜底判据):
 //   唯一调用点(useChatPanels)恒传 chatStreaming.status, 不留可选垫片; 与 RightViewer 同口径。 — 小欧-2026-10-30
-// 11位置对照表(当前实际布局, 从左到右):
-//   1 徽标      2 动态状态(含卡死预警 warning)
-//   3 轮次      4 本轮token 5 步数
-//   6 任务token
-//   7 耗时     8 上下文  9 占窗率  10 信任    11 事件
+// 12位置对照表(当前实际布局, 从左到右):
+//   1 徽标      2 计划      3 动态状态(含卡死预警 warning)
+//   4 轮次      5 本轮token 6 步数
+//   7 任务token
+//   8 耗时      9 上下文   10 占窗率  11 信任    12 事件
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 // 编辑历史: 2026-11-13 商量 - 实时秒表改「服务器时钟锚」口径: 起点=后端权威任务起点(首个 thought-start 携带的
 //   task_start_time, 与终态 duration=end-start_time 同一真源), 走表=(最新帧服务器时刻−起点)+(客户端增量)。
@@ -96,6 +96,9 @@
 //   sessionId 缺省不携带), 随既有 process-events 端点直写后端 ref_ledger_json 列, 冷启动台账数据源就绪 — 小欧-2026-11-17
 // 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 台账为空不再携带第3参(原空数组也进请求体, 等于上传
 //   空快照, 与"不携带=不覆盖"混同) — 小欧-2026-11-18
+// 编辑历史: 2026-11-18 商量 - 「执行计划」入口自右组(占窗率后、信任前)迁至左组状态徽标之后:
+//   徽标答「这一轮什么状态」, 计划答「进行到哪一步」, 同属状态句的前半; 右组只留度量与操作入口。
+//   位置表随之由 11 位变 12 位(计划入位2, 其后各位顺延 +1)。
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -512,11 +515,19 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexShrink: 0,
           }}
         >
-          {/* ── 左组: 1徽标 2动态状态(含卡死预警 warning) ── */}
+          {/* ── 左组: 1徽标 2计划 3动态状态(含卡死预警 warning) ── */}
           {/* 1-徽标(状态指示) */}
           <Badge status={b.status} text={b.text} />
+          {/* 2-计划 — 2026-11-18 商量: 紧跟状态徽标(徽标答"这一轮什么状态", 计划答"进行到哪一步",
+               同属一句话的前半; 右组留给耗时/token/信任/事件等度量与入口), 与徽标共用左组 gap 不再另立分隔 */}
+          {scheduleList && (
+            <>
+              <span style={DOT_STYLE}>•</span>
+              <ScheduleCard list={scheduleList} compact={isNarrow} />
+            </>
+          )}
 
-          {/* 2-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
+          {/* 3-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
           {/* 小欧 2026-09-02: 第一行位置2(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
 
           {/* 3.9 断点矩阵: 各档统一 EllipsisTip 按显示宽度省略(2026-10-28 小欧: 原窄屏 200/宽屏 JS 字符截断, 改统一 CSS 像素级省略) — 小欧-2026-10-28 */}
@@ -541,12 +552,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexWrap: 'wrap',
           }}
         >
-          {/* ── 中组: 3轮次 4本轮token 5步数 6任务token ── */}
-          {/* 3-轮次 */}
+          {/* ── 中组: 4轮次 5本轮token 6步数 7任务token ── */}
+          {/* 4-轮次 */}
           {/* G3 步轮: 2026-10-04 小欧 拆为轮/步两段独立 span, 删 xsmall "耗时·轮·步" 合并串(北京老陈: 不要纠缠在一起) */}
           <span style={STAT_STYLE}>{info.llmCallCount}轮</span>
           <span style={DOT_STYLE}>•</span>
-          {/* 4-本轮token(P/C/T) — G5: P加粗+C/T中灰, 序P/C/T, 折K(M); narrow起C/T收进tooltip; 无数据显示– */}
+          {/* 5-本轮token(P/C/T) — G5: P加粗+C/T中灰, 序P/C/T, 折K(M); narrow起C/T收进tooltip; 无数据显示– */}
           {/* G5 本轮/任务: P 加粗 + C/T 中灰, 序 P/C/T, 折 K(M); narrow 起 C/T 收进 tooltip; 无数据显示 –;
               本轮项不显标签(北京老陈令), 轮已前移至其前 — 小欧 2026-10-04 */}
           <MetricItem
@@ -559,10 +570,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
           />
           <span style={DOT_STYLE}>•</span>
-          {/* 5-步数 */}
+          {/* 6-步数 */}
           <span style={STAT_STYLE}>{info.stepCount}步</span>
           <span style={DOT_STYLE}>•</span>
-          {/* 6-任务token(P/C/T累计) — 标签"任务" */}
+          {/* 7-任务token(P/C/T累计) — 标签"任务" */}
           <MetricItem
             label="任务"
             value={`P${formatTokenK(
@@ -586,8 +597,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
-          {/* ── 右组: 7耗时 8上下文 9占窗率 10信任 11事件 ── */}
-          {/* 7-耗时 — G2: 时分秒格式, 各档常显 */}
+          {/* ── 右组: 8耗时 9上下文 10占窗率 11信任 12事件 ── */}
+          {/* 8-耗时 — G2: 时分秒格式, 各档常显 */}
           <span
             style={{
               fontSize: FontSize.SECONDARY,
@@ -598,14 +609,14 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           >
             耗时 {formatDurationHMS(shownElapsed)}
           </span>
-          {/* 8-上下文 — G6: 浮层①入口锚点, 内容抽至ContextOverviewCard */}
+          {/* 9-上下文 — G6: 浮层①入口锚点, 内容抽至ContextOverviewCard */}
           <span style={DOT_STYLE}>•</span>
           <ContextOverviewCard
             overview={info.overview}
             isLiveContext={info.isLiveContext}
             contextWindow={info.contextWindow}
           />
-          {/* 9-占窗率 — G8: 本轮P/窗口, 恒≤100%; DOT 在条件内, null 时不渲染防悬空 */}
+          {/* 10-占窗率 — G8: 本轮P/窗口, 恒≤100%; DOT 在条件内, null 时不渲染防悬空 */}
           {windowUsePct != null && (
             <>
               <span style={DOT_STYLE}>•</span>
@@ -616,20 +627,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               />
             </>
           )}
-          {/* 10-计划 — 2026-11-18 商量: 执行计划入口, 排在「信任」前(操作类入口留在最右) */}
-          {scheduleList && (
-            <>
-              <span style={DOT_STYLE}>•</span>
-              <ScheduleCard list={scheduleList} compact={isNarrow} />
-            </>
-          )}
           {/* 11-信任 — G7: TrustPanel触发按钮, 窄档仅计数 */}
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           {/* 2026-11-18 商量 - 分隔点改为「每项自带前导点」: 原占窗率块尾部带点, 靠"后面一定是信任"成立;
               插入计划入口后变成「• •」双点。改为所有可选项一律前缀点, 谁渲染谁带点, 增删项不再影响邻项。 */}
           <span style={DOT_STYLE}>•</span>
           <TrustPanel sessionId={sessionId} compact={isNarrow} />
-          {/* 11-事件 — G8: 浮层②事件卡片, 热区32×32, 开合唯一真源=trigger+onOpenChange */}
+          {/* 12-事件 — G8: 浮层②事件卡片, 热区32×32, 开合唯一真源=trigger+onOpenChange */}
           {/* G8 事件入口(v4.1/v4.2, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
           {/* v4.2 双写修复: 删 onClick 手动 setEventsOpen toggle(与 antd trigger click 双重写入), 开合唯一真源为 trigger + onOpenChange, 与 G6 对齐 */}
           <FloatingEntry

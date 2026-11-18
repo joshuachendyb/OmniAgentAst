@@ -1,6 +1,7 @@
-// 2026-11-18 商量 - 新建: taskinfo 右组的「执行计划」入口 + 浮层卡片
+// 2026-11-18 商量 - 新建: taskinfo 的「执行计划」入口 + 浮层卡片
 //   WHY: schedule 工具是纯回显(不落库/不发事件), 清单只存在于步骤流里, 需要一个人能主动点开的位置;
-//   放 taskinfo 右组是因为该组语义就是「当前任务的实时状态与可查信息」, 计划天然属于这一组。
+//   入口落 taskinfo 左组状态徽标之后 —— 徽标答「这一轮什么状态」, 计划答「进行到哪一步」, 同属一句状态;
+//   右组留给耗时/token 等度量与信任/事件入口。
 //   与 question 面板的分叉: question 的锚点是阻塞本身(必须弹出), 本入口的锚点是用户主动查(不打扰)。
 // 2026-11-18 商量 - 三处纠偏:
 //   ① 行由 alignItems:center 改回首行对齐 —— 多行条目时字形浮在整段中间, 与文字不在一个基线上;
@@ -182,7 +183,10 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
       onOpenChange={setOpen}
       // 入口在 taskinfo(视口底部), 必须向上弹: 向下展开只剩输入框高度, 长清单必被裁。
       // 与「事件」浮层同一决策(2026-11-18 小欧实测), 此处沿用 — 商量-2026-11-18
-      placement="topRight"
+      // 2026-11-18 商量 - 水平方向改 topLeft: 入口已迁至左组(徽标之后), 贴视口左侧,
+      //   若仍写 topRight, 卡片右缘对齐入口左缘会跑出视口左边界, 只能靠 rc-trigger 自动翻转兜底。
+      //   声明真实方位, 不依赖翻转。
+      placement="topLeft"
       cardId="taskinfo-schedule-card"
       ariaLabel="执行计划"
       cardStyle={{ width: CARD_W, maxWidth: '90vw' }}
