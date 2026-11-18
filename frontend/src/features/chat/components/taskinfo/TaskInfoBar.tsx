@@ -99,6 +99,8 @@
 // 编辑历史: 2026-11-18 商量 - 「执行计划」入口自右组(占窗率后、信任前)迁至左组状态徽标之后:
 //   徽标答「这一轮什么状态」, 计划答「进行到哪一步」, 同属状态句的前半; 右组只留度量与操作入口。
 //   位置表随之由 11 位变 12 位(计划入位2, 其后各位顺延 +1)。
+// 编辑历史: 2026-11-18 商量 - 计划入口归属收口: 入口与卡片只认 steps 所属任务, detail 非空(信息条在展示
+//   另一任务的历史详情)时不渲染 —— 原状态会拿 A 任务的计划配 B 任务的耗时/步数 — 商量-2026-11-18
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -269,7 +271,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const isNarrow = bp === 'narrow' || bp === 'xsmall';
   // 2026-11-18 商量 - 计划清单由步骤流派生(最后一次 schedule 调用=当前清单);
   //   在此派生一次供「分隔点 + 入口显隐 + 卡片内容」三处共用, 避免入口与卡片各算一份
-  const scheduleList = useScheduleList(steps);
+  // 2026-11-18 商量 - 归属收口: steps 只属于当前锚定任务(store.serverTaskId), 而 detail 非空即
+  //   信息条正在展示"另一个任务"的历史详情(useTaskSelection 仅在 activeTaskId≠serverTaskId 时拉详情)。
+  //   两者不同源时若照样渲染入口, 就是"拿 A 任务的计划配 B 任务的耗时/步数"—— 同一行里两套事实。
+  //   故历史态不渲染计划入口; 历史任务的计划在右栏流水线里按 schedule 工具行逐次可查(DB 原始事实)。
+  //   派生照常无条件执行(Hooks 规则), 只在取值处分叉。
+  const stepSchedule = useScheduleList(steps);
+  const scheduleList = detail ? null : stepSchedule;
   // 2026-10-04 小欧: 极窄档(<768)备用, 当前两项收窄门统一用 isNarrow; 保留待极窄档单独策略时直接用(北京老陈令留)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 有意保留的备用断点档, 非死代码
   const isXSmall = bp === 'xsmall';
