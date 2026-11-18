@@ -1,3 +1,12 @@
+v1.7.7
+发布时间: 2026-11-18 18:13:20 - 商量-2026-11-18
+## v1.7.6以来 变更汇总(2个commit: fix1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
+[2026-11-18 18:13:20 商量] 范围=v1.7.6..HEAD 全部commit(2个); 说明=①兜底作答补收口指令: 到点未答走兜底后, 摘要原先只给结果不给指令, 模型把"系统自动代答/自动决策"这套内部机制复述给用户并重新征求确认(实证两轮); 现于 summary 同行追加"该答案即视为用户的选择, 不要再向用户重复询问同一问题, 直接按此结果继续"(AUTO_FALLBACK_DIRECTIVE), 用户收到的是推进结果而非机制说明; ②取消分支补传 wait_ms: cancelled 走 _build_question_llm_data 时漏传 wait_ms 而走默认 0, 用户真实等待被记成 0ms(遥测失真), 补传后实测 5016ms 落库; ③question.title 语义外键丢弃: LLM 常按习惯附带整次调用标题, 本工具只有每题 header、无整次标题槽位, 原每轮被判"含非法参数"白废一轮; 复用既有校正链 tools_alias_mapper.PARAM_DROP(与 grep/read 同款既有先例)静默剔除, 不改校验逻辑也不做泛化忽略; ④doc37 实施后回填与契约纠偏: §6.2 补 backend_timeout(前端倒计时唯一真值)、§6.4/§7.4.2/§7.4.3 改贴输入框上沿浮层挂载、§7.5 改双分支超时与到点兜底(含收口指令)、§8.2 计划清单改 taskinfo 浮层派生不落库、§9.3 补语义外键丢弃、§9.4 缓冲 30→15 并对齐真实实现与 bypass 上界说明、§13.1 Q9/Q12 改兜底成功口径并新增 Q17/Q18、§14.1 保留为实施前快照并新增 §14.3 实施后现状、§15 决策记录追加 19-22 标注覆盖 #8/#16; ⑤真实链路验证(真后端+真 LLM+真 SQLite, 无 Mock): 到点未答场景 question_required 带 backend_timeout=30、30s 后 outcome=expired、observation 为 success 且 summary 以收口指令收尾, 最终回答直接给结论不再反问; 取消场景 answer API 回 success 后 outcome=cancelled、step_json 记 wait_ms=5016(改前恒 0)。维持PATCH v1.7.7。
+### 1.7.7.1 缺陷修复
+[工具] fix 074fd0fc5 question 兜底作答摘要补收口指令(视为用户选择, 不再重复询问) + 取消分支补传 wait_ms(原漏传走默认 0) + question.title 走 PARAM_DROP 静默丢弃(复用既有校正链, 不再每轮判非法参数) - 商量-2026-11-18
+### 1.7.7.2 文档
+[文档] docs 94ece7cc0 doc37 question 与 schedule 工具设计实施后回填与契约纠偏(backend_timeout/浮层挂载/双分支超时与兜底收口指令/计划浮层落地/语义外键丢弃/缓冲 15/用例口径/§14.3 现状/决策 19-22) - 商量-2026-11-18
+
 v1.7.6
 发布时间: 2026-11-18 18:23:18 - opencode-2026-11-18
 ## v1.7.5以来 变更汇总(4个commit: perf1/fix2/docs1, 不含merge提交与本次version.txt汇总提交本身) - opencode-2026-11-18
