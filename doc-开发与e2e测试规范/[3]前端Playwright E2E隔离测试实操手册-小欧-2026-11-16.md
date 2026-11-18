@@ -110,6 +110,7 @@ await page.goto('http://localhost:5173/');
 - `browser.newContext()` 起独立上下文，与用户已在运行的浏览器互不干扰。
 - 取证靠页面事件监听：`page.on('console')` 抓前端日志、`page.on('request')` 抓 SSE/API 请求、`page.on('pageerror')` 抓 JS 异常；配合 `page.screenshot({ path, fullPage:true })` 留截图。
 - 临时脚本与截图写入事项目录，不入库。
+- 选型判断：本节面向"验证自己写的前端功能对不对"（localhost 页面，无需登录态）。功能/交互/状态验证用本节 Playwright 脚本即可，不必引入依赖登录态的浏览器工具（连真实 Chrome 的 Browser Harness、Playwright MCP `--extension` 等——那些用于操作已登录的第三方网站，与本场景无关）。真正遇到页面卡顿/内存增长时走 §5 的 CDP 性能测量，不为尚未出现的问题预先引入重型调试 MCP。
 
 ---
 
@@ -156,4 +157,5 @@ const { profile } = await cdp.send('Profiler.stop'); // 解析self-time定位热
 
 > 编写人：小欧；日期：2026-11-16
 > 更新人：opencode；日期：2026-11-18；更新内容：新增 §4.1 本机系统 Chrome 拉起方式（真实浏览器实测，独立 context 不干扰现有浏览器）
+> 更新人：opencode；日期：2026-11-18；更新内容：§4.1 补按调试目的选工具的判断说明（功能验证用本节 Playwright 脚本，登录态工具与本场景无关，性能问题走 §5）
 > 关联：[2]隔离方法固化标准（端口一致），[46]性能优化方案（性能测量方法）
