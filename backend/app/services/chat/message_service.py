@@ -56,7 +56,11 @@
 #   旧调用方不再静默丢 steps); ②thought 只在详情模式下发, 真正兑现首屏减包; ③分页下界回退到任务组首行,
 #   根治页缝把同一 ai_message_id 的 carrier 切到上一页(空 assistant 气泡); ④steps 预加载/取值去双重
 #   include_steps 判断, 空缓存天然退化为 [] — 小欧-2026-11-18
+# 2026-11-18 - 小欧 - 分页推进契约: 下界回退到任务组首行使本页行数可大于 limit, 原 has_more
+#   用 offset+len(pairs) 计数、下一页按 limit 步进会在组首重叠(同组行被两页各返回一次);
+#   新增 next_offset(= 本会话 id >= 组首的行数) 与 has_more 同源, 消费方按它推进即无重叠无漏页 — 小欧-2026-11-18
 """
+
 message_service — 消息业务服务(services/chat)
 
 职责(方案4.7.3, 小欧 2026-08-13): 会话消息历史读取/保存 + display_name 缓存(独占)。
@@ -166,10 +170,22 @@ def get_session_messages(
                 )
             else:
                 pairs = []  # offset 超范围 → 空页, 无负切片缺陷
-            has_more = (offset + len(pairs)) < total
+            # 2026-11-18 - 小欧 - 下一页起点按"本会话 id >= 组首"的行数给出: 下界回退使本页行数
+            #   可能大于 limit, 按 limit 步进会在组首与上一页重叠; next_offset 与 has_more 同源,
+            #   消费者按它推进即无重叠、无漏页(空窗口退回本次入参 offset) — 小欧-2026-11-18
+            next_offset = (
+                conn.execute(
+                    "SELECT COUNT(*) FROM chat_user_message WHERE session_id=? AND id >= ?",
+                    (session_id, _lo),
+                ).fetchone()[0]
+                if _bounds
+                else offset
+            )
+            has_more = next_offset < total
         else:
             pairs = fetch_session_user_message_pairs(conn, session_id)  # 全量(默认兼容)
             total = len(pairs)
+            next_offset = total
             has_more = False
         window = pairs
 
@@ -268,6 +284,8 @@ def get_session_messages(
             # [46] P0: total/has_more 供首屏判断"是否还有更早可加载"(pairs 口径)
             "total": total,
             "has_more": has_more,
+            # 下一页 offset(行口径): 消费者按它推进, 不按 limit 步进(组首回退会重叠) — 小欧-2026-11-18
+            "next_offset": next_offset,
             "messages": messages,
         }
 

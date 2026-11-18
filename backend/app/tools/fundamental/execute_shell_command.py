@@ -192,6 +192,7 @@
 #   _child_console_isolation_kwargs 删除, 3 处调用改用 isolation_kwargs(); 语义零改动;
 #   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
 # 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.utils.proc_io(函数本体的迁移史见其 docstring)
+# 2026-11-18 小欧 - 清遗留死导入 sys(模块内零引用, ruff F401 长期红), 不涉运行逻辑 — 小欧-2026-11-18
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -282,7 +283,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import time as _time_mod

@@ -373,8 +373,11 @@ def cleanup_sessions(mode: str, days: int = 30, preview: bool = False) -> dict:
         for start in range(0, len(ids), 400):
             chunk = ids[start:start + 400]
             ph = ",".join("?" for _ in chunk)
+            # 2026-11-18 小欧 - 补 is_deleted = FALSE: targets 取自 where(is_deleted=FALSE) 的快照, 但预览到
+            #   执行之间可能有并发删除; 不限定未删行会把已删行再算一次 rowcount, deleted 虚高(实删数失真) — 小欧-2026-11-18
             cur = conn.execute(
-                f"UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id IN ({ph})",
+                f"UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? "
+                f"WHERE id IN ({ph}) AND is_deleted = FALSE",
                 [now] + chunk,
             )
             deleted += cur.rowcount or 0

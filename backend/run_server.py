@@ -68,6 +68,8 @@
 #     优雅停机; ⑤--no-browser/--no-single-instance 供自动化与并行调试。 — 小欧-2026-11-16
 #   2026-11-16 小欧 - _open_browser_when_ready 可观测性: 原只调 webbrowser.open 不查返回值不落日志,
 #     开浏览器成败全静默无法排障; 现成功/失败/异常均写 boot 日志, 并以 open() 返回值判成败。 — 小欧-2026-11-16
+#   2026-11-18 商量 - 自动开浏览器仅打包态执行: 第⑤步 if not args.no_browser 改为 if is_frozen and
+#     not args.no_browser, 开发环境(源码模式)不再自动打开浏览器, 避免调试时频繁弹窗干扰。 — 商量-2026-11-18
 # ============================================================================
 import argparse
 import shutil
@@ -474,7 +476,8 @@ def main() -> None:
     _app_main.app.state.uvicorn_server = server
 
     # ⑤ 就绪后自动开浏览器: 后台线程轮询 /health, 避免先于服务就绪打开错误页。
-    if not args.no_browser:
+    # 仅打包态(frozen)执行, 开发环境(源码模式)不自动打开浏览器 — 商量 2026-11-18
+    if is_frozen and not args.no_browser:
         import threading
         threading.Thread(
             target=_open_browser_when_ready,
