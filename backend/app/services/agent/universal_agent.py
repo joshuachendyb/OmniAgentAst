@@ -14,6 +14,8 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
   2026-09-22 小欧 - constants.py 配置化迁移：import TOOL_CACHE_TTL 改别名 + 类属性改读 tuning 配置
   2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：TOOL_CACHE_TTL 读取键路径同步，
     缓存 TTL 语义/_D_TOOL_CACHE_TTL 默认值零改动 — 小欧-2026-09-24
+   2026-11-18 商量 - _INITIAL_CATEGORIES 增 AGENT(question/schedule): 两工具是会话内交互能力,
+     若仅靠 searchtool 动态注入, LLM 不主动搜就永远看不到, 工具等于没上线 — 商量-2026-11-18
 """
 from typing import Any, Optional, Set
 
@@ -32,11 +34,15 @@ from app.utils.cache import TTLCache
 # 注意：注册(register)和注入(inject)是不同概念：
 # 1. 注册：在ToolRegistry中注册工具函数，所有工具都在启动时注册
 # 2. 注入：将工具描述注入给LLM，只有注入的工具LLM才能看到和使用
-_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory.FILE}
+_INITIAL_CATEGORIES: Set[ToolCategory] = {
+    ToolCategory.FUNDAMENTAL,
+    ToolCategory.FILE,
+    ToolCategory.AGENT,  # 2026-11-18 商量: question/schedule 首次注入, 不依赖 searchtool 动态发现
+}
 
 
 class UniversalAgent(BaseAgent):
-    """通用 Agent — 初始仅注入 FUNDAMENTAL+FILE 2个分类给LLM，其余分类（含SHELL）通过 searchtool 动态注入"""
+    """通用 Agent — 初始注入 FUNDAMENTAL+FILE+AGENT 3个分类给LLM，其余分类通过 searchtool 动态注入"""
 
     TOOL_CACHE_TTL = get_config().get("tuning.live_front.tool_cache_ttl", _D_TOOL_CACHE_TTL)  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
 

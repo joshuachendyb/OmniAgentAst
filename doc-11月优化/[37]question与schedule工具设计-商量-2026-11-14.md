@@ -680,6 +680,8 @@ backend/app/tools/agent/
 | 4 | `tools_alias_mapper.py` | `UNAVAILABLE_OFFICIAL_TOOLS` 移除 `question`(回落默认与配置保持一致) |
 | 5 | `config/config.yaml` `tuning.agent.disabled_tools` | 移除 `question` (**真值源**) |
 
+> **首次注入补正(2026-11-18)**: 注册≠注入。默认 `UniversalAgent._INITIAL_CATEGORIES` 只有 FUNDAMENTAL+FILE, 若不加 AGENT, 两工具不会出现在首次工具列表, 只能等 LLM 主动 `searchtool` 动态加载(实测不主动搜即永远看不到)。本次把 `ToolCategory.AGENT` 加入初始注入集, 实测首次工具列表含 question/schedule; `config.yaml.example` 同步移除 question。
+
 ### 10.3 agent_register.py 模板(参照 timer_register.py)
 
 ```python
@@ -874,6 +876,7 @@ tuning:
 | 15 | 先工具内核+单测(阶段A), 再注册接系统(阶段B) | 用户 | 2026-11-18 |
 | 16 | schedule 一期不加前端面板, 以 observation 文本呈现(本仓无 metadata 通道) | 契约对齐 | 2026-11-18 |
 | 17 | question 前端 UI/UE 以系统既有代码范式为准(antd 5 + 设计 token 内联样式 + dock 槽), 不建组件 CSS 文件、不拷 opencode 样式 | 用户要求(复核) | 2026-11-18 |
+| 18 | AGENT 分类加入 `UniversalAgent._INITIAL_CATEGORIES`, 两工具首次即注入 LLM 工具列表(不等 searchtool 动态发现) | 用户提问驱动 | 2026-11-18 |
 
 ---
 

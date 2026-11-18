@@ -33,7 +33,8 @@
 # 2026-11-15 - 小欧 - 参数容错补齐(日志实证): grep 增 include→glob 键名别名; 新增 PARAM_DROP(grep 丢弃
 #   limit/head_limit/head/output_mode/-n, read 丢弃误传的 content)与 PARAM_INVERT_ALIASES(grep
 #   caseSensitive 取反归 ignore_case); 键名统一剥离前导 '/' (LLM 传 /shell_type 的序列化残留)。
-# 2026-11-18 - 商量 - question 已实现, 从禁用回落名单移除; 新增 question/schedule 参数别名(qs/todos/tasks/plan 等归一)
+# 2026-11-18 - 商量 - question 已实现, 从禁用回落名单移除; 新增 question/schedule 参数别名(qs/todos/tasks/plan 等归一);
+#   TOOL_NAME_ALIASES 增 opencode todoWrite 变体→schedule(LLM 按原名调用时归一到注册名)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -411,6 +412,11 @@ TOOL_NAME_ALIASES = {
     "websearch": "searchweb",  # 2026-11-10 小欧 - 网关强塞的官方13件套名收编: 真联网搜索, 必填{query}逐字兼容(实证beam-free连调×13全被拒死循环)
     "glob": "find",  # 2026-11-10 小欧 - 官方glob{pattern,path?}→find(文件名通配搜索): pattern必填同名; path官方面可选本系统必填, 只传pattern时schema校验反馈补路径(一轮可纠正非死循环)
     "webfetch": "fetchpage",  # 2026-11-10 小欧 - 官方webfetch{url,format,timeout}→fetchpage, url必填同名
+    # 2026-11-18 商量 - schedule 由 opencode todoWrite 改名, LLM 常按原名/变体调用 → 归一到注册名
+    "todowrite": "schedule",
+    "todo_write": "schedule",
+    "todoWrite": "schedule",
+    "TodoWrite": "schedule",
 }
 
 # 官方13件套中禁用工具的回落名单: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10
