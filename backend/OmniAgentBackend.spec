@@ -16,6 +16,12 @@
 #   2026-11-07 小欧 - 修复 datas 目标路径: PyInstaller datas 第二参数是目标目录非文件路径,
 #     原 web/index.html 被当目录→创建 web/index.html/index.html(嵌套一层, 前端白屏);
 #     改 .parent 取目标目录, 文件名由 PyInstaller 自动保持 — 小欧-2026-11-07
+#   2026-11-18 小欧 - 修复 hook 收集绕过 spec 瘦身过滤: contrib hook-pyarrow.py 用
+#     collect_data_files('pyarrow') 全量收集, 把 tests/、include/arrow/testing 及零散 test_*.h
+#     等 57 个测试文件带入产物(spec _datas 过滤管不到 hook datas); matplotlib 内置 hook 整目录
+#     收集 mpl-data 带入 _classic_test_patch.mplstyle(测试样式)。新增 backend/pyinstaller_hooks/
+#     自定义 hook-pyarrow.py + hook-matplotlib.py 经 hookspath 覆盖(USER_HOOKS 优先级最高),
+#     用 excludes 精确排除测试套件, 产物 pyarrow 测试 57→0、matplotlib 测试样式 1→0 — 小欧-2026-11-18
 # ============================================================================
 import sys
 from pathlib import Path
@@ -49,6 +55,45 @@ for _pkg in ("httpx", "httpcore", "anyio", "h11", "certifi", "sniffio", "idna", 
         _datas += collect_data_files(_pkg)
     except Exception:
         pass
+
+# 打包瘦身: 排除第三方库自带的测试套件/测试数据(纯冗余, 只增大包体积) — 小欧 2026-11-18
+#   collect_all 整包收集会把 pandas/pyarrow 等库的 tests 目录一并带入, 运行时不会被 import。
+#   关键: 必须基于【源文件完整路径 d[0]】判断(含文件名), 而非目标目录 d[1](不含文件名)!
+#   首版误用 d[1] 导致 _TEST_DATA_FILES 全部失配、pyarrow testing/ 目录段与零散 test 文件漏网。
+#   注意: 不能按文件名含 "test" 简单过滤 —— numpy/_multiarray_tests.pyd、pandas/_libs/testing.pyd、
+#   pandas/testing.py、pandas/_testing/ 等是真实运行模块(名字带 test 但业务依赖), 必须保留。
+_TEST_FILE_NAMES = {
+    # matplotlib 测试样式
+    "_classic_test_patch.mplstyle",
+    # tcl8 测试库
+    "tcltest-2.5.8.tm",
+    # reportlab 测试字体/脚本
+    "hb-test.ttf", "test.py", "testdrawings.py", "testshapes.py", "testutils.py",
+    # pandas pytest 配置与 util 测试辅助
+    "conftest.py", "_test_decorators.py", "_tester.py",
+}
+
+def _is_test_artifact(src: str, dest: str) -> bool:
+    s = src.replace("\\", "/")
+    s_parts = s.split("/")
+    # 1. 源路径含标准测试目录段(tests / testing): 覆盖 pandas/tests, pyarrow/tests,
+    #    pyarrow/include/arrow/testing, h11/tests 等。注意不含 pandas/_testing(单下划线=运行依赖)。
+    if "tests" in s_parts or "testing" in s_parts:
+        return True
+    fname = s_parts[-1]
+    # 2. C++/Cython 测试源码(头文件/源文件, 绝无运行依赖): 覆盖 pyarrow test_*.h/*_test.h/python_test.cc 等
+    if fname.endswith((".h", ".cc", ".pxd", ".pyx")) and "test" in fname.lower():
+        return True
+    # 3. 明确的零散测试数据/脚本文件
+    if fname in _TEST_FILE_NAMES:
+        return True
+    return False
+
+_before = len(_datas)
+_datas = [d for d in _datas if not _is_test_artifact(d[0], d[1])]
+print(f"[spec] 打包瘦身: 排除第三方测试文件 {_before - len(_datas)} 个 (剩余 {len(_datas)} 个数据项)")
+_pyarrow_test_after = [d for d in _datas if "pyarrow" in d[0].replace("\\", "/").lower() and ("test" in d[0].replace("\\", "/").lower() or "testing" in d[0].replace("\\", "/").lower())]
+print(f"[spec] 调试: 过滤后 _datas 仍含 pyarrow 测试 {len(_pyarrow_test_after)} 个")
 
 # app/系命名空间包(无__init__.py), collect_all/modulegraph收不全 →
 # 业务源码整树以源码形式拷入_internal/app, 由launcher置sys.path后按普通源码导入 — 小欧 2026-09-19
@@ -96,7 +141,10 @@ a = Analysis(
         "jinja2",
         "platformdirs",  # setuptools/pkg_resources运行时rthook依赖(构建机原缺失已补装) — 小欧 2026-09-19
     ] + _hiddenimports,
-    hookspath=[],
+    # pyarrow 测试套件瘦身: 自定义 hook-pyarrow.py 覆盖 contrib 原版(collect_data_files 全量收集
+    #   会把 tests/、include/arrow/testing 及零散 test_*.h 一并带入), 经 excludes 精确排除 —
+    #   小欧 2026-11-18. 优先级 USER_HOOKS(1000) > CONTRIBUTED(-1000), 完整覆盖不污染第三方库。
+    hookspath=[str(BACKEND / "pyinstaller_hooks")],
     hooksconfig={},
     runtime_hooks=[],
     # 注意: 不可全局排除 pkg_resources —— win10toast 运行时真实依赖它;
