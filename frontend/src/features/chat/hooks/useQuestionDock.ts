@@ -1,4 +1,5 @@
 // 2026-11-18 商量 - 新建 question dock 状态管理(对齐 useAuthorization: 读 store 快照→归一→fire-and-forget 调 API→清快照)
+// 2026-11-18 商量 - 三堂会审整改: 自定义输入框内按键不再触发面板快捷键; 自定义答案单选替换多选追加(防 radio 双值歧义); 新增 canSubmit 空答案守卫
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 
@@ -77,14 +78,28 @@ export function useQuestionDock(sessionId: string | null) {
     if (sessionId) chatStreamStore.acknowledgeQuestion(sessionId);
   }, [sessionId]);
 
+  // 2026-11-18 商量 - 可提交判据: 任一题已有选中项或已填自定义答案(空提交无合法含义, "取消"才是放弃)
+  const canSubmit = useMemo(() => {
+    if (!request) return false;
+    return request.questions.some((_, i) => {
+      if ((state.answers[i]?.length ?? 0) > 0) return true;
+      const c = state.customs[i];
+      return Boolean(c?.on && c.text.trim());
+    });
+  }, [request, state.answers, state.customs]);
+
   const submit = useCallback(() => {
-    if (!request || submittingRef.current) return;
+    if (!request || submittingRef.current || !canSubmit) return;
     submittingRef.current = true;
-    const answers = request.questions.map((_, i) => {
+    const answers = request.questions.map((q, i) => {
       const values = [...(state.answers[i] ?? [])];
       const c = state.customs[i];
       const text = c?.text?.trim();
-      if (c?.on && text) values.push(text);
+      if (c?.on && text) {
+        // 2026-11-18 商量 - 自定义答案: 多选追加为额外项, 单选替换(与 opencode radio 语义一致, 防双值歧义)
+        if (q.multiple) values.push(text);
+        else return [text];
+      }
       return values;
     });
     void taskControlApi
@@ -108,7 +123,7 @@ export function useQuestionDock(sessionId: string | null) {
         });
         submittingRef.current = false;
       });
-  }, [request, state.answers, state.customs, close]);
+  }, [request, state.answers, state.customs, canSubmit, close]);
 
   const cancel = useCallback(() => {
     if (!request || submittingRef.current) return;
@@ -189,6 +204,9 @@ export function useQuestionDock(sessionId: string | null) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       if (!current) return;
+      // 2026-11-18 商量 - 自定义输入框内的按键不触发面板快捷键(防数字选中/方向键切题/Escape误取消)
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return;
       if (e.key === 'Escape') {
         e.preventDefault();
         cancel();
@@ -243,6 +261,7 @@ export function useQuestionDock(sessionId: string | null) {
       cancel,
       toggleMinimize,
       handleKeyDown,
+      canSubmit,
     }),
     [
       request,
@@ -262,6 +281,7 @@ export function useQuestionDock(sessionId: string | null) {
       cancel,
       toggleMinimize,
       handleKeyDown,
+      canSubmit,
     ]
   );
 }

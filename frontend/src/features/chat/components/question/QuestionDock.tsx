@@ -1,4 +1,5 @@
 // 2026-11-18 商量 - question 卡片式底部停靠面板(对齐系统既有 antd + 设计 token 范式, 非 Modal)
+// 2026-11-18 商量 - 三堂会审整改: 提交按钮在无任何作答时禁用(与 canSubmit 守卫同源)
 import {
   CheckOutlined,
   CloseOutlined,
@@ -43,10 +44,10 @@ export function QuestionDock({ controller }: QuestionDockProps) {
     goTab,
     next,
     prev,
-    submit,
     cancel,
     toggleMinimize,
     handleKeyDown,
+    canSubmit,
   } = controller;
 
   if (!request) return null;
@@ -233,6 +234,7 @@ export function QuestionDock({ controller }: QuestionDockProps) {
           data-testid="question-next"
           icon={tab === total - 1 ? <CheckOutlined /> : <RightOutlined />}
           onClick={next}
+          disabled={tab === total - 1 && !canSubmit}
           style={{
             height: CONTROL_HEIGHT.comfortable.normal,
             marginLeft: 'auto',
