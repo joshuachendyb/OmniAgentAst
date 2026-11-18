@@ -69,10 +69,10 @@ export function QuestionDock({ controller }: QuestionDockProps) {
 
   const headerActions = (
     <>
-      {/* 倒计时环(复用 HITL CountdownRing): 30s 窗口下剩余时间是本面板的主信号之一, 置于视线终点
-          环自带 marginBottom:4 用于居中留白, 此处 flex 行内需抵掉, 否则整行被压偏 4px(贴边补偿) */}
+      {/* 倒计时环(与 HITL 危险确认弹窗共用同一组件, 仅直径分叉): 30s 窗口下剩余时间是本面板的主信号之一,
+          置于视线终点。环的盒子尺寸即直径本身, 行内不需任何贴边补偿 */}
       {countdown > 0 ? (
-        <span style={{ display: 'inline-flex', marginBottom: -Spacing.XS }}>
+        <span style={{ display: 'inline-flex' }}>
           <CountdownRing
             countdown={countdown}
             confirmTimeout={request.backendTimeout ?? 0}
