@@ -2,6 +2,7 @@
 
 > 文档号: [37] | 作者: 商量 | 日期: 2026-11-14
 > 更新: 2026-11-18 - 商量 - 复核前端 UI/UE 设计参照系统既有代码范式, 补 §7.4.3 范式对齐结论并同步 §6.4/§12 B5/§13 前端用例
+> 更新: 2026-11-18 - 商量 - 实施后回填与契约纠偏: §6.2 补 `backend_timeout`、§6.4/§7.4.2/§7.4.3 改浮层挂载、§7.5 改双分支超时与到点兜底(含收口指令)、§9.3 补语义外键丢弃、§9.4 缓冲 30→15 并对齐真实实现、§13.1 Q9/Q12 改兜底成功口径、§14 增实施后现状
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -12,19 +13,19 @@
 
 | 工具 | 名称 | 本质 | 分类 | 人工干预 | 超时 |
 |---|---|---|---|---|---|
-| **question** | question | 阻塞式人机问答 | **AGENT(本次新增)** | **继承 `security.hitl.enabled`(同一开关)** | 复用 `security.hitl.timeout`(默认120s) |
+| **question** | question | 阻塞式人机问答 | **AGENT(本次新增)** | **继承 `security.hitl.enabled`(同一开关)** | 双分支镜像 hitl_confirm: HTL开=`security.hitl.timeout`(默认120s) / HTL关=bypass短窗(≈10s)到点自动过 |
 | **schedule** | schedule | 会话内任务/计划清单 | **AGENT(本次新增)** | 无需(纯回显) | 无 |
 
 **关键决策**:
 1. **question 从禁用名单移除** —— 真值源 `config.yaml tuning.agent.disabled_tools`, 内置 `UNAVAILABLE_OFFICIAL_TOOLS` 同步摘除
-2. **question 超时复用 `security.hitl.timeout`(默认120s)** —— 与 HITL 确认超时同源
-3. **question 人工干预开关继承 HITL 同一开关** (`security.hitl.enabled`) —— 不单独设 question 开关
+2. **question 超时复用 `security.hitl.timeout`(默认120s), HTL关走 bypass 短窗** —— 与 HITL 确认超时同源(公式单源 `_resolve_timeouts`)
+3. **question 人工干预开关继承 HITL 同一开关** (`security.hitl.enabled`) —— 不单独设 question 开关; 关时不是"不问", 而是"要问但自动过"(短窗内用户仍可抢答, 到点按首选项兜底)
 4. **schedule 一期方案 A** —— 纯回显, 见 §4
 5. **两个工具都不属于现有任何分类** —— 新增 `ToolCategory.AGENT`, 见 §5
 6. **question 不复用 `paused` 事件** —— 新增独立事件对 `question_required` / `question_resolved`, 见 §6
 7. **实施顺序铁律** —— 先写工具内核 + 单测跑通(阶段A, 不注册/不改配置/不动 SSE), 再接系统(阶段B), 见 §12
 
-**本文档的可实施性说明**: §1~§4 为 opencode 设计依据(研究结论, 保留原文); §5~§13 为本仓落地的**可执行契约**——函数签名/返回结构/事件字段/登记表/测试用例/实施顺序, 全部与本仓当前代码逐行对齐。落地现状核对见 §14.1(截至本文档补充时, 代码落地为 0)。
+**本文档的可实施性说明**: §1~§4 为 opencode 设计依据(研究结论, 保留原文); §5~§13 为本仓落地的**可执行契约**——函数签名/返回结构/事件字段/登记表/测试用例/实施顺序, 全部与本仓当前代码逐行对齐。落地现状见 §14.1(设计阶段快照: 代码落地为 0)与 §14.3(实施后回填: 已全链路落地)。
 
 ---
 
@@ -296,16 +297,18 @@ AGENT = ("agent", 10, "智能体交互工具")   # 追加在 WIN_REGISTRY=9 之�
 
 | 事件 type | 时机 | 语义 | 落库 | 关键字段 |
 |---|---|---|---|---|
-| `question_required` | 工具进入阻塞前 | 请用户回答 | ❌ 仅 SSE | `question_id`, `questions`(归一化数组) |
+| `question_required` | 工具进入阻塞前 | 请用户回答 | ❌ 仅 SSE | `question_id`, `questions`(归一化数组), `backend_timeout`(秒, 本次等待窗口, 与 `authorization_required` 同名同语义) |
 | `question_resolved` | 阻塞结束(回答/取消/超时) | 问询已关闭 | ❌ 仅 SSE | `question_id`, `outcome`(answered/cancelled/expired) |
 
 **帧样例**(SSE, 裸键由 `MetaStep._extra_fields` 从 step_model 派生):
 ```json
 {"type":"question_required","step":7,"content":"需要你回答 2 个问题",
- "question_id":"task_xxx:9f3a1c2d",
+ "question_id":"task_xxx:9f3a1c2d","backend_timeout":120,
  "questions":[{"header":"认证","question":"选择认证方式?","options":[{"label":"OAuth","description":"..."}],"multiple":false}]}
 {"type":"question_resolved","step":7,"content":"用户已回答","question_id":"task_xxx:9f3a1c2d","outcome":"answered"}
 ```
+
+> `backend_timeout` 是**唯一**倒计时真值: 前端 dock 按它渲染倒计时环, 到 0 只归零展示, 清窗仍由后端 `question_resolved` 收口(窗口长短由 `_resolve_timeouts` 双分支决定, 工具侧不自知也无需自知)。
 
 **为什么不用一对事件 name 承载子类型(如 `question phase=start/done`)**: 本仓 `notice` 用 `kind+phase` 是因为通知种类多(4+)且语义同族; question 只有"请答/已结"两态且**必须阻塞转发**(仅 SSE、不进持久化、不进统计), 两个扁平 type 更直白, 且与 `paused/resumed` 的既有成对范式一致。
 
@@ -334,7 +337,7 @@ AGENT = ("agent", 10, "智能体交互工具")   # 追加在 WIN_REGISTRY=9 之�
 | 4 | `streams/chatStreamTransport.ts` | 新增 `questionHandlers` 组: 写 `pendingQuestion` + `hitlWaitingKeys`(复用, 见 6.5) |
 | 5 | `streams/chatStreamStore.ts` | 会话态加 `pendingQuestion`; 进快照(`bump` 字面量)+`SNAPSHOT_KEYS`+`toBackupOf`; 加 `acknowledgeQuestion(sessionId)` |
 | 6 | `components/layout/SessionPanelRegistry.ts` | `SlotName` 加 `'question'` |
-| 7 | `components/layout/SessionLayout.tsx` | 底部停靠区加 `question` 行, 位置在 `input` 槽上方(对齐 opencode composer 上方) |
+| 7 | `components/layout/SessionLayout.tsx` | `question` 槽为贴在 `input` 行上沿的浮层(锚点由 `position:relative` 的 input 包裹层提供, 面板 `absolute` + `bottom:100%` + 一个 `Gap.STACK`), 不占布局流 |
 | 8 | `hooks/useChatPanels.tsx` | 注册 `question.dock` 槽(参照 `taskinfo.bar`/`input.chat` 注册模式), 新 props 进 useMemo 依赖数组 |
 
 ### 6.5 状态推导: 复用 `hitlWaitingKeys`, 不新增等待集合
@@ -478,21 +481,22 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 #### 7.4.2 Omni question 前端设计(新文件, 基于 opencode 范式)
 
 **目录**: `frontend/src/features/chat/components/question/`(与 taskinfo/config/input 同层, 会话内面板)
-- `QuestionDock.tsx` —— 卡片式底部停靠面板(header/content/footer 三区)
+- `QuestionDock.tsx` —— 浮层问答卡片(壳复用 `components/PanelCard`, 头部/分段进度/内容/按钮四区)
 - `QuestionOption.tsx` —— 单选项(antd `Radio.Group`/`Checkbox` + 数字快捷键)
 - `QuestionCustomInput.tsx` —— 自定义输入框(antd `Input.TextArea`)
 - `useQuestionDock.ts` —— 状态管理(tab/answers/custom/customOn, 经 `useChatStreamSession` 读 `pendingQuestion`)
 
 > 复核补正(2026-11-18): 不建 `QuestionDock.css`。系统既有范式是无 CSS Modules/组件级 CSS 文件, 组件内联 `style={{}}`, 视觉值统一取 TS 设计 token(§7.4.3)。opencode `question-prompt.css` 只作范式参考, 不拷样式。
 
-> **归属依据**: chat 会话内面板(taskinfo/config/input)统一放 `features/chat/components/` 下, 由 `useChatPanels.tsx` 按 slot 注册; `components/` 一级目录仅放页面级全局组件(如 AuthorizationModal, ChatPage 引用)。QuestionDock 是会话内停靠面板, 应归 `features/chat/components/question/`。
+> **归属依据**: chat 会话内面板(taskinfo/config/input)统一放 `features/chat/components/` 下, 由 `useChatPanels.tsx` 按 slot 注册; `components/` 一级目录仅放页面级全局组件(如 AuthorizationModal, ChatPage 引用)。QuestionDock 是会话内浮层面板, 应归 `features/chat/components/question/`。
 
-**挂载点**(而非 Modal):
-- 复用 `SessionLayout` 底部停靠区(`features/chat/components/layout/SessionLayout.tsx:219-232`, taskinfo/config/input 三槽)
-- question dock 停靠 **input 槽上方**(与 opencode composer 上方一致)
+**挂载点**(浮层, 而非 Modal):
+- 复用 `SessionLayout` 底部停靠区(`features/chat/components/layout/SessionLayout.tsx`, taskinfo/config/input 三槽)
+- question 面板**贴 input 槽上沿悬浮**: `input` 槽外层包一个 `position:relative` 锚点容器, 面板 `position:absolute; bottom:100%` + 一个 `Gap.STACK` 间距, 加 `zIndex` 压低层级
+- **为什么是浮层而不是流式行**: 原设计把它当 dock 内的一个子项, 卡片一出现就把中部会话区压矮、输入框整体上移 —— 既没有层级感, 又付出接近 Modal 的挤压代价; 改浮层后会话区高度与输入框位置都不变(实测面板底 612px / 输入框顶 618px), 仍保留"不遮挡上下文 + 可最小化"
 - 通过 `SessionPanelRegistry` 注册新槽 `question`(参照 taskinfo/config/input 注册模式)
-- **需扩展 `SessionPanelRegistry.ts:15-27` `SlotName` 联合类型**, 加 `'question'`
-- 面板注册在 `useChatPanels.tsx`(参照 taskinfo.bar:331 / input.chat:357 注册模式)
+- **需扩展 `SessionPanelRegistry.ts` `SlotName` 联合类型**, 加 `'question'`
+- 面板注册在 `useChatPanels.tsx`(参照 taskinfo.bar / input.chat 注册模式)
 
 **数据流**:
 - `question_required` 帧 → `chatStreamTransport.questionHandlers` → `chatStreamStore.pendingQuestion`
@@ -500,13 +504,13 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 - 提交 → `taskControlApi.answerQuestion(questionId, answers)` → 后端 `resolve_question`
 - 关闭 → `taskControlApi.answerQuestion(questionId, [], cancel=True)` → 后端按 cancelled 收口 + 前端 `acknowledgeQuestion(sessionId)`(防切回重弹)
 
-**交互**(照搬 opencode):
-- 多问题分页(tab + 进度条分段)
-- 单选/多选(radio/checkbox)
-- 自定义输入(custom 恒开, 与 opencode `custom:true` 一致)
-- 数字快捷键 1-9 + 键盘导航(Arrow/Home/End/Enter)
-- Escape=dismiss(cancel)、Ctrl+Enter=next/submit、Alt+Left=back
-- 最小化/恢复(折叠)
+**交互**(照搬 opencode, 部分按本仓收口):
+- 多问题导航合并为头部下方**一条可点分段进度线**(每段即跳题, 省掉另起一排题号按钮, 也让"还剩几题/现在第几题"一眼可读)
+- 单选/多选(radio/checkbox); 单选下"自定义答案"替换已选项而非追加(防一个题两个答案的歧义)
+- 自定义输入(勾选「输入自己的答案」后展开, 与 opencode `custom:true` 一致)
+- 数字快捷键 1-9 + 键盘导航(Arrow/Alt+Left/Ctrl+Enter)
+- Escape=dismiss(cancel)、Ctrl+Enter=submit; 自定义输入框内的按键不触发面板快捷键
+- 最小化/恢复(折叠); 无任何作答时提交按钮禁用(空提交无合法语义, 放弃请用「取消」)
 - 状态缓存(questionCache, 防会话切换丢失)
 
 #### 7.4.3 系统前端范式对齐复核(2026-11-18)
@@ -517,7 +521,7 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 |---|---|---|
 | 组件库 | antd 5 (`Button`/`Tag`/`Typography`/`Checkbox`/`Input`/`Progress`), `@ant-design/icons`, 全中文文案, 交互元素带 `aria-label` 与 `data-testid` | `QuestionOption` 用 `Radio.Group`/`Checkbox`, 自定义输入用 `Input.TextArea`, 按钮用 antd `Button`, 不手写原生标签 |
 | 视觉真源 | `utils/stepStyles.ts` 的 `Colors/FontSize/FontWeight/Spacing/Radius/BorderWidth`, `theme/spacing.ts` 的 `Gap/LineHeight`, `theme/controlScale.ts` 的 `CONTROL_HEIGHT*/CONTROL_RADIUS/FOCUS_RING_*`, `theme/tokens.ts` 的 `chatTokens` | 所有颜色/间距/字号/圆角/控件高度/焦点环取 token, 禁裸数字; 全局只有 `--font-mono` 一个 CSS 变量, 不新增组件 CSS 文件 |
-| 停靠区 | `SessionLayout.tsx:219-232` 底部 dock 顺序 taskinfo→config→input, 行容器无边框无高度(高度随内容), 根 gap 分隔 | question 行插在 input 上方; 卡片用 `Colors.BG.PRIMARY` 底 + `Colors.BORDER.LIGHT` 边 + `Radius.LG` + `boxShadow`, 高度受 `Size.PARAMS_PANEL_MAX_H` 类约束不溢出视口 |
+| 停靠区 | `SessionLayout.tsx` 底部 dock 顺序 taskinfo→config→input, 行容器无边框无高度(高度随内容), 根 gap 分隔 | question 以浮层贴 input 上方(§7.4.2 挂载点), 不占流; 卡片壳复用 `components/PanelCard`(`Colors.BG.PRIMARY` 底 + `Colors.BORDER.LIGHT` 边 + `Radius.LG` + `boxShadow`), 列表限高取 `Size.PANEL_LIST_MAX_H` |
 | 数据流 | `useAuthorization.ts`: `useChatStreamSession` 读 store 快照 → 映射为请求态(同 id 去重) → fire-and-forget 调 `taskControlApi` → 成功后 `acknowledge*` 清快照 | `useQuestionDock` 同构: 读 `pendingQuestion` → `QuestionRequest`, 提交经新增 `taskControlApi.answerQuestion`, 收口 `acknowledgeQuestion` |
 | SSE 登记 | `sseParser.ts` `KNOWN_EVENT_TYPES` 白名单 + `case` 双登记, 漏一则帧静默丢弃 | 两个 type 必须同时进白名单与 switch(§6.4 #2) |
 | 快照持久化 | `chatStreamStore.ts` `bump()` 字面量 + `SNAPSHOT_KEYS` + `toBackupOf()` 三处同步, 缺一切会话丢状态/重连不恢复 | `pendingQuestion` 三处齐改(§6.4 #5) |
@@ -527,14 +531,19 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 
 | 场景 | 行为 | LLM 侧结果 |
 |---|---|---|
-| `security.hitl.enabled=false` | 不创建问询, 不阻塞 | `error` + hint「人工问答已关闭, 请自行决策并说明假设后继续」 |
-| 回调未注入(直调工具/无 agent) | 同上, 不阻塞 | `error` + 同上 hint |
-| 等待超时(`security.hitl.timeout`) | 后端关闭问询, 发 `question_resolved(outcome=expired)` | `error` + hint「用户未在N秒内回答, 请基于最合理假设继续, 不要重新提问」 |
-| 用户取消(关闭面板) | 后端关闭问询, 发 `question_resolved(outcome=cancelled)` | `error` + hint「用户已放弃本次提问, 请停止推进并在最终回答中说明已中断」 |
 | 用户回答 | — | `success`, `summary` 含问答对, LLM 直接据以继续 |
+| `security.hitl.enabled=false`(bypass) | **照常创建问询并发射事件**, 窗口换成 bypass 短窗(≈10s, 公式单源 `_resolve_timeouts`); 窗内用户仍可抢答 | 到点未答 → `success` + 各题**首选项**兜底作答(同级 `auto=true`) |
+| 等待超时(`security.hitl.timeout`, HTL开) | 后端关闭问询, 发 `question_resolved(outcome=expired)` | `success` + **专家指令**兜底作答, `summary` 前缀「问询到点未答, 已按专家模式自动决策」 |
+| 用户取消(关闭面板) | 后端关闭问询, 发 `question_resolved(outcome=cancelled)` | `error` + hint「用户已放弃本次提问, 请停止推进并在最终回答中说明已中断」; `metrics.wait_ms` 记真实等待时长 |
+| 回调未注入(直调工具/无 agent) | 不阻塞 | `error` + hint「无问询通道(直接调工具/无 agent 场景), 请自行决策并说明假设后继续」 |
 | 回调内部异常 | 工具捕获, 不外抛 | `error` + hint「问询通道异常, 请自行决策后继续」 |
+| `questions` 校验失败 | 不创建问询 | `error` + detail 点名第几题哪个字段, hint「请按字段要求修正 questions 后重试」 |
 
-> **与 opencode 的差异(有意为之)**: opencode 用 `die(CancelledError)` 终止步骤; 本仓工具层的异常会被重试引擎归类成失败并重试/吞掉, 用异常做控制流会失真。故取消/超时统一以 `build_error + hint` 表达, 由模型收口——语义等价, 且不引入新的控制流通道。
+**兜底作答为什么是成功而不是报错**: 到点未答的语义是"用户没空, 按最合理的默认继续", 不是"提问失败"。旧实现回 `error` + 空答案, 模型只能把这一步记成失败再自行编假设, 步骤与结果两头失真; 现在给真实答案 + `auto=true`, 让观察与最终回答都建立在同一份可追溯的答案上。
+
+**兜底必带收口指令**(`AUTO_FALLBACK_DIRECTIVE`): 摘要末尾固定追加「该答案即视为用户的选择, 不要再向用户重复询问同一问题, 直接按此结果继续」。缺这一句时模型会把"系统自动代答/自动决策"这套内部机制复述给用户听, 并重新征求确认(实证两轮) —— 用户收到的应当是推进结果, 而不是一句机制说明。
+
+> **与 opencode 的差异(有意为之)**: opencode 用 `die(CancelledError)` 终止步骤; 本仓工具层的异常会被重试引擎归类成失败并重试/吞掉, 用异常做控制流会失真。故取消统一以 `build_error + hint` 表达, 由模型收口——语义等价, 且不引入新的控制流通道。
 
 ---
 
@@ -577,16 +586,17 @@ active = [i["content"] for i in items if i["status"] == "in_progress"]
 return f"计划已更新: {', '.join(parts)}" + (f"。进行中: {', '.join(active)}" if active else "")
 ```
 
-### 8.2 前端(一期零新增, 二期面板)
+### 8.2 前端(一期落地: taskinfo 计划浮层)
 
-**一期(方案A)**: 清单以 **observation 文本**呈现(用户可见的执行计划), 零前端改动。
+**一期(方案A)**: 清单以 **observation 文本**呈现, 同时由 taskinfo 右组「计划 N/M」入口弹浮层查看完整清单。
 - `llm_data.summary` 已含"3/5 已完成, 进行中: 编写代码", observation 渲染即用户可见
-- 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路
+- 浮层清单**不新增事件/表/快照槽**: 由 `useScheduleList` 从步骤流出步骤流取出(倒序取最后一次 `schedule` 调用的 `tools[].params.items`), 因此切会话、历史回放随步骤自然恢复
+- 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路; 步骤里的 `params.items` 是唯一已有且可回放的落点
 
-**二期(可选, 独立事件)**: 新增 `schedule_updated` 事件 + `TaskListPanel` 面板, 与 question 事件同一套登记纪律(§6.3)。
+**二期(可选, 独立事件)**: 新增 `schedule_updated` 事件 + 独立计划面板, 与 question 事件同一套登记纪律(§6.3)。
 - 需先决定: 事件是否落库(建议仅 SSE), 面板是否跨会话恢复(建议否)
 
-> **为什么不一期就做面板**: 一期目标是跑通"模型有计划 → 用户看得见"闭环; 面板需要新增事件类型+槽位+持久化三项登记, 与 question 的 6 处前端改动叠加会把首版回归面放大一倍。按 YAGNI 分期。
+> **为什么一期不新增事件**: 一期目标是跑通"模型有计划 → 用户看得见"闭环; 新事件要动三条登记线(事件类型/遥测/前端白名单)并引入持久化取舍, 而步骤流已经免费提供同一份数据。按 YAGNI 分期, 只有需要"计划变更即时推送/跨任务聚合"时才值得加事件。
 
 ### 8.3 权限与开关
 - 无需 HITL 确认(纯信息展示, 零副作用, 无 save 语义)
@@ -629,23 +639,32 @@ async def schedule(items: List[Dict[str, Any]]) -> Dict[str, Any]: ...
 `_validate_params` 只做顶层: 非法键名 → `ERR_INVALID_PARAMS`; 缺必填 → `ERR_MISSING_PARAM`; type 粗判。
 **不做**嵌套校验、不做范围校验 → 全部落在工具内(§7.3 / §8.1), 并用 `hint` 引导 LLM 自纠。
 
+**语义外键在校验前就丢**(`tools_alias_mapper.PARAM_DROP`): 例 `question` 的 `title`(整次调用的标题, 本工具只有每题 `header`, 无整次标题槽位)。这类键在本仓没有承载位, 保留只会被判非法参数白废一轮(实证 LLM 反复附带), 故归一化阶段直接剔除 —— 丢弃不影响任何语义, 且比"报错让模型删"少一轮往返。新增条目一律按"实际发生 + 明确无对应语义"收录, 不做泛化忽略。
+
 ### 9.4 超时保险丝(★ 不处理必被误杀)
 
 `tool_retry_engine._compute_fuse` 两条路径:
-- 有 inner timeout 参数 → `inner × (max_retries+1) + INSURANCE_BUFFER(30)`
+- 有 inner timeout 参数 → `inner × (max_retries+1) + INSURANCE_BUFFER(15)`
 - **无 inner(question 属此类)** → `min(base_timeout × (attempt+1), PROGRESSIVE_MAX=300)`, `base = TOOL_TIMEOUTS.get("question", TOOL_TIMEOUTS["default"]=60)`
 
 **实测后果**: question 无 `timeout` 参数 → 保险丝 = 60s; 而 `security.hitl.timeout` 默认 120s(可配到 86400) → **用户还没答完就被 `asyncio.wait_for` 掐死**。
 
-**必须的改法**(阶段B, 一行分支, 不引入注册表):
+**已落地改法**(`_compute_fuse` 开头特判, 与工具内等待同源, 不引入注册表):
 ```python
 # _compute_fuse 开头
 if action == "question":
     from app.config import get_config
-    from app.constants import HITL_TIMEOUT as _D
-    return int(float(get_config().get("security.hitl.timeout", _D))) + INSURANCE_BUFFER
+    from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
+
+    try:
+        _hitl_timeout = int(float(get_config().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
+    except (TypeError, ValueError):
+        _hitl_timeout = _D_HITL_TIMEOUT
+    return _hitl_timeout + INSURANCE_BUFFER
 ```
 配套: **不把 question 写进 `TOOL_RETRY_CONFIG`** → `max_retries=0` → 不会重复弹问。
+
+> 该特判按 `hitl.timeout` 取值, 对 bypass 短窗(≈10s)是**偏大的上界**——保险丝只负责"不早于等待结束就掐", 多留余量不产生行为差异。
 
 ### 9.5 Schema → LLM 可见性
 
@@ -745,6 +764,8 @@ tuning:
 
 ### 12.2 阶段B: 接系统(分 5 步, 每步可独立验证)
 
+> 本节是实施当日的顺序规划, 已按 B1→B5 全序落地(各步实测结论见 §14.3); 保留原步骤表以说明先后依赖。
+
 | 步 | 内容 | 验证 |
 |---|---|---|
 | B1 | 注册: `ToolCategory.AGENT` + `CATEGORY_MODULES` + `agent_register.py` + 别名 + 禁用名单 | 启动日志有 2 个工具; LLM 工具列表可见; 直调 registry 元数据正确 |
@@ -778,14 +799,16 @@ tuning:
 | Q6 | options 超 9 项 | 10 个 | error |
 | Q7 | option 缺 label | `[{"description":"x"}]` | error |
 | Q8 | multiple 非 bool | `"yes"` | error |
-| Q9 | 开关关闭 | 替身 enabled=False | error + hint 含"自行决策", **不阻塞** |
-| Q10 | 回调未注入 | 不 set ContextVar | error + hint 同 Q9, **不阻塞** |
+| Q9 | 开关关闭(HTL关) | 替身/真实链路 enabled=False | 仍创建问询并发 `question_required`(短窗), 到点 `expired` → **success** + 各题首选项兜底 + `data.auto=true` |
+| Q10 | 回调未注入 | 不 set ContextVar | error + hint 含"无问询通道", **不阻塞** |
 | Q11 | 正常回答 | 替身返回 `answers=[["OAuth"],["PostgreSQL"]]` | success; `data.answers` 等长; `summary` 含两个答案; `metrics.wait_ms>=0` |
-| Q12 | 超时 | 替身返回 `expired=True` | error + hint 含"未在…回答" |
-| Q13 | 取消 | 替身返回 `cancelled=True` | error + hint 含"已放弃" |
+| Q12 | 到点未答(HTL开) | 替身返回 `expired=True` | **success**; `data.auto=true`; 答案=专家指令; `summary` 含"自动决策"与收口指令 |
+| Q13 | 取消 | 替身返回 `cancelled=True` | error + hint 含"已放弃"; `metrics.wait_ms` = 真实等待(非 0, 回归守卫) |
 | Q14 | 替身抛异常 | raise RuntimeError | error(不外抛), hint 含"通道异常" |
 | Q15 | 返回值形状 | Q11 结果 | 顶层键 ⊆ {data,llm_data,other_data}; `llm_data.status.exec_code` 存在; `tool_zh=提问` |
 | Q16 | schema 无 `$defs` | `QuestionInput.model_json_schema()` | `"$defs" not in` 且 `"$ref" not in json.dumps` |
+| Q17 | 兜底收口指令 | Q9/Q12 的 `summary` | 均以 `AUTO_FALLBACK_DIRECTIVE` 收尾(视为用户选择 / 不要重复询问) |
+| Q18 | 语义外键丢弃 | `normalize_params("question", {"questions":…, "title":"x"})` | 返回键只剩 `questions`, 不触发 `ERR_INVALID_PARAMS` |
 
 ### 13.2 schedule 用例
 
@@ -810,12 +833,12 @@ tuning:
 | B-T1 | `_compute_fuse("question", {}, 60, 0, 0)` | `= hitl.timeout + INSURANCE_BUFFER`(当前 15, 非 60/300) |
 | B-T2 | 注册后 `tool_registry.get_tool("question").category` | `ToolCategory.AGENT` |
 | B-T3 | 真实链路: LLM 调 question → 用户答 | SSE 顺序 `question_required` → (answer API) → `question_resolved` → observation |
-| B-T4 | 真实链路: 超时 | `question_resolved(outcome=expired)` + observation 为 error |
+| B-T4 | 真实链路: 到点未答 | `question_resolved(outcome=expired)` + observation 为 **success** 且含兜底答案 |
 | B-T5 | 并发两条 question | 两个 id 各自独立, 答一个不影响另一个; `hitlWaitingKeys` 剩 1 时 status 仍 `paused` |
 | B-T6 | 会话切走再切回 | QuestionDock 重新出现(读 `pendingQuestion`), 不重复请求后端 |
 | B-T7 | `disabled_tools` 移除 question 后 | LLM 工具列表含 question; 旧配置(含 question)回落仍禁用 |
 | B-T8 | 前端 SSE 白名单 | `KNOWN_EVENT_TYPES` 含两个 type; 帧进 `pendingQuestion` 不丢 seq |
-| B-T9 | 前端 dock 渲染 | `question_required` → QuestionDock 出现在 input 槽上方, 单选/多选/自定义/分页齐全, 样式取设计 token |
+| B-T9 | 前端 dock 渲染 | `question_required` → QuestionDock 浮于输入框上沿(会话区不被压缩、输入框不位移), 单选/多选/自定义/分段进度齐全, 样式取设计 token |
 | B-T10 | 前端提交/取消/切会话 | `answerQuestion` 提交后 `question_resolved`→dock 消失; 取消同理; 切走再切回 dock 从快照恢复不重弹 |
 | B-T11 | 前端规范检查 | `npm run check:full`(typecheck + lint + format:check) 0 error |
 
@@ -823,7 +846,9 @@ tuning:
 
 ## 14. 落地核对与风险
 
-### 14.1 落地现状核对(本文档补充时实测)
+### 14.1 实施前现状核对(设计阶段快照, 2026-11-18 实施前)
+
+> 保留为历史快照: 下表是本文档补充契约当天的实测结果, 用来说明"设计文档先行、落地从 0 开始"。当前落地现状见 §14.3。
 
 | 检查项 | 结果 |
 |---|---|
@@ -844,14 +869,29 @@ tuning:
 
 | # | 风险 | 影响 | 处置 |
 |---|---|---|---|
-| R1 | 保险丝按 default=60s 截杀 120s 等待 | question 永远等不到回答 | §9.4 特判, **B2 先于 B3** |
-| R2 | question 误 `import app.services` | 触发 tools 层越层守护规则 | 强制走 ContextVar 注入(§7.2) |
-| R3 | 嵌套 BaseModel 生成 `$defs/$ref` | 部分 provider 拒绝该工具 | 扁平 `List[Dict[str, Any]]`(§7.3) |
-| R4 | 复用 `paused` 会污染信任落库 | 无信任语义的问询写进 `chat_session_trust` | 独立事件对(§6.1) |
-| R5 | `hitlWaitingKeys` 混用后按 id 误删 | 一条问答结束把授权等待也清了 | 只按精确 id 删, 严禁 `clear()`(§6.5) |
-| R6 | 长链路忘记更新 schedule | 清单陈旧 | 方案B(二期) |
-| R7 | 并发多问询上限 | 内存泄漏/前端堆叠 | 复用 `tuning.hitl.max_pending_confirmations` 上限 + 过期清理(与 HITL 同款) |
-| R8 | LLM 滥用 question(每步都问) | 用户被打断 | description 明确"仅在需要决策/歧义时"; 后续可加同类调用频次提示 |
+| R1 | 保险丝按 default=60s 截杀 120s 等待 | question 永远等不到回答 | ✅ 已落地 §9.4 特判(`HITL 超时 + 15`) |
+| R2 | question 误 `import app.services` | 触发 tools 层越层守护规则 | ✅ 强制走 ContextVar 注入(§7.2) |
+| R3 | 嵌套 BaseModel 生成 `$defs/$ref` | 部分 provider 拒绝该工具 | ✅ 扁平 `List[Dict[str, Any]]`(§7.3) |
+| R4 | 复用 `paused` 会污染信任落库 | 无信任语义的问询写进 `chat_session_trust` | ✅ 独立事件对(§6.1) |
+| R5 | `hitlWaitingKeys` 混用后按 id 误删 | 一条问答结束把授权等待也清了 | ✅ 只按精确 id 删, 严禁 `clear()`(§6.5) |
+| R6 | 长链路忘记更新 schedule | 清单陈旧 | 一期方案A 纯回显(taskinfo「计划 N/M」浮层展示最后一次调用); 主动 nag 仍属二期 |
+| R7 | 并发多问询上限 | 内存泄漏/前端堆叠 | ✅ 复用 `tuning.hitl.max_pending_confirmations` 上限 + 过期清理(与 HITL 同款) |
+| R8 | LLM 滥用 question(每步都问) | 用户被打断 | ✅ description 明确"仅在需要决策/歧义时"; 频次提示留待观察 |
+
+---
+
+### 14.3 实施后现状(2026-11-18 回填)
+
+| 检查项 | 结果 |
+|---|---|
+| `backend/app/tools/agent/question.py` / `schedule.py` | ✅ 已落地(工具内核 + 手工语义校验) |
+| `services/agent/handlers/question_gateway.py` | ✅ 唯一发射点(create→emit→wait→emit) |
+| `_compute_fuse` question 特判 | ✅ `hitl.timeout + INSURANCE_BUFFER(15)` |
+| `question_required` 事件(含 `backend_timeout`) | ✅ 已登记 SSE-only; 前端倒计时同源 |
+| 到点未答兜底 | ✅ HTL关=首选项 / HTL开=专家指令; 均带收口指令, 成功收口 |
+| 前端 `features/chat/components/question/` | ✅ 浮层卡片(壳复用 `PanelCard`), 贴输入框上沿 |
+| taskinfo 计划入口 | ✅ 「计划 N/M」浮层(`useScheduleList` 派生自步骤流) |
+| `config.yaml disabled_tools` / `UNAVAILABLE_OFFICIAL_TOOLS` | ✅ 均已摘除 `question` |
 
 ---
 
@@ -877,6 +917,10 @@ tuning:
 | 16 | schedule 一期不加前端面板, 以 observation 文本呈现(本仓无 metadata 通道) | 契约对齐 | 2026-11-18 |
 | 17 | question 前端 UI/UE 以系统既有代码范式为准(antd 5 + 设计 token 内联样式 + dock 槽), 不建组件 CSS 文件、不拷 opencode 样式 | 用户要求(复核) | 2026-11-18 |
 | 18 | AGENT 分类加入 `UniversalAgent._INITIAL_CATEGORIES`, 两工具首次即注入 LLM 工具列表(不等 searchtool 动态发现) | 用户提问驱动 | 2026-11-18 |
+| 19 | **覆盖 #8**: question 面板改为贴 input 行上沿的浮层(锚点 relative + `absolute/bottom:100%`), 不占布局流、不压缩会话区 | 商量(用户要求重做 UI) | 2026-11-18 |
+| 20 | **覆盖 #16**: schedule 一期补前端「计划 N/M」浮层(清单派生自步骤流, 不落库) | 商量(用户要求) | 2026-11-18 |
+| 21 | 到点未答改**成功收口 + 兜底作答**(HTL关首选项/HTL开专家指令), 摘要必带"视为用户选择, 不要重复询问"收口指令 | 商量(用户拍板) | 2026-11-18 |
+| 22 | question 语义外键 `title` 走 `PARAM_DROP` 静默丢弃, 不判非法参数(省一轮往返) | 商量(用户拍板) | 2026-11-18 |
 
 ---
 
@@ -897,7 +941,7 @@ tuning:
 | opencode todoWrite | `packages/core/src/tool/plugin/todo.ts` | Info:13-19, Input:21-23, summarize:30-41, execute:61-78 |
 | Omni HITL 弹窗 | `frontend/src/components/AuthorizationModal/index.tsx` | 全文(656行, 二值确认) |
 | Omni HITL 壳 | `frontend/src/components/AuthorizationModal/HITLModalShell.tsx` | 全文(55行, antd Modal) |
-| Omni 底部停靠区 | `frontend/src/features/chat/components/layout/SessionLayout.tsx` | L219-232(taskinfo/config/input dock) |
+| Omni 底部停靠区 | `frontend/src/features/chat/components/layout/SessionLayout.tsx` | taskinfo/config/input 三槽 + question 浮层锚点(包住 input 行的 `position:relative` 容器) |
 | Omni SSE 帧定义 | `frontend/src/types/chat.ts` | StatusMessage:161-177(paused/resumed/notice) |
 | Omni 授权 hook | `frontend/src/features/chat/hooks/useAuthorization.ts` | 全文(197行, SSE→Modal) |
 | Omni 事件 Store | `frontend/src/features/chat/streams/chatStreamStore.ts` | pendingAuthorization:386/快照:640-680/acknowledge:1518 |
