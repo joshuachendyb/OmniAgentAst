@@ -147,6 +147,8 @@
 # 2026-11-18 小欧 - [46b] 会审整改: ①derive_tool_paths_from_steps 补相对路径归一(_tool_path_relative,
 #   与前端 toRelativePath 同口径) + params 非 dict 防御, 原地注释"与 root_relative 一致"的失真声明作废;
 #   ②get_task_detail 的 ref_ledger_json/tool_paths_json 改 pop+parse 为契约字段, 不再以裸串下发 — 小欧-2026-11-18
+# 2026-11-18 小欧 - _tool_path_relative 补 POSIX 绝对路径丢弃: Windows 下 Path.is_absolute() 判 "/opt/x" 为 False,
+#   原会被当相对链归一成 "opt/x" 假链接(项目根本机为 Windows, 此类路径不属于根) — 小欧-2026-11-18
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -386,6 +388,10 @@ def _tool_path_relative(raw: str) -> Optional[str]:
     """
     p = raw.strip()
     if not p or any(ord(c) < 32 for c in p):
+        return None
+    if p.startswith("/"):
+        # POSIX 绝对路径在本机不属于项目根, 必须丢弃: Windows 下 Path.is_absolute() 对 "/a/b" 为 False,
+        #   漏判会被当相对链归一成 "a/b" 假链接 — 小欧-2026-11-18
         return None
     if Path(p).is_absolute():
         return browse.root_relative(p)
