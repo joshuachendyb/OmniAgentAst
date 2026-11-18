@@ -3,6 +3,7 @@
 > 文档号: [37] | 作者: 商量 | 日期: 2026-11-14
 > 更新: 2026-11-18 - 商量 - 复核前端 UI/UE 设计参照系统既有代码范式, 补 §7.4.3 范式对齐结论并同步 §6.4/§12 B5/§13 前端用例
 > 更新: 2026-11-18 - 商量 - 实施后回填与契约纠偏: §6.2 补 `backend_timeout`、§6.4/§7.4.2/§7.4.3 改浮层挂载、§7.5 改双分支超时与到点兜底(含收口指令)、§9.3 补语义外键丢弃、§9.4 缓冲 30→15 并对齐真实实现、§13.1 Q9/Q12 改兜底成功口径、§14 增实施后现状
+> 更新: 2026-11-19 - 商量 - 三堂会审复核: §8.2 清单取数改「读观察步 `llm_data` 落地结果」口径并补任务边界/失败不改两条, §14.4 新增复核整改与结论表(真实 9 / 不成立不改 4), §15 补决策 23–25
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -588,10 +589,13 @@ return f"计划已更新: {', '.join(parts)}" + (f"。进行中: {', '.join(acti
 
 ### 8.2 前端(一期落地: taskinfo 计划浮层)
 
-**一期(方案A)**: 清单以 **observation 文本**呈现, 同时由 taskinfo 右组「计划 N/M」入口弹浮层查看完整清单。
+**一期(方案A)**: 清单以 **observation 文本**呈现, 同时由 taskinfo 左组「计划 N/M」入口弹浮层查看完整清单。
 - `llm_data.summary` 已含"3/5 已完成, 进行中: 编写代码", observation 渲染即用户可见
-- 浮层清单**不新增事件/表/快照槽**: 由 `useScheduleList` 从步骤流出步骤流取出(倒序取最后一次 `schedule` 调用的 `tools[].params.items`), 因此切会话、历史回放随步骤自然恢复
-- 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路; 步骤里的 `params.items` 是唯一已有且可回放的落点
+- 浮层清单**不新增事件/表/快照槽**: 由 `useScheduleList` 从步骤流取出, 因此切会话、历史回放随步骤自然恢复。取数口径三条(实施后按真实链路收口, 详见前端 `FUNCTIONS_FRONT.md` §4.1):
+  - **认落地结果, 不认模型意图**: 读观察步 `tool_result[i].llm_data` 的归一化清单(后端已校验/截断), 不读 action 步 `tools[i].params.items` 的模型原文 —— 后者在后端拒收(超 50 条/超 200 字/status 非法)时照样"长得像一份清单", 直接显示会出现"计划已生效"的假象
+  - **任务边界即清单边界**: 倒序扫描遇到 `start/startinfo` 立即停, 新任务第一秒不显示上一任务的清单
+  - **失败不改清单**: `exec_code≠success` 或被 HITL 拦下(无观察步)时跳过本次继续往前找; 成功但清单为空 = 计划已清空, 就地收口不再回溯旧版本
+- 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路; 观察步的 `llm_data.action.params.items` 是唯一已有且可回放的落地落点
 
 **二期(可选, 独立事件)**: 新增 `schedule_updated` 事件 + 独立计划面板, 与 question 事件同一套登记纪律(§6.3)。
 - 需先决定: 事件是否落库(建议仅 SSE), 面板是否跨会话恢复(建议否)
@@ -893,6 +897,26 @@ tuning:
 | taskinfo 计划入口 | ✅ 「计划 N/M」浮层(`useScheduleList` 派生自步骤流) |
 | `config.yaml disabled_tools` / `UNAVAILABLE_OFFICIAL_TOOLS` | ✅ 均已摘除 `question` |
 
+### 14.4 三堂会审复核整改(2026-11-19)
+
+按「代码本身 → 消费方语义 → 可达性/触发条件」三遍复核后落定的整改项与复核结论。编号仅为复核顺序, 不含文档/评审序号。
+
+| 结论 | 事项 | 处置 |
+|---|---|---|
+| 真实 | 问询已被过期清理摘除(entry=None)时三态全假 | `hitl_question.wait` 该分支改 `expired=True`(reason=stale) —— 原返回会被上层读成"用户已回答"并空答案成功收口, 语义反转; 改后交兜底作答接管 |
+| 真实 | 网关等待段抛错时状态停在 SUSPENDED | 等待段加 `try/finally` 掀 SUSPENDED —— 否则任务终态被 `agent_runner` 映射成 `paused` 落库 |
+| 真实 | 工具层二次读 `security.hitl.enabled` 推导兜底文案 | 窗口模式改由发射器判定并随结果 `auto_confirm` 回传, 工具层不读安全配置(与 `hitl_gateway` 布尔单源同源), 消除等待期配置热更致"窗口与文案错配" |
+| 真实 | 异常分支漏传 `wait_ms` | `t_wait` 提到 `try` 外, 三分支同源(遥测不再恒 0) |
+| 真实 | 部分题未答时摘要输出 `header=""` 且通篇"用户已回答" | 空答案显式标「（未作答）」—— 空串会被模型读成"用户选择了空" |
+| 真实 | `question_*` 未入前端 `META_STEP_TYPES` | 归 meta: 改前被当业务步进流水线, 而 `buildSegments` 无对应分支 → 零产出, `RightViewer` 的 `hasSteps` 已为真 → 查看区空白 |
+| 真实 | `acknowledgeQuestion` 无 id 守卫 | 增 `questionId` 比对: 旧问询的异步 close 晚于新问询落地时会误清新问题 |
+| 真实 | `CountdownRing` 在 `components/AuthorizationModal/` 且 default export | 迁 `components/CountdownRing/index.tsx` 并改具名导出(两处调用同步), 共享组件落点与导出规范归位 |
+| 真实 | 浮层右上 × 的 aria-label「关闭问询」与动作不符 | 改「取消问询(模型自行决策继续)」—— 该按钮走 cancel, 中断本次问询 |
+| 不成立 | `assignTimeout` 缺省 60 是否污染合法窗口 | 仅非法值触发, 后端恒发合法整数, 不改 |
+| 不成立 | `useCountdown` 首帧一帧陈旧 | 需渲染期重置, 收益为零, 不改 |
+| 不改 | 快照恢复后倒计时按整窗重算 | 仅展示偏差; 修它要三文件透传时间戳, 违 KISS/YAGNI |
+| 不改 | `useScheduleList` 名为 list 返回单份快照 | 语义可接受(取的是"当前清单"), 改名波及公共清单与调用点, 不值 |
+
 ---
 
 ## 15. 决策记录
@@ -921,6 +945,9 @@ tuning:
 | 20 | **覆盖 #16**: schedule 一期补前端「计划 N/M」浮层(清单派生自步骤流, 不落库) | 商量(用户要求) | 2026-11-18 |
 | 21 | 到点未答改**成功收口 + 兜底作答**(HTL关首选项/HTL开专家指令), 摘要必带"视为用户选择, 不要重复询问"收口指令 | 商量(用户拍板) | 2026-11-18 |
 | 22 | question 语义外键 `title` 走 `PARAM_DROP` 静默丢弃, 不判非法参数(省一轮往返) | 商量(用户拍板) | 2026-11-18 |
+| 23 | 三堂会审复核: 兜底文案判据改由回调下发 `auto_confirm`, 工具层不再读 `security.hitl.enabled`(窗口模式单源在发射器) | 商量(三堂会审) | 2026-11-18 |
+| 24 | 三堂会审复核: `question_required/resolved` 归 meta 不进业务流水线, 用户可见态只由 `QuestionDock` 浮层承担 | 商量(三堂会审) | 2026-11-18 |
+| 25 | 三堂会审复核: `CountdownRing` 迁 `components/CountdownRing/` 且改具名导出(共享件不隶属 HITL 目录) | 商量(三堂会审) | 2026-11-18 |
 
 ---
 
