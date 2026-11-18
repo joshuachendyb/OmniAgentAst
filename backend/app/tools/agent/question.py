@@ -3,6 +3,8 @@
 #   开关/超时继承 HITL; 降级/超时/取消统一以 build_error + hint 收口, 不引入异常控制流
 # 2026-11-18 商量 - 三堂会审整改: 双分支镜像 hitl_confirm — HTL关不再立即降级(改由发射器分窗: 短窗要问+到点expired自动过);
 #   降级分支仅保留"回调未注入"(直接调工具/无agent); expired hint 去秒数插值(窗口双分支后工具侧不再自知秒数); 清 get_config/HITL_TIMEOUT 死导入
+# 2026-11-18 商量 - 到点未答兜底作答优化: expired 由"空答案+报错"改"成功收口+真实答案" — HTL关→各题首选项(最合理默认),
+#   HTL开→专家指令回填答案槽(按最合理逻辑处理); summary 带 auto_note 说明自动作答; cancelled 维持报错收口
 """
 question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取实现决策)
 
@@ -13,6 +15,7 @@ question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取
 import time as _time_mod
 from typing import Any, Dict, List, Tuple
 
+from app.config import get_config
 from app.tools.context import get_current_question_callback
 from app.tools.tool_constants import ERR_QUESTION
 from app.tools.tool_response import build_error, build_success
@@ -23,6 +26,8 @@ MAX_HEADER_CHARS = 30
 MAX_QUESTION_CHARS = 1000
 MAX_LABEL_CHARS = 200
 MAX_DESCRIPTION_CHARS = 500
+# HTL开(真人工)到点未答的兜底作答文案 — 商量 2026-11-18
+EXPERT_FALLBACK_ANSWER = "你是资深专家, 以专家的高水准和全局视野, 按最合理的逻辑进行处理"
 
 
 def _validate_questions(questions: Any) -> Tuple[List[Dict[str, Any]], str]:
@@ -103,6 +108,24 @@ def _normalize_answers(raw: Any, count: int) -> List[List[str]]:
     return answers
 
 
+def _auto_fallback(
+    normalized: List[Dict[str, Any]], bypass: bool
+) -> Tuple[List[List[str]], str]:
+    """到点未答的兜底作答(双分支) — 商量 2026-11-18
+    HTL关(bypass短窗)→各题首选项作答(最合理默认); HTL开→专家指令作答(按最合理逻辑处理)。
+    返回 (answers, 说明文案)。
+    """
+    if bypass:
+        return (
+            [[q["options"][0]["label"]] for q in normalized],
+            "问询到点未答, 已按首选项自动作答",
+        )
+    return (
+        [[EXPERT_FALLBACK_ANSWER] for _ in normalized],
+        "问询到点未答, 已按专家模式自动决策",
+    )
+
+
 def _build_question_llm_data(
     exec_code: str,
     duration_ms: int,
@@ -111,8 +134,9 @@ def _build_question_llm_data(
     answers: List[List[str]] = None,
     questions: List[Dict[str, Any]] = None,
     wait_ms: int = 0,
+    auto_note: str = "",
 ) -> Dict[str, Any]:
-    """question 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18"""
+    """question 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18; auto_note 非空=到点自动兜底作答"""
     answers = answers or []
     questions = questions or []
     if exec_code == "error":
@@ -127,7 +151,11 @@ def _build_question_llm_data(
             title = q.get("header", "") if isinstance(q, dict) else ""
             value = "、".join(ans)
             pairs.append(f'{title}="{value}"')
-        summary = "用户已回答 " + f"{len(answers)} 个问题: " + "; ".join(pairs) if pairs else "用户已回答问题"
+        if pairs:
+            prefix = f"{auto_note}: " if auto_note else "用户已回答 "
+            summary = prefix + f"{len(answers)} 个问题: " + "; ".join(pairs)
+        else:
+            summary = auto_note or "用户已回答问题"
         status = {
             "exec_code": "success", "message": "成功", "code": "",
             "detail": "", "hint": "",
@@ -187,17 +215,26 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
     cancelled = bool(result.get("cancelled", False))
     expired = bool(result.get("expired", False))
     if cancelled or expired:
-        if expired:
-            detail = "用户未在规定时间内回答"
-            hint = "用户未在规定时间内回答, 请基于最合理假设继续, 不要重新提问"
-        else:
+        if cancelled:
             detail = "用户已放弃本次提问"
             hint = "用户已放弃本次提问, 请停止推进并在最终回答中说明已中断"
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            return build_error(
+                data={"answers": [], "questions": normalized},
+                llm_data=_build_question_llm_data(
+                    "error", duration_ms, detail=detail, hint=hint, questions=normalized,
+                ),
+            )
+        # 2026-11-18 商量 - 到点未答兜底作答(成功收口, 不再空答案报错):
+        #   HTL关(bypass短窗)→各题首选项; HTL开→专家指令回填答案槽
+        bypass = not bool(get_config().get("security.hitl.enabled", True))
+        fallback, note = _auto_fallback(normalized, bypass)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_error(
-            data={"answers": [], "questions": normalized},
+        return build_success(
+            data={"answers": fallback, "questions": normalized, "auto": True},
             llm_data=_build_question_llm_data(
-                "error", duration_ms, detail=detail, hint=hint, questions=normalized,
+                "success", duration_ms, answers=fallback,
+                questions=normalized, wait_ms=wait_ms, auto_note=note,
             ),
         )
 
