@@ -35,6 +35,7 @@
 # 2026-11-20 小欧 本地视频原生投递: 实测 mimo(opencli OpenAI兼容网关)接受 data:video/mp4;base64 作为 video_url 且能真看懂内容;
 #   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
 # 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
+# 2026-11-20 小欧 视频发前转 H264: 模型对视频编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9, MJPG 等报400), 用 imageio-ffmpeg 自带 ffmpeg 把非标准编码转 H264 再投递(新模块 video_transcode, 转码结果按源缓存); 实测 214MB MJPG .mov 转码后 nano-omni 看懂内容
 
 # 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
 #   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
@@ -59,6 +60,7 @@ import asyncio
 import base64
 import io
 import ipaddress
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
@@ -300,6 +302,27 @@ async def _read_capped(attachment: Dict[str, Any],
         return None, "文件不可读"
 
 
+def _ensure_video_h264(path: str) -> str:
+    """视频发前转 H264(编码差异兜底); 缓存目录用源文件同级 .h264 子目录(任务级, 随附件清理)。
+    转码失败返回原路径, 由投递侧错误分类降级, 不在此抛异常 — 小欧-2026-11-20"""
+    from app.services.agent.video_transcode import ensure_h264
+    cache_dir = os.path.join(os.path.dirname(path), ".h264") if path else None
+    return ensure_h264(path, cache_dir=cache_dir)
+
+
+def _read_bytes_capped(path: str, limit: int) -> Optional[bytes]:
+    """同步读指定路径字节并限大小; 超限/不可读/空返回 None。供视频转码后读取 — 小欧-2026-11-20"""
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read(limit + 1)
+    except OSError as e:
+        logger.warning(f"[media] 视频读取失败 path={path} err={e}")
+        return None
+    if len(raw) > limit or not raw:
+        return None
+    return raw
+
+
 async def build_logical_part(kind: str, attachment: Dict[str, Any]
                              ) -> Tuple[Optional[Dict[str, Any]], str]:
     """本地附件 → 逻辑 part(只描述语义: modality/mime/data/url, 不描述方言)。"""
@@ -308,16 +331,19 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         return ({"modality": "image", "mime": attachment.get("mime") or "image/png",
                  "data": None, "url": url}, "") if url else (None, reason)
     if kind == "video":
-        # 本地视频 → data URI 走 video_url 方言(chat 无独立视频内联 part, 但 mimo 等厂商
-        # 实测接受 data:video/mp4;base64 作为 video_url——empty/CANNOT SEE 是内容问题非协议问题,
-        # 详证实测 2026-11-20:完整 data URI 的 video_url 让 mimo 真看懂视频内容)。
-        # 上限单列 video_inline_limit_mb(默认 20MB, 与 file 档附件上限对齐), 不走图片 2MB 口径。
-        raw, reason = await _read_capped(attachment, video_inline_limit_bytes())
+        # 本地视频 → data URI 走 video_url 方言(chat 无独立视频内联 part, 但 mimo/nano-omni
+        # 实测接受 data:video/mp4;base64)。模型对编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9,
+        # MJPG/MP4V 会 400)——发前统一转 H264, 按模型定制的前提是有标准编码可投递 — 小欧-2026-11-20
+        stored = str(attachment.get("stored_path") or "")
+        play_path, transcoded = await asyncio.to_thread(_ensure_video_h264, stored)
+        limit = video_inline_limit_bytes()
+        raw = await asyncio.to_thread(_read_bytes_capped, play_path, limit)
+        if raw is None:
+            return None, f"视频读取失败或超过 {limit // (1024 * 1024)}MB"
         if not raw:
-            return None, reason
-        mime = str(attachment.get("mime") or "") or "video/mp4"
-        return {"modality": "video", "mime": mime, "data": None,
-                "url": f"data:{mime};base64,{_b64(raw)}"}, ""
+            return None, "视频载荷为空"
+        return {"modality": "video", "mime": "video/mp4", "data": None,
+                "url": f"data:video/mp4;base64,{_b64(raw)}"}, ""
     if kind == "audio":
         # 音频用独立上限(默认20MB), 不再沿用图片2MB口径 — 小欧-2026-11-20
         raw, reason = await _read_capped(attachment, audio_inline_limit_bytes())

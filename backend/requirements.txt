@@ -50,6 +50,7 @@ win10toast>=0.9
 Pillow>=10.0.0
 mss>=10.0.0
 imageio>=2.37.0
+imageio-ffmpeg>=0.6.0  # 视频发前转 H264(imageio 自带 ffmpeg, 免系统安装) — 小欧-2026-11-20
 pytesseract>=0.3.13
 pyautogui>=0.9.54
 
