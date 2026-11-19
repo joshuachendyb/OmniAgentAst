@@ -99,7 +99,7 @@ import { chatStreamStore } from '../../streams/chatStreamStore';
 // 2026-10-22 小欧 - 引用入口统一（选区走 quoteSelection，与文件页口径一致）
 import { quoteWithToast } from '@/features/refs/quoteToast';
 import { labelOf, refKeyOf } from '@/features/refs/identity';
-import type { SentRefLedgerEntry } from '../../streams/backupTypes'; // 台账条目类型(与 store 备份同源) — opencode-2026-11-18
+import type { SentRefLedgerEntry } from '../../streams/chatStreamTypes'; // 台账条目类型(与 store 备份同源, 类型源已随 notice 改造更名 chatStreamTypes) — opencode-2026-11-19
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
