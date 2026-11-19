@@ -1,5 +1,5 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================
 echo  quick pool check: reverify pool + revive deadpool (~1-2 min)

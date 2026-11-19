@@ -1,5 +1,5 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================
 echo  rebuild node pool: 11 steps (~15-20 min)

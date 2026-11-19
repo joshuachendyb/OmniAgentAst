@@ -1,8 +1,8 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================
-echo  ������Ͱ: ײ 429 �������ʱ˫�����
+echo  换出口桶: 撞 429 配额用完时双击
 echo ============================================
 powershell -ExecutionPolicy Bypass -File "%~dp0proxy-switch.ps1"
 echo.

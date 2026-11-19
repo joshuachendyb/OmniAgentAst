@@ -1,10 +1,10 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================
-echo  �رմ���: ȡ��ϵͳ���� + ֹͣ mihomo
+echo  关闭代理: 取消系统代理 + 停止 mihomo
 echo ============================================
 powershell -ExecutionPolicy Bypass -File "%~dp0proxy-off.ps1" -Stop
 echo.
-echo �ѻָ�ֱ��
+echo 已恢复直连
 pause
