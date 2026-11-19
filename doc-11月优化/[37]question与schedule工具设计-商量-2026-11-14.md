@@ -9,6 +9,7 @@
 > 更新: 2026-11-19 - 小欧 - items 约束前置参数层: 经 json_schema_extra 内联 item schema(status enum/required/additionalProperties/maxLength/maxItems), 实测无 $ref/$defs 严格 provider 兼容; 校验层对齐精确报错(拒未知字段/区分缺字段与类型非法)为兜底; §8.1 同步
 > 更新: 2026-11-19 - 小欧 - 失败二分: 完全错误(结构不符)→error; 可容忍错(content/条数超标记裁剪、status 非法按 pending 归位)→build_warning 成功+警告; §8.1 校验矩阵改 error/warning 二分
 > 更新: 2026-11-19 - 小欧 - 三态均发 notice 且均返回 LLM+落库: error→failed+only_event=true(仅事件列表不画卡片不占位置2)/warning·success→done(事件列表+卡片); 三态不发前端 step 工具行(SSE 转发出口摘除)
+> 更新: 2026-11-19 - 商量 - 简要更新删错: §4.1/§8.1/§8.2/§10/§13.2 的 schedule 伪代码与用例按最终实现纠正(plan_stage 必填/notice 通道/rows 二维数组/warning 二分/阶段前缀), §15 补决策 26–28(收敛到 [47])
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -179,11 +180,11 @@ return `Todos updated: ${counts}${active.length ? `. In progress: ${active.join(
 
 **一句话**: 模型每次调用 `schedule` 时把**完整清单**传进来, 后端**原样回显**并生成摘要, 不落任何状态。清单的"记忆"完全在模型自己的上下文里。
 
-**行为**:
-- 模型调用 `schedule({items:[{content:"步骤1", status:"in_progress"}, ...]})`
-- 后端返回 `{data:{items}, llm_data:{summary}}`(原样回显 + 摘要)
-- 模型下次更新时**再次传完整清单**(整体替换)
-- **无任何内部状态** —— 后端不记录"上一次清单", 不校验"是否变化"
+**行为**(最终实现, 详见 [47]):
+- 模型调用 `schedule({items:[{content:"步骤1", status:"in_progress"}, ...], plan_stage:"init|update|finish"})`
+- 后端返回 `{data:{rows:[[事项,完成标志],...]}, llm_data:{summary,...}}`(计数摘要 + 二维数组)
+- 模型下次更新时**再次传完整清单 + plan_stage**(整体替换)
+- **无业务状态** —— 后端不记录"上一次清单"; 清单经 notice 推前端呈现, 快照仅存前端呈现态
 
 **优点**:
 - 实现极简(纯函数, 零落库, 零状态)
@@ -576,41 +577,41 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 
 **三态均发 notice 且均返回 LLM + 落库**(observation 步原样, 仅 SSE 转发出口摘工具行): error 发 `failed`+`only_event=true`(错误摘要, 无 items)→ 前端**仅事件列表**(不画卡片、不占位置2、保持上一份); warning/success 发 `done`(only_event 默认 false, 带裁剪/归位后的实际清单)→ 前端事件列表 + 计划卡片 + 位置2。`only_event` 是 notice 呈现标记(默认 false), 不落库不进 LLM, 老 notice 无此字段按 false 处理零退化。
 
-**执行逻辑**(纯回显, 零状态):
+**执行逻辑**(纯回显, 零状态; 当前实现, 详见 [47] 规范文档):
 ```python
-async def schedule(items: List[Dict[str, Any]]) -> Dict[str, Any]:
-    normalized, err = _normalize_items(items)     # 校验 + 归一
+async def schedule(items: List[Dict[str, Any]], plan_stage: str) -> Dict[str, Any]:
+    # 两个参数均必填: items(清单) + plan_stage(init/update/finish, LLM 主动阶段决策)
+    normalized, err, warnings = _normalize_items(items)   # 三分: 归一化/完全错误/可容忍警告
     if err:
-        return build_error(data={"items": []}, llm_data=_llm_data("error", err, [], 0))
-    summary = _summarize(normalized)              # 照搬 opencode summarize
-    return build_success(
-        data={"items": normalized},               # 原样回显
-        llm_data=_llm_data("success", "", normalized, elapsed_ms),
-    )
+        # 完全错误→error, 发 failed notice(only_event=True)
+        return build_error(data={"rows": []}, llm_data=...)
+    summary = _summarize(normalized, plan_stage)          # 阶段前缀 + 计数式
+    stage_note = _check_plan_stage(plan_stage, normalized)  # 宽松核对反馈
+    # 三态均发 done notice(带 items) + 均返回 LLM+落库; write 时 data=rows 二维数组
+    data = {"rows": [[it["content"], it["status"]] for it in normalized]}
+    ...  # warning→build_warning(带警告) / success→build_success
 ```
 
-**`_summarize`(照搬 opencode, 中文口径)**:
+**`_summarize`(中文口径, 阶段前缀)**:
 ```python
-if not items: return "计划已清空"
+stage_prefix = f"任务计划:{init→初建/update→更新/finish→结束}; " if plan_stage else ""
+if not items: return f"{stage_prefix}计划已清空"
 total = len(items); counts = 四态各自计数
 unfinished = counts["in_progress"] + counts["pending"]   # 未完成=进行中+待开始
-return f"收到{total}项: 已完成{counts['completed']}项, 未完成{unfinished}项(进行中{counts['in_progress']}、待开始{counts['pending']}), 已取消{counts['cancelled']}项。"
+return f"{stage_prefix}收到{total}项: 已完成{counts['completed']}项, 未完成{unfinished}项(进行中{counts['in_progress']}、待开始{counts['pending']}), 已取消{counts['cancelled']}项。"
 ```
 
-### 8.2 前端(一期落地: taskinfo 计划浮层)
+### 8.2 前端(taskinfo 计划浮层, notice 通道)
 
-**一期(方案A)**: 清单以 **observation 文本**呈现, 同时由 taskinfo 左组「计划 N/M」入口弹浮层查看完整清单。
-- `llm_data.summary` 改为计数式"收到N项: 已完成X项, 未完成Y项(进行中/待开始), 已取消Z项", observation 渲染即用户可见
-- 浮层清单改走 **notice 通道**: 后端成功发 `notice(kind=schedule, items)`, 前端写 `store.scheduleList` 入快照(刷新恢复), taskinfo 卡片直读; 不再从步骤流派生(`useScheduleList` 已删)。详细口径见前端 `FUNCTIONS_FRONT.md` §三/§四:
-  - **认落地结果, 不认模型意图**: 读观察步 `tool_result[i].llm_data` 的归一化清单(后端已校验/截断), 不读 action 步 `tools[i].params.items` 的模型原文 —— 后者在后端拒收(超 20 条/超 100 字/status 非法)时照样"长得像一份清单", 直接显示会出现"计划已生效"的假象
-  - **任务边界即清单边界**: 倒序扫描遇到 `start/startinfo` 立即停, 新任务第一秒不显示上一任务的清单
-  - **失败不改清单**: `exec_code≠success` 或被 HITL 拦下(无观察步)时跳过本次继续往前找; 成功但清单为空 = 计划已清空, 就地收口不再回溯旧版本
-- 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路; 观察步的 `llm_data.action.params.items` 是唯一已有且可回放的落地落点
+> 本节已按最终实现更新(原"observation 文本呈现/步骤流派生/一期不新增事件"口径已废弃)。完整规范见 [47] 文档。
 
-**二期(可选, 独立事件)**: 新增 `schedule_updated` 事件 + 独立计划面板, 与 question 事件同一套登记纪律(§6.3)。
-- 需先决定: 事件是否落库(建议仅 SSE), 面板是否跨会话恢复(建议否)
+清单走 **notice 独立通道**, 不从步骤流派生(`useScheduleList` 已删):
+- 后端三态均发 notice: 成功/可容忍发 `done`(带处理后 items), 完全错误发 `failed`+`only_event=true`(无 items)
+- 前端 `sseParser` notice 分支: 三态都 push 事件列表; 仅 `done` 且带 items 时投 `onScheduleUpdate` 写 `store.scheduleList`(入会话快照, 刷新恢复), taskinfo 卡片直读; `only_event` 跳过卡片与位置2
+- 后端 SSE 转发出口(`format_agent_sse`)按 `hide_from_steps` 工具属性摘除 schedule 工具行; 落库/喂 LLM 的 observation 原样保留
+- count 摘要经 observation 文本喂 LLM; `plan_stage` 阶段含义前置到 summary(`任务计划:初建/更新/结束;`), notice content 同步可见
 
-> **为什么一期不新增事件**: 一期目标是跑通"模型有计划 → 用户看得见"闭环; 新事件要动三条登记线(事件类型/遥测/前端白名单)并引入持久化取舍, 而步骤流已经免费提供同一份数据。按 YAGNI 分期, 只有需要"计划变更即时推送/跨任务聚合"时才值得加事件。
+任务边界: 历史详情态(`detail` 非空)不渲染计划卡片, 避免"A 任务计划配 B 任务耗时"两套事实。
 
 ### 8.3 权限与开关
 - 无需 HITL 确认(纯信息展示, 零副作用, 无 save 语义)
@@ -723,9 +724,9 @@ AGENT_TOOL_DESCRIPTIONS = {
     "question": "执行中向用户提问, 收集偏好/澄清歧义/获取实现决策。questions 为问题数组, "
                 "每项含 question(完整问题)/header(短标签)/options(选项数组)/multiple(是否多选)。"
                 "适用于: 需要用户决策、指令存在歧义、多个方案需用户选择时。阻塞等待回答后继续。",
-    "schedule": "创建/更新当前会话的任务计划清单(用户可见的执行计划)。items 为完整清单(整体替换), "
-                "每项含 content(任务简述)/status(pending|in_progress|completed|cancelled)。"
-                "适用于: 任务≥3个步骤、用户给了多项任务、用户索要计划时。单一简单任务不要用。",
+    "schedule": "创建/更新/结束任务计划清单(必填 items + plan_stage=init/update/finish)。"
+                "items 每项含 content/status(pending|in_progress|completed|cancelled)。"
+                "适用于: 任务≥3个步骤或用户索要计划时; 单一简单步骤不要用。(最终文案见 agent_register.py)",
 }
 AGENT_INPUT_MODELS = {"question": QuestionInput, "schedule": ScheduleInput}
 AGENT_TOOL_EXAMPLES = {
@@ -734,7 +735,8 @@ AGENT_TOOL_EXAMPLES = {
                                              {"label": "JWT", "description": "自建账号体系"}]}]}],
     "schedule": [{"items": [{"content": "分析需求", "status": "completed"},
                             {"content": "编写代码", "status": "in_progress"},
-                            {"content": "测试", "status": "pending"}]}],
+                            {"content": "测试", "status": "pending"}],
+                  "plan_stage": "init"}],
 }
 ```
 
@@ -827,19 +829,20 @@ tuning:
 
 ### 13.2 schedule 用例
 
-| # | 场景 | 输入 | 期望 |
+| # | 场景 | 输入(items, plan_stage) | 期望 |
 |---|---|---|---|
-| S1 | 正常 3 项 | pending/in_progress/completed 各一 | success; summary 含"收到3项: 已完成1项, 未完成2项(进行中1、待开始1), 已取消0项" |
-| S2 | 清空 | `items=[]` | success; summary == "计划已清空" |
-| S3 | 非 list | `items={"a":1}` | error |
-| S4 | 单条非 dict | `items=["x"]` | error |
-| S5 | content 空 | `content=""` | error, detail 点名第 n 项 |
-| S6 | content 超长 | 101 字(上限 100) | error |
-| S7 | status 非法 | `status="done"` | error, detail 列出四个合法值 |
-| S8 | 超 20 项 | 21 项 | error |
-| S9 | 全 completed | 2 项 completed | summary 含"收到2项: 已完成2项, 未完成0项" |
-| S10 | 返回值形状 | S1 结果 | 同 Q15; `tool_zh=计划`; `data.rows` 二维数组(事项\|完成标志) |
-| S11 | schema 无 `$defs` | `ScheduleInput.model_json_schema()` | 同 Q16 |
+| S1 | 正常 3 项 | pending/in_progress/completed 各一, `update` | success; summary 含"任务计划:更新; 收到3项: 已完成1项, 未完成2项(进行中1、待开始1), 已取消0项"; plan_stage_note 含持续引导 |
+| S2 | 清空 | `[]`, `finish` | success; summary == "任务计划:结束; 计划已清空"; 无 plan_stage_note |
+| S3 | 非 list | `{"a":1}`, `init` | error |
+| S4 | 单条非 dict | `["x"]`, `init` | error |
+| S5 | content 空 | `content=""`, `init` | error, detail 点名第 n 项 |
+| S6 | content 超长 | 101 字, `init` | warning(裁剪到100) |
+| S7 | status 非法值 | `status="done"`, `init` | warning(归 pending) |
+| S8 | 超 20 项 | 21 项, `init` | warning(裁剪到20) |
+| S9 | 全 completed | 2 项 completed, `update` | summary 含"收到2项: 已完成2项, 未完成0项" |
+| S10 | 返回值形状 | S1 结果 | `tool_zh=计划`; `data.rows` 二维数组(事项\|完成标志); llm_data 含 plan_stage_note |
+| S11 | schema 无 `$defs` + 两必填 | `ScheduleInput.model_json_schema()` | 无 `$ref/$defs`; required=[items, plan_stage] |
+| S12 | plan_stage 宽松核对 | finish+非空 / init+空 / 非法值 | success + plan_stage_note 反馈(不硬拒绝) |
 
 ### 13.3 阶段B 补充用例(接系统后)
 
@@ -961,6 +964,9 @@ tuning:
 | 23 | 三堂会审复核: 兜底文案判据改由回调下发 `auto_confirm`, 工具层不再读 `security.hitl.enabled`(窗口模式单源在发射器) | 商量(三堂会审) | 2026-11-18 |
 | 24 | 三堂会审复核: `question_required/resolved` 归 meta 不进业务流水线, 用户可见态只由 `QuestionDock` 浮层承担 | 商量(三堂会审) | 2026-11-18 |
 | 25 | 三堂会审复核: `CountdownRing` 迁 `components/CountdownRing/` 且改具名导出(共享件不隶属 HITL 目录) | 商量(三堂会审) | 2026-11-18 |
+| 26 | **覆盖 #20**: 清单来源由步骤流派生改 notice 独立通道(`notice(kind=schedule)`→store.scheduleList→卡片), 删 `useScheduleList`; 工具属性 `hide_from_steps` 令 SSE 转发副本摘工具行(落库/喂LLM不变) | 商量 | 2026-11-19 |
+| 27 | 最终设计收敛到 [47] 规范文档(通知事件类 tool 规范 + schedule 落地), 本文 schedule 详细实现以 [47] 为准 | 商量 | 2026-11-19 |
+| 28 | schedule 新增必填 `plan_stage`(init/update/finish, LLM 主动阶段决策+宽松核对反馈), summary 前置"任务计划:初建/更新/结束" | 商量 | 2026-11-19 |
 
 ---
 
