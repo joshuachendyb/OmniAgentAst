@@ -5,6 +5,7 @@
 > 存放: D:\NDOOmniAgent\doc-11月优化\[47]通知事件类tool规范与schedule落地-商量-2026-11-19.md
 > 性质: **规范类文档** —— 定义「通知事件类 tool」的设计规范，schedule 为首个落地范例
 > 前置: [37] question 与 schedule 工具设计（[37] 留作历史，本文是通知事件类 tool 的规范收敛版）
+> 更新: 2026-11-19 商量 - 新增 plan_stage 必填参数(LLM 主动阶段决策 init/update/finish, 宽松核对反馈)与 summary 阶段前缀
 
 ## 目录
 
@@ -91,11 +92,14 @@ schedule = 会话内任务/计划清单，一次提交完整清单（整体替�
 
 ### 3.2 参数结构
 
-仅 `items` 一个字段：完整清单，`[]` 即清空。每项仅两个字段：
-- `content`：一句话动作短语，非空，≤100 字
-- `status`：四选一必填 —— `pending`/`in_progress`/`completed`/`cancelled`
+两个参数均**必填**（schema `required=[items, plan_stage]`）：
 
-上限 20 项。经 `json_schema_extra` 内联 item schema（enum/required/additionalProperties=false/maxLength/maxItems），保持 `List[Dict[str,Any]]` 扁平类型故无 `$ref/$defs`，严格 provider 兼容。
+1. `items`：完整清单，`[]` 即清空。每项仅两个字段：
+   - `content`：一句话动作短语，非空，≤100 字
+   - `status`：四选一必填 —— `pending`/`in_progress`/`completed`/`cancelled`
+   上限 20 项。经 `json_schema_extra` 内联 item schema（enum/required/additionalProperties=false/maxLength/maxItems），保持 `List[Dict[str,Any]]` 扁平类型故无 `$ref/$defs`，严格 provider 兼容。
+
+2. `plan_stage`：LLM 结合任务进展**主动声明**的计划阶段，enum 三选一 —— `init`（初建）/ `update`（更新进展）/ `finish`（结束清空）。语义提示非精密状态机：后端与 items 做**宽松核对**（如 finish 但清单非空 → 反馈提示，不硬拒绝），核对结论进 `llm_data.plan_stage_note`（LLM 下一轮可见）；`update` 阶段附"后续持续维护清单"引导。阶段中文含义前置到 summary（`任务计划:初建/更新/结束;`），notice content 随之可见。
 
 ### 3.3 错误二分
 

@@ -12,6 +12,8 @@
 #   SCHEDULE_ITEMS_PARAM_DESC(原名 ITEMS_SPEC 含糊, 改现名精准表达"哪个工具的什么参数描述")
 # 2026-11-19 - 小欧 - 新增 SCHEDULE_STATUSES/SCHEDULE_ITEM_SCHEMA: item 内联 JSON Schema(enum/additionalProperties
 #   /maxLength/maxItems), 约束前置参数层; 实测无 $ref/$defs, 严格 provider 兼容 — 小欧-2026-11-19
+# 2026-11-19 - 商量 - 新增 plan_stage 三阶段(init/update/finish)与描述/引导常量: 必填, LLM 主动语义决策, 宽松核对非精密绑定;
+#   中文标签 SCHEDULE_PLAN_STAGE_LABELS 供 summary 前缀拼接
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -311,6 +313,17 @@ SCHEDULE_ITEM_SCHEMA: dict = {
 }
 # 允许的 item 字段: 从 schema properties 派生(校验层拒未知字段用), 与 schema 天然同源不硬编码
 SCHEDULE_ITEM_KEYS = frozenset(SCHEDULE_ITEM_SCHEMA["properties"].keys())
+# plan_stage: LLM 主动声明的计划阶段(init 初建/update 更新/finish 结束), 语义提示非精密状态机;
+#   后端宽松核对并反馈, 不硬拒绝; 单一真源 — 小欧 2026-11-19
+SCHEDULE_PLAN_STAGES = ("init", "update", "finish")
+# plan_stage 中文含义(summary 前缀用), 与阶段枚举一一对应, 单一真源
+SCHEDULE_PLAN_STAGE_LABELS = {"init": "初建", "update": "更新", "finish": "结束"}
+SCHEDULE_PLAN_STAGE_DESC: str = (
+    "计划阶段(必填, LLM 结合任务进展自主判断): init=初建清单 / update=更新进展 / finish=结束清空。"
+    "该项为语义提示, 与 items 宽松核对后会在返回中反馈是否合理。"
+)
+# update 阶段的持续引导: 进度变化后提醒 LLM 后续继续维护 — 小欧 2026-11-19
+SCHEDULE_UPDATE_GUIDANCE: str = "进度已更新, 请在后续步骤任务推进时持续更新本清单(status 与 items 保持同步)"
 
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell

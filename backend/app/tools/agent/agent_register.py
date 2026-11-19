@@ -3,6 +3,7 @@
 # 2026-11-19 小欧 - schedule 注册声明 hide_from_steps=True(清单走 notice→taskinfo, 前端步骤流不画工具行);
 #   schedule 注册描述为工具级路由文案; items 字段规格由 schema description 引用 tool_constants.SCHEDULE_ITEMS_PARAM_DESC
 # 2026-11-19 小欧 - 注册描述"中途更换/必须更新每个状态"改"中途替换/状态按实际进度填写", 消除术语不一致与 pending 误导
+# 2026-11-19 小欧 - 注册描述补 plan_stage 必填说明(init/update/finish)
 """
 agent_register — 智能体交互工具注册点(question / schedule)
 """
@@ -21,6 +22,7 @@ AGENT_TOOL_DESCRIPTIONS = {
         "在长任务中，根据任务进展实时更新及时通知，便于用户掌握任务进展。"
         "创建/更新/结束当前任务的用户可见的执行计划清单,实时同步任务计划完成状态。"
         "中途替换-可按需修改每项的content与status, status按实际进度填写即可(pending/in_progress/completed/cancelled)。"
+        "必填 plan_stage 声明本次阶段(init=初建/update=更新进展/finish=结束清空), 需与 items 相符。"
     ),
 }
 

@@ -4,7 +4,7 @@
 **编写人**: 小欧
 **维护人**: 小欧
 **最后更新时间**: 2026-11-19
-**最近更新**: 2026-11-19 商量 schedule notice 通道三态+only_event 呈现标记
+**最近更新**: 2026-11-19 商量 plan_stage 阶段决策+宽松核对反馈
 
 ---
 
@@ -394,3 +394,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.14 | 2026-11-19 | `CountdownRing` 迁共享目录并具名导出，§三路径同步；question 事件归 meta；问询清窗加 id 守卫 | 商量 |
 | v1.15 | 2026-11-19 | 执行计划清单改走 notice 通道：`tool_registry.visible_in_steps` 统一判据（工具属性 `hide_from_steps`）令 SSE 转发副本摘除 schedule 工具行（落库/喂 LLM 不动）；前端 `setScheduleList`→快照、`ScheduleCard` 读 store，删 `useScheduleList` | 商量 |
 | v1.16 | 2026-11-19 | notice 三态化：三态均发 notice 且均返回 LLM+落库；error 发 `failed`+`only_event=true`（仅事件列表、不画卡片不占位置2），warning/success 发 `done`（事件列表+卡片）；新增 `only_event` 呈现标记（notice 可选字段，默认 false 零退化）；§三补 notice 信封登记；`backupTypes.ts` 改名 `chatStreamTypes.ts`（名副其实）；完整设计见 [47] 文档 | 商量 |
+| v1.17 | 2026-11-19 | schedule 新增 `plan_stage` 必填参数(init/update/finish)：LLM 主动阶段决策, 与 items 宽松核对, 反馈进 `llm_data.plan_stage_note`; 阶段中文含义前置到 summary/notice content(`任务计划:初建/更新/结束;`); schema required 含两参数 | 商量 |
