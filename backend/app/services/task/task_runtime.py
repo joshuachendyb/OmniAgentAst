@@ -58,6 +58,11 @@
 #   登记前就被置位, 拿它当判据会丢掉唯一一次打断 in-flight await 的机会)。compliance: KISS-DIRECT/SRP
 # 2026-11-03 小欧 - cancel_task 取消请求 log_and_print 显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
 # 2026-11-03 小欧 - 任务不存在/暂停超时自动恢复两处 WARNING→DEBUG/INFO(资源与自愈) — 小欧-2026-11-03
+# 2026-11-19 小欧 - 暂停超时自动恢复帧文案区分: content 改「任务暂停超过 N 分钟，已自动恢复」(N 为实际生效 timeout),
+#   与手动恢复的「任务已恢复」不同, 用户能识别是系统自愈非本人操作且知道等待时长 — 小欧-2026-11-19
+# 2026-11-19 小欧 - 暂停超时改可配置: 兜底常量迁 app.constants.PAUSE_AUTO_RESUME_TIMEOUT,
+#   实际值经 config tuning.hitl.pause_auto_resume_timeout 覆盖(_get_pause_timeout 读, 两路径同口径) — 小欧-2026-11-19
+# 2026-11-19 小欧 - paused SSE 帧带 backend_timeout(_emit_step_sse 新增可选参), 供前端人工暂停浮层倒计时 — 小欧-2026-11-19
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -70,6 +75,10 @@ import time
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
+from app.config import get_config  # 2026-11-19 小欧: 暂停超时读配置(可运行时调整, 常量仅兜底)
+from app.constants import (
+    PAUSE_AUTO_RESUME_TIMEOUT,  # 2026-11-19 小欧: 暂停超时兜底常量(单一真源在 constants.py)
+)
 from app.logger import (  # 2026-09-08 小欧: log_and_print 双写(console可见取消请求) — 小欧-2026-09-08
     log_and_print,
     logger,
@@ -93,9 +102,17 @@ from app.services.task.task_state import (
 from app.utils.response_utils import api_failure, api_success
 from app.utils.sse_formatter import format_agent_sse
 
-# 暂停自动恢复超时(秒): 前端 SSE 消费路径(task_pause_check_and_yield)与后台 wait_for_resume 同口径 —
-# 暂停最多等该时长, 超时自动恢复继续(防任务永久卡 SUSPENDED 的状态漂移) — 小欧 2026-10-30
-_PAUSE_AUTO_RESUME_TIMEOUT = 300.0
+# 暂停自动恢复超时: 兜底常量已迁 app.constants.PAUSE_AUTO_RESUME_TIMEOUT(单一真源),
+# 实际值经 config tuning.hitl.pause_auto_resume_timeout 覆盖(见 _get_pause_timeout) — 小欧 2026-11-19
+
+
+def _get_pause_timeout() -> float:
+    """读暂停自动恢复超时(秒): config 可运行时调整, 缺省/非法回落 constants 兜底 — 小欧 2026-11-19"""
+    try:
+        value = float(get_config().get("tuning.hitl.pause_auto_resume_timeout", PAUSE_AUTO_RESUME_TIMEOUT))
+        return value if value > 0 else PAUSE_AUTO_RESUME_TIMEOUT
+    except (TypeError, ValueError):
+        return PAUSE_AUTO_RESUME_TIMEOUT
 
 # ============================================================
 # 取消/暂停操作（从 task_cancel 迁入）
@@ -241,8 +258,10 @@ async def task_cancel_check_and_yield(
     return None
 
 
-def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
-    return format_agent_sse(build_step_dict(step, step_type, message))
+def _emit_step_sse(step: Optional[int], step_type: str, message: str, backend_timeout: Optional[float] = None) -> str:
+    # 2026-11-19 小欧 - backend_timeout 透传给前端暂停浮层(剩余自动恢复倒计时), 与 question/授权浮层同范式
+    return format_agent_sse(build_step_dict(step, step_type, message,
+                                            data={"backend_timeout": backend_timeout} if backend_timeout else None))
 
 
 async def task_cancel_check(
@@ -285,7 +304,8 @@ async def _pause_core(
             step_value = _current_step(task_id)
             # 2026-08-28 小欧 yield日志审计: 暂停事件日志(SRP)
             logger.info(f"[pause] task={task_id} step={step_value} paused")
-            yield _emit_step_sse(step_value, "paused", '任务已暂停')
+            # 2026-11-19 小欧 - 带 backend_timeout 供前端暂停浮层显示剩余自动恢复时间(config 单一真源)
+            yield _emit_step_sse(step_value, "paused", '任务已暂停', backend_timeout=timeout)
     try:
         if timeout:
             await asyncio.wait_for(pause_event.wait(), timeout=timeout)
@@ -300,7 +320,12 @@ async def _pause_core(
         if not await check_cancelled(task_id):
             await set_resumed(task_id)
             if emit_sse:
-                yield _emit_step_sse(_current_step(task_id), "resumed", '任务已恢复')
+                # 2026-11-19 小欧 - 超时自动恢复与手动恢复的帧区分: 带出实际生效时长(config 可配)让用户知道等多久被自愈
+                _timeout_desc = f"{int(timeout // 60)} 分钟" if timeout and timeout >= 60 else f"{int(timeout or 0)} 秒"
+                yield _emit_step_sse(
+                    _current_step(task_id), "resumed",
+                    f'任务暂停超过 {_timeout_desc}，已自动恢复',
+                )
         else:
             await set_was_paused(task_id, False)
         return
@@ -317,12 +342,13 @@ async def _pause_core(
         yield _emit_step_sse(step_value, "resumed", '任务已恢复')
 
 
-async def wait_for_resume(task_id: str, timeout: Optional[float] = _PAUSE_AUTO_RESUME_TIMEOUT) -> None:
+async def wait_for_resume(task_id: str, timeout: Optional[float] = None) -> None:
     """仅阻塞等待暂停恢复(不产出SSE)。react_cycle 后台编排路径用 — 小欧 2026-08-09
     SSE 上报统一由前端消费路径 task_pause_check 负责, 后台路径不再产出死路事件。
     2026-10-30 小欧 P1: 默认 timeout 与前端消费路径(task_pause_check_and_yield)同口径,
-    防"前端300s自动恢复、后台无限等"双路径状态漂移致任务永久卡死。"""
-    async for _ in _pause_core(task_id, timeout, emit_sse=False):
+    防"前端300s自动恢复、后台无限等"双路径状态漂移致任务永久卡死。
+    2026-11-19 小欧: 默认 None → 函数内读配置(常量兜底), 支持运行时改配置。"""
+    async for _ in _pause_core(task_id, timeout if timeout is not None else _get_pause_timeout(), emit_sse=False):
         pass
 
 
@@ -339,5 +365,5 @@ async def task_pause_check(
 async def task_pause_check_and_yield(
     task_id: str,
 ) -> AsyncGenerator[str, None]:
-    async for event in task_pause_check(task_id, timeout=_PAUSE_AUTO_RESUME_TIMEOUT):  # 2026-10-30 小欧 P1: 常量 DRY(消魔数300)
+    async for event in task_pause_check(task_id, timeout=_get_pause_timeout()):  # 2026-11-19 小欧: 读配置(常量兜底), 与后台路径同口径
         yield event

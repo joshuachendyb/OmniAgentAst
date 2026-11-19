@@ -16,6 +16,7 @@
 // 编辑历史: 2026-11-18 商量 - ExecutionStep.type 补 question_required/question_resolved(阻塞问答成对事件, 仅SSE) — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact(仅SSE); 字段 interaction_id/interact_kind/event/payload
 //   (phase+outcome 合并为 event 叶子语义 ask/answered/cancelled/expired) — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - ExecutionStep 补 backend_timeout?: number(paused 帧带, 供人工暂停浮层倒计时) — 小欧-2026-11-19
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -62,7 +63,7 @@ export interface ExecutionStep {
     | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派
     | 'rejected'
     | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
-    | 'interact' // 2026-11-19 小欧: 通用双向交互事件(question 等), phase 分派, 仅SSE
+    | 'interact' // 2026-11-19 小欧: 通用双向交互事件(question 等), kind+event 分派, 仅SSE
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动
   // 且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
   // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 改为**真实数据源**——
@@ -79,6 +80,8 @@ export interface ExecutionStep {
   interact_kind?: string; // 交互种类: question/confirm/...
   interact_event?: 'ask' | 'answered' | 'cancelled' | 'expired'; // 这条消息发生了什么(叶子语义)
   interact_payload?: Record<string, unknown>; // 各 tool 特殊内容(框架零解释)
+  // 2026-11-19 小欧: paused 步带后端超时秒数, 供人工暂停浮层显示剩余自动恢复时间
+  backend_timeout?: number;
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
   // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：
   //   后端 content_items 对象数组，与 content 同源同序；前端现阶段只透传保存 — 小欧-2026-10-12

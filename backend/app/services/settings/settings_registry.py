@@ -137,6 +137,8 @@ key 全局唯一，加载自检重复直接拒启。
       三项是公网素材地址(数十~上百字符), text 走 inputWidth(180) 只剩尾部不可读, 改 url 类走
       baseUrlWidth(360), 与 provider api_base 同宽族; 前端 SettingRow 按类型分派宽度, 零键名硬编码
       — opencode-2026-11-18
+    2026-11-19 小欧 - hitl 组增 pause_auto_resume_timeout(暂停自动恢复秒数, 30~3600, 默认300):
+      设置页可见可改(原只加 config.yaml.example 但设置页无入口=用户改不了), HITL 组 4 键→5 键 — 小欧-2026-11-19
 
 """
 from typing import Any, Dict, List, Optional
@@ -561,7 +563,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="内部小缓存最多存多少条，超了自动丢最久没用的；一般不用动，调错也没什么感觉"),
         _item("tuning.live_front.journal_retention_days", "int", "事件流水保留(天)", 7, range_=[1, 30],
               notice="事件流水（chat_stream_events）保留几天：只清已完成/已失败/已取消任务的事件，正在跑的任务永不删；调小省磁盘但更早查不到历史回放，调大能回看更久"),
-        # --- hitl: 人工确认（4 键）---
+        # --- hitl: 人工确认（5 键）---
         _item("tuning.hitl.hitl_confirm_lead", "int", "确认倒计时提前(秒)", 10, range_=[0, 60],
               notice="危险操作确认弹窗：页面上的倒计时比后端实际超时（默认120秒）提前这么多秒归零，让你先看到「已超时」提示，而不是弹窗凭空消失；提前量要小于总超时"),
         _item("tuning.hitl.bypass_auto_lead", "int", "自动放行提前(秒)", 2, range_=[0, 10],
@@ -570,6 +572,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="确认弹窗倒计时至少显示这么多秒，防止倒计时太短、弹窗一闪而来不及点"),
         _item("tuning.hitl.max_pending_confirmations", "int", "待确认条数上限", 100, range_=[10, 1000],
               notice="同时排队等你确认的操作最多多少条，超了新的直接拒绝（防一次弹出太多窗把页面卡死）"),
+        _item("tuning.hitl.pause_auto_resume_timeout", "int", "暂停自动恢复(秒)", 300, range_=[30, 3600],
+              notice="任务暂停后的等待时长，超过就自动继续（防止你点了暂停后忘了点继续、任务一直挂着不动）；调小=更快自动恢复，调大=给你更长考虑时间"),
         # --- content: 内容截断（3 键）---
         _item("tuning.content.project_context_max_chars", "int", "项目规则字数上限", 10000, range_=[1000, 50000],
               notice="项目规则文件(OmniAgent.md)每次带给模型的最大字数，超长部分不带；调大=规则记得全但更占记忆容量，调小=省容量但长规则会被截断"),

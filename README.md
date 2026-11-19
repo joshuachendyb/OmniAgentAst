@@ -669,7 +669,7 @@ location /api/ {
 | 裁剪 | `tuning.trim.` | 5 | max_rounds, trigger_ratio, compaction_buffer, keep_recent_rounds, tools_token_reserve |
 | 压缩 | `tuning.compaction.` | 4 | start_enabled, start_limit_ratio, summary_feed_max_chars, keep_tail |
 | 前后端之间的流/任务/缓存 | `tuning.live_front.` | 5 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size, journal_retention_days |
-| 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
+| 人工确认 | `tuning.hitl.` | 5 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations, pause_auto_resume_timeout |
 | 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
 
 > `temperature`/`max_tokens` 等采样参数已迁顶层 `llm.sampling.*`（通用组）；`cors_origins` 已迁顶层 `network.cors_origins`（系统组）。

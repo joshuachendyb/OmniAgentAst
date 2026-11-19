@@ -76,6 +76,8 @@
     2026-11-11 小欧 REF_KINDS 增 url 来源(引用入口与渲染共用白名单自动放行) — 小欧-2026-11-11
     2026-11-14 小欧 第7章7.1: 删 log/message 死来源(无生产方、不可达), 白名单收敛 file/selection/
                          attachment/url — 小欧-2026-11-14
+    2026-11-19 小欧 新增 PAUSE_AUTO_RESUME_TIMEOUT=300.0(HITL 段): 任务暂停后自动恢复兜底秒数,
+                         实际值经 config tuning.hitl.pause_auto_resume_timeout 覆盖(设置页可改), 单一真源 — 小欧-2026-11-19
 
 """
 
@@ -235,6 +237,7 @@ HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可�
 HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
 BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
 HITL_MIN_CONFIRM_TIMEOUT = 3  # 2026-09-03 小欧/北京老陈: 前端倒计时最小值(后端窗口-LEAD钳制下限, 改前硬编码5→现常量3)
+PAUSE_AUTO_RESUME_TIMEOUT = 300.0  # 2026-11-19 小欧: 任务暂停后自动恢复兜底秒数(可被 config tuning.hitl.pause_auto_resume_timeout 覆盖); 防忘点继续致任务永久挂起
 
 # HITL最大待确认数（从 hitl_confirmation.py 集中迁移 2026-07-14 小欧）
 MAX_PENDING_CONFIRMATIONS = 100  # 【系统级】使用对象: HITL 最大待确认数

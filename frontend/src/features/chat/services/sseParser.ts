@@ -132,6 +132,7 @@
 //   kind 分派与 questions/timeout 读取交 transport 层; event 叶子(ask/answered/cancelled/expired) — 小欧-2026-11-19
 // 编辑历史: 2026-11-19 小欧 - HITL 授权解耦: 删 onAuthorizationRequired 与 paused 帧授权透传(assignTimeout/normalizeAutoConfirm),
 //   paused/resumed case 删除后按按钮本位恢复(仅 onPaused/onResumed 驱动显示缓冲, 授权走 interact confirm) — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - paused 帧解析 backend_timeout 挂 step, 供人工暂停浮层倒计时(后端 config 单一真源) — 小欧-2026-11-19
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -1049,6 +1050,13 @@ const processSSEData = (
         pushAndFlush(handlers, step);
         onStep?.(step);
 
+        // 2026-11-19 小欧 - paused 帧带 backend_timeout, 挂到 step 供人工暂停浮层倒计时(与 question/授权同范式)
+        if (
+          rawData.type === 'paused' &&
+          rawData.data?.backend_timeout != null
+        ) {
+          step.backend_timeout = Number(rawData.data.backend_timeout);
+        }
         // 根据type调用对应的回调(按钮 paused/resumed 驱动显示缓冲; HITL 授权不走此, 已收敛 interact confirm)
         switch (rawData.type) {
           case 'paused':

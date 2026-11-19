@@ -62,6 +62,7 @@
 // 编辑历史: 2026-11-18 小欧 - RightViewer 透传 tasksLoading: 切会话后任务清单未就绪的那一帧
 //   右栏用加载态替代「暂无执行记录」空态 — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 商量 - 注册 question.dock 槽(input 上方): 包装组件内聚 useQuestionDock, 主 memo 零新依赖
+// 编辑历史: 2026-11-19 小欧 - 注册 pause.dock 槽(taskinfo 徽条上方): PauseDockSlot 自订阅 Store, 主 memo 零新依赖 — 小欧-2026-11-19
 
 import { useCallback, useMemo } from 'react';
 import { Typography } from 'antd';
@@ -81,6 +82,8 @@ import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 // 2026-11-18 商量 - question 阻塞问答 dock(会话内面板, 停靠 input 上方)
 import { QuestionDockSlot } from '../components/question/QuestionDockSlot';
+// 2026-11-19 小欧 - 人工暂停小浮层(停靠 taskinfo 徽条上方)
+import { PauseDockSlot } from '../components/pause/PauseDockSlot';
 // 2026-10-30 小欧 - 删 chatStreamStore 直接导入: storeStatus 改由 chatStreaming.status 传入(同一快照,
 //   且已入 useMemo 依赖), 本文件不再直读 store。
 import { Colors, FontSize, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
@@ -472,6 +475,18 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         slot: 'question',
         key: 'question.dock',
         component: <QuestionDockSlot sessionId={sessionId} />,
+        defaultVisible: true,
+      },
+      {
+        // 2026-11-19 小欧: 人工暂停小浮层, 停靠 taskinfo 徽条上方, 明确"用户点了暂停"并倒计时
+        slot: 'pause',
+        key: 'pause.dock',
+        component: (
+          <PauseDockSlot
+            sessionId={sessionId}
+            serverTaskId={activeTaskId ?? serverTaskId}
+          />
+        ),
         defaultVisible: true,
       },
       {

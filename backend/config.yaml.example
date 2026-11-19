@@ -708,6 +708,7 @@ tuning:
     bypass_auto_lead: 2            # 自动放行弹窗倒计时提前N秒归零,页面先收好后端再放行
     hitl_min_confirm_timeout: 3    # 倒计时至少显示N秒,防弹窗一闪来不及点
     max_pending_confirmations: 100 # 同时排队等确认最多N条,超了新的直接拒(防弹窗洪水)
+    pause_auto_resume_timeout: 300 # 任务暂停后最多等N秒自动恢复,防忘点继续致任务永久挂起(2026-11-19 小欧)
 
   # 内容截断（3 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   content:

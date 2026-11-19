@@ -17,6 +17,8 @@
 //   修复, @types/node@20 的 Timeout 覆盖 DOM number) — 小欧-2026-11-06
 // 编辑历史: 2026-11-19 小欧 - handleTogglePause 加弹窗等待拦截: 命令式读 Store pending(HITL/question)时禁止暂停,
 //   与 SubmitActions 置灰共用 hasPendingInteraction 单一真源, UI 绕过也拦得住 — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - 暂停即时提示改本地文案「正在暂停…当前步骤输出完成后生效」(轮边界挂起语义),
+//   不再用后端 result.message, 不接返回值 — 小欧-2026-11-19
 
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
@@ -255,8 +257,8 @@ export const useChatTaskControl = (
 
     try {
       if (!isPaused) {
-        // 暂停：发送暂停请求
-        const result = await taskControlApi.pause(
+        // 暂停：发送暂停请求(2026-11-19 小欧: 提示改本地文案"正在暂停", 不再用后端 result.message, 不接返回值)
+        await taskControlApi.pause(
           serverTaskId ?? undefined,
           sessionId ?? undefined
         );
@@ -265,13 +267,9 @@ export const useChatTaskControl = (
         setIsPaused(true);
         isPausedRef.current = true;
 
-        // 2026-10-30 小欧 P2(体验, 纯展示层零后端改动): 暂停=轮边界挂起语义(本轮 LLM 完成后才真正挂起),
-        //   提示补齐排队说明, 避免"已暂停但内容仍在流式输出"的体感困惑 — 小欧-2026-10-30
-        // 显示后端返回的具体消息
-        showTaskResultMessage(
-          'pause',
-          `${result.message || '任务已暂停'}（当前步骤完成后生效）`
-        );
+        // 2026-11-19 小欧 P2 体验整改: 暂停=轮边界挂起(本轮 LLM 输出完后才真停), 即时提示明确"正在暂停→完成后生效",
+        //   与按钮图标(此时变▶)共同表达"暂停请求已受理、即将生效", 避免用户以为内容该立刻停 — 小欧-2026-11-19
+        showTaskResultMessage('pause', '正在暂停…当前步骤输出完成后生效');
       } else {
         // 继续：发送恢复请求
         const result = await taskControlApi.resume(

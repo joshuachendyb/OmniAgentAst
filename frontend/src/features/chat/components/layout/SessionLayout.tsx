@@ -14,6 +14,7 @@
 // 2026-11-13 商量 - 底部三槽(taskinfo/config/input)合并为同一 dock: 原各自为根 flex 子项被根 gap 分隔,
 //   taskinfo 与输入框间形成 8px 白缝且两条上边线平行; 合并后紧贴, 仅保留与中部区的根间距 — 商量-2026-11-13
 // 2026-11-13 商量 - 间距归一: 各处 gap 改走全站间距语义档 Gap, 容器内距改走 Spacing — 商量-2026-11-13
+// 2026-11-19 小欧 - 底部 dock 容器加 position:relative + pause 插槽浮层贴 taskinfo 徽条上方(absolute 不占布局) — 小欧-2026-11-19
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -220,7 +221,29 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     {/* ③④⑤ 底部停靠区: taskinfo/config/input 合并为同一 dock 紧贴排列。
         原三者各自为根 flex 子项, 根 gap 在 taskinfo 与输入框之间留 8px 白缝,
         两条上边线上下平行形成断线感; 合并后内部无缝隙, 仅与中部区保留根 gap。 */}
-    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        position: 'relative',
+      }}
+    >
+      {/* 2026-11-19 小欧 - 人工暂停小浮层贴 taskinfo 徽条上方: absolute 不占布局, 会话区不压缩;
+          瞄点是 taskinfo 徽标(停靠区顶端), 浮层 bottom:100% 贴其上缘, 左对齐徽标列 */}
+      {hasVisibleSlot(panels, 'pause') && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            bottom: '100%',
+            paddingBottom: Gap.STACK,
+            zIndex: 20,
+          }}
+        >
+          {renderSlot(panels, 'pause')}
+        </div>
+      )}
       {hasVisibleSlot(panels, 'taskinfo') && (
         <div>{renderSlot(panels, 'taskinfo')}</div>
       )}
