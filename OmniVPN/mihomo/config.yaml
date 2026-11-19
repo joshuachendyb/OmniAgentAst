@@ -6,107 +6,56 @@ log-level: info
 external-controller: 127.0.0.1:9090
 proxies:
 
-  # 出口 109.122.196.245 (DE/FRA) — N825  414ms
-  - name: N825
+  # 出口 51.255.37.164 (FR/CDG) — N907  878ms
+  - name: N907
     type: vless
-    server: 37.114.37.192
+    server: 163.245.42.87
     port: 443
-    uuid: "955d8dc7-5e3b-40ac-b2bb-bd8aa20fc7e6"
-    udp: true
-    tls: true
-    servername: "api-mod.storagedirectguide.com"
-    client-fingerprint: chrome
-    network: grpc
-    reality-opts:
-      public-key: "eyEGQfdxyhZG0bCKlwp8hSihdc5WHTGmw4umrW4_bxY"
-    grpc-opts:
-      grpc-service-name: "api-mod"
-  # 出口 130.61.145.251 (DE/FRA) — N03  2645ms
-  - name: N03
-    type: ss
-    server: 130.61.145.251
-    port: 59924
-    cipher: "2022-blake3-chacha20-poly1305"
-    password: "uou5NTq+xna9PBIG+8jtSSyQ6idxiXZgeK+Uw52qopY="
-    udp: true
-  # 出口 163.123.193.7 (DE/FRA) — N02  561ms
-  - name: N02
-    type: ss
-    server: 47.85.162.44
-    port: 443
-    cipher: "2022-blake3-chacha20-poly1305"
-    password: "3NBsnBLanPfG6i3S2GTHineswr6EeSJPb0PCeMQoGoA="
-    udp: true
-  # 出口 185.255.115.181 (DE/FRA) — N732  874ms
-  - name: N732
-    type: vless
-    server: 4935e4t.de25.h1clayd.click
-    port: 443
-    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
+    uuid: "b9bfa54d-bc44-4592-a6d6-89a9665d286f"
     flow: "xtls-rprx-vision"
     udp: true
     tls: true
-    servername: 4935e4t.de25.h1clayd.click
+    servername: "mother-earth.fyi"
     client-fingerprint: chrome
     reality-opts:
-      public-key: "MzgB17ZFbKqs8pbC3EscTzHid_ENc-k_Cp6nXl-2knw"
-      short-id: "6976d670818644cc"
-  # 出口 45.198.55.32 (ES/MAD) — N1297  2363ms
-  - name: N1297
+      public-key: "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc"
+  # 出口 200.181.82.226 (HK/HKG) — N972  5582ms
+  - name: N972
     type: vless
-    server: 196.199.122.2
-    port: 443
-    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
+    server: free.fugui.lol
+    port: 47396
+    uuid: "ead3595f-4020-4e76-a3ec-c248e1a2f2f7"
     flow: "xtls-rprx-vision"
     udp: true
     tls: true
-    servername: 7aa271t.es1.h1clayd.click
-    client-fingerprint: firefox
-    reality-opts:
-      public-key: "ZSmetD4e9QG5CiXhniHg5HJB68L4kwbgAkJmMHtVwEE"
-      short-id: "42426c882c5fcd41"
-  # 出口 152.89.244.172 (FI/HEL) — N824  550ms
-  - name: N824
-    type: vless
-    server: 2.26.191.219
-    port: 443
-    uuid: "955d8dc7-5e3b-40ac-b2bb-bd8aa20fc7e6"
-    flow: "xtls-rprx-vision"
-    udp: true
-    tls: true
-    servername: "gsdfhjb.wey-land.net"
+    servername: swdist.apple.com
     client-fingerprint: chrome
     reality-opts:
-      public-key: "Wv7JkcxhkaWGIl2YjzM_8jlmAS99IwsvseYDSIkqt1k"
-  # 出口 57.131.27.21 (IT/MXP) — N219  406ms
-  - name: N219
+      public-key: "IjWYbHNrZb3UCQxsTJyekEOA3tHq42L6Jw3O8MmLYVQ"
+      short-id: "fa514b83"
+  # 出口 80.174.118.42 (IT/MXP) — N20  721ms
+  - name: N20
     type: ss
-    server: 57.131.27.21
-    port: 8388
-    cipher: "aes-256-gcm"
-    password: "itzvpn@321"
-    udp: true
-  # 出口 80.174.118.87 (IT/MXP) — N213  517ms
-  - name: N213
-    type: ss
-    server: 202.50.253.90
+    server: 202.50.253.45
     port: 19999
     cipher: "aes-256-gcm"
     password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
     udp: true
-  # 出口 2a0f:85c1:b36:12d::1 (NL/AMS) — N645  770ms
-  - name: N645
-    type: trojan
-    server: alireza.karamoz1.ir
+  # 出口 164.37.224.239 (NL/AMS) — N932  2550ms
+  - name: N932
+    type: vless
+    server: 196.196.148.85
     port: 443
-    password: poimnap
+    uuid: "cda0862a-0f87-4be9-8ed8-1d0c9e382839"
     udp: true
-    sni: alireza.karamoz1.ir
-    alpn:
-      - h2
-      - http/1.1
-  # 出口 79.182.39.163 (NL/AMS) — N731  1607ms
-  - name: N731
+    tls: true
+    servername: 5d0319t.nl7.h1clayd.click
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: "l-GzBDuNuhnjxoRlZqKvT7jAt_sbVAxhGFsAttO5kXs"
+      short-id: "361d0dd59c70516f"
+  # 出口 79.182.39.163 (NL/AMS) — N756  2942ms
+  - name: N756
     type: vless
     server: 196.196.148.76
     port: 443
@@ -119,8 +68,23 @@ proxies:
     reality-opts:
       public-key: "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA"
       short-id: "8d0d0679f42ffd98"
-  # 出口 80.47.11.123 (PL/WAW) — N845  723ms
-  - name: N845
+  # 出口 94.183.164.176 (NL/AMS) — N691  1941ms
+  - name: N691
+    type: vless
+    server: 94.183.164.176
+    port: 443
+    uuid: "12776e55-6230-48b9-b069-1bb8a04b4237"
+    udp: true
+    tls: true
+    servername: optim.tildacdn.pub
+    client-fingerprint: chrome
+    network: grpc
+    reality-opts:
+      public-key: "_KeOS5u_irk1547CMVB3RdwQzz1SzrQZk-IV-btF7TU"
+    grpc-opts:
+      grpc-service-name: ebl
+  # 出口 80.47.11.123 (PL/WAW) — N879  793ms
+  - name: N879
     type: vless
     server: 80.47.10.106
     port: 443
@@ -132,36 +96,22 @@ proxies:
     reality-opts:
       public-key: "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ"
       short-id: "a7c92e4b10d6f835"
-  # 出口 84.32.217.0 (SE/ARN) — N826  608ms
-  - name: N826
-    type: vless
-    server: 88.216.189.192
+  # 出口 95.143.196.97 (SE/ARN) — N1065  573ms
+  - name: N1065
+    type: trojan
+    server: 95.143.196.32
     port: 443
-    uuid: "955d8dc7-5e3b-40ac-b2bb-bd8aa20fc7e6"
-    flow: "xtls-rprx-vision"
+    password: FkQH0Q5EFneySv20Qj3yoArD2GSb2XZF
     udp: true
-    tls: true
-    servername: "modx.wey-land.net"
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: "1VhM5R3IlHPjzxEeTuik1lcUad-HI6C57MzXxppyXg4"
-  # 出口 88.216.130.235 (SE/ARN) — N847  871ms
-  - name: N847
-    type: vless
-    server: 88.216.60.73
-    port: 443
-    uuid: "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-    udp: true
-    tls: true
-    servername: "ns-api-gw.galioncc.com"
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ"
-      short-id: "a7c92e4b10d6f835"
-  # 出口 107.175.54.116 (US/LAX) — N998  882ms
-  - name: N998
+    sni: "connect-se.mimowhat.online"
+    skip-cert-verify: true
+    alpn:
+      - h2
+      - http/1.1
+  # 出口 107.175.54.116 (US/LAX) — N1177  981ms
+  - name: N1177
     type: vmess
-    server: 172.64.145.93
+    server: www.shopify.com
     port: 443
     cipher: auto
     uuid: "6a89a215-22bf-4bd7-9642-b95b2e09583a"
@@ -174,40 +124,34 @@ proxies:
       path: /hls/cctv5phd.m3u8
       headers:
         Host: guanwang.awsno.com
-  # 出口 48.103.218.241 (US/HEL) — N11  590ms
-  - name: N11
+  # 出口 80.174.118.96 (IT/MXP) — N23  779ms
+  - name: N23
     type: ss
-    server: 48.103.218.241
-    port: 18443
-    cipher: "aes-256-gcm"
-    password: Lpq5UPVHtQYiuB9jEUNc2WkeIYCUH9DE
-    udp: true
-  # 出口 80.174.118.15 (IT/MXP) — N16  549ms
-  - name: N16
-    type: ss
-    server: 202.50.253.18
+    server: 202.50.253.99
     port: 19999
     cipher: "aes-256-gcm"
     password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
     udp: true
-  # 出口 79.182.39.163 (NL/AMS) — N730  1839ms
-  - name: N730
+  # 出口 79.182.39.144 (NL/AMS) — N933  4438ms
+  - name: N933
     type: vless
-    server: 136.148.208.221
+    server: 961ec0g.nl17.h1clayd.click
     port: 443
-    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
-    flow: "xtls-rprx-vision"
+    uuid: "cda0862a-0f87-4be9-8ed8-1d0c9e382839"
     udp: true
     tls: true
-    servername: 8a2e72t.nl20.h1clayd.shop
+    servername: 961ec0g.nl17.h1clayd.click
     client-fingerprint: chrome
+    network: grpc
     reality-opts:
-      public-key: "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA"
-      short-id: "8d0d0679f42ffd98"
-  # 出口 107.175.54.116 (US/LAX) — N977  889ms
-  - name: N977
+      public-key: "xn7KVKS5MOnsFrYrEeRS04JssBCOxh12rxegaDFyGkA"
+      short-id: "6d289ff0f47c0aac"
+    grpc-opts:
+      grpc-service-name: 7d5abcd7d8a1
+  # 出口 107.175.54.116 (US/LAX) — N1016  2237ms
+  - name: N1016
     type: vmess
-    server: 104.18.42.163
+    server: 172.67.190.164
     port: 443
     cipher: auto
     uuid: "6a89a215-22bf-4bd7-9642-b95b2e09583a"
@@ -227,45 +171,33 @@ proxy-groups:
   proxies:
   - Auto
   - DIRECT
-  - N825
-  - N03
-  - N02
-  - N732
-  - N1297
-  - N824
-  - N219
-  - N213
-  - N645
-  - N731
-  - N845
-  - N826
-  - N847
-  - N998
-  - N11
-  - N16
-  - N730
-  - N977
+  - N907
+  - N972
+  - N20
+  - N932
+  - N756
+  - N691
+  - N879
+  - N1065
+  - N1177
+  - N23
+  - N933
+  - N1016
 - name: Auto
   type: url-test
   proxies:
-  - N825
-  - N03
-  - N02
-  - N732
-  - N1297
-  - N824
-  - N219
-  - N213
-  - N645
-  - N731
-  - N845
-  - N826
-  - N847
-  - N998
-  - N11
-  - N16
-  - N730
-  - N977
+  - N907
+  - N972
+  - N20
+  - N932
+  - N756
+  - N691
+  - N879
+  - N1065
+  - N1177
+  - N23
+  - N933
+  - N1016
   url: https://www.google.com/generate_204
   interval: 300
   tolerance: 50

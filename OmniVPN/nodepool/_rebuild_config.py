@@ -5,6 +5,8 @@
 
 用法: python _rebuild_config.py <nodes.yaml> [--apply]
   不带 --apply 只做预演, 打印将要写入的规模。
+
+编辑历史: 2026-11-20 小欧 备份目录从 mihomo\\ 迁到 log\\(已忽略): 原 config.yaml.bak-时间戳 落在 mihomo\\ 与入库 config 同目录, 属过程产物污染 git status; 改落 WORK_DIR(log\\), 入库目录只留 config.yaml
 """
 import os
 import re
@@ -71,7 +73,9 @@ def rebuild(path, nodes_text, names, apply):
     text = "\n".join(out).rstrip("\n") + "\n"
     if apply:
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        bak = path + ".bak-" + stamp
+        # 备份落 log\(已忽略), 不污染 mihomo\ 入库目录 — 小欧-2026-11-20
+        os.makedirs(WORK_DIR, exist_ok=True)
+        bak = os.path.join(WORK_DIR, os.path.basename(path) + ".bak-" + stamp)
         shutil.copy2(path, bak)
         open(path, "w", encoding="utf-8", newline="\n").write(text)
         print("  已写 %s  节点 %d 个  备份 %s" % (os.path.basename(path), len(names), os.path.basename(bak)))
