@@ -6,6 +6,7 @@
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: META_STEP_TYPES 补 'rejected'(meta/业务分流归位, 非新增事件类型; rejected 本就在 ProcessEvent['kind'] 且由后端 rejected 帧驱动), 防 pipeline 把 rejected 当业务步渲染致与 deniedTools 点名条同帧双绘 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: META_STEP_TYPES 补 'rejected'(meta/业务分流归位, 非新增事件类型; rejected 本就在 ProcessEvent['kind'] 且由后端 rejected 帧驱动), 防 pipeline 把 rejected 当业务步渲染致与 deniedTools 点名条同帧双绘 — 小欧-2026-10-11
 // 编辑历史: 2026-11-18 商量 - META_STEP_TYPES 补 question_required/question_resolved: 原进业务流水线但无渲染分支(零产出), hasSteps 误判致查看区空白 — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为 interact, META_STEP_TYPES 同步(否则又踩查看区空白) — 小欧-2026-11-19
 /**
  * pipeline 分流工具
  *
@@ -40,8 +41,8 @@ export const META_STEP_TYPES = [
   //   只由 useTaskInfo 派生进事件列表, pipeline 侧点名条显示不变(仍走 deniedTools)。
   'rejected',
   // 2026-11-18 商量: question 成对事件为用户可见态由 QuestionDock 浮层承担, 不进业务流水线
-  'question_required',
-  'question_resolved',
+  // 2026-11-19 小欧: 合并为通用 interact(question 等), 同样由浮层承担, 不进业务流水线
+  'interact',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>

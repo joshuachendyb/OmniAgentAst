@@ -128,6 +128,8 @@
 // 编辑历史: 2026-11-18 商量 - question_required 下发补 backend_timeout(镜像 authorization 的 assignTimeout 归一), 供 dock 倒计时 — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - schedule notice 三态都 push 事件列表(与其它 notice 同构); 仅 phase=done 且带 items
 //   时投 onScheduleUpdate 写计划卡片, failed 只进事件列表不画卡片(保持上一份) — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact: sseParser 只解析通用字段投 onInteract,
+//   kind 分派与 questions/timeout 读取交 transport 层; event 叶子(ask/answered/cancelled/expired) — 小欧-2026-11-19
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -212,9 +214,8 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'notice', // 2026-10-25 小欧: 通知信封(事前/事后统一)
   'refs_notice', // 2026-10-30 小欧: 引用回执(仅 SSE, 不落库; 消费方 chip 5 态)
   'merged',
-  // 2026-11-18 商量 - question 阻塞问答成对事件(漏加则帧在 switch 前被静默丢弃, seq 不推进)
-  'question_required',
-  'question_resolved',
+  // 2026-11-19 小欧 - 通用双向交互事件(question 等按 kind 分派; 漏加则帧在 switch 前被静默丢弃, seq 不推进)
+  'interact',
 ]);
 
 const logTypeArrival = (type: string, round?: number) => {
@@ -263,21 +264,13 @@ const processSSEData = (
       }[];
     }) => void;
     onRetry?: (message: string, waitTime?: number) => void;
-    // 2026-11-18 商量 - question 阻塞问答回调(与 onAuthorizationRequired 同层结构)
-    onQuestionRequired?: (data: {
-      question_id: string;
-      questions: {
-        header: string;
-        question: string;
-        options: { label: string; description?: string }[];
-        multiple?: boolean;
-      }[];
-      content?: string;
-      backend_timeout?: number; // 2026-11-18 商量: 后端窗口秒数, dock 倒计时
-    }) => void;
-    onQuestionResolved?: (data: {
-      question_id?: string;
-      outcome?: string;
+    // 2026-11-19 小欧 - 通用双向交互事件回调(question 等按 kind 分派, sseParser 只投通用载荷)
+    onInteract?: (data: {
+      interaction_id: string;
+      kind: string;
+      event: 'ask' | 'answered' | 'cancelled' | 'expired';
+      content: string;
+      payload?: Record<string, unknown>;
     }) => void;
     // 2026-11-19 小欧: schedule 清单 notice(kind=schedule) → 写 store, taskinfo 卡片唯一来源
     onScheduleUpdate?: (
@@ -1172,28 +1165,29 @@ const processSSEData = (
         break;
       }
       // 2026-11-18 商量 - question 阻塞问答成对事件: 解析层只 push 步骤 + 投回调(与 paused/resumed 同范式)
-      case 'question_required':
-      case 'question_resolved': {
+      // 2026-11-19 小欧 - 通用双向交互事件(question 等): sseParser 只解析通用字段并投 onInteract,
+      //   kind 分派与特殊载荷(questions/timeout)归一交 transport 层, 解析器不认识任何 tool 语义
+      case 'interact': {
         logTypeArrival(rawData.type, step.step);
-        step.type = rawData.type as ExecutionStep['type'];
+        step.type = 'interact';
         step.content = rawData.content || '';
+        step.interaction_id = (rawData.interaction_id as string) || '';
+        step.interact_kind = (rawData.kind as string) || '';
+        step.interact_event =
+          (rawData.event as 'ask' | 'answered' | 'cancelled' | 'expired') ||
+          'ask';
+        if (rawData.payload && typeof rawData.payload === 'object') {
+          step.interact_payload = rawData.payload as Record<string, unknown>;
+        }
         pushAndFlush(handlers, step);
         onStep?.(step);
-        if (rawData.type === 'question_required') {
-          handlers.onQuestionRequired?.({
-            question_id: (rawData.question_id as string) || '',
-            questions: (rawData.questions || []) as Parameters<
-              NonNullable<typeof handlers.onQuestionRequired>
-            >[0]['questions'],
-            content: rawData.content as string | undefined,
-            backend_timeout: assignTimeout(rawData.backend_timeout), // 2026-11-18 商量: 镜像 authorization 的超时归一(合法0保留)
-          });
-        } else {
-          handlers.onQuestionResolved?.({
-            question_id: rawData.question_id as string | undefined,
-            outcome: rawData.outcome as string | undefined,
-          });
-        }
+        handlers.onInteract?.({
+          interaction_id: step.interaction_id,
+          kind: step.interact_kind,
+          event: step.interact_event,
+          content: step.content || '',
+          payload: step.interact_payload,
+        });
         step.timestamp = timestampValue;
         break;
       }

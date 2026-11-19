@@ -94,6 +94,8 @@
 //   与 HITL 等待语义同源(精确 id 删, 不 clear) — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - 新增 scheduleHandlers: notice(kind=schedule) 的 items 写 store.scheduleList(整体替换,
 //   空清单写 null 收口), 清单唯一来源; 失败不发 notice 故保留上一份 — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - questionHandlers 升格为通用 interactHandlers: 按 kind 分派, question 分支读写 pendingQuestion,
+//   questions/timeout 从 payload 取; event=ask 发问/answered·cancelled·expired 清窗; 新增交互 tool 加分支即可 — 小欧-2026-11-19
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -1131,35 +1133,56 @@ function hitlHandlers(s: ChatStreamSession) {
   };
 }
 
-/** 2026-11-18 商量 - handler 组③b: question 阻塞问答(与 HITL 等待语义相同, 复用 hitlWaitingKeys) */
-function questionHandlers(s: ChatStreamSession) {
-  return {
-    onQuestionRequired: (data: PendingQuestionPayload) => {
-      commit(s, (d) => {
-        if (
-          d.pendingQuestion &&
-          d.pendingQuestion.question_id !== data.question_id
-        ) {
+/** 2026-11-19 小欧 - handler 组③b: 通用双向交互事件 interact, 按 kind 分派到各 tool 专属逻辑
+ *  question 为第一个使用者: start→写 pendingQuestion, done/failed→清窗; 后续 confirm 等加分支即可, 框架零改。
+ */
+function interactHandlers(s: ChatStreamSession) {
+  const onQuestion = (
+    event: 'ask' | 'answered' | 'cancelled' | 'expired',
+    id: string,
+    payload?: Record<string, unknown>
+  ) => {
+    commit(s, (d) => {
+      if (event === 'ask') {
+        // 发问: questions/timeout 从 payload 取(question 特殊性, 框架不认识)
+        if (d.pendingQuestion && d.pendingQuestion.question_id !== id) {
           d.hitlWaitingKeys.delete(d.pendingQuestion.question_id);
         }
-        d.pendingQuestion = { ...data };
-        d.hitlWaitingKeys.add(data.question_id);
+        const questions = (payload?.questions ||
+          []) as PendingQuestionPayload['questions'];
+        const backendTimeout = payload?.backend_timeout;
+        d.pendingQuestion = {
+          question_id: id,
+          questions,
+          backend_timeout:
+            typeof backendTimeout === 'number' ? backendTimeout : undefined,
+        };
+        d.hitlWaitingKeys.add(id);
         d.status = 'paused';
         d.isReceiving = true;
-      });
-    },
-    onQuestionResolved: (data: { question_id?: string; outcome?: string }) => {
-      commit(s, (d) => {
-        if (data.question_id) d.hitlWaitingKeys.delete(data.question_id);
-        if (
-          !data.question_id ||
-          d.pendingQuestion?.question_id === data.question_id
-        ) {
+      } else {
+        // 收口: answered/cancelled/expired 都清窗(event 本身已表达结果)
+        d.hitlWaitingKeys.delete(id);
+        if (!d.pendingQuestion || d.pendingQuestion.question_id === id) {
           d.pendingQuestion = null;
         }
         d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
         d.isReceiving = true;
-      });
+      }
+    });
+  };
+  return {
+    onInteract: (data: {
+      interaction_id: string;
+      kind: string;
+      event: 'ask' | 'answered' | 'cancelled' | 'expired';
+      content: string;
+      payload?: Record<string, unknown>;
+    }) => {
+      if (data.kind === 'question') {
+        onQuestion(data.event, data.interaction_id, data.payload);
+      }
+      // 未来 kind=confirm/select → 加分支, 框架零改
     },
   };
 }
@@ -1245,7 +1268,7 @@ function storeHandlers(s: ChatStreamSession) {
       ...refHandlers(s),
       ...broadcastHandlers(s),
       ...hitlHandlers(s),
-      ...questionHandlers(s), // 2026-11-18 商量: question 阻塞问答
+      ...interactHandlers(s), // 2026-11-19 小欧: 通用 interact 按 kind 分派(question 第一个使用者)
       ...scheduleHandlers(s), // 2026-11-19 小欧: schedule 清单 notice → store
       ...errorHandlers(s, (b) => {
         branch = b;

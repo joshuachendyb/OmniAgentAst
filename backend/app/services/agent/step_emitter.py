@@ -34,6 +34,8 @@ Author: 小沈 - 2026-05-31
 #   其它 notice 不传为 None, 行为不变。
 # 2026-11-19 小欧 - emit_notice 加可选 only_event 呈现标记(默认 False=全位置): True=仅事件列表不画卡片不占位置2
 #   (schedule error); 纯前端字段不落库不进 LLM, 老 notice 无此字段按默认 False 处理, 兼容零退化。
+# 2026-11-19 小欧 - 新增 emit_interact: 通用双向交互事件统一发射器(interaction_id/kind/event/payload),
+#   event=ask/answered/cancelled/expired(phase+outcome 合并), question 为第一个使用者, 用专用 InteractStep 类
 """
 
 import time
@@ -138,6 +140,29 @@ class StepEmitter:
         except Exception as e:        # 播报失败不得影响主链
             logger.warning(f"[StepEmitter] notice 事件播报失败(kind={kind} phase={phase}): {e}")
 
+    async def emit_interact(self, interaction_id: str, kind: str, event: str, content: str = "",
+                            payload: Optional[Dict] = None) -> None:
+        """通用双向交互事件统一发射器 — 小欧 2026-11-19
+
+        事件契约(框架级, 不认识任何 tool 特殊语义): type=interact + interaction_id + kind
+          + event(ask/answered/cancelled/expired, 这条消息发生了什么) + content(文案) + payload(可选, 各 tool 特殊内容)。
+        event 为叶子语义(一字段说清事件), phase/outcome 已合并其中; 具体结果值放 payload。
+        question 为第一个使用者, 后续交互 tool(confirm/select...)复用本发射器, 只填自己的 kind/payload。
+        使用专用 InteractStep 类而非 MetaStep kwargs(字段为框架一等公民, clarity > 复用 kwargs)。
+        """
+        log_and_print(f"[StepEmit] interact {kind}/{event}: {content[:80]}", level="WARNING")
+        try:
+            from app.services.agent.steps import InteractStep
+            from app.services.task.task_state import get_stream_buffer
+            step = self.emit(InteractStep(
+                step=len(self.agent.steps), interaction_id=interaction_id, kind=kind,
+                event=event, content=content, payload=payload))
+            _buf = get_stream_buffer(self.agent.task_id)
+            if _buf is not None:
+                await _buf.publish(step.to_dict())
+        except Exception as e:        # 播报失败不得影响主链
+            logger.warning(f"[StepEmitter] interact 事件播报失败(kind={kind} event={event}): {e}")
+
     async def ask_question(self, questions: list) -> dict:
         """阻塞问询统一发射器 — 商量 2026-11-18
 
@@ -164,9 +189,9 @@ class StepEmitter:
             logger.warning("[StepEmitter] ask_question: 无流缓冲区, 无法发射问询事件")
             raise RuntimeError("问询通道不可用: 无流缓冲区")
         # 窗口模式随事件链一道下传: 网关与工具层都按此布尔取兜底文案, 不再各自重读配置(单一真源) — 商量-2026-11-18
+        # 2026-11-19 小欧 - 不再传 publish: 网关经 emit_interact 统一发射(start/done), 此处只做 buffer 可用性守卫
         return await ask_question(
-            self.agent, questions, publish=_buf.publish,
-            timeout=timeout, auto_confirm=not _enabled,
+            self.agent, questions, timeout=timeout, auto_confirm=not _enabled,
         )
 
     def _get_tracker(self):

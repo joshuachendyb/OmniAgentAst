@@ -16,6 +16,8 @@
 #   序列化不变(to_dict 仍走 get_content()), 纯增量零副作用 — 小欧 2026-09-02
 # 2026-09-18 小欧 - safety_level→severity: kwargs透传注释同步更新 — 小欧-2026-09-18
 # 2026-11-18 商量 - MetaStep 契约文档补 question_required/question_resolved 两事件类型 — 商量-2026-11-18
+# 2026-11-19 小欧 - MetaStep 契约描述移除上述两类型(question 已升格为独立 interact 事件, 由 InteractStep 承载,
+#   不再走 MetaStep); 11-18 历史条目保留 — 小欧-2026-11-19
 """
 ReasoningStep 抽象基类
 
@@ -111,7 +113,7 @@ class AgentResult:
 # 此前 steps/__init__.py 注释误写 meta_step.py, 已修正。
 # 如需严格 SRP 拆分再单独抽 meta_step.py。
 class MetaStep(ReasoningStep):
-    """运行时元事件 - start/cancelled/paused/resumed/retrying/authorization_required/question_required/question_resolved — 小欧 2026-07-12 / 小沈 2026-07-13 / 商量 2026-11-18"""
+    """运行时元事件 - start/cancelled/paused/resumed/retrying/authorization_required — 小欧 2026-07-12 / 小沈 2026-07-13 / 商量 2026-11-18"""
 
     def __init__(
         self,

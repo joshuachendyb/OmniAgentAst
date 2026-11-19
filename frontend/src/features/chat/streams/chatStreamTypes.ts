@@ -108,6 +108,15 @@ export interface ScheduleItem {
   status: ScheduleStatus;
 }
 
+/** 2026-11-19 小欧: 通用双向交互事件载荷(interact, question 为第一个使用者) — 框架级字段, 不认识 tool 特殊语义 */
+export interface InteractPayload {
+  interaction_id: string; // 交互 id: 同 id 多轮关联, 不同 id 独立
+  kind: string; // 交互种类: question/confirm/...
+  event: 'ask' | 'answered' | 'cancelled' | 'expired'; // 这条消息发生了什么(叶子语义)
+  content: string; // 人可读文案
+  payload?: Record<string, unknown>; // 各 tool 特殊内容(question 的 questions/backend_timeout 等), 框架零解释
+}
+
 export interface SessionSnapshot {
   serverTaskId: string | null;
   lastSeq: number; // event_log 已处理偏移，初始 -1

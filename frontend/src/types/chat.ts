@@ -32,6 +32,8 @@
 //   由 getSessionMessages 响应 has_more/total 透传) — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 商量 - StatusValue/StatusMessage 增 question_required/resolved 与 question_id/questions/outcome;
 //   新增 QuestionItem/QuestionOptionItem 类型供 question dock 消费 — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact, 字段 interaction_id/kind/event/payload
+//   (event 叶子 ask/answered/cancelled/expired); 载荷类型在 streams/chatStreamTypes — 小欧-2026-11-19
 
 /**
  * 流式API响应类型定义
@@ -165,8 +167,7 @@ export type StatusValue =
   | 'resumed'
   | 'retrying'
   | 'notice'
-  | 'question_required'
-  | 'question_resolved';
+  | 'interact'; // 2026-11-19 小欧: 通用双向交互事件(question 等), 原 question_required/resolved 合并
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
@@ -186,13 +187,7 @@ export interface QuestionItem {
 }
 
 export interface StatusMessage {
-  type:
-    | 'paused'
-    | 'retrying'
-    | 'resumed'
-    | 'notice'
-    | 'question_required'
-    | 'question_resolved';
+  type: 'paused' | 'retrying' | 'resumed' | 'notice' | 'interact'; // 2026-11-19 小欧: 通用双向交互事件, 原 question_required/resolved 合并
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -200,9 +195,11 @@ export interface StatusMessage {
   params?: Record<string, unknown>; // 仅 paused(HITL) 时可选
   safety_level?: string; // 仅 paused(HITL) 时可选
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
-  question_id?: string; // 仅 question_required/resolved 时可选
-  questions?: QuestionItem[]; // 仅 question_required 时可选
-  outcome?: string; // 仅 question_resolved: answered/cancelled/expired
+  // 2026-11-19 小欧: interact 交互事件字段(question 等按 kind 分派)
+  interaction_id?: string;
+  interact_kind?: string;
+  interact_event?: 'ask' | 'answered' | 'cancelled' | 'expired';
+  interact_payload?: Record<string, unknown>;
 }
 
 // ==================== 联合类型 ====================
@@ -267,8 +264,7 @@ export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
     msg.type === 'retrying' ||
     msg.type === 'resumed' ||
     msg.type === 'notice' ||
-    msg.type === 'question_required' ||
-    msg.type === 'question_resolved'
+    msg.type === 'interact'
   );
 }
 

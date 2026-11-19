@@ -4,6 +4,7 @@
 #   schedule 注册描述为工具级路由文案; items 字段规格由 schema description 引用 tool_constants.SCHEDULE_ITEMS_PARAM_DESC
 # 2026-11-19 小欧 - 注册描述"中途更换/必须更新每个状态"改"中途替换/状态按实际进度填写", 消除术语不一致与 pending 误导
 # 2026-11-19 小欧 - 注册描述补 plan_stage 必填说明(init/update/finish)
+# 2026-11-19 小欧 - question 注册也声明 hide_from_steps=True(与 schedule 同: 非业务交互 tool 不画通用工具行)
 """
 agent_register — 智能体交互工具注册点(question / schedule)
 """
@@ -61,9 +62,9 @@ AGENT_TOOL_EXAMPLES = {
 def _register_agent_tools():
     """注册 question/schedule 两个智能体交互工具 — 商量 2026-11-18"""
     tool_methods = {"question": question, "schedule": schedule}
-    # 2026-11-19 小欧 - 前端步骤流隐藏: schedule 清单走 notice→taskinfo 独立通道, 不画工具行;
-    #   question 保持默认(False, 仍画工具行, 其用户可见态由 question_required/resolved meta 承担)。
-    hide_from_steps = {"schedule"}
+    # 2026-11-19 小欧 - 前端步骤流隐藏(非业务 tool 共性): 两者都是 agent 与用户的交互, 产出由专属 UI 呈现,
+    #   不画通用工具行; 落库/喂 LLM 照常。schedule→notice 清单卡; question→interact 问询浮层。
+    hide_from_steps = {"schedule", "question"}
     for name, method in tool_methods.items():
         tool_registry.register(
             name=name,

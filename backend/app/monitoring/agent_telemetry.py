@@ -68,7 +68,7 @@
 #   (无历史/直接注入/压缩模型[provider/model] 三态), 存槽 _first_frame_content, 后续帧从槽读保持不变; 槽位随 telemetry 实例每任务新建(天然隔离)。 — 小沈-2026-10-26
 # 2026-11-03 小欧 - log_and_print 增 level 参数: _log_task_end 任务结束汇总显式传 level="WARNING"
 #   (任务起止必须可见), 文件通道仍固定 INFO 落盘 — 小欧-2026-11-03
-# 2026-11-18 商量 - SSE_ONLY_TYPES 增 question_required/question_resolved: 阻塞问答两事件仅 SSE 不落库, 不计业务步
+# 2026-11-19 小欧 - question_required/question_resolved 升格为 interact: 通用双向交互事件仅 SSE 不落库, 不计业务步
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -102,7 +102,7 @@ SSE_ONLY_TYPES = frozenset({          # 维度1: 仅 SSE 下发, 不落 chat_tas
     "chunk", "thought-start", "error", "usage", "paused",
     "resumed", "retrying", "cancelled", "rejected",
     "notice",  # 2026-10-25 小欧: 通知信封(事前/事后), 仅SSE不落库
-    "question_required", "question_resolved",  # 2026-11-18 商量: 阻塞问答成对事件, 仅SSE不落库
+    "interact",  # 2026-11-19 小欧: 通用双向交互事件(question 等), 仅SSE不落库
 })
 PERSISTED_NON_BIZ_TYPES = frozenset({ # 维度2: 落库(需回放)但不计业务步
     "start", "stats", "history_context", "final_stats", "authorization_required",  # 2026-10-04 小欧: context_overview 改名 history_context
