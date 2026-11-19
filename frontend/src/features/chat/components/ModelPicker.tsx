@@ -31,6 +31,7 @@
 //   Gap/Spacing/Radius/CONTROL_PADDING, 消除 14 处魔法值(columnGap:10 不在刻度/minWidth:248 裸字面量等);
 //   marginBottom:8 改父容器 gap(铁律三), marginTop:3 改 flex+gap(铁律三) — 小欧-2026-11-16
 // 编辑历史: 2026-11-20 小欧 - 修复下拉与选中项tip重叠抖动: 外层 Tooltip 改受控 open(select 打开时强制关 tip), 消除信息卡浮层与下拉浮层在选中框上方重叠、鼠标穿越反复显隐导致的页面抖动; Select onOpenChange 同步开合态
+// 编辑历史: 2026-11-20 小欧 - tip 标签改名并统一左对齐: 输入→输入模态/输出→输出模态/上下文→窗口上限/推理→当前推理/可调→推理选项; "推理选项"从推理值区内嵌 span 提为独立 grid 行与其他标签同列左对齐; 标签列宽常量 TIP_LABEL_COL_W=60 容纳4字, 卡宽248→260防值折行
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -123,8 +124,10 @@ const TIP_ROW_LABEL_STYLE: React.CSSProperties = {
 
 // 缺省推理档位(低/中/高), 与后端 DEFAULT_PARAM_OPTIONS.reasoning_effort 同源;
 // 推理深度仅两层: 模型层(model_params.reasoning_effort) > 缺省层(本表), 模型层未设即按缺省 — 小欧-2026-11-16
-// 悬浮信息卡最小宽度(px): 保证四行标签+值不折行
-const TIP_CARD_MIN_W = 248;
+// 悬浮信息卡最小宽度(px): 保证四行标签+值不折行(标签列60px容纳"输入模态/窗口上限/当前推理"4字) — 小欧-2026-11-20
+const TIP_CARD_MIN_W = 260;
+// 标签列宽(px): 4字标签(输入模态/输出模态/窗口上限/当前推理)在12px字号下需≥48px, 留余量取60 — 小欧-2026-11-20
+const TIP_LABEL_COL_W = 60;
 const DEFAULT_EFFORT_OPTIONS = ['low', 'medium', 'high'];
 
 const formatContext = (value?: number): string => {
@@ -208,7 +211,7 @@ const ModelMetaTip: React.FC<{
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '48px 1fr',
+          gridTemplateColumns: `${TIP_LABEL_COL_W}px 1fr`,
           rowGap: Gap.STACK,
           columnGap: Spacing.MD,
           fontSize: FontSize.SECONDARY,
@@ -216,42 +219,34 @@ const ModelMetaTip: React.FC<{
           alignItems: 'start',
         }}
       >
-        <span style={TIP_ROW_LABEL_STYLE}>输入</span>
+        <span style={TIP_ROW_LABEL_STYLE}>输入模态</span>
         <ModalityTags items={meta.input_modalities ?? []} />
         {showOutput && (
           <>
-            <span style={TIP_ROW_LABEL_STYLE}>输出</span>
+            <span style={TIP_ROW_LABEL_STYLE}>输出模态</span>
             <ModalityTags items={output} />
           </>
         )}
-        <span style={TIP_ROW_LABEL_STYLE}>上下文</span>
+        <span style={TIP_ROW_LABEL_STYLE}>窗口上限</span>
         <span>{formatContext(meta.context_length)}</span>
-        {(effortValue || effortOptions.length > 0) && (
+        {effortValue && (
           <>
-            <span style={TIP_ROW_LABEL_STYLE}>推理</span>
-            <span
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: Gap.ROW,
-              }}
-            >
-              <span>
-                {effortValue && (
-                  <span style={{ fontWeight: FontWeight.MEDIUM }}>
-                    {effortValue}
-                  </span>
-                )}
-                {effortSource && (
-                  <span style={TIP_LABEL_STYLE}>（{effortSource}）</span>
-                )}
+            <span style={TIP_ROW_LABEL_STYLE}>当前推理</span>
+            <span>
+              <span style={{ fontWeight: FontWeight.MEDIUM }}>
+                {effortValue}
               </span>
-              {effortOptions.length > 0 && (
-                <span style={TIP_LABEL_STYLE}>
-                  可调{' '}
-                  {effortOptions.map((e) => EFFORT_LABELS[e] ?? e).join(' / ')}
-                </span>
+              {effortSource && (
+                <span style={TIP_LABEL_STYLE}>（{effortSource}）</span>
               )}
+            </span>
+          </>
+        )}
+        {effortOptions.length > 0 && (
+          <>
+            <span style={TIP_ROW_LABEL_STYLE}>推理选项</span>
+            <span style={TIP_LABEL_STYLE}>
+              {effortOptions.map((e) => EFFORT_LABELS[e] ?? e).join(' / ')}
             </span>
           </>
         )}
