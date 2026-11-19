@@ -15,7 +15,7 @@ import { useStreamPulse } from '../../features/chat/hooks/useStreamPulse';
 import type { StreamTone } from '../../features/chat/hooks/useStreamPulse';
 import { IDLE_TIMEOUT } from '../../features/chat/streams/chatStreamTransport';
 import type { PulseSubject } from '../../features/chat/streams/chatStreamStore';
-import type { StreamStatus } from '../../features/chat/streams/backupTypes';
+import type { StreamStatus } from '../../features/chat/streams/chatStreamTypes';
 import { useMergedRunningTasks } from '../../features/chat/streams/runningTasksStore';
 import { Colors } from '../../utils/stepStyles';
 import { TONE_COLOR } from '../../utils/tone';

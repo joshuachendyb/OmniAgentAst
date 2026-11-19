@@ -92,6 +92,8 @@
 //   场景 status 卡 paused; 两处删除幂等(后端若补发 user_rejected 帧再删一次无副作用) — 商量-2026-11-14
 // 编辑历史: 2026-11-18 商量 - 新增 questionHandlers: question_required/resolved 写 pendingQuestion 与 hitlWaitingKeys,
 //   与 HITL 等待语义同源(精确 id 删, 不 clear) — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - 新增 scheduleHandlers: notice(kind=schedule) 的 items 写 store.scheduleList(整体替换,
+//   空清单写 null 收口), 清单唯一来源; 失败不发 notice 故保留上一份 — 小欧-2026-11-19
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -112,7 +114,7 @@ import type {
   PendingQuestionPayload,
   ResumeResult,
   SessionSnapshot,
-} from './backupTypes';
+} from './chatStreamTypes';
 import {
   chatStreamStore,
   commit,
@@ -1162,6 +1164,23 @@ function questionHandlers(s: ChatStreamSession) {
   };
 }
 
+/** 2026-11-19 小欧 - handler 组③c: schedule 清单 notice → store(唯一来源, 不靠步骤流派生) */
+function scheduleHandlers(s: ChatStreamSession) {
+  return {
+    onScheduleUpdate: (
+      items: {
+        content: string;
+        status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+      }[]
+    ) => {
+      commit(s, (d) => {
+        // 整体替换; 空清单(清空)也写 null, 卡片隐藏。失败不发 notice → 保持上一份。
+        d.scheduleList = items.length ? [...items] : null;
+      });
+    },
+  };
+}
+
 /** handler 组④：终态裁决——按错误类别决定"是否终止本轮读循环"，并回写 branch 标记。 */
 function errorHandlers(
   s: ChatStreamSession,
@@ -1227,6 +1246,7 @@ function storeHandlers(s: ChatStreamSession) {
       ...broadcastHandlers(s),
       ...hitlHandlers(s),
       ...questionHandlers(s), // 2026-11-18 商量: question 阻塞问答
+      ...scheduleHandlers(s), // 2026-11-19 小欧: schedule 清单 notice → store
       ...errorHandlers(s, (b) => {
         branch = b;
       }),

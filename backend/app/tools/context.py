@@ -20,6 +20,10 @@
 # 2026-11-18 商量 - 新增 _current_question_callback ContextVar(get/set/reset): 承载入口层注入的"阻塞问询回调"
 #   (同 _current_notice_callback 模式, tool_executor 持 agent 注入 ask_question 包装闭包)。
 #   签名 async (questions: List[Dict]) -> {"answers","cancelled","expired","reason"}; 工具层零越层, 未注入自行降级
+# 2026-11-19 小欧 - notice 回调签名补可选 items 结构化载荷(schedule 清单): async (kind,phase,content,items=None);
+#   工具层零越层不变, 未注入自行降级。
+# 2026-11-19 小欧 - notice 回调签名再补 only_event(默认 False): async (...,items=None,only_event=False);
+#   仅事件列表标记, schedule error 用, 其它工具零改动。
 """
 tools/context — 工具层运行上下文
 
@@ -106,7 +110,9 @@ def reset_current_text_task(token) -> None:
 def get_current_notice_callback() -> Optional[object]:
     """获取当前作用域的notice消息回调(入口层注入) — 小沈 2026-10-26
     返回 None 表示未注入(直接调工具/无agent场景), 由工具自行降级。
-    签名: async (kind: str, phase: str, content: str) -> None
+    签名: async (kind: str, phase: str, content: str, items: Optional[List[Dict]] = None,
+                only_event: bool = False) -> None
+    2026-11-19 小欧 - items 可选结构化载荷(schedule 清单); only_event 仅事件列表标记(默认 False)
     """
     return _current_notice_callback.get()
 

@@ -13,6 +13,8 @@
 #   + preinstall_tool_dependencies(启动期一次 pip 装齐); 运行期自愈拆 heal_missing_deps(工作线程只装)
 #   与 apply_heal_result(主线程写元数据), 免跨线程改共享元数据读到中间态。
 # 2026-10-19 - 小欧 - list_tools 的 expose_to_llm_only 改读 visible_to_llm, 与 tool_description 同判据。
+# 2026-11-19 - 小欧 - ToolMetadata 增 hide_from_steps 属性, register/_update_existing/_register_new/装饰器四处贯通透传;
+#   新增 visible_in_steps(name) 判据(未注册/默认可见零退化), 供 SSE 出口统一查工具行前端可见性。
 """
 工具注册表模块 - 统一入口
 
@@ -148,6 +150,7 @@ class ToolRegistry:
         op_param: Optional[str] = None,
         dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
         target_param: Optional[str] = None,
+        hide_from_steps: bool = False,
     ) -> Dict[str, Any]:
         """
         注册工具（单一入口，委托给私有方法）
@@ -171,7 +174,7 @@ class ToolRegistry:
                 input_schema, examples, version, deps,
                 expose_to_llm, failure_hint_fn,
                 needs_confirmation, action_confirmation, confirm_fn, op_param,
-                target_param, missing,
+                target_param, missing, hide_from_steps,
             )
 
         # 职责2：注册新工具
@@ -180,7 +183,7 @@ class ToolRegistry:
             input_schema, examples, version,
             expose_to_llm, failure_hint_fn,
             needs_confirmation, action_confirmation, confirm_fn, op_param, deps,
-            target_param, missing,
+            target_param, missing, hide_from_steps,
         )
 
     def _update_existing_tool(
@@ -201,6 +204,7 @@ class ToolRegistry:
         op_param: Optional[str] = None,
         target_param: Optional[str] = None,
         missing_deps: Optional[List[str]] = None,
+        hide_from_steps: bool = False,
     ) -> Dict[str, Any]:
         """更新已注册工具 — chendyg 2026-06-26 修复: 补全所有字段更新和分类索引"""
         _update_tool_metadata(
@@ -218,6 +222,7 @@ class ToolRegistry:
             confirm_fn=confirm_fn,
             op_param=op_param,
             target_param=target_param,
+            hide_from_steps=hide_from_steps,
             # 2026-10-15 小欧 - 原缺省直取 .action_kind, 旧实例无该字段会 AttributeError。
             action_kind=_resolve_action_kind(name, getattr(self._tools[name], "action_kind", "write")),
             # 2026-10-19 小欧 - 重注册须一并刷新依赖结论, 否则换依赖后仍沿用旧的 missing_deps。
@@ -247,6 +252,7 @@ class ToolRegistry:
         dependencies: List[Union[str, Dict[str, Any]]] = None,
         target_param: Optional[str] = None,
         missing_deps: Optional[List[str]] = None,
+        hide_from_steps: bool = False,
     ) -> Dict[str, Any]:
         """注册新工具"""
         metadata = ToolMetadata(
@@ -264,6 +270,7 @@ class ToolRegistry:
             op_param=op_param,
             dependencies=dependencies or [],
             target_param=target_param,
+            hide_from_steps=hide_from_steps,
             # 2026-10-15 小欧 - 动作类型按声明表赋值, 未列者取 fallback(fail-closed 最严档)
             action_kind=_resolve_action_kind(name, "write"),
             # 2026-10-19 小欧 - 依赖检查结论落元数据: 缺库仍注册但对 LLM 不可见。
@@ -299,6 +306,15 @@ class ToolRegistry:
     def get_implementation(self, name: str) -> Optional[Callable]:
         """获取工具实现函数"""
         return self._implementations.get(name)
+
+    def visible_in_steps(self, name: str) -> bool:
+        """工具行是否进前端步骤流 —— 框架层唯一判据 — 小欧 2026-11-19
+
+        hide_from_steps=True 的工具走独立通道(如 schedule→notice→taskinfo 卡片),
+        其 action/observation 不在前端步骤流画工具行; 未注册/默认工具一律可见(零退化)。
+        """
+        meta = self.get_tool(name)
+        return False if meta is not None and meta.hide_from_steps else True
 
     def heal_missing_deps(self, name: str) -> List[str]:
         """缺库兜底重装(A方案: 运行期惰性), 返回仍缺的依赖规格串 — 小欧 2026-10-19
@@ -429,6 +445,7 @@ def register_tool(
     op_param: Optional[str] = None,
     dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
     target_param: Optional[str] = None,
+    hide_from_steps: bool = False,
 ):
     """
     工具注册装饰器
@@ -461,6 +478,7 @@ def register_tool(
             op_param=op_param,
             dependencies=dependencies,
             target_param=target_param,
+            hide_from_steps=hide_from_steps,
         )
         return func
 

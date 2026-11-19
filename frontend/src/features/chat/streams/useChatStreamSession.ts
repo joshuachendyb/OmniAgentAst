@@ -8,7 +8,7 @@
 // 编辑历史: 2026-09-29 22:47:10 小欧 - [63] 5.5 防退化修复 2 处 — 小欧-2026-09-29 22:47:10：
 //   ① waitClock 原每次 render 新建对象 → useChatPanels useMemo 永久失效，改 useMemo([id, heartbeatTs])；
 //   ② heartbeatTs 未列入 5.4 快照 → 心跳不触发 bump 通知、等待期 ClockStopwatch 冻结，
-//      已在 backupTypes.SessionSnapshot + chatStreamStore.SNAPSHOT_KEYS/bump 补齐。
+//      已在 chatStreamTypes.SessionSnapshot + chatStreamStore.SNAPSHOT_KEYS/bump 补齐。
 //
 // 编辑历史: 2026-09-29 23:22:19 小欧 - [63] 5.5 防退化修复：零钟面锁死 — 小欧-2026-09-29 23:22:19：
 //   症状：首帧迟到/空流的会话，waitClock.lastBizTsRef 恒 0，等待动画与静默升档全失效
@@ -69,7 +69,7 @@
 //   不会 abort、不会清 Store、不会删 sessionStorage（停止任务必须走显式 stop()）。
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { ExecutionStep } from '@/types/execution';
-import type { StreamEvent } from './backupTypes';
+import type { StreamEvent } from './chatStreamTypes';
 import { chatStreamStore } from './chatStreamStore';
 
 /** 2026-09-29 小欧：空 sessionId 时的只读空 ref 视图（render 期不得 ensureSession 造 '' 假会话） */

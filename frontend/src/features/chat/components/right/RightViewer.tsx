@@ -193,9 +193,9 @@ import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: bad
 import { computeIsCurrentLive } from '@/utils/viewState'; // 2026-09-14 小欧 改动点③(方案A): isCurrentLive 判定提纯复用 — 小欧-2026-09-14
 import type { TaskMetaFrames, ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 import { emptyMetaFrames } from '@/types/sse';
-// 2026-10-30 小欧 - storeStatus 用 Store 的状态枚举(backupTypes 唯一定义处), 不再退化成裸 string:
+// 2026-10-30 小欧 - storeStatus 用 Store 的状态枚举(chatStreamTypes 唯一定义处), 不再退化成裸 string:
 //   裸 string 只能"看得见任何值", 拼错也编译通过; 这里要的是"必须传且合法"。
-import type { StreamStatus } from '@/features/chat/streams/backupTypes';
+import type { StreamStatus } from '@/features/chat/streams/chatStreamTypes';
 
 // 2026-09-12 小欧 修复: 业务步骤类型集合提升模块级, 消组件体每次渲染重建 Set(性能+DRY) — 小欧-2026-09-12
 const BUSINESS_TYPES = new Set<ExecutionStep['type']>([
@@ -613,7 +613,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
               description={
                 <Typography.Text
                   type="secondary"
-                  style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    color: Colors.TEXT.SECONDARY,
+                  }}
                 >
                   暂无执行记录
                 </Typography.Text>

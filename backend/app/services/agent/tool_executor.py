@@ -33,6 +33,8 @@ tool_executor — 工具执行逻辑
 #   工具经get_current_notice_callback消费, 未注入返None降级。
 # 2026-11-18 商量 - 注入question阻塞问询回调(同notice模式): 持agent注入发射器ask_question闭包, try/finally reset;
 #   工具层零越层, 未注入自行降级。
+# 2026-11-19 小欧 - _invoke_notice 加 items 形参, 透传 emit_notice(schedule 清单经 notice 下发); 其它调用不变。
+# 2026-11-19 小欧 - _invoke_notice 加 only_event 形参(默认 False), 透传 emit_notice(schedule error 仅事件列表); 其它调用不变。
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -118,8 +120,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     # 2026-10-26 小沈 - 注入notice消息回调(同 text_task 模式), 工具经 get_current_notice_callback 消费
     _has_emitter = hasattr(agent, '_step_emitter') and agent._step_emitter is not None
 
-    async def _invoke_notice(kind: str, phase: str, content: str):
-        await agent._step_emitter.emit_notice(kind, phase, content)
+    async def _invoke_notice(kind: str, phase: str, content: str, items=None, only_event=False):
+        await agent._step_emitter.emit_notice(kind, phase, content, items=items, only_event=only_event)
 
     _notice_token = set_current_notice_callback(_invoke_notice) if _has_emitter else None
 

@@ -37,6 +37,8 @@
 # 2026-10-31 - 小欧 - 三堂会审同源收口: 删除本模块 _safe_llm_sub(与 toolhelper.tool_utils 各写一份
 #   类型防御, DRY 违反), 8 处调用改调 app.utils.type_utils.safe_sub_dict(单一真源); 判断语义完全一致
 #   (非 dict 顶层/子值一律归一为空 dict), 零行为变更。
+# 2026-11-19 - 小欧 - #5 rows 分支注释补登 schedule: 其 data.rows(二维数组, 无 columns)走 _format_rows 无列名分支,
+#   输出"事项 | 完成标志"; 复用现有 formatter, 零行为变更。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -298,7 +300,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
         if "headers" in data and "rows" in data:
             return _format_table(data["headers"], data["rows"])
 
-        # ── #5 rows — 2 tools: query_sql, filter_data ──
+        # ── #5 rows — 3 tools: query_sql, filter_data(带 columns 显示列名), schedule(无 columns, 事项|完成标志) ──
         if "rows" in data:
             return _format_rows(data["rows"], data.get("columns"))
 

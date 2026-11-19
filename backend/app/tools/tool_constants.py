@@ -7,6 +7,11 @@
 #   每次 finditer 传 timeout, 防灾难回溯正则烧死事件循环(8100假死事故根因, 单行回溯50.9s+); 值取5s, 正常行匹配毫秒级 — 小欧-2026-11-14
 # 2026-11-18 - 商量 - 新增 ERR_QUESTION/ERR_SCHEDULE 错误码(智能体交互工具), 与工具层错误体 llm_data.status.code 对齐;
 #   CATEGORY_MODULES 增 agent→_register_agent_tools 映射(启动注册该分类)
+# 2026-11-19 - 小欧 - 新增 SCHEDULE_INPUT_MAX_ITEMS(20)/SCHEDULE_INPUT_MAX_CONTENT_CHARS(100) 入参闸门常量,
+#   从 schedule.py 迁入(数值常量归位本文件, 遵循常量单一真源规范); 同步迁入 items 参数描述文案
+#   SCHEDULE_ITEMS_PARAM_DESC(原名 ITEMS_SPEC 含糊, 改现名精准表达"哪个工具的什么参数描述")
+# 2026-11-19 - 小欧 - 新增 SCHEDULE_STATUSES/SCHEDULE_ITEM_SCHEMA: item 内联 JSON Schema(enum/additionalProperties
+#   /maxLength/maxItems), 约束前置参数层; 实测无 $ref/$defs, 严格 provider 兼容 — 小欧-2026-11-19
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -279,6 +284,33 @@ EDIT_INPUT_MAX_BYTES: int = 10 * 1024 * 1024     # 使用对象: edit_text_file.
 FETCHPAGE_INPUT_MAX_CONTENT_LENGTH: int = 10 * 1024 * 1024  # 使用对象: fetch_webpage.py(Content-Length 超阈值拒绝下载)
 DOWNLOAD_INPUT_MAX_BYTES: int = 1 * 1024 * 1024 * 1024     # 使用对象: download_file.py(下载文件大小上限, 超则拒绝)
 CLIPBOARD_INPUT_MAX_CHARS: int = 200 * 1024          # 使用对象: clipboard_control.py(剪贴板读取最大字符数, 超则截断)
+# 2026-11-19 小欧 - schedule 入参闸门(描述/schema/校验/失败hint 单一真源)
+SCHEDULE_INPUT_MAX_ITEMS: int = 20                   # 使用对象: schedule.py/tool_constants.SCHEDULE_ITEM_SCHEMA(清单上限, 超则裁剪+warning)
+SCHEDULE_INPUT_MAX_CONTENT_CHARS: int = 100          # 使用对象: schedule.py/SCHEDULE_ITEM_SCHEMA(单条 content 上限, 超则裁剪+warning)
+# items 参数描述文案(转述给 LLM): schema/注册描述/失败 hint 单一真源, 约束前置首屏, 不让模型靠试错猜上限
+SCHEDULE_ITEMS_PARAM_DESC: str = (
+    "整体替换: 首次传即创建, 之后每次传完整清单覆盖旧清单即更新, 传[]即结束并清空; "
+    f"最多{SCHEDULE_INPUT_MAX_ITEMS}项; "
+    "每项为一个对象, 仅含两个字段: "
+    f"content(一句话动作短语, 非空且≤{SCHEDULE_INPUT_MAX_CONTENT_CHARS}字) 与 "
+    "status(四选一, 必填: pending=待开始 / in_progress=进行中 / "
+    "completed=已完成 / cancelled=已取消)。"
+)
+# status 四态与 item 内联 JSON Schema(约束前置到参数层, enum/additionalProperties/maxLength/maxItems):
+#   json_schema_extra 内联注入, 不产生 $ref/$defs, 严格 provider(opencode/deepseek)兼容已实测。
+#   校验层 schedule._normalize_items 与 schema 共用这四个常量, 杜绝两处口径漂移。
+SCHEDULE_STATUSES = ("pending", "in_progress", "completed", "cancelled")
+SCHEDULE_ITEM_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "content": {"type": "string", "maxLength": SCHEDULE_INPUT_MAX_CONTENT_CHARS, "description": "任务简述"},
+        "status": {"type": "string", "enum": list(SCHEDULE_STATUSES), "description": "四选一"},
+    },
+    "required": ["content", "status"],
+    "additionalProperties": False,
+}
+# 允许的 item 字段: 从 schema properties 派生(校验层拒未知字段用), 与 schema 天然同源不硬编码
+SCHEDULE_ITEM_KEYS = frozenset(SCHEDULE_ITEM_SCHEMA["properties"].keys())
 
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell

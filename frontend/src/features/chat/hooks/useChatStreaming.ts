@@ -87,7 +87,7 @@ import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type {
   StreamEvent,
   StreamStatus,
-} from '@/features/chat/streams/backupTypes';
+} from '@/features/chat/streams/chatStreamTypes';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
 import {

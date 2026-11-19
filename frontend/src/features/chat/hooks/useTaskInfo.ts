@@ -64,6 +64,7 @@
 // 编辑历史: 2026-11-18 小欧 - 终态耗时与终态判据同源: final 步只取一次, 三个终态判据与 elapsedSec
 //   共用; elapsedSec 补 final 步 duration 兜底 —— 原只认 final_stats 帧, 该帧缺失时终态耗时恒 0
 //   (实时秒表还在涨, 刷新后才回到后端真值) — 小欧-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - notice case 的 only_event=true(schedule error)仅进事件列表, 跳过位置2 latestProcessEvent 读写 — 小欧-2026-11-19
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -309,6 +310,10 @@ export const useTaskInfo = (
           });
           // 位置2: start/failed 设置 latestProcessEvent, done 只清除**自己 kind** 的条目 — 小欧-2026-10-30
           //   (原 done 无条件清空: 插话的 refs_ready_done 会把主任务"生成摘要中"等提示一并抹掉)
+          // 2026-11-19 小欧: only_event=true(schedule error)仅进事件列表, 不占位置2(不动 latestProcessEvent)
+          if (s.only_event) {
+            break;
+          }
           if (noticePhase === 'start' || noticePhase === 'failed') {
             latestProcessEvent = {
               kind: 'notice',
@@ -556,7 +561,11 @@ export const useTaskInfo = (
 
     return {
       badge,
-      elapsedSec: frames.finalStats?.duration ?? finalStep?.duration ?? stats?.duration ?? 0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
+      elapsedSec:
+        frames.finalStats?.duration ??
+        finalStep?.duration ??
+        stats?.duration ??
+        0, // 2026-08-27 小欧 修复#19/#20: finalStats终态duration优先(此前零消费, elapsedSec永远0)
       // 2026-11-18 小欧 - 补 final 步耗时兜底: final_stats 帧缺失(后端短信号/连接异常)时终态秒表归零，
       //   而 final 步的 duration 与概览「运行耗时」同源，是同一任务终态的唯一真值 — 小欧-2026-11-18
       stepCount,

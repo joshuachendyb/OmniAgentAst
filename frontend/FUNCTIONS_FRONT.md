@@ -4,7 +4,7 @@
 **编写人**: 小欧
 **维护人**: 小欧
 **最后更新时间**: 2026-11-19
-**最近更新**: 2026-11-19 商量 倒计时环迁共享目录、问询事件归 meta
+**最近更新**: 2026-11-19 商量 schedule notice 通道三态+only_event 呈现标记
 
 ---
 
@@ -303,8 +303,9 @@
 | `EyeIcon` / `SignalBarsIcon` / `SunIcon` / `ApproachDotsIcon` / `SpinSquareIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行图标组：当前在用 1 个（`SpinSquareIcon`）+ 备用 4 个（北京老陈令备用常驻，想用即改 `ReasoningIcon` 别名取值）。`viewBox` 统一收为图形外接框，缩放后填满 `Icon.BOX`、垂直居中；`animating` 条件挂动画类 | `{ size?: number; animating?: boolean }` | JSX |
 | `Icon`（图标规格令牌） | `src/utils/stepStyles.ts` | step 行首图标统一规格：`BOX: 16`(盒子边长) + `STROKE: 2`(统一描边宽)。图标组件 `size` 默认取 `Icon.BOX`、`strokeWidth` 取 `Icon.STROKE`；图形需"填满盒子"时令描边外缘=viewBox 边界 — 小欧 2026-10-07 | — | `{ BOX: 16; STROKE: 2 }` |
 | `ShortcutHelp` / `SHORTCUT_GROUPS` | `components/input/ShortcutHelp.tsx` | 输入帮助分层唯一落点：输入框内只保留核心 placeholder（提交语义 + 能力提示尾段 `@ 引用 · 拖入文件 · 粘贴图片`，见 `InputCore.PLACEHOLDER_HINTS`），原常驻编号清单的其余输入方式迁入「输入技巧」浮层（按 输入 / 文件与引用 / 图片 三组归类，可随新增扩展）；入口经 `SubmitBar.middleExtra` 落在底部按钮行中段（右对齐、与按钮同高，输入区零额外高度；打字后/受阻态 placeholder 隐藏时入口仍常驻）。**维护唯一入口**：增删改输入方式只改 `SHORTCUT_GROUPS`，浮层分组自动跟随 — 商量 2026-11-13 | — | `ShortcutGroup[]` / JSX |
-| `useScheduleList` | `hooks/useScheduleList.ts` | 「最新执行计划」派生：倒序扫步骤流挑**最后一次落地的** `schedule` 调用，读该次观察步 `tool_result[i].llm_data`（后端归一后的 `action.params.items` + `status.exec_code`），归一为 `{items:[{content,status}], step}`。三条口径：①**任务边界即清单边界** —— 越过 `start`/`startinfo` 立即停，本任务第一次落地之前无清单（实时侧复位由发新消息的 `clearSteps` 承担，此边界是历史回放/备份恢复侧的同一条线）；②**认落地结果不认模型意图** —— action 步的 `tools[].params` 是模型提交原文，后端拒收（超 50 条/超 200 字/状态非法）时它照样像一份清单，故只认观察步里 `exec_code==='success'` 的那份；③**失败不改清单** —— 未落地（无观察步/HITL 拦截/exec_code≠success）跳过继续往前找，成功但清单为空＝「计划已清空」就地收口返回 null。同一步多次调用取后者（整体替换语义）。不新增事件/表/快照槽，切会话与历史回放随步骤自然恢复 — 商量 2026-11-18 | steps: ExecutionStep[] | ScheduleSnapshot \| null |
-| `ScheduleCard` | `components/taskinfo/ScheduleCard.tsx` | taskinfo 左组「执行计划」入口（紧跟状态徽标）+ 浮层卡片（`计划 N/M`，窄档只显示 `N/M`，无清单不渲染）：条目按 `completed/in_progress/pending/cancelled` 三档着色，脚注点出「进行中：xxx」；与问询面板的分工是**主动查 vs 阻塞弹出**。清单由 `useScheduleList` 派生后传入（入口显隐与卡片共用同一份）；**入口只属于 `steps` 所在任务** —— 信息条转入历史详情（`detail` 非空，指标来自 DB）时不渲染，避免「A 任务的计划配 B 任务的耗时/步数」，历史计划在右栏流水线按 `schedule` 工具行逐次可查 — 商量 2026-11-18 | `{list: ScheduleSnapshot \| null, compact?: boolean}` | JSX |
+| notice 信封（`type=notice`） | `services/sseParser.ts` + `hooks/useTaskInfo.ts` | 通知信封统一解析：`kind`(种类) + `phase`(start/done/failed) + `content`(文案) + 可选 `items`(结构化载荷) + 可选 `only_event`(呈现标记, 默认 false)。三态都 push 进 executionSteps（事件列表）；`phase=start/failed` 占位置2、`done` 清位置2，**例外**：`only_event=true`（schedule error）只进事件列表、不画卡片、不占位置2。`kind=schedule` 且 `!only_event` 且带 items → 投 `onScheduleUpdate` 写计划卡片。老 notice 无 `items`/`only_event` 字段按缺省处理，零退化 — 商量 2026-11-19 | — | `ExecutionStep{notice_kind,notice_phase,content,items?,only_event?}` |
+| `ScheduleItem` / `scheduleList` | `streams/chatStreamTypes.ts` + `streams/chatStreamStore.ts` | 执行计划清单走 **notice 独立通道**（三态均发）：后端成功/可容忍发 `notice(kind=schedule, phase=done, items=[{content,status}])`，完全错误发 `notice(phase=failed, only_event=true)`；`sseParser` 按 `kind+phase+only_event` 分派，done 投 `onScheduleUpdate` → `chatStreamStore.setScheduleList` 写会话快照（刷新恢复），failed 只进事件列表、卡片保持上一份。清单类型 `ScheduleItem[] \| null` 从 `chatStreamTypes.ts`（backupTypes.ts 改名）单一真源导出，入 `SessionSnapshot`/`SNAPSHOT_KEYS`/`toBackupOf`/`restore`。后端仅 SSE 转发副本摘除 schedule 工具行（`sse_formatter`，判据 `tool_registry.visible_in_steps`），落库/喂 LLM/历史 conv 的 observation 原样保留（工具属性 `hide_from_steps` 声明）。完整设计见 [47] 文档 — 商量 2026-11-19 | — | `ScheduleItem[] \| null` |
+| `ScheduleCard` | `components/taskinfo/ScheduleCard.tsx` | taskinfo 左组「执行计划」入口（紧跟状态徽标）+ 浮层卡片（`计划 N/M`，窄档只显示 `N/M`，无清单不渲染）：条目按 `completed/in_progress/pending/cancelled` 三档着色，脚注点出「进行中：xxx」；与问询面板的分工是**主动查 vs 阻塞弹出**。清单读 `store.scheduleList`（notice 唯一来源），经 `useChatStreamSession(sessionId)` 订阅；**入口只属于当前任务** —— 信息条转入历史详情（`detail` 非空，指标来自 DB）时不渲染，避免「A 任务的计划配 B 任务的耗时/步数」 — 商量 2026-11-19 | `{list: ScheduleItem[] \| null, compact?: boolean}` | JSX |
 
 ---
 
@@ -391,3 +392,5 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.12 | 2026-11-18 | §4.1 `ScheduleCard` 入口落位改述：由 taskinfo 右组迁至**左组状态徽标之后**（徽标答「这一轮什么状态」，计划答「进行到哪一步」，同属一句状态），TaskInfoBar 位置表由 11 位改 12 位。另 §三 补登 `PanelChip` 的 `danger` 色调后 `QuestionDock` 宽度口径：改 520 定宽（与 HITL 弹窗同宽，产品定宽不按字数推导）+ `90vw` 兜底，浮层不得通栏 | 商量 |
 | v1.13 | 2026-11-18 | §4.1 `useScheduleList` 口径重写：清单改从观察步 `tool_result[i].llm_data`（后端归一后的 `items` + `exec_code`）派生，不再读 action 步的模型原文入参；三条口径入文 —— 任务边界即清单边界（越过 `start` 即无清单，新任务复位）、只认 `exec_code==='success'` 的落地结果（被拒/失败不显示假的「计划已生效」）、失败不改清单（跳过继续往前找，成功但空清单＝已清空就地收口）；同一步多次调用取后者。§4.1 `ScheduleCard` 补「入口只属于 `steps` 所在任务」：信息条展示历史详情时不渲染，避免两套事实混排 | 商量 |
 | v1.14 | 2026-11-19 | `CountdownRing` 迁共享目录并具名导出，§三路径同步；question 事件归 meta；问询清窗加 id 守卫 | 商量 |
+| v1.15 | 2026-11-19 | 执行计划清单改走 notice 通道：`tool_registry.visible_in_steps` 统一判据（工具属性 `hide_from_steps`）令 SSE 转发副本摘除 schedule 工具行（落库/喂 LLM 不动）；前端 `setScheduleList`→快照、`ScheduleCard` 读 store，删 `useScheduleList` | 商量 |
+| v1.16 | 2026-11-19 | notice 三态化：三态均发 notice 且均返回 LLM+落库；error 发 `failed`+`only_event=true`（仅事件列表、不画卡片不占位置2），warning/success 发 `done`（事件列表+卡片）；新增 `only_event` 呈现标记（notice 可选字段，默认 false 零退化）；§三补 notice 信封登记；`backupTypes.ts` 改名 `chatStreamTypes.ts`（名副其实）；完整设计见 [47] 文档 | 商量 |

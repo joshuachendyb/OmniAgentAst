@@ -9,6 +9,8 @@
 # 2026-10-19 - 小欧 - 新增 visible_to_llm 属性: "该不该给 LLM 看"的唯一判据(= expose_to_llm and available),
 #   原先各消费方各写双判断, 新增维度需同步改多处, 漏一处即口径分裂。
 # 2026-11-18 - 商量 - 新增 AGENT 分类(order 10): question/schedule 属智能体与用户/与自身计划交互, 不操作文件/网络/硬件, 落现有分类均语义错配
+# 2026-11-19 - 小欧 - ToolMetadata 新增 hide_from_steps 属性(工具行是否进前端步骤流), 供框架层统一判据 visible_in_steps 消费;
+#   走专用通道的工具(如 schedule→notice)注册时声明, 业务调用点零改动(OCP)
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -118,6 +120,11 @@ class ToolMetadata:
         各消费方只读这一个判据, 加维度只改这一处。
         """
         return self.expose_to_llm and self.available
+
+    # 【2026-11-19 小欧】工具行前端可见性: True=该工具的 action/observation 不在前端步骤流画工具行
+    #   (走专用通道呈现, 如 schedule 清单走 notice→taskinfo 卡片)。框架层构建 tools/tool_result 视图
+    #   统一读 visible_in_steps 判据, 业务调用点零改动, 新工具想隐藏只需注册时声明 hide_from_steps。
+    hide_from_steps: bool = False
 
     # 【2026-08-18 小健】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)

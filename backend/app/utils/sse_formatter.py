@@ -4,6 +4,8 @@
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
 # 2026-09-06 - 小欧 - B2(方案C): format_agent_sse 剥离内部路由标记 _live_only(仅 agent_runner 通道路由
 #   消费, 不下发给前端; 过滤副本不改 event_log 原引用, 快照扫描仍可读) — 小欧-2026-09-06
+# 2026-11-19 - 小欧 - format_agent_sse 对 action/observation 按 tool_registry.visible_in_steps 过滤 hide_from_steps
+#   工具行(schedule), 仅改转发副本不动 event_log(落库/喂LLM不变); 独轮全隐藏不发该帧, 混调只摘隐藏项。
 """
 sse_formatter — SSE事件格式化工具(纯函数)
 
@@ -62,6 +64,19 @@ def format_agent_sse(step_dict: dict, step: int = None) -> str:
     #   不下发给前端(过滤副本, 不改 event_log 原引用, 快照扫描仍可读) — 小欧-2026-09-06
     if "_live_only" in step_dict:
         step_dict = {k: v for k, v in step_dict.items() if k != "_live_only"}
+    # 2026-11-19 小欧 - hide_from_steps 工具(schedule)走独立通道(notice→taskinfo), 前端步骤流不画其工具行。
+    #   仅在 SSE 转发副本上摘除, 不改 event_log 原对象(落库/历史conv/喂LLM全不受影响); 判据取注册表统一出口。
+    #   独轮 schedule: 过滤后 tools/tool_result 为空 → 该帧不下发(前端无空工具行); 混调: 只摘 schedule 那一项。
+    if event_type in ("action", "observation"):
+        from app.tools.registry import tool_registry  # 延迟导入防环(utils 不在导入期依赖 tools)
+        step_dict = dict(step_dict)  # 转发副本, 不动 event_log
+        key = "tools" if event_type == "action" else "tool_result"
+        tkey = "tool" if event_type == "action" else "tool_name"
+        if key in step_dict and isinstance(step_dict[key], list):
+            step_dict[key] = [t for t in step_dict[key]
+                              if not isinstance(t, dict) or tool_registry.visible_in_steps(t.get(tkey, ""))]
+            if not step_dict[key]:
+                return ''  # 整轮全是隐藏工具 → 不下发该步(与"不发空工具行"一致)
     return format_sse_event(event_type, step_num, step_dict)
 
 

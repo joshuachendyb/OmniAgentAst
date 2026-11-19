@@ -7,16 +7,18 @@
 //   时才要求 taskId 非空）。原判据在"待发草稿落盘"窗口（sendMessage 先 commit pendingMessage.state='queued'
 //   + persistNow，而 start 帧尚未到达、taskId 仍是上一任务旧值或 null）会整份判废 → 待发草稿与已发意图全丢 — 小欧-2026-10-01
 // 编辑历史: 2026-10-03 小欧 - legacyToBackup lastContextLinkMode 改名 linkEnabled
-//   (与 backupTypes 同步) — 小欧-2026-10-03
+//   (与 chatStreamTypes 同步) — 小欧-2026-10-03
 // 编辑历史: 2026-10-13 18:10 小欧 - : 草稿存储 sessionStorage → localStorage(前者关浏览器即销毁);
 //   保留期=跟随会话生命周期+7天孤儿兜底+50条上限(会话删则草稿删经 destroySession→saveDraft(sid,') 自动成立);
 //   值改 {t,ts} 并兼容旧纯字符串; 清理曾挂在每次按键上(全量扫描 localStorage), 已加 5 秒节流
 // 编辑历史: 2026-10-22 小欧 - legacyToBackup 补 sentRefLedger: []（台账入备份后成为必填字段，
 //   legacy 数据无台账，补空数组）— 小欧-2026-10-22
 // 编辑历史: 2026-11-18 商量 - legacyToBackup 补 pendingQuestion: null(question 入快照后成为必填字段) — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - legacyToBackup 补 scheduleList: null(schedule 清单入快照后成为必填字段,
+//   legacy 备份无此字段, 补 null 保持清单卡隐藏) — 小欧-2026-11-19
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
-import type { StreamBackup } from './backupTypes';
+import type { StreamBackup } from './chatStreamTypes';
 import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（type-only 不可作值调用）
 
 // 落盘/恢复前校验：结构完整性 + 同源（version/sessionId/taskId/revision/lastSeq 五项）
@@ -79,6 +81,8 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     pendingAuthorization: null,
     // 2026-11-18 商量 - legacy 备份无 question 字段, 补 null
     pendingQuestion: null,
+    // 2026-11-19 小欧 - legacy 备份无 schedule 字段, 补 null
+    scheduleList: null,
     // 2026-10-22 小欧 - legacy 备份无台账（新增必填字段，补空数组）
     sentRefLedger: [],
   };

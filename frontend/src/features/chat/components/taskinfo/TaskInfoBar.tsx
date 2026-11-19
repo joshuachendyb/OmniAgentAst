@@ -101,6 +101,8 @@
 //   位置表随之由 11 位变 12 位(计划入位2, 其后各位顺延 +1)。
 // 编辑历史: 2026-11-18 商量 - 计划入口归属收口: 入口与卡片只认 steps 所属任务, detail 非空(信息条在展示
 //   另一任务的历史详情)时不渲染 —— 原状态会拿 A 任务的计划配 B 任务的耗时/步数 — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - 计划清单来源由 useScheduleList(步骤流派生)改读 store.scheduleList(notice 写入);
+//   历史态(detail 非空)仍不渲染入口, 避免两套事实 — 小欧-2026-11-19
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -125,7 +127,7 @@ import {
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
 // 2026-10-30 小欧 - storeStatus 用 Store 状态枚举(唯一定义处), 类型收窄到合法值
-import type { StreamStatus } from '@/features/chat/streams/backupTypes';
+import type { StreamStatus } from '@/features/chat/streams/chatStreamTypes';
 // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回传用(仅取 executionApi.saveTaskProcessEvents)
 //   与上方 import type 合并成单条 import(同模块, 避免重复 import 声明)
 import {
@@ -137,7 +139,8 @@ import { Gap, LineHeight } from '@/theme/spacing';
 import { formatTimeHMS, formatDurationHMS, parseTimeSafe } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18; 2026-11-13 商量: 实时秒表服务器时钟锚解析 — 商量-2026-11-13
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
-import { useScheduleList } from '../../hooks/useScheduleList'; // 2026-11-18 商量: 计划清单派生(供入口显隐与卡片共用一份)
+// 2026-11-19 小欧: 计划清单改由 schedule notice 写 store, 不再从步骤流派生; 卡片读 store.scheduleList
+import { useChatStreamSession } from '../../streams/useChatStreamSession';
 // [46b] P2b 小欧 2026-11-17: final 帧收尾上交台账快照(权威源在 store, 经调用点取参传 api 层)
 import {
   chatStreamStore,
@@ -269,15 +272,15 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 3.9 断点矩阵（v4.4 修复#3）：wide≥1280 / mid 1280~960 / narrow 960~768 / xsmall<768
   const bp = useInfoBreakpoint();
   const isNarrow = bp === 'narrow' || bp === 'xsmall';
-  // 2026-11-18 商量 - 计划清单由步骤流派生(最后一次 schedule 调用=当前清单);
-  //   在此派生一次供「分隔点 + 入口显隐 + 卡片内容」三处共用, 避免入口与卡片各算一份
-  // 2026-11-18 商量 - 归属收口: steps 只属于当前锚定任务(store.serverTaskId), 而 detail 非空即
-  //   信息条正在展示"另一个任务"的历史详情(useTaskSelection 仅在 activeTaskId≠serverTaskId 时拉详情)。
-  //   两者不同源时若照样渲染入口, 就是"拿 A 任务的计划配 B 任务的耗时/步数"—— 同一行里两套事实。
-  //   故历史态不渲染计划入口; 历史任务的计划在右栏流水线里按 schedule 工具行逐次可查(DB 原始事实)。
-  //   派生照常无条件执行(Hooks 规则), 只在取值处分叉。
-  const stepSchedule = useScheduleList(steps);
-  const scheduleList = detail ? null : stepSchedule;
+  // 2026-11-19 小欧 - 计划清单改由 schedule notice 写 store(唯一来源), 不再从步骤流派生:
+  //   store.scheduleList 由后端成功时下发的 notice(kind=schedule, items)写入, 入快照刷新恢复。
+  // 2026-11-18 商量 - 归属收口: 历史态(detail 非空=信息条展示另一任务的历史详情)不渲染计划入口,
+  //   避免"拿 A 任务的计划配 B 任务的耗时/步数"两套事实; 历史任务右栏按 schedule 工具行逐次可查(DB 原始事实)。
+  //   Hook 无条件调用(规则), 只在取值处分叉。
+  const { scheduleList: storedSchedule } = useChatStreamSession(
+    sessionId ?? null
+  );
+  const scheduleList = detail ? null : storedSchedule;
   // 2026-10-04 小欧: 极窄档(<768)备用, 当前两项收窄门统一用 isNarrow; 保留待极窄档单独策略时直接用(北京老陈令留)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 有意保留的备用断点档, 非死代码
   const isXSmall = bp === 'xsmall';

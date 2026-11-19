@@ -30,10 +30,14 @@ Author: 小沈 - 2026-05-31
 # 2026-11-18 商量 - 超时双分支镜像 hitl_confirm: HTL开=security.hitl.timeout 窗, HTL关=bypass 短窗自动过(仍要问), 公式单源复用 _resolve_timeouts
 # 2026-11-18 商量 - 三堂会审复核: 窗口模式(auto_confirm=not enabled)随调一道下传网关并回传工具层,
 #   消除工具层二次读配置致"窗口与兜底文案错配" — 商量-2026-11-18
+# 2026-11-19 小欧 - emit_notice 加可选 items 结构化载荷(schedule 清单), 经 MetaStep **kwargs 透传下发 notice 帧;
+#   其它 notice 不传为 None, 行为不变。
+# 2026-11-19 小欧 - emit_notice 加可选 only_event 呈现标记(默认 False=全位置): True=仅事件列表不画卡片不占位置2
+#   (schedule error); 纯前端字段不落库不进 LLM, 老 notice 无此字段按默认 False 处理, 兼容零退化。
 """
 
 import time
-from typing import Optional
+from typing import Dict, List, Optional
 
 from app.logger import log_and_print, logger
 from app.services.agent.steps import (  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
@@ -109,12 +113,17 @@ class StepEmitter:
             error_type=error_type, error_message=error_message, reasoning=reasoning,
         ))
 
-    async def emit_notice(self, kind: str, phase: str, content: str) -> None:
+    async def emit_notice(self, kind: str, phase: str, content: str, items: Optional[List[Dict]] = None,
+                          only_event: bool = False) -> None:
         """通知信封统一发射器(事前/事后) — 小欧 2026-10-25 三堂会审
 
         信封结构: type="notice" + kind(通知种类) + phase(start/done/failed) + content(文案)
         事前(phase=start)与事后(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
         buffer 判空: get_stream_buffer 可能返回 None(任务尚未建 buffer), 直接 publish 会 AttributeError。
+        2026-11-19 小欧 - items 可选结构化载荷(schedule 清单), 经 MetaStep **kwargs 透传; 其它 notice 不传为 None。
+        2026-11-19 小欧 - only_event 呈现标记(默认 False=全位置: 事件列表+卡片+位置2): True=仅事件列表,
+          不画卡片不占位置2(schedule error); 纯前端呈现字段, 不落库(notice SSE-only)、不进 LLM,
+          老 notice 无此字段前端按默认 False 处理。
         """
         log_and_print(f"[StepEmit] notice {kind}/{phase}: {content[:80]}", level="WARNING")
         try:
@@ -122,7 +131,7 @@ class StepEmitter:
             from app.services.task.task_state import get_stream_buffer
             step = self.emit(MetaStep(
                 step=len(self.agent.steps), type="notice",
-                content=content, kind=kind, phase=phase))
+                content=content, kind=kind, phase=phase, items=items, only_event=only_event))
             _buf = get_stream_buffer(self.agent.task_id)
             if _buf is not None:
                 await _buf.publish(step.to_dict())

@@ -61,7 +61,7 @@
 //   ① EMPTY_SNAPSHOT/bump/SNAPSHOT_KEYS 补 sentRefLedger（台账变化能触发订阅者重渲染，
 //      否则"↩ 本轮引用"行可能不出现）；② toBackupOf 落盘 sentRefLedger（刷新/崩溃后仍在）；
 //   ③ restore 补 sentRefLedger ?? []（老备份无此字段时显式给空数组，避免 .filter 抛错）；
-//   ④ SentRefLedgerEntry 类型迁至 backupTypes（备份类型单一真源），此处 re-export 保持 import 路径不断 — 小欧-2026-10-22
+//   ④ SentRefLedgerEntry 类型迁至 chatStreamTypes（类型单一真源），此处 re-export 保持 import 路径不断 — 小欧-2026-10-22
 // 编辑历史: 2026-10-30 小欧 - 取消等帧看门狗与资源释放解耦（北京老陈: 前端收不到后端取消事件）:
 //   原 settleCancelByDb 在看门狗 5s 到期时调 clearCompleted → abortController.abort() + pollSignal.aborted，
 //   把取消终态帧的唯一送达通道（本条 SSE）自己掐断；后端取消收敛 TTFB 场景需等 provider read_timeout
@@ -94,6 +94,8 @@
 //   (原只改 taskId 保留旧 lastSeq → after_seq 对不上新任务 seq 0 起的事件, 续跑执行中刷新后不滚动);
 //   与 attachOrphanTask 的清理抽为 reanchorToTask 共用 — opencode-2026-11-18
 // 编辑历史: 2026-11-18 商量 - pendingQuestion 入会话快照+acknowledgeQuestion(供切会话恢复与提交后清窗); 清窗按 questionId 守卫, 防旧问询的异步回调误清新问题 — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - scheduleList 入会话快照(EMPTY_SNAPSHOT/SNAPSHOT_KEYS/toBackupOf/restore/legacy 五处)
+//   与 setScheduleList action: notice(kind=schedule) 写清单, 刷新恢复; 清单唯一来源, 不再从步骤流派生 — 小欧-2026-11-19
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -103,13 +105,14 @@ import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（ty
 import type { ClockSignals } from '@/types/sse';
 import type {
   SessionSnapshot,
-  SentRefLedgerEntry, // 2026-10-22 小欧 - 类型自本地迁出 backupTypes，本地引用仍需 import
+  SentRefLedgerEntry, // 2026-10-22 小欧 - 类型自本地迁出 chatStreamTypes，本地引用仍需 import
+  ScheduleItem, // 2026-11-19 小欧: schedule notice 清单
   StreamBackup,
   StreamEvent,
   StreamStatus,
   ReconnectStatus,
   ResumeResult,
-} from './backupTypes'; // 5.1 唯一定义处
+} from './chatStreamTypes'; // 5.1 唯一定义处
 import {
   load as backupLoad,
   save as backupSave,
@@ -394,6 +397,8 @@ const EMPTY_SNAPSHOT: SessionSnapshot = Object.freeze({
   pendingAuthorization: null,
   // 2026-11-18 商量: question 阻塞问询原始载荷(与 HITL 等待语义相同, 快照入参)
   pendingQuestion: null,
+  // 2026-11-19 小欧: schedule 清单(schedule notice 写入, 刷新恢复)
+  scheduleList: null,
   reconnectStatus: 'idle' as const,
   // 2026-09-29 22:47:10 小欧 - 0 = 未收到心跳（与 ZERO_CLOCK 钟面恒 0 同口径）
   heartbeatTs: 0,
@@ -520,10 +525,10 @@ export interface SentRefInput {
 }
 
 /**
- * 引用台账条目 —— 2026-10-22 小欧 - 类型已迁至 backupTypes.ts（备份类型单一真源），
+ * 引用台账条目 —— 2026-10-22 小欧 - 类型已迁至 chatStreamTypes.ts（类型单一真源），
  *   此处 re-export 保持既有 import 路径不断（chatStreamStore 侧调用方零改动）。
  */
-export type { SentRefLedgerEntry } from './backupTypes';
+export type { SentRefLedgerEntry } from './chatStreamTypes';
 
 /** 台账上限（每会话 50 条，新者前）— 小杨-2026-10-21 */
 const SENT_REF_LEDGER_LIMIT = 50;
@@ -665,6 +670,8 @@ function bump(s: ChatStreamSession): void {
     pendingAuthorization: s.pendingAuthorization,
     // 2026-11-18 商量: question 入快照(bump 比较 + 响应式通知)
     pendingQuestion: s.pendingQuestion,
+    // 2026-11-19 小欧: schedule 清单入快照(notice 写入后触发卡片重渲染)
+    scheduleList: s.scheduleList,
     reconnectStatus: s.reconnectStatus,
     heartbeatTs: s.heartbeatTs,
     // 2026-10-22 小欧 - 台账入快照（pushSentRefs 后能触发重渲染）
@@ -688,6 +695,7 @@ const SNAPSHOT_KEYS: (keyof SessionSnapshot)[] = [
   'status',
   'pendingAuthorization',
   'pendingQuestion', // 2026-11-18 商量: question 入快照比较键
+  'scheduleList', // 2026-11-19 小欧: schedule 清单入快照比较键
   'reconnectStatus',
   'heartbeatTs',
   // 2026-10-22 小欧 - 台账入比较键（引用变化即视为快照变化）
@@ -719,6 +727,8 @@ function toBackupOf(sessionId: string): StreamBackup {
     pendingAuthorization: s.pendingAuthorization,
     // 2026-11-18 商量: question 随备份落盘(切会话/刷新恢复 dock)
     pendingQuestion: s.pendingQuestion,
+    // 2026-11-19 小欧: schedule 清单随备份落盘(刷新恢复卡片)
+    scheduleList: s.scheduleList ? [...s.scheduleList] : null,
     hitlWaitingKeys: [...s.hitlWaitingKeys],
     pendingMessage: s.pendingMessage,
     linkEnabled: s.linkEnabled,
@@ -726,7 +736,7 @@ function toBackupOf(sessionId: string): StreamBackup {
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 - 随备份落盘，供刷新后恢复心跳钟面（0=未收到）
     heartbeatTs: s.heartbeatTs,
-    // 2026-10-01 小欧 - 钟面静默升档基线随备份落盘(刷新后不丢, 见 backupTypes 注释)
+    // 2026-10-01 小欧 - 钟面静默升档基线随备份落盘(刷新后不丢, 见 chatStreamTypes 注释)
     lastBizTs: s.lastBizTs,
     lastDataTime: s.lastDataTime,
     // 2026-10-22 小欧 - 引用台账随备份落盘（刷新/崩溃后仍在）；
@@ -1036,6 +1046,7 @@ export const chatStreamStore = {
       usageAccum: { prompt: 0, completion: 0, total: 0 },
       pendingAuthorization: null,
       pendingQuestion: null, // 2026-11-18 商量: 与 HITL 同款会话态初值
+      scheduleList: null, // 2026-11-19 小欧: schedule 清单初值
       pendingMessage: null,
       linkEnabled: false,
       allowInterject: false, // 2026-10-07 小欧 - EMPTY_SNAPSHOT 默认(与 link 同款)
@@ -1620,6 +1631,15 @@ export const chatStreamStore = {
       });
   },
 
+  /** 2026-11-19 小欧: schedule notice 写入清单(成功时前端唯一来源), 整体替换; 入快照刷新恢复 */
+  setScheduleList(sessionId: string, items: ScheduleItem[] | null): void {
+    const s = sessions.get(sessionId);
+    if (s)
+      commit(s, (d) => {
+        d.scheduleList = items;
+      });
+  },
+
   setReceiving(sessionId: string, v: boolean): void {
     const s = sessions.get(sessionId);
     if (!s || s.isReceiving === v) return;
@@ -1772,6 +1792,8 @@ export const chatStreamStore = {
         sentRefLedger: b.sentRefLedger ?? [],
         // 2026-11-18 商量 - 老备份无 question 字段 → 显式 null(展开式会把 undefined 原样带入)
         pendingQuestion: b.pendingQuestion ?? null,
+        // 2026-11-19 小欧: 老备份无 schedule 字段 → 显式 null(还原清单卡隐藏态)
+        scheduleList: b.scheduleList ?? null,
       })
     );
     return 'ok';

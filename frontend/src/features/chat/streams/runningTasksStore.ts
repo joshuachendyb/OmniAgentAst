@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react';
 
 import { sessionApi, type RunningTask } from '@/services/api/session.api';
 import { getActiveSessionStatusList, toStreamStatus } from './chatStreamStore';
-import type { StreamStatus } from './backupTypes';
+import type { StreamStatus } from './chatStreamTypes';
 
 /** 一条"在跑"任务的前端口径视图: 状态已归一到 StreamStatus, 开跑时刻已解析为 epoch ms */
 export interface RunningTaskView {

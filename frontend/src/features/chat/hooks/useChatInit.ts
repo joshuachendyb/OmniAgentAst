@@ -36,7 +36,7 @@ import { showWarning } from '../../../utils/chatMessages';
 import { ERROR_TYPE_LABELS } from '../components/ErrorDetail';
 import type { UseChatFacadeReturn } from './useChatFacade';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
-import type { ResumeResult } from '@/features/chat/streams/backupTypes';
+import type { ResumeResult } from '@/features/chat/streams/chatStreamTypes';
 
 const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
   task_interrupted: ERROR_TYPE_LABELS.task_interrupted,

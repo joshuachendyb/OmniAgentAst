@@ -126,6 +126,8 @@
 // 编辑历史: 2026-11-18 商量 - KNOWN_EVENT_TYPES + case 增 question_required/question_resolved(阻塞问答成对事件),
 //   handlers 增 onQuestionRequired/onQuestionResolved; 漏白名单则帧被静默丢弃且 seq 不推进 — 商量-2026-11-18
 // 编辑历史: 2026-11-18 商量 - question_required 下发补 backend_timeout(镜像 authorization 的 assignTimeout 归一), 供 dock 倒计时 — 商量-2026-11-18
+// 编辑历史: 2026-11-19 小欧 - schedule notice 三态都 push 事件列表(与其它 notice 同构); 仅 phase=done 且带 items
+//   时投 onScheduleUpdate 写计划卡片, failed 只进事件列表不画卡片(保持上一份) — 小欧-2026-11-19
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -277,6 +279,13 @@ const processSSEData = (
       question_id?: string;
       outcome?: string;
     }) => void;
+    // 2026-11-19 小欧: schedule 清单 notice(kind=schedule) → 写 store, taskinfo 卡片唯一来源
+    onScheduleUpdate?: (
+      items: {
+        content: string;
+        status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+      }[]
+    ) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
       tool_name: string;
@@ -1142,8 +1151,23 @@ const processSSEData = (
         step.notice_kind = (rawData.kind as string) || '';
         step.notice_phase =
           (rawData.phase as 'start' | 'done' | 'failed') || 'start';
+        // 2026-11-19 小欧: only_event=true(老帧无此字段按 false) → 仅事件列表, 不画卡片不占位置2
+        step.only_event = rawData.only_event === true;
+        // 2026-11-19 小欧: schedule notice 也 push 进事件列表(三态都渲染), 与其它 notice 同构。
         pushAndFlush(handlers, step);
         onStep?.(step);
+        // 仅非 only_event(成功/可容忍错)写计划卡片; error(only_event=true)只进事件列表, 卡片保持上一份
+        if (
+          rawData.kind === 'schedule' &&
+          !step.only_event &&
+          Array.isArray(rawData.items)
+        ) {
+          handlers.onScheduleUpdate?.(
+            rawData.items as Parameters<
+              NonNullable<typeof handlers.onScheduleUpdate>
+            >[0]
+          );
+        }
         step.timestamp = timestampValue;
         break;
       }

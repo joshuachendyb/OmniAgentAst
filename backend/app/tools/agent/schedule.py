@@ -1,5 +1,14 @@
 # -*- coding: utf-8 -*-
-# 2026-11-18 商量 - 新增 schedule 工具: 会话内任务/计划清单(一期方案A纯回显零状态), 整体替换+摘要给 LLM, 不落库
+# 2026-11-18 商量 - 新增 schedule 工具: 会话内任务/计划清单(一期方案A纯回显零状态), 整体替换+摘要给 LLM
+# 2026-11-19 小欧 - notice 通道改造: 清理单从步骤流派生; 成功发 notice(kind=schedule, items)供前端卡片;
+#   data 改 rows 二维数组(事项|完成标志)给 LLM; action 删 params.items(obs不用); 失败 hint 按参数说明
+# 2026-11-19 小欧 - 规格收紧(描述无歧义): 条数 50→20、content 200→100; 约束前置到 schema/注册描述;
+#   items 结构/四态语义/整体替换单一真源描述, 常量与描述同源;
+#   数值上限与参数描述文案全迁 tool_constants(SCHEDULE_*)，本文件只 import 不重定义
+# 2026-11-19 小欧 - 失败二分: 完全错误(结构不符)→error; 可容忍错(content/条数超标记裁剪、status 非法归 pending)
+#   →成功+warning(build_warning), 裁剪后清单照常发 notice 落地
+# 2026-11-19 小欧 - 三态均发 notice: done(带 items→事件列表+卡片) / failed(only_event=True→仅事件列表不占位置2);
+#   三态均返回 LLM+落库, 仅 SSE 转发出口摘工具行
 """
 schedule — 任务/计划清单(方案A: 纯回显, 与 opencode todoWrite 一致)
 
@@ -10,68 +19,108 @@ schedule — 任务/计划清单(方案A: 纯回显, 与 opencode todoWrite 一�
 import time as _time_mod
 from typing import Any, Dict, List, Tuple
 
-from app.tools.tool_constants import ERR_SCHEDULE
-from app.tools.tool_response import build_error, build_success
+from app.tools.context import get_current_notice_callback
+from app.tools.tool_constants import (
+    ERR_SCHEDULE,
+    SCHEDULE_INPUT_MAX_CONTENT_CHARS,
+    SCHEDULE_INPUT_MAX_ITEMS,
+    SCHEDULE_ITEM_KEYS,
+    SCHEDULE_ITEMS_PARAM_DESC,
+    SCHEDULE_STATUSES,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
 
-VALID_STATUSES = ("pending", "in_progress", "completed", "cancelled")
-MAX_ITEMS = 50
-MAX_CONTENT_CHARS = 200
+VALID_STATUSES = SCHEDULE_STATUSES  # 四态单一真源在 tool_constants, 校验与 schema enum 同源
 
 
-def _normalize_items(items: Any) -> Tuple[List[Dict[str, str]], str]:
-    """校验并归一化清单 — 商量 2026-11-18; 返回 (归一化清单, 错误文案), 错误文案为空即通过"""
+def _normalize_items(items: Any) -> Tuple[List[Dict[str, str]], str, List[str]]:
+    """校验并归一化清单(错误二分: 结构错拒绝, 可容忍错裁剪/归位+警告) — 商量 2026-11-18
+    2026-11-19 小欧 - 分两类: 完全错误(error, 立即拒) / 可容忍错误(warning, 裁剪或归位后继续)。
+      返回 (归一化清单, 错误文案, 警告列表); error 非空即拒绝, warning 非空则成功+警告。
+    """
     if not isinstance(items, list):
-        return [], "items 必须是数组"
-    if len(items) > MAX_ITEMS:
-        return [], f"清单过长(最多{MAX_ITEMS}项), 请合并相似任务"
+        return [], "items 必须是数组", []
+
+    allowed = SCHEDULE_ITEM_KEYS  # 从 schema properties 派生, 与参数层同源(拒未知字段口径不漂移)
+    warnings: List[str] = []
+
+    # 可容忍: 条数超标 → 裁剪取前 N 项
+    if len(items) > SCHEDULE_INPUT_MAX_ITEMS:
+        warnings.append(f"清单共{len(items)}项, 超过上限{SCHEDULE_INPUT_MAX_ITEMS}, 已裁剪保留前{SCHEDULE_INPUT_MAX_ITEMS}项")
+        items = items[:SCHEDULE_INPUT_MAX_ITEMS]
 
     normalized: List[Dict[str, str]] = []
     for idx, item in enumerate(items, start=1):
+        # ---- 完全错误: 结构不符, 立即拒绝 ----
         if not isinstance(item, dict):
-            return [], f"第{idx}项必须是对象"
-        content = item.get("content")
-        if not isinstance(content, str) or not content.strip():
-            return [], f"第{idx}项 content 不能为空"
-        if len(content) > MAX_CONTENT_CHARS:
-            return [], f"第{idx}项 content 超过{MAX_CONTENT_CHARS}字"
-        status = item.get("status")
+            return [], f"第{idx}项必须是对象", []
+        extra = set(item) - allowed
+        if extra:
+            return [], f"第{idx}项含未知字段 {sorted(extra)}, 每项只允许 content/status", []
+        if "content" not in item:
+            return [], f"第{idx}项缺少 content", []
+        content = item["content"]
+        if not isinstance(content, str):
+            return [], f"第{idx}项 content 必须是字符串", []
+        if not content.strip():
+            return [], f"第{idx}项 content 不能为空", []
+        if "status" not in item:
+            return [], f"第{idx}项缺少 status", []
+        status = item["status"]
+        if not isinstance(status, str):
+            return [], f"第{idx}项 status 必须是字符串", []
+
+        # ---- 可容忍: content 超长 → 裁剪, status 非法 → 归 pending, 记警告 ----
+        if len(content) > SCHEDULE_INPUT_MAX_CONTENT_CHARS:
+            warnings.append(f"第{idx}项 content 超过{SCHEDULE_INPUT_MAX_CONTENT_CHARS}字, 已裁剪")
+            content = content[:SCHEDULE_INPUT_MAX_CONTENT_CHARS]
         if status not in VALID_STATUSES:
-            return [], f"第{idx}项 status 只能取 {', '.join(VALID_STATUSES)} 之一"
+            warnings.append(f"第{idx}项 status={status!r} 非法, 已按 pending 处理")
+            status = "pending"
         normalized.append({"content": content, "status": status})
-    return normalized, ""
+    return normalized, "", warnings
 
 
 def _summarize(items: List[Dict[str, str]]) -> str:
-    """计划摘要(中文口径, 照搬 opencode summarize) — 商量 2026-11-18"""
+    """计划摘要: 共 N 项, 按完成/未完成/取消三类计数 — 商量 2026-11-18
+    2026-11-19 小欧 - 改「共N项+完成/未完成/取消三分类」, 一项不重复列; 未完成=进行中+待开始。
+    """
     if not items:
         return "计划已清空"
     total = len(items)
     counts = {s: 0 for s in VALID_STATUSES}
     for item in items:
         counts[item["status"]] += 1
-    parts = [f"{counts['completed']}/{total} 已完成"]
-    for status, zh in (("in_progress", "进行中"), ("pending", "待开始"), ("cancelled", "已取消")):
-        if counts[status]:
-            parts.append(f"{counts[status]} {zh}")
-    active = [item["content"] for item in items if item["status"] == "in_progress"]
-    return f"计划已更新: {', '.join(parts)}" + (f"。进行中: {', '.join(active)}" if active else "")
+    unfinished = counts["in_progress"] + counts["pending"]
+    return (
+        f"收到{total}项: 已完成{counts['completed']}项, "
+        f"未完成{unfinished}项(进行中{counts['in_progress']}、待开始{counts['pending']}), "
+        f"已取消{counts['cancelled']}项。"
+    )
 
 
 def _build_schedule_llm_data(
     exec_code: str,
     duration_ms: int,
     detail: str = "",
-    hint: str = "",
-    items: List[Dict[str, str]] = None,
     summary: str = "",
+    item_count: int = 0,
 ) -> Dict[str, Any]:
-    """schedule 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18"""
-    items = items or []
+    """schedule 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18
+    2026-11-19: 删 items 参数与 action.params.items(obs 不用, 前端 hook 已删); 计数改用 item_count。
+    """
     if exec_code == "error":
-        summary = f"计划更新失败: {detail}"
+        # message="失败"已表成败(全仓规范); summary 给概括(具体违反项在 detail→"✖错误"行), 两行不重复
+        summary = "计划未被接受, 请修正后重新提交完整清单"
         status = {
             "exec_code": "error", "message": "失败", "code": ERR_SCHEDULE,
-            "detail": detail, "hint": hint,
+            "detail": detail, "hint": f"请按 schedule 参数说明重新提交 items: {SCHEDULE_ITEMS_PARAM_DESC}",
+        }
+    elif exec_code == "warning":
+        # 可容忍错已就地处理(裁剪/归位), summary 仍报清单计数; 警告逐条进 detail(→"⚠警告"行)
+        status = {
+            "exec_code": "warning", "message": "完成但有警告", "code": "",
+            "detail": detail, "hint": "计划已按上述处理落地, 如需精确控制请修正后重新提交完整清单",
         }
     else:
         status = {
@@ -80,35 +129,48 @@ def _build_schedule_llm_data(
         }
     return {
         "summary": summary,
-        "action": {"tool": "schedule", "tool_zh": "计划", "params": {"items": items}},
+        "action": {"tool": "schedule", "tool_zh": "计划"},
         "status": status,
         "duration_ms": duration_ms,
-        "metrics": {"item_count": len(items)},
+        "metrics": {"item_count": item_count},
     }
 
 
 async def schedule(items: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """创建/更新当前会话的任务计划清单(整体替换) — 商量 2026-11-18"""
+    """创建/更新当前会话的任务计划清单(整体替换) — 商量 2026-11-18
+    2026-11-19: 三态均发 notice — done(带 items, 事件列表+卡片) / failed(only_event=True, 仅事件列表不占位置2);
+       三态均返回 LLM + 落库(observation 步原样), 仅 SSE 转发出口摘除工具行; data 改 rows 二维数组给 LLM。
+    """
     t0 = _time_mod.perf_counter()
+    _notice_cb = get_current_notice_callback()
 
-    normalized, err = _normalize_items(items)
+    normalized, err, warnings = _normalize_items(items)
     if err:
+        # 完全错误(结构不符)→ error: 发 failed notice(only_event=True)→ 前端只进事件列表, 不画卡片不占位置2, 保持上一份
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if _notice_cb:
+            await _notice_cb("schedule", "failed", f"计划未更新: {err}", only_event=True)
         return build_error(
-            data={"items": []},
-            llm_data=_build_schedule_llm_data(
-                "error", duration_ms, detail=err,
-                hint="请按字段要求修正 items 后重试",
-            ),
+            data={"rows": []},
+            llm_data=_build_schedule_llm_data("error", duration_ms, detail=err),
         )
 
     summary = _summarize(normalized)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    # 成功/可容忍错发 done notice(带裁剪/归位后的 items)→ 前端事件列表 + 计划卡片显示实际落地结果
+    if _notice_cb:
+        await _notice_cb("schedule", "done", summary, items=normalized)
+    data = {"rows": [[it["content"], it["status"]] for it in normalized]}
+    if warnings:
+        # 可容忍错(长度超标裁剪/status 非法归位)→ 成功+warning, 清单已就地处理落地
+        return build_warning(
+            data=data,
+            llm_data=_build_schedule_llm_data("warning", duration_ms, summary=summary,
+                                              detail="; ".join(warnings), item_count=len(normalized)),
+        )
     return build_success(
-        data={"items": normalized},
-        llm_data=_build_schedule_llm_data(
-            "success", duration_ms, items=normalized, summary=summary,
-        ),
+        data=data,
+        llm_data=_build_schedule_llm_data("success", duration_ms, summary=summary, item_count=len(normalized)),
     )
 
 

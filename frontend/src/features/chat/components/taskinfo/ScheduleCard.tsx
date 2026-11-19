@@ -7,6 +7,8 @@
 //   ① 行由 alignItems:center 改回首行对齐 —— 多行条目时字形浮在整段中间, 与文字不在一个基线上;
 //   ② 状态字形的 7px/1px 魔法数改令牌(Spacing.MD / BorderWidth.THIN), 刻度外数字不得出现在业务代码;
 //   ③ 脚注「共 N 项，第 M 步更新」把内部步骤计数当说明写给人看, 改成人话(进行中/全部完成) — 商量-2026-11-18
+// 2026-11-19 小欧 - list 入参由 ScheduleSnapshot(步骤流派生)改 ScheduleItem[](store.scheduleList, notice 写入);
+//   类型 ScheduleItem/ScheduleStatus 改从 chatStreamTypes 导入(清单类型单一真源) — 小欧-2026-11-19
 import { CloseOutlined, CheckOutlined } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 
@@ -17,9 +19,9 @@ import {
   PanelRow,
 } from '@/components/PanelCard';
 import type {
-  ScheduleSnapshot,
+  ScheduleItem,
   ScheduleStatus,
-} from '@/features/chat/hooks/useScheduleList';
+} from '@/features/chat/streams/chatStreamTypes';
 import { LineHeight } from '@/theme/spacing';
 import {
   BorderWidth,
@@ -35,8 +37,8 @@ import { FloatingEntry } from './FloatingEntry';
 const CARD_W = 30 * FontSize.SECONDARY; // 30 汉字宽 ≈ 360px
 
 interface ScheduleCardProps {
-  /** 派生自步骤流的最新清单(TaskInfoBar 用同一份派生值决定分隔点与入口显隐, 故由此传入) */
-  list: ScheduleSnapshot | null;
+  /** 2026-11-19 小欧: schedule notice 写入 store 的清单(TaskInfoBar 传 store.scheduleList) */
+  list: ScheduleItem[] | null;
   compact?: boolean; // 窄档仅计数, 与 TrustPanel 的窄档口径一致
 }
 
@@ -109,7 +111,7 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
 
   if (!list) return null;
 
-  const { items } = list;
+  const items = list;
   const done = items.filter((it) => it.status === 'completed').length;
   const total = items.length;
   const active = items.find((it) => it.status === 'in_progress');

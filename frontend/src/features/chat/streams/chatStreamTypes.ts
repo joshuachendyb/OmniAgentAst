@@ -15,6 +15,10 @@
 // 2026-11-18 opencode - SentRefLedgerEntry 补 kind: url 条目点击开外链, 其余仍按文件重读 — opencode-2026-11-18
 // 2026-11-18 商量 - 新增 QuestionItem/PendingQuestionPayload 与 SessionSnapshot.pendingQuestion: question 阻塞问答快照(切会话恢复)
 // 2026-11-18 商量 - PendingQuestionPayload 补 backend_timeout(后端问询窗口秒数), dock 倒计时随快照持久
+// 2026-11-19 小欧 - 新增 ScheduleItem/ScheduleStatus 类型(自 useScheduleList 迁入, notice 通道单一真源),
+//   SessionSnapshot 增 scheduleList 字段(入 StreamBackup 落盘, 刷新恢复清单卡) — 小欧-2026-11-19
+// 2026-11-19 小欧 - 文件名 backupTypes.ts→chatStreamTypes.ts: 原名只覆盖 StreamBackup 一类, 实为 stream 领域
+//   全部共享类型(授权/question/状态/台账/清单/快照/事件/备份)单一真源, 新名名副其实; 12 处 import 同步 — 小欧-2026-11-19
 import type { QuestionItem } from '@/types/chat';
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
@@ -93,6 +97,17 @@ export interface SentRefLedgerEntry {
   ts: number;
 }
 
+/** 2026-11-19 小欧: 执行计划清单项(从 useScheduleList 迁入, notice 通道唯一真源) */
+export type ScheduleStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+export interface ScheduleItem {
+  content: string;
+  status: ScheduleStatus;
+}
+
 export interface SessionSnapshot {
   serverTaskId: string | null;
   lastSeq: number; // event_log 已处理偏移，初始 -1
@@ -107,6 +122,8 @@ export interface SessionSnapshot {
   pendingAuthorization: PendingAuthorizationPayload | null;
   /** 2026-11-18 商量: question 阻塞问询原始载荷, 归一化在 useQuestionDock 消费侧 */
   pendingQuestion: PendingQuestionPayload | null;
+  /** 2026-11-19 小欧: schedule 清单(schedule notice 写入, taskinfo 卡片唯一来源; 入快照刷新恢复) */
+  scheduleList: ScheduleItem[] | null;
   reconnectStatus: ReconnectStatus;
   /**
    * 2026-09-29 22:47:10 小欧（[63] 5.4 防退化修复）：最近一次心跳时间戳。

@@ -4,6 +4,11 @@
 > 更新: 2026-11-18 - 商量 - 复核前端 UI/UE 设计参照系统既有代码范式, 补 §7.4.3 范式对齐结论并同步 §6.4/§12 B5/§13 前端用例
 > 更新: 2026-11-18 - 商量 - 实施后回填与契约纠偏: §6.2 补 `backend_timeout`、§6.4/§7.4.2/§7.4.3 改浮层挂载、§7.5 改双分支超时与到点兜底(含收口指令)、§9.3 补语义外键丢弃、§9.4 缓冲 30→15 并对齐真实实现、§13.1 Q9/Q12 改兜底成功口径、§14 增实施后现状
 > 更新: 2026-11-19 - 商量 - 三堂会审复核: §8.2 清单取数改「读观察步 `llm_data` 落地结果」口径并补任务边界/失败不改两条, §14.4 新增复核整改与结论表(真实 9 / 不成立不改 4), §15 补决策 23–25
+> 更新: 2026-11-19 - 商量 - schedule 规格收紧与描述无歧义整改: 条数 50→20、content 200→100 字; §9.2 校验矩阵同步; 约束前置到 schema/注册描述(引用 ITEMS_SPEC 单一真源), 消除 LLM 靠试错猜上限
+> 更新: 2026-11-19 - 小欧 - summary 改计数式(收到N项/完成/未完成/取消), 与 message"成功/失败"规范无叠字; §8.1 代码块与 §8.2 前端口径(notice 通道)同步, §11 用例断言同步
+> 更新: 2026-11-19 - 小欧 - items 约束前置参数层: 经 json_schema_extra 内联 item schema(status enum/required/additionalProperties/maxLength/maxItems), 实测无 $ref/$defs 严格 provider 兼容; 校验层对齐精确报错(拒未知字段/区分缺字段与类型非法)为兜底; §8.1 同步
+> 更新: 2026-11-19 - 小欧 - 失败二分: 完全错误(结构不符)→error; 可容忍错(content/条数超标记裁剪、status 非法按 pending 归位)→build_warning 成功+警告; §8.1 校验矩阵改 error/warning 二分
+> 更新: 2026-11-19 - 小欧 - 三态均发 notice 且均返回 LLM+落库: error→failed+only_event=true(仅事件列表不画卡片不占位置2)/warning·success→done(事件列表+卡片); 三态不发前端 step 工具行(SSE 转发出口摘除)
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -554,15 +559,22 @@ FormAnswer = { [x:string]: string|number|boolean|string[] }
 
 **Schema**: 见 §7.3 `ScheduleInput`。
 
-**校验矩阵**(工具内手工校验, 失败均 `build_error`):
+**两道约束**(约束前置, 不再单靠工具函数马后炮):
+1. **参数层(schema, 事前)**: `ScheduleInput.items` 经 `json_schema_extra` 内联 item schema —— `status` 用 `enum` 四态、`required=[content,status]`、`additionalProperties=false`、`content.maxLength=100`、`maxItems=20`。不嵌套 BaseModel 故**无 `$ref/$defs`**(实测), opencode/deepseek 等严格 provider 兼容。LLM 从参数结构即被引导/约束, 非法枚举值 API 层即可拦截。
+2. **校验层(工具函数, 兜底)**: 错误二分(**完全错误→`build_error` 拒绝; 可容忍错→就地处理后 `build_warning` 成功+警告**), 对齐 schema 口径, 常量同源于 tool_constants。
 
-| 校验项 | 规则 | hint |
+**校验矩阵**(校验层兜底, error/warning 二分):
+
+| 校验项 | 完全错误→error(拒绝) | 可容忍→warning(处理后落地) |
 |---|---|---|
-| items 类型 | 必须是 list(可为空) | 「items 必须是数组」 |
-| 单条类型 | 必须是 dict | 「每项必须是对象」 |
-| content | 非空字符串, ≤200 字 | 「任务简述不能为空/过长」 |
-| status | ∈ {pending,in_progress,completed,cancelled} | 「status 只能取四个值之一」 |
-| 条数 | ≤50 | 「清单过长, 请合并相似任务」 |
+| items 类型 | 非 list「items 必须是数组」 | — |
+| 单条类型 | 非 dict「每项必须是对象」 | — |
+| 未知字段 | 含未知字段「只允许 content/status」 | — |
+| content | 缺少/非字符串/空「缺少 content / 必须字符串 / 不能为空」 | >100字→裁剪取前100, 警告 |
+| status | 缺少/非字符串「缺少 status / 必须字符串」 | 值非法(如 done)→按 pending 归位, 警告 |
+| 条数 | — | >20项→裁剪保留前20, 警告 |
+
+**三态均发 notice 且均返回 LLM + 落库**(observation 步原样, 仅 SSE 转发出口摘工具行): error 发 `failed`+`only_event=true`(错误摘要, 无 items)→ 前端**仅事件列表**(不画卡片、不占位置2、保持上一份); warning/success 发 `done`(only_event 默认 false, 带裁剪/归位后的实际清单)→ 前端事件列表 + 计划卡片 + 位置2。`only_event` 是 notice 呈现标记(默认 false), 不落库不进 LLM, 老 notice 无此字段按 false 处理零退化。
 
 **执行逻辑**(纯回显, 零状态):
 ```python
@@ -580,19 +592,17 @@ async def schedule(items: List[Dict[str, Any]]) -> Dict[str, Any]:
 **`_summarize`(照搬 opencode, 中文口径)**:
 ```python
 if not items: return "计划已清空"
-total = len(items); completed = 已计数
-parts = [f"{completed}/{total} 已完成"]
-for s in ("in_progress", "pending", "cancelled"): 有则追加 f"{n} 进行中/待开始/已取消"
-active = [i["content"] for i in items if i["status"] == "in_progress"]
-return f"计划已更新: {', '.join(parts)}" + (f"。进行中: {', '.join(active)}" if active else "")
+total = len(items); counts = 四态各自计数
+unfinished = counts["in_progress"] + counts["pending"]   # 未完成=进行中+待开始
+return f"收到{total}项: 已完成{counts['completed']}项, 未完成{unfinished}项(进行中{counts['in_progress']}、待开始{counts['pending']}), 已取消{counts['cancelled']}项。"
 ```
 
 ### 8.2 前端(一期落地: taskinfo 计划浮层)
 
 **一期(方案A)**: 清单以 **observation 文本**呈现, 同时由 taskinfo 左组「计划 N/M」入口弹浮层查看完整清单。
-- `llm_data.summary` 已含"3/5 已完成, 进行中: 编写代码", observation 渲染即用户可见
-- 浮层清单**不新增事件/表/快照槽**: 由 `useScheduleList` 从步骤流取出, 因此切会话、历史回放随步骤自然恢复。取数口径三条(实施后按真实链路收口, 详见前端 `FUNCTIONS_FRONT.md` §4.1):
-  - **认落地结果, 不认模型意图**: 读观察步 `tool_result[i].llm_data` 的归一化清单(后端已校验/截断), 不读 action 步 `tools[i].params.items` 的模型原文 —— 后者在后端拒收(超 50 条/超 200 字/status 非法)时照样"长得像一份清单", 直接显示会出现"计划已生效"的假象
+- `llm_data.summary` 改为计数式"收到N项: 已完成X项, 未完成Y项(进行中/待开始), 已取消Z项", observation 渲染即用户可见
+- 浮层清单改走 **notice 通道**: 后端成功发 `notice(kind=schedule, items)`, 前端写 `store.scheduleList` 入快照(刷新恢复), taskinfo 卡片直读; 不再从步骤流派生(`useScheduleList` 已删)。详细口径见前端 `FUNCTIONS_FRONT.md` §三/§四:
+  - **认落地结果, 不认模型意图**: 读观察步 `tool_result[i].llm_data` 的归一化清单(后端已校验/截断), 不读 action 步 `tools[i].params.items` 的模型原文 —— 后者在后端拒收(超 20 条/超 100 字/status 非法)时照样"长得像一份清单", 直接显示会出现"计划已生效"的假象
   - **任务边界即清单边界**: 倒序扫描遇到 `start/startinfo` 立即停, 新任务第一秒不显示上一任务的清单
   - **失败不改清单**: `exec_code≠success` 或被 HITL 拦下(无观察步)时跳过本次继续往前找; 成功但清单为空 = 计划已清空, 就地收口不再回溯旧版本
 - 依据: 本仓 tool_result **无 `metadata` 通道**(只有 `tool_name/llm_data/data_text/raw_data/other_data`), `data.items` 不进前端渲染链路; 观察步的 `llm_data.action.params.items` 是唯一已有且可回放的落地落点
@@ -672,7 +682,8 @@ if action == "question":
 
 ### 9.5 Schema → LLM 可见性
 
-- `$defs/$ref` 不内联(§7.3), 故用扁平模型
+- `$defs/$ref` 不内联(§7.3), 故用扁平模型 `List[Dict[str, Any]]`
+- 2026-11-19: schedule 通过 `Field(json_schema_extra=...)` **内联** item 约束(enum/required/additionalProperties/maxLength/maxItems) —— 仍不嵌套 BaseModel, 实测无 `$ref/$defs`, 严格 provider 兼容(§8.1 两道约束)
 - `register(input_model=...)` 会自动生成 `input_schema`, `expose_to_llm=True` 默认
 - 两工具都**不放** `TOOL_TIMEOUT_HINTS`(question 超时由网关表达, schedule 无超时)
 - 两工具都**不放** `TOOL_CATEGORY_OVERRIDE`(分类由注册时的 `category=ToolCategory.AGENT` 决定)
@@ -818,16 +829,16 @@ tuning:
 
 | # | 场景 | 输入 | 期望 |
 |---|---|---|---|
-| S1 | 正常 3 项 | pending/in_progress/completed 各一 | success; summary 含 "1/3 已完成"; 含"进行中: …" |
+| S1 | 正常 3 项 | pending/in_progress/completed 各一 | success; summary 含"收到3项: 已完成1项, 未完成2项(进行中1、待开始1), 已取消0项" |
 | S2 | 清空 | `items=[]` | success; summary == "计划已清空" |
 | S3 | 非 list | `items={"a":1}` | error |
 | S4 | 单条非 dict | `items=["x"]` | error |
 | S5 | content 空 | `content=""` | error, detail 点名第 n 项 |
-| S6 | content 超长 | 201 字 | error |
+| S6 | content 超长 | 101 字(上限 100) | error |
 | S7 | status 非法 | `status="done"` | error, detail 列出四个合法值 |
-| S8 | 超 50 项 | 51 项 | error |
-| S9 | 全 completed | 2 项 completed | summary 含 "2/2 已完成", 不含"进行中" |
-| S10 | 返回值形状 | S1 结果 | 同 Q15; `tool_zh=计划`; `data.items` 等长归一 |
+| S8 | 超 20 项 | 21 项 | error |
+| S9 | 全 completed | 2 项 completed | summary 含"收到2项: 已完成2项, 未完成0项" |
+| S10 | 返回值形状 | S1 结果 | 同 Q15; `tool_zh=计划`; `data.rows` 二维数组(事项\|完成标志) |
 | S11 | schema 无 `$defs` | `ScheduleInput.model_json_schema()` | 同 Q16 |
 
 ### 13.3 阶段B 补充用例(接系统后)
@@ -875,7 +886,7 @@ tuning:
 |---|---|---|---|
 | R1 | 保险丝按 default=60s 截杀 120s 等待 | question 永远等不到回答 | ✅ 已落地 §9.4 特判(`HITL 超时 + 15`) |
 | R2 | question 误 `import app.services` | 触发 tools 层越层守护规则 | ✅ 强制走 ContextVar 注入(§7.2) |
-| R3 | 嵌套 BaseModel 生成 `$defs/$ref` | 部分 provider 拒绝该工具 | ✅ 扁平 `List[Dict[str, Any]]`(§7.3) |
+| R3 | 嵌套 BaseModel 生成 `$defs/$ref` | 部分 provider 拒绝该工具 | ✅ 扁平 `List[Dict[str, Any]]`(§7.3); schedule 的item约束走 `json_schema_extra` 内联(§9.5), 实测无 `$ref/$defs` |
 | R4 | 复用 `paused` 会污染信任落库 | 无信任语义的问询写进 `chat_session_trust` | ✅ 独立事件对(§6.1) |
 | R5 | `hitlWaitingKeys` 混用后按 id 误删 | 一条问答结束把授权等待也清了 | ✅ 只按精确 id 删, 严禁 `clear()`(§6.5) |
 | R6 | 长链路忘记更新 schedule | 清单陈旧 | 一期方案A 纯回显(taskinfo「计划 N/M」浮层展示最后一次调用); 主动 nag 仍属二期 |
@@ -894,7 +905,7 @@ tuning:
 | `question_required` 事件(含 `backend_timeout`) | ✅ 已登记 SSE-only; 前端倒计时同源 |
 | 到点未答兜底 | ✅ HTL关=首选项 / HTL开=专家指令; 均带收口指令, 成功收口 |
 | 前端 `features/chat/components/question/` | ✅ 浮层卡片(壳复用 `PanelCard`), 贴输入框上沿 |
-| taskinfo 计划入口 | ✅ 「计划 N/M」浮层(`useScheduleList` 派生自步骤流) |
+| taskinfo 计划入口 | ✅ 「计划 N/M」浮层(清单改走 notice→`store.scheduleList`, 不靠步骤流派生; 见 §8.2) |
 | `config.yaml disabled_tools` / `UNAVAILABLE_OFFICIAL_TOOLS` | ✅ 均已摘除 `question` |
 
 ### 14.4 三堂会审复核整改(2026-11-19)
@@ -916,6 +927,8 @@ tuning:
 | 不成立 | `useCountdown` 首帧一帧陈旧 | 需渲染期重置, 收益为零, 不改 |
 | 不改 | 快照恢复后倒计时按整窗重算 | 仅展示偏差; 修它要三文件透传时间戳, 违 KISS/YAGNI |
 | 不改 | `useScheduleList` 名为 list 返回单份快照 | 语义可接受(取的是"当前清单"), 改名波及公共清单与调用点, 不值 |
+
+> 现状注(2026-11-19): 上表为当时复核记录, 保留不改历史。其后清单来源整体改走 notice 通道(§8.2), `useScheduleList` hook 已删除, 该条"不改名"决策的对象已不存在, 仅作历史留档。
 
 ---
 

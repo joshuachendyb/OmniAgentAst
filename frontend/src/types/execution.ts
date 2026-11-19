@@ -71,6 +71,8 @@ export interface ExecutionStep {
   // 2026-10-25 小欧: 通知信封字段(type='notice' 时有效)
   notice_kind?: string; // 通知种类: summarizing/installing/extracting/refs_ready/ws_inject/trimming
   notice_phase?: 'start' | 'done' | 'failed'; // 阶段: start(事前)/done(成功)/failed(失败)
+  // 2026-11-19 小欧: only_event(默认 false)=仅进事件列表, 不画卡片不占位置2(schedule error); 老帧无此字段按 false
+  only_event?: boolean;
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
   // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：
   //   后端 content_items 对象数组，与 content 同源同序；前端现阶段只透传保存 — 小欧-2026-10-12
