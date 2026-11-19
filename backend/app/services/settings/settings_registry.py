@@ -145,7 +145,12 @@ from typing import Any, Dict, List, Optional
 
 # 2026-11-18 opencode - 外链条数上限改引 extract.MAX_TEXT_URLS: 原引 MAX_REMOTE_IMAGES(4) 已无执行点,
 #   真实上限是单次引用 URL 总数 8, 文案按实报 — opencode-2026-11-18
+# 2026-11-20 小欧 - 音视频内联上限默认值引附件真源(单一真源, 不写死 20MB):
+#   与 media_payload 逻辑兜底同源, 改附件上限时设置页默认值自动跟随
+from app.attachments.attachment_service import MAX_FILE_BYTES as _MEDIA_INLINE_DEFAULT_BYTES
 from app.attachments.extract import MAX_TEXT_URLS
+
+_MEDIA_INLINE_DEFAULT_MB = max(1, _MEDIA_INLINE_DEFAULT_BYTES // 1024 // 1024)
 
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
@@ -265,8 +270,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("media.doc_inline_limit_mb", "int", "内联文档上限(MB)", 8, range_=[1, 20],
               notice="富文档（PDF 等）以原始字节编进请求体随消息发送时的单份上限。文档不做压缩（重编码会破坏内容），超过这个值就不走原生文档通道，改为在正文里注入抽取出的文字：内容不丢，版式与图表丢失。只有模型库声明支持文档输入的模型才走原生通道，其余模型恒走文字注入；图片上限见上一项"),
         # 2026-11-20 小欧 - 媒体组增 media.video_inline_limit_mb: 本地视频转 data URI 走 video_url 的单份上限(默认20MB)
-        _item("media.video_inline_limit_mb", "int", "内联视频上限(MB)", 20, range_=[1, 100],
-              notice="本地视频文件以 data:video/mp4;base64 编进请求体随消息发送时的单份上限（默认 20MB，与单个附件文件上限对齐）。只有模型库声明支持视频输入的模型才走这条原生通道，实测 mimo 等能解析视频内容；超过这个值就退化为一行文字说明。图片/文档上限分别见前两项"),
+        _item("media.video_inline_limit_mb", "int", "内联视频上限(MB)", _MEDIA_INLINE_DEFAULT_MB, range_=[1, 100],
+              notice="本地视频文件以 data:video/mp4;base64 编进请求体随消息发送时的单份上限（缺省=单个附件文件上限）。只有模型库声明支持视频输入的模型才走这条原生通道，实测 mimo 等能解析视频内容；超过这个值就退化为一行文字说明。图片/文档上限分别见前两项"),
+        # 2026-11-20 小欧 - 媒体组增 media.audio_inline_limit_mb: 音频转 base64 input_audio 的单份上限(缺省=附件上限真源)
+        _item("media.audio_inline_limit_mb", "int", "内联音频上限(MB)", _MEDIA_INLINE_DEFAULT_MB, range_=[1, 100],
+              notice="本地音频文件以 base64 编进请求体随消息发送时的单份上限（缺省=单个附件文件上限）。音频不能压缩（重编码破坏内容），不沿用图片 2MB 上限以免几分钟的 mp3/wav 全数降级；只有模型库声明支持音频输入的模型才走原生通道，超过退化为文字说明"),
         _item("media.compress_enabled", "bool", "超限自动压缩", True,
               notice="超限的内联图片先在本机等比缩小再编码（JPEG/PNG），原文件不动。关掉则超限图片一律不发，只在对话里留一行说明"),
         _item("media.compress_max_edge", "int", "压缩长边(像素)", 2048, range_=[256, 4096],

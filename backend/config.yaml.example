@@ -517,8 +517,9 @@ app:
 #     链接图片默认也先下载再按本项判断，只有模型实测证明能抓外链才直接转发地址
 #   doc_inline_limit_mb: 内联文档上限(MB)。富文档(PDF 等)以原始字节随消息发送的单份上限；文档不压缩
 #     (重编码会破坏内容)，超过则改为正文注入抽取文字(内容不丢，版式与图表丢失)
-#   video_inline_limit_mb: 内联视频上限(MB，默认 20，与 file 档附件上限对齐)。本地视频字节转
-#     data:video/mp4;base64 走 video_url 投递，mimo 等实测能解析；不走图片 2MB 口径 — 小欧-2026-11-20
+#   video_inline_limit_mb / audio_inline_limit_mb: 视频/音频内联上限(MB)。缺省跟随单文件附件上限
+#     (attachment_service.MAX_FILE_BYTES, 单一真源, 不在配置里写死)。本地视频转 data:video/mp4;base64
+#     走 video_url、音频走 base64 input_audio; mimo 等实测能解析; 不走图片 2MB 口径 — 小欧-2026-11-20
 #   compress_max_edge / compress_jpeg_quality: 压缩只缩不改内容(长边像素、JPEG 质量)
 #   remote_url_passthrough: 「转发视频外链」，消息里明确写出的公网视频地址直接转给模型(零字节搬运，视频唯一投递方式)；
 #     关掉则视频链接只留一行说明、图片改为下载后内联
@@ -529,7 +530,6 @@ app:
 media:
   inline_limit_mb: 2
   doc_inline_limit_mb: 8
-  video_inline_limit_mb: 20
   compress_enabled: true
   compress_max_edge: 2048
   compress_jpeg_quality: 85

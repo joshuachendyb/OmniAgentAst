@@ -34,6 +34,7 @@
 #   — opencode-2026-11-18
 # 2026-11-20 小欧 本地视频原生投递: 实测 mimo(opencli OpenAI兼容网关)接受 data:video/mp4;base64 作为 video_url 且能真看懂内容;
 #   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
+# 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
 
 # 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
 #   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
@@ -101,15 +102,38 @@ def doc_inline_limit_bytes() -> int:
     return max(1, int(mb)) * 1024 * 1024
 
 
-def video_inline_limit_bytes() -> int:
-    """视频内联上限(media.video_inline_limit_mb, 默认 20MB)。
-    视频走 data URI 的 video_url 投递(完整 base64), 体积远大于图片; 上限与 file 档附件
-    上限对齐, 避免图片 2MB 口径把可用视频全数拒绝 — 小欧-2026-11-20"""
+def _default_media_inline_bytes() -> int:
+    """音视频内联上限缺省值 = 单文件附件上限真源(attachment_service.MAX_FILE_BYTES)。
+    不另造数值, 改附件上限时音视频自动跟随 — 小欧-2026-11-20"""
+    from app.attachments.attachment_service import MAX_FILE_BYTES  # 延迟导入防循环
+    return MAX_FILE_BYTES
+
+
+def _media_inline_limit_bytes(key: str) -> int:
+    """按配置项取音视频内联上限字节数; 未配置/非法时回落单文件附件上限真源。"""
+    default = _default_media_inline_bytes()
+    raw = media_config().get(key)
+    if raw is None or raw == "":
+        return default
     try:
-        mb = float(media_config().get("video_inline_limit_mb") or 20)
+        mb = float(raw)
+        return max(1, int(mb)) * 1024 * 1024
     except (TypeError, ValueError):
-        mb = 20.0
-    return max(1, int(mb)) * 1024 * 1024
+        return default
+
+
+def audio_inline_limit_bytes() -> int:
+    """音频内联上限(media.audio_inline_limit_mb), 缺省=单文件附件上限。
+    音频走 base64 input_audio 投递, 不能像图片那样压缩; 沿用图片 2MB 口径会让几分钟的
+    mp3/wav 全数降级"未发送" — 小欧-2026-11-20"""
+    return _media_inline_limit_bytes("audio_inline_limit_mb")
+
+
+def video_inline_limit_bytes() -> int:
+    """视频内联上限(media.video_inline_limit_mb), 缺省=单文件附件上限。
+    视频走 data URI 的 video_url 投递(完整 base64), 体积远大于图片; 缺省跟随附件上限,
+    避免图片 2MB 口径把可用视频全数拒绝 — 小欧-2026-11-20"""
+    return _media_inline_limit_bytes("video_inline_limit_mb")
 
 
 def _compress_params() -> Tuple[int, int]:
@@ -295,7 +319,8 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         return {"modality": "video", "mime": mime, "data": None,
                 "url": f"data:{mime};base64,{_b64(raw)}"}, ""
     if kind == "audio":
-        raw, reason = await _read_capped(attachment)
+        # 音频用独立上限(默认20MB), 不再沿用图片2MB口径 — 小欧-2026-11-20
+        raw, reason = await _read_capped(attachment, audio_inline_limit_bytes())
         return ({"modality": "audio", "mime": attachment.get("mime") or "",
                  "data": raw, "url": None}, "") if raw else (None, reason)
     if kind in ("richdoc", "file"):
