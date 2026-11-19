@@ -60,10 +60,10 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   与 deepseek-chat 对以下历史消息必 400/422: tool_calls 为对象非数组、tool_calls 元素缺 function/缺 name/缺 type、
   arguments 为对象或空串或非 JSON 文本、assistant.content=None 且无 tool_calls。归一后请求得以发出去, 而非整轮 400。
   零改动时原样返回入参对象(不复制不改入参), 常态路径零行为变化 — 小欧-2026-10-31
+ 2026-11-03 小欧 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障)
+ 2026-11-20 小欧 连接池耗尽根治: 软配额闸门上限改 min(max_connections-2, 8), 恒小于 httpx 池上限, 池结构上不会被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长
 """
 
-# 编辑历史:
-# 2026-11-03 小欧 - 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障) — 小欧-2026-11-03
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
 import inspect  # SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
 import json
@@ -94,6 +94,7 @@ from app.constants import (
 )
 from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.adapters import get_provider_adapter  # 适配层查询 — 小欧 2026-09-23
+from app.llm.core import LLMResponseError  # 软配额排队超时熔断 — 小欧-2026-11-20
 from app.llm.reasoning import (
     extract_reasoning_from_chunk,  # diff五 流式收集复用三字段链 — 小欧 2026-09-23
 )
@@ -397,14 +398,16 @@ def _extract_server_error_message(body_text: str) -> tuple:
 
 
 _soft_pool_semaphore = None  # 2026-09-20 小欧 软配额: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
-_SOFT_POOL_WAIT_TIMEOUT = get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0)  # 软配额排队等待上限(秒): 超时保底放行(不拒绝不降级) — 小欧-2026-09-20
+_SOFT_POOL_WAIT_TIMEOUT = float(get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0))  # 软配额排队等待上限(秒): 超时熔断, 不硬塞进池 — 小欧-2026-11-20
 
 
 def _get_soft_pool_semaphore():
-    """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20"""
+    """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20
+    软配额上限留余量: 比 httpx max_connections 少 2, 保证池绝不会先满(软配额先挡住) — 小欧-2026-11-20"""
     global _soft_pool_semaphore
     if _soft_pool_semaphore is None:
-        _soft_pool_semaphore = asyncio.Semaphore(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
+        _max = int(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
+        _soft_pool_semaphore = asyncio.Semaphore(max(1, min(_max - 2, 8)))
     return _soft_pool_semaphore
 
 
@@ -471,15 +474,17 @@ class LLMClient:
             )
 
     async def _acquire_soft_pool(self, _sem: Optional[asyncio.Semaphore] = None) -> bool:
-        """排队获取软配额信号量: 超时保底放行(不拒绝不降级, 防长时间卡等) — 小欧 2026-09-24 v3.7.1
+        """排队获取软配额信号量 — 小欧 2026-09-24 v3.7.1
+        闸门上限恒 < httpx 池上限(见 _get_soft_pool_semaphore), 池结构上不会满; 这里满则
+        排队等待配置项 soft_pool_wait_timeout 秒, 超时熔断失败(不放行也不无限挂) — 小欧-2026-11-20
         函数化(DRY: request/request_stream 两处完全相同的排队块收敛为单点)。"""
         sem = _sem or _get_soft_pool_semaphore()
         try:
             await asyncio.wait_for(sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
             return True
         except asyncio.TimeoutError:
-            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
-            return False
+            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s, 熔断本次调用(不硬塞连接池)")
+            raise LLMResponseError(message="LLM软配额排队超时", details={"error_type": "pool_full"})
 
     def _adapt_request(self, body: Dict) -> tuple:
         """gate 允许 + 端点分派 + 动态头 + 协议判定(非流式/流式共用) — 小欧 2026-09-24 v3.7.1; 模块化收敛协议判定单点 2026-09-24
