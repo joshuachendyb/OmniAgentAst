@@ -113,6 +113,8 @@ frontend/playwright-report/
 # 前端 E2E 运行产物(e2e_case/output代理自落盘日志)与TS增量缓存: 小欧 2026-09-13
 frontend/e2e_case/output/
 frontend/tsconfig.node.tsbuildinfo
+# 本地 E2E 测试 case 不入库(AGENTS.md 铁规: 严令禁止 commit 任何测试 case 代码); 保留本地供验证: 小欧-2026-11-20
+frontend/e2e_case/local_*.spec.ts
 # 前端 E2E 访问口令状态(globalSetup 运行时生成, 内含 token 不得入库): 小欧 2026-09-27
 frontend/e2e_front_lib/.auth-state.json
 frontend/.auth-state.json

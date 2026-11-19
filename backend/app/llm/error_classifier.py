@@ -40,12 +40,15 @@
      2026-11-09 小欧 ruff F541 修复: 裸429兜底 debug 日志去多余 f 前缀(无占位符) — 小欧-2026-11-09
      2026-11-09 小欧 文案订正: QUOTA_EXCEEDED 用户文案"限额"改"配额"(QUOTA=quota 配额, 非 limit 限额; 与枚举语义/测试断言一致, 两处: description+SYSTEM_ERROR_TYPE_TO_MESSAGE) — 小欧-2026-11-09
      2026-11-20 小欧 连接池耗尽兜底: 本地 httpx.PoolTimeout 与 client_sdk 软配额熔断(pool_full)两类均归 CIRCUIT_OPEN 不可重试; 此类为本地资源已满信号, 重试只会继续占池放大雪崩, 短路失败由上层处置
+     2026-11-20 小欧 三堂会审整改: PoolTimeout 判类型由字符串匹配改 isinstance(httpx.PoolTimeout); 去 pool_full 分支的 try/except Exception 异常黑洞(纯 getattr/isinstance 不会抛)
 """
 
 import json
 import re
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
+
+import httpx  # PoolTimeout 精确类型判定 — 小欧-2026-11-20 三堂会审
 
 from app.logger import logger
 
@@ -185,12 +188,9 @@ class SystemErrorClassifier:
     def _check_special_errors(error: Exception) -> Optional[SystemErrorCategory]:
         """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
         # 软配额排队超时熔断(pool_full) → CIRCUIT_OPEN 不可重试: 闸门满说明并发已满, 重试只会继续排队放大 — 小欧-2026-11-20
-        try:
-            _det = getattr(error, "details", None) or {}
-            if isinstance(_det, dict) and _det.get("error_type") == "pool_full":
-                return SystemErrorCategory.CIRCUIT_OPEN
-        except Exception:
-            pass
+        _det = getattr(error, "details", None)
+        if isinstance(_det, dict) and _det.get("error_type") == "pool_full":
+            return SystemErrorCategory.CIRCUIT_OPEN
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return SystemErrorCategory.IDLE_TIMEOUT
         try:
@@ -344,7 +344,8 @@ class SystemErrorClassifier:
 
         # 2.5 本地连接池耗尽(PoolTimeout) → CIRCUIT_OPEN 不可重试:
         #   httpx.PoolTimeout=本地 max_connections 已满等不到连接, 重试只会继续占池放大雪崩, 短路失败 — 小欧-2026-11-20
-        if type(error).__name__ == "PoolTimeout":
+        #   用 isinstance 精确判类型(原文 type().__name__ 字符串匹配会被同名异常误命中) — 小欧-2026-11-20 三堂会审
+        if isinstance(error, httpx.PoolTimeout):
             return SystemErrorCategory.CIRCUIT_OPEN
 
         # 3. 系统级关键词

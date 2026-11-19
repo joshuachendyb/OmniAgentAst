@@ -36,6 +36,7 @@
 #   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
 # 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
 # 2026-11-20 小欧 视频发前转 H264: 模型对视频编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9, MJPG 等报400), 用 imageio-ffmpeg 自带 ffmpeg 把非标准编码转 H264 再投递(新模块 video_transcode, 转码结果按源缓存); 实测 214MB MJPG .mov 转码后 nano-omni 看懂内容
+# 2026-11-20 小欧 三堂会审整改: 转码缓存落系统临时目录(原附件同级 .h264 无清理会磁盘泄漏); _ensure_video_h264 返回注解改 Tuple[str,bool]; 复用 _read_capped(path=) 消重复读取函数; 消死变量 transcoded
 
 # 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
 #   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
@@ -60,7 +61,6 @@ import asyncio
 import base64
 import io
 import ipaddress
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
@@ -283,9 +283,12 @@ def sniff_mime(raw: Optional[bytes]) -> str:
 
 
 async def _read_capped(attachment: Dict[str, Any],
-                       limit: Optional[int] = None) -> Tuple[Optional[bytes], str]:
-    """读附件字节(上限 limit, 缺省取图片内联上限); 超限/不可读返回 (None, 原因)。"""
-    path = str(attachment.get("stored_path") or "")
+                       limit: Optional[int] = None,
+                       path: Optional[str] = None) -> Tuple[Optional[bytes], str]:
+    """读字节(上限 limit, 缺省取图片内联上限); 超限/不可读返回 (None, 原因)。
+    path 覆盖: 视频转码后读缓存文件时传入, 与读原附件共用本函数 — 小欧-2026-11-20"""
+    if path is None:
+        path = str(attachment.get("stored_path") or "")
     cap = limit or inline_limit_bytes()
 
     def _work() -> Tuple[Optional[bytes], str]:
@@ -302,25 +305,11 @@ async def _read_capped(attachment: Dict[str, Any],
         return None, "文件不可读"
 
 
-def _ensure_video_h264(path: str) -> str:
-    """视频发前转 H264(编码差异兜底); 缓存目录用源文件同级 .h264 子目录(任务级, 随附件清理)。
-    转码失败返回原路径, 由投递侧错误分类降级, 不在此抛异常 — 小欧-2026-11-20"""
+def _ensure_video_h264(path: str) -> Tuple[str, bool]:
+    """视频发前转 H264(编码差异兜底); 缓存落系统临时目录(由 OS 清理, 不污染附件目录)。
+    返回 (最终路径, 是否转码); 转码失败返回原路径由投递侧降级 — 小欧-2026-11-20"""
     from app.services.agent.video_transcode import ensure_h264
-    cache_dir = os.path.join(os.path.dirname(path), ".h264") if path else None
-    return ensure_h264(path, cache_dir=cache_dir)
-
-
-def _read_bytes_capped(path: str, limit: int) -> Optional[bytes]:
-    """同步读指定路径字节并限大小; 超限/不可读/空返回 None。供视频转码后读取 — 小欧-2026-11-20"""
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read(limit + 1)
-    except OSError as e:
-        logger.warning(f"[media] 视频读取失败 path={path} err={e}")
-        return None
-    if len(raw) > limit or not raw:
-        return None
-    return raw
+    return ensure_h264(path)  # 不传 cache_dir, 用 video_transcode 的默认临时目录
 
 
 async def build_logical_part(kind: str, attachment: Dict[str, Any]
@@ -335,13 +324,11 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         # 实测接受 data:video/mp4;base64)。模型对编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9,
         # MJPG/MP4V 会 400)——发前统一转 H264, 按模型定制的前提是有标准编码可投递 — 小欧-2026-11-20
         stored = str(attachment.get("stored_path") or "")
-        play_path, transcoded = await asyncio.to_thread(_ensure_video_h264, stored)
+        play_path, _ = await asyncio.to_thread(_ensure_video_h264, stored)
         limit = video_inline_limit_bytes()
-        raw = await asyncio.to_thread(_read_bytes_capped, play_path, limit)
+        raw, reason = await _read_capped(attachment, limit, path=play_path)
         if raw is None:
-            return None, f"视频读取失败或超过 {limit // (1024 * 1024)}MB"
-        if not raw:
-            return None, "视频载荷为空"
+            return None, reason or f"视频超过 {limit // (1024 * 1024)}MB"
         return {"modality": "video", "mime": "video/mp4", "data": None,
                 "url": f"data:video/mp4;base64,{_b64(raw)}"}, ""
     if kind == "audio":

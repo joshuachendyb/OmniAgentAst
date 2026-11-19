@@ -6,6 +6,7 @@
 # 2026-11-18 opencode 文档模态按声明开启(与图片/音视频同口径): 声明 file 即原生 file part,
 #   未声明降级为文本全文注入; 探测只作取证/展示(图片外链门见下条) — opencode-2026-11-18
 # 2026-11-20 小欧 视频 transport 加 inline: 本地视频字节转 data URI 走 video_url(media_payload 已实现), mimo 实测能解析; 原只有 url 导致本地视频被误判无原生通道降级"未发送"
+# 2026-11-20 小欧 三堂会审整改: docstring 与 _TRANSPORT 注释同步为"视频 url+inline 两种方言都可达", 消除与改后代码的矛盾
 
 # 2026-11-18 opencode 运输方式归方言固有能力(_TRANSPORT), 实测只在一处开门: 图片外链。
 #   其余模态(音频/文档内联、视频地址)是方言决定的事实, 不需要探测;(旧「实测外链可用才转发
@@ -15,9 +16,10 @@
 """services.agent.capability — 模型输入能力画像(纯函数, 零 IO)。
 
 声明模态即首选请求模式: input_modalities 含 m → native=True。
-运输方式由方言固有能力(_TRANSPORT)决定: chat 方言里图片/音频/文档可内联字节, 视频只有
-video_url(无视频内联 part)。唯一例外是图片外链 —— 厂商是否真去抓公网地址无法从声明推断,
-故 media.accept.image ∈ {url, both} 才把 url 加进图片运输集合, 其余情况链接图下载后内联。
+运输方式由方言固有能力(_TRANSPORT)决定: chat 方言里图片/音频/文档可内联字节; 视频两种
+方言都可达(url 公网直传 / inline 本地字节转 data URI 走 video_url)。唯一例外是图片外链 ——
+厂商是否真去抓公网地址无法从声明推断, 故 media.accept.image ∈ {url, both} 才把 url 加进
+图片运输集合, 其余情况链接图下载后内联。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet
@@ -42,7 +44,7 @@ class NativeCap:
 _MODALITIES = ("image", "audio", "video", "file")
 _EMPTY = frozenset()
 # 运输方式 = 方言固有能力, 不是探测结论: 内联没有任何厂商前置条件, 天然的默认;
-#   视频在 chat 方言里没有内联 part(video_url 是唯一投递方式), 反过来只能走地址。
+#   视频 url=公网链接直传, inline=本地字节转 data URI 走 video_url(两种都可达, 见下)。
 _TRANSPORT: Dict[str, FrozenSet[str]] = {
     "image": frozenset({"inline"}),
     "audio": frozenset({"inline"}),

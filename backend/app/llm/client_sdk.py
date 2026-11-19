@@ -61,7 +61,8 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   arguments 为对象或空串或非 JSON 文本、assistant.content=None 且无 tool_calls。归一后请求得以发出去, 而非整轮 400。
   零改动时原样返回入参对象(不复制不改入参), 常态路径零行为变化 — 小欧-2026-10-31
  2026-11-03 小欧 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障)
- 2026-11-20 小欧 连接池耗尽根治: 软配额闸门上限改 min(max_connections-2, 8), 恒小于 httpx 池上限, 池结构上不会被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长
+ 2026-11-20 小欧 连接池耗尽根治: 软配额闸门上限改 max(1, max_connections - 余量), 恒小于 httpx 池上限, 池结构上不会被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长
+ 2026-11-20 小欧 三堂会审整改: 闸门余量提常量 _SOFT_POOL_HEADROOM, 去掉封顶8(改大 max_connections 时闸门不再被卡住, 配置意图生效); 同步排队超时注释与配置文案为熔断语义
 """
 
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
@@ -399,15 +400,18 @@ def _extract_server_error_message(body_text: str) -> tuple:
 
 _soft_pool_semaphore = None  # 2026-09-20 小欧 软配额: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
 _SOFT_POOL_WAIT_TIMEOUT = float(get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0))  # 软配额排队等待上限(秒): 超时熔断, 不硬塞进池 — 小欧-2026-11-20
+# 软配额闸门余量: 比 httpx max_connections 少的槽数, 保证池绝不会先满(软配额先挡住)。
+# 不设封顶——用户调大 max_connections 时闸门随之增大, 配置意图生效 — 小欧-2026-11-20 三堂会审
+_SOFT_POOL_HEADROOM = 2
 
 
 def _get_soft_pool_semaphore():
     """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20
-    软配额上限留余量: 比 httpx max_connections 少 2, 保证池绝不会先满(软配额先挡住) — 小欧-2026-11-20"""
+    软配额上限 = max_connections - HEADROOM, 恒小于池上限, 池结构上填不满 — 小欧-2026-11-20"""
     global _soft_pool_semaphore
     if _soft_pool_semaphore is None:
         _max = int(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
-        _soft_pool_semaphore = asyncio.Semaphore(max(1, min(_max - 2, 8)))
+        _soft_pool_semaphore = asyncio.Semaphore(max(1, _max - _SOFT_POOL_HEADROOM))
     return _soft_pool_semaphore
 
 
@@ -553,7 +557,7 @@ class LLMClient:
             extra_body=extra_body,
         )
         _to = httpx.Timeout(request_timeout) if request_timeout else self._default_timeout
-        # 软配额: 排队超时保底放行(非硬闸不 503 不降级, 防长时间卡等) — 小欧-2026-09-20
+        # 软配额: 排队等待, 超时熔断失败(不放行也不挤占连接池) — 小欧-2026-11-20
         _sem = _get_soft_pool_semaphore()
         _acquired = await self._acquire_soft_pool(_sem)
         try:
