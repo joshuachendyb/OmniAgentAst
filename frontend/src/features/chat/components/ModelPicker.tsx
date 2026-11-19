@@ -30,6 +30,7 @@
 // 编辑历史: 2026-11-16 小欧 - 悬浮卡样式归令牌: 字号/字重/行高/间距/圆角全部改引 FontSize/FontWeight/LineHeight/
 //   Gap/Spacing/Radius/CONTROL_PADDING, 消除 14 处魔法值(columnGap:10 不在刻度/minWidth:248 裸字面量等);
 //   marginBottom:8 改父容器 gap(铁律三), marginTop:3 改 flex+gap(铁律三) — 小欧-2026-11-16
+// 编辑历史: 2026-11-20 小欧 - 修复下拉与选中项tip重叠抖动: 外层 Tooltip 改受控 open(select 打开时强制关 tip), 消除信息卡浮层与下拉浮层在选中框上方重叠、鼠标穿越反复显隐导致的页面抖动; Select onOpenChange 同步开合态
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -270,6 +271,9 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
   const [models, setModels] = useState<ModelOptionMeta[]>([]);
   const [globalEffort, setGlobalEffort] = useState('');
   const [loading, setLoading] = useState(false);
+  // 2026-11-20 小欧 - 下拉/悬浮tip互斥: select 打开期间强制关外层 Tooltip, 防两浮层重叠抖动
+  const [selectOpen, setSelectOpen] = useState(false);
+  const [tipOpen, setTipOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,6 +365,9 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
 
   return (
     <Tooltip
+      // 2026-11-20 小欧 - 受控开合: select 下拉打开时强制关 tip, 消除选中项信息卡与下拉浮层重叠导致的抖动; select 关闭后 tip 仍由 hover 控制
+      open={!selectOpen && tipOpen}
+      onOpenChange={setTipOpen}
       title={
         selectedMeta ? (
           <ModelMetaTip meta={selectedMeta} globalEffort={globalEffort} />
@@ -374,6 +381,8 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
     >
       <Select
         size="small"
+        // 2026-11-20 小欧 - 下拉开合同步到 state, 供外层 Tooltip 互斥关闭
+        onOpenChange={setSelectOpen}
         // title:'' 抑制选中项容器由 rc-select getTitle 自动生成的原生 title, 选中项 tip 只保留外层自定义信息卡 — 小欧-2026-11-16
         title=""
         value={value}
