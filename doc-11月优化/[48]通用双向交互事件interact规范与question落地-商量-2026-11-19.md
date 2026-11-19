@@ -5,6 +5,7 @@
 > 存放: D:\NDOOmniAgent\doc-11月优化\[48]通用双向交互事件interact规范与question落地-商量-2026-11-19.md
 > 性质: **规范类文档** —— 定义「通用双向交互事件 interact」，question 为首个落地范例
 > 前置: [47] 通知事件类 tool 规范（notice 是单向通知，interact 是双向交互，两者并列）
+> 更新: 2026-11-19 商量 - 本文定义的是 interact **事件帧契约**（type/interaction_id/kind/event/payload），本次 question 工具内部参数(single/阈值)与返回三态(success/warning/error)重构不改变事件帧结构；工具层契约详见 [37] §7.3/§9.2、设计决策见 [49] §4.3
 
 ## 目录
 

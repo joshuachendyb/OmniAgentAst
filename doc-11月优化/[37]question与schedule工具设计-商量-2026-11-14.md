@@ -10,6 +10,7 @@
 > 更新: 2026-11-19 - 小欧 - 失败二分: 完全错误(结构不符)→error; 可容忍错(content/条数超标记裁剪、status 非法按 pending 归位)→build_warning 成功+警告; §8.1 校验矩阵改 error/warning 二分
 > 更新: 2026-11-19 - 小欧 - 三态均发 notice 且均返回 LLM+落库: error→failed+only_event=true(仅事件列表不画卡片不占位置2)/warning·success→done(事件列表+卡片); 三态不发前端 step 工具行(SSE 转发出口摘除)
 > 更新: 2026-11-19 - 商量 - 简要更新删错: §4.1/§8.1/§8.2/§10/§13.2 的 schedule 伪代码与用例按最终实现纠正(plan_stage 必填/notice 通道/rows 二维数组/warning 二分/阶段前缀), §15 补决策 26–28(收敛到 [47])
+> 更新: 2026-11-19 - 商量 - question 参数/返回契约重构同步: §7.3 QuestionInput 约束前置+阈值收紧(问题≤10/选项≤5/题干≤100/标题≤20/选项文本≤100)+single 默认true单选+header 可选; §9.2 返回三态(success全答/warning部分答或截断/error取消与结构错); §13.1 Q2/Q4/Q6/Q8 用例同步截断容错。§1~§4 opencode 研究结论保留原文
 > 目录: D:\NDOOmniAgent\doc-11月优化\[37]question与schedule工具设计-商量-2026-11-14.md
 > 前置研究: 20261113-102752-37dc\question_todowrite_research.md(18KB, opencode2.2.5源码 + Claude Code/Spring AI 对比)
 > 前端深研: 2026-11-14 追加 opencode question 前端(§7.4.0) —— **DockPrompt 底部停靠面板范式, 非 Modal 弹窗; Omni HITL 不能复用**
@@ -308,6 +309,7 @@ AGENT = ("agent", 10, "智能体交互工具")   # 追加在 WIN_REGISTRY=9 之�
 | `question_resolved` | 阻塞结束(回答/取消/超时) | 问询已关闭 | ❌ 仅 SSE | `question_id`, `outcome`(answered/cancelled/expired) |
 
 **帧样例**(SSE, 裸键由 `MetaStep._extra_fields` 从 step_model 派生):
+> ⚠ 此 `question_required/resolved` 帧为历史设计快照; 现役事件已升格为通用 `interact`(interaction_id/kind/event/payload, event=ask/answered/cancelled/expired), 见 [48]。此处保留原文供溯源。
 ```json
 {"type":"question_required","step":7,"content":"需要你回答 2 个问题",
  "question_id":"task_xxx:9f3a1c2d","backend_timeout":120,
@@ -412,9 +414,12 @@ _question_token = set_current_question_callback(_invoke_question) if _has_emitte
 # app/tools/agent/agent_schema.py
 class QuestionInput(BaseModel):
     questions: List[Dict[str, Any]] = Field(
-        ..., description="问题数组(1~8项)。每项: {question:完整问题, header:极短标签(≤30字), "
-                         "options:[{label:选项文本, description:选项说明}](1~9项), multiple:是否多选(默认false)}"
+        ..., description=QUESTION_ITEMS_PARAM_DESC,
+        # 约束前置(schedule 同款): 内联 item/options schema, 无 $ref/$defs
+        json_schema_extra={"items": QUESTION_ITEM_SCHEMA, "maxItems": QUESTION_INPUT_MAX_QUESTIONS},
     )
+    # 阈值单一真源(tool_constants): 问题≤10/选项≤5/题干≤100/标题≤20/选项文本≤100
+    # 字段: header(可选, 概述)/question(必填)/options(必填)/single(默认true单选) — 2026-11-19 小欧
 
 class ScheduleInput(BaseModel):
     items: List[Dict[str, Any]] = Field(
@@ -423,7 +428,7 @@ class ScheduleInput(BaseModel):
     )
 ```
 
-**语义校验在工具内手工完成**(见 §8.1 校验矩阵), 校验失败返回 `build_error` + `hint`, 让 LLM 自纠——与 timer/dataanalysis 等既有工具同款做法。
+**语义校验在工具内手工完成**(`_normalize_params` 三元组 `归一化/硬错误/截断警告`): 硬错误(结构错: 非数组/缺字段/未知字段/类型错/label重复)→`build_error`+hint 拒绝; 可容忍错(字数/条数超限)→就地截断+记 warning, 转正常问询。校验用字段白名单从 `QUESTION_ITEM_SCHEMA` 派生, 阈值同源 tool_constants。LLM 从 observation 的 detail(截断说明)+hint(截断提示)得知被截断。
 
 ### 7.4 前端(基于 opencode DockPrompt 范式, **非 Modal 弹窗**)
 
@@ -644,7 +649,7 @@ async def schedule(items: List[Dict[str, Any]]) -> Dict[str, Any]: ...
 | `data` | 工具间/调试/落盘 | `{answers, questions}` | `{items}` |
 | `llm_data.summary` | LLM 与 observation 文本 | 问答对摘要 | 计划统计摘要 |
 | `llm_data.action` | 观察行渲染 | `{tool, tool_zh, params}` | 同 |
-| `llm_data.status` | `is_success` 判据(`exec_code`) | success/error + code/detail/hint | 同 |
+| `llm_data.status` | `is_success` 判据(`exec_code`) | success(全答无截断)/warning(部分答或截断)/error(取消·结构错) + code/detail/hint | 同 |
 | `llm_data.duration_ms` / `metrics` | 遥测 | 耗时 / `{wait_ms}` | 耗时 / 计数 |
 
 `tool_zh` 取值(短名词, 遵 2026-10-12 约定): question → `提问`; schedule → `计划`。
@@ -721,9 +726,9 @@ backend/app/tools/agent/
 
 ```python
 AGENT_TOOL_DESCRIPTIONS = {
-    "question": "执行中向用户提问, 收集偏好/澄清歧义/获取实现决策。questions 为问题数组, "
-                "每项含 question(完整问题)/header(短标签)/options(选项数组)/multiple(是否多选)。"
-                "适用于: 需要用户决策、指令存在歧义、多个方案需用户选择时。阻塞等待回答后继续。",
+    "question": "执行中向用户提问。适用于: 需要用户决策、指令存在歧义、多个方案需用户选择时。"
+                "questions 为问题数组, 每项含 header(问题标题,可选)/question(必填)/options(必填)/single(默认true单选)。"
+                "阻塞等待回答后继续。",
     "schedule": "创建/更新/结束任务计划清单(必填 items + plan_stage=init/update/finish)。"
                 "items 每项含 content/status(pending|in_progress|completed|cancelled)。"
                 "适用于: 任务≥3个步骤或用户索要计划时; 单一简单步骤不要用。(最终文案见 agent_register.py)",
@@ -809,13 +814,13 @@ tuning:
 | # | 场景 | 输入 | 期望 |
 |---|---|---|---|
 | Q1 | 空数组 | `questions=[]` | error, detail 含"至少一个问题" |
-| Q2 | 超上限 | 9 个问题 | error, detail 含"最多8" |
+| Q2 | 超上限 | 11 个问题 | warning, 截断保留前 10, detail 含"超过上限10" |
 | Q3 | 缺 question | `[{"header":"h"}]` | error, detail 点名第 1 个字段 |
-| Q4 | header 过长 | header 31 字 | error |
+| Q4 | header 过长 | header 21 字 | warning, 截断到 20 字, detail 含"已截断" |
 | Q5 | options 空 | `options=[]` | error |
-| Q6 | options 超 9 项 | 10 个 | error |
+| Q6 | options 超 5 项 | 6 个 | warning, 截断保留前 5, detail 含"超过上限5" |
 | Q7 | option 缺 label | `[{"description":"x"}]` | error |
-| Q8 | multiple 非 bool | `"yes"` | error |
+| Q8 | single 非 bool | `"yes"` | error |
 | Q9 | 开关关闭(HTL关) | 替身/真实链路 enabled=False | 仍创建问询并发 `question_required`(短窗), 到点 `expired` → **success** + 各题首选项兜底 + `data.auto=true` |
 | Q10 | 回调未注入 | 不 set ContextVar | error + hint 含"无问询通道", **不阻塞** |
 | Q11 | 正常回答 | 替身返回 `answers=[["OAuth"],["PostgreSQL"]]` | success; `data.answers` 等长; `summary` 含两个答案; `metrics.wait_ms>=0` |

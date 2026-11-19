@@ -6,6 +6,7 @@
 > 性质: **规范类文档** —— 定义「通知事件类 tool」的设计规范，schedule 为首个落地范例
 > 前置: [37] question 与 schedule 工具设计（[37] 留作历史，本文是通知事件类 tool 的规范收敛版）
 > 更新: 2026-11-19 商量 - 新增 plan_stage 必填参数(LLM 主动阶段决策 init/update/finish, 宽松核对反馈)与 summary 阶段前缀
+> 更新: 2026-11-19 商量 - 本次 question 工具参数/返回契约重构(single/阈值/截断容错/三态)不涉及 notice 通道与 schedule，本文规范不变；question 契约见 [37]/[49]
 
 ## 目录
 
