@@ -65,6 +65,7 @@
 //   共用; elapsedSec 补 final 步 duration 兜底 —— 原只认 final_stats 帧, 该帧缺失时终态耗时恒 0
 //   (实时秒表还在涨, 刷新后才回到后端真值) — 小欧-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - notice case 的 only_event=true(schedule error)仅进事件列表, 跳过位置2 latestProcessEvent 读写 — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - ProcessEvent.kind 加 interact + steps 遍历 case 记录: 用户要求 interact 上 taskinfo 时间线(浮层主呈现外的审计轨迹, 不占位置2) — 小欧-2026-11-19
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -108,6 +109,8 @@ export interface ProcessEvent {
     | 'cancelled'
     | 'final'
     | 'heartbeat'
+    // 2026-11-19 小欧: 通用交互事件(question/confirm), 事件列表记录 ask/收口 — 用户要求 interact 上 timeline
+    | 'interact'
     // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令改名 context_trimmed): 原 truncated 一名三义
     //   (输出截断帧类型 / 位置2 输出截断 / 本事件), 视觉上无法与 error 区分
     | 'context_trimmed'
@@ -118,6 +121,9 @@ export interface ProcessEvent {
   // 2026-10-25 小欧: 通知信封字段(仅 kind='notice' 时有效), 供 NOTICE_CONFIG 按 kind+phase 查表渲染
   notice_kind?: string;
   notice_phase?: 'start' | 'done' | 'failed';
+  // 2026-11-19 小欧: 交互事件字段(仅 kind='interact' 时有效), 区分 question/confirm 与 ask/收口
+  interact_kind?: string;
+  interact_event?: 'ask' | 'answered' | 'cancelled' | 'expired';
 }
 
 // 小欧 2026-09-02: 位置2 数据准予类型(只收三类, 无优先级);
@@ -280,6 +286,16 @@ export const useTaskInfo = (
             kind: 'resumed',
             text: s.content || '任务已恢复',
             time: s.timestamp,
+          });
+          break;
+        case 'interact':
+          // 2026-11-19 小欧: 通用交互事件(question/confirm)记入事件列表; 浮层承担主呈现, 此处留审计轨迹
+          processEvents.push({
+            kind: 'interact',
+            text: s.content || '交互事件',
+            time: s.timestamp,
+            interact_kind: s.interact_kind,
+            interact_event: s.interact_event,
           });
           break;
         case 'retrying':

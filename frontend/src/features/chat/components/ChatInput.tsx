@@ -41,16 +41,6 @@
 //   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
 // 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案沿既有两段;
 //   删输入框下方旧提示块消除双提示并存; testid 保 overlay 内层以保既有 e2e 不断 — 小欧-2026-10-26
-// 编辑历史: 2026-11-16 小欧 [23]阶段B(输入框体验统一): ①refs.map 内联 chip 抽为统一组件
-//   RefChip(features/refs/, 四类引用同一渲染体, 样式/点击/回执态零改动);
-//   ②徽标双源: URL 逐项只读 preflight quality(采集层落存), 附件/文件只读 ref_quality_map;
-//   ③新增发送前提示行 HintLine(降级/超限/非法链接/推荐切换, 互不串扰, 引用行下);
-//   ④worst_quality 前端聚合与后端 preflight 同口径(任一非 native 即 degraded) — 小欧-2026-11-16
-
-// 2026-11-18 opencode 修正: URL 粘贴撤出正文只撤**已入队**的那几个 URL —
-//   原实现整段撤出, 被拒/超限的链接没有 chip 顶替, 正文一撤用户输入就凭空消失;
-//   撤出按每个 URL 的粘贴落点精确定位(连粘多个时逐个撤), 并发编辑兜底撤首个完整匹配 — opencode-2026-11-18
-
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
 //   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
@@ -106,6 +96,16 @@
 //   随 sessionId 复位 —— 组件跨会话复用, 原状态不重置会致新会话同键建议不自动切换、回退指向旧会话模型
 // 2026-11-16 小欧 - 删除按钮行「指令」入口: CommandPanel 按钮无实际价值, 移除装配与 import,
 //   快捷指令能力改由顶部 ShortcutPanel 承载 — 小欧-2026-11-16
+// 2026-11-16 小欧 [23]阶段B(输入框体验统一): ①refs.map 内联 chip 抽为统一组件
+//   RefChip(features/refs/, 四类引用同一渲染体, 样式/点击/回执态零改动);
+//   ②徽标双源: URL 逐项只读 preflight quality(采集层落存), 附件/文件只读 ref_quality_map;
+//   ③新增发送前提示行 HintLine(降级/超限/非法链接/推荐切换, 互不串扰, 引用行下);
+//   ④worst_quality 前端聚合与后端 preflight 同口径(任一非 native 即 degraded) — 小欧-2026-11-16
+// 2026-11-18 opencode 修正: URL 粘贴撤出正文只撤**已入队**的那几个 URL —
+//   原实现整段撤出, 被拒/超限的链接没有 chip 顶替, 正文一撤用户输入就凭空消失;
+//   撤出按每个 URL 的粘贴落点精确定位(连粘多个时逐个撤), 并发编辑兜底撤首个完整匹配 — opencode-2026-11-18
+// 2026-11-19 小欧 - 弹窗等待(HITL/question)时暂停按钮禁用: 读 Store pending → interactionPending 传 SubmitActions
+//   置灰, 与 handleTogglePause 的 handler 拦截共用 hasPendingInteraction 单一真源 — 小欧-2026-11-19
 
 // 2026-11-18 opencode - 插话历史即时入列: 插话 onSend 闭合到插话应答流结束(注入失败降级时会跑完整条
 //   新任务流), 等 await 返回才 addRecentInput 会让用户数分钟内按 ↑ 翻不到刚发的插话; 插话为乐观投递,
@@ -188,6 +188,8 @@ import {
 } from '../utils/recentInputs';
 import type { SendOpts, RoutingMode } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isInterjectRoute, isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源; 2026-11-18 opencode 补插话判定复用同一真源
+import { useChatStreamSession } from '../streams/useChatStreamSession'; // 2026-11-19 小欧 - 弹窗等待时禁用暂停按钮
+import { hasPendingInteraction } from '../streams/chatStreamStore'; // 2026-11-19 小欧 - 弹窗等待唯一判据
 import { Colors, Radius, Spacing } from '@/utils/stepStyles';
 import { Gap } from '@/theme/spacing';
 // 2026-11-14 小欧 - chip 引用质量徽标: 生效模型 ref_quality_map 只读索引 — 小欧-2026-11-14
@@ -382,6 +384,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleWsClose = () => {
     setWsPanelOpen(false);
   };
+
+  // 2026-11-19 小欧 - 弹窗等待(HITL授权/question问询)时暂停按钮禁用: 与 handleTogglePause 的 handler 拦截共用 hasPendingInteraction 单一真源
+  const streamSnapshot = useChatStreamSession(sessionId ?? null);
+  const interactionPending = hasPendingInteraction(streamSnapshot);
 
   // 2026-10-08 小欧 - 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
   const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
@@ -813,7 +819,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
    *  被拒/超限的 URL 没有 chip 顶替, 其原文必须留在输入框 —— 否则用户输入凭空消失。
    *  预检失败: 粘贴场景正文已原生落位, 静默放行不吞文本; 拖拽场景点名失败。 */
   const handleUrlText = useCallback(
-    (text: string, strip?: (draft: string, removeUrls: string[]) => string): void => {
+    (
+      text: string,
+      strip?: (draft: string, removeUrls: string[]) => string
+    ): void => {
       void captureUrlsFromText(text, getMaxRefs() - getRefs().length, {
         // 后端以 provider/model 定位画像; 仅有 model 时退化按 model 解析 — 小欧-2026-11-16
         modelId: modelId
@@ -1157,6 +1166,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             loading={loading}
             isReceiving={isReceiving}
             isPaused={isPaused}
+            interactionPending={interactionPending}
             sendBlocked={sendBlocked || refsPending}
             emptyDraft={emptyDraft}
             onSend={handleSendInternal}

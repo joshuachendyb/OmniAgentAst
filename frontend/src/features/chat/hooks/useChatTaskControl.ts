@@ -15,6 +15,8 @@
 
 // 编辑历史: 2026-11-06 小欧 - waitTimerRef 类型改 ReturnType<typeof setInterval> | null(同 useChatState
 //   修复, @types/node@20 的 Timeout 覆盖 DOM number) — 小欧-2026-11-06
+// 编辑历史: 2026-11-19 小欧 - handleTogglePause 加弹窗等待拦截: 命令式读 Store pending(HITL/question)时禁止暂停,
+//   与 SubmitActions 置灰共用 hasPendingInteraction 单一真源, UI 绕过也拦得住 — 小欧-2026-11-19
 
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
@@ -36,7 +38,10 @@
 
 import { useCallback } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
-import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
+import {
+  chatStreamStore,
+  hasPendingInteraction,
+} from '@/features/chat/streams/chatStreamStore';
 import {
   showTaskControlInfo,
   showTaskResultMessage,
@@ -236,6 +241,15 @@ export const useChatTaskControl = (
   const handleTogglePause = useCallback(async () => {
     if (!serverTaskId) {
       showNoActiveTaskWarning();
+      return;
+    }
+    // 2026-11-19 小欧 - 弹窗等待(HITL授权/question问询)时禁止暂停: agent 正挂起等用户交互,
+    //   再点暂停会与之叠加(用户答完 interact 后任务在下一轮卡在等恢复)。命令式读 Store 权威快照, UI 绕过也拦得住。
+    if (
+      !isPaused &&
+      hasPendingInteraction(chatStreamStore.getSnapshot(sessionId ?? ''))
+    ) {
+      showTaskControlInfo('请先处理当前的确认/提问, 完成后再暂停任务');
       return;
     }
 

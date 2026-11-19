@@ -32,6 +32,9 @@
 # 2026-10-18 小欧 - 注释精简冗余标注(去mode/截断方式/截断阈值三处, 技术说明与日期署名原样保留)。
 # 2026-10-19 小欧 - 删 _desensitize: HITL 弹窗参数改回原文。HITL(paused)属 SSE_ONLY 不落库不落盘,
 #   展示给输入该参数的本人, 无外泄面; 落盘出口(日志/落库)另经 redact_* 遮蔽。
+# 2026-11-19 小欧 - HITL 授权从 paused/resumed MetaStep 收敛到 interact(kind=confirm): paused/resumed 归还按钮本位;
+#   ask/answered/cancelled/expired 四态都发(消除收口不对称); 授权特殊字段全在 payload — 小欧-2026-11-19
+# 2026-11-19 小欧 - 配套删 MetaStep 导入与 hitl_confirm 的 publish 参数(emit_interact 内部 publish, 与 question_gateway 同构) — 小欧-2026-11-19
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -42,7 +45,6 @@ from app.services.agent.status_table import (  # AgentStatus真实位置status_t
     AgentStatus,
     set_status,
 )
-from app.services.agent.steps import MetaStep
 
 
 @dataclass
@@ -110,8 +112,8 @@ async def _resolve_timeouts(auto_confirm):
     return _bt, _bt - _bypass
 
 
-async def hitl_confirm(agent, spec: ConfirmSpec, publish):
-    """spec属性访问（与4.2同形）→verdict。网关内统一：超时计算/trust_path/脱敏/SUSPENDED→wait→EXECUTING。"""
+async def hitl_confirm(agent, spec: ConfirmSpec):
+    """spec属性访问（与4.2同形）→verdict。网关内统一：超时计算/trust_path/SUSPENDED→wait→EXECUTING；事件经 emit_interact 发。"""
     from app.safety.trust import (
         extract_trust_path,  # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
     )
@@ -124,14 +126,24 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
     _bt, _ct = await _resolve_timeouts(spec.auto_confirm)
     _auto = spec.auto_confirm
-    paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
-        content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
-        params=_summarize_params(spec.tool_name, spec.params),  # 参数摘要(主键path优先+长值截断)防弹窗超高, 原文展示 — 小健-2026-09-16
-        trust_impact=spec.trust_impact,
-        safety_level=spec.safety_level, trust_path=_path, auto_confirm=_auto,
-        confirm_timeout=_ct, backend_timeout=_bt))
+    # 2026-11-19 小欧 - HITL 授权从 paused/resumed MetaStep 收敛到通用 interact(kind=confirm):
+    #   paused/resumed 归还"任务暂停/恢复按钮"本位, 授权问询走 interact; 特殊字段全在 payload, 框架零解释。
+    #   event 收口三态都发: confirmed→answered / rejected→cancelled / expired→expired(消除收口不对称)。
+    await agent._step_emitter.emit_interact(
+        interaction_id=confirm_id, kind="confirm", event="ask",
+        content=spec.content,
+        payload={
+            "tool_name": spec.tool_name,
+            "params": _summarize_params(spec.tool_name, spec.params),  # 参数摘要(主键path优先+长值截断) — 小健-2026-09-16
+            "trust_impact": spec.trust_impact,
+            "safety_level": spec.safety_level,
+            "trust_path": _path,
+            "auto_confirm": _auto,
+            "confirm_timeout": _ct,
+            "backend_timeout": _bt,
+        },
+    )
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")
-    await publish(paused.to_dict())
     auth = await wait_for_confirmation_result(confirm_id, timeout=_bt)
     set_status(agent, AgentStatus.EXECUTING, "用户裁决完成")
     # 裁决统一收口：confirmed/expired/rejected 三路径共用一处注销，防无人裁决(超时/拒绝)时 confirm_id pending 泄漏；
@@ -141,11 +153,19 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
                                    confirmed=bool(auth.get("confirmed")),
                                    trust_session=bool(auth.get("trust_session", False)))
     except Exception as _e:
-        logger.error(f"[hitl_gateway] resolve_confirmation({confirm_id})收口失败: {_e!r}")   # 不阻断 resumed/verdict
-    # resumed配对条件同4.2（confirmed必发；bypass(auto_confirm=True)+expired亦发，真HITL expired/rejected不发）。— 小健-2026-09-05
-    if auth.get("confirmed") or (spec.auto_confirm and auth.get("expired")):
-        resumed = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="resumed",
-            content=f"已确认执行: {spec.tool_name}", severity="info", confirm_id=confirm_id))
-        await publish(resumed.to_dict())
+        logger.error(f"[hitl_gateway] resolve_confirmation({confirm_id})收口失败: {_e!r}")   # 不阻断 interact 收口/verdict
+    # 收口 event 三态都发(2026-11-19): confirmed→answered / cancelled(rejected)→cancelled / expired→expired
+    if auth.get("confirmed"):
+        _event = "answered"
+        _content = f"已确认执行: {spec.tool_name}"
+    elif auth.get("expired"):
+        _event = "expired"
+        _content = f"授权超时: {spec.tool_name}"
+    else:
+        _event = "cancelled"
+        _content = f"已拒绝授权: {spec.tool_name}"
+    await agent._step_emitter.emit_interact(
+        interaction_id=confirm_id, kind="confirm", event=_event, content=_content,
+    )
     return {"confirmed": bool(auth.get("confirmed")), "expired": bool(auth.get("expired")),
             "trust_session": bool(auth.get("trust_session", False)), "confirm_id": confirm_id}

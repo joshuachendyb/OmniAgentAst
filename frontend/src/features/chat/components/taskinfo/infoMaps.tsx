@@ -23,6 +23,7 @@
 // 编辑历史: 2026-11-01 小欧 - NOTICE_CONFIG 加 trimming_done(对话历史裁剪 notice, 后端 react_step 真裁剪帧发射): ScissorOutlined 剪刀图标, 时间线按 kind+phase 查表 — 小欧-2026-11-01
 // 编辑历史: 2026-11-07 小欧 - NOTICE_CONFIG 加 retrying_start/done: loop 重试改用 notice 通道(有 done 终态清除位置2), 原 MetaStep(retrying) 无 done 拼留 — 小欧-2026-11-07
 // 编辑历史: 2026-11-08 小欧(设计[15]三堂会审) - NOTICE_CONFIG 加 rate_limit_wait_start/done(429 契约等待 pause 帧转 notice, 前端倒计时展示+中断, done 清除位置2, 与 retrying 同机理) — 小欧-2026-11-08
+// 编辑历史: 2026-11-19 小欧 - EVENT_ICON_MAP 加 interact(MessageOutlined): 交互事件记录到 taskinfo 时间线的图标 — 小欧-2026-11-19
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -35,6 +36,7 @@ import {
   CheckCircleOutlined,
   SyncOutlined,
   ScissorOutlined,
+  MessageOutlined, // 2026-11-19 小欧: interact 交互事件图标
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
 // 2026-10-09 小欧[20]: ContextSource 改复用帧类型(DRY, 不手写平铺形状)
@@ -118,6 +120,8 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   context_trimmed: <WarningOutlined />,
   // 2026-10-09 北京老陈令[20]: 压缩事件图标, 与裁剪同级(压缩改变历史原貌, 值得警示)
   context_compressed: <WarningOutlined />, // 需与 useTaskInfo ProcessEvent kind 同步
+  // 2026-11-19 小欧: 通用交互事件(question/confirm), 记入事件列表留审计轨迹(浮层仍是主呈现)
+  interact: <MessageOutlined />,
 };
 
 // ---------- NOTICE_CONFIG（通知信封 kind+phase 图标映射） ----------

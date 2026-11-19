@@ -72,6 +72,8 @@
 #   [改法] 去 [:140], 仅保留 split(" | ",1)[0] 去 stderr 英文 tail(人话原因完整保留)——
 #          全文进前端由 TaskInfoBar 事件列表 CSS text-overflow:ellipsis 按真实渲染宽度省略, 中/英/数字各填满, 全文 hover/Tooltip 可见;
 #          denied_list 仍用完整 pre.blocked_reason(含 stderr tail) 喂 LLM 自纠, 前后端/LLM 职责分离不变 — 小欧-2026-10-28
+# 2026-11-19 小欧 - hitl_confirm 删 publish 传参: 授权事件经 emit_interact 内部 publish(与 question_gateway 同构);
+#   _buf 保留仅作 buffer 存在守卫(授权事件发不出则显式失败), 第177行调用同步 — 小欧-2026-11-19
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -174,7 +176,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         #   safety_level 改 block_command: 沙箱裁决属"命令级预检未通过", 与路径授权(确认命名空间)
         #   无关; 原 path_auth 是把沙箱裁决错标成路径授权, 且该值已不在 SafetyLevel 枚举内。
         safety_level=SafetyLevel.BLOCK_COMMAND)
-    verdict = await hitl_confirm(agent, spec, _buf.publish)
+    verdict = await hitl_confirm(agent, spec)  # 2026-11-19 小欧: 删 publish 传参; _buf 上方仍做 buffer 存在守卫
     if verdict["confirmed"] or (verdict.get("expired") and _sb):
         # 2026-09-19 小欧 修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)
         logger.info(f"[sandbox] {'bypass超时自动放行' if verdict.get('expired') else '用户裁决: 确认执行'}: tool={tool_name}")

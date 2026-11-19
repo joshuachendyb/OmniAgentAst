@@ -10,7 +10,6 @@
 // 编辑历史: 2026-09-06 小欧 - 方案(被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
 //   (step,message,toolName)——user_rejected 事件透传 rawData.tool_name 供聚合被拒工具点名条; ②error blocked/timeout
 //   构造对象补 tool_name(rawData.tool_name, 后端事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
-// 编辑历史: 2026-09-18 小欧 - 实施: paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
 // 编辑历史: 2026-09-07 小欧 - 取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
 // 编辑历史: 2026-09-07 小欧 - start/startinfo 双信号拆分(按前端消息分类处理分析定案):
@@ -52,7 +51,6 @@
 // 编辑历史: 2026-09-10 小欧 - 批量commit: thought-start/thought/chunk/action/observation/paused/resumed六处改push+scheduleFlush,
 //   零同步序列化消除O(N²)主线程阻塞; final分支同步flush防组件卸载前丢尾; handlers新增pendingStepsRef/scheduleFlush — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
-// 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged分支+onMerged回调 — 小欧-2026-09-28
 // 编辑历史: 2026-09-10 小欧 - seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段三残留死参清理: handlers删saveStepsToStorage字段(:78)+解构(:133,
 //   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
@@ -88,7 +86,9 @@
 // 编辑历史: 2026-09-17 小欧 - 实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 复核更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
 //   同日复核已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
+// 编辑历史: 2026-09-18 小欧 - 实施: paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
 // 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged分支+onMerged回调 — 小欧-2026-09-28
 // 编辑历史: 2026-09-29 21:37:55 小欧 - HITL 单源化: 删 resumed 帧带 confirm_id 时的
 //   window.dispatchEvent('authorization_resumed') 兜底派发(原 :180-186 小沈 2026-09-03 加的防御兜底)。
 //   超时放行现走 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
@@ -130,6 +130,8 @@
 //   时投 onScheduleUpdate 写计划卡片, failed 只进事件列表不画卡片(保持上一份) — 小欧-2026-11-19
 // 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact: sseParser 只解析通用字段投 onInteract,
 //   kind 分派与 questions/timeout 读取交 transport 层; event 叶子(ask/answered/cancelled/expired) — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - HITL 授权解耦: 删 onAuthorizationRequired 与 paused 帧授权透传(assignTimeout/normalizeAutoConfirm),
+//   paused/resumed case 删除后按按钮本位恢复(仅 onPaused/onResumed 驱动显示缓冲, 授权走 interact confirm) — 小欧-2026-11-19
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime, parseTimeSafe } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14; 2026-11-13 商量: 服务器时钟锚时刻比较 — 商量-2026-11-13
@@ -142,11 +144,8 @@ const normalizeBoolean = (v: unknown): boolean =>
 // 2026-09-12 小欧 修复: step 数值化 helper, 消原始十处 Number(rawData.step)||1 重复(DRY) — 小欧-2026-09-12
 const toStepNumber = (v: unknown): number => Number(v) || 1;
 
-// 2026-09-03 小欧 修复: 计时解析(与 useAuthorization.parseTimeout 同语义), 合法 0 保留, 仅 NaN/负数兜 60
-const assignTimeout = (v: unknown): number => {
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 0 ? n : 60;
-};
+// 2026-11-19 小欧 - 删 assignTimeout: 授权字段解析随 interact(confirm) 收敛到 transport 侧, 本文件不再解析超时;
+//   useAuthorization.parseTimeout 仍是前端消费侧唯一真源。
 
 // 2026-11-07 小欧 - SSE tool_stats 扁平化: 后端 final_stats 帧的 tool_stats 是嵌套结构
 //   {tool_name: {call_count, error_count, latency}}, DB 路径(adaptTaskDetail)已是扁平 {tool_name: call_count};
@@ -247,7 +246,8 @@ const processSSEData = (
       /** 2026-10-11 小欧: HITL 确认终态携带, 消费侧按 id 精确关窗(无 id 者本无确认流程) */
       confirm_id?: string;
     }) => void;
-    // 小欧 2026-09-10 S15: onPaused/onResumed 加 confirmId 参数（并发 HITL 区分）
+    // 2026-11-19 小欧 - onPaused/onResumed 保留: 任务暂停/恢复按钮发 paused/resumed SSE(按钮本位),
+    //   驱动前端显示缓冲; 与 HITL 授权(已收敛 interact confirm)无关。
     onPaused?: (confirmId?: string) => void;
     onResumed?: (confirmId?: string) => void;
     // 2026-09-28 小欧: 注入应答回调(merged_into_task_id 供前端高亮目标任务)
@@ -279,18 +279,7 @@ const processSSEData = (
         status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
       }[]
     ) => void;
-    onAuthorizationRequired?: (data: {
-      confirm_id: string;
-      tool_name: string;
-      params: Record<string, unknown>;
-      content?: string;
-      safety_level: string;
-      trust_impact?: 'high' | 'medium' | 'low'; // 授权影响面 — 2026-10-18 小欧
-      trust_path?: string | null;
-      auto_confirm?: boolean;
-      confirm_timeout?: number;
-      backend_timeout?: number;
-    }) => void;
+    // 2026-11-19 小欧 - 删 onAuthorizationRequired: HITL 授权改由 onInteract(kind=confirm) 投递, transport 的 interactHandlers 处理
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     // 2026-09-30 小欧 - 删 setIsReceiving/setIsConnected：收尾两字段归 transport 的
@@ -1041,7 +1030,8 @@ const processSSEData = (
         break;
       }
 
-      // 【北京老陈 2026-07-12 小欧】直接处理 paused/resumed/retrying 类型
+      // 2026-11-19 小欧 - paused/resumed 回归按钮本位: 任务暂停/恢复按钮经 task_runtime 发这两个 SSE,
+      //   前端据此缓冲/回放显示(HITL 授权已收敛 interact confirm, 不再经此)。
       // 2026-09-07 小欧: 删 cancelled——取消终态由 type=final+outcome=cancelled 承担, 前端不再消费 cancelled 事件
       case 'paused':
       case 'resumed':
@@ -1059,35 +1049,16 @@ const processSSEData = (
         pushAndFlush(handlers, step);
         onStep?.(step);
 
-        // 根据type调用对应的回调
+        // 根据type调用对应的回调(按钮 paused/resumed 驱动显示缓冲; HITL 授权不走此, 已收敛 interact confirm)
         switch (rawData.type) {
           case 'paused':
-            onPaused?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10 S15: 传 confirmId
-            if (rawData.confirm_id) {
-              handlers.onAuthorizationRequired?.({
-                confirm_id: rawData.confirm_id,
-                tool_name: rawData.tool_name,
-                params: rawData.params,
-                content: rawData.content ?? '', // 7.4.1: 后端 ConfirmSpec.content 弹窗原因 — 小欧-2026-09-18
-                safety_level: rawData.safety_level,
-                trust_impact: rawData.trust_impact, // 授权影响面(高/中/低) — 2026-10-18 小欧
-                trust_path: rawData.trust_path ?? null,
-                // 2026-09-03 小欧 落码: 改用normalizeAutoConfirm四态归一; 2026-09-12 修复: 函数更名normalizeBoolean — 小欧-2026-09-12
-                auto_confirm: normalizeBoolean(rawData.auto_confirm),
-                // 2026-09-03 小欧 镜像修复: 合法 0 不被 || 兜成 60(与 useAuthorization 的 parseTimeout 同语义)
-                confirm_timeout: assignTimeout(rawData.confirm_timeout),
-                backend_timeout: assignTimeout(rawData.backend_timeout),
-              });
-            }
+            onPaused?.();
             break;
           case 'resumed':
-            // authorization_resumed window 兜底派发删除（HITL 单源化）——
-            //   超时放行链路走 onResumed（emitEvent + 清 Store.pendingAuthorization）
-            //   → useAuthorization 快照 effect 关弹窗
-            onResumed?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10: 传 confirmId
+            onResumed?.();
             break;
           case 'retrying':
-            // 小欧 2026-07-13: 同上, 读取后端 content 字段作为重试提示文本。
+            // 小欧 2026-07-13: 读取后端 content 字段作为重试提示文本。
             onRetry?.(rawData.content || '正在重试...', rawData.wait_time);
             break;
           default:

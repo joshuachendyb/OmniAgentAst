@@ -57,6 +57,8 @@
 #   范围门下沉 PathToolSafetyChecker._check_before_execute(注册判定之后自守), 归线判定收口单一层,
 #   避免 gate 与 checker 两处名单各判一遍而漂移; 非路径工具照常进检查器后立即放行, 不再有双层判断。
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): rejected content 去工具名(前端已拼_label·工具名), 去详情err — 小欧-2026-10-25
+# 2026-11-19 小欧 - hitl_confirm 删 publish 传参: 授权事件经 emit_interact 内部 publish(与 question_gateway 同构);
+#   _buf 保留仅作 buffer 存在守卫(授权事件发不出则显式失败), 第345行调用同步 — 小欧-2026-11-19
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -342,8 +344,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         # 2026-10-14 小欧 - 透传 auth_path。
                         #   auth 轨(白名单外临时授权)此前在 HITL 链丢失 — 下游 hitl_gateway
                         #   已按 spec.path 优先消费, 但此处不传则它恒 None, 授权路径无处可查。
-                        path=getattr(safety_result, "auth_path", None)),
-                        _buf.publish)
+                        path=getattr(safety_result, "auth_path", None)))  # 2026-11-19 小欧: 删 publish 传参; _buf 上方仍做 buffer 存在守卫
                     _confirm_cache[_group_key] = _verdict
                 else:
                     _verdict = _confirm_cache[_group_key]   # 组内复用首call裁决, 不发第二次弹窗 — 小欧-2026-09-18

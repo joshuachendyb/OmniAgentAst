@@ -96,6 +96,7 @@
 // 编辑历史: 2026-11-18 商量 - pendingQuestion 入会话快照+acknowledgeQuestion(供切会话恢复与提交后清窗); 清窗按 questionId 守卫, 防旧问询的异步回调误清新问题 — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - scheduleList 入会话快照(EMPTY_SNAPSHOT/SNAPSHOT_KEYS/toBackupOf/restore/legacy 五处)
 //   与 setScheduleList action: notice(kind=schedule) 写清单, 刷新恢复; 清单唯一来源, 不再从步骤流派生 — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - 新增 hasPendingInteraction 纯函数: HITL授权/question问询等待唯一判据, 暂停按钮 handler 拦截与 UI 置灰共用 — 小欧-2026-11-19
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -163,6 +164,14 @@ const RELEASED_RECHECK_MAX = 30;
 
 export function isTerminalStatus(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
+/** 2026-11-19 小欧 - 弹窗等待唯一判据: HITL 授权(pendingAuthorization)或 question 问询(pendingQuestion)
+ *  任一非空即 agent 正等用户交互; 暂停按钮的 handler 拦截与 UI 置灰共用此判据(单一真源, DRY)。 */
+export function hasPendingInteraction(
+  snapshot: SessionSnapshot | null | undefined
+): boolean {
+  return Boolean(snapshot?.pendingAuthorization || snapshot?.pendingQuestion);
 }
 
 /** 2026-11-03 小欧 - 「在跑」四态(与终态/idle 互补), 供映射表声明 Record<RunningStreamStatus, ...>:

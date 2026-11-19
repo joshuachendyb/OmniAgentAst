@@ -96,6 +96,8 @@
 //   空清单写 null 收口), 清单唯一来源; 失败不发 notice 故保留上一份 — 小欧-2026-11-19
 // 编辑历史: 2026-11-19 小欧 - questionHandlers 升格为通用 interactHandlers: 按 kind 分派, question 分支读写 pendingQuestion,
 //   questions/timeout 从 payload 取; event=ask 发问/answered·cancelled·expired 清窗; 新增交互 tool 加分支即可 — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - HITL 授权收敛到 interact(kind=confirm): interactHandlers 加 onConfirm(写 pendingAuthorization/收口清窗,
+//   授权期间 agent 串行阻塞无 chunk 需暂存, 删 buffer 事件); hitlHandlers 保留 onPaused/onResumed(按钮暂停)/onRejected — 小欧-2026-11-19
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -1051,56 +1053,24 @@ function broadcastHandlers(s: ChatStreamSession) {
   };
 }
 
-/** handler 组③：HITL 业务（授权请求/暂停/恢复/被拒），只管 pendingAuthorization 与 hitlWaitingKeys。 */
+/** handler 组③：任务暂停/恢复按钮 + 安全拒绝。
+ *  2026-11-19 小欧 - 授权请求/收口已收敛到 interactHandlers.onConfirm(interact kind=confirm);
+ *  onPaused/onResumed 归位按钮(paused/resumed SSE)本职: Store status + 显示缓冲; onRejected 留安全拦截帧。 */
 function hitlHandlers(s: ChatStreamSession) {
   return {
-    onAuthorizationRequired: (data: PendingAuthorizationPayload) => {
-      // 2026-09-30 00:52 小欧 - 归位补漏(退化)：Store 单源化后"顶替即拒"
-      //   必须落在 Store。原实现只在 useAuthorization 的 React effect 里拒旧 pendingRef，
-      //   但同一条 SSE 流内连发多帧（同批 commit）时 React 只渲染末帧 → 中间 confirm_id
-      //   从未经 confirm(false)，静默泄漏到后端等到自身超时（原 2026-09-02 修的正是这个）。
-      //   覆写发生处即 Store，prev 在此处必然可见，是唯一可靠归属点（DRY：单一 owner）。
-      const prev = s.pendingAuthorization;
-      if (prev && prev.confirm_id !== data.confirm_id) {
-        void taskControlApi
-          .confirm(prev.confirm_id, false, false)
-          .catch(() => undefined);
-      }
+    onPaused: () => {
       commit(s, (d) => {
-        // 2026-11-14 商量 - 顶替泄漏清理: 被顶替的 confirm_id 已对后端发 confirm(false),
-        //   后端对其不发 resumed(拒绝路径), 该 key 若不删则永留集合, 污染 onResumed 的
-        //   size===0 判定(与 onRejected 的删除幂等一致)。
-        if (prev && prev.confirm_id !== data.confirm_id) {
-          d.hitlWaitingKeys.delete(prev.confirm_id);
-        }
-        d.pendingAuthorization = { ...data };
-        d.hitlWaitingKeys.add(data.confirm_id);
         d.status = 'paused';
-        d.isReceiving = true; // 2026-09-29 小欧：HITL 等待期保持接收态，UI 不得回落"无响应"
+        d.isReceiving = true; // 暂停≠停流, 显示层缓冲 chunk
       });
+      emitEvent(s, 'paused', {}); // 驱动 useChatCallbacks 显示缓冲
     },
-    onPaused: (confirmId?: string) => {
+    onResumed: () => {
       commit(s, (d) => {
-        if (confirmId) d.hitlWaitingKeys.add(confirmId);
-        d.status = 'paused';
-        d.isReceiving = true; // 同上：暂停≠停流
-      });
-      emitEvent(s, 'paused', { confirmId });
-    },
-    onResumed: (confirmId?: string) => {
-      commit(s, (d) => {
-        if (confirmId) d.hitlWaitingKeys.delete(confirmId);
-        if (!confirmId || d.pendingAuthorization?.confirm_id === confirmId) {
-          d.pendingAuthorization = null;
-        }
-        // 2026-09-29 22:22:12 小欧：恢复即回 active（2026-09-29 原稿无条件置 active），
-        //   但并发 HITL（paused a + paused b，resumed 仅 a）时 b 仍在等待——无条件置 active 会让
-        //   UI 显示"流式中"而实际卡在等用户确认 b，状态与 hitlWaitingKeys 自相矛盾。
-        //   故按等待集合判定：无人在等才回 active，仍有人在等则保持 paused。
         d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
         d.isReceiving = true;
       });
-      emitEvent(s, 'resumed', { confirmId });
+      emitEvent(s, 'resumed', {}); // 回放显示缓冲
     },
     onRejected: (data: {
       step: number;
@@ -1171,6 +1141,68 @@ function interactHandlers(s: ChatStreamSession) {
       }
     });
   };
+  // 2026-11-19 小欧 - HITL 授权收敛到 interact(kind=confirm): ask→写 pendingAuthorization+waitingKeys+status=paused;
+  //   收口→清窗+按 waitingKeys 回 status。无 buffer 事件(授权期间 agent 串行阻塞, SSE 静默无 chunk 需暂存)。
+  const onConfirm = (
+    event: 'ask' | 'answered' | 'cancelled' | 'expired',
+    id: string,
+    content: string,
+    payload?: Record<string, unknown>
+  ) => {
+    if (event === 'ask') {
+      const data: PendingAuthorizationPayload = {
+        confirm_id: id,
+        tool_name: (payload?.tool_name as string) ?? '',
+        params: payload?.params as Record<string, unknown> | undefined,
+        content: content || undefined,
+        safety_level: payload?.safety_level as string | undefined,
+        trust_impact:
+          payload?.trust_impact as PendingAuthorizationPayload['trust_impact'],
+        trust_path: payload?.trust_path as string | null | undefined,
+        auto_confirm: payload?.auto_confirm as
+          | boolean
+          | string
+          | number
+          | undefined,
+        confirm_timeout: payload?.confirm_timeout as
+          | number
+          | string
+          | undefined,
+        backend_timeout: payload?.backend_timeout as
+          | number
+          | string
+          | undefined,
+      };
+      // 顶替旧授权先 confirm(false) 防泄漏(Store 单源 owner, DRY) — 复用原 hitlHandlers 逻辑
+      const prev = s.pendingAuthorization;
+      if (prev && prev.confirm_id !== data.confirm_id) {
+        void taskControlApi
+          .confirm(prev.confirm_id, false, false)
+          .catch(() => undefined);
+      }
+      commit(s, (d) => {
+        if (prev && prev.confirm_id !== data.confirm_id) {
+          d.hitlWaitingKeys.delete(prev.confirm_id);
+        }
+        d.pendingAuthorization = data;
+        d.hitlWaitingKeys.add(data.confirm_id);
+        d.status = 'paused';
+        d.isReceiving = true;
+      });
+      // 2026-11-19 小欧 - 删缓冲事件: 授权期间 agent 串行阻塞(check_safety_and_confirm 在 execute_tools 前),
+      //   SSE 流静默无 chunk 需暂存; 弹窗由 Store.pendingAuthorization 驱动, 不依赖 buffer。
+    } else {
+      commit(s, (d) => {
+        d.hitlWaitingKeys.delete(id);
+        if (d.pendingAuthorization?.confirm_id === id) {
+          d.pendingAuthorization = null;
+        }
+        d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
+        d.isReceiving = true;
+      });
+      // 2026-11-19 小欧 - 同上删回放事件: 授权结束无缓冲需回放。
+    }
+  };
   return {
     onInteract: (data: {
       interaction_id: string;
@@ -1181,8 +1213,9 @@ function interactHandlers(s: ChatStreamSession) {
     }) => {
       if (data.kind === 'question') {
         onQuestion(data.event, data.interaction_id, data.payload);
+      } else if (data.kind === 'confirm') {
+        onConfirm(data.event, data.interaction_id, data.content, data.payload);
       }
-      // 未来 kind=confirm/select → 加分支, 框架零改
     },
   };
 }

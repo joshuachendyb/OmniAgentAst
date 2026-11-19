@@ -10,6 +10,7 @@
 //   连带删 Spacing import(已无引用)与 ACTION_RESERVE 过时注释(InputCore 该常量已随框内挂点删除) — 小欧-2026-10-25
 // 2026-10-25 小欧 - 钮高对齐(北京老陈令): BTN 34→24, 与 SubmitBar 行内 small 控件(24 高)齐平消除
 //   并列突兀; 24 内图标 16 留白 4px 紧凑不空 — 小欧-2026-10-25
+// 2026-11-19 小欧 - 暂停按钮加 interactionPending 置灰(弹窗等待 HITL/question 时不可暂停, 与 handler 拦截共用判据) — 小欧-2026-11-19
 /**
  * SubmitActions - 提交行右端动作按钮组: 发送(常驻) + 停止/暂停·继续(执行中渲染)
  *
@@ -34,6 +35,8 @@ interface SubmitActionsProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
+  /** 2026-11-19 小欧: 弹窗等待(HITL/question)时暂停按钮禁用, 与 handler 拦截共用 hasPendingInteraction 判据 */
+  interactionPending: boolean;
   /** 执行中不可发送(ChatInput 用 isSendBlocked 算好, 与提交门同源) */
   sendBlocked: boolean;
   /** 空草稿不可发送(与 handleSendInternal 的 !content 判据同源) */
@@ -60,6 +63,7 @@ const SubmitActions: React.FC<SubmitActionsProps> = ({
   loading,
   isReceiving,
   isPaused,
+  interactionPending,
   sendBlocked,
   emptyDraft,
   onSend,
@@ -91,6 +95,12 @@ const SubmitActions: React.FC<SubmitActionsProps> = ({
             }
             style={{ ...square, borderColor: Colors.BORDER.DEFAULT }}
             onClick={onTogglePause}
+            disabled={interactionPending && !isPaused}
+            title={
+              interactionPending && !isPaused
+                ? '请先处理当前的确认/提问'
+                : undefined
+            }
           />
         </>
       ) : null}
