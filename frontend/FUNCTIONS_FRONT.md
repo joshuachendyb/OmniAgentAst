@@ -4,7 +4,7 @@
 **编写人**: 小欧
 **维护人**: 小欧
 **最后更新时间**: 2026-11-19
-**最近更新**: 2026-11-19 商量 plan_stage 阶段决策+宽松核对反馈
+**最近更新**: 2026-11-19 商量 新增 §4.2 notice 与 interact 两事件使用规范 + §4.1 登记 interact 事件
 
 ---
 
@@ -306,6 +306,44 @@
 | notice 信封（`type=notice`） | `services/sseParser.ts` + `hooks/useTaskInfo.ts` | 通知信封统一解析：`kind`(种类) + `phase`(start/done/failed) + `content`(文案) + 可选 `items`(结构化载荷) + 可选 `only_event`(呈现标记, 默认 false)。三态都 push 进 executionSteps（事件列表）；`phase=start/failed` 占位置2、`done` 清位置2，**例外**：`only_event=true`（schedule error）只进事件列表、不画卡片、不占位置2。`kind=schedule` 且 `!only_event` 且带 items → 投 `onScheduleUpdate` 写计划卡片。老 notice 无 `items`/`only_event` 字段按缺省处理，零退化 — 商量 2026-11-19 | — | `ExecutionStep{notice_kind,notice_phase,content,items?,only_event?}` |
 | `ScheduleItem` / `scheduleList` | `streams/chatStreamTypes.ts` + `streams/chatStreamStore.ts` | 执行计划清单走 **notice 独立通道**（三态均发）：后端成功/可容忍发 `notice(kind=schedule, phase=done, items=[{content,status}])`，完全错误发 `notice(phase=failed, only_event=true)`；`sseParser` 按 `kind+phase+only_event` 分派，done 投 `onScheduleUpdate` → `chatStreamStore.setScheduleList` 写会话快照（刷新恢复），failed 只进事件列表、卡片保持上一份。清单类型 `ScheduleItem[] \| null` 从 `chatStreamTypes.ts`（backupTypes.ts 改名）单一真源导出，入 `SessionSnapshot`/`SNAPSHOT_KEYS`/`toBackupOf`/`restore`。后端仅 SSE 转发副本摘除 schedule 工具行（`sse_formatter`，判据 `tool_registry.visible_in_steps`），落库/喂 LLM/历史 conv 的 observation 原样保留（工具属性 `hide_from_steps` 声明）。完整设计见 [47] 文档 — 商量 2026-11-19 | — | `ScheduleItem[] \| null` |
 | `ScheduleCard` | `components/taskinfo/ScheduleCard.tsx` | taskinfo 左组「执行计划」入口（紧跟状态徽标）+ 浮层卡片（`计划 N/M`，窄档只显示 `N/M`，无清单不渲染）：条目按 `completed/in_progress/pending/cancelled` 三档着色，脚注点出「进行中：xxx」；与问询面板的分工是**主动查 vs 阻塞弹出**。清单读 `store.scheduleList`（notice 唯一来源），经 `useChatStreamSession(sessionId)` 订阅；**入口只属于当前任务** —— 信息条转入历史详情（`detail` 非空，指标来自 DB）时不渲染，避免「A 任务的计划配 B 任务的耗时/步数」 — 商量 2026-11-19 | `{list: ScheduleItem[] \| null, compact?: boolean}` | JSX |
+| interact 信封（`type=interact`） | `services/sseParser.ts` + `streams/chatStreamTransport.ts` | 通用双向交互事件统一解析与分派：`interaction_id` + `kind` + `event`(ask/answered/cancelled/expired) + `content` + 可选 `payload`。sseParser 只解析框架通用字段、push executionSteps 并投 `onInteract`（不认识 kind 语义）；transport 的 `interactHandlers` 按 kind 分派，`kind=question` 读写 `pendingQuestion`/`hitlWaitingKeys`（ask 开窗、answered/cancelled/expired 清窗，清窗只认后端收口帧）。载荷类型 `InteractPayload` 单一真源在 `chatStreamTypes.ts`。question 为首个使用者，新增交互 tool 只加一个 kind 分支，框架层零改 — 商量 2026-11-19 | — | `ExecutionStep{interaction_id,interact_kind,interact_event,content,interact_payload?}` |
+
+### 4.2 SSE 事件使用规范：notice 与 interact
+
+前端只消费两类 SSE 事件信封（业务 tool 仍走 observation 步，不走这两类）：**notice 单向通知**与**interact 双向交互**。两者并列，不可混用。完整设计：notice 见 [47]，interact 见 [48]，设计说明见 [49]。
+
+#### 4.2.1 选型（什么时候用哪个）
+
+| 判断 | notice | interact |
+|------|--------|----------|
+| 方向 | 后端→前端单向告知，不需要用户响应 | 后端发起→用户响应→回传唤醒后端阻塞 |
+| 典型 | 执行进度、摘要/安装提示、计划清单 | 问询（question）、确认（confirm）、选择 |
+| 前端呈现 | 事件列表 + 可选卡片（任务信息条） | 专属浮层（QuestionDock / 授权弹窗） |
+| 回传 API | 否 | 是（answer / confirm API 唤醒后端） |
+| 生命周期字段 | `phase`: start/done/failed | `event`: ask/answered/cancelled/expired |
+
+#### 4.2.2 字段契约（速查，完整定义见各规范文档）
+
+| 事件 | type | 字段 |
+|------|------|------|
+| notice | `notice` | `kind` + `phase` + `content` + `items?` + `only_event?` |
+| interact | `interact` | `interaction_id` + `kind` + `event` + `content` + `payload?` |
+
+#### 4.2.3 前端处理规范
+
+- **两层分派**：sseParser 只解析框架通用字段，不认识 kind 语义；分派层按 kind 路由——notice 走各 notice handler（如 `onScheduleUpdate`），interact 走 transport 的 `interactHandlers`。解析层不得写任何 tool 专属字段。
+- **事件列表**：两类事件都 push 进 executionSteps，归 meta 不进业务流水线（否则查看区空白）。
+- **呈现差异**：notice 用 `phase` 控制卡片占/清位置2（`only_event=true` 只进事件列表）；interact 用 `event=ask` 弹浮层、`answered/cancelled/expired` 清窗。
+- **清窗权威**：interact 清窗只认后端收口帧，前端倒计时纯展示，不得自行清窗（双计时源会漂移）。
+- **单一真源**：notice 清单读 `store.scheduleList`（notice 唯一来源）；interact 问询读 `store.pendingQuestion`（分派层唯一写入点）。
+- **扩展新 kind**：notice 加 kind 走对应 handler；interact 加 `kind==='xxx'` 分支 + 专属 UI，框架层（sseParser / InteractStep / stepFilter）零改。
+
+#### 4.2.4 不变量
+
+1. 不混用：通知不弹阻塞浮层，交互不发 notice 卡片。
+2. interact 的 ask 之后必有且仅有一个收口帧；前端清窗只认收口帧。
+3. 两类事件均 SSE-only（不落库），工具行由 `hide_from_steps` 屏蔽，但落库/喂 LLM 照常。
+4. 老帧缺可选字段（`items`/`only_event`/`payload`）按缺省处理，零退化。
 
 ---
 
@@ -395,3 +433,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.15 | 2026-11-19 | 执行计划清单改走 notice 通道：`tool_registry.visible_in_steps` 统一判据（工具属性 `hide_from_steps`）令 SSE 转发副本摘除 schedule 工具行（落库/喂 LLM 不动）；前端 `setScheduleList`→快照、`ScheduleCard` 读 store，删 `useScheduleList` | 商量 |
 | v1.16 | 2026-11-19 | notice 三态化：三态均发 notice 且均返回 LLM+落库；error 发 `failed`+`only_event=true`（仅事件列表、不画卡片不占位置2），warning/success 发 `done`（事件列表+卡片）；新增 `only_event` 呈现标记（notice 可选字段，默认 false 零退化）；§三补 notice 信封登记；`backupTypes.ts` 改名 `chatStreamTypes.ts`（名副其实）；完整设计见 [47] 文档 | 商量 |
 | v1.17 | 2026-11-19 | schedule 新增 `plan_stage` 必填参数(init/update/finish)：LLM 主动阶段决策, 与 items 宽松核对, 反馈进 `llm_data.plan_stage_note`; 阶段中文含义前置到 summary/notice content(`任务计划:初建/更新/结束;`); schema required 含两参数 | 商量 |
+| v1.18 | 2026-11-19 | §4.1 登记 interact 信封(type=interact)：sseParser 只解析通用字段投 onInteract、transport interactHandlers 按 kind 分派；§4.2 新增 notice 与 interact 两事件使用规范(选型/字段契约/处理规范/不变量)；完整设计见 [47][48][49] | 商量 |
