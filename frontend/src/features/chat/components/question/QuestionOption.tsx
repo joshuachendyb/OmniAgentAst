@@ -1,4 +1,5 @@
 // 2026-11-18 商量 - question 单选项(antd Radio/Checkbox + 数字快捷键提示), 视觉取设计 token
+// 2026-11-19 小欧 - multiple→single 语义反转: single 默认true=单选; role/控件与传参同步 — 小欧-2026-11-19
 import { Checkbox, Radio } from 'antd';
 
 import { Gap } from '@/theme/spacing';
@@ -8,7 +9,7 @@ interface QuestionOptionProps {
   label: string;
   description?: string;
   index: number;
-  multiple: boolean;
+  single: boolean;
   selected: boolean;
   onSelect: (label: string) => void;
 }
@@ -17,14 +18,14 @@ export function QuestionOption({
   label,
   description,
   index,
-  multiple,
+  single,
   selected,
   onSelect,
 }: QuestionOptionProps) {
   return (
     <div
       data-testid={`question-option-${index + 1}`}
-      role={multiple ? 'checkbox' : 'radio'}
+      role={single ? 'radio' : 'checkbox'}
       aria-checked={selected}
       tabIndex={0}
       onClick={() => onSelect(label)}
@@ -47,10 +48,10 @@ export function QuestionOption({
       }}
     >
       {/* 选中唯一入口 = 容器 onClick/onKeyDown; 内层控件只做视觉, onChange 空实现避免与容器冒泡双触发 */}
-      {multiple ? (
-        <Checkbox checked={selected} onChange={() => undefined} />
-      ) : (
+      {single ? (
         <Radio checked={selected} onChange={() => undefined} />
+      ) : (
+        <Checkbox checked={selected} onChange={() => undefined} />
       )}
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: FontSize.PRIMARY, color: Colors.TEXT.STRONG }}>

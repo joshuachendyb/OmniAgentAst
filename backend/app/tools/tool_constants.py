@@ -14,6 +14,15 @@
 #   /maxLength/maxItems), 约束前置参数层; 实测无 $ref/$defs, 严格 provider 兼容 — 小欧-2026-11-19
 # 2026-11-19 - 商量 - 新增 plan_stage 三阶段(init/update/finish)与描述/引导常量: 必填, LLM 主动语义决策, 宽松核对非精密绑定;
 #   中文标签 SCHEDULE_PLAN_STAGE_LABELS 供 summary 前缀拼接
+# 2026-11-19 - 小欧 - question 约束按 schedule 模式前置: 入参闸门常量从 question.py 迁入本文件(单一真源),
+#   新增 QUESTION_ITEMS_PARAM_DESC(描述引用常量, 不再手写重复)与 QUESTION_ITEM_SCHEMA(内联 item/options 子结构,
+#   required/additionalProperties/maxLength/maxItems, 纯 dict 无 $ref/$defs) — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - question 参数描述补"同题 label 不可重复"(与校验层对齐) — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - question 约束阈值收紧: 问题≤10/选项≤5/题干≤100/标题≤20/选项文本≤100(描述/schema/校验同源自动跟随) — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - 常量改名 HEADER_CHARS→TITLE_CHARS: header 实为问题标题/概述, 原名表意不准 — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - 字段顺序统一 header→question→options(与界面一致), header 改可选其余必填 — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - multiple→single 语义反转: single 默认true=单选(正向语义), 前端同步 — 小欧-2026-11-19
+# 2026-11-19 - 小欧 - 一致性整改: 加字段白名单(schema派生, 拒未知字段)/single 结构化 default:true — 小欧-2026-11-19
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -324,6 +333,55 @@ SCHEDULE_PLAN_STAGE_DESC: str = (
 )
 # update 阶段的持续引导: 进度变化后提醒 LLM 后续继续维护 — 小欧 2026-11-19
 SCHEDULE_UPDATE_GUIDANCE: str = "进度已更新, 请在后续步骤任务推进时持续更新本清单(status 与 items 保持同步)"
+
+# —— question 入参闸门(描述/schema/校验 单一真源, 同 schedule 模式) — 小欧 2026-11-19 ——
+QUESTION_INPUT_MAX_QUESTIONS: int = 10                 # 问题数上限
+QUESTION_INPUT_MAX_OPTIONS: int = 5                    # 单题选项数上限
+QUESTION_INPUT_MAX_QUESTION_CHARS: int = 100           # 题干长度上限
+QUESTION_INPUT_MAX_TITLE_CHARS: int = 20              # 问题标题(概述)长度上限
+QUESTION_INPUT_MAX_LABEL_CHARS: int = 100              # 选项文本长度上限
+QUESTION_INPUT_MAX_DESCRIPTION_CHARS: int = 500        # 选项说明长度上限
+# items 参数描述文案(转述给 LLM): f-string 引用常量, 描述与校验天然同源不漂移
+QUESTION_ITEMS_PARAM_DESC: str = (
+    f"问题数组(1~{QUESTION_INPUT_MAX_QUESTIONS}项)。每项为一个对象, 含四个字段: "
+    f"header(问题标题/概述, 可选, ≤{QUESTION_INPUT_MAX_TITLE_CHARS}字)、"
+    f"question(完整问题, 必填, 非空且≤{QUESTION_INPUT_MAX_QUESTION_CHARS}字)、"
+    f"options(选项数组, 必填, 1~{QUESTION_INPUT_MAX_OPTIONS}项, 每项含 "
+    f"label(选项文本, 非空且≤{QUESTION_INPUT_MAX_LABEL_CHARS}字, 同题不可重复) 与 "
+    f"description(选项说明, 可选, ≤{QUESTION_INPUT_MAX_DESCRIPTION_CHARS}字))、"
+    "single(是否单选, 布尔值, 默认true)。"
+)
+# item 内联 JSON Schema(约束前置参数层): required/additionalProperties/maxLength/maxItems,
+#   options 为嵌套数组, 内层选项 schema 同样内联; 纯 dict 无 BaseModel 嵌套故无 $ref/$defs (同 schedule 实测)
+QUESTION_ITEM_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "header": {"type": "string", "maxLength": QUESTION_INPUT_MAX_TITLE_CHARS, "description": "问题标题/概述(可选)"},
+        "question": {"type": "string", "maxLength": QUESTION_INPUT_MAX_QUESTION_CHARS, "description": "完整问题"},
+        "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": QUESTION_INPUT_MAX_OPTIONS,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "maxLength": QUESTION_INPUT_MAX_LABEL_CHARS, "description": "选项文本"},
+                    "description": {"type": "string", "maxLength": QUESTION_INPUT_MAX_DESCRIPTION_CHARS, "description": "选项说明(可选)"},
+                },
+                "required": ["label"],
+                "additionalProperties": False,
+            },
+        },
+        "single": {"type": "boolean", "default": True, "description": "是否单选, 默认true"},
+    },
+    "required": ["question", "options"],
+    "additionalProperties": False,
+}
+# 允许的字段: 从 schema 派生(校验层拒未知字段用), 与 schema 天然同源不硬编码 (同 SCHEDULE_ITEM_KEYS)
+QUESTION_ITEM_SCHEMA_KEYS = frozenset(QUESTION_ITEM_SCHEMA["properties"].keys())
+QUESTION_OPTION_SCHEMA_KEYS = frozenset(
+    QUESTION_ITEM_SCHEMA["properties"]["options"]["items"]["properties"].keys()
+)
 
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell

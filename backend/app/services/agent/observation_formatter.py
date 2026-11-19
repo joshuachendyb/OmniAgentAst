@@ -39,6 +39,8 @@
 #   (非 dict 顶层/子值一律归一为空 dict), 零行为变更。
 # 2026-11-19 - 小欧 - #5 rows 分支注释补登 schedule: 其 data.rows(二维数组, 无 columns)走 _format_rows 无列名分支,
 #   输出"事项 | 完成标志"; 复用现有 formatter, 零行为变更。
+# 2026-11-19 - 小欧 - #21 fallback 分支注释补登 question: 其 data={answers,questions} 无专属分支,
+#   走 _format_scalar_data 键值对展示; 答案真值已在 llm_data.summary, 不新增专属 formatter — 小欧-2026-11-19
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -382,7 +384,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_which_result(data)
 
         # ── #0 空data — 1 tool: mouse_click（走第 72 行 if not data: return ""）────
-        # ── #21 fallback — 33 tools（排除which/edit/write） ──
+        # ── #21 fallback — 34 tools（排除which/edit/write） ──
+        #   question: data={answers,questions} 走本分支 _format_scalar_data(答案真值在 llm_data.summary, 不另立专属 formatter) — 小欧-2026-11-19
         #   move, copy, delete, rename, extract,
         #   download, ping_port, write_docx, write_xlsx, write_pdf, write_pptx,
         #   timenow, timeadd, timediff, calendar, notify, execute_sql, generate_chart,

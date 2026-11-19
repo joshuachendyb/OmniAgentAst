@@ -5,6 +5,7 @@
 # 2026-11-19 小欧 - 注册描述"中途更换/必须更新每个状态"改"中途替换/状态按实际进度填写", 消除术语不一致与 pending 误导
 # 2026-11-19 小欧 - 注册描述补 plan_stage 必填说明(init/update/finish)
 # 2026-11-19 小欧 - question 注册也声明 hide_from_steps=True(与 schedule 同: 非业务交互 tool 不画通用工具行)
+# 2026-11-19 小欧 - question 工具描述字段顺序统一 header(可选)→question→options; multiple 改 single(默认true单选) — 小欧-2026-11-19
 """
 agent_register — 智能体交互工具注册点(question / schedule)
 """
@@ -17,7 +18,12 @@ from app.tools.tool_types import ToolCategory
 
 # 描述仅作一句话路由/适用场景说明, 能力详情写在 Schema 类 description(会进 JSON Schema 发给 LLM)。
 AGENT_TOOL_DESCRIPTIONS = {
-    "question": """执行中向用户提问, 收集偏好/澄清歧义/获取实现决策。questions 为问题数组, 每项含 question(完整问题)/header(短标签)/options(选项数组)/multiple(是否多选)。适用于: 需要用户决策、指令存在歧义、多个方案需用户选择时。阻塞等待回答后继续。""",
+    "question": (  # 2026-11-19 小欧: 工具级路由描述; questions 字段规格见 tool_constants.QUESTION_ITEMS_PARAM_DESC
+        "适用于:任务中有不确认的处理方法的时候邀请用户决策"
+        "发问的场景：需要有歧义，指令理解不准确、处理有多个方案，需用户进一步给出准确答复"
+        "questions 为问题数组, 每项含 header(问题标题, 可选)/question(问题描述, 必填)/options(选项数组, 必填)/single(是否单选, 默认true)。"
+        "阻塞等待回答后继续。"
+    ),
     "schedule": (  # 2026-11-19 小欧: 工具级路由描述; items 字段规格见 tool_constants.SCHEDULE_ITEMS_PARAM_DESC(schema/失败hint 引用)
         "适用: 任务含多步骤(≥3)或用户索要计划时; 单一简单步骤严禁使用。"
         "在长任务中，根据任务进展实时更新及时通知，便于用户掌握任务进展。"
@@ -53,7 +59,8 @@ AGENT_TOOL_EXAMPLES = {
                 {"content": "分析需求", "status": "completed"},
                 {"content": "编写代码", "status": "in_progress"},
                 {"content": "测试", "status": "pending"},
-            ]
+            ],
+            "plan_stage": "init",
         }
     ],
 }

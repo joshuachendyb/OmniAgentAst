@@ -4,6 +4,8 @@
 #   规格收紧: 条数≤20、content≤100字; 并经 json_schema_extra 内联 item schema 把 enum/required/maxLength
 #   前置到参数层(不嵌套 BaseModel 故无 $ref), 校验层 schedule._normalize_items 为兜底双保险
 # 2026-11-19 小欧 - ScheduleInput 增 plan_stage 必填参数(enum init/update/finish), LLM 主动阶段决策
+# 2026-11-19 小欧 - QuestionInput 约束按 schedule 模式前置: 描述改引用 QUESTION_ITEMS_PARAM_DESC(单一真源),
+#   json_schema_extra 内联 QUESTION_ITEM_SCHEMA + maxItems; 实测无 $ref/$defs — 小欧-2026-11-19
 """
 agent_schema — 智能体交互工具参数模型(question / schedule)
 
@@ -14,6 +16,9 @@ from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
 from app.tools.tool_constants import (
+    QUESTION_INPUT_MAX_QUESTIONS,  # 2026-11-19 小欧: question 约束单一真源(schema 与校验同源, 同 schedule 模式)
+    QUESTION_ITEM_SCHEMA,
+    QUESTION_ITEMS_PARAM_DESC,
     SCHEDULE_INPUT_MAX_ITEMS,  # 2026-11-19 小欧: items 参数约束单一真源(schema 与校验同源)
     SCHEDULE_ITEM_SCHEMA,
     SCHEDULE_ITEMS_PARAM_DESC,
@@ -24,8 +29,10 @@ from app.tools.tool_constants import (
 
 class QuestionInput(BaseModel):
     questions: List[Dict[str, Any]] = Field(
-        ..., description="问题数组(1~8项)。每项: {question:完整问题, header:极短标签(≤30字), "
-                         "options:[{label:选项文本, description:选项说明}](1~9项), multiple:是否多选(默认false)}"
+        ..., description=QUESTION_ITEMS_PARAM_DESC,
+        # 2026-11-19 小欧 - 约束前置参数层(同 schedule): item/options 内联 schema
+        #   (required/additionalProperties/maxLength/maxItems) + maxItems; 扁平类型不引入 $ref。
+        json_schema_extra={"items": QUESTION_ITEM_SCHEMA, "maxItems": QUESTION_INPUT_MAX_QUESTIONS},
     )
 
 

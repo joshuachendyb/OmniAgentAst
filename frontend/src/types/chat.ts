@@ -34,6 +34,7 @@
 //   新增 QuestionItem/QuestionOptionItem 类型供 question dock 消费 — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact, 字段 interaction_id/kind/event/payload
 //   (event 叶子 ask/answered/cancelled/expired); 载荷类型在 streams/chatStreamTypes — 小欧-2026-11-19
+// 编辑历史: 2026-11-19 小欧 - QuestionItem 字段对齐后端: header 改可选; multiple→single(默认true单选) — 小欧-2026-11-19
 
 /**
  * 流式API响应类型定义
@@ -180,10 +181,10 @@ export interface QuestionOptionItem {
 }
 
 export interface QuestionItem {
-  header: string;
+  header?: string;
   question: string;
   options: QuestionOptionItem[];
-  multiple?: boolean;
+  single?: boolean;
 }
 
 export interface StatusMessage {

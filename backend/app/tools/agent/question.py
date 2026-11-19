@@ -10,8 +10,28 @@
 # 2026-11-18 商量 - cancelled 分支补传 wait_ms: 原漏传走默认 0, 用户实际等了多久被记成 0ms(遥测失真) — 商量-2026-11-18
 # 2026-11-18 商量 - 三堂会审复核: 兜底文案判据改读回调下发的 auto_confirm(窗口模式单一判定在发射器, 工具层不判安全策略);
 #   异常/取消分支补 wait_ms; 摘要未作答项标「（未作答）」— 商量-2026-11-18
+# 2026-11-19 小欧 - 约束常量迁入 tool_constants 单一真源(同 schedule 模式), 校验统一引用;
+#   补同题选项 label 重复校验(前端按 label 判选中, 重复会同选致答案无法区分) — 小欧-2026-11-19
+# 2026-11-19 小欧 - 字段顺序统一 header→question→options; header 可选(缺失/null→空串), question/options 必填 — 小欧-2026-11-19
+# 2026-11-19 小欧 - llm_data.summary 标题回退: header 缺省时用 question, 防出现 ="" 空标题(conv/落库同源) — 小欧-2026-11-19
+# 2026-11-19 小欧 - multiple→single 语义反转: single 默认true=单选; 校验/归一化同步 — 小欧-2026-11-19
+# 2026-11-19 小欧 - 一致性整改: header strip(空白归空)/未知字段拒(白名单从schema派生, 同schedule) — 小欧-2026-11-19
+# 2026-11-19 小欧 - 函数改名 _validate_questions→_normalize_params: 实为校验+补默认值+理顺结构的参数归一化 — 小欧-2026-11-19
+# 2026-11-19 小欧 - 正常回答分支两档: 全答success/部分答warning; 全未答不可达(canSubmit 保证≥1题有答案); summary 报"回答 M/N 个" — 小欧-2026-11-19
+# 2026-11-19 小欧 - warning 补 hint UNANSWERED_HINT: 三思三省做最佳决策继续, 仅关键信息无法推断才停下请补充 — 小欧-2026-11-19
+# 2026-11-19 小欧 - 超限容错: 字数/条数超限改截断(schedule 模式)转 warning; 截断说明进 detail+hint 两处, 与未答叠加 — 小欧-2026-11-19
+# 2026-11-19 小欧 - warning 文案统一: 兜底 summary 与 success 同款格式; message 按实际未答/截断组合精确措辞 — 小欧-2026-11-19
 """
 question — 阻塞式人机问答(执行中收集偏好 / 澄清歧义 / 获取实现决策)
+
+【返回状态设计决策 — 小欧 2026-11-19】
+  成功(success): 全题作答 且 无参数截断。
+  警告(warning): 部分题未答(三思三省做最佳决策继续) 或 参数超限截断(按截断后内容继续) 或 两者叠加;
+    有截断则必不 success, detail 放截断说明+未答数, hint 放截断提示+未答决策指引(两处都说明)。
+  失败(error): 用户取消(停下推进) / 参数结构错(非数组/缺字段/未知字段/类型错/label重复, 拒绝) /
+    问询通道未注入 / 回调异常(后两者让 LLM 自行决策继续)。
+  全题未答不单独设档: 前端 canSubmit 保证至少一题有答案, 正常链路不可达。
+  到点兜底(expired): 系统生成答案让任务继续, 无截断=success, 有截断=warning。
 
 【铁规1】helper 只返回 raw dict, build_* 与 llm_data 在 main 函数构建。
 【铁规2】工具返回原始 data, 不调用 truncate_data_for_frontend。
@@ -21,84 +41,123 @@ import time as _time_mod
 from typing import Any, Dict, List, Tuple
 
 from app.tools.context import get_current_question_callback
-from app.tools.tool_constants import ERR_QUESTION
-from app.tools.tool_response import build_error, build_success
+from app.tools.tool_constants import (
+    ERR_QUESTION,
+    QUESTION_INPUT_MAX_DESCRIPTION_CHARS,
+    QUESTION_INPUT_MAX_LABEL_CHARS,
+    QUESTION_INPUT_MAX_OPTIONS,
+    QUESTION_INPUT_MAX_QUESTION_CHARS,
+    QUESTION_INPUT_MAX_QUESTIONS,
+    QUESTION_INPUT_MAX_TITLE_CHARS,
+    QUESTION_ITEM_SCHEMA_KEYS,
+    QUESTION_ITEMS_PARAM_DESC,
+    QUESTION_OPTION_SCHEMA_KEYS,
+)
+from app.tools.tool_response import build_error, build_success, build_warning
 
-MAX_QUESTIONS = 8
-MAX_OPTIONS = 9
-MAX_HEADER_CHARS = 30
-MAX_QUESTION_CHARS = 1000
-MAX_LABEL_CHARS = 200
-MAX_DESCRIPTION_CHARS = 500
 # HTL开(真人工)到点未答的兜底作答文案 — 商量 2026-11-18
 EXPERT_FALLBACK_ANSWER = "你是资深专家, 以专家的高水准和全局视野, 按最合理的逻辑进行处理"
 # 到点未答兜底后给模型的收口指令 — 商量 2026-11-18
 #   兜底答案已生效, 问题也已关闭; 缺此指令时模型会把"系统自动代答/自动决策"复述给用户并重新征求确认,
 #   等于用一句内部机制说明换掉了用户本该看到的推进结果。
 AUTO_FALLBACK_DIRECTIVE = "该答案即视为用户的选择, 不要再向用户重复询问同一问题, 直接按此结果继续"
+# 未答问题的统一 hint(warning 用) — 小欧 2026-11-19
+#   核心: 让 LLM 三思三省做最佳决策继续(不停下); 仅当关键信息确实无法推断时才停下说明并请用户补充。
+UNANSWERED_HINT = (
+    "未作答的问题请三思三省: 结合任务目标、已回答内容与专家判断, 做出最合理的选择后继续推进, "
+    "不要再向用户重复询问同一问题, 也不要停下等待; "
+    "仅当该问题的关键信息确实无法从任务上下文推断时, 才在最终回答中说明卡点并请用户补充。"
+)
 
 
-def _validate_questions(questions: Any) -> Tuple[List[Dict[str, Any]], str]:
-    """校验并归一化问题数组 — 商量 2026-11-18; 返回 (归一化数组, 错误文案), 错误文案为空即通过"""
+def _normalize_params(questions: Any) -> Tuple[List[Dict[str, Any]], str, List[str]]:
+    """归一化 question 工具参数(校验+补默认值+理顺结构+超限截断) — 商量 2026-11-18
+    返回 (归一化数组, 硬错误文案, 截断警告列表); 硬错误非空即拒绝, 截断警告降级 warning 继续 — 小欧 2026-11-19
+    """
     if not isinstance(questions, list):
-        return [], "questions 必须是数组"
+        return [], "questions 必须是数组", []
     if not questions:
-        return [], "至少需要一个问题"
-    if len(questions) > MAX_QUESTIONS:
-        return [], f"最多{MAX_QUESTIONS}个问题"
+        return [], "至少需要一个问题", []
+
+    warnings: List[str] = []
+    # 问题数超限: 截断保留前 N 项 + 记警告(不拒绝)
+    if len(questions) > QUESTION_INPUT_MAX_QUESTIONS:
+        warnings.append(f"问题数组共{len(questions)}项, 超过上限{QUESTION_INPUT_MAX_QUESTIONS}, 已保留前{QUESTION_INPUT_MAX_QUESTIONS}项")
+        questions = questions[:QUESTION_INPUT_MAX_QUESTIONS]
 
     normalized: List[Dict[str, Any]] = []
     for idx, q in enumerate(questions, start=1):
         if not isinstance(q, dict):
-            return [], f"第{idx}个问题必须是对象"
+            return [], f"第{idx}个问题必须是对象", warnings
+        extra = set(q.keys()) - QUESTION_ITEM_SCHEMA_KEYS
+        if extra:
+            return [], f"第{idx}个问题含未知字段 {sorted(extra)}, 每项只允许 header/question/options/single", warnings
+
+        # 问题标题(header)可选: 缺失/null/纯空白 归一为空串(前端不渲染小标签), 传了则须是字符串且不超长 — 小欧-2026-11-19
+        header = q.get("header", "")
+        if header is None:
+            header = ""
+        if not isinstance(header, str):
+            return [], f"第{idx}个问题 header 必须是字符串", warnings
+        header = header.strip()
+        if len(header) > QUESTION_INPUT_MAX_TITLE_CHARS:
+            warnings.append(f"第{idx}个问题 header 超过{QUESTION_INPUT_MAX_TITLE_CHARS}字, 已截断")
+            header = header[:QUESTION_INPUT_MAX_TITLE_CHARS]
 
         text = q.get("question")
         if not isinstance(text, str) or not text.strip():
-            return [], f"第{idx}个问题缺少 question(完整问题)"
-        if len(text) > MAX_QUESTION_CHARS:
-            return [], f"第{idx}个问题 question 超过{MAX_QUESTION_CHARS}字"
-
-        header = q.get("header")
-        if not isinstance(header, str) or not header.strip():
-            return [], f"第{idx}个问题缺少 header(极短标签)"
-        if len(header) > MAX_HEADER_CHARS:
-            return [], f"第{idx}个问题 header 超过{MAX_HEADER_CHARS}字"
+            return [], f"第{idx}个问题缺少 question(完整问题)", warnings
+        if len(text) > QUESTION_INPUT_MAX_QUESTION_CHARS:
+            warnings.append(f"第{idx}个问题 question 超过{QUESTION_INPUT_MAX_QUESTION_CHARS}字, 已截断")
+            text = text[:QUESTION_INPUT_MAX_QUESTION_CHARS]
 
         options = q.get("options")
         if not isinstance(options, list) or not options:
-            return [], f"第{idx}个问题 options 不能为空"
-        if len(options) > MAX_OPTIONS:
-            return [], f"第{idx}个问题 options 最多{MAX_OPTIONS}项"
+            return [], f"第{idx}个问题 options 不能为空", warnings
+        if len(options) > QUESTION_INPUT_MAX_OPTIONS:
+            warnings.append(f"第{idx}个问题 options 共{len(options)}项, 超过上限{QUESTION_INPUT_MAX_OPTIONS}, 已保留前{QUESTION_INPUT_MAX_OPTIONS}项")
+            options = options[:QUESTION_INPUT_MAX_OPTIONS]
 
         norm_options: List[Dict[str, str]] = []
+        seen_labels = set()
         for oi, opt in enumerate(options, start=1):
             if not isinstance(opt, dict):
-                return [], f"第{idx}个问题第{oi}个选项必须是对象"
+                return [], f"第{idx}个问题第{oi}个选项必须是对象", warnings
+            extra = set(opt.keys()) - QUESTION_OPTION_SCHEMA_KEYS
+            if extra:
+                return [], f"第{idx}个问题第{oi}个选项含未知字段 {sorted(extra)}, 每项只允许 label/description", warnings
             label = opt.get("label")
             if not isinstance(label, str) or not label.strip():
-                return [], f"第{idx}个问题第{oi}个选项缺少 label"
-            if len(label) > MAX_LABEL_CHARS:
-                return [], f"第{idx}个问题第{oi}个选项 label 过长"
+                return [], f"第{idx}个问题第{oi}个选项缺少 label", warnings
+            if len(label) > QUESTION_INPUT_MAX_LABEL_CHARS:
+                warnings.append(f"第{idx}个问题第{oi}个选项 label 超过{QUESTION_INPUT_MAX_LABEL_CHARS}字, 已截断")
+                label = label[:QUESTION_INPUT_MAX_LABEL_CHARS]
+            # 前端按 label 判选中/作答案值, 重复 label 会同选且无法区分 — 小欧-2026-11-19
+            label_key = label.strip()
+            if label_key in seen_labels:
+                return [], f"第{idx}个问题选项 label 重复: {label!r}", warnings
+            seen_labels.add(label_key)
             desc = opt.get("description", "")
             if desc is None:
                 desc = ""
             if not isinstance(desc, str):
-                return [], f"第{idx}个问题第{oi}个选项 description 必须是字符串"
-            if len(desc) > MAX_DESCRIPTION_CHARS:
-                return [], f"第{idx}个问题第{oi}个选项 description 过长"
+                return [], f"第{idx}个问题第{oi}个选项 description 必须是字符串", warnings
+            if len(desc) > QUESTION_INPUT_MAX_DESCRIPTION_CHARS:
+                warnings.append(f"第{idx}个问题第{oi}个选项 description 超过{QUESTION_INPUT_MAX_DESCRIPTION_CHARS}字, 已截断")
+                desc = desc[:QUESTION_INPUT_MAX_DESCRIPTION_CHARS]
             norm_options.append({"label": label, "description": desc})
 
-        multiple = q.get("multiple", False)
-        if not isinstance(multiple, bool):
-            return [], f"第{idx}个问题 multiple 必须是布尔值"
+        single = q.get("single", True)
+        if not isinstance(single, bool):
+            return [], f"第{idx}个问题 single 必须是布尔值", warnings
 
         normalized.append({
-            "question": text,
             "header": header,
+            "question": text,
             "options": norm_options,
-            "multiple": multiple,
+            "single": single,
         })
-    return normalized, ""
+    return normalized, "", warnings
 
 
 def _normalize_answers(raw: Any, count: int) -> List[List[str]]:
@@ -144,20 +203,65 @@ def _build_question_llm_data(
     questions: List[Dict[str, Any]] = None,
     wait_ms: int = 0,
     auto_note: str = "",
+    answered: int = None,
+    warnings: List[str] = None,
 ) -> Dict[str, Any]:
-    """question 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18; auto_note 非空=到点自动兜底作答"""
+    """question 的 llm_data 构建(helper 只返 raw dict) — 商量 2026-11-18; auto_note 非空=到点自动兜底作答
+    answered=实际作答题数; warnings=参数截断警告; 截断说明进 detail(警告行)+hint(建议行)两处 — 小欧-2026-11-19
+    """
     answers = answers or []
     questions = questions or []
+    warnings = warnings or []
+    total = len(questions)
+    # 截断说明(两处复用): detail 放警告行, hint 放建议行 — 小欧 2026-11-19
+    trunc_detail = "参数超限已截断: " + "; ".join(warnings) if warnings else ""
+    trunc_hint = "提交的参数已按上限截断处理(见警告), 请基于截断后的内容继续; " if warnings else ""
     if exec_code == "error":
         summary = f"提问失败: {detail}"
         status = {
             "exec_code": "error", "message": "失败", "code": ERR_QUESTION,
             "detail": detail, "hint": hint,
         }
+    elif exec_code == "warning":
+        pairs = []
+        for q, ans in zip(questions, answers):
+            title = q.get("header", "") if isinstance(q, dict) else ""
+            if not title:
+                title = q.get("question", "") if isinstance(q, dict) else ""
+            value = "、".join(ans) or "（未作答）"
+            pairs.append(f'{title}="{value}"')
+        if auto_note:
+            # 兜底+截断: summary 与 success 同款格式(避免同语义两种措辞) — 小欧-2026-11-19
+            summary = f"{auto_note}: {len(answers)} 个问题: " + "; ".join(pairs)
+            summary = f"{summary}。{AUTO_FALLBACK_DIRECTIVE}"
+        else:
+            summary = f"用户回答 {answered}/{total} 个问题: " + "; ".join(pairs)
+        # detail 叠加: 截断说明 + 未答数; hint 叠加: 截断提示 + 未答决策指引 — 小欧-2026-11-19
+        detail_parts = ([trunc_detail] if trunc_detail else [])
+        if answered < total:
+            detail_parts.append(f"{total - answered} 个问题未作答")
+        hint_parts = ([trunc_hint] if trunc_hint else [])
+        if answered < total:
+            hint_parts.append(UNANSWERED_HINT)
+        # message 按实际情况精确措辞(避免全答时仍说"有未答") — 小欧-2026-11-19
+        _has_unanswered = answered < total
+        if warnings and _has_unanswered:
+            _msg = "完成但有未答和截断"
+        elif warnings:
+            _msg = "完成但有截断"
+        else:
+            _msg = "完成但有未答"
+        status = {
+            "exec_code": "warning", "message": _msg, "code": "",
+            "detail": "; ".join(detail_parts), "hint": "".join(hint_parts),
+        }
     else:
         pairs = []
         for q, ans in zip(questions, answers):
             title = q.get("header", "") if isinstance(q, dict) else ""
+            # 标题可选: 缺省时回退完整问题, 否则 summary 出现 ="" 的空标题, 模型无法分辨是哪题的答案 — 小欧-2026-11-19
+            if not title:
+                title = q.get("question", "") if isinstance(q, dict) else ""
             # 未作答项显式标注: 空串会被模型读成"用户选择了空", 与"没答"是两件事 — 商量-2026-11-18
             value = "、".join(ans) or "（未作答）"
             pairs.append(f'{title}="{value}"')
@@ -186,14 +290,14 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
     """阻塞式向用户提问 — 商量 2026-11-18"""
     t0 = _time_mod.perf_counter()
 
-    normalized, err = _validate_questions(questions)
+    normalized, err, warnings = _normalize_params(questions)
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         return build_error(
             data={"answers": [], "questions": []},
             llm_data=_build_question_llm_data(
                 "error", duration_ms, detail=err,
-                hint="请按字段要求修正 questions 后重试",
+                hint=f"请按 question 参数说明重新提交 questions: {QUESTION_ITEMS_PARAM_DESC}",
             ),
         )
 
@@ -246,23 +350,32 @@ async def question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
         auto_confirm = bool(result.get("auto_confirm", False))
         fallback, note = _auto_fallback(normalized, auto_confirm)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return build_success(
-            data={"answers": fallback, "questions": normalized, "auto": True},
-            llm_data=_build_question_llm_data(
-                "success", duration_ms, answers=fallback,
-                questions=normalized, wait_ms=wait_ms, auto_note=note,
-            ),
+        # 有截断则兜底降级 warning(截断不 success) — 小欧 2026-11-19
+        fallback_code = "warning" if warnings else "success"
+        llm_data = _build_question_llm_data(
+            fallback_code, duration_ms, answers=fallback,
+            questions=normalized, wait_ms=wait_ms, auto_note=note,
+            answered=len(fallback), warnings=warnings,
         )
+        data = {"answers": fallback, "questions": normalized, "auto": True}
+        if fallback_code == "warning":
+            return build_warning(data=data, llm_data=llm_data)
+        return build_success(data=data, llm_data=llm_data)
 
     answers = _normalize_answers(result.get("answers"), len(normalized))
+    answered = sum(1 for a in answers if a)  # 空答案组=未作答
+    total = len(normalized)
+    # 状态叠加: 有截断→必warning(无success); 无截断时全答success/部分答warning — 小欧-2026-11-19
+    exec_code = "warning" if (warnings or answered < total) else "success"
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    return build_success(
-        data={"answers": answers, "questions": normalized},
-        llm_data=_build_question_llm_data(
-            "success", duration_ms, answers=answers,
-            questions=normalized, wait_ms=wait_ms,
-        ),
+    llm_data = _build_question_llm_data(
+        exec_code, duration_ms, answers=answers, questions=normalized,
+        wait_ms=wait_ms, answered=answered, warnings=warnings,
     )
+    data = {"answers": answers, "questions": normalized}
+    if exec_code == "warning":
+        return build_warning(data=data, llm_data=llm_data)
+    return build_success(data=data, llm_data=llm_data)
 
 
 __all__ = ["question"]

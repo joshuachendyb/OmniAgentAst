@@ -1,6 +1,8 @@
 // 2026-11-18 商量 - 新建 question dock 状态管理(对齐 useAuthorization: 读 store 快照→归一→fire-and-forget 调 API→清快照)
 // 2026-11-18 商量 - 三堂会审整改: 自定义输入框内按键不再触发面板快捷键; 自定义答案单选替换多选追加(防 radio 双值歧义); 新增 canSubmit 空答案守卫
 // 2026-11-18 商量 - 新增倒计时: 读快照 backendTimeout 每秒递减纯展示(到点清窗由后端 question_resolved 收口, 单一权威源)
+// 2026-11-19 小欧 - multiple→single 语义反转: 自定义答案追加判据/选中切换逻辑同步(single 默认true单选) — 小欧-2026-11-19
+// 2026-11-19 小欧 - single 缺省判据统一: 仅明确 false 才追加自定义答案, 与选中逻辑(single!==false)同口径 — 小欧-2026-11-19
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 
@@ -114,7 +116,7 @@ export function useQuestionDock(sessionId: string | null) {
       const text = c?.text?.trim();
       if (c?.on && text) {
         // 2026-11-18 商量 - 自定义答案: 多选追加为额外项, 单选替换(与 opencode radio 语义一致, 防双值歧义)
-        if (q.multiple) values.push(text);
+        if (q.single === false) values.push(text);
         else return [text];
       }
       return values;
@@ -162,12 +164,12 @@ export function useQuestionDock(sessionId: string | null) {
     (label: string) => {
       setState((prev) => {
         const old = prev.answers[tab] ?? [];
-        const multiple = Boolean(current?.multiple);
-        const next = multiple
-          ? old.includes(label)
+        const single = current?.single !== false;
+        const next = single
+          ? [label]
+          : old.includes(label)
             ? old.filter((x) => x !== label)
-            : [...old, label]
-          : [label];
+            : [...old, label];
         return { ...prev, answers: { ...prev.answers, [tab]: next } };
       });
     },

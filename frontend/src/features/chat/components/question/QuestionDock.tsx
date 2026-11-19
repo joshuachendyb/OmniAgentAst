@@ -11,6 +11,7 @@
 //   卡片左缘贴锚点容器左缘(输入行左缘), 与聊天正文同一根左轴。
 //   原实现随锚点容器 left:0/right:0 拉满会话列(实测 826 宽), 宽屏下成一条横幅, 选项行也失去节奏。 — 商量-2026-11-18
 // 2026-11-18 商量 - 右上 × 走 cancel(中断问询), aria-label 改名符实; 倒计时环改从 components/CountdownRing 具名引入 — 商量-2026-11-18
+// 2026-11-19 小欧 - multiple→single 语义反转: 传参改 single(默认true单选) — 小欧-2026-11-19
 import {
   CheckOutlined,
   CloseOutlined,
@@ -268,7 +269,7 @@ export function QuestionDock({ controller }: QuestionDockProps) {
                 index={i}
                 label={opt.label}
                 description={opt.description}
-                multiple={Boolean(current?.multiple)}
+                single={current?.single !== false}
                 selected={selected.includes(opt.label)}
                 onSelect={selectOption}
               />
