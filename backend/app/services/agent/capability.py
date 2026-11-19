@@ -5,6 +5,7 @@
 
 # 2026-11-18 opencode 文档模态按声明开启(与图片/音视频同口径): 声明 file 即原生 file part,
 #   未声明降级为文本全文注入; 探测只作取证/展示(图片外链门见下条) — opencode-2026-11-18
+# 2026-11-20 小欧 视频 transport 加 inline: 本地视频字节转 data URI 走 video_url(media_payload 已实现), mimo 实测能解析; 原只有 url 导致本地视频被误判无原生通道降级"未发送"
 
 # 2026-11-18 opencode 运输方式归方言固有能力(_TRANSPORT), 实测只在一处开门: 图片外链。
 #   其余模态(音频/文档内联、视频地址)是方言决定的事实, 不需要探测;(旧「实测外链可用才转发
@@ -45,7 +46,9 @@ _EMPTY = frozenset()
 _TRANSPORT: Dict[str, FrozenSet[str]] = {
     "image": frozenset({"inline"}),
     "audio": frozenset({"inline"}),
-    "video": frozenset({"url"}),
+    # 视频两种方言都可达: url=公网链接直传; inline=本地字节转 data URI 走 video_url(mimo 等实测支持,
+    # 见 media_payload.build_logical_part video 分支) — 小欧-2026-11-20
+    "video": frozenset({"url", "inline"}),
     "file": frozenset({"inline"}),
 }
 # 实测开门白名单(唯一): 厂商会不会去抓图片外链, 声明里没有这项能力位, 只能实测证明 ——

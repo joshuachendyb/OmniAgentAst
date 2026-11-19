@@ -32,6 +32,8 @@
 #   压缩后 2MB 口径, PDF 不能压缩, 沿用图片上限会让几乎所有真实文档落到降级;
 #   ③容器不猜: 仅 PDF 产原生 file part(docx/xlsx/pptx 各家方言不一), 其余显式原因回落文本抽取
 #   — opencode-2026-11-18
+# 2026-11-20 小欧 本地视频原生投递: 实测 mimo(opencli OpenAI兼容网关)接受 data:video/mp4;base64 作为 video_url 且能真看懂内容;
+#   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
 
 # 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
 #   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
@@ -96,6 +98,17 @@ def doc_inline_limit_bytes() -> int:
         mb = float(media_config().get("doc_inline_limit_mb") or 8)
     except (TypeError, ValueError):
         mb = 8.0
+    return max(1, int(mb)) * 1024 * 1024
+
+
+def video_inline_limit_bytes() -> int:
+    """视频内联上限(media.video_inline_limit_mb, 默认 20MB)。
+    视频走 data URI 的 video_url 投递(完整 base64), 体积远大于图片; 上限与 file 档附件
+    上限对齐, 避免图片 2MB 口径把可用视频全数拒绝 — 小欧-2026-11-20"""
+    try:
+        mb = float(media_config().get("video_inline_limit_mb") or 20)
+    except (TypeError, ValueError):
+        mb = 20.0
     return max(1, int(mb)) * 1024 * 1024
 
 
@@ -270,9 +283,20 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         url, reason = await _image_data_url(attachment)
         return ({"modality": "image", "mime": attachment.get("mime") or "image/png",
                  "data": None, "url": url}, "") if url else (None, reason)
-    if kind in ("video", "audio"):
+    if kind == "video":
+        # 本地视频 → data URI 走 video_url 方言(chat 无独立视频内联 part, 但 mimo 等厂商
+        # 实测接受 data:video/mp4;base64 作为 video_url——empty/CANNOT SEE 是内容问题非协议问题,
+        # 详证实测 2026-11-20:完整 data URI 的 video_url 让 mimo 真看懂视频内容)。
+        # 上限单列 video_inline_limit_mb(默认 20MB, 与 file 档附件上限对齐), 不走图片 2MB 口径。
+        raw, reason = await _read_capped(attachment, video_inline_limit_bytes())
+        if not raw:
+            return None, reason
+        mime = str(attachment.get("mime") or "") or "video/mp4"
+        return {"modality": "video", "mime": mime, "data": None,
+                "url": f"data:{mime};base64,{_b64(raw)}"}, ""
+    if kind == "audio":
         raw, reason = await _read_capped(attachment)
-        return ({"modality": kind, "mime": attachment.get("mime") or "",
+        return ({"modality": "audio", "mime": attachment.get("mime") or "",
                  "data": raw, "url": None}, "") if raw else (None, reason)
     if kind in ("richdoc", "file"):
         # 富文档/文件 → 文档模态: modality 必须是 "file"(to_wire_part 词表), 不能沿用 content_kind;
