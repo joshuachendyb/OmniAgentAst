@@ -1,27 +1,48 @@
-v1.7.9
-发布时间: 2026-11-18 18:52:30 - 商量-2026-11-18
-## v1.7.8以来 变更汇总(2个commit: refactor1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
-[2026-11-18 18:52:30 商量] 范围=v1.7.8..HEAD 全部commit(2个); 说明=①倒计时环去 antd Progress 改自绘 SVG: 原实现把环的直径/环宽/中心内容全交给库的 size/strokeWidth/format 三件套, 三处都是库缺省派生的口径(违 theme/controlScale.ts 铁律); 现用 <circle> + strokeDasharray 直接算弧长(2πr), 起点 12 点整体旋转 -90°, 直径/环宽/数字字号/字色/字重一律取本项目令牌, 环色三档改走既有语义色(主色 → 将到点 WAIT_ACTION 橙 → 临近 ORANGE_RED 红, 原中档为散落的 #faad14 裸色值), 数字与环同色并保到点脉冲; ②顺带删掉外层 marginBottom:4 的假留白 —— 那是为抵库组件基线下沉而加, 导致调用方(问询浮层)要用负 margin 再抵回来, 一处距离两处补偿(违 theme/spacing.ts 铁律一); 现盒子尺寸即直径本身, 行内无需任何补偿; ③共用关系明确并沿用: 本组件同时供 HITL 危险确认弹窗(size 44)与 question 问询浮层(size 40)使用, 环的形状/配色/脉冲只有这一份实现, 两者只在直径上分叉; ④真实链路验证(真后端+真 LLM+真 SQLite+真浏览器, 无 Mock): 问询浮层真跑 question 调用量测到 40px 环 r=18/dash=113.1/数字 14px/环心与两行文字组同轴, 弧长比例随真实倒计时逐秒收缩(25/30 时 ratio=0.833 与 0.8333 相符), 三档环色实测蓝→5s 变 #fa8c16→3s 变 #fa541c 且数字同步转橙并脉冲; 另将 size 临时置 44 实测 HITL 弹窗同参下环 r=20/dash=125.66/数字 16px/环心与标题行同轴居中(测完已还原 40); 共用方 antd Progress 节点已从 DOM 消失(.ant-progress 计数 0); ⑤FUNCTIONS_FRONT v1.10 同步登记 CountdownRing 与上一轮新增的 PanelIconButton, 并明确 PanelRow 是浮层行距唯一归属。维持PATCH v1.7.9。
-### 1.7.9.1 重构
-[浮层] refactor 2ab45beb3 倒计时环去 antd Progress 改自绘 SVG(直径/环宽/字色走本项目令牌, 盒子尺寸即直径并去掉假留白; HITL 弹窗与问询浮层共用不变, 只按直径分叉) - 商量-2026-11-18
-### 1.7.9.2 文档
-[文档] docs bfe221de0 FUNCTIONS_FRONT v1.10 登记 CountdownRing(自绘 SVG 环, HITL 与问询共用)与 PanelIconButton, 明确 PanelRow 是行距唯一归属 - 商量-2026-11-18
-
-v1.7.8
-发布时间: 2026-11-18 18:35:04 - 商量-2026-11-18
-## v1.7.7以来 变更汇总(1个commit: fix1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
-[2026-11-18 18:35:04 商量] 范围=v1.7.7..HEAD 全部commit(1个); 说明=①信任清单行距纠偏(用户反馈"path 之间的行间距过大"): 病根是行内撤销 ✕ 的 24px 盒高把 12px 文字行从 25px 撑到 32px, 再叠组 gap 4, 整列竖向节奏比刻度大 11px; 现 ✕ 改绝对定位居中(不参与行高)、行距只由 PanelRow 上下内距(4+4)独占、组内 gap 一并去掉(回落 theme/spacing.ts 铁律一"一个距离只能有一个归属"), 实测行高 32→24.8px、组内行距 24.8、跨组 61.4; ②新增自绘 PanelIconButton(forwardRef, 盒高取本项目控件小档 24、圆角与焦点环取本项目令牌), 替换三处浮层头尾的 antd 文本图标按钮 —— antd 按钮的高/内距/圆角/焦点环是库缺省派生(0.75×/1.25×), 拿它当标准违 theme/controlScale.ts 铁律; ③执行计划浮层: 行改回首行对齐(多行条目字形原浮在整段中点, 与文字不在同一基线), 7px/1px 魔法数改 Spacing.MD/BorderWidth.THIN, 脚注「共 N 项，第 M 步更新」把内部步骤计数当说明写给人看, 改人话(有进行中项点名/全完成则明说/两者都不是则不占一行); ④问询浮层: 分段进度条 gap 2/高 3/圆角 2 三处刻度外数字改 Gap.ROW/Spacing.XS/Radius.SM, 单题不渲染恒禁用的「上一题」, 最小化只剩标题栏(footer 随之收起), footer 改 flex 使主按钮真贴右端(原 marginLeft:auto 在行内流不生效); ⑤真实链路验证(真后端+真 LLM+真 SQLite+真浏览器, 无 Mock): 6 条真信任的既有会话量测行高与 ✕ 定位、跑真实 schedule 调用量测多行条目字形中心距文字顶 9.8px(= 首行行盒 19.6 正中)、跑真实 question 调用量测分段条几何与 footer 按钮序列/右对齐/最小化收起/✕ 取消收口。维持PATCH v1.7.8。
-### 1.7.8.1 缺陷修复
-[浮层] fix 00217aa3f 三处浮层排版纠偏: 信任清单行距归一到行内距(撤销 ✕ 绝对定位不参与行高, 组 gap 去掉) + 新增自绘 PanelIconButton(去 antd 按钮缺省派生) + 执行计划行首行对齐与魔法数令牌化 + 脚注改人话 + 问询分段条令牌化与单题隐藏「上一题」 + 最小化收起 footer + 主按钮真右对齐 - 商量-2026-11-18
-
 v1.7.7
-发布时间: 2026-11-18 18:13:20 - 商量-2026-11-18
-## v1.7.6以来 变更汇总(2个commit: fix1/docs1, 不含本次version.txt汇总提交与tag提交本身) - 商量-2026-11-18
-[2026-11-18 18:13:20 商量] 范围=v1.7.6..HEAD 全部commit(2个); 说明=①兜底作答补收口指令: 到点未答走兜底后, 摘要原先只给结果不给指令, 模型把"系统自动代答/自动决策"这套内部机制复述给用户并重新征求确认(实证两轮); 现于 summary 同行追加"该答案即视为用户的选择, 不要再向用户重复询问同一问题, 直接按此结果继续"(AUTO_FALLBACK_DIRECTIVE), 用户收到的是推进结果而非机制说明; ②取消分支补传 wait_ms: cancelled 走 _build_question_llm_data 时漏传 wait_ms 而走默认 0, 用户真实等待被记成 0ms(遥测失真), 补传后实测 5016ms 落库; ③question.title 语义外键丢弃: LLM 常按习惯附带整次调用标题, 本工具只有每题 header、无整次标题槽位, 原每轮被判"含非法参数"白废一轮; 复用既有校正链 tools_alias_mapper.PARAM_DROP(与 grep/read 同款既有先例)静默剔除, 不改校验逻辑也不做泛化忽略; ④doc37 实施后回填与契约纠偏: §6.2 补 backend_timeout(前端倒计时唯一真值)、§6.4/§7.4.2/§7.4.3 改贴输入框上沿浮层挂载、§7.5 改双分支超时与到点兜底(含收口指令)、§8.2 计划清单改 taskinfo 浮层派生不落库、§9.3 补语义外键丢弃、§9.4 缓冲 30→15 并对齐真实实现与 bypass 上界说明、§13.1 Q9/Q12 改兜底成功口径并新增 Q17/Q18、§14.1 保留为实施前快照并新增 §14.3 实施后现状、§15 决策记录追加 19-22 标注覆盖 #8/#16; ⑤真实链路验证(真后端+真 LLM+真 SQLite, 无 Mock): 到点未答场景 question_required 带 backend_timeout=30、30s 后 outcome=expired、observation 为 success 且 summary 以收口指令收尾, 最终回答直接给结论不再反问; 取消场景 answer API 回 success 后 outcome=cancelled、step_json 记 wait_ms=5016(改前恒 0)。维持PATCH v1.7.7。
-### 1.7.7.1 缺陷修复
-[工具] fix 074fd0fc5 question 兜底作答摘要补收口指令(视为用户选择, 不再重复询问) + 取消分支补传 wait_ms(原漏传走默认 0) + question.title 走 PARAM_DROP 静默丢弃(复用既有校正链, 不再每轮判非法参数) - 商量-2026-11-18
-### 1.7.7.2 文档
-[文档] docs 94ece7cc0 doc37 question 与 schedule 工具设计实施后回填与契约纠偏(backend_timeout/浮层挂载/双分支超时与兜底收口指令/计划浮层落地/语义外键丢弃/缓冲 15/用例口径/§14.3 现状/决策 19-22) - 商量-2026-11-18
+发布时间: 2026-11-19 19:58:00 - opencode-2026-11-19
+## v1.7.6以来 变更汇总(36个commit: feat10/fix9/refactor5/docs8/chore4, 无merge; 本地v1.7.7~v1.7.9三个版本提交在与远端融合时清理合并为单个v1.7.7, 其汇总块已删除; tag v1.7.6仍指向ec42408d2) - opencode-2026-11-19
+[2026-11-19 19:58:00 opencode] 范围=v1.7.6(tag ec42408d2)..HEAD 全部commit(36个, 无merge; 含远端master在tag之后的3个commit: edee277a1/23c12c6b1/69dd5a49d, 此前均未进过任何版本汇总); 说明=①question与schedule工具线落地: 后端question阻塞问询回调+hitl答案收口+agent工具注册+AGENT分类首次注入LLM工具列表(todoWrite变体归一schedule)、前端QuestionDock与SSE透传、question参数与返回契约重构(single替代multiple/阈值收紧/截断容错warning叠加/返回三态success·warning·error); ②到点未答兜底双分支镜像hitl_confirm(HTL关改短窗"要问就自动过", 复用_resolve_timeouts单源, HTL开维持长窗; 兜底答案HTL关取各题首选项、HTL开走专家指令回填, 空答案报错改成功收口); question_required带backend_timeout+前端CountdownRing倒计时复用, 纯展示到0由后端question_resolved收口清窗; ③浮层UI三件套: 问询面板改贴输入框上沿浮层(HITL/question共用卡片语言, PanelCard壳族+胶囊/列表/空态三原子)/执行计划浮层(taskinfo入口+useScheduleList从步骤流派生schedule最后一次整体替换, 不新增事实源/快照, 切会话与历史回放随步骤自然恢复)/信任清单按工具归组两级列表(组间细线分段/长路径段收敛保留盘符+末段/撤销悬停渐进披露/空组不显示胶囊, 并修trustApi.getTrust读错wire字段); CountdownRing去antd Progress改自绘SVG环; 三处浮层排版纠偏(行距归一到PanelRow内距/PanelIconButton替换antd按钮缺省派生/执行计划行首行对齐与魔法数令牌化/问询分段条令牌化与单题隐藏"上一题"/最小化收起footer/主按钮真右对齐); 问询浮层宽度520定宽(与HITL弹窗同宽)并去通栏; ④interact双向交互框架: question从question_required/resolved升格, 新增InteractStep+统一发射器emit_interact, event叶子ask/answered/cancelled/expired四态, interact信封+only_event呈现标记, 专用InteractStep+前后端链路同步(新增[48]规范文档); HITL授权authorization从paused/resumed解耦到interact(kind=confirm四态都发), paused/resumed归还任务暂停按钮本位; ⑤schedule增强: plan_stage必填阶段参数(init/update/finish, LLM主动决策+宽松核对反馈)+summary阶段前缀+计划卡片四态字形; notice三态通道(tool通知类改造为notice+only_event, 参数约束前置+error/warning二分, 前端notice通道, 新增[47]规范文档); 执行计划清单口径收口(改读观察步落地结果+任务边界复位+失败不改旧清单+历史态不渲染入口); ⑥人工暂停小浮层PauseDock(贴taskinfo徽标上方, 明确"手动暂停"+倒计时环+剩余自动恢复+立即继续/取消)+暂停超时配置化(config tuning.hitl.pause_auto_resume_timeout+设置页可改+constants兜底)+超时恢复帧文案区分(带时长, 用户识别系统自愈)+paused帧带backend_timeout供前端倒计时+暂停即时提示改"正在暂停"; ⑦远端opencli_gateway新增重试启动脚本(节点脱落间歇性建立失败自动重试最多5次)+ECONNREFUSED根因分析+E2E手册§4.1补按调试目的选工具判断说明; ⑧本机融合修正: 融合过程中陈旧版本汇总块(本地v1.7.6/v1.7.7/v1.7.8/v1.7.9)清理保留远端v1.7.6原样, TaskListPanel导入路径跟随类型源更名(backupTypes.ts→chatStreamTypes.ts)修正typecheck. 维持PATCH v1.7.7。
+### 1.7.7.1 功能新增
+[工具] feat 4117f9b41 question与schedule工具 question阻塞问询回调+hitl答案收口+agent工具注册+前端QuestionDock与SSE透传 - 商量-2026-11-18
+[工具] feat 9e1c48b54 question与schedule工具 AGENT分类首次注入LLM工具列表+todoWrite变体归一schedule+example同步 - 商量-2026-11-18
+[工具] feat f761a73fd question dock倒计时 question_required带backend_timeout+前端CountdownRing复用渲染+纯展示到0由后端收口 - 商量-2026-11-18
+[工具] feat 088ca17f9 question 到点未答兜底作答 HTL关各题首选项+HTL开专家指令回填答案槽 空答案报错改成功收口 - 商量-2026-11-18
+[浮层] feat e748042c3 问询面板改输入框上方浮层+新增执行计划浮层+信任清单改两级归组 - 商量-2026-11-18
+[工具] feat d52b5298e question 参数与返回契约重构(single替代multiple/阈值收紧/截断容错warning叠加/返回三态success·warning·error) - 小欧-2026-11-19
+[框架] feat 7ecda9bb1 通用双向交互事件interact框架(question从question_required/resolved升格,event叶子ask/answered/cancelled/expired,专用InteractStep+统一发射器emit_interact+前后端链路同步,新增[48]规范文档) - 商量-2026-11-19
+[工具] feat 3743557e3 schedule 新增 plan_stage 必填阶段参数(init/update/finish,LLM主动决策+宽松核对反馈)+summary阶段前缀+计划卡片四态字形优化(无障碍aria-label+完成绿勾+待开始方块+取消叉) - 小欧-2026-11-19
+[暂停] feat 6e1057a10 人工暂停小浮层 PauseDock(倒计时环/立即继续/取消)+暂停超时配置化(config tuning.hitl.pause_auto_resume_timeout+设置页可改+constants兜底)+超时恢复帧文案区分+paused帧带backend_timeout供前端倒计时+暂停即时提示改"正在暂停" - 小欧-2026-11-19
+[运维] feat 69dd5a49d opencli_gateway新增重试启动脚本 opencode2api网关WARP隧道间歇性建立失败自动重试最多5次(1次双击即成功,不改原start.bat) - opencode-2026-11-18
+### 1.7.7.2 缺陷修复
+[工具] fix 7bb82083c question工具 三堂会审整改 输入框按键隔离+单选自定义替换+空答案守卫+删网关空转resolve+无缓冲区抛通道异常 - 商量-2026-11-18
+[工具] fix 1d7399a71 question工具 双分支镜像hitl_confirm HTL关改短窗要问自动过(复用_resolve_timeouts单源)+HTL开维持长窗+降级仅保留回调未注入 - 商量-2026-11-18
+[工具] fix 5f3070c28 question工具 兜底作答摘要补收口指令(该答案即视为用户选择, 不再重复询问)+取消分支补传wait_ms(原漏传走默认0, 实测改为记录真实等待)+question.title走PARAM_DROP静默丢弃(复用既有校正链, 不再每轮判非法参数) - 商量-2026-11-18
+[执行计划] fix 92d9b046d 执行计划清单口径收口(改读观察步落地结果+任务边界复位+失败不改旧清单+历史态不渲染入口) - 商量-2026-11-18
+[浮层] fix b1fd01cb2 浮层UI 三处浮层排版纠偏(信任清单行距归一到行内距+撤销改绝对定位+新增自绘PanelIconButton+计划行首行对齐+问询分段条与footer令牌化) - 商量-2026-11-18
+[浮层] fix 8b6a7aaaa 问询浮层 去通栏(宽度收敛为40字宽480+90vw兜底, 卡面左缘对齐输入框左缘; 原随锚点容器left0/right0拉满会话列) - 商量-2026-11-18
+[浮层] fix 90fc148f0 问询浮层 宽度改520(与HITL授权弹窗同宽, 产品定宽不按字数推导), 仍贴输入行左缘 - 商量-2026-11-18
+[工具] fix 80e21b426 question/schedule 三堂会审整改(兜底判据单源、stale归expired、未作答标注、question事件归meta、倒计时环迁共享目录) - 商量-2026-11-19
+[前端] fix 84661de71 前端 TaskListPanel 导入路径跟随类型源更名(backupTypes.ts->chatStreamTypes.ts)校正融合遗留 - opencode-2026-11-19
+### 1.7.7.3 重构
+[浮层] refactor fd58d3450 倒计时环 去antd Progress改自绘SVG(直径/环宽/字色取本项目令牌, 盒子尺寸即直径并去掉假留白; HITL授权弹窗与问询浮层共用不变, 只按直径分叉) - 商量-2026-11-18
+[浮层] refactor 59c6ce0f4 AuthorizationModal HITL弹窗去antd缺省派生(等级标签Tag改PanelChip三级严重度+裸色值归位令牌+Typography改自绘span+纵向节奏归root gap+壳边框内距收进content并居中) - 商量-2026-11-18
+[浮层] refactor d78855d16 计划入口迁至 taskinfo 左组徽标之后(徽标答状态/计划答进度同属一句, 右组只留度量与信任事件入口), 位置表11位改12位, 浮层方向改 topLeft - 商量-2026-11-18
+[工具] refactor 2170c0526 schedule 通知事件类 tool 改造(三态 notice+only_event 呈现标记+参数约束前置+error/warning 二分+前端 notice 通道, 新增[47]规范文档) - 商量-2026-11-19
+[授权] refactor be1906665 HITL授权从paused/resumed解耦到interact(kind=confirm四态都发),paused/resumed归还任务暂停按钮本位(删publish传参/删MetaStep导入/buffer事件) - 小沈-2026-11-19
+### 1.7.7.4 文档
+[文档] docs 89fe6bffb [37]question与schedule question工具设计 实施后回填与契约纠偏(backend_timeout/浮层挂载/双分支超时与兜底收口指令/计划浮层落地/语义外键丢弃/缓冲15/用例口径/§14.3实施后现状/决策19-22) - 商量-2026-11-18
+[文档] docs 01ad69d07 FUNCTIONS_FRONT v1.10 登记 CountdownRing(自绘SVG环, HITL与问询共用)与 PanelIconButton, 明确 PanelRow 是行距唯一归属 - 商量-2026-11-18
+[文档] docs cae6edceb doc37三堂会审复核回填+FUNCTIONS_FRONT v1.14+version.txt清掉已删tag对应的v1.7.6~v1.7.9汇总块 - 商量-2026-11-19
+[文档] docs 4ae797561 [37] schedule 设计简要更新删错(§4.1/§8.1/§8.2/§10/§13.2 按最终实现纠正 plan_stage/notice/rows/warning, §15 补决策26-28) - 商量-2026-11-19
+[文档] docs b21d538ee 新增[49]question与interact交互事件设计规范说明+frontend/FUNCTIONS_FRONT.md登记interact信封与§4.2两事件使用规范 - 商量-2026-11-19
+[文档] docs 66637dfc7 [37][47][48][49]同步question参数与返回契约重构([37]本仓契约段§7.3/§9.2/§13对齐代码+旧帧样例标注已由interact取代; [49]§4.3补工具层返回三态决策表; [47][48]加指针说明本次不涉及notice与interact事件帧) - 商量-2026-11-19
+[文档] docs edee277a1 E2E手册 §4.1补按调试目的选工具判断说明 - opencode-2026-11-18
+[文档] docs 23c12c6b1 opencode-ECONNREFUSED-分析与处理 opencode桌面版ECONNREFUSED根因分析+Bun uSockets网络栈问题+node代理解决方案+开机自启与手动兜底说明 - opencode-2026-11-18
+### 1.7.7.5 版本维护
+[版本] chore 2ec16196b 本地 v1.7.7 汇总稿(与本线其余本地版本稿一并清理, 由本版取代) - 商量-2026-11-18
+[版本] chore a45540137 本地 v1.7.8 汇总稿(已清理, 由本版取代) - 商量-2026-11-18
+[版本] chore b9685a22f 本地 v1.7.9 汇总稿(已清理, 由本版取代) - 商量-2026-11-18
+[配置] chore 0e3069635 OmniVPN mihomo 出口节点配置更新 - 商量-2026-11-19
 
 v1.7.6
 发布时间: 2026-11-18 18:23:18 - opencode-2026-11-18
