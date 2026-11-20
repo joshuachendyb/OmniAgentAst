@@ -8,6 +8,7 @@
 
 from typing import Dict, Set
 
+from app.llm.adapters.agnes import AgnesAdapter
 from app.llm.adapters.base import ProviderAdapter
 from app.llm.adapters.opencodeZen import OpencodeZenAdapter
 from app.llm.adapters.sensenova import SensenovaAdapter
@@ -18,6 +19,7 @@ _DEFAULT_ADAPTER: ProviderAdapter = ProviderAdapter()
 
 _ADAPTERS: Dict[str, ProviderAdapter] = {
     "ZenFree": OpencodeZenAdapter(),
+    "agnes": AgnesAdapter(),       # 生图方言(档位+ratio+return_base64) — 小欧-2026-11-20
     "sensenova": SensenovaAdapter(),  # 生图方言(size WIDTHxHEIGHT) — 小欧-2026-11-20
 }
 

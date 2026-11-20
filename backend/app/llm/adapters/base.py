@@ -88,21 +88,19 @@ class ProviderAdapter:
                            image_refs: Optional[list] = None,
                            return_base64: bool = False,
                            response_format: Optional[str] = None) -> Dict:
-        """生图请求体方言定制 — 默认 agnes/OpenAI 风格: size 档位+ratio, image 单图字符串/多图数组。
+        """生图请求体方言 — 基类 = 纯 general(通用), 不含任何厂商特有字段。
 
-        覆写示例(sensenova): size 换算 WIDTHxHEIGHT、无 ratio、image 恒数组。
-        单图用字符串是为保持探测腿(_image_leg 传字符串 URL)请求形状零变化 — 小欧-2026-11-20。
+        通用字段: size 原样、image 参考图(单串/多数组, 多数兼容厂商支持 generations 内传图)、
+          response_format 顶层(OpenAI 标准)。厂商特有字段下沉各自 adapter:
+          agnes(ratio/return_base64/extra_body.response_format)、sensenova(WIDTHxHEIGHT)。
+        探测腿走基类 = 探通用协议兼容性 — 小欧 2026-11-20
         """
         if size:
             body["size"] = size
-            if ratio:
-                body["ratio"] = ratio
         if image_refs:
             body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
-        if return_base64:
-            body["return_base64"] = True
         if response_format:
-            body.setdefault("extra_body", {})["response_format"] = response_format
+            body["response_format"] = response_format  # OpenAI 标准: 顶层
         return body
 
     @staticmethod
