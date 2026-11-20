@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
-"""生图/生视频端点调用单点（generation 通道唯一 HTTP 出口）。
+"""生图/生视频通用生成引擎（generation 通道唯一 HTTP 出口 = general 入口）。
 
-探测腿（settings2 生成验证 probe-output）与未来真业务（会话生图工具等）
-共用本函数；生成端点禁直连 httpx。视频是异步任务：提交 → 轮询 → 取产物
-- 小欧-2026-11-09
+【新厂商接入契约(零定制直接用)】
+  generate_image / generate_video 是协议无关的通用引擎, 默认走 OpenAI 兼容方言。
+  新厂商若协议与 OpenAI 兼容 → 零定制: 直接调用本模块的 general_gen_image / general_gen_video
+  (或 generate_image / generate_video, 两者同义), 只需在 config 登记 model 即可。
+  厂商有差异(size 方言/字段位置/输出格式等) → 只加一个 provider adapter 覆写对应钩子
+  (prepare_image_body / prepare_video_body), 本引擎零改动(OCP)。现有 sensenova 即此范例。
+  探测腿(model_service)与业务腿(media_generate)共用本引擎; 生成端点禁直连 httpx。
+
 2026-11-09 订正: 素材不可达判定收窄为短语集常量(原含"下载"二字即归此类过宽); _video_url 取证串标注勿回放 - 小欧-2026-11-09
 2026-11-20 小欧 Phase B 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
 2026-11-20 小欧 按厂商文档补全视频全能力: generate_video 支持 mode(text/keyframe/reference)及 first_frame/last_frame/images/
@@ -321,3 +326,11 @@ async def generate_video(
                 prefix = "source_unreachable" if _source_unreachable(reason) else "task_failed"
                 return False, f"{prefix}: {status} {reason}".strip()[:_EV_LIMIT], False
         return False, f"poll_timeout: {status or 'unknown'}"[:_EV_LIMIT], False
+
+
+# ---- general 通用入口(新厂商零定制直接用) — 小欧 2026-11-20 ----
+# generate_image/generate_video 已是协议无关引擎, 这两个别名只提供"通用入口"语义:
+#   新厂商协议兼容 OpenAI → 直接调 general_gen_*; 有差异 → 传 adapter 覆写钩子。
+#   两者签名完全同义(不引入新逻辑, 避免双实现漂移), 现有探测腿/业务腿可继续用短名。
+general_gen_image = generate_image
+general_gen_video = generate_video

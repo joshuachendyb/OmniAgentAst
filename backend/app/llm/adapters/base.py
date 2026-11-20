@@ -75,9 +75,12 @@ class ProviderAdapter:
         return None
 
     # ---- 生成端点方言钩子(生图/生视频) — 小欧 2026-11-20 ----
-    # 背景: 生图/生视频请求体各家协议不同(如 size 档位 vs WIDTHxHEIGHT), 方言翻译归 provider adapter,
-    #   generation_client 保持协议无关。默认实现=OpenAI/agnes 风格(档位+ratio, image 数组顶层),
-    #   其他厂商覆写对应钩子即可, 新增厂商不改 generation_client(OCP)。
+    # 【新厂商接入指南】
+    #   ① 协议与 OpenAI 兼容(绝大多数厂商) → 零定制: 不建 adapter, 直接调 general_gen_image/
+    #      general_gen_video, 基类默认实现即 OpenAI 风格(档位+ratio, image 单串/多数组)。
+    #   ② 有差异(如 sensenova size 用 WIDTHxHEIGHT) → 新建 adapter 文件, 只覆写下面对应钩子,
+    #      并在 adapters/__init__.py 的 _ADAPTERS 注册; generation_client 与工具层零改动(OCP)。
+    # 方言翻译归 provider adapter, generation_client 保持协议无关。
 
     @staticmethod
     def prepare_image_body(body: Dict, *, size: Optional[str] = None,
