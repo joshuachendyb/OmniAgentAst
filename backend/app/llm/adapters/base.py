@@ -73,3 +73,53 @@ class ProviderAdapter:
         返回 None = 未接管, 调用方自行走通用路径; 本钩子绝不抛异常, 以免波及既有链路。
         """
         return None
+
+    # ---- 生成端点方言钩子(生图/生视频) — 小欧 2026-11-20 ----
+    # 背景: 生图/生视频请求体各家协议不同(如 size 档位 vs WIDTHxHEIGHT), 方言翻译归 provider adapter,
+    #   generation_client 保持协议无关。默认实现=OpenAI/agnes 风格(档位+ratio, image 数组顶层),
+    #   其他厂商覆写对应钩子即可, 新增厂商不改 generation_client(OCP)。
+
+    @staticmethod
+    def prepare_image_body(body: Dict, *, size: Optional[str] = None,
+                           ratio: Optional[str] = None,
+                           image_refs: Optional[list] = None,
+                           return_base64: bool = False,
+                           response_format: Optional[str] = None) -> Dict:
+        """生图请求体方言定制 — 默认 agnes/OpenAI 风格: size 档位+ratio, image 单图字符串/多图数组。
+
+        覆写示例(sensenova): size 换算 WIDTHxHEIGHT、无 ratio、image 恒数组。
+        单图用字符串是为保持探测腿(_image_leg 传字符串 URL)请求形状零变化 — 小欧-2026-11-20。
+        """
+        if size:
+            body["size"] = size
+            if ratio:
+                body["ratio"] = ratio
+        if image_refs:
+            body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
+        if return_base64:
+            body["return_base64"] = True
+        if response_format:
+            body.setdefault("extra_body", {})["response_format"] = response_format
+        return body
+
+    @staticmethod
+    def prepare_video_body(body: Dict, *, first_frame: Optional[str] = None,
+                           last_frame: Optional[str] = None,
+                           images: Optional[list] = None,
+                           audios: Optional[list] = None,
+                           videos: Optional[list] = None,
+                           seconds: Optional[str] = None,
+                           size: Optional[str] = None,
+                           aspect_ratio: Optional[str] = None,
+                           seed: Optional[int] = None) -> Dict:
+        """生视频请求体方言定制 — 默认 agnes/OpenAI Videos 风格(字段同名直传)。
+
+        新增厂商若有字段差异, 覆写本钩子; generation_client 保持协议无关。
+        """
+        for key, val in (("first_frame", first_frame), ("last_frame", last_frame),
+                         ("images", images), ("audios", audios), ("videos", videos),
+                         ("seconds", seconds), ("size", size),
+                         ("aspect_ratio", aspect_ratio), ("seed", seed)):
+            if val is not None:
+                body[key] = val
+        return body

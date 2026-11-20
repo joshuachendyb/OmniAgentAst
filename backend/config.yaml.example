@@ -71,6 +71,7 @@ ai:
       - agnes-2.5-pro
       - agnes-3.0-flash
       - agnes-image-2.1-flash
+      - agnes-image-2.5-flash
       - agnes-video-2.5
       - agnes-video-2.5-flash
     timeout: 120

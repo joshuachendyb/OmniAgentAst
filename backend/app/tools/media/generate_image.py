@@ -19,7 +19,7 @@
 """
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.tools.context import get_current_generate_callback
 
@@ -34,9 +34,11 @@ from app.tools.tool_response import build_error, build_success, build_warning, w
 
 async def generate_image(prompt: str, model: Optional[str] = None,
                          image: Optional[str] = None,
-                         images: Optional[list] = None,
+                         images: Optional[List[str]] = None,
                          size: Optional[str] = None,
-                         ratio: Optional[str] = None) -> Dict[str, Any]:
+                         ratio: Optional[str] = None,
+                         return_base64: bool = False,
+                         response_format: Optional[str] = None) -> Dict[str, Any]:
     """生成一张图片(t2i/i2i/多图合成)。返回 {data, llm_data, other_data}。"""
     t0 = time.monotonic()
     generate_callback = get_current_generate_callback()
@@ -62,6 +64,10 @@ async def generate_image(prompt: str, model: Optional[str] = None,
         cb_kwargs["size"] = size
     if ratio:
         cb_kwargs["ratio"] = ratio
+    if return_base64:
+        cb_kwargs["return_base64"] = True
+    if response_format:
+        cb_kwargs["response_format"] = response_format
     result = await generate_callback("image", effective_model, prompt, image=image, **cb_kwargs)
     dur = int((time.monotonic() - t0) * 1000)
     if not result.get("ok"):

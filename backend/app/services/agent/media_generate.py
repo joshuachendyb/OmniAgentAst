@@ -156,6 +156,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                           *, image: Optional[str] = None,
                           mode: Optional[str] = None,
                           images: Optional[list] = None,
+                          return_base64: bool = False,
+                          response_format: Optional[str] = None,
                           first_frame: Optional[str] = None,
                           last_frame: Optional[str] = None,
                           audios: Optional[list] = None,
@@ -176,7 +178,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
     provider, api_base, api_key = _provider_credentials(model)
     if not provider or not api_base:
         return {"ok": False, "settled": False, "reason": f"未找到模型 {model} 的 provider/api_base"}
-    headers = get_provider_adapter(provider).static_headers(api_key)
+    adapter = get_provider_adapter(provider)
+    headers = adapter.static_headers(api_key)
     out: Dict[str, Any] = {}
     try:
         if kind == "image":
@@ -186,7 +189,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
             kw = {"timeout": timeout} if timeout else {}
             ok, evidence, settled = await generate_image(
                 api_base, headers, model, prompt, image=src_image, images=src_images,
-                size=size, ratio=ratio, provider=provider, out=out, **kw)
+                size=size, ratio=ratio, return_base64=return_base64,
+                response_format=response_format, adapter=adapter, out=out, **kw)
         elif kind == "video":
             # 工具侧 mode 支持 t2v/i2v 别名与 text/keyframe/reference 直通 — 单一映射点
             alias = {"t2v": VIDEO_MODE_T2V, "i2v": VIDEO_MODE_I2V}
@@ -202,7 +206,7 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                 api_base, headers, model, prompt, endpoint_mode,
                 images=src_images, first_frame=src_first, last_frame=src_last,
                 audios=audios, videos=videos, seconds=seconds, size=size,
-                aspect_ratio=aspect_ratio, seed=seed, out=out, **kw)
+                aspect_ratio=aspect_ratio, seed=seed, adapter=adapter, out=out, **kw)
         else:
             return {"ok": False, "settled": False, "reason": f"未知生成类型 {kind}"}
     except Exception as e:  # noqa: BLE001 — 生成异常回退, 不打断对话轮

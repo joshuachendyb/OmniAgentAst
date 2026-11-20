@@ -10,6 +10,7 @@ from typing import Dict, Set
 
 from app.llm.adapters.base import ProviderAdapter
 from app.llm.adapters.opencodeZen import OpencodeZenAdapter
+from app.llm.adapters.sensenova import SensenovaAdapter
 from app.logger import logger
 
 # 模块级默认实例: 未注册 provider 复用同一实例(行为==现状), 避免每次 new — 小欧 2026-09-23
@@ -17,6 +18,7 @@ _DEFAULT_ADAPTER: ProviderAdapter = ProviderAdapter()
 
 _ADAPTERS: Dict[str, ProviderAdapter] = {
     "ZenFree": OpencodeZenAdapter(),
+    "sensenova": SensenovaAdapter(),  # 生图方言(size WIDTHxHEIGHT) — 小欧-2026-11-20
 }
 
 # 已告警过的无专属适配器厂商(同名只警告一次, 防刷屏) — 小欧 2026-10-11

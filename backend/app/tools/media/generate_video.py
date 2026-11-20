@@ -11,7 +11,7 @@
   ⑤duration_ms 实时计算; ⑥产物声明改用 with_artifacts 公共 helper(与全项目写工具同模式) — 小欧-2026-11-20
 """
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.tools.context import get_current_generate_callback
 
@@ -26,11 +26,11 @@ from app.tools.tool_response import build_error, build_success, build_warning, w
 
 async def generate_video(prompt: str, model: Optional[str] = None,
                          mode: str = "t2v", image: Optional[str] = None,
-                         images: Optional[list] = None,
+                         images: Optional[List[str]] = None,
                          first_frame: Optional[str] = None,
                          last_frame: Optional[str] = None,
-                         audios: Optional[list] = None,
-                         videos: Optional[list] = None,
+                         audios: Optional[List[str]] = None,
+                         videos: Optional[List[Dict[str, Any]]] = None,
                          seconds: Optional[str] = None,
                          size: Optional[str] = None,
                          aspect_ratio: Optional[str] = None,
@@ -91,7 +91,7 @@ async def generate_video(prompt: str, model: Optional[str] = None,
                    f"![生成的视频]({url})")
     else:
         summary = "生成视频，成功"
-    # data 只留输入回显; mode 回显实际生效值(kwargs 里可能已从 i2v 降级为 t2v), 避免字段与实际矛盾 — 小欧-2026-11-20
+    # data 只留输入回显; mode 原样回显(text/keyframe/reference 或别名 t2v/i2v), 由编排层映射厂商三态 — 小欧-2026-11-20
     llm_data: Dict[str, Any] = {
         "summary": summary,
         "status": {"exec_code": "success", "message": "成功"},
