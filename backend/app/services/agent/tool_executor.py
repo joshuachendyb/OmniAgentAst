@@ -36,6 +36,7 @@ tool_executor — 工具执行逻辑
 # 2026-11-19 小欧 - _invoke_notice 加 items 形参, 透传 emit_notice(schedule 清单经 notice 下发); 其它调用不变。
 # 2026-11-19 小欧 - _invoke_notice 加 only_event 形参(默认 False), 透传 emit_notice(schedule error 仅事件列表); 其它调用不变。
 # 2026-11-20 小欧 - 注入 generation 回调(生图/生视频): 闭包调 services/agent/media_generate.invoke_generate, try/finally reset; 工具层零越层拿产物
+# 2026-11-20 小欧 - generation 回调闭包补传 session_id(agent._start_meta), 供 b64 产物(如 SenseNova)落盘为会话 attachment
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -135,9 +136,12 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
 
     _question_token = set_current_question_callback(_invoke_question) if _has_emitter else None
 
-    # 2026-11-20 小欧 - 注入生成回调(生图/生视频): 闭包调 invoke_generate, 工具层零越层拿产物
+    # 2026-11-20 小欧 - 注入生成回调(生图/生视频): 闭包调 invoke_generate, 工具层零越层拿产物。
+    #   session_id 从 agent._start_meta 取, 供 b64 产物(如 SenseNova)落盘为 attachment
+    _sid = str((getattr(agent, "_start_meta", None) or {}).get("session_id") or "")
+
     async def _invoke_generate(kind: str, model: str, prompt: str, **kwargs):
-        return await invoke_generate(kind, model, prompt, **kwargs)
+        return await invoke_generate(kind, model, prompt, session_id=_sid, **kwargs)
 
     _generate_token = set_current_generate_callback(_invoke_generate)
     try:
