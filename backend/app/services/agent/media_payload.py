@@ -44,6 +44,8 @@
 # 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
 # 2026-11-20 小欧 视频发前转 H264: 模型对视频编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9, MJPG 等报400), 用 imageio-ffmpeg 自带 ffmpeg 把非标准编码转 H264 再投递(新模块 video_transcode, 转码结果按源缓存); 实测 214MB MJPG .mov 转码后 nano-omni 看懂内容
 # 2026-11-20 小欧 三堂会审整改: 转码缓存落系统临时目录(原附件同级 .h264 无清理会磁盘泄漏); _ensure_video_h264 返回注解改 Tuple[str,bool]; 复用 _read_capped(path=) 消重复读取函数; 消死变量 transcoded
+# 2026-11-20 小欧 命名整改: 局部变量 play_path→h264_path(明确是 H264 转码产物); 上一条提到的 _ensure_video_h264 已在早前整改中
+#   去除透传壳、顶层直引 ensure_h264, 此处保留历史原文不删, 仅登记现名以消歧义 — 小欧-2026-11-20
 
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
@@ -325,9 +327,9 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         # 实测接受 data:video/mp4;base64)。模型对编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9,
         # MJPG/MP4V 会 400)——发前统一转 H264, 按模型定制的前提是有标准编码可投递 — 小欧-2026-11-20
         stored = str(attachment.get("stored_path") or "")
-        play_path, _ = await asyncio.to_thread(ensure_h264, stored)
+        h264_path, _ = await asyncio.to_thread(ensure_h264, stored)
         limit = video_inline_limit_bytes()
-        raw, reason = await _read_capped(attachment, limit, path=play_path)
+        raw, reason = await _read_capped(attachment, limit, path=h264_path)
         if raw is None:
             return None, reason or f"视频超过 {limit // (1024 * 1024)}MB"
         return {"modality": "video", "mime": "video/mp4", "data": None,

@@ -6,6 +6,9 @@
 编辑历史: 2026-11-20 小欧 三堂会审整改: 空路径/文件缺失防御(不崩轮); 半成品写临时名成功后原子替换(防缓存投毒);
   进程内锁防同文件并发重复转码; 编码只探一次; 魔法数提常量; 类型注解 Tuple 化。
   临时文件后缀修复: 原用 .partial 致 ffmpeg 无法识别 muxer 报 Invalid argument, 改 .tmp_<key>(保留 .mp4 后缀)后转码成功。
+编辑历史: 2026-11-20 小欧 三堂会审命名整改: _get_ffmpeg 返回的是路径却名作 ffmpeg, 改 _get_ffmpeg_path; 局部变量 fc→fourcc_int、
+  tmp_path→partial_path(保留 mp4 后缀的中间产物, 非泛临时物); 引用常量 VIDEO_ACCEPTED_FOURCCS/VIDEO_TRANSCODE_LOCK_TABLE_MAX
+  (见 media_constants 同名整改); 纯改名零行为变更。
 """
 import os
 import subprocess
@@ -15,9 +18,9 @@ from typing import Dict, Optional, Tuple
 
 from app.logger import logger
 from app.services.agent.media_constants import (
-    VIDEO_ACCEPTED_FOURCC,
+    VIDEO_ACCEPTED_FOURCCS,
     VIDEO_TRANSCODE_CRF,
-    VIDEO_TRANSCODE_LOCK_MAX,
+    VIDEO_TRANSCODE_LOCK_TABLE_MAX,
     VIDEO_TRANSCODE_MAX_EDGE,
     VIDEO_TRANSCODE_TIMEOUT_SEC,
 )  # 转码常量集中管理(三堂会审归位) — 小欧-2026-11-20
@@ -29,8 +32,8 @@ _locks_guard = threading.Lock()
 _ffmpeg_exe: Optional[str] = None
 
 
-def _get_ffmpeg() -> str:
-    """惰性取 ffmpeg 可执行文件路径(imageio-ffmpeg 自带, 无需系统安装)。"""
+def _get_ffmpeg_path() -> str:
+    """惰性取 ffmpeg 可执行文件路径(imageio-ffmpeg 自带, 无需系统安装) — 小欧-2026-11-20 命名整改。"""
     global _ffmpeg_exe
     if _ffmpeg_exe is None:
         import imageio_ffmpeg  # 延迟导入: 仅转码路径需要
@@ -46,8 +49,8 @@ def _probe_codec(path: str) -> str:
         if not cap.isOpened():
             return ""
         try:
-            fc = int(cap.get(cv2.CAP_PROP_FOURCC))
-            return "".join(chr((fc >> (8 * i)) & 0xFF) for i in range(4))
+            fourcc_int = int(cap.get(cv2.CAP_PROP_FOURCC))
+            return "".join(chr((fourcc_int >> (8 * i)) & 0xFF) for i in range(4))
         finally:
             cap.release()
     except Exception as e:  # noqa: BLE001 — cv2 缺失/解码异常都降级为"未知编码"走转码
@@ -61,7 +64,7 @@ def _lock_for(path: str) -> threading.Lock:
     with _locks_guard:
         lock = _transcode_locks.get(key)
         if lock is None:
-            if len(_transcode_locks) >= VIDEO_TRANSCODE_LOCK_MAX:
+            if len(_transcode_locks) >= VIDEO_TRANSCODE_LOCK_TABLE_MAX:
                 # 清掉未被持有的锁(已转完的); 正被持有的不动, 防并发写同一缓存文件
                 for k in [k for k, v in _transcode_locks.items() if not v.locked()]:
                     del _transcode_locks[k]
@@ -87,7 +90,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
         return path, False
 
     codec = _probe_codec(path)
-    if codec in VIDEO_ACCEPTED_FOURCC:
+    if codec in VIDEO_ACCEPTED_FOURCCS:
         return path, False
 
     base = os.path.basename(path)
@@ -111,31 +114,31 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
             return out_path, True
         # 写临时文件成功后原子替换 → 半成品永不成为缓存。
         # 临时名必须保留 .mp4 扩展名: ffmpeg 靠扩展名选 muxer, 用 .partial 会因无法识别封装格式而失败 — 小欧-2026-11-20
-        tmp_path = os.path.join(out_dir, f".tmp_{key}")  # key 已含 .mp4 后缀
+        partial_path = os.path.join(out_dir, f".tmp_{key}")  # key 已含 .mp4 后缀
         cmd = [
-            _get_ffmpeg(), "-y", "-v", "error",
+            _get_ffmpeg_path(), "-y", "-v", "error",
             "-i", path,
             "-vf", f"scale='min({VIDEO_TRANSCODE_MAX_EDGE},iw)':-2",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_TRANSCODE_CRF),
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             "-an",  # 视频投递不需要音轨, 去掉省体积
-            tmp_path,
+            partial_path,
         ]
         try:
             # 清理可能的旧半成品
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            if os.path.exists(partial_path):
+                os.remove(partial_path)
             result = subprocess.run(cmd, capture_output=True, timeout=VIDEO_TRANSCODE_TIMEOUT_SEC)
-            if result.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            if result.returncode != 0 or not os.path.exists(partial_path) or os.path.getsize(partial_path) == 0:
                 logger.warning(f"[video_transcode] 转码失败 codec={codec} path={path} err={result.stderr[-300:]!r}")
-                _safe_remove(tmp_path)
+                _safe_remove(partial_path)
                 return path, False
-            os.replace(tmp_path, out_path)  # 原子替换
+            os.replace(partial_path, out_path)  # 原子替换
             logger.info(f"[video_transcode] {codec}->h264 成功: {base} -> {os.path.getsize(out_path)} bytes")
             return out_path, True
         except Exception as e:  # noqa: BLE001 — 转码失败降级, 不打断对话
             logger.warning(f"[video_transcode] 转码异常 codec={codec} path={path} err={e}")
-            _safe_remove(tmp_path)
+            _safe_remove(partial_path)
             return path, False
 
 

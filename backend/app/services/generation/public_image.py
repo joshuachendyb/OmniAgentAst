@@ -11,6 +11,8 @@
   本机 mihomo 常驻 7890; 任何失败返回空串由调用方降级, 不抛异常断轮。
 编辑历史: 2026-11-20 小欧 配置化: 图床端点/代理改读 media.public_image_upload_url / public_image_proxy,
   默认值提模块常量作单一真源(settings_registry 引用), 本机 VPN(7890)为默认代理; 代理候选按"配置→环境→本地端口→直连"优先级去重回退。
+编辑历史: 2026-11-20 小欧 三堂会审命名整改: _ext_of(mime→后缀)名含糊, 改名 _mime_to_extension; 局部变量 out→candidates
+  (代理候选列表)、data→upload_result(上传响应 JSON), 消含糊命名; 纯改名零行为变更。
 """
 import hashlib
 import os
@@ -46,24 +48,24 @@ def _proxy_candidates() -> Tuple[str, ...]:
     与本机 mihomo 默认端口, 任一环节失败可回退, 末位直连兜底 — 小欧-2026-11-20。
     """
     cfg = _media_config()
-    out: list = []
+    candidates: list = []
 
     def add(value: Any) -> None:
         p = str(value or "").strip()
-        if p and p not in out:
-            out.append(p)
+        if p and p not in candidates:
+            candidates.append(p)
 
     add(cfg.get("public_image_proxy"))
     add(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
         or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
     for p in _LOCAL_FALLBACK_PROXIES:
         add(p)
-    out.append("")  # 直连兜底
-    return tuple(out)
+    candidates.append("")  # 直连兜底
+    return tuple(candidates)
 
 
-def _ext_of(mime: str) -> str:
-    """mime → 文件后缀, 图床按后缀判类型。"""
+def _mime_to_extension(mime: str) -> str:
+    """mime 类型 → 文件后缀, 图床按后缀判类型。"""
     return {
         "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
         "image/gif": "gif", "image/bmp": "bmp",
@@ -79,7 +81,7 @@ async def upload_image(raw: bytes, mime: str, stem: str = "image") -> str:
     if cached:
         logger.info(f"[public_image] 命中缓存 url={cached[:100]}")
         return cached
-    name = f"{stem}.{_ext_of(mime)}"
+    name = f"{stem}.{_mime_to_extension(mime)}"
     endpoint = str(_media_config().get("public_image_upload_url") or "").strip() or DEFAULT_UPLOAD_ENDPOINT
     last_err = ""
     for proxy in _proxy_candidates():
@@ -92,8 +94,8 @@ async def upload_image(raw: bytes, mime: str, stem: str = "image") -> str:
                     files={_UPLOAD_FIELD: (name, raw, mime or "image/png")},
                 )
             if resp.status_code == 200:
-                data = resp.json()
-                files = data.get("files") if isinstance(data, dict) else None
+                upload_result = resp.json()
+                files = upload_result.get("files") if isinstance(upload_result, dict) else None
                 url = str(files[0].get("url") or "") if isinstance(files, list) and files else ""
                 if url.startswith("http"):
                     if len(_CACHE) >= _CACHE_MAX:
