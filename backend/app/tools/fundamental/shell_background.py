@@ -98,10 +98,10 @@ def _new_shell_id() -> str:
 
 
 def _bg_output_dir() -> str:
-    # 2026-11-13 商量: 输出目录单源 get_output_dir()(= project_root/output),
-    #   与 download_file/generate_chart 同基准, 不再落 %TEMP%
-    from app.utils.path_utils import get_output_dir
-    d = get_output_dir()
+    # 2026-11-20 小欧: 后台输出目录改走 get_tool_dir("output")(会话默认目录优先,
+    #   兜底项目根), 与 download_file/generate_chart 同一分配口
+    from app.utils.path_utils import get_tool_dir
+    d = get_tool_dir("output")
     os.makedirs(d, exist_ok=True)
     return d
 

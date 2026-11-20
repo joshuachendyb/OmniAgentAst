@@ -22,7 +22,6 @@ screen_capture — 屏幕截图
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
-import tempfile
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -33,6 +32,7 @@ from app.tools.tool_response import build_error, build_success, with_artifact_fi
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
     check_path_four_level,
+    get_tool_dir,
     validate_path_for_write,  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
 )
 from app.utils.time_utils import timestamp_for_filename
@@ -83,9 +83,9 @@ def _screenshot(dest: Optional[str] = None, region: Optional[Dict[str, int]] = N
         logger.error("screen_capture._screenshot: pyautogui未安装,工具暂时不能使用。请执行: pip install pyautogui")
         return {"error_detail": "pyautogui库未安装,工具暂时不能使用", "params": {"library": "pyautogui"}}
     try:
-        if not dest:  # dest为None或空串均生成临时路径 — 2026-08-05 小欧 #5
+        if not dest:  # dest为None或空串均生成默认输出路径 — 2026-11-20 小欧改走 get_tool_dir
             timestamp = timestamp_for_filename()
-            dest = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
+            dest = os.path.join(get_tool_dir("output"), f"screenshot_{timestamp}.png")
 
         if region:
             r = (region.get("x", 0), region.get("y", 0), region.get("width", 800), region.get("height", 600))
@@ -109,9 +109,9 @@ def _snapshot(display: int = 1, dest: Optional[str] = None) -> Dict[str, Any]:
     except ImportError:
         try:
             import pyautogui
-            if not dest:  # 空串也生成临时路径 — 2026-08-05 小欧 #5
+            if not dest:  # 空串也生成默认输出路径 — 2026-11-20 小欧改走 get_tool_dir
                 timestamp = timestamp_for_filename()
-                dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+                dest = os.path.join(get_tool_dir("output"), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(dest)
             return {"image_path": dest, "display": display, "monitors": 0}
@@ -119,9 +119,9 @@ def _snapshot(display: int = 1, dest: Optional[str] = None) -> Dict[str, Any]:
             logger.error("screen_capture._snapshot: mss/pyautogui均未安装,工具暂时不能使用。请执行: pip install mss")
             return {"error_detail": "需要安装 mss 或 pyautogui 库,工具暂时不能使用", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
-        if not dest:  # 空串也生成临时路径 — 2026-08-05 小欧 #5
+        if not dest:  # 空串也生成默认输出路径 — 2026-11-20 小欧改走 get_tool_dir
             timestamp = timestamp_for_filename()
-            dest = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+            dest = os.path.join(get_tool_dir("output"), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
             monitors = sct.monitors
             if display < 1 or display >= len(monitors):

@@ -48,7 +48,11 @@ import httpx
 
 from app.config import get_config  # 用户指定路径基准 get_project_root()
 from app.logger import logger
-from app.tools.network.http_client_sdk import check_network, create_http_client, is_ssrf_blocked_error
+from app.tools.network.http_client_sdk import (
+    check_network,
+    create_http_client,
+    is_ssrf_blocked_error,
+)
 from app.tools.tool_constants import (
     DOWNLOAD_INPUT_MAX_BYTES,
     ERR_INVALID_PARAMS,
@@ -72,7 +76,7 @@ from app.utils.path_utils import (
     OpCategory,
     absolutize_path,
     check_path_four_level,
-    get_output_dir,
+    get_tool_dir,
     has_path_traversal,
     validate_path_for_write,
 )
@@ -170,7 +174,7 @@ async def download(
         dest_path = absolutize_path(dest, get_config().get_project_root())
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
-        dest_path = os.path.join(get_output_dir(), filename)
+        dest_path = os.path.join(get_tool_dir("output"), filename)
     # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查(dest 经 resolve 得绝对路径), 此处仅业务警告
     _, _, path_warn = validate_path_for_write(dest_path)
     if path_warn:

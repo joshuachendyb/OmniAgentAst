@@ -26,7 +26,6 @@ registry_read — 读取Windows注册表键值
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import os
-import tempfile
 import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
 import time as _time_mod
 import winreg
@@ -42,6 +41,7 @@ from app.tools.tool_constants import (
 )
 from app.tools.tool_response import build_error, build_success
 from app.tools.validate.registry_path_checker import validate_registry_key
+from app.utils.path_utils import get_tool_dir  # 2026-11-20 小欧: 注册表备份落会话 temp 目录
 from app.utils.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
@@ -86,7 +86,7 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[s
     修复(小欧 2026-09-20): 新建备份前清理同key旧备份文件, 防temp目录磁盘泄漏。
     """
     backup_key = f"{session_id}::{root_key}\\{sub_key}"  # A-4: 会话级缓存键
-    backup_dir = tempfile.gettempdir()
+    backup_dir = get_tool_dir("temp")
 
     # 修复: 清理同key旧备份文件, 防磁盘泄漏
     with _registry_backup_lock:

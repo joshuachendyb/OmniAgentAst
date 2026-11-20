@@ -31,10 +31,10 @@ from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTP
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_response import build_error, build_success, with_artifact_file
 from app.tools.toolhelper.error_hints import hint_for_data_error
-from app.utils.path_utils import (  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层; 2026-10-26 小沈 - 输出目录改用公用 get_output_dir  # 2026-10-17 小欧 - 路径四级合法性总入口
+from app.utils.path_utils import (  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层; 2026-11-20 小欧 - 落点改用 get_tool_dir(会话默认目录优先)  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
     check_path_four_level,
-    get_output_dir,
+    get_tool_dir,
     validate_path_for_write,
 )
 from app.utils.time_utils import timestamp_for_filename
@@ -213,7 +213,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         if dest is None:
             timestamp = timestamp_for_filename()
-            dest = os.path.join(get_output_dir(), f"chart_{timestamp}.png")
+            dest = os.path.join(get_tool_dir("output"), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()

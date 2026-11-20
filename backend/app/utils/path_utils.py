@@ -30,6 +30,7 @@
 #   `reject_reason_empty_path(fp) or check_preconditions(fp)` 组合取原因; 归归属由 safety 层定。
 # 2026-10-26 小沈 - 新增has_path_traversal(路径穿越轻量判定,工具层专用,按\和/切分任一段==".."即命中,纯内存不做realpath);
 #   新增get_output_dir(输出目录=project_root/output); 汇集散落各处的..穿越检查(DRY)。
+# 2026-11-20 小欧 - 新增 get_tool_dir: tool 落盘目录唯一分配口(attachments/output/temp 三子目录), 会话默认区优先, 兜底项目根
 """
 path_utils — 路径处理通用工具
 
@@ -87,6 +88,36 @@ def get_output_dir() -> str:
     """
     from app.config import get_config
     return os.path.join(get_config().get_project_root(), "output")
+
+
+def get_tool_dir(kind: str = "output") -> str:
+    r"""tool 落盘目录唯一分配口 — 小欧 2026-11-20
+
+    kind 限 attachments/output/temp。第一选择会话默认目录, 兜底项目根。
+    会话默认目录取自任务级快照(session_workspace.get_ws_snapshot 的 is_default 条目),
+    tool 执行期已注入, 无需 session_id。
+    """
+    if kind not in ("attachments", "output", "temp"):
+        raise ValueError(f"不支持的目录类型: {kind}")
+
+    # 第一选择：会话默认目录（任务级快照的 is_default 条目）
+    base = ""
+    from app.session_workspace import get_ws_snapshot
+    snap = get_ws_snapshot()
+    if snap:
+        for entry in snap.entries:
+            if entry.is_default:
+                base = entry.path
+                break
+
+    # 兜底项目根（get_config 未配置 project_root 时回落用户主目录）
+    if not base:
+        from app.config import get_config
+        base = get_config().get_project_root()
+
+    folder = Path(base) / kind
+    folder.mkdir(parents=True, exist_ok=True)
+    return str(folder)
 
 
 # 2026-10-19 小欧 - 目录名单收口: get_allowed_roots 迁 app/safety/path_dir_lists
@@ -339,7 +370,7 @@ def check_path_four_level(
     return True, None
 
 
-__all__ = ["to_win_long_path", "absolutize_path", "get_output_dir",
+__all__ = ["to_win_long_path", "absolutize_path", "get_output_dir", "get_tool_dir",
            "path_has_reserved_char", "path_has_reserved_name", "path_has_extra_drive",
            "validate_str_param",
            "OpCategory", "check_path_syntax_and_exists", "check_preconditions",

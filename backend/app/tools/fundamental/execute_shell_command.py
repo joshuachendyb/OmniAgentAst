@@ -294,11 +294,10 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
-from app.utils.proc_io import isolation_kwargs as _isolation_kwargs  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
-from app.tools.file.file_encoding import get_file_encoding
 from app.tools.context import get_current_task_id
+from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental import shell_background
 from app.tools.fundamental.shell_engine import (
     _replace_python3_safe,  # 2026-11-06 小欧: 去池化, 仅留命令规范化, 不再 import shell_pool/PersistentShell
@@ -318,10 +317,14 @@ from app.tools.tool_constants import (
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.validate.timeout_validator import validate_timeout
+from app.utils.path_utils import get_tool_dir  # 2026-11-20 小欧: .bat 中间脚本落会话 temp 目录
 from app.utils.proc_io import (  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
     TRUNCATED_NOTE,
     drain_after_exit,
     drain_until_exit,
+)
+from app.utils.proc_io import (
+    isolation_kwargs as _isolation_kwargs,  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
 )
 from app.utils.proc_utils import (
     kill_process_tree,  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
@@ -1311,10 +1314,11 @@ def shell(
             returncode = proc.returncode if proc.returncode is not None else -1
 
         elif shell_type == "cmd":  # ── 【CMD专属】: .bat + subprocess ──
-            # 写入 temp .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
+            # 写入 .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
             # cmd.exe读.bat用的是系统OEM编码(中文Win=gbk)，utf-8写入会乱 — 小欧 2026-07-07
+            # 2026-11-20 小欧: 落点改会话 temp 目录(用完即弃), 唯一文件名仍由 mkstemp 保证
             bat_encoding = locale.getpreferredencoding()
-            bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True)
+            bat_fd, bat_path = tempfile.mkstemp(suffix='.bat', text=True, dir=get_tool_dir("temp"))
             try:
                 with os.fdopen(bat_fd, 'w', encoding=bat_encoding, errors='replace') as f:
                     f.write('@echo off\r\n')
