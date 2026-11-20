@@ -4,37 +4,59 @@
 背景: 生视频 i2v(reference 模式)的 images 只吃公网 URL 字符串, 厂商要能直连 GET,
   本地路径/attachment_id/data URI 都不行(实测 data URI 被拒)。本模块把本地图临时公网化,
   供 i2v 参考图用; 生图 i2i 仍走 data URI(厂商接受), 两条路不混。
+图床协议约束: multipart 字段名固定 files[], 响应取 files[0].url(uguu.se 契约)。换端点须兼容
+  该请求/响应结构, 否则公网化失败; 端点与代理均可配置(media.public_image_upload_url / public_image_proxy)。
 编辑历史: 2026-11-20 小欧 新建: uguu.se 图床(实测上传返回 d.uguu.se/h.uguu.se 公网直链, GET 真实 PNG);
   代理三级回退(环境代理→OmniVPN 本地 7890/7891→直连), 因为生产服务进程无代理环境变量而国外图床直连不通,
   本机 mihomo 常驻 7890; 任何失败返回空串由调用方降级, 不抛异常断轮。
+编辑历史: 2026-11-20 小欧 配置化: 图床端点/代理改读 media.public_image_upload_url / public_image_proxy,
+  默认值提模块常量作单一真源(settings_registry 引用), 本机 VPN(7890)为默认代理; 代理候选按"配置→环境→本地端口→直连"优先级去重回退。
 """
 import hashlib
 import os
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import httpx
 
+from app.config import get_config
 from app.logger import logger
 
-# 图床上传端点(单一真源)。uguu.se 实测可用: 返回 files[0].url 公网 PNG 直链。
-_UPLOAD_ENDPOINT = "https://uguu.se/upload.php"
-_UPLOAD_FIELD = "files[]"
-# 代理回退候选: None=直连兜底; 环境代理在 _proxy_candidates 里优先取(避免重复)。
-_LOCAL_PROXIES = ("http://127.0.0.1:7890", "http://127.0.0.1:7891")
+# 默认值单一真源: settings_registry 注册 media.public_image_* 项时引用此处, 避免配置页默认值与运行期兜底漂移。
+DEFAULT_UPLOAD_ENDPOINT = "https://uguu.se/upload.php"  # 实测可用, 返回 files[0].url 公网 PNG 直链
+DEFAULT_PROXY = "http://127.0.0.1:7890"  # 本机 mihomo VPN 跨界出口(用户启动时可达)
+_UPLOAD_FIELD = "files[]"  # uguu.se multipart 字段名, 协议固定
+_LOCAL_FALLBACK_PROXIES = ("http://127.0.0.1:7890", "http://127.0.0.1:7891")  # 未配置时的本机端口兜底
 _UPLOAD_TIMEOUT = 40.0
 # 同一张图(按字节摘要)短期内复用公网 URL, 避免重复上传; i2v 生成就几分钟, 时效足够。
 _CACHE: Dict[str, str] = {}
 _CACHE_MAX = 128
 
 
+def _media_config() -> Dict[str, Any]:
+    """media 配置块; 缺键走模块默认, 配置缺失不改变既有行为 — 小欧-2026-11-20。"""
+    cfg = get_config().get("media")
+    return cfg if isinstance(cfg, dict) else {}
+
+
 def _proxy_candidates() -> Tuple[str, ...]:
-    """代理候选: 环境代理(若有)优先, 再 OmniVPN 本地, 最后直连(None 用空串表示)。"""
-    out = []
-    env_proxy = (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-                 or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") or "")
-    if env_proxy:
-        out.append(env_proxy)
-    out.extend(_LOCAL_PROXIES)
+    """代理候选, 按优先级去重: 配置首选 → 环境变量 → 本机端口兜底 → 直连(空串)。
+
+    配置 media.public_image_proxy 非空时置顶(尊重用户显式指定的跨界出口); 其后保留环境变量
+    与本机 mihomo 默认端口, 任一环节失败可回退, 末位直连兜底 — 小欧-2026-11-20。
+    """
+    cfg = _media_config()
+    out: list = []
+
+    def add(value: Any) -> None:
+        p = str(value or "").strip()
+        if p and p not in out:
+            out.append(p)
+
+    add(cfg.get("public_image_proxy"))
+    add(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
+    for p in _LOCAL_FALLBACK_PROXIES:
+        add(p)
     out.append("")  # 直连兜底
     return tuple(out)
 
@@ -57,6 +79,7 @@ async def upload_image(raw: bytes, mime: str, stem: str = "image") -> str:
         logger.info(f"[public_image] 命中缓存 url={cached[:100]}")
         return cached
     name = f"{stem}.{_ext_of(mime)}"
+    endpoint = str(_media_config().get("public_image_upload_url") or "").strip() or DEFAULT_UPLOAD_ENDPOINT
     last_err = ""
     for proxy in _proxy_candidates():
         try:
@@ -64,7 +87,7 @@ async def upload_image(raw: bytes, mime: str, stem: str = "image") -> str:
             async with httpx.AsyncClient(proxy=proxy or None, timeout=_UPLOAD_TIMEOUT,
                                          follow_redirects=True, trust_env=False) as client:
                 resp = await client.post(
-                    _UPLOAD_ENDPOINT,
+                    endpoint,
                     files={_UPLOAD_FIELD: (name, raw, mime or "image/png")},
                 )
             if resp.status_code == 200:

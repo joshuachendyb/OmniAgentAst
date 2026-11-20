@@ -534,6 +534,14 @@ media:
   #   仅确需独立限额时才取消注释覆盖(单位 MB) — 小欧-2026-11-20
   # video_inline_limit_mb: 20
   # audio_inline_limit_mb: 20
+  # public_image_upload_url / public_image_proxy: 生视频 i2v 用本地图时的公网化参数(非必填) — 小欧-2026-11-20
+  #   upload_url: 临时图床上传端点, 留空=用内置默认 https://uguu.se/upload.php;
+  #     更换图床须兼容 multipart 字段 files[] 与响应 files[0].url, 否则公网化失败
+  #   proxy: 上传代理, 留空或默认即走本机 VPN(127.0.0.1:7890/7891); 国外图床直连通常不通, 本机 mihomo
+  #     启动后默认即可用, 本项仅用于代理地址/端口变更或换机器部署时覆盖;
+  #     优先级: 本项 → 系统 HTTPS_PROXY 环境变量 → 本机 7890/7891 → 直连, 逐条回退
+  # public_image_upload_url: "https://uguu.se/upload.php"
+  # public_image_proxy: "http://127.0.0.1:7890"
   compress_enabled: true
   compress_max_edge: 2048
   compress_jpeg_quality: 85

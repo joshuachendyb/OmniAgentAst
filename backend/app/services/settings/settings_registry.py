@@ -147,10 +147,14 @@ from typing import Any, Dict, List, Optional
 
 # 2026-11-18 opencode - 外链条数上限改引 extract.MAX_TEXT_URLS: 原引 MAX_REMOTE_IMAGES(4) 已无执行点,
 #   真实上限是单次引用 URL 总数 8, 文案按实报 — opencode-2026-11-18
-# 2026-11-20 小欧 - 音视频内联上限默认值引附件真源(单一真源, 不写死 20MB):
-#   与 media_payload 逻辑兜底同源, 改附件上限时设置页默认值自动跟随
+# 2026-11-20 小欧 - 音视频内联上限默认值引附件真源(单一真源, 不写死 20MB): 与 media_payload 逻辑兜底同源;
+#   公网化默认值(图床端点/代理)引 public_image 常量, 与运行期兜底同源 — 小欧-2026-11-20
 from app.attachments.attachment_service import MAX_FILE_BYTES as _MEDIA_INLINE_DEFAULT_BYTES
 from app.attachments.extract import MAX_TEXT_URLS
+from app.services.generation.public_image import DEFAULT_PROXY as _PUBLIC_IMAGE_DEFAULT_PROXY
+from app.services.generation.public_image import (
+    DEFAULT_UPLOAD_ENDPOINT as _PUBLIC_IMAGE_DEFAULT_ENDPOINT,
+)
 
 _MEDIA_INLINE_DEFAULT_MB = max(1, _MEDIA_INLINE_DEFAULT_BYTES // 1024 // 1024)
 
@@ -285,6 +289,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压缩成 JPEG 时的量化质量。85 对照片基本看不出差别；截图、图表、含小字的图建议 92 以上，否则文字边缘发糊。带透明通道的图压缩后存 PNG（无量化损失，但仍会等比缩小），本项对它不生效"),
         _item("media.remote_url_passthrough", "bool", "转发视频外链", True,
               notice=f"在消息里明确写出的公网视频地址转给模型：不下载、不转码，请求体里只放地址，由厂商自己抓取（聊天接口没有视频内联格式，这是视频唯一的投递方式）。只认两种写法：Markdown 链接，或带视频后缀的裸链接（?查询参数原样保留）；单次引用最多 {MAX_TEXT_URLS} 个链接，超出的静默不转发；本机地址、内网/保留地址、以及非视频后缀一律不走直传（文本/富文档改走下载抽取正文，音频下载后内联发送；图片只有该模型实测证明能抓外链时才转发地址，否则也下载后内联），被拒的会在对话里留一行说明。关掉则视频链接只留一行说明、图片改为下载后内联"),
+        # 2026-11-20 小欧 - 生视频 i2v 本地图公网化: 图床端点与上传代理可配置(默认走本机 VPN, 非必填)
+        _item("media.public_image_upload_url", "url", "图床上传端点(i2v公网化)", _PUBLIC_IMAGE_DEFAULT_ENDPOINT,
+              notice="生视频 i2v 用本地图作参考图时, 后端先把图片字节传到临时图床换公网直链(厂商只认公网地址, 不收本地路径/data URI)。本项是上传端点, 留空=用内置默认 uguu.se。更换图床须兼容 multipart 字段名 files[] 与响应 files[0].url 结构, 否则公网化失败"),
+        _item("media.public_image_proxy", "text", "图床上传代理(i2v公网化)", _PUBLIC_IMAGE_DEFAULT_PROXY,
+              notice="上传图床所用代理, 留空或默认即走本机 VPN(127.0.0.1:7890/7891)。国外图床直连通常不通, 需代理跨界; 本机 mihomo 启动后默认即可用, 本项仅用于代理地址/端口变更或换机器部署时覆盖。优先级: 本项→系统 HTTPS_PROXY 环境变量→本机 7890/7891→直连, 逐条回退"),
         _item("media.probe_image_url", "url", "图片输入检测外链素材地址",
               "https://www.baidu.com/img/flexible/logo/pc/result.png",
               notice="「实测」时用来测外链腿的那张公网图片地址（内联腿用内置的 8×8 PNG，不依赖本项）。留空 = 只测内联，外链不写结论；地址会原样交给厂商自己抓取，别用带隐私参数的链接"),
