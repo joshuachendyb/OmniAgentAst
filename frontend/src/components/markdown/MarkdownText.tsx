@@ -332,9 +332,22 @@ const buildComponents = (
     },
     // 2026-11-12 小欧 - 补 img 组件(缺陷 #7: 图片无任何样式, 大图溢出容器):
     //   限宽 + 圆角 + 懒加载(长文档多图不阻塞首屏); alt 由净化 schema 放行, 缺 alt 时保留原值。
-    img: (props: MdProps) => (
-      <img src={props.src} alt={props.alt ?? ''} loading="lazy" />
-    ),
+    // 2026-11-20 小欧 - 生视频产物呈现: src 为视频后缀(.mp4/.webm/.mov)时渲染 <video controls>,
+    //   图片仍走 <img>。约定 ![生成视频](url.mp4) 即可播放, 无需 rehype-raw(本项目未装, HTML 标签会被净化丢弃)。
+    img: (props: MdProps) => {
+      const src = props.src ?? '';
+      if (/\.(mp4|webm|mov|ogg)(\?|$)/i.test(src)) {
+        return (
+          <video
+            src={src}
+            controls
+            preload="metadata"
+            style={{ maxWidth: '100%', borderRadius: 6 }}
+          />
+        );
+      }
+      return <img src={src} alt={props.alt ?? ''} loading="lazy" />;
+    },
     table: (props: MdProps) => <MdTable {...props} />,
     thead: (props: MdProps) => <thead>{props.children}</thead>,
     // 2026-10-06 小欧: 长 token 可断行。分类表的「目录列表」列有超长路径
@@ -346,7 +359,9 @@ const buildComponents = (
     //   判定规则在 utils/markdownStyles 的 isNumericCell(唯一真源)。
     td: (props: MdProps) => {
       const numeric = isNumericCell(extractPlainText(props.children));
-      return <td className={numeric ? 'md-num' : undefined}>{props.children}</td>;
+      return (
+        <td className={numeric ? 'md-num' : undefined}>{props.children}</td>
+      );
     },
     // GFM 任务列表复选框: 只读展示。
     // ⚠️ 绝不能 `const { node, ...safe } = props` 再 {...safe} —— safe 里含 children,
@@ -384,9 +399,7 @@ const PreBlock: React.FC<MdProps & { lineHeightFallback: number }> = (
         //   内联行为样式各写一份 → 双源。现统一由 utils/markdownStyles 的 codeBlockStyle 给出,
         //   CSS 侧已删除对应声明(数值完全一致 → 视觉零变化)。
         ...codeBlockStyle,
-        ...(lineHeight === props.lineHeightFallback
-          ? {}
-          : { lineHeight }),
+        ...(lineHeight === props.lineHeightFallback ? {} : { lineHeight }),
       }}
     >
       <CopyButton text={content} />

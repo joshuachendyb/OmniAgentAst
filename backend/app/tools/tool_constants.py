@@ -524,6 +524,8 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: 
     "win_registry": ("app.tools.win_registry", "_register_registry_tools"),
     "timer": ("app.tools.timer", "_register_timer_tools"),
     "agent": ("app.tools.agent", "_register_agent_tools"),
+    # 2026-11-20 小欧 - 媒体生成工具分类(生图/生视频): 走 generation 端点产出多媒体
+    "media": ("app.tools.media", "_register_media_tools"),
 }
 
 # ============================================================
@@ -600,6 +602,9 @@ TOOL_RETRY_CONFIG: dict[str, dict] = {
     "fetchpage": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
     "searchweb": {"max_retries": 2, "retryable": ["connect", "network"]},
     "ping_port": {"max_retries": 2, "retryable": ["connect"]},
+    # 2026-11-20 小欧 - 生图/生视频不重试: 生成端点每次调用都产生费用, 重试会重复提交重复扣费
+    "generate_image": {"max_retries": 0, "retryable": []},
+    "generate_video": {"max_retries": 0, "retryable": []},
 }  # 【tool 级】使用对象: ToolRetryEngine per-tool 重试参数
 
 # 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30

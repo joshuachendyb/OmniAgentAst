@@ -51,6 +51,8 @@ class ToolCategory(Enum):
     TIMER = ("timer", 8, "定时器工具")
     WIN_REGISTRY = ("win_registry", 9, "注册表工具")
     AGENT = ("agent", 10, "智能体交互工具")
+    # 2026-11-20 小欧 - 新增 MEDIA 分类(生图/生视频工具): 产出多媒体, 走 generation 端点 — 小欧-2026-11-20
+    MEDIA = ("media", 11, "媒体生成工具")
 
     def __new__(cls, value, order, name_cn):
         member = object.__new__(cls)

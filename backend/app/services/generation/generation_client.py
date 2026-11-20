@@ -5,6 +5,7 @@
 共用本函数；生成端点禁直连 httpx。视频是异步任务：提交 → 轮询 → 取产物
 - 小欧-2026-11-09
 2026-11-09 订正: 素材不可达判定收窄为短语集常量(原含"下载"二字即归此类过宽); _video_url 取证串标注勿回放 - 小欧-2026-11-09
+2026-11-20 小欧 Phase B 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
 """
 import asyncio
 import time
@@ -71,6 +72,7 @@ async def generate_image(
     *,
     image: Optional[str] = None,
     timeout: float = 120.0,
+    out: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str, bool]:
     """生成一张图 → (产物成功?, evidence, 是否确定结论)。
 
@@ -78,6 +80,8 @@ async def generate_image(
     = 确定 OK；400/415/422 = 确定拒绝；401/403/429/5xx/网络错 = 未定，
     调用方不得写结论。image 传 URL 时走图生图（i2i），与 t2i 同端点同函数
     - 小欧-2026-11-09
+    out: 可选产物出口(Phase B 对话生图工具)——成功时写入未截断的原始 url/b64_json;
+      探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt}
     if image:
@@ -112,9 +116,12 @@ async def generate_image(
     )
     url = str(rec.get("url") or "")
     b64 = str(rec.get("b64_json") or "")
-    if url:
-        return True, f"url={url}"[:_EV_LIMIT], True
-    if b64:
+    if url or b64:
+        # 产物原始值写入 out(未截断), 供对话生图工具下载/展示; 探测腿不传 out 零影响 — 小欧-2026-11-20
+        if out is not None:
+            out.update(url=url, b64=b64)
+        if url:
+            return True, f"url={url}"[:_EV_LIMIT], True
         return True, f"b64_len={len(b64)}", True
     return False, "no_output", True
 
@@ -149,11 +156,12 @@ def _video_reason(data: Any) -> str:
     return ""
 
 
-def _video_url(data: Any) -> str:
+def _video_url(data: Any, preserve_case: bool = False) -> str:
     """递归找产物地址: 先认键名含 video 的 http 串, 再退任意 .mp4 直链。
 
     视频任务响应常同时带封面图/尾帧图, 只按 "url" 取值会拿错, 故按键名优先级收敛。
-    返回串仅供人读取证(URL 已 lower, 签名类参数大小写敏感), 严禁回放调用 - 小欧-2026-11-09
+    默认返回 lower 串仅供人读取证(签名参数大小写敏感, 严禁回放);
+    preserve_case=True 返回原始大小写串, 供对话生视频工具下载产物 — 小欧-2026-11-20
     """
     found: List[Tuple[str, str, str]] = []
 
@@ -170,10 +178,10 @@ def _video_url(data: Any) -> str:
     _walk(data, "")
     for key, low, raw in found:
         if "video" in key and (".mp4" in low or "video" in low):
-            return raw
+            return raw if preserve_case else low
     for _, low, raw in found:
         if ".mp4" in low:
-            return raw
+            return raw if preserve_case else low
     return ""
 
 
@@ -187,6 +195,7 @@ async def generate_video(
     images: Optional[List[str]] = None,
     timeout: float = 120.0,
     poll_timeout: float = VIDEO_POLL_TIMEOUT,
+    out: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str, bool]:
     """生成一段视频（提交+轮询）→ (产物成功?, evidence, 是否确定结论)。
 
@@ -194,6 +203,8 @@ async def generate_video(
     400/415/422 或任务 failed = 确定拒绝；401/429/5xx/队列已满/轮询超时/网络错
     = 未定（厂商侧环境或排队问题，不得据此判模型无生视频能力）
     - 小欧-2026-11-09
+    out: 可选产物出口(Phase B 对话生视频工具)——成功时写入未截断的原始 mp4 url;
+      探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt, "mode": mode}
     if images:
@@ -253,8 +264,11 @@ async def generate_video(
                 return False, "bad_json", False
             status = _video_status(detail) or "unknown"
             if status in VIDEO_DONE:
-                url = _video_url(detail)
+                url = _video_url(detail)  # lower 取证串
                 if url:
+                    # 产物原始大小写 URL 写入 out 供下载(签名参数大小写敏感); 探测腿零影响 — 小欧-2026-11-20
+                    if out is not None:
+                        out["url"] = _video_url(detail, preserve_case=True) or url
                     return True, f"url={url}"[:_EV_LIMIT], True
                 # 终态却取不到视频地址: 多半是响应结构变化, 不能据此判"无生成能力"
                 return False, f"no_output_field: {poll.text}"[:_EV_LIMIT], False
