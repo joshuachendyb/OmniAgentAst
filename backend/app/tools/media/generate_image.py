@@ -15,6 +15,7 @@
   ⑤订正 b64 编辑历史里 with_artifact_file 的说法(实际手工声明 artifacts) — 小欧-2026-11-20
 编辑历史: 2026-11-20 小欧 复用整改: 产物声明由手工内联 action.artifacts 改用公共 helper with_artifacts(llm_data, artifacts),
   与全项目十余个写工具同模式(复用优先); 编辑历史此前"with_artifact_file"说法不准(with_artifact_file 靠扩展名猜 type, 不适用 URL 产物) — 小欧-2026-11-20
+编辑历史: 2026-11-20 小欧 按厂商文档补全生图全能力: 工具加 images(多图合成)/size(档位)/ratio(宽高比)参数并透传回调; 纯能力扩展旧调用零影响 — 小欧-2026-11-20
 """
 import os
 import time
@@ -32,8 +33,11 @@ from app.tools.tool_response import build_error, build_success, build_warning, w
 
 
 async def generate_image(prompt: str, model: Optional[str] = None,
-                         image: Optional[str] = None) -> Dict[str, Any]:
-    """生成一张图片。返回 {data, llm_data, other_data}。"""
+                         image: Optional[str] = None,
+                         images: Optional[list] = None,
+                         size: Optional[str] = None,
+                         ratio: Optional[str] = None) -> Dict[str, Any]:
+    """生成一张图片(t2i/i2i/多图合成)。返回 {data, llm_data, other_data}。"""
     t0 = time.monotonic()
     generate_callback = get_current_generate_callback()
     if generate_callback is None:
@@ -50,7 +54,15 @@ async def generate_image(prompt: str, model: Optional[str] = None,
             },
         )
     effective_model = model or MEDIA_DEFAULT_IMAGE_MODEL
-    result = await generate_callback("image", effective_model, prompt, image=image)
+    # 只透传非空可选参数; 新参数(images/size/ratio)不传则编排层走默认, 旧调用零影响
+    cb_kwargs: Dict[str, Any] = {}
+    if images:
+        cb_kwargs["images"] = images
+    if size:
+        cb_kwargs["size"] = size
+    if ratio:
+        cb_kwargs["ratio"] = ratio
+    result = await generate_callback("image", effective_model, prompt, image=image, **cb_kwargs)
     dur = int((time.monotonic() - t0) * 1000)
     if not result.get("ok"):
         # 错误归因按 settled 区分(三堂会审): settled=False=未定(队列/网络/超时)→可稍后重试;

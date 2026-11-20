@@ -21,6 +21,8 @@
 编辑历史: 2026-11-20 小欧 按厂商文档(agnes-video-2.5/flash)补全视频全能力: invoke_generate 扩 first_frame/last_frame/audios/videos/
   seconds/size/aspect_ratio/seed 参数; mode 支持 t2v/i2v 别名与 text/keyframe/reference 直通; 图片类素材(images/first/last)统一公网化,
   audios/videos 为公网URL原样透传; 厂商实测新模式提交返回 queue_full(非参数错)证明参数结构正确 — 小欧-2026-11-20
+编辑历史: 2026-11-20 小欧 按厂商文档补全生图全能力: invoke_generate image 分支加 ratio/images(多图合成)并透传 provider/size,
+  供 generation_client 按厂商方言翻译; 实测 agnes(sensenova) size 协议不同(档位 vs WIDTHxHEIGHT) — 小欧-2026-11-20
 """
 import base64
 import os
@@ -160,6 +162,7 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                           videos: Optional[list] = None,
                           seconds: Optional[str] = None,
                           size: Optional[str] = None,
+                          ratio: Optional[str] = None,
                           aspect_ratio: Optional[str] = None,
                           seed: Optional[int] = None,
                           timeout: Optional[float] = None,
@@ -177,11 +180,13 @@ async def invoke_generate(kind: str, model: str, prompt: str,
     out: Dict[str, Any] = {}
     try:
         if kind == "image":
-            # i2i: 图源转 data URI(两 provider 实测接受), 公网 URL 原样
+            # i2i 单图: 转 data URI(两 provider 实测接受), 公网 URL 原样; 多图合成参考图走公网化(sensenova 多图要公网URL)
             src_image = _resolve_image_source(image) if image else None
+            src_images = [await _publicize_image_source(x) for x in images] if images else None
             kw = {"timeout": timeout} if timeout else {}
-            ok, evidence, settled = await generate_image(api_base, headers, model, prompt,
-                                                         image=src_image, out=out, **kw)
+            ok, evidence, settled = await generate_image(
+                api_base, headers, model, prompt, image=src_image, images=src_images,
+                size=size, ratio=ratio, provider=provider, out=out, **kw)
         elif kind == "video":
             # 工具侧 mode 支持 t2v/i2v 别名与 text/keyframe/reference 直通 — 单一映射点
             alias = {"t2v": VIDEO_MODE_T2V, "i2v": VIDEO_MODE_I2V}

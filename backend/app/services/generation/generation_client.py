@@ -8,6 +8,9 @@
 2026-11-20 小欧 Phase B 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
 2026-11-20 小欧 按厂商文档补全视频全能力: generate_video 支持 mode(text/keyframe/reference)及 first_frame/last_frame/images/
   audios/videos/seconds/size/aspect_ratio/seed, 全部可选(OCP, 探测腿与旧调用零影响); 加 VIDEO_MODES/SIZES/ASPECT_RATIOS 白名单常量 — 小欧-2026-11-20
+2026-11-20 小欧 按厂商文档补全生图全能力: generate_image 加 size/ratio/多图 images 及 provider 方言翻译
+  (agnes 档位+ratio / sensenova 档位换算 WIDTHxHEIGHT, 实测两家参数协议不同); image 归一为数组(sensenova 只认数组);
+  全部可选(OCP); 加 IMAGE_SIZES/RATIOS/档位像素表常量 — 小欧-2026-11-20
 """
 import asyncio
 import time
@@ -18,6 +21,23 @@ import httpx
 # OpenAI Images 兼容协议常量（厂家漂移时改 provider adapter generation_paths() 钩子）
 IMAGE_PATH = "/images/generations"
 VIDEO_PATH = "/videos"
+
+# 生图尺寸档位与宽高比(agnes-image-2.x 文档)。两家方言不同, 在 generate_image 内按 provider 翻译:
+#   agnes: size 用档位(1K/2K/3K/4K) + ratio; sensenova: size 用 WIDTHxHEIGHT(32倍数,512-4096), 无 ratio。
+#   下表为档位×比例对应像素, 恰为32倍数可直接给 sensenova 用 — 小欧-2026-11-20
+IMAGE_SIZES = frozenset({"1K", "2K", "3K", "4K"})
+IMAGE_RATIOS = frozenset({"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"})
+_IMAGE_TIER_PIXELS = {
+    "1K": {"1:1": "1024x1024", "3:4": "864x1152", "4:3": "1152x864", "16:9": "1312x736",
+           "9:16": "736x1312", "2:3": "832x1248", "3:2": "1248x832", "21:9": "1568x672"},
+    "2K": {"1:1": "2048x2048", "3:4": "1728x2304", "4:3": "2304x1728", "16:9": "2624x1472",
+           "9:16": "1472x2624", "2:3": "1664x2496", "3:2": "2496x1664", "21:9": "3136x1344"},
+    "3K": {"1:1": "3072x3072", "3:4": "2592x3456", "4:3": "3456x2592", "16:9": "3936x2208",
+           "9:16": "2208x3936", "2:3": "2496x3744", "3:2": "3744x2496", "21:9": "4704x2016"},
+    "4K": {"1:1": "4096x4096", "3:4": "3456x4608", "4:3": "4608x3456", "16:9": "5248x2944",
+           "9:16": "2944x5248", "2:3": "3328x4992", "3:2": "4992x3328", "21:9": "6272x2688"},
+}
+_PROVIDER_SENSENOVA = "sensenova"
 
 # 厂商明确拒绝的状态: 只有这三个算"确定不收", 其余错误码是环境问题。
 # 单源常量: 输入腿(_probe_once)也从这里取, 两腿判定口径物理同源 - 小欧-2026-11-09
@@ -79,6 +99,10 @@ async def generate_image(
     prompt: str,
     *,
     image: Optional[str] = None,
+    size: Optional[str] = None,
+    ratio: Optional[str] = None,
+    images: Optional[List[str]] = None,
+    provider: str = "",
     timeout: float = 120.0,
     out: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str, bool]:
@@ -88,12 +112,28 @@ async def generate_image(
     = 确定 OK；400/415/422 = 确定拒绝；401/403/429/5xx/网络错 = 未定，
     调用方不得写结论。image 传 URL 时走图生图（i2i），与 t2i 同端点同函数
     - 小欧-2026-11-09
+    size/ratio/images(多图合成)按厂商文档方言翻译(agnes 档位+ratio / sensenova WIDTHxHEIGHT),
+      全可选不传则请求体只含既有字段(探测腿零影响, OCP) — 小欧-2026-11-20
     out: 可选产物出口(Phase B 对话生图工具)——成功时写入未截断的原始 url/b64_json;
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt}
-    if image:
-        body["image"] = image
+    # 尺寸: agnes 用档位+ratio; sensenova 用 WIDTHxHEIGHT(把档位按文档尺寸表换算)
+    if size:
+        if provider == _PROVIDER_SENSENOVA:
+            pixel = (ratio and _IMAGE_TIER_PIXELS.get(size, {}).get(ratio)) or _IMAGE_TIER_PIXELS.get(size, {}).get("1:1")
+            body["size"] = pixel or size  # 档位未知时原样交给厂商判
+        else:
+            body["size"] = size
+            if ratio:
+                body["ratio"] = ratio
+    # 参考图: 单图(image)与多图(images)都归一为数组(实测 agnes 字符串也行但数组兼容 sensenova);
+    #   agnes 文档推荐放 extra_body.image, 但实测顶层 image 数组同样 200, 统一用顶层少一层
+    refs = list(images) if images else []
+    if image and image not in refs:
+        refs.insert(0, image)
+    if refs:
+        body["image"] = refs
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(

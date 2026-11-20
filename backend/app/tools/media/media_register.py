@@ -5,6 +5,7 @@
 编辑历史: 2026-11-20 小欧 工具描述同步 image 参数支持本地路径/attachment_id(后端转data URI), 明确引导 LLM 从会话 attachments 目录取上传图的路径做 i2i 编辑。
 编辑历史: 2026-11-20 小欧 话术审查整改: 两工具描述消除含糊与矛盾 —— 明确 mode/image 如何决定 t2i/i2i、t2v/i2v; image 四种来源与 schema 对齐;
   model 只列本模态模型避免传错; 产物展示区分公网URL(markdown)与本地附件(不用markdown, 会401), 消除与 llm_data.summary 的冲突; 纯话术改动零行为变更。
+编辑历史: 2026-11-20 小欧 按厂商文档补全生图全能力: generate_image 描述加 images 多图合成、size 档位、ratio 宽高比, examples 补多图合成示例 — 小欧-2026-11-20
 """
 from app.logger import logger
 from app.tools.media.generate_image import generate_image
@@ -17,8 +18,9 @@ MEDIA_TOOL_DESCRIPTIONS = {
     "generate_image": (
         "适用: 用户要求生成/画一张图片, 或基于已有图片编辑(改色/换风格等)时。"
         "prompt 写想要的内容或改动; model 为生成图像模型名(只传生成图像模型如 agnes-image-2.1-flash, 不填用默认; 切勿传生成视频模型)。"
-        "image 决定模式: 留空=文生图(t2i), 传参考图=图生图(i2i); 参考图可传用户上传图的本地路径(在会话 attachments 目录下)、"
-        "attachment_id、公网图片URL 或 data URI 四者之一, 后端自动归一, 本地图无需公网图床。"
+        "image 决定模式: 留空=文生图(t2i), 传单张参考图=图生图(i2i), 传 images 多张=多图合成(prompt 里说明每张图角色与组合方式); "
+        "参考图可传本地路径(会话 attachments 目录下)、attachment_id、公网图片URL 或 data URI, 后端自动归一, 本地图无需公网图床。"
+        "size 尺寸档位 1K/2K/3K/4K 与 ratio 宽高比(1:1/3:4/4:3/16:9/9:16/2:3/3:2/21:9)可选, 不填用厂商默认。"
         "产物为公网URL时, 在回复里原样输出工具返回的 markdown ![](url) 展示; 若产物是本地附件(工具会说明), 则只告知用户去产物/附件查看, 不要用 markdown 展示本地路径。"
     ),
     "generate_video": (
@@ -46,6 +48,13 @@ MEDIA_TOOL_EXAMPLES = {
         {
             "prompt": "把图片主色调改成蓝色",
             "image": "会话 attachments 目录下用户上传图的本地路径",
+            "model": "agnes-image-2.1-flash",
+        },
+        {
+            "prompt": "以第一张图为主角、第二张图为产品参考, 生成电影级海报, 保留角色身份与产品外形",
+            "images": ["会话 attachments 目录下角色图的本地路径", "会话 attachments 目录下产品图的本地路径"],
+            "size": "2K",
+            "ratio": "16:9",
             "model": "agnes-image-2.1-flash",
         },
     ],

@@ -7,6 +7,8 @@
 编辑历史: 2026-11-20 小欧 按厂商文档(agnes-video-2.5/flash)补全视频全能力: mode 扩 text/keyframe/reference;
   加 first_frame/last_frame(首尾帧)、images(多图)/audios/videos(多模态参考)、seconds/size/aspect_ratio/seed 通用参数;
   prompt 引导用 <Picture N>/<Audio N>/<Video N> 指代素材 — 小欧-2026-11-20
+编辑历史: 2026-11-20 小欧 按厂商文档(agnes-image-2.1/2.5-flash)补全生图全能力: GenerateImageInput 加 images(多图合成)/
+  size(1K~4K档位)/ratio(8种宽高比); 实测 agnes 档位+ratio、sensenova WIDTHxHEIGHT 由后端按 provider 翻译 — 小欧-2026-11-20
 """
 from typing import Optional
 
@@ -19,7 +21,10 @@ from app.tools.tool_constants import MEDIA_IMAGE_MODEL_HINT, MEDIA_VIDEO_MODEL_H
 class GenerateImageInput(BaseModel):
     prompt: str = Field(..., min_length=1, description="图片内容描述(文本生成图像提示词)。写清主体、风格、场景、光线等要素, 越具体出图越贴合; 图生图(i2i)时用来描述想要的改动(如'改成蓝色')")
     model: Optional[str] = Field(default=None, description=MEDIA_IMAGE_MODEL_HINT)
-    image: Optional[str] = Field(default=None, description="图生图(i2i)参考图, 四种都支持: ①用户上传图的本地路径(如会话 attachments 目录下的 xxx.png) ②attachment_id(32位十六进制) ③公网图片URL ④data URI(data:image/...;base64,...)。留空=纯文本生成图像(t2i); 传值=基于这张图编辑(i2i)。后端自动归一为厂商可解析格式, 本地图无需公网图床")
+    image: Optional[str] = Field(default=None, description="单张参考图(i2i), 四种都支持: ①本地路径(会话 attachments 目录) ②attachment_id(32位hex) ③公网图片URL ④data URI。留空=文生图(t2i); 传值=图生图(i2i)。后端自动归一, 本地图无需图床。多图合成请用 images")
+    images: Optional[list] = Field(default=None, description="多图合成参考图列表(2张及以上)。每项来源同 image(本地路径/attachment_id/公网URL/data URI), 后端自动公网化。与 image 同时给时合并。prompt 里说明每张图的角色与组合方式")
+    size: Optional[str] = Field(default=None, description="输出尺寸档位: 1K/2K/3K/4K(agnes), sensenova 会自动换算成对应像素尺寸。不填用厂商默认")
+    ratio: Optional[str] = Field(default=None, description="宽高比: 1:1/3:4/4:3/16:9/9:16/2:3/3:2/21:9, 与 size 档位配合, 默认 1:1(agnes)")
 
 
 class GenerateVideoInput(BaseModel):
