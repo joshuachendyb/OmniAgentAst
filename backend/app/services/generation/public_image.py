@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """本地图片公网化(services/generation) — 把本地图字节上传到临时图床拿到公网直链。
 
+归属说明(为何也在 generation 层): 本模块是 i2v 生成的前置辅助——为生成端点准备可参考的公网图,
+  与 generation_client(生成端点出口)同属"生图生视频链路", 消费方是 media_generate 回调。
+  generation 包现含两类 HTTP: ①generation_client=生成端点唯一出口(/images/generations、/videos);
+  ②本模块=图床上传端点(i2v 参考图公网化), 二者端点不同、职责分离 — 小欧-2026-11-20 三堂会审
+
 背景: 生视频 i2v(reference 模式)的 images 只吃公网 URL 字符串, 厂商要能直连 GET,
   本地路径/attachment_id/data URI 都不行(实测 data URI 被拒)。本模块把本地图临时公网化,
   供 i2v 参考图用; 生图 i2i 仍走 data URI(厂商接受), 两条路不混。

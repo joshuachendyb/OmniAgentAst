@@ -10,7 +10,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| 工具函数 | 63 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer 共 9 类 |
+| 工具函数 | 68 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer / agent / media 共 11 类 |
 | 推理引擎 | thought → action → observation 循环推理 |
 | Agent | 单一 UniversalAgent（BaseAgent 子类，配置驱动） |
 | AI Provider | 多模型适配：OpenCode、智谱AI、DeepSeek、Kimi 等 OpenAI 兼容 API |
@@ -44,7 +44,7 @@
 编排层（services/chat/stream_orchestrator → agent_runner → run_react_cycle）
         │
         ├── Agent：agent_runner → UniversalAgent + tool_loader
-        ├── Tool：tool_executor（统一执行入口），ToolRegistry 9 类 63 工具
+        ├── Tool：tool_executor（统一执行入口），ToolRegistry 11 类 68 工具
         └── LLM 客户端（app/llm，httpx 多 Provider）
         ▼
 安全层（app/safety）L0-L3：全局开关 → 安全级别 → 已知风险 → DB 事务编排
@@ -101,7 +101,7 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
                        safety ──> tools（安全守卫被工具层调用，不反向依赖业务）
 ```
 
-由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制：api 不得引 tools/safety；tools 不得引 services/safety；safety 不得引 services。
+分层靠 code review 约定维持（原设定的守护测试 `tests/test_architecture_boundaries.py` 未落地）：api 不得引 tools/safety；tools 不得引 services/safety；safety 不得引 services。新增工具（含 tools/media）须自查依赖方向只向下。
 
 ### 2.4 与初始设计蓝图的差距
 
@@ -122,9 +122,9 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 
 ---
 
-## 三、工具体系（63个）
+## 三、工具体系（68个）
 
-### 3.1 工具分类（9 类 63 工具）
+### 3.1 工具分类（11 类 68 工具）
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
@@ -134,10 +134,12 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 | DESKTOP | 11 | 窗口管理、鼠标键盘控制、截屏、剪贴板 |
 | DOCUMENT | 11 | PDF/Word/Excel/PPT读写、压缩解压、媒体读取 |
 | DATAANALYSIS | 6 | SQL查询/执行、图表生成、数据筛选分析 |
-| FUNDAMENTAL | 6 | Shell执行、网页抓取、搜索工具、通知 |
+| FUNDAMENTAL | 7 | Shell执行、网页抓取、搜索工具、通知 |
 | WIN_REGISTRY | 3 | 注册表读/写/删 |
 | TIMER | 6 | 定时器设置/清除/列出、时间计算 |
-| 合计 | 63 | |
+| AGENT | 2 | question 阻塞问询、schedule 智能体交互（hide_from_steps，走 notice 通道） |
+| MEDIA | 2 | 生成图像、生成视频（经 context 回调拿产物，不碰文件/网络工具链） |
+| 合计 | 68 | |
 
 ### 3.2 工具注册架构
 
@@ -159,7 +161,8 @@ backend/app/tools/
 ├── security/                # 安全守卫（path_safe_check / safety_result / temp_auth，非对外工具）
 ├── trust.py trust_db.py     # 工具信任管理（会话级信任 / 路径级精确撤销）
 ├── file/ network/ system/ desktop/ document/
-├── dataanalysis/ fundamental/ win_registry/ timer/   # 9 个工具分类目录
+├── dataanalysis/ fundamental/ win_registry/ timer/
+├── agent/ media/                       # 11 个工具分类目录（agent=问询/计划交互，media=生成图像/视频）
 └── {category}_schema.py     # Pydantic 参数模型（每个分类）
    {category}_register.py    # 注册入口（tool_methods 字典显式注册）
    └── {原子实现文件}.py     # 具体实现按原子文件散落（如 file/ 下 read_text_file.py 等，无 {category}_tools.py 大文件）
@@ -213,7 +216,7 @@ OmniAgentAs-01/
 │   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
 │   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/path_tool_safety_checker/default_hooks/models
-│   │   ├── tools/              # 工具函数（9分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
+│   │   ├── tools/              # 工具函数（11分类68工具，含 security 安全守卫 + validate 校验层 + toolhelper）
 │   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
 │   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
 │   │   ├── services/

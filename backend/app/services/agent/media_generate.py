@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """媒体生成回调实现(services 层) — 供 tool_executor 注入给 media 工具。
 
+归属说明(为何在 agent 层而非 generation 层): 本模块是 tool_executor 注入给工具层的回调实现,
+  消费方(tool_executor)在 services/agent, 故随用方放 agent 层; 真正的厂商 HTTP 出generation_client
+  仍在 services/generation, 本模块只做"定位 provider/凭据 + 编排调用 + b64 落盘", 不另开生成出口 — 小欧-2026-11-20 三堂会审
+
 编辑历史: 2026-11-20 小欧 新建: 按模型名定位 provider + 拿凭据 + 调 generation_client 统一出口,
   产出原始 url/b64 回给生图/生视频工具; 探测与业务共用 generate_* 同一 HTTP 出口(设计[15] Phase B)。
 编辑历史: 2026-11-20 小欧 b64 产物落盘: SenseNova U1.5 只返 2048² PNG 的 b64(约4MB)无公网URL,
