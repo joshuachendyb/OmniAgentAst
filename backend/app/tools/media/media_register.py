@@ -21,7 +21,7 @@ MEDIA_TOOL_DESCRIPTIONS = {
     "generate_video": (
         "适用: 用户要求生成/制作一段视频时。文字描述想要的画面, 调用本工具生成视频(异步, 约几分钟)。"
         "prompt 为视频内容描述; model 为生视频模型名(不填用默认 agnes-video-2.5-flash); "
-        "mode=t2v(纯文本)或 i2v(带参考图, 需给 image); timeout 等待上限秒(默认660)。"
+        "mode=t2v(纯文本)或 i2v(带参考图, 需给 image——可传本地路径/attachment_id, 后端自动公网化, 本地图也能做图生视频); timeout 等待上限秒(默认660)。"
         "生成后在回复里用 markdown 展示视频: ![生成的视频](产物URL)。"
     ),
 }

@@ -60,9 +60,9 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   与 deepseek-chat 对以下历史消息必 400/422: tool_calls 为对象非数组、tool_calls 元素缺 function/缺 name/缺 type、
   arguments 为对象或空串或非 JSON 文本、assistant.content=None 且无 tool_calls。归一后请求得以发出去, 而非整轮 400。
   零改动时原样返回入参对象(不复制不改入参), 常态路径零行为变化 — 小欧-2026-10-31
- 2026-11-03 小欧 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障)
- 2026-11-20 小欧 连接池耗尽根治: 软配额闸门上限改 max(1, max_connections - 余量), 恒小于 httpx 池上限, 池结构上不会被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长
- 2026-11-20 小欧 三堂会审整改: 闸门余量提常量 _SOFT_POOL_HEADROOM, 去掉封顶8(改大 max_connections 时闸门不再被卡住, 配置意图生效); 同步排队超时注释与配置文案为熔断语义
+ 编辑历史: 2026-11-03 小欧 - 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障) — 小欧-2026-11-03
+ 编辑历史: 2026-11-20 小欧 - 连接池耗尽根治: 软配额闸门上限改 max(1, max_connections - 余量), 通常小于 httpx 池上限使池结构上难被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长 — 小欧-2026-11-20
+ 编辑历史: 2026-11-20 小欧 - 三堂会审整改: 闸门余量提常量 _SOFT_POOL_HEADROOM, 去掉封顶8(改大 max_connections 时闸门不再被卡住, 配置意图生效); 同步排队超时注释与配置文案为熔断语义; 熔断标记提共享常量 ERR_TYPE_POOL_FULL 消跨模块裸字符串; _acquire_soft_pool 返回值简化为 None 消死分支 — 小欧-2026-11-20
 """
 
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
@@ -96,6 +96,9 @@ from app.constants import (
 from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.adapters import get_provider_adapter  # 适配层查询 — 小欧 2026-09-23
 from app.llm.core import LLMResponseError  # 软配额排队超时熔断 — 小欧-2026-11-20
+from app.llm.error_classifier import (
+    ERR_TYPE_POOL_FULL,  # 熔断标记单一真源 — 小欧-2026-11-20 三堂会审
+)
 from app.llm.reasoning import (
     extract_reasoning_from_chunk,  # diff五 流式收集复用三字段链 — 小欧 2026-09-23
 )
@@ -407,7 +410,8 @@ _SOFT_POOL_HEADROOM = 2
 
 def _get_soft_pool_semaphore():
     """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20
-    软配额上限 = max_connections - HEADROOM, 恒小于池上限, 池结构上填不满 — 小欧-2026-11-20"""
+    软配额上限 = max_connections - HEADROOM, 通常小于池上限使池结构上填不满;
+    极小 max_connections(<=HEADROOM)时退化为 1, 与池同宽, 靠排队熔断兜底 — 小欧-2026-11-20 三堂会审"""
     global _soft_pool_semaphore
     if _soft_pool_semaphore is None:
         _max = int(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
@@ -477,18 +481,18 @@ class LLMClient:
                 base_url=self._base_url,
             )
 
-    async def _acquire_soft_pool(self, _sem: Optional[asyncio.Semaphore] = None) -> bool:
+    async def _acquire_soft_pool(self, _sem: Optional[asyncio.Semaphore] = None) -> None:
         """排队获取软配额信号量 — 小欧 2026-09-24 v3.7.1
         闸门上限恒 < httpx 池上限(见 _get_soft_pool_semaphore), 池结构上不会满; 这里满则
         排队等待配置项 soft_pool_wait_timeout 秒, 超时熔断失败(不放行也不无限挂) — 小欧-2026-11-20
-        函数化(DRY: request/request_stream 两处完全相同的排队块收敛为单点)。"""
+        函数化(DRY: request/request_stream 两处完全相同的排队块收敛为单点)。
+        成功即持有(返回 None), 超时抛熔断异常; 调用方 finally 直接 release, 无 False 分支 — 小欧-2026-11-20 三堂会审。"""
         sem = _sem or _get_soft_pool_semaphore()
         try:
             await asyncio.wait_for(sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
-            return True
         except asyncio.TimeoutError:
             logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s, 熔断本次调用(不硬塞连接池)")
-            raise LLMResponseError(message="LLM软配额排队超时", details={"error_type": "pool_full"})
+            raise LLMResponseError(message="LLM软配额排队超时", details={"error_type": ERR_TYPE_POOL_FULL})
 
     def _adapt_request(self, body: Dict) -> tuple:
         """gate 允许 + 端点分派 + 动态头 + 协议判定(非流式/流式共用) — 小欧 2026-09-24 v3.7.1; 模块化收敛协议判定单点 2026-09-24
@@ -559,14 +563,13 @@ class LLMClient:
         _to = httpx.Timeout(request_timeout) if request_timeout else self._default_timeout
         # 软配额: 排队等待, 超时熔断失败(不放行也不挤占连接池) — 小欧-2026-11-20
         _sem = _get_soft_pool_semaphore()
-        _acquired = await self._acquire_soft_pool(_sem)
+        await self._acquire_soft_pool(_sem)
         try:
             _endpoint, body, _dyn_headers, _ = self._adapt_request(body)   # v3.7.1 函数化; 协议位非流式不消费 — 小欧 2026-09-24
             response = await self._client.post(_endpoint, json=body, timeout=_to,
                                                headers=_dyn_headers or None)
         finally:
-            if _acquired:
-                _sem.release()
+            _sem.release()
         if response.status_code >= 400:
             self._raise_http_error(response, response.text)   # v3.7.1 函数化 — 小欧 2026-09-24
         return response.json()
@@ -675,7 +678,7 @@ class LLMClient:
             pool=float(get_config().get("tuning.llm_net.pool_timeout", _D_POOL_TIMEOUT)),
         )
         _sem = _get_soft_pool_semaphore()
-        _acquired = await self._acquire_soft_pool(_sem)   # v3.7.1 函数化(DRY) — 小欧 2026-09-24
+        await self._acquire_soft_pool(_sem)   # v3.7.1 函数化(DRY) — 小欧 2026-09-24
         try:
             _endpoint, body, _dyn_headers, _is_responses = self._adapt_request(body)   # 协议判定单点(见 _adapt_request) — 小欧 2026-09-24
             async with self._client.stream("POST", _endpoint, json=body, timeout=_timeout,
@@ -719,8 +722,7 @@ class LLMClient:
         finally:
             # 小欧 2026-09-20: 流结束/异常清在飞响应(镜像随流清), 防悬挂旧HTTP响应 — 小欧-2026-09-20
             self._current_response = None
-            if _acquired:
-                _sem.release()
+            _sem.release()
 
     async def cancel(self):
         """强制取消在飞流式请求 — 小欧 2026-09-20: 直达HTTP层关闭流式响应, 供 BaseAIService.cancel 委托。

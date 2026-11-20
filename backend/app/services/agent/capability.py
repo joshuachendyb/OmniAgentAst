@@ -5,13 +5,13 @@
 
 # 2026-11-18 opencode 文档模态按声明开启(与图片/音视频同口径): 声明 file 即原生 file part,
 #   未声明降级为文本全文注入; 探测只作取证/展示(图片外链门见下条) — opencode-2026-11-18
-# 2026-11-20 小欧 视频 transport 加 inline: 本地视频字节转 data URI 走 video_url(media_payload 已实现), mimo 实测能解析; 原只有 url 导致本地视频被误判无原生通道降级"未发送"
-# 2026-11-20 小欧 三堂会审整改: docstring 与 _TRANSPORT 注释同步为"视频 url+inline 两种方言都可达", 消除与改后代码的矛盾
-
 # 2026-11-18 opencode 运输方式归方言固有能力(_TRANSPORT), 实测只在一处开门: 图片外链。
 #   其余模态(音频/文档内联、视频地址)是方言决定的事实, 不需要探测;(旧「实测外链可用才转发
 #   图片地址」过期后会让厂商抓不到素材且请求不报错 —— 链接图默认下载后内联, 有实测证明才转发)
 #   — opencode-2026-11-18
+
+# 2026-11-20 小欧 视频 transport 加 inline: 本地视频字节转 data URI 走 video_url(media_payload 已实现), mimo 实测能解析; 原只有 url 导致本地视频被误判无原生通道降级"未发送"
+# 2026-11-20 小欧 三堂会审整改: docstring 与 _TRANSPORT 注释同步为"视频 url+inline 两种方言都可达", 消除与改后代码的矛盾
 
 """services.agent.capability — 模型输入能力画像(纯函数, 零 IO)。
 

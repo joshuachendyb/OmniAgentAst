@@ -139,6 +139,8 @@ key 全局唯一，加载自检重复直接拒启。
       — opencode-2026-11-18
     2026-11-19 小欧 - hitl 组增 pause_auto_resume_timeout(暂停自动恢复秒数, 30~3600, 默认300):
       设置页可见可改(原只加 config.yaml.example 但设置页无入口=用户改不了), HITL 组 4 键→5 键 — 小欧-2026-11-19
+    2026-11-20 小欧 - 媒体组增 media.video_inline_limit_mb/media.audio_inline_limit_mb:
+      音视频内联上限缺省跟随附件上限真源(MAX_FILE_BYTES, 20MB), 不再沿用图片 2MB 口径致大文件全数降级 — 小欧-2026-11-20
 
 """
 from typing import Any, Dict, List, Optional

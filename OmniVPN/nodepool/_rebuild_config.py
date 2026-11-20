@@ -78,7 +78,7 @@ def rebuild(path, nodes_text, names, apply):
         bak = os.path.join(WORK_DIR, os.path.basename(path) + ".bak-" + stamp)
         shutil.copy2(path, bak)
         open(path, "w", encoding="utf-8", newline="\n").write(text)
-        print("  已写 %s  节点 %d 个  备份 %s" % (os.path.basename(path), len(names), os.path.basename(bak)))
+        print("  已写 %s  节点 %d 个  备份 %s" % (os.path.basename(path), len(names), os.path.relpath(bak, os.path.dirname(WORK_DIR))))
     else:
         print("  [预演] %s  头部 %d 行 + 节点 %d 个 + 规则 %d 行"
               % (os.path.basename(path), len(head), len(names), len(rules)))

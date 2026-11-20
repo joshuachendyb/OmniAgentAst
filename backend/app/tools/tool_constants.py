@@ -92,6 +92,8 @@
 #   配置派生值(如 shell 并发上限)不进本文件: 常量模块保持纯数据, 由 tool_retry_engine/shell_engine 各自按配置计算 — 小欧-2026-11-04
 # 2026-11-15 小欧 - 新增 GREP_INPUT_MATCH_TIMEOUT_SECONDS=5(单次正则匹配超时上限, 引擎换 regex 后每次
 #   finditer 传 timeout, 防御灾难回溯卡死; 见 grep_file_content.py) — 小欧-2026-11-15
+# 2026-11-20 小欧 - CATEGORY_MODULES 增 media→_register_media_tools 映射(启动注册生图/生视频工具);
+#   TOOL_RETRY_CONFIG 增 generate_image/generate_video max_retries=0(生成端点计费, 禁重试重复提交)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 

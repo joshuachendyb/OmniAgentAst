@@ -53,6 +53,8 @@
 //   ④行内代码改「浅灰底 + 深色字 + 品牌色左线」(对比度 11.7:1, 原蓝字蓝底仅 3.71:1 不达 AA)。
 //   ⑤代码块行高双档: 普通代码取场景值(1.4/1.35), 含 ASCII 框线图的围栏仍取 1.1
 //      (框线竖线墨迹高仅 1.12~1.17em, 行高大于此值竖线会断成虚线 —— 不可破)。
+// 编辑历史: 2026-11-20 小欧 - img 组件按视频后缀(.mp4/.webm/.mov/.ogg)分流渲染 <video controls>, 生视频产物 markdown 即可播放;
+//   限宽/圆角并入 .md-body img,video 的 CSS 变量真源(去内联 style), 三堂会审消魔法数 — 小欧-2026-11-20
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -334,17 +336,11 @@ const buildComponents = (
     //   限宽 + 圆角 + 懒加载(长文档多图不阻塞首屏); alt 由净化 schema 放行, 缺 alt 时保留原值。
     // 2026-11-20 小欧 - 生视频产物呈现: src 为视频后缀(.mp4/.webm/.mov)时渲染 <video controls>,
     //   图片仍走 <img>。约定 ![生成视频](url.mp4) 即可播放, 无需 rehype-raw(本项目未装, HTML 标签会被净化丢弃)。
+    //   限宽/圆角走 .md-body video 的 CSS 变量(与 img 同源), 不内联样式 — 小欧-2026-11-20 三堂会审
     img: (props: MdProps) => {
       const src = props.src ?? '';
       if (/\.(mp4|webm|mov|ogg)(\?|$)/i.test(src)) {
-        return (
-          <video
-            src={src}
-            controls
-            preload="metadata"
-            style={{ maxWidth: '100%', borderRadius: 6 }}
-          />
-        );
+        return <video src={src} controls preload="metadata" />;
       }
       return <img src={src} alt={props.alt ?? ''} loading="lazy" />;
     },

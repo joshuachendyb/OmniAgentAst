@@ -21,6 +21,6 @@ class GenerateVideoInput(BaseModel):
     prompt: str = Field(..., min_length=1, description="视频内容描述(文本生视频提示词), 尽量具体")
     model: Optional[str] = Field(default=None, description=_MODEL_HINT)
     mode: str = Field(default="t2v", description="生成方式: t2v=纯文本生视频, i2v=带参考图生视频(需给 image)")
-    image: Optional[str] = Field(default=None, description="i2v 的参考图。可传本地路径/attachment_id/公网URL/data URI(后端自动转换); mode=t2v 时留空")
+    image: Optional[str] = Field(default=None, description="i2v 的参考图。可传本地路径/attachment_id/公网URL/data URI——本地图/附件/ data URI 后端会自动上传到临时图床转成公网 URL(生视频 i2v 厂商只认公网 URL); mode=t2v 时留空")
     timeout: int = Field(default=660, ge=120, le=1200,
                          description="视频生成等待上限(秒); 异步任务含排队+出片, 默认660, 别调太小")

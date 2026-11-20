@@ -32,17 +32,18 @@
 #   压缩后 2MB 口径, PDF 不能压缩, 沿用图片上限会让几乎所有真实文档落到降级;
 #   ③容器不猜: 仅 PDF 产原生 file part(docx/xlsx/pptx 各家方言不一), 其余显式原因回落文本抽取
 #   — opencode-2026-11-18
-# 2026-11-20 小欧 本地视频原生投递: 实测 mimo(opencli OpenAI兼容网关)接受 data:video/mp4;base64 作为 video_url 且能真看懂内容;
-#   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
-# 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
-# 2026-11-20 小欧 视频发前转 H264: 模型对视频编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9, MJPG 等报400), 用 imageio-ffmpeg 自带 ffmpeg 把非标准编码转 H264 再投递(新模块 video_transcode, 转码结果按源缓存); 实测 214MB MJPG .mov 转码后 nano-omni 看懂内容
-# 2026-11-20 小欧 三堂会审整改: 转码缓存落系统临时目录(原附件同级 .h264 无清理会磁盘泄漏); _ensure_video_h264 返回注解改 Tuple[str,bool]; 复用 _read_capped(path=) 消重复读取函数; 消死变量 transcoded
 
 # 2026-11-18 opencode 链接图并入统一额度: 上限/压缩策略抽为 _image_data_uri 单点, 本地附件与
 #   链接下载图共用 —— 原链接图内联不判额度不压缩, media.inline_limit_mb 对链接图形同虚设,
 #   一张 10MB 网图会直接以 13MB base64 进请求体; ensure_payload 的 url 直传只保留
 #   视频(方言唯一投递方式)与图片(实测证明厂商能抓外链时才由能力层选到这条),
 #   转发开关关掉时图片回落下载内联而不是丢素材 — opencode-2026-11-18
+
+# 2026-11-20 小欧 本地视频原生投递: 实测 mimo(opencli OpenAI兼容网关)接受 data:video/mp4;base64 作为 video_url 且能真看懂内容;
+#   build_logical_part 的 video 分支改为本地字节→data URI 放 url(走 to_wire_part 已有 video_url 方言), 新增 video_inline_limit_mb(默认20MB) 与 file 档对齐, 修"声明支持视频却降级未发送"的缺陷
+# 2026-11-20 小欧 音频独立内联上限: 新增 audio_inline_limit_mb(默认20MB), 音频分支不再沿用图片2MB口径(不能压缩, 几分钟mp3会全数降级未发送)
+# 2026-11-20 小欧 视频发前转 H264: 模型对视频编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9, MJPG 等报400), 用 imageio-ffmpeg 自带 ffmpeg 把非标准编码转 H264 再投递(新模块 video_transcode, 转码结果按源缓存); 实测 214MB MJPG .mov 转码后 nano-omni 看懂内容
+# 2026-11-20 小欧 三堂会审整改: 转码缓存落系统临时目录(原附件同级 .h264 无清理会磁盘泄漏); _ensure_video_h264 返回注解改 Tuple[str,bool]; 复用 _read_capped(path=) 消重复读取函数; 消死变量 transcoded
 
 """services.agent.media_payload — 媒体附件 → 请求 content part 的唯一构造点。
 
@@ -67,6 +68,9 @@ from urllib.parse import urlsplit
 
 from app.config import get_config
 from app.logger import logger
+from app.services.agent.video_transcode import (
+    ensure_h264,  # 视频发前转 H264(顶层直引, 消透传函数) — 小欧-2026-11-20 三堂会审
+)
 
 _DATA_URL_MAX = 8
 _data_url_cache: Dict[Tuple[str, str, int, int, int], str] = {}
@@ -82,13 +86,18 @@ def media_config() -> Dict[str, Any]:
     return cfg if isinstance(cfg, dict) else {}
 
 
+def _mb_to_bytes(mb: float) -> int:
+    """MB(浮点) → 字节, 下限 1MB; 内联上限换算单点 — 小欧-2026-11-20 三堂会审(DRY)"""
+    return max(1, int(mb)) * 1024 * 1024
+
+
 def inline_limit_bytes() -> int:
     # 本机可调阈值(media.inline_limit_mb, 默认 2MB), 非外部协议上限; 单机自有资源可放宽。
     try:
         mb = float(media_config().get("inline_limit_mb") or 2)
     except (TypeError, ValueError):
         mb = 2.0
-    return max(1, int(mb)) * 1024 * 1024
+    return _mb_to_bytes(mb)
 
 
 def doc_inline_limit_bytes() -> int:
@@ -101,7 +110,7 @@ def doc_inline_limit_bytes() -> int:
         mb = float(media_config().get("doc_inline_limit_mb") or 8)
     except (TypeError, ValueError):
         mb = 8.0
-    return max(1, int(mb)) * 1024 * 1024
+    return _mb_to_bytes(mb)
 
 
 def _default_media_inline_bytes() -> int:
@@ -118,8 +127,7 @@ def _media_inline_limit_bytes(key: str) -> int:
     if raw is None or raw == "":
         return default
     try:
-        mb = float(raw)
-        return max(1, int(mb)) * 1024 * 1024
+        return _mb_to_bytes(float(raw))
     except (TypeError, ValueError):
         return default
 
@@ -305,13 +313,6 @@ async def _read_capped(attachment: Dict[str, Any],
         return None, "文件不可读"
 
 
-def _ensure_video_h264(path: str) -> Tuple[str, bool]:
-    """视频发前转 H264(编码差异兜底); 缓存落系统临时目录(由 OS 清理, 不污染附件目录)。
-    返回 (最终路径, 是否转码); 转码失败返回原路径由投递侧降级 — 小欧-2026-11-20"""
-    from app.services.agent.video_transcode import ensure_h264
-    return ensure_h264(path)  # 不传 cache_dir, 用 video_transcode 的默认临时目录
-
-
 async def build_logical_part(kind: str, attachment: Dict[str, Any]
                              ) -> Tuple[Optional[Dict[str, Any]], str]:
     """本地附件 → 逻辑 part(只描述语义: modality/mime/data/url, 不描述方言)。"""
@@ -324,7 +325,7 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
         # 实测接受 data:video/mp4;base64)。模型对编码要求不一(nano-omni 只收 H264/HEVC/VP8/VP9,
         # MJPG/MP4V 会 400)——发前统一转 H264, 按模型定制的前提是有标准编码可投递 — 小欧-2026-11-20
         stored = str(attachment.get("stored_path") or "")
-        play_path, _ = await asyncio.to_thread(_ensure_video_h264, stored)
+        play_path, _ = await asyncio.to_thread(ensure_h264, stored)
         limit = video_inline_limit_bytes()
         raw, reason = await _read_capped(attachment, limit, path=play_path)
         if raw is None:
@@ -364,8 +365,8 @@ def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Option
     if modality == "video":
         if url:
             return {"type": "video_url", "video_url": {"url": url}}, ""
-        # provider 定制点: chat 方言无视频内联 part; 待视频功能落地时, 对声明支持视频内联的
-        #   provider(如 Gemini inline_data video/mp4)在此产内联 part, 其余仍回落文本卡。
+        # 本地视频已在 build_logical_part 转 data URI 走 url 分支投递(厂商侧 video_url);
+        #   走到这里说明既无 url 也无可内联字节(远程视频未下载/超限), 只能回落说明 — 小欧-2026-11-20
         return None, "该传输方言不支持视频内联"
     if modality == "audio":
         if url:
@@ -401,7 +402,7 @@ async def ensure_payload(item: Dict[str, Any], transport: str) -> Tuple[Optional
     两个运输方式都产**逻辑 part**(modality/mime/data/url), 方言由 to_wire_part 单点产出;
     仅媒体模态(image/audio/video)可达, text/richdoc 的 URL 走 attachment_wire 抽取路径。
     关掉 media.remote_url_passthrough 只停"把地址交给厂商": 图片改下载内联(不丢素材),
-    视频无内联 part 只能留一行说明。"""
+    视频本地字节已转 data URI 走 url 投递, 仅远程视频未下载时留一行说明 — 小欧-2026-11-20。"""
     url = str(item.get("url") or "")
     kind = str(item.get("content_kind") or "") or "image"
     if transport == "url":

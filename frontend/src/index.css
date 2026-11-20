@@ -801,8 +801,9 @@
   text-decoration: underline;
   overflow-wrap: break-word;
 }
-/* 图片: 限宽 + 圆角(缺陷 #7) */
-.md-body img {
+/* 图片/视频: 限宽 + 圆角(缺陷 #7); 生视频产物 <video> 与图片同款观感, 样式走同一 CSS 变量真源 — 小欧-2026-11-20 */
+.md-body img,
+.md-body video {
   max-width: 100%;
   height: auto;
   border-radius: var(--md-radius);

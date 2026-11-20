@@ -41,6 +41,7 @@
      2026-11-09 小欧 文案订正: QUOTA_EXCEEDED 用户文案"限额"改"配额"(QUOTA=quota 配额, 非 limit 限额; 与枚举语义/测试断言一致, 两处: description+SYSTEM_ERROR_TYPE_TO_MESSAGE) — 小欧-2026-11-09
      2026-11-20 小欧 连接池耗尽兜底: 本地 httpx.PoolTimeout 与 client_sdk 软配额熔断(pool_full)两类均归 CIRCUIT_OPEN 不可重试; 此类为本地资源已满信号, 重试只会继续占池放大雪崩, 短路失败由上层处置
      2026-11-20 小欧 三堂会审整改: PoolTimeout 判类型由字符串匹配改 isinstance(httpx.PoolTimeout); 去 pool_full 分支的 try/except Exception 异常黑洞(纯 getattr/isinstance 不会抛)
+     2026-11-20 小欧 再整改: pool_full 裸字符串提为模块级常量 ERR_TYPE_POOL_FULL(单一真源), client_sdk 写入与此处分类共用, 防两处字面漂移 — 小欧-2026-11-20
 """
 
 import json
@@ -56,6 +57,10 @@ try:
     from app.utils.idle_timeout import IdleTimeoutError
 except ImportError:
     IdleTimeoutError = None
+
+# 软配额排队超时熔断的跨模块协议标记(单一真源): client_sdk 写入 details.error_type,
+# 本模块分类读取; 两处共用此常量, 避免裸字符串各自硬编码漂移 — 小欧-2026-11-20 三堂会审
+ERR_TYPE_POOL_FULL = "pool_full"
 
 
 class SystemErrorCategory(Enum):
@@ -189,7 +194,7 @@ class SystemErrorClassifier:
         """检查特殊错误 — 白名单例外，走非SERVER路径 — 小沈 2026-07-05 移除EndOfStream(黑名单默认处理)"""
         # 软配额排队超时熔断(pool_full) → CIRCUIT_OPEN 不可重试: 闸门满说明并发已满, 重试只会继续排队放大 — 小欧-2026-11-20
         _det = getattr(error, "details", None)
-        if isinstance(_det, dict) and _det.get("error_type") == "pool_full":
+        if isinstance(_det, dict) and _det.get("error_type") == ERR_TYPE_POOL_FULL:
             return SystemErrorCategory.CIRCUIT_OPEN
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return SystemErrorCategory.IDLE_TIMEOUT

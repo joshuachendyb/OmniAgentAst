@@ -7,7 +7,9 @@
   直接塞 LLM 回复会超消息大小; 本层(services, 可 import attachments)把 b64 落盘为会话 attachment,
   返回 attachment_id/file_path, 工具声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览(零前端改动)。
 编辑历史: 2026-11-20 小欧 图源归一: 实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i/i2v image 参数都接受标准
-  data URI; _resolve_image_source 把本地路径/attachment_id 读字节转 data URI(公网URL原样), 打通本地图片编辑(无需公网图床)。
+  data URI(仅 i2i; i2v reference 只吃公网 URL, data URI 被拒); _image_bytes 统一读字节, i2i 转 data URI, i2v 走 public_image 公网化。
+编辑历史: 2026-11-20 小欧 本地图 i2v 公网化: 新增 _image_bytes 抽出图源读取(i2i/i2v 共用, DRY); invoke_generate 的 i2v 分支
+  调 public_image.upload_image 把本地图临时公网化后送厂商 images; i2i 仍走 data URI(需求: 本地图也能做图生视频)。
 """
 import base64
 import os
@@ -23,21 +25,31 @@ from app.services.generation.generation_client import (
     generate_video,
 )
 
+_MIME_BY_EXT = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "webp": "image/webp", "gif": "image/gif"}
 
-def _resolve_image_source(src: str) -> str:
-    """图片源归一: 本地路径/attachment_id → data URI(厂商可直连解析); 公网 URL/已是 data URI 原样返回。
-    实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i image 参数均接受标准 data URI — 小欧-2026-11-20
+
+def _image_bytes(src: str) -> Optional[tuple]:
+    """图片源 → (字节, mime); 仅本地路径/attachment_id/data URI 可读, 公网 URL 返回 None。
+    i2i(转 data URI) 与 i2v(公网化) 共用此读取口, 避免两处重复解析 — 小欧-2026-11-20
     """
     if not src:
-        return src
+        return None
     lowered = src.lower()
-    if lowered.startswith(("data:", "http://", "https://")):
-        return src
-    import base64
+    if lowered.startswith("data:"):
+        # data:image/png;base64,XXXX → 拆出 mime 与 payload
+        try:
+            header, payload = src.split(",", 1)
+            mime = header[5:].split(";", 1)[0] or "image/png"
+            return base64.b64decode(payload), mime
+        except (ValueError, base64.binascii.Error) as e:
+            logger.warning(f"[media_generate] data URI 解析失败 err={e}")
+            return None
+    if lowered.startswith(("http://", "https://")):
+        return None  # 公网 URL 由调用方原样处理
     import re
     path = ""
-    # 32hex attachment_id → 取 stored_path
-    if re.fullmatch(r"[0-9a-f]{32}", src):
+    if re.fullmatch(r"[0-9a-f]{32}", src):  # 32hex attachment_id → stored_path
         try:
             from app.attachments import attachment_service
             rec = attachment_service.get_attachment(src)
@@ -46,20 +58,50 @@ def _resolve_image_source(src: str) -> str:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[media_generate] 附件解析失败 id={src} err={e}")
     else:
-        path = src  # 直接当本地路径
+        path = src
     if not path or not os.path.isfile(path):
-        logger.warning(f"[media_generate] 图片源不可用, 原样透传: {src[:80]}")
-        return src
+        logger.warning(f"[media_generate] 图片源不可用: {src[:80]}")
+        return None
     try:
-        raw = open(path, "rb").read()
-        # mime 按后缀, 默认 png
+        with open(path, "rb") as f:
+            raw = f.read()
         ext = os.path.splitext(path)[1].lower().lstrip(".")
-        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "webp": "image/webp", "gif": "image/gif"}.get(ext, "image/png")
-        return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+        return raw, _MIME_BY_EXT.get(ext, "image/png")
     except OSError as e:
         logger.warning(f"[media_generate] 图片读取失败 path={path} err={e}")
+        return None
+
+
+def _resolve_image_source(src: str) -> str:
+    """i2i 图源: 本地路径/attachment_id/data URI → data URI; 公网 URL 原样(厂商可直连)。
+    实测 agnes-image-2.1-flash / sensenova-u1.5-lite 的 i2i image 参数接受标准 data URI — 小欧-2026-11-20
+    """
+    if not src:
         return src
+    if src.lower().startswith(("http://", "https://")):
+        return src
+    pair = _image_bytes(src)
+    if pair is None:
+        return src  # 读不出则原样透传, 由厂商判定
+    raw, mime = pair
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+async def _publicize_image_source(src: str) -> str:
+    """i2v 图源: 本地路径/attachment_id/data URI → 公网 URL(临时图床); 公网 URL 原样。
+    i2v reference 的 images 只吃厂商可直连 GET 的公网 URL, data URI 被拒 — 小欧-2026-11-20
+    """
+    if not src:
+        return src
+    if src.lower().startswith(("http://", "https://")):
+        return src
+    pair = _image_bytes(src)
+    if pair is None:
+        return src  # 读不出则原样透传, 厂商会报 source_unreachable
+    raw, mime = pair
+    from app.services.generation.public_image import upload_image
+    url = await upload_image(raw, mime)
+    return url or src  # 公网化失败则原样透传, 交由厂商拒绝并记因
 
 
 def _save_b64_attachment(b64: str, session_id: str, mime: str, stem: str) -> Optional[Dict[str, str]]:
@@ -115,17 +157,20 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         return {"ok": False, "settled": False, "reason": f"未找到模型 {model} 的 provider/api_base"}
     headers = get_provider_adapter(provider).static_headers(api_key)
     out: Dict[str, Any] = {}
-    # 图源归一: 本地路径/attachment_id → data URI(实测两 provider 的 i2i/i2v 都接受)
-    src_image = _resolve_image_source(image) if image else None
-    src_images = [_resolve_image_source(x) for x in images] if images else None
     try:
         if kind == "image":
+            # i2i: 图源转 data URI(两 provider 实测接受), 公网 URL 原样
+            src_image = _resolve_image_source(image) if image else None
             kw = {"timeout": timeout} if timeout else {}
             ok, ev, settled = await generate_image(api_base, headers, model, prompt,
                                                    image=src_image, out=out, **kw)
         elif kind == "video":
             # 工具侧 mode 是 t2v/i2v, generation 端点要 text/reference — 在此映射(单一转换点)
             vmode = VIDEO_MODE_I2V if mode == "i2v" else VIDEO_MODE_T2V
+            # i2v: 图源须公网 URL(厂商直连 GET), 本地图经临时图床公网化; t2v 无图源
+            src_images = None
+            if vmode == VIDEO_MODE_I2V and images:
+                src_images = [await _publicize_image_source(x) for x in images]
             kw = {"timeout": timeout} if timeout else {}
             ok, ev, settled = await generate_video(api_base, headers, model, prompt, vmode,
                                                    images=src_images, out=out, **kw)

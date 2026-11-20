@@ -530,6 +530,10 @@ app:
 media:
   inline_limit_mb: 2
   doc_inline_limit_mb: 8
+  # video_inline_limit_mb / audio_inline_limit_mb: 缺省跟随单文件附件上限真源, 通常不写死;
+  #   仅确需独立限额时才取消注释覆盖(单位 MB) — 小欧-2026-11-20
+  # video_inline_limit_mb: 20
+  # audio_inline_limit_mb: 20
   compress_enabled: true
   compress_max_edge: 2048
   compress_jpeg_quality: 85
@@ -667,7 +671,7 @@ tuning:
 
   # 并发配额（3 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   concurrency:
-    soft_pool_wait_timeout: 30.0   # 排队最多等N秒,超时熔断本次调用直接失败(不放行也不挤占连接池,防雪崩)
+    soft_pool_wait_timeout: 30.0   # 排队最多等N秒,超时熔断本次调用直接失败(不放行也不挤占连接池,防雪崩) — 小欧-2026-11-20
     shell_max_processes: 10        # 同时执行的shell子进程总数上限(每个约40MB),跑完即销毁不常驻 — 小欧-2026-11-06
     shell_max_background: 5        # 后台命令并发上限(超出拒绝并提示稍后);后台命令无超时,完成自动通知续跑 — 商量-2026-11-13
 

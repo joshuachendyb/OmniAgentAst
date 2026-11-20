@@ -11,6 +11,7 @@
 # 2026-11-18 - 商量 - 新增 AGENT 分类(order 10): question/schedule 属智能体与用户/与自身计划交互, 不操作文件/网络/硬件, 落现有分类均语义错配
 # 2026-11-19 - 小欧 - ToolMetadata 新增 hide_from_steps 属性(工具行是否进前端步骤流), 供框架层统一判据 visible_in_steps 消费;
 #   走专用通道的工具(如 schedule→notice)注册时声明, 业务调用点零改动(OCP)
+# 2026-11-20 - 小欧 - 新增 MEDIA 分类(order 11): generate_image/generate_video 走 generation 端点产多媒体, 不碰文件/网络工具链
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -51,7 +52,7 @@ class ToolCategory(Enum):
     TIMER = ("timer", 8, "定时器工具")
     WIN_REGISTRY = ("win_registry", 9, "注册表工具")
     AGENT = ("agent", 10, "智能体交互工具")
-    # 2026-11-20 小欧 - 新增 MEDIA 分类(生图/生视频工具): 产出多媒体, 走 generation 端点 — 小欧-2026-11-20
+    # 2026-11-20 小欧 - 新增 MEDIA 分类(生图/生视频工具): 产出多媒体, 走 generation 端点
     MEDIA = ("media", 11, "媒体生成工具")
 
     def __new__(cls, value, order, name_cn):

@@ -11,7 +11,7 @@ import os
 import subprocess
 import tempfile
 import threading
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from app.logger import logger
 
@@ -24,7 +24,8 @@ _TRANSCODE_MAX_EDGE = 1280
 _TRANSCODE_CRF = 26
 _TRANSCODE_TIMEOUT_SEC = 300
 # 同文件并发转码锁(进程内): 防止同时 -y 写同一路径产出截断文件
-_transcode_locks: dict = {}
+_TRANSCODE_LOCK_MAX = 1024  # 锁表上限: 长跑服务防无界增长, 超限清未持有的锁(转码期锁必被持有, 清不掉)
+_transcode_locks: Dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
 _ffmpeg_exe: Optional[str] = None
@@ -40,16 +41,20 @@ def _get_ffmpeg() -> str:
 
 
 def _probe_codec(path: str) -> str:
-    """读视频编码 FOURCC; 失败返回空串(空串按需转码处理, 保守)。"""
-    import cv2  # 延迟导入: 仅探测路径需要
-    cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
-        return ""
+    """读视频编码 FOURCC; 任何失败返回空串(空串→保守转码), 绝不抛异常断轮 — 小欧-2026-11-20。"""
     try:
-        fc = int(cap.get(cv2.CAP_PROP_FOURCC))
-        return "".join(chr((fc >> (8 * i)) & 0xFF) for i in range(4))
-    finally:
-        cap.release()
+        import cv2  # 延迟导入: 仅探测路径需要
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            return ""
+        try:
+            fc = int(cap.get(cv2.CAP_PROP_FOURCC))
+            return "".join(chr((fc >> (8 * i)) & 0xFF) for i in range(4))
+        finally:
+            cap.release()
+    except Exception as e:  # noqa: BLE001 — cv2 缺失/解码异常都降级为"未知编码"走转码
+        logger.warning(f"[video_transcode] 编码探测失败, 按需转码 path={path} err={e}")
+        return ""
 
 
 def _lock_for(path: str) -> threading.Lock:
@@ -58,6 +63,10 @@ def _lock_for(path: str) -> threading.Lock:
     with _locks_guard:
         lock = _transcode_locks.get(key)
         if lock is None:
+            if len(_transcode_locks) >= _TRANSCODE_LOCK_MAX:
+                # 清掉未被持有的锁(已转完的); 正被持有的不动, 防并发写同一缓存文件
+                for k in [k for k, v in _transcode_locks.items() if not v.locked()]:
+                    del _transcode_locks[k]
             lock = threading.Lock()
             _transcode_locks[key] = lock
         return lock
