@@ -51,6 +51,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx  # PoolTimeout 精确类型判定 — 小欧-2026-11-20 三堂会审
 
+# 熔断标记从系统层常量引入(三堂会审归位) — 小欧-2026-11-20
+from app.constants import ERR_TYPE_POOL_FULL
 from app.logger import logger
 
 try:
@@ -58,9 +60,8 @@ try:
 except ImportError:
     IdleTimeoutError = None
 
-# 软配额排队超时熔断的跨模块协议标记(单一真源): client_sdk 写入 details.error_type,
-# 本模块分类读取; 两处共用此常量, 避免裸字符串各自硬编码漂移 — 小欧-2026-11-20 三堂会审
-ERR_TYPE_POOL_FULL = "pool_full"
+# 软配额排队超时熔断标记的权威定义在 app.constants(ERR_TYPE_POOL_FULL), client_sdk 写入、
+# 本模块分类读取均 import 该常量, 避免裸字符串各自硬编码漂移 — 小欧-2026-11-20 三堂会审
 
 
 class SystemErrorCategory(Enum):

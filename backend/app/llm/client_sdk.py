@@ -88,6 +88,10 @@ from app.constants import (
     DEFAULT_WRITE_TIMEOUT as _D_WRITE_TIMEOUT,
 )
 from app.constants import (
+    ERR_TYPE_POOL_FULL,  # 熔断标记(三堂会审归位) — 小欧-2026-11-20
+    SOFT_POOL_HEADROOM,  # 软配额闸门留量(三堂会审归位) — 小欧-2026-11-20
+)
+from app.constants import (
     LLM_MAX_CONNECTIONS as _D_MAX_CONNECTIONS,
 )
 from app.constants import (
@@ -96,9 +100,6 @@ from app.constants import (
 from app.db.models.chat_models import ModelRef  # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.adapters import get_provider_adapter  # 适配层查询 — 小欧 2026-09-23
 from app.llm.core import LLMResponseError  # 软配额排队超时熔断 — 小欧-2026-11-20
-from app.llm.error_classifier import (
-    ERR_TYPE_POOL_FULL,  # 熔断标记单一真源 — 小欧-2026-11-20 三堂会审
-)
 from app.llm.reasoning import (
     extract_reasoning_from_chunk,  # diff五 流式收集复用三字段链 — 小欧 2026-09-23
 )
@@ -403,9 +404,7 @@ def _extract_server_error_message(body_text: str) -> tuple:
 
 _soft_pool_semaphore = None  # 2026-09-20 小欧 软配额: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
 _SOFT_POOL_WAIT_TIMEOUT = float(get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0))  # 软配额排队等待上限(秒): 超时熔断, 不硬塞进池 — 小欧-2026-11-20
-# 软配额闸门余量: 比 httpx max_connections 少的槽数, 保证池绝不会先满(软配额先挡住)。
-# 不设封顶——用户调大 max_connections 时闸门随之增大, 配置意图生效 — 小欧-2026-11-20 三堂会审
-_SOFT_POOL_HEADROOM = 2
+# 软配额闸门余量(SOFT_POOL_HEADROOM)已归位 app.constants(系统层单一真源) — 小欧-2026-11-20 三堂会审
 
 
 def _get_soft_pool_semaphore():
@@ -415,7 +414,7 @@ def _get_soft_pool_semaphore():
     global _soft_pool_semaphore
     if _soft_pool_semaphore is None:
         _max = int(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
-        _soft_pool_semaphore = asyncio.Semaphore(max(1, _max - _SOFT_POOL_HEADROOM))
+        _soft_pool_semaphore = asyncio.Semaphore(max(1, _max - SOFT_POOL_HEADROOM))
     return _soft_pool_semaphore
 
 

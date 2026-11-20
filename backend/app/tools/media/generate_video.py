@@ -8,9 +8,10 @@ import time
 from typing import Any, Dict, Optional
 
 from app.tools.context import get_current_generate_callback
-from app.tools.tool_response import build_error, build_success, build_warning
 
-_DEFAULT_MODEL = "agnes-video-2.5-flash"
+# 默认生视频模型从工具层常量引入(三堂会审归位) — 小欧-2026-11-20
+from app.tools.tool_constants import MEDIA_DEFAULT_VIDEO_MODEL
+from app.tools.tool_response import build_error, build_success, build_warning
 
 
 async def generate_video(prompt: str, model: Optional[str] = None,
@@ -28,7 +29,7 @@ async def generate_video(prompt: str, model: Optional[str] = None,
                 "duration_ms": 0,
             },
         )
-    use_model = model or _DEFAULT_MODEL
+    use_model = model or MEDIA_DEFAULT_VIDEO_MODEL
     kwargs: Dict[str, Any] = {"timeout": float(timeout)}
     if mode == "i2v" and image:
         kwargs["mode"] = "i2v"

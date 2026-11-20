@@ -94,6 +94,8 @@
 #   finditer 传 timeout, 防御灾难回溯卡死; 见 grep_file_content.py) — 小欧-2026-11-15
 # 2026-11-20 小欧 - CATEGORY_MODULES 增 media→_register_media_tools 映射(启动注册生图/生视频工具);
 #   TOOL_RETRY_CONFIG 增 generate_image/generate_video max_retries=0(生成端点计费, 禁重试重复提交)
+# 2026-11-20 小欧 三堂会审常量归位: 新增第16节媒体生成工具常量 —— generate_image/generate_video 默认模型
+#   与 media_schema 的 model 提示串原散于业务文件, 迁至本文件单一真源, 原文件改 import — 小欧-2026-11-20
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -898,5 +900,17 @@ PATH_TOOLS = READ_PATH_TOOLS | WRITE_PATH_TOOLS | DELETE_PATH_TOOLS | DUAL_PATH_
 # 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
 # 迁自 trust.py — 小欧 2026-10-14
 WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
+
+
+# ====================================================================
+# 16. 媒体生成工具常量 — 【工具层】（生图/生视频默认模型与描述）— 小欧 2026-11-20 三堂会审
+# ====================================================================
+# 原散于 generate_image.py / generate_video.py / media_schema.py 的默认模型与提示串归位至此, 取值零变更。
+MEDIA_DEFAULT_IMAGE_MODEL = "agnes-image-2.1-flash"  # 【tool 级】使用对象: generate_image 默认生图模型
+MEDIA_DEFAULT_VIDEO_MODEL = "agnes-video-2.5-flash"  # 【tool 级】使用对象: generate_video 默认生视频模型
+MEDIA_MODEL_HINT = (  # 【tool 级】使用对象: media_schema 两输入模型的 model 字段描述
+    "生成模型名(须为已配置且声明对应输出模态的模型, 如 agnes-image-2.1-flash / agnes-video-2.5-flash); "
+    "不填则用系统默认生成模型"
+)
 
 

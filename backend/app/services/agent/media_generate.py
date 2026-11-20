@@ -18,15 +18,15 @@ from typing import Any, Dict, Optional
 from app.config import get_config
 from app.llm.adapters import get_provider_adapter
 from app.logger import logger
+
+# 图源 mime 映射从 media_constants 引入(三堂会审常量归位) — 小欧-2026-11-20
+from app.services.agent.media_constants import IMAGE_MIME_BY_EXT
 from app.services.generation.generation_client import (
     VIDEO_MODE_I2V,
     VIDEO_MODE_T2V,
     generate_image,
     generate_video,
 )
-
-_MIME_BY_EXT = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "webp": "image/webp", "gif": "image/gif"}
 
 
 def _image_bytes(src: str) -> Optional[tuple]:
@@ -66,7 +66,7 @@ def _image_bytes(src: str) -> Optional[tuple]:
         with open(path, "rb") as f:
             raw = f.read()
         ext = os.path.splitext(path)[1].lower().lstrip(".")
-        return raw, _MIME_BY_EXT.get(ext, "image/png")
+        return raw, IMAGE_MIME_BY_EXT.get(ext, "image/png")
     except OSError as e:
         logger.warning(f"[media_generate] 图片读取失败 path={path} err={e}")
         return None

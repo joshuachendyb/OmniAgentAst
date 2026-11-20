@@ -10,10 +10,10 @@ import time
 from typing import Any, Dict, Optional
 
 from app.tools.context import get_current_generate_callback
-from app.tools.tool_response import build_error, build_success, build_warning
 
-# 默认生图模型(回调侧会校验是否在配置中)
-_DEFAULT_MODEL = "agnes-image-2.1-flash"
+# 默认生图模型从工具层常量引入(三堂会审归位) — 小欧-2026-11-20
+from app.tools.tool_constants import MEDIA_DEFAULT_IMAGE_MODEL
+from app.tools.tool_response import build_error, build_success, build_warning
 
 
 async def generate_image(prompt: str, model: Optional[str] = None,
@@ -30,7 +30,7 @@ async def generate_image(prompt: str, model: Optional[str] = None,
                 "duration_ms": int((time.monotonic() - t0) * 1000),
             },
         )
-    use_model = model or _DEFAULT_MODEL
+    use_model = model or MEDIA_DEFAULT_IMAGE_MODEL
     result = await cb("image", use_model, prompt, image=image)
     dur = int((time.monotonic() - t0) * 1000)
     if not result.get("ok"):

@@ -19,11 +19,12 @@ from typing import Any, Dict, Tuple
 import httpx
 
 from app.config import get_config
+
+# 图床端点默认值单一真源在 app.constants(三堂会审常量归位): settings_registry 注册项与此处运行期兜底同源。
+from app.constants import PUBLIC_IMAGE_UPLOAD_URL as DEFAULT_UPLOAD_ENDPOINT
 from app.logger import logger
 
-# 默认值单一真源: settings_registry 注册 media.public_image_* 项时引用此处, 避免配置页默认值与运行期兜底漂移。
-DEFAULT_UPLOAD_ENDPOINT = "https://uguu.se/upload.php"  # 实测可用, 返回 files[0].url 公网 PNG 直链
-DEFAULT_PROXY = "http://127.0.0.1:7890"  # 本机 mihomo VPN 跨界出口(用户启动时可达)
+# 以下为本模块内部协议/运行参数(非跨模块共享), 随用方留在业务模块 — 小欧-2026-11-20 三堂会审
 _UPLOAD_FIELD = "files[]"  # uguu.se multipart 字段名, 协议固定
 _LOCAL_FALLBACK_PROXIES = ("http://127.0.0.1:7890", "http://127.0.0.1:7891")  # 未配置时的本机端口兜底
 _UPLOAD_TIMEOUT = 40.0

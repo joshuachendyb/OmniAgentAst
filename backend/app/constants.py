@@ -78,6 +78,9 @@
                          attachment/url — 小欧-2026-11-14
     2026-11-19 小欧 新增 PAUSE_AUTO_RESUME_TIMEOUT=300.0(HITL 段): 任务暂停后自动恢复兜底秒数,
                          实际值经 config tuning.hitl.pause_auto_resume_timeout 覆盖(设置页可改), 单一真源 — 小欧-2026-11-19
+    2026-11-20 小欧 三堂会审常量归位: 新增第10节(媒体生成与连接池) —— PUBLIC_IMAGE_UPLOAD_URL/PUBLIC_IMAGE_PROXY
+                         (原散落 public_image.py, 被 settings_registry 跨模块引用当配置默认值)、SOFT_POOL_HEADROOM
+                         (原 client_sdk.py 私有)、ERR_TYPE_POOL_FULL(原 error_classifier.py, 跨模块协议标记) 集中至此单一真源 — 小欧-2026-11-20
 
 """
 
@@ -285,6 +288,21 @@ CHAT_TASK_STATUSES: frozenset[str] = frozenset(s.value for s in ChatTaskStatus)
 #: 在跑 = 非终态。'idle' 不在本词表内(无任何写入方), 但历史库可能有残留行,
 #: 故与终态一起排除 —— 与 list_running_tasks 的 24h 年龄窗同旨: 宁可少报, 不虚报。
 CHAT_TASK_NON_RUNNING_STATUSES: frozenset[str] = CHAT_TASK_TERMINAL_STATUSES | {"idle"}
+
+
+# ============================================================
+# 10. 媒体生成与连接池(系统层共享默认值 — 小欧-2026-11-20 三堂会审常量归位)
+# ============================================================
+
+# 本地图 i2v 公网化: 图床端点/代理默认值, settings_registry 配置默认值与 public_image 运行期兜底共用(单一真源)
+PUBLIC_IMAGE_UPLOAD_URL = "https://uguu.se/upload.php"  # 【系统级】使用对象: settings_registry(media.public_image_upload_url 默认值) + public_image(端点兜底); 须兼容 multipart files[] 与响应 files[0].url
+PUBLIC_IMAGE_PROXY = "http://127.0.0.1:7890"  # 【系统级】使用对象: settings_registry(media.public_image_proxy 默认值) + public_image(代理首选); 本机 mihomo VPN 出口, 留空走环境变量/本机 7890/7891/直连回退
+
+# LLM 软配额闸门留出的池槽数: 闸门上限=max_connections-本值, 使 httpx 连接池结构上难被占满
+SOFT_POOL_HEADROOM = 2  # 【系统级】使用对象: client_sdk._get_soft_pool_semaphore(软配额信号量上限)
+
+# 本地资源耗尽的熔断标记: client_sdk 写入 LLMResponseError.details.error_type, error_classifier 据此归 CIRCUIT_OPEN
+ERR_TYPE_POOL_FULL = "pool_full"  # 【系统级】使用对象: client_sdk(写入) + error_classifier(分类), 跨模块协议单一真源
 
 
 

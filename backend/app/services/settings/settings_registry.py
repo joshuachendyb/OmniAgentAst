@@ -148,13 +148,11 @@ from typing import Any, Dict, List, Optional
 # 2026-11-18 opencode - 外链条数上限改引 extract.MAX_TEXT_URLS: 原引 MAX_REMOTE_IMAGES(4) 已无执行点,
 #   真实上限是单次引用 URL 总数 8, 文案按实报 — opencode-2026-11-18
 # 2026-11-20 小欧 - 音视频内联上限默认值引附件真源(单一真源, 不写死 20MB): 与 media_payload 逻辑兜底同源;
-#   公网化默认值(图床端点/代理)引 public_image 常量, 与运行期兜底同源 — 小欧-2026-11-20
+#   公网化默认值(图床端点/代理)引 app.constants 系统层常量, 与 public_image 运行期兜底同源 — 小欧-2026-11-20
 from app.attachments.attachment_service import MAX_FILE_BYTES as _MEDIA_INLINE_DEFAULT_BYTES
 from app.attachments.extract import MAX_TEXT_URLS
-from app.services.generation.public_image import DEFAULT_PROXY as _PUBLIC_IMAGE_DEFAULT_PROXY
-from app.services.generation.public_image import (
-    DEFAULT_UPLOAD_ENDPOINT as _PUBLIC_IMAGE_DEFAULT_ENDPOINT,
-)
+from app.constants import PUBLIC_IMAGE_PROXY as _PUBLIC_IMAGE_DEFAULT_PROXY
+from app.constants import PUBLIC_IMAGE_UPLOAD_URL as _PUBLIC_IMAGE_DEFAULT_ENDPOINT
 
 _MEDIA_INLINE_DEFAULT_MB = max(1, _MEDIA_INLINE_DEFAULT_BYTES // 1024 // 1024)
 

@@ -14,17 +14,15 @@ import threading
 from typing import Dict, Optional, Tuple
 
 from app.logger import logger
+from app.services.agent.media_constants import (
+    VIDEO_ACCEPTED_FOURCC,
+    VIDEO_TRANSCODE_CRF,
+    VIDEO_TRANSCODE_LOCK_MAX,
+    VIDEO_TRANSCODE_MAX_EDGE,
+    VIDEO_TRANSCODE_TIMEOUT_SEC,
+)  # 转码常量集中管理(三堂会审归位) — 小欧-2026-11-20
 
-# H264 的 FOURCC 取值(cv2 CAP_PROP_FOURCC 返回); 这些编码模型普遍能收, 不转
-_H264_FOURCC = {"h264", "avc1", "H264", "AVC1", "x264", "X264"}
-# 模型普遍也能收的其它标准编码(实测 nano-omni 报的错误里列出), 原样放行
-_ACCEPTED_FOURCC = _H264_FOURCC | {"hevc", "hvc1", "vp80", "vp90", "av01"}
-# 转码参数(原散落的魔法数集中于此): 长边上限、CRF 质量、超时秒
-_TRANSCODE_MAX_EDGE = 1280
-_TRANSCODE_CRF = 26
-_TRANSCODE_TIMEOUT_SEC = 300
-# 同文件并发转码锁(进程内): 防止同时 -y 写同一路径产出截断文件
-_TRANSCODE_LOCK_MAX = 1024  # 锁表上限: 长跑服务防无界增长, 超限清未持有的锁(转码期锁必被持有, 清不掉)
+# 以下为进程内运行时状态(非配置常量), 随用方留本模块
 _transcode_locks: Dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
@@ -63,7 +61,7 @@ def _lock_for(path: str) -> threading.Lock:
     with _locks_guard:
         lock = _transcode_locks.get(key)
         if lock is None:
-            if len(_transcode_locks) >= _TRANSCODE_LOCK_MAX:
+            if len(_transcode_locks) >= VIDEO_TRANSCODE_LOCK_MAX:
                 # 清掉未被持有的锁(已转完的); 正被持有的不动, 防并发写同一缓存文件
                 for k in [k for k, v in _transcode_locks.items() if not v.locked()]:
                     del _transcode_locks[k]
@@ -89,7 +87,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
         return path, False
 
     codec = _probe_codec(path)
-    if codec in _ACCEPTED_FOURCC:
+    if codec in VIDEO_ACCEPTED_FOURCC:
         return path, False
 
     base = os.path.basename(path)
@@ -117,8 +115,8 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
         cmd = [
             _get_ffmpeg(), "-y", "-v", "error",
             "-i", path,
-            "-vf", f"scale='min({_TRANSCODE_MAX_EDGE},iw)':-2",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(_TRANSCODE_CRF),
+            "-vf", f"scale='min({VIDEO_TRANSCODE_MAX_EDGE},iw)':-2",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_TRANSCODE_CRF),
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             "-an",  # 视频投递不需要音轨, 去掉省体积
             tmp_path,
@@ -127,7 +125,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
             # 清理可能的旧半成品
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            result = subprocess.run(cmd, capture_output=True, timeout=_TRANSCODE_TIMEOUT_SEC)
+            result = subprocess.run(cmd, capture_output=True, timeout=VIDEO_TRANSCODE_TIMEOUT_SEC)
             if result.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
                 logger.warning(f"[video_transcode] 转码失败 codec={codec} path={path} err={result.stderr[-300:]!r}")
                 _safe_remove(tmp_path)
