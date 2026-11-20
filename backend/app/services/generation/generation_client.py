@@ -118,8 +118,8 @@ async def generate_image(
     refs = list(images) if images else []
     if image and image not in refs:
         refs.insert(0, image)
-    # 方言翻译下沉到 provider adapter: 默认 agnes 风格, sensenova 覆写(WIDTHxHEIGHT/无ratio/b64方言)
-    #   generation_client 不再硬编码任何 provider 判断(OCP) — 小欧-2026-11-20
+    # 方言翻译下沉到 provider adapter(基类通用, agnes/sensenova 覆写请求与响应钩子);
+    #   gen_adapter 全函数复用(请求方言 + 响应方言), generation_client 无 provider 硬编码(OCP) — 小欧-2026-11-20
     gen_adapter = adapter or ProviderAdapter()
     gen_adapter.prepare_image_body(body, size=size, ratio=ratio, image_refs=refs or None,
                                    return_base64=return_base64, response_format=response_format)
@@ -145,7 +145,6 @@ async def generate_image(
     except Exception:
         return False, "bad_json", False
     # 响应方言: 厂商覆写 parse_image_result 优先; 否则用通用 data[0].url/b64_json(OCP)
-    gen_adapter = adapter or ProviderAdapter()
     parsed = gen_adapter.parse_image_result(data) if isinstance(data, dict) else None
     if parsed is not None:
         url, b64 = str(parsed[0] or ""), str(parsed[1] or "")

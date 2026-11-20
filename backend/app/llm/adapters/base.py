@@ -118,6 +118,28 @@ class ProviderAdapter:
             body["response_format"] = response_format  # OpenAI 标准: 顶层
         return body
 
+    @staticmethod
+    def prepare_video_body(body: Dict, *, first_frame: Optional[str] = None,
+                           last_frame: Optional[str] = None,
+                           images: Optional[list] = None,
+                           audios: Optional[list] = None,
+                           videos: Optional[list] = None,
+                           seconds: Optional[str] = None,
+                           size: Optional[str] = None,
+                           aspect_ratio: Optional[str] = None,
+                           seed: Optional[int] = None) -> Dict:
+        """生视频请求体方言定制 — 默认 agnes/OpenAI Videos 风格(字段同名直传)。
+
+        新增厂商若有字段差异, 覆写本钩子; generation_client 保持协议无关。
+        """
+        for key, val in (("first_frame", first_frame), ("last_frame", last_frame),
+                         ("images", images), ("audios", audios), ("videos", videos),
+                         ("seconds", seconds), ("size", size),
+                         ("aspect_ratio", aspect_ratio), ("seed", seed)):
+            if val is not None:
+                body[key] = val
+        return body
+
     # ---- 生成响应解析钩子(与 prepare_*_body 请求方言对称) — 小欧 2026-11-20 ----
     # 默认返回 None = 采用 generation_client 的通用启发式(data[0]/递归猜 status/url);
     #   响应结构与通用不同的厂商覆写这些方法返回 (url,b64)/str, 即可只改 adapter 不改引擎(OCP)。
@@ -141,25 +163,3 @@ class ProviderAdapter:
     def parse_video_url(data: Dict, preserve_case: bool = False) -> Optional[str]:
         """视频产物地址; None=用引擎通用启发式(键名含 video / .mp4 递归)"""
         return None
-
-    @staticmethod
-    def prepare_video_body(body: Dict, *, first_frame: Optional[str] = None,
-                           last_frame: Optional[str] = None,
-                           images: Optional[list] = None,
-                           audios: Optional[list] = None,
-                           videos: Optional[list] = None,
-                           seconds: Optional[str] = None,
-                           size: Optional[str] = None,
-                           aspect_ratio: Optional[str] = None,
-                           seed: Optional[int] = None) -> Dict:
-        """生视频请求体方言定制 — 默认 agnes/OpenAI Videos 风格(字段同名直传)。
-
-        新增厂商若有字段差异, 覆写本钩子; generation_client 保持协议无关。
-        """
-        for key, val in (("first_frame", first_frame), ("last_frame", last_frame),
-                         ("images", images), ("audios", audios), ("videos", videos),
-                         ("seconds", seconds), ("size", size),
-                         ("aspect_ratio", aspect_ratio), ("seed", seed)):
-            if val is not None:
-                body[key] = val
-        return body
