@@ -48,8 +48,9 @@ _EMPTY = frozenset()
 _TRANSPORT: Dict[str, FrozenSet[str]] = {
     "image": frozenset({"inline"}),
     "audio": frozenset({"inline"}),
-    # 视频两种方言都可达: url=公网链接直传; inline=本地字节转 data URI 走 video_url(mimo 等实测支持,
-    # 见 media_payload.build_logical_part video 分支) — 小欧-2026-11-20
+    # 视频两种投递都可达: url=公网链接直传; inline=本地字节转 data URI 走 video_url。
+    # video_url 非 OpenAI 标准但是 glm/mimo/nano-omni/crouton 多厂商共同支持的通用能力(故列为方言固有, 不探测);
+    #   若某厂商 part 形状/编码不同(如 Gemini inline_data)→ 走 provider adapter 适配, 不改本通用声明 — 小欧-2026-11-20
     "video": frozenset({"url", "inline"}),
     "file": frozenset({"inline"}),
 }

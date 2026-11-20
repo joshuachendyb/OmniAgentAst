@@ -352,8 +352,14 @@ async def build_logical_part(kind: str, attachment: Dict[str, Any]
 
 def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Optional[Dict[str, Any]], str]:
     """逻辑 part → 方言 part。chat 产出 OpenAI 兼容结构; responses 由适配器二次转换。
-    video 无标准 chat part: 仅当 provider 适配器显式声明支持才产出, 否则显式原因。
-    file(文档)按 NATIVE_DOC_MIMES 白名单产 file part, 容器不在白名单即显式回落文本抽取。"""
+
+    各模态通用性与差异处理(三堂会审-2026-11-20 调研结论):
+      - image/audio/file: OpenAI 标准 part, 五家协议一致, 通用构造(传输策略由能力层门控)。
+      - video: video_url 非 OpenAI 标准, 是 glm/mimo/nano-omni/crouton 多厂商共同支持的事实扩展,
+        故作为通用能力在此统一产出; 若某厂商要求不同 part 形状(如 Gemini inline_data)或编码约束,
+        走 provider adapter 适配(不要改这里的一统构造)。编码前置转换见 video_transcode(nano-omni 拒 MJPG)。
+      - file: 按 NATIVE_DOC_MIMES 白名单产 file part, 容器不在白名单即回落文本抽取。
+    """
     modality, url = logical.get("modality"), logical.get("url")
     if modality == "image":
         if url:
@@ -366,6 +372,8 @@ def to_wire_part(logical: Dict[str, Any], dialect: str = "chat") -> Tuple[Option
         return None, "图片载荷为空"
     if modality == "video":
         if url:
+            # video_url: 多厂商共同支持的通用视频投递形状, 统一在此产出(非单一厂商私有);
+            #   厂商若有不同 part 形状/编码约束 → 走 provider adapter 适配, 不改此通用构造 — 小欧-2026-11-20
             return {"type": "video_url", "video_url": {"url": url}}, ""
         # 本地视频已在 build_logical_part 转 data URI 走 url 分支投递(厂商侧 video_url);
         #   走到这里说明既无 url 也无可内联字节(远程视频未下载/超限), 只能回落说明 — 小欧-2026-11-20
