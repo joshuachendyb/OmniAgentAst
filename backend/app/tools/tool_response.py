@@ -8,6 +8,10 @@
 #   工具继续任务"的出路, ReAct loop 不停。错误码落 llm_data.status.code, 随全项目错误体约定。
 # 2026-10-19 - 小欧 - 修文案重复: 缺依赖信息为空时, 兜底分支与末尾追加各写了一遍
 #   "改用其他工具", 同一句出现两次。现兜底只说明"未取得具体缺失依赖信息", 出路统一由末尾追加一次。
+# 2026-11-20 - 小欧 - 待整改(记录,暂不改): with_artifacts/with_artifact_file 把产物清单挂 llm_data.action.artifacts,
+#   action 本意是动作描述(tool/tool_zh/params), 塞清单属职责混用; 产物 payload 应在 data, 清单声明是另一回事。
+#   根治需 helper 改挂 other_data 或统一从 data 派生 + agent_telemetry 读口改 + 全项目10+写工具同步 + tool编写规范改,
+#   联动范围大, 单独立项; 当前全项目统一用此入口, 单改个别工具会破坏产物抽屉, 故保持现状。
 """
 统一工具返回结构定义 — 小健 2026-05-21
 

@@ -919,6 +919,7 @@ MEDIA_VIDEO_MODEL_HINT = (  # 【tool 级】使用对象: GenerateVideoInput.mod
 )
 # 媒体工具错误码(单一真源, 供 generate_image/generate_video 的 llm_data.status.code 引用) — 小欧-2026-11-20
 ERR_GENERATE_NO_CHANNEL = "ERR_GENERATE_NO_CHANNEL"  # 生成回调未注入
-ERR_GENERATE_INCOMPLETE = "ERR_GENERATE_INCOMPLETE"  # 生成未完成(未定/队列/环境)
+ERR_GENERATE_INCOMPLETE = "ERR_GENERATE_INCOMPLETE"  # 生成未完成(未定/队列/环境, settled=False → warning)
+ERR_GENERATE_REJECTED = "ERR_GENERATE_REJECTED"  # 厂商确定拒绝(模型不存在/参数非法/鉴权/no_output, settled=True → error) — 小欧-2026-11-20
 
 

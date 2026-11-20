@@ -110,6 +110,8 @@ import {
 import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import { WaitTimerText } from '@/components/WaitingIcons/waitTimerText'; // 2026-11-03 小欧: 首行右端文字数码计时(表盘只留顶栏) — 小欧-2026-11-03
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
+// 2026-11-20 小欧 - 生成图像/视频产物专用卡片: 文字信息仍走本文件通用行, 本卡片只呈现产物 — 小欧-2026-11-20
+import GenerationResultCard, { type GenerationArtifact } from './GenerationResultCard';
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -233,6 +235,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     return ['success', 'error', 'warning'].includes(code)
       ? (code as 'success' | 'error' | 'warning')
       : undefined;
+  };
+  // 2026-11-20 小欧 - 生成工具产物: 只取 tool_result[i].raw_data(=后端 data, {url,type}/{file_path,...}),
+  //   取到什么就是什么, 不做任何兜底/派生。按 Tool 编写规范 data 才是本次执行产物 payload。
+  //   raw_data 是单产物对象(非数组), 包成数组交卡片统一渲染; 无产物 → 空数组 → 卡片不渲染。
+  const getArtifactsForIndex = (i: number): GenerationArtifact[] => {
+    const r = getResultForIndex(i);
+    const raw = r?.raw_data as Record<string, unknown> | undefined;
+    return raw ? [raw as GenerationArtifact] : [];
   };
   const retryCount = action.action_retry_count;
   const attemptLabel =
@@ -485,6 +495,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       </span>
                     </div>
                   </div>
+                  {/* 2026-11-20 小欧 - 生成图像/视频产物专用卡片(差异部分): 公网URL缩略图/播放器 + 本地路径深链。
+                      放在 role="button" 之外(点缩略图不误折叠整行), 默认可见——用户思考完即见工具行+产物, 不再藏展开区。
+                      文字信息(工具名/参数/状态/耗时/摘要)由上面通用行呈现, 此处只放产物, 无产物不渲染 — 小欧-2026-11-20 */}
+                  <GenerationResultCard artifacts={getArtifactsForIndex(i)} />
                   {/* 2026-10-13 小欧 - 文档[29]§4.6.7/§2.7 I1 + D-1: 参数区**移出** role="button",
                       点节点不再误折叠整行(B1 结构性根治), 故无需 stopPropagation 补丁;
                       顶层键默认折叠 → 高度恒 (键数+1)×16px(C1/C2 根治) — 小欧 2026-10-13 */}

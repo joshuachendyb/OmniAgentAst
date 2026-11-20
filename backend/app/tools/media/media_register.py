@@ -6,6 +6,7 @@
 编辑历史: 2026-11-20 小欧 话术审查整改: 两工具描述消除含糊与矛盾 —— 明确 mode/image 如何决定 t2i/i2i、t2v/i2v; image 四种来源与 schema 对齐;
   model 只列本模态模型避免传错; 产物展示区分公网URL(markdown)与本地附件(不用markdown, 会401), 消除与 llm_data.summary 的冲突; 纯话术改动零行为变更。
 编辑历史: 2026-11-20 小欧 按厂商文档补全生图全能力: generate_image 描述加 images 多图合成、size 档位、ratio 宽高比, examples 补多图合成示例 — 小欧-2026-11-20
+编辑历史: 2026-11-20 小欧 生成工具回归通用 tool 行: 移除 hide_from_steps 隐藏, 让 action/observation 按其他 tool 同款通道下发(工具名/浮层参数/状态/耗时/结果), 前端产出物另由 artifacts 专用卡片呈现; 多轮多张每次调用各自成行 — 小欧-2026-11-20
 """
 from app.logger import logger
 from app.tools.media.generate_image import generate_image
@@ -86,8 +87,8 @@ MEDIA_TOOL_EXAMPLES = {
 def _register_media_tools():
     """注册 generate_image/generate_video 两个媒体生成工具 — 小欧 2026-11-20"""
     tool_methods = {"generate_image": generate_image, "generate_video": generate_video}
-    # 产物走专属呈现(图片 markdown / 视频产物卡), 不画通用工具行
-    hide_from_steps = {"generate_image", "generate_video"}
+    # 走注册表默认可见: action/observation 与其他 tool 同款下发(工具名/浮层参数/状态/耗时/结果),
+    #   产物另由前端 artifacts 专用卡片呈现; 多轮多张每次调用各自成行 — 小欧-2026-11-20
     for name, method in tool_methods.items():
         tool_registry.register(
             name=name,
@@ -97,7 +98,6 @@ def _register_media_tools():
             version="1.0.0",
             input_model=MEDIA_INPUT_MODELS.get(name),
             examples=MEDIA_TOOL_EXAMPLES.get(name, []),
-            hide_from_steps=name in hide_from_steps,
         )
         logger.debug(f"[media_register] 已注册工具: {name}")
 
