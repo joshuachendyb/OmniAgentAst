@@ -59,6 +59,8 @@
 //   原 memo 依赖 [sessionId, tasks] 不重算 → 插话引用/图片行不出现; 改订阅快照台账(引用变化才重渲) — opencode-2026-11-18
 // 编辑历史: 2026-11-18 opencode - 台账行三处真问题: ①与 ref_ledger 快照按 path+lineRange 合并
 //   (原 live 非空即全量覆盖, 丢快照里 live 未复现的条目); ②url 条目点击开外链(原来当文件重读必失败) — opencode-2026-11-18
+// 编辑历史: 2026-11-20 小欧 - 修"复制失败" bug: 原 handleCopy 用裸 navigator.clipboard.writeText, 嵌入式浏览器/权限被拒/文档未聚焦时
+//   抛 NotAllowedError 必报"复制失败"(实测复现 Document is not focused); 改走统一 copyTextToClipboard(内建 execCommand 降级) — 小欧-2026-11-20
 
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
@@ -93,6 +95,8 @@ import type { SessionTaskItem } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '@/types/execution';
 import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
+// 统一剪贴板工具(含 execCommand 降级) — 小欧-2026-11-20
+import { copyTextToClipboard } from '@/utils/clipboard';
 import { showSuccess, handleError } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
@@ -584,12 +588,14 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     !latestTaskId || taskId === latestTaskId;
 
   // 2026-09-09 小欧 复制按钮: 点击复制文本到剪贴板, 显示成功提示
+  // 2026-11-20 小欧 - 改走统一剪贴板工具(内建 execCommand 降级): 原裸 writeText 在权限被拒/文档未聚焦时抛
+  //   NotAllowedError 报"复制失败", 嵌入式浏览器实测必现; 两法都失败才提示失败 — 小欧-2026-11-20
   const handleCopy = useCallback(
     async (text: string, type: '问题' | '回复') => {
-      try {
-        await navigator.clipboard.writeText(text);
+      const { ok } = await copyTextToClipboard(text);
+      if (ok) {
         showSuccess(`${type}已复制`);
-      } catch {
+      } else {
         handleError({ message: '复制失败' });
       }
     },
