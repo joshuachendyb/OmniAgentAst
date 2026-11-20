@@ -829,8 +829,8 @@ def my_parse_json(json_str):
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `generate_image` | 生图唯一 HTTP 出口（t2i/i2i 同端点同函数）；settled 三态与 `_probe_once` 同口径（200 有产物=ok / 400·415·422 或无产物=none / 401·429·5xx·网络错=未定） | api_base, headers, model, prompt, image=None, timeout=120 | Tuple[bool, str, bool] |
-| `generate_video` | 生视频唯一 HTTP 出口（t2v/i2v 同端点；提交+轮询，`mode` 必填；i2v 素材字段为 `images` 数组）；settled 口径同 `generate_image`，另将队列已满/轮询超时/轮询非 200/任务 failed（厂商侧失败无原因）/无 task_id 判为未定（不可归因模型） | api_base, headers, model, prompt, mode, images=None, timeout=120, poll_timeout=600 | Tuple[bool, str, bool] |
+| `generate_image` | 生图唯一 HTTP 出口（t2i/i2i 同端点同函数）；settled 三态与 `_probe_once` 同口径（200 有产物=ok / 400·415·422 或无产物=none / 401·429·5xx·网络错=未定）；`out` 可选出参成功时写未截断产物 url/b64，探测腿不传则三元组不变(OCP) — 小欧 2026-11-20 | api_base, headers, model, prompt, image=None, timeout=120, out=None | Tuple[bool, str, bool] |
+| `generate_video` | 生视频唯一 HTTP 出口（t2v/i2v 同端点；提交+轮询，`mode` 必填；i2v 素材字段为 `images` 数组）；settled 口径同 `generate_image`，另将队列已满/轮询超时/轮询非 200/任务 failed（厂商侧失败无原因）/无 task_id 判为未定（不可归因模型）；`out` 可选出参成功时写未截断 mp4 url（原大小写，签名参数敏感）— 小欧 2026-11-20 | api_base, headers, model, prompt, mode, images=None, timeout=120, poll_timeout=600, out=None | Tuple[bool, str, bool] |
 | `_video_status` / `_video_url` / `_video_reason` / `_source_unreachable` | 视频响应解析私有辅助：状态串兼容平铺与 `data.status` 包裹；产物地址按键名含 video 优先、再退 `.mp4` 直链（响应常同时带封面/尾帧图，只取 `url` 会拿错）；失败原因取 `error/message/fail_reason` 首个非空文本，原样进 evidence；素材抓取失败判定图/视频两腿共用（中英两种报错） | data / text | str / bool |
 | `REJECT_STATUS` | 确定拒绝状态集 {400, 415, 422}；输入腿 `_probe_once` 与视频腿同取此常量（**单源，勿再复制**） | 无 | frozenset |
 | `IMAGE_PATH` / `VIDEO_PATH` | 生成端点协议常量（images 同步产物 / videos 异步 task） | 无 | str |

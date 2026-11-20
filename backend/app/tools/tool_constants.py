@@ -96,6 +96,8 @@
 #   TOOL_RETRY_CONFIG 增 generate_image/generate_video max_retries=0(生成端点计费, 禁重试重复提交)
 # 2026-11-20 小欧 三堂会审常量归位: 新增第16节媒体生成工具常量 —— generate_image/generate_video 默认模型
 #   与 media_schema 的 model 提示串原散于业务文件, 迁至本文件单一真源, 原文件改 import — 小欧-2026-11-20
+# 2026-11-20 小欧 话术审查整改: MEDIA_MODEL_HINT(两工具共用, 同时列出 image/video 模型诱导传错)拆为
+#   MEDIA_IMAGE_MODEL_HINT / MEDIA_VIDEO_MODEL_HINT, 各自只列本模态模型并明确"不要传另一模态模型" — 小欧-2026-11-20
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -528,7 +530,7 @@ CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: 
     "win_registry": ("app.tools.win_registry", "_register_registry_tools"),
     "timer": ("app.tools.timer", "_register_timer_tools"),
     "agent": ("app.tools.agent", "_register_agent_tools"),
-    # 2026-11-20 小欧 - 媒体生成工具分类(生图/生视频): 走 generation 端点产出多媒体
+    # 2026-11-20 小欧 - 媒体生成工具分类(生成图像/生成视频): 走 generation 端点产出多媒体
     "media": ("app.tools.media", "_register_media_tools"),
 }
 
@@ -606,7 +608,7 @@ TOOL_RETRY_CONFIG: dict[str, dict] = {
     "fetchpage": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
     "searchweb": {"max_retries": 2, "retryable": ["connect", "network"]},
     "ping_port": {"max_retries": 2, "retryable": ["connect"]},
-    # 2026-11-20 小欧 - 生图/生视频不重试: 生成端点每次调用都产生费用, 重试会重复提交重复扣费
+    # 2026-11-20 小欧 - 生成图像/生成视频不重试: 生成端点每次调用都产生费用, 重试会重复提交重复扣费
     "generate_image": {"max_retries": 0, "retryable": []},
     "generate_video": {"max_retries": 0, "retryable": []},
 }  # 【tool 级】使用对象: ToolRetryEngine per-tool 重试参数
@@ -903,14 +905,20 @@ WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
 
 
 # ====================================================================
-# 16. 媒体生成工具常量 — 【工具层】（生图/生视频默认模型与描述）— 小欧 2026-11-20 三堂会审
+# 16. 媒体生成工具常量 — 【工具层】（生成图像/生成视频默认模型与描述）— 小欧 2026-11-20 三堂会审
 # ====================================================================
 # 原散于 generate_image.py / generate_video.py / media_schema.py 的默认模型与提示串归位至此, 取值零变更。
-MEDIA_DEFAULT_IMAGE_MODEL = "agnes-image-2.1-flash"  # 【tool 级】使用对象: generate_image 默认生图模型
-MEDIA_DEFAULT_VIDEO_MODEL = "agnes-video-2.5-flash"  # 【tool 级】使用对象: generate_video 默认生视频模型
-MEDIA_MODEL_HINT = (  # 【tool 级】使用对象: media_schema 两输入模型的 model 字段描述
-    "生成模型名(须为已配置且声明对应输出模态的模型, 如 agnes-image-2.1-flash / agnes-video-2.5-flash); "
-    "不填则用系统默认生成模型"
+MEDIA_DEFAULT_IMAGE_MODEL = "agnes-image-2.1-flash"  # 【tool 级】使用对象: generate_image 默认生成图像模型
+MEDIA_DEFAULT_VIDEO_MODEL = "agnes-video-2.5-flash"  # 【tool 级】使用对象: generate_video 默认生成视频模型
+# model 字段话术按工具拆开: 各自只列本模态模型, 避免生成图像工具里出现生成视频模型名诱导 LLM 传错 — 小欧-2026-11-20
+MEDIA_IMAGE_MODEL_HINT = (  # 【tool 级】使用对象: GenerateImageInput.model 字段描述
+    "生成图像模型名, 如 agnes-image-2.1-flash(须为已配置且声明图像输出的模型); 不填用默认 agnes-image-2.1-flash。不要传生成视频模型"
 )
+MEDIA_VIDEO_MODEL_HINT = (  # 【tool 级】使用对象: GenerateVideoInput.model 字段描述
+    "生成视频模型名, 如 agnes-video-2.5-flash(须为已配置且声明视频输出的模型); 不填用默认 agnes-video-2.5-flash。不要传生成图像模型"
+)
+# 媒体工具错误码(单一真源, 供 generate_image/generate_video 的 llm_data.status.code 引用) — 小欧-2026-11-20
+ERR_GENERATE_NO_CHANNEL = "ERR_GENERATE_NO_CHANNEL"  # 生成回调未注入
+ERR_GENERATE_INCOMPLETE = "ERR_GENERATE_INCOMPLETE"  # 生成未完成(未定/队列/环境)
 
 

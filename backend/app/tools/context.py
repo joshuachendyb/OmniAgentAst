@@ -25,7 +25,7 @@
 # 2026-11-19 小欧 - notice 回调签名再补 only_event(默认 False): async (...,items=None,only_event=False);
 #   仅事件列表标记, schedule error 用, 其它工具零改动。
 # 2026-11-20 小欧 - 新增 _current_generate_callback(生成回调): 入口层持 agent 注入, 闭包内用当前模型凭据调
-#   generation 端点, 生图/生视频工具层零越层拿产物 — 小欧-2026-11-20
+#   generation 端点, 生成图像/生成视频工具层零越层拿产物 — 小欧-2026-11-20
 """
 tools/context — 工具层运行上下文
 
@@ -49,7 +49,7 @@ _current_text_task: ContextVar[Optional[object]] = ContextVar("current_text_task
 _current_notice_callback: ContextVar[Optional[object]] = ContextVar("current_notice_callback", default=None)
 # "阻塞问询回调": 入口层(tool_executor)持 agent 注入, 签名 async (questions: List[Dict]) -> Dict — 商量 2026-11-18
 _current_question_callback: ContextVar[Optional[object]] = ContextVar("current_question_callback", default=None)
-# 2026-11-20 小欧 - 生成回调: 入口层(tool_executor)持 agent 注入, 签名 async (kind, prompt, **kwargs)->Dict;
+# 2026-11-20 小欧 - 生成回调: 入口层(tool_executor)持 agent 注入, 签名 async (kind, model, prompt, **kwargs)->Dict;
 #   闭包内用当前模型凭据调 generation 端点, 工具层零越层(不 import services/config) — 小欧-2026-11-20
 _current_generate_callback: ContextVar[Optional[object]] = ContextVar("current_generate_callback", default=None)
 
@@ -153,8 +153,8 @@ def reset_current_question_callback(token) -> None:
 def get_current_generate_callback() -> Optional[object]:
     """获取当前作用域的生成回调(入口层注入) — 小欧 2026-11-20
     返回 None 表示未注入(直接调工具/无agent), 由生成工具自行降级。
-    签名: async (kind: str, prompt: str, **kwargs) -> Dict[str, Any]
-      kind ∈ {image, video}; kwargs: image/i2i 图源、mode(视频 t2v/i2v)、images 等
+    签名: async (kind: str, model: str, prompt: str, **kwargs) -> Dict[str, Any]
+      kind ∈ {image, video}; model=生成模型名; kwargs: image/i2i 图源、mode(视频 t2v/i2v)、images 等
       返回 {ok, settled, url, b64, reason}
     """
     return _current_generate_callback.get()

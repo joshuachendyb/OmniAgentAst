@@ -25,6 +25,8 @@ from app.services.agent.media_constants import (
     VIDEO_TRANSCODE_TIMEOUT_SEC,
 )  # 转码常量集中管理(三堂会审归位) — 小欧-2026-11-20
 
+_TRANSCODE_STDERR_TAIL = 300  # 转码失败日志里截取的 stderr 尾部字符数(本模块日志细节)
+
 # 以下为进程内运行时状态(非配置常量), 随用方留本模块
 _transcode_locks: Dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
@@ -102,8 +104,8 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
     except OSError as e:
         logger.warning(f"[video_transcode] 读源文件元数据失败, 跳转码: {path} err={e}")
         return path, False
-    # 缓存键: 源文件名 + 大小 + mtime, 同文件复投不重转
-    key = f"{stem}_{st.st_size}_{int(st.st_mtime)}.mp4"
+    # 缓存键: 源文件名 + 大小 + mtime(纳秒, 避免同秒同大小覆盖文件命中旧产物), 同文件复投不重转
+    key = f"{stem}_{st.st_size}_{st.st_mtime_ns}.mp4"
     out_path = os.path.join(out_dir, key)
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path, True
@@ -130,7 +132,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
                 os.remove(partial_path)
             result = subprocess.run(cmd, capture_output=True, timeout=VIDEO_TRANSCODE_TIMEOUT_SEC)
             if result.returncode != 0 or not os.path.exists(partial_path) or os.path.getsize(partial_path) == 0:
-                logger.warning(f"[video_transcode] 转码失败 codec={codec} path={path} err={result.stderr[-300:]!r}")
+                logger.warning(f"[video_transcode] 转码失败 codec={codec} path={path} err={result.stderr[-_TRANSCODE_STDERR_TAIL:]!r}")
                 _safe_remove(partial_path)
                 return path, False
             os.replace(partial_path, out_path)  # 原子替换

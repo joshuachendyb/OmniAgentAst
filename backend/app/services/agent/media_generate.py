@@ -6,8 +6,8 @@
 编辑历史: 2026-11-20 小欧 b64 产物落盘: SenseNova U1.5 只返 2048² PNG 的 b64(约4MB)无公网URL,
   直接塞 LLM 回复会超消息大小; 本层(services, 可 import attachments)把 b64 落盘为会话 attachment,
   返回 attachment_id/file_path, 工具声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览(零前端改动)。
-编辑历史: 2026-11-20 小欧 图源归一: 实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i/i2v image 参数都接受标准
-  data URI(仅 i2i; i2v reference 只吃公网 URL, data URI 被拒); _image_bytes 统一读字节, i2i 转 data URI, i2v 走 public_image 公网化。
+编辑历史: 2026-11-20 小欧 图源归一: 实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i image 参数接受标准 data URI;
+  i2v reference 只接受公网 URL(data URI 被拒); _read_image_source 统一读字节, i2i 转 data URI, i2v 走 public_image 公网化。
 编辑历史: 2026-11-20 小欧 本地图 i2v 公网化: 新增 _image_bytes 抽出图源读取(i2i/i2v 共用, DRY); invoke_generate 的 i2v 分支
   调 public_image.upload_image 把本地图临时公网化后送厂商 images; i2i 仍走 data URI(需求: 本地图也能做图生视频)。
 编辑历史: 2026-11-20 小欧 三堂会审命名整改: _image_bytes 返回(字节,mime)二元组名不符实, 改名 _read_image_source 且注解精确为
@@ -17,6 +17,8 @@
 """
 import base64
 import os
+import re
+import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from app.config import get_config
@@ -51,7 +53,6 @@ def _read_image_source(src: str) -> Optional[Tuple[bytes, str]]:
             return None
     if lowered.startswith(("http://", "https://")):
         return None  # 公网 URL 由调用方原样处理
-    import re
     path = ""
     if re.fullmatch(r"[0-9a-f]{32}", src):  # 32hex attachment_id → stored_path
         try:
@@ -114,8 +115,6 @@ def _save_b64_attachment(b64: str, session_id: str, mime: str, stem: str) -> Opt
     if not b64 or not session_id:
         return None
     try:
-        import uuid
-
         from app.attachments import attachment_service
         raw = base64.b64decode(b64)
         ext = "png" if "png" in mime else ("jpg" if "jpeg" in mime or "jpg" in mime else "bin")

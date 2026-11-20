@@ -3,6 +3,8 @@
 
 模板参照 agent_register.py: 分类 MEDIA, 扁平 input_model, 一句路由描述。
 编辑历史: 2026-11-20 小欧 工具描述同步 image 参数支持本地路径/attachment_id(后端转data URI), 明确引导 LLM 从会话 attachments 目录取上传图的路径做 i2i 编辑。
+编辑历史: 2026-11-20 小欧 话术审查整改: 两工具描述消除含糊与矛盾 —— 明确 mode/image 如何决定 t2i/i2i、t2v/i2v; image 四种来源与 schema 对齐;
+  model 只列本模态模型避免传错; 产物展示区分公网URL(markdown)与本地附件(不用markdown, 会401), 消除与 llm_data.summary 的冲突; 纯话术改动零行为变更。
 """
 from app.logger import logger
 from app.tools.media.generate_image import generate_image
@@ -13,16 +15,18 @@ from app.tools.tool_types import ToolCategory
 
 MEDIA_TOOL_DESCRIPTIONS = {
     "generate_image": (
-        "适用: 用户要求生成/画一张图片时。文字描述想要的内容, 调用本工具生成图片。"
-        "prompt 为图片内容描述; model 为生图模型名(不填用默认 agnes-image-2.1-flash); "
-        "image 为图生图(i2i)参考图, 可传用户上传图片的本地路径/attachment_id/公网URL(后端自动转换), 留空=纯文本生图(t2i)。"
-        "用户上传的图片可从会话的 attachments 目录找到本地路径直接传 image。生成后在回复里用 ![](产物URL) 展示图片。"
+        "适用: 用户要求生成/画一张图片, 或基于已有图片编辑(改色/换风格等)时。"
+        "prompt 写想要的内容或改动; model 为生成图像模型名(只传生成图像模型如 agnes-image-2.1-flash, 不填用默认; 切勿传生成视频模型)。"
+        "image 决定模式: 留空=文生图(t2i), 传参考图=图生图(i2i); 参考图可传用户上传图的本地路径(在会话 attachments 目录下)、"
+        "attachment_id、公网图片URL 或 data URI 四者之一, 后端自动归一, 本地图无需公网图床。"
+        "产物为公网URL时, 在回复里原样输出工具返回的 markdown ![](url) 展示; 若产物是本地附件(工具会说明), 则只告知用户去产物/附件查看, 不要用 markdown 展示本地路径。"
     ),
     "generate_video": (
-        "适用: 用户要求生成/制作一段视频时。文字描述想要的画面, 调用本工具生成视频(异步, 约几分钟)。"
-        "prompt 为视频内容描述; model 为生视频模型名(不填用默认 agnes-video-2.5-flash); "
-        "mode=t2v(纯文本)或 i2v(带参考图, 需给 image——可传本地路径/attachment_id, 后端自动公网化, 本地图也能做图生视频); timeout 等待上限秒(默认660)。"
-        "生成后在回复里用 markdown 展示视频: ![生成的视频](产物URL)。"
+        "适用: 用户要求生成/制作一段视频, 或让一张图动起来时。异步任务, 常需数分钟, 请勿中途重复提交(会重复扣费)。"
+        "prompt 写想要的画面或如何动; model 为生成视频模型名(只传生成视频模型如 agnes-video-2.5-flash, 不填用默认; 切勿传生成图像模型)。"
+        "mode 决定模式: t2v=文生视频(默认, image 留空), i2v=图生视频(必须同时给 image 作首帧参考图; 若 mode=i2v 却没给 image, 会按无参考图的 t2v 处理)。"
+        "image 四种都支持: 本地路径(会话 attachments 目录下)、attachment_id、公网图片URL、data URI; 本地图/附件/data URI 后端会自动公网化, 本地图也能做。"
+        "timeout 为等待上限秒(默认660, 范围120~1200, 别调太小)。产物为公网URL, 在回复里原样输出工具返回的 markdown ![生成的视频](url) 展示, 别输出普通链接。"
     ),
 }
 
@@ -32,15 +36,14 @@ MEDIA_INPUT_MODELS = {
 }
 
 MEDIA_TOOL_EXAMPLES = {
-    "generate_image": [{
-        "prompt": "一只戴墨镜的猫坐在沙滩上, 夕阳西下, 写实风格",
-        "model": "agnes-image-2.1-flash",
-    }],
-    "generate_video": [{
-        "prompt": "一个红色圆点在白色背景上缓慢移动",
-        "model": "agnes-video-2.5-flash",
-        "mode": "t2v",
-    }],
+    "generate_image": [
+        {"prompt": "一只戴墨镜的猫坐在沙滩上, 夕阳西下, 写实风格", "model": "agnes-image-2.1-flash"},
+        {"prompt": "把图片主色调改成蓝色", "image": "会话 attachments 目录下用户上传图的本地路径", "model": "agnes-image-2.1-flash"},
+    ],
+    "generate_video": [
+        {"prompt": "一个红色圆点在白色背景上缓慢移动", "model": "agnes-video-2.5-flash", "mode": "t2v"},
+        {"prompt": "让镜头缓慢推近", "image": "会话 attachments 目录下用户上传图的本地路径", "model": "agnes-video-2.5-flash", "mode": "i2v"},
+    ],
 }
 
 

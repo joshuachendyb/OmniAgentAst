@@ -264,12 +264,15 @@ async def generate_video(
                 return False, "bad_json", False
             status = _video_status(detail) or "unknown"
             if status in VIDEO_DONE:
-                url = _video_url(detail)  # lower 取证串
-                if url:
+                # 一次递归取原始大小写 URL: evidence 用其 lower 取证(与 _video_url 默认口径等价), out 用原串下载;
+                #   避免同一 detail 两次全量遍历(DRY) — 小欧-2026-11-20 三堂会审
+                raw_url = _video_url(detail, preserve_case=True)
+                evidence_url = raw_url.lower()
+                if evidence_url:
                     # 产物原始大小写 URL 写入 out 供下载(签名参数大小写敏感); 探测腿零影响 — 小欧-2026-11-20
                     if out is not None:
-                        out["url"] = _video_url(detail, preserve_case=True) or url
-                    return True, f"url={url}"[:_EV_LIMIT], True
+                        out["url"] = raw_url
+                    return True, f"url={evidence_url}"[:_EV_LIMIT], True
                 # 终态却取不到视频地址: 多半是响应结构变化, 不能据此判"无生成能力"
                 return False, f"no_output_field: {poll.text}"[:_EV_LIMIT], False
             if status in VIDEO_FAILED:
