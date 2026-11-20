@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
-# 模块说明: provider 适配基类 — 默认行为==现状(仅 Authorization, 无动态头, body 原样, chat 端点)
-#   新 provider 特殊 HTTP 握手 = 继承本基类覆写对应钩子; 未覆写即完全默认(现状语义)。
-#   归属依据(北京老陈核查): 承载 provider 的请求适配与调用约定差异 ——
-#   前者指 HTTP 接缝差异与门禁 body/端点路由(7 个纯变换钩子), 后者指纯文本任务的
-#   调用约定(callTextForTask, 带 I/O)。两者同源于"provider 约定变化", 故同处一基类。
+# 模块说明: provider 适配基类 — 默认行为==通用(general), 承载各 provider 相对通用的差异钩子。
+#
+# 【基类提供的通用能力(未覆写即采用)】
+#   ① 鉴权/HTTP 接缝: Bearer 头(auth_headers/static_headers)、每请求头、chat 端点(/chat/completions)、
+#      门禁 body 原样、非流式、error 码走全局分类器。
+#   ② 输入模态: 基类不构造 chat 输入 part —— 图片/音频/文档用 OpenAI 标准
+#      (image_url/input_audio/file), 视频用多厂商共同支持的 video_url, 均在 media_payload 统一构造;
+#      传输策略(内联/外链)由 capability 的 transport 门控。基类只提供 responses 端点 body 转换(to_responses_body)。
+#   ③ 输出模态(生成): 通用生图 prepare_image_body(size/image/response_format顶层) +
+#      通用生视频 prepare_video_body(first/last_frame/images/audios/videos/seconds/size/aspect_ratio/seed 同名直传)。
+#   ④ 纯文本任务调用约定: callTextForTask 默认不接管。
+#
+# 【何时必须建 adapter】规则: 某 provider 的方法/能力与上面基类通用实现不同 → 新建 adapter 文件继承本类,
+#   只覆写有差异的钩子(如 sensenova 生图 size 用 WIDTHxHEIGHT、agnes 用档位+ratio+return_base64),
+#   并在 adapters/__init__.py 的 _ADAPTERS 注册; 未覆写的钩子仍走基类通用实现(OCP)。
+#   反例: 若只是调 general_gen_image/general_gen_video 的通用参数, 无需建 adapter。
+#
+# 归属依据(北京老陈核查): 承载 provider 的请求适配与调用约定差异 ——
+#   前者指 HTTP 接缝差异与门禁 body/端点路由, 后者指纯文本任务的调用约定(callTextForTask)。
 #   schema/reasoning/工具别名(#3/4/5)为全局层, 绝不 provider 化。
 # 编辑历史: 2026-09-23 小欧 新建
 # 编辑历史: 2026-10-09 小欧 加 callTextForTask 钩子(纯文本任务定制调用, 默认不接管) — 小欧-2026-10-09
