@@ -1,11 +1,11 @@
 # 通用双向交互事件 `interact` 规范与 question 落地文档
 
-> 文档号: [48] | 签名: 商量 | 时间: 2026-11-19 14:20:00
+> 文档号: [3] | 签名: 商量 | 时间: 2026-11-19 14:20:00
 > 编写/更新人: 商量（签名）
-> 存放: D:\NDOOmniAgent\doc-11月优化\[48]通用双向交互事件interact规范与question落地-商量-2026-11-19.md
+> 存放: D:\NDOOmniAgent\doc-开发规范\[3]通用双向交互事件interact规范与question落地-商量-2026-11-19.md
 > 性质: **规范类文档** —— 定义「通用双向交互事件 interact」，question 为首个落地范例
-> 前置: [47] 通知事件类 tool 规范（notice 是单向通知，interact 是双向交互，两者并列）
-> 更新: 2026-11-19 商量 - 本文定义的是 interact **事件帧契约**（type/interaction_id/kind/event/payload），本次 question 工具内部参数(single/阈值)与返回三态(success/warning/error)重构不改变事件帧结构；工具层契约详见 [37] §7.3/§9.2、设计决策见 [49] §4.3
+> 前置: [2] 通知事件类 tool 规范（notice 是单向通知，interact 是双向交互，两者并列）
+> 更新: 2026-11-19 商量 - 本文定义的是 interact **事件帧契约**（type/interaction_id/kind/event/payload），本次 question 工具内部参数(single/阈值)与返回三态(success/warning/error)重构不改变事件帧结构；工具层契约详见 [37] §7.3/§9.2、设计决策见 [4] §4.3
 
 ## 目录
 
@@ -28,7 +28,7 @@ agent 工具按「与用户交互方式」分三类：
 | 类别 | 本质 | 代表 | 前端呈现 | 规范 |
 |---|---|---|---|---|
 | 业务类 tool | 操作外部资源，产出业务结果 | read/write/shell | observation 步入业务流水线 | 本仓既有 |
-| 通知事件类 tool | 单向通知用户（后端→前端） | schedule | notice → 专属卡片 | [47] |
+| 通知事件类 tool | 单向通知用户（后端→前端） | schedule | notice → 专属卡片 | [2] |
 | **交互事件类 tool** | **双向交互（后端发起→用户响应→回传）** | **question（首个）** | **interact → 专属浮层** | 本文 |
 
 交互事件类 tool 的特征：

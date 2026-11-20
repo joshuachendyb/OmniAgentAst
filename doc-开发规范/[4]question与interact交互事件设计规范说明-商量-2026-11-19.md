@@ -1,11 +1,11 @@
 # question 与 interact 交互事件设计规范说明
 
-> 文档号：[49] | 签名：商量 | 时间：2026-11-19 15:00:00
+> 文档号：[4] | 签名：商量 | 时间：2026-11-19 15:00:00
 > 编写/更新人：商量（签名）
-> 存放：D:\NDOOmniAgent\doc-11月优化\[49]question与interact交互事件设计规范说明-商量-2026-11-19.md
+> 存放：D:\NDOOmniAgent\doc-开发规范\[4]question与interact交互事件设计规范说明-商量-2026-11-19.md
 > 性质：**设计说明文档** —— 回答"为什么这样设计"，不重复字段契约与代码位置
-> 分工：[48] 管实现规范（字段契约、代码位置、复用指引）；本文管设计思想、决策取舍、分层关系、设计演进
-> 前置：[37] question/schedule 业务设计；[47] notice（单向通知）规范；[48] interact 实现规范
+> 分工：[3] 管实现规范（字段契约、代码位置、复用指引）；本文管设计思想、决策取舍、分层关系、设计演进
+> 前置：[37] question/schedule 业务设计；[2] notice（单向通知）规范；[3] interact 实现规范
 > 更新: 2026-11-19 商量 - §4.3 补工具层返回三态设计决策（success 全答无截断 / warning 部分答或截断或叠加 / error 取消与结构错），参数约束重构见 [37] §7.3
 
 ## 目录
@@ -29,7 +29,7 @@
 question 最初以一对专用事件实现：发问 `question_required`、收口 `question_resolved`（见 [37]）。落地后暴露出两个结构性问题：
 
 1. **框架被 tool 语义污染**：专用事件把 question 的专属字段（questions/backend_timeout/outcome）平铺在框架事件里，框架层不得不认识这些字段。再来一个交互 tool（确认、选择）就要再发明一对专用事件，框架无法复用。
-2. **同类事件各自为政**：notice 已经抽象出单向通知通道（[47]），而双向交互没有统一范式——question 自有一套、HITL 授权借用 `paused/resumed` 又是一套，概念割裂。
+2. **同类事件各自为政**：notice 已经抽象出单向通知通道（[2]），而双向交互没有统一范式——question 自有一套、HITL 授权借用 `paused/resumed` 又是一套，概念割裂。
 
 抽象出 interact 的目的：**把"agent 与用户的双向交互"提升为框架一等公民**，让任何交互 tool 只填自己的 `kind` 与 `payload`，框架层零语义。question 成为第一个使用者，也是验证该范式的范例。
 
@@ -40,7 +40,7 @@ question 最初以一对专用事件实现：发问 `question_required`、收口
 | 框架不认识 tool 语义 | 框架级字段只有 interaction_id/kind/event/content/payload；questions 等特殊性全在 payload |
 | 双向、可多轮 | interaction_id 关联多轮；event 区分发起与收口；阻塞 Future 唤醒后端 |
 | 新增交互 tool 框架零改 | sseParser 只解析通用字段；transport 按 kind 一个分支；UI 放各自目录 |
-| 与单向通知并列 | notice（[47]）=单向；interact=双向，两者不混用 |
+| 与单向通知并列 | notice（[2]）=单向；interact=双向，两者不混用 |
 | 不退化 | 落库与喂 LLM 照常；仅呈现通道变化（工具行隐藏、事件上浮） |
 
 核心设计原则：**框架层提供"消息通道"，业务层提供"交互语义"**。两者边界清晰，改动互不穿透。
@@ -162,7 +162,7 @@ interact 字段是框架一等公民（四字段 + payload），专用类让契�
 
 ### 7.1 与 notice（单向通知）
 
-| 维度 | notice [47] | interact（本文） |
+| 维度 | notice [2] | interact（本文） |
 |---|---|---|
 | 方向 | 单向（后端→前端） | 双向（后端发起→用户响应→回传） |
 | 代表 | schedule | question |
@@ -204,7 +204,7 @@ interact 字段是框架一等公民（四字段 + payload），专用类让契�
 
 ## 10. 扩展到下一个交互 tool
 
-以 confirm（授权确认）为例，设计 Follow 顺序（具体步骤见 [48]）：
+以 confirm（授权确认）为例，设计 Follow 顺序（具体步骤见 [3]）：
 
 1. 工具注册声明 `hide_from_steps=True`。
 2. 后端业务流程调 `emit_interact(interaction_id, kind='confirm', event=ask/answered/cancelled/expired, payload=...)`；授权的特殊字段（trust_impact/path/params）放 payload。
