@@ -18,6 +18,9 @@
   Optional[Tuple[bytes,str]]; _provider_and_base 返回三元组漏 key 改 _provider_credentials; 局部变量 pair→image_data、
   vmode→endpoint_mode(端点是 text/reference, 与工具侧 t2v/i2v 区分)、ev→evidence(取证串); 另 rec→attachment_rec/saved_rec
   (附件记录, 消含糊缩写); 纯改名零行为变更。
+编辑历史: 2026-11-20 小欧 按厂商文档(agnes-video-2.5/flash)补全视频全能力: invoke_generate 扩 first_frame/last_frame/audios/videos/
+  seconds/size/aspect_ratio/seed 参数; mode 支持 t2v/i2v 别名与 text/keyframe/reference 直通; 图片类素材(images/first/last)统一公网化,
+  audios/videos 为公网URL原样透传; 厂商实测新模式提交返回 queue_full(非参数错)证明参数结构正确 — 小欧-2026-11-20
 """
 import base64
 import os
@@ -151,11 +154,19 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                           *, image: Optional[str] = None,
                           mode: Optional[str] = None,
                           images: Optional[list] = None,
+                          first_frame: Optional[str] = None,
+                          last_frame: Optional[str] = None,
+                          audios: Optional[list] = None,
+                          videos: Optional[list] = None,
+                          seconds: Optional[str] = None,
+                          size: Optional[str] = None,
+                          aspect_ratio: Optional[str] = None,
+                          seed: Optional[int] = None,
                           timeout: Optional[float] = None,
                           session_id: Optional[str] = None) -> Dict[str, Any]:
     """生成回调主入口 → {ok, settled, url, b64, file_path, attachment_id, reason}。
 
-    kind=image → generate_image; kind=video → generate_video(默认 t2v)。
+    kind=image → generate_image; kind=video → generate_video(全模式: text/keyframe/reference)。
     产物 url 直接回; 只有 b64(如 SenseNova)时经 session_id 落盘为 attachment, 回 file_path。
     任何异常回 ok=False 不抛, 由工具收口。
     """
@@ -172,15 +183,21 @@ async def invoke_generate(kind: str, model: str, prompt: str,
             ok, evidence, settled = await generate_image(api_base, headers, model, prompt,
                                                          image=src_image, out=out, **kw)
         elif kind == "video":
-            # 工具侧 mode 是 t2v/i2v, generation 端点要 text/reference — 在此映射(单一转换点)
-            endpoint_mode = VIDEO_MODE_I2V if mode == "i2v" else VIDEO_MODE_T2V
-            # i2v: 图源须公网 URL(厂商直连 GET), 本地图经临时图床公网化; t2v 无图源
-            src_images = None
-            if endpoint_mode == VIDEO_MODE_I2V and images:
-                src_images = [await _publicize_image_source(x) for x in images]
+            # 工具侧 mode 支持 t2v/i2v 别名与 text/keyframe/reference 直通 — 单一映射点
+            alias = {"t2v": VIDEO_MODE_T2V, "i2v": VIDEO_MODE_I2V}
+            endpoint_mode = alias.get(mode or "", mode or VIDEO_MODE_T2V)
+            # 图片类素材须公网 URL(厂商直连 GET), 本地路径/attachment_id/data URI 经临时图床公网化
+            # keyframe(first/last_frame) 与 reference(images) 都是图片, 统一公网化
+            src_images = [await _publicize_image_source(x) for x in images] if images else None
+            src_first = await _publicize_image_source(first_frame) if first_frame else None
+            src_last = await _publicize_image_source(last_frame) if last_frame else None
+            # audios/videos 已是公网 URL/对象(厂商要求直连 GET), 本地文件暂不公网化, 原样透传交由厂商判定
             kw = {"timeout": timeout} if timeout else {}
-            ok, evidence, settled = await generate_video(api_base, headers, model, prompt, endpoint_mode,
-                                                         images=src_images, out=out, **kw)
+            ok, evidence, settled = await generate_video(
+                api_base, headers, model, prompt, endpoint_mode,
+                images=src_images, first_frame=src_first, last_frame=src_last,
+                audios=audios, videos=videos, seconds=seconds, size=size,
+                aspect_ratio=aspect_ratio, seed=seed, out=out, **kw)
         else:
             return {"ok": False, "settled": False, "reason": f"未知生成类型 {kind}"}
     except Exception as e:  # noqa: BLE001 — 生成异常回退, 不打断对话轮

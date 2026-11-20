@@ -26,8 +26,17 @@ from app.tools.tool_response import build_error, build_success, build_warning, w
 
 async def generate_video(prompt: str, model: Optional[str] = None,
                          mode: str = "t2v", image: Optional[str] = None,
+                         images: Optional[list] = None,
+                         first_frame: Optional[str] = None,
+                         last_frame: Optional[str] = None,
+                         audios: Optional[list] = None,
+                         videos: Optional[list] = None,
+                         seconds: Optional[str] = None,
+                         size: Optional[str] = None,
+                         aspect_ratio: Optional[str] = None,
+                         seed: Optional[int] = None,
                          timeout: int = 660) -> Dict[str, Any]:
-    """生成一段视频。返回 {data, llm_data, other_data}。"""
+    """生成一段视频(text/keyframe/reference 全模式)。返回 {data, llm_data, other_data}。"""
     t0 = time.monotonic()
     generate_callback = get_current_generate_callback()
     if generate_callback is None:
@@ -44,12 +53,19 @@ async def generate_video(prompt: str, model: Optional[str] = None,
             },
         )
     effective_model = model or MEDIA_DEFAULT_VIDEO_MODEL
-    kwargs: Dict[str, Any] = {"timeout": float(timeout)}
-    if mode == "i2v" and image:
-        kwargs["mode"] = "i2v"
-        kwargs["images"] = [image]
-    else:
-        kwargs["mode"] = "t2v"
+    kwargs: Dict[str, Any] = {"timeout": float(timeout), "mode": mode}
+    # image(单图兼容旧 i2v)合并进 images, 与显式 images 一起送编排层公网化
+    merged_images: list = list(images) if images else []
+    if image and image not in merged_images:
+        merged_images.insert(0, image)
+    # 只透传非空可选参数, 未给的走厂商默认(探测腿/旧调用零影响)
+    if merged_images:
+        kwargs["images"] = merged_images
+    for key, val in (("first_frame", first_frame), ("last_frame", last_frame),
+                     ("audios", audios), ("videos", videos), ("seconds", seconds),
+                     ("size", size), ("aspect_ratio", aspect_ratio), ("seed", seed)):
+        if val is not None:
+            kwargs[key] = val
     result = await generate_callback("video", effective_model, prompt, **kwargs)
     dur = int((time.monotonic() - t0) * 1000)
     if not result.get("ok"):

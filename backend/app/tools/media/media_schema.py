@@ -4,6 +4,9 @@
 扁平简单类型(prompt/model/mode 等 str), 无嵌套 BaseModel, 严格 provider 兼容(同 agent_schema 契约)。
 编辑历史: 2026-11-20 小欧 话术审查整改: model 字段改用按模态拆分的 hint(防传错模型); prompt 去"尽量具体"改列具体要素;
   mode/image 讲清 t2i/i2i/t2v/i2v 触发条件(留空 vs 传值); image 四种来源完整列出; timeout 补范围120~1200与"别调太小"原因; 纯话术改动零行为变更。
+编辑历史: 2026-11-20 小欧 按厂商文档(agnes-video-2.5/flash)补全视频全能力: mode 扩 text/keyframe/reference;
+  加 first_frame/last_frame(首尾帧)、images(多图)/audios/videos(多模态参考)、seconds/size/aspect_ratio/seed 通用参数;
+  prompt 引导用 <Picture N>/<Audio N>/<Video N> 指代素材 — 小欧-2026-11-20
 """
 from typing import Optional
 
@@ -20,9 +23,26 @@ class GenerateImageInput(BaseModel):
 
 
 class GenerateVideoInput(BaseModel):
-    prompt: str = Field(..., min_length=1, description="视频内容描述(文本生成视频提示词)。写清主体、动作、镜头、风格等要素, 越具体出片越贴合; 图生视频(i2v)时用来描述画面如何动起来(如'镜头缓慢推近')")
+    prompt: str = Field(..., min_length=1,
+                        description="视频内容描述。写清主体、动作、镜头、风格、声音。参考模式(reference)里用 <Picture N>/<Audio N>/<Video N> 指代素材(从1编号), 如'以 <Picture 1> 的角色风格, 跟随 <Audio 1> 的节奏'")
     model: Optional[str] = Field(default=None, description=MEDIA_VIDEO_MODEL_HINT)
-    mode: str = Field(default="t2v", description="生成方式二选一: t2v=纯文本生成视频(此时 image 留空); i2v=图生视频(必须给 image 作为首帧参考图)。默认 t2v")
-    image: Optional[str] = Field(default=None, description="图生视频(i2v)的参考图(首帧), 四种都支持: ①本地路径(如会话 attachments 目录下的 xxx.png) ②attachment_id(32位十六进制) ③公网图片URL ④data URI(data:image/...;base64,...)。本地路径/attachment_id/data URI 后端会自动上传到临时图床换成公网URL(生成视频厂商只认公网URL), 本地图也能做; mode=t2v 时必须留空")
+    mode: str = Field(default="t2v",
+                      description="生成方式: t2v/text=纯文本生成视频(媒体字段全留空); keyframe=首尾帧控制(给 first_frame 和/或 last_frame); i2v/reference=多模态参考(给 images/audios/videos 至少一类)。默认 t2v")
+    image: Optional[str] = Field(default=None,
+                                 description="单张参考图(兼容旧 i2v 用法), 等价于 images 只填一张。支持本地路径/attachment_id/公网URL/data URI, 本地图后端自动公网化。与 images 同时给时两者合并")
+    images: Optional[list] = Field(default=None,
+                                   description="参考图片公网URL列表(reference模式)。多张时 prompt 用 <Picture 1>/<Picture 2> 按序指代。最多8张(flash最多5张), 本地文件路径/attachment_id 会自动公网化")
+    first_frame: Optional[str] = Field(default=None,
+                                       description="首帧图片(keyframe模式), 成片会以此为真实首帧。支持本地路径/attachment_id/公网URL/data URI, 后端自动公网化; 与 last_frame 至少给一个")
+    last_frame: Optional[str] = Field(default=None,
+                                      description="尾帧图片(keyframe模式), 成片会以此为真实尾帧。来源同 first_frame; 与 first_frame 至少给一个")
+    audios: Optional[list] = Field(default=None,
+                                   description="参考音频公网URL列表(reference模式), 最多3段, prompt 用 <Audio N> 指代。需厂商可直连GET的公网地址")
+    videos: Optional[list] = Field(default=None,
+                                   description="参考视频公网URL列表(reference模式), 最多1个, prompt 用 <Video N> 指代。需厂商可直连GET的公网地址; 注意 flash 模型不支持视频参考")
+    seconds: Optional[str] = Field(default=None, description="视频时长, 字符串 '4'~'12', 默认 '5'")
+    size: Optional[str] = Field(default=None, description="输出分辨率档位: 720P/1080P/1K/2K(flash 仅支持 720P)。不填用厂商默认")
+    aspect_ratio: Optional[str] = Field(default=None, description="画幅比例: 21:9/16:9/4:3/1:1/3:4/9:16, 默认 16:9")
+    seed: Optional[int] = Field(default=None, description="随机种子, 相同种子提高结果可复现性")
     timeout: int = Field(default=660, ge=120, le=1200,
                          description="视频生成等待上限(秒), 有效范围 120~1200, 默认 660。异步任务含厂商排队+出片, 常需数分钟, 不要调太小否则任务未完成就超时")

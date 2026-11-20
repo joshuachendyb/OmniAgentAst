@@ -6,6 +6,8 @@
 - 小欧-2026-11-09
 2026-11-09 订正: 素材不可达判定收窄为短语集常量(原含"下载"二字即归此类过宽); _video_url 取证串标注勿回放 - 小欧-2026-11-09
 2026-11-20 小欧 Phase B 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
+2026-11-20 小欧 按厂商文档补全视频全能力: generate_video 支持 mode(text/keyframe/reference)及 first_frame/last_frame/images/
+  audios/videos/seconds/size/aspect_ratio/seed, 全部可选(OCP, 探测腿与旧调用零影响); 加 VIDEO_MODES/SIZES/ASPECT_RATIOS 白名单常量 — 小欧-2026-11-20
 """
 import asyncio
 import time
@@ -28,12 +30,18 @@ PROBE_PROMPT = "一个红色圆点，白色背景"
 PROBE_IMAGE_URL = "https://www.people.com.cn/img/2020peopleindex/img/2024tp/rmwj.jpg"
 # 图生图探测 prompt（对任意图源通用: 只改主色调, 不假设图内容）
 PROBE_I2I_PROMPT = "把图片主色调改为蓝色"
-# 视频腿: 异步任务(提交→轮询), mode 必填且是生成方式枚举。真机枚举实证合法值仅 {text, reference}:
-#   text=纯文本生视频(带素材字段直接 400), reference=带参考图生视频(素材走 images, 传 first_frame/image 被 400 拒)
+# 视频腿: 异步任务(提交→轮询), mode 必填且是生成方式枚举, 厂商文档合法值 {text, keyframe, reference}:
+#   text=纯文本; keyframe=首/尾帧(first_frame/last_frame); reference=图/音/视频参考(images/audios/videos)
 PROBE_VIDEO_PROMPT = "一个红色圆点在白色背景上缓慢移动"
 PROBE_VIDEO_I2V_PROMPT = "让画面缓慢推近"
-VIDEO_MODE_T2V = "text"
-VIDEO_MODE_I2V = "reference"
+# 视频生成的三种模式(厂商文档 agnes-video-2.5/flash): text=纯文本, keyframe=首/尾帧, reference=图/音/视频参考
+VIDEO_MODE_T2V = "text"       # 纯文本生视频(保留别名兼容既有 t2v 工具语义)
+VIDEO_MODE_I2V = "reference"  # 图片参考生视频(保留别名兼容既有 i2v 工具语义)
+VIDEO_MODE_KEYFRAME = "keyframe"  # 首帧/尾帧控制
+VIDEO_MODES = frozenset({"text", "keyframe", "reference"})
+# 通用可选参数白名单(厂商文档: seconds 4-12 字符串, size 档位, aspect_ratio 白名单, seed 整数)
+VIDEO_SIZES = frozenset({"720P", "1080P", "1K", "2K"})
+VIDEO_ASPECT_RATIOS = frozenset({"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"})
 # 轮询节奏与上限: 单腿最多等 600s。真机实测整个任务 402s(排队≈250s 后 in_progress,
 #   出片≈150s), 队列时长不可控; 超时只记未完成, 不下能力结论
 VIDEO_POLL_INTERVAL = 5.0
@@ -193,6 +201,14 @@ async def generate_video(
     mode: str,
     *,
     images: Optional[List[str]] = None,
+    first_frame: Optional[str] = None,
+    last_frame: Optional[str] = None,
+    audios: Optional[List[str]] = None,
+    videos: Optional[List[Dict[str, Any]]] = None,
+    seconds: Optional[str] = None,
+    size: Optional[str] = None,
+    aspect_ratio: Optional[str] = None,
+    seed: Optional[int] = None,
     timeout: float = 120.0,
     poll_timeout: float = VIDEO_POLL_TIMEOUT,
     out: Optional[Dict[str, Any]] = None,
@@ -203,12 +219,32 @@ async def generate_video(
     400/415/422 或任务 failed = 确定拒绝；401/429/5xx/队列已满/轮询超时/网络错
     = 未定（厂商侧环境或排队问题，不得据此判模型无生视频能力）
     - 小欧-2026-11-09
+    模式(text/keyframe/reference)与媒体/通用参数按厂商文档 agnes-video-2.5/flash 全量支持,
+      所有新参数可选、不传则请求体只含既有字段(探测腿与旧调用零影响, OCP) — 小欧-2026-11-20
     out: 可选产物出口(Phase B 对话生视频工具)——成功时写入未截断的原始 mp4 url;
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt, "mode": mode}
+    # 模式专用媒体字段: keyframe 首/尾帧, reference 图/音/视频(均为公网 URL 或 videos 对象)
+    if first_frame:
+        body["first_frame"] = first_frame
+    if last_frame:
+        body["last_frame"] = last_frame
     if images:
         body["images"] = images
+    if audios:
+        body["audios"] = audios
+    if videos:
+        body["videos"] = videos
+    # 通用可选参数
+    if seconds:
+        body["seconds"] = seconds
+    if size:
+        body["size"] = size
+    if aspect_ratio:
+        body["aspect_ratio"] = aspect_ratio
+    if seed is not None:
+        body["seed"] = seed
     base = api_base.rstrip("/")
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = None

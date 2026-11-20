@@ -22,11 +22,13 @@ MEDIA_TOOL_DESCRIPTIONS = {
         "产物为公网URL时, 在回复里原样输出工具返回的 markdown ![](url) 展示; 若产物是本地附件(工具会说明), 则只告知用户去产物/附件查看, 不要用 markdown 展示本地路径。"
     ),
     "generate_video": (
-        "适用: 用户要求生成/制作一段视频, 或让一张图动起来时。异步任务, 常需数分钟, 请勿中途重复提交(会重复扣费)。"
-        "prompt 写想要的画面或如何动; model 为生成视频模型名(只传生成视频模型如 agnes-video-2.5-flash, 不填用默认; 切勿传生成图像模型)。"
-        "mode 决定模式: t2v=文生视频(默认, image 留空), i2v=图生视频(必须同时给 image 作首帧参考图; 若 mode=i2v 却没给 image, 会按无参考图的 t2v 处理)。"
-        "image 四种都支持: 本地路径(会话 attachments 目录下)、attachment_id、公网图片URL、data URI; 本地图/附件/data URI 后端会自动公网化, 本地图也能做。"
-        "timeout 为等待上限秒(默认660, 范围120~1200, 别调太小)。产物为公网URL, 在回复里原样输出工具返回的 markdown ![生成的视频](url) 展示, 别输出普通链接。"
+        "适用: 用户要求生成/制作视频、让图动起来、按首/尾帧控制、或多模态参考生成时。异步任务, 常需数分钟, 请勿中途重复提交(会重复扣费)。"
+        "prompt 写画面/动作/镜头/声音; reference 模式用 <Picture N>/<Audio N>/<Video N> 按序指代素材。model 为生成视频模型名(只传生成视频模型如 agnes-video-2.5-flash, 不填用默认; 切勿传生成图像模型)。"
+        "mode 三选一: t2v/text=纯文本生成视频(媒体全留空, 默认); keyframe=首尾帧控制(给 first_frame 和/或 last_frame, 成片以此为真实首/尾帧); "
+        "i2v/reference=多模态参考(给 images 多图 / audios 音频 / videos 视频至少一类; 单图可用 image, 与 images 合并)。"
+        "图片类素材(image/images/first_frame/last_frame)支持本地路径(会话 attachments 目录下)、attachment_id、公网URL、data URI, 本地的后端自动公网化; audios/videos 需公网URL(厂商直连GET, flash 不支持视频参考)。"
+        "可选: seconds('4'~'12')、size(720P/1080P/1K/2K, flash仅720P)、aspect_ratio(21:9/16:9/4:3/1:1/3:4/9:16)、seed(可复现)。timeout 等待上限秒(默认660, 范围120~1200)。"
+        "产物为公网URL, 在回复里原样输出工具返回的 markdown ![生成的视频](url) 展示, 别输出普通链接。"
     ),
 }
 
@@ -37,12 +39,35 @@ MEDIA_INPUT_MODELS = {
 
 MEDIA_TOOL_EXAMPLES = {
     "generate_image": [
-        {"prompt": "一只戴墨镜的猫坐在沙滩上, 夕阳西下, 写实风格", "model": "agnes-image-2.1-flash"},
-        {"prompt": "把图片主色调改成蓝色", "image": "会话 attachments 目录下用户上传图的本地路径", "model": "agnes-image-2.1-flash"},
+        {
+            "prompt": "一只戴墨镜的猫坐在沙滩上, 夕阳西下, 写实风格",
+            "model": "agnes-image-2.1-flash",
+        },
+        {
+            "prompt": "把图片主色调改成蓝色",
+            "image": "会话 attachments 目录下用户上传图的本地路径",
+            "model": "agnes-image-2.1-flash",
+        },
     ],
     "generate_video": [
-        {"prompt": "一个红色圆点在白色背景上缓慢移动", "model": "agnes-video-2.5-flash", "mode": "t2v"},
-        {"prompt": "让镜头缓慢推近", "image": "会话 attachments 目录下用户上传图的本地路径", "model": "agnes-video-2.5-flash", "mode": "i2v"},
+        {
+            "prompt": "一个红色圆点在白色背景上缓慢移动",
+            "model": "agnes-video-2.5-flash",
+            "mode": "t2v",
+        },
+        {
+            "prompt": "以 <Picture 1> 的角色和画风为参考, 在花田中自然奔跑",
+            "image": "会话 attachments 目录下用户上传图的本地路径",
+            "model": "agnes-video-2.5-flash",
+            "mode": "reference",
+        },
+        {
+            "prompt": "从首帧姿态自然转身走向窗边, 平滑过渡到尾帧构图",
+            "first_frame": "会话 attachments 目录下首帧图的本地路径",
+            "last_frame": "会话 attachments 目录下尾帧图的本地路径",
+            "model": "agnes-video-2.5",
+            "mode": "keyframe",
+        },
     ],
 }
 
