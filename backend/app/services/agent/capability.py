@@ -25,13 +25,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet
 
 from app.config import get_config
-
-
-# normalize_modalities 是纯词汇归一, 归属重模块 model_service; 顶层 import 会与
-# model_service→contract/capability 的下发依赖成环, 故函数内延迟导入。
-def _normalize_modalities(values: Any):
-    from app.services.model.model_service import normalize_modalities
-    return normalize_modalities(values)
+from app.utils.modality import (
+    normalize_modalities,  # 无依赖纯函数, 下沉 utils 消除与 model_service 的双向延迟导入 — 小欧-2026-11-20
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +67,7 @@ def _meta_of(provider: str, model: str) -> Dict[str, Any]:
 def profile_of(provider: str, model: str) -> Dict[str, NativeCap]:
     """统一入口: 发送侧(llm_model 抽二元组)与 preflight 侧(model_id 解析)同源取画像。"""
     meta = _meta_of(provider, model)
-    declared = set(_normalize_modalities(meta.get("input_modalities")))
+    declared = set(normalize_modalities(meta.get("input_modalities")))
     accept = ((meta.get("media") or {}).get("accept") or {}) if isinstance(meta.get("media"), dict) else {}
     caps: Dict[str, NativeCap] = {}
     for m in _MODALITIES:

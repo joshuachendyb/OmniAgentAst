@@ -14,9 +14,9 @@
 # 【何时必须建 adapter】规则: 某 provider 的方法/能力与上面基类通用实现不同 → 新建 adapter 文件继承本类,
 #   只覆写有差异的钩子(如 sensenova 生图 size 用 WIDTHxHEIGHT、agnes 用档位+ratio+return_base64),
 #   并在 adapters/__init__.py 的 _ADAPTERS 注册; 未覆写的钩子仍走基类通用实现(OCP)。
-#   反例: 若只是调 general_gen_image/general_gen_video 的通用参数, 无需建 adapter。
+#   反例: 若只是调 generate_image/generate_video 的通用参数, 无需建 adapter。
 #
-# 归属依据(北京老陈核查): 承载 provider 的请求适配与调用约定差异 ——
+# 归属依据: 承载 provider 的请求适配与调用约定差异 ——
 #   前者指 HTTP 接缝差异与门禁 body/端点路由, 后者指纯文本任务的调用约定(callTextForTask)。
 #   schema/reasoning/工具别名(#3/4/5)为全局层, 绝不 provider 化。
 # 编辑历史: 2026-09-23 小欧 新建
@@ -90,7 +90,7 @@ class ProviderAdapter:
 
     # ---- 生成端点方言钩子(生图/生视频) — 小欧 2026-11-20 ----
     # 【新厂商接入指南】
-    #   ① 协议通用(字段同名) → 零定制: 不建 adapter, 直接调 general_gen_image/general_gen_video,
+    #   ① 协议通用(字段同名) → 零定制: 不建 adapter, 直接调 generation_client.generate_image/generate_video,
     #      基类提供通用生图(size/image/response_format顶层)与通用生视频(first/last_frame/images/audios/
     #      videos/seconds/size/aspect_ratio/seed 同名字段直传)两套实现。
     #   ② 有差异(如 sensenova size 用 WIDTHxHEIGHT) → 新建 adapter 文件, 只覆写下面对应钩子,
@@ -117,6 +117,30 @@ class ProviderAdapter:
         if response_format:
             body["response_format"] = response_format  # OpenAI 标准: 顶层
         return body
+
+    # ---- 生成响应解析钩子(与 prepare_*_body 请求方言对称) — 小欧 2026-11-20 ----
+    # 默认返回 None = 采用 generation_client 的通用启发式(data[0]/递归猜 status/url);
+    #   响应结构与通用不同的厂商覆写这些方法返回 (url,b64)/str, 即可只改 adapter 不改引擎(OCP)。
+
+    @staticmethod
+    def parse_image_result(data: Dict) -> Optional[tuple]:
+        """生图响应 → (url, b64_json); None=用引擎通用(data[0].url/b64_json)"""
+        return None
+
+    @staticmethod
+    def parse_video_status(data: Dict) -> Optional[str]:
+        """视频任务状态串; None=用引擎通用启发式(status/state/task_status 递归)"""
+        return None
+
+    @staticmethod
+    def parse_video_reason(data: Dict) -> Optional[str]:
+        """视频失败原因串; None=用引擎通用启发式"""
+        return None
+
+    @staticmethod
+    def parse_video_url(data: Dict, preserve_case: bool = False) -> Optional[str]:
+        """视频产物地址; None=用引擎通用启发式(键名含 video / .mp4 递归)"""
+        return None
 
     @staticmethod
     def prepare_video_body(body: Dict, *, first_frame: Optional[str] = None,

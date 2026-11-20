@@ -246,6 +246,7 @@ from app.services.model.config_helpers import (
 
 # 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
 #   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
+from app.utils.modality import normalize_modalities  # 模态词归一(无依赖纯函数) — 小欧 2026-11-20
 from app.utils.secret_utils import is_blank_secret
 
 RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
@@ -929,27 +930,7 @@ def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-# 模态词汇归一表: 远端存在 MIME 级值(image/jpeg、application/pdf)与历史脏值 pdf — 小欧-2026-11-08
-_MODALITY_PREFIX = (("image/", "image"), ("audio/", "audio"), ("video/", "video"), ("text/", "text"))
-_MODALITY_ALIAS = {"pdf": "file", "application/pdf": "file"}
-
-
-def normalize_modalities(values: Any) -> List[str]:
-    """模态词归一: MIME 级值与脏值收敛到 {text,image,audio,video,file}, 未知值保序保留不丢能力。"""
-    out: List[str] = []
-    for v in values if isinstance(values, list) else []:
-        if not isinstance(v, str):
-            continue
-        s = v.strip()
-        if not s:
-            continue
-        low = s.lower()
-        canon = _MODALITY_ALIAS.get(low)
-        if canon is None:
-            canon = next((c for pfx, c in _MODALITY_PREFIX if low.startswith(pfx)), s)
-        if canon not in out:
-            out.append(canon)
-    return out
+# normalize_modalities 已下沉 app.utils.modality(无依赖纯函数), 与 capability 共用消除双向延迟导入 — 小欧-2026-11-20
 
 
 def _extract_modalities(modalities: Any) -> List[str]:

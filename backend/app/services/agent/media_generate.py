@@ -3,10 +3,10 @@
 
 归属说明(为何在 agent 层而非 generation 层): 本模块是 tool_executor 注入给工具层的回调实现,
   消费方(tool_executor)在 services/agent, 故随用方放 agent 层; 真正的厂商 HTTP 出generation_client
-  仍在 services/generation, 本模块只做"定位 provider/凭据 + 编排调用 + b64 落盘", 不另开生成出口 — 小欧-2026-11-20 三堂会审
+  仍在 services/generation, 本模块只做"定位 provider/凭据 + 编排调用 + b64 落盘", 不另开生成出口 — 小欧-2026-11-20
 
 编辑历史: 2026-11-20 小欧 新建: 按模型名定位 provider + 拿凭据 + 调 generation_client 统一出口,
-  产出原始 url/b64 回给生图/生视频工具; 探测与业务共用 generate_* 同一 HTTP 出口(设计[15] Phase B)。
+  产出原始 url/b64 回给生图/生视频工具; 探测与业务共用 generate_* 同一 HTTP 出口。
 编辑历史: 2026-11-20 小欧 b64 产物落盘: SenseNova U1.5 只返 2048² PNG 的 b64(约4MB)无公网URL,
   直接塞 LLM 回复会超消息大小; 本层(services, 可 import attachments)把 b64 落盘为会话 attachment,
   返回 attachment_id/file_path, 工具声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览(零前端改动)。
@@ -14,7 +14,7 @@
   i2v reference 只接受公网 URL(data URI 被拒); _read_image_source 统一读字节, i2i 转 data URI, i2v 走 public_image 公网化。
 编辑历史: 2026-11-20 小欧 本地图 i2v 公网化: 新增 _image_bytes 抽出图源读取(i2i/i2v 共用, DRY); invoke_generate 的 i2v 分支
   调 public_image.upload_image 把本地图临时公网化后送厂商 images; i2i 仍走 data URI(需求: 本地图也能做图生视频)。
-编辑历史: 2026-11-20 小欧 三堂会审命名整改: _image_bytes 返回(字节,mime)二元组名不符实, 改名 _read_image_source 且注解精确为
+编辑历史: 2026-11-20 小欧 命名整改: _image_bytes 返回(字节,mime)二元组名不符实, 改名 _read_image_source 且注解精确为
   Optional[Tuple[bytes,str]]; _provider_and_base 返回三元组漏 key 改 _provider_credentials; 局部变量 pair→image_data、
   vmode→endpoint_mode(端点是 text/reference, 与工具侧 t2v/i2v 区分)、ev→evidence(取证串); 另 rec→attachment_rec/saved_rec
   (附件记录, 消含糊缩写); 纯改名零行为变更。
@@ -201,7 +201,9 @@ async def invoke_generate(kind: str, model: str, prompt: str,
             src_first = await _publicize_image_source(first_frame) if first_frame else None
             src_last = await _publicize_image_source(last_frame) if last_frame else None
             # audios/videos 已是公网 URL/对象(厂商要求直连 GET), 本地文件暂不公网化, 原样透传交由厂商判定
-            kw = {"timeout": timeout} if timeout else {}
+            # 工具 timeout = 视频总等待上限, 映射到 poll_timeout(轮询总时长); httpx 单请求超时用引擎默认。
+            #   工具 schema 宣称 timeout 是"等待上限", 必须控制轮询而非仅单请求 — 小欧-2026-11-20
+            kw = {"poll_timeout": float(timeout)} if timeout else {}
             ok, evidence, settled = await generate_video(
                 api_base, headers, model, prompt, endpoint_mode,
                 images=src_images, first_frame=src_first, last_frame=src_last,

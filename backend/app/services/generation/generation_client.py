@@ -1,16 +1,23 @@
 # -*- coding: utf-8 -*-
 """生图/生视频通用生成引擎（generation 通道唯一 HTTP 出口 = general 入口）。
 
-【新厂商接入契约(零定制直接用)】
-  generate_image / generate_video 是协议无关的通用引擎, 默认走 OpenAI 兼容方言。
-  新厂商若协议与 OpenAI 兼容 → 零定制: 直接调用本模块的 general_gen_image / general_gen_video
-  (或 generate_image / generate_video, 两者同义), 只需在 config 登记 model 即可。
-  厂商有差异(size 方言/字段位置/输出格式等) → 只加一个 provider adapter 覆写对应钩子
-  (prepare_image_body / prepare_video_body), 本引擎零改动(OCP)。现有 sensenova 即此范例。
+【新厂商接入契约】
+  generate_image / generate_video 是协议无关的通用引擎, 默认走通用方言。
+  新厂商协议通用 → 零定制: 只需在 config 登记 model, 直接调本模块函数。
+  厂商有差异 → 只加一个 provider adapter 覆写对应钩子, 本引擎零改动(OCP):
+    · 请求方言: prepare_image_body / prepare_video_body(size 档位/字段名/输出格式位置)
+    · 响应方言: parse_image_result / parse_video_status / parse_video_reason / parse_video_url(产物/状态提取)
+  覆写钩子返回 None 即回退引擎通用启发式, 故新厂商只覆写有差异的钩子。
+  现有范例: agnes(生图档位+ratio)、sensenova(生图 WIDTHxHEIGHT), 均只改 adapter。
+
+【通用能力边界(诚实说明)】
+  生图 = 同步单请求(POST 直接返产物); 生视频 = 异步任务(提交→轮询)。
+  若某厂商生图也走异步(如通义万相), 需扩展引擎的任务分支, 非仅覆写钩子可涵盖 —
+  当前未接入此类厂商, 不预先抽象(YAGNI); 接入时再加通用 submit/poll 分支。
   探测腿(model_service)与业务腿(media_generate)共用本引擎; 生成端点禁直连 httpx。
 
 2026-11-09 订正: 素材不可达判定收窄为短语集常量(原含"下载"二字即归此类过宽); _video_url 取证串标注勿回放 - 小欧-2026-11-09
-2026-11-20 小欧 Phase B 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
+2026-11-20 小欧 产物出参: generate_image/generate_video 加可选 out 字典, 成功时写入未截断原始产物(url/b64/mp4), 探测腿不传则三元组不变(OCP); _video_url 加 preserve_case 供业务下载签名 URL
 2026-11-20 小欧 按厂商文档补全视频全能力: generate_video 支持 mode(text/keyframe/reference)及 first_frame/last_frame/images/
   audios/videos/seconds/size/aspect_ratio/seed, 全部可选(OCP, 探测腿与旧调用零影响); 加 VIDEO_MODES/SIZES/ASPECT_RATIOS 白名单常量 — 小欧-2026-11-20
 2026-11-20 小欧 按厂商文档补全生图全能力: generate_image 加 size/ratio/多图 images 及 provider 方言翻译
@@ -103,7 +110,7 @@ async def generate_image(
     size/ratio/images(多图合成)/return_base64/response_format 经 provider adapter 的 prepare_image_body 钩子
       做方言翻译(默认 agnes 档位+ratio, sensenova 覆写为 WIDTHxHEIGHT), generation_client 协议无关(OCP);
       全可选不传则请求体只含既有字段; 探测腿不传 adapter 走默认(agnes 风格) — 小欧-2026-11-20
-    out: 可选产物出口(Phase B 对话生图工具)——成功时写入未截断的原始 url/b64_json;
+    out: 可选产物出口(对话生图工具)——成功时写入未截断的原始 url/b64_json;
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt}
@@ -137,15 +144,21 @@ async def generate_image(
         data = resp.json()
     except Exception:
         return False, "bad_json", False
-    rec = (
-        data.get("data")[0]
-        if isinstance(data, dict)
-        and isinstance(data.get("data"), list)
-        and data.get("data")
-        else {}
-    )
-    url = str(rec.get("url") or "")
-    b64 = str(rec.get("b64_json") or "")
+    # 响应方言: 厂商覆写 parse_image_result 优先; 否则用通用 data[0].url/b64_json(OCP)
+    gen_adapter = adapter or ProviderAdapter()
+    parsed = gen_adapter.parse_image_result(data) if isinstance(data, dict) else None
+    if parsed is not None:
+        url, b64 = str(parsed[0] or ""), str(parsed[1] or "")
+    else:
+        rec = (
+            data.get("data")[0]
+            if isinstance(data, dict)
+            and isinstance(data.get("data"), list)
+            and data.get("data")
+            else {}
+        )
+        url = str(rec.get("url") or "")
+        b64 = str(rec.get("b64_json") or "")
     if url or b64:
         # 产物原始值写入 out(未截断), 供对话生图工具下载/展示; 探测腿不传 out 零影响 — 小欧-2026-11-20
         if out is not None:
@@ -244,7 +257,7 @@ async def generate_video(
     - 小欧-2026-11-09
     模式(text/keyframe/reference)与媒体/通用参数按厂商文档 agnes-video-2.5/flash 全量支持,
       所有新参数可选、不传则请求体只含既有字段(探测腿与旧调用零影响, OCP) — 小欧-2026-11-20
-    out: 可选产物出口(Phase B 对话生视频工具)——成功时写入未截断的原始 mp4 url;
+    out: 可选产物出口(对话生视频工具)——成功时写入未截断的原始 mp4 url;
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt, "mode": mode}
@@ -307,11 +320,12 @@ async def generate_video(
                 detail = poll.json()
             except Exception:
                 return False, "bad_json", False
-            status = _video_status(detail) or "unknown"
+            # 响应方言: 厂商覆写钩子优先, 否则用通用启发式(_video_* 递归) — OCP
+            status = (gen_adapter.parse_video_status(detail) or _video_status(detail)) or "unknown"
             if status in VIDEO_DONE:
                 # 一次递归取原始大小写 URL: evidence 用其 lower 取证(与 _video_url 默认口径等价), out 用原串下载;
-                #   避免同一 detail 两次全量遍历(DRY) — 小欧-2026-11-20 三堂会审
-                raw_url = _video_url(detail, preserve_case=True)
+                #   避免同一 detail 两次全量遍历(DRY)
+                raw_url = gen_adapter.parse_video_url(detail, preserve_case=True) or _video_url(detail, preserve_case=True)
                 evidence_url = raw_url.lower()
                 if evidence_url:
                     # 产物原始大小写 URL 写入 out 供下载(签名参数大小写敏感); 探测腿零影响 — 小欧-2026-11-20
@@ -322,15 +336,11 @@ async def generate_video(
                 return False, f"no_output_field: {poll.text}"[:_EV_LIMIT], False
             if status in VIDEO_FAILED:
                 # 任务失败多为厂商侧资源/素材抓取问题, 不据此判"模型无生视频能力"; 原因串原文留证 - 小欧-2026-11-09
-                reason = _video_reason(detail)
+                reason = gen_adapter.parse_video_reason(detail) or _video_reason(detail)
                 prefix = "source_unreachable" if _source_unreachable(reason) else "task_failed"
                 return False, f"{prefix}: {status} {reason}".strip()[:_EV_LIMIT], False
         return False, f"poll_timeout: {status or 'unknown'}"[:_EV_LIMIT], False
 
 
-# ---- general 通用入口(新厂商零定制直接用) — 小欧 2026-11-20 ----
-# generate_image/generate_video 已是协议无关引擎, 这两个别名只提供"通用入口"语义:
-#   新厂商协议兼容 OpenAI → 直接调 general_gen_*; 有差异 → 传 adapter 覆写钩子。
-#   两者签名完全同义(不引入新逻辑, 避免双实现漂移), 现有探测腿/业务腿可继续用短名。
-general_gen_image = generate_image
-general_gen_video = generate_video
+# 新厂商零定制接入: 直接调用本模块的 generate_image/generate_video(协议无关通用引擎),
+#   有差异则传 adapter 覆写钩子 — 无需另设 general_gen_* 别名(已删, 零调用方) — 小欧 2026-11-20
