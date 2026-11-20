@@ -6,6 +6,8 @@
 编辑历史: 2026-11-20 小欧 b64 产物落盘: SenseNova U1.5 只返 2048² PNG 的 b64(约4MB)无公网URL,
   直接塞 LLM 回复会超消息大小; 本层(services, 可 import attachments)把 b64 落盘为会话 attachment,
   返回 attachment_id/file_path, 工具声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览(零前端改动)。
+编辑历史: 2026-11-20 小欧 图源归一: 实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i/i2v image 参数都接受标准
+  data URI; _resolve_image_source 把本地路径/attachment_id 读字节转 data URI(公网URL原样), 打通本地图片编辑(无需公网图床)。
 """
 import base64
 import os
@@ -20,6 +22,44 @@ from app.services.generation.generation_client import (
     generate_image,
     generate_video,
 )
+
+
+def _resolve_image_source(src: str) -> str:
+    """图片源归一: 本地路径/attachment_id → data URI(厂商可直连解析); 公网 URL/已是 data URI 原样返回。
+    实测 agnes-image-2.1-flash 与 sensenova-u1.5-lite 的 i2i image 参数均接受标准 data URI — 小欧-2026-11-20
+    """
+    if not src:
+        return src
+    lowered = src.lower()
+    if lowered.startswith(("data:", "http://", "https://")):
+        return src
+    import base64
+    import re
+    path = ""
+    # 32hex attachment_id → 取 stored_path
+    if re.fullmatch(r"[0-9a-f]{32}", src):
+        try:
+            from app.attachments import attachment_service
+            rec = attachment_service.get_attachment(src)
+            if rec:
+                path = str(rec.get("stored_path") or "")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[media_generate] 附件解析失败 id={src} err={e}")
+    else:
+        path = src  # 直接当本地路径
+    if not path or not os.path.isfile(path):
+        logger.warning(f"[media_generate] 图片源不可用, 原样透传: {src[:80]}")
+        return src
+    try:
+        raw = open(path, "rb").read()
+        # mime 按后缀, 默认 png
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "webp": "image/webp", "gif": "image/gif"}.get(ext, "image/png")
+        return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+    except OSError as e:
+        logger.warning(f"[media_generate] 图片读取失败 path={path} err={e}")
+        return src
 
 
 def _save_b64_attachment(b64: str, session_id: str, mime: str, stem: str) -> Optional[Dict[str, str]]:
@@ -75,17 +115,20 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         return {"ok": False, "settled": False, "reason": f"未找到模型 {model} 的 provider/api_base"}
     headers = get_provider_adapter(provider).static_headers(api_key)
     out: Dict[str, Any] = {}
+    # 图源归一: 本地路径/attachment_id → data URI(实测两 provider 的 i2i/i2v 都接受)
+    src_image = _resolve_image_source(image) if image else None
+    src_images = [_resolve_image_source(x) for x in images] if images else None
     try:
         if kind == "image":
             kw = {"timeout": timeout} if timeout else {}
             ok, ev, settled = await generate_image(api_base, headers, model, prompt,
-                                                   image=image, out=out, **kw)
+                                                   image=src_image, out=out, **kw)
         elif kind == "video":
             # 工具侧 mode 是 t2v/i2v, generation 端点要 text/reference — 在此映射(单一转换点)
             vmode = VIDEO_MODE_I2V if mode == "i2v" else VIDEO_MODE_T2V
             kw = {"timeout": timeout} if timeout else {}
             ok, ev, settled = await generate_video(api_base, headers, model, prompt, vmode,
-                                                   images=images, out=out, **kw)
+                                                   images=src_images, out=out, **kw)
         else:
             return {"ok": False, "settled": False, "reason": f"未知生成类型 {kind}"}
     except Exception as e:  # noqa: BLE001 — 生成异常回退, 不打断对话轮

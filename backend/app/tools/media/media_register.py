@@ -2,6 +2,7 @@
 """媒体生成工具注册点(generate_image / generate_video) — 小欧 2026-11-20
 
 模板参照 agent_register.py: 分类 MEDIA, 扁平 input_model, 一句路由描述。
+编辑历史: 2026-11-20 小欧 工具描述同步 image 参数支持本地路径/attachment_id(后端转data URI), 明确引导 LLM 从会话 attachments 目录取上传图的路径做 i2i 编辑。
 """
 from app.logger import logger
 from app.tools.media.generate_image import generate_image
@@ -14,7 +15,8 @@ MEDIA_TOOL_DESCRIPTIONS = {
     "generate_image": (
         "适用: 用户要求生成/画一张图片时。文字描述想要的内容, 调用本工具生成图片。"
         "prompt 为图片内容描述; model 为生图模型名(不填用默认 agnes-image-2.1-flash); "
-        "image 为图生图参考图公网URL(留空=纯文本生图)。生成后在回复里用 ![](产物URL) 展示图片。"
+        "image 为图生图(i2i)参考图, 可传用户上传图片的本地路径/attachment_id/公网URL(后端自动转换), 留空=纯文本生图(t2i)。"
+        "用户上传的图片可从会话的 attachments 目录找到本地路径直接传 image。生成后在回复里用 ![](产物URL) 展示图片。"
     ),
     "generate_video": (
         "适用: 用户要求生成/制作一段视频时。文字描述想要的画面, 调用本工具生成视频(异步, 约几分钟)。"
