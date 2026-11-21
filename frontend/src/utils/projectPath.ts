@@ -66,6 +66,10 @@
 //   （仅在调用方确知是文件时传 true），不进 PathTarget、不改 dirHint 语义（后者 false 表示"未知"）— 小欧-2026-11-18
 // 2026-11-18 商量 - 新增 shortenPath：路径**展示**收敛（盘符 + 末段），供信任清单等密集列表用；
 //   原 AuthorizationModal 自建 truncatePath 且已无调用方，改由本文件单一实现 — 商量-2026-11-18
+// 2026-11-20 商量 - 行内 code 里的 URL 也可点击：convertOutsideInline 对反引号包 URL 输出
+//   <url> 尖括号 autolink（初版输出裸 URL 实测吞字符——`…git，分支` 全角逗号与中文被当 URL 字符，
+//   href 变 `…git，分支` 点击跳错；改 <url> 后 URL 边界明确、后面标点独立）；
+//   只转无空白 URL，路径/代码片段仍走 toWholePathLink 不变 — 商量-2026-11-20
 
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
@@ -826,7 +830,18 @@ const convertOutsideInline = (line: string, projectRoot?: string): string => {
   let m: RegExpExecArray | null;
   while ((m = INLINE_CODE_RE.exec(line)) !== null) {
     out += convertRuns(line.slice(last, m.index), projectRoot);
-    out += toWholePathLink(m[2], projectRoot) ?? m[0];
+    // 2026-11-20 商量 - 行内 code 里的 URL 也可点击（**修订**：初版输出裸 URL 交 remark-gfm
+    //   autolink，实测**吞字符**——`https://a.git，分支` 的全角逗号与中文被当成 URL 字符，
+    //   href 变成 `…git，分支`，点击跳错地址；改为输出 `<url>` 尖括号 autolink：
+    //   URL 边界明确（`>`），后面的 `，分支` 独立成文本，href 干净。
+    //   只转**无空白**的 URL（含空白的不是可定位 URL，保留原文不破坏 autolink 边界）；
+    //   路径/代码片段仍走 toWholePathLink（行内 code 路径转 chip 的既有语义不变）— 商量-2026-11-20
+    const codeText = m[2].trim();
+    if (isUrlLike(codeText) && !/\s/.test(codeText)) {
+      out += `<${codeText}>`;
+    } else {
+      out += toWholePathLink(m[2], projectRoot) ?? m[0];
+    }
     last = m.index + m[0].length;
   }
   return out + convertRuns(line.slice(last), projectRoot);
