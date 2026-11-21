@@ -15,6 +15,9 @@
 #     补 needNpmInstall 先 npm install 再构建, 杜绝依赖变更后拿旧 node_modules 打包。
 #   2026-11-16 小欧 - 增交互式模式选择: 未传 -Full 参数时弹出 [1]智能检测/[2]全编译 菜单,
 #     用户显式选择而非默认走智能检测; -Full 参数跳过菜单直接全编译 — 小欧-2026-11-16
+#   2026-11-21 opencode - 阶段0前置检查增补 PyInstaller 模块校验: 此前仅查 Node/Python/spec,
+#     PyInstaller 缺失时前端构建完成后才在后端打包阶段报错, 前置拦截省时并给出明确安装命令;
+#     配套在 backend/requirements-dev.txt 声明打包期依赖
 # 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1          # 交互选择模式
 #       powershell -ExecutionPolicy Bypass -File build_spa.ps1 -Full     # 跳过菜单, 直接全编译
 #       或双击 build_spa.bat                                             # 交互选择模式
@@ -298,6 +301,15 @@ $pyMajor = [int]$pyParts[0]
 $pyMinor = if ($pyParts.Count -gt 1) { [int]$pyParts[1] } else { 0 }
 if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 11)) { Write-Err "Python 版本过低: $pyVer (需 >= 3.11)"; exit 1 }
 Write-OK "Python $pyVer"
+
+# PyInstaller 模块检查: 后端打包阶段强依赖, 前置拦截避免前端构建完成后才在阶段3失败
+$pyiVer = try { & python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null } catch { $null }
+if (-not $pyiVer -or $LASTEXITCODE -ne 0) {
+    Write-Err "PyInstaller 未安装 (当前 Python: $((Get-Command python).Source))"
+    Write-Info "安装命令: python -m pip install pyinstaller"
+    exit 1
+}
+Write-OK "PyInstaller $pyiVer"
 
 if (-not (Test-Path $spec)) { Write-Err "PyInstaller spec 文件不存在: $spec"; exit 1 }
 Write-OK "PyInstaller spec: OmniAgentBackend.spec"
