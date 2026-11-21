@@ -12,6 +12,8 @@
 #   action 本意是动作描述(tool/tool_zh/params), 塞清单属职责混用; 产物 payload 应在 data, 清单声明是另一回事。
 #   根治需 helper 改挂 other_data 或统一从 data 派生 + agent_telemetry 读口改 + 全项目10+写工具同步 + tool编写规范改,
 #   联动范围大, 单独立项; 当前全项目统一用此入口, 单改个别工具会破坏产物抽屉, 故保持现状。
+# 2026-11-21 - 小欧 - 新增 artifact_from_url: 公网产物 URL 生成清单条目, name 取 URL 真实后缀,
+#   消生图/生视频各自硬编码 generated_image.png / generated_video.mp4 与实际格式不符。
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
@@ -212,3 +214,19 @@ def with_artifact_file(llm_data: Optional[Dict], file_path: str) -> Dict:
         "path": file_path,
         "type": extract_ext(file_path),
     }])
+
+
+_ARTIFACT_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov")
+
+
+def artifact_from_url(url: str, kind: str) -> Dict[str, str]:
+    """公网产物 URL → 产物清单条目 — 小欧 2026-11-21
+
+    name 按 URL 路径末段真实后缀定名(签名查询串不进名字), 认不出后缀按 kind 取默认;
+    path 恒为原 URL(签名参数一字不改), type 取 kind(image/video)。
+    """
+    path = (url or "").split("?")[0].lower()
+    suffix = next((s for s in _ARTIFACT_SUFFIXES if path.endswith(s)), "")
+    if not suffix:
+        suffix = ".mp4" if kind == "video" else ".png"
+    return {"name": f"generated_{kind}{suffix}", "path": url, "type": kind}

@@ -80,16 +80,6 @@ def absolutize_path(path: str, base: str) -> str:
     return os.path.abspath(os.path.join(base, p.lstrip("/\\")))
 
 
-def get_output_dir() -> str:
-    r"""输出目录(工具层公用) — 小沈 2026-10-26
-
-    = `get_config().get_project_root()/output`(未配 project_root 时回落用户主目录)。
-    generate_chart 等输出工具共用同一基准(单源), 不各自拼接。
-    """
-    from app.config import get_config
-    return os.path.join(get_config().get_project_root(), "output")
-
-
 def get_tool_dir(kind: str = "output") -> str:
     r"""tool 落盘目录唯一分配口 — 小欧 2026-11-20
 
@@ -370,7 +360,7 @@ def check_path_four_level(
     return True, None
 
 
-__all__ = ["to_win_long_path", "absolutize_path", "get_output_dir", "get_tool_dir",
+__all__ = ["to_win_long_path", "absolutize_path", "get_tool_dir",
            "path_has_reserved_char", "path_has_reserved_name", "path_has_extra_drive",
            "validate_str_param",
            "OpCategory", "check_path_syntax_and_exists", "check_preconditions",

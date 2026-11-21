@@ -14,6 +14,8 @@
   产物清单仍走 with_artifacts(llm_data.action.artifacts) → final_stats/产物抽屉 — 小欧-2026-11-20
 编辑历史: 2026-11-20 小欧 按 Tool 编写规范整改: effective_model/in_params 构造提到无通道 error 检查之前, 保证 error 态 action.params 也带全(prompt/model/档位), 与 generate_video 同构 — 小欧-2026-11-20
 编辑历史: 2026-11-20 小欧 三态语义校正: settled=True(厂商确定拒绝)→error+ERR_GENERATE_REJECTED、settled=False(未定)→warning; 修 b64 落盘失败/成功无产物两处"成功但失败"矛盾文案; status.message 由 builder 查表改为三态调用处写死(避免非法 exec_code 崩溃) — 小欧-2026-11-20
+编辑历史: 2026-11-21 小欧 三堂会审整改: 公网产物的 artifacts 名改由 artifact_from_url 按 URL 真实后缀定名(原硬编码 .png);
+  本地附件摘要按是否真拿到 attachment_id 拼接, 登记失败兜底时不再出现空 attachment_id= — 小欧-2026-11-21
 """
 import os
 import time
@@ -28,7 +30,13 @@ from app.tools.tool_constants import (
     ERR_GENERATE_REJECTED,
     MEDIA_DEFAULT_IMAGE_MODEL,
 )
-from app.tools.tool_response import build_error, build_success, build_warning, with_artifacts
+from app.tools.tool_response import (
+    artifact_from_url,
+    build_error,
+    build_success,
+    build_warning,
+    with_artifacts,
+)
 
 
 def _build_image_llm_data(
@@ -125,35 +133,33 @@ async def generate_image(prompt: str, model: Optional[str] = None,
         return build_warning(
             data={},
             llm_data=_build_image_llm_data(
-                "warning", dur, f"生成图像，警告：{reason}, 可稍后重试", in_params, "完成但有警告",
+                "warning", dur, f"生成图像，警告：{reason}", in_params, "完成但有警告",
                 code=ERR_GENERATE_INCOMPLETE, detail=reason, hint="可稍后重试", model=effective_model,
             ),
         )
     url = str(result.get("url") or "")
     file_path = str(result.get("file_path") or "")
     attachment_id = str(result.get("attachment_id") or "")
-    b64 = str(result.get("b64") or "")
-    # data = 执行产出(产物), 与 read_text_file/query_sql 口径一致; 清单另走 with_artifacts
+    # 只有拿到可用产物(url 或落盘 file_path)才算成功; 引擎 ok=True 但只有 b64 未落盘 = 没交付产物, 判未定警告
+    if not url and not file_path:
+        # 有 b64 但落盘失败, 或引擎无产物: 对用户就是没拿到图, 不能标 success — 未定可重试
+        detail = "厂商返回图片但保存为附件失败, 无可用产物" if result.get("b64") else "厂商未返回可用图片产物"
+        return build_warning(
+            data={},
+            llm_data=_build_image_llm_data(
+                "warning", dur, f"生成图像，警告：{detail}", in_params, "完成但有警告",
+                code=ERR_GENERATE_INCOMPLETE, detail=detail, hint="可稍后重试或换模型", model=effective_model,
+            ),
+        )
     if url:
-        summary = (f"生成图像，成功：模型 {effective_model}。请在回复里原样输出这段 markdown(勿改写 URL、勿用普通链接): "
-                   f"![生成的图片]({url})")
-        artifacts = [{"name": "generated_image.png", "path": url, "type": "image"}]
+        # summary 是给 LLM 的客观结论(照 search_web 口径: 只报结果不报内容), 产物 url 在 data 由前端卡片呈现
+        summary = f"生成图像，成功：模型 {effective_model}"
+        artifacts = [artifact_from_url(url, "image")]
         result_data: Dict[str, Any] = {"url": url, "type": "image"}
-    elif file_path:
-        summary = (f"生成图像，成功：模型 {effective_model}, 已存为会话附件(attachment_id={attachment_id}), "
-                   f"产物路径 {file_path}。请告知用户图片已生成并可在产物/附件中查看。"
-                   "注意: 该模型产物是本地文件(非公网URL), 不要用 markdown ![](file_path) 展示(会 401)。")
+    else:
+        att_part = f"attachment_id={attachment_id}, " if attachment_id else ""
+        summary = (f"生成图像，成功：模型 {effective_model}, 产物为本地附件({att_part}路径 {file_path})")
         artifacts = [{"name": os.path.basename(file_path), "path": file_path, "type": "image"}]
         result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "image"}
-    elif b64:
-        # 落盘失败兜底: 大 b64 不塞进 data/回复, 只文字说明。措辞避免"成功但失败"自相矛盾 — 小欧-2026-11-20
-        summary = (f"生成图像：模型 {effective_model} 已产出图片, 但保存为会话附件失败, 暂时无法在回复中展示图片。"
-                   "请重试生成; 若反复失败请换模型。")
-        artifacts = []
-        result_data = {}
-    else:
-        summary = "生成图像，成功"
-        artifacts = []
-        result_data = {}
     llm_data = _build_image_llm_data("success", dur, summary, in_params, "成功", model=effective_model)
     return build_success(data=result_data, llm_data=with_artifacts(llm_data, artifacts))

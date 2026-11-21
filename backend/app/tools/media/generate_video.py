@@ -10,7 +10,10 @@
   data = 执行产出(产物 url/type), 不再是入参回显(入参归 action.params); 失败归因按 settled 区分;
   产物清单走 with_artifacts(llm_data.action.artifacts) → final_stats/产物抽屉 — 小欧-2026-11-20
 编辑历史: 2026-11-20 小欧 三态语义校正: settled=True(厂商确定拒绝)→error+ERR_GENERATE_REJECTED、settled=False(未定)→warning; 修成功无产物处"成功但失败"矛盾文案; status.message 由 builder 查表改为三态调用处写死(避免非法 exec_code 崩溃) — 小欧-2026-11-20
+编辑历史: 2026-11-21 小欧 三堂会审整改: 公网产物的 artifacts 名改由 artifact_from_url 按 URL 真实后缀定名(原硬编码 .mp4);
+  本地附件摘要按是否真拿到 attachment_id 拼接, 登记失败兜底时不再出现空 attachment_id= — 小欧-2026-11-21
 """
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -23,7 +26,13 @@ from app.tools.tool_constants import (
     ERR_GENERATE_REJECTED,
     MEDIA_DEFAULT_VIDEO_MODEL,
 )
-from app.tools.tool_response import build_error, build_success, build_warning, with_artifacts
+from app.tools.tool_response import (
+    artifact_from_url,
+    build_error,
+    build_success,
+    build_warning,
+    with_artifacts,
+)
 
 
 def _build_video_llm_data(
@@ -121,21 +130,32 @@ async def generate_video(prompt: str, model: Optional[str] = None,
         return build_warning(
             data={},
             llm_data=_build_video_llm_data(
-                "warning", dur, f"生成视频，警告：{reason}, 可稍后重试", in_params, "完成但有警告",
+                "warning", dur, f"生成视频，警告：{reason}", in_params, "完成但有警告",
                 code=ERR_GENERATE_INCOMPLETE, detail=reason, hint="可稍后重试", model=effective_model,
             ),
         )
     url = str(result.get("url") or "")
-    artifacts = [{"name": "generated_video.mp4", "path": url, "type": "video"}] if url else []
-    # data = 执行产出(产物), 与 read_text_file/query_sql 口径一致
-    result_data: Dict[str, Any] = {"url": url, "type": "video"} if url else {}
+    file_path = str(result.get("file_path") or "")
+    attachment_id = str(result.get("attachment_id") or "")
+    # 可用产物 = 公网 url 或 b64 落盘的本地附件路径; 两者皆无才算没交付
+    if not url and not file_path:
+        detail = "厂商返回视频但保存为附件失败, 无可用产物" if result.get("b64") else "厂商未返回可用视频产物"
+        return build_warning(
+            data={},
+            llm_data=_build_video_llm_data(
+                "warning", dur, f"生成视频，警告：{detail}", in_params, "完成但有警告",
+                code=ERR_GENERATE_INCOMPLETE, detail=detail, hint="可稍后重试或换模型", model=effective_model,
+            ),
+        )
     if url:
-        # 明确要求 markdown 图片语法(前端 img 组件按 .mp4 后缀渲染 <video>), 别输出普通链接; 强调原样输出防改写签名 URL
-        summary = (f"生成视频，成功：模型 {effective_model}。请在回复里原样输出这段 markdown(勿改写 URL、勿用普通链接): "
-                   f"![生成的视频]({url})")
+        # summary 是给 LLM 的客观结论(照 search_web 口径: 只报结果不报内容), 产物 url 在 data 由前端卡片呈现
+        summary = f"生成视频，成功：模型 {effective_model}"
+        artifacts = [artifact_from_url(url, "video")]
+        result_data: Dict[str, Any] = {"url": url, "type": "video"}
     else:
-        # ok=True 但引擎未给出 mp4 地址: 不能标"成功"却无产物, 措辞如实说明 — 小欧-2026-11-20
-        summary = (f"生成视频：模型 {effective_model} 任务已提交, 但未取得视频产物地址, 暂时无法展示。"
-                   "请重试; 若反复失败请换模型。")
+        att_part = f"attachment_id={attachment_id}, " if attachment_id else ""
+        summary = (f"生成视频，成功：模型 {effective_model}, 产物为本地附件({att_part}路径 {file_path})")
+        artifacts = [{"name": os.path.basename(file_path), "path": file_path, "type": "video"}]
+        result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "video"}
     llm_data = _build_video_llm_data("success", dur, summary, in_params, "成功", model=effective_model)
     return build_success(data=result_data, llm_data=with_artifacts(llm_data, artifacts))

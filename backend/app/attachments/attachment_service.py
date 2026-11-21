@@ -43,6 +43,14 @@
 # 2026-11-15 小欧 语义前缀归一: 预览失败说明文案收归 app.wire_prefix(INLINE_EXTRACT_FAIL) — 小欧-2026-11-15
 # 2026-11-16 小欧 [23]阶段C: list_attachments 增 kind 类型筛选(单值), 经 contract.expand_kind
 #   展开为参数化 IN 条件(禁止字符串拼接), 与 scope/q/分页同口径; 非法 kind 点名 400 — 小欧-2026-11-16
+# 2026-11-20 小欧 新增 save_generated_bytes: 生成产物(系统产出)专用写盘口。上传与系统产出是两类来源,
+#   前者受会话存在性/会话总量配额/单文件上限约束, 后者拿到字节就必须落地, 不适用上述约束;
+#   会话工作区不可用回落全局 generated 目录, 登记失败仍返回磁盘路径保证产物不丢 — 小欧-2026-11-20
+# 2026-11-21 小欧 三堂会审整改: 上传与系统产出共用的落盘段(目标路径/写盘/INSERT/回查)抽 _attachment_target
+#   与 _insert_attachment_row 单源, 消两处大段重复; _generated_record 改为按 _COLS 顺序构造行元组后走
+#   _row_to_dict, 与台账行恒同构(原缺 extract_status/created_at/scope 等 8 字段); 删 save_generated_bytes
+#   无人调用的 source_task_id 形参; 写盘目录收敛为 get_tool_dir("attachments") 单一分配口(删原代码里
+#   另拼的全局 generated 目录, 会话产物就该落在会话工作区); 会话总量配额注释按"报警不拦截"口径重写 — 小欧-2026-11-21
 
 
 
@@ -94,7 +102,7 @@ from app.wire_prefix import INLINE_EXTRACT_FAIL
 # ── 配额 ────────────────────────────────────────────────────────────────
 MAX_IMAGE_BYTES = browse.MAX_IMAGE_BYTES        # 10MB: 直接引用图片预览口径, 不重写数值(DRY)
 MAX_FILE_BYTES = 20 * 1024 * 1024               # 非图片单文件上限
-MAX_SESSION_BYTES = 200 * 1024 * 1024           # 单会话附件总量上限
+MAX_SESSION_BYTES = 20 * 1024 * 1024 * 1024      # 单会话附件总量警报阈值(20G, 报警不限制写入) - 小欧-2026-11-20
 MAX_LIST_ITEMS = 200                            # 「最近用过 / 已收藏」单次上限(抽屉一屏够用)
 
 _ATTACH_SUBDIR = "attachments"
@@ -201,6 +209,49 @@ def ensure_session_attachment_dir(session_id: str) -> Path:
     return folder
 
 
+def _attachment_target(folder: Path, sha: str, safe: str) -> Path:
+    """附件落盘目标路径：时间戳-内容前缀-安全名（上传与系统产出同一命名规则）。"""
+    stamp = get_local_iso_timestamp().replace("-", "").replace(":", "").replace("T", "-")[:15]
+    return folder / f"{stamp}-{sha[:8]}-{safe}"
+
+
+def _insert_attachment_row(session_id: str | None, safe: str, stored: Path, size: int,
+                           mime: str | None, sha: str, kind: str, *,
+                           source_path: str | None = None,
+                           source_task_id: str | None = None) -> dict[str, Any] | None:
+    """登记一行并回查台账行（上传与系统产出共用）。
+
+    INSERT OR IGNORE + 回查: UNIQUE(session_id, sha256) 挡下并发同内容写入, 此时回查旧行复用;
+    返回值可能是别人的行, 调用方按 stored_path 判断本次写出的文件是否重复副本。
+    既无本次行也无旧行(无会话归属的系统产出被挡下) → None, 由调用方决定清理与报错。
+    """
+    att_id = uuid.uuid4().hex
+    with db.get_conn("chat") as conn:
+        conn.execute(
+            f"INSERT OR IGNORE INTO attachments ({_INSERT_COLS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (att_id, session_id, safe, str(stored),
+             mime or mimetypes.guess_type(safe)[0] or "application/octet-stream",
+             size, sha, kind, "none", 0, source_path, source_task_id,
+             get_local_iso_timestamp()),
+        )
+    rec = get_attachment(att_id)
+    if rec is not None:
+        return rec
+    if not session_id:
+        return None
+    with db.get_conn("chat") as conn:
+        dup = conn.execute(
+            f"SELECT {_COLS} FROM attachments WHERE session_id = ? AND sha256 = ? LIMIT 1",
+            (session_id, sha),
+        ).fetchone()
+        if dup:
+            d = _row_to_dict(dup)
+            _decorate_global(conn, [d])
+            return d
+    return None
+
+
 def save_bytes(session_id: str, name: str, data: bytes, *,
                mime: str | None = None,
                source_path: str | None = None,
@@ -244,43 +295,113 @@ def save_bytes(session_id: str, name: str, data: bytes, *,
             (session_id,),
         ).fetchone()[0]
         if int(used) + size > MAX_SESSION_BYTES:
-            fail(ATTACHMENT_TOO_LARGE, "会话附件总量超过 200MB，请先清理旧附件")
+            # 会话附件总量只报警不拦写: 拿到数据却落盘失败对用户更无出路, 容量治理交给用户清理 — 小欧-2026-11-21
+            logger.warning(
+                "[attachments] 会话附件总量警报(本次写入不拦截) session=%s 已用=%sMB 本次=%sMB 阈值=%sGB",
+                session_id, int(used) // (1024 * 1024), size // (1024 * 1024),
+                MAX_SESSION_BYTES // (1024 * 1024 * 1024),
+            )
 
     folder = ensure_session_attachment_dir(session_id)
-    stamp = get_local_iso_timestamp().replace("-", "").replace(":", "").replace("T", "-")[:15]
-    stored = folder / f"{stamp}-{sha[:8]}-{safe}"
+    stored = _attachment_target(folder, sha, safe)
     try:
         stored.write_bytes(data)
         kind = extract.classify(stored, mime or "", size)
-        att_id = uuid.uuid4().hex
-        with db.get_conn("chat") as conn:
-            # INSERT OR IGNORE + 回查: UNIQUE(session_id, sha256) 约束防并发竞态(Agnes 补)
-            conn.execute(
-                f"INSERT OR IGNORE INTO attachments ({_INSERT_COLS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (att_id, session_id, safe, str(stored),
-                 mime or mimetypes.guess_type(safe)[0] or "application/octet-stream",
-                 size, sha, kind, "none", 0, source_path, source_task_id,
-                 get_local_iso_timestamp()),
-            )
+        rec = _insert_attachment_row(session_id, safe, stored, size, mime, sha, kind,
+                                     source_path=source_path, source_task_id=source_task_id)
     except Exception:
         stored.unlink(missing_ok=True)
         raise
-    rec = get_attachment(att_id)
     if rec is None:
-        # INSERT OR IGNORE 未写入(并发同 sha 已存在) → 先删本次写出的孤儿文件, 再回查
         stored.unlink(missing_ok=True)
+        fail(ATTACHMENT_UNAVAILABLE, "附件登记后读取失败")
+    if rec.get("stored_path") != str(stored):
+        # 并发同内容: UNIQUE 挡下本次 INSERT 并由回查复用旧行, 本次写出的文件是重复副本
+        stored.unlink(missing_ok=True)
+    return rec
+
+
+def _mime_to_suffix(mime: str | None) -> str:
+    """生成产物 mime → 白名单后缀(单一映射点)。未识别按图片处理(生成产物以图/视频为主)。"""
+    m = (mime or "").lower()
+    if "png" in m:
+        return ".png"
+    if "jpeg" in m or "jpg" in m:
+        return ".jpg"
+    if "webp" in m:
+        return ".webp"
+    if "gif" in m:
+        return ".gif"
+    if "mp4" in m:
+        return ".mp4"
+    if "webm" in m:
+        return ".webm"
+    if "quicktime" in m or "mov" in m:
+        return ".mov"
+    return ".png"
+
+
+def save_generated_bytes(session_id: str, name: str, data: bytes, *,
+                         mime: str | None = None) -> dict[str, Any]:
+    """生成产物落盘 + 登记(系统产出专用写盘口)。
+
+    与 save_bytes(用户上传) 的差别: 生图/生视频的字节(系统产出)拿到就必须落地 ——
+    不校验会话是否存在、不计入会话附件配额、不设单文件上限;
+    落盘统一走 get_tool_dir("attachments")(会话默认目录优先, 兜底项目根), 登记失败不抛, 仍返回磁盘路径, 产物不丢。
+    """
+    if not data:
+        fail(ATTACHMENT_UNAVAILABLE, "生成产物为空字节")
+    safe = _sanitize_name(name)
+    if Path(safe).suffix.lower() not in _ALLOWED_SUFFIXES:
+        safe = f"{Path(safe).stem or 'generated'}{_mime_to_suffix(mime)}"
+    size = len(data)
+    sha = hashlib.sha256(data).hexdigest()
+    sid = session_id or ""
+    if sid:
         with db.get_conn("chat") as conn:
             dup = conn.execute(
                 f"SELECT {_COLS} FROM attachments WHERE session_id = ? AND sha256 = ? LIMIT 1",
-                (session_id, sha),
+                (sid, sha),
             ).fetchone()
             if dup:
                 d = _row_to_dict(dup)
                 _decorate_global(conn, [d])
                 return d
-        fail(ATTACHMENT_UNAVAILABLE, "附件登记后读取失败")
+    from app.utils.path_utils import get_tool_dir
+    folder = Path(get_tool_dir("attachments"))
+    stored = _attachment_target(folder, sha, safe)
+    try:
+        stored.write_bytes(data)
+    except OSError as e:
+        # 目录已统一为 get_tool_dir("attachments"), 无第二目录可换; 瞬时故障(锁/杀毒)原地重试一次
+        logger.warning(f"[attachments] 生成产物写盘失败, 同目录重试一次 path={stored} err={e}")
+        stored.write_bytes(data)
+    kind = extract.classify(stored, mime or "", size)
+    try:
+        rec = _insert_attachment_row(sid or None, safe, stored, size, mime, sha, kind)
+    except Exception as e:  # noqa: BLE001 — 登记失败不丢产物, 返回磁盘路径兜底
+        logger.error(f"[attachments] 生成产物登记失败, 保留磁盘文件 path={stored} err={e}")
+        return _generated_record(sid, safe, stored, mime, size, sha, kind)
+    if rec is None:
+        return _generated_record(sid, safe, stored, mime, size, sha, kind)
+    if rec.get("stored_path") != str(stored):
+        stored.unlink(missing_ok=True)   # 并发同内容: 复用旧行, 删本次写出的重复副本
     return rec
+
+
+def _generated_record(session_id: str, safe: str, stored: Path,
+                      mime: str | None, size: int, sha: str, kind: str) -> dict[str, Any]:
+    """登记不可用时的磁盘记录: 行结构与台账行恒同构。
+
+    按 _COLS 顺序构造行元组走 _row_to_dict, 故 path/available/favorited/global_id 及
+    extract_* / scope / created_at 等字段与正常行一致; 唯一区别是 id 为空(未入库)。
+    """
+    return _row_to_dict((
+        "", session_id or None, safe, str(stored),
+        mime or mimetypes.guess_type(safe)[0] or "application/octet-stream",
+        size, sha, kind, "none", 0, None, None,
+        get_local_iso_timestamp(), "session", None, 0,
+    ))
 
 
 async def save_upload(session_id: str, upload: UploadFile) -> dict[str, Any]:

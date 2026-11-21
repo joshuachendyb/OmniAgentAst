@@ -13,6 +13,8 @@
 //   不再由各调用方逐个按钮打补丁(上下文概览 / 事件 及后续注入可交互 content 的调用方同样受益)
 // 编辑历史: 2026-11-18 小欧 - placement 类型补 topLeft/topRight: 事件浮层入口位于视口底部的任务信息带,
 //   向下展开高度不足被裁, 调用方改传 topRight 向上弹 — 小欧-2026-11-18
+// 编辑历史: 2026-11-21 小欧 - 新增 destroyOnClose(默认 false): 工具参数浮层内的媒体(objectURL)需要
+//   关闭即卸载才能回收, 既有两处调用不传 → 行为零变化 — 小欧-2026-11-21
 import React, { useEffect, useRef } from 'react';
 import { Popover } from 'antd';
 
@@ -41,6 +43,12 @@ export interface FloatingEntryProps {
    *   .popover-viewport-centered 注释); ②「上下文概览」已传 centered, 不再零影响 — 小欧-2026-10-14
    */
   centered?: boolean;
+  /**
+   * 2026-11-21 小欧 - 关闭即卸载卡片内容(antd Popover destroyOnHidden)。
+   *   默认 false 保持既有调用零变化; 工具参数浮层置 true —— 卡内媒体以 objectURL 承载,
+   *   不卸载则关闭后 blob 一直被引用, 反复开关会累积视频内存。
+   */
+  destroyOnClose?: boolean;
   cardStyle?: React.CSSProperties; // 卡片容器样式（宽/布局，调用方注入）
   content: React.ReactNode; // 卡片内容（调用方注入，内部 a11y 如 role="log" 自带）
   children: React.ReactNode; // 入口热区内容（上下文概览: MetricItem / 事件: DownOutlined + "事件"）
@@ -61,6 +69,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
   cardId,
   ariaLabel,
   centered = false,
+  destroyOnClose = false,
   cardStyle,
   content,
   children,
@@ -118,6 +127,7 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
         arrow={centered ? false : { pointAtCenter: true }}
         transitionName={centered ? '' : undefined}
         rootClassName={centered ? CENTERED_CLASS : undefined}
+        destroyOnHidden={destroyOnClose}
         content={
           <div
             ref={cardRef}

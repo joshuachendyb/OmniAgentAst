@@ -68,6 +68,8 @@
 // 编辑历史: 2026-11-03 08:45:00 小欧 - 步骤级计时改挂首行右端文字数码(WaitTimerText, 齿轮位置动画不动);
 //   门控与齿轮同源(已出结果/被拦截/回放不挂) — 小欧-2026-11-03
 // 编辑历史: 2026-11-14 商量 - 工具子行折叠箭头尺寸走令牌 FoldArrow.MD(16→14 并禁裸数字) — 商量-2026-11-14
+// 编辑历史: 2026-11-21 小欧 - 新增 history prop(冷历史回放)门控生成产物卡片: 实时任务显示、历史回放不显示;
+//   与 replay 区分(replay 含刚完成的当前任务, 用它门控会让产物在完成瞬间消失) — 小欧-2026-11-21
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -111,7 +113,19 @@ import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小�
 import { WaitTimerText } from '@/components/WaitingIcons/waitTimerText'; // 2026-11-03 小欧: 首行右端文字数码计时(表盘只留顶栏) — 小欧-2026-11-03
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 // 2026-11-20 小欧 - 生成图像/视频产物专用卡片: 文字信息仍走本文件通用行, 本卡片只呈现产物 — 小欧-2026-11-20
-import GenerationResultCard, { type GenerationArtifact } from './GenerationResultCard';
+// 2026-11-21 小欧 - 卡片只对生成类工具挂载: raw_data 是各工具自己的 data, 其它工具也可能带 file_path
+//   (write/download 等), 不按工具名门控会把普通文件产出误标成"生成的图片" — 小欧-2026-11-21
+// 2026-11-21 小欧 - 卡片只在实时任务挂载(含刚完成的终态), 历史回放不挂: 历史是看过程,
+//   产物由「浮层参数 → TOOL结果」标签承载(该标签在历史里同样可点开看产物) — 小欧-2026-11-21
+import {
+  GenerationResultCard,
+  type GenerationArtifact,
+} from './GenerationResultCard';
+
+const GENERATION_TOOLS: ReadonlySet<string> = new Set([
+  'generate_image',
+  'generate_video',
+]);
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -119,6 +133,12 @@ interface ToolCallLineProps {
   highlight?: boolean; // HITL 联动高亮
   interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
   replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
+  /**
+   * 2026-11-21 小欧 - 数据是否来自**冷历史回放**(REST 整表装载), 由 PipelineRenderer 的 lazy 透传。
+   *   ⚠️ 与 `replay` 不同: replay = !streaming, 含"刚完成的当前任务"; history 只含真正从库里翻出的旧任务。
+   *   生成产物卡片只认本标志 —— 用 replay 会让产物在任务完成那一刻消失。
+   */
+  history?: boolean;
   // 2026-09-30 小欧 - tool/reason 转可选以匹配上游 deniedEntries（单一真源）类型；
   //   无名条目已由 PipelineRenderer 渲染前 .filter(e => e.tool) 拦掉，此处只需类型一致。
   deniedTools?: Array<{ tool?: string; reason?: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
@@ -167,6 +187,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   highlight = false,
   interrupted = false,
   replay = false,
+  history = false,
   deniedTools, // 2026-09-06 小欧 B2(6.4)
   waitClock, // 2026-09-17 小欧 实施
 }) => {
@@ -238,11 +259,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   };
   // 2026-11-20 小欧 - 生成工具产物: 只取 tool_result[i].raw_data(=后端 data, {url,type}/{file_path,...}),
   //   取到什么就是什么, 不做任何兜底/派生。按 Tool 编写规范 data 才是本次执行产物 payload。
-  //   raw_data 是单产物对象(非数组), 包成数组交卡片统一渲染; 无产物 → 空数组 → 卡片不渲染。
-  const getArtifactsForIndex = (i: number): GenerationArtifact[] => {
-    const r = getResultForIndex(i);
-    const raw = r?.raw_data as Record<string, unknown> | undefined;
-    return raw ? [raw as GenerationArtifact] : [];
+  //   2026-11-21 小欧: 仅生成类工具挂载(见 GENERATION_TOOLS), 并把产物对象原样传入(不新建数组),
+  //   React.memo 的浅比较才有意义 — 小欧-2026-11-21
+  const getGenerationArtifact = (i: number): GenerationArtifact | undefined => {
+    if (!GENERATION_TOOLS.has(tools[i]?.tool ?? '')) return undefined;
+    const raw = getResultForIndex(i)?.raw_data;
+    return raw as GenerationArtifact | undefined;
   };
   const retryCount = action.action_retry_count;
   const attemptLabel =
@@ -436,6 +458,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           // 2026-10-13 小欧 - 北京老陈定案: 仅工具行参数浮层改视口居中(见 index.css
                           //   .popover-viewport-centered 注释)。「上下文概览」「事件」两个浮层不传 centered, 行为零变化。
                           centered
+                          // 2026-11-21 小欧 - 关闭即卸载: 卡内生成产物以 objectURL 承载, 不卸载则关闭后仍被引用 — 小欧-2026-11-21
+                          destroyOnClose
                           cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
                           ariaLabel={`${t.tool} 参数`}
                           cardStyle={PARAMS_CARD_STYLE}
@@ -497,8 +521,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   </div>
                   {/* 2026-11-20 小欧 - 生成图像/视频产物专用卡片(差异部分): 公网URL缩略图/播放器 + 本地路径深链。
                       放在 role="button" 之外(点缩略图不误折叠整行), 默认可见——用户思考完即见工具行+产物, 不再藏展开区。
-                      文字信息(工具名/参数/状态/耗时/摘要)由上面通用行呈现, 此处只放产物, 无产物不渲染 — 小欧-2026-11-20 */}
-                  <GenerationResultCard artifacts={getArtifactsForIndex(i)} />
+                      文字信息(工具名/参数/状态/耗时/摘要)由上面通用行呈现, 此处只放产物, 无产物不渲染 — 小欧-2026-11-20
+                      2026-11-21 小欧 - 冷历史回放不挂(history): 历史以看过程为主, 产物走浮层 TOOL结果 标签 — 小欧-2026-11-21 */}
+                  {!history && <GenerationResultCard artifact={getGenerationArtifact(i)} />}
                   {/* 2026-10-13 小欧 - 文档[29]§4.6.7/§2.7 I1 + D-1: 参数区**移出** role="button",
                       点节点不再误折叠整行(B1 结构性根治), 故无需 stopPropagation 补丁;
                       顶层键默认折叠 → 高度恒 (键数+1)×16px(C1/C2 根治) — 小欧 2026-10-13 */}

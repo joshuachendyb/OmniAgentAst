@@ -137,10 +137,9 @@
 | `path_has_reserved_name` | 路径任一分段是 Windows 保留名则返回该分段，否则 None；纯拼写零IO | file_path: str | Optional[str] |
 | `path_has_extra_drive` | 路径尾部含多余盘符则返回原因，否则 None；纯拼写零IO | file_path: str | Optional[str] |
 | `validate_str_param` | 字符串参数基础校验（非路径通用参数用；路径非空由 SA1 覆盖）；None/非str/空串返回错误信息 | value: Any, param_name: str | Optional[str] |
-| `get_output_dir` | 输出目录(project_root/output)，generate_chart/download 默认输出基准 | 无 | str |
 | `get_tool_dir` | tool 落盘目录唯一分配口：会话默认目录(任务快照 is_default 条目)优先，兜底项目根；kind 限 attachments/output/temp，建目录后返回绝对路径 | kind: str | str |
 
-> 注：备份(operation_backup)与回收站维护(operation_maintenance)链路统一使用 `get_output_dir`，保证深嵌套备份能写入亦能清理。
+> 注：备份(operation_backup)与回收站维护(operation_maintenance)链路的深嵌套路径统一走 `to_win_long_path`，保证备份能写入亦能清理。
 
 ### 1.11 文件处理（file_utils.py）
 
@@ -264,6 +263,9 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `build_error` | 构建错误响应 | data, llm_data, other_data, **extra | dict |
 | `build_warning` | 构建警告响应 | data, llm_data, other_data, **extra | dict |
 | `build_missing_dep_error` | 缺库统一错误体（`ERR_MISSING_DEPENDENCY`）。文案分三级：系统自动装失败 → LLM 用 `bash` 自装 → 转管理员；锁定依赖（httpx/httpcore）不给自装指示，直指按锁定版本由管理员装；收尾统一给"改用其他工具继续任务"的出路，**不终止 ReAct loop**。错误码落 `llm_data.status.code`，随全项目错误体约定 | tool_name: str, missing: list = None, agent_can_install: bool = None | dict |
+| `with_artifacts` | 产出型工具声明产物清单：挂 `llm_data.action.artifacts`，供 final_stats / 产物抽屉消费 | llm_data: dict, items: list[{name, path, type}] | dict |
+| `with_artifact_file` | 由文件路径便捷声明产物（name/path/type 自动取） | llm_data: dict, file_path: str | dict |
+| `artifact_from_url` | 公网产物 URL → 产物条目；`name` 按 URL 路径真实后缀定名（认不出用 kind 默认名），不把签名查询串带进名字 | url: str, kind: str（image/video） | dict |
 
 ---
 
@@ -442,6 +444,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `save_bytes` | 附件落盘唯一实现：sha256 去重（同会话同内容复用行）、写 `attachments/`、分类、落 DB | session_id: str, name: str, data: bytes | Dict（附件行） |
+| `save_generated_bytes` | 生成产物（系统产出）落盘口：不校验会话存在/不计配额/不限单文件，落 `get_tool_dir("attachments")`，登记失败仍返回同构磁盘行 | session_id: str, name: str, data: bytes, mime: str = None | Dict（附件行） |
 | `rel_to_root` | 绝对落盘路径 → 相对 posix 路径（对外展示/引用口径） | stored_path: str | str |
 | `ensure_session_attachment_dir` | 确保默认工作区存在并返回其 `attachments/` 目录 | session_id: str | Path |
 | `classify` | 五分类唯一真源：image/video/richdoc/text/binary；扩展名优先，mime 仅无扩展名时辅助 | stored_path: Path, mime: str, size: int | str |

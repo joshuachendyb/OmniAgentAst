@@ -20,6 +20,8 @@
 #   cleanup_orphan_artifacts 启动期清理上一世残留产物(重启后注册表为空, 惰性清理覆盖不到, 磁盘泄漏);
 #   (3)启动失败不留空 .log 产物; (4)终态语义统一为 outcome 字段(completed/failed/timeout/oversize/killed),
 #   原 timed_out 布尔信息量不足致查询无法区分超时/超限/失败; (5)补后台启动与结束 info 日志(成功路径此前无日志)
+# 2026-11-21 小欧 三堂会审整改: 启动期孤儿清理改扫全集(_bg_output_dirs): 输出已按会话工作区落盘,
+#   只扫当前分配口(启动期无会话快照→项目根/output)会漏掉各会话目录里的上一世 .log/.bat
 """
 S: shell_background — bash 工具后台执行支撑
 
@@ -34,6 +36,7 @@ import subprocess
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.config import get_config
@@ -104,6 +107,18 @@ def _bg_output_dir() -> str:
     d = get_tool_dir("output")
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def _bg_output_dirs() -> list[str]:
+    """后台产物目录全集: 当前分配口 + 项目根下各会话工作区的 output/。
+
+    输出已按会话工作区落盘, 启动期没有会话快照(get_tool_dir 回落项目根), 只扫当前分配口会漏掉
+    各会话目录里的上一世产物; 会话工作区固定为 {项目根}/{时间戳-会话}/output, 故按目录布局枚举。
+    """
+    dirs = [_bg_output_dir()]
+    root = get_config().get_project_root()
+    dirs += [str(p) for p in Path(root).glob("*/output") if p.is_dir()]
+    return list(dict.fromkeys(dirs))
 
 
 def _bg_error(command: str, cmd_short: str, detail: str, hint: str) -> Dict[str, Any]:
@@ -438,17 +453,17 @@ def cleanup_orphan_artifacts(not_after: float) -> int:
     安全: 只删 (a) 本模块命名空间 bgsh_* 前缀 (b) mtime 早于 not_after(启动时刻) 的文件;
     活跃进程仍在追加写的文件 mtime 会刷新, 不会被误删; 其他工具的产物一律不动。"""
     import glob
-    d = _bg_output_dir()
     n = 0
-    for pattern in (f"bgsh_*{_BG_SIDECAR_SUFFIX}", "bgsh_*.log"):
-        for path in glob.glob(os.path.join(d, pattern)):
-            try:
-                if os.path.getmtime(path) >= not_after:
-                    continue
-                os.remove(path)
-                n += 1
-            except OSError as e:
-                logger.warning(f"[bg_shell] 启动期孤儿产物删除失败 {path}: {e}")
+    for d in _bg_output_dirs():
+        for pattern in (f"bgsh_*{_BG_SIDECAR_SUFFIX}", "bgsh_*.log"):
+            for path in glob.glob(os.path.join(d, pattern)):
+                try:
+                    if os.path.getmtime(path) >= not_after:
+                        continue
+                    os.remove(path)
+                    n += 1
+                except OSError as e:
+                    logger.warning(f"[bg_shell] 启动期孤儿产物删除失败 {path}: {e}")
     if n:
         logger.info(f"[bg_shell] 启动期清理孤儿结果产物 {n} 个(上一世后台命令残留)")
     return n

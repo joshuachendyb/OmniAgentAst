@@ -106,6 +106,8 @@
 // 2026-11-03 小欧 - 等待图标计时器解耦: 步骤级计时从等待图标解剖为独立文字数码(WaitTimerText), 三个等待图标位置/动画零改动,
 //   ThoughtWaitingIcon/ToolWaitingIcon 只留图标, 计时读数挂首行右端; 蓝色波纹留句尾 — 小欧-2026-11-03
 // 编辑历史: 2026-11-12 小欧 - 字号档归位: FontSize.TERTIARY → FontSize.SECONDARY(同值两档, 阶梯收敛为单一真源) — 小欧-2026-11-12
+// 编辑历史: 2026-11-21 小欧 - 向 ToolCallLine 透传 history(=lazy, 冷历史回放): 生成产物卡片只在实时任务挂载,
+//   历史回放不挂(历史以看过程为主, 产物走浮层 TOOL结果 标签); 不复用 replay —— 后者含刚完成的当前任务 — 小欧-2026-11-21
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -589,6 +591,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               observations={toolObs}
               interrupted={toolObs.length === 0 && allDenied}
               replay={!streaming} // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放加了标志就自然不需要齿轮转动, 更简单 — 小欧-2026-09-06
+              // 2026-11-21 小欧 - 冷历史回放标志单列透传(只服务"生成产物卡片是否挂载"):
+              //   replay=!streaming 含"刚完成的当前任务", 用它门控会让产物在任务完成瞬间消失, 故用 lazy 同源信号 — 小欧-2026-11-21
+              history={lazy}
               highlight={
                 highlightToolName != null &&
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)

@@ -23,11 +23,15 @@
   audios/videos 为公网URL原样透传; 厂商实测新模式提交返回 queue_full(非参数错)证明参数结构正确 — 小欧-2026-11-20
 编辑历史: 2026-11-20 小欧 按厂商文档补全生图全能力: invoke_generate image 分支加 ratio/images(多图合成)并透传 provider/size,
   供 generation_client 按厂商方言翻译; 实测 agnes(sensenova) size 协议不同(档位 vs WIDTHxHEIGHT) — 小欧-2026-11-20
+编辑历史: 2026-11-21 小欧 三堂会审整改: provider 定位改为 ai.model_ref 当前 provider 优先(同名模型跨 provider 时不再取字典序第一个,
+  复用 model_service.get_current_ref/RESERVED_AI_KEYS 单源); 未找到 provider 属确定失败改 settled=True(原 False 让工具回"稍后重试");
+  async 入口内的图源读文件/b64 落盘改 asyncio.to_thread(原同步阻塞事件循环); 产物 mime 改为按字节魔数嗅探
+  (厂商只回 url/b64 不回 mime, 原按 kind 硬编码 png/mp4 会让 jpeg/webm 产物后缀撒谎) — 小欧-2026-11-21
 """
+import asyncio
 import base64
 import os
 import re
-import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from app.config import get_config
@@ -109,7 +113,7 @@ async def _publicize_image_source(src: str) -> str:
         return src
     if src.lower().startswith(("http://", "https://")):
         return src
-    image_data = _read_image_source(src)
+    image_data = await asyncio.to_thread(_read_image_source, src)
     if image_data is None:
         return src  # 读不出则原样透传, 厂商会报 source_unreachable
     raw, mime = image_data
@@ -118,31 +122,75 @@ async def _publicize_image_source(src: str) -> str:
     return url or src  # 公网化失败则原样透传, 交由厂商拒绝并记因
 
 
-def _save_b64_attachment(b64: str, session_id: str, mime: str, stem: str) -> Optional[Dict[str, str]]:
-    """把生成产物 b64 落盘为会话 attachment → {attachment_id, file_path, name} 或 None。
-    仅 services 层可调(import attachments), 失败只告警不抛 — 小欧-2026-11-20"""
-    if not b64 or not session_id:
+_MEDIA_MIME_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"\x1a\x45\xdf\xa3", "video/webm"),
+)
+
+
+def _sniff_media_mime(raw: bytes, kind: str) -> str:
+    """按字节魔数判定产物 mime → 落盘后缀才对得上真实格式。
+
+    厂商只回 url/b64, 不回报文 mime; 按 kind 硬编码 image/png|video/mp4 会把 jpeg/webm 产物
+    落成 .png/.mp4(附件五分类按扩展名走, 预览与转码随之错)。认不出的按 kind 取默认 — 小欧-2026-11-21
+    """
+    head = raw[:16]
+    for sig, mime in _MEDIA_MIME_SIGNATURES:
+        if head.startswith(sig):
+            return mime
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head[4:8] == b"ftyp":
+        return "video/quicktime" if head[8:12] == b"qt  " else "video/mp4"
+    return "image/png" if kind == "image" else "video/mp4"
+
+
+def _save_b64_attachment(b64: str, session_id: str, kind: str, stem: str) -> Optional[Dict[str, str]]:
+    """把生成产物 b64 落盘为附件 → {attachment_id, file_path, name} 或 None。
+    走系统产出专用落盘口(不受会话存在性/配额/单文件上限约束), 后缀按字节真实格式由附件域映射;
+    仅空 b64、解码不出字节或磁盘不可写才返回 None — 小欧-2026-11-21"""
+    if not b64:
         return None
     try:
         from app.attachments import attachment_service
-        raw = base64.b64decode(b64)
-        ext = "png" if "png" in mime else ("jpg" if "jpeg" in mime or "jpg" in mime else "bin")
-        name = f"{stem}-{uuid.uuid4().hex[:8]}.{ext}"
-        saved_rec = attachment_service.save_bytes(session_id, name, raw, mime=mime or f"image/{ext}")
-        return {"attachment_id": str(saved_rec.get("id") or ""), "file_path": str(saved_rec.get("stored_path") or ""), "name": name}
+        # b64 可能缺 padding 且夹带换行, 补齐 padding + validate=False 忽略非字母表字符
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4), validate=False)
+        if not raw:
+            return None
+        rec = attachment_service.save_generated_bytes(
+            session_id or "", stem, raw, mime=_sniff_media_mime(raw, kind))
+        return {
+            "attachment_id": str(rec.get("id") or ""),
+            "file_path": str(rec.get("stored_path") or ""),
+            "name": str(rec.get("original_name") or ""),
+        }
     except Exception as e:  # noqa: BLE001 — 落盘失败降级, 不打断对话
-        logger.warning(f"[media_generate] b64 落盘失败 session={session_id} err={e}")
+        logger.error(f"[media_generate] b64 落盘失败 session={session_id} err={e}")
         return None
 
 
 def _provider_credentials(model: str) -> Tuple[Optional[str], str, str]:
-    """按模型名取调用凭据 (provider, api_base, api_key); 遍历 config.ai 各 provider 的 models 列表。
-    未找到返回 (None, "", "")。"""
+    """按模型名取调用凭据 (provider, api_base, api_key)。
+
+    定位顺序: 当前模型(ai.model_ref.provider)优先 —— 同一模型名可被多个 provider 声明,
+    沿用 model_service 的当前 provider 单源, 避免拼接/鉴权落到字典序第一个 provider;
+    未命中再遍历其余 provider。均未找到返回 (None, "", "")。
+    """
     ai = get_config().get("ai") or {}
     if not isinstance(ai, dict):
         return None, "", ""
-    for name, p in ai.items():
-        if not isinstance(p, dict) or name.startswith("_") or name in {"model_ref"}:
+    from app.services.model.model_service import RESERVED_AI_KEYS, get_current_ref
+    current = get_current_ref(ai).get("provider") or ""
+    names = ([current] if current else []) + [
+        name for name in ai
+        if name not in RESERVED_AI_KEYS and not name.startswith("_")
+    ]
+    for name in dict.fromkeys(names):
+        p = ai.get(name)
+        if not isinstance(p, dict):
             continue
         models = p.get("models") or []
         if model in models:
@@ -177,14 +225,16 @@ async def invoke_generate(kind: str, model: str, prompt: str,
     """
     provider, api_base, api_key = _provider_credentials(model)
     if not provider or not api_base:
-        return {"ok": False, "settled": False, "reason": f"未找到模型 {model} 的 provider/api_base"}
+        # 模型/provider 未配置属确定失败(换模型或改配置才有出路), 不能按未定让工具回"稍后重试"
+        return {"ok": False, "settled": True, "reason": f"未找到模型 {model} 的 provider/api_base"}
     adapter = get_provider_adapter(provider)
     headers = adapter.static_headers(api_key)
     out: Dict[str, Any] = {}
     try:
         if kind == "image":
             # i2i 单图: 转 data URI(两 provider 实测接受), 公网 URL 原样; 多图合成参考图走公网化(sensenova 多图要公网URL)
-            src_image = _resolve_image_source(image) if image else None
+            #   图源读文件是同步 IO, 交线程执行, 不阻塞事件循环
+            src_image = await asyncio.to_thread(_resolve_image_source, image) if image else None
             src_images = [await _publicize_image_source(x) for x in images] if images else None
             kw = {"timeout": timeout} if timeout else {}
             ok, evidence, settled = await generate_image(
@@ -210,7 +260,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                 audios=audios, videos=videos, seconds=seconds, size=size,
                 aspect_ratio=aspect_ratio, seed=seed, adapter=adapter, out=out, **kw)
         else:
-            return {"ok": False, "settled": False, "reason": f"未知生成类型 {kind}"}
+            # 未知 kind 是调用方写错, 重试无出路 → 确定失败
+            return {"ok": False, "settled": True, "reason": f"未知生成类型 {kind}"}
     except Exception as e:  # noqa: BLE001 — 生成异常回退, 不打断对话轮
         logger.warning(f"[media_generate] 生成异常 kind={kind} model={model} err={e}")
         return {"ok": False, "settled": False, "reason": f"生成异常: {type(e).__name__}: {e}"}
@@ -227,9 +278,10 @@ async def invoke_generate(kind: str, model: str, prompt: str,
     }
     # 只有 b64 无公网 URL(如 SenseNova U1.5 官方只返 2048² PNG b64) → 落盘为 attachment,
     # 工具据此声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览, 不把 4MB data URI 塞进 LLM 回复
-    if ok and not url and b64 and session_id:
-        mime = "image/png" if kind == "image" else "video/mp4"
-        saved = _save_b64_attachment(b64, session_id, mime, f"generated_{kind}")
+    if ok and not url and b64:
+        # 落盘含写盘+登记(同步 IO), 交线程执行; mime 由附件侧按字节真实格式映射
+        saved = await asyncio.to_thread(
+            _save_b64_attachment, b64, session_id or "", kind, f"generated_{kind}")
         if saved:
             result.update(saved)
     return result

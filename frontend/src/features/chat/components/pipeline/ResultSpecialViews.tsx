@@ -1,4 +1,4 @@
-// 结果视图的两个专用渲染器 —— 目录树 / 文件列表(北京老陈裁定 2026-10-14)
+// 结果视图的专用渲染器 —— 目录树 / 文件列表 / 生成媒体(北京老陈裁定 2026-10-14)
 // 编辑历史: 2026-10-14 小欧 - 新建。`tree` / `listdir` 有业务语义(层级/列对齐),
 //   通用 JSON 折叠表达不了, 故各写一个专用渲染器; 仅用于「TOOL结果」, 参数视图零影响。
 //   数据来源(源码实证, 勿凭记忆改):
@@ -6,11 +6,14 @@
 //     listdir  app/tools/file/list_directory.py:48-51,127-134  {entries:[{name,type,mtime,[size]}], truncated}
 //   注册名依据 app/tools/file/file_register.py:84 的注册清单(AGENTS 铁规指明的单一真源)。
 // 编辑历史: 2026-11-14 商量 - 目录树节点折叠箭头尺寸走令牌 FoldArrow.SM(14→12, 内容区密集小控件区) — 商量-2026-11-14
+// 编辑历史: 2026-11-21 小欧 - 增第三个专用渲染器(生成媒体): data 带 type=image|video 且有 url/file_path
+//   即派发 GeneratedMediaView, 把 URL 渲染成图/播放器、本地落盘经附件接口取 blob 渲染; 其余结果不受影响 — 小欧-2026-11-21
 import React, { useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { Colors, FoldArrow, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
 import { formatTimestamp } from '@/utils/time';
 import { formatBytes } from '@/utils/format';
+import { GeneratedMediaView, isMediaResult } from './GeneratedMediaView';
 
 /**
  * 2026-10-14 小欧 - mtime 是 **float Unix 时间戳**(list_directory.py:49 `st.st_mtime`),
@@ -324,6 +327,9 @@ export const pickResultView = (
   toolName: string,
   data: Record<string, unknown>
 ): React.ReactNode => {
+  // 2026-11-21 小欧 - 生成媒体先判: 判据是 data 自带的 type=image|video + 产物指针(url / file_path),
+  //   与目录树/文件列表的键集合零重叠, 且不依赖工具名(将来新增生成类工具无需改派发表)
+  if (isMediaResult(data)) return <GeneratedMediaView data={data} />;
   const byName =
     toolName === 'tree' ? 'tree' : toolName === 'listdir' ? 'listdir' : null;
   /**
