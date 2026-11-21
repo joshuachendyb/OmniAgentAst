@@ -1,5 +1,5 @@
 ﻿# rebuild-pool.ps1 — 节点池重建流水线(11 步一键跑完, 整池死透时用)
-# 编写人: 小欧    日期: 2026-11-12    版本: v1.2    更新时间: 2026-11-12 13:30:00
+# 编写人: 小欧    日期: 2026-11-12    版本: v1.3    更新时间: 2026-11-21 08:47:43
 # 用途: proxy-switch 连 4 轮都换桶失败 = 免费池全死; 跑本脚本从公开订阅源重抓一批:
 #       抓订阅 -> 裸线TCP筛 -> TLS筛 -> 死点复活注入 -> 转YAML -> mihomo实测 -> 死点结算
 #       -> 只留可用 -> 定桶 -> 排序 -> 写回配置
@@ -10,6 +10,8 @@
 #       实测后结算(复活移出/失败+1/连续 5 死清除/新死入池); 9 步扩为 11 步
 # 说明: 第 6 步 mihomo 逐节点实测最慢(千级节点约 15 分钟); 并发 12 实测存活数最准, 别调大
 # 产物: 全部落 log\; 第 11 步写回 mihomo\config.yaml(自动留 .bak), 跑完自动重启 mihomo
+# 更新: v1.3 小欧 2026-11-21 第 6 步加 --retry 1: 同一批节点重复测会换着失败(实测 6 并发下每遍死 4~5 个、
+#       两遍死的还不是同一批), 只测一遍会把"抖动"当成"死"记进死点池; 多一轮重试(半并发)约多花 5 分钟
 
 param()
 $ErrorActionPreference = 'Stop'
@@ -38,7 +40,7 @@ Step '6/11 mihomo 逐节点实测(最慢, 约 15 分钟, 别关窗)' @(
     (Join-Path $here '_verify_nodes.py'),
     (Join-Path $work 'nodes_all.yaml'),
     '--raw', '--ports', '7897', '9097', '--threads', '12', '--timeout', '8000',
-    '--out', (Join-Path $work 'good_all.txt'))
+    '--retry', '1', '--out', (Join-Path $work 'good_all.txt'))
 Step '7/11 死点池结算(复活移出/失败+1/连5死清除/新死入池)' @((Join-Path $here '_deadpool.py'),
                              'record',
                              (Join-Path $work 'nodes_all.yaml.map.txt'),

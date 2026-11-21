@@ -5,6 +5,10 @@
 
 用法: python _verify_nodes.py <nodes.yaml> [--ports 7897 9097] [--raw] [--threads 8]
   --raw  加 interface-name: WLAN, 走物理网卡(裸线), 绕开系统级全局路由/隧道工具
+
+更新: 2026-11-21 小欧 失败节点不再只记"死": 抓 HTTPError 响应体(504=超时 / 503=连接或协议失败)
+      与异常类型, 收尾打失败原因分布, 重试轮救回几个也一并报出 —— 用来区分"节点真死"与"实测环境抖动",
+      原来的写法把原因全吞了, 只剩一句 an error occurred, 无法判断该不该信这次结果。
 """
 import argparse
 import json
@@ -17,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -118,6 +123,7 @@ rules:
         names = load_names(nodes)
         print("节点 %d 个, 并发 %d, 控制器 %s" % (len(names), args.threads, base))
         good, bad = [], []
+        reasons = Counter()   # 失败原因 -> 次数
 
         def probe(name):
             q = urllib.parse.urlencode({"timeout": args.timeout, "url": TEST_URL})
@@ -126,20 +132,29 @@ rules:
                 d = api(base, path, timeout=args.timeout / 1000.0 + 15)
                 ms = d.get("delay")
                 if isinstance(ms, int) and ms > 0:
-                    return ms
-            except Exception:
-                pass
-            return None
+                    return ms, ""
+                return None, "无延迟字段 %r" % (d,)
+            except urllib.error.HTTPError as e:
+                # 失败原因只写在响应体里, 不抓就等于没记 — 小欧 2026-11-21
+                try:
+                    why = json.loads(e.read().decode("utf-8", "replace")).get("message", "")
+                except Exception:
+                    why = ""
+                return None, "%d %s" % (e.code, why or e.reason)
+            except Exception as e:
+                return None, type(e).__name__
 
         def work(name):
-            ms = probe(name)
+            ms, why = probe(name)
             if ms:
                 with lock:
                     good.append((name, ms))
                     print("  OK   %5dms  %s" % (ms, name), flush=True)
-                return
+                return True
             with lock:
                 bad.append(name)
+                reasons[why] += 1
+            return False
 
         with ThreadPoolExecutor(max_workers=args.threads) as ex:
             list(ex.map(work, names))
@@ -152,12 +167,18 @@ rules:
             print()
             print("---- 第 %d 轮重试: %d 个 ----" % (rnd, len(todo)), flush=True)
             with ThreadPoolExecutor(max_workers=max(1, args.threads // 2)) as ex:
-                list(ex.map(work, todo))
+                got = sum(1 for ok in ex.map(work, todo) if ok)
+            print("     本轮救回 %d 个" % got, flush=True)
 
         print()
         print("==== 可用 %d / %d ====" % (len(good), len(names)))
         for name, ms in sorted(good, key=lambda x: x[1]):
             print("  %5dms  %s" % (ms, name))
+        if reasons:
+            print()
+            print("失败原因分布(含重试轮):")
+            for why, n in reasons.most_common(8):
+                print("  %4d x %s" % (n, why))
         if args.out:
             with open(args.out, "w", encoding="utf-8", newline="\n") as f:
                 for name, ms in sorted(good, key=lambda x: x[1]):

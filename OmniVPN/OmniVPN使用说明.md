@@ -43,7 +43,7 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 ### 3.3 nodepool 节点池流水线（入口在根目录，步骤实现在 nodepool\ 子目录）
 
-免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。双击入口 `rebuild-pool.bat` 在 OmniVPN 根目录（用户要求：双击执行脚本不放子目录），它调用编排 `rebuild-pool.ps1`（v1.2），步骤实现脚本在 `nodepool\` 下，按序执行 11 步：抓取公开订阅源（`_fetch2.py`，9 源并行抓取，秒级完成，直连失败自动走 7890 备援，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，绑源地址 3 秒判据）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"）→ **死点池复活注入**（`_deadpool.py revive`，把上次实测失败的节点追加进待测清单，跳过 TCP/TLS 预筛直进实测，单次上限 300 条）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟；并发 12 实测存活数最准，调大会低估）→ **死点池结算**（`_deadpool.py record`：注入且实测通过 = 复活移出池；仍失败 = 失败次数+1；连续 5 次死 = 彻底清除；本轮新失败的新鲜节点 = 入池。池文件 `log\deadpool.txt`）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
+免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。双击入口 `rebuild-pool.bat` 在 OmniVPN 根目录（用户要求：双击执行脚本不放子目录），它调用编排 `rebuild-pool.ps1`（v1.3），步骤实现脚本在 `nodepool\` 下，按序执行 11 步：抓取公开订阅源（`_fetch2.py`，9 源并行抓取，秒级完成，直连失败自动走 7890 备援，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，按自动探测的物理网卡源地址 3 秒判据，开跑前打印实际源地址）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"，与 TCP 筛绑同一个源地址）→ **死点池复活注入**（`_deadpool.py revive`，把上次实测失败的节点追加进待测清单，跳过 TCP/TLS 预筛直进实测，单次上限 300 条、池内总量上限 600 条）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟，外加一轮重试约 5 分钟；并发 12 实测存活数最准，调大会低估；收尾按 504 超时 / 503 协议失败分列失败原因，并报重试救回几个）→ **死点池结算**（`_deadpool.py record`：注入且实测通过 = 复活移出池；仍失败 = 失败次数+1；连续 5 次死 = 彻底清除；本轮新失败的新鲜节点 = 入池。池文件 `log\deadpool.txt`）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
 
 死点池存在的原因：免费节点失联后过几天常会复活，一次性淘汰太浪费；连续 5 次实测仍死的才彻底扔掉。不想跑全量重建时，双击 `update-pool-quick.bat` 做轻量巡检（约 1~2 分钟）：现池逐节点复验报存活数 + 死点池复活实测与结算，实测用临时端口 7897/9097 起独立 mihomo 实例，不影响在跑的 7890/9090 主实例；该巡检也挂在 `proxy-switch.bat` 尾部，换桶结束后自动带跑一遍。
 
@@ -61,7 +61,7 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 每天开始干活前双击 `proxy-on.bat`——窗口会依次打印内核就绪、系统代理启用、节点池清单（几个节点、几个桶、逐节点所属桶）、直连出口与代理出口对照，看完就能关（mihomo 是后台进程不受影响，但出口查询每步要 3~8 秒，别在查询中途关窗）。看"代理出口"那一项的 loc 和前缀，就是当前出口桶。
 
-撞 429 时双击 `proxy-switch.bat`——窗口出现"换桶成功"即配额恢复，继续发请求；出现"换桶失败"说明节点池整体失效，按提示按 Y 重建（约 15~20 分钟），或直接双击根目录的 `rebuild-pool.bat`。
+撞 429 时双击 `proxy-switch.bat`——窗口出现"换桶成功"即配额恢复，继续发请求；出现"换桶失败"说明节点池整体失效，按提示按 Y 重建（约 20~26 分钟），或直接双击根目录的 `rebuild-pool.bat`。
 
 收工时双击 `proxy-off.bat`——取消系统代理并停止内核，本机恢复裸线直连（出口恒为 `loc=CN`）；只想关系统代理、保留内核运行，用命令行 `proxy-off.ps1`（不带 `-Stop`，见 4.2.1）。
 
@@ -121,7 +121,7 @@ python OmniVPN\exit_rotator.py --reset-history
 操作对象：`log\` 下的池数据文件与 `mihomo\config.yaml` 的节点段（含死点池 `log\deadpool.txt`）。
 
 ```powershell
-# 全量重建(11 步约 15~20 分钟; = 双击 OmniVPN\rebuild-pool.bat)
+# 全量重建(11 步约 20~26 分钟; = 双击 OmniVPN\rebuild-pool.bat)
 powershell -ExecutionPolicy Bypass -File OmniVPN\rebuild-pool.ps1
 
 # 轻量巡检(现池复验 + 死点复活结算, 1~2 分钟, 临时端口不影响在跑的 mihomo; = 双击 update-pool-quick.bat)

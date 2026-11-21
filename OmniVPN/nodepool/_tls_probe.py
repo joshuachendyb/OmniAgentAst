@@ -2,6 +2,9 @@
 
 输入 reachable.txt (scheme host port 源 原始链接)
 输出 tls_ok.txt: 握手成功的节点原始链接; ss 等无 TLS 协议按 TCP 结果直接保留
+
+更新: 2026-11-21 小欧 源地址改为复用 _parse_test.lan_source_ip()(原写死 192.168.1.4, 换网即整轮全灭);
+      TLS 握手与 TCP 筛必须绑同一个源地址, 否则两段判据口径不一致。
 """
 import base64
 import json
@@ -17,9 +20,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WORK_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "log")   # 源码 nodepool\, 产物 log\ — 小欧-2026-11-11
 
+sys.path.insert(0, SCRIPT_DIR)
+from _parse_test import lan_source_ip  # 同目录脚本, 复用裸线源地址探测
+
 IN = os.path.join(WORK_DIR, "reachable.txt")
 OUT = os.path.join(WORK_DIR, "tls_ok.txt")
-SRC = "192.168.1.4"
 
 
 def b64(s):
@@ -56,14 +61,15 @@ def tls_params(scheme, line):
     return False, "", ""
 
 
-def tls_ok(host, port, sni, timeout=6.0):
+def tls_ok(host, port, sni, src, timeout=6.0):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     raw.settimeout(timeout)
     try:
-        raw.bind((SRC, 0))
+        if src:
+            raw.bind((src, 0))
         raw.connect((host, port))
         with ctx.wrap_socket(raw, server_hostname=sni or host) as s:
             return True, s.version()
@@ -82,7 +88,7 @@ def main():
         parts = line.rstrip("\n").split("\t")
         if len(parts) < 5:
             continue
-        scheme, host, port, src, raw = parts
+        scheme, host, port, _, raw = parts
         recs.append((scheme, host, int(port), raw))
     print("待测:", len(recs))
 
@@ -96,11 +102,13 @@ def main():
             plain.append((scheme, host, port, raw))
 
     print("需 TLS 握手:", len(tls_list), " | 无 TLS(ss/vmess plain):", len(plain))
+    src = lan_source_ip()
+    print("裸线源地址: %s" % (src or "未绑定(物理网卡取不到, 走系统默认路由)"))
     print("开始 TLS 握手筛查(6 秒超时, 40 并发)...")
 
     def work(rec):
         scheme, host, port, raw, sni, alpn = rec
-        ok, info = tls_ok(host, port, sni)
+        ok, info = tls_ok(host, port, sni, src)
         return (rec, ok, info)
 
     survivors = [(s, h, p, r) for s, h, p, r in plain]

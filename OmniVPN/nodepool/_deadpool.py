@@ -11,6 +11,10 @@
 用法:
   python _deadpool.py revive   <tls_ok.txt> <inject_out>
   python _deadpool.py record   <nodes_all.yaml.map.txt> <good_all.txt> <reachable.txt> <inject_file>
+
+更新: 2026-11-21 小欧 池内总量加封顶(POOL_CAP): 全量重建一轮新死节点就上千条, 不封顶池子会涨到几千条,
+      而单次只注入 300 条, 排在后面的永远轮不到(实测池内 1600+ 条时注入 300 条复活 0 条, 每轮白花约 3 分钟)。
+      封顶后按失败次数从少到多保留, 失败次数最多的先丢 —— 它们已被复测多轮仍死, 再留没意义。
 """
 import os
 import sys
@@ -24,6 +28,7 @@ DEADPOOL = os.path.join(WORK_DIR, "deadpool.txt")
 
 INJECT_CAP = 300     # 单次注入上限: 死点全测太拖第 6 步(每节点最多 8s), 300 条约 3 分钟
 PURGE_AT = 5         # 连续失败次数达到即彻底清除
+POOL_CAP = 600       # 池内总量上限: 单次只注入 300 条, 池子超过这个数后面排队的永远轮不到 — 小欧 2026-11-21
 
 
 def norm_scheme(s):
@@ -60,9 +65,14 @@ def load_pool():
 
 def save_pool(rows):
     rows.sort(key=lambda r: (r[0], r[1]))   # 失败少/新失败的在前, 注入优先复活它们
+    dropped = 0
+    if POOL_CAP > 0 and len(rows) > POOL_CAP:
+        dropped = len(rows) - POOL_CAP
+        del rows[POOL_CAP:]                 # 原地裁剪, 调用方看到的即最终池
     with open(DEADPOOL, "w", encoding="utf-8", newline="\n") as f:
         for count, d, uri in rows:
             f.write("%d\t%s\t%s\n" % (count, d, uri))
+    return dropped
 
 
 def read_keys_and_lines(map_path, good_path):
@@ -165,9 +175,11 @@ def cmd_record(map_path, good_path, reachable_path, inject_file):
             fresh_new.append(uri)
 
     rows = [(c, d, u) for u, (c, d) in by_uri.items()]
-    save_pool(rows)
+    dropped = save_pool(rows)
     print("死点池结算: 复活 %d, 仍死 %d(加重), 清除 %d(连续 %d 死), 新增 %d, 原样保留 %d, 池现有 %d 条"
           % (len(revived), len(failed), len(purged), PURGE_AT, len(fresh_new), kept, len(rows)))
+    if dropped:
+        print("  超上限裁剪 %d 条(池上限 %d, 失败次数最多的先丢)" % (dropped, POOL_CAP))
     for u in purged[:5]:
         print("  清除: %s" % u[:90])
     return 0
