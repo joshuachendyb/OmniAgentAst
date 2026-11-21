@@ -16,6 +16,9 @@
 //   ① 病根是行高被行内撤销 ✕ 决定 —— 24px 的按钮把 12px 文字行从 25px 撑到 32px,
 //      再叠组 gap 4, 整列的竖向节奏比刻度大 11px; 现改 ✕ 绝对定位居中(不参与行高), 行距只由
 //      PanelRow 上下内距(4+4)决定, 组内 gap 一并去掉(一处归属) — 商量-2026-11-18
+// 2026-11-22 商量 - 方案B 折行: 信任路径原单行省略号(nowrap+ellipsis)仍会截掉长路径尾部,
+//   用户反馈无法辨认完整路径; 改允许折行(去 nowrap/overflow/textOverflow, 加 wordBreak:break-all),
+//   任意长路径完整多行展示; PanelRow 为 flex-start + 撤销 ✕ 绝对定位垂直居中, 多行折行布局兼容 — 商量-2026-11-22
 /**
  * TrustPanel - 会话信任清单入口(集成于 TaskInfoBar 右组)
  *
@@ -49,13 +52,9 @@ import {
 } from '@/utils/stepStyles';
 import { Gap, LineHeight } from '@/theme/spacing';
 import { CONTROL_HEIGHT_SM } from '@/theme/controlScale';
-import { shortenPath } from '@/utils/projectPath';
 import { FloatingEntry } from '../taskinfo/FloatingEntry';
 
 const CARD_W = 32 * FontSize.SECONDARY; // 32 汉字宽 ≈ 384px
-
-/** 路径展示上限(字符): 384px 卡片内 12px 等宽约容 46 字, 取 44 —— 超长的提前做段级裁剪, 短的原样 */
-const PATH_MAX = 44;
 
 /**
  * 撤销 ✕ 的站位宽(= 控件小档盒宽 24)。
@@ -227,7 +226,12 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
                     }}
                   >
                     <span
-                      // 长路径先做段级裁剪, 仍过长时由尾部省略号兜底; 全文挂 title 供核对
+                      // 完整路径展示, 超长时由尾部省略号兜底; 全文挂 title 供核对
+                      // 2026-11-22 小欧 - 修复路径裁剪: 用户反馈信任窗口路径被缩短如 F:\...\proxies\PROXY
+                      //   无法辨认, 改原样展示完整路径(与 AuthorizationModal 操作范围行口径一致) — 小欧-2026-11-22
+                      // 2026-11-22 商量 - 方案B 折行: 单行省略号仍会截掉长路径尾部, 改允许折行
+                      //   (去掉 nowrap/ellipsis, 加 break-all 强制长 ASCII 路径断行), 任意长路径完整展示;
+                      //   PanelRow 为 flex-start + 撤销 ✕ 绝对定位垂直居中, 多行折行布局兼容 — 商量-2026-11-22
                       title={t.path ?? undefined}
                       style={{
                         flex: 1,
@@ -236,12 +240,10 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
                         fontFamily: t.path ? FontFamily.MONO : undefined,
                         color: Colors.TEXT.TERTIARY,
                         lineHeight: LineHeight.DENSE,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        wordBreak: 'break-all',
                       }}
                     >
-                      {t.path ? shortenPath(t.path, PATH_MAX) : '全部路径'}
+                      {t.path ?? '全部路径'}
                     </span>
                     <Tooltip title="撤销信任">
                       <PanelIconButton
