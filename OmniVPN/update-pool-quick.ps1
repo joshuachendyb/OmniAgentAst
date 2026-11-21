@@ -1,7 +1,10 @@
-﻿# update-pool-quick.ps1 — 节点池轻量巡检(约 1~2 分钟): 现池复验 + 死点池复活结算
-# 编写人: 小欧    日期: 2026-11-12    版本: v1.0
-# 用途: 不重建整池, 只做两件事:
+﻿# update-pool-quick.ps1 — 节点池轻量巡检(约 1~2 分钟): 现池复验 + 桶分布统计 + 死点池复活结算
+# 编写人: 小欧    日期: 2026-11-12    版本: v1.1    更新时间: 2026-11-21 10:50:00
+# 更新: v1.1 小欧 2026-11-21 现池复验后加跑 _bucket_stats.py, 直接报"活着的池子有几个不同桶、
+#                            还有几个桶没被最近 3 次换桶账本占用"(换桶策略改口径后的配套视图)
+# 用途: 不重建整池, 只做三件事:
 #   [现池复验] 把当前节点池(nodes_ordered.yaml, 缺则 nodes.yaml)逐节点重测, 报存活 x/y
+#   [桶分布]   用存活结果 join 桶快照 log\buckets.tsv, 报互不相同的桶数与换桶可用桶数
 #   [死点复活] 死点池(log\deadpool.txt)的节点追加实测(_deadpool.py revive),
 #              实测后结算(复活移出/失败+1/连 5 死清除/新死入池, record)
 # 用法: 双击 update-pool-quick.bat; 也挂在 proxy-switch.bat 尾部换桶后自动跑
@@ -43,6 +46,10 @@ if (Test-Path $poolNodes) {
         } else {
             "现池存活: $alive / $total"
         }
+        # 存活名单 join 桶快照: 报活池有几个互不相同的桶、还有几个没被最近 3 次账本占用
+        # 池文件传 $poolNodes(刚复验的那份), 不用 _bucket_stats.py 默认的 mihomo\config.yaml, 口径对齐
+        $rcStat = Step '现池桶分布 (离线统计)' @((Join-Path $here '_bucket_stats.py'), $poolNodes, '--alive', $goodPool)
+        if ($rcStat -ne 0) { "桶分布统计跳过(退出码 $rcStat), 不影响巡检结论" }
     }
 } else {
     "现池文件缺失(还没跑过 rebuild), 跳过现池复验"

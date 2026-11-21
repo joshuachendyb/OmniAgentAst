@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_probe.py — 出口身份探测与 mihomo VPN 状态检查（查桶）
-# 编写人: 小欧    版本: v2.6    更新时间: 2026-11-21 10:20:00
+# 编写人: 小欧    版本: v2.7    更新时间: 2026-11-21 11:00:00
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
@@ -22,6 +22,9 @@
 #                       新增 bucket_history_load/push/keys/is_fresh 四个函数, 历史落
 #                       log\bucket_history.json(同桶提前, 只留最近 5 个);
 #                       wait_ip_change 增 avoid_keys 参数, 落回最近用过的桶不算换桶
+#   v2.7 2026-11-21 小欧 账本深度 5 -> 3(用户要求): 现池 9 节点只有 7 个互不相同的桶,
+#                       留 5 个会把候选桶压到 2 个, 留 3 个则剩 4 个; 读取时按上限截断,
+#                       上限调小立即生效(不必等下一次入账)
 #   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
 #                       新增 --cf-trace; 出口身份带 family/loc/colo
 #   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
@@ -83,7 +86,8 @@ PROXY_PORT = 7890                      # 本地 HTTP 混合代理端口
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 换桶历史账本: 记录最近用过的出口桶, 新桶要与这 N 个都不同才算换成功 — 小欧 2026-11-21
-BUCKET_HISTORY_SIZE = 5
+# N=3: 现池只有 7 个互不相同的桶(9 节点), 取 5 会把候选桶压到 2 个, 取 3 留 4 个候选
+BUCKET_HISTORY_SIZE = 3
 BUCKET_HISTORY_PATH = os.path.join(SCRIPT_DIR, "log", "bucket_history.json")
 UNKNOWN_BUCKET = "?|?"                 # 前缀/loc 都查不到时的占位指纹, 不记入历史
 
@@ -241,7 +245,7 @@ def identity_key(ident):
 
 
 def bucket_history_load():
-    """读最近用过的出口桶(最近在前)。文件缺失或损坏时按空历史处理 — 小欧 2026-11-21"""
+    """读最近用过的出口桶(最近在前, 最多 BUCKET_HISTORY_SIZE 个); 文件缺失或损坏按空历史处理 — 小欧 2026-11-21"""
     try:
         with open(BUCKET_HISTORY_PATH, "r", encoding="utf-8") as f:
             items = json.load(f)
@@ -249,7 +253,8 @@ def bucket_history_load():
         return []
     if not isinstance(items, list):
         return []
-    return [x for x in items if isinstance(x, dict) and x.get("key") and x["key"] != UNKNOWN_BUCKET]
+    kept = [x for x in items if isinstance(x, dict) and x.get("key") and x["key"] != UNKNOWN_BUCKET]
+    return kept[:BUCKET_HISTORY_SIZE]     # 上限调小后立即生效, 不必等下一次入账
 
 
 def bucket_history_push(ident, limit=BUCKET_HISTORY_SIZE):

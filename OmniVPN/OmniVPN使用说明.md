@@ -7,7 +7,7 @@ OpenCode 免费层的配额按出口 IP 网段记账。实测结论：同一个�
 
 判定"出口换没换"的观测点是 Cloudflare trace（`https://www.cloudflare.com/cdn-cgi/trace`）。trace 返回的 `ip=` 是服务端实际看到的地址，opencode.ai 与 www.cloudflare.com 在同一张 CF 网络上，所以这个观测点最接近真实情况。出口桶的指纹由**前缀（IPv4 折 /24、IPv6 折 /48）**和**地区（loc）**组成，判定硬标准只有一条：**前缀变没变**——前缀变了就是新桶；loc 是随行的地区标注（换节点时通常跟着一起变，可佐证出口真的换了，但不单独作判桶依据）；尾号永远不算（CGNAT 场景尾号一直在变，前缀不变就还是同一个桶）。ipv4 与 ipv6 的区别只是前缀折算规则不同（/24 对 /48），不是第三条判定项。
 
-只要求"和当前桶不同"不够：池内节点少时来回切会切回刚用完的桶，配额照旧是空的。所以换桶口径是**新桶要与最近 5 次用过的桶都不同**。历史账本落在 `log\bucket_history.json`（按最近在前、同桶只留一条、最多 5 条），每次换桶前把当前桶记入账本，等到的新桶不在账本里才算换桶成功、成功后入账。池内可用桶少于 6 个时可能出现"怎么切都在最近 5 次里"，此时执行 `python exit_rotator.py --reset-history` 清空账本再换。
+只要求"和当前桶不同"不够：池内节点少时来回切会切回刚用完的桶，配额照旧是空的。所以换桶口径是**新桶要与最近 3 次用过的桶都不同**。历史账本落在 `log\bucket_history.json`（按最近在前、同桶只留一条、最多 3 条），每次换桶前把当前桶记入账本，等到的新桶不在账本里才算换桶成功、成功后入账。账本深度取 3 是因为现池 9 个节点只给出 7 个互不相同的桶，留 5 个只剩 2 个候选桶、留 3 个还有 4 个。池内可用桶少于 4 个时可能出现"怎么切都在最近 3 次里"，此时执行 `python exit_rotator.py --reset-history` 清空账本再换。
 
 ## 2 mihomo 内核：是什么、提供什么
 
@@ -19,7 +19,7 @@ mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的�
 
 **外部控制器 API（9090）**。这是整套换桶方案的支点。控制器提供 REST 接口：`GET /proxies` 列出代理组和节点，`PUT /proxies/PROXY` 切换选中节点（不重启进程、不断连接管理），`GET /proxies/<节点>/delay` 对单个节点测活。换桶脚本就是靠这三个接口实现"确定性轮换"的，全程不需要重启 mihomo。
 
-**节点内联配置**。所有节点直接写在 `mihomo\config.yaml` 的 `proxies:` 段里（当前 6 个免费节点）。不用 proxy-provider 是刻意的：换桶依赖的 `/proxies/<名>/delay` 测活接口对 provider 节点一律返回 404，组级测活接口 `/group/<组>/delay` 在大组时必返回 504，只有内联节点的逐个测活是可靠的。配置里还写了 `interface-name: WLAN`，强制连节点的流量走裸线物理网卡，不与系统上其它全局路由/代理工具抢占默认路由，可并行运行。
+**节点内联配置**。所有节点直接写在 `mihomo\config.yaml` 的 `proxies:` 段里（当前 9 个免费节点，随重建变化）。不用 proxy-provider 是刻意的：换桶依赖的 `/proxies/<名>/delay` 测活接口对 provider 节点一律返回 404，组级测活接口 `/group/<组>/delay` 在大组时必返回 504，只有内联节点的逐个测活是可靠的。配置里还写了 `interface-name: WLAN`，强制连节点的流量走裸线物理网卡，不与系统上其它全局路由/代理工具抢占默认路由，可并行运行。
 
 **选中状态记忆**。mihomo 运行时在 `mihomo\cache.db` 记住当前选中的节点，重启后恢复旧选择。这个行为无害：轮换脚本不依赖开机选的是谁，遇到失联节点会自动跳过。
 
@@ -27,9 +27,9 @@ mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的�
 
 ### 3.1 python 脚本（根目录两个）
 
-**exit_probe.py（出口探测器）** 是出口身份判定的权威实现，被换桶脚本直接 import 复用。核心函数：`cf_trace`（取 CF trace 原始字段）、`exit_identity`（汇总 IP/协议族/前缀/loc/colo 的完整出口身份）、`net_prefix` 与 `identity_key`（桶指纹的计算与比对）、`wait_ip_change`（按桶指纹等待出口真正变化，可传 `avoid_keys` 指定要避开的最近桶）、`bucket_history_load`／`bucket_history_push`／`bucket_history_keys`／`bucket_is_fresh`／`bucket_history_clear`（最近 5 次桶账本的读写与判定，落盘 `log\bucket_history.json`）、`make_client`（构造不走环境变量代理的 httpx 客户端）。它单独运行时有三种用法：**不带参数** = VPN 体检加走代理查当前出口桶两段连跑（日常首选，代理端口未运行时自动跳过走代理段）；`--mihomo` 只做完整 VPN 体检（服务进程、内核版本、节点池测活缓存、WinInet 系统代理、直连与代理出口对照）；`--cf-trace` 只查出口身份加 ASN 归属（缺省查裸线，配 `--proxy http://127.0.0.1:7890` 查走节点）。各种用法的报告都落盘 `log\exit_probe_report-*.txt`。exit=出口（网络出网点，不是"退出"），与功能名副其实。
+**exit_probe.py（出口探测器）** 是出口身份判定的权威实现，被换桶脚本直接 import 复用。核心函数：`cf_trace`（取 CF trace 原始字段）、`exit_identity`（汇总 IP/协议族/前缀/loc/colo 的完整出口身份）、`net_prefix` 与 `identity_key`（桶指纹的计算与比对）、`wait_ip_change`（按桶指纹等待出口真正变化，可传 `avoid_keys` 指定要避开的最近桶）、`bucket_history_load`／`bucket_history_push`／`bucket_history_keys`／`bucket_is_fresh`／`bucket_history_clear`（最近 3 次桶账本的读写与判定，落盘 `log\bucket_history.json`）、`make_client`（构造不走环境变量代理的 httpx 客户端）。它单独运行时有三种用法：**不带参数** = VPN 体检加走代理查当前出口桶两段连跑（日常首选，代理端口未运行时自动跳过走代理段）；`--mihomo` 只做完整 VPN 体检（服务进程、内核版本、节点池测活缓存、WinInet 系统代理、直连与代理出口对照）；`--cf-trace` 只查出口身份加 ASN 归属（缺省查裸线，配 `--proxy http://127.0.0.1:7890` 查走节点）。各种用法的报告都落盘 `log\exit_probe_report-*.txt`。exit=出口（网络出网点，不是"退出"），与功能名副其实。
 
-**exit_rotator.py（出口轮换器）** 是换桶的执行器。`switch_mihomo` 通过控制器从当前节点的下一个开始环形寻找存活节点（跳过 DIRECT/REJECT/Auto 和失联节点，逐个发测活确认），找到后 PUT 切换过去；`main` 负责参数解析和最终判定——`--verify` 打印当前出口身份与最近 5 次桶，`--wait` 模式下等到的新桶要避开最近 5 次用过的桶才返回 0，成功后新桶入账；`--reset-history` 清空账本。它复用 exit_probe 的全部桶判定与账本逻辑，自己不重复实现。exit_rotator 切换完只报告事实（返回码），撞 429 的时机判断由调用方（gateway 或人）负责。
+**exit_rotator.py（出口轮换器）** 是换桶的执行器。`switch_mihomo` 通过控制器从当前节点的下一个开始环形寻找存活节点（跳过 DIRECT/REJECT/Auto 和失联节点，逐个发测活确认），找到后 PUT 切换过去；`main` 负责参数解析和最终判定——`--verify` 打印当前出口身份与最近 3 次桶，`--wait` 模式下等到的新桶要避开最近 3 次用过的桶才返回 0，成功后新桶入账；`--reset-history` 清空账本。它复用 exit_probe 的全部桶判定与账本逻辑，自己不重复实现。exit_rotator 切换完只报告事实（返回码），撞 429 的时机判断由调用方（gateway 或人）负责。
 
 ### 3.2 双击入口（根目录三对 bat+ps1）
 
@@ -37,7 +37,7 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 **proxy-on.ps1** 完成"开机三件事"：启动 mihomo 内核（端口未监听才启动，最多等 15 秒）→ 设置 WinInet 系统代理到 `127.0.0.1:7890`（含本机地址绕过表，并用 InternetSetOption 通知系统立即生效）→ 分别查询直连出口与代理出口做对照，末尾打印换桶命令备忘。注意它只开代理不换桶——撞 429 必须点 proxy-switch。
 
-**proxy-switch.ps1** 是换桶的日常入口。先确认内核在跑（没跑就先调 proxy-on），打印换桶前出口与最近 5 次桶，然后最多 6 轮调用 exit_rotator 轮换（每轮自动跳过失联节点，单轮等待 25 秒——实测换桶 6~8 秒，同桶多等无意义；等到的桶若在最近 5 次里不算换出，本轮失败转下一轮）。轮次默认 6 而不是 4：最近 5 次桶占掉大部分可用桶后，要往后多试几个节点才碰得到新桶。任何一轮返回 0 即成功，返回 2（控制器不可达或参数错误）则中止重试。6 轮全失败会提示先试 `--reset-history`，再询问是否重建节点池，按 Y 进入 nodepool 流水线。
+**proxy-switch.ps1** 是换桶的日常入口。先确认内核在跑（没跑就先调 proxy-on），打印换桶前出口与最近 3 次桶，然后最多 6 轮调用 exit_rotator 轮换（每轮自动跳过失联节点，单轮等待 25 秒——实测换桶 6~8 秒，同桶多等无意义；等到的桶若在最近 3 次里不算换出，本轮失败转下一轮）。轮次默认 6 而不是 4：最近 3 次桶占掉一部分可用桶后，要往后多试几个节点才碰得到新桶。任何一轮返回 0 即成功，返回 2（控制器不可达或参数错误）则中止重试。6 轮全失败会提示先试 `--reset-history`，再询问是否重建节点池，按 Y 进入 nodepool 流水线。
 
 **proxy-off.ps1** 恢复直连：关闭 WinInet 系统代理；加 `-Stop` 参数时连 mihomo 进程一起停（同时收 `mihomo-slim` 与官方内核名两个进程名），停完报告当前直连出口。
 
@@ -47,11 +47,13 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 死点池存在的原因：免费节点失联后过几天常会复活，一次性淘汰太浪费；连续 5 次实测仍死的才彻底扔掉。不想跑全量重建时，双击 `update-pool-quick.bat` 做轻量巡检（约 1~2 分钟）：现池逐节点复验报存活数 + 死点池复活实测与结算，实测用临时端口 7897/9097 起独立 mihomo 实例，不影响在跑的 7890/9090 主实例；该巡检也挂在 `proxy-switch.bat` 尾部，换桶结束后自动带跑一遍。
 
-公开免费池的存活率约 1.2%（实测口径：源单 9 源进料 15001 条 → TLS 通约 2 千 → mihomo 节点约 1300 → 真能出网约 16 → 每桶留 2 共 6），节点失联与复活都属正常。
+公开免费池的存活率约 1.2%（实测口径：源单 9 源进料 15001 条 → TLS 通约 2 千 → mihomo 节点约 1300 → 真能出网约 16，按桶轮转留下不重复的桶，现池落成 9 个节点 / 7 个桶），节点失联与复活都属正常。
+
+现池到底有几个互不相同的出口桶，用 `nodepool\_bucket_stats.py` 离线统计（不起内核、不联网）：默认读真正生效的 `mihomo\config.yaml`，配 `log\buckets.tsv` 快照列出每个桶的节点清单，并标出哪些桶已被换桶账本占用、还剩几个可换的新桶；加 `--alive log\quick\good_pool.txt` 只算存活节点。它已挂在 `update-pool-quick.ps1` 的现池复验之后，轻量巡检顺手就报。`buckets.tsv` 只在 `rebuild-pool.ps1` 第 9 步刷新，轻量巡检不刷新，所以快照时间会早于巡检时间。
 
 ### 3.4 目录里其余文件
 
-`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加 6 个内联节点加 WLAN 绑定。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑"测出口定桶/轮转排序"两步够用）、换桶历史账本 bucket_history.json、探测报告 exit_probe_report-*.txt、订阅缓存、死点池 deadpool.txt 与轻量巡检目录 quick\。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
+`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加当前节点池的内联节点（现 9 个）加 WLAN 绑定。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑"测出口定桶/轮转排序"两步够用）、换桶历史账本 bucket_history.json、探测报告 exit_probe_report-*.txt、订阅缓存、死点池 deadpool.txt 与轻量巡检目录 quick\。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
 
 ## 4 脚本与命令的使用
 
@@ -108,7 +110,7 @@ powershell -ExecutionPolicy Bypass -File OmniVPN\proxy-switch.ps1
 python OmniVPN\exit_rotator.py --verify --proxy http://127.0.0.1:7890
 python OmniVPN\exit_rotator.py --target mihomo --group PROXY --wait --proxy http://127.0.0.1:7890
 
-# 池内桶都已在最近 5 次里时, 清空历史账本后重换
+# 池内桶都已在最近 3 次里时, 清空历史账本后重换
 python OmniVPN\exit_rotator.py --reset-history
 ```
 
@@ -128,9 +130,13 @@ powershell -ExecutionPolicy Bypass -File OmniVPN\update-pool-quick.ps1
 # 死点池单步手动(一般不用: 流水线第 4/11、7/11 步与巡检脚本会自动调)
 python OmniVPN\nodepool\_deadpool.py revive <tls_ok.txt> <inject_out.txt>
 python OmniVPN\nodepool\_deadpool.py record <map.txt> <good.txt> <reachable.txt> <inject.txt>
+
+# 现池桶分布统计(离线, 不起内核不联网; 报互不相同的桶数 + 被账本占掉几个 + 还剩几个可换)
+python OmniVPN\nodepool\_bucket_stats.py
+python OmniVPN\nodepool\_bucket_stats.py --alive OmniVPN\log\quick\good_pool.txt   # 只算存活节点
 ```
 
-`nodepool\` 下其余 `_*.py` 是流水线步骤实现脚本，只被编排 ps1 调用，不单独手动跑。
+`nodepool\` 下其余 `_*.py` 是流水线步骤实现脚本，只被编排 ps1 调用，不单独手动跑；`_bucket_stats.py` 例外，它是只读统计，随时可手动跑。
 
 #### 4.2.4 出口身份与隧道环境诊断
 
@@ -160,11 +166,11 @@ $env:HTTP_PROXY='http://127.0.0.1:7890'; $env:HTTPS_PROXY='http://127.0.0.1:7890
 
 ### 4.3 返回码与判定口径
 
-换桶判定标准：前缀（IPv4 折 /24、IPv6 折 /48）与 loc 一起变才算新桶，同前缀只换尾号仍是同一桶；在此基础上还要避开最近 5 次用过的桶（账本 `log\bucket_history.json`），落回这 5 个桶里同样不算换桶，哪怕它的前缀与当前桶不同。exit_rotator 的返回码：0 = 已换出最近 5 次以外的新桶，可恢复发请求；1 = 切换了但出口仍落在最近用过的桶内（候选同桶或全部失联），proxy-switch 会自动再试下一节点；2 = 控制器不可达、参数缺失或切换失败，需查现场（9090 是否在听），不能当作成功。
+换桶判定标准：前缀（IPv4 折 /24、IPv6 折 /48）与 loc 一起变才算新桶，同前缀只换尾号仍是同一桶；在此基础上还要避开最近 3 次用过的桶（账本 `log\bucket_history.json`），落回这 3 个桶里同样不算换桶，哪怕它的前缀与当前桶不同。exit_rotator 的返回码：0 = 已换出最近 3 次以外的新桶，可恢复发请求；1 = 切换了但出口仍落在最近用过的桶内（候选同桶或全部失联），proxy-switch 会自动再试下一节点；2 = 控制器不可达、参数缺失或切换失败，需查现场（9090 是否在听），不能当作成功。
 
 ### 4.4 常见问题处置
 
-`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2.5 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。6 轮全失败，多半是整池死透或池内桶都已在最近 5 次里，先 `--reset-history` 再换，仍不行走重建。
+`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2.5 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。6 轮全失败，多半是整池死透或池内桶都已在最近 3 次里，先 `--reset-history` 再换，仍不行走重建。
 
 ## 5 相关文档
 

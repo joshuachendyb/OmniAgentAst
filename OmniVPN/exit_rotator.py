@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_rotator.py — gateway 出口切换适配器（给 --switch-cmd 直接调用）
-# 编写人: 小欧    版本: v1.7    更新时间: 2026-11-21 10:20:00
+# 编写人: 小欧    版本: v1.8    更新时间: 2026-11-21 11:00:00
 #
 # 修改历史（最新在最下）:
 #   v1.0 2026-11-11 小欧 初版: warp/mihomo/tailscale/wg 四种 target, 桶判定复用 opcode225-gate.py
@@ -22,22 +22,24 @@
 #   v1.7 2026-11-21 小欧 换桶判定改为查历史账本(用户要求: 新桶要与最近 5 次的桶都不同):
 #                       切换前的桶先记入历史, --wait 等到的桶必须避开最近 5 个桶才算换成功,
 #                       成功后再入账; 新增 --reset-history 清空历史; --verify 附带历史列表
+#   v1.8 2026-11-21 小欧 账本深度改 3(用户要求, 现池 7 个桶留 5 个太紧): 文案里的次数
+#                       一律取 exit_probe.BUCKET_HISTORY_SIZE, 不再写死数字
 #
 # 用途:
 #   gateway 撞 429(FreeUsageLimitError, 按出口 IP 记配额桶)后, 调本脚本换出口,
-#   换到新桶(前缀/24·/48 + loc 变化, 且不在最近 5 次用过的桶里)才返回 0,
+#   换到新桶(前缀/24·/48 + loc 变化, 且不在最近几次用过的桶里)才返回 0,
 #   gateway 据此恢复发请求。桶判定与历史账本全部复用 exit_probe.py
 #   (exit_identity/wait_ip_change/bucket_history_*), 不重复实现。
 #
 # 用法:
-#   python exit_rotator.py --verify                 # 只打印当前出口身份(桶)+最近 5 次桶后退出
+#   python exit_rotator.py --verify                 # 打印当前出口身份(桶)+最近用过的桶后退出
 #   python exit_rotator.py --reset-history          # 清空最近换桶历史(池子换过一批桶后重置)
 #   python exit_rotator.py --target mihomo          # Clash/mihomo API 轮换到组内下一节点
 #   python exit_rotator.py --target mihomo --url http://127.0.0.1:9090 --secret xxx --group 节点选择
 #   python exit_rotator.py --target mihomo --wait --proxy http://127.0.0.1:7890
 #                                                   # 端口代理模式下用该代理观测出口身份
 # 通用参数: --wait 等待桶变化(默认关); --ip-timeout 等待秒(默认 180); --delay 切后先等 N 秒
-# 返回码: 0=已换到最近 5 次以外的新桶  1=切换后仍在最近用过的桶内  2=控制器不可达/参数缺失/切换失败
+# 返回码: 0=已换到账本以外的新桶  1=切换后仍在最近用过的桶内  2=控制器不可达/参数缺失/切换失败
 
 import argparse
 import os
@@ -49,7 +51,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-# 复用 exit_probe 的桶判定与最近 5 次桶账本(exit_identity / wait_ip_change / bucket_history_* / make_client)
+# 复用 exit_probe 的桶判定与最近 N 次桶账本(exit_identity / wait_ip_change / bucket_history_* / make_client)
 import exit_probe as gate
 
 
@@ -123,13 +125,15 @@ def main() -> int:
     except Exception:
         pass
     ap = argparse.ArgumentParser(description="gateway 出口切换适配器(换 429 配额桶)")
-    ap.add_argument("--verify", action="store_true", help="打印当前出口身份(桶)与最近 5 次桶后退出")
+    ap.add_argument("--verify", action="store_true",
+                    help="打印当前出口身份(桶)与最近 %d 次桶后退出" % gate.BUCKET_HISTORY_SIZE)
     ap.add_argument("--target", choices=["mihomo"], default="", help="切换后端, 目前只有 mihomo")
     ap.add_argument("--proxy", default="", help="观测出口用的代理(如 http://127.0.0.1:7890)")
     ap.add_argument("--url", default="http://127.0.0.1:9090", help="mihomo 外部控制器地址")
     ap.add_argument("--secret", default="", help="mihomo controller secret")
     ap.add_argument("--group", default="", help="mihomo Selector 组名(缺省自动选第一个)")
-    ap.add_argument("--wait", action="store_true", help="等桶换成最近 5 次以外的桶才返回 0")
+    ap.add_argument("--wait", action="store_true",
+                    help="等桶换成最近 %d 次以外的桶才返回 0" % gate.BUCKET_HISTORY_SIZE)
     ap.add_argument("--ip-timeout", type=int, default=180)
     ap.add_argument("--delay", type=float, default=2.0, help="切换后先等 N 秒再观测")
     ap.add_argument("--reset-history", action="store_true", help="清空最近换桶历史后退出")
@@ -142,7 +146,8 @@ def main() -> int:
         client.close()
         print("当前出口: %s" % gate.fmt_identity(ident))
         keys = gate.bucket_history_keys()
-        print("最近 %d 次桶: %s" % (len(keys), " | ".join(keys) if keys else "无记录"))
+        print("最近用过的桶: %d 个 (上限 %d): %s"
+              % (len(keys), gate.BUCKET_HISTORY_SIZE, " | ".join(keys) if keys else "无记录"))
         return 0
 
     if a.reset_history:
@@ -161,7 +166,8 @@ def main() -> int:
     # 当前桶先记入历史: 新桶必须避开它和之前用过的桶
     recent = gate.bucket_history_push(old)
     keys = gate.bucket_history_keys(recent)
-    print("最近 %d 次桶: %s" % (len(keys), " | ".join(keys) if keys else "无记录"))
+    print("最近用过的桶: %d 个 (上限 %d): %s"
+          % (len(keys), gate.BUCKET_HISTORY_SIZE, " | ".join(keys) if keys else "无记录"))
 
     if not switch_mihomo(a.url, a.secret, a.group):
         client.close()
