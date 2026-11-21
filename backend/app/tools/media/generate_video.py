@@ -24,7 +24,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from app.services.generation.vendor_spec import build_vendor_spec, vendor_duration_ms
+from app.services.generation.vendor_spec import build_vendor_fields
 from app.tools.context import get_current_generate_callback
 
 # 默认生成视频模型与错误码从工具层常量引入 — 小欧-2026-11-20
@@ -76,22 +76,6 @@ def _build_video_llm_data(
     }
 
 
-def _vendor_fields(result: Dict[str, Any], effective_model: str) -> tuple:
-    """厂商回显 → (metrics, summary 规格段, other_data, 实际模型) — 小欧-2026-11-21
-
-    规格走 vendor_spec 标准键: 时长+清晰度/质量档/用时, 映射不到就不显示; 实际模型以厂商回显为准
-    (无则用生效模型), 由本函数统一给出, 调用方不再从 metrics 反查; 其余字段整包进 other_data。
-    """
-    meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
-    model = str(meta.get("model") or "") or effective_model
-    # 编排层已算过的直接用; 缺失时从 meta 时间戳自算, 不因上游漏传而丢规格 — 小欧-2026-11-21
-    duration_ms = int(result.get("vendor_duration_ms") or 0) or vendor_duration_ms(meta)
-    spec_metrics, suffix = build_vendor_spec("video", meta, duration_ms)
-    metrics: Dict[str, Any] = {"model": {"value": model, "text": model}}
-    metrics.update(spec_metrics)
-    return metrics, suffix, ({"provider": meta} if meta else None), model
-
-
 async def generate_video(prompt: str, model: Optional[str] = None,
                          mode: str = "t2v", image: Optional[str] = None,
                          images: Optional[List[str]] = None,
@@ -140,7 +124,7 @@ async def generate_video(prompt: str, model: Optional[str] = None,
         )
     result = await generate_callback("video", effective_model, prompt, **kwargs)
     dur = int((time.monotonic() - t0) * 1000)
-    metrics, spec, other, model_echo = _vendor_fields(result, effective_model)
+    metrics, spec, other, model_echo = build_vendor_fields("video", result, effective_model)
     if not result.get("ok"):
         # 三态语义(按 settled 分, 不硬编码): settled=True=厂商确定拒绝→error 换模型/查配置;
         #   settled=False=未定(队列/网络/超时)→warning 可稍后重试
