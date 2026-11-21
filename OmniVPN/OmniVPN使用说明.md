@@ -35,7 +35,7 @@ mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的�
 
 bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
-**proxy-on.ps1** 完成"开机三件事"：启动 mihomo 内核（端口未监听才启动，最多等 15 秒）→ 设置 WinInet 系统代理到 `127.0.0.1:7890`（含本机地址绕过表，并用 InternetSetOption 通知系统立即生效）→ 分别查询直连出口与代理出口做对照，末尾打印换桶命令备忘。注意它只开代理不换桶——撞 429 必须点 proxy-switch。
+**proxy-on.ps1** 完成开代理的整套动作：启动 mihomo 内核（端口未监听才启动，最多等 15 秒）→ 设置 WinInet 系统代理到 `127.0.0.1:7890`（含本机地址绕过表，并用 InternetSetOption 通知系统立即生效）→ 打印当前节点池清单（几个节点、几个互不相同的桶、逐节点所属桶，离线读 `mihomo\config.yaml` 与 `log\buckets.tsv`，秒出），随后分别查询直连出口与代理出口做对照，末尾打印换桶命令备忘。注意它只开代理不换桶——撞 429 必须点 proxy-switch。
 
 **proxy-switch.ps1** 是换桶的日常入口。先确认内核在跑（没跑就先调 proxy-on），打印换桶前出口与最近 3 次桶，然后最多 6 轮调用 exit_rotator 轮换（每轮自动跳过失联节点，单轮等待 25 秒——实测换桶 6~8 秒，同桶多等无意义；等到的桶若在最近 3 次里不算换出，本轮失败转下一轮）。轮次默认 6 而不是 4：最近 3 次桶占掉一部分可用桶后，要往后多试几个节点才碰得到新桶。任何一轮返回 0 即成功，返回 2（控制器不可达或参数错误）则中止重试。6 轮全失败会提示先试 `--reset-history`，再询问是否重建节点池，按 Y 进入 nodepool 流水线。
 
@@ -49,7 +49,7 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 公开免费池的存活率约 1.2%（实测口径：源单 9 源进料 15001 条 → TLS 通约 2 千 → mihomo 节点约 1300 → 真能出网约 16，按桶轮转留下不重复的桶，现池落成 9 个节点 / 7 个桶），节点失联与复活都属正常。
 
-现池到底有几个互不相同的出口桶，用 `nodepool\_bucket_stats.py` 离线统计（不起内核、不联网）：默认读真正生效的 `mihomo\config.yaml`，配 `log\buckets.tsv` 快照列出每个桶的节点清单，并标出哪些桶已被换桶账本占用、还剩几个可换的新桶；加 `--alive log\quick\good_pool.txt` 只算存活节点。它已挂在 `update-pool-quick.ps1` 的现池复验之后，轻量巡检顺手就报。`buckets.tsv` 只在 `rebuild-pool.ps1` 第 9 步刷新，轻量巡检不刷新，所以快照时间会早于巡检时间。
+现池到底有几个互不相同的出口桶，用 `nodepool\_bucket_stats.py` 离线统计（不起内核、不联网）：默认读真正生效的 `mihomo\config.yaml`，配 `log\buckets.tsv` 快照列出每个桶的节点清单，并标出哪些桶已被换桶账本占用、还剩几个可换的新桶；加 `--alive log\quick\good_pool.txt` 只算存活节点，加 `--by-node` 则逐节点一行（proxy-on 启动后打的就是这一种）。它已挂在 `update-pool-quick.ps1` 的现池复验之后，轻量巡检顺手就报。`buckets.tsv` 只在 `rebuild-pool.ps1` 第 9 步刷新，轻量巡检不刷新，所以快照时间会早于巡检时间。
 
 ### 3.4 目录里其余文件
 
@@ -59,7 +59,7 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 ### 4.1 双击用法（日常）
 
-每天开始干活前双击 `proxy-on.bat`——窗口会依次打印内核就绪、系统代理启用、直连出口与代理出口对照，看完就能关（mihomo 是后台进程不受影响，但出口查询每步要 3~8 秒，别在查询中途关窗）。看"代理出口"那一项的 loc 和前缀，就是当前出口桶。
+每天开始干活前双击 `proxy-on.bat`——窗口会依次打印内核就绪、系统代理启用、节点池清单（几个节点、几个桶、逐节点所属桶）、直连出口与代理出口对照，看完就能关（mihomo 是后台进程不受影响，但出口查询每步要 3~8 秒，别在查询中途关窗）。看"代理出口"那一项的 loc 和前缀，就是当前出口桶。
 
 撞 429 时双击 `proxy-switch.bat`——窗口出现"换桶成功"即配额恢复，继续发请求；出现"换桶失败"说明节点池整体失效，按提示按 Y 重建（约 15~20 分钟），或直接双击根目录的 `rebuild-pool.bat`。
 
@@ -134,6 +134,7 @@ python OmniVPN\nodepool\_deadpool.py record <map.txt> <good.txt> <reachable.txt>
 # 现池桶分布统计(离线, 不起内核不联网; 报互不相同的桶数 + 被账本占掉几个 + 还剩几个可换)
 python OmniVPN\nodepool\_bucket_stats.py
 python OmniVPN\nodepool\_bucket_stats.py --alive OmniVPN\log\quick\good_pool.txt   # 只算存活节点
+python OmniVPN\nodepool\_bucket_stats.py --by-node   # 逐节点一行(池内轮转顺序), proxy-on 启动后打的就是这一种
 ```
 
 `nodepool\` 下其余 `_*.py` 是流水线步骤实现脚本，只被编排 ps1 调用，不单独手动跑；`_bucket_stats.py` 例外，它是只读统计，随时可手动跑。

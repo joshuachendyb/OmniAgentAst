@@ -13,7 +13,8 @@ r"""统计当前节点池的出口桶分布(离线, 不联网不起内核)。 �
   python _bucket_stats.py
   python _bucket_stats.py log\nodes_ordered.yaml
   python _bucket_stats.py --alive log\quick\good_pool.txt
-输出: 每个桶一行(前缀/loc/桶内节点, 已被账本占用的桶带标记) + 汇总行
+  python _bucket_stats.py --by-node              # 逐节点一行(按池内轮转顺序), 供 proxy-on 启动后展示
+输出: 每个桶一行(前缀/loc/桶内节点, 已被账本占用的桶带标记) + 汇总行; --by-node 则每个节点一行
 返回码: 0=正常  2=池文件或桶快照缺失
 """
 import argparse
@@ -53,12 +54,27 @@ def read_pool(path):
     return names
 
 
+def print_by_node(shown, buckets, used):
+    """逐节点一行(按池内顺序, 即轮转顺序): 节点 -> 所属桶前缀/loc — 小欧 2026-11-21"""
+    print("  #   节点                     前缀                 loc  备注")
+    print("  " + "-" * 78)
+    for i, n in enumerate(shown, 1):
+        b = buckets.get(n)
+        if not b:
+            print("  %-3d %-24s %-20s %-4s %s" % (i, n, "(未普查)", "-", "跑 _survey_buckets.py --tsv 补"))
+            continue
+        key = "%s|%s" % (b["prefix"], b["loc"])
+        tail = "最近 %d 次已用" % gate.BUCKET_HISTORY_SIZE if key in used else ""
+        print(("  %-3d %-24s %-20s %-4s %s" % (i, n, b["prefix"], b["loc"], tail)).rstrip())
+
+
 def main():
     ap = argparse.ArgumentParser(description="统计当前节点池的出口桶分布(离线)")
     ap.add_argument("pool", nargs="?", default=os.path.join(ROOT, "mihomo", "config.yaml"),
                     help="池文件, 默认 mihomo\\config.yaml")
     ap.add_argument("--tsv", default=os.path.join(WORK_DIR, "buckets.tsv"), help="桶普查快照")
     ap.add_argument("--alive", default="", help="只看存活节点(每行 延迟ms\\t名称)")
+    ap.add_argument("--by-node", action="store_true", help="逐节点一行(池内顺序), 不按桶分组")
     args = ap.parse_args()
 
     if not os.path.exists(args.pool):
@@ -93,15 +109,18 @@ def main():
           % (len(shown), len(shown) - len(missing), len(missing)))
     print("互不相同的桶: %d 个" % len(groups))
     print()
-    print("  前缀                 loc  桶内节点")
-    print("  " + "-" * 76)
-    for key in sorted(groups, key=lambda k: (k[1] or "", k[0] or "")):
-        nodes = groups[key]
-        tail = "  <- 最近 %d 次已用" % gate.BUCKET_HISTORY_SIZE if ("%s|%s" % key) in used else ""
-        print("  %-20s %-4s %d 个: %s%s"
-              % (key[0], key[1], len(nodes), ", ".join(nodes), tail))
-    if missing:
-        print("  %-20s %-4s %d 个: %s" % ("(未普查)", "-", len(missing), ", ".join(missing)))
+    if args.by_node:
+        print_by_node(shown, buckets, used)
+    else:
+        print("  前缀                 loc  桶内节点")
+        print("  " + "-" * 76)
+        for key in sorted(groups, key=lambda k: (k[1] or "", k[0] or "")):
+            nodes = groups[key]
+            tail = "  <- 最近 %d 次已用" % gate.BUCKET_HISTORY_SIZE if ("%s|%s" % key) in used else ""
+            print("  %-20s %-4s %d 个: %s%s"
+                  % (key[0], key[1], len(nodes), ", ".join(nodes), tail))
+        if missing:
+            print("  %-20s %-4s %d 个: %s" % ("(未普查)", "-", len(missing), ", ".join(missing)))
     print()
 
     pool_keys = {"%s|%s" % k for k in groups}

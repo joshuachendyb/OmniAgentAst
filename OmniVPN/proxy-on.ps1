@@ -1,10 +1,12 @@
 ﻿# proxy-on.ps1 — 一键开代理(启动 mihomo + 设系统代理 + 验证出口)
-# 编写人: 小欧    日期: 2026-11-11    版本: v2.0    更新时间: 2026-11-12 01:20:00
+# 编写人: 小欧    日期: 2026-11-11    版本: v2.3    更新时间: 2026-11-21 12:10:00
 # 更新: v1.1 小欧 2026-11-11 出口查询各需 3~8 秒, 加提示防止误判卡死关窗(实测踩过)
 # 更新: v1.2 小欧 2026-11-12 内核优先用自编精简版 mihomo-slim.exe, 缺文件回落官方原版
 # 更新: v2.0 小欧 2026-11-12 目录迁移 OmniVPN\: 内核/配置/脚本全在本目录下自洽, 不再依赖 vpn-trial\ 与 hooks\
 # 更新: v2.1 小欧 2026-11-12 输出文案统一重排: 状态措辞规范化(运行中/启用), 分节标题对齐
 # 更新: v2.2 小欧 2026-11-12 用途注释中性化: 删外部工具(skyline)提法, 改为独立 VPN 表述
+# 更新: v2.3 小欧 2026-11-21 启动成功后加打节点池清单(节点数/桶数/逐节点所属桶, 离线读配置与桶快照);
+#                             顺手修掉换桶命令备忘把 "python (Join-Path ...)" 当纯文本打印的老问题
 # 用途: 接管本机上网出口(流量经节点出去); 只改「系统代理」与本地进程, 不动路由/网卡
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File hooks\proxy-on.ps1            # 默认 mihomo:7890
@@ -58,11 +60,17 @@ if (-not ('WinInet' -as [type])) { Add-Type -TypeDefinition $sig }
 [WinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null  # INTERNET_OPTION_REFRESH
 "[OK] 系统代理: 启用 -> 127.0.0.1:$Port (仅本机地址绕过)"
 
-# 3. 验证出口(直连 vs 走代理, 对照着看才看得出生效没)
+# 3. 池子清单(离线读 mihomo\config.yaml + log\buckets.tsv, 不联网, 秒出)
+"---- 节点池 (当前生效的池子: 几个节点、几个桶, 逐节点所属桶) ----"
+$stats = Join-Path $PSScriptRoot 'nodepool\_bucket_stats.py'
+if (Test-Path $stats) { python $stats --by-node } else { "桶统计脚本缺失: $stats" }
+
+# 4. 验证出口(直连 vs 走代理, 对照着看才看得出生效没)
+$rot = Join-Path $PSScriptRoot 'exit_rotator.py'
 "---- 出口验证 (Cloudflare trace, 每项 3~8 秒, 请勿中途关窗) ----"
 "-- 直连出口 (裸线, 不经 mihomo; 恒为 loc=CN 属正常) --"
-python (Join-Path $PSScriptRoot 'exit_rotator.py') --verify
+python $rot --verify
 "-- 代理出口 (经 mihomo -> 节点, 看这一项) --"
-python (Join-Path $PSScriptRoot 'exit_rotator.py') --verify --proxy "http://127.0.0.1:$Port"
+python $rot --verify --proxy "http://127.0.0.1:$Port"
 "-- 换桶操作 (撞 429 配额时执行) --"
-"python (Join-Path $PSScriptRoot 'exit_rotator.py') --target mihomo --group PROXY --wait --proxy http://127.0.0.1:$Port"
+"python `"$rot`" --target mihomo --group PROXY --wait --proxy http://127.0.0.1:$Port"
