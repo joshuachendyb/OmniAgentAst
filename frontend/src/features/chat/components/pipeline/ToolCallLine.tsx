@@ -70,6 +70,7 @@
 // 编辑历史: 2026-11-14 商量 - 工具子行折叠箭头尺寸走令牌 FoldArrow.MD(16→14 并禁裸数字) — 商量-2026-11-14
 // 编辑历史: 2026-11-21 小欧 - 新增 history prop(冷历史回放)门控生成产物卡片: 实时任务显示、历史回放不显示;
 //   与 replay 区分(replay 含刚完成的当前任务, 用它门控会让产物在完成瞬间消失) — 小欧-2026-11-21
+// 编辑历史: 2026-11-21 小欧 - 参数浮层撤销 centered, 恢复贴按钮弹出(浮层跑到页面中间属退化, 仅本浮层撤) — 小欧-2026-11-21
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -455,9 +456,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           onOpenChange={onPanelOpenChange}
                           placement="bottomRight"
                           trigger={['click']}
-                          // 2026-10-13 小欧 - 北京老陈定案: 仅工具行参数浮层改视口居中(见 index.css
-                          //   .popover-viewport-centered 注释)。「上下文概览」「事件」两个浮层不传 centered, 行为零变化。
-                          centered
+                          // 2026-11-21 小欧 - 撤销 centered: 参数浮层恢复贴按钮弹出(居中属退化, 上下文概览浮层仍居中) — 小欧-2026-11-21
                           // 2026-11-21 小欧 - 关闭即卸载: 卡内生成产物以 objectURL 承载, 不卸载则关闭后仍被引用 — 小欧-2026-11-21
                           destroyOnClose
                           cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
