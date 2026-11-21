@@ -87,7 +87,9 @@ def _source_unreachable(text: str) -> bool:
 
 # 厂商响应里"产物本体"的键: 已单独进 out(url/b64), 元数据再存一份等于把 MB 级串翻倍
 _META_DROP_KEYS = frozenset({"b64_json", "url", "image_url", "video_url", "image", "mask"})
-# 单值护栏: 未知键承载 base64 时不把 MB 级串带进 other_data 落库
+# 键名含 b64/base64 的字符串一律当产物本体剔: 厂商自造键名(b64、base64、image_base64…)同样不能落库
+_META_DROP_KEY_PARTS = ("b64", "base64")
+# 单值护栏: 其余未知键承载 base64 时不把 MB 级串带进 other_data 落库
 _META_STR_MAX = 8192
 _META_EMPTY = object()
 
@@ -100,7 +102,10 @@ def _prune_meta(node: Any) -> Any:
     if isinstance(node, dict):
         kept = {}
         for k, v in node.items():
-            if str(k).lower() in _META_DROP_KEYS and isinstance(v, str):
+            name = str(k).lower()
+            if isinstance(v, str) and (
+                name in _META_DROP_KEYS or any(part in name for part in _META_DROP_KEY_PARTS)
+            ):
                 continue
             child = _prune_meta(v)
             if child is not _META_EMPTY:
