@@ -6,8 +6,8 @@ log-level: info
 external-controller: 127.0.0.1:9090
 proxies:
 
-  # 出口 51.255.37.164 (FR/CDG) — N907  878ms
-  - name: N907
+  # 出口 104.224.47.18 (DE/WAW) — N901  469ms
+  - name: N901
     type: vless
     server: 163.245.42.87
     port: 443
@@ -19,97 +19,37 @@ proxies:
     client-fingerprint: chrome
     reality-opts:
       public-key: "SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc"
-  # 出口 200.181.82.226 (HK/HKG) — N972  5582ms
-  - name: N972
+  # 出口 2a01:ecc0:500:562::2 (FI/AMS) — N793  1013ms
+  - name: N793
     type: vless
-    server: free.fugui.lol
-    port: 47396
-    uuid: "ead3595f-4020-4e76-a3ec-c248e1a2f2f7"
+    server: 13.143.187.220
+    port: 443
+    uuid: "66c78912-4e2d-41dc-8742-aaae2590804e"
     flow: "xtls-rprx-vision"
     udp: true
     tls: true
-    servername: swdist.apple.com
+    servername: "fi-s1.kadrhub.tech"
     client-fingerprint: chrome
     reality-opts:
-      public-key: "IjWYbHNrZb3UCQxsTJyekEOA3tHq42L6Jw3O8MmLYVQ"
-      short-id: "fa514b83"
-  # 出口 80.174.118.42 (IT/MXP) — N20  721ms
-  - name: N20
+      public-key: "eDzVz3bxkv3IoN3BUCa_aA-RicoeG7ACylYSnmS2Pgg"
+  # 出口 80.174.118.60 (IT/MXP) — N22  669ms
+  - name: N22
     type: ss
-    server: 202.50.253.45
+    server: 202.50.253.63
     port: 19999
     cipher: "aes-256-gcm"
     password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
     udp: true
-  # 出口 164.37.224.239 (NL/AMS) — N932  2550ms
-  - name: N932
-    type: vless
-    server: 196.196.148.85
+  # 出口 38.244.172.117 (NO/CPH) — N215  575ms
+  - name: N215
+    type: hysteria2
+    server: 168.113.254.247
     port: 443
-    uuid: "cda0862a-0f87-4be9-8ed8-1d0c9e382839"
-    udp: true
-    tls: true
-    servername: 5d0319t.nl7.h1clayd.click
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: "l-GzBDuNuhnjxoRlZqKvT7jAt_sbVAxhGFsAttO5kXs"
-      short-id: "361d0dd59c70516f"
-  # 出口 79.182.39.163 (NL/AMS) — N756  2942ms
-  - name: N756
-    type: vless
-    server: 196.196.148.76
-    port: 443
-    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
-    flow: "xtls-rprx-vision"
-    udp: true
-    tls: true
-    servername: 8a2e72t.nl20.h1clayd.shop
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA"
-      short-id: "8d0d0679f42ffd98"
-  # 出口 94.183.164.176 (NL/AMS) — N691  1941ms
-  - name: N691
-    type: vless
-    server: 94.183.164.176
-    port: 443
-    uuid: "12776e55-6230-48b9-b069-1bb8a04b4237"
-    udp: true
-    tls: true
-    servername: optim.tildacdn.pub
-    client-fingerprint: chrome
-    network: grpc
-    reality-opts:
-      public-key: "_KeOS5u_irk1547CMVB3RdwQzz1SzrQZk-IV-btF7TU"
-    grpc-opts:
-      grpc-service-name: ebl
-  # 出口 80.47.11.123 (PL/WAW) — N879  793ms
-  - name: N879
-    type: vless
-    server: 80.47.10.106
-    port: 443
-    uuid: "a30903dc-1bf0-4be5-8b1b-603a3a56211c"
-    udp: true
-    tls: true
-    servername: pl8.galioncc.com
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: "drl7nndYdfzZY1aQ0eUAWmNV0nsHig2uDnu9siy9biQ"
-      short-id: "a7c92e4b10d6f835"
-  # 出口 95.143.196.97 (SE/ARN) — N1065  573ms
-  - name: N1065
-    type: trojan
-    server: 95.143.196.32
-    port: 443
-    password: FkQH0Q5EFneySv20Qj3yoArD2GSb2XZF
-    udp: true
-    sni: "connect-se.mimowhat.online"
+    password: "b006650f-8771-0001-b7fa-e18fc6e80ef1"
+    sni: "vcerx-ru-67sb.my-fade.cloud"
     skip-cert-verify: true
-    alpn:
-      - h2
-      - http/1.1
-  # 出口 107.175.54.116 (US/LAX) — N1177  981ms
-  - name: N1177
+  # 出口 107.175.54.116 (US/PHX) — N1140  1867ms
+  - name: N1140
     type: vmess
     server: www.shopify.com
     port: 443
@@ -124,46 +64,58 @@ proxies:
       path: /hls/cctv5phd.m3u8
       headers:
         Host: guanwang.awsno.com
-  # 出口 80.174.118.96 (IT/MXP) — N23  779ms
-  - name: N23
-    type: ss
-    server: 202.50.253.99
-    port: 19999
-    cipher: "aes-256-gcm"
-    password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
-    udp: true
-  # 出口 79.182.39.144 (NL/AMS) — N933  4438ms
-  - name: N933
+  # 出口 48.103.230.73 (US/AMS) — N738  6472ms
+  - name: N738
     type: vless
-    server: 961ec0g.nl17.h1clayd.click
+    server: "leviko-se8900.shopingggg.ir"
+    port: 443
+    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
+    flow: "xtls-rprx-vision"
+    udp: true
+    tls: true
+    servername: 8a2e72t.nl20.h1clayd.shop
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA"
+      short-id: "8d0d0679f42ffd98"
+  # 出口 69.10.52.92 (US/EWR) — N926  4221ms
+  - name: N926
+    type: vless
+    server: 89.124.122.19
     port: 443
     uuid: "cda0862a-0f87-4be9-8ed8-1d0c9e382839"
     udp: true
     tls: true
-    servername: 961ec0g.nl17.h1clayd.click
+    servername: 0592efg.us8.h1clayd.click
     client-fingerprint: chrome
     network: grpc
     reality-opts:
-      public-key: "xn7KVKS5MOnsFrYrEeRS04JssBCOxh12rxegaDFyGkA"
-      short-id: "6d289ff0f47c0aac"
+      public-key: "cO3wYHISTeorXcM8ffaDCDdqZ-olBQL-GyZqb-W7rTk"
+      short-id: "bd8f712209a9c283"
     grpc-opts:
-      grpc-service-name: 7d5abcd7d8a1
-  # 出口 107.175.54.116 (US/LAX) — N1016  2237ms
-  - name: N1016
-    type: vmess
-    server: 172.67.190.164
+      grpc-service-name: 99f2107b03f8
+  # 出口 80.174.118.15 (IT/MXP) — N17  723ms
+  - name: N17
+    type: ss
+    server: 202.50.253.18
+    port: 19999
+    cipher: "aes-256-gcm"
+    password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
+    udp: true
+  # 出口 48.103.230.73 (US/AMS) — N737  6520ms
+  - name: N737
+    type: vless
+    server: 136.148.208.221
     port: 443
-    cipher: auto
-    uuid: "6a89a215-22bf-4bd7-9642-b95b2e09583a"
-    alterId: 0
+    uuid: "4201786b-d99b-4147-a5f0-20d47acddb81"
+    flow: "xtls-rprx-vision"
     udp: true
     tls: true
-    servername: guanwang.awsno.com
-    network: ws
-    ws-opts:
-      path: /hls/cctv5phd.m3u8
-      headers:
-        Host: guanwang.awsno.com
+    servername: 8a2e72t.nl20.h1clayd.shop
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: "VZS639V1i-35g7VXb9EoTYL-Srm7858sxcvFAunncmA"
+      short-id: "8d0d0679f42ffd98"
 
 proxy-groups:
 - name: PROXY
@@ -171,33 +123,27 @@ proxy-groups:
   proxies:
   - Auto
   - DIRECT
-  - N907
-  - N972
-  - N20
-  - N932
-  - N756
-  - N691
-  - N879
-  - N1065
-  - N1177
-  - N23
-  - N933
-  - N1016
+  - N901
+  - N793
+  - N22
+  - N215
+  - N1140
+  - N738
+  - N926
+  - N17
+  - N737
 - name: Auto
   type: url-test
   proxies:
-  - N907
-  - N972
-  - N20
-  - N932
-  - N756
-  - N691
-  - N879
-  - N1065
-  - N1177
-  - N23
-  - N933
-  - N1016
+  - N901
+  - N793
+  - N22
+  - N215
+  - N1140
+  - N738
+  - N926
+  - N17
+  - N737
   url: https://www.google.com/generate_204
   interval: 300
   tolerance: 50
