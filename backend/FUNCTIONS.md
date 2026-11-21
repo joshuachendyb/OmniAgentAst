@@ -3,7 +3,7 @@
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
 **最后更新时间**: 2026-11-14
-**最近更新**: 2026-11-21 小欧 §3.13 新登记会话生成回调与厂商字段三处落点（`vendor_spec.py` 标准规格键映射唯一真源，图像=尺寸/格式/用时、视频=时长+清晰度/质量档/用时，映射不到不显示；`invoke_generate` 出参补 `meta`/`vendor_duration_ms`；厂商响应落点由 `vendor_spec.py` 的 `build_vendor_fields` 统一裁定：metrics = 模型 + 规格 + usage 摘要 + 有价值标量（`revised_prompt`/`error_code`/`request_id`，失败态加 `task_id`）、summary = 结论 + 规格段、other_data = 只装厂商返回的 token 用量数字（其余过程量不落库），成功 summary 不复述产物指针）；§3.13 补未交付语义（b64 落盘失败/厂商无产物均报 error，`_save_b64_attachment` 瞬时失败重试 3 次）；§10.4 补 `_prune_meta`/`_put_meta`（厂商响应剔产物本体与空壳，六处出口统一）；2026-11-13 商量 §1.22 新登记通配模式花括号展开（`app/utils/glob_pattern.py` 的 `expand_braces`）：fnmatch 不认 `{a,b}` → LLM 写 `"*.{py,ts,tsx}"` 必然 0 命中且无报错；grep 工具 `glob` 与 find 工具 `pattern` 由此共用同一单源；2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最近更新**: 2026-11-21 小欧 删除后台查询工具及其配套读口/schema 类/注册项(北京老陈定案: 后台完成已有系统通知覆盖, 判定画蛇添足); 2026-11-21 小欧 后台查询工具改名(名称不带下划线)并按 [1] Tool 编写规范整改; 2026-11-21 小欧 §3.13 新登记会话生成回调与厂商字段三处落点（`vendor_spec.py` 标准规格键映射唯一真源，图像=尺寸/格式/用时、视频=时长+清晰度/质量档/用时，映射不到不显示；`invoke_generate` 出参补 `meta`/`vendor_duration_ms`；厂商响应落点由 `vendor_spec.py` 的 `build_vendor_fields` 统一裁定：metrics = 模型 + 规格 + usage 摘要 + 有价值标量（`revised_prompt`/`error_code`/`request_id`，失败态加 `task_id`）、summary = 结论 + 规格段、other_data = 只装厂商返回的 token 用量数字（其余过程量不落库），成功 summary 不复述产物指针）；§3.13 补未交付语义（b64 落盘失败/厂商无产物均报 error，`_save_b64_attachment` 瞬时失败重试 3 次）；§10.4 补 `_prune_meta`/`_put_meta`（厂商响应剔产物本体与空壳，六处出口统一）；2026-11-13 商量 §1.22 新登记通配模式花括号展开（`app/utils/glob_pattern.py` 的 `expand_braces`）：fnmatch 不认 `{a,b}` → LLM 写 `"*.{py,ts,tsx}"` 必然 0 命中且无报错；grep 工具 `glob` 与 find 工具 `pattern` 由此共用同一单源；2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 **历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
@@ -289,7 +289,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 - `heal_missing_deps` 与 `apply_heal_result` 必须拆开：前者经 `to_thread` 跑在工作线程，与事件循环并发读同一份 meta，跨线程写会读到 `available` 已翻而 `missing_deps` 未写的中间态。
 - 运行期自愈需加冷却窗（如 `_HEAL_COOLDOWN_SEC`）：装不上时每次工具调用都重试 = 每次都起一个 pip。
 
-### 2.3 后台命令执行（app/tools/fundamental/shell_background.py + bg_task_query.py）
+### 2.3 后台命令执行（app/tools/fundamental/shell_background.py）
 
 后台 Shell 命令的生命周期与查询单源。后台命令**默认无超时**，故等待必须与工具共享线程池隔离，否则卡死后台永久霸占 `tool-sync` 池致全站工具饿死（系统级卡死）。
 
@@ -300,8 +300,6 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `kill_background_by_task` | 任务非正常终态时连带杀本 task 名下全部后台进程树 | task_id: str | int（终止数） |
 | `kill_all_background` | 服务关闭时杀全部 running 后台进程树（防主循环关闭后子进程成孤儿跨重启） | reason: str = "shutdown" | int（终止数） |
 | `cleanup_orphan_artifacts` | 启动期清理上一世残留产物（重启后注册表为空，惰性清理覆盖不到致磁盘泄漏）；只动 `bgsh_*` 命名空间且 mtime 早于启动时刻 | not_after: float | int（删除数） |
-| `get_bg_info` | 取后台命令注册表快照（副本，调用方不持锁） | shell_id: str | Optional[dict] |
-| `bg_task_query` | 查询后台任务状态与输出；`output_file` 直查限输出目录内（防任意文件读取）；输出走**有界尾读**（峰值内存与文件大小无关） | shell_id=None, output_file=None | dict（build_success 标准格式） |
 
 **实现要点**
 
@@ -310,6 +308,8 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 - 输出文件超 `tuning.shell_bg_max_output_mb` 即杀进程（默认 512MB，并发 5 条峰值约 2.5GB），防日志狂写把磁盘写满。
 - 结果产物清理"先删产物、删净才 pop 注册表"，删除失败保留记录下轮重试，连续失败达上限才放弃（防注册表无限累积）。
 - 等待 Future 被取消（主循环关闭）时须兜底杀进程 + 还槽，否则成孤儿进程且信号量永久泄漏。
+- `run_shell_background` 与 `_bg_error` 的 `duration_ms` 是**启动动作**的实测墙钟耗时（`t0`/`_dur`），不等于命令运行时长；按规范 2.2 不设豁免，禁止硬编码 0。
+- 注册表 `outcome` 初值 `"running"` 表示未结束，终态才写 `completed`/`failed`/`timeout`/`oversize`/`killed`；`status` 字段已废弃，状态判定只认 `outcome`。
 
 ---
 
@@ -892,6 +892,9 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.44 | 2026-11-21 | 删除后台查询工具(北京老陈定案): 后台命令完成已有系统通知(含退出码/耗时/输出尾部)覆盖, 该工具不可替代性仅剩"读进程内注册表", 判定画蛇添足; 同批删除仅它调用的读口 `get_bg_info`/`find_bg_by_output_file`(无调用方, 不留死代码)与对应 schema 类、注册项 8 处; `ShellInput.background` 描述同步去掉"或用查询工具查询"; 通知降级落盘时保留输出文件供直接读取 | 小欧 |
+| v5.43 | 2026-11-21 | 后台查询工具语义整改(北京老陈定案): 查询是只读动作, **结论恒为 success**, 三分类 `state`=not_found(不存在/已过期) / running(仍在执行) / finished(已结束); finished 由 `outcome`(completed/failed/timeout/oversize/killed, 按文件查无注册表记录为 unknown) 细分, `source` 标 registry/file 可信度; 原实现把"查不到"当 error 且另造 `status=unknown` 与任务态混词表, 属分类错误; `_read_output_tail` 读失败不再吞成空串(改抛 OSError, 工具没读到即失败, 错误码 ERR_FILE_READ_FAILED); summary 按 state/outcome 分档(原恒写"成功", 命令失败也报成功); 同批 `run_shell_background`/`_bg_error` 的 `duration_ms` 原硬编码 0 改 `t0` 实测启动耗时(规范 2.2 不设豁免) | 小欧 |
+| v5.42 | 2026-11-21 | 后台查询工具改名(北京老陈令: 名称不带下划线), 文件/函数/注册名/schema 类/私有 builder 同步; 同批按 [1] Tool 编写规范整改该工具——补 `t0` 计时(原 4 个出口硬编码 `duration_ms=0`)、llm_data 抽私有 builder 三态复用、`action.params` 只放非空入参; §2.3 标题与函数表同步新名 | 小欧 |
 | v5.41 | 2026-11-21 | 厂商响应落点收窄(AGENTS §1.2 DRY/§1.3): 两个生图/生视频工具里各一份的 `_vendor_fields` 合并为 `vendor_spec.py` 的 `build_vendor_fields(kind, result, effective_model)`(同 4 元组出参, 唯一真源免两份拷贝各自漂移); `other_data` 从「厂商 meta 整包」收窄为**只装厂商返回的 token 用量数字**(`{"usage": {...numbers}}`, 无 usage 则 None), 其余有价值标量提到 metrics(`revised_prompt` / `error_code` / `request_id`, 失败态另加 `task_id`), 过程量(created/completed_at/progress/status/input_*)不再落库; §3.13 同步改写落点口径与函数表 | 小欧 |
 | v5.40 | 2026-11-21 | 未交付语义校正(AGENTS §1.3): b64 落盘失败与厂商无产物不再报 warning 而报 error(新增 `ERR_GENERATE_PERSIST_FAILED`, 无产物沿用 `ERR_GENERATE_REJECTED`), warning 只留未定(队列/网络/超时); `_save_b64_attachment` 解码失败不重试、写盘登记失败线性退避重试 3 次; §3.13 补 `_save_b64_attachment` 与失败语义, `_vendor_fields` 返回值改 4 元组(第 4 项直回厂商回显 model) | 小欧 |
 | v5.39 | 2026-11-21 | 生成工具规格口径定稿(AGENTS §1.3): 新增 `services/generation/vendor_spec.py` 作标准规格键映射唯一真源(`build_vendor_spec`: 图像 size/format、视频 seconds/size/quality, 别名表命中即显示未命中不显示; `vendor_duration_ms`: 时间戳别名 + 毫秒级时间戳不重复乘 1000); 工具侧 `_vendor_fields` 改调之并在 result 漏传时自算用时; 成功 summary 去掉产物段(URL/路径已在 data, 公网与本地形态话术一致), 用时标签统一「用时 N 秒」; §3.13 同步登记, §10.4 两条出口函数补 meta 出参 | 小欧 |
