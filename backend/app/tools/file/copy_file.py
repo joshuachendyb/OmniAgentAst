@@ -33,6 +33,8 @@
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(与 move 同口径: 源 EXISTS / 目标 WRITE)
 # 2026-11-03 小欧 - 目标目录已存在删除重建提示 WARNING→INFO(业务分支) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 typing.Tuple(死导入) — 小欧-2026-11-04
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 F7: copy_file — 复制文件
 
@@ -65,7 +67,8 @@ from app.tools.file.file_write_arbiter import (
     claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
 )
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -230,14 +233,14 @@ async def copy(
                 except Exception:
                     pass
             llm_data = _build_copy_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics=extra_m, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-            with_artifact_file(llm_data, destination)   # 11.6.1 产出物声明 — 小欧 2026-08-21
             # ---- observation_formatter route -------------------------------------------
             # branch: #0 空data (L73)
             # trigger: data 为 {} → if not data: return ""
             # handler: 直接返回空字符串
             # file:    observation_formatter.py:73-74
             # ------------------------------------------------------------------------------
-            return build_success(data={}, llm_data=llm_data)
+            return build_success(data={}, llm_data=llm_data,
+                                 other_data=declare_artifact_file({}, destination))
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": detail or "复制失败"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
         return build_error(data={}, llm_data=llm_data)
 

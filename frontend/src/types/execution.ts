@@ -17,6 +17,8 @@
 // 编辑历史: 2026-11-19 小欧 - question_required/resolved 合并为通用 interact(仅SSE); 字段 interaction_id/interact_kind/event/payload
 //   (phase+outcome 合并为 event 叶子语义 ask/answered/cancelled/expired) — 小欧-2026-11-19
 // 编辑历史: 2026-11-19 小欧 - ExecutionStep 补 backend_timeout?: number(paused 帧带, 供人工暂停浮层倒计时) — 小欧-2026-11-19
+// 编辑历史: 2026-11-21 小欧 - artifacts 补可选 form(file/dir/url): 产物契约第五字段, 与后端
+//   app/utils/artifacts.py 对齐; 缺省视为 file(老数据) — 小欧-2026-11-21
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -217,10 +219,12 @@ export interface ExecutionStep {
   tool_stats?: Record<string, number>;
   // 2026-09-12 小欧 三堂会审修复: artifacts 补 tool_name? —— 与 FinalStatsFrame(sse.ts:34) 对齐后端 4 字段契约
   // (tool_name/name/path/type, 见 handle_action.py 11.6.2); 原 3 字段缺 tool_name 与 sse.ts 契约分裂 — 小欧-2026-09-12
+  // 2026-11-21 小欧 - 补 form(产物契约第五字段): file/dir/url, 与后端 app/utils/artifacts.py 对齐
   artifacts?: Array<{
     tool_name?: string;
     name: string;
     path: string;
+    form?: 'file' | 'dir' | 'url';
     type: string;
   }> | null;
   // 2026-09-12 小欧: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12

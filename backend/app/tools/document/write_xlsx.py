@@ -13,6 +13,8 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 写入Excel→写EXCEL
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
 # 2026-10-20 05:27 小欧 - FIX: 删 get_column_letter 死导入(_set_xlsx_table_style 按单元格迭代定位表头行, 列字母从未使用)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -31,7 +33,8 @@ from app.tools.tool_constants import (
     ERR_WRITE_XLSX,  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_OPENPYXL
 )
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_response import build_error, build_success, build_warning, with_artifact_file
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import (  # 2026-07-31 小欧: 移除未使用 logger
     hint_for_write_error,
     permission_error_hint,
@@ -262,7 +265,6 @@ def write_xlsx(
         row_count = len(rows)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("success", duration_ms, str(path), row_count, user_sheet_name=sheet_name)
-        with_artifact_file(llm_data, str(path))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：row_count/file_path 从 data 移除，通过 llm_data.metrics/summary
         # 传入 LLM observation。summary 已包含文件路径和行数：
@@ -271,7 +273,8 @@ def write_xlsx(
         # 避免 file_path 在 summary 和详情中重复造成冗余。
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
-        return build_success(data={}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data,
+                             other_data=declare_artifact_file({}, str(path)))
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = permission_error_hint(path)

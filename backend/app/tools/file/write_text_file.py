@@ -44,6 +44,8 @@
 #   _write_file_atomic 返回值扩为(成功,错误,实写字节,实用编码), 实用编码!=请求编码时显式告警(不静默);
 #   bytes_written 调用方自猜(append 只算新增/降级整写低估), 改用落盘点实值;
 #   删 _arb_released 死标志(定值 False 后从未置 True, finally 恒真条件)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"];
+#   编码告警的 warning 分支也声明(文件确已落盘, 与 success 同口径), 条目补 form 形态 — 小欧-2026-11-21
 """
 F2: write — 写文本文件
 
@@ -63,12 +65,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS, WRITE_INPUT_MAX_BYTES
-from app.tools.tool_response import (  # 2026-08-21 小欧 11.6.1: 产出物声明
+from app.tools.tool_response import (
     build_error,
     build_success,
     build_warning,
-    with_artifact_file,
 )
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 
 
 def _build_content_preview(content: str) -> str:
@@ -455,9 +457,10 @@ async def write(
                     return build_warning(
                         data={"content_preview": _build_content_preview(checked_content)},
                         llm_data=llm_data,
+                        # 文件确已落盘(仅编码有告警), 与 fetch_webpage 的 warning 声明同口径
+                        other_data=declare_artifact_file({}, str(path)),
                     )
                 llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
-                with_artifact_file(llm_data, file_path)
                 if auto_removed_pyeof:
                     llm_data["summary"] += "（已自动移除末尾PYEOF标记）"
                     llm_data["metrics"]["auto_removed_pyeof"] = {"value": True, "text": "已自动移除文件末尾的heredoc标记PYEOF"}
@@ -472,6 +475,7 @@ async def write(
                 return build_success(
                     data={"content_preview": _build_content_preview(checked_content)},
                     llm_data=llm_data,
+                    other_data=declare_artifact_file({}, str(path)),
                 )
             else:
                 detail = error_detail or "写入文件失败"

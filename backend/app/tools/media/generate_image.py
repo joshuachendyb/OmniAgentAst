@@ -26,8 +26,10 @@
 编辑历史: 2026-11-21 小欧 落点收窄 + DRY: 原 _vendor_fields 与 generate_video 逐字重复, 合并为
   vendor_spec.build_vendor_fields(kind, result, effective_model) 单源; other_data 只装厂商 usage 数字
   (原 other_data.provider 与其余标量改走 metrics), 无 usage 时为空 dict — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 产物声明迁出 tool_response 并补形态: 公网 URL 走 declare_artifacts+artifact_from_url
+  (form=url, type 取 URL 后缀), 本地落盘走 declare_artifact_file(form=file), 两者都挂 other_data["artifacts"]
+  (不再挂 llm_data.action.artifacts, 也不再手搓条目 dict) — 小欧-2026-11-21
 """
-import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -43,11 +45,14 @@ from app.tools.tool_constants import (
     MEDIA_DEFAULT_IMAGE_MODEL,
 )
 from app.tools.tool_response import (
-    artifact_from_url,
     build_error,
     build_success,
     build_warning,
-    with_artifacts,
+)
+from app.utils.artifacts import (  # 产物契约唯一实现 — 小欧 2026-11-21
+    artifact_from_url,
+    declare_artifact_file,
+    declare_artifacts,
 )
 
 
@@ -182,11 +187,12 @@ async def generate_image(prompt: str, model: Optional[str] = None,
     # summary 只报结论与规格, 产物指针在 data(不重复); 两种形态话术一致 — 小欧-2026-11-21
     summary = f"生成图像，成功：模型 {model_echo}{spec}"
     if url:
-        artifacts = [artifact_from_url(url, "image")]
+        # 公网产物: form=url, name 取 URL 末段文件名, 签名查询串不进名字
+        other = declare_artifacts(other, [artifact_from_url(url, "image")])
         result_data: Dict[str, Any] = {"url": url, "type": "image"}
     else:
-        artifacts = [{"name": os.path.basename(file_path), "path": file_path, "type": "image"}]
+        # 本地落盘产物: 与其余写工具同一入口, form/type 由契约判定(不再手搓条目)
+        other = declare_artifact_file(other, file_path)
         result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "image"}
     llm_data = _build_image_llm_data("success", dur, summary, in_params, "成功", metrics=metrics)
-    return build_success(data=result_data, llm_data=with_artifacts(llm_data, artifacts),
-                         other_data=other)
+    return build_success(data=result_data, llm_data=llm_data, other_data=other)

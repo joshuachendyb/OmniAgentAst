@@ -8,6 +8,8 @@
 // 编辑历史: 2026-11-11 小欧 - iconOf(kind,mime) 按类型图标 + 行内 QualityBadge(quality) — 小欧-2026-11-14
 // 编辑历史: 2026-11-14 小欧 - iconOf 修 PDF 图标死代码: 原 PDF 分支在 richdoc 之后永不达; 改为按
 //   mime/文件名先判 PDF, 补 name 入参(产物行无 mime 时靠 .pdf 后缀识别) — 小欧-2026-11-14
+// 编辑历史: 2026-11-21 小欧 - iconOf 补 folder/link 两种形态图标: 产物新增目录与远程 URL 两类,
+//   原统一落 FileOutlined 与文件不可区分 — 小欧-2026-11-21
 /**
  * FileRow —— 文件抽屉的列表行（唯一实现）
  *
@@ -28,6 +30,8 @@ import {
   FileOutlined,
   FilePdfOutlined,
   FileTextOutlined,
+  FolderOutlined,
+  LinkOutlined,
   MoreOutlined,
   StarFilled,
   StarOutlined,
@@ -51,6 +55,9 @@ function iconOf(kind: string | undefined, mime: string, name: string): React.Rea
   if (k === 'audio') return <CustomerServiceOutlined />;
   if (isPdf(mime, name)) return <FilePdfOutlined />;
   if (k === 'richdoc' || k === 'text') return <FileTextOutlined />;
+  // 2026-11-21 小欧 - 产物新增两种形态: 目录/远程链接各有专属图标(原统一落 FileOutlined)
+  if (k === 'folder') return <FolderOutlined />;
+  if (k === 'link') return <LinkOutlined />;
   return <FileOutlined />;
 }
 

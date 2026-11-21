@@ -4,6 +4,8 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(截图文件)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(输出目标用 WRITE)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 screen_capture — 屏幕截图
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -28,7 +30,8 @@ from typing import Any, Dict, Optional
 
 from app.logger import logger
 from app.tools.tool_constants import ERR_SCREEN_SNAPSHOT, ERR_SCREENSHOT
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
     check_path_four_level,
@@ -197,7 +200,6 @@ def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] 
     monitor_count = result.pop("monitors", 0)
     display_val = result.pop("display", None)
     llm_data = _build_screen_capture_llm_data("success", duration_ms, image_path, region=region_val, display=display_val, monitor_count=monitor_count)
-    with_artifact_file(llm_data, image_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
     # ---- observation_formatter route -------------------------------------------
     # branch: #21 fallback (key:val)
     # trigger: 无上述20条分支匹配 — image_path/display/monitors 不命中专用分支
@@ -207,7 +209,8 @@ def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] 
     data = {"image_path": image_path}
     if display_val is not None:
         data["display"] = display_val
-    return build_success(data=data, llm_data=llm_data)
+    return build_success(data=data, llm_data=llm_data,
+                         other_data=declare_artifact_file({}, image_path))
 
 
 __all__ = ["screen_capture"]

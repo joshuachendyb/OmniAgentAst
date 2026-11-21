@@ -22,6 +22,8 @@
 // 编辑历史: 2026-11-18 opencode - RefLedgerWireEntry 补 kind(引用种类随快照落库): 冷启动后
 //   url 台账条目按外链打开, 不再被当文件重读 — opencode-2026-11-18
 // 编辑历史: 2026-11-18 商量 - taskControlApi 新增 answerQuestion(POST /chat/stream/answer), 与 confirm 同构 — 商量-2026-11-18
+// 编辑历史: 2026-11-21 小欧 - TaskArtifact 补可选 form(file/dir/url): 产物契约第五字段,
+//   与后端 app/utils/artifacts.py 对齐; 缺省视为 file(老数据) — 小欧-2026-11-21
 import api, { dedupeGet, sharedGet } from './client';
 import type { ApiRequestConfig } from './client';
 
@@ -174,6 +176,8 @@ export interface SessionTasksResponse {
 export interface TaskArtifact {
   name: string;
   path: string;
+  /** 形态: file/dir/url — 后端产物契约五字段之一 */
+  form?: 'file' | 'dir' | 'url';
   type: string;
   tool_name: string;
 }

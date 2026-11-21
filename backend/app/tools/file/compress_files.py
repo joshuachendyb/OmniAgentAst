@@ -42,6 +42,8 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的既有结论)。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 F8: compress_files — 压缩文件
 
@@ -71,7 +73,8 @@ from app.tools.context import (  # ContextVar hooks — 小欧 2026-08-12; 修�
 )
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.utils.json_utils import coerce_json
@@ -432,7 +435,6 @@ async def compress(
                 user_destination=dest, user_format=format, user_overwrite=overwrite,
                 user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
             )
-            with_artifact_file(llm_data, result.get("destination_path") or dest)   # 11.6.1 产出物声明 — 小欧 2026-08-21
             safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "file_count", "compressed_files", "compression_ratio")}
             # ---- observation_formatter route -------------------------------------------
             # branch: #18 compress
@@ -441,7 +443,8 @@ async def compress(
             # handler: _format_compress_result(data) — ratio/compression_level/encrypted/files
             # file:    observation_formatter.py:193-194
             # ------------------------------------------------------------------------------
-            return build_success(data=safe_data, llm_data=llm_data)
+            return build_success(data=safe_data, llm_data=llm_data,
+                                 other_data=declare_artifact_file({}, result.get("destination_path") or dest))
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"源路径：{path}", hint="请检查源路径和目标路径是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
         return build_error(data={}, llm_data=llm_data)
 

@@ -26,6 +26,8 @@
 // 编辑历史: 2026-10-26 小沈 - ContextOverviewFrame 恢复顶层 timestamp/content: 浮层顶部行(北京老陈令)显示
 //   timestamp+content(后端首帧写入 userinput[10]+压缩情况), 标题行后各带 timestamp; 原 2026-10-10 删的顶层回落读法不适用此处(非回落, 是新用途) — 小沈-2026-10-26
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
+// 编辑历史: 2026-11-21 小欧 - FinalStatsFrame.artifacts 补可选 form(file/dir/url): 产物契约第五字段,
+//   与后端 app/utils/artifacts.py 对齐; 缺省视为 file(老数据) — 小欧-2026-11-21
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 // 编辑历史: 2026-11-13 商量 - 任务起点与服务器时钟锚下发: 增 taskStartTime(后端权威任务起点, 与终态 duration 同源)
@@ -49,10 +51,12 @@ export interface FinalStatsFrame {
   // 2026-09-11 小欧 三堂会审修复: artifacts 补 tool_name?——后端 final_stats 实为 4 字段契约
   //   (tool_name/name/path/type, 见 backend/app/services/agent/handlers/handle_action.py 11.6.2),
   //   原 3 字段漏 tool_name 致 StaticStatsBlock 产出物列表编译错(TS2339) — 小欧-2026-09-11
+  // 2026-11-21 小欧 - 补 form(产物契约第五字段): file/dir/url, 与后端 app/utils/artifacts.py 对齐
   artifacts?: Array<{
     tool_name?: string;
     name: string;
     path: string;
+    form?: 'file' | 'dir' | 'url';
     type: string;
   }> | null;
   final_status?: 'completed' | 'failed' | 'cancelled';

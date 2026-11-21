@@ -13,6 +13,8 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 写入PDF→写PDF
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
 # 2026-11-03 小欧 - 未找到中文字体提示 WARNING→INFO(环境提示) — 小欧-2026-11-03
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 D7: write_pdf — 写入PDF文档
 
@@ -36,7 +38,8 @@ from app.logger import logger
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
 from app.tools.tool_constants import ERR_WRITE_PDF
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error, permission_error_hint
 from app.tools.validate.content_safety import check_content_safety
 from app.tools.validate.file_type_checker import check_office_file
@@ -269,14 +272,14 @@ def write_pdf(
         doc.build(elements)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("success", duration_ms, str(path), user_title=title or "", char_count=content_char_count)
-        with_artifact_file(llm_data, str(path))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：file_path 从 data 移除，通过 llm_data.summary 传入 LLM observation。
         # summary 已包含文件路径: "写入PDF成功: /path.pdf"
         # data 为空 dict 时 formatter 不追加详情，避免冗余。
         # — 小欧 2026-07-06
         # =============================================================================
-        return build_success(data={}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data,
+                             other_data=declare_artifact_file({}, str(path)))
     except PermissionError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         hint = permission_error_hint(path)

@@ -16,6 +16,8 @@
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
 # 2026-10-20 小欧 - 目标检查误拦修复: dest 缺省(默认解压到源同名目录)时 10-17 的目标检查收 raw None 必判空;
 #   改先 _resolve_output_dir 解析真实 out_dir 再查(纯推导无 I/O, 格式判断先于 makedirs 的次序不变)。
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"];
+#   解压产物是目录, 契约按 isdir 判 form="dir"(原条目无形态, 下游当文件判恒失效) — 小欧-2026-11-21
 """
 F9: extract_archive — 解压文件
 
@@ -37,7 +39,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.logger import logger
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -242,14 +245,16 @@ async def extract(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("success", duration_ms, source, user_destination=destination, user_overwrite=overwrite, extracted_files=result.get("extracted_files", 0), skipped_files=result.get("skipped_files", 0), fmt=result.get("format", ""))
-        with_artifact_file(llm_data, result["output_dir"])   # 11.6.1 产出物声明(解压目录) — 小欧 2026-08-21
         # extracted_files/skipped_files/format 已由 llm_data 承载, data 中不重复(2026-07-20)
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={"output_dir": result["output_dir"], "file_list": result.get("file_list", [])}, llm_data=llm_data)
+        # 解压产物是目录: artifact_from_file 按 isdir 判 form="dir", 不再被当文件判失效
+        return build_success(data={"output_dir": result["output_dir"], "file_list": result.get("file_list", [])},
+                             llm_data=llm_data,
+                             other_data=declare_artifact_file({}, result["output_dir"]))
 
     except zipfile.BadZipFile:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

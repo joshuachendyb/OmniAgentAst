@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-11-14
-**最近更新**: 2026-11-21 小欧 删除后台查询工具及其配套读口/schema 类/注册项(北京老陈定案: 后台完成已有系统通知覆盖, 判定画蛇添足); 2026-11-21 小欧 后台查询工具改名(名称不带下划线)并按 [1] Tool 编写规范整改; 2026-11-21 小欧 §3.13 新登记会话生成回调与厂商字段三处落点（`vendor_spec.py` 标准规格键映射唯一真源，图像=尺寸/格式/用时、视频=时长+清晰度/质量档/用时，映射不到不显示；`invoke_generate` 出参补 `meta`/`vendor_duration_ms`；厂商响应落点由 `vendor_spec.py` 的 `build_vendor_fields` 统一裁定：metrics = 模型 + 规格 + usage 摘要 + 有价值标量（`revised_prompt`/`error_code`/`request_id`，失败态加 `task_id`）、summary = 结论 + 规格段、other_data = 只装厂商返回的 token 用量数字（其余过程量不落库），成功 summary 不复述产物指针）；§3.13 补未交付语义（b64 落盘失败/厂商无产物均报 error，`_save_b64_attachment` 瞬时失败重试 3 次）；§10.4 补 `_prune_meta`/`_put_meta`（厂商响应剔产物本体与空壳，六处出口统一）；2026-11-13 商量 §1.22 新登记通配模式花括号展开（`app/utils/glob_pattern.py` 的 `expand_braces`）：fnmatch 不认 `{a,b}` → LLM 写 `"*.{py,ts,tsx}"` 必然 0 命中且无报错；grep 工具 `glob` 与 find 工具 `pattern` 由此共用同一单源；2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
+**最后更新时间**: 2026-11-21
+**最近更新**: 2026-11-21 小欧 §1.23 新登记产物声明契约（`app/utils/artifacts.py` 九函数）：产物条目五字段（`tool_name`/`name`/`path`/`form`/`type`）、落点由 `llm_data.action.artifacts` 改 `other_data["artifacts"]`（`action` 是动作描述，塞清单属职责混用）、只在 `exec_code ∈ {success, warning}` 收集、去重键统一（URL 去签名参数 / 本地 normcase+abspath）、上限 50 保留最新；同批 §2.1 删 `with_artifacts`/`with_artifact_file`/`artifact_from_url`/`extract_ext` 四函数登记（不做兼容层）；2026-11-21 小欧 删除后台查询工具及其配套读口/schema 类/注册项(北京老陈定案: 后台完成已有系统通知覆盖, 判定画蛇添足); 2026-11-21 小欧 后台查询工具改名(名称不带下划线)并按 [1] Tool 编写规范整改; 2026-11-21 小欧 §3.13 新登记会话生成回调与厂商字段三处落点（`vendor_spec.py` 标准规格键映射唯一真源，图像=尺寸/格式/用时、视频=时长+清晰度/质量档/用时，映射不到不显示；`invoke_generate` 出参补 `meta`/`vendor_duration_ms`；厂商响应落点由 `vendor_spec.py` 的 `build_vendor_fields` 统一裁定：metrics = 模型 + 规格 + usage 摘要 + 有价值标量（`revised_prompt`/`error_code`/`request_id`，失败态加 `task_id`）、summary = 结论 + 规格段、other_data = 只装厂商返回的 token 用量数字（其余过程量不落库），成功 summary 不复述产物指针）；§3.13 补未交付语义（b64 落盘失败/厂商无产物均报 error，`_save_b64_attachment` 瞬时失败重试 3 次）；§10.4 补 `_prune_meta`/`_put_meta`（厂商响应剔产物本体与空壳，六处出口统一）；2026-11-13 商量 §1.22 新登记通配模式花括号展开（`app/utils/glob_pattern.py` 的 `expand_braces`）：fnmatch 不认 `{a,b}` → LLM 写 `"*.{py,ts,tsx}"` 必然 0 命中且无报错；grep 工具 `glob` 与 find 工具 `pattern` 由此共用同一单源；2026-11-13 商量 §2.3 新登记后台命令执行（`shell_background.py`/`bg_task_query.py`）：后台命令默认无超时，等待须与 `tool-sync` 共享池隔离（否则卡死后台霸占工具线程池致全站饿死）；终态语义统一 `outcome` 字段；输出超上限强杀防磁盘写满；关闭与启动双侧收口防孤儿进程与磁盘残留；2026-11-10 小欧 §3.4 `parse_model_params` 补摘除契约语义（`model_params.<model>.<键>`: 显式 null/false = 从请求体移除该默认键，RFC 7396 merge-patch 同语义；首例 beam-free 上游严格校验 400 适配，代码零硬编码、摘除声明随配置走）；2026-11-09 小欧 §10.4 补登 `generate_video`（生视频唯一 HTTP 出口，提交+轮询，`mode` 仅 text/reference）与 `_video_status`/`_video_url`/`_video_reason`；同章 `generate_image`（生图唯一 HTTP 出口）与 `REJECT_STATUS` 单源；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 **历史补登**: 2026-11-08 23:45:00 小欧 §1.13 补登记 `log_and_print`（logger/__init__.py 公共函数: 日志文件+控制台双通道单点输出, 上屏判定=精确匹配(==) logging.level, 含上屏机制速查）；2026-11-07 22:00:00 小欧 §3.5 新登记 `fmt_tok`（token 体积紧凑文案 K/M 两档唯一真源，`agent_utils.py`），收口 `start_step` 摘要提示/`react_step` 裁剪 notice/`refs.notice._tokens_text` 三处散落；2026-11-03 21:32:39 小欧 §1.17 `spawn_bg` 接入面扩展：app/main.py 四处后台任务 `asyncio.create_task` 收口（_cleanup_task_ref/_journal_retention_ref/_monitoring_retention_ref/_log_watcher_ref，shutdown 仍按引用 cancel），强引用防 GC 一处实现；2026-11-03 20:10:00 小欧 §1.17 新建 app/utils/background_tasks.py `spawn_bg`（fire-and-forget 统一存引用防 GC），首接入 monitoring/middleware.py；2026-10-31 00:42:00 小欧 §3.6 `[54]` 整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
@@ -253,6 +253,36 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 
 **消费点**：`app/tools/file/grep_file_content.py`（grep 工具的 `glob` 参数）、`app/tools/file/search_files.py`（find 工具的 `pattern` 参数）——两者共用此单源，不重复实现。
 
+### 1.23 产物声明契约（artifacts.py）
+
+产物条目（工具产出物清单）的**字段定义、规范化、去重、存在性判定唯一真源**。声明端（产出型工具）、收集端（`agent_telemetry`）、读口（`storage.list_session_task_artifacts`）、前端类型全部以此为准，任何模块不得再自行解释条目字段。
+
+**五字段契约**：
+
+| 字段 | 含义 | 来源 |
+|------|------|------|
+| `tool_name` | 产出工具名 | 收集器注入（拷贝条目，不改写生产者数据） |
+| `name` | 展示名 | 本地取 `basename`；目录取目录名；URL 取末段文件名（去签名查询串） |
+| `path` | 资源地址 | 本地绝对路径 或 `http(s)` URL，唯一地址字段 |
+| `form` | 形态 | `file` / `dir` / `url`，唯一形态字段；前端只按它分派，不自行猜 |
+| `type` | 展示类型 | 扩展名（小写无点）/ `dir` / 媒体类别 / `file` / `url` |
+
+**落点**：`other_data["artifacts"]`（不是 `llm_data.action`——`action` 是动作描述，塞清单属职责混用）。**收集条件**：`exec_code ∈ {success, warning}`（失败态即便误声明也不进清单）。**去重键**：URL 去 query/fragment（换签名参数仍是同一资源）；本地 `normcase(abspath)`（Windows 大小写不敏感）。**上限**：50 条，超限丢最早、保留最新并告警。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `normalize_artifact` | 任意来源条目 → 五字段标准条目（幂等）；`form` 已存在则信任不重探磁盘（历史数据形态必须稳定） | raw: Any | Optional[Dict[str, str]]（不可成立为 None） |
+| `artifact_dedup_key` | 去重键：形态 + 去签名资源地址（URL 去 query/fragment；本地 normcase+abspath） | item: Dict | str |
+| `artifact_exists` | 产物是否仍可达：url 不探网（抽屉渲染不能打外网），dir 用 `isdir`，file 用 `isfile` | item: Dict | bool |
+| `artifact_from_file` | 本地文件/目录 → 标准条目（目录判 `dir`，其余 `file`） | path: str, name: str = "" | Dict |
+| `artifact_from_url` | 公网产物 URL → 标准条目（name 取末段文件名，type 取后缀，认不出用 kind） | url: str, kind: str = "" | Dict |
+| `merge_artifacts` | 唯一合并入口：规范化 + 按去重键合并（后到覆盖先到）+ 保留最新 `MAX_ARTIFACTS` 条 | existing: list = None, new_items: list = None | list[Dict] |
+| `declare_artifacts` | 声明入口（基座）：条目挂 `other_data["artifacts"]`，追加语义，不改入参 | other_data: dict = None, items: list | dict |
+| `declare_artifact_file` | 声明入口（便捷）：由本地路径声明单个产物 | other_data: dict = None, file_path: str | dict |
+| `read_declared_artifacts` | 读取口：从工具返回体取已声明产物并规范化（收集器专用） | result: Any | list[Dict] |
+
+**工具侧用法**：`return build_success(data=..., llm_data=..., other_data=declare_artifact_file({}, str(path)))`；多条目用 `declare_artifacts`；URL 产物用 `declare_artifacts(other, [artifact_from_url(url, "image")])`。**不要**手搓条目 dict（`form`/`type` 判错就会让抽屉把远程资源与目录当本地文件判"已不存在"）。
+
 ---
 
 ## 二、工具返回层（app/tools/）
@@ -265,9 +295,6 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `build_error` | 构建错误响应 | data, llm_data, other_data, **extra | dict |
 | `build_warning` | 构建警告响应 | data, llm_data, other_data, **extra | dict |
 | `build_missing_dep_error` | 缺库统一错误体（`ERR_MISSING_DEPENDENCY`）。文案分三级：系统自动装失败 → LLM 用 `bash` 自装 → 转管理员；锁定依赖（httpx/httpcore）不给自装指示，直指按锁定版本由管理员装；收尾统一给"改用其他工具继续任务"的出路，**不终止 ReAct loop**。错误码落 `llm_data.status.code`，随全项目错误体约定 | tool_name: str, missing: list = None, agent_can_install: bool = None | dict |
-| `with_artifacts` | 产出型工具声明产物清单：挂 `llm_data.action.artifacts`，供 final_stats / 产物抽屉消费 | llm_data: dict, items: list[{name, path, type}] | dict |
-| `with_artifact_file` | 由文件路径便捷声明产物（name/path/type 自动取） | llm_data: dict, file_path: str | dict |
-| `artifact_from_url` | 公网产物 URL → 产物条目；`name` 按 URL 路径真实后缀定名（认不出用 kind 默认名），不把签名查询串带进名字 | url: str, kind: str（image/video） | dict |
 
 ---
 
@@ -892,6 +919,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.45 | 2026-11-21 | **§1.23 新登记产物声明契约**(小欧): 新建 `app/utils/artifacts.py` 作产物条目唯一契约模块（九函数：`normalize_artifact`/`artifact_dedup_key`/`artifact_exists`/`artifact_from_file`/`artifact_from_url`/`merge_artifacts`/`declare_artifacts`/`declare_artifact_file`/`read_declared_artifacts`）。字段定五字段 `tool_name`/`name`/`path`/`form`/`type`——原四字段缺形态维度，URL 与解压目录被下游当本地文件判失效；`form`(file/dir/url) 成为唯一形态字段，前端只按它分派。落点由 `llm_data.action.artifacts` 改 `other_data["artifacts"]`（`action` 是动作描述，塞清单属职责混用 SRP）。收集条件收窄为 `exec_code ∈ {success, warning}`（失败态误声明不进清单）；去重键统一（URL 去 query/fragment——换签名仍是同一条；本地 `normcase(abspath)`）；上限 50 保留最新并告警（长任务末尾产物才是用户关心的）。§2.1 同步删除 `with_artifacts`/`with_artifact_file`/`artifact_from_url`/`extract_ext` 四函数与 `_ARTIFACT_SUFFIXES` 登记，不做兼容层（禁 backward） | 小欧 |
 | v5.44 | 2026-11-21 | 删除后台查询工具(北京老陈定案): 后台命令完成已有系统通知(含退出码/耗时/输出尾部)覆盖, 该工具不可替代性仅剩"读进程内注册表", 判定画蛇添足; 同批删除仅它调用的读口 `get_bg_info`/`find_bg_by_output_file`(无调用方, 不留死代码)与对应 schema 类、注册项 8 处; `ShellInput.background` 描述同步去掉"或用查询工具查询"; 通知降级落盘时保留输出文件供直接读取 | 小欧 |
 | v5.43 | 2026-11-21 | 后台查询工具语义整改(北京老陈定案): 查询是只读动作, **结论恒为 success**, 三分类 `state`=not_found(不存在/已过期) / running(仍在执行) / finished(已结束); finished 由 `outcome`(completed/failed/timeout/oversize/killed, 按文件查无注册表记录为 unknown) 细分, `source` 标 registry/file 可信度; 原实现把"查不到"当 error 且另造 `status=unknown` 与任务态混词表, 属分类错误; `_read_output_tail` 读失败不再吞成空串(改抛 OSError, 工具没读到即失败, 错误码 ERR_FILE_READ_FAILED); summary 按 state/outcome 分档(原恒写"成功", 命令失败也报成功); 同批 `run_shell_background`/`_bg_error` 的 `duration_ms` 原硬编码 0 改 `t0` 实测启动耗时(规范 2.2 不设豁免) | 小欧 |
 | v5.42 | 2026-11-21 | 后台查询工具改名(北京老陈令: 名称不带下划线), 文件/函数/注册名/schema 类/私有 builder 同步; 同批按 [1] Tool 编写规范整改该工具——补 `t0` 计时(原 4 个出口硬编码 `duration_ms=0`)、llm_data 抽私有 builder 三态复用、`action.params` 只放非空入参; §2.3 标题与函数表同步新名 | 小欧 |

@@ -34,6 +34,10 @@
 // 编辑历史: 2026-11-16 opencode 修正: 上传入口在 capabilities 未加载前置灰, 避免 accept 为空时
 //   选择器放开全部类型而由后端 415 兜底(体验兜底, 白名单真源仍在后端)。
 
+// 编辑历史: 2026-11-21 小欧 - 产物行按后端契约 form(file/dir/url) 分派: 远程产物点击开外链、
+//   目录产物跳文件页外部目录树、本地文件维持引用/存为附件; 类型标签改用后端 type(不再从 name 切后缀),
+//   只有本地文件才判失效 —— 修公网产物与解压目录在抽屉里恒显「源文件已不存在」。
+
 /**
  * FileDrawer —— 「附件」唯一面板（一个动作：把文件放进本轮；一个仓库：合集）
  *
@@ -117,6 +121,8 @@ import {
 import { quoteFile } from '@/features/refs/quote';
 import { getLocalCapability, importLocal } from '@/features/refs/localImport';
 import { refLimitText, setMaxRefs, setAttachmentByteLimits, type ComposerRef } from '@/features/refs/store';
+import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+import { buildExternalDeepLink } from '@/utils/projectPath';
 import {
   showMessage,
   showSuccess,
@@ -317,6 +323,8 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
   const [artifacts, setArtifacts] = useState<SessionArtifactItem[]>([]);
   const [artifactsLoading, setArtifactsLoading] = useState(false);
   const [artifactsErr, setArtifactsErr] = useState(false);
+  /** 目录产物跳文件页: 有 Router 走 SPA, 无 Router(单测)整页跳 — 小欧 2026-11-21 */
+  const navTo = useOptionalNavigate();
   /** 各作用域列表失败标记（非阻断：空态改「加载失败+重试」，不再与真空态难辨 — 2026-11-07） */
   const [errScopes, setErrScopes] = useState<
     Partial<Record<ScopeKey, boolean>>
@@ -1065,19 +1073,28 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
         };
       });
 
-  /** 「本会话产物」产物行：源文件清单（真源=chat_tasks.artifacts），加入本轮=引用源文件 */
+  /** 「本会话产物」产物行：源文件清单（真源=chat_tasks.artifacts），加入本轮=引用源文件
+   *  2026-11-21 小欧 - 按后端产物契约的 form(file/dir/url) 分派: 形态由后端定, 前端不猜 —
+   *  远程产物/目录不再被当本地文件判"已不存在", 点击各走外链/目录/引用三条路。 */
   const buildArtifactRows = (): RowSpec[] =>
     artifacts
       // 已存为附件的产物: 副本台账行归「本会话附件」, 此处不重复列(同一文件只出现一处)
       .filter((a) => !lists.session.some((r) => r.source_path === a.path))
       .filter((a) => match(a.name))
       .map((a) => {
+        const form = a.form ?? 'file'; // 老数据无 form: 按文件处理, 与改造前行为一致
         const inRoot = !!a.rel_path;
-        // 类型按后端 suffix_kind→kind_options 单链查中文短名(与附件行同源, doc38 P4);
-        //   caps 未加载时该段先落「文件」, 不再闪 unknown
-        const ext = `.${(a.name.split('.').pop() || '').toLowerCase()}`;
-        const aKind = caps?.suffix_kind?.[ext];
-        const aKindLabel = kindLabel(aKind, caps);
+        // 类型: 后端 type 已是扩展名/类别(契约唯一口径), 文件走 suffix_kind 查中文短名,
+        //   目录/远程直接显示 type; caps 未加载时该段先落 type 原文, 不再闪 unknown
+        const aKind =
+          form === 'file' ? caps?.suffix_kind?.[`.${a.type}`] : undefined;
+        const aKindLabel = aKind
+          ? kindLabel(aKind, caps)
+          : form === 'dir'
+            ? '目录'
+            : form === 'url'
+              ? '远程'
+              : a.type || '文件';
         const added = inRoot
           ? refs.some((r) => r.path === a.rel_path && r.kind !== 'attachment')
           : false;
@@ -1088,18 +1105,40 @@ const FileDrawer: React.FC<FileDrawerProps> = ({
             aKindLabel,
             a.tool_name || 'AI 产出',
             formatRelativeTime(a.task_created_at),
-            inRoot ? '可引用' : '在项目根外',
+            form === 'url'
+              ? '远程产物'
+              : form === 'dir'
+                ? '目录产物'
+                : inRoot
+                  ? '可引用'
+                  : '在项目根外',
           ].join(' · '),
-          kind: aKind ?? 'unknown',
+          kind:
+            aKind ??
+            (form === 'dir' ? 'folder' : form === 'url' ? 'link' : 'unknown'),
           added,
-          invalid: !a.exists,
+          // 只有本地文件会失效: 远程资源不做网络探测, 目录用 isdir 判(后端已给 exists)
+          invalid: form === 'file' && !a.exists,
           starDisabled: true,
           onToggle: () => void toggleArtifact(a),
         };
       });
 
-  /** 产物行加入本轮：根内引用源文件(不复制)；根外则存为附件(复制固化) */
+  /** 产物行点击: 远程开外链 / 目录进文件页 / 本地文件加入本轮(根内引用, 根外存为附件) */
   const toggleArtifact = async (a: SessionArtifactItem): Promise<void> => {
+    const form = a.form ?? 'file';
+    if (form === 'url') {
+      window.open(a.path, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (form === 'dir') {
+      if (!a.exists) {
+        showMessage(ErrorType.WARNING, '该产物目录已不存在');
+        return;
+      }
+      navTo(buildExternalDeepLink(a.path));
+      return;
+    }
     if (!a.exists) {
       showMessage(ErrorType.WARNING, '该产物文件已不存在');
       return;

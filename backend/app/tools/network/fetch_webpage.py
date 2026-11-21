@@ -38,6 +38,8 @@
 #   BUG修复:save_text_to_file None/空content拒绝、路径穿越(has_path_traversal)、write None处理;
 #   schema:extract_format描述加MD守护、timeout默认30→60 | py_compile+118回归测试全过
 # 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: save_to 落盘时才 declare_artifact_file 挂
+#   other_data["artifacts"](未落盘不塞空清单), success/warning 两态都声明 — 小欧-2026-11-21
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -91,7 +93,8 @@ from app.tools.tool_constants import (
     FETCHPAGE_OUTLIMIT_BODY_BYTES,
     TOOL_BROWSER_UA,
 )
-from app.tools.tool_response import build_error, build_success, build_warning, with_artifact_file
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.tool_utils import save_text_to_file
 from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.url_validator import transcode_url, validate_proxy, validate_url
@@ -781,15 +784,18 @@ async def fetchpage(
                 _result_data = {"content": extracted_content}
                 if content_len >= 100:
                     llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                    if _saved_path:
-                        with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
-                    return build_success(data=_result_data, llm_data=llm_data)
+                    return build_success(
+                        data=_result_data, llm_data=llm_data,
+                        # 落盘才有产物: save_to 未指定时 other_data 为空(不塞空清单)
+                        other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+                    )
                 # Jina成功但内容短 → warning
                 _warn_data = {} if content_len < 30 else _result_data
                 llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, 200, False, detail=_detail, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                if _saved_path:
-                    with_artifact_file(llm_data, _saved_path)
-                return build_warning(data=_warn_data, llm_data=llm_data)
+                return build_warning(
+                    data=_warn_data, llm_data=llm_data,
+                    other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+                )
             # Jina失败 → 继续走下方httpx静态抓取(降级)
 
         playwright_result = None
@@ -818,9 +824,10 @@ async def fetchpage(
                     _detail += f"；{_save_note}"
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                if _saved_path:
-                    with_artifact_file(llm_data, _saved_path)
-                return build_success(data={"content": external_md}, llm_data=llm_data)
+                return build_success(
+                    data={"content": external_md}, llm_data=llm_data,
+                    other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+                )
             logger.warning(f"js_render渲染失败, 外部API兜底失败, 回落静态抓取: {playwright_result.get('detail')}")
             # 不return, 继续下方静态抓取
         elif js_render and not playwright_result.get("error"):
@@ -973,9 +980,10 @@ async def fetchpage(
             # file:    observation_formatter.py:117-122
             # ------------------------------------------------------------------------------
             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-            if _saved_path:
-                with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
-            return build_success(data=result_data, llm_data=llm_data)
+            return build_success(
+                data=result_data, llm_data=llm_data,
+                other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+            )
 
         # 非LLM提取路径(无prompt或降级): 原 content_len 判断
         if content_len >= 100:
@@ -983,14 +991,16 @@ async def fetchpage(
             if _save_detail:
                 _detail = (_detail + ";" + _save_detail) if _detail else _save_detail
             llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-            if _saved_path:
-                with_artifact_file(llm_data, _saved_path)   # 声明产出物(与download一致) — 小沈 2026-10-26
-            return build_success(data=result_data, llm_data=llm_data)
+            return build_success(
+                data=result_data, llm_data=llm_data,
+                other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+            )
         result_data = {} if content_len < 30 else result_data
         llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, status_code, truncated, detail=_detail_note, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-        if _saved_path:
-            with_artifact_file(llm_data, _saved_path)
-        return build_warning(data=result_data, llm_data=llm_data)
+        return build_warning(
+            data=result_data, llm_data=llm_data,
+            other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
+        )
 
     except (httpx.TimeoutException, asyncio.TimeoutError):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

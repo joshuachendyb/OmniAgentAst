@@ -70,6 +70,8 @@
 //   <url> 尖括号 autolink（初版输出裸 URL 实测吞字符——`…git，分支` 全角逗号与中文被当 URL 字符，
 //   href 变 `…git，分支` 点击跳错；改 <url> 后 URL 边界明确、后面标点独立）；
 //   只转无空白 URL，路径/代码片段仍走 toWholePathLink 不变 — 商量-2026-11-20
+// 2026-11-21 小欧 - buildExternalDeepLink 由模块内私有改为 export：文件抽屉的目录产物
+//   需要跳 /files 外部目录树，复用同一深链构造，不再在抽屉里另拼一份查询串 — 小欧-2026-11-21
 
 /**
  * 项目根 ⇄ 相对路径转换 + 深链拼装 + 正文路径识别（**单一真源**）
@@ -349,7 +351,7 @@ export const buildFileDeepLink = (
  * 项目根**外**路径深链：`/files?ext=1&path=<绝对路径>`（外部只读预览 / 外部目录树）。
  * @param absPath 盘符绝对路径（如 `E:\outside\a.py`）
  */
-const buildExternalDeepLink = (
+export const buildExternalDeepLink = (
   absPath: string,
   lineRange?: { start: number; end: number } | null
 ): string =>

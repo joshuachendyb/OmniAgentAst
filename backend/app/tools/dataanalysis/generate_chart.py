@@ -10,6 +10,8 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(图表文件)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(输出目标用 WRITE)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -29,7 +31,8 @@ from app.logger import logger
 from app.tools.dataanalysis.data_loader import load_data_to_df
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.utils.path_utils import (  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层; 2026-11-20 小欧 - 落点改用 get_tool_dir(会话默认目录优先)  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -247,7 +250,6 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, dest, file_size=file_size,
                                                     data=data, title=title, x_label=x_label, y_label=y_label)
-        with_artifact_file(llm_data, dest)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # =============================================================================
         # 数据设计：dest 从 data 移除，通过 llm_data.summary 传递给 LLM
         # summary 示例: "成功生成bar图表: D:/chart.png"
@@ -259,7 +261,8 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         # trigger: 无 key 可匹配
         # handler: 直接返回 "" (空字符串)
         # ------------------------------------------------------------------------------
-        return build_success(data={}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data,
+                             other_data=declare_artifact_file({}, dest))
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e), hint=hint_for_data_error(e), data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)

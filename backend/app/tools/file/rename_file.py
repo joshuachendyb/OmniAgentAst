@@ -10,6 +10,8 @@
 #   + changed=0, 结构化承接结果量; summary 不动
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与源合法性检查(归 路径安全层); new_name 保留字符改调 utils 原子。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(仅判源 EXISTS; dest 语义是"新文件名"非路径, 判之会误拦)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 F13: rename_file — 重命名文件
 
@@ -30,7 +32,8 @@ from app.tools.file.file_write_arbiter import (
 )
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.utils.path_utils import (  # 2026-10-17 小欧: 路径四级合法性总入口 + 保留字符原子(派生名格式检查用)
     OpCategory,
     check_path_four_level,
@@ -114,14 +117,14 @@ async def rename(
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite, file_size=_same_size, changed=0)
         llm_data["summary"] = f"重命名文件{source}，成功: {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
-        with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val) — skipped path
         # trigger: 无上述20条分支匹配 — skipped/reason 不命中专用分支
         # handler: _format_scalar_data(data) — key | value 单行列表
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data,
+                             other_data=declare_artifact_file({}, str(dst)))
 
     # 重命名目标登记写仲裁(impl 内层同任务登记幂等, 外层包裹保证rename层写意图显式) — 小欧 2026-09-20
     with claim_write(str(dst), _current_task_id.get()):
@@ -134,7 +137,6 @@ async def rename(
         except OSError:
             _new_size = 0
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite, file_size=_new_size)
-        with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — operation_id 不命中专用分支
@@ -144,6 +146,7 @@ async def rename(
         return build_success(
             data={},
             llm_data=llm_data,
+            other_data=declare_artifact_file({}, str(dst)),
         )
     else:
         error_detail = result.get("error_detail", "重命名失败")

@@ -2,8 +2,19 @@
 
 **创建时间**: 2026-11-20
 **制定人**: 小欧
+**更新时间**: 2026-11-21 19:19:20
+**更新人**: 小欧
 **适用范围**: OmniAgentAs 后端所有 tool（`backend/app/tools/**`）
 **总结来源**: `write_text_file` / `read_text_file` / `read_media_file` / `query_sql` / `search_web` / `question` / `schedule` 七个代表工具的实际代码
+
+---
+
+## 版本历史
+
+| 版本 | 时间 | 签名 | 修改简介 |
+|---|---|---|---|
+| V1.6 | 2026-11-21 19:19:20 | 小欧 | 3.3.2 产物声明契约改写：唯一实现迁至 `app/utils/artifacts.py`，条目定五字段（`tool_name`/`name`/`path`/`form`/`type`），落点由 `llm_data.action.artifacts` 改 `other_data["artifacts"]`（职责归位），收集条件收窄为 `exec_code ∈ {success, warning}`，去重键统一（URL 去签名参数 / 本地 normcase+abspath），上限 50 保留最新；声明入口改 `declare_artifact_file`/`declare_artifacts`/`artifact_from_url`。3.4.5 同步说明迁出与四旧函数删除（不留兼容别名）；3.6 `other_data` 键表补 `artifacts`（7→8 键）；四章消费对照与五章自查清单同步新落点 |
+| V1.5 | 2026-11-21 16:56:35 | 小欧 | 2.1 阻塞工具举例去掉已删除的工具名，仅留 `shell`/`query_sql`（本规范只写入口/出口通用要求，不记录具体工具的增删）；历史条目按原样保留，不删历史 |
 
 ---
 
@@ -25,7 +36,7 @@ async def <tool_name>(param1: type, param2: Optional[type] = None, ...) -> Dict[
 
 | 要求 | 说明 |
 |---|---|
-| `async def` | 所有工具统一异步，即便内部是同步操作 |
+| `async def` 或 `def` | 执行器按 `inspect.iscoroutinefunction` 分流（协程直调 / 同步走有界线程池），**两种都支持**；有 I/O 等待优先 `async`，纯阻塞工具（如 `shell`/`query_sql`）保持 `def`，**禁止把阻塞工具硬改 `async`**（会取消线程卸载、阻塞事件循环，见 `tool_retry_engine.py:283`） |
 | 类型注解 | 参数与返回值 `-> Dict[str, Any]` 必须完整 |
 | 可选参数 | 用 `Optional[X] = None`；有业务默认值的用具体默认值（如 `mode: str = "t2v"`、`limit: int = 50`） |
 | 返回类型 | 恒为 `Dict[str, Any]`，且必须是 `build_success/error/warning` 产出的三字段结构 |
@@ -43,6 +54,8 @@ duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 ```
 
 证据：`write_text_file`、`query_sql`、`search_web`、`question`、`schedule` 全部如此。
+
+**计时是硬要求**：所有工具入口第一行取 `t0`，各出口按实际耗时算 `duration_ms`，一律不得硬编码 `0`。没有例外，不设豁免。
 
 ### 2.3 入参定位（路径类工具）
 
@@ -121,7 +134,7 @@ def _normalize_items(items: Any) -> Tuple[List[Dict], str, List[str]]:
 
 ### 2.5 schema 与描述
 
-工具在 `*_register.py` 里注册，提供 `description` / `input_model`（扁平） / `examples`。描述要消除含糊、明确参数语义与执行结果的输出形态；`hide_from_steps=True` 仅用于走独立通道的事件类工具（如 `schedule`），普通工具一律默认可见。
+工具在 `*_register.py` 里注册，提供 `description` / `input_model`（扁平） / `examples`。描述要消除含糊、明确参数语义与执行结果的输出形态；`hide_from_steps=True` 仅用于走独立通道、不进前端步骤流工具行的交互类工具。**当前实际声明者只有 `schedule` 与 `question` 两个**（`agent_register.py:74` 的 `hide_from_steps = {"schedule", "question"}`）；生成类工具已于 2026-11-20 回归通用工具行（`media_register.py:9`）。普通工具一律默认可见。
 
 ---
 
@@ -141,7 +154,7 @@ def _normalize_items(items: Any) -> Tuple[List[Dict], str, List[str]]:
 
 ### 3.0 出口分流：三路（LLM / 前端 SSE / 落库 DB）
 
-`data` 和 `llm_data` 都是 tool 出口的东西（由 4 个函数组装成一个 result 返回）。出口之后**分成三路**，各自取不同的字段、走不同的函数——三路都要高准确度，不能串味：
+`data` 和 `llm_data` 都是 tool 出口的东西（由构建外壳与私有 builder 组装成一个 result 返回，函数族见 3.4）。出口之后**分成三路**，各自取不同的字段、走不同的函数——三路都要高准确度，不能串味：
 
 ```
 tool 返回 {data, llm_data, other_data}
@@ -161,7 +174,7 @@ tool 返回 {data, llm_data, other_data}
    │       · llm_data  → ToolResultRenderer 读 summary/detail/hint/duration_ms/metrics
    │       · raw_data  → = result["data"]，前端「结果」视图（ParamsPanel）
    │       · data_text → 前端折叠文本（字符串 tool_result 兜底）
-   │       · other_data→ 编排层信号（return_direct/attachment/warning）
+   │       · other_data→ 编排层信号（attachment 生效；return_direct/warning 现状见 3.6）
    │
    └─ 路 C：落库 DB（历史回放 / 统计权威源）
          agent_runner._route_step_to_db → append_step
@@ -180,7 +193,7 @@ tool 返回 {data, llm_data, other_data}
 | `llm_data.duration_ms/metrics` | 进观察文本标签 | 结果区尾部小标签 | 原样存 |
 | `data`（payload） | `format_data_detail(data)` → "详情"段 | `raw_data` → 前端「结果」视图（edit diff 在 `raw_data.diff`） | 原样存 `tool_result[i].raw_data` |
 | `data_text`（格式化文本） | **LLM 与历史回放的唯一文本源** | 字符串 tool_result 兜底折叠显示 | 原样存 `tool_result[i].data_text` |
-| `other_data` | 编排层收集 return_direct/attachment/warning | `tool_result[i].other_data` 原样下发 | 原样存 |
+| `other_data` | 编排层收集 attachment（return_direct/warning 现状见 3.6） | `tool_result[i].other_data` 原样下发 | 原样存 |
 
 **路 C 与路 B 的关系**：落库（路 C）和前端 SSE（路 B）**同源**——都是 `build_observation` 产出的同一个 step 帧 `ed`：一路经 `format_agent_sse` 转发给前端，一路经 `_route_step_to_db` 原样写进 `chat_task_steps.step_json`。所以前端此刻看到的 step 和历史回放看到的 step 是同一份（仅 SSE 转发时会按 `hide_from_steps` 摘除隐藏工具，落库不摘）。**路 C 不是路 A/路 B 的综合，而是它们的共同源头。**
 
@@ -190,7 +203,13 @@ tool 返回 {data, llm_data, other_data}
 - 三路共用同一个 `build_observation` 构建点：`obs_text` 一路进 LLM tool 消息（路A）、一路作 `data_text` 进前端 tool_result（路B）、一路随 step_json 落库供回放（路C）。
 - 历史回放读的是 `step_json` 里的 `data_text`，不是重新 format——所以 `data_text` 是回放唯一文本源。
 
-证据：`observation_builder.build_observation`（L80-174）、`observation_formatter.build_observation_text/format_llm_observation`、`agent_runner._route_step_to_db`（L552-586）、`storage.append_step`（step_json 完整落库，storage.py L58/311/358）、`sseParser.ts` observation 分支（L995-1013）、`ToolResultRenderer/index.tsx`。
+**非标准出口形态（与本地代码一致，工具编写者须知）**：上面三路分流描述的是"工具返回标准三字段"的正常路径。实际 `build_observation` 还会收到三类非标准 `result`，由外围机制（安全门禁 / 重试引擎 / 有界执行器）产生，**工具自身不构造、也不能假设只会走标准路径**：
+
+- **`result` 为 `Exception`**：工具执行抛异常，`build_observation` 走异常分支生成 `Observation: 工具X执行异常...`，不读 data/llm_data（`observation_builder.py:110-112`）；
+- **`result is None`**：全工具被安全拦截、`results` 缺失该 call 的结果，`build_observation` 合成占位 `{"llm_data": {"status": {"exec_code": "error"}, "summary": "已安全拦截：X"}, "other_data": {"synthetic": True}}`（`observation_builder.py:107-109`），使 ObservationStep 必然发出；
+- **`llm_data.status` 为 `str` 等畸形**：`build_observation` 用 `isinstance` 防御，避免 `.get` 抛 `AttributeError` 炸掉整轮观察（`observation_builder.py:116-119`）。
+
+证据：`observation_builder.build_observation`（L80-194）、`observation_formatter.build_observation_text/format_llm_observation`、`agent_runner._route_step_to_db`（L552-586）、`storage.append_step`（step_json 完整落库，storage.py L58/311/358）、`sseParser.ts` observation 分支（L995-1013）、`ToolResultRenderer/index.tsx`。
 
 ### 3.1 `data` = tool 执行结果的输出（不是入参回显）
 
@@ -254,6 +273,10 @@ tool 返回 {data, llm_data, other_data}
 
 证据：`_build_write_text_file_llm_data`/`_build_query_sql_llm_data`/`_build_search_web_llm_data`/`_build_question_llm_data`/`_build_schedule_llm_data` 都用私有 builder 三态复用，字段结构完全一致——这是要照着学的规范做法。
 
+**错误码来源（与代码一致）**：`status.code` 统一取 `app/tools/tool_constants.py` 的 `ERR_*` 常量（按 file / shell / network / desktop / document / dataanalysis / system / win_registry 等域分组，100+ 个，如 `ERR_FILE_WRITE_FAILED`、`ERR_PARAMETER_INVALID`、`ERR_PARAMETER_EMPTY`、`ERR_MISSING_DEPENDENCY`），**禁止自造字符串错误码**。
+
+**同名不同层陷阱（与代码一致）**：`action` 键在 `data` 与 `llm_data` 两层语义不同——`llm_data.action` 是 LLM 展示目标（tool/tool_zh/params），`data` 若也出现 `action` 则是工具自带快照；前端 raw 视图读 `data`、LLM 观察读 `llm_data.action`，取值勿混（`tool_response.py:49/66/83` 注释，2026-10-04 小欧）。
+
 ### 3.3 tool 执行结果的输出（data）与任务产出物（artifacts）是两个概念
 
 这是最容易搞错的地方（data/llm_data 区别见本章开头总纲表）。**"tool 执行结果的输出"和"任务产出物"是完全不同的两件事，严禁混淆。**
@@ -268,25 +291,71 @@ tool 返回 {data, llm_data, other_data}
 
 | 环节 | 函数/位置 | 时机 |
 |---|---|---|
-| tool 声明 | 产出型工具成功时 `with_artifacts(llm_data, [...])` / `with_artifact_file` 挂到 `llm_data.action.artifacts` | 每次 tool 成功 |
-| 遥测收集 | `agent_telemetry.collect_and_report` → `on_tool_call` → `_merge_artifacts` 合入内存态 `telemetry._artifacts`（按 tool_name+path 去重，上限 50） | 每批工具执行后 |
+| tool 声明 | 产出型工具在 `other_data` 里声明：`declare_artifact_file({}, path)`（本地单个）/ `declare_artifacts(other, items)`（多条目）/ `artifact_from_url(url, kind)`（公网 URL 造条目） | 每次 tool **成功或警告**（`exec_code ∈ {success, warning}`） |
+| 遥测收集 | `agent_telemetry.collect_and_report` → `read_declared_artifacts`（读 `other_data["artifacts"]`）→ 拷贝条目注入 `tool_name` → `merge_artifacts` 合入 `telemetry._artifacts` | 每批工具执行后 |
 | 终态落库 | `agent_runner` 终态 `db_ops.update_task(..., artifacts=telemetry._artifacts)` → `chat_tasks.artifacts` | 任务结束时 |
 | 前端呈现 | `list_session_task_artifacts` 读 `chat_tasks.artifacts` → 会话「产出物」抽屉 | 前端打开抽屉时 |
 
-所以产出物的**真源是 `chat_tasks.artifacts`**，由 `agent_telemetry` 生成、`agent_runner` 落库——是独立于单次 tool 返回的一整条链路。`llm_data.action.artifacts` 只是这条链路的**输入声明**（tool 告诉遥测"我产出了什么"），不是产出物本身。
+所以产出物的**真源是 `chat_tasks.artifacts`**，由 `agent_telemetry` 生成、`agent_runner` 落库——是独立于单次 tool 返回的一整条链路。`other_data["artifacts"]` 只是这条链路的**输入声明**（tool 告诉遥测"我产出了什么"），不是产出物本身。
+
+**产物声明契约（唯一实现 `app/utils/artifacts.py`，2026-11-21 起）**：
+
+条目固定五字段，任何模块不得自行解释或另造字段：
+
+| 字段 | 含义 | 来源 |
+|---|---|---|
+| `tool_name` | 产出工具名 | **收集器注入**（拷贝条目，不改写工具返回体里的原条目） |
+| `name` | 展示名 | 本地取 `basename`；目录取目录名；URL 取末段文件名（签名查询串不进名字） |
+| `path` | 资源地址 | 本地绝对路径 或 `http(s)` URL，**唯一地址字段** |
+| `form` | 形态 | `file` / `dir` / `url`，**唯一形态字段**；前端只按它分派，不自行猜 |
+| `type` | 展示类型 | 扩展名（小写无点）/ `dir` / 媒体类别 / `file` / `url` |
+
+**声明入口（工具侧只用这三个，不要手搓条目 dict）**：
+
+| 函数 | 角色 | 用法 |
+|---|---|---|
+| `declare_artifact_file(other_data, path)` | **单文件便捷入口**，内部走 `artifact_from_file` 判形态（目录自动 `form="dir"`） | 写文件/下载/压缩/解压/截图/改文件等约 15 个工具 |
+| `declare_artifacts(other_data, items)` | **基座入口**，追加语义（`merge_artifacts` 去重+上限），不改入参 | 多条目清单、或配合 `artifact_from_url` 声明公网产物 |
+| `artifact_from_url(url, kind)` | **条目构造器**，只返回条目、不挂载（`form="url"`，`type` 取 URL 后缀，认不出用 `kind`） | `generate_image` / `generate_video` 的公网产物 |
+
+调用形态（唯一写法，与 `data` 分开给）：
+
+```python
+return build_success(
+    data={"file_path": str(path)},
+    llm_data=llm_data,
+    other_data=declare_artifact_file({}, str(path)),
+)
+```
+
+**为什么挂在 `other_data` 而不是 `llm_data.action`**：`action` 是动作描述（`tool`/`tool_zh`/`params`），往里面塞清单属职责混用（SRP）。产物声明是编排层信号，与 `attachment` 同层。
+
+**为什么必须有 `form`**：只有 `path` 时下游无法判断它是文件、目录还是远程 URL——把 URL 当本地文件 `isfile()` 判会恒"已不存在"，把解压目录当文件判同样恒失效，前端也没法决定点击该开外链、进目录树还是加入本轮。
+
+**去重与上限**：去重键统一由 `artifact_dedup_key` 给（URL 去 query/fragment——换签名参数仍是同一资源；本地 `normcase(abspath)`——Windows 大小写不敏感、相对路径归一）。上限 50 条，超限**丢最早、保留最新**并告警（长任务末尾产出的文件才是用户最关心的）。
+
+**收集条件**：只有 `exec_code ∈ {success, warning}` 才收集。失败态即便工具误声明了产物也不进清单——没交付就不算产出。
 
 #### 3.3.3 两者关系
 
 - `data` 里的 tool 执行结果输出 = 本次调用的真实 payload（前端结果视图/LLM 详情读它）
 - 任务产出物 artifacts = 跨 tool、跨轮次累加的任务级清单（遥测生成、终态落库、产物抽屉读它）
 
-不要因为 gen 工具同时填了 `data={"url":...}` 和 `llm_data.action.artifacts=[{path:url}]` 就以为"同一个东西放两处"——前者是这次 tool 的执行结果输出给 LLM/前端看，后者是向遥申报备一个任务产出物供终态汇总，用途和生命周期都不同。
+不要因为 gen 工具同时填了 `data={"url":...}` 和 `other_data.artifacts=[{path:url}]` 就以为"同一个东西放两处"——前者是这次 tool 的执行结果输出给 LLM/前端看，后者是向遥测申报一个任务产出物供终态汇总，用途和生命周期都不同。
 
-当前实现的已知不优雅：`with_artifacts` 把产出物声明塞在 `llm_data.action.artifacts`（`action` 本意是"动作描述"，塞清单属职责混用），且与 `data` 里的结果输出信息重复。这是历史机制，本规范如实记录其现状与生成链，后续根治（声明改挂 `other_data` 或统一从 `data` 派生）需单独立项，不在工具编写层擅改。
+两者的一致性靠契约保证：`data` 里的结果输出是给人/LLM 看的文本与指针，`other_data.artifacts` 是给编排层的结构化清单，字段口径统一由 `app/utils/artifacts.py` 裁定。
 
-### 3.4 出口的 4 个函数（真实源码）
+### 3.4 出口相关函数族（tool_response.py 真实源码）
 
-前面 3.1~3.3 讲清了 data/llm_data 字段规则和产出物概念，本节集中给出口代码——所有工具出口都在这 4 个函数里：**3 个构建函数**（`tool_response.py` 的 `build_success`/`build_error`/`build_warning`，包三字段外壳）+ **1 个私有 builder**（工具自己的 `_build_<tool>_llm_data`，造 llm_data 字段）。
+前面 3.1~3.3 讲清了 data/llm_data 字段规则和产出物概念。**注意：工具出口函数不止 3 个 `build_*`**——`tool_response.py` 实际提供按职责分组的函数族，工具编写会用到其中的构建外壳、缺库错误体、状态判定、产物声明，外加工具自己的私有 builder：
+
+| 组 | 函数 | 职责 |
+|---|---|---|
+| 构建外壳 | `build_success` / `build_error` / `build_warning`（L44/61/78） | 包 `{data, llm_data, other_data}` 三字段外壳 |
+| 缺库错误体 | `build_missing_dep_error`（L95） | 缺依赖统一错误体，由 `tool_executor._missing_dep_guard` 调用 |
+| 状态判定 | `is_success` / `is_warning` / `is_error`（L174/179/184） | 从 `llm_data.status.exec_code` 判态，编排层消费 |
+| 产物声明 | `app/utils/artifacts.py` 的 `declare_artifact_file` / `declare_artifacts` / `artifact_from_url` | 声明产出物到 `other_data["artifacts"]`（**已迁出 `tool_response.py`**），详见 3.3.2 |
+| 私有 builder | `_build_<tool>_llm_data`（各工具） | 造 `llm_data` 字段，见 3.4.2 |
 
 #### 3.4.1 三个构建函数（tool_response.py，三者同构，只有默认 exec_code 不同）
 
@@ -341,7 +410,7 @@ def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
 
 三者都返回 `{"data", "llm_data", "other_data"}` 三字段外壳，禁止顶层塞自定义字段（`**extra` 工具层不使用）。
 
-#### 3.4.2 私有 builder（第 4 个函数，范本）
+#### 3.4.2 私有 builder（工具自造 llm_data，范本）
 
 真实范本 `write_text_file._build_write_text_file_llm_data`（error/warning/success 三态齐全），新工具的 `_build_<tool>_llm_data` 照此结构写：
 
@@ -387,11 +456,23 @@ def _build_write_text_file_llm_data(
     }
 ```
 
-4 个函数的关系：`build_*` 包外壳（data/llm_data/other_data），`_build_<tool>_llm_data` 造 llm_data 内容（字段规则见 3.1/3.2），主函数把两者组合后返回——调用方式见 3.5。
+构建外壳与私有 builder 的关系：`build_*` 包外壳（data/llm_data/other_data），`_build_<tool>_llm_data` 造 llm_data 内容（字段规则见 3.1/3.2），主函数把两者组合后返回——调用方式见 3.5。其余三组函数见 3.4.3~3.4.5。
 
-### 3.5 主函数怎么用这 4 个函数
+#### 3.4.3 缺库错误体 `build_missing_dep_error`
 
-4 个函数的源码见 3.4（`build_*` 包外壳、`_build_<tool>_llm_data` 造 llm_data）。工具主函数里三态出口照这样调用它们：
+工具缺依赖时**不要自己写"请安装 xxx"文案**，统一由 `tool_executor._missing_dep_guard`（`tool_executor.py:107/204/212/229`）在系统自动装库仍失败时调用 `build_missing_dep_error(tool_name, missing_deps)`（`tool_response.py:95`）。它按"系统装不上 → LLM 用 bash 自装 → 转管理员"三级给可执行出路，锁定依赖（httpx/httpcore 等）不给自装指示，错误码落 `ERR_MISSING_DEPENDENCY`。该函数由引擎调用，不属于工具出口的计时范围。
+
+#### 3.4.4 状态判定 `is_success` / `is_warning` / `is_error`
+
+编排层/工具用它们从 `llm_data.status.exec_code` 判态（`tool_response.py:174/179/184`）：`is_success` 认 `success`+`warning`；`is_warning` 仅认 `warning`；`is_error` 认 `error`，且对畸形结果（无 `llm_data`）视为错误。工具自身一般不需要调，但改写/复用工具结果时要按此口径判。
+
+#### 3.4.5 产物声明三函数（已迁出本文件）
+
+`declare_artifact_file` / `declare_artifacts` / `artifact_from_url` 现住在 `app/utils/artifacts.py`（2026-11-21 迁出），职责、字段契约与调用形态见 3.3.2，此处不重复。原 `tool_response.py` 的 `with_artifacts` / `with_artifact_file` / `artifact_from_url` / `extract_ext` 与 `_ARTIFACT_SUFFIXES` 已删除，**不留兼容别名**（禁 backward）。
+
+### 3.5 主函数怎么用这些出口函数
+
+出口函数族源码见 3.4（`build_*` 包外壳、`_build_<tool>_llm_data` 造 llm_data）。工具主函数里三态出口照这样调用它们：
 
 ```python
 if <前置校验失败>:
@@ -411,6 +492,23 @@ return build_success(data=<执行结果的输出>, llm_data=_build_<tool>_llm_da
 - 异常分支要给 `hint` 可执行出路，不让 ReAct 循环停摆；
 - 大 payload（如媒体 base64）放 `data`，由 `observation_formatter` 受控截断/前端隐藏键处理，不塞进 `summary`。
 
+### 3.6 `other_data` 契约（如实记录现状，与本地代码逐项核对）
+
+`other_data` 是第三个顶层字段。**当前实际有 8 个键，状态参差**，新工具务必只使用"有明确消费方"的键，不要凭想象往 other_data 塞编排无关内容。逐键现状（2026-11-21 核对）：
+
+| 键 | 写入者（证据） | 消费方（证据） | 状态 |
+|---|---|---|---|
+| `attachment` | `fetch_webpage.py:606`（抓图片/PDF 的 base64 媒体，`_build_media_result`） | `observation_builder.py:181` → `orchestration["attachments"]` → `attachment_wire`（原生多模态投喂/降级） | ✅ 生效 |
+| `usage` | `generate_image` / `generate_video`（值来自 `vendor_spec.py:136` 的 token 用量） | 落库/遥测，不进 LLM | ✅ 生效 |
+| `artifacts` | 产出型工具经 `app/utils/artifacts.py` 的 `declare_artifact_file` / `declare_artifacts` 声明（五字段条目，见 3.3.2） | `agent_telemetry.collect_and_report` → `read_declared_artifacts` → `merge_artifacts` → 终态 `chat_tasks.artifacts` → 产物抽屉 | ✅ 生效 |
+| `retry_count` | 重试引擎 `tool_retry_engine.py:354/464/509/770` | 前端 `sseParser.ts:606/624` 读的是 `stats`/`final_stats` 帧的 `retry_count`，**不是** `tool_result.other_data.retry_count` | ⚠️ tool_result 侧仅落库，前端另走统计帧 |
+| `synthetic` | `observation_builder.py:109`（安全拦截合成占位） | **无任何消费者**（前端 `synthetic` 0 处、后端无读取） | ❌ 只写不读 |
+| `return_direct` | **无工具写入**（tools 目录 grep = 0） | `observation_builder.py:176` 读 | ❌ 死读取（工具侧已无人写） |
+| `warning` | **无工具写进 other_data**（`line_pager.py:109` 的 `result["warning"]` 是业务 data，不是 other_data） | `observation_builder.py:183` 读 | ❌ 死读取 |
+| `category` | **无工具写**（`tool_error_classifier.py:181` 是诊断 dict，非 other_data） | `tool_retry_engine.py:705` 可选读 | ⚠️ 无人写，读取待用 |
+
+**结论**：真正在跑的只有 `attachment`（`fetch_webpage` 抓媒体）、`usage`（生成类 token）与 `artifacts`（产出物声明，五字段契约）；`synthetic` / `return_direct` / `warning` / `category` 是机制退役后未清理的残留。新工具**只应使用 `attachment` / `usage` / `artifacts` 这类有明确消费方的键**；历史残留的清理需单独立项，不在工具编写层擅动。
+
 ---
 
 ## 四、下游消费对照（为什么必须这样）
@@ -421,22 +519,25 @@ return build_success(data=<执行结果的输出>, llm_data=_build_<tool>_llm_da
 | 前端工具行 `ToolCallLine` | `action.tools[].tool/params`、`content`、状态水滴读 `llm_data.status.exec_code` | 状态字段缺 → 水滴不显示状态；params 缺 → 浮层参数空 |
 | 前端结果区 `ToolResultRenderer` | `tool_result[i].llm_data.summary/detail/hint/duration_ms/metrics` | 字段缺 → 结果区空白 |
 | 落库/历史回放 `agent_runner._route_step_to_db` → `append_step` | 整个 step 帧 `ed`（含 `tool_result[i].data_text/raw_data/llm_data`）原样写 `chat_task_steps.step_json` | step 帧字段缺 → 历史回放内容丢失；`data_text` 缺 → 回放空白 |
-| 产出物链路 `agent_telemetry.collect_and_report` → `update_task` | `llm_data.action.artifacts` → `final_stats.artifacts` → `chat_tasks.artifacts` | 声明缺 → 产出物抽屉看不到该产出物 |
+| 产出物链路 `agent_telemetry.collect_and_report` → `update_task` | `other_data["artifacts"]`（五字段）→ `telemetry._artifacts` → `final_stats.artifacts` → `chat_tasks.artifacts` | 声明缺 → 产出物抽屉看不到该产出物；缺 `form` → 远程产物/目录被当本地文件判失效 |
 
 ---
 
 ## 五、自查清单（写工具/改工具后逐项核对）
 
-- [ ] `async def` + 完整类型注解 + `-> Dict[str, Any]`
-- [ ] 入口第一行 `t0`，所有出口 `duration_ms` 统一
-- [ ] 出口只用 `build_success/error/warning`，顶层仅三字段
+- [ ] `async def` 或 `def`（按工具性质选，纯阻塞工具保持 `def`，见 2.1）+ 完整类型注解 + `-> Dict[str, Any]`
+- [ ] 入口第一行 `t0`，所有出口 `duration_ms` 按实际耗时计算，不得硬编码 `0`（见 2.2）
+- [ ] 出口只用 `build_success/error/warning`，顶层仅三字段；缺库走 `build_missing_dep_error`，不自造"请安装 xxx"
 - [ ] `data` 是 tool 执行结果的输出，**无入参回显**
+- [ ] `data.action` 与 `llm_data.action` 严格区分（同名不同层，见 3.2）
 - [ ] `llm_data` 字段结构齐全（summary/action/status 五字段/duration_ms/metrics）；经私有 builder 三态复用构造
 - [ ] `summary` 用 `{tool_zh}，{状态}：{结果}` 口径
 - [ ] `action` 有 tool/tool_zh，入参有意义时带 params
-- [ ] `status` 五字段齐全（exec_code/message/code/detail/hint）
+- [ ] `status` 五字段齐全（exec_code/message/code/detail/hint）；`code` 复用 `tool_constants.ERR_*` 常量，不自造字符串
 - [ ] `duration_ms` 三态都有；`metrics` 无量时为 `{}`
-- [ ] tool 执行结果的输出放 `data`（url/路径/字节）；产出型工具另用 `with_artifacts` 向遥测声明任务产出物到 `llm_data.action.artifacts`（两者是不同概念，别混）
+- [ ] tool 执行结果的输出放 `data`（url/路径/字节）；产出型工具用 `declare_artifact_file` / `declare_artifacts` / `artifact_from_url` 声明到 `other_data["artifacts"]`（五字段契约，产物声明 ≠ data 结果输出，别混）
+- [ ] `other_data` 只放有明确消费方的键（当前 `attachment`/`usage`），不塞编排无关内容（见 3.6）
+- [ ] `hide_from_steps` 仅 `schedule`/`question` 声明；普通工具默认可见
 - [ ] 失败原因只在 status.detail + summary，不在 data 重复
 - [ ] 异常分支给 hint 出路
 

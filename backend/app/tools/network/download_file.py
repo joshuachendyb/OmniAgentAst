@@ -29,6 +29,8 @@
 #   normcase 消除大小写差异后再比, 真 symlink/junction 仍可检出
 # 2026-11-12 - 小欧 - check_network 导入从 network_register 改为 http_client_sdk: 消除循环导入
 #   (network_register 导入 download 形成循环, check_network 已移至 http_client_sdk)
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 N2: download — 下载文件到本地
 
@@ -66,7 +68,8 @@ from app.tools.tool_constants import (
     ERR_NETWORK_TIMEOUT,
     ERR_NETWORK_WRITE_FILE,
 )
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 
 # 2026-10-26 小沈 - 默认输出目录改用 get_output_dir()(project_root/output), 用户指定路径仍用 project_root
 from app.tools.toolhelper.error_hints import hint_for_write_error
@@ -237,14 +240,14 @@ async def download(
         # data = {}，无需额外字段 — 小欧 2026-07-06
         # =============================================================================
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
-        with_artifact_file(llm_data, dest_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: A- empty data — 无字段，输出"详情:\n" + 空
         # trigger: data == {}
         # handler: _format_scalar_data(data) — 空dict输出空字符串
         # file:    observation_formatter.py:214
         # ------------------------------------------------------------------------------
-        return build_success(data={}, llm_data=llm_data)
+        return build_success(data={}, llm_data=llm_data,
+                             other_data=declare_artifact_file({}, dest_path))
     except (PermissionError, OSError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)

@@ -51,6 +51,8 @@
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(被改文件须存在, 用 EXISTS)
 # 2026-10-20 05:27 小欧 - FIX: 删 dry_run 死参数 — 工具入口 2026-06-20 已删该参数, _precise_replace_in_file
 #   唯一调用方恒传 False, 分支不可达(YAGNI); 参数/if dry_run 分支/恒 False 局部变量一并移除
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   success 与 warning(语法告警但已落盘)两态都声明, 条目补 form 形态 — 小欧-2026-11-21
 """
 F4: edit — 编辑文本文件
 
@@ -89,7 +91,8 @@ from app.tools.tool_constants import (
     EDIT_OUTPARM_LIMIT_SAFETY,
     ERR_FILE_EDIT_FAILED,
 )
-from app.tools.tool_response import build_error, build_success, build_warning, with_artifact_file
+from app.tools.tool_response import build_error, build_success, build_warning
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.toolhelper.syntax_validator import (  # 小欧 2026-07-21 统一语法检测接入
     detect_language,
@@ -689,7 +692,6 @@ async def edit(
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
     )
-    with_artifact_file(llm_data, file_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
     # ---- observation_formatter route -------------------------------------------
     # branch:  fallback (key:val)
     # trigger: 无上述20条分支匹配 — result 含 applied_edits/diff，不命中任何专用分支
@@ -713,9 +715,10 @@ async def edit(
         data = {"diff": result.get("diff", "")}
     # 2026-10-12 小欧 - 有语法告警时返回 warning(与 write 一致): 编辑确已落盘,
     #   语法问题仅提示; exec_code 已由 builder 按 hint/syntax_warning 自动判定
+    other = declare_artifact_file({}, file_path)   # 产物声明(五字段契约) — 小欧 2026-11-21
     if llm_data["status"]["exec_code"] == "warning":
-        return build_warning(data=data, llm_data=llm_data)
-    return build_success(data=data, llm_data=llm_data)
+        return build_warning(data=data, llm_data=llm_data, other_data=other)
+    return build_success(data=data, llm_data=llm_data, other_data=other)
 
 
 # 本地 mtime 缓存已于 2026-07-05 迁移到 file/file_state.py — 小欧

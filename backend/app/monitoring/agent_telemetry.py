@@ -69,6 +69,11 @@
 # 2026-11-03 小欧 - log_and_print 增 level 参数: _log_task_end 任务结束汇总显式传 level="WARNING"
 #   (任务起止必须可见), 文件通道仍固定 INFO 落盘 — 小欧-2026-11-03
 # 2026-11-19 小欧 - question_required/question_resolved 升格为 interact: 通用双向交互事件仅 SSE 不落库, 不计业务步
+# 2026-11-21 小欧 - 产物收集改造: 来源由 llm_data.action.artifacts 改 other_data["artifacts"](职责归位);
+#   只在 exec_code ∈ {success,warning} 时收集; 注入 tool_name 改为拷贝条目, 不再原地改写工具返回体;
+#   去重键/上限/规范化统一走 app/utils/artifacts.merge_artifacts(超限保留最新并告警), 删 _merge_artifacts。
+# 2026-11-21 20:27 小欧 - 修收集端 tool_name 过滤: 原推导式 `if not _a.get("tool_name")` 会把带非空
+#   tool_name 的条目整条丢弃(与"拷贝后注入"语义矛盾, dict() 覆盖本已足够); 删过滤, 无条件覆盖注入。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -86,6 +91,7 @@ from app.logger import (  # log_and_print: TASK_END console 打印 — 小健 20
     logger,
 )
 from app.monitoring import storage  # 落库层（独立，storage 内部惰性导入 database 防环）
+from app.utils.artifacts import merge_artifacts, read_declared_artifacts  # 产物契约唯一实现 — 小欧 2026-11-21
 
 # 统计 step_count 时剔除的全部非业务 MetaStep type（与 11.2-B / 12.17 完全一致，单一来源）
 # 2026-10-01 小欧: 提为公开常量 M_SKIP 并由 agent_runner 复用(解 [1] E1/E2)——
@@ -249,42 +255,29 @@ class TaskTelemetry:
             _t["error_count"] += 1
         _t["latency"] += float(duration_seconds or 0)
         if artifacts and isinstance(artifacts, list):
-            self._merge_artifacts(artifacts)
-
-    def _merge_artifacts(self, new_items: list) -> None:
-        """合并新产出物到内存态（去重按 tool_name+path 组合+上限50）— 小欧 2026-08-21"""
-        for _a in new_items:
-            if not isinstance(_a, dict):
-                continue
-            _key = (_a.get("tool_name", ""), _a.get("path", ""))
-            if _key[1] and _key not in {(x.get("tool_name", ""), x.get("path", "")) for x in self._artifacts}:
-                self._artifacts.append(_a)
-        if len(self._artifacts) > 50:
-            self._artifacts = self._artifacts[:50]
+            self._artifacts = merge_artifacts(self._artifacts, artifacts)
 
     def collect_and_report(self, all_calls: List[Any], results: List[Any]) -> None:
         """工具执行批后批量聚合遥测（从 action_handler.execute_tools 下沉）— 小健 2026-09-04
 
         遍历 all_calls+results 配对, 逐条调用 on_tool_call(tool_name, success, duration, artifacts)。
-        逻辑与下沉前完全一致(完整复制), 收敛到 telemetry 模块, action_handler 不再持有收集细节。
+        产物来源唯一 = 工具返回体 other_data["artifacts"]（契约见 app/utils/artifacts.py）。
         """
         for _call, _res in zip(all_calls, results):
             _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
             _ok = not isinstance(_res, Exception)
             _dur = 0.0
-            _arts = None
+            _arts: List[Dict[str, str]] = []
             if _ok and isinstance(_res, dict):
-                _llm_d = (_res.get("llm_data") or {})
+                _llm_d = _res.get("llm_data") or {}
                 _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
-                _act = _llm_d.get("action")
-                if isinstance(_act, dict):
-                    # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
-                    _arts = _act.get("artifacts")
-                    # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
-                    if _arts and isinstance(_arts, list):
-                        for _a in _arts:
-                            if isinstance(_a, dict) and "tool_name" not in _a:
-                                _a["tool_name"] = _tname
+                # 只有成功/警告才收产物: 失败态即便误声明也不能进清单 — 小欧 2026-11-21
+                _st = _llm_d.get("status")
+                _exec = _st.get("exec_code", "") if isinstance(_st, dict) else ""
+                if _exec in ("success", "warning"):
+                    # 拷贝后注入 tool_name, 绝不改写工具返回体里的原条目(SRP: 收集器不改生产者数据)
+                    _arts = [dict(_a, tool_name=_tname)
+                             for _a in read_declared_artifacts(_res)]
             self.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
 
 

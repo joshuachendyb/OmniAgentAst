@@ -35,6 +35,8 @@
 //   预览恒为 [] — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - getSession/getSessionMessages 改走 dedupeGet: 首屏布局/历史/右栏多处并发
 //   取同一会话与同一页消息(实测 /sessions/{id} 4 次、/messages 2 次); key 含全部入参以免串数据 — 小欧-2026-11-18
+// 编辑历史: 2026-11-21 小欧 - SessionArtifactItem 补 form(file/dir/url): 后端产物契约新增形态字段,
+//   rel_path 与 exists 的口径随之说明(仅本地文件有 rel_path; url 恒可达) — 小欧-2026-11-21
 
 import api, { dedupeGet } from './client';
 import type { ExecutionStep } from '@/types/execution';
@@ -171,11 +173,13 @@ export interface SessionArtifactItem {
   task_created_at: string;
   name: string;
   path: string;
-  /** 项目根相对 posix 路径(根内有值, 可直接作文件引用上行; 根外为 null) */
+  /** 形态: file 本地文件 / dir 本地目录 / url 公网资源 — 后端产物契约五字段之一, 前端只按它分派 */
+  form: 'file' | 'dir' | 'url';
+  /** 项目根相对 posix 路径(仅 form=file 且根内有值, 可直接作文件引用上行; 目录与 URL 恒为 null) */
   rel_path: string | null;
   type: string;
   tool_name: string;
-  /** 产物文件是否还在（失效行仍可见，不可加入本轮） */
+  /** 产物是否仍可达（失效行仍可见，不可加入本轮）: url 恒 true, dir 用 isdir, file 用 isfile */
   exists: boolean;
 }
 

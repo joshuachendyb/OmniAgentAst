@@ -149,6 +149,9 @@
 #   ②get_task_detail 的 ref_ledger_json/tool_paths_json 改 pop+parse 为契约字段, 不再以裸串下发 — 小欧-2026-11-18
 # 2026-11-18 小欧 - _tool_path_relative 补 POSIX 绝对路径丢弃: Windows 下 Path.is_absolute() 判 "/opt/x" 为 False,
 #   原会被当相对链归一成 "opt/x" 假链接(项目根本机为 Windows, 此类路径不属于根) — 小欧-2026-11-18
+# 2026-11-21 20:27 小欧 - list_session_task_artifacts 按产物五字段契约重写: 条目走 normalize_artifact
+#   规范化, 去重键走 artifact_dedup_key(替换 seen_paths), 存在性走 artifact_exists; form(file/dir/url)
+#   决定 rel_path 与 exists 口径, 修 URL 与解压目录被当本地文件判"已不存在", rel_path 现仅本地文件有值。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -184,6 +187,11 @@ from app.safety.trust_db import (
     trust_scope_path,  # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
 )
 from app.utils.json_utils import parse_json, safe_json_dumps
+from app.utils.artifacts import (  # 产物契约唯一实现 — 小欧 2026-11-21
+    artifact_dedup_key,
+    artifact_exists,
+    normalize_artifact,
+)
 from app.utils.secret_utils import (
     redact_step_params,  # 落库出口脱敏(step 参数敏感键) — 小欧 2026-10-19
 )
@@ -1313,14 +1321,17 @@ def list_running_tasks(conn: Connection) -> List[Dict[str, Any]]:
 
 # 2026-11-13 小欧 - 任务产出物清单读口: list_session_task_artifacts 读 chat_tasks.artifacts 真源,
 #   附 rel_path(项目根相对路径, 根内有值)/exists(文件是否还在) 供前端渲染与加入本轮判定 — 小欧-2026-11-13
+# 2026-11-21 小欧 - 按五字段契约重写: form(file/dir/url) 决定 exists 与 rel_path 口径,
+#   条目规范化/去重键统一走 app/utils/artifacts; 修 URL 与解压目录被当本地文件判"已不存在"。 — 小欧-2026-11-21
 def list_session_task_artifacts(conn: Connection, session_id: str) -> List[Dict[str, Any]]:
     """会话内全部任务的产出物清单（chat_tasks.artifacts 真源，跨任务倒序）。
 
     「AI 产出的」唯一真源：产出物是**任务产物**，不是附件台账行 —— 工作区内产物走引用
     模式从不落 attachments 表，用 attachments 判据取该清单恒为空。
-    倒序口径：任务时间新→旧（同任务内保持声明顺序）；同一文件被多任务反复产出只列一次（保留最新任务）。
-    rel_path：项目根相对 posix 路径（在根内才有值，可直接作文件引用上行）；
-    根外的产物 rel_path 为 None，只能经「存为附件」复制固化后入轮。
+    倒序口径：任务时间新→旧（同任务内保持声明顺序）；同一资源被多任务反复产出只列一次（保留最新任务）。
+    rel_path：仅本地文件(file)且位于项目根内才有值，可直接作文件引用上行；
+    目录(dir)与远程 URL(url)的 rel_path 恒为 None —— 前者走目录跳转，后者走外链。
+    exists：url 恒可达（不做网络探测）；dir 用 isdir；file 用 isfile。
     """
     rows = conn.execute(
         "SELECT task_id, artifacts, created_at FROM chat_tasks "
@@ -1328,32 +1339,34 @@ def list_session_task_artifacts(conn: Connection, session_id: str) -> List[Dict[
         (session_id,),
     ).fetchall()
     out: List[Dict[str, Any]] = []
-    seen_paths: set[str] = set()
+    seen: set[str] = set()
     for r in rows:
         items = parse_json(r["artifacts"], label="artifacts") if r["artifacts"] else []
         if not isinstance(items, list):
             continue
         for it in items:
-            if not isinstance(it, dict):
+            # 契约唯一实现: 老条目(四字段)按地址推断 form/type, 新条目原样信任 — 小欧 2026-11-21
+            item = normalize_artifact(it)
+            if item is None:
                 continue
-            path = (it.get("path") or "").strip()
-            if not path:
+            # 同一资源被多任务反复产出(write→edit)只列一次, 保留最新任务(倒序首个)
+            _key = artifact_dedup_key(item)
+            if _key in seen:
                 continue
-            # 同一文件被多任务反复产出(write→edit)只列一次, 保留最新任务(倒序首个)
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            rel: Optional[str] = browse.root_relative(path)
+            seen.add(_key)
+            # 只有本地文件可作文件引用上行; 目录与远程 URL 无 rel_path, 各自走目录跳转/外链
+            rel: Optional[str] = browse.root_relative(item["path"]) if item["form"] == "file" else None
             out.append({
                 "task_id": r["task_id"],
                 "task_created_at": r["created_at"],
-                "name": it.get("name") or Path(path).name,
-                "path": path,
+                "name": item["name"],
+                "path": item["path"],
+                "form": item["form"],
                 "rel_path": rel,
-                "type": it.get("type") or "",
-                "tool_name": it.get("tool_name") or "",
-                # 产物文件是否还在（失效行仍可见，不可加入本轮）
-                "exists": Path(path).is_file(),
+                "type": item["type"],
+                "tool_name": item["tool_name"],
+                # 形态化存在性: url 恒可达, dir 用 isdir, file 用 isfile
+                "exists": artifact_exists(item),
             })
     return out
 

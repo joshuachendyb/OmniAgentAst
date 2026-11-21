@@ -14,6 +14,10 @@
 #   联动范围大, 单独立项; 当前全项目统一用此入口, 单改个别工具会破坏产物抽屉, 故保持现状。
 # 2026-11-21 - 小欧 - 新增 artifact_from_url: 公网产物 URL 生成清单条目, name 取 URL 真实后缀,
 #   消生图/生视频各自硬编码 generated_image.png / generated_video.mp4 与实际格式不符。
+# 2026-11-21 - 小欧 - 产物声明迁出本模块: 删 extract_ext/with_artifacts/with_artifact_file/
+#   artifact_from_url 四函数, 契约统一到 app/utils/artifacts.py, 落点改 other_data["artifacts"]。
+#   理由: 清单挂 llm_data.action 与 action 的动作描述语义冲突(SRP), 且条目缺 form 形态维度
+#   导致 URL/目录产物被下游当本地文件判失效, type 三套含义。本文件只留返回体组装与判态。
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
@@ -32,7 +36,6 @@ build_success/error/warning 签名重写，函数名即语义，无需 exec_code
     → LLM observation / 前端SSE / extract_status 格式化
     → 禁止构建结果,只消费和格式化
 """
-import os
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -189,44 +192,7 @@ def is_error(result: Dict[str, Any]) -> bool:
     return _exec_code(result) == "error"
 
 
-def extract_ext(file_path: str) -> str:
-    """提取文件扩展名（小写无点），无扩展名返回 'file' — 小欧 2026-08-21 DRY"""
-    _base = os.path.basename(file_path)
-    return _base.rsplit(".", 1)[-1].lower() if "." in _base else "file"
-
-
-def with_artifacts(llm_data: Optional[Dict], items: List[Dict[str, str]]) -> Dict:
-    """产出型工具成功时声明产出物 [{name, path, type}]，挂 llm_data.action.artifacts（无白名单、OCP）— 小欧 2026-08-20"""
-    if not isinstance(llm_data, dict):
-        llm_data = {}
-    _act = llm_data.setdefault("action", {})
-    if not isinstance(_act, dict):
-        _act = {}
-        llm_data["action"] = _act
-    _act["artifacts"] = list(items or [])
-    return llm_data
-
-
-def with_artifact_file(llm_data: Optional[Dict], file_path: str) -> Dict:
-    """便捷声明：从文件路径自动提取 name/path/type，挂 llm_data.action.artifacts — 小欧 2026-08-21 KISS"""
-    return with_artifacts(llm_data, [{
-        "name": os.path.basename(file_path),
-        "path": file_path,
-        "type": extract_ext(file_path),
-    }])
-
-
-_ARTIFACT_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov")
-
-
-def artifact_from_url(url: str, kind: str) -> Dict[str, str]:
-    """公网产物 URL → 产物清单条目 — 小欧 2026-11-21
-
-    name 按 URL 路径末段真实后缀定名(签名查询串不进名字), 认不出后缀按 kind 取默认;
-    path 恒为原 URL(签名参数一字不改), type 取 kind(image/video)。
-    """
-    path = (url or "").split("?")[0].lower()
-    suffix = next((s for s in _ARTIFACT_SUFFIXES if path.endswith(s)), "")
-    if not suffix:
-        suffix = ".mp4" if kind == "video" else ".png"
-    return {"name": f"generated_{kind}{suffix}", "path": url, "type": kind}
+# 产物声明已迁出本模块 — 小欧 2026-11-21
+# 原 extract_ext / with_artifacts / with_artifact_file / artifact_from_url 四函数删除,
+# 契约(五字段/规范化/去重/存在性/上限)统一由 app/utils/artifacts.py 提供,
+# 落点由 llm_data.action.artifacts 改为 other_data["artifacts"]。

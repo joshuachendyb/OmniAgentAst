@@ -29,6 +29,8 @@
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE), 根治空路径落成 cwd 搬走工作目录的事故
 # 2026-11-03 小欧 - 目标目录已存在删除后移动提示 WARNING→INFO(业务分支) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 typing.Tuple(死导入) — 小欧-2026-11-04
+# 2026-11-21 小欧 - 产物声明迁出 tool_response: 改 declare_artifact_file 挂 other_data["artifacts"],
+#   条目补 form(file/dir/url) 形态(五字段契约见 app/utils/artifacts.py) — 小欧-2026-11-21
 """
 F10: move_file — 移动文件
 
@@ -59,7 +61,8 @@ from app.tools.file.file_write_arbiter import (
     claim_write,  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 移动目标落盘前登记占用
 )
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
-from app.tools.tool_response import build_error, build_success, with_artifact_file
+from app.tools.tool_response import build_error, build_success
+from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -233,7 +236,6 @@ async def move(
         except OSError:
             _moved_bytes = 0
         llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, user_overwrite=overwrite, moved_bytes=_moved_bytes, moved_count=1)
-        with_artifact_file(llm_data, destination)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)
         # trigger: 无上述20条分支匹配 — operation_id 不命中任何专用分支
@@ -243,6 +245,7 @@ async def move(
         return build_success(
             data={},
             llm_data=llm_data,
+            other_data=declare_artifact_file({}, destination),
         )
     else:
         error_detail = result.get("error_detail", "移动文件失败")
