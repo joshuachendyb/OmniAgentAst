@@ -93,6 +93,8 @@
 # 2026-11-16 小欧 - 优雅停机入口: 挂载 system_routes(POST /api/v1/shutdown, 走 _mount 默认 token 鉴权), 置 uvicorn Server.should_exit 触发既有 lifespan shutdown; Server 引用由 run_server 编程式启动时挂到 app.state.uvicorn_server — 小欧-2026-11-16
 # 2026-11-16 小欧 - 启动摘要(当前版本/LLM 配置)补文件留痕: 打包态 console 镜像随 detach 旁路, 原仅
 #   console_put 会从所有日志消失; 改为 logger.info(落 app 文件) + console_put(真控制台上屏) 双通道 — 小欧-2026-11-16
+# 2026-11-21 小欧 - startup 增保留期清理: 日志(app/boot/prompt-logs)与转码缓存按 logging.retention_days
+#   (默认 10 天)删超期档; 原日志只按大小轮转、prompt-logs 只增不减 — 小欧-2026-11-21
 import asyncio
 import sys
 import threading
@@ -666,6 +668,18 @@ async def startup_event():
         except Exception as _exc:
             logger.warning('[chat_retention] startup sweep failed (degrade): %r' % _exc)
     _start_log_level_watcher()   # 2026-10-25 小欧: 日志级别热重载, config 改动免重启
+    # 2026-11-21 小欧 - 保留期清理(启动一次): 日志目录全树与视频转码缓存,
+    #   天数读 logging.retention_days(默认 10); 清理失败只告警, 绝不阻断启动 — 小欧-2026-11-21
+    try:
+        from app.logger.log_retention import sweep_old_logs
+        from app.services.agent.video_transcode import sweep_cache
+        _n_log = sweep_old_logs()
+        _n_cache = sweep_cache()
+        if _n_log["total"] or _n_cache:
+            logger.info(f"[启动] 保留期清理: 日志 文件 {_n_log['files']} 个 / 空目录 {_n_log['dirs']} 个, "
+                        f"转码缓存 {_n_cache} 个")
+    except Exception as _exc:
+        logger.warning(f"[启动] 保留期清理失败(降级): {_exc!r}")
     # 2026-10-03 小欧 - 启动期一次性对账 Journal 事件与 chat_task_steps 步骤表, 只告警不自动补
     _t4 = time.time()
     try:

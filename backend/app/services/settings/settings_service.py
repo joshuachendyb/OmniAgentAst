@@ -158,6 +158,7 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
     #   （workspace.project_root / logging.debug 变更后即刷新；不落 yaml，与 config_path 同一机制）
     if key.startswith("paths."):
         from app.config import get_code_root
+        from app.db.database import db_dir
         from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
         from app.logger.config import LOG_DIR
         from app.services.prompts.project_context import resolve_context_path
@@ -169,7 +170,7 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
             "paths.project_root": _p_root,
             "paths.omniagent_md": resolve_context_path(get_code_root()),
             "paths.download": str(Path(_p_root) / "download"),
-            "paths.database": str(Path.home() / ".omniagent"),
+            "paths.database": str(db_dir()),
             "paths.record_tool": f"{SESSION_DIR_PREFIX}<会话ID>\\{TASK_DIR_PREFIX}<任务ID>\\tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl",
             "paths.record_conv": f"{SESSION_DIR_PREFIX}<会话ID>\\{TASK_DIR_PREFIX}<任务ID>\\conv_hist_<短任务ID>_<消息ID>_<时间去冒号>.jsonl",
             "paths.logs": str(LOG_DIR),

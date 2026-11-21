@@ -24,6 +24,11 @@
 # 2026-08-21 - 小欧 - 差异设计落地: ①删observer条目+删init_observer方法(零调用方); ②_db_paths加timers条目(timers.db独立库); ③import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
 # 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
 # 2026-11-16 - 小欧 - 启动迁移连接放宽 busy_timeout: get_conn 新增 busy_timeout_ms 参数(默认 500ms 行为不变), init() 的迁移连接传 30000ms — 双击并发初始化撞写锁时不再立即抛 database is locked 崩启动; 运行期仍 500ms+指数退避。
+# 2026-11-21 - 小欧 - 库文件归入 db/ 子目录: 原 5 个库与 assets/recycle_bin 平铺在数据根, 备份/清理
+#   无法按类区分(资产与回收站早已是子目录, 只有库落在根上)。新增 _DB_SUBDIR 与 db_file_path() 单一拼装点,
+#   get_conn 经 ensure_db_layout() 惰性做一次性迁移(copy-校验-删旧, 幂等; 同目录 -wal/-shm 一并搬);
+#   迁移在循环内首连接前完成, 任何不经 lifespan 的上下文(单测/裸脚本/worker)同样拿到新布局。
+#   测试注入仍走 _db_overrides, 不触发迁移。
 """DB SDK - 统一数据库操作接口
 
 管理3个SQLite数据库:
@@ -57,12 +62,14 @@ import asyncio
 import contextvars
 import functools
 import os
+import shutil
 import sqlite3
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator
+from typing import Any, Dict, Iterator, Set
 
 from app.db.db_initializer import (
     init_chat_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
@@ -155,6 +162,9 @@ _DB_FILES = {
     "monitoring": "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
 }
 
+# 库文件子目录: 数据根下与 assets/recycle_bin 平级, 库不再平铺在根上 — 小欧-2026-11-21
+_DB_SUBDIR = "db"
+
 # 各库就绪判据表(①): 与 _DB_FILES 一一对应, get_conn 见缺即就地幂等建表 — 小欧 2026-10-06
 _DB_READY_TABLE = {
     "chat": "chat_sessions",
@@ -178,6 +188,96 @@ def resolve_db_dir() -> Path:
     """
     env = (os.getenv("OMNIAGENT_DATA_DIR") or "").strip()
     return Path(env) if env else Path.home() / ".omniagent"
+
+
+def db_dir() -> Path:
+    """库目录: {数据根}/db — 小欧-2026-11-21"""
+    return resolve_db_dir() / _DB_SUBDIR
+
+
+def db_file_path(db_name: str) -> Path:
+    """库文件绝对路径唯一拼装点: {数据根}/db/{库文件名} — 小欧-2026-11-21
+
+    纯路径, 不建目录不迁移(读口/CLI 可直接用); 库文件名真源仍是 _DB_FILES。
+    """
+    return db_dir() / _DB_FILES[db_name]
+
+
+_migrated_data_dirs: Set[str] = set()
+_migrate_lock = threading.Lock()
+
+
+def _migrate_flat_db_files(data_dir: Path) -> None:
+    """把历史上平铺在数据根的库一次性搬进 db/ 子目录 — 小欧-2026-11-21
+
+    病根: 库与 assets/recycle_bin 平铺同一根, 备份/清理无法按类区分; 后两者早已是子目录,
+      只有库落在根上。
+    做法: 主库与 -wal 先复制成 .migrating 中间名 → 逐个校验大小一致 → 全部通过才 rename 成正式名,
+      最后删原位副本。任一步失败只留中间名并清掉, 原库原样不动, 下次启动重试; 不会出现
+      "新库落了但没带 WAL"这种半套状态(SQLite 会把它当成完整库读, 少掉最近事务)。
+    幂等: 新位置已有同名库则跳过, 重复运行与「降级回退后再次升级」都安全。
+    -shm 不复制: 它是进程本地共享内存索引, 带过来只是过期状态, SQLite 打开时自行重建;
+      原位 -shm 随主库一起删除。
+    """
+    target_dir = data_dir / _DB_SUBDIR
+    moved = []
+    left = []
+    for fname in _DB_FILES.values():
+        old = data_dir / fname
+        if not old.is_file() or (target_dir / fname).exists():
+            continue                      # 无旧库(已迁移) / 新位置已有: 都不动
+        staged = []                       # [(中间名, 终点)]
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for suffix in ("", "-wal"):
+                src = data_dir / f"{fname}{suffix}"
+                if not src.is_file():
+                    continue
+                tmp = target_dir / f"{fname}{suffix}.migrating"
+                shutil.copy2(src, tmp)
+                if tmp.stat().st_size != src.stat().st_size:
+                    raise OSError(f"大小校验失败 {src} -> {tmp}")
+                staged.append((tmp, target_dir / f"{fname}{suffix}"))
+            for tmp, final in staged:
+                tmp.replace(final)        # 校验全过才落成正式名
+        except OSError as e:
+            for tmp, _final in staged:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            logger.error(f"[db] 迁移库文件失败(原库不动, 下次启动重试): {old}: {e}")
+            continue
+        moved.append(fname)
+        # 新库已就位, 原位副本尽量清掉; 被其它进程占用时删不掉只告警, 不影响使用
+        for suffix in ("", "-wal", "-shm"):
+            side = data_dir / f"{fname}{suffix}"
+            if side.is_file():
+                try:
+                    side.unlink()
+                except OSError:
+                    left.append(side.name)
+    if moved:
+        logger.info(f"[db] 库文件已迁入 {target_dir}: {', '.join(moved)}")
+    if left:
+        logger.warning(f"[db] 新库已就绪, 原位副本被占用未能删除(可人工清理): {', '.join(left)}")
+
+
+def ensure_db_layout() -> None:
+    """确保库目录布局就绪(幂等, 每数据目录只迁移一次) — 小欧-2026-11-21
+
+    在 get_conn 内惰性调用: 与 resolve_db_dir 同款惰性口径, 不吃导入顺序;
+    OMNIAGENT_DATA_DIR 指向不同目录时各迁移各的(测试隔离不共享状态)。
+    """
+    data_dir = resolve_db_dir()
+    key = str(data_dir)
+    if key in _migrated_data_dirs:
+        return
+    with _migrate_lock:
+        if key in _migrated_data_dirs:
+            return
+        _migrate_flat_db_files(data_dir)
+        _migrated_data_dirs.add(key)
 
 
 class DatabaseManager:
@@ -222,7 +322,11 @@ class DatabaseManager:
             )
 
         # 惰性解析(见 resolve_db_dir docstring) — 小欧 2026-09-30
-        db_path = Path(_override) if _override else resolve_db_dir() / _DB_FILES[db_name]
+        if _override is not None:
+            db_path = Path(_override)
+        else:
+            ensure_db_layout()          # 历史平铺库一次性归入 db/ 子目录(幂等) — 小欧-2026-11-21
+            db_path = db_file_path(db_name)
         db_path.parent.mkdir(parents=True, exist_ok=True)   # env 指向的临时目录可能尚不存在
         conn = None
 

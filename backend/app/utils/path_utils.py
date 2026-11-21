@@ -80,12 +80,11 @@ def absolutize_path(path: str, base: str) -> str:
     return os.path.abspath(os.path.join(base, p.lstrip("/\\")))
 
 
-def get_tool_dir(kind: str = "output") -> str:
-    r"""tool 落盘目录唯一分配口 — 小欧 2026-11-20
+def get_tool_dir_path(kind: str = "output") -> Path:
+    r"""tool 目录纯路径解析(不建目录) — 小欧-2026-11-21
 
-    kind 限 attachments/output/temp。第一选择会话默认目录, 兜底项目根。
-    会话默认目录取自任务级快照(session_workspace.get_ws_snapshot 的 is_default 条目),
-    tool 执行期已注入, 无需 session_id。
+    与 get_tool_dir 同一解析规则(会话默认目录优先 → 兜底项目根), 但**不做 mkdir**。
+    供只读场景(边界校验、枚举、查询)使用: 读口调用分配口会把空目录建到用户项目根。
     """
     if kind not in ("attachments", "output", "temp"):
         raise ValueError(f"不支持的目录类型: {kind}")
@@ -105,7 +104,18 @@ def get_tool_dir(kind: str = "output") -> str:
         from app.config import get_config
         base = get_config().get_project_root()
 
-    folder = Path(base) / kind
+    return Path(base) / kind
+
+
+def get_tool_dir(kind: str = "output") -> str:
+    r"""tool 落盘目录唯一分配口 — 小欧 2026-11-20
+
+    kind 限 attachments/output/temp。第一选择会话默认目录, 兜底项目根。
+    会话默认目录取自任务级快照(session_workspace.get_ws_snapshot 的 is_default 条目),
+    tool 执行期已注入, 无需 session_id。
+    路径解析复用 get_tool_dir_path(DRY), 本函数只负责建目录。
+    """
+    folder = get_tool_dir_path(kind)
     folder.mkdir(parents=True, exist_ok=True)
     return str(folder)
 

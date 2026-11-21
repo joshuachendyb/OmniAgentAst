@@ -9,11 +9,14 @@
 编辑历史: 2026-11-20 小欧 三堂会审命名整改: _get_ffmpeg 返回的是路径却名作 ffmpeg, 改 _get_ffmpeg_path; 局部变量 fc→fourcc_int、
   tmp_path→partial_path(保留 mp4 后缀的中间产物, 非泛临时物); 引用常量 VIDEO_ACCEPTED_FOURCCS/VIDEO_TRANSCODE_LOCK_TABLE_MAX
   (见 media_constants 同名整改); 纯改名零行为变更。
+编辑历史: 2026-11-21 小欧 缓存目录单源 + 保留期清理: 目录拼装收口 default_cache_dir(), 新增 sweep_cache(days)
+  按 mtime 删超期 .mp4/.tmp_(保留期同日志 logging.retention_days), 原缓存只增不减 — 小欧-2026-11-21
 """
 import os
 import subprocess
 import tempfile
 import threading
+import time
 from typing import Dict, Optional, Tuple
 
 from app.logger import logger
@@ -41,6 +44,40 @@ def _get_ffmpeg_path() -> str:
         import imageio_ffmpeg  # 延迟导入: 仅转码路径需要
         _ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     return _ffmpeg_exe
+
+
+def default_cache_dir() -> str:
+    """转码缓存默认目录: %TEMP%/omniagent_video_h264 — 小欧-2026-11-21 单源(转码与清理共用)"""
+    return os.path.join(tempfile.gettempdir(), "omniagent_video_h264")
+
+
+def sweep_cache(days: int = 0) -> int:
+    """清理超过 days 天的转码缓存, 返回删除个数 — 小欧-2026-11-21
+
+    缓存原先无任何清理策略(实测 %TEMP% 留残留 mp4); 保留期与日志同一口径(logging.retention_days)。
+    目录是本模块专用的, 里面只有转码产物与半成品, 故按整目录清, 不设文件名匹配。
+    """
+    if days <= 0:
+        from app.config import get_config
+        days = int(get_config().get("logging.retention_days", 10) or 0)
+    if days <= 0:
+        return 0
+    folder = default_cache_dir()
+    if not os.path.isdir(folder):
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for name in os.listdir(folder):
+        target = os.path.join(folder, name)
+        try:
+            if os.path.isfile(target) and os.path.getmtime(target) < cutoff:
+                os.remove(target)
+                removed += 1
+        except OSError as e:
+            logger.warning(f"[video_transcode] 清理缓存失败: {target} err={e}")
+    if removed:
+        logger.info(f"[video_transcode] 清理超期转码缓存 {removed} 个(保留 {days} 天)")
+    return removed
 
 
 def _probe_codec(path: str) -> str:
@@ -97,7 +134,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
 
     base = os.path.basename(path)
     stem, _ = os.path.splitext(base)
-    out_dir = cache_dir or os.path.join(tempfile.gettempdir(), "omniagent_video_h264")
+    out_dir = cache_dir or default_cache_dir()
     try:
         os.makedirs(out_dir, exist_ok=True)
         st = os.stat(path)

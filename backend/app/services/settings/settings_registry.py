@@ -433,6 +433,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单个日志文件大小上限，超限自动轮转（需重启生效）"),
         _item("logging.backup_count", "int", "日志备份数", 5, range_=[1, 100], restart=True,
               notice="日志轮转保留的备份文件个数（需重启生效）"),
+        _item("logging.retention_days", "int", "日志保留天数", 10, range_=[0, 3650], restart=True,
+              notice="日志目录内全部文件与空目录按此天数清理（启动时执行，含提示词日志、诊断转储、供应商报告）；0=不清理（需重启生效）"),
         _item("paths.logs", "readonly", "日志目录", None, readonly=True,
               notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),
         # --- 工程目录（6 只读；值实时派生见 settings_service._item_data） ---
@@ -443,7 +445,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("paths.download", "readonly", "下载目录", None, readonly=True,
               notice="项目根目录\\download；项目根未配置时=用户主目录\\download；download.dest 相对本目录"),
         _item("paths.database", "readonly", "数据库目录", None, readonly=True,
-              notice="固定 ~\\.omniagent 无配置项；chat_history.db/monitoring.db 等多库与回收站 recycle_bin 同根"),
+              notice="固定 ~\\.omniagent（或 OMNIAGENT_DATA_DIR）；库文件在 db\\ 子目录，回收站 recycle_bin、资产 assets 同根"),
         _item("paths.record_tool", "readonly", "工具结果文件", None, readonly=True,
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1工具结果"),
         _item("paths.record_conv", "readonly", "对话历史文件", None, readonly=True,

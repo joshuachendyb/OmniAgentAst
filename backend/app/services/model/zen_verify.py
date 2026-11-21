@@ -23,6 +23,9 @@
 
   2026-10-11 小欧 - _verify_by_adapter 删硬编码 opencodeZen 键名, 由传入 name 解析; 加 ProviderAdapter 基类守卫(无适配器 provider 返回明确错误而非假绿) — 小欧-2026-10-11
   2026-10-31 小欧 - 删本地重复的"空 key 摘 Authorization"实现, 收口到 ProviderAdapter.auth_headers 单点 — 小欧-2026-10-31
+  2026-11-21 小欧 - 报告目录改 {日志根}/zen_verify: 原落记录根(与 Sion_*/Task_* 任务记录同级),
+    服务级报告混入会话级记录根; 旧目录历史报告首次访问时一次性搬入 — 小欧-2026-11-21
+    (编辑历史首条所述 "files/zen_verify" 为当时的落点, 现已改日志根, 见本条)
 
 """
 import asyncio
@@ -37,7 +40,7 @@ import httpx
 from app.file_persist import _files_root
 from app.llm.adapters import get_provider_adapter
 from app.llm.adapters.base import ProviderAdapter
-from app.logger import logger
+from app.logger import LOG_DIR, logger
 from app.services.model import model_service as svc
 
 _ZEN_GATE_FILE = Path(r"F:\agenttool\ZenFree-Test-20260923\zen_gate.py")
@@ -233,8 +236,20 @@ async def verify_provider_zen(name: str) -> Dict[str, Any]:
 
 
 def _report_dir() -> Path:
-    """报告目录: 复用 file_persist._files_root 的目录分流(debug→backend/files, 正式→~/.omniagent/files)"""
-    d = _files_root() / _REPORT_DIRNAME
+    """报告目录: {日志根}/zen_verify (打包 exe/logs, 源码 backend/logs) — 小欧-2026-11-21
+
+    原落 {记录根}/zen_verify, 与 Sion_*/Task_* 任务记录同级: 服务级报告混进会话级记录根。
+    旧目录若有历史报告, 首次访问时一次性搬入新目录(本功能属服务级, 不带会话语义)。
+    """
+    d = LOG_DIR / _REPORT_DIRNAME
+    legacy = _files_root() / _REPORT_DIRNAME
+    if legacy.is_dir() and not d.exists():
+        try:
+            d.parent.mkdir(parents=True, exist_ok=True)
+            legacy.rename(d)
+            logger.info(f"[zen_verify] 历史报告目录已迁至 {d}")
+        except OSError as e:
+            logger.warning(f"[zen_verify] 历史报告目录迁移失败(继续用新目录): {e}")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

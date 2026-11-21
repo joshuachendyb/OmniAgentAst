@@ -138,6 +138,7 @@
 | `path_has_extra_drive` | 路径尾部含多余盘符则返回原因，否则 None；纯拼写零IO | file_path: str | Optional[str] |
 | `validate_str_param` | 字符串参数基础校验（非路径通用参数用；路径非空由 SA1 覆盖）；None/非str/空串返回错误信息 | value: Any, param_name: str | Optional[str] |
 | `get_tool_dir` | tool 落盘目录唯一分配口：会话默认目录(任务快照 is_default 条目)优先，兜底项目根；kind 限 attachments/output/temp，建目录后返回绝对路径 | kind: str | str |
+| `get_tool_dir_path` | 同 `get_tool_dir` 的解析规则但**不建目录**（只读场景用：边界校验/枚举/查询；读口调分配口会把空目录建到用户项目根） — 小欧-2026-11-21 | kind: str | Path |
 
 > 注：备份(operation_backup)与回收站维护(operation_maintenance)链路的深嵌套路径统一走 `to_win_long_path`，保证备份能写入亦能清理。
 
@@ -164,6 +165,7 @@
 |--------|------|------|--------|
 | `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |
 | `log_and_print` | 【公共函数, __all__ 导出】日志文件+控制台双通道单点输出: 一条消息既进日志文件又上控制台, 收口"logger.info(msg)+print(msg)"为单点。文件通道=_file_logger(不挂控制台 handler)按"该行声明档位"落盘(>=阈值); 控制台通道=console_put 唯一一条, 上屏判定=**精确匹配(==)** logging.level(非>=阈值)。level 是"该行属于哪一档"的声明(默认 DEBUG), 业务/异常/取消/任务起止/冷却等观测行须显式传 level="WARNING" 才在 WARNING 档上屏(默认 DEBUG 不上屏只落文件)。2026-11-08 小欧 补登记+上屏机制速查(见函数 docstring) | msg: str, level: str = "DEBUG" | None |
+| `sweep_old_logs` | 【log_retention.py】日志目录按保留天数整体清理(启动一次)：递归 `{LOG_DIR}` 全树，mtime 超期的文件一律删、清空后的子目录一并删、日志根保留；不设文件名白名单(新增日志形态自动纳入)；正在写的文件占用删不掉则跳过。天数缺省读 `logging.retention_days`(10)，<=0 不清理 — 小欧-2026-11-21 | days: int = 0 | Dict[str, int]（files/dirs/total） |
 
 ### 1.14 shell 命令静态守卫（shell_static_guard.py，位于 app/tools/fundamental/）
 
@@ -506,6 +508,28 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `vendor_duration_ms` | 厂商侧任务用时（毫秒）：时间戳别名表取 start→end（created_at/created/started_at → completed_at/completed/finished_at），缺任一端或倒挂返回 0，13 位毫秒时间戳不重复乘 1000；与工具墙钟 `duration_ms` 互补（墙钟含排队提交与轮询粒度，实测 525.6s vs 厂商 461s） | meta: Dict | int |
 | `build_vendor_spec` | 厂商 meta → `(metrics 规格项, summary 规格尾段)`，**标准键映射唯一真源**：图像 size/format，视频 seconds/size/quality，按候选键名优先级取首个非空标量（顶层优先、`data[0]` 兜底，mime 取子类型）；未命中即不出现，不猜不编造；值统一 `{value,text}` 形（前端工具行标签只认 text/value，裸标量渲染成空）；用时统一拼「用时 N 秒」 | kind, meta, duration_ms | Tuple[Dict, str] |
 | `build_vendor_fields` | 生成回调出参 → `(metrics, 规格尾段, other_data, 实际模型)`：metrics = 模型（厂商回显优先）+ 规格 + usage 摘要（total/output_tokens）+ 有价值标量（`revised_prompt` / `error_code` / `request_id`，失败态另加 `task_id`）；other_data 只装 usage 数字原样键名，无 usage 则为 None；`vendor_duration_ms` 缺失时从 meta 自算；模型直回第 4 项，调用方不再从 metrics 反查 | kind, result, effective_model | Tuple[Dict, str, Optional[Dict], str] |
+
+### 3.14 数据目录与库文件路径（`app/db/database.py`）(2026-11-21 新增 §, 小欧)
+
+库文件从数据根平铺改为 `db/` 子目录后的三个路径口。解析口径与 `resolve_db_dir()` 同源（`OMNIAGENT_DATA_DIR` 优先，否则 `~/.omniagent`）；`get_conn` 在首次连接前调用 `ensure_db_layout()` 完成一次性迁移（copy-校验-删旧，幂等）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `resolve_db_dir` | 数据目录唯一解析点：`OMNIAGENT_DATA_DIR` 优先，否则 `~/.omniagent`；惰性解析（不在导入期冻结） | 无 | Path |
+| `db_dir` | 库目录 `{数据根}/db` | 无 | Path |
+| `db_file_path` | 库文件绝对路径唯一拼装点 `{数据根}/db/{库文件名}`（文件名真源 `_DB_FILES`）；纯路径不建目录 | db_name: str | Path |
+| `ensure_db_layout` | 历史平铺库一次性归入 `db/` 子目录：主库与 `-wal` 先落 `.migrating` 中间名、校验大小后转正、再清原位副本；失败不留半套库，幂等，每数据目录只跑一次 | 无 | None |
+
+### 3.15 媒体转码缓存（`app/services/agent/video_transcode.py`）(2026-11-21 新增 §, 小欧)
+
+非 H264 视频转码投递，产物按「源文件名 + 大小 + 纳秒 mtime」缓存复用；缓存目录与清理同源，保留期与日志同一口径（`logging.retention_days`）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `ensure_h264` | 确保视频是 H264：已是原样返回，否则转码到缓存并返回新路径；任何失败（空路径/文件缺失/转码异常/超时）都返回原路径不抛，交上游降级 | path: str, cache_dir: Optional[str] | Tuple[str, bool]（最终路径, 是否转码） |
+| `default_cache_dir` | 缓存目录单源 `%TEMP%/omniagent_video_h264`（转码与清理共用，禁止别处重拼） | 无 | str |
+| `sweep_cache` | 启动清理超期转码缓存：目录专用，按整目录删 mtime 超期文件；天数缺省读 `logging.retention_days`(10)，<=0 不清理 | days: int = 0 | int（删除个数） |
+
 
 ---
 

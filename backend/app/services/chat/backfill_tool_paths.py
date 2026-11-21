@@ -25,15 +25,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from app.db.database import resolve_db_dir
+from app.db.database import db_file_path
 from app.services.chat.storage import derive_tool_paths_from_steps  # 复用派生函数(DRY)
 from app.utils.json_utils import safe_json_dumps  # 与在线落库同一序列化出口(DRY)
 
-_CHAT_DB_FILE = "chat_history.db"
-
 
 def _default_db_path() -> str:
-    return str(resolve_db_dir() / _CHAT_DB_FILE)
+    # 2026-11-21 小欧 - 改走 db_file_path 单源: 库已归入 {数据根}/db/, 此处原直接拼根路径会指向不存在的库
+    return str(db_file_path("chat"))
 
 
 def _write_task(conn: sqlite3.Connection, task_id: str, steps: list,

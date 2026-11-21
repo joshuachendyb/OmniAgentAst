@@ -114,8 +114,11 @@ def _bg_output_dirs() -> list[str]:
 
     输出已按会话工作区落盘, 启动期没有会话快照(get_tool_dir 回落项目根), 只扫当前分配口会漏掉
     各会话目录里的上一世产物; 会话工作区固定为 {项目根}/{时间戳-会话}/output, 故按目录布局枚举。
+    2026-11-21 小欧 - 枚举改走 get_tool_dir_path(只算不建): 本函数唯一调用方是启动期孤儿产物清理,
+      属只读扫盘; 原调 get_tool_dir 会在每次启动无快照时把空 output/ 建到用户项目根。
     """
-    dirs = [_bg_output_dir()]
+    from app.utils.path_utils import get_tool_dir_path
+    dirs = [str(get_tool_dir_path("output"))]
     root = get_config().get_project_root()
     dirs += [str(p) for p in Path(root).glob("*/output") if p.is_dir()]
     return list(dict.fromkeys(dirs))

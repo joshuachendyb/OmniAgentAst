@@ -28,14 +28,16 @@ from app.tools.tool_constants import (
     SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
 )
 from app.tools.tool_response import build_error, build_success
-from app.utils.path_utils import get_tool_dir
+from app.utils.path_utils import get_tool_dir_path
 
 
 def _within_output_dir(path: str) -> bool:
     """output_file 直查边界校验: 目标真实路径须位于输出目录内(防借查询工具读任意文件)。
-    基准与 shell_background 写入侧统一走 get_tool_dir("output"), 避免读写错位。"""
+    基准与 shell_background 写入侧统一走同一分配规则, 避免读写错位。
+    2026-11-21 小欧 - 改调 get_tool_dir_path(只算不建): 原调 get_tool_dir 会 mkdir,
+      只是查一次就把空 output/ 建到用户项目根(启动期无会话快照时兜底到项目根)。"""
     try:
-        base = os.path.realpath(get_tool_dir("output"))
+        base = os.path.realpath(get_tool_dir_path("output"))
         target = os.path.realpath(path)
         return os.path.commonpath([base, target]) == base
     except ValueError:   # 跨盘符等无法比较
