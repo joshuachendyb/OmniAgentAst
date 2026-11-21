@@ -300,6 +300,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         "reason": evidence,
         "meta": meta,
         "vendor_duration_ms": vendor_duration_ms(meta),
+        # 产物所属会话: 前端据此取本地附件 raw 接口(带 token), 不依赖全局前台会话 — 小欧-2026-11-22
+        "session_id": session_id or "",
     }
     # 只有 b64 无公网 URL(如 SenseNova U1.5 官方只返 2048² PNG b64) → 落盘为 attachment,
     # 工具据此声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览, 不把 4MB data URI 塞进 LLM 回复

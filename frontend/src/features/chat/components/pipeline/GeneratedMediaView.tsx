@@ -3,6 +3,10 @@
 //   attachmentApi.loadRawBlob 带 token 取 blob → objectURL(复用附件预览同一取流口, 不新写请求);
 //   type 决定 <img> 或 <video controls>; 未登记附件的兜底行无可取字节, 只能显文字。
 //   2026-11-21 小欧 - 媒体下方补一行产物指针纯文字(url / file_path): 看得见图也能复制地址 — 小欧-2026-11-21
+// 编辑历史: 2026-11-22 小欧 - 三堂会审整改: blob 取流/objectURL/revoke/超时收敛到公用 useAttachmentBlob,
+//   与聊天流产物卡片同一实现, 本组件只留浮层特有的"打开即加载"调用与指针文字 — 小欧-2026-11-22
+// 编辑历史: 2026-11-22 小欧 - 消除 sessionId 全局隐式依赖: 会话改从 data.session_id(后端给)读,
+//   不再依赖 useForegroundSession, 跨会话回看浮层产物不取错附件 — 小欧-2026-11-22
 /**
  * GeneratedMediaView —— 生成类工具结果的媒体渲染器
  *
@@ -14,10 +18,9 @@
  * 尺寸受内容区约束(maxWidth 100% + maxHeight), 不按原始分辨率撑破浮层;
  * objectURL 在卸载/切换工具行时由 effect 清理函数回收, 不泄漏视频内存。
  */
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
-import { attachmentApi } from '@/services/api/attachment.api';
-import { useForegroundSession } from '@/features/chat/services/foregroundSessionStore';
+import { useAttachmentBlob } from '@/features/chat/hooks/useAttachmentBlob';
 import {
   Colors,
   FontFamily,
@@ -28,8 +31,6 @@ import {
 
 /** 浮层内媒体最大高度: 面板已限 maxHeight(100vh-58), 视频按原始高度会顶掉头部 */
 const MEDIA_MAX_H = 360;
-/** 本地产物取流超时: 视频可达数十 MB, 取 60s(短于附件预览的 30s 会误杀大文件) */
-const LOAD_TIMEOUT_MS = 60_000;
 
 const REMOTE_RE = /^https?:\/\//i;
 
@@ -87,45 +88,12 @@ export const GeneratedMediaView: React.FC<GeneratedMediaViewProps> = ({
   const filePath = nonEmpty(data.file_path) ? data.file_path : '';
   const attachmentId =
     !remoteUrl && nonEmpty(data.attachment_id) ? data.attachment_id : '';
-  const { sessionId } = useForegroundSession();
-  const [blobUrl, setBlobUrl] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    setBlobUrl('');
-    setError('');
-    if (!attachmentId) return;
-    if (!sessionId) {
-      setError('会话未就绪，无法读取本地产物');
-      return;
-    }
-    let alive = true;
-    let objUrl = '';
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), LOAD_TIMEOUT_MS);
-    attachmentApi
-      .loadRawBlob(attachmentId, sessionId, ctrl.signal)
-      .then((b) => {
-        if (!alive) return;
-        objUrl = URL.createObjectURL(b);
-        setBlobUrl(objUrl);
-      })
-      .catch((e: unknown) => {
-        if (!alive) return;
-        setError(
-          e instanceof DOMException && e.name === 'AbortError'
-            ? '产物加载超时，请稍后重试'
-            : '产物加载失败，文件可能已被移动'
-        );
-      })
-      .finally(() => window.clearTimeout(timer));
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      ctrl.abort();
-      if (objUrl) URL.revokeObjectURL(objUrl);
-    };
-  }, [attachmentId, sessionId]);
+  // 会话取自产物自身(后端权威), 不依赖全局前台会话; 浮层打开即取流(非懒加载)
+  const ownerSessionId = nonEmpty(data.session_id) ? data.session_id : '';
+  const { blobUrl, error, containerRef } = useAttachmentBlob(
+    attachmentId,
+    ownerSessionId
+  );
 
   const label = isVideo ? '生成的视频' : '生成的图片';
   const pointer = remoteUrl || filePath;
@@ -147,7 +115,10 @@ export const GeneratedMediaView: React.FC<GeneratedMediaViewProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: Spacing.XS }}>
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', flexDirection: 'column', gap: Spacing.XS }}
+    >
       {isVideo ? (
         <video src={src} controls preload="metadata" style={mediaStyle} />
       ) : (

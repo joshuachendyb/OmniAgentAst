@@ -185,14 +185,16 @@ async def generate_image(prompt: str, model: Optional[str] = None,
             other_data=other,
         )
     # summary 只报结论与规格, 产物指针在 data(不重复); 两种形态话术一致 — 小欧-2026-11-21
+    # 2026-11-22 小欧 - data 带 session_id: 前端产物卡片据此取本地附件 raw 接口, 不依赖全局前台会话
+    _sid = str(result.get("session_id") or "")
     summary = f"生成图像，成功：模型 {model_echo}{spec}"
     if url:
         # 公网产物: form=url, name 取 URL 末段文件名, 签名查询串不进名字
         other = declare_artifacts(other, [artifact_from_url(url, "image")])
-        result_data: Dict[str, Any] = {"url": url, "type": "image"}
+        result_data: Dict[str, Any] = {"url": url, "type": "image", "session_id": _sid}
     else:
         # 本地落盘产物: 与其余写工具同一入口, form/type 由契约判定(不再手搓条目)
         other = declare_artifact_file(other, file_path)
-        result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "image"}
+        result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "image", "session_id": _sid}
     llm_data = _build_image_llm_data("success", dur, summary, in_params, "成功", metrics=metrics)
     return build_success(data=result_data, llm_data=llm_data, other_data=other)

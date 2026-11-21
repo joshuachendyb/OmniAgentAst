@@ -296,6 +296,7 @@
 | 导出名 | 位置 | 功能 | 参数 | 返回值 |
 |--------|------|------|------|--------|
 | `useDisclosure` | `hooks/useDisclosure.ts` | 折叠/展开状态 + 两道 a11y 事件聚合（Enter/Space 切换、全分支 stopPropagation）；只管切换与事件阻断，不管阈值/文案 | initial?: boolean | `{expanded, setExpanded, onToggleClick, onToggleKeyDown}` |
+| `useAttachmentBlob` | `hooks/useAttachmentBlob.ts` | 附件 raw blob 内嵌预览唯一取流口：带 token 取字节→objectURL、60s 超时 abort、依赖变化/卸载 revoke；`lazy=true` 用 IntersectionObserver 进入视口才取流（聊天流卡片），`lazy=false` 挂载即取（浮层 TOOL结果）。会话 id 由调用方从产物 data 传入（不依赖全局前台会话）。复用 `attachmentApi.loadRawBlob` — 小欧 2026-11-22 | attachmentId, sessionId, options?{lazy?,rootMargin?} | `{blobUrl, error, containerRef}` |
 | `useStepRenderPrefs` | `components/pipeline/useStepRenderPrefs.ts` | 读后端 `appearance` 组的两个 step 渲染开关（「思考排版」「推理内容」）+ 订阅保存事件刷新；唯一真源=服务端 YAML | 无 | `StepRenderPrefs` |
 | `SETTINGS_SAVED_EVT` | `src/constants/settingsEvents.ts` | 设置保存成功广播事件名（唯一定义点；生产侧仅 useSettings 派发，消费侧仅 useStepRenderPrefs 订阅）— 小欧 2026-10-05 | — | string |
 | `MarkdownBody` | `components/pipeline/MarkdownBody.tsx` | thought 块正文 Markdown 渲染（围栏代码块/行内代码/粗体/斜体/1~3 级标题/无序列表子集；零新依赖，全程不用 dangerouslySetInnerHTML） | `{ text: string }` | JSX |
@@ -434,3 +435,4 @@ const myIsCapsDirty = (a: string[], b: string[]) =>
 | v1.16 | 2026-11-19 | notice 三态化：三态均发 notice 且均返回 LLM+落库；error 发 `failed`+`only_event=true`（仅事件列表、不画卡片不占位置2），warning/success 发 `done`（事件列表+卡片）；新增 `only_event` 呈现标记（notice 可选字段，默认 false 零退化）；§三补 notice 信封登记；`backupTypes.ts` 改名 `chatStreamTypes.ts`（名副其实）；完整设计见 [47] 文档 | 商量 |
 | v1.17 | 2026-11-19 | schedule 新增 `plan_stage` 必填参数(init/update/finish)：LLM 主动阶段决策, 与 items 宽松核对, 反馈进 `llm_data.plan_stage_note`; 阶段中文含义前置到 summary/notice content(`任务计划:初建/更新/结束;`); schema required 含两参数 | 商量 |
 | v1.18 | 2026-11-19 | §4.1 登记 interact 信封(type=interact)：sseParser 只解析通用字段投 onInteract、transport interactHandlers 按 kind 分派；§4.2 新增 notice 与 interact 两事件使用规范(选型/字段契约/处理规范/不变量)；完整设计见 [47][48][49] | 商量 |
+| v1.19 | 2026-11-22 | §4.1 新登记 `useAttachmentBlob`（`hooks/useAttachmentBlob.ts`）：附件 raw blob 内嵌预览唯一取流口（带 token 取字节→objectURL→60s 超时/abort→依赖变化或卸载 revoke），`lazy` 分视口懒加载(聊天流卡片)与挂载即取(浮层 TOOL结果)两形态；消除 `GeneratedMediaView` 与 `GenerationResultCard` 两处重复的取流 effect；会话 id 由调用方从产物 `data.session_id`（后端权威）传入，不再依赖全局前台会话 `useForegroundSession`，跨会话回看不取错附件 | 小欧 |
