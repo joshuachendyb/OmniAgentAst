@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_probe.py — 出口身份探测与 mihomo VPN 状态检查（查桶）
-# 编写人: 小欧    版本: v2.5    更新时间: 2026-11-12 13:00:00
+# 编写人: 小欧    版本: v2.6    更新时间: 2026-11-21 10:20:00
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
@@ -18,6 +18,10 @@
 #   v2.5 2026-11-12 小欧 出口信息永不缺位(用户要求: 不管哪个 VPN 在跑都要输出完整出口对照):
 #                       不带参数时 7890 未运行不再跳过 trace 段, 改查直连链路出口(被 TUN 接管
 #                       时即该 VPN 出口, 带 trace 明细+ASN 归属); 显式 --cf-trace 口径不变
+#   v2.6 2026-11-21 小欧 换桶判定加历史账本(用户要求: 新桶要与最近 5 次的桶都不同):
+#                       新增 bucket_history_load/push/keys/is_fresh 四个函数, 历史落
+#                       log\bucket_history.json(同桶提前, 只留最近 5 个);
+#                       wait_ip_change 增 avoid_keys 参数, 落回最近用过的桶不算换桶
 #   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
 #                       新增 --cf-trace; 出口身份带 family/loc/colo
 #   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
@@ -77,6 +81,11 @@ CONTROLLER = "http://127.0.0.1:%d" % CONTROLLER_PORT
 PROXY_PORT = 7890                      # 本地 HTTP 混合代理端口
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 换桶历史账本: 记录最近用过的出口桶, 新桶要与这 N 个都不同才算换成功 — 小欧 2026-11-21
+BUCKET_HISTORY_SIZE = 5
+BUCKET_HISTORY_PATH = os.path.join(SCRIPT_DIR, "log", "bucket_history.json")
+UNKNOWN_BUCKET = "?|?"                 # 前缀/loc 都查不到时的占位指纹, 不记入历史
 
 
 def cf_trace(client):
@@ -187,27 +196,37 @@ def fmt_identity(i):
     return " ".join(parts)
 
 
-def wait_ip_change(client, old_ident, timeout, log):
+def wait_ip_change(client, old_ident, timeout, log, avoid_keys=None):
     """按"配额桶"判定是否真的换了出口：比 /24、/48 前缀和 loc。
-    只换门牌号（同前缀）等于没换，继续等；换到不同前缀/不同国家才算换成功。"""
+    只换门牌号（同前缀）等于没换，继续等；换到不同前缀/不同国家才算换成功。
+    avoid_keys 给定时(最近用过的桶), 落回这些桶里同样不算换成功 — 小欧 2026-11-21"""
     if not (old_ident or {}).get("ip"):
         return None
     old_key = identity_key(old_ident)
+    avoid = set(avoid_keys or ())
+    avoid.add(old_key)
     log("  [等待] 换桶前出口: %s" % fmt_identity(old_ident))
-    log("  [等待] 判定口径 = 前缀(%s) 或 loc 变化; 同前缀仅尾号变化不计入 (上限 %ds)"
-        % (old_key, timeout))
+    log("  [等待] 判定口径 = 前缀(%s) 或 loc 变化, 且避开最近用过的桶 %s (上限 %ds)"
+        % (old_key, ", ".join(sorted(k for k in avoid if k != old_key)) or "无", timeout))
     start = time.time()
+    seen = old_ident
+    warned = set()
     while time.time() - start < timeout:
         time.sleep(3)
         ident = exit_identity(client)
-        if identity_key(ident) != old_key:
+        key = identity_key(ident)
+        if key and key != UNKNOWN_BUCKET and key not in avoid:
             log("  [等待] 已换至新出口桶 -> %s (耗时 %.0fs)" % (fmt_identity(ident), time.time() - start))
             return ident
-        if (ident or {}).get("colo") and ident.get("colo") != old_ident.get("colo"):
-            log("  [等待] 仅 CF 边缘机房变化 (colo %s -> %s), 桶指纹未变, 继续等待"
-                % (old_ident.get("colo"), ident.get("colo")))
-            old_ident = dict(old_ident, colo=ident.get("colo"))
-    log("  [等待] 超时: 桶指纹未变, 本次切换仍在同一出口桶内")
+        if key == old_key:
+            if (ident or {}).get("colo") and ident.get("colo") != (seen or {}).get("colo"):
+                log("  [等待] 仅 CF 边缘机房变化 (colo %s -> %s), 桶指纹未变, 继续等待"
+                    % ((seen or {}).get("colo"), ident.get("colo")))
+                seen = dict(seen or {}, colo=ident.get("colo"))
+        elif key in avoid and key not in warned:
+            warned.add(key)
+            log("  [等待] 出口落回最近用过的桶 %s, 不算换桶, 继续等待" % key)
+    log("  [等待] 超时: 仍未换出最近用过桶以外的出口")
     return None
 
 
@@ -219,6 +238,65 @@ def identity_key(ident):
     if not prefix and ident.get("ip"):
         prefix = net_prefix(ident["ip"])
     return "%s|%s" % (prefix or "?", ident.get("loc") or "?")
+
+
+def bucket_history_load():
+    """读最近用过的出口桶(最近在前)。文件缺失或损坏时按空历史处理 — 小欧 2026-11-21"""
+    try:
+        with open(BUCKET_HISTORY_PATH, "r", encoding="utf-8") as f:
+            items = json.load(f)
+    except Exception:
+        return []
+    if not isinstance(items, list):
+        return []
+    return [x for x in items if isinstance(x, dict) and x.get("key") and x["key"] != UNKNOWN_BUCKET]
+
+
+def bucket_history_push(ident, limit=BUCKET_HISTORY_SIZE):
+    """把一次出口桶记入历史(同桶提到最前, 只留最近 limit 个), 返回记录后的历史。"""
+    key = identity_key(ident)
+    if not key or key == UNKNOWN_BUCKET:
+        return bucket_history_load()
+    items = [x for x in bucket_history_load() if x["key"] != key]
+    items.insert(0, {
+        "key": key,
+        "ip": ident.get("ip"),
+        "prefix": ident.get("prefix"),
+        "loc": ident.get("loc"),
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+    })
+    items = items[:limit]
+    try:
+        os.makedirs(os.path.dirname(BUCKET_HISTORY_PATH), exist_ok=True)
+        with open(BUCKET_HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    return items
+
+
+def bucket_history_keys(recent=None):
+    """历史桶指纹列表(最近在前)。recent 为空时读文件。"""
+    return [x["key"] for x in (bucket_history_load() if recent is None else recent)]
+
+
+def bucket_is_fresh(ident, recent=None):
+    """新桶是否新鲜: 与最近用过的桶全部不同。历史为空时任何可用桶都算新鲜。"""
+    key = identity_key(ident)
+    if not key or key == UNKNOWN_BUCKET:
+        return False
+    return key not in bucket_history_keys(recent)
+
+
+def bucket_history_clear():
+    """清空换桶历史(节点池整体换过一批出口桶后可手动重置)。"""
+    try:
+        os.makedirs(os.path.dirname(BUCKET_HISTORY_PATH), exist_ok=True)
+        with open(BUCKET_HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        return True
+    except Exception:
+        return False
 
 
 def make_client(proxy=None, timeout=90):
@@ -365,7 +443,7 @@ def main():
         lines.append(s)
 
     log("=" * 78)
-    log("exit_probe v2.5  出口身份探测 / mihomo VPN 状态    %s" % stamp)
+    log("exit_probe v2.6  出口身份探测 / mihomo VPN 状态    %s" % stamp)
     log("=" * 78)
 
     # 模式判定: 显式 --mihomo 只体检; 显式 --cf-trace 只查出口(缺省裸线);
