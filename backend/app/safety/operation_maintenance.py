@@ -48,7 +48,7 @@ def _cleanup_by_size() -> int:
     from app.safety.file_safety_config import FileSafetyConfig
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
-    recycle_path = config.RECYCLE_BIN_PATH
+    recycle_path = FileSafetyConfig.recycle_bin_path()
     if not recycle_path.exists():
         return 0
 

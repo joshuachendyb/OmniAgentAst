@@ -188,10 +188,9 @@ def backup_to_recycle_bin(source_path: Path) -> Optional[Path]:
     r"""备份文件到回收站 — 小欧 2026-08-11 长路径支持: 源/目标加\\?\前缀,
     解决深嵌套目录(递归自复制套娃)备份时 WinError 206 路径超长整体失败。
     """
-    config = FileSafetyConfig()
     try:
         timestamp = timestamp_for_filename()
-        backup_dir = config.RECYCLE_BIN_PATH / f"{timestamp}_{uuid4().hex[:8]}"
+        backup_dir = FileSafetyConfig.recycle_bin_path() / f"{timestamp}_{uuid4().hex[:8]}"
         os.makedirs(to_win_long_path(backup_dir), exist_ok=True)
         backup_path = backup_dir / source_path.name
         src_long = to_win_long_path(source_path)

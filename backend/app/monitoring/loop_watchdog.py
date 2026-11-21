@@ -11,6 +11,8 @@
 #   2026-11-04 小欧 - _DUMP_POOL 1→3: py-spy 卡在 Popen 时单 worker 永久失效, 之后每次 dump 只能等超时。
 # 2026-11-04 小欧 - 监测线程改启动期 prewarm(): 原首个 SSE reader 才 Thread.start, 运行期建线程与
 #   CreateProcess 抢 loader lock(实测 runtime_thread_starts=1 就出在这里), activate 收口为幂等调用 — 小欧-2026-11-04
+# 2026-11-21 小欧 - dump 目录改 LOG_DIR/pyspy 单源: 原按源码树 parents[2]/logs 拼装, 打包(exe)后该路径落在
+#   解包临时目录, dump 随进程退出即丢, 且与 spawn_gate._DUMP_DIR 分叉成两处 — 小欧-2026-11-21
 """
 loop_watchdog — 事件循环心跳看门狗
 
@@ -26,11 +28,10 @@ import shutil
 import subprocess
 import threading
 import time
-from pathlib import Path
 from typing import List
 
 from app.config import get_config
-from app.logger import logger
+from app.logger import LOG_DIR, logger
 from app.utils.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
@@ -198,7 +199,7 @@ def _dump_evidence(stale: float) -> None:
     if not py_spy:
         logger.warning(f"[观测] 事件循环疑似停摆(心跳缺失{stale:.0f}s>{_threshold():.0f}s), py-spy不可用 → 手动取证: py-spy dump --pid {pid_txt}")
         return
-    out_dir = Path(__file__).resolve().parents[2] / "logs" / "pyspy"
+    out_dir = LOG_DIR / "pyspy"
     ts = time.strftime("%Y%m%d_%H%M%S")
     dumped = False
     for pid in pids:
