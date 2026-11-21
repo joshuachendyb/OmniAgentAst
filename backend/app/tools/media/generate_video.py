@@ -19,6 +19,9 @@
   去掉产物段(附件路径已在 data, 重复即噪音), 公网形态本地形态话术一致 — 小欧-2026-11-21
 编辑历史: 2026-11-21 小欧 未交付不再报 warning: b64 落盘失败与厂商无产物一律 exec_code=error
   (分别 ERR_GENERATE_PERSIST_FAILED / ERR_GENERATE_REJECTED), LLM 须明确知道没拿到视频 — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 落点收窄 + DRY: 原 _vendor_fields 与 generate_image 逐字重复, 合并为
+  vendor_spec.build_vendor_fields(kind, result, effective_model) 单源; other_data 只装厂商 usage 数字
+  (原 other_data.provider 与其余标量改走 metrics), 无 usage 时为空 dict — 小欧-2026-11-21
 """
 import os
 import time

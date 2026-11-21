@@ -23,6 +23,8 @@
 2026-11-20 小欧 按厂商文档补全生图全能力: generate_image 加 size/ratio/多图 images 及 provider 方言翻译
   (agnes 档位+ratio / sensenova 档位换算 WIDTHxHEIGHT, 实测两家参数协议不同); image 归一为数组(sensenova 只认数组);
   全部可选(OCP); 加 IMAGE_SIZES/RATIOS/档位像素表常量 — 小欧-2026-11-20
+2026-11-21 小欧 订正 generate_video docstring 的 settled 口径: 原写「任务 failed = 确定拒绝」与实现不符,
+  实为 settled=False(厂商侧资源/素材问题, 不判模型无能); 与 FUNCTIONS.md §10.4 对齐 — 小欧-2026-11-21
 """
 import asyncio
 import time
@@ -318,10 +320,9 @@ async def generate_video(
 ) -> Tuple[bool, str, bool]:
     """生成一段视频（提交+轮询）→ (产物成功?, evidence, 是否确定结论)。
 
-    settled 口径与 generate_image 对齐：任务终态且有视频地址 = 确定 OK；
-    400/415/422 或任务 failed = 确定拒绝；401/429/5xx/队列已满/轮询超时/网络错
-    = 未定（厂商侧环境或排队问题，不得据此判模型无生视频能力）
-    - 小欧-2026-11-09
+    settled 口径与 generate_image 对齐：任务终态且有视频地址 = 确定 OK；400/415/422 = 确定拒绝。
+    任务 failed 记未定——多为厂商侧资源/素材抓取问题, 不据此判模型无生视频能力; 401/429/5xx/
+    队列已满/轮询超时/网络错/终态无地址/协议漂移同为未定 - 小欧-2026-11-09
     模式(text/keyframe/reference)与媒体/通用参数按厂商文档 agnes-video-2.5/flash 全量支持,
       所有新参数可选、不传则请求体只含既有字段(探测腿与旧调用零影响, OCP) — 小欧-2026-11-20
     out: 可选产物出口(对话生视频工具)——成功时写入未截断的原始 mp4 url 及 meta(厂商其余字段);
