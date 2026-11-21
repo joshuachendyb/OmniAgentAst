@@ -19,11 +19,14 @@
 编辑历史: 2026-11-21 小欧 厂商响应不再只留产物地址: 规格(size/output_format)与出图耗时拼进 summary 一句,
   厂商回显 model 覆盖 metrics.model, 其余字段(created/task_id/revised_prompt/usage/失败 request id)原样进
   other_data.provider(落库落档, 不进 LLM) — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 规格改走 vendor_spec 标准键映射(尺寸/格式/耗时, 未映射不显示); 成功 summary 去掉产物段
+  (附件路径已在 data, 重复即噪音), 公网形态本地形态话术一致 — 小欧-2026-11-21
 """
 import os
 import time
 from typing import Any, Dict, List, Optional
 
+from app.services.generation.vendor_spec import build_vendor_spec, vendor_duration_ms
 from app.tools.context import get_current_generate_callback
 
 # 默认生成图像模型与错误码从工具层常量引入 — 小欧-2026-11-20
@@ -77,28 +80,17 @@ def _build_image_llm_data(
 def _vendor_fields(result: Dict[str, Any], effective_model: str) -> tuple:
     """厂商回显 → (metrics, summary 规格尾段, other_data) — 小欧-2026-11-21
 
-    metrics 只收厂商明确回来的标量(键值取 {value,text} 形: 前端工具行标签只认 text/value,
-    标量会渲染成空值); 规格与出图耗时另拼进 summary 一句; 其余字段(created/task_id/
-    revised_prompt/usage 原结构/失败 request id)整包进 other_data, 落库落档但不进 LLM。
+    规格(mappings) 走 vendor_spec 标准键: 尺寸/格式/耗时, 映射不到就不显示;
+    其余字段(created/task_id/revised_prompt/usage 原结构/失败 request id)整包进 other_data。
     """
     meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
     model = str(meta.get("model") or "") or effective_model
-    size = str(meta.get("size") or "")
-    fmt = str(meta.get("output_format") or "")
-    usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
+    # 编排层已算过的直接用; 缺失时从 meta 时间戳自算, 不因上游漏传而丢规格 — 小欧-2026-11-21
+    duration_ms = int(result.get("vendor_duration_ms") or 0) or vendor_duration_ms(meta)
+    spec_metrics, suffix = build_vendor_spec("image", meta, duration_ms)
     metrics: Dict[str, Any] = {"model": {"value": model, "text": model}} if model else {}
-    if size:
-        metrics["size"] = {"value": size, "text": size}
-    if fmt:
-        metrics["format"] = {"value": fmt, "text": fmt}
-    for key in ("total_tokens", "output_tokens"):
-        val = usage.get(key)
-        if isinstance(val, int) and val:
-            metrics[key] = {"value": val, "text": str(val)}
-    vendor_ms = int(result.get("vendor_duration_ms") or 0)
-    parts = [p for p in (size, f"{fmt} 格式" if fmt else "",
-                         f"出图耗时 {vendor_ms // 1000} 秒" if vendor_ms else "") if p]
-    return metrics, "".join(f"，{p}" for p in parts), ({"provider": meta} if meta else None)
+    metrics.update(spec_metrics)
+    return metrics, suffix, ({"provider": meta} if meta else None)
 
 
 async def generate_image(prompt: str, model: Optional[str] = None,
@@ -187,14 +179,12 @@ async def generate_image(prompt: str, model: Optional[str] = None,
             ),
             other_data=other,
         )
+    # summary 只报结论与规格, 产物指针在 data(不重复); 两种形态话术一致 — 小欧-2026-11-21
+    summary = f"生成图像，成功：模型 {model_echo}{spec}"
     if url:
-        # summary 是给 LLM 的客观结论(照 search_web 口径: 只报结果不报内容), 产物 url 在 data 由前端卡片呈现
-        summary = f"生成图像，成功：模型 {model_echo}{spec}"
         artifacts = [artifact_from_url(url, "image")]
         result_data: Dict[str, Any] = {"url": url, "type": "image"}
     else:
-        att_part = f"attachment_id={attachment_id}, " if attachment_id else ""
-        summary = (f"生成图像，成功：模型 {model_echo}{spec}，产物为本地附件({att_part}路径 {file_path})")
         artifacts = [{"name": os.path.basename(file_path), "path": file_path, "type": "image"}]
         result_data = {"file_path": file_path, "attachment_id": attachment_id, "type": "image"}
     llm_data = _build_image_llm_data("success", dur, summary, in_params, "成功", metrics=metrics)

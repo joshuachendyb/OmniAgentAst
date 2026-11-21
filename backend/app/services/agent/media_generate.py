@@ -27,6 +27,8 @@
   复用 model_service.get_current_ref/RESERVED_AI_KEYS 单源); 未找到 provider 属确定失败改 settled=True(原 False 让工具回"稍后重试");
   async 入口内的图源读文件/b64 落盘改 asyncio.to_thread(原同步阻塞事件循环); 产物 mime 改为按字节魔数嗅探
   (厂商只回 url/b64 不回 mime, 原按 kind 硬编码 png/mp4 会让 jpeg/webm 产物后缀撒谎) — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 厂商 meta 的规格映射与耗时计算收口到 generation/vendor_spec.py(标准键别名表唯一真源),
+  本模块只调 vendor_duration_ms, 不再自带一份时间戳解析 — 小欧-2026-11-21
 """
 import asyncio
 import base64
@@ -46,6 +48,7 @@ from app.services.generation.generation_client import (
     generate_image,
     generate_video,
 )
+from app.services.generation.vendor_spec import vendor_duration_ms
 
 
 def _read_image_source(src: str) -> Optional[Tuple[bytes, str]]:
@@ -200,19 +203,6 @@ def _provider_credentials(model: str) -> Tuple[Optional[str], str, str]:
     return None, "", ""
 
 
-def _vendor_duration_ms(meta: Dict[str, Any]) -> int:
-    """厂商侧任务耗时(毫秒): created_at→completed_at; 缺任一端返回 0 — 小欧-2026-11-21
-
-    与工具墙钟 duration_ms 互补: 墙钟含排队提交+轮询粒度, 厂商耗时才是真出片时间。
-    """
-    try:
-        start = int(meta.get("created_at") or 0)
-        end = int(meta.get("completed_at") or 0)
-    except (TypeError, ValueError):
-        return 0
-    return (end - start) * 1000 if start and end and end >= start else 0
-
-
 async def invoke_generate(kind: str, model: str, prompt: str,
                           *, image: Optional[str] = None,
                           mode: Optional[str] = None,
@@ -291,7 +281,7 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         "attachment_id": "",
         "reason": evidence,
         "meta": meta,
-        "vendor_duration_ms": _vendor_duration_ms(meta),
+        "vendor_duration_ms": vendor_duration_ms(meta),
     }
     # 只有 b64 无公网 URL(如 SenseNova U1.5 官方只返 2048² PNG b64) → 落盘为 attachment,
     # 工具据此声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览, 不把 4MB data URI 塞进 LLM 回复
