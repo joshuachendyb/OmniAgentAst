@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: shell 输出超长截断改引用 tool_constants.SHELL_OUTPUT_MAX_CHARS(30000→20000), 功能零退化
@@ -193,6 +193,8 @@
 #   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
 # 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.utils.proc_io(函数本体的迁移史见其 docstring)
 # 2026-11-18 小欧 - 清遗留死导入 sys(模块内零引用, ruff F401 长期红), 不涉运行逻辑 — 小欧-2026-11-18
+# 2026-11-21 小欧 - 退出码含义字典上移 tool_constants.EXIT_CODE_MEANING 单源(与后台完成通知共用),
+#   删本地副本; 后台启动 action.params 的 shell_type/cwd 由 shell_background._start_params 统一补齐 — 小欧-2026-11-21
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -310,6 +312,7 @@ from app.tools.tool_constants import (
     ERR_SHELL_INJECTION,
     ERR_SHELL_TIMEOUT,
     EXECUTE_SHELL_OUTPARM_LIMIT_CMD,
+    EXIT_CODE_MEANING,
     SHELL_OUTLIMIT_STDERR_MAX_CHARS,
     SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
     SUBPROCESS_TIMEOUT_SHORT,
@@ -1054,8 +1057,8 @@ def shell(
 
     返回:
         build_success / build_error / build_warning 标准格式
-        data: {stdout, stderr}（原始输出; returncode/shell_type/duration_ms 仅在 llm_data, 不在 data）
-        background=true 时: data={shell_id, output_file, status}
+        data: {stdout, stderr}（原始输出; returncode/shell_type/duration_ms 在 llm_data, 不在 data）
+        background=true 时: data 为空(启动无结果本体; shell_id 与输出文件在 llm_data.metrics)
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1【通用】: 参数校验 ──
@@ -1251,7 +1254,10 @@ def shell(
             timeout=(timeout if _timeout_explicit else None),  # None=后台默认无超时, 显式传才生效 — 商量-2026-11-13
             success_codes=success_codes)
         if result is not None and result.get("llm_data"):
-            result["llm_data"]["action"]["params"]["timeout"] = timeout  # 留痕原始入参供历史核对
+            # 只留痕"显式传入"的 timeout: 未显式传时局部 timeout 已被填成前台默认 60,
+            # 后台实际无超时, 照抄会让历史核对与 LLM 误以为限时 60 秒 — 小欧-2026-11-21
+            if _timeout_explicit:
+                result["llm_data"]["action"]["params"]["timeout"] = timeout
             if _shell_type_switch:
                 # 后台分支 llm_data 由 shell_background 构建, 在此补路由留痕(与前台同口径)
                 result["llm_data"]["action"]["params"]["shell_type_requested"] = _requested_shell_type
@@ -1399,11 +1405,7 @@ def shell(
             data["_truncated"] = True
 
         # ── 阶段 5【通用】: 构建 llm_data（截断已由阶段4.5统一处理，此处只判定状态+构建detail+调1次）
-        _EXIT_CODE_MEANING = {
-            1: "通用错误", 2: "命令语法错误", 3: "配置错误",
-            5: "拒绝访问", 127: "命令未找到", 9009: "命令未找到(cmd)",
-            3221225786: "程序崩溃(STATUS_DATATYPE_MISALIGNMENT)",
-        }
+        # 退出码含义单源 tool_constants.EXIT_CODE_MEANING(后台完成通知共用同一份, 不再本地另存副本) — 小欧-2026-11-21
         _exec_code = "success"
         _err_code = ""
         _detail = ""
@@ -1436,7 +1438,7 @@ def shell(
                 _err_code = ERR_SHELL_EXEC
                 _detail = (stderr_str if stderr_str.strip()
                            else (stdout_str if stdout_str.strip()
-                                 else f"退出码{returncode}({_EXIT_CODE_MEANING.get(returncode, '未知错误')})"))
+                                 else f"退出码{returncode}({EXIT_CODE_MEANING.get(returncode, '未知错误')})"))
                 if stderr_str.strip():
                     if re.search(r"(command not found|not recognized|'[^']+' is not recognized|不是内部|不是可运行)", stderr_str, re.IGNORECASE):
                         _detail = f"[命令未找到] {_detail}"
@@ -1452,7 +1454,7 @@ def shell(
                 _exec_code = "error"            # 无产出(如仅pip notice/命令失败无输出) → 保守保留 error 防掩盖
                 _err_code = ERR_SHELL_EXEC
                 _detail = (stderr_str if stderr_str.strip()
-                           else f"退出码{returncode}({_EXIT_CODE_MEANING.get(returncode, '未知错误')})")
+                           else f"退出码{returncode}({EXIT_CODE_MEANING.get(returncode, '未知错误')})")
             _hint = _shell_mismatch_hint(shell_type, _stderr_for_diag) or "请检查命令语法和参数"
 
         # 只调 1 次 _build_..._llm_data

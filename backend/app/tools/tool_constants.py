@@ -98,6 +98,8 @@
 #   与 media_schema 的 model 提示串原散于业务文件, 迁至本文件单一真源, 原文件改 import — 小欧-2026-11-20
 # 2026-11-20 小欧 话术审查整改: MEDIA_MODEL_HINT(两工具共用, 同时列出 image/video 模型诱导传错)拆为
 #   MEDIA_IMAGE_MODEL_HINT / MEDIA_VIDEO_MODEL_HINT, 各自只列本模态模型并明确"不要传另一模态模型" — 小欧-2026-11-20
+# 2026-11-21 小欧 - 新增 EXIT_CODE_MEANING(退出码→含义单源): 同步 shell 失败 detail 与后台完成通知共用,
+#   原为 execute_shell_command 内局部字典, 两处各持一份易漂移 — 小欧-2026-11-21
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -393,6 +395,12 @@ QUESTION_OPTION_SCHEMA_KEYS = frozenset(
 # shell
 SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 10000          # 使用对象: execute_shell_command.py(shell 成功输出字符上限, 超则截断; 原50000→20000→10000) — 小欧-2026-10-27
 SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = 2000           # 使用对象: execute_shell_command.py(shell 失败输出字符上限, 超则截断; 原20000→2000) — 小欧-2026-10-27
+# shell 退出码含义单源(同步/后台共用): 失败时给 LLM 解释, 只认确定的常见码, 未收录的不猜 — 小欧-2026-11-21
+EXIT_CODE_MEANING: dict = {
+    1: "通用错误", 2: "命令语法错误", 3: "配置错误",
+    5: "拒绝访问", 127: "命令未找到", 9009: "命令未找到(cmd)",
+    3221225786: "程序崩溃(STATUS_DATATYPE_MISALIGNMENT)",
+}
 # xlsx
 XLSX_OUTLIMIT_ROWS_MAX: int = 1000                    # 使用对象: read_xlsx.py(读取 Excel 行数上限, 超此截断)
 XLSX_OUTLIMIT_CELL_CHARS: int = 500                   # 使用对象: read_xlsx.py(单格字符串字符上限, 超此截断)

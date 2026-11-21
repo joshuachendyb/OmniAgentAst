@@ -61,6 +61,8 @@
 //   (原 live 非空即全量覆盖, 丢快照里 live 未复现的条目); ②url 条目点击开外链(原来当文件重读必失败) — opencode-2026-11-18
 // 编辑历史: 2026-11-20 小欧 - 修"复制失败" bug: 原 handleCopy 用裸 navigator.clipboard.writeText, 嵌入式浏览器/权限被拒/文档未聚焦时
 //   抛 NotAllowedError 必报"复制失败"(实测复现 Document is not focused); 改走统一 copyTextToClipboard(内建 execCommand 降级) — 小欧-2026-11-20
+// 编辑历史: 2026-11-21 小欧 - 后台完成通知正文前缀由「[系统通知]」改为「[后台通知]」: 上文 11-14 条目所称
+//   "正文自带前缀可区分"改以新前缀为准; 消息种类判定仍走 msg_kind=system_notice, 本文件零逻辑变更 — 小欧-2026-11-21
 
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）

@@ -10,6 +10,9 @@
 # 2026-11-13 商量 - 后台命令: ShellInput 增 background 参数; 新增 BashResultInput(后台结果查询) — 商量-2026-11-13
 # 2026-11-13 商量 - 改名: BashResultInput 改名 TaskQueryInput, 配合工具 bash_result→task_query 通用化
 # 2026-11-13 商量 - 再改名: TaskQueryInput 改名 BgTaskQueryInput, 配合工具 task_query→bg_task_query 与计划任务区分
+# 2026-11-21 小欧 - 后台查询 schema 类再改名(名称不带下划线), 配合工具名同步
+# 2026-11-21 小欧 - 删除后台查询 schema 类: 对应工具一并删除(完成通知已覆盖后台结果,
+#   查询能力仅剩"读内存注册表"一条不可替代, 北京老陈定案删)
 """
 FUNDAMENTAL Schema - 基础工具参数模型
 
@@ -105,7 +108,6 @@ class ShellInput(BaseModel):
     - stderr: 标准错误内容
     - returncode: 退出码(0=成功)
     - shell_type: 实际使用的shell类型
-    - background=true 时: data={shell_id, output_file, status}
     """
     command: str = Field(
         ..., description="命令字符串。多个命令用;分隔。注意:本机Python解释器命令为python,禁止使用python3。"
@@ -130,19 +132,11 @@ class ShellInput(BaseModel):
     )
     background: bool = Field(
         default=False,
-        description="后台运行命令并立即返回(适合dev server/长构建)。"
-                    "无需在命令末尾加&。完成时会自动收到系统通知并自动继续处理,"
-                    "不要轮询等待; 期间可继续其他工作或直接结束回答。"
+        description="后台运行命令并立即返回(适合dev server/长构建), 无需在末尾加&。"
+                    "返回的只是启动结果(shell_id/输出文件), 不代表命令已成功;"
+                    "成败看之后的完成通知(含退出码与输出尾部)。"
+                    "完成会自动收到通知并继续处理, 不要轮询等待。"
                     "后台命令默认无超时, 显式传timeout则生效。"
-    )
-
-
-class BgTaskQueryInput(BaseModel):
-    shell_id: Optional[str] = Field(
-        default=None, description="后台命令ID(bash background=true 返回的 shell_id)"
-    )
-    output_file: Optional[str] = Field(
-        default=None, description="输出文件路径(服务重启后 shell_id 失效时按文件直查)"
     )
 
 
@@ -151,6 +145,5 @@ __all__ = [
     "TimeNowInput",
     "SendNotificationInput",
     "ShellInput",
-    "BgTaskQueryInput",
 ]
 

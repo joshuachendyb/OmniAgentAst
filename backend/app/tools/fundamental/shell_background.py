@@ -22,6 +22,21 @@
 #   原 timed_out 布尔信息量不足致查询无法区分超时/超限/失败; (5)补后台启动与结束 info 日志(成功路径此前无日志)
 # 2026-11-21 小欧 三堂会审整改: 启动期孤儿清理改扫全集(_bg_output_dirs): 输出已按会话工作区落盘,
 #   只扫当前分配口(启动期无会话快照→项目根/output)会漏掉各会话目录里的上一世 .log/.bat
+# 2026-11-21 小欧 计时整改(规范 2.2 不设豁免): run_shell_background 与 _bg_error 的 duration_ms
+#   原硬编码 0(真启动进程却报 0 毫秒), 改 t0/_dur 实测启动动作墙钟耗时; 同步订正注册表
+#   outcome 初值注释(初值 running=未结束, 终态才写 completed/failed/timeout/oversize/killed) — 小欧-2026-11-21
+# 2026-11-21 小欧 删除查询工具配套读口: 后台查询工具删除后, 只被它调用的 get_bg_info /
+#   find_bg_by_output_file 无调用方, 一并删除(不留死代码); 注册表仍是后台状态的唯一真源, 仅供本模块内部使用
+# 2026-11-21 小欧 完成通知整改: 前缀统一 [后台通知] 后台shell 执行完成/失败/超时已被强制终止/输出超限;
+#   t_end_mono 改在"判定结束"瞬间记录(杀进程树耗时不再算进命令耗时, 修"限时1s/耗时4.3s"自相矛盾);
+#   _await_process 返回 (rc, outcome, t_end), 输出上限取注册表启动值(通知阈值与强杀判据同源);
+#   新增 _fmt_duration/_rc_text/_cmd_display/_start_params: 快命令不再恒显 0.0s、退出码带含义(单源
+#   EXIT_CODE_MEANING, success_codes 命中不套失败含义)、负码写"退出码未知"、长命令截断留省略号、
+#   启动返回 action.params 补 shell_type/cwd; 输出尾部声明截断、无输出写"(无输出)"、末行加核查提示;
+#   kill_background_by_task 补锁内二次校验 outcome(防覆盖等待协程已写的真实终态) — 小欧-2026-11-21
+# 2026-11-21 小欧 三堂会审补漏: 拆出 _build_notice_text(纯函数, 只拼文案不发路由) 与 persist_notice_text
+#   (路由未注册/异常时把通知正文追加进输出文件, 不再只留一行日志); 超限通知补报实际已写大小;
+#   被外部终止(任务取消/服务关闭/等待协程取消)在输出文件尾写终止说明, 不再完全无痕 — 小欧-2026-11-21
 """
 S: shell_background — bash 工具后台执行支撑
 
@@ -41,12 +56,12 @@ from typing import Any, Dict, Optional
 
 from app.config import get_config
 from app.logger import logger
-from app.tools.tool_constants import ERR_SHELL_EXCEPTION
+from app.tools.tool_constants import ERR_SHELL_EXCEPTION, EXIT_CODE_MEANING
 from app.tools.tool_response import build_error, build_success
 from app.utils.workers import WorkerPool
 
 # ── 全局态 ──────────────────────────────────────────────
-_BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {proc, output_file, task_id, command, shell_type, status, started_at, notice_id, sem_released}}
+_BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {proc, output_file, task_id, command, shell_type, outcome, started_at, t0_mono, timeout, notice_id, sem_released}}
 _BG_LOCK = threading.Lock()          # 注册表读写锁(工作线程注册 vs 主循环协程更新)
 _BG_TASKS: set = set()               # Future 强引用集合, done 回调 discard 防GC(仿 agent_runner._background_tasks)
 
@@ -61,6 +76,10 @@ _BG_SIDECAR_SUFFIX = ".bat"   # cmd 后台启动脚本后缀(与输出文件同�
 #   池大小与 _BG_SEM 同源, 每个在跑后台恰占 1 线程, 一对一不排队。
 _BG_WAIT_POOL = WorkerPool(_BG_MAX, "bg-shell-wait")
 _BG_CLEANUP_MAX_ATTEMPTS = 5   # 产物删除连续失败上限, 超过则放弃记录防注册表无限增长
+_NOTICE_TAIL_CHARS = 600       # 完成通知附带的输出尾部字符数(超则只给尾部并在正文声明截断) — 小欧-2026-11-21
+_NOTICE_CMD_CHARS = 200        # 完成通知里的命令展示上限(超则加省略号) — 小欧-2026-11-21
+_NOTICE_FOOTER = "[结合上下文,核查执行结果]"   # 通知末行: 提醒 LLM 结合上下文核对结果 — 小欧-2026-11-21
+HD_Notice = "[后台通知]"                       # 后台完成通知正文前缀(唯一生产者在本模块) — 小欧-2026-11-21
 
 
 def _max_output_bytes() -> int:
@@ -124,13 +143,27 @@ def _bg_output_dirs() -> list[str]:
     return list(dict.fromkeys(dirs))
 
 
-def _bg_error(command: str, cmd_short: str, detail: str, hint: str) -> Dict[str, Any]:
+def _start_params(command: str, shell_type: str, cwd: Optional[str]) -> Dict[str, Any]:
+    """异步启动的 action.params: 与前台同口径带 shell_type, cwd 非空才留痕 — 小欧-2026-11-21"""
+    p: Dict[str, Any] = {"command": command, "background": True}
+    if shell_type:
+        p["shell_type"] = shell_type
+    if cwd:
+        p["cwd"] = cwd
+    return p
+
+
+def _bg_error(command: str, cmd_short: str, detail: str, hint: str,
+              duration_ms: int = 0, shell_type: str = "",
+              cwd: Optional[str] = None) -> Dict[str, Any]:
+    """后台启动失败出口。duration_ms 由调用方按真实耗时传入(规范 2.2 禁硬编码) — 小欧-2026-11-21"""
     return build_error(data={}, llm_data={
-        "summary": f"执行Shell命令{cmd_short}，失败",
-        "action": {"tool": "bash", "tool_zh": "执行", "params": {"command": command, "background": True}},
+        "summary": f"后台执行Shell命令{cmd_short}",
+        "action": {"tool": "bash", "tool_zh": "执行",
+                   "params": _start_params(command, shell_type, cwd)},
         "status": {"exec_code": "error", "message": "失败", "code": ERR_SHELL_EXCEPTION,
                    "detail": detail, "hint": hint},
-        "duration_ms": 0, "metrics": {}})
+        "duration_ms": duration_ms, "metrics": {}})
 
 
 def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
@@ -139,16 +172,26 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                           success_codes: Optional[list[int]] = None) -> Dict[str, Any]:
     """启动后台命令并立即返回。popen_factory: 由调用方注入(Popen 构造, 复用 shell() 各
     shell_type 的启动参数装配, 避免本模块重复实现四种 shell 的命令行拼装 DRY)。
-    返回 build_success 标准格式, data={shell_id, output_file, status:"running"}。"""
+    返回 build_success 标准格式, data={}(启动无结果本体; shell_id/output_file 在 llm_data.metrics)。
+
+    duration_ms 为"本次启动动作"的真实墙钟耗时(进程起完即返回, 不等于命令运行时长),
+    按规范 2.2 由 t0 计时, 不得硬编码 0 — 小欧-2026-11-21
+    """
+    t0 = time.perf_counter()
+
+    def _dur() -> int:
+        return int((time.perf_counter() - t0) * 1000)
+
     if _MAIN_LOOP is None:
         return _bg_error(command, cmd_short,
-                         "主事件循环未初始化, 后台执行不可用", "服务启动中, 请稍后重试")
+                         "主事件循环未初始化, 后台执行不可用", "服务启动中, 请稍后重试",
+                         _dur(), shell_type, cwd)
     # 新后台命令启动时顺带清理过期结果(与设置项说明一致, 也给上轮删除失败项重试机会)
     _schedule_result_cleanup()
     if not _BG_SEM.acquire(blocking=False):
         return _bg_error(command, cmd_short,
                          f"后台并发已达上限({_BG_MAX}), 请等待现有后台命令结束",
-                         "属容量管理, 非命令本身错误")
+                         "属容量管理, 非命令本身错误", _dur(), shell_type, cwd)
     shell_id = ""
     proc = None
     try:
@@ -164,15 +207,20 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 os.remove(output_file)
             except OSError:
                 pass
-            return _bg_error(command, cmd_short, "后台进程启动失败", "请检查命令与解释器")
+            return _bg_error(command, cmd_short, "后台进程启动失败", "请检查命令与解释器",
+                             _dur(), shell_type, cwd)
         with _BG_LOCK:
             _BG_REGISTRY[shell_id] = {
                 "proc": proc, "output_file": output_file, "task_id": task_id,
-                "command": command, "shell_type": shell_type,
-                "status": "running", "started_at": time.time(),
+                "command": command, "shell_type": shell_type, "cwd": cwd or "",
+                "started_at": time.time(), "t0_mono": time.monotonic(),
                 "timeout": timeout,
+                # 启动时定下输出上限, 等待/通知共用同一个值(通知里报的阈值必须与强杀判据一致)
+                "max_output_bytes": _max_output_bytes(),
                 "success_codes": success_codes or [],
-                "outcome": "running",   # 终态语义: completed/failed/timeout/oversize/killed
+                # 状态单一真源: outcome ∈ running(未结束)/completed/failed/timeout/oversize/killed。
+                # 原另存一份 status(少 timeout/oversize 两词) 与 outcome 表达同一件事, 已删 — 小欧-2026-11-21
+                "outcome": "running",
                 "notice_id": f"{shell_id}_done",   # 通知追踪ID(仅日志留痕; 同 shell_id 通知只发一次由 _wait_and_notify 单次执行保证)
                 "sem_released": False,
             }
@@ -192,22 +240,25 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
             _BG_SEM.release()
             logger.error(f"[bg_shell] {shell_id} 等待协程提交失败(主循环不可用), 进程已终结: {_sub_e}")
             return _bg_error(command, cmd_short,
-                             f"等待协程提交失败: {_sub_e}", "服务正在关闭, 请稍后重试")
+                             f"等待协程提交失败: {_sub_e}", "服务正在关闭, 请稍后重试",
+                             _dur(), shell_type, cwd)
         _BG_TASKS.add(fut)
         fut.add_done_callback(lambda f: _on_wait_future_done(shell_id, f))
         logger.info(f"[bg_shell] 后台已启动 {shell_id} (task={task_id}, type={shell_type}, "
                     f"timeout={timeout}, out={output_file})")
         return build_success(
-            data={"shell_id": shell_id, "output_file": output_file, "status": "running"},
+            # 异步启动没有"结果本体": shell_id/output_file 只是指针, 已进 llm_data.metrics,
+            # data 留空防与统计段重复(原三键与 metrics 完全重复, LLM 看到两遍) — 小欧-2026-11-21
+            data={},
             llm_data={
-                "summary": f"执行Shell命令{cmd_short}，已转后台",
+                "summary": f"后台执行Shell命令{cmd_short}",
                 "action": {"tool": "bash", "tool_zh": "执行",
-                           "params": {"command": command, "background": True}},
-                "status": {"exec_code": "success", "message": "已转后台运行",
+                           "params": _start_params(command, shell_type, cwd)},
+                "status": {"exec_code": "success", "message": "成功",
                            "code": "", "detail": "",
                            "hint": "完成时会自动收到系统通知并自动继续处理, 不要轮询等待; "
                                    "期间可继续其他工作或直接结束回答"},
-                "duration_ms": 0,
+                "duration_ms": _dur(),
                 "metrics": {"shell_id": {"value": shell_id, "text": f"后台ID {shell_id}"},
                             "output_file": {"value": output_file, "text": "输出文件"}}})
     except Exception as e:
@@ -224,7 +275,7 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 _info["sem_released"] = True
         _BG_SEM.release()
         logger.error(f"[bg_shell] 后台启动异常: {e}", exc_info=True)
-        return _bg_error(command, cmd_short, str(e), "后台启动异常")
+        return _bg_error(command, cmd_short, str(e), "后台启动异常", _dur(), shell_type, cwd)
 
 
 def _release_slot(shell_id: str) -> None:
@@ -237,6 +288,65 @@ def _release_slot(shell_id: str) -> None:
     _BG_SEM.release()
 
 
+def _elapsed_s(info: dict) -> float:
+    """命令运行时长(秒, 不取整): monotonic 起点/终点相减, 不受系统调时间影响; 展示交给 _fmt_duration。
+    原实现用 time.time() 差值且 int 截断, 调时间会算出负值/错值 — 小欧-2026-11-21"""
+    t0 = info.get("t0_mono")
+    t_end = info.get("t_end_mono")
+    if t0 is None or t_end is None:
+        return 0.0
+    return max(t_end - t0, 0.0)
+
+
+def _fmt_duration(seconds: float) -> str:
+    """耗时展示: <1s 两位小数(快命令不再恒显 0.0s), <60s 一位, ≥60s 分秒 — 小欧-2026-11-21"""
+    if seconds < 1:
+        return f"{seconds:.2f}s"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    return f"{int(seconds // 60)}m{int(seconds % 60)}s"
+
+
+def _rc_text(rc: int, success: bool = False) -> str:
+    """退出码展示: 已知码带含义(单源 EXIT_CODE_MEANING), 未收录只给数字, 负值=无有效退出码。
+    success=True 表示 rc 已被 success_codes 判为成功: 此时不套失败含义, 否则"执行完成"里会出现"通用错误"。
+    原实现直接写"退出码-1", LLM 会当成真实退出码 — 小欧-2026-11-21"""
+    if rc is None or rc < 0:
+        return "退出码未知"
+    if success and rc != 0:
+        return f"退出码{rc}(已按成功码判定)"
+    meaning = EXIT_CODE_MEANING.get(rc)
+    return f"退出码{rc}({meaning})" if meaning else f"退出码{rc}"
+
+
+def _cmd_display(command: str, limit: int = _NOTICE_CMD_CHARS) -> str:
+    """通知里的命令展示: 超长必须留省略号, 静默截断会让 LLM 对不上自己发的命令 — 小欧-2026-11-21"""
+    return command if len(command) <= limit else command[:limit] + "…"
+
+
+def _fmt_bytes(n: int) -> str:
+    """字节数展示: <1KB 给 B, <1MB 给 KB, 其余给 MB。
+    原按 //(1024*1024) 取整, 上限配成 512KB 时会显示"上限0MB" — 小欧-2026-11-21"""
+    if n < 1024:
+        return f"{n}B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f}KB"
+    return f"{n / (1024 * 1024):.1f}MB"
+
+
+def _mark_terminated(info: dict, reason: str) -> None:
+    """被外部终止(任务取消/服务关闭/等待协程取消)时在输出文件尾部落一条终止说明。
+    这类终止刻意不发完成通知(发了会唤醒续跑, 取消后复活), 但不落痕则事后完全查不到
+    这条命令是怎么没的(输出文件停在半截, 注册表重启即丢) — 小欧-2026-11-21"""
+    marker = (f"\n{HD_Notice} 后台shell 执行被终止({reason}, 退出码未知, "
+              f"实际运行{_fmt_duration(_elapsed_s(info))})\n")
+    try:
+        with open(info["output_file"], "ab") as f:
+            f.write(marker.encode("utf-8"))
+    except OSError as e:
+        logger.debug(f"[bg_shell] 终止标记写入失败(忽略) {info.get('output_file')}: {e}")
+
+
 def _on_wait_future_done(shell_id: str, fut) -> None:
     """等待 Future 结束回调: 正常完成仅解除引用; 被取消(主循环关闭/协程未跑)则兜底杀进程+还槽,
     杜绝孤儿进程与 BoundedSemaphore 永久泄漏(协程没机会进 finally 的窗口)。"""
@@ -244,7 +354,7 @@ def _on_wait_future_done(shell_id: str, fut) -> None:
     if not fut.cancelled():
         return
     info = _BG_REGISTRY.get(shell_id)
-    if info is None or info.get("status") != "running":
+    if info is None or info.get("outcome") != "running":
         return
     from app.utils.proc_utils import kill_process_tree
     try:
@@ -252,9 +362,12 @@ def _on_wait_future_done(shell_id: str, fut) -> None:
     except Exception as e:
         logger.debug(f"[bg_shell] 取消兜底杀进程异常(忽略) {shell_id}: {e}")
     with _BG_LOCK:
-        if info.get("status") == "running":
-            info["status"] = "killed"
+        if info.get("outcome") == "running":
+            info["outcome"] = "killed"
             info["finished_at"] = time.time()
+            info["t_end_mono"] = time.monotonic()
+            info["duration_s"] = _elapsed_s(info)
+    _mark_terminated(info, "等待协程被取消")
     _release_slot(shell_id)
     logger.warning(f"[bg_shell] 等待协程被取消, 已兜底杀进程并还槽: {shell_id}")
 
@@ -301,70 +414,105 @@ async def _kill_tree(proc: subprocess.Popen) -> None:
 
 
 async def _await_process(info: dict):
-    """等待进程并归一为 (rc, outcome), outcome ∈ {completed, failed, timeout, oversize}。"""
+    """等待进程并归一为 (rc, outcome, t_end_mono), outcome ∈ {completed, failed, timeout, oversize}。
+    t_end_mono 在"判定结束"那一瞬记录: 杀进程树要几秒, 放到杀完再记会把杀进程时间算进命令耗时。
+    输出上限用注册表启动时定下的值, 不重新读配置(否则通知里的阈值与实际强杀判据可能不一致) — 小欧-2026-11-21"""
     proc: subprocess.Popen = info["proc"]
     cf = _BG_WAIT_POOL.submit(functools.partial(
         _wait_process, proc, info.get("timeout") or None,
-        info["output_file"], _max_output_bytes()))
+        info["output_file"], info.get("max_output_bytes") or 0))
     try:
         rc, reason = await asyncio.wrap_future(cf)
     except subprocess.TimeoutExpired:
+        t_end = time.monotonic()
         await _kill_tree(proc)
-        return (proc.returncode if proc.returncode is not None else -1), "timeout"
+        return (proc.returncode if proc.returncode is not None else -1), "timeout", t_end
+    t_end = time.monotonic()
     if reason == "oversize":
         await _kill_tree(proc)
-        return (proc.returncode if proc.returncode is not None else -1), "oversize"
+        return (proc.returncode if proc.returncode is not None else -1), "oversize", t_end
     success_codes = info.get("success_codes") or []
-    return rc, ("completed" if (rc == 0 or rc in success_codes) else "failed")
+    return rc, ("completed" if (rc == 0 or rc in success_codes) else "failed"), t_end
 
 
-async def _finish_and_notify(shell_id: str, info: dict, rc: int, outcome: str) -> None:
-    """收尾: 落状态 + 路由完成通知(取消连带杀则跳过通知, 防取消后复活)。"""
+def _build_notice_text(shell_id: str, info: dict, rc: int, outcome: str) -> str:
+    """拼完成通知正文(纯函数: 只读注册表快照, 不写状态不发路由, 便于单测) — 小欧-2026-11-21"""
+    duration = _fmt_duration(info.get("duration_s") or 0.0)
+    tail, truncated = _read_output_tail(info["output_file"], _NOTICE_TAIL_CHARS)
+    rc_text = _rc_text(rc, success=(outcome == "completed"))
+    if outcome == "timeout":
+        head = (f"{HD_Notice} 后台shell 执行超时已被强制终止(shell_id={shell_id}, "
+                f"限时{info.get('timeout')}s, 实际运行{duration})")
+        hint = "命令未在限定时间内完成, 已强制终止; 请检查是否需优化命令或调大 timeout"
+    elif outcome == "oversize":
+        limit = info.get("max_output_bytes") or 0
+        written = _file_size(info["output_file"])
+        head = (f"{HD_Notice} 后台shell 输出达{_fmt_bytes(written)}(上限{_fmt_bytes(limit)})已被强制终止"
+                f"(shell_id={shell_id}, {rc_text}, 实际运行{duration})")
+        hint = "输出文件过大, 已强制终止防磁盘写满; 请降低输出量或把输出重定向到文件"
+    elif outcome == "completed":
+        head = f"{HD_Notice} 后台shell 执行完成(shell_id={shell_id}, {rc_text}, 耗时{duration})"
+        hint = ""
+    else:
+        head = f"{HD_Notice} 后台shell 执行失败(shell_id={shell_id}, {rc_text}, 耗时{duration})"
+        # 等待环节自身异常时 rc=-1, 此时"退出码非成功"的解释不成立, 不能笼统说去尾部找原因
+        hint = ("等待进程时异常, 未能取得退出码, 请检查输出文件判断命令是否已执行"
+                if rc < 0 else "非成功退出, 详细原因见输出尾部")
+    lines = [head, f"命令: {_cmd_display(info['command'])}"]
+    if info.get("cwd"):
+        lines.append(f"工作目录: {info['cwd']}")
+    if info.get("shell_type"):
+        lines.append(f"Shell类型: {info['shell_type']}")
+    lines.append(f"输出文件: {info['output_file']}（完整输出可读此文件）")
+    if hint:
+        lines.append(f"提示: {hint}")
+    lines.append(f"输出尾部(仅最后{_NOTICE_TAIL_CHARS}字符):" if truncated else "输出尾部:")
+    lines.append(tail or "(无输出)")
+    lines.append(_NOTICE_FOOTER)
+    return "\n".join(lines)
+
+
+def persist_notice_text(output_file: str, text: str) -> None:
+    """通知投不出去时(无会话归属/inbox满/续跑失败/路由未注册/路由异常)把正文追加到输出文件尾部:
+    否则 LLM 永远收不到"命令已结束"这条事实, 磁盘上只剩裸输出 — 小欧-2026-11-21"""
+    try:
+        with open(output_file, "ab") as f:
+            f.write(("\n" + text + "\n").encode("utf-8"))
+    except OSError as e:
+        logger.warning(f"[bg_shell] 通知落盘失败 {output_file}: {e}")
+
+
+async def _finish_and_notify(shell_id: str, info: dict, rc: int, outcome: str,
+                             t_end_mono: float) -> None:
+    """收尾: 落状态 + 路由完成通知(取消连带杀则跳过通知, 防取消后复活)。
+    t_end_mono 由调用方在"判定结束"瞬间记录, 杀进程树耗时不计入命令耗时 — 小欧-2026-11-21"""
     with _BG_LOCK:
-        killed = info.get("status") == "killed"
+        killed = info.get("outcome") == "killed"
         if not killed:
-            info["status"] = "failed" if outcome != "completed" else "completed"
-            info["returncode"] = rc
             info["outcome"] = outcome
+            info["returncode"] = rc
             info["finished_at"] = time.time()
-        else:
-            info["outcome"] = "killed"
+            info["t_end_mono"] = t_end_mono
+            info["duration_s"] = _elapsed_s(info)
     if killed:
         # 任务取消连带杀: 进程终结是取消动作的一部分, 不再发完成通知(否则会唤醒续跑, 取消后复活)
         logger.info(f"[bg_shell] {shell_id} 已被任务取消连带杀, 跳过完成通知")
         return
 
-    duration = int(info["finished_at"] - info["started_at"])
-    logger.info(f"[bg_shell] 后台已结束 {shell_id} outcome={outcome} rc={rc} 耗时{duration}s")
-    tail = _read_output_tail(info["output_file"], 600)
-    if outcome == "timeout":
-        head = f"[系统通知] 后台命令超时已被终止(shell_id={shell_id}, 超时{info.get('timeout')}s, 耗时{duration}s)"
-        hint = "命令未在限定时间内完成, 已强制终止; 请检查是否需优化或延长 timeout"
-    elif outcome == "oversize":
-        limit_mb = _max_output_bytes() // (1024 * 1024)
-        head = f"[系统通知] 后台命令输出超过{limit_mb}MB已被终止(shell_id={shell_id}, 耗时{duration}s)"
-        hint = "输出文件过大, 已强制终止防磁盘写满; 请降低输出量或改用日志裁剪"
-    elif outcome == "completed":
-        head = f"[系统通知] 后台命令已完成(shell_id={shell_id}, 退出码{rc}, 耗时{duration}s)"
-        hint = ""
-    else:
-        head = f"[系统通知] 后台命令失败(shell_id={shell_id}, 退出码{rc}, 耗时{duration}s)"
-        hint = "退出码非成功, 请检查输出尾部定位原因"
-    text = (f"{head}\n"
-            f"命令: {info['command'][:200]}\n"
-            f"输出文件: {info['output_file']}\n"
-            + (f"提示: {hint}\n" if hint else "")
-            + f"输出尾部:\n{tail}")
-
+    text = _build_notice_text(shell_id, info, rc, outcome)
+    logger.info(f"[bg_shell] 后台已结束 {shell_id} outcome={outcome} rc={rc} "
+                f"耗时{_fmt_duration(info['duration_s'])}")
+    if _BG_NOTIFY_ROUTER is None:
+        logger.warning(f"[bg_shell] {shell_id} 通知路由未注册, 降级落盘: {info['output_file']}")
+        persist_notice_text(info["output_file"], text)
+        return
     try:
-        if _BG_NOTIFY_ROUTER is None:
-            logger.warning(f"[bg_shell] {shell_id} 通知路由未注册, 降级落盘: {info['output_file']}")
-            return
         await _BG_NOTIFY_ROUTER(
             shell_id=shell_id, task_id=info["task_id"], notice_id=info["notice_id"],
             text=text, output_file=info["output_file"])
     except Exception as e:
         logger.error(f"[bg_shell] 通知路由异常({shell_id}): {e}", exc_info=True)
+        persist_notice_text(info["output_file"], text)
 
 
 async def _wait_and_notify(shell_id: str) -> None:
@@ -375,32 +523,34 @@ async def _wait_and_notify(shell_id: str) -> None:
         return
     try:
         try:
-            rc, outcome = await _await_process(info)
+            rc, outcome, t_end = await _await_process(info)
         except Exception as e:
             logger.error(f"[bg_shell] 等待异常({shell_id}): {e}", exc_info=True)
-            rc, outcome = -1, "failed"
-        await _finish_and_notify(shell_id, info, rc, outcome)
+            rc, outcome, t_end = -1, "failed", time.monotonic()
+        await _finish_and_notify(shell_id, info, rc, outcome, t_end)
     finally:
         _release_slot(shell_id)
         _schedule_result_cleanup()
 
 
-def _read_output_tail(path: str, max_chars: int) -> str:
-    """读输出文件尾部(超限文件读末尾 max_chars)"""
+def _read_output_tail(path: str, max_chars: int) -> tuple[str, bool]:
+    """读输出文件尾部, 返回 (文本, 是否被截断)。
+
+    只给尾部却不说截断, LLM 会把尾部当完整输出(真错误在最前面时就会误判"日志里没有错误"),
+    故截断标记必须回给调用方写进通知 — 小欧-2026-11-21
+    """
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
             if size > max_chars * 4:
                 f.seek(-max_chars * 4, os.SEEK_END)
             data = f.read()
-        return data.decode("utf-8", errors="replace")[-max_chars:]
-    except OSError:
-        return "(输出文件读取失败)"
-
-
-def get_bg_info(shell_id: str) -> Optional[dict]:
-    with _BG_LOCK:
-        return dict(_BG_REGISTRY.get(shell_id) or {})
+    except OSError as e:
+        # 读不到尾部不等于没输出, 必须留痕: 通知里只能给"读取失败", 排障要看日志 — 小欧-2026-11-21
+        logger.warning(f"[bg_shell] 读取输出尾部失败 {path}: {e}")
+        return "(输出文件读取失败)", False
+    text = data.decode("utf-8", errors="replace")
+    return text[-max_chars:], len(text) > max_chars
 
 
 def kill_background_by_task(task_id: str) -> int:
@@ -411,15 +561,23 @@ def kill_background_by_task(task_id: str) -> int:
         targets = [sid for sid, i in _BG_REGISTRY.items() if i["task_id"] == task_id]
     for sid in targets:
         info = _BG_REGISTRY.get(sid)
-        if info and info["status"] == "running":
+        if info and info.get("outcome") == "running":
             try:
                 kill_process_tree(info["proc"])
                 with _BG_LOCK:
-                    info["status"] = "killed"
-                    info["finished_at"] = time.time()
-                _release_slot(sid)
-                n += 1
-                logger.info(f"[bg_shell] 任务取消连带杀后台进程: {sid} (task={task_id})")
+                    # 锁内二次校验: 锁外判定到加锁之间等待协程可能已写终态(completed/timeout),
+                    #   无条件覆盖成 killed 会抹掉真实终态与耗时, 与 kill_all_background 同口径 — 小欧-2026-11-21
+                    _killed = info.get("outcome") == "running"
+                    if _killed:
+                        info["outcome"] = "killed"
+                        info["finished_at"] = time.time()
+                        info["t_end_mono"] = time.monotonic()
+                        info["duration_s"] = _elapsed_s(info)
+                if _killed:
+                    _mark_terminated(info, "任务取消")
+                    _release_slot(sid)
+                    n += 1
+                    logger.info(f"[bg_shell] 任务取消连带杀后台进程: {sid} (task={task_id})")
             except Exception as e:
                 logger.warning(f"[bg_shell] 连带杀失败({sid}): {e}")
     return n
@@ -431,18 +589,23 @@ def kill_all_background(reason: str = "shutdown") -> int:
     from app.utils.proc_utils import kill_process_tree
     with _BG_LOCK:
         targets = [(sid, info) for sid, info in _BG_REGISTRY.items()
-                   if info.get("status") == "running"]
+                   if info.get("outcome") == "running"]
     n = 0
     for sid, info in targets:
         try:
             kill_process_tree(info["proc"])
             with _BG_LOCK:
-                if info.get("status") == "running":
-                    info["status"] = "killed"
+                _killed = info.get("outcome") == "running"
+                if _killed:
+                    info["outcome"] = "killed"
                     info["finished_at"] = time.time()
-            _release_slot(sid)
-            n += 1
-            logger.info(f"[bg_shell] {reason} 终止后台进程: {sid}")
+                    info["t_end_mono"] = time.monotonic()
+                    info["duration_s"] = _elapsed_s(info)
+            if _killed:
+                _mark_terminated(info, reason)
+                _release_slot(sid)
+                n += 1
+                logger.info(f"[bg_shell] {reason} 终止后台进程: {sid}")
         except Exception as e:
             logger.warning(f"[bg_shell] {reason} 终止失败({sid}): {e}")
     return n
@@ -496,7 +659,7 @@ def _schedule_result_cleanup() -> None:
     retain = _retain_seconds()
     with _BG_LOCK:
         expired = [(sid, dict(i)) for sid, i in _BG_REGISTRY.items()
-                   if i.get("status") not in ("running", None)
+                   if i.get("outcome") not in ("running", None)
                    and now - i.get("finished_at", now) > retain]
     for sid, info in expired:
         if not _remove_artifacts(info["output_file"]):
