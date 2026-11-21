@@ -87,15 +87,20 @@ def _source_unreachable(text: str) -> bool:
 
 # 厂商响应里"产物本体"的键: 已单独进 out(url/b64), 元数据再存一份等于把 MB 级串翻倍
 _META_DROP_KEYS = frozenset({"b64_json", "url", "image_url", "video_url", "image", "mask"})
+# 单值护栏: 未知键承载 base64 时不把 MB 级串带进 other_data 落库
+_META_STR_MAX = 8192
 _META_EMPTY = object()
 
 
 def _prune_meta(node: Any) -> Any:
-    """递归剔除产物本体与空容器; 返回 _META_EMPTY 表示该分支整体丢弃 — 小欧-2026-11-21"""
+    """递归剔产物本体、空容器与超长串; 返回 _META_EMPTY 表示该分支整体丢弃 — 小欧-2026-11-21
+
+    产物本体只按"键名命中且值为字符串"剔: 厂商把 image/mask 用作结构化元数据时照常保留(其内部 url 再被剔)。
+    """
     if isinstance(node, dict):
         kept = {}
         for k, v in node.items():
-            if str(k).lower() in _META_DROP_KEYS:
+            if str(k).lower() in _META_DROP_KEYS and isinstance(v, str):
                 continue
             child = _prune_meta(v)
             if child is not _META_EMPTY:
@@ -104,6 +109,8 @@ def _prune_meta(node: Any) -> Any:
     if isinstance(node, list):
         items = [c for c in (_prune_meta(v) for v in node) if c is not _META_EMPTY]
         return items or _META_EMPTY
+    if isinstance(node, str) and len(node) > _META_STR_MAX:
+        return _META_EMPTY
     return node
 
 
@@ -111,12 +118,30 @@ def _put_meta(out: Optional[Dict[str, Any]], data: Any) -> None:
     """厂商响应原文 → out["meta"]: 只剔产物本体与空壳, 其余字段原样留给工具落 other_data — 小欧-2026-11-21
 
     meta 承载 created/task_id/revised_prompt/usage/size/quality/seconds/progress/时间戳/失败原因,
-    由调用方决定进 summary/llm_data 还是 other_data; 探测腿不传 out 时零影响。
+    由调用方决定进 summary/llm_data/other_data; 多次调用累积合并(后者覆盖同名键), 提交阶段拿到的
+    task_id 不因后续轮询响应缺项而丢; 探测腿不传 out 时零影响。
     """
     if out is None:
         return
     meta = _prune_meta(data) if isinstance(data, dict) else _META_EMPTY
-    out["meta"] = meta if isinstance(meta, dict) else {}
+    merged = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+    if isinstance(meta, dict):
+        merged.update(meta)
+    out["meta"] = merged
+
+
+def _resp_meta(resp: httpx.Response) -> Dict[str, Any]:
+    """非 200 响应 → meta: JSON 体原样, 解析不出则 {status_code, body(截断)} — 小欧-2026-11-21
+
+    失败态的 code/message/request id 是排查最有用的一手信息, 不能只留 160 字 evidence。
+    """
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            return data
+    except Exception:  # noqa: BLE001 — 非 JSON 错误页(网关/反代)走 body 兜底
+        pass
+    return {"status_code": resp.status_code, "body": resp.text[:2000]}
 
 
 async def generate_image(
@@ -166,6 +191,7 @@ async def generate_image(
         return False, f"network_error: {type(e).__name__}: {e}"[:_EV_LIMIT], False
     if resp.status_code != 200:
         text = resp.text
+        _put_meta(out, _resp_meta(resp))  # 失败响应体同样落档: 错误码/request id 是排查一手信息
         # 厂商抓不到图源: 属探测素材不可达, 不判模型能力 — 小欧-2026-11-09
         if image and _source_unreachable(text):
             return False, f"source_unreachable: {text}"[:_EV_LIMIT], False
@@ -177,6 +203,7 @@ async def generate_image(
     try:
         data = resp.json()
     except Exception:
+        _put_meta(out, _resp_meta(resp))
         return False, "bad_json", False
     # 响应方言: 厂商覆写 parse_image_result 优先; 否则用通用 data[0].url/b64_json(OCP)
     parsed = gen_adapter.parse_image_result(data) if isinstance(data, dict) else None
@@ -315,7 +342,8 @@ async def generate_video(
             await asyncio.sleep(VIDEO_QUEUE_GAP)
         if resp.status_code != 200:
             text = resp.text
-            # 图源不可达 / 队列已满 / mode 校验: 都属探测环境或协议漂移, 不判模型能力 - 小欧-2026-11-09
+            _put_meta(out, _resp_meta(resp))  # 失败响应体同样落档: 错误码/request id 是排查一手信息
+            # 图源不可达 / 队列已满 / mode 校验: 都属探测环境或协议漂移, 不判模型能力 — 小欧-2026-11-09
             if images and _source_unreachable(text):
                 return False, f"source_unreachable: {text}"[:_EV_LIMIT], False
             if "video_queue_full" in text:
@@ -330,6 +358,7 @@ async def generate_video(
         try:
             data = resp.json()
         except Exception:
+            _put_meta(out, _resp_meta(resp))
             return False, "bad_json", False
         task_id = ""
         if isinstance(data, dict):
@@ -341,6 +370,8 @@ async def generate_video(
         if not task_id:
             _put_meta(out, data)
             return False, f"no_task_id: {resp.text}"[:_EV_LIMIT], False
+        # 提交即落档 task_id/created_at: 轮询超时或轮询失败时仍能追到任务, 不因后续未完成而丢
+        _put_meta(out, data)
         deadline = time.monotonic() + poll_timeout
         status = ""
         while time.monotonic() < deadline:
@@ -351,10 +382,12 @@ async def generate_video(
                 return False, f"network_error: {type(e).__name__}: {e}"[:_EV_LIMIT], False
             if poll.status_code != 200:
                 # 轮询失败(task_not_exist/鉴权/限流)不构成"模型不能生成"的证据 → 一律未定
+                _put_meta(out, _resp_meta(poll))
                 return False, f"poll_http_{poll.status_code}: {poll.text}"[:_EV_LIMIT], False
             try:
                 detail = poll.json()
             except Exception:
+                _put_meta(out, _resp_meta(poll))
                 return False, "bad_json", False
             # 响应方言: 厂商覆写钩子优先, 否则用通用启发式(_video_* 递归) — OCP
             status = (gen_adapter.parse_video_status(detail) or _video_status(detail)) or "unknown"

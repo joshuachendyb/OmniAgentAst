@@ -29,11 +29,14 @@
   (厂商只回 url/b64 不回 mime, 原按 kind 硬编码 png/mp4 会让 jpeg/webm 产物后缀撒谎) — 小欧-2026-11-21
 编辑历史: 2026-11-21 小欧 厂商 meta 的规格映射与耗时计算收口到 generation/vendor_spec.py(标准键别名表唯一真源),
   本模块只调 vendor_duration_ms, 不再自带一份时间戳解析 — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 b64 落盘加固: 解码失败(确定性)与写盘/登记失败(瞬时)分开处理, 后者线性退避重试
+  _PERSIST_RETRIES 次; 全败回 None 由工具报 error(ERR_GENERATE_PERSIST_FAILED), 不再按未定警告 — 小欧-2026-11-21
 """
 import asyncio
 import base64
 import os
 import re
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from app.config import get_config
@@ -49,6 +52,10 @@ from app.services.generation.generation_client import (
     generate_video,
 )
 from app.services.generation.vendor_spec import vendor_duration_ms
+
+# b64 落盘重试: 写盘失败多为杀软/索引器瞬时占锁, 线性退避重试后仍失败才算真失败 — 小欧-2026-11-21
+_PERSIST_RETRIES = 3
+_PERSIST_BACKOFF = 0.1
 
 
 def _read_image_source(src: str) -> Optional[Tuple[bytes, str]]:
@@ -154,25 +161,33 @@ def _sniff_media_mime(raw: bytes, kind: str) -> str:
 def _save_b64_attachment(b64: str, session_id: str, kind: str, stem: str) -> Optional[Dict[str, str]]:
     """把生成产物 b64 落盘为附件 → {attachment_id, file_path, name} 或 None。
     走系统产出专用落盘口(不受会话存在性/配额/单文件上限约束), 后缀按字节真实格式由附件域映射;
-    仅空 b64、解码不出字节或磁盘不可写才返回 None — 小欧-2026-11-21"""
+    解码失败不重试, 写盘/登记失败重试 _PERSIST_RETRIES 次(杀软占锁、目录刚建等瞬时故障), 全败才返回 None — 小欧-2026-11-21"""
     if not b64:
         return None
     try:
-        from app.attachments import attachment_service
         # b64 可能缺 padding 且夹带换行, 补齐 padding + validate=False 忽略非字母表字符
         raw = base64.b64decode(b64 + "=" * (-len(b64) % 4), validate=False)
-        if not raw:
-            return None
-        rec = attachment_service.save_generated_bytes(
-            session_id or "", stem, raw, mime=_sniff_media_mime(raw, kind))
-        return {
-            "attachment_id": str(rec.get("id") or ""),
-            "file_path": str(rec.get("stored_path") or ""),
-            "name": str(rec.get("original_name") or ""),
-        }
-    except Exception as e:  # noqa: BLE001 — 落盘失败降级, 不打断对话
-        logger.error(f"[media_generate] b64 落盘失败 session={session_id} err={e}")
+    except Exception as e:  # noqa: BLE001 — 字节不可解属确定性失败, 重试无益
+        logger.error(f"[media_generate] b64 解码失败 kind={kind} session={session_id} err={e}")
         return None
+    if not raw:
+        return None
+    from app.attachments import attachment_service
+    mime = _sniff_media_mime(raw, kind)
+    for attempt in range(1, _PERSIST_RETRIES + 1):
+        try:
+            rec = attachment_service.save_generated_bytes(session_id or "", stem, raw, mime=mime)
+            return {
+                "attachment_id": str(rec.get("id") or ""),
+                "file_path": str(rec.get("stored_path") or ""),
+                "name": str(rec.get("original_name") or ""),
+            }
+        except Exception as e:  # noqa: BLE001 — 落盘失败不抛, 工具据此报 error
+            logger.error(f"[media_generate] b64 落盘失败({attempt}/{_PERSIST_RETRIES}) "
+                         f"kind={kind} session={session_id} err={e}")
+            if attempt < _PERSIST_RETRIES:
+                time.sleep(_PERSIST_BACKOFF * attempt)
+    return None
 
 
 def _provider_credentials(model: str) -> Tuple[Optional[str], str, str]:
@@ -230,7 +245,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
     provider, api_base, api_key = _provider_credentials(model)
     if not provider or not api_base:
         # 模型/provider 未配置属确定失败(换模型或改配置才有出路), 不能按未定让工具回"稍后重试"
-        return {"ok": False, "settled": True, "reason": f"未找到模型 {model} 的 provider/api_base"}
+        return {"ok": False, "settled": True, "reason": f"未找到模型 {model} 的 provider/api_base",
+                "meta": {}, "vendor_duration_ms": 0}
     adapter = get_provider_adapter(provider)
     headers = adapter.static_headers(api_key)
     out: Dict[str, Any] = {}
@@ -265,10 +281,12 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                 aspect_ratio=aspect_ratio, seed=seed, adapter=adapter, out=out, **kw)
         else:
             # 未知 kind 是调用方写错, 重试无出路 → 确定失败
-            return {"ok": False, "settled": True, "reason": f"未知生成类型 {kind}"}
+            return {"ok": False, "settled": True, "reason": f"未知生成类型 {kind}",
+                    "meta": {}, "vendor_duration_ms": 0}
     except Exception as e:  # noqa: BLE001 — 生成异常回退, 不打断对话轮
         logger.warning(f"[media_generate] 生成异常 kind={kind} model={model} err={e}")
-        return {"ok": False, "settled": False, "reason": f"生成异常: {type(e).__name__}: {e}"}
+        return {"ok": False, "settled": False, "reason": f"生成异常: {type(e).__name__}: {e}",
+                "meta": {}, "vendor_duration_ms": 0}
     url = str(out.get("url") or "")
     b64 = str(out.get("b64") or "")
     meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}

@@ -21,6 +21,8 @@
   other_data.provider(落库落档, 不进 LLM) — 小欧-2026-11-21
 编辑历史: 2026-11-21 小欧 规格改走 vendor_spec 标准键映射(尺寸/格式/耗时, 未映射不显示); 成功 summary 去掉产物段
   (附件路径已在 data, 重复即噪音), 公网形态本地形态话术一致 — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 未交付不再报 warning: b64 落盘失败(厂商已生成、本地产物丢失)与厂商无产物一律
+  exec_code=error(分别 ERR_GENERATE_PERSIST_FAILED / ERR_GENERATE_REJECTED), LLM 须明确知道没拿到图 — 小欧-2026-11-21
 """
 import os
 import time
@@ -33,6 +35,7 @@ from app.tools.context import get_current_generate_callback
 from app.tools.tool_constants import (
     ERR_GENERATE_INCOMPLETE,
     ERR_GENERATE_NO_CHANNEL,
+    ERR_GENERATE_PERSIST_FAILED,
     ERR_GENERATE_REJECTED,
     MEDIA_DEFAULT_IMAGE_MODEL,
 )
@@ -78,19 +81,19 @@ def _build_image_llm_data(
 
 
 def _vendor_fields(result: Dict[str, Any], effective_model: str) -> tuple:
-    """厂商回显 → (metrics, summary 规格尾段, other_data) — 小欧-2026-11-21
+    """厂商回显 → (metrics, summary 规格段, other_data, 实际模型) — 小欧-2026-11-21
 
-    规格(mappings) 走 vendor_spec 标准键: 尺寸/格式/耗时, 映射不到就不显示;
-    其余字段(created/task_id/revised_prompt/usage 原结构/失败 request id)整包进 other_data。
+    规格走 vendor_spec 标准键: 尺寸/格式/用时, 映射不到就不显示; 实际模型以厂商回显为准(无则用生效模型),
+    由本函数统一给出, 调用方不再从 metrics 反查; 其余字段整包进 other_data。
     """
     meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
     model = str(meta.get("model") or "") or effective_model
     # 编排层已算过的直接用; 缺失时从 meta 时间戳自算, 不因上游漏传而丢规格 — 小欧-2026-11-21
     duration_ms = int(result.get("vendor_duration_ms") or 0) or vendor_duration_ms(meta)
     spec_metrics, suffix = build_vendor_spec("image", meta, duration_ms)
-    metrics: Dict[str, Any] = {"model": {"value": model, "text": model}} if model else {}
+    metrics: Dict[str, Any] = {"model": {"value": model, "text": model}}
     metrics.update(spec_metrics)
-    return metrics, suffix, ({"provider": meta} if meta else None)
+    return metrics, suffix, ({"provider": meta} if meta else None), model
 
 
 async def generate_image(prompt: str, model: Optional[str] = None,
@@ -140,8 +143,7 @@ async def generate_image(prompt: str, model: Optional[str] = None,
         cb_kwargs["response_format"] = response_format
     result = await generate_callback("image", effective_model, prompt, image=image, **cb_kwargs)
     dur = int((time.monotonic() - t0) * 1000)
-    metrics, spec, other = _vendor_fields(result, effective_model)
-    model_echo = str(metrics.get("model", {}).get("value") or effective_model)
+    metrics, spec, other, model_echo = _vendor_fields(result, effective_model)
     if not result.get("ok"):
         # 三态语义(按 settled 分, 不硬编码): settled=True=厂商确定拒绝(模型/参数/鉴权/no_output)→error, 换模型或查配置;
         #   settled=False=未定(队列/网络/超时)→warning, 可稍后重试
@@ -167,15 +169,26 @@ async def generate_image(prompt: str, model: Optional[str] = None,
     url = str(result.get("url") or "")
     file_path = str(result.get("file_path") or "")
     attachment_id = str(result.get("attachment_id") or "")
-    # 只有拿到可用产物(url 或落盘 file_path)才算成功; 引擎 ok=True 但只有 b64 未落盘 = 没交付产物, 判未定警告
+    # 只有拿到可用产物(url 或落盘 file_path)才算成功; 引擎 ok=True 但只有 b64 未落盘 = 没交付产物
     if not url and not file_path:
-        # 有 b64 但落盘失败, 或引擎无产物: 对用户就是没拿到图, 不能标 success — 未定可重试
-        detail = "厂商返回图片但保存为附件失败, 无可用产物" if result.get("b64") else "厂商未返回可用图片产物"
-        return build_warning(
+        # 没交付就是失败: 落盘失败是大模型已生成、本地产物丢了, 报 error 而非 warning(LLM 须知道没拿到图)
+        if result.get("b64"):
+            detail = "厂商返回图片但保存为附件失败, 无可用产物"
+            return build_error(
+                data={},
+                llm_data=_build_image_llm_data(
+                    "error", dur, "生成图像，失败：本地产物保存失败", in_params, "失败",
+                    code=ERR_GENERATE_PERSIST_FAILED, detail=detail,
+                    hint="稍后重试; 持续失败请检查附件目录写入权限与磁盘空间", metrics=metrics,
+                ),
+                other_data=other,
+            )
+        return build_error(
             data={},
             llm_data=_build_image_llm_data(
-                "warning", dur, f"生成图像，警告：{detail}", in_params, "完成但有警告",
-                code=ERR_GENERATE_INCOMPLETE, detail=detail, hint="可稍后重试或换模型", metrics=metrics,
+                "error", dur, "生成图像，失败：厂商未返回可用产物", in_params, "失败",
+                code=ERR_GENERATE_REJECTED, detail="厂商未返回可用图片产物",
+                hint="换模型或检查模型配置", metrics=metrics,
             ),
             other_data=other,
         )

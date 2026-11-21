@@ -17,6 +17,8 @@
   失败 request id)原样进 other_data.provider(落库落档, 不进 LLM) — 小欧-2026-11-21
 编辑历史: 2026-11-21 小欧 规格改走 vendor_spec 标准键映射(时长+清晰度/质量档/耗时, 未映射不显示); 成功 summary
   去掉产物段(附件路径已在 data, 重复即噪音), 公网形态本地形态话术一致 — 小欧-2026-11-21
+编辑历史: 2026-11-21 小欧 未交付不再报 warning: b64 落盘失败与厂商无产物一律 exec_code=error
+  (分别 ERR_GENERATE_PERSIST_FAILED / ERR_GENERATE_REJECTED), LLM 须明确知道没拿到视频 — 小欧-2026-11-21
 """
 import os
 import time
@@ -29,6 +31,7 @@ from app.tools.context import get_current_generate_callback
 from app.tools.tool_constants import (
     ERR_GENERATE_INCOMPLETE,
     ERR_GENERATE_NO_CHANNEL,
+    ERR_GENERATE_PERSIST_FAILED,
     ERR_GENERATE_REJECTED,
     MEDIA_DEFAULT_VIDEO_MODEL,
 )
@@ -74,19 +77,19 @@ def _build_video_llm_data(
 
 
 def _vendor_fields(result: Dict[str, Any], effective_model: str) -> tuple:
-    """厂商回显 → (metrics, summary 规格尾段, other_data) — 小欧-2026-11-21
+    """厂商回显 → (metrics, summary 规格段, other_data, 实际模型) — 小欧-2026-11-21
 
-    规格走 vendor_spec 标准键: 时长+清晰度/质量档/耗时, 映射不到就不显示;
-    其余字段(task_id/video_id/时间戳/progress/input_*/失败 request id)整包进 other_data。
+    规格走 vendor_spec 标准键: 时长+清晰度/质量档/用时, 映射不到就不显示; 实际模型以厂商回显为准
+    (无则用生效模型), 由本函数统一给出, 调用方不再从 metrics 反查; 其余字段整包进 other_data。
     """
     meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
     model = str(meta.get("model") or "") or effective_model
     # 编排层已算过的直接用; 缺失时从 meta 时间戳自算, 不因上游漏传而丢规格 — 小欧-2026-11-21
     duration_ms = int(result.get("vendor_duration_ms") or 0) or vendor_duration_ms(meta)
     spec_metrics, suffix = build_vendor_spec("video", meta, duration_ms)
-    metrics: Dict[str, Any] = {"model": {"value": model, "text": model}} if model else {}
+    metrics: Dict[str, Any] = {"model": {"value": model, "text": model}}
     metrics.update(spec_metrics)
-    return metrics, suffix, ({"provider": meta} if meta else None)
+    return metrics, suffix, ({"provider": meta} if meta else None), model
 
 
 async def generate_video(prompt: str, model: Optional[str] = None,
@@ -137,8 +140,7 @@ async def generate_video(prompt: str, model: Optional[str] = None,
         )
     result = await generate_callback("video", effective_model, prompt, **kwargs)
     dur = int((time.monotonic() - t0) * 1000)
-    metrics, spec, other = _vendor_fields(result, effective_model)
-    model_echo = str(metrics.get("model", {}).get("value") or effective_model)
+    metrics, spec, other, model_echo = _vendor_fields(result, effective_model)
     if not result.get("ok"):
         # 三态语义(按 settled 分, 不硬编码): settled=True=厂商确定拒绝→error 换模型/查配置;
         #   settled=False=未定(队列/网络/超时)→warning 可稍后重试
@@ -166,12 +168,24 @@ async def generate_video(prompt: str, model: Optional[str] = None,
     attachment_id = str(result.get("attachment_id") or "")
     # 可用产物 = 公网 url 或 b64 落盘的本地附件路径; 两者皆无才算没交付
     if not url and not file_path:
-        detail = "厂商返回视频但保存为附件失败, 无可用产物" if result.get("b64") else "厂商未返回可用视频产物"
-        return build_warning(
+        # 没交付就是失败: 落盘失败是大模型已生成、本地产物丢了, 报 error 而非 warning(LLM 须知道没拿到视频)
+        if result.get("b64"):
+            detail = "厂商返回视频但保存为附件失败, 无可用产物"
+            return build_error(
+                data={},
+                llm_data=_build_video_llm_data(
+                    "error", dur, "生成视频，失败：本地产物保存失败", in_params, "失败",
+                    code=ERR_GENERATE_PERSIST_FAILED, detail=detail,
+                    hint="稍后重试; 持续失败请检查附件目录写入权限与磁盘空间", metrics=metrics,
+                ),
+                other_data=other,
+            )
+        return build_error(
             data={},
             llm_data=_build_video_llm_data(
-                "warning", dur, f"生成视频，警告：{detail}", in_params, "完成但有警告",
-                code=ERR_GENERATE_INCOMPLETE, detail=detail, hint="可稍后重试或换模型", metrics=metrics,
+                "error", dur, "生成视频，失败：厂商未返回可用产物", in_params, "失败",
+                code=ERR_GENERATE_REJECTED, detail="厂商未返回可用视频产物",
+                hint="换模型或检查模型配置", metrics=metrics,
             ),
             other_data=other,
         )
