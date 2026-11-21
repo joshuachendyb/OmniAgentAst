@@ -144,3 +144,5 @@ gateways/**/__pycache__/
 # 须入库; 上行"tests/"通用规则(为后端/前端 pytest 产物设计)会把它整个吞掉, 故在此反转排除。
 !gateways/tests/
 
+# 2026-11-20 小欧: rebuild-pool 写回配置时自动留的 .bak, 仅本地回滚用, 不入库 - 小欧-2026-11-20
+OmniVPN/mihomo/config.yaml.bak-*

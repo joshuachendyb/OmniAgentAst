@@ -7,11 +7,15 @@ OpenCode 免费层的配额按出口 IP 网段记账。实测结论：同一个�
 
 判定"出口换没换"的观测点是 Cloudflare trace（`https://www.cloudflare.com/cdn-cgi/trace`）。trace 返回的 `ip=` 是服务端实际看到的地址，opencode.ai 与 www.cloudflare.com 在同一张 CF 网络上，所以这个观测点最接近真实情况。出口桶的指纹由**前缀（IPv4 折 /24、IPv6 折 /48）**和**地区（loc）**组成，判定硬标准只有一条：**前缀变没变**——前缀变了就是新桶；loc 是随行的地区标注（换节点时通常跟着一起变，可佐证出口真的换了，但不单独作判桶依据）；尾号永远不算（CGNAT 场景尾号一直在变，前缀不变就还是同一个桶）。ipv4 与 ipv6 的区别只是前缀折算规则不同（/24 对 /48），不是第三条判定项。
 
-只要求"和当前桶不同"不够：池内节点少时来回切会切回刚用完的桶，配额照旧是空的。所以换桶口径是**新桶要与最近 3 次用过的桶都不同**。历史账本落在 `log\bucket_history.json`（按最近在前、同桶只留一条、最多 3 条），每次换桶前把当前桶记入账本，等到的新桶不在账本里才算换桶成功、成功后入账。账本深度取 3 是因为现池 9 个节点只给出 7 个互不相同的桶，留 5 个只剩 2 个候选桶、留 3 个还有 4 个。池内可用桶少于 4 个时可能出现"怎么切都在最近 3 次里"，此时执行 `python exit_rotator.py --reset-history` 清空账本再换。
+只要求"和当前桶不同"不够：池内节点少时来回切会切回刚用完的桶，配额照旧是空的。所以换桶口径是**新桶要与最近 3 次用过的桶都不同**。历史账本落在 `log\bucket_history.json`（按最近在前、同桶只留一条、最多 3 条），每次换桶前把当前桶记入账本，等到的新桶不在账本里才算换桶成功、成功后入账。账本深度取 3 是因为现池可用 11 个互不相同的桶（15 个节点），留 3 条后还有 8 个候选桶，换桶空间充足；池内可用桶少于 4 个时可能出现"怎么切都在最近 3 次里"，此时执行 `python exit_rotator.py --reset-history` 清空账本再换。
 
 ## 2 mihomo 内核：是什么、提供什么
 
-mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的单文件代理内核，上游源码在 GitHub 仓库 **https://github.com/MetaCubeX/mihomo**。本目录使用自编精简版 `mihomo-slim.exe`（tag v1.19.34，约 47.8MB）：按官方 tag v1.19.34 取源码（转存本机 `D:\Downloads\mihomo-src\`，仓库外只读留存），裁掉 TUN、gvisor、WireGuard、QUIC 等本方案用不到的模块，只保留核心代理能力，`-s -w` 裁掉调试符号；重编命令见 §5。官方原版 exe 不在本目录（精简版已实测全链路等价）。
+mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的单文件代理内核，上游源码在 GitHub 仓库 **https://github.com/MetaCubeX/mihomo**，发布页 **https://github.com/MetaCubeX/mihomo/releases**。
+
+本目录当前的 `mihomo-slim.exe` 是**官方 release v1.19.34（2026-11-11 发布）的 Windows amd64 原版二进制**：下载 `mihomo-windows-amd64-v1.19.34.zip`（21.35 MB），解压得 `mihomo-windows-amd64.exe`（58.3 MB，go1.26.11 编译，Use tags: with_gvisor）。因为脚本（`proxy-on.ps1`、`nodepool\_verify_nodes.py`、`nodepool\_survey_buckets.py`）都按 `mihomo-slim.exe` 这个文件名定位内核，装回时沿用该文件名，内容不再裁剪：TUN、gvisor、WireGuard、QUIC 等模块都在，只是本方案不用，功能与旧精简版等价。
+
+历史版本曾是按同一 tag 自编的精简版（约 47.8 MB，`-s -w` 去符号、裁掉用不到的模块）。该自编件的源码目录 `D:\Downloads\mihomo-src\` 已不在本机（2026-11-20 核实），需要精简体积时按 §5.2 重新取源码编译，否则直接用官方包最省事。
 
 它在本方案里提供四项能力：
 
@@ -19,7 +23,7 @@ mihomo 是 Clash Meta 内核的延续版（Mihomo Meta），Go 语言编写的�
 
 **外部控制器 API（9090）**。这是整套换桶方案的支点。控制器提供 REST 接口：`GET /proxies` 列出代理组和节点，`PUT /proxies/PROXY` 切换选中节点（不重启进程、不断连接管理），`GET /proxies/<节点>/delay` 对单个节点测活。换桶脚本就是靠这三个接口实现"确定性轮换"的，全程不需要重启 mihomo。
 
-**节点内联配置**。所有节点直接写在 `mihomo\config.yaml` 的 `proxies:` 段里（当前 9 个免费节点，随重建变化）。不用 proxy-provider 是刻意的：换桶依赖的 `/proxies/<名>/delay` 测活接口对 provider 节点一律返回 404，组级测活接口 `/group/<组>/delay` 在大组时必返回 504，只有内联节点的逐个测活是可靠的。配置里还写了 `interface-name: WLAN`，强制连节点的流量走裸线物理网卡，不与系统上其它全局路由/代理工具抢占默认路由，可并行运行。
+**节点内联配置**。所有节点直接写在 `mihomo\config.yaml` 的 `proxies:` 段里（当前 15 个免费节点、11 个互不相同的出口桶，随重建变化）。不用 proxy-provider 是刻意的：换桶依赖的 `/proxies/<名>/delay` 测活接口对 provider 节点一律返回 404，组级测活接口 `/group/<组>/delay` 在大组时必返回 504，只有内联节点的逐个测活是可靠的。配置的顶层设计里还有一条 `interface-name: WLAN`，作用是强制连节点的流量走裸线物理网卡、不与系统上其它全局路由/代理工具抢占默认路由；当前 `config.yaml` 里**没有**写入这一项（2026-11-20 核对），本机装 Skyline TUN 时实测仍能正常出网，需要强制裸线时再补上该行并重启内核。
 
 **选中状态记忆**。mihomo 运行时在 `mihomo\cache.db` 记住当前选中的节点，重启后恢复旧选择。这个行为无害：轮换脚本不依赖开机选的是谁，遇到失联节点会自动跳过。
 
@@ -43,17 +47,17 @@ bat 是给双击用的薄壳，实际逻辑都在同名 ps1 里。
 
 ### 3.3 nodepool 节点池流水线（入口在根目录，步骤实现在 nodepool\ 子目录）
 
-免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。双击入口 `rebuild-pool.bat` 在 OmniVPN 根目录（用户要求：双击执行脚本不放子目录），它调用编排 `rebuild-pool.ps1`（v1.3），步骤实现脚本在 `nodepool\` 下，按序执行 11 步：抓取公开订阅源（`_fetch2.py`，9 源并行抓取，秒级完成，直连失败自动走 7890 备援，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，按自动探测的物理网卡源地址 3 秒判据，开跑前打印实际源地址）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"，与 TCP 筛绑同一个源地址）→ **死点池复活注入**（`_deadpool.py revive`，把上次实测失败的节点追加进待测清单，跳过 TCP/TLS 预筛直进实测，单次上限 300 条、池内总量上限 600 条）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟，外加一轮重试约 5 分钟；并发 12 实测存活数最准，调大会低估；收尾按 504 超时 / 503 协议失败分列失败原因，并报重试救回几个）→ **死点池结算**（`_deadpool.py record`：注入且实测通过 = 复活移出池；仍失败 = 失败次数+1；连续 5 次死 = 彻底清除；本轮新失败的新鲜节点 = 入池。池文件 `log\deadpool.txt`）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
+免费节点生生死死是常态，整池死透时需要从公开订阅源重新抓一批。双击入口 `rebuild-pool.bat` 在 OmniVPN 根目录（用户要求：双击执行脚本不放子目录），它调用编排 `rebuild-pool.ps1`（v1.4），步骤实现脚本在 `nodepool\` 下，按序执行 11 步：抓取公开订阅源（`_fetch2.py`，9 源并行抓取，秒级完成，直连失败自动走 7890 备援，落 `log\subs\`）→ 解析去重加裸线 TCP 筛（`_parse_test.py`，按自动探测的物理网卡源地址 3 秒判据，开跑前打印实际源地址）→ TLS 真实握手筛（`_tls_probe.py`，防"TCP 通但 TLS 被掐"，与 TCP 筛绑同一个源地址）→ **死点池复活注入**（`_deadpool.py revive`，把上次实测失败的节点追加进待测清单，跳过 TCP/TLS 预筛直进实测，单次上限 300 条、池内总量上限 600 条）→ 转 mihomo YAML（`_uri2yaml.py`）→ mihomo 逐节点实测出网（`_verify_nodes.py`，最慢的一步，千级节点约 15 分钟，外加一轮重试约 5 分钟；并发 12 实测存活数最准，调大会低估；收尾按 504 超时 / 503 协议失败分列失败原因，并报重试救回几个）→ **死点池结算**（`_deadpool.py record`：注入且实测通过 = 复活移出池；仍失败 = 失败次数+1；连续 5 次死 = 彻底清除；本轮新失败的新鲜节点 = 入池。池文件 `log\deadpool.txt`）→ 只留可用节点（`_filter_nodes.py`）→ 测出口定桶（`_survey_buckets.py`）→ 按出口桶轮转排序（`_order_nodes.py`，保证相邻节点必不同桶，所以"切下一个活节点"几乎必然换桶）→ 写回 `mihomo\config.yaml`（`_rebuild_config.py`，自动留 `.bak`）。全部跑完后自动重启 mihomo 加载新池。
 
 死点池存在的原因：免费节点失联后过几天常会复活，一次性淘汰太浪费；连续 5 次实测仍死的才彻底扔掉。不想跑全量重建时，双击 `update-pool-quick.bat` 做轻量巡检（约 1~2 分钟）：现池逐节点复验报存活数 + 死点池复活实测与结算，实测用临时端口 7897/9097 起独立 mihomo 实例，不影响在跑的 7890/9090 主实例；该巡检也挂在 `proxy-switch.bat` 尾部，换桶结束后自动带跑一遍。
 
-公开免费池的存活率约 1.2%（实测口径：源单 9 源进料 15001 条 → TLS 通约 2 千 → mihomo 节点约 1300 → 真能出网约 16，按桶轮转留下不重复的桶，现池落成 9 个节点 / 7 个桶），节点失联与复活都属正常。
+公开免费池的存活率很低，2026-11-20 全量重建的实测口径：9 源进料解析 14238 条 → 按 host:port 去重 7668 条 → 裸线 TCP 可达 2108 条 → TLS 握手通 1389 条 → mihomo 逐个实测真能出网 **30** 条 → 测出口后 26 条可用、覆盖 **11 个不同出口桶** → 按桶轮转后落配置 **15 个节点**。约 0.4% 的进料能真正出网，节点失联与复活都属正常。
 
 现池到底有几个互不相同的出口桶，用 `nodepool\_bucket_stats.py` 离线统计（不起内核、不联网）：默认读真正生效的 `mihomo\config.yaml`，配 `log\buckets.tsv` 快照列出每个桶的节点清单，并标出哪些桶已被换桶账本占用、还剩几个可换的新桶；加 `--alive log\quick\good_pool.txt` 只算存活节点，加 `--by-node` 则逐节点一行（proxy-on 启动后打的就是这一种）。它已挂在 `update-pool-quick.ps1` 的现池复验之后，轻量巡检顺手就报。`buckets.tsv` 只在 `rebuild-pool.ps1` 第 9 步刷新，轻量巡检不刷新，所以快照时间会早于巡检时间。
 
 ### 3.4 目录里其余文件
 
-`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加当前节点池的内联节点（现 9 个）加 WLAN 绑定。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑"测出口定桶/轮转排序"两步够用）、换桶历史账本 bucket_history.json、探测报告 exit_probe_report-*.txt、订阅缓存、死点池 deadpool.txt 与轻量巡检目录 quick\。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
+`mihomo\config.yaml` 是运行配置：7890/7891/9090 三端口加当前节点池的内联节点（现 15 个）。`mihomo\cache.db` 是 mihomo 运行时自建的选中记忆，不入库。`log\` 存放全部运行时产物：节点池数据（nodes.yaml、nodes_ordered.yaml、buckets.tsv、good_all.txt，离线重跑"测出口定桶/轮转排序"两步够用）、换桶历史账本 bucket_history.json、探测报告 exit_probe_report-*.txt、订阅缓存、死点池 deadpool.txt 与轻量巡检目录 quick\。git 只跟踪源码与文档，exe、cache.db、log\ 均已 ignore。
 
 ## 4 脚本与命令的使用
 
@@ -171,8 +175,48 @@ $env:HTTP_PROXY='http://127.0.0.1:7890'; $env:HTTPS_PROXY='http://127.0.0.1:7890
 
 ### 4.4 常见问题处置
 
-`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2.5 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。6 轮全失败，多半是整池死透或池内桶都已在最近 3 次里，先 `--reset-history` 再换，仍不行走重建。
+`proxy-on` 报端口未监听，手动跑 `OmniVPN\mihomo\mihomo-slim.exe -d OmniVPN\mihomo` 看内核报错。`proxy-switch` 返回 2，查 `127.0.0.1:9090` 控制器是否在听。窗口停在"直连出口"没动静，是 python 查询在等网络回包（3~8 秒），会自己出来，别关窗。浏览器出口没变，是命令行程序不认系统代理，按 4.2.5 节喂环境变量。重启后选中节点变了，是 mihomo 的 cache.db 记忆行为，无害。换桶后网页变慢，免费节点带宽所限，属预期，本方案只作应急。6 轮全失败，多半是整池死透或池内桶都已在最近 3 次里，先 `--reset-history` 再换，仍不行走重建。重建时窗口出现"裸线 TCP 可达: 0 / N"，先看开跑第一行打印的"裸线源地址"：正常应是物理网卡 IPv4（本机为 `192.168.1.18`）；显示未探到或走默认路由时，先用 `Get-NetAdapter -Physical` 确认物理网卡是 Up 且拿到 IPv4，再确认 `python -c "import psutil"` 可用（源地址探测靠它列网卡），修好再重跑。
 
-## 5 相关文档
+## 5 内核 exe 缺失时的恢复与重编
 
-`opencli\部署与启停说明.md` 第 5 章有网关侧出口代理启停与换桶摘要；`doc-11月优化\[19]LLM429限流分级处理与冷却记忆优化设计-小欧-2026-11-08.md` 说明了 429 为什么要换桶；mihomo 内核上游仓库为 https://github.com/MetaCubeX/mihomo，本地源码在 `D:\Downloads\mihomo-src\`（官方 tag v1.19.34），重编命令：`go build -trimpath -ldflags "-s -w -X github.com/metacubex/mihomo/constant.Version=v1.19.34-slim" -o mihomo-slim.exe .`
+### 5.1 从官方 release 装回（推荐，1 分钟）
+
+内核二进制不入库（`OmniVPN/mihomo/*.exe` 已在 `.gitignore`），换机、清理磁盘或误删后会缺失，表现是 `proxy-on` 报"未找到内核程序: ...mihomo-slim.exe"。恢复步骤：
+
+```powershell
+# 1) 查最新 tag（当前最新 v1.19.34，2026-11-11 发布）
+curl.exe -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest
+
+# 2) 下载 Windows amd64 包
+curl.exe -L -o $env:TEMP\mihomo.zip `
+  https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-windows-amd64-v1.19.34.zip
+
+# 3) 解压并把 exe 按脚本要求改名放回 mihomo 目录
+Expand-Archive $env:TEMP\mihomo.zip $env:TEMP\mihomo -Force
+Copy-Item $env:TEMP\mihomo\mihomo-windows-amd64.exe F:\OmniAgentAs-01\OmniVPN\mihomo\mihomo-slim.exe -Force
+
+# 4) 校验版本，应输出 Mihomo Meta v1.19.34 windows amd64
+F:\OmniAgentAs-01\OmniVPN\mihomo\mihomo-slim.exe -v
+
+# 5) 启动并验证（7890 代理口、7891 socks、9090 控制器）
+F:\OmniAgentAs-01\OmniVPN\proxy-on.bat
+```
+
+包名怎么选：普通 x64 机器用 `mihomo-windows-amd64-v1.19.34.zip`；CPU 较新可用 `-v2-`/`-v3-`（Go 微架构档位，需 CPU 支持对应指令集）；老系统用 `-compatible-`；32 位用 `386`，ARM 用 `arm64`。下载慢时把 URL 交给下载工具或走代理（`curl.exe -x http://127.0.0.1:7890 ...`）。
+
+2026-11-20 08:08 按上述步骤装回并实测：进程 `mihomo-slim` 监听 7890/7891/9090，控制器 `/version` 返回 v1.19.34，经 7890 查 CF trace 出口 `130.61.145.251`（loc=DE，colo=FRA），经 7890 访问 `models.opencode.ai` 返回 HTTP 200，`proxy-on.ps1` 设置系统代理成功。
+
+### 5.2 想要精简体积时重编
+
+```powershell
+# 取指定 tag 源码（需要 git 与 Go，本机 Go 在 E:\30AI编程工具\go1.25\bin\go.exe）
+git clone --depth 1 --branch v1.19.34 https://github.com/MetaCubeX/mihomo.git D:\Downloads\mihomo-src
+cd D:\Downloads\mihomo-src
+go build -trimpath -ldflags "-s -w -X github.com/metacubex/mihomo/constant.Version=v1.19.34-slim" -o mihomo-slim.exe .
+```
+
+自编精简版的体积收益只有 10 MB 左右（58.3 MB → 47.8 MB），功能上本方案用不到的部分本来就不参与转发，日常没必要为了这点体积自己编译；官方包出问题（缺 DLL、被杀软误报）时才优先考虑自编。
+
+## 6 相关文档
+
+`opencli\部署与启停说明.md` 第 5 章有网关侧出口代理启停与换桶摘要；`doc-11月优化\[19]LLM429限流分级处理与冷却记忆优化设计-小欧-2026-11-08.md` 说明了 429 为什么要换桶；mihomo 内核上游仓库为 https://github.com/MetaCubeX/mihomo，发布页 https://github.com/MetaCubeX/mihomo/releases，内核缺失的装回与重编步骤见 §5（本机已无 `D:\Downloads\mihomo-src\` 源码）。

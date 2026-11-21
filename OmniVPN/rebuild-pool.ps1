@@ -1,5 +1,5 @@
 ﻿# rebuild-pool.ps1 — 节点池重建流水线(11 步一键跑完, 整池死透时用)
-# 编写人: 小欧    日期: 2026-11-12    版本: v1.3    更新时间: 2026-11-21 08:47:43
+# 编写人: 小欧    日期: 2026-11-12    版本: v1.4    更新时间: 2026-11-21 08:47:43
 # 用途: proxy-switch 连 4 轮都换桶失败 = 免费池全死; 跑本脚本从公开订阅源重抓一批:
 #       抓订阅 -> 裸线TCP筛 -> TLS筛 -> 死点复活注入 -> 转YAML -> mihomo实测 -> 死点结算
 #       -> 只留可用 -> 定桶 -> 排序 -> 写回配置
@@ -8,9 +8,11 @@
 #       $here 改指 nodepool\ 步骤实现目录, 九步逻辑零改动
 # 更新: v1.2 小欧 2026-11-12 接入死点池(_deadpool.py): TLS 筛后注入死点复测(跳预筛直进实测),
 #       实测后结算(复活移出/失败+1/连续 5 死清除/新死入池); 9 步扩为 11 步
+# 更新: v1.3 小欧 2026-11-20 第 5 步后加空池护栏: 进料为 0 时直接报"本轮进料为空"并中止,
+#       不再把空 nodes_all.yaml 丢给 mihomo 换来一条看不懂的 "proxy group[0]: SEL" 报错
 # 说明: 第 6 步 mihomo 逐节点实测最慢(千级节点约 15 分钟); 并发 12 实测存活数最准, 别调大
 # 产物: 全部落 log\; 第 11 步写回 mihomo\config.yaml(自动留 .bak), 跑完自动重启 mihomo
-# 更新: v1.3 小欧 2026-11-21 第 6 步加 --retry 1: 同一批节点重复测会换着失败(实测 6 并发下每遍死 4~5 个、
+# 更新: v1.4 小欧 2026-11-21 第 6 步加 --retry 1: 同一批节点重复测会换着失败(实测 6 并发下每遍死 4~5 个、
 #       两遍死的还不是同一批), 只测一遍会把"抖动"当成"死"记进死点池; 多一轮重试(半并发)约多花 5 分钟
 
 param()
@@ -36,6 +38,12 @@ Step '4/11 死点池复活注入' @((Join-Path $here '_deadpool.py'),
 Step '5/11 转 mihomo YAML' @((Join-Path $here '_uri2yaml.py'),
                            (Join-Path $work 'tls_ok.txt'),
                            (Join-Path $work 'nodes_all.yaml'))
+$nodesAll = Join-Path $work 'nodes_all.yaml'
+$nodeCount = (Select-String -Path $nodesAll -Pattern '^\s+- name:' -ErrorAction SilentlyContinue | Measure-Object).Count
+if ($nodeCount -eq 0) {
+    throw "第 6 步前检查: nodes_all.yaml 里 0 个节点(本轮进料为空), 已中止; 原 mihomo\config.yaml 未被改动"
+}
+"     待实测节点: $nodeCount"
 Step '6/11 mihomo 逐节点实测(最慢, 约 15 分钟, 别关窗)' @(
     (Join-Path $here '_verify_nodes.py'),
     (Join-Path $work 'nodes_all.yaml'),
