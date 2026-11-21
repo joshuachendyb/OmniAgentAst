@@ -85,6 +85,40 @@ def _source_unreachable(text: str) -> bool:
     return any(m in text for m in _SOURCE_UNREACHABLE_MARKS)
 
 
+# 厂商响应里"产物本体"的键: 已单独进 out(url/b64), 元数据再存一份等于把 MB 级串翻倍
+_META_DROP_KEYS = frozenset({"b64_json", "url", "image_url", "video_url", "image", "mask"})
+_META_EMPTY = object()
+
+
+def _prune_meta(node: Any) -> Any:
+    """递归剔除产物本体与空容器; 返回 _META_EMPTY 表示该分支整体丢弃 — 小欧-2026-11-21"""
+    if isinstance(node, dict):
+        kept = {}
+        for k, v in node.items():
+            if str(k).lower() in _META_DROP_KEYS:
+                continue
+            child = _prune_meta(v)
+            if child is not _META_EMPTY:
+                kept[k] = child
+        return kept or _META_EMPTY
+    if isinstance(node, list):
+        items = [c for c in (_prune_meta(v) for v in node) if c is not _META_EMPTY]
+        return items or _META_EMPTY
+    return node
+
+
+def _put_meta(out: Optional[Dict[str, Any]], data: Any) -> None:
+    """厂商响应原文 → out["meta"]: 只剔产物本体与空壳, 其余字段原样留给工具落 other_data — 小欧-2026-11-21
+
+    meta 承载 created/task_id/revised_prompt/usage/size/quality/seconds/progress/时间戳/失败原因,
+    由调用方决定进 summary/llm_data 还是 other_data; 探测腿不传 out 时零影响。
+    """
+    if out is None:
+        return
+    meta = _prune_meta(data) if isinstance(data, dict) else _META_EMPTY
+    out["meta"] = meta if isinstance(meta, dict) else {}
+
+
 async def generate_image(
     api_base: str,
     headers: Dict[str, str],
@@ -110,7 +144,7 @@ async def generate_image(
     size/ratio/images(多图合成)/return_base64/response_format 经 provider adapter 的 prepare_image_body 钩子
       做方言翻译(默认 agnes 档位+ratio, sensenova 覆写为 WIDTHxHEIGHT), generation_client 协议无关(OCP);
       全可选不传则请求体只含既有字段; 探测腿不传 adapter 走默认(agnes 风格) — 小欧-2026-11-20
-    out: 可选产物出口(对话生图工具)——成功时写入未截断的原始 url/b64_json;
+    out: 可选产物出口(对话生图工具)——成功时写入未截断的原始 url/b64_json 及 meta(厂商其余字段);
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt}
@@ -162,9 +196,11 @@ async def generate_image(
         # 产物原始值写入 out(未截断), 供对话生图工具下载/展示; 探测腿不传 out 零影响 — 小欧-2026-11-20
         if out is not None:
             out.update(url=url, b64=b64)
+            _put_meta(out, data)
         if url:
             return True, f"url={url}"[:_EV_LIMIT], True
         return True, f"b64_len={len(b64)}", True
+    _put_meta(out, data)
     return False, "no_output", True
 
 
@@ -256,7 +292,7 @@ async def generate_video(
     - 小欧-2026-11-09
     模式(text/keyframe/reference)与媒体/通用参数按厂商文档 agnes-video-2.5/flash 全量支持,
       所有新参数可选、不传则请求体只含既有字段(探测腿与旧调用零影响, OCP) — 小欧-2026-11-20
-    out: 可选产物出口(对话生视频工具)——成功时写入未截断的原始 mp4 url;
+    out: 可选产物出口(对话生视频工具)——成功时写入未截断的原始 mp4 url 及 meta(厂商其余字段);
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
     body: Dict[str, Any] = {"model": model, "prompt": prompt, "mode": mode}
@@ -303,6 +339,7 @@ async def generate_video(
                     task_id = val
                     break
         if not task_id:
+            _put_meta(out, data)
             return False, f"no_task_id: {resp.text}"[:_EV_LIMIT], False
         deadline = time.monotonic() + poll_timeout
         status = ""
@@ -330,12 +367,15 @@ async def generate_video(
                     # 产物原始大小写 URL 写入 out 供下载(签名参数大小写敏感); 探测腿零影响 — 小欧-2026-11-20
                     if out is not None:
                         out["url"] = raw_url
+                        _put_meta(out, detail)
                     return True, f"url={evidence_url}"[:_EV_LIMIT], True
                 # 终态却取不到视频地址: 多半是响应结构变化, 不能据此判"无生成能力"
+                _put_meta(out, detail)
                 return False, f"no_output_field: {poll.text}"[:_EV_LIMIT], False
             if status in VIDEO_FAILED:
-                # 任务失败多为厂商侧资源/素材抓取问题, 不据此判"模型无生视频能力"; 原因串原文留证 - 小欧-2026-11-09
+                # 任务失败多为厂商侧资源/素材抓取问题, 不据此判"模型无生视频能力"; 原因串原文留证 — 小欧-2026-11-09
                 reason = gen_adapter.parse_video_reason(detail) or _video_reason(detail)
+                _put_meta(out, detail)
                 prefix = "source_unreachable" if _source_unreachable(reason) else "task_failed"
                 return False, f"{prefix}: {status} {reason}".strip()[:_EV_LIMIT], False
         return False, f"poll_timeout: {status or 'unknown'}"[:_EV_LIMIT], False

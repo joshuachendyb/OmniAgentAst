@@ -200,6 +200,19 @@ def _provider_credentials(model: str) -> Tuple[Optional[str], str, str]:
     return None, "", ""
 
 
+def _vendor_duration_ms(meta: Dict[str, Any]) -> int:
+    """厂商侧任务耗时(毫秒): created_at→completed_at; 缺任一端返回 0 — 小欧-2026-11-21
+
+    与工具墙钟 duration_ms 互补: 墙钟含排队提交+轮询粒度, 厂商耗时才是真出片时间。
+    """
+    try:
+        start = int(meta.get("created_at") or 0)
+        end = int(meta.get("completed_at") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return (end - start) * 1000 if start and end and end >= start else 0
+
+
 async def invoke_generate(kind: str, model: str, prompt: str,
                           *, image: Optional[str] = None,
                           mode: Optional[str] = None,
@@ -217,10 +230,11 @@ async def invoke_generate(kind: str, model: str, prompt: str,
                           seed: Optional[int] = None,
                           timeout: Optional[float] = None,
                           session_id: Optional[str] = None) -> Dict[str, Any]:
-    """生成回调主入口 → {ok, settled, url, b64, file_path, attachment_id, reason}。
+    """生成回调主入口 → {ok, settled, url, b64, file_path, attachment_id, reason, meta, vendor_duration_ms}。
 
     kind=image → generate_image; kind=video → generate_video(全模式: text/keyframe/reference)。
     产物 url 直接回; 只有 b64(如 SenseNova)时经 session_id 落盘为 attachment, 回 file_path。
+    meta = 厂商响应其余字段(剔 url/b64 本体), 工具据此拼规格摘要并落 other_data — 小欧-2026-11-21
     任何异常回 ok=False 不抛, 由工具收口。
     """
     provider, api_base, api_key = _provider_credentials(model)
@@ -267,6 +281,7 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         return {"ok": False, "settled": False, "reason": f"生成异常: {type(e).__name__}: {e}"}
     url = str(out.get("url") or "")
     b64 = str(out.get("b64") or "")
+    meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
     result: Dict[str, Any] = {
         "ok": ok,
         "settled": settled,
@@ -275,6 +290,8 @@ async def invoke_generate(kind: str, model: str, prompt: str,
         "file_path": "",
         "attachment_id": "",
         "reason": evidence,
+        "meta": meta,
+        "vendor_duration_ms": _vendor_duration_ms(meta),
     }
     # 只有 b64 无公网 URL(如 SenseNova U1.5 官方只返 2048² PNG b64) → 落盘为 attachment,
     # 工具据此声明产物, 前端产物抽屉经 loadRawBlob 带 token 预览, 不把 4MB data URI 塞进 LLM 回复
