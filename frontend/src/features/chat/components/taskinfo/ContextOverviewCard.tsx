@@ -33,6 +33,13 @@
  *   下接 2px 分隔线与下方信息明显区隔; 「对话上下文」「历史上下文」两个 SectionHead 标题后各带 timestamp — 小沈-2026-10-26
  * 编辑历史: 2026-11-18 小欧 - 时间戳改走 utils/time 的 formatTimestampSec: 后端给的是带微秒的裸 ISO 串,
  *   原样渲染与全站口径不一致(同页概览为 HH:MM:SS、足迹为 YYYY-MM-DD HH:MM:SS) — 小欧-2026-11-18
+ * 编辑历史: 2026-11-22 商量 - 浮层定位改靠右: 入口在 taskinfo 右组(视口底部偏右), 原 centered(视口居中)
+ *   浮层在屏幕中央、入口在右下角, 视线跳变且遮中央聊天区; 改 placement=topRight(右缘对齐入口向上弹),
+ *   贴近入口、不遮中央, 与事件浮层模式一致; 长内容由 maxHeight+overflowY 内部滚动兜底 — 商量-2026-11-22
+ * 编辑历史: 2026-11-22 商量 - 修复 topRight 向上弹内容增高顶部跑出视口(用户反馈): 原 maxHeight
+ *   calc(100vh-58px) 是为浮层底贴视口底设计, 改向上弹后浮层底锚定入口上方(入口下方还有输入框+留白,
+ *   距视口底约120~140px), 内容高接近 100vh-58 时顶部 = 58-130 ≈ -72px 溢出。改 maxHeight
+ *   calc(100vh-170px)(预留入口到底部140+顶部留白32), 顶部永不超出, 超出走内部滚动 — 商量-2026-11-22
  */
 import React, { useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -223,10 +230,10 @@ export const ContextOverviewCard: React.FC<Props> = ({
     <FloatingEntry
       open={open}
       onOpenChange={setOpen}
-      placement="bottomLeft"
-      // 2026-10-14 小欧 - 纵向居中(不贴按钮)。只封顶 maxHeight 不够: 位置仍贴触发器生长,
-      //   触发器在顶部时近满屏高的浮层会被 rc-trigger 上推过头 → 顶部被切(实测)。
-      centered
+      // 2026-11-22 商量 - 改靠右: 入口在 taskinfo 右组(视口底部偏右), 浮层右缘对齐入口向上弹(topRight),
+      //   贴近入口、不遮中央聊天区, 与事件浮层模式一致(2026-11-18 已验证); 长内容由下方
+      //   maxHeight+overflowY 内部滚动兜底, 不会顶出视口顶部。原 centered(视口居中)已移除。
+      placement="topRight"
       cardId="taskinfo-context-card"
       ariaLabel="历史上下文"
       cardStyle={{
@@ -236,7 +243,12 @@ export const ContextOverviewCard: React.FC<Props> = ({
         maxWidth: '90vw',
         // 2026-10-14 小欧 - 高度由内容定但封顶不超屏; 超出走内部滚动(本卡片无固定头部,
         //   故滚动容器是卡片自身)。58 = 留白32 + antd inner padding 24 + 边框2; 少了 26 会被上下切。
-        maxHeight: 'calc(100vh - 58px)',
+        // 2026-11-22 商量 - 改 topRight 向上弹后 58px 预留不足: 浮层底部锚定在入口上方(非视口底),
+        //   入口在 taskinfo 条内, 下方还有输入框区域+底部留白, 入口到视口底约 120~140px; 内容增高时
+        //   顶部 = 入口顶 - 内容高, 内容高接近 100vh-58 时顶部 = 58 - 130 ≈ -72px 跑出视口顶(用户反馈)。
+        //   修复: 预留 入口到底部(保守140) + 顶部留白(32) ≈ 170px, maxHeight=calc(100vh - 170px),
+        //   顶部永不超出; 代价是内容显示高度少 112px, 超出走内部滚动(overflowY 已有)。
+        maxHeight: 'calc(100vh - 170px)',
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
