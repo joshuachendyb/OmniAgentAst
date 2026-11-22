@@ -111,31 +111,67 @@ ai:
       - kimi-k3
       - sensenova-6.8-flash
       - sensenova-6.8-flash-lite
+      - sensenova-u1.5-lite
     timeout: 200
     max_retries: 3
     # 双维度能力标注（与真实 config 同构）：input=看图，output=生成产出
+    # 2026-11-22 小欧 同步 config.yaml 缺失配置项：补 context_length/max_output_length、
+    #   kimi-k3 range/param_options、sensenova-u1.5-lite 模型块与 model_params（探测数据不进模板）
     model_meta:
       deepseek-flash:
+        context_length: 1048576
+        max_output_length: 65536
         input_modalities: [text]
         output_modalities: [text]
       deepseek-v4-flash:
+        context_length: 1048576
+        max_output_length: 65536
         input_modalities: [text]
         output_modalities: [text]
       glm-5.2:
+        context_length: 1048576
+        max_output_length: 131072
         input_modalities: [text]
         output_modalities: [text]
       glm-5.3:
+        context_length: 1048576
+        max_output_length: 131072
         input_modalities: [text]
         output_modalities: [text]
       kimi-k3:
+        context_length: 1048576
+        max_output_length: 65536
         input_modalities: [text]
         output_modalities: [text]
+        range:
+          temperature:
+            min: 0
+            max: 2
+          top_p:
+            min: 0
+            max: 1
+        param_options: {}
       sensenova-6.8-flash:
+        context_length: 262144
+        max_output_length: 65536
         input_modalities: [text, image]        # 看图
         output_modalities: [text]
       sensenova-6.8-flash-lite:
+        context_length: 262144
+        max_output_length: 65536
         input_modalities: [text, image]        # 看图
         output_modalities: [text]
+      sensenova-u1.5-lite:
+        context_length: 262144
+        max_output_length: 65536
+        input_modalities: [text]
+        output_modalities: [image]             # 文生图/图片编辑产出
+        supported_parameters: [temperature, stop]
+        supported_features: [tools, json_mode, reasoning]
+    model_params:
+      kimi-k3:
+        temperature: 1
+        top_p: 0.95
 
   ZenFree:
     api_base: https://opencode.ai/zen/v1
@@ -282,6 +318,8 @@ ai:
   # 付费模型调用才需填 api_key；api_key 留空即免 key 使用（免费面已可用），models 空表=到模型库拉取勾选。
   # 以下 models/model_meta 镜像自真实 config.yaml（2026-11-01 模型库保存实况）
   kilo:
+    name: kilo
+    label: Kilo
     api_base: https://ai-gateway.kilo.ai/api/v1
     api_key: ''
     timeout: 120
@@ -398,9 +436,17 @@ ai:
     timeout: 300
     max_retries: 3
     # model_params 键值显式null=请求体摘除该默认键(beam-free上游严格校验拒收chat_template_kwargs) — 小欧 2026-11-10
+    # 2026-11-22 小欧 同步 config.yaml 缺失的 context_length 覆盖项
     model_params:
+      mimo-v2.6-flash-free:
+        context_length: 195000
+      inkling-2-small-free:
+        context_length: 900000
       beam-free:
+        context_length: 1000000
         chat_template_kwargs: null
+      big-pickle:
+        context_length: 180000
     models:
       - beam-free
       - big-pickle
@@ -408,7 +454,9 @@ ai:
       - deepseek-v4.1-flash-free
       - glm-5.3-flash-free
       - inkling-2-small-free
+      - longcat-2.5-free
       - mimo-v2.6-flash-free
+      - minimax-m3.1-flash-free
     model_meta:
       beam-free:
         context_length: 1048576
@@ -507,6 +555,31 @@ ai:
           - text
         supported_features: []
         supported_parameters: []
+      longcat-2.5-free:
+        context_length: 1000000
+        max_output_length: 262144
+        input_modalities:
+          - text
+          - image
+        output_modalities:
+          - text
+        supported_parameters: []
+        supported_features:
+          - reasoning
+          - tools
+      minimax-m3.1-flash-free:
+        context_length: 1000000
+        max_output_length: 512000
+        input_modalities:
+          - text
+          - image
+          - video
+        output_modalities:
+          - text
+        supported_parameters: []
+        supported_features:
+          - reasoning
+          - tools
 
 # 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
