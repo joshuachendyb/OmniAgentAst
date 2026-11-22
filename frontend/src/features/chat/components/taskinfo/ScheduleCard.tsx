@@ -11,6 +11,14 @@
 //   类型 ScheduleItem/ScheduleStatus 改从 chatStreamTypes 导入(清单类型单一真源) — 小欧-2026-11-19
 // 2026-11-19 小欧 - 状态渲染优化(高级设计): 字形加 aria-label/title 文字兜底(无障碍可学习); 完成项改绿勾+SECONDARY
 //   文字(不再纯灰隐形); 四态形状各异: 完成绿勾✓/进行实心圆●/待开始空心方块□/取消叉✕(配删除线) — 小欧-2026-11-19
+// 2026-11-22 商量 - 入口「计划 N/M」文字颜色改深琥珀 WARNING(#AD6800): 原 TEXT.PRIMARY 中灰 #595959
+//   在 taskinfo 一线不明显(用户反馈); 深琥珀暖色调醒目, 保留文字入口轻量语言(不胶囊化);
+//   与动态状态卡死预警同 WARNING 色带, 但计划是"进行到哪一步"状态短语, 暖色强调合理 — 商量-2026-11-22
+// 2026-11-22 商量 - 入口颜色再改 WAIT_ACTION(#fa8c16 太阳橙): 用户要求改成天气图标小圆球(橙黄渐变太阳)
+//   的主体色; 圆球主体约 #FF9800 明亮橙, 既有令牌最接近 WAIT_ACTION(复用不新增), 比 WARNING 更亮更近
+//   图片鲜艳橙; ⚠ 白底对比度约 2.4:1 偏浅, 12px 小字可读性弱于深琥珀, 若觉浅可再调深 — 商量-2026-11-22
+// 2026-11-22 商量 - 入口改用新 token WARNING_BRIGHT: 用户令新增 warning 语义亮警告色(不用 WAIT_ACTION 等
+//   非 warning 名), 值 #fa8c16 太阳橙即图片圆球主体色; 深色 WARNING(#AD6800) 保留不变 — 商量-2026-11-22
 import { CloseOutlined, CheckOutlined } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 
@@ -238,7 +246,11 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
         {/* 不叠 Tooltip: 本入口是 hover 即开浮层, 再挂一层悬浮提示会与浮层抢同一触发, 观感上是两个框同时冒出 */}
         <span
           style={{
-            color: Colors.TEXT.PRIMARY,
+            // 2026-11-22 商量 - 颜色改 WARNING_BRIGHT(#fa8c16 亮警告色): 用户要求改成天气图标小圆球
+            //   (橙黄渐变太阳)的主体色, 并要求新增 warning 语义 token(不用 WAIT_ACTION 等非 warning 名);
+            //   值 #fa8c16 太阳橙即图片圆球主体色。⚠ 白底对比度约 2.4:1 偏浅, 12px 小字可读性弱于深琥珀,
+            //   若觉浅可回退深色 WARNING(#AD6800) 或调 ACCENT_ORANGE(#d4380d)。
+            color: Colors.WARNING_BRIGHT,
             fontWeight: FontWeight.MEDIUM,
           }}
         >
