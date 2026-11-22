@@ -18,6 +18,9 @@
 #   2026-11-21 opencode - 阶段0前置检查增补 PyInstaller 模块校验: 此前仅查 Node/Python/spec,
 #     PyInstaller 缺失时前端构建完成后才在后端打包阶段报错, 前置拦截省时并给出明确安装命令;
 #     配套在 backend/requirements-dev.txt 声明打包期依赖
+#   2026-11-22 opencode - 部署入口统一到 deploy_spa.bat: 此前 build 里硬编码目标路径且直接调
+#     deploy_spa.py(未传 --target, 实际走 py 的旧默认值), 与用户改过的 bat 目标不一致; 改为调用 bat,
+#     目标路径只由 bat 的 TARGET 定义, 改一处即可
 # 用法: powershell -ExecutionPolicy Bypass -File build_spa.ps1          # 交互选择模式
 #       powershell -ExecutionPolicy Bypass -File build_spa.ps1 -Full     # 跳过菜单, 直接全编译
 #       或双击 build_spa.bat                                             # 交互选择模式
@@ -462,23 +465,24 @@ Write-Host "  产物目录:" -ForegroundColor White
 Write-Host "    $distDir" -ForegroundColor Green
 Write-Host ""
 
-# ── 部署选择 ──
-$deployScript = Join-Path $backend "deploy_spa.py"
+# ── 部署选择: 统一走 deploy_spa.bat, 目标路径由 bat 的 TARGET 单点定义 ──
 $deployBat = Join-Path $root "deploy_spa.bat"
-$deployTarget = "G:\OmniAgent-SPA"
-Write-Host "  是否部署到 $deployTarget ?" -ForegroundColor White
-$choice = Read-Host "  输入 Y 部署, N 退出 (默认 N)"
-if ($choice -eq 'Y' -or $choice -eq 'y') {
-    Write-Host ""
-    Write-Host "  执行部署脚本..." -ForegroundColor Cyan
-    python $deployScript
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "部署失败 (退出码 $LASTEXITCODE)"
-    }
+if (-not (Test-Path $deployBat)) {
+    Write-Err "部署脚本不存在: $deployBat"
 } else {
-    Write-Host ""
-    Write-Host "  部署方式:" -ForegroundColor White
-    Write-Host "    命令:   python backend\deploy_spa.py" -ForegroundColor Cyan
-    Write-Host "    双击:   deploy_spa.bat" -ForegroundColor Cyan
+    Write-Host "  是否调用 deploy_spa.bat 部署? (目标路径由该脚本配置)" -ForegroundColor White
+    $choice = Read-Host "  输入 Y 部署, N 退出 (默认 N)"
+    if ($choice -eq 'Y' -or $choice -eq 'y') {
+        Write-Host ""
+        Write-Host "  执行部署脚本: deploy_spa.bat" -ForegroundColor Cyan
+        & $deployBat
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "部署失败 (退出码 $LASTEXITCODE)"
+        }
+    } else {
+        Write-Host ""
+        Write-Host "  部署方式:" -ForegroundColor White
+        Write-Host "    双击:   deploy_spa.bat" -ForegroundColor Cyan
+    }
 }
 Write-Host ""

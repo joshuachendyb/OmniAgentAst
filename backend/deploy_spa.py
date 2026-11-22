@@ -1,8 +1,9 @@
 # ============================================================================
 # deploy_spa.py — SPA 部署脚本: 替换 exe + _internal 到目标目录
 # 创建: 2026-11-04 小欧
-# 用法: python backend/deploy_spa.py [--target G:\OmniAgent-SPA] [--dist <dist目录>]
-#   默认 target=G:\OmniAgent-SPA, dist=backend/dist/OmniAgentBackend
+# 用法: python backend/deploy_spa.py [--target E:\OmniAgent-SPA] [--dist <dist目录>]
+#   默认 target=E:\OmniAgent-SPA, dist=backend/dist/OmniAgentBackend
+#   注: 常规部署走 deploy_spa.bat (--target 由其 TARGET 传入), 此处默认值仅直接命令行调用时兜底
 #
 # 编辑历史:
 #   2026-11-04 小欧 - 新建。exe 原地覆盖; _internal 改覆盖合并(dirs_exist_ok=True),
@@ -13,6 +14,8 @@
 #   2026-11-06 小欧 - 部署前先清 _internal/web 再 copytree: web 是唯一随版本陈旧累积的静态资源,
 #     copytree dirs_exist_ok 只覆盖同名, 目标端旧 chunk 永不清除; 其余 _internal 依赖不清理保容错。
 #   2026-11-12 小欧 - 提示信息重新设计: 阶段化输出, 技术用词准确, 操作反馈清晰。
+#   2026-11-22 opencode - 默认部署目标由 G: 改为 E:, 与 deploy_spa.bat 的 TARGET 一致;
+#     常规部署统一从 bat 传 --target, 此处默认值仅直接命令行调用时兜底
 # ============================================================================
 import argparse
 import shutil
@@ -20,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-DEFAULT_TARGET = Path(r'G:\OmniAgent-SPA')
+DEFAULT_TARGET = Path(r'E:\OmniAgent-SPA')
 DEFAULT_DIST = Path(__file__).resolve().parent / 'dist' / 'OmniAgentBackend'
 EXE_NAME = 'OmniAgentBackend.exe'
 
