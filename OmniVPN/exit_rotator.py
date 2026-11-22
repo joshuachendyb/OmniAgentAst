@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_rotator.py — gateway 出口切换适配器（给 --switch-cmd 直接调用）
-# 编写人: 小欧    版本: v1.8    更新时间: 2026-11-21 11:00:00
+# 编写人: 小欧    版本: v2.0    更新时间: 2026-11-22 10:00:00
 #
 # 修改历史（最新在最下）:
 #   v1.0 2026-11-11 小欧 初版: warp/mihomo/tailscale/wg 四种 target, 桶判定复用 opcode225-gate.py
@@ -24,6 +24,11 @@
 #                       成功后再入账; 新增 --reset-history 清空历史; --verify 附带历史列表
 #   v1.8 2026-11-21 小欧 账本深度改 3(用户要求, 现池 7 个桶留 5 个太紧): 文案里的次数
 #                       一律取 exit_probe.BUCKET_HISTORY_SIZE, 不再写死数字
+#   v2.0 2026-11-22 小欧 两级池轮转: switch_mihomo 改名 switch_group(通用任意组环形轮换);
+#                       新增 --mode {exit,indonesia,both} 决定轮转哪级池(exit=二级大转默认,
+#                       indonesia=一级小转换跳板, both=先转二级再转一级); 新增 --exit-group/
+#                       --indonesia-group 指定两级组名(默认 EXIT_POOL/INDONESIA_POOL);
+#                       保留 --group 作单组覆盖(优先于 mode); 桶判定与历史账本仍复用 exit_probe
 #
 # 用途:
 #   gateway 撞 429(FreeUsageLimitError, 按出口 IP 记配额桶)后, 调本脚本换出口,
@@ -34,7 +39,9 @@
 # 用法:
 #   python exit_rotator.py --verify                 # 打印当前出口身份(桶)+最近用过的桶后退出
 #   python exit_rotator.py --reset-history          # 清空最近换桶历史(池子换过一批桶后重置)
-#   python exit_rotator.py --target mihomo          # Clash/mihomo API 轮换到组内下一节点
+#   python exit_rotator.py --target mihomo          # 二级大转: 轮换 EXIT_POOL 换出口(默认)
+#   python exit_rotator.py --target mihomo --mode indonesia   # 一级小转: 换 INDONESIA_POOL 跳板
+#   python exit_rotator.py --target mihomo --mode both        # 先转二级再转一级(两级都换)
 #   python exit_rotator.py --target mihomo --url http://127.0.0.1:9090 --secret xxx --group 节点选择
 #   python exit_rotator.py --target mihomo --wait --proxy http://127.0.0.1:7890
 #                                                   # 端口代理模式下用该代理观测出口身份
@@ -55,9 +62,10 @@ if SCRIPT_DIR not in sys.path:
 import exit_probe as gate
 
 
-def switch_mihomo(ctrl: str, secret: str, group: str) -> bool:
-    """Clash/mihomo 外部控制器: 组内轮换到当前节点的下一个(确定性循环, 无需状态文件).
-    作者: 小欧 2026-11-11"""
+def switch_group(ctrl: str, secret: str, group: str) -> bool:
+    """Clash/mihomo 外部控制器: 指定 Selector 组内轮换到当前节点的下一个(确定性循环, 无需状态文件).
+    适用于两级池任一组: 二级 EXIT_POOL(换出口) 或 一级 INDONESIA_POOL(换跳板).
+    作者: 小欧 2026-11-11, 改名 2026-11-22"""
     c = gate.make_client(timeout=30)
     try:
         hdr = {"Authorization": "Bearer %s" % secret} if secret else {}
@@ -131,7 +139,12 @@ def main() -> int:
     ap.add_argument("--proxy", default="", help="观测出口用的代理(如 http://127.0.0.1:7890)")
     ap.add_argument("--url", default="http://127.0.0.1:9090", help="mihomo 外部控制器地址")
     ap.add_argument("--secret", default="", help="mihomo controller secret")
-    ap.add_argument("--group", default="", help="mihomo Selector 组名(缺省自动选第一个)")
+    ap.add_argument("--group", default="", help="mihomo Selector 组名(覆盖 mode, 单组轮转)")
+    ap.add_argument("--mode", choices=["exit", "indonesia", "both"], default="exit",
+                    help="轮转模式: exit=二级大转换出口(默认), indonesia=一级小转换跳板, "
+                         "both=先转二级再转一级")
+    ap.add_argument("--exit-group", default="EXIT_POOL", help="二级出口池组名")
+    ap.add_argument("--indonesia-group", default="INDONESIA_POOL", help="一级跳板池组名")
     ap.add_argument("--wait", action="store_true",
                     help="等桶换成最近 %d 次以外的桶才返回 0" % gate.BUCKET_HISTORY_SIZE)
     ap.add_argument("--ip-timeout", type=int, default=180)
@@ -169,9 +182,24 @@ def main() -> int:
     print("最近用过的桶: %d 个 (上限 %d): %s"
           % (len(keys), gate.BUCKET_HISTORY_SIZE, " | ".join(keys) if keys else "无记录"))
 
-    if not switch_mihomo(a.url, a.secret, a.group):
-        client.close()
-        return 2
+    # 确定要轮转的组列表: --group 优先(单组覆盖), 否则按 mode 决定轮转哪级池
+    if a.group:
+        groups = [a.group]
+        print("  [模式] 单组覆盖: %s" % a.group)
+    elif a.mode == "indonesia":
+        groups = [a.indonesia_group]
+        print("  [模式] 一级小转(换跳板): %s" % a.indonesia_group)
+    elif a.mode == "both":
+        groups = [a.exit_group, a.indonesia_group]
+        print("  [模式] 两级都转: %s -> %s" % (a.exit_group, a.indonesia_group))
+    else:  # exit
+        groups = [a.exit_group]
+        print("  [模式] 二级大转(换出口): %s" % a.exit_group)
+
+    for g in groups:
+        if not switch_group(a.url, a.secret, g):
+            client.close()
+            return 2
 
     if a.delay:
         time.sleep(a.delay)
