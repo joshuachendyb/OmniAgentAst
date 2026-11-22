@@ -164,10 +164,14 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
   const content = (
     <PanelCard
       title="执行计划"
+      // 2026-11-22 商量 - 标题行 meta 改当前进行状态(短词): 进度汇总移底部(用户令"两个位置反了"),
+      //   标题行只留标题+当前状态; 具体进行中项由内容区实心圆+STRONG 标识(DRY), 避免长内容挤标题行
       meta={
-        <PanelChip tone={done === total ? 'success' : 'primary'}>
-          {done} / {total} 已完成
-        </PanelChip>
+        active ? (
+          <PanelChip tone="primary">进行中</PanelChip>
+        ) : done === total ? (
+          <PanelChip tone="success">全部完成</PanelChip>
+        ) : undefined
       }
       actions={
         <PanelIconButton
@@ -182,13 +186,11 @@ export function ScheduleCard({ list, compact }: ScheduleCardProps) {
         overflowY: 'auto',
       }}
       footer={
-        // 脚注只说人话: 有进行中项就点名, 全做完就说全做完, 其余情况不占一行
-        // (原「共 N 项，第 M 步更新」把内部步骤计数当说明, 读者既不知道"第 M 步"指什么, 也用不上)
-        active
-          ? `进行中：${active.content}`
-          : done === total
-            ? '全部完成'
-            : undefined
+        // 2026-11-22 商量 - 底部脚注改进度汇总(4/6 已完成): 用户令"进度汇总应在底部而非标题行"("两个位置反了"),
+        //   标题行只留标题+当前状态, 进度胶囊落底部脚注, 完成态转绿
+        <PanelChip tone={done === total ? 'success' : 'primary'}>
+          {done} / {total} 已完成
+        </PanelChip>
       }
     >
       {items.map((it, i) => (
