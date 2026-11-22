@@ -15,6 +15,8 @@
 //      行距看起来比实际刻度大 7px —— 行高不该被行内一个图标按钮决定;
 //   ③ 新增 PanelIconButton: antd 按钮的高/内距/圆角/焦点环都是库缺省派生(控 theme/controlScale.ts 铁律),
 //      这里自绘 button, 盒高只取本项目控件小档, 且不参与行高计算 — 商量-2026-11-18
+// 2026-11-22 商量 - 标题 span 补 minWidth:0: 标题为长内容(如问询面板"需要你回答 + 问题标题")时允许收缩,
+//   让子级 header 走省略号, 防长标题顶开右侧操作按钮; 计划/信任的短标题无视觉影响 — 商量-2026-11-22
 import { forwardRef } from 'react';
 import type {
   CSSProperties,
@@ -120,6 +122,9 @@ export function PanelCard({
             fontWeight: FontWeight.BOLD,
             color: Colors.TEXT.STRONG,
             whiteSpace: 'nowrap',
+            // 2026-11-22 商量 - minWidth:0: 标题为长内容(如问询面板"需要你回答 + 问题标题")时允许收缩,
+            //   让子级 header 走省略号, 防长标题顶开右侧操作按钮; 计划/信任的短标题无视觉影响
+            minWidth: 0,
           }}
         >
           {title}

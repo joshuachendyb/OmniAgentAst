@@ -12,6 +12,11 @@
 //   原实现随锚点容器 left:0/right:0 拉满会话列(实测 826 宽), 宽屏下成一条横幅, 选项行也失去节奏。 — 商量-2026-11-18
 // 2026-11-18 商量 - 右上 × 走 cancel(中断问询), aria-label 改名符实; 倒计时环改从 components/CountdownRing 具名引入 — 商量-2026-11-18
 // 2026-11-19 小欧 - multiple→single 语义反转: 传参改 single(默认true单选) — 小欧-2026-11-19
+// 2026-11-22 商量 - 标题栏并入 header(问题标题/概述): "需要你回答" 后紧接下划线+黑色(STRONG)+常规字重的 header,
+//   字号用正文字号(14, 原题干小标签 11 属小字), 细竖线分隔, 长标题省略号兜底防顶开右侧操作;
+//   题干区不再重复渲染该小标签(DRY)。PanelCard 标题 span 补 minWidth:0 使长标题可收缩 — 商量-2026-11-22
+// 2026-11-22 商量 - 底部「取消」按钮文字改「忽略」: 语义更贴切(忽略本次问询, 模型自行决策继续),
+//   动作仍走 cancel 不变, 仅文案调整; data-testid=question-dismiss 保持不变 — 商量-2026-11-22
 import {
   CheckOutlined,
   CloseOutlined,
@@ -114,7 +119,46 @@ export function QuestionDock({ controller }: QuestionDockProps) {
   const card = (
     <PanelCard
       variant="raised"
-      title="需要你回答"
+      // 2026-11-22 商量 - 标题栏并入 header(问题标题/概述): "需要你回答" 后紧接 header,
+      //   下划线 + 正文字号(14, 非小字) + 黑色(STRONG, 非灰) + 常规字重, 与粗体主标题形成"动作标签 | 问题主题"层级;
+      //   细竖线分隔, 长标题走省略号兜底(防顶开右侧操作)。题干区不再重复渲染该小标签(DRY)。
+      title={
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: Gap.INLINE,
+            minWidth: 0,
+          }}
+        >
+          <span style={{ flexShrink: 0 }}>需要你回答</span>
+          {current?.header ? (
+            <>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 1,
+                  height: 12,
+                  background: Colors.BORDER.LIGHT,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  textDecoration: 'underline',
+                  color: Colors.TEXT.STRONG,
+                  fontWeight: FontWeight.REGULAR,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {current.header}
+              </span>
+            </>
+          ) : null}
+        </span>
+      }
       meta={
         total > 1 ? (
           <PanelChip tone="primary">
@@ -190,7 +234,7 @@ export function QuestionDock({ controller }: QuestionDockProps) {
               onClick={cancel}
               style={{ height: CONTROL_HEIGHT.comfortable.normal }}
             >
-              取消
+              忽略
             </Button>
             {total > 1 ? (
               <Button
@@ -225,37 +269,18 @@ export function QuestionDock({ controller }: QuestionDockProps) {
     >
       {minimized ? undefined : (
         <>
-          {/* 题干: 小标签(问题类别) + 正文。header 是 LLM 给的短标题, question 是完整问句,
-              两者信息不重叠, 分层显示比压成一段更好扫读; 组内 4px, 与下方选项块走卡片 12px 主节奏 */}
-          <div
+          {/* 题干: 正文。header(问题标题/概述)已并入标题栏, 不再重复渲染;
+              正文仅剩 question 完整问句, 与下方选项块走卡片 12px 主节奏 */}
+          <span
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: Spacing.XS,
+              fontSize: FontSize.PRIMARY,
+              fontWeight: FontWeight.MEDIUM,
+              color: Colors.TEXT.STRONG,
+              lineHeight: LineHeight.BODY,
             }}
           >
-            {current?.header ? (
-              <span
-                style={{
-                  fontSize: FontSize.SMALL,
-                  color: Colors.TEXT.TERTIARY,
-                  letterSpacing: 0.2,
-                }}
-              >
-                {current.header}
-              </span>
-            ) : null}
-            <span
-              style={{
-                fontSize: FontSize.PRIMARY,
-                fontWeight: FontWeight.MEDIUM,
-                color: Colors.TEXT.STRONG,
-                lineHeight: LineHeight.BODY,
-              }}
-            >
-              {current?.question ?? ''}
-            </span>
-          </div>
+            {current?.question ?? ''}
+          </span>
           <div
             style={{
               display: 'flex',
