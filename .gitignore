@@ -24,6 +24,10 @@ hooks/log/
 OmniVPN/log/
 OmniVPN/mihomo/*.exe
 OmniVPN/mihomo/cache.db*
+# 2026-11-22 小欧: 本地 mihomo 配置扩展测试文件(含明文节点口令), 不入库 — 小欧-2026-11-22
+OmniVPN/mihomo/config-expand-test.yaml
+# 2026-11-22 小欧: OmniVPN/tests/ 放本地测试配置/产物(config-expand-test.yaml 等), 不入库 — 小欧-2026-11-22
+OmniVPN/tests/
 # 2026-11-11 小欧: 出口/VPN 资料里含明文账号口令, 严禁入库 — 小欧-2026-11-11
 hooks/vpn-*.txt
 # 2026-11-11 小欧: VPN 试用工具(内核/GUI/节点表)合计 400+MB 二进制, 属本机试验环境不入库 — 小欧-2026-11-11
