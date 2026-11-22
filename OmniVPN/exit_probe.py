@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_probe.py — 出口身份探测与 mihomo VPN 状态检查（查桶）
-# 编写人: 小欧    版本: v2.7    更新时间: 2026-11-21 11:00:00
+# 编写人: 小欧    版本: v2.9    更新时间: 2026-11-22 11:30:00
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
@@ -25,6 +25,14 @@
 #   v2.7 2026-11-21 小欧 账本深度 5 -> 3(用户要求): 现池 9 节点只有 7 个互不相同的桶,
 #                       留 5 个会把候选桶压到 2 个, 留 3 个则剩 4 个; 读取时按上限截断,
 #                       上限调小立即生效(不必等下一次入账)
+#   v2.8 2026-11-22 小欧 新增 --pool 全桶普查(用户要求: 两级池扩容后查二级池全部桶):
+#                       新增 pool_bucket_survey() 遍历指定节点池(EXIT_POOL/INDONESIA_POOL)全部成员,
+#                       逐个切换实测出口, 按桶指纹(prefix|loc)去重统计桶数/分布/国家, 落盘
+#                       log\pool_buckets-<池名>.json; 顶层 PROXY 自动指向该池, 复用已有
+#                       make_client/exit_identity/identity_key/net_prefix/_port_open/fmt_identity
+#   v2.9 2026-11-22 小欧 不带参数默认附带两级池当前桶(用户要求: 执行时同时看一级/二级各自的桶):
+#                       新增 pool_now_buckets() 读 INDONESIA_POOL/EXIT_POOL 当前选中节点,
+#                       分别切顶层 PROXY 查出口桶后恢复原选择; 仅不带任何参数时触发
 #   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
 #                       新增 --cf-trace; 出口身份带 family/loc/colo
 #   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
@@ -49,6 +57,8 @@
 #   python exit_probe.py --mihomo         # 只做 VPN 状态体检(端口/内核/节点池/系统代理/出口对照)
 #   python exit_probe.py --cf-trace       # 只查出口身份(缺省裸线, 恒 loc=CN) + ASN 归属
 #   python exit_probe.py --cf-trace --proxy http://127.0.0.1:7890   # 查当前出口桶(走节点)
+#   python exit_probe.py --pool EXIT_POOL       # 遍历二级池全部节点实测出口桶并去重统计
+#   python exit_probe.py --pool INDONESIA_POOL  # 遍历一级跳板池全部节点实测出口桶并去重统计
 #
 # --mihomo 查什么: [0] 本机 VPN 隧道环境(TUN/隧道网卡+VPN进程) → 7890/9090 端口 → 内核版本
 #                  → PROXY 组当前选中 → 各节点最近测活结果 → 系统代理开关 → 直连出口 vs 走代理出口
@@ -63,6 +73,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import httpx
 
@@ -422,6 +433,143 @@ def mihomo_status(log, proxy):
         "直连恒为裸线(loc=CN); 看「代理出口」的前缀+loc 即当前出口桶"))
 
 
+
+def pool_bucket_survey(log, pool_name, proxy, settle=4):
+    """遍历指定节点池全部成员, 逐个切换实测出口, 按桶指纹(prefix|loc)去重统计。
+    适用于两级池任一组: 二级 EXIT_POOL(挂 dialer-proxy 经一级中转, 出口=二级最终出口)
+    或 一级 INDONESIA_POOL(直接出口)。切换后须把顶层 PROXY 指向该池, 否则 7890 出口不生效。
+    作者: 小欧 2026-11-22"""
+    api = CONTROLLER + "/proxies"
+    ctrl = make_client(timeout=30)
+    try:
+        # 读池成员
+        try:
+            r = ctrl.get(api + "/" + urllib.parse.quote(pool_name, safe=""))
+            if r.status_code != 200:
+                log("  [错误] 读取组 %s 失败: HTTP %s" % (pool_name, r.status_code))
+                return 2
+            entry = r.json()
+        except Exception as e:
+            log("  [错误] 控制器查询失败: %s" % str(e).splitlines()[-1])
+            return 2
+        members = [x for x in (entry.get("all") or [])
+                   if x not in ("Auto", "DIRECT", "REJECT")]
+        if not members:
+            log("  [错误] 组 %s 无成员" % pool_name)
+            return 2
+        log("=== 遍历节点池 %s 实测出口桶 (共 %d 节点) ===" % (pool_name, len(members)))
+        # 顶层 PROXY 必须指向该池, 否则 7890 出口不经过该池
+        try:
+            ctrl.put(api + "/PROXY", json={"name": pool_name})
+            log("  [顶层] PROXY -> %s" % pool_name)
+        except Exception as e:
+            log("  [提示] 顶层 PROXY 切换失败(继续, 出口可能不经过该池): %s" % str(e).splitlines()[-1])
+        time.sleep(2)
+        # 逐个切换 + 测出口
+        results, buckets = {}, {}
+        for i, name in enumerate(members):
+            try:
+                ctrl.put(api + "/" + urllib.parse.quote(pool_name, safe=""),
+                         json={"name": name})
+                time.sleep(settle)
+                client = make_client(proxy=proxy or "http://127.0.0.1:%d" % PROXY_PORT)
+                ident = exit_identity(client)
+                client.close()
+                ip = (ident or {}).get("ip")
+                key = identity_key(ident)
+                if ip and key and key != UNKNOWN_BUCKET:
+                    results[name] = {"ip": ip, "loc": (ident or {}).get("loc"),
+                                     "bucket": key, "prefix": (ident or {}).get("prefix")}
+                    buckets.setdefault(key, set()).add(name)
+                else:
+                    results[name] = {"ip": None, "loc": None, "bucket": None}
+            except Exception as e:
+                results[name] = {"ip": None, "loc": None, "bucket": None,
+                                 "err": str(e).splitlines()[-1][:60]}
+            if (i + 1) % 20 == 0:
+                log("  进度 %d/%d: 可测 %d 桶 %d" % (i + 1, len(members),
+                                                    len([v for v in results.values() if v.get("ip")]),
+                                                    len(buckets)))
+        ok = {k: v for k, v in results.items() if v.get("ip")}
+        log("")
+        log("=== 池 %s 实测汇总 ===" % pool_name)
+        log("  总节点 %d | 可测 %d | 去重桶 %d" % (len(members), len(ok), len(buckets)))
+        # 桶分布(按节点数降序)
+        bucket_list = sorted(buckets.items(), key=lambda kv: -len(kv[1]))
+        log("  桶分布(前15, 按节点数降序):")
+        for bk, names in bucket_list[:15]:
+            log("    %-28s %d 节点" % (bk, len(names)))
+        if len(bucket_list) > 15:
+            log("    ... 其余 %d 桶" % (len(bucket_list) - 15))
+        # 国家分布
+        from collections import Counter
+        locs = Counter((k or "").split("|")[-1] for k in buckets)
+        log("  国家分布: %s" % (", ".join("%s=%d" % (k, v) for k, v in locs.most_common())))
+        # 落盘
+        try:
+            survey = {"pool": pool_name, "total": len(members), "ok": len(ok),
+                      "bucket_count": len(buckets),
+                      "buckets": {k: sorted(v) for k, v in buckets.items()},
+                      "results": results,
+                      "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            out = os.path.join(SCRIPT_DIR, "log", "pool_buckets-%s.json" % pool_name)
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(survey, f, ensure_ascii=False, indent=1)
+            log("  已落盘: %s" % out)
+        except Exception as e:
+            log("  [提示] 落盘失败: %s" % str(e).splitlines()[-1])
+        return 0
+    finally:
+        ctrl.close()
+
+
+
+
+def pool_now_buckets(log):
+    """不带参数默认附带: 显示一级池与二级池各自当前选中节点的出口桶。
+    分别把顶层 PROXY 切到 INDONESIA_POOL / EXIT_POOL, 查出口桶后恢复原 PROXY 选择。
+    作者: 小欧 2026-11-22"""
+    api = CONTROLLER + "/proxies"
+    ctrl = make_client(timeout=30)
+    try:
+        # 记录原 PROXY 选择
+        try:
+            orig = ctrl.get(api + "/PROXY").json().get("now", "EXIT_POOL")
+        except Exception:
+            orig = None
+        log("")
+        log("[5] 两级池当前出口桶 (切换查桶, 查完恢复 PROXY=%s)" % (orig or "?"))
+        log("    注: 一级=跳板直接出口, 二级=经一级中转后最终出口; 桶=出口IP网段前缀+loc")
+        for gname, label in (("INDONESIA_POOL", "一级跳板池"), ("EXIT_POOL", "二级出口池")):
+            try:
+                e = ctrl.get(api + "/" + urllib.parse.quote(gname, safe="")).json()
+                now = e.get("now") or "?"
+                ctrl.put(api + "/PROXY", json={"name": gname})
+                time.sleep(3)
+                client = make_client(proxy="http://127.0.0.1:%d" % PROXY_PORT)
+                ident = exit_identity(client)
+                client.close()
+                ip = (ident or {}).get("ip")
+                key = identity_key(ident)
+                log("    %-14s : %s" % (label, gname))
+                log("    当前节点       : %s" % now)
+                log("    出口 IP        : %s" % (ip or "?"))
+                log("    出口桶         : %s" % (key or "?"))
+            except Exception as e:
+                log("    %-14s : %s" % (label, gname))
+                log("    查询失败       : %s" % str(e).splitlines()[-1][:60])
+        # 恢复原 PROXY
+        if orig:
+            try:
+                ctrl.put(api + "/PROXY", json={"name": orig})
+                log("    已恢复 PROXY -> %s" % orig)
+            except Exception as e:
+                log("    [提示] 恢复 PROXY 失败: %s" % str(e).splitlines()[-1][:60])
+    finally:
+        ctrl.close()
+
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -434,6 +582,8 @@ def main():
     ap.add_argument("--cf-trace", action="store_true",
                     help="只查出口身份与 ASN 归属(不带 --proxy 时查裸线; 不带任何参数时自动走 7890)")
     ap.add_argument("--proxy", default="", help="观测出口用的代理(如 http://127.0.0.1:7890)，查节点桶用")
+    ap.add_argument("--pool", default="", choices=["EXIT_POOL", "INDONESIA_POOL"],
+                    help="遍历指定节点池全部成员实测出口桶并去重统计(二级 EXIT_POOL / 一级 INDONESIA_POOL)")
     args = ap.parse_args()
 
     lines = []
@@ -448,8 +598,22 @@ def main():
         lines.append(s)
 
     log("=" * 78)
-    log("exit_probe v2.6  出口身份探测 / mihomo VPN 状态    %s" % stamp)
+    log("exit_probe v2.9  出口身份探测 / mihomo VPN 状态    %s" % stamp)
     log("=" * 78)
+
+    # --pool 独立模式: 遍历指定节点池全部成员实测出口桶并去重统计(用户指定 2026-11-22)
+    if args.pool:
+        if not _port_open(CONTROLLER_PORT):
+            log("  [错误] 控制器 %d 未运行: --pool 需 mihomo 在跑, 先启动 mihomo" % CONTROLLER_PORT)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            print("报告已落盘: %s" % out_path)
+            return 2
+        rc = pool_bucket_survey(log, args.pool, args.proxy)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        print("报告已落盘: %s" % out_path)
+        return rc
 
     # 模式判定: 显式 --mihomo 只体检; 显式 --cf-trace 只查出口(缺省裸线);
     # 不带参数 = 体检 + 查当前出口桶, 两段连跑(用户指定 2026-11-12)
@@ -458,6 +622,10 @@ def main():
 
     if mode_status:
         mihomo_status(log, args.proxy)
+
+    # 不带任何参数默认附带: 显示一级/二级池各自当前节点出口桶(用户要求 2026-11-22)
+    if mode_status and mode_trace and not args.cf_trace and not args.mihomo and not args.pool:
+        pool_now_buckets(log)
 
     if mode_trace:
         if args.cf_trace:
