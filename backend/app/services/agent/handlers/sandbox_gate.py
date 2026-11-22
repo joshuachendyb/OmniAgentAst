@@ -74,6 +74,10 @@
 #          denied_list 仍用完整 pre.blocked_reason(含 stderr tail) 喂 LLM 自纠, 前后端/LLM 职责分离不变 — 小欧-2026-10-28
 # 2026-11-19 小欧 - hitl_confirm 删 publish 传参: 授权事件经 emit_interact 内部 publish(与 question_gateway 同构);
 #   _buf 保留仅作 buffer 存在守卫(授权事件发不出则显式失败), 第177行调用同步 — 小欧-2026-11-19
+
+# 2026-11-22 小欧 - 纯静态预检结果经 ContextVar 渠道给 tool: sandbox_resolve passed=True 分支注入
+#   precheck_info(经 set_current_precheck_info), 预检只做静态检查不执行不弹窗不拦截, tool 自行处理(零越层)。
+
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -117,6 +121,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     # 3A: 等待/暂停/恢复组装、计时、SUSPENDED/EXECUTING 全部收 hitl_gateway,
     #   此处仅剩阻塞前直通分支与 error 组装消费 MetaStep — 小欧 2026-09-06
     if pre.passed:
+        # 2026-11-22 小欧 - 纯静态预检结果经 ContextVar 渠道给 tool 自行处理(不弹窗不拦截):
+        #   仅 shell 预检产出 precheck_info(静态检查结果), 注入后由 execute_tool 消费给 shell;
+        #   file_op 预检 precheck_info 恒空, 不注入(保持现状)。
+        if getattr(pre, "precheck_info", None):
+            from app.tools.context import set_current_precheck_info
+            set_current_precheck_info(pre.precheck_info)
         logger.info(f"[sandbox] 放行执行: tool={tool_name}")
         return True, []
     # 毛病4(2026-09-18 小欧): 用户拒绝记忆检查点 B(覆盖豁免直通 requires=False 路径, 主路 requires 路径已由检查点 A 拦截) —

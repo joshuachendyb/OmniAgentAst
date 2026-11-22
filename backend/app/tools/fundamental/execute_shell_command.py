@@ -195,6 +195,10 @@
 # 2026-11-18 小欧 - 清遗留死导入 sys(模块内零引用, ruff F401 长期红), 不涉运行逻辑 — 小欧-2026-11-18
 # 2026-11-21 小欧 - 退出码含义字典上移 tool_constants.EXIT_CODE_MEANING 单源(与后台完成通知共用),
 #   删本地副本; 后台启动 action.params 的 shell_type/cwd 由 shell_background._start_params 统一补齐 — 小欧-2026-11-21
+
+# 2026-11-22 小欧 - shell() 消费沙箱预检纯静态结果: 入口 get_current_precheck_info 读取(未注入返回 None 降级),
+#   仅记录日志不拦截; 预检本体不再启动进程/不弹窗 HITL, 正常业务零误杀。
+
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
 
@@ -298,7 +302,10 @@ from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并�
 from app.logger import logger
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
-from app.tools.context import get_current_task_id
+from app.tools.context import (  # 2026-11-22 小欧: 预检纯静态结果消费
+    get_current_precheck_info,
+    get_current_task_id,
+)
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental import shell_background
 from app.tools.fundamental.shell_engine import (
@@ -1061,6 +1068,14 @@ def shell(
         background=true 时: data 为空(启动无结果本体; shell_id 与输出文件在 llm_data.metrics)
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
+    # 2026-11-22 小欧 - 消费沙箱预检纯静态结果(sandbox_resolve 经 ContextVar 注入): 预检只做静态检查
+    #   不执行不弹窗不拦截, 结果经此渠道给本工具自行处理——记录日志供排查, 不阻断正常业务。
+    _precheck_info = get_current_precheck_info()
+    if _precheck_info:
+        logger.info(f"[Shell] 沙箱预检纯静态结果: command_head={str(_precheck_info.get('command_head', ''))[:120]!r}, "
+                    f"danger_intent={_precheck_info.get('danger_intent')}, "
+                    f"timeout_over_limit={_precheck_info.get('timeout_over_limit')}, "
+                    f"readonly_whitelisted={_precheck_info.get('readonly_whitelisted')}")
     # ── 阶段 1【通用】: 参数校验 ──
     # 2026-11-13 商量(复核修正): timeout 语义归一 — None=未显式传(前台兜底60秒, 后台无超时),
     #   不再用 "60 即默认" 的魔法值猜测; 显式传 60 的后台命令照常生效60秒超时。

@@ -6,6 +6,12 @@
 #   非沙箱功能。提取到 app/utils/ 与 proc_utils.py 同层(通用进程工具)。— 小欧-2026-11-07
 # 2026-11-12 - 小欧 - SetInformationJobObject 从 BasicLimitInformation(Class=2) 改用 ExtendedLimitInformation(Class=9):
 #   KILL_ON_JOB_CLOSE 在 Basic 上返回 ERROR_INVALID_PARAMETER(87), 必须用 Extended 才能设置此标志
+# 2026-11-22 - 小欧 - 误杀面收敛(不能误伤铁律): 新增 breakaway 基础设施常量
+#   JOB_OBJECT_LIMIT_BREAKAWAY_OK(允许显式 breakaway) / JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK(子进程自动脱离)
+#   / CREATE_BREAKAWAY_FROM_JOB(进程创建标志)。供沙箱 Job 豁免"用户显式启动、意图跨调用驻留的后台进程"
+#   (Start-Process/Start-Job/&) 脱离 Job, 预检 cleanup 杀树不误杀。SILENT 与 BREAKAWAY 互斥(Windows 限制),
+#   沙箱默认启用 SILENT(自动脱离覆盖任意 shell 后台), BREAKAWAY_OK 保留为显式控制基础设施。
+#   新增 QueryInformationJobObject 声明(验证 LimitFlags 读回生效)。
 import ctypes
 from ctypes import wintypes
 
@@ -15,6 +21,15 @@ from app.logger import logger
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
+
+# 2026-11-22 小欧 - breakaway 基础设施(不能误伤): 允许 Job 内进程创建的子进程脱离 Job。
+#   SILENT=自动脱离(子进程无需标志, 覆盖任意 shell 后台); BREAKAWAY=需显式 CREATE_BREAKAWAY_FROM_JOB。
+#   二者互斥(Windows 限制), 沙箱默认启用 SILENT, BREAKAWAY_OK 保留为显式控制基础设施。
+JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
+JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
+# 进程创建标志: 配合 BREAKAWAY_OK, 新进程以显式 breakaway 脱离 Job(需 Job 先设 BREAKAWAY_OK)。
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
 
 # ── JobObjectInformationClass 枚举值 ──
 JobObjectBasicLimitInformation = 2
@@ -33,6 +48,11 @@ kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
 kernel32.CloseHandle.restype = wintypes.BOOL
 kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
 kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+
+# 2026-11-22 小欧 - QueryInformationJobObject 声明: 读回 LimitFlags 验证 breakaway/KILL_ON_JOB_CLOSE 生效
+kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+kernel32.QueryInformationJobObject.argtypes = (wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+
 
 
 # ── 结构体 ──

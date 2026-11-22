@@ -37,6 +37,10 @@ tool_executor — 工具执行逻辑
 # 2026-11-19 小欧 - _invoke_notice 加 only_event 形参(默认 False), 透传 emit_notice(schedule error 仅事件列表); 其它调用不变。
 # 2026-11-20 小欧 - 注入 generation 回调(生图/生视频): 闭包调 services/agent/media_generate.invoke_generate, try/finally reset; 工具层零越层拿产物
 # 2026-11-20 小欧 - generation 回调闭包补传 session_id(agent._start_meta), 供 b64 产物(如 SenseNova)落盘为会话 attachment
+
+# 2026-11-22 小欧 - execute_tool 消费/清理沙箱预检纯静态结果: 入口读 get_current_precheck_info 并重新 set 到当前
+#   作用域(跨 await 边界), finally reset; 供 shell 等 tool 消费, 零越层未注入自行降级。
+
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -51,6 +55,7 @@ from app.services.agent.llm_call import (
 from app.services.agent.media_generate import invoke_generate  # 2026-11-20 小欧 生图/生视频回调实现
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 from app.tools.context import (
+    get_current_precheck_info,  # 2026-11-22 小欧 - 沙箱预检纯静态结果消费
     reset_current_generate_callback,  # 2026-11-20 小欧 - 生成回调
     reset_current_hooks,
     reset_current_notice_callback,
@@ -59,6 +64,7 @@ from app.tools.context import (
     set_current_generate_callback,  # 2026-11-20 小欧 - 生图/生视频回调
     set_current_hooks,
     set_current_notice_callback,  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
+    set_current_precheck_info,  # 2026-11-22 小欧 - 沙箱预检纯静态结果注入
     set_current_question_callback,  # 2026-11-18 商量 - question 阻塞问询回调
     set_current_text_task,
 )
@@ -144,6 +150,9 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         return await invoke_generate(kind, model, prompt, session_id=_sid, **kwargs)
 
     _generate_token = set_current_generate_callback(_invoke_generate)
+    # 2026-11-22 小欧 - 消费沙箱预检纯静态结果(sandbox_resolve 注入): 读取后供 shell 等工具经
+    #   get_current_precheck_info 消费, finally 置 None 清理防跨工具泄漏(未注入则 None, 工具自行降级)。
+    _precheck_info = get_current_precheck_info()
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
@@ -165,6 +174,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
             reset_current_question_callback(_question_token)
         if _generate_token is not None:  # 2026-11-20 小欧 生成回调token同finally reset
             reset_current_generate_callback(_generate_token)
+        if _precheck_info:  # 2026-11-22 小欧 沙箱预检纯静态结果作用域清理(防跨工具泄漏, 置 None 不残留)
+            set_current_precheck_info(None)
     elapsed = time.time() - start
 
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")

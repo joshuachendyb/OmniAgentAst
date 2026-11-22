@@ -8,15 +8,25 @@
 #  限 1 时孙进程创建被内核拒绝。注意二者均不阻止子进程杀宿主进程, 那类由 shell_readonly 静态判定负责。 — 小欧-2026-10-08
 # 2026-11-07 - 小欧 - 底层 ctypes 封装提取到 app/utils/win_job_object.py(SRP: 沙箱目录只放沙箱功能);
 #   本文件改为从公共库导入底层声明/结构体/常量, 只保留 SandboxJob 类。— 小欧-2026-11-07
+# 2026-11-22 - 小欧 - 误杀面收敛(不能误伤铁律, mihomo 跨调用被杀): SandboxJob LimitFlags 重构
+#   [病根] KILL_ON_JOB_CLOSE + Windows Job 默认收编全部后代进程 → 用户 Start-Process/Start-Job/&
+#          显式启动、意图跨调用驻留的后台进程(如 mihomo)被自动收编, 预检 cleanup 杀树误杀。
+#   [改法] ①去 KILL_ON_JOB_CLOSE(句柄关闭不再杀树, 防"意外关闭杀全树"误杀; 正常路径 cleanup 仍显式
+#          kill_tree 杀预检本体, 清理契约完整) ②加 SILENT_BREAKAWAY_OK(Job 内进程创建的子进程自动
+#          脱离 Job, 覆盖任意 shell 后台进程, 预检杀树不误杀) ③保留 PROCESS_MEMORY+ACTIVE_PROCESS
+#          (预检本体显式 assign 仍在 Job 内受控)。
+#   [验证] verify_breakaway.py/verify_breakaway2.py 实证: SILENT 下后台 ping 存活(脱离未误杀),
+#          预检本体 pwsh 被杀(清理契约完整)。SILENT 与 BREAKAWAY 互斥, 默认 SILENT。
+
 import ctypes
 import subprocess
 
 from app.logger import logger
 from app.utils.win_job_object import (
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+    JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JobObjectExtendedLimitInformation,
     kernel32,
 )
@@ -34,9 +44,13 @@ class SandboxJob:
         if not self._handle:
             raise OSError(f"CreateJobObjectW failed: {ctypes.GetLastError()}")
         info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        # 2026-11-22 小欧 - 误杀面收敛(不能误伤铁律): 去 KILL_ON_JOB_CLOSE(句柄关闭不再杀树, 防意外关闭
+        #   杀全树误杀后台进程; 正常路径 cleanup 仍显式 kill_tree 杀预检本体, 清理契约完整);
+        #   加 SILENT_BREAKAWAY_OK(Job 内进程创建的子进程自动脱离 Job, 覆盖任意 shell 后台进程,
+        #   预检杀树不误杀)。保留 PROCESS_MEMORY+ACTIVE_PROCESS(预检本体显式 assign 仍在 Job 内受控)。
         info.BasicLimitInformation.LimitFlags = (
-            JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS)
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)
         info.ProcessMemoryLimit = process_memory_limit_mb * 1024 * 1024
         info.BasicLimitInformation.ActiveProcessLimit = active_process_limit
         if not kernel32.SetInformationJobObject(
@@ -45,7 +59,7 @@ class SandboxJob:
             self.close()
             raise OSError(f"SetInformationJobObject failed: {ctypes.GetLastError()}")
         logger.info(f"[sandbox][job] JobObject 创建成功, 进程内存上限={process_memory_limit_mb}MB, "
-                    f"进程数上限={active_process_limit}, KILL_ON_JOB_CLOSE=开")
+                    f"进程数上限={active_process_limit}, KILL_ON_JOB_CLOSE=关, SILENT_BREAKAWAY_OK=开")
 
     def assign(self, proc: subprocess.Popen) -> None:
         """收编子进程及其全部孙进程; R3: 返回值必校验, 失败上抛非静默(executor 转 HITL)"""
@@ -61,7 +75,9 @@ class SandboxJob:
 
     def close(self) -> None:
         """CloseHandle(8.2.1: 千次 create/close 句柄数守恒) — 小欧 2026-08-25
-        2026-10-08 小欧: 因已置 KILL_ON_JOB_CLOSE, 此处 close 本身也会杀树, 故必须幂等且不吞异常。"""
+        2026-10-08 小欧: 因已置 KILL_ON_JOB_CLOSE, 此处 close 本身也会杀树, 故必须幂等且不吞异常。
+        2026-11-22 小欧: 已去 KILL_ON_JOB_CLOSE(误杀面收敛), close 不再杀树; 杀树由 cleanup
+        显式 kill_tree 承担(预检本体), 后台进程经 SILENT_BREAKAWAY_OK 已脱离不受影响。"""
         if self._handle:
             kernel32.CloseHandle(self._handle)
             logger.info("[sandbox][job] CloseHandle 释放 Job")

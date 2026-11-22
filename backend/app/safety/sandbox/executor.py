@@ -34,6 +34,11 @@
 # 2026-10-14 - 小欧 - 命令文本处理与工具分类符号迁出本模块(shell_static_guard 单一真源), 删本地定义改 import; 同批删已无引用的 re
 # 2026-11-15 小欧 - 口径收敛(用户令): shell_has_hidden_kill 正名 shell_kill_needs_hitl — 保护范围最小化,
 #   只对"目标为系统关键进程/服务"的杀转 HITL, 其余杀进程放行由 LLM 自决; 守卫2判定语义随正名更新。
+
+# 2026-11-22 小欧 - 沙箱预检 shell 类改纯静态(事故驱动): _pre_execute_shell 不再经 backend.run 执行原命令预演
+#   (Job Object 误杀面过大——把用户显式启动、意图跨调用驻留的后台服务进程也连带清杀), 改纯静态检查零副作用零误杀;
+#   PreCheckResult 新增 precheck_info 字段承载检查结果, 经 ContextVar 渠道给 tool 自行处理(零越层)。
+
 import asyncio
 import os
 import tempfile
@@ -81,6 +86,7 @@ class PreCheckResult:
     impacts: List[FileImpact] = field(default_factory=list)   # 影响文件清单(喂给LLM辅助判断) — 可变默认必须用field工厂
     stdout_tail: str = ""        # 输出尾部(截断4096字符)
     stderr_tail: str = ""        # 错误尾部(截断4096字符; 承载"stderr 原文喂 LLM"的字段)
+    precheck_info: Dict = field(default_factory=dict)   # 纯静态检查结果(渠道给 tool 自行处理) — 小欧-2026-11-22
 
 
 # 只读白名单常量与判定已迁 app.safety.shell_readonly(2026-10-04 小欧, 单源见该模块; 2026-10-18 订正路径)
@@ -212,9 +218,13 @@ class SandboxExecutor:
                 or resolved.startswith(tempfile.gettempdir().lower()))
 
     async def _pre_execute_shell(self, command: str, params: Dict, timeout_sec: int) -> PreCheckResult:
-        """shell 类预检(唯一完整实现): 守卫1超上限 → 守卫2危险意图扫描 → 白名单 → run → finally 清理"""
-        # 守卫1: 声明 timeout 超硬上限 -> 不创建工作区、不运行 backend, 直接转 HITL
-        # timeout 可能由 LLM 以字符串返回, 必须归一为 int 再比较, 否则 str>int 抛 TypeError 被捕获成"内部异常"误分类
+        """shell 类预检(纯静态检查): 不执行原命令(零副作用零误杀), 不弹窗HITL, 不拦截正常业务;
+        检查结果经 precheck_info 渠道给 tool 自行处理 — 小欧-2026-11-22
+        (原实现经 backend.run 执行原命令预演, 因 Job Object 误杀面过大——把用户显式启动、意图跨调用
+         驻留的后台服务进程也连带清杀——改为纯静态, 预检本体不再启动任何进程, 零误杀)"""
+        info: Dict = {"static_checked": True, "warnings": []}
+        # 守卫1: 声明 timeout 超硬上限 -> 记录(不拦截, passed 恒 True)
+        # timeout 可能由 LLM 以字符串返回, 必须归一为 int 再比较, 否则 str>int 抛 TypeError
         declared = params.get("timeout")
         if declared is not None:
             try:
@@ -222,65 +232,26 @@ class SandboxExecutor:
             except (TypeError, ValueError):
                 declared = None
         if declared and declared > self.max_timeout_sec:
-            logger.warning(f"[sandbox][exec] 声明timeout超硬上限转HITL: declared={declared}s, 上限={self.max_timeout_sec}s")
-            return PreCheckResult(
-                passed=False, needs_ruling=True,
-                blocked_reason=f"工具执行超时设置不合理（{declared}秒），请调整后重试",
-            )
-        # 守卫2: 命令文本危险意图扫描(越界写 + 杀进程/停服务) -> 不运行 backend, 直接转 HITL(预检不改状态)
+            info["warnings"].append(f"声明timeout超硬上限: {declared}s, 上限={self.max_timeout_sec}s")
+            info["timeout_over_limit"] = True
+        else:
+            info["timeout_over_limit"] = False
+        # 守卫2: 命令文本危险意图扫描(越界写 + 杀进程/停服务) -> 记录(不拦截, 预检不改状态)
         if _scan_command_danger_intent(command):
-            logger.warning(f"[sandbox][exec] 命令含危险意图, 转HITL: command_head={command[:120]!r}")
-            return PreCheckResult(
-                passed=False, needs_ruling=True,
-                blocked_reason="命令包含危险操作，需要用户确认",
-            )
-        # 白名单快速通道(定序: 必须在危险意图扫描之后判定, 防重定向逃逸绕过扫描)
+            info["warnings"].append("命令含危险意图(越界写/杀进程), 已静态标记")
+            info["danger_intent"] = True
+        else:
+            info["danger_intent"] = False
+        # 白名单(定序: 必须在危险意图扫描之后判定, 防重定向逃逸绕过扫描) -> 记录(不拦截)
         if is_shell_readonly_whitelisted(command):
-            logger.info(f"[sandbox][exec] 只读白名单直通放行真机: command_head={command[:120]!r}")
-            return PreCheckResult(passed=True)   # 只读直通: 免预检放行真机
-        backend = self._dispatch_backend()
-        workspace = SandboxWorkspace(max_workspace_mb=self.max_workspace_mb,
-                                     max_shadow_mb=self.max_shadow_mb)
-        workspace.create()
-        try:
-            # timeout_sec 可能由 LLM 以字符串返回, 归一为 int 再夹取硬上限, 否则 min(str,int) 抛 TypeError
-            try:
-                _to = int(timeout_sec)
-            except (TypeError, ValueError):
-                _to = self.default_timeout_sec
-            logger.info(f"[sandbox][exec] shell 预检 run 启动: timeout={min(_to, self.max_timeout_sec)}s")
-            # 2026-08-29 小沈: 同步 subprocess 经 to_thread 离载子线程, 事件循环不被冻结(并发任务不被延迟)
-            result = await asyncio.to_thread(backend.run, command, workspace.path, min(_to, self.max_timeout_sec))
-            logger.info(f"[sandbox][exec] shell 预检 run 结束: rc={result.rc}, timed_out={result.timed_out}")
-            impacts = workspace.diff_impacts()
-            used = self._disk_usage(workspace.path)   # 以工作区真实磁盘占用来判定容量(防副本自身漏算/删除误算)
-            if not workspace.check_capacity(used):
-                # 工作区上限接线(原方法存在但无人调用), 超限拒绝预检转 HITL 强确认
-                logger.warning(f"[sandbox][exec] 工作区超上限转HITL: used={used}B, 上限={self.max_workspace_mb}MB")
-                return PreCheckResult(passed=False, needs_ruling=True,
-                                       blocked_reason=f"沙箱工作区写入数据量超限（{used}字节）",
-                                       impacts=impacts,
-                                       stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
-            return self._classify(result, impacts)   # 判定分流算法(规则2-7)
-        except OSError as exc:
-            # Job Object 收编失败(进程已提权等, assign 上抛非静默) → 升级 HITL 强确认而非静默放行
-            logger.warning(f"[sandbox][exec] Job Object 收编失败转HITL: {exc}")
-            return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason="沙箱环境配置异常，需要用户确认")
-        except Exception as exc:
-            # 非 OSError 异常(编码/内部错误/注入测试)不得穿透到 action_handler 炸掉整批调用,
-            # 统一转 needs_ruling 交用户裁决(资源由下方 finally 回收, 对齐异常注入用例)
-            logger.warning(f"[sandbox][exec] 预检内部异常转HITL: {exc}")
-            return PreCheckResult(passed=False, needs_ruling=True,
-                                  blocked_reason="沙箱预检器内部异常，需要用户确认")
-        finally:
-            backend.cleanup()      # TerminateJobObject 杀树 + CloseHandle(句柄守恒; 含 proc 补充收割)
-            try:
-                workspace.destroy()
-            except OSError as exc:
-                # 销毁最终失败仅告警不抛: finally 中 raise 会覆盖已生成的放行结果,
-                # 把无害磁盘残留(仅占 %TEMP%)升级成整次调用报错
-                logger.warning(f"[sandbox] workspace destroy failed(残留 %TEMP%, 无功能影响): {exc}")
+            info["readonly_whitelisted"] = True
+            info["warnings"].append("只读白名单直通")
+        else:
+            info["readonly_whitelisted"] = False
+        info["command_head"] = command[:120]
+        logger.info(f"[sandbox][exec] shell 预检纯静态: command_head={command[:120]!r}, "
+                    f"danger_intent={info['danger_intent']}, timeout_over_limit={info['timeout_over_limit']}")
+        return PreCheckResult(passed=True, precheck_info=info)   # 永不拦截、永不弹窗
 
     async def _pre_execute_file_op(self, tool_name: str, params: Dict) -> PreCheckResult:
         """Phase 2: 高危文件操作预检 — delete/copy/move 影子副本预演 + registry 静态分析"""

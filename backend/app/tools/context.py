@@ -26,7 +26,11 @@
 #   仅事件列表标记, schedule error 用, 其它工具零改动。
 # 2026-11-20 小欧 - 新增 _current_generate_callback(生成回调): 入口层持 agent 注入, 闭包内用当前模型凭据调
 #   generation 端点, 生成图像/生成视频工具层零越层拿产物 — 小欧-2026-11-20
+# 2026-11-22 小欧 - 新增 _current_precheck_info ContextVar(get/set/reset): 承载沙箱预检纯静态检查结果,
+#   由 sandbox_resolve(passed=True 分支)注入, 工具(如 shell)经 get_current_precheck_info 消费——
+#   预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层, 未注入返回 None 自行降级)。
 """
+
 tools/context — 工具层运行上下文
 
 职责: 承载工具执行期间的请求作用域上下文(ContextVar), 供工具/日志等读取
@@ -52,6 +56,9 @@ _current_question_callback: ContextVar[Optional[object]] = ContextVar("current_q
 # 2026-11-20 小欧 - 生成回调: 入口层(tool_executor)持 agent 注入, 签名 async (kind, model, prompt, **kwargs)->Dict;
 #   闭包内用当前模型凭据调 generation 端点, 工具层零越层(不 import services/config) — 小欧-2026-11-20
 _current_generate_callback: ContextVar[Optional[object]] = ContextVar("current_generate_callback", default=None)
+# 2026-11-22 小欧 - 沙箱预检纯静态检查结果: sandbox_resolve(passed=True)注入, 工具(如 shell)经 get_current_precheck_info
+#   消费——预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层, 未注入返回 None 自行降级)
+_current_precheck_info: ContextVar[Optional[dict]] = ContextVar("current_precheck_info", default=None)
 
 def get_current_task_id() -> Optional[str]:
     """获取当前任务的 taskId — 小沈 2026-07-30(迁自 task_context)"""
@@ -168,3 +175,21 @@ def set_current_generate_callback(callback):
 def reset_current_generate_callback(token) -> None:
     """恢复上一个生成回调 — 小欧 2026-11-20"""
     _current_generate_callback.reset(token)
+
+
+def get_current_precheck_info() -> Optional[dict]:
+    """获取当前作用域的沙箱预检纯静态检查结果(入口注入) — 小欧 2026-11-22
+    返回 None 表示未注入(直接调工具/无沙箱预检场景), 由工具自行降级。
+    预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层)。
+    """
+    return _current_precheck_info.get()
+
+
+def set_current_precheck_info(info: Optional[dict]):
+    """设置当前作用域的沙箱预检纯静态检查结果, 返回 token 供 reset — 小欧 2026-11-22"""
+    return _current_precheck_info.set(info)
+
+
+def reset_current_precheck_info(token) -> None:
+    """恢复上一个沙箱预检纯静态检查结果 — 小欧 2026-11-22"""
+    _current_precheck_info.reset(token)
