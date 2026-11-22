@@ -148,7 +148,7 @@
 //   ③PipelineRenderer 以 taskKey=activeTaskId 绑定任务 —— 分批窗口是任务级视图状态, 切任务即复位窗口,
 //     不再用"数组引用变化"猜任务切换; 不用 React key 重挂载(会令 useStepRenderPrefs 重拉设置,
 //     reasoningVisible/thoughtMarkdown 闪回默认值) — 小欧-2026-10-30
-// 编辑历史: 2026-11-18 小欧 - [46] P1 首屏裁剪: messages 默认不带 execution_steps, 右栏 messages 兜底
+// 编辑历史: 2026-11-18 小欧 - P1 首屏裁剪: messages 默认不带 execution_steps, 右栏 messages 兜底
 //   显式传 include_steps=true, 保住 getTaskSteps 返回空时的历史步骤兜底链路 — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 小欧 - 切会话空态误报修复: 新增 tasksLoading prop, 无选中任务且清单仍在加载时
 //   走加载态(Spin)。原条件只看自身 REST loading, 切会话后 activeTaskId 尚未确定的那一帧

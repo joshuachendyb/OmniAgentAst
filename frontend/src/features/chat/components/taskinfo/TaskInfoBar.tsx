@@ -1,63 +1,53 @@
-﻿// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审去框/边距: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
-// 编辑历史: 2026-08-28 小欧 - ①C/c1: 去胶囊改透明+borderTop#f0f0f0, gap12→8, 数值加粗#595959 500, Tag→Text轻量化
-// 编辑历史: 2026-08-30 小欧 - 13.14 8处Typography.Text→span+双组token本轮/任务累计(P/C/T后端直发) - 小欧-2026-08-30
-// 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
+﻿// 编辑历史: 2026-08-26 小欧 - 修复接受detail派生历史任务动态信息+执行中实时计时+上下文截断文字
+// 编辑历史: 2026-08-27 小欧 - 审查修复: useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
+// 编辑历史: 2026-08-27 小欧 - 审查修复: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 审查去框/边距: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
+// 编辑历史: 2026-08-28 小欧 - ①去胶囊改透明+borderTop#f0f0f0, gap12→8, 数值加粗#595959 500, Tag→Text轻量化
+// 编辑历史: 2026-08-30 小欧 - 8处Typography.Text→span+双组token本轮/任务累计(P/C/T后端直发) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(北京老陈驱动: 冒泡至整行onClick致setCollapsed两次切换抵消=点了没反应; 且与整行点击重复): 面板折叠仅保留整行点击(:139), 信任独立三角stopPropagation - 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): Props六参补
-//   liveErrorText(位置2 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
-//   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位置2) + 位置2渲染段(🔁/🛑/⚠
-//   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(冒泡致 setCollapsed 两次切换抵消): 面板折叠仅保留整行点击, 信任独立三角 stopPropagation - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 设计落码: Props 六参补 liveErrorText(位置2 error 实时源) + 组件解构同步 +
+//   useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计与截断独立段(并入位置2) + 位置2 渲染段图标映射 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 审计修复: revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端定案): TrustedTool带path升级一行一变——
 //   trustTools行键改 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revokeTrust签名带path精确撤销、Tooltip文案改"会话级 tool+path 免审白名单"(目标路径及其子目录免弹框) — 小欧-2026-09-02
 // 编辑历史: 2026-09-06 小欧 - 秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
 //   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
 //   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
-// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
-//   (数据源对象形态, useChatPanels 透传) + 位置2 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
-//   替原🛑, ·/着色 Colors.ERROR) + 请求级 error 用 ⛔(后端业务错误如"消息列表为空"); retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
-// 编辑历史: 2026-09-09 小欧 - v4.1+v4.2: 探针删除/折叠态机删除(信息带恒定1行)/图标全antd SVG/对比度分级/ Token两段式MetricItem/上下文4态/换行/分隔线归属input/令牌化/事件时间轴/徽标迁infoMaps/耗时等宽/G6上下文+G8事件双浮层经FloatingEntry复用(G8双写修复) — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - v4.4 修复: 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
-//   G3 mid/narrow 收窄(仅数字+Tooltip 展开全文本)、G4 narrow/xsmall 省略(maxWidth200+ellipsis+Tooltip 全文)、G5 累计段收窄(明细进 MetricItem Tooltip 轻浮层)、
-//   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖, 见:122注释),
+// 编辑历史: 2026-09-08 小欧 - 设计定案: prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
+//   (数据源对象形态, useChatPanels 透传) + 位置2 图标分层——执行级 error 用 CloseCircleFilled + 请求级 error 用 ⛔; retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 探针删除/折叠态机删除(信息带恒定1行)/图标全antd SVG/对比度分级/Token两段式MetricItem/
+//   上下文4态/换行/分隔线归属input/令牌化/事件时间轴/徽标迁infoMaps/耗时等宽/上下文+事件双浮层经FloatingEntry复用 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 断点矩阵修复: 断点矩阵落地(useInfoBreakpoint 1280/960/768)——耗时/步轮 xsmall 合并、
+//   步轮 mid/narrow 收窄(仅数字+Tooltip)、步数 narrow/xsmall 省略(maxWidth200+ellipsis)、累计段收窄(明细进 Tooltip)、
+//   信任 narrow/xsmall 仅计数、上下文/事件 恒完整(FloatingEntry 基础行+明细进浮层) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖),
 //   加eslint-disable+理由注释 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 位置2错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(20)截断加…,
-//   宽/中屏超长时 Tooltip 全文(窄屏沿用 G4 EllipsisTip maxWidth200, 不叠双层Tooltip), 杜绝超长 error_message 撑爆第一行;
-//   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
-//   MetricItem label 恒直出 + 浮层摘要全文显示(非截断), 两块均与"上下文详情→历史上下文"命名一致 — 小欧-2026-09-09
+//   宽/中屏超长时 Tooltip 全文, 杜绝超长 error_message 撑爆第一行; 上下文卡片标签"上下文详情"→"历史上下文" — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
+//   MetricItem label 恒直出 + 浮层摘要全文显示(非截断) — 小欧-2026-09-09
 // 编辑历史: 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名 (steps, frames, detail, liveError)
-//   ——receiving 不再透传徽标派生(断连窗由 startinfo 门承接), 组件自身 receiving prop 保留(秒表 interval 启停, D3 契约) — 小欧-2026-09-14
+//   ——receiving 不再透传徽标派生(断连窗由 startinfo 门承接), 组件自身 receiving prop 保留(秒表 interval 启停) — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 删第二个变量(北京老陈令): receiving prop 整体删除——秒表启停改由 frames 权威信号驱动:
-//   走廊判定=startInfo非空(已开始)&&finalStats空(未终态落库); 实时走廊走表(语义等价旧receiving), 断连窗/错误中间态继续走表(旧
-//   receiving=false缺陷窗口=进化, 09-08同源根治), final到达(hasFinalStats)停表回退duration(终态准确), 未开始startInfo空
-//   不走表(旧receiving=true提前走表窗口=修正); shownElapsed同步: detail→elapsedSec / 走廊→liveElapsed / 终态→elapsedSec;
-//   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(防每帧重置去抖); useChatPanels 透传一并删除, 连接级isReceiving
-//   只留ChatInput消费 — 小欧-2026-09-14
-// 编辑历史: 2026-09-15 小欧 - 北京老陈定案(整体视觉): 纯白页面中 taskinfo 白条无分隔看不清——
-//   加底色 Colors.BG.LIGHT(#fafafa) 整条通栏平铺(无圆角卡片, 全页无卡片语法), 与纯白输入区形成明暗层次,
-//   分隔线仍走输入框上沿(定案B), 色块下沿即贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
-// 编辑历史: 2026-09-15 小欧 - 北京老陈令(长方形封边): taskinfo 色块顶部补 1px #f0f0f0 上边框线,
-//   与输入框上沿线同色, 色块成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔 — 小欧-2026-09-15
+//   走廊判定=startInfo非空&&finalStats空; 实时走廊走表, 断连窗/错误中间态继续走表, final 到达停表回退 duration,
+//   未开始不走表; shownElapsed 同步 detail→elapsedSec/走廊→liveElapsed/终态→elapsedSec — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - 北京老陈定案(整体视觉): 加底色 Colors.BG.LIGHT(#fafafa) 整条通栏平铺(无圆角卡片),
+//   与纯白输入区形成明暗层次, 分隔线走输入框上沿, 色块下沿贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 北京老陈令(长方形封边): 色块顶部补 1px #f0f0f0 上边框线, 色块成完整"长方形"框感 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - 耗时+步轮从左组移至右组信任前面: 左组原 Badge+耗时+步轮+liveMeta 改为 Badge+liveMeta,
-//   耗时(G2)与步轮(G3)整块迁至右组 TrustPanel 前, 断点矩阵逻辑(xsmall/mid/narrow/wide)不变 — 小沈-2026-09-17
+//   耗时与步轮整块迁至右组 TrustPanel 前, 断点矩阵逻辑(xsmall/mid/narrow/wide)不变 — 小沈-2026-09-17
 // 编辑历史: 2026-09-17 小沈 - 事件列表两项优化: ①空列表时显示"暂无事件"提示(原 null 导致 Popover 弹空白);
 //   ②事件排序改为正序(最早在上), 配合 useTaskInfo 去除 .reverse() — 小沈-2026-09-17
-// 编辑历史: 2026-09-18 小欧 - 北京老陈令(taskinfo部分小改动): ①G5"累计"标签改"任务"(tooltip同步),
-//   ②耗时 G2 秒值改"时分秒"结构(formatDurationHMS, 如 00:07:43), ③G3 步轮组三档重排——
-//   宽: 轮数:N · 步骤:M / 窄: 轮:N · 步:M(或保持紧凑) / 极窄(xsmall): 随耗时合并为 耗时 h:mm:ss · 轮:N · 步:M,
-//   语义补正: 数3000+实为业务步骤数(后端total_steps, 非消息数/非发送次数) — 小欧-2026-09-18
-// 编辑历史: 2026-10-04 小欧 - 文档[6]: G6 上下文浮层卡片抽为 ContextOverviewCard(删本文件内 78 行内联 IIFE
-//   及其 CONTEXT_STATE_MAP/mapStatus/FloatingEntry 导入与 ctxOpen 状态, 卡片自持折叠态; 行为等价)
+// 编辑历史: 2026-09-18 小欧 - 北京老陈令(taskinfo部分小改动): ①"累计"标签改"任务"(tooltip同步),
+//   ②耗时段秒值改"时分秒"结构(formatDurationHMS, 如 00:07:43), ③步轮组三档重排——宽: 轮数:N·步骤:M / 窄: 轮:N·步:M /
+//   极窄: 随耗时合并为 耗时 h:mm:ss·轮:N·步:M; 语义补正: 数3000+实为业务步骤数(后端total_steps) — 小欧-2026-09-18
+// 编辑历史: 2026-10-04 小欧 - 上下文浮层卡片抽为 ContextOverviewCard(删本文件内 78 行内联 IIFE 及其
+//   CONTEXT_STATE_MAP/mapStatus/FloatingEntry 导入与 ctxOpen 状态, 卡片自持折叠态; 行为等价)
 // 编辑历史: 2026-10-04 小欧 - token 两项改版: 序改 P/C/T(P 加粗)、行内折 K/M、tooltip 原始值且不折行、
-//   无数据显示 –; G3 轮步拆两段移到「任务」前(删 xsmall 合并串, 耗时位置未动); 分隔点统一「•」(BORDER.ACCENT);
-//   新增「占窗率 = 本轮P/窗口」置于「任务」前(缺窗口不显); 断点门统一 isNarrow, 删 isMid
+//   无数据显示 –; 步轮拆两段移到「任务」前(删 xsmall 合并串, 耗时位置未动); 分隔点统一「•」; 新增「占窗率」置于「任务」前 — 小欧-2026-10-04
 // 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
@@ -75,8 +65,8 @@
 // 编辑历史: 2026-10-29 小欧 - 北京老陈令「上下文挪至耗时后、信任前」: 上下文(ContextOverviewCard)自中组末尾
 //   迁至右组耗时后、信任前(位号 8→9 对调, 耗时 9→8); 中组删其前分隔点(7任务token收尾), 右组耗时后补分隔点;
 //   11位置对照表同步。 小欧-2026-10-29
-// 编辑历史: 2026-10-29 小欧 - 北京老陈令「占窗率挪至上下文后、信任前」: 占窗率(G8)自中组迁至右组上下文后、
-//   信任前; 序号同步 任务token6/耗时7/上下文8/占窗率9; 11位置对照表同步。 小欧-2026-10-29
+// 编辑历史: 2026-10-29 小欧 - 北京老陈令「占窗率挪至上下文后、信任前」: 占窗率自中组迁至右组上下文后、
+//   信任前; 序号同步 任务token6/耗时7/上下文8/占窗率9; 位置对照表同步。 小欧-2026-10-29
 // 编辑历史: 2026-10-30 小欧 - storeStatus 改必填 StreamStatus(取消终态帧未送达时的徽标兜底判据):
 //   唯一调用点(useChatPanels)恒传 chatStreaming.status, 不留可选垫片; 与 RightViewer 同口径。 — 小欧-2026-10-30
 // 12位置对照表(当前实际布局, 从左到右):
@@ -87,14 +77,12 @@
 // 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 // 编辑历史: 2026-11-13 商量 - 实时秒表改「服务器时钟锚」口径: 起点=后端权威任务起点(首个 thought-start 携带的
 //   task_start_time, 与终态 duration=end-start_time 同一真源), 走表=(最新帧服务器时刻−起点)+(客户端增量)。
-//   根治: ①摘要压缩期秒表不走字(原锚 start 帧到达时刻, 而 start 帧在压缩后才发)且实时值比终态少一个摘要耗时;
-//   ②断线重连回放该帧会抹掉已流逝时间。taskStarted 门同步纳入权威起点(压缩期即走表) — 商量-2026-11-13
-// 2026-11-13 商量 - 间距归一: 组内 gap 改走全站间距语义档 Gap, 删子元素 marginLeft 叠加(改由父 gap 承担),
-//   事件行行高改走全站标准 LineHeight.DENSE — 商量-2026-11-13
-// 编辑历史: 2026-11-17 小欧 - [46b] P2b 任务列表数据契约对齐: final 帧回填事件列表时第3参捎带台账快照
+//   根治: 摘要压缩期秒表不走字且实时值比终态少一个摘要耗时; 断线重连回放抹掉已流逝时间 — 商量-2026-11-13
+// 2026-11-13 商量 - 间距归一: 组内 gap 改走全站间距语义档 Gap, 删子元素 marginLeft 叠加; 事件行行高改走 LineHeight.DENSE — 商量-2026-11-13
+// 编辑历史: 2026-11-17 小欧 - 任务列表数据契约对齐: final 帧回填事件列表时第3参捎带台账快照
 //   chatStreamStore.getSentRefLedger(sessionId, taskId)(feature 层取参传 api 层, 不在 service 层依赖 store;
 //   sessionId 缺省不携带), 随既有 process-events 端点直写后端 ref_ledger_json 列, 冷启动台账数据源就绪 — 小欧-2026-11-17
-// 编辑历史: 2026-11-18 小欧 - [46b] 会审整改: 台账为空不再携带第3参(原空数组也进请求体, 等于上传
+// 编辑历史: 2026-11-18 小欧 - 引用整改: 台账为空不再携带第3参(原空数组也进请求体, 等于上传
 //   空快照, 与"不携带=不覆盖"混同) — 小欧-2026-11-18
 // 编辑历史: 2026-11-18 商量 - 「执行计划」入口自右组(占窗率后、信任前)迁至左组状态徽标之后:
 //   徽标答「这一轮什么状态」, 计划答「进行到哪一步」, 同属状态句的前半; 右组只留度量与操作入口。

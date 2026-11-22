@@ -3,42 +3,18 @@
 //   迁移源：useSSE.ts:779-1179（sendMessageInternal/reconnect 读循环链）
 //         + useSSE.ts:121-404（模块级 helper：classifyError/handleSSEError/
 //           ERROR_CONFIG_MAP/calculateReconnectDelay/pollSessionTaskStatus/TASK_POLL_*）
-//   本层不持有任何 React 状态，状态宿主唯一为 Store session（5.4）。
+//   本层不持有任何 React 状态，状态宿主唯一为 Store session。
 
-// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: SSE 传输层落地(POST/GET 续传/读循环/退避/轮询观察/错误中心，
-//   迁移自 useSSE.ts:779-1179 + :121-404) — 小欧-2026-09-29 21:37:55
-//   相对原稿的 6 处修正（均为避免功能退化/死代码，非风格改动）——小欧-2026-09-29 21:37:55：
-//   ① onError 业务错误帧不再停泵：后端 event_emitter.py:84-109 在 ReAct 循环内 yield blocked/
-//      user_rejected 等 error 中间帧，Agent 继续执行并最终发 final；原稿 `ERROR_BRANCH[t] ?? 'failed'`
-//      会杀掉读循环、丢掉 final。改按 from_backend(sseParser.ts:654 既有契约) + 恢复类白名单判别。
-//   ② 补 onMerged 接线（sseParser 注入应答事件）：原实现漏接致提示条/高亮永不触发；
-//      同步在 5.1 StreamEvent 增 'merged' kind。
-//   ③ scheduleReconnect 只走 GET 续传不回退重 POST：复原既有根治口径，
-//      原稿 onReconnect → sendStreamRequest 会重新 POST 复活"双任务/僵尸任务"。
-//   ④ ERROR_CONFIG_MAP 复用 @/services/error/handler 的 getErrorConfig（2026-09-27 已收敛的唯一兜底口），
-//      不再原样复制第二份同义表（DRY，且直索引 ERROR_CONFIG_MAP 有白屏前科 handler.ts:14）。
-//   ⑤ recoverFromIdle：abort 后 await pumpDone 再续传，修复 pumpActive 单飞守卫致空闲超时恢复永久失效；
-//      同步复原 useSSE.ts:920-931 的空闲超时错误上报（console.warn + error 事件），防静默恢复致用户无感知；
-//      abort 旧读前置 intentionalAbort=true，防旧泵 AbortError 误判为连接故障（噪声 + 轮询与续传双恢复） — 小欧-2026-09-29 22:22:12
-//   ⑥ handleGetNotFound/observeByPolling 终态以 chat_tasks 回读的真实 status 为准（原稿强写 completed
-//      可能与后端 failed/cancelled 冲突致假完成）。
-//   ⑦ onResumed 按 hitlWaitingKeys 判定回 active/paused：并发 HITL 恢复其一时保持 paused
-//      （原 5.3 无条件置 active，与仍在等待的 confirmId 自相矛盾）— 小欧-2026-09-29 22:22:12
-//   另：onPaused/onAuthorizationRequired 置 status='paused' + isReceiving=true、onResumed 回 'active'，
-//      消除 5.4 原实现"status 恒 paused"的 UI 卡死。
-// 编辑历史: 2026-09-30 01:05:17 小欧 - 迁移落地后的 4 处功能退化修复 + 1 处 HITL 归位补漏（均为真实缺陷，
-//   非风格改动；每条都经 vitest 用例实跑验证）：
-//   ① pump 读循环所有退出路径泄漏 idleTimeout → 改在 finally 统一 clearTimeout + 置 null；
-//   ② 重连耗尽后不再上报（同口径退化）→ reconnectStatus 置 'failed' 并按旧口径发一次连接失败
-//      error 事件，随后仍进入轮询观察（不自动取消后端任务，任务继续跑）；
-//   ③ releaseUnsubscribed（60s 宽限期满）只断流未停轮询 → 同步置 pollSignal.aborted=true，
-//      堵 observeByPolling 空转；
-//   ④ sendStreamRequest 换发消息时旧轮询不退出 → 先 abort 旧连接 + 置位旧 pollSignal 再新建信号；
-//   ⑤ 归位补漏：onAuthorizationRequired 覆写 pendingAuthorization 前，先对被顶替的
-//      旧 confirm_id 发 confirm(false) —— 原实现只在 useAuthorization 的 React effect 里拒旧
-//      pendingRef，同批 commit 的中间帧拿不到 → 中间请求静默泄漏到后端等超时。覆写发生处即本处，
-//      prev 必然可见，是唯一可靠归属点（DRY: 单一 owner，hook 侧同步删重复分支）；
-//      为此 import 增补 taskControlApi（与 sessionTaskApi 同模块）— 小欧-2026-09-30 01:05:17
+// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: SSE 传输层落地(POST/GET 续传/读循环/退避/轮询观察/错误中心,
+//   迁移自 useSSE.ts:779-1179 + :121-404)。相对原稿 7 处修正(均避免功能退化/死代码): ①onError 业务错误帧
+//   不再停泵(后端 ReAct 循环内 yield 中间帧, Agent 继续发 final, 按 from_backend+恢复类白名单判);
+//   ②补 onMerged 接线; ③scheduleReconnect 只走 GET 续传不回退重 POST; ④ERROR_CONFIG_MAP 复用 getErrorConfig(DRY);
+//   ⑤recoverFromIdle abort 后 await pumpDone 再续传+复原空闲超时错误上报+abort 前置 intentionalAbort=true;
+//   ⑥终态以 chat_tasks 回读真实 status 为准; ⑦onResumed 按 hitlWaitingKeys 判定回 active/paused — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 01:05:17 小欧 - 迁移落地后 4 处功能退化修复+1 处 HITL 归位补漏(均真实缺陷, 经 vitest 验证):
+//   ①pump 退出路径泄漏 idleTimeout→finally 统一 clearTimeout; ②重连耗尽置 reconnectStatus='failed'+发一次错误事件;
+//   ③releaseUnsubscribed 只断流未停轮询→同步置 pollSignal.aborted; ④sendStreamRequest 换发时先 abort 旧轮询再新建;
+//   ⑤onAuthorizationRequired 覆写 pendingAuthorization 前先对被顶替 confirm_id 发 confirm(false) — 小欧-2026-09-30 01:05:17
 // 编辑历史: 2026-09-30 14:30 小欧 - EOF 补收尾接回重连（加终态守卫与上限）；抽 markDisconnected/resetPollSignal；轮询捕获信号对象
 // 编辑历史: 2026-10-01 小欧 - 修复：start 帧落 taskId 由 makeSetter 的 commit（仅 5s 落盘防抖）改走
 //   chatStreamStore.setServerTaskId（commit 后立即 persistNow）——serverTaskId 是断点续传的唯一锚点，
@@ -57,13 +33,9 @@
 //   无确认流程) 到达时, 此刻开着的无关 HITL 弹窗一并关掉。确认终态现由后端必带 confirm_id — 小欧-2026-10-11
 // 编辑历史: 2026-10-21 小杨 - 消息体支持随消息上行 refs（首连与插话两条 POST 路径一致） — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 上行前同时剥离 pending/invalid 前端内存态 — 小杨-2026-10-21
-// 编辑历史: 2026-10-26 小欧 - 持续连接策略: 有taskId永不failed(全局"后端在跑前端不放弃")
-//   ① 超帧跳过 → 跳过帧+继续读+报事件"单帧超长已跳过，流继续"
-//   ② 不可重试+有taskId → 降级observeByPolling+报事件"连接中断，转轮询待恢复"
-//   ③ 轮询耗尽 → recovering不markDisconnected+报事件"轮询超时，任务仍在执行", 窗口30→60
-//   ④ 字符串错误 → 报事件"帧解析异常，流继续"不终止流
-//   ⑤ 无taskId请求失败 → 按会话回查listTasks找活跃任务, 找到则续传, 否则"请求失败，请重试"
-//   文案规则: ≤14汉字, 精准说明问题+待重连/流继续; 所有报事件用transportError包装渲染到taskinfo
+// 编辑历史: 2026-10-26 小欧 - 持续连接策略: 有taskId永不failed(全局"后端在跑前端不放弃")——①超帧跳过+继续读;
+//   ②不可重试+有taskId→降级 observeByPolling; ③轮询耗尽→recovering 不 markDisconnected, 窗口30→60;
+//   ④字符串错误→报事件不终止流; ⑤无taskId失败→按会话回查 listTasks 找活跃任务续传; 文案≤14汉字 — 小欧-2026-10-26
 
 // 编辑历史: 2026-10-29 小欧 - 上行 refs 加 wire 投影: 新增 toWireRef(白名单投影, 剥 content/mtime/
 //   pending/invalid 前端内存态), 首连与插话两处 refs 序列化统一走它(防内存字段泄漏上行) — 小欧-2026-10-29
@@ -82,14 +54,9 @@
 // 编辑历史: 2026-11-03 小欧 - handleGetNotFound/observeByPolling 的终态赋值删 `as StreamStatus` 断言,
 //   改走 toStreamStatus 归一(DB 词表 executing 不再原样落前端字段) — 小欧-2026-11-03
 
-// 编辑历史: 2026-11-14 商量 - 修顶栏胶囊卡「待确认」到 final(用户实测反馈):
-//   ① resumeFromPaused 单一出口: 业务推进帧(thought-start/action/observation/chunk)到达即证 agent
-//   在推进, status='paused' 兜底回 active — resumed 帧丢失/不发时(后端 hitl_gateway: 真 HITL
-//   rejected/expired 不发 resumed)胶囊不再卡死; 对齐 useTaskInfo 2026-09-01 同根因修法
-//   (badge 已修, 胶囊 2026-11-02 新建时漏同步该防御);
-//   ② hitlWaitingKeys 泄漏清理: onRejected 删 confirm_id + onAuthorizationRequired 顶替分支删
-//   被顶替 key — 后端拒绝不发 resumed, 残留 key 令 onResumed 的 size===0 判定永假, 并发/顶替
-//   场景 status 卡 paused; 两处删除幂等(后端若补发 user_rejected 帧再删一次无副作用) — 商量-2026-11-14
+// 编辑历史: 2026-11-14 商量 - 修顶栏胶囊卡「待确认」到 final: ①resumeFromPaused 单一出口——业务推进帧到达即证
+//   agent 推进, status='paused' 兜底回 active(resumed 帧丢失/不发时胶囊不再卡死); ②hitlWaitingKeys 泄漏清理——
+//   onRejected 删 confirm_id + onAuthorizationRequired 顶替分支删被顶替 key(后端拒绝不发 resumed) — 商量-2026-11-14
 // 编辑历史: 2026-11-18 商量 - 新增 questionHandlers: question_required/resolved 写 pendingQuestion 与 hitlWaitingKeys,
 //   与 HITL 等待语义同源(精确 id 删, 不 clear) — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - 新增 scheduleHandlers: notice(kind=schedule) 的 items 写 store.scheduleList(整体替换,
@@ -209,7 +176,7 @@ function resetPollSignal(s: ChatStreamSession): void {
   s.pollSignal = { aborted: false };
 }
 
-/** 2026-09-29 小欧：统一构造 SSEError 事件载荷（5.1 StreamEvent error 载荷为 SSEError 全结构） */
+/** 2026-09-29 小欧：统一构造 SSEError 事件载荷（StreamEvent error 载荷为 SSEError 全结构） */
 function transportError(errorType: string, errorMessage: string): SSEError {
   return {
     type: 'error',
@@ -269,7 +236,7 @@ export async function sendStreamRequest(
   s.abortController?.abort(); // 2026-09-29 小欧：断上一条连接（等价 useSSE.ts:796 disconnect(false,...)），防连接泄漏
   // 2026-09-29 23:52:07 小欧（防退化修复）：换发必须先中止**旧轮询观察**再放行新流。
   //   旧 useSSE.ts.bak:796 disconnect() 走 unmount 路径，会把 pollSignalRef 一并 abort；
-  //   5.3 原稿只 abort abortController，而 observeByPolling 只认 pollSignal
+  //   原稿只 abort abortController，而 observeByPolling 只认 pollSignal
   //   （本文件 observeByPolling 首行 `if (s.pollSignal.aborted) return 'aborted'`），
   //   于是"轮询期间用户再发新消息"时旧轮询不中止、与新流叠加，两路都发 listTasks 都发事件。
   //   又 pollSignal 自建会话起只置 true 从不复位，故此处先置位旧信号中止旧轮询、再换新对象，
@@ -371,7 +338,7 @@ async function readToEnd(body: ReadableStream<Uint8Array>): Promise<void> {
 }
 
 /**
- * 恢复状态机 ACTIVE + GET_* 分支（5.4 resume 委派）：按 after_seq 续传同一流态缓冲，绝不重新 POST。
+ * 恢复状态机 ACTIVE + GET_* 分支（resume 委派）：按 after_seq 续传同一流态缓冲，绝不重新 POST。
  * 不可重试错误类型不进循环；可重试耗尽后转轮询观察终态（2026-07-12 约定：不自动 cancel）。
  */
 export async function resumeStreamRequest(
@@ -475,7 +442,7 @@ export async function resumeStreamRequest(
           // 2026-09-29 23:52:07 小欧（防退化修复）：
           //   重连耗尽必须置 reconnectStatus='failed'。旧 useSSE.ts.bak:1155-1159
           //   `if (reconnectAttemptsRef.current >= config.maxAttempts) { setReconnectStatus('failed') }`
-          //   明确置位；5.3 原稿直接 observeByPolling，reconnectStatus 一路停在 'reconnecting'
+          //   明确置位；原稿直接 observeByPolling，reconnectStatus 一路停在 'reconnecting'
           //   最长 150s，UI 会一直显示"重连中"，而实际早已转入轮询观察 —— 状态与事实不符（铁规 1.2 严禁退化）。
           //   口径与旧实现同构：'failed' 只表示"重连这条路断了"，任务本身仍由轮询观察，不自动取消。
           commit(s, (d) => {
@@ -485,7 +452,7 @@ export async function resumeStreamRequest(
           //   旧 useSSE 的本地 handleSSEError 包装器（useSSE.ts.bak:303-324）在耗尽时先
           //   console.warn + 转入 pollSessionTaskStatus，随后**必发**一次
           //   onError{error_type, error_message: ERROR_CONFIG_MAP[errorType].showMessage ?? '连接失败'}。
-          //   5.3 原稿直接 observeByPolling，用户最长 2.5 分钟（30×5s）收不到任何失败提示，
+          //   原稿直接 observeByPolling，用户最长 2.5 分钟（30×5s）收不到任何失败提示，
           //   期间 UI 只见"重连中"——铁规 1.2 严禁退化。此处按旧口径复原（ErrorConfig.message
           //   即旧 showMessage 的对应字段）。
           console.warn(
@@ -622,11 +589,11 @@ function armIdleWatch(s: ChatStreamSession): void {
 /**
  * 2026-09-29 小欧：空闲超时恢复必须"先断旧读、等旧泵退出、再续传"——
  *   useSSE.ts:931 reconnect() 内先 disconnect(false) abort 旧 fetch 后才建新连接；
- *   5.3 原稿直接 void resumeStreamRequest(s)，而 pump() 的 pumpActive 单飞守卫会把续传弹回
+ *   原稿直接 void resumeStreamRequest(s)，而 pump() 的 pumpActive 单飞守卫会把续传弹回
  *   'recovering'（旧泵仍占位直到 await read 抛 AbortError 才在 finally 清位）→ 空闲超时恢复永久失效。
  *   故 abort 后 await pumpDone 再续传。
  *
- * 2026-09-29 22:22:12 小欧（防退化补丁）：5.3 原稿只 abort+续传、**不发任何 error 事件**，
+ * 2026-09-29 22:22:12 小欧（防退化补丁）：原稿只 abort+续传、**不发任何 error 事件**，
  *   而 useSSE.ts:920-931 的既有行为是 console.warn + onError('SSE 空闲超时：60s 未收到数据') + reconnect()。
  *   静默恢复会让"连接已卡死"对用户完全不可见（铁规 1.2 严禁退化功能），故按老口径复原上报：
  *   先 warn + emitEvent(error)，再断旧读续传——顺序与老代码 onError 先于 reconnect 一致。
@@ -635,7 +602,7 @@ function armIdleWatch(s: ChatStreamSession): void {
  *   续传成功照常 terminal（不误判终态）。
  *
  * 2026-09-29 22:22:12 小欧（同批修第二处退化）：本函数 abort 旧读**必须**前置 intentionalAbort=true
- *   （与 5.4 clearCompleted/destroySession 同口径）。否则旧泵 read 抛的 AbortError 落到
+ *   （与 clearCompleted/destroySession 同口径）。否则旧泵 read 抛的 AbortError 落到
  *   handleTransportError:640 非静默分支 → console.error 噪声 + reconnectStatus='failed'/
  *   isReceiving=false + observeByPolling 轮询，与本函数紧随其后的 resumeStreamRequest 并发抢同一会话
  *   （双恢复器）。2026-09-07 约定的 REQUEST-ABORT 静默默认路径正是为此设的标志。
@@ -882,7 +849,7 @@ function refHandlers(s: ChatStreamSession) {
       }
     ),
     getCurrentExecutionSteps: () => s.executionSteps,
-    // 2026-09-29 小欧：引 Store 推导视图，与 5.5 组件层同一对象（字面量各自创建即第二真源）
+    // 2026-09-29 小欧：引 Store 推导视图，与组件层同一对象（字面量各自创建即第二真源）
     executionStepsRef: chatStreamStore.getExecutionStepsRef(s.sessionId),
     pendingStepsRef: {
       // sseParser.ts:117 push / :575 splice 原地改写
@@ -979,7 +946,7 @@ function broadcastHandlers(s: ChatStreamSession) {
       emitEvent(s, 'chunk', { chunk, isReasoning });
     },
     // 2026-10-30 小欧 批2序12: 引用回执帧 → refNoticeStore(chip 5 态唯一写入口)。
-    //   按 path 键控: chips 归 useComposerRefs 本地态, per-ref 直改够不到(5.4.6 裁定)。
+    //   按 path 键控: chips 归 useComposerRefs 本地态, per-ref 直改够不到(引用归属判定)。
     onRefsNotice: (data: {
       level: string;
       scope: string;
@@ -988,7 +955,7 @@ function broadcastHandlers(s: ChatStreamSession) {
       refNoticeStore.setMap(noticeMapByPath(data.items));
     },
     // 2026-09-29 小欧：metadata 类型对齐 sseParser.ts:136 真实契约
-    //   （string | SSEMetadata），非 unknown——unknown 会在 5.1 载荷类型处断裂成断言
+    //   （string | SSEMetadata），非 unknown——unknown 会在载荷类型处断裂成断言
     onComplete: (
       full: string,
       meta?: string | SSEMetadata,
@@ -1271,10 +1238,10 @@ function errorHandlers(
       const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
       // 2026-09-29 小欧：业务错误帧（blocked/timeout/user_rejected 等）**不终止流**——
       //   后端 event_emitter.py:84-109 在 ReAct 循环内 yield，Agent 继续执行并最终发 final；
-      //   5.3 原稿 `ERROR_BRANCH[t] ?? 'failed'` 会把这类中间帧当终态杀掉读循环、丢掉 final（功能退化）。
+      //   原稿 `ERROR_BRANCH[t] ?? 'failed'` 会把这类中间帧当终态杀掉读循环、丢掉 final（功能退化）。
       //   判据用 sseParser 既有契约 from_backend（sseParser.ts:654 无条件置 true）+ 恢复类 error_type 白名单。
       if (!recovery && e.from_backend) {
-        emitEvent(s, 'error', e); // 仅投事件（HITL 齿轮/被拒点名/错误行由 5.8 消费），流继续
+        emitEvent(s, 'error', e); // 仅投事件（HITL 齿轮/被拒点名/错误行由错误分支消费），流继续
         return;
       }
       setBranch(recovery ?? 'failed');

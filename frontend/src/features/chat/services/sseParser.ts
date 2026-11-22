@@ -12,35 +12,24 @@
 //   构造对象补 tool_name(rawData.tool_name, 后端事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
 // 编辑历史: 2026-09-07 小欧 - 取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
-// 编辑历史: 2026-09-07 小欧 - start/startinfo 双信号拆分(按前端消息分类处理分析定案):
-//   startinfo 合并入 start——后端 start 现已自带 ai_message_id, 删除 case 'startinfo' 分支;
-//   case 'start' 合并写入 contextSummary + startTimestamp + startInfo(含 ai_message_id),
-//   徽标(running/idle)/过程条首行/计时/概况支付行为全不变(startInfo 到达提前到 start, 徽章 running 只更早亮) — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - start/startinfo 双信号拆分: startinfo 合并入 start(后端 start 已自带
+//   ai_message_id, 删 case 'startinfo'); start 写入 contextSummary+startTimestamp+startInfo — 小欧-2026-09-07
 // 编辑历史: 2026-09-08 小欧 - 回归总原则(北京老陈定案): error case onError 构造对象无条件打
 //   from_backend=true(来源判据, 不做类型匹配) + request_level=rawData.step===0(层级判据, 读原始值禁stepNum归一;
 //   请求级step=0为真, 执行级step≥1/缺失为false) — useChatCallbacks 据此分道只进第三类; step/tool_name 仍照传(聚合源不变) — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
 //   后端 StartStep.get_content() 返回 context_summary 对象(非字符串), 原 typeof==='string' 三元把对象丢弃为 '',
 //   任务信息条上下文概况(tooltip)空白(数据退化)。改: 对象 JSON 序列化承接, null/undefined 仍为空 — 小欧-2026-09-08
-// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理、与后端消息不匹配的必须一致」):
-//   case 'action' 删 6 条耗时打点(执行Steps保存开始/完成、sessionStorage保存开始/完成、渲染开始/完成)与 9 个计时变量
-//   (execStepsStartTime/execStepsDoneTime/execStepsDuration、storageStartTime/storageDoneTime/storageDuration、
-//   renderStartTime/renderDoneTime/renderDuration)——sseParser 性能打点与 sse_parser 职责无关且高噪(D.R.Y);
-//   final 分支「[连接断开]」误导文案改为「[收到final终态]」——该处实为收到 final 终态事件, 非连接异常收尾 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - thought-start/action/observation 到达打点精确化(北京老陈指示「准确记录到达时间、单步并行准确log」):
-//   ①thought-start 补到达打点(原无 log) [type=thought-start][step][开始思考]+秒级到达时间;
-//   ②action 打点补 exec_type 直标 single/multi(单步橙标·并行 orange 多×N) + 工具点名(与 step.content 同源 join('+')),
-//     到达时间=receiveTime(收到帧即时截取, 原用解析后时间不精确);
-//   ③observation 打点移出解析前占位(原在解析前打无工具名/状态), 移到解析完成后直打 [工具名][状态=exec_code][结果×N] + 收到帧时刻 receiveTime,
-//     并行观察由 tool_result 数组长度反映(>1=并行动作多次观察); 均秒级 toLocaleTimeString — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理: case 'action' 删 6 条耗时打点与 9 个计时变量(与
+//   sse_parser 职责无关且高噪, DRY); final 分支「[连接断开]」改「[收到final终态]」 — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - thought-start/action/observation 到达打点精确化: ①thought-start 补到达打点;
+//   ②action 打点补 exec_type 直标 single/multi+工具点名, 到达时间=receiveTime; ③observation 打点移解析完成后
+//   直打[工具名][状态][结果×N]+receiveTime; 均秒级 toLocaleTimeString — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - action 双发事件独立点名(北京老陈指示「每次 action 都记, 分别记为 action_preview/action_canonical」):
 //   后端 handle_action 同一步 preview(齿轮先行 tools=all_calls _live_only) 与 canonical(真实执行集 _exec_calls) 双发,
 //   打点 type 字段据 step.preview 前缀化 [type=action_preview]/[type=action_canonical], observation 不参与(单次到达) — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 时序统一核查(北京老陈指示「核查时序准确性, log标签简洁明了准确」):
-//   ①新增 frameTime=本条SSE帧到达时刻(processSSEData 逐行调用即帧到达), 各分支日志统一引用,
-//     消除原分支内 Date.now()/接收时间 各自截取的毫秒级不一致(同帧各日志时间必然一致);
-//   ②thought-start/thought/action/observation/error/final/user_rejected/paused/resumed/retrying 全部换用 frameTime;
-//   ③删 action/observation 分支内私有 receiveTime(回归 frameTime 单一真源) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 时序统一核查: ①新增 frameTime=本条SSE帧到达时刻, 各分支日志统一引用消除
+//   毫秒级不一致; ②thought/action/observation/error/final 等全换 frameTime; ③删私有 receiveTime — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 失败终态透传修复(北京老陈「UI冻住/日志不完整」排查实证): final 分支补解析
 //   outcome/error_type/error_message —— 后端 FinalStep(2026-07-18 规整) 已稳定下发, 前端漏解析导致
 //   useChatCallbacks.onComplete 无法识别失败终态, 4333字思考草稿(5轮流式chunk累积)被当"完整回复"正常展示 — 小欧-2026-09-09
@@ -54,10 +43,8 @@
 // 编辑历史: 2026-09-10 小欧 - seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段三残留死参清理: handlers删saveStepsToStorage字段(:78)+解构(:133,
 //   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
-// 编辑历史: 2026-09-10 小欧 - 阶段三final分支ref权威源修复(与useSSE flushPendingSteps同款):
-//   原实现函数式updater(prev=>[...prev,...batch])且updater内含写ref副作用, 违反更新器零副作用(StrictMode双执行双写ref);
-//   且原ref先行只补当前step、漏早前未flush的pending, onComplete读ref缺失早前步骤。
-//   改非函数式set: batch全量+ref权威源展开, ref同步赋值后再setState, StrictMode幂等 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三final分支ref权威源修复: 原函数式updater含写ref副作用(StrictMode双写),
+//   且漏早前未flush的pending; 改非函数式set: batch全量+ref权威源展开, ref同步赋值后再setState — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 终态后作废守卫(北京老陈排查失败): handlers新增可选中terminalSeqRef,
 //   final/error分支记录终态seq, 入口层拦截终态后到达的更高seq晚到帧(防pendingSteps被污染);
 //   start/final_stats/usage元信息帧放行(终态统计仍需落) — 小欧-2026-09-10
@@ -73,10 +60,9 @@
 //   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致调试日志恒undefined — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - 复核修复(usage帧taskLike单源): usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts 同源) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - 复核修复(action分支删死字段): action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - 实施(北京老陈批准, 作废守卫退役): 删终态后作废守卫全部残留——
-//   接口定义/解构/入口拦截块/ final·error分支终态seq记录 五处删除(第二套度量衡退役, event_log seq全局连续单调+TCP有序
-//   +final后无业务帧 ⇒ 晚到高seq帧物理不存在, 守卫零拦截量, YAGNI纯删除)。useSSE侧S904 B2空流判定改用lastSeqRef
-//   (见useSSE.ts编辑历史, done权威置位在后final先publish, 判定语义等价)。编辑历史注释保留可追溯 — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 实施(北京老陈批准, 作废守卫退役): 删终态后作废守卫全部残留——接口定义/解构/
+//   入口拦截块/final·error分支终态seq记录 五处删除(event_log seq 全局连续单调+TCP有序+final后无业务帧 ⇒
+//   晚到高seq帧物理不存在, 零拦截量, YAGNI); useSSE侧空流判定改用 lastSeqRef — 小欧-2026-09-12
 // 编辑历史: 2026-09-13 小欧 - TDD(行154/311-315): lastUsageSeqRef 第二基线退役——①handlers 接口删除
 //   lastUsageSeqRef 字段声明(仅保留 lastSeqRef 唯一条基线); ②usage 分支内 seq<=lastUsageSeqRef.current 守卫块整块删除
 //   (入口 lastSeqRef 层已拦截全部重复帧, 该守卫拦截量 0, F2 与入口重复; 单基线纪律 3.2, YAGNI) — 小欧-2026-09-13
@@ -90,10 +76,8 @@
 // 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged分支+onMerged回调 — 小欧-2026-09-28
 // 编辑历史: 2026-09-29 21:37:55 小欧 - HITL 单源化: 删 resumed 帧带 confirm_id 时的
-//   window.dispatchEvent('authorization_resumed') 兜底派发(原 :180-186 小沈 2026-09-03 加的防御兜底)。
-//   超时放行现走 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
-//   快照 effect 关弹窗(上块); window 派发端双删之一(另一处 useChatCallbacks
-//   onAuthorizationRequired), 防双源复活 — 小欧-2026-09-29 21:37:55
+//   window.dispatchEvent('authorization_resumed') 兜底派发(超时放行现走 onResumed → useAuthorization 快照
+//   effect 关弹窗); 防双源复活 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 解析/业务分层兜底；未知 type 不推进 seq 保留 onBiz；final 提前收尾；删零消费成员
 // 编辑历史: 2026-10-04 小欧 - context_overview 摘要键修正 summary→content(帧的权威文本字段是 content,
 //   从无 summary 键, 原读法致卡片恒显"–")＋补收 injected 两键 — 小欧 2026-10-04
@@ -104,11 +88,8 @@
 // 编辑历史: 2026-10-08 小欧 北京老陈定案"不能误导用户"(与 ContextOverviewCard 同批): contextOverview 帧
 //   解析改 compressed/compress_saved_pct 两字段, 删 injected_ratio —— 该值>1 才代表压缩生效但标签叫"压缩比"
 //   方向相反, 且未压缩时≠1.0(装入含 system+本轮提问), 会让用户误读。
-// 编辑历史: 2026-10-10 小欧:  history_context: contextOverview 改整→
-//   原样透出(原白名单重建只留少数 → 会静默丢字段并逼出下游形状兼容); 裁剪读法改走 utils/contextFrame;
-//   「steps 门补 hasSummary — 「summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 「if(trimmed)
-//   把唯一携带 summary 的帧挡在 steps 外 → 致压缩事件永不产出」
-// 2026-10-10 北京老陈定案: 帧读侧唯一真源(禁在本文件重判形状)
+// 编辑历史: 2026-10-10 小欧: history_context: contextOverview 改整→原样透出(原白名单重建只留少数会静默丢字段);
+//   裁剪读法改走 utils/contextFrame; steps 门补 hasSummary(唯一携带 summary 的帧不再被挡) — 小欧-2026-10-10
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: case 'rejected' 在 onRejected 回调外补 pushAndFlush 入 executionSteps(透传 reject_type/tool_name), 使 useTaskInfo 能从 steps 派生 rejected 过程事件; 改前只调回调不入流, 事件列表永无 rejected — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 小欧 - rejected 帧补传 confirm_id(北京老陈令): 原不传致 onRejected 拿不到 id,
 //   关窗分支不成立, 确认作废后弹窗永留屏幕(实测 e95d2ceb) — 小欧-2026-10-11
@@ -290,8 +271,6 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
     lastSeqRef?: React.MutableRefObject<number>;
-    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 接口定义已删除(作废守卫退役,
-    //   event_log seq 全局连续单调+TCP有序+final后无业务帧 ⇒ 晚到高seq帧物理不存在, YAGNI) — 小欧-2026-09-12
     // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
     pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
     scheduleFlush?: () => void;
@@ -324,7 +303,6 @@ const processSSEData = (
     // 2026-09-30 小欧 - 原 `disconnect: _disconnect` 解构已删（成员与解构同时退役，见上方 handlers 类型注释）。
     setServerTaskId,
     onSeq,
-    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
   } = handlers;
 
   // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
@@ -395,8 +373,6 @@ const processSSEData = (
       }
     }
 
-    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「终态后作废守卫」拦截块已删除(作废守卫退役,
-    //   本文件编辑历史板块 2026-09-12 条目同步) — 小欧-2026-09-12
     // 2026-09-30 小欧 - 未知 type 分档：seq 不推进（该帧未消费，推进则 after_seq 越过它、
     //   重连永无补发机会=真丢数据），但 onBiz 仍调（任何 data 帧到达即后端仍活跃产出）
     const isKnownEventType = KNOWN_EVENT_TYPES.has(rawData.type as string);
@@ -428,7 +404,7 @@ const processSSEData = (
 
     // 2026-09-17 小欧 实施: 业务帧到达(=后端仍在活跃产出) → 刷新业务时间基线;
     //   长输出期间 chunk 不断, 保证不被误判"业务静默"而升档(与心跳/断连语义正交);
-    //   按 6.6#1 校核置于 seq 守卫之后, 仅通过守卫的真正新帧才刷新基线(过期帧不得掩盖真实静默) — 小欧-2026-09-17
+    //   按校核置于 seq 守卫之后, 仅通过守卫的真正新帧才刷新基线(过期帧不得掩盖真实静默) — 小欧-2026-09-17
     handlers.onBiz?.();
 
     // 【小强修复 2026-03-18】统一处理timestamp转换
@@ -814,7 +790,6 @@ const processSSEData = (
           } as SSEMetadata,
           finalStepsWithCurrent
         );
-        // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「final 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
@@ -889,7 +864,6 @@ const processSSEData = (
         // 历史版本没有调用onComplete，UI显示正常
         // 2026-09-30 小欧 - 删此处 setIsReceiving/setIsConnected(false)：终态收尾已由
         //   transport onError 的 markDisconnected 统一承担；非终态业务错误流仍在跑，误关即 Bug
-        // 编辑历史: 2026-09-12 16:28 小欧 - 实施: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
