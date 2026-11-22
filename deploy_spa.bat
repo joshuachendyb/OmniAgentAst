@@ -19,7 +19,7 @@ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 set "DEPLOY_SCRIPT=%ROOT%\backend\deploy_spa.py"
 
 REM ── 目标目录: 参数1优先, 缺省本机部署目录 ──
-set "TARGET=G:\OmniAgent-SPA"
+set "TARGET=E:\OmniAgent-SPA"
 if not "%~1"=="" set "TARGET=%~1"
 
 echo ============================================================
