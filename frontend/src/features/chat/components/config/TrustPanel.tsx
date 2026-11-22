@@ -1,5 +1,5 @@
 // 编辑历史: 2026-08-26 小欧 - 8.7 实施: 信任操作面板, 查询/撤销信任, HITL confirm写入(4.3.5/4.7)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增omni-trust-changed事件监听, HITL信任写入后自动刷新面板
+// 编辑历史: 2026-08-27 小欧 - 新增omni-trust-changed事件监听, HITL信任写入后自动刷新面板
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5: tool+path 精确信任(行键 toolName:path, 撤销带 path)
 // 编辑历史: 2026-09-03 小欧 - TaskInfoBar 复用(北京老陈定案方向1, 零退化): 内联实现合并回本组件(DRY)
 // 编辑历史: 2026-09-09 小欧 - 展开列表改 Drawer 侧滑面板 + 撤销移入行首列 Modal.confirm 二次确认
@@ -109,7 +109,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
     void load();
   }, [load]);
 
-  // 2026-08-27 小欧 三堂会审: 监听 HITL confirm(trust_session=True) 成功后派发的事件, 仅命中本会话时刷新
+  // 2026-08-27 小欧 监听 HITL confirm(trust_session=True) 成功后派发的事件, 仅命中本会话时刷新
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ sessionId: string }>;

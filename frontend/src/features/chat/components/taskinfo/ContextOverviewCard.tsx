@@ -63,7 +63,7 @@ import {
 
 interface Props {
   /** history_context 帧数据(实时唯一来源); 历史任务无帧时为 null — 小欧 2026-10-04
-   *  2026-10-10 小欧[20] 删 string 联合: 生产路径恒为 object|null(useTaskInfo 直传
+   *  2026-10-10 小欧 删 string 联合: 生产路径恒为 object|null(useTaskInfo 直传
    *  frames.contextOverview), string 联合是纯 phantom 且只有测试在喂 —— 禁 backward 必删。 */
   overview: ContextOverviewFrame | null;
   /** false = 历史任务：弹框只显历史上下文段（DB 首帧回放，无对话上下文段） — 小欧 2026-10-09 */
@@ -159,7 +159,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
     typeof convTokens === 'number' && contextWindow
       ? Math.round((convTokens / contextWindow) * 100)
       : null;
-  // 2026-10-10 小欧[20] 修复「历史上下文」整段空白:
+  // 2026-10-10 小欧 修复「历史上下文」整段空白:
   //   原门控是 injectCount —— 而 injected_message_count 在"无注入"时后端给 0/'' (agent_telemetry
   //   :381 `_inj_count` 与 :407 未 link 分支的 ''), 于是整段输出 null, 把 content_link_mode /
   //   compressed / summary 一起吞掉。后端在无注入时同样会发压缩情况文字(如"无历史上下文注入"),
@@ -341,7 +341,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
               />
             </>
           )}
-          {/* 2026-10-10 小欧[20] 状态点判据与数据行门控 hasInjectInfo 同源 ——
+          {/* 2026-10-10 小欧 状态点判据与数据行门控 hasInjectInfo 同源 ——
               原用 injectCount, 会出现"标题右侧有压缩情况文字但点是灰的"自相矛盾 */}
           <SectionHead
             dotColor={hasInjectInfo ? Colors.SUCCESS : Colors.TEXT.TERTIARY}

@@ -4,6 +4,21 @@
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
+
+#   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
+#                       新增 --cf-trace; 出口身份带 family/loc/colo
+#   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
+#                       --wait-ip 按"前缀 + loc"判定, 同前缀只换尾号不算换(CGNAT 尾号一直在变)
+#   v1.4 2026-11-04 小欧 --cf-trace 增加 ASN/归属/reverse 查询(ip-api.com)
+#   v1.5 2026-11-04 小欧 新增 --real 直连探测说明; 直连探测的 429 不代表真实额度
+#   v1.6 2026-11-11 小欧 报告文件改写到 hooks/reports/ 子目录
+#   v1.7 2026-11-11 小欧 移除 --real 系列(real_client_probe, 依赖已失效的 opencode-cli 路径)
+#   v1.8 2026-11-11 小欧 报告落盘目录改为 hooks/log/, 与其它运行时生成物统一
+#   v2.0 2026-11-11 小欧 只保留出口身份判定一条线: 删除免费模型探测流水线(--probe-urls/
+#                       --models/--url-mode/--proxies/--switch-cmd/--wait-ip/--kill-bun/
+#                       tools 假装/UA 轮换/call_once 等, 已无调用者); main 缩为 --cf-trace 查询,
+#                       不带参数时行为相同; exit_rotator.py 复用的函数全部原样保留
+
 #   v2.1 2026-11-12 小欧 由 opcode225-gate.py 改名(原名是历史包名, 名不副实);
 #                       新增 --mihomo: 一条命令查全 VPN 状态(端口/内核版本/PROXY 选中/
 #                       各节点最近测活结果/系统代理/直连与代理出口身份); 报告名改 exit_probe_report-*
@@ -33,19 +48,7 @@
 #   v2.9 2026-11-22 小欧 不带参数默认附带两级池当前桶(用户要求: 执行时同时看一级/二级各自的桶):
 #                       新增 pool_now_buckets() 读 INDONESIA_POOL/EXIT_POOL 当前选中节点,
 #                       分别切顶层 PROXY 查出口桶后恢复原选择; 仅不带任何参数时触发
-#   v1.2 2026-11-04 小欧 --wait-ip 改用 Cloudflare trace 判定出口(CF 的 ip= 才是服务端所见);
-#                       新增 --cf-trace; 出口身份带 family/loc/colo
-#   v1.3 2026-11-04 小欧 出口身份增加配额桶前缀: IPv4 折 /24, IPv6 折 /48, 并显示 loc;
-#                       --wait-ip 按"前缀 + loc"判定, 同前缀只换尾号不算换(CGNAT 尾号一直在变)
-#   v1.4 2026-11-04 小欧 --cf-trace 增加 ASN/归属/reverse 查询(ip-api.com)
-#   v1.5 2026-11-04 小欧 新增 --real 直连探测说明; 直连探测的 429 不代表真实额度
-#   v1.6 2026-11-11 小欧 报告文件改写到 hooks/reports/ 子目录
-#   v1.7 2026-11-11 小欧 移除 --real 系列(real_client_probe, 依赖已失效的 opencode-cli 路径)
-#   v1.8 2026-11-11 小欧 报告落盘目录改为 hooks/log/, 与其它运行时生成物统一
-#   v2.0 2026-11-11 小欧 只保留出口身份判定一条线: 删除免费模型探测流水线(--probe-urls/
-#                       --models/--url-mode/--proxies/--switch-cmd/--wait-ip/--kill-bun/
-#                       tools 假装/UA 轮换/call_once 等, 已无调用者); main 缩为 --cf-trace 查询,
-#                       不带参数时行为相同; exit_rotator.py 复用的函数全部原样保留
+
 #
 # 用途:
 #   判定"当前出口是哪个配额桶"。429 FreeUsageLimitError 按出口 IP 网段记账(实测:

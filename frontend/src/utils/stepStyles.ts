@@ -256,7 +256,7 @@ export const Colors = {
   //   红-8 为 7.1:1 / 白底 7.8:1; ERROR 仍作边框与图标色 — 小欧-2026-11-02
   ERROR_TEXT: '#a8071a',
 
-  // 2026-10-27 小欧 - PILL_* 三态胶囊专用色(doc[48] N1): 原 SUCCESS/ERROR/BORDER.STRONG 配白字
+  // 2026-10-27 小欧 - PILL_* 三态胶囊专用色: 原 SUCCESS/ERROR/BORDER.STRONG 配白字
   //   实测对比度 2.27/3.27/1.84:1, 全不达 WCAG AA 4.5:1(cancelled 灰底白字几乎不可读)。
   //   取 AntD 深一档(green-8/red-8) + TEXT.PRIMARY 灰, 实测 5.59/7.75/7.00:1 均达 AA。
   //   **新增而非改值**: SUCCESS/ERROR 是全站功能色(状态点/边框/图标/警示条), 改值会波及所有引用处;
@@ -295,7 +295,7 @@ export const Size = {
   // 2026-10-13 23:20 小欧 - 320 → 460: 头部标题改 whiteSpace:nowrap 后(图标+标题+3项Segmented+复制+✕),
   //   320px 装不下会被迫折行或溢出卡片。460 是实测所需宽度(标题 ~141 + Segmented ~130 + 其余 ~80)。
   //   ⚠️ 必须写成 min(460, 100vw-32) 而非固定 460: CSS 中 min-width **优先于** max-width,
-  //   固定 460 会在 <492px 视口下撑破视口(此坑见 [29] v2.4 第⑩项)。
+  //   固定 460 会在 <492px 视口下撑破视口(此坑见 v2.4 第⑩项)。
   PARAMS_PANEL_MIN_W: 460, // 浮层面板最小宽(标题 nowrap 所需下限; 窄屏由 min() 收敛到视口内)
   PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
   // 2026-11-02 小欧 - HEADER_HEIGHT=43: 顶栏Header/LayoutSkeleton/NavContent Logo区三处同值43收口(纵向对齐三方, 改一处全联动) — 小欧-2026-11-02

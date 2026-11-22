@@ -3,7 +3,7 @@
 //   attachmentApi.loadRawBlob 带 token 取 blob → objectURL(复用附件预览同一取流口, 不新写请求);
 //   type 决定 <img> 或 <video controls>; 未登记附件的兜底行无可取字节, 只能显文字。
 //   2026-11-21 小欧 - 媒体下方补一行产物指针纯文字(url / file_path): 看得见图也能复制地址 — 小欧-2026-11-21
-// 编辑历史: 2026-11-22 小欧 - 三堂会审整改: blob 取流/objectURL/revoke/超时收敛到公用 useAttachmentBlob,
+// 编辑历史: 2026-11-22 小欧 - blob 取流/objectURL/revoke/超时收敛到公用 useAttachmentBlob,
 //   与聊天流产物卡片同一实现, 本组件只留浮层特有的"打开即加载"调用与指针文字 — 小欧-2026-11-22
 // 编辑历史: 2026-11-22 小欧 - 消除 sessionId 全局隐式依赖: 会话改从 data.session_id(后端给)读,
 //   不再依赖 useForegroundSession, 跨会话回看浮层产物不取错附件 — 小欧-2026-11-22
