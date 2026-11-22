@@ -98,6 +98,13 @@ class ProviderAdapter:
     # 方言翻译归 provider adapter, generation_client 保持协议无关。
 
     @staticmethod
+    def image_endpoint(has_refs: bool) -> str:
+        """生图端点方言: 默认恒走 generations。有厂商(如 sensenova)把图片编辑分到独立端点时覆写。
+        has_refs=本次是否带参考图; 探测腿/文生图恒无参考图 → 默认 generations。 — 小欧-2026-11-22
+        """
+        return "/images/generations"
+
+    @staticmethod
     def prepare_image_body(body: Dict, *, size: Optional[str] = None,
                            ratio: Optional[str] = None,
                            image_refs: Optional[list] = None,

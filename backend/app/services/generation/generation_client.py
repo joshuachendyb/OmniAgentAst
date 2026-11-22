@@ -25,6 +25,8 @@
   全部可选(OCP); 加 IMAGE_SIZES/RATIOS/档位像素表常量 — 小欧-2026-11-20
 2026-11-21 小欧 订正 generate_video docstring 的 settled 口径: 原写「任务 failed = 确定拒绝」与实现不符,
   实为 settled=False(厂商侧资源/素材问题, 不判模型无能); 与 FUNCTIONS.md §10.4 对齐 — 小欧-2026-11-21
+2026-11-22 小欧 生图端点按适配器选: generate_image 改用 adapter.image_endpoint(has_refs) 代替固定 IMAGE_PATH,
+  默认仍 generations(探测腿/文生图/其他厂商零影响), sensenova 有参考图切 /images/edits — 小欧-2026-11-22
 """
 import asyncio
 import time
@@ -34,7 +36,8 @@ import httpx
 
 from app.llm.adapters.base import ProviderAdapter
 
-# OpenAI Images/Videos 兼容端点常量（各家方言走 provider adapter 的 prepare_image_body/prepare_video_body 钩子）
+# 通用默认生图端点: 实际端点由 adapter.image_endpoint(has_refs) 按厂商+有无参考图选定,
+#   默认(基类/探测腿/文生图)=本值, sensenova 有参考图走 /images/edits; 常量保留供文档登记 — 小欧-2026-11-22
 IMAGE_PATH = "/images/generations"
 VIDEO_PATH = "/videos"
 
@@ -175,7 +178,8 @@ async def generate_image(
     - 小欧-2026-11-09
     size/ratio/images(多图合成)/return_base64/response_format 经 provider adapter 的 prepare_image_body 钩子
       做方言翻译(默认 agnes 档位+ratio, sensenova 覆写为 WIDTHxHEIGHT), generation_client 协议无关(OCP);
-      全可选不传则请求体只含既有字段; 探测腿不传 adapter 走默认(agnes 风格) — 小欧-2026-11-20
+      端点经 adapter.image_endpoint(has_refs) 按厂商+有无参考图选定(默认 generations, sensenova 有参考图走 /images/edits);
+      全可选不传则请求体只含既有字段; 探测腿不传 adapter 走默认(agnes 风格) — 小欧-2026-11-20 / 2026-11-22
     out: 可选产物出口(对话生图工具)——成功时写入未截断的原始 url/b64_json 及 meta(厂商其余字段);
       探测腿不传则三元组行为不变(OCP) — 小欧-2026-11-20
     """
@@ -185,14 +189,17 @@ async def generate_image(
     if image and image not in refs:
         refs.insert(0, image)
     # 方言翻译下沉到 provider adapter(基类通用, agnes/sensenova 覆写请求与响应钩子);
-    #   gen_adapter 全函数复用(请求方言 + 响应方言), generation_client 无 provider 硬编码(OCP) — 小欧-2026-11-20
+    #   gen_adapter 全函数复用(端点方言 + 请求方言 + 响应方言), generation_client 无 provider 硬编码(OCP) — 小欧-2026-11-20
     gen_adapter = adapter or ProviderAdapter()
     gen_adapter.prepare_image_body(body, size=size, ratio=ratio, image_refs=refs or None,
                                    return_base64=return_base64, response_format=response_format)
+    # 端点方言: 按适配器 + 有无参考图选端点(基类恒 generations; sensenova 有参考图走 /images/edits);
+    #   探测腿不传 adapter=基类无参考图 → generations, 行为不变 — 小欧-2026-11-22
+    endpoint = gen_adapter.image_endpoint(has_refs=bool(refs))
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
-                f"{api_base.rstrip('/')}{IMAGE_PATH}", headers=headers, json=body
+                f"{api_base.rstrip('/')}{endpoint}", headers=headers, json=body
             )
     except Exception as e:
         return False, f"network_error: {type(e).__name__}: {e}"[:_EV_LIMIT], False

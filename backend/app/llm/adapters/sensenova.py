@@ -3,8 +3,10 @@
 
 职责: 承载 sensenova 相对 OpenAI/agnes 协议的生成方言差异, 只覆写生成钩子, 其余继承基类。
   生图 size 用 WIDTHxHEIGHT(32倍数, 512~4096)而非档位; 无 ratio 字段(比例隐含在尺寸里);
-  image 只认数组(字符串会 RemoteProtocolError)。视频方言当前与 agnes 一致(继承基类)。
+  有参考图(i2i)走 /images/edits 端点且用 images:[{image_url:...}] 方言(image 传字符串会 RemoteProtocolError)。
+  视频方言当前与 agnes 一致(继承基类)。
 编辑历史: 2026-11-20 小欧 新建: prepare_image_body 覆写(档位→像素换算+4K钳制到4096上限) — 小欧-2026-11-20
+编辑历史: 2026-11-22 小欧 加 image_endpoint 覆写(有参考图→/images/edits); prepare_image_body 有参考图改 images:[{image_url}] 方言 — 小欧-2026-11-22
 """
 from typing import Dict, Optional
 
@@ -28,6 +30,11 @@ class SensenovaAdapter(ProviderAdapter):
     """sensenova 生成方言适配器 — 小欧 2026-11-20"""
 
     @staticmethod
+    def image_endpoint(has_refs: bool) -> str:
+        """sensenova 端点方言: 带参考图=图片编辑走 /images/edits, 否则继承基类 generations — 小欧-2026-11-22"""
+        return "/images/edits" if has_refs else ProviderAdapter.image_endpoint(has_refs)
+
+    @staticmethod
     def _clamp_size(pixel: str) -> str:
         """把 WIDTHxHEIGHT 的每边钳制到 4096 上限, 并按 32 倍数取整(sensenova 硬性要求)。"""
         try:
@@ -46,7 +53,7 @@ class SensenovaAdapter(ProviderAdapter):
                            image_refs: Optional[list] = None,
                            return_base64: bool = False,
                            response_format: Optional[str] = None) -> Dict:
-        """sensenova 生图方言: 档位→WIDTHxHEIGHT(钳制4096), 无 ratio, image 数组顶层。"""
+        """sensenova 生图方言: 档位→WIDTHxHEIGHT(钳制4096), 无 ratio; 有参考图走 images:[{image_url}] 方言。"""
         if size:
             tier = _SENSENOVA_TIER_PIXELS.get(size.upper())
             pixel = None
@@ -55,7 +62,8 @@ class SensenovaAdapter(ProviderAdapter):
             body["size"] = SensenovaAdapter._clamp_size(pixel) if pixel else size
             # 注意: sensenova 没有 ratio 字段, 比例已隐含在 WIDTHxHEIGHT 中, 不下发 ratio
         if image_refs:
-            body["image"] = image_refs
+            # 有参考图=图片编辑(/images/edits): sensenova 只认 images:[{image_url:...}], 非 image 数组 — 小欧-2026-11-22
+            body["images"] = [{"image_url": ref} for ref in image_refs]
         # sensenova 的 b64 通过 response_format=b64_json(放 extra_body)控制; return_base64 非其字段, 忽略
         if response_format:
             body.setdefault("extra_body", {})["response_format"] = response_format
