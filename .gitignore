@@ -150,3 +150,5 @@ gateways/**/__pycache__/
 
 # 2026-11-20 小欧: rebuild-pool 写回配置时自动留的 .bak, 仅本地回滚用, 不入库 - 小欧-2026-11-20
 OmniVPN/mihomo/config.yaml.bak-*
+# 2026-11-23 小欧: OmniVPN 备份(代码/配置/数据)统一放 OmniVPN/backup/, 不进 git 跟踪 - 小欧-2026-11-23
+OmniVPN/backup/

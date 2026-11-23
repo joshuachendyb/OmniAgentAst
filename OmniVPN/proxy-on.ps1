@@ -1,5 +1,5 @@
 ﻿# proxy-on.ps1 — 一键开代理(启动 mihomo + 设系统代理 + 验证出口)
-# 编写人: 小欧    日期: 2026-11-11    版本: v2.5    更新时间: 2026-11-22 06:50:00
+# 编写人: 小欧    日期: 2026-11-11    版本: v2.6    更新时间: 2026-11-23 18:33:42
 # 更新: v1.1 小欧 2026-11-11 出口查询各需 3~8 秒, 加提示防止误判卡死关窗(实测踩过)
 # 更新: v1.2 小欧 2026-11-12 内核优先用自编精简版 mihomo-slim.exe, 缺文件回落官方原版
 # 更新: v2.0 小欧 2026-11-12 目录迁移 OmniVPN\: 内核/配置/脚本全在本目录下自洽, 不再依赖 vpn-trial\ 与 hooks\
@@ -9,6 +9,7 @@
 #                             顺手修掉换桶命令备忘把 "python (Join-Path ...)" 当纯文本打印的老问题
 # 更新: v2.4 小欧 2026-11-22 出口验证发现选中节点失联(代理出口 ? (?))时, 自动切换到下一个存活节点并复验
 # 更新: v2.5 小欧 2026-11-22 输出改为 exit_probe 风格 [1]~[5] 阶段编号, 启动顺序清晰, 文案精简
+# 更新: v2.6 小欧 2026-11-23 新增 [4] 代理链路: 读 9090 渲染两级串联与当前选中节点, 原出口对照/换桶备忘顺延为 [5]/[6]
 # 用途: 接管本机上网出口(流量经节点出去); 只改「系统代理」与本地进程, 不动路由/网卡
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File proxy-on.ps1            # 默认 mihomo:7890
@@ -28,7 +29,7 @@ $mihomoDir = Join-Path $PSScriptRoot 'mihomo'
 $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 "============================================================"
-"proxy-on v2.5  一键开代理   $stamp"
+"proxy-on v2.6  一键开代理   $stamp"
 "============================================================"
 ""
 
@@ -81,8 +82,41 @@ $stats = Join-Path $PSScriptRoot 'nodepool\_bucket_stats.py'
 if (Test-Path $stats) { python $stats --by-node } else { '    桶统计脚本缺失: ' + $stats }
 ""
 
-# 4. 验证出口(直连 vs 走代理, 对照着看才看得出生效没)
-'[4] 出口对照 (Cloudflare trace, 3~8 秒/项, 请勿中途关窗)'
+# 4. 代理链路(读 9090 运行态, 渲染两级串联与当前选中; 控制器不可达时降级提示)
+'[4] 代理链路 (两级串联 · 读 9090 运行态)'
+function Get-Px([string]$name) {
+    try { Invoke-RestMethod "http://127.0.0.1:9090/proxies/$name" -TimeoutSec 2 } catch { $null }
+}
+$px = Get-Px 'PROXY'
+if ($null -eq $px) {
+    '    控制器 9090 不可达, 跳过链路展示 (不影响代理本身)'
+} elseif ($px.now -eq 'DIRECT' -or $px.now -eq 'INDONESIA_POOL') {
+    "    本机程序 ──系统代理──> 127.0.0.1:$Port (mihomo)"
+    "    当前一级直出 (PROXY 选中 = $($px.now)), 未串联二级出口"
+} elseif ($px.now -eq 'EXIT_POOL' -or $px.now -eq 'Auto') {
+    $lvl1 = Get-Px 'INDONESIA_POOL'
+    $lvl2 = Get-Px $px.now
+    $node = if ($lvl2) { Get-Px $lvl2.now } else { $null }
+    $dp = if ($node) { $node.'dialer-proxy' } else { '' }
+    $via = if ($dp -eq 'INDONESIA_POOL') { '经一级中转' } elseif ($dp) { "经 $dp 中转" } else { '直连(未设 dialer-proxy)' }
+    $n1 = if ($lvl1) { @($lvl1.all).Count } else { '?' }
+    $n2 = if ($lvl2) { @($lvl2.all).Count } else { '?' }
+    $c1 = if ($lvl1) { $lvl1.now } else { '?' }
+    $c2 = if ($lvl2) { $lvl2.now } else { '?' }
+    "    本机程序 ──系统代理──> 127.0.0.1:$Port (mihomo)"
+    '                              │'
+    "    一级·前置跳板 : INDONESIA_POOL [$c1]  印尼 ss ×$n1  (直连裸线)"
+    '                              │ dialer-proxy'
+    "    二级·最终出口 : $($px.now) [$c2]  出口节点 ×$n2  ($via)"
+    '                              │'
+    '                          目标网站   (出口 IP 见下段对照)'
+} else {
+    "    PROXY 选中了未识别的组: $($px.now), 跳过链路展示"
+}
+""
+
+# 5. 验证出口(直连 vs 走代理, 对照着看才看得出生效没)
+'[5] 出口对照 (Cloudflare trace, 3~8 秒/项, 请勿中途关窗)'
 $rot = Join-Path $PSScriptRoot 'exit_rotator.py'
 '    直连出口   : (裸线, 不经 mihomo; 恒为 loc=CN 属正常)'
 python $rot --verify | ForEach-Object { "    $_" }
@@ -97,6 +131,6 @@ if (($proxyOut -join "`n") -match '当前出口: \? \(\?\)') {
 }
 ""
 
-# 5. 换桶备忘
-'[5] 换桶操作 (撞 429 配额时执行)'
+# 6. 换桶备忘
+'[6] 换桶操作 (撞 429 配额时执行)'
 "    python `"$rot`" --target mihomo --group PROXY --wait --proxy http://127.0.0.1:$Port"
