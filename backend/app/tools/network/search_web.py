@@ -17,6 +17,7 @@
 #   excerpts 由只取首条改全拼("\n\n" 连接), 消除正文缺失 — 小欧-2026-11-23
 # 2026-11-23 小欧 - S4: 流式读取限 MCP 响应体 + NetError 穿透通用 except + JSON-RPC error 信封检查 — 小欧-2026-11-23
 # 2026-11-23 小欧 - S2: 统一调度接入 — 固定 if 降级链改 SEARCH_CHAIN + run_chain, 错误分类/分级冷却/attempts 由底座负责 — 小欧-2026-11-23
+# 2026-11-23 小欧 - FIX: Parallel structured.results 字段异常时回落 text 内嵌 JSON 解析, 消除 S1 边缘退化 — 小欧-2026-11-23
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -272,20 +273,24 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
 
         if engine == "parallel":
             # 2026-11-23 小欧 - S1: 优先读 MCP 结构化结果; text 内嵌 JSON 作为同一 provider 的响应格式容错
+            # 2026-11-23 小欧 - FIX: structured.results 字段异常(解析不出 title/url)时也回落 text, 防边缘退化
             structured = (data.get("result") or {}).get("structuredContent") or {}
             parsed = structured if structured.get("results") else None
-            if parsed is None:
-                if not result_text.startswith("{"):
-                    _search_failed(engine, "返回数据非JSON")
-                    return None
-                parsed = parse_json(result_text, raise_on_error=True)
             results = []
-            for r in parsed.get("results", [])[:num_results]:
+            for r in (parsed.get("results", []) if parsed else [])[:num_results]:
                 title, url = r.get("title", ""), r.get("url", "")
                 if title and url:
                     # 2026-11-23 小欧 - 全部 excerpts 拼接, 避免只取首段造成正文缺失
                     snippet = "\n\n".join(str(x) for x in (r.get("excerpts") or []) if x)
                     results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
+            if not results and result_text.startswith("{"):
+                # structured 无有效结果时回落到 text 内嵌 JSON，保持解析路径可用
+                fallback = parse_json(result_text, raise_on_error=True)
+                for r in fallback.get("results", [])[:num_results]:
+                    title, url = r.get("title", ""), r.get("url", "")
+                    if title and url:
+                        snippet = "\n\n".join(str(x) for x in (r.get("excerpts") or []) if x)
+                        results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
             if not results:
                 _search_failed(engine, "无搜索结果")
                 return None
