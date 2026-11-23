@@ -1,6 +1,8 @@
-# 后端开发期工具依赖（不是运行时依赖，禁止并入 requirements.txt）
+# 后端开发期与打包工具依赖（不是运行时依赖，禁止并入 requirements.txt）
 # 创建时间: 2026-11-03 23:01:15    编写人: 小欧-2026-11-03
 # 更新时间: 2026-11-21 opencode - 增补打包工具 pyinstaller 及其安装方式说明
+# 更新时间: 2026-11-23 opencode - 文件定位明确为"开发期+打包工具", 与 runtime(requirements.txt)、
+#   可选遗留(requirements-optional.txt) 三文件职责分开
 #
 # 用途: 开发期静态检查 + 打包 —— 静态检查打捞「纯透传函数 / 死函数 / 未用导入 / 未用形参 / 重复换算」这类烂代码;
 #       pyinstaller 供 build_spa.ps1 阶段3 生成 OmniAgentBackend.exe。

@@ -22,6 +22,9 @@
 #     收集 mpl-data 带入 _classic_test_patch.mplstyle(测试样式)。新增 backend/pyinstaller_hooks/
 #     自定义 hook-pyarrow.py + hook-matplotlib.py 经 hookspath 覆盖(USER_HOOKS 优先级最高),
 #     用 excludes 精确排除测试套件, 产物 pyarrow 测试 57→0、matplotlib 测试样式 1→0 — 小欧-2026-11-18
+#   2026-11-23 opencode - 排除构建机环境自带 ML 包(datasets/torch/transformers/spacy 及其链):
+#     app/ 生产代码零引用, contrib hooks 只要发现环境装了就整包收进产物(~480MB 死重量);
+#     显式 excludes 后即使构建机装了也不进包
 # ============================================================================
 import sys
 from pathlib import Path
@@ -150,7 +153,13 @@ a = Analysis(
     # 注意: 不可全局排除 pkg_resources —— win10toast 运行时真实依赖它;
     #   构建机原缺 jaraco.text/jaraco.functools 导致 pyi_rth_pkgres 钩子启动即崩,
     #   已于构建机补装该依赖而非排除包 — 小欧 2026-10-11
-    excludes=[],
+    # ML 包排除: 构建机装了 datasets/torch/transformers/spacy, contrib hook 会整包收进产物,
+    #   但 app/ 生产代码零引用, 属纯死重量(实测 ~480MB) — opencode 2026-11-23
+    excludes=[
+        "datasets", "torch", "torchvision", "torchaudio",
+        "transformers", "spacy", "blis", "thinc",
+        "tokenizers", "sentencepiece", "hf_xet", "huggingface_hub",
+    ],
     noarchive=False,
     optimize=0,
 )

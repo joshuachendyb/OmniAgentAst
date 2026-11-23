@@ -1,4 +1,8 @@
-﻿# 依赖补全校验 2026-07-08 小沈 — 9个漏网之鱼
+﻿# 运行时依赖 — 本文件只放软件运行/系统必需的包; 开发期与打包工具在 requirements-dev.txt
+# 编辑历史:
+#   2026-11-23 opencode - 明确本文件仅运行时依赖: 移出生产代码零引用的 pycorrector(另存 requirements-optional.txt),
+#     避免打包机装上后被 PyInstaller hook 连带收进产物
+# 依赖补全校验 2026-07-08 小沈 — 9个漏网之鱼
 chardet>=5.2.0
 python-dateutil>=2.9.0
 html2text>=2024.2.26
@@ -19,7 +23,6 @@ httpx==0.26.0
 httpcore==1.0.1
 
 # 文本处理
-pycorrector==1.1.3
 lunarcalendar>=0.0.9
 jieba>=0.42.0
 # 正则增强(单行finditer超时/回溯限制, grep灾难回溯根治用 — 小欧 2026-11-15)

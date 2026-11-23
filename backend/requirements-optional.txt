@@ -1,0 +1,9 @@
+# 可选/遗留依赖 — 非运行时必需, 默认不安装
+# 创建: 2026-11-23 opencode
+# 用途: 保留生产代码当前零引用、但未来可能恢复的包, 与运行时依赖隔离;
+#       打包机不装这些包, 可避免 PyInstaller hook 顺着已安装包把大体积间接依赖收进产物。
+# 安装(仅在明确需要时): pip install -r backend/requirements-optional.txt
+#
+# pycorrector==1.1.3 — app/services/preprocessing/ 目录为空, 测试里用 MagicMock 替代,
+#   生产代码零引用; 若恢复文本纠错功能, 从此文件安装并补回代码引用。
+pycorrector==1.1.3
