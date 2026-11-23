@@ -25,6 +25,8 @@
 #   ④内层放行整个 httpx 家族给底座分类, 不再把 RemoteProtocolError/ReadError 吞成 EMPTY;
 #   ⑤searchweb 增 timeout 参数并作为链级共享预算下传, 每家拿剩余时间, 不再被外层保险丝整链掐断;
 #   ⑥bing 全域名网络失败时上抛给底座(原来 continue 吞掉, 三家全挂也报 success 0); ⑦成功也打 attempts 日志 — 小欧-2026-11-23
+# 2026-11-23 商量 - P0+P2: MCP调用headers补User-Agent(TOOL_BROWSER_UA)修Cloudflare 403(原仅Accept被Exa/Parallel拒);
+#   _search_mcp_engine支持config.extra_headers合并(TinyFish keyless header), 与UA并存 — 商量-2026-11-23
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -187,13 +189,30 @@ _MCP_CONFIGS = {
         "tool_name": "web_search_exa",
         "build_args": lambda q, n: {"query": q, "type": "auto", "numResults": n, "livecrawl": "fallback"},
     },
+    # 2026-11-23 商量 - Firecrawl keyless 免费层(实测200, 免UA); 仅 scrape/search/parse 三工具限速
+    "firecrawl": {
+        "url": "https://mcp.firecrawl.dev/v2/mcp",
+        "tool_name": "firecrawl_search",
+        "build_args": lambda q, n: {"query": q, "limit": n},
+    },
+    # 2026-11-23 商量 - TinyFish keyless(实测200, 免握手); 须带 X-TinyFish-Access-Mode: keyless header;
+    #   build_args 不带 count(实测 count 参数致 400, 仅 query 200)
+    "tinyfish": {
+        "url": "https://agent.tinyfish.ai/mcp",
+        "tool_name": "search",
+        "build_args": lambda q, n: {"query": q},
+        "extra_headers": {"X-TinyFish-Access-Mode": "keyless"},
+    },
 }
 
 # 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行; tavily 待 S3 有 key 时接入。
 #   每个后端末参数 remaining = 链级预算剩余秒数(None=不限), 底层逐家按剩余时间收敛硬超时
+# 2026-11-23 商量 - 端点顺序(8.1.1): parallel(结构化首选)→exa(次选)→firecrawl(免费层三选)→tinyfish(备用四选)
 SEARCH_CHAIN = (
     Backend("parallel", lambda q, n, p, t: _search_mcp_engine("parallel", q, n, p, t)),
     Backend("exa", lambda q, n, p, t: _search_mcp_engine("exa", q, n, p, t)),
+    Backend("firecrawl", lambda q, n, p, t: _search_mcp_engine("firecrawl", q, n, p, t)),
+    Backend("tinyfish", lambda q, n, p, t: _search_mcp_engine("tinyfish", q, n, p, t)),
 )
 
 
@@ -257,6 +276,35 @@ def _parse_exa_results(text: str, num_results: int) -> Optional[List[Dict[str, s
     return formatted or None
 
 
+# 2026-11-23 商量 - Firecrawl firecrawl_search 专用解析(实测: 返回 structuredContent {success,data:{web:[{url,title,description}]}},
+#   非 Exa 的 Title:/URL: 文本块, _parse_exa_results 不适用); text 内嵌 JSON 作为同 provider 容错
+def _parse_firecrawl_results(parsed: Optional[dict], num_results: int) -> List[dict]:
+    results = []
+    data = (parsed or {}).get("data") or {}
+    for r in (data.get("web") or [])[:num_results]:
+        title, url = r.get("title", ""), r.get("url", "")
+        if title and url:
+            results.append({"title": title, "url": url, "snippet": r.get("description", ""), "source": "Firecrawl"})
+    return results
+
+
+# 2026-11-23 商量 - TinyFish search 专用解析(实测: 返回 result_text JSON {query,results:[{title,url,snippet,...}]},
+#   非 Exa 的 Title:/URL: 文本块); 解析失败返回 None 交底座分类
+def _parse_tinyfish_results(text: str, num_results: int) -> Optional[List[dict]]:
+    try:
+        parsed = parse_json(text, raise_on_error=True)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    results = []
+    for r in (parsed.get("results") or [])[:num_results]:
+        title, url = r.get("title", ""), r.get("url", "")
+        if title and url:
+            results.append({"title": title, "url": url, "snippet": r.get("snippet", ""), "source": "TinyFish"})
+    return results or None
+
+
 async def _search_mcp_engine(
     engine: str,
     query: str,
@@ -279,8 +327,12 @@ async def _search_mcp_engine(
     try:
         async with create_http_client(timeout_sec=call_timeout, proxy=proxy) as client:
             # 2026-11-23 小欧 - S4: 流式读取并限制响应体, 避免大响应整体进内存
+            # 2026-11-23 商量 - P0 UA修复 + P2 extra_headers合并: MCP调用带浏览器UA(TOOL_BROWSER_UA)修Cloudflare 403
+            #   (原仅Accept, httpx默认python-httpx被Exa/Parallel拒); 并合并config.extra_headers(TinyFish keyless header)
+            _headers = {"Accept": "application/json, text/event-stream", "User-Agent": TOOL_BROWSER_UA}
+            _headers.update(config.get("extra_headers") or {})
             async with client.stream("POST", config["url"], json=payload,
-                    headers={"Accept": "application/json, text/event-stream"}) as resp:
+                    headers=_headers) as resp:
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "")
                 chunks = []
@@ -338,6 +390,23 @@ async def _search_mcp_engine(
                 _search_failed(engine, "无搜索结果")
                 return None
             return results
+
+        if engine == "firecrawl":
+            # 2026-11-23 商量 - Firecrawl 返回 structuredContent{data:{web:[]}}; text 内嵌 JSON 作容错
+            results = _parse_firecrawl_results(structured, num_results)
+            if not results and result_text:
+                results = _parse_firecrawl_results(_parse_json_text(result_text), num_results)
+            if not results:
+                _search_failed(engine, "无搜索结果")
+                return None
+            return results
+
+        if engine == "tinyfish":
+            # 2026-11-23 商量 - TinyFish 返回 result_text JSON{results:[]}; 解析失败归 None 交底座
+            formatted = _parse_tinyfish_results(result_text, num_results)
+            if not formatted:
+                _search_failed(engine, "无搜索结果")
+            return formatted
 
         if not result_text:
             _search_failed(engine, "返回空数据")
