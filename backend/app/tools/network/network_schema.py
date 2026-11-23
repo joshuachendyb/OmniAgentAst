@@ -8,6 +8,8 @@
 # 2026-07-25 - 小欧 - DownloadFileInput.dest 补充路径限制说明(不支持绝对路径/../)
 # 2026-10-18 - 小欧 - DownloadFileInput.dest 描述订正: 支持绝对路径(原样使用), 相对路径相对下载目录, 两者均禁止 ../
 # 2026-10-26 - 小沈 - FetchWebpageInput新增save_to字段; extract_format描述加MD守护说明; timeout默认30→60。
+# 2026-11-23 小欧 - SearchWebInput新增timeout(链级共享预算, 默认90): 无此参数时保险丝按无inner渐进算出60s,
+#   小于三家降级链最坏耗时80s, 整链会被外层掐断且attempts/已得结果全丢 — 小欧-2026-11-23
 """
 Network Schema - 网络工具参数模型
 
@@ -29,6 +31,8 @@ Author: 小沈 - 2026-04-29
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.tools.tool_constants import SEARCH_WEB_TIMEOUT_DEFAULT
 
 
 class HttpRequestInput(BaseModel):
@@ -111,15 +115,18 @@ class SearchWebInput(BaseModel):
     proxy: Optional[str] = Field(
         default=None, description="代理地址"
     )
+    timeout: int = Field(
+        default=SEARCH_WEB_TIMEOUT_DEFAULT, ge=10, le=180, description="本次搜索总时间上限(秒, 多搜索源共享此预算; 默认90, 覆盖三家依次降级的最坏耗时)"
+    )
 
 
 class NetworkDiagnoseInput(BaseModel):
     """网络连通性诊断工具
-    
+
     【mode参数】决定诊断类型：
     - ping: ICMP可达性检测(主机级)
     - port: TCP端口检测(服务级)
-    
+
     【使用示例】
     - ping测试 → ping_port(host="8.8.8.8")
     - 端口检测 → ping_port(host="8.8.8.8", mode="port", port=53)

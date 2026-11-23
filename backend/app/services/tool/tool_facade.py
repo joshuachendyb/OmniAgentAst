@@ -31,10 +31,12 @@
 #   故原码对别名工具名不误判; 本次仅为单次归一/少一次查表的收敛, 行为等价。
 # 2026-10-18 - 小欧 - 随契约调整同步: 直调 API 的"待确认"判读改 needs_confirm。判定分支(自动确认直通 vs 回给调用方自行裁决)零变更。
 # 2026-11-03 - 小欧 - 未知工具拒绝执行 WARNING→DEBUG(LLM 编造工具名属调用方错误) — 小欧-2026-11-03
-
 # 2026-11-23 小欧 - 与 agent 链路 sandbox_precheck 对齐: 仅 sandbox_required=True 才调沙箱预检,
 #   非文件类工具(searchweb/fetchpage 等) sandbox_required=False 直通, 消除 API 直调误拦
 #   (此前无条件调 pre_execute, 非 shell 工具被 _pre_execute_file_op 误判"暂不支持操作类型"拒绝) — 小欧-2026-11-23
+# 2026-11-23 小欧 - 三堂会审整改: ①补 M4 兜底 —— 预检抛异常时降级放行并 WARNING 留痕, 与 agent 链路同语义
+#   (原实现异常会直接冒泡成 500, 两条入口对同一故障表现不一致); ②放行时经 ContextVar 注入 precheck_info
+#   供 shell 消费(原来只有 agent 链路注入, API 直调丢静态检查结果); ③注释去 sandbox_gate.py 行号引用(易过期) — 小欧-2026-11-23
 
 """
 tool_facade — 工具门面(API 适配层)
@@ -189,17 +191,26 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     # 2. 沙箱预检 + 临时授权(SA7/SA6) — 2026-10-14 小欧
     #    病根: 本链此前只做 SA3, 不做 SA7/SA6 —— destructive 操作经 API 直调可绕过影子副本预检;
     #    白名单外授权请求无人 grant, 工具体内 validate_path 二次拦截, 表现为「弹了窗但仍被拦」。
-    #    2026-11-23 小欧 - 与 agent 链路 sandbox_precheck(sandbox_gate.py:100)对齐:
-    #    仅 sandbox_required=True 才预检; 非文件类工具(searchweb/fetchpage 等) sandbox_required=False
-    #    直通, 消除 API 直调误拦(此前无条件调 pre_execute, 非 shell 工具被 _pre_execute_file_op 误判不支持)。
+    #    2026-11-23 小欧 - 与 agent 链路 sandbox_precheck 对齐(同判据 sandbox_required, 同 M4 兜底,
+    #    同 precheck_info 注入): 仅 sandbox_required=True 才预检; 非文件类工具(searchweb/fetchpage 等)
+    #    sandbox_required=False 直通, 消除 API 直调误拦(此前无条件调 pre_execute, 非 shell 工具被
+    #    _pre_execute_file_op 误判不支持)。
     from app.safety.sandbox.executor import get_sandbox_executor
     pre = None
     if safety.sandbox_required:
-        pre = await get_sandbox_executor().pre_execute(tool_name, params or {})
-        if not pre.passed:
+        try:
+            pre = await get_sandbox_executor().pre_execute(tool_name, params or {})
+        except Exception as exc:  # noqa: BLE001 — M4 兜底: 预检异常不阻断调用链, 与 agent 链路同语义
+            logger.warning(f"[tool_facade] 沙箱预检异常(M4兜底直接执行): tool={tool_name}, err={exc}")
+            pre = None
+        if pre is not None and not pre.passed:
             # API 链无前端可裁决, needs_ruling 亦直接拒绝(不弹窗), 与上方"需确认即拒"同一降级语义
             return {"tool_name": tool_name, "success": False,
                     "error": f"沙箱预检未通过: {pre.blocked_reason}", "safety": safety}
+        # 2026-11-23 小欧 - 纯静态预检结果经 ContextVar 交给 tool 自行消费(shell 静态检查结果), 与 agent 链路一致
+        if pre is not None and getattr(pre, "precheck_info", None):
+            from app.tools.context import set_current_precheck_info
+            set_current_precheck_info(pre.precheck_info)
     # 授权: 白名单外写预检已放行, 但工具体内 validate_path 仍查 temp_auth → 不 grant 会二次拦截。
     #   必须带 auth_path 守卫: shell 类确认(返回的 SafetyResult 不带 auth_path)裸调会传 None。
     #   单次调用作用域: 请求结束随 ContextVar 消亡, 不跨调用(API 链自建 task_id, 无"同 task"概念)。

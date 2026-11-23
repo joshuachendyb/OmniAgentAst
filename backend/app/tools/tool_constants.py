@@ -101,6 +101,10 @@
 #   MEDIA_IMAGE_MODEL_HINT / MEDIA_VIDEO_MODEL_HINT, 各自只列本模态模型并明确"不要传另一模态模型" — 小欧-2026-11-20
 # 2026-11-21 小欧 - 新增 EXIT_CODE_MEANING(退出码→含义单源): 同步 shell 失败 detail 与后台完成通知共用,
 #   原为 execute_shell_command 内局部字典, 两处各持一份易漂移 — 小欧-2026-11-21
+# 2026-11-23 小欧 三堂会审整改: ERR_NET_* 八码迁入本文件做单一真源(net_backend.py 原为裸常量, 与全仓
+#   ERR_* 风格及 status.code 口径不一致); searchweb 三处配置清理 —— TOOL_TIMEOUTS/TOOL_TIMEOUT_HINTS 移出
+#   (schema 新增 timeout 参数, 按"有 timeout 参数工具不进本表"约定), TOOL_RETRY_CONFIG 移出(链内自带降级,
+#   外层重试永远等不到 connect/timeout 异常, 该条已死) — 小欧-2026-11-23
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -145,7 +149,7 @@ TOOL_TIMEOUT_HINTS = {  # tool 超时时的 LLM hint，指引 LLM 缩小范围�
     "write": "文件写入超时，可能内容过大或磁盘繁忙。建议分批写入或检查磁盘状态后重试。",
     "edit": "文件编辑超时，可能文件过大。建议直接重写整个文件或减小修改范围。",
     "readmedia": "媒体读取超时，可能文件损坏或过大。建议检查文件完整性后重试。",
-    "searchweb": "搜索超时，可能搜索服务不稳定。建议简化搜索词后重试。",
+    # 2026-11-23 小欧 - searchweb 已移出: schema 新增 timeout 参数后, hint 由工具错误 detail 自带, 本表只收无 timeout 参数工具
     # 2026-10-09 - 小欧 - compress hint改写: 原「①增大timeout参数」列首位属反向引导(与bash hint同源),
     #   改为问题侧解法优先(排除大文件/分批), 调大timeout降末位并加前置条件; 详见文件头编辑历史
     "compress": "压缩超时,目标目录可能过大或包含超大文件。建议: 1. 添加 exclude_patterns 排除无关/大文件 2. 将大目录分批压缩,缩小单次范围 3. 确认文件规模合理、非IO瓶颈后, 再考虑增大 timeout 参数",
@@ -162,7 +166,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 保险丝超时（ToolRetryEngi
     "tree": 120,
     "session": 60,
     "event_log": 60,
-    "searchweb": 60,
+    # 2026-11-23 小欧 - searchweb 移出: schema 已有 timeout 参数(默认90), 保险丝按 inner×次数+BUFFER 计算
     "window_info": 20,
     "window_focus": 20,
     "window_resize": 20,
@@ -433,6 +437,7 @@ QUERY_SQL_OUTPARM_LIMIT_SQL: int = 100                # 使用对象: query_sql.
 # network
 SEARCH_WEB_OUTPARM_LIMIT_RAW: int = 200               # 使用对象: search_web.py(raw_text/str(e)日志/error截断)
 SEARCH_WEB_MCP_MAX_BYTES: int = 256 * 1024            # 使用对象: search_web.py(MCP响应体字节上限, 超则记失败并降级)
+SEARCH_WEB_TIMEOUT_DEFAULT: int = 90                  # 使用对象: search_web.py/network_schema.py(链级共享预算默认秒: parallel25+exa25+bing15×2=80s 最坏链+余量)
 FETCH_WEBPAGE_OUTPARM_LIMIT_DESC: int = 300            # 使用对象: fetch_webpage.py(metadata描述字段截断)
 # chart/data
 GENERATE_CHART_OUTPARM_LIMIT_DATA: int = 200           # 使用对象: generate_chart.py(chart data params/detail 预览截断)
@@ -608,7 +613,9 @@ TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级�
 # 2026-10-09 - 小欧 - 北京老陈「timeout 不能重试」: 5个工具的 retryable 全部移除 "timeout"。
 #   理由: 超时意味着资源已耗尽 30~600 秒，再重试一次只是让用户多等一轮同样的失败。
 #   保留 connect/network/protocol —— 瞬时网络故障重试廉价且高收益(与超时性质不同)。
-#   接受的代价(北京老陈已确认): ping_port/searchweb 遇瞬时网络抖动将直接失败，以鲁棒性换响应速度。
+#   接受的代价(北京老陈已确认): ping_port 遇瞬时网络抖动将直接失败，以鲁棒性换响应速度。
+#   2026-11-23 小欧 - searchweb 移出本表: 搜索链在工具内部已完成三级降级(parallel→exa→bing),
+#     外部重试意味着再跑一整条链(最坏 +80s)且重复消耗上游配额; 移出后 max_retries=0, 保险丝=inner+BUFFER。
 #   ★ 注意: 删本表不等于删干净 —— tool_retry_engine._struct_error_category 有 message 关键词兜底，
 #     错误串含 "timeout"/"timed out"/"time out" 即判 ToolErrorCategory.TIMEOUT(不受本表控制)。
 #     该通道保留符合原意图(TIMEOUT 即不重试), 但需留痕免得后人误以为删表即全清。
@@ -616,7 +623,6 @@ TOOL_RETRY_CONFIG: dict[str, dict] = {
     "httpget": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
     "download": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
     "fetchpage": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
-    "searchweb": {"max_retries": 2, "retryable": ["connect", "network"]},
     "ping_port": {"max_retries": 2, "retryable": ["connect"]},
     # 2026-11-20 小欧 - 生成图像/生成视频不重试: 生成端点每次调用都产生费用, 重试会重复提交重复扣费
     "generate_image": {"max_retries": 0, "retryable": []},
@@ -799,6 +805,17 @@ ERR_NETWORK_JS_RENDER = "ERR_NETWORK_JS_RENDER"
 ERR_NETWORK_REQUEST_ERROR = "ERR_NETWORK_REQUEST_ERROR"
 ERR_NETWORK_WRITE_FILE = "ERR_NETWORK_WRITE_FILE"
 ERR_NET_UNKNOWN = "ERR_NET_UNKNOWN"
+# 2026-11-23 小欧 - 网络检索调度底座分类码单一真源(app/tools/network/net_backend.py 消费):
+#   六类=上游对请求的意见(BAD_INPUT/NOT_FOUND 命中即停, 其余冷却后换家);
+#   NETWORK=本地网络不可达(不冷却, 直接换家, 与"上游坏了"区分); INTERNAL=本侧代码缺陷(不冷却, 不掩盖)
+ERR_NET_BAD_INPUT = "ERR_NET_BAD_INPUT"
+ERR_NET_NOT_FOUND = "ERR_NET_NOT_FOUND"
+ERR_NET_RATE_LIMITED = "ERR_NET_RATE_LIMITED"
+ERR_NET_NEED_SETUP = "ERR_NET_NEED_SETUP"
+ERR_NET_UPSTREAM_BROKEN = "ERR_NET_UPSTREAM_BROKEN"
+ERR_NET_TIMEOUT = "ERR_NET_TIMEOUT"
+ERR_NET_NETWORK = "ERR_NET_NETWORK"
+ERR_NET_INTERNAL = "ERR_NET_INTERNAL"
 ERR_NO_PYAUTOGUI = "ERR_NO_PYAUTOGUI"
 
 # --- 迁移自动补充 ---
