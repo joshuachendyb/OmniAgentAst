@@ -651,6 +651,27 @@ LLM 工具名与参数名的别名归一层，schema 校验前执行（调用点
 ### 4.5 Agent步骤辅助（observation_content.py）
 | `build_content_items`+`render_line` | tool_result[]→7字段数组→一句人话（详见设计文档3.7.3） | tool_result/item | List[Dict]/str |
 
+
+### 4.6 网络检索后端调度底座（app/tools/network/net_backend.py）(2026-11-23 新增 §, 小欧)
+
+只做共性编排，不含任何 provider 业务逻辑；供 search_web 搜索链 / fetch 链共用。
+
+| 函数/常量 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `classify` | 任意后端异常归一为 `NetError`（429→RATE_LIMITED / 401·403→NEED_SETUP / 其余 HTTP→UPSTREAM_BROKEN / 超时→TIMEOUT / 其余→UPSTREAM_BROKEN） | exc: BaseException | NetError |
+| `run_chain` | 按序尝试后端：跳过冷却→调用→分类→记冷却→记 attempts；命中 `FINAL_CODES` 即停、取消类异常穿透、全空结果保持 success 0 条 | kind: str, chain: Tuple[Backend,...], args: Tuple | Dict(items/backend/attempts/error) |
+| `mark_failure` | 按错误码记冷却；Retry-After 优先于分级缺省 | kind, backend_id, error: NetError | None |
+| `cooldown_left` | 返回剩余冷却秒数，未冷却/已过期返回 0 | kind, backend_id | float |
+| `Backend` | 后端描述（id + call 可调用对象），frozen dataclass | — | dataclass |
+| `NetError` | 带统一错误码与 retry_after 的后端异常 | code, message, retry_after=None | Exception |
+| `RATE_LIMITED`/`UPSTREAM_BROKEN`/`TIMEOUT`/`NEED_SETUP`/`BAD_INPUT`/`NOT_FOUND` | 六类错误码常量 | — | str |
+| `FINAL_CODES` | 命中即停的终止码集合（BAD_INPUT/NOT_FOUND） | — | frozenset |
+| `DEFAULT_COOLDOWN_SECONDS` | 分级冷却缺省（RATE_LIMITED 3600 / UPSTREAM_BROKEN 120 / TIMEOUT 60 / NEED_SETUP 60） | — | Dict |
+
+---
+
+## 五、LLM核心层（app/llm/）
+
 ---
 
 ## 五、LLM核心层（app/llm/）
@@ -919,6 +940,9 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+
+| v5.47 | 2026-11-23 | **§4.6 新登记网络检索后端调度底座**(小欧): 新建 `app/tools/network/net_backend.py` 作搜索链/抓取链共性编排底座(错误分类/分级冷却/尝试轨迹, 不含 provider 业务逻辑), 供 search_web 接入; 同批 search_web 接入 `SEARCH_CHAIN`+`run_chain` 统一调度(S2)、Parallel 优先读 MCP `structuredContent` + excerpts 全拼(S1)、MCP 流式读取限响应体 + NetError 穿透通用 except + JSON-RPC error 信封检查(S4) | 小欧 |
+
 | v5.46 | 2026-11-22 | **§10.4 生图端点按适配器选**: `generation_client.generate_image` 端点由固定 `IMAGE_PATH` 改 `adapter.image_endpoint(has_refs)`, 基类默认 generations(探测腿/文生图/其他厂商零影响); `SensenovaAdapter` 覆写有参考图→`/images/edits` 且请求体改 `images:[{image_url:...}]` 方言; `IMAGE_PATH` 保留为默认端点文档常量 | 小欧 |
 | v5.45 | 2026-11-21 | **§1.23 新登记产物声明契约**(小欧): 新建 `app/utils/artifacts.py` 作产物条目唯一契约模块（九函数：`normalize_artifact`/`artifact_dedup_key`/`artifact_exists`/`artifact_from_file`/`artifact_from_url`/`merge_artifacts`/`declare_artifacts`/`declare_artifact_file`/`read_declared_artifacts`）。字段定五字段 `tool_name`/`name`/`path`/`form`/`type`——原四字段缺形态维度，URL 与解压目录被下游当本地文件判失效；`form`(file/dir/url) 成为唯一形态字段，前端只按它分派。落点由 `llm_data.action.artifacts` 改 `other_data["artifacts"]`（`action` 是动作描述，塞清单属职责混用 SRP）。收集条件收窄为 `exec_code ∈ {success, warning}`（失败态误声明不进清单）；去重键统一（URL 去 query/fragment——换签名仍是同一条；本地 `normcase(abspath)`）；上限 50 保留最新并告警（长任务末尾产物才是用户关心的）。§2.1 同步删除 `with_artifacts`/`with_artifact_file`/`artifact_from_url`/`extract_ext` 四函数与 `_ARTIFACT_SUFFIXES` 登记，不做兼容层（禁 backward） | 小欧 |
 | v5.44 | 2026-11-21 | 删除后台查询工具(北京老陈定案): 后台命令完成已有系统通知(含退出码/耗时/输出尾部)覆盖, 该工具不可替代性仅剩"读进程内注册表", 判定画蛇添足; 同批删除仅它调用的读口 `get_bg_info`/`find_bg_by_output_file`(无调用方, 不留死代码)与对应 schema 类、注册项 8 处; `ShellInput.background` 描述同步去掉"或用查询工具查询"; 通知降级落盘时保留输出文件供直接读取 | 小欧 |

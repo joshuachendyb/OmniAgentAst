@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
@@ -14,6 +13,10 @@
 #   对字符串**逐字符**比 URL(单字符'.'/'o'/'m'几乎必命中)致白名单/黑名单形同虚设。改为: 接口层
 #   _coerce_domain_list 归一(str/JSON数组串/list → list[str]) + _url_match_domain 按 host 边界匹配
 #   (host==d 或 host.endswith('.'+d), 消 'not-baidu.com' 子串假命中), 白/黑名单真正生效 | py_compile ✓
+# 2026-11-23 小欧 - S1: Parallel 优先读 MCP structuredContent; text 内嵌 JSON 作为同一 provider 的响应格式容错;
+#   excerpts 由只取首条改全拼("\n\n" 连接), 消除正文缺失 — 小欧-2026-11-23
+# 2026-11-23 小欧 - S4: 流式读取限 MCP 响应体 + NetError 穿透通用 except + JSON-RPC error 信封检查 — 小欧-2026-11-23
+# 2026-11-23 小欧 - S2: 统一调度接入 — 固定 if 降级链改 SEARCH_CHAIN + run_chain, 错误分类/分级冷却/attempts 由底座负责 — 小欧-2026-11-23
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -37,10 +40,19 @@ import httpx
 from app.constants import HTML_TAG_PATTERN
 from app.logger import logger
 from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.net_backend import (
+    NEED_SETUP,
+    RATE_LIMITED,
+    UPSTREAM_BROKEN,
+    Backend,
+    NetError,
+    run_chain,
+)
 from app.tools.tool_constants import (
     ERR_NET_UNKNOWN,
     ERR_PARAM_INVALID,
     SEARCH_WEB_INER_HTML_PARSE,
+    SEARCH_WEB_MCP_MAX_BYTES,
     SEARCH_WEB_OUTPARM_LIMIT_RAW,
     TOOL_BROWSER_UA,
 )
@@ -164,6 +176,12 @@ _MCP_CONFIGS = {
     },
 }
 
+# 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行; tavily 待 S3 有 key 时接入
+SEARCH_CHAIN = (
+    Backend("parallel", lambda q, n, p: _search_mcp_engine("parallel", q, n, p)),
+    Backend("exa", lambda q, n, p: _search_mcp_engine("exa", q, n, p)),
+)
+
 
 def _search_failed(engine: str, reason: str = "") -> None:
     """日志记录MCP搜索失败 — 小欧 2026-06-22"""
@@ -211,12 +229,19 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     }
     try:
         async with create_http_client(timeout_sec=25.0, proxy=proxy) as client:
-            resp = await client.post(config["url"], json=payload,
-                headers={"Accept": "application/json, text/event-stream"})
-            resp.raise_for_status()
-
-            content_type = resp.headers.get("content-type", "")
-            raw_text = resp.text
+            # 2026-11-23 小欧 - S4: 流式读取并限制响应体, 避免大响应整体进内存
+            async with client.stream("POST", config["url"], json=payload,
+                    headers={"Accept": "application/json, text/event-stream"}) as resp:
+                resp.raise_for_status()
+                content_type = resp.headers.get("content-type", "")
+                chunks = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > SEARCH_WEB_MCP_MAX_BYTES:
+                        raise NetError(UPSTREAM_BROKEN, f"响应超过{SEARCH_WEB_MCP_MAX_BYTES}字节")
+                    chunks.append(chunk)
+                raw_text = b"".join(chunks).decode("utf-8", errors="replace")
 
             if "text/event-stream" in content_type or raw_text.lstrip().startswith("data: "):
                 for line in raw_text.split("\n"):
@@ -231,7 +256,13 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
                     _search_failed(engine, f"SSE无有效JSON帧: {raw_text[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
                     return None
             else:
-                data = resp.json()
+                # 2026-11-23 小欧 - 流式模式下 body 未入 resp._content, 直接解析已拼接的受限文本
+                data = json.loads(raw_text)
+
+            # 2026-11-23 小欧 - MCP 特有: HTTP 200 也可能带 JSON-RPC error envelope, 不检查会被当空数据吞掉
+            rpc_error = data.get("error")
+            if isinstance(rpc_error, dict):
+                raise NetError(UPSTREAM_BROKEN, f"JSON-RPC error: {str(rpc_error.get('message', ''))[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
 
             content_list = data.get("result", {}).get("content", [])
             result_text = content_list[0].get("text", "") if content_list else ""
@@ -240,15 +271,20 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
                 return None
 
         if engine == "parallel":
-            if not result_text.startswith("{"):
-                _search_failed(engine, "返回数据非JSON")
-                return None
-            parsed = parse_json(result_text, raise_on_error=True)
+            # 2026-11-23 小欧 - S1: 优先读 MCP 结构化结果; text 内嵌 JSON 作为同一 provider 的响应格式容错
+            structured = (data.get("result") or {}).get("structuredContent") or {}
+            parsed = structured if structured.get("results") else None
+            if parsed is None:
+                if not result_text.startswith("{"):
+                    _search_failed(engine, "返回数据非JSON")
+                    return None
+                parsed = parse_json(result_text, raise_on_error=True)
             results = []
             for r in parsed.get("results", [])[:num_results]:
                 title, url = r.get("title", ""), r.get("url", "")
                 if title and url:
-                    snippet = r.get("excerpts", [])[0] or ""
+                    # 2026-11-23 小欧 - 全部 excerpts 拼接, 避免只取首段造成正文缺失
+                    snippet = "\n\n".join(str(x) for x in (r.get("excerpts") or []) if x)
                     results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
             if not results:
                 _search_failed(engine, "无搜索结果")
@@ -260,8 +296,9 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
                 _search_failed(engine, "无搜索结果")
             return formatted
 
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
-        raise  # 【小欧 2026-06-29】传播给ToolRetryEngine统一分类+重试
+    # 2026-11-23 小欧 - NetError(响应超限/JSON-RPC error)必须穿透, 被下方通用 except 吞成 None 会丢失分类与冷却
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError, NetError):
+        raise  # 【小欧 2026-06-29】传播给调度底座统一分类+冷却
     except Exception as e:
         _search_failed(engine, f"异常: {type(e).__name__}: {str(e)[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
     return None
@@ -423,24 +460,28 @@ async def searchweb(
             llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail=f"num_results必须在1-1000之间,当前值: {num_results}", hint="请将结果数量设置在1-1000之间", proxy=proxy, num_results=num_results)
             return build_error(data={}, llm_data=llm_data)
 
-        results = await _search_mcp_engine("parallel", query, num_results, proxy)
-        engine_used = "Parallel"
-
-        if results is None:
-            logger.info("[searchweb] Parallel失败,降级到Exa MCP搜索")
-            results = await _search_mcp_engine("exa", query, num_results, proxy)
-            engine_used = "Exa"
-
-        if results is None:
-            logger.info("[searchweb] Exa失败,降级到Bing中国搜索")
-            try:
-                results = await _search_bing(query, num_results, proxy)
-                engine_used = "Bing"
-            except Exception as e:
-                logger.warning(f"[searchweb] Bing搜索也失败: {e}")
-                results = []
-
-        results = results or []
+        # 2026-11-23 小欧 - S2 统一调度: 错误分类/分级冷却/尝试轨迹由底座负责
+        out = await run_chain(
+            "search",
+            SEARCH_CHAIN + (Backend("bing", lambda q, n, p: _search_bing(q, n, p)),),
+            (query, num_results, proxy),
+        )
+        if out["error"] is not None:
+            error = out["error"]
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            hint = {
+                RATE_LIMITED: "搜索引擎冷却中，请稍后重试",
+                NEED_SETUP: "搜索服务鉴权失败，请检查 API key 配置",
+            }.get(error.code, "请检查搜索词和网络连接")
+            llm_data = _build_search_web_llm_data(
+                "error", duration_ms, query, err_code=error.code,
+                detail=error.message, hint=hint, proxy=proxy, num_results=num_results,
+            )
+            logger.info("[searchweb] attempts=%s", out["attempts"])
+            return build_error(data={}, llm_data=llm_data)
+        # backend 为 None = 全链无异常但均无结果, 保持 success 0 条现状语义
+        results = out["items"]
+        engine_used = (out["backend"] or "").capitalize()
 
         if _allowed_domains:
             results = [r for r in results if any(_url_match_domain(r.get("url", ""), d) for d in _allowed_domains)]
