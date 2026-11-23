@@ -16,6 +16,7 @@ r"""统计当前节点池的出口桶分布(离线, 不联网不起内核)。 �
   python _bucket_stats.py --by-node              # 逐节点一行(按池内轮转顺序), 供 proxy-on 启动后展示
 输出: 每个桶一行(前缀/loc/桶内节点, 已被账本占用的桶带标记) + 汇总行; --by-node 则每个节点一行
 返回码: 0=正常  2=池文件或桶快照缺失
+  修复: 小欧 2026-11-23 read_pool 兼容顶格 - name: 序列项(config.yaml 当前写法), 原逻辑只认缩进项致节点数归零
 """
 import argparse
 import datetime
@@ -43,14 +44,13 @@ def read_pool(path):
         s = line.rstrip("\n")
         if not s.strip() or s.lstrip().startswith("#"):
             continue
+        m = re.match(r"^(\s*)-\s+name:\s*(.+)$", s)
+        if m:                                  # 顶格或缩进的 - name: 都是当前段的节点项
+            if in_proxies:
+                names.append(m.group(2).strip().strip("\"'"))
+            continue
         if not s[:1].isspace():                # 顶层键: 决定后面是否还在 proxies 段
             in_proxies = s.split(":", 1)[0].strip() == "proxies"
-            continue
-        if not in_proxies:
-            continue
-        m = re.match(r"^\s*-\s+name:\s*(.+)$", s)
-        if m:
-            names.append(m.group(1).strip().strip("\"'"))
     return names
 
 
