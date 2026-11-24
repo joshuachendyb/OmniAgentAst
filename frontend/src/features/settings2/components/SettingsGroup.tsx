@@ -103,10 +103,12 @@ function sectionOf(group: string, key: string): string | null {
     // 2026-11-03 小欧 - 更正: 现 5 小节(运维日志/工程目录/网络/数据治理/关于), system 组 13 项;
     //   无 app.* 项, 下方 app. 分支保留为将来扩展兜底 — 小欧-2026-11-03
     // 2026-09-23 小欧 - cors_origins 自 tuning 迁入系统组：关于上方新增「网络」分块，键名 network.cors_origins — 小欧-2026-09-23
+    // 2026-11-24 商量 - 工具参数归 system 组: tool_websearch_* 前缀独立「工具」小节(对齐后端 registry 同组承载)
     if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';
     if (key.startsWith('paths.')) return '工程目录';
     if (key.startsWith('app.')) return '系统参数';
     if (key.startsWith('network.')) return '网络';
+    if (key.startsWith('tool_websearch_')) return '工具';
     if (key === 'system.chat_retention_days') return '数据治理';
     return '关于';
   }

@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**系统版本**: v1.6.6 | **更新时间**: 2026-11-09 22:36 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-11-09（核对最新本地代码同步：附件域与媒体链路、输出模态生成验证腿、LLM 429 冷却、设置页 9 组重构、opencli 免费车道网关、配置节与调优键口径）
+**系统版本**: v1.7.10 | **更新时间**: 2026-11-24 13:37 | **作者**: 北京老陈团队 | **更新人**: 商量-2026-11-24（核对最新本地代码同步：版本号对齐 version.txt、工具数 67、调优键 41、E2E 手册 v2.20 与文档目录归位、新增 tool_websearch_* 配置键、前端 E2E 用例 24 个、补充 Tool 注入策略与首次注入清单）
 
 ## 一、项目概述
 
@@ -10,13 +10,30 @@
 
 | 能力 | 说明 |
 |------|------|
-| 工具函数 | 68 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer / agent / media 共 11 类 |
+| 工具函数 | 67 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer / agent / media 共 11 类 |
 | 推理引擎 | thought → action → observation 循环推理 |
 | Agent | 单一 UniversalAgent（BaseAgent 子类，配置驱动） |
 | AI Provider | 多模型适配：OpenCode、智谱AI、DeepSeek、Kimi 等 OpenAI 兼容 API |
 | 响应方式 | SSE 流式推送，推理过程实时可见 |
 | 会话管理 | 历史记录、搜索、标题自动生成、跨会话切换 |
 | 安全防护 | 四层体系：全局开关 → 工具安全级别 → 已知风险检测 → 数据库事务编排 |
+
+### 1.1 Tool 注入策略
+
+"注册"与"注入"是两个不同概念：全部 67 个工具在启动时**注册**到 ToolRegistry，但只有被**注入**（写进 LLM 请求的 tools 字段）的工具，LLM 才能看到并调用。系统采用"首次注入少量核心工具 + 其余按需动态注入"的策略，避免一次性把 67 个工具塞进上下文：
+
+- **首次注入**：只注入 FUNDAMENTAL（基础）、FILE（文件操作）、AGENT（智能体交互）3 个分类共 19 个工具（清单见下表），开箱即可完成基础文件读写、命令执行、网络请求与问询/计划交互。定义在 `universal_agent.py::_INITIAL_CATEGORIES`，`UniversalAgent` 实例化时经 `ToolLoader.init_tools()` 加载。
+- **动态注入**：其余分类不预先注入；`patch_search_desc()` 把"当前未加载分类"追加进 `searchtool` 工具描述，LLM 需要时调用 `searchtool` 搜索，命中后由 `ToolLoader.load_category()` 把对应分类的工具动态加入 `_tools_dict`。
+- **可见性判据**：工具是否进 LLM 工具列表由 `visible_to_llm`（= `expose_to_llm and available`，依赖齐备）统一判定；缺库工具仍注册但对 LLM 不可见，避免试调白耗一轮。
+- **缓存**：已注入的工具定义经 TTL 缓存（`tuning.live_front.tool_cache_ttl`），工具注册/注销或动态加载后失效重算。
+
+首次注入的 3 个分类与 19 个工具清单：
+
+| 分类（value） | 中文名 | 数量 | 工具列表 |
+|---------------|--------|------|----------|
+| FILE（file） | 文件操作工具 | 11 | read、write、edit、listdir、tree、find、grep、move、copy、delete、rename |
+| FUNDAMENTAL（fundamental） | 基础工具 | 6 | bash、fetchpage、notify、searchtool、searchweb、timenow |
+| AGENT（agent） | 智能体交互工具 | 2 | question、schedule |
 
 ## 二、技术架构
 
@@ -40,11 +57,12 @@
 后端 API 薄壳层（FastAPI，单进程，无独立网关）
         │  api/v1：chat / task / execution / health / messages / sessions
         │          config / settings / models / tool / task-queries / metrics / token-usage
+        │          attachments / fs / files / material_packs / auth
         ▼
 编排层（services/chat/stream_orchestrator → agent_runner → run_react_cycle）
         │
         ├── Agent：agent_runner → UniversalAgent + tool_loader
-        ├── Tool：tool_executor（统一执行入口），ToolRegistry 11 类 68 工具
+        ├── Tool：tool_executor（统一执行入口），ToolRegistry 11 类 67 工具
         └── LLM 客户端（app/llm，httpx 多 Provider）
         ▼
 安全层（app/safety）L0-L3：全局开关 → 安全级别 → 已知风险 → DB 事务编排
@@ -105,7 +123,7 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 
 ### 2.4 与初始设计蓝图的差距
 
-初始蓝图（`doc-系统初建/OmniAgentAst_系统设计方案.md`）规划了微服务化、网关层、Redis 任务队列、多端接入等形态；当前实现为**单进程紧凑架构**，未落地分布式组件：
+初始蓝图（`doc-2月发展/OmniAgentAst_系统设计方案.md`）规划了微服务化、网关层、Redis 任务队列、多端接入等形态；当前实现为**单进程紧凑架构**，未落地分布式组件：
 
 | 维度 | 当前实现 | 蓝图规划 | 取舍说明 |
 |------|---------|---------|---------|
@@ -122,9 +140,9 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 
 ---
 
-## 三、工具体系（68个）
+## 三、工具体系（67个）
 
-### 3.1 工具分类（11 类 68 工具）
+### 3.1 工具分类（11 类 67 工具）
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
@@ -139,7 +157,7 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 | TIMER | 6 | 定时器设置/清除/列出、时间计算 |
 | AGENT | 2 | question 阻塞问询、schedule 智能体交互（hide_from_steps，走 notice 通道） |
 | MEDIA | 2 | 生成图像、生成视频（经 context 回调拿产物，不碰文件/网络工具链） |
-| 合计 | 68 | |
+| 合计 | 67 | |
 
 ### 3.2 工具注册架构
 
@@ -261,7 +279,7 @@ OmniAgentAs-01/
 │   │   └── utils/              # 工具函数（time / stepStyles / sse 处理等）
 │   ├── src/tests/              # 前端单元测试（Vitest，git 忽略）
 │   ├── e2e_front_lib/          # 前端 E2E 基座（POM/常量/夹具，必从 ../../e2e_front_lib 引用）
-│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~28*.spec.ts + e2e.config/vite.e2e.config）
+│   ├── e2e_case/               # Playwright E2E 用例（fre2e_01~24*.spec.ts + e2e.config/vite.e2e.config）
 │   ├── scripts/                # 辅助脚本（CI/本地启动等）
 │   ├── tests/                  # 前端测试与性能测量脚本
 │   └── package.json
@@ -270,7 +288,7 @@ OmniAgentAs-01/
 ├── OmniVPN/                    # 出口换桶配套服务（mihomo 精简内核 config.yaml/双击 bat+ps1/exit_probe.py/exit_rotator.py/nodepool 重建流水线 + OmniVPN使用说明；内核 exe/log/cache 不入库）
 ├── config/                     # 配置文件（config.yaml 主配置，已被 Git 忽略）
 ├── doc-5月优化/                # 5月优化（含 doc-5月agent2.0 架构设计文档，旧称 doc-agent2.0）
-├── doc-*/                      # 各月优化/专题设计文档目录（doc-打包与E2E、doc-测试与审查等）
+├── doc-*/                      # 各月优化/专题设计文档目录（doc-打包规范、doc-测试规范、doc-测试与审查等）
 ├── version.txt                 # 版本变更记录（append-only）
 └── AGENTS.md                   # 开发规范
 ```
@@ -480,8 +498,10 @@ OmniAgentAs-01/
 | `logging` | 日志级别与轮转（level、debug、max_file_size、backup_count） |
 | `security` | 安全体系（`security.system.*` 硬拦开关 / `security.hitl.*` 人工确认与只读白名单 / `security.trust.ttl_days`） |
 | `sandbox` | 沙箱预检（工具执行前资源约束） |
-| `tuning` | 调优参数（36 键，9 子组：LLM 语义/网络/并发/Agent/裁剪/压缩/流任务/HITL/内容） |
+| `tuning` | 调优参数（41 键，10 子组：LLM 语义/网络/并发/后台命令/Agent/裁剪/压缩/流任务/HITL/内容） |
 | `system` | 系统（chat_retention_days 对话历史保留天数，0=不清理） |
+| `tool_websearch_Tavily_key` | 顶层键：Web搜索 Tavily 密钥（env `TAVILY_API_KEY` 覆盖；留空不启用 Tavily 源，系统组「工具」小节展示） |
+| `tool_websearch_parallel_merge` | 顶层键：Web搜索并行合并开关（bool 默认开；开=前3家 exa/tavily/parallel 并发+串行尾兜底，关=回退原串行链；热读即时生效） |
 
 ### 7.3 `ai` — 模型与 Provider
 
@@ -661,14 +681,15 @@ location /api/ {
 
 > 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8100` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
 
-### 7.7 `tuning` — 调优参数（36 键，9 子组）
+### 7.7 `tuning` — 调优参数（41 键，10 子组）
 
 | 子组 | 键前缀 | 数量 | 说明 |
 |------|--------|------|------|
 | LLM 语义参数 | `tuning.llm.` | 5 | tool_choice, stream_max_retries, response_fallback, response_retries, stream_options |
 | LLM 网络/超时/连接池 | `tuning.llm_net.` | 7 | read_timeout, connect_timeout, write_timeout, pool_timeout, max_connections, max_keepalive, stream_total_timeout |
-| 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_max_processes |
-| Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
+| 并发配额 | `tuning.concurrency.` | 3 | soft_pool_wait_timeout, shell_max_processes, shell_max_background |
+| 后台命令输出/保留 | `tuning.shell_bg_*` | 2 | shell_bg_max_output_mb, shell_bg_result_retain_hours |
+| Agent 循环参数 | `tuning.agent.` | 2 | max_chunks_without_promote, disabled_tools |
 | 裁剪 | `tuning.trim.` | 5 | max_rounds, trigger_ratio, compaction_buffer, keep_recent_rounds, tools_token_reserve |
 | 压缩 | `tuning.compaction.` | 4 | start_enabled, start_limit_ratio, summary_feed_max_chars, keep_tail |
 | 前后端之间的流/任务/缓存 | `tuning.live_front.` | 5 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size, journal_retention_days |
@@ -697,6 +718,7 @@ location /api/ {
 |----------|--------|
 | `{PROVIDER}_API_KEY`（如 `AGNES_API_KEY`） | `ai.<provider>.api_key` |
 | `AI_PROVIDER` | `ai.model_ref.provider` |
+| `TAVILY_API_KEY` | `tool_websearch_Tavily_key`（Web搜索 Tavily 密钥，优先于配置文件） |
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
 | `CORS_ORIGINS` | `network.cors_origins`（CORS 跨域，逗号分隔） |
@@ -720,7 +742,8 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.19） | `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.20） | `doc-测试规范/[1]全链路E2E测试手册-小健-2026-05-23.md` |
+| 前端执行手册（Playwright 隔离测试） | `doc-测试规范/[3]前端Playwright E2E隔离测试实操手册-小欧-2026-11-16.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
@@ -750,7 +773,7 @@ backend/e2etests/
 └── reports/                               # 报告输出（按需生成）
 ```
 
-> 总手册《全链路E2E测试手册》已迁至 `doc-打包与E2E/`（见 8.1 配套文档表），本目录只留用例与公共库。
+> 总手册《全链路E2E测试手册》已迁至 `doc-测试规范/`（见 8.1 配套文档表），本目录只留用例与公共库。
 
 **后端执行落盘**（`backend/` 下）：
 
@@ -770,7 +793,7 @@ frontend/
 │   ├── stream-diag.ts                    #  attachStreamDiag/printDiag/日志基线/run-on 检测
 │   ├── chat-page.ts                      #  ChatPage POM（六方法）
 │   └── normal-chat.ts                    #  普通会话封装（日常/天气/股票/目录分析等）
-└── e2e_case/                             # 前端 E2E 用例（fre2e_01~28*.spec.ts）
+└── e2e_case/                             # 前端 E2E 用例（fre2e_*.spec.ts）
     ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8100，SSE 直连）
     ├── e2e.config.ts / vite.e2e.config.ts#  Playwright / vite 测试配置
     └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化/模型参数模板）
@@ -1261,11 +1284,13 @@ location /api/ {
 }
 ```
 
-详见 `doc-打包与E2E/同源SPA打包与部署说明-小杨-2026-10-27.md`。
+详见 `doc-打包规范/同源SPA打包与部署说明-小杨-2026-10-27.md`。
 
 ---
 
 ### 9.4 Tauri发布环境说明
+
+> 状态说明：当前主仓库尚未包含 `desktop/`（Tauri 壳）目录与 `tauri.conf.json`，本节为规划/独立分支的发布流程记录，主仓库当前实际发布形态为 9.3 同源 SPA exe。
 
 在 PyInstaller 同源 SPA 基础上，用 Tauri 包一层原生桌面壳，生成 `.msi` 安装程序。
 
@@ -1300,7 +1325,7 @@ cargo tauri build
 - **安装程序**：将 `.msi` 分发给用户，双击安装
 - **绿色版**：打包 `target/release/` 下 `OmniAgentApp.exe`、`sidecar/` 目录、`_internal/` 等，用户解压即用
 
-详细步骤见 `doc-打包与E2E/Tauri桌面打包与部署说明-小杨-2026-10-27.md`。
+详细步骤见 `doc-打包规范/Tauri桌面打包与部署说明-小杨-2026-10-27.md`。
 
 ### 9.5 可选依赖（二级工具）
 
@@ -1398,5 +1423,5 @@ pip install mss imageio numpy
 
 ---
 
-| 最后更新 | 2026-11-09 22:36 | 小欧 |
+| 最后更新 | 2026-11-24 13:37 | 商量 |
 

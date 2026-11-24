@@ -658,19 +658,15 @@ LLM 工具名与参数名的别名归一层，schema 校验前执行（调用点
 
 | 函数/常量 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `classify` | 任意后端异常归一为 `NetError`（429→RATE_LIMITED / 401·403→NEED_SETUP / 其余 HTTP→UPSTREAM_BROKEN / 超时→TIMEOUT / 其余→UPSTREAM_BROKEN） | exc: BaseException | NetError |
-| `run_chain` | 按序尝试后端：跳过冷却→调用→分类→记冷却→记 attempts；命中 `FINAL_CODES` 即停、取消类异常穿透、全空结果保持 success 0 条 | kind: str, chain: Tuple[Backend,...], args: Tuple | Dict(items/backend/attempts/error) |
-| `mark_failure` | 按错误码记冷却；Retry-After 优先于分级缺省 | kind, backend_id, error: NetError | None |
-| `cooldown_left` | 返回剩余冷却秒数，未冷却/已过期返回 0 | kind, backend_id | float |
-| `Backend` | 后端描述（id + call 可调用对象），frozen dataclass | — | dataclass |
+| `classify` | 任意后端异常归一为 `NetError`（429→`ERR_NET_RATE_LIMITED` 带 Retry-After / 401·403→`ERR_NET_NEED_SETUP` / 其余 HTTP→`ERR_NET_UPSTREAM_BROKEN` / ConnectError·ConnectTimeout→`ERR_NET_NETWORK` / 超时→`ERR_NET_TIMEOUT` / 其余 httpx→`ERR_NET_UPSTREAM_BROKEN` / httpx 未包装的底层传输异常(`httpcore`·`anyio` 等, 如 `EndOfStream` 服务端中途断开)→`ERR_NET_UPSTREAM_BROKEN` / 非 httpx→`ERR_NET_INTERNAL`） | exc: BaseException | NetError |
+| `run_chain` | 按序尝试后端：跳过冷却→按剩余预算调用→分类→记冷却→记 attempts（成功也记 `OK`）；`budget_sec` 为链级共享预算，逐家下传剩余秒数，耗尽即停并报 `ERR_NET_TIMEOUT`；命中 `FINAL_CODES` 即停、取消类异常穿透；0 结果且存在失败/冷却时报真实错误而非 success 0 | kind: str, chain: Tuple[Backend,...], args: Tuple, budget_sec: Optional[float] | Dict(items/backend/attempts/failures/error/budget_exhausted) |
+| `mark_failure` | 按错误码记冷却；Retry-After 优先于分级缺省；**分级表外错误码（NETWORK/INTERNAL）不冷却**——本地断网与本侧缺陷不该让用户干等 | kind, backend_id, error: NetError | None |
+| `cooldown_info` | 返回（剩余冷却秒数, 致冷却的错误码），未冷却/已过期返回 (0.0, "")；带原因码才能在"全部冷却"时如实归因 | kind, backend_id | Tuple[float, str] |
+| `Backend` | 后端描述（id + call 可调用对象），frozen dataclass；call 签名固定末参 `remaining`（链级预算剩余秒数，None=不限） | id: str, call: Callable | dataclass |
 | `NetError` | 带统一错误码与 retry_after 的后端异常 | code, message, retry_after=None | Exception |
-| `RATE_LIMITED`/`UPSTREAM_BROKEN`/`TIMEOUT`/`NEED_SETUP`/`BAD_INPUT`/`NOT_FOUND` | 六类错误码常量 | — | str |
+| `ERR_NET_*` 八码 | 错误码常量（`BAD_INPUT`/`NOT_FOUND`/`RATE_LIMITED`/`NEED_SETUP`/`UPSTREAM_BROKEN`/`TIMEOUT`/`NETWORK`/`INTERNAL`），**单一真源在 `app/tools/tool_constants.py`** | — | str |
 | `FINAL_CODES` | 命中即停的终止码集合（BAD_INPUT/NOT_FOUND） | — | frozenset |
 | `DEFAULT_COOLDOWN_SECONDS` | 分级冷却缺省（RATE_LIMITED 3600 / UPSTREAM_BROKEN 120 / TIMEOUT 60 / NEED_SETUP 60） | — | Dict |
-
----
-
-## 五、LLM核心层（app/llm/）
 
 ---
 
@@ -941,6 +937,7 @@ def my_parse_json(json_str):
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 
+| v5.48 | 2026-11-23 | **§4.6 调度底座健壮性整改**(小欧): ①`classify` 增 `ERR_NET_NETWORK`(ConnectError/ConnectTimeout, 本地不可达)与 `ERR_NET_INTERNAL`(非 httpx 异常=本侧缺陷), 不再把编程错误当上游故障冷却 120s; ②`mark_failure` 只冷却分级表内错误码, 冷却记录带原因码, `cooldown_left` 换 `cooldown_info`; ③`run_chain` 增链级共享预算 `budget_sec` 并逐家下传 `remaining`(各家硬超时之和 80s 曾超外层 60s 保险丝, 整链 attempts 与已得结果全丢), 成功也入 attempts, 0 结果且存在失败/冷却时报真实错误而非 success 0; ④错误码迁 `tool_constants.py` 统一 `ERR_NET_*`; ⑤`search_web` 同步: 空守卫下沉进 text 分支(只带 structuredContent 的合法 MCP 响应曾被吞成 success 0)、SSE 取 result 帧、JSON 文本容忍围栏与前置空白并归一 `UPSTREAM_BROKEN`、放行整个 httpx 家族、bing 全域名网络失败上抛、`timeout` 参数作链级预算(默认 `SEARCH_WEB_TIMEOUT_DEFAULT=90`), 并移出 `TOOL_TIMEOUTS`/`TOOL_TIMEOUT_HINTS`/`TOOL_RETRY_CONFIG`(max_retries=0 使保险丝 105s 恒覆盖预算 90s); ⑥真实外网实测补 `anyio.EndOfStream` 等 httpx 未包装传输异常归 `UPSTREAM_BROKEN`(原落 `INTERNAL` 把上游断连谎报成本侧缺陷且不冷却) | 小欧 |
 | v5.47 | 2026-11-23 | **§4.6 新登记网络检索后端调度底座**(小欧): 新建 `app/tools/network/net_backend.py` 作搜索链/抓取链共性编排底座(错误分类/分级冷却/尝试轨迹, 不含 provider 业务逻辑), 供 search_web 接入; 同批 search_web 接入 `SEARCH_CHAIN`+`run_chain` 统一调度(S2)、Parallel 优先读 MCP `structuredContent` + excerpts 全拼(S1)、MCP 流式读取限响应体 + NetError 穿透通用 except + JSON-RPC error 信封检查(S4) | 小欧 |
 
 | v5.46 | 2026-11-22 | **§10.4 生图端点按适配器选**: `generation_client.generate_image` 端点由固定 `IMAGE_PATH` 改 `adapter.image_endpoint(has_refs)`, 基类默认 generations(探测腿/文生图/其他厂商零影响); `SensenovaAdapter` 覆写有参考图→`/images/edits` 且请求体改 `images:[{image_url:...}]` 方言; `IMAGE_PATH` 保留为默认端点文档常量 | 小欧 |

@@ -141,6 +141,8 @@ key 全局唯一，加载自检重复直接拒启。
       设置页可见可改(原只加 config.yaml.example 但设置页无入口=用户改不了), HITL 组 4 键→5 键 — 小欧-2026-11-19
     2026-11-20 小欧 - 媒体组增 media.video_inline_limit_mb/media.audio_inline_limit_mb:
       音视频内联上限缺省跟随附件上限真源(MAX_FILE_BYTES, 20MB), 不再沿用图片 2MB 口径致大文件全数降级 — 小欧-2026-11-20
+    2026-11-24 商量 - 系统组工具(searchweb)增 tool_websearch_parallel_merge(并行合并开关, bool, 默认开):
+      原 SEARCH_PARALLEL_MERGE 常量改设置项(设置页可见可改), 关=回退原串行降级链 — 商量-2026-11-24
 
 """
 from typing import Any, Dict, List, Optional
@@ -454,6 +456,14 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
               notice="仅跨域部署时生效（如前端独立CDN、E2E代理）；打包版同源运行无需配置"),
+        # --- 工具（searchweb）：Tavily 搜索密钥（普通可编辑项, 非 secret 走通用设置写通道;
+        #    env TAVILY_API_KEY 可覆盖 config 值 — 商量 2026-11-24）---
+        _item("tool_websearch_Tavily_key", "url", "Web搜索Tavily密钥",
+              "", env_key="TAVILY_API_KEY", env_inject=True,
+              notice="Websearch搜索服务 Tavily 的 API key。留空则不启用 Tavily 源；可在环境变量 TAVILY_API_KEY 设置以覆盖此值"),
+        # --- 工具（searchweb）：并行合并开关（bool, 默认开; 关=回退原串行降级链）---
+        _item("tool_websearch_parallel_merge", "bool", "Web搜索并行合并", True,
+              notice="Websearch 搜索并行合并开关：开=前3家(exa/tavily/parallel)并发请求+串行尾兜底，更快更全；关=原串行降级链(一键回退)"),
         # --- 对话历史保留（1 键，归 system 命名空间，启动时清理超期会话）---
         _item("system.chat_retention_days", "int", "对话历史保留天数", 0,
               range_=[0, 3650], restart=True,

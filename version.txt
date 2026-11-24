@@ -1,3 +1,77 @@
+v1.7.10
+发布时间: 2026-11-24 13:37:00 - 商量-2026-11-24
+## v1.7.10汇总 从上一个 tag v1.7.9(commit 49a4a8e04, 2026-11-24)以来全部 13 个 commit(feat 4 / fix 3 / refactor 3 / docs 3); 本批以搜索抓取链升级为轴心: Tavily搜索后端接入+链序重排(exa→tavily→parallel→tinyfish→firecrawl)+P4并行合并(前3家并发+串行尾兜底)+fetchpage外部链云端代抓前置(Firecrawl→Tavily→Jina→Exa)+并行合并开关改设置项(热读)+notice信封收口+TaskInfoBar宽度修复 - 商量-2026-11-24
+### 1.7.10.1 新增功能
+[feat] feat:search_web 接入 Tavily 搜索后端 _search_tavily(原生REST api.tavily.com/search, 需key, 无key抛NEED_SETUP由底座跳过) + 注册键tool_websearch_Tavily_key(env TAVILY_API_KEY覆盖, ENV_INJECTED_KEYS与registry键名严格对应) + config.example增键 + 前端SettingsGroup sectionOf system分支新增「工具」小节 - 商量-2026-11-24
+[feat] feat:settings_registry Tavily密钥项改url类型并调整文案+新增search_web并行多源方案文档 - 商量-2026-11-24
+[feat] feat:search_web P4并行合并实施([58]§4): 新增_normalize_search_url/merge_search_items(URL归一去重保序)/_PARALLEL_GROUP/search_parallel_merge(前3家并发+串行尾兜底)/_mk_parallel_out(错误分类+冷却), 主函数接SEARCH_PARALLEL_MERGE开关(默认关可一键回退)+engine_used多引擎展示适配 - 商量-2026-11-24
+[feat] feat:notice 空响应/降级Text/摘要重试统一信封收口: handle_answer空响应改notice(retrying,start)+置_active标志, react_step抽_clear_active_notices(清retrying/rate_limit_wait双done, chunk/response两路共用), react_dispatch识别notice(retrying,start)置RETRYING驱动重试, llm_call摘要补summarizing done, steps/__init__补登5个在用kind - 商量-2026-11-24
+### 1.7.10.2 缺陷修复
+[fix] fix:search_web 三堂会审P0修复 链序重排后六家timeout_cap之和105>90致Bing最坏BUDGET_EXHAUSTED轮不到, 收敛firecrawl 20→10/tinyfish 15→10(实测延迟充裕)使和=90恢复预算不变量 - 商量-2026-11-24
+[fix] fix:fetchpage 三堂会审DRY修复 SPA回退分支单点直调Jina改走_fetch_via_external_providers统一链(Firecrawl→Tavily→Jina→Exa), 消除绕链第二实现, 反爬SPA站云端代抓得以出场; 删死代码_remaining_seconds - 商量-2026-11-24
+[fix] fix:TaskInfoBar 位3动态状态截断宽度25→19汉字宽(300→228px): 收窄第三位(动态状态)显示最大宽度 - 商量-2026-11-24
+### 1.7.10.3 重构与优化
+[refactor] refactor:search_web SEARCH_CHAIN链序重排 exa→tavily→parallel→tinyfish→firecrawl(实测依据: exa48次全稳居首, tavily最快质量最优次位, firecrawl最慢限速兜底) - 商量-2026-11-24
+[refactor] refactor:fetchpage 外部抓取链云端代抓前置 Firecrawl→Tavily→Jina→Exa(新增_fetch_via_tavily_extract REST/extract key复用tool_websearch_Tavily_key, 反反爬最强打头) - 商量-2026-11-24
+[refactor] refactor:searchweb 并行合并开关从代码常量改设置项tool_websearch_parallel_merge(bool默认True): settings_registry system组新增项(设置页可见可改), search_web主函数改get_config惰性热读(与_search_tavily同模式), tool_constants删SEARCH_PARALLEL_MERGE常量(保留SEARCH_PARALLEL_WIDTH), config.example增键; 改后即时生效无需重启 - 商量-2026-11-24
+### 1.7.10.4 文档
+[docs] docs:SearchWebInput新增docstring能力/效果说明: 多引擎串行降级链+URL去重合并+可选并行合并, 让LLM了解搜索效果可能变化 - 商量-2026-11-24
+[docs] docs:[58]v4详细设计补全: 新增§4.6实施对接清单(asyncio/net_backend三函数导入清单, engine_used多引擎展示适配, schema零改动, 开关回退)+修§4.2设计bug(attempts轨迹被{**leftover}覆盖丢并行段, 显式合并) - 商量-2026-11-24
+[docs] docs:[58]v3全文一致性核查修订: 现状链序同步已实施新序(exa首位), 目标4/5对齐定稿决策, 并行组统一为exa+tavily+parallel, 删作废的scrape参数设计, 预算表同步cap新值(和=90), 实施步骤阶段1标记已完成 - 商量-2026-11-24
+v1.7.9
+发布时间: 2026-11-24 10:10:00 - 商量-2026-11-24
+## v1.7.10汇总 从上一个 tag v1.7.9(commit 49a4a8e04, 2026-11-24)以来: Tavily 搜索密钥接入 searchweb 搜索链 + 设置页承载。含: search_web 新增 _search_tavily 原生 REST 后端(api.tavily.com/search, 需 key, 无 key 抛 NEED_SETUP 由底座跳过)、注册键 tool_websearch_Tavily_key(env TAVILY_API_KEY 覆盖, ENV_INJECTED_KEYS 与 registry 键名严格对应)、config.yaml.example 增 tool_websearch_Tavily_key 键、前端 SettingsGroup sectionOf system 分支新增「工具」小节(tool_websearch_* 前缀, 对齐后端 system 组承载, 不新建 Tab) - 商量-2026-11-24
+### 1.7.10.1 新增功能
+[feat] feat:search_web 接入 Tavily 搜索后端 _search_tavily(原生 REST api.tavily.com/search, 需 key) + 注册键 tool_websearch_Tavily_key(env TAVILY_API_KEY 覆盖, ENV_INJECTED_KEYS 与键名严格对应) + config.example 增键 + 前端 SettingsGroup sectionOf system 分支新增「工具」小节(不新建 Tab, 学习现有 system 组小节做法) - 商量-2026-11-24
+v1.7.9
+发布时间: 2026-11-24 08:48:22 - 商量-2026-11-24
+## v1.7.9汇总 从上一个 tag v1.7.8(commit 4f753decd, 2026-11-21)以来本线全部 40 个 commit(feat 11 / fix 7 / refactor 5 / docs 12 / perf 1 / chore 4); 本批以搜索抓取链升级为轴心, 含MCP传输层抽取到mcp_client(限体/末帧/error信封)、三家外部API合并_fetch_via_external_providers(Jina→Exa→Firecrawl)、单家timeout_cap(20/20/20/15)修复Bing永轮不到、run_prompt布尔透传消除(KISS)、搜索Web能力升级(错误码单一来源/链级预算/冷却分级/SSE取末帧)、OmniVPN两级池轮转方案与节点池动态展示、MediaCrawler开源项目分析与集成方案A/B - 商量-2026-11-24
+### 1.7.9.1 新增功能
+[feat] feat:搜索抓取链MCP传输层抽取与抓取链整改 MCP传输收敛到mcp_client(限体/末帧/error信封)+三家外部API合并_fetch_via_external_providers(Jina→Exa→Firecrawl)+单家timeout_cap(20/20/20/15)修复Bing永轮不到+run_prompt布尔透传消除(KISS, 决策闭包收口) - 商量-2026-11-24
+[feat] feat:search_web/fetch_webpage 搜索抓取链扩展(P0修复UA bug+P1抓取链Exa/Firecrawl兜底+P2搜索链firecrawl/tinyfish接入) - 商量-2026-11-23
+[feat] feat:search_web 搜索Web能力升级设计三堂会审整改 错误码单一真源(ERR_NET_*八码迁tool_constants)+链级共享预算(budget_sec逐家下传remaining)+冷却分级(NETWORK/INTERNAL不冷却,cooldown_info带原因码)+空值守卫下沉(只带structuredContent的合法MCP响应不再被吞成success 0)+SSE取末帧+JSON容错围栏+searchweb配置清理(TOOL_TIMEOUTS/HINTS/RETRY_CONFIG移出)+tool_facade沙箱预检对齐 - 小欧-2026-11-23
+[feat] feat:OmniVPN/proxy-on.ps1+_bucket_stats.py+_verify_current.py+update-pool-quick.ps1+.gitignore 新增[4]两级代理链动态展示,修复池统计顶格name解析归零,巡检检测活改生效config,新增当前配置版测活脚本,桶快照全量刷新并归位backup目录忽略 - 小欧-2026-11-23
+[feat] feat:search_web 接入统一调度底座(S2)+MCP结构化优先(S1)+流式读取限体(S4) - 小欧-2026-11-23
+[feat] feat:清除本机代理残留 一键清理系统代理三键 - 商量-2026-11-22
+[feat] feat:QuestionDock标题栏并入问题header(需要你回答+下划线STRONG正文字号+细竖线, 题干区不再重复渲染DRY) + PanelCard标题span补minWidth:0长标题可收缩省略号防顶开操作 + 底部取消改忽略(语义贴切动作不变) - 商量-2026-11-22
+[feat] feat:stepStyles.ts新增WARNING_BRIGHT亮警告色token(#fa8c16太阳橙, warning语义) + ScheduleCard计划入口N/M用WARNING_BRIGHT: 用户令改天气太阳圆球主体色, 新增warning语义token(不用WAIT_ACTION非warning名), 深色WARNING保留; 12px小字对比2.4:1偏浅已注释说明 - 商量-2026-11-22
+[feat] feat:exit_probe.py 两级池桶查询增强 v2.9: 新增--pool全桶普查(遍历池成员实测出口桶去重统计落盘log\pool_buckets-<池名>.json) + 不带参数默认附带[5]两级池当前出口桶(切顶层PROXY查桶后恢复), 输出节编号+缩进+字段对齐与其他bat一致 - 小欧-2026-11-22
+[feat] feat:OmniVPN两级池轮转方案 应对429配额池: config.yaml升级两级池(10印尼跳板+201二级出口, 二级挂dialer-proxy经一级中转), exit_rotator.py v2.0双组轮转(--mode exit/indonesia/both), _fetch2.py新增v2rayfree/nodesradar源并支持Clash YAML转URI, proxy-on/off/switch/rebuild/update-pool脚本版本升级(出口失联自动切活节点+阶段编号输出) - 小欧-2026-11-22
+[feat] feat:generation_client.py,sensenova.py,base.py,FUNCTIONS.md 生图端点按适配器选(sensenova有参考图走/images/edits+images:[{image_url}]方言) - 小欧-2026-11-22
+### 1.7.9.2 缺陷修复
+[fix] fix:search_web Parallel结构化结果异常回落text解析消除边缘退化 - 小欧-2026-11-23
+[fix] fix:tool_facade 沙箱预检与 agent 链路对齐(仅 sandbox_required=True 才预检) - 小欧-2026-11-23
+[fix] fix:build_spa.ps1 部署入口统一调用 deploy_spa.bat, 目标路径由 bat 单点定义, 消除与用户修改的 E 盘部署目录不一致 - opencode-2026-11-22
+[fix] fix:proxy-off 系统代理取消改删三键彻底清除代理残留 - 商量-2026-11-22
+[fix] fix:ContextOverviewCard浮层改topRight靠右向上弹(入口在taskinfo右组, 原centered视口居中遮中央聊天区) + maxHeight改calc(100vh-170px)修topRight向上弹顶部跑出视口(预留入口到底部140+顶部留白32, 超出走内部滚动) - 商量-2026-11-22
+[fix] fix:sandbox 沙箱预检shell改纯静态+JobObject误杀面收敛 - 小欧-2026-11-22
+[fix] fix:TrustPanel 信任路径允许折行完整展示 - 商量-2026-11-22
+### 1.7.9.3 重构与优化
+[refactor] refactor:三堂会审整改 清理编号/评审信息乱插 前端6文件(删除[20]/doc[48]/[29]/三堂会审字样)+exit_probe编辑历史顺序(v1.2~v2.0移到v2.1前) - 商量-2026-11-22
+[refactor] refactor:ScheduleCard 执行计划浮层标题行与底部位置互换 进度汇总(4/6已完成)移底部标题行只留当前状态(进行中/全部完成) - 商量-2026-11-22
+[refactor] refactor:frontend 编辑历史合规整改 精简超长条目清理编号引用散落移头部+ clearSteps补清scheduleList - 商量-2026-11-22
+[refactor] refactor:TestConnectionProbe 结果提示重构为图标+短标题+Tooltip 一行显示不折行 - 商量-2026-11-22
+[refactor] refactor:生成产物blob渲染 抽useAttachmentBlob公用hook收敛取流/懒加载/revoke, 产物data带session_id消除全局前台会话依赖 - 小欧-2026-11-22
+### 1.7.9.4 文档
+[docs] docs:[54]MediaCrawler开源项目分析报告 [55]集成方案A服务集成 [56]集成方案B代码集成 [57]搜索抓取链三堂会审报告 - 商量-2026-11-24
+[docs] docs:[53]搜索抓取Provider多方求证实测与准确接入方案 第8章改写为详细设计分两节(8.1搜索链/8.2抓取链)含端点顺序首选次选理由+完整代码 四家keyless实测可用仅Tavily需key - 商量-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 按[53]多方求证实测修正keyless结论 四家免key实测可用仅Tavily需key TinyFish免initialize握手 同步2.2/2.3/3.2/3.4/4.3/6.5/7.2/7.5/7.7/8.1/9.4 - 商量-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 三堂会审整改后同步(错误码单一真源/链级预算/冷却分级/空值守卫/SSE取末帧) - 小欧-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 S1代码同步整改后回落逻辑 - 小欧-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 6.3.1插槽全景 底座与provider分层及增删换操作语义 - 商量-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 第一阶段会审整改 取消类异常穿透/空结果语义保持/HTTP400-404归UPSTREAM_BROKEN/NEED_SETUP提示分派/NetError穿透与RPC信封检查/风险清单改为设计内闭环消解 - 商量-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 全文一致性核查修正接口签名与429表述 - 小欧-2026-11-23
+[docs] docs:[52]搜索Web能力升级设计 新增两阶段实施规划与代码级详细设计 - 小欧-2026-11-23
+[docs] docs:stepStyles.ts WARNING注释同步蓝紫色(用户将WARNING改hsla(244,79%,49%,0.94)蓝紫, 注释仍写深珊瑚且声称保留不变与代码矛盾, 三堂会审发现后同步注释为实际蓝紫描述, 代码值不动) - 商量-2026-11-22
+[docs] docs:生图生视频浏览器全分支测试笔记-小健-2026-11-21.md 从notes/移至doc-测试与审查/ - 小欧-2026-11-22
+[docs] docs:[7]系统新增能力详细说明-从v1.6.3到v1.7.8 新建架构能力说明书,覆盖507commit/14次升级/10条新能力线 - 小欧-2026-11-21
+### 1.7.9.5 性能优化
+[perf] perf:OmniAgentBackend.spec 打包瘦身 排除环境自带ML包(datasets/torch/transformers/spacy链)并拆分requirements为运行时+开发打包+可选三文件 - opencode-2026-11-23
+### 1.7.9.6 杂项
+[chore] chore:OmniVPN config.yaml 节点池数据更新(两级池轮转方案, 10印尼跳板+201二级出口, 应对429配额池) - 小欧-2026-11-23
+[chore] chore:deploy_spa 部署目录由 G 改为 E - 商量-2026-11-22
+[chore] chore:config.yaml.example 同步真实config缺失配置项: 补sensenova-u1.5-lite模型块(文生图/图片编辑)与kimi-k3 range/param_options/model_params, 各模型补context_length/max_output_length, kilo补name/label, 免费面补longcat-2.5-free/minimax-m3.1-flash-free及context_length覆盖 - 小欧-2026-11-22
+[chore] chore:.gitignore OmniVPN测试文件入库: 忽略OmniVPN/tests/目录(本地测试配置/产物)与OmniVPN/mihomo/config-expand-test.yaml(含明文节点口令), 测试文件移至tests/不入库 - 小欧-2026-11-22
 v1.7.8
 发布时间: 2026-11-21 21:05:00 - 小欧-2026-11-21
 ## v1.7.7汇总 从上一个 tag v1.7.7(commit 3ddad4db1, 2026-11-19)以来本线全部 61 个 commit(feat 12 / fix 16 / refactor 16 / docs 13 / perf 1 / test 1 / chore 1 / merge 1); 本批以生图生视频接入对话工具链为轴心, 含图床公网化(i2v)、i2i 本地编辑、生图生视频全能力(size/ratio/三模式)、厂商响应落点与规格口径、产物声明契约收敛到 app/utils/artifacts.py、存储目录 db/ 归位与日志保留期、后台查询工具删除、会话产物规范文档[7] - 小欧-2026-11-21

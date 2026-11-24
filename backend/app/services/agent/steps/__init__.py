@@ -27,6 +27,10 @@ Updated: 2026-11-13 商量 - 撤销同日误登的 NOTICE_KINDS "bg_shell_done"(
   不产生 notice 信封帧, 登记为死配置; 撤销依据复核) — 商量 2026-11-13
 Updated: 2026-11-13 商量 - 后台完成通知改走注入/续跑业务流: 不再登记 NOTICE_KINDS(死配置已撤),
   后台命令结果由续跑任务注入消息承载 — 商量 2026-11-13
+Updated: 2026-11-24 小欧 - NOTICE_KINDS 补登 5 个实际在用的 kind(缺登 7+ 天):
+  trimming/react_step:392, retrying/react_step:452+handle_answer:173,
+  rate_limit_wait/react_step:445, schedule/tools/agent/schedule.py,
+  extracting/tools/network/fetch_webpage.py; 纪律"新增先登记"闭合
 """
 from .action_step import ActionStep
 from .base import MetaStep, ReasoningStep
@@ -93,13 +97,19 @@ ALL_STEP_TYPES = frozenset({
 
 # ============================================================
 # 通知信封 kind 登记源(唯一登记处) — 小欧-2026-10-25
-# 纪律: 新增通知类型必须先在此登记, 前端 execution.ts NoticeKind 同步。
+# 纪律: 新增通知类型必须先在此登记; 前端 notice_kind 为开放 string(无独立 union 类型),
+#   同步点=execution.ts 枚举注释 + infoMaps.NOTICE_CONFIG 查表(schedule 走独立 onScheduleUpdate 通道)。
 # 信封结构: type="notice" + kind(通知种类) + phase(阶段: start/done/failed) + content(文案)
 # 事前通知(phase=start)与事后通知(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
 NOTICE_KINDS = frozenset({
-    "summarizing",  # 摘要生成(start 阶段调 LLM 压缩历史)
-    "installing",   # 依赖安装(缺库自愈 pip install)
-    "refs_ready",   # 输入框引用处置汇总(引用进入本轮/全部不可用) — 小欧 2026-10-30
-    "ws_inject",    # 事项目录块超限省略提示(只提示, 不阻断) — 小欧 2026-10-31
+    "summarizing",    # 摘要生成(start 阶段调 LLM 压缩历史)
+    "installing",     # 依赖安装(缺库自愈 pip install)
+    "refs_ready",     # 输入框引用处置汇总(引用进入本轮/全部不可用) — 小欧 2026-10-30
+    "ws_inject",      # 事项目录块超限省略提示(只提示, 不阻断) — 小欧 2026-10-31
+    "trimming",       # 上下文裁剪(裁掉约N tokens, 瞬时单发 done) — 小欧 2026-11-01
+    "retrying",       # LLM 重试(429/空响应/主链 L1L2, start→首chunk/response done) — 小欧 2026-11-07
+    "rate_limit_wait",# 模型限速冷却(429·延时, 可中断倒计时) — 小欧 2026-11-08
+    "schedule",       # 计划清单更新(三态 done/failed 走 notice 信封, items 载荷) — 小欧 2026-11-19
+    "extracting",     # 网页 prompt 提取(start/done/failed, fetchpage 工具内 LLM 提取) — 小沈 2026-10-26
 })
 

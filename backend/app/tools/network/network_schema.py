@@ -8,6 +8,13 @@
 # 2026-07-25 - 小欧 - DownloadFileInput.dest 补充路径限制说明(不支持绝对路径/../)
 # 2026-10-18 - 小欧 - DownloadFileInput.dest 描述订正: 支持绝对路径(原样使用), 相对路径相对下载目录, 两者均禁止 ../
 # 2026-10-26 - 小沈 - FetchWebpageInput新增save_to字段; extract_format描述加MD守护说明; timeout默认30→60。
+# 2026-11-23 小欧 - SearchWebInput新增timeout(链级共享预算, 默认90): 无此参数时保险丝按无inner渐进算出60s,
+#   小于三家降级链最坏耗时80s, 整链会被外层掐断且attempts/已得结果全丢 — 小欧-2026-11-23
+# 2026-11-24 商量 - SearchWebInput新增docstring(能力/效果说明, 规范第3条"tool描述的增强信息"):
+#   多引擎串行降级链+URL去重合并+可选并行合并(SEARCH_PARALLEL_MERGE默认关), 让LLM了解搜索效果可能变化 — 商量-2026-11-24
+
+# 2026-11-24 商量 - SearchWebInput docstring 订正: 默认行为为并行(SEARCH_PARALLEL_MERGE 默认开), 前3家并发+串行尾兜底, 如实描述不再写默认关 — 商量-2026-11-24
+
 """
 Network Schema - 网络工具参数模型
 
@@ -29,6 +36,8 @@ Author: 小沈 - 2026-04-29
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.tools.tool_constants import SEARCH_WEB_TIMEOUT_DEFAULT
 
 
 class HttpRequestInput(BaseModel):
@@ -96,6 +105,12 @@ class FetchWebpageInput(BaseModel):
 
 
 class SearchWebInput(BaseModel):
+    """搜索引擎查询工具
+
+    【能力】支持工具内部多引擎并行搜索: 默认3家 exa/tavily/parallel引擎 + 串行尾兜底(链尾 tinyfish/firecrawl + bing);
+    一家失败/限流自动降级不拖垮整链; 结果按 URL 归一化去重合并, 保首源顺序。
+    【效果】默认并行: 并发搜索更快更全, 不足/全败续串行尾兜底; 链级共享预算封顶(默认90s)。
+    """
     query: str = Field(
         ..., description="搜索查询字符串"
     )
@@ -111,15 +126,18 @@ class SearchWebInput(BaseModel):
     proxy: Optional[str] = Field(
         default=None, description="代理地址"
     )
+    timeout: int = Field(
+        default=SEARCH_WEB_TIMEOUT_DEFAULT, ge=10, le=180, description="本次搜索总时间上限(秒, 多搜索源共享此预算; 默认90, 覆盖三家依次降级的最坏耗时)"
+    )
 
 
 class NetworkDiagnoseInput(BaseModel):
     """网络连通性诊断工具
-    
+
     【mode参数】决定诊断类型：
     - ping: ICMP可达性检测(主机级)
     - port: TCP端口检测(服务级)
-    
+
     【使用示例】
     - ping测试 → ping_port(host="8.8.8.8")
     - 端口检测 → ping_port(host="8.8.8.8", mode="port", port=53)

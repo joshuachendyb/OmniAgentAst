@@ -194,6 +194,9 @@
 # 2026-11-15 小欧 - 块标志改用 app.wire_prefix(ENV_WS_OPEN/ENV_REFS_OPEN), 消除对 workspace_block/render 的字面量再导出依赖 — 小欧-2026-11-15
 # 2026-11-15 小欧 - 同签名判定两处方案注释同步: 签名改仅主调用(并行pending不参与重复判定), 实现收敛于 react_inference._tool_call_signature — 小欧-2026-11-15
 
+# 2026-11-24 小欧 - notice 恢复清除收口: 抽 _clear_active_notices 供 chunk/response 两路共用(DRY)——
+#   原 done 仅挂 chunk 分支, 降级 Text 以终结 response 收尾时 retrying/rate_limit_wait 不清(位置2残留); 现任一正常输出皆复位
+
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 拆分后专注"单步编排")
 
 职责: 单步编排(LLM调用准备→流式调用→响应分发), 不包含主循环调度/类型分派/推断基元。
@@ -307,6 +310,21 @@ async def _absorb_inbox(agent) -> int:
         f"形态={'并入末条user(锚不变)' if _merge_into_last else f'独立成轮(锚uid={_uid})'}"
     )
     return len(_injected)
+
+
+async def _clear_active_notices(agent) -> None:
+    """首个正常输出(原生chunk或终结response)到达时清除活跃 notice(retrying/rate_limit_wait) — 小欧-2026-11-24
+
+    原 done 清除只挂在 chunk 分支, 降级 Text 若以终结 response 收尾则 done 不发致位置2 残留;
+    现抽为单点收口, chunk 与 response 两路共用(DRY), 任一正常输出皆复位。
+    """
+    if getattr(agent, "_pause_notice_active", False):
+        await agent._step_emitter.emit_notice("rate_limit_wait", "done", "恢复")
+        agent._pause_notice_active = False
+    if getattr(agent, "_retrying_notice_active", False):
+        await agent._step_emitter.emit_notice("retrying", "done", "已恢复")
+        agent._retrying_notice_active = False
+
 
 
 async def _process_single_step(agent, chunk_buffer) -> List:
@@ -439,14 +457,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             chunk_type, chunk_data = "chunk", item   # 原生 chunk: 喂下方 chunk 分支(原 "chunk" 拆包语义)
 
         if chunk_type == "chunk":
-            if getattr(agent, "_pause_notice_active", False):
-                # 2026-11-08 小欧(设计[15]三堂会审): pause 恢复清除——首个正常 chunk 到达 → 发 notice(rate_limit_wait, done) 清位置2
-                await agent._step_emitter.emit_notice("rate_limit_wait", "done", "恢复")
-                agent._pause_notice_active = False
-            if getattr(agent, "_retrying_notice_active", False):
-                # 2026-11-07 小欧 重试恢复清除: 首个正常 chunk 到达 → 发 notice(retrying, done) 清位置2
-                await agent._step_emitter.emit_notice("retrying", "done", "已恢复")
-                agent._retrying_notice_active = False
+            await _clear_active_notices(agent)
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
             chunk_buffer.append(content)
@@ -460,6 +471,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             )
             await _emit_publish(agent._step_emitter.emit(chunk_step).to_dict())
         elif chunk_type == "response":
+            await _clear_active_notices(agent)
             llm_response = chunk_data
             _call_dur = time.time() - _call_start
             chunk_buffer.clear()
