@@ -50,6 +50,8 @@
 #   只负责"抓取+clean+落盘"(SRP); run_prompt 决策收口到 fetchpage 闭包内单点使用, 不再向下透传 — 商量-2026-11-24
 # 2026-11-24 商量 - 云端代抓前置: 外部链重排 Firecrawl→Tavily→Jina→Exa(反反爬最强的云端代抓打头, keyless 补位后置);
 #   新增 _fetch_via_tavily_extract(REST /extract, key 复用 searchweb 的 tool_websearch_Tavily_key) — 商量-2026-11-24
+# 2026-11-24 商量 - DRY修复: SPA回退分支单点直调 Jina 改走 _fetch_via_external_providers 统一链,
+#   消除绕链第二实现, 反爬 SPA 站 Firecrawl/Tavily 云端代抓得以出场 — 商量-2026-11-24
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -125,11 +127,6 @@ FETCHPAGE_PROMPT_EXTRACT_BUDGET = 60_000
 
 # 外部抓取API兜底内容的最短可用长度(字符): 低于此值视为导航壳/空页, 继续降级 — 商量 2026-11-24
 EXTERNAL_FETCH_MIN_CHARS = 200
-
-
-def _remaining_seconds(deadline: float) -> float:
-    """距抓取总预算 deadline 的剩余秒数, 下限 1s(防负值直接判超时) — 商量 2026-11-24"""
-    return max(1.0, deadline - _time_mod.perf_counter())
 
 
 def _match_attrs(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
@@ -1020,8 +1017,12 @@ async def fetchpage(
                 if not pw_res.get("error"):
                     pw_content = pw_res
                 else:
-                    ext_md = await _fetch_via_external_reader(url, _remaining_seconds(deadline), proxy)   # 小欧 2026-07-17 L2兜底
-                    if ext_md:
+                    # 2026-11-24 商量 - DRY/退化修复: 原单点直调 Jina(_fetch_via_external_reader)绕过
+                    #   _EXTERNAL_FETCHERS 统一链, 反爬 SPA 站时 Firecrawl/Tavily 云端代抓没机会出场;
+                    #   改走统一链(Firecrawl→Tavily→Jina→Exa), 首个达标即用
+                    found = await _fetch_via_external_providers(url, deadline, proxy)
+                    if found:
+                        ext_md = found[1]
                         pw_content = {"extracted_content": ext_md, "truncated": False, "content_type": "text/markdown", "status_code": 200}
 
             if pw_content:
