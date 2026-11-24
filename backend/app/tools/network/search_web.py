@@ -28,7 +28,7 @@
 # 2026-11-23 商量 - P0+P2: MCP调用headers补User-Agent(TOOL_BROWSER_UA)修Cloudflare 403(原仅Accept被Exa/Parallel拒);
 #   _search_mcp_engine支持config.extra_headers合并(TinyFish keyless header), 与UA并存 — 商量-2026-11-23
 # 2026-11-24 商量 - MCP 传输层抽到 mcp_client: 本文件不再手写请求/限体/SSE/error信封; 单家上限改由
-#   _MCP_CONFIGS.timeout_cap 声明(20/20/20/15), 与链级预算 90s 对齐, 修复 Bing 被前四家吃满预算永远轮不到 — 商量-2026-11-24
+#   _MCP_CONFIGS.timeout_cap 声明, 与链级预算 90s 对齐, 修复 Bing 被前几家吃满预算永远轮不到 — 商量-2026-11-24
 # 2026-11-24 商量 - 链序重排(exa→tavily→parallel→tinyfish→firecrawl): 三源实测 tavily 最快(1.6s)+snippet最长+
 #   来源权威, 前移至次位; exa 48次全稳居首位; parallel 有429配额退第三; tinyfish 快但snippet短居四;
 #   firecrawl 最慢(5.7s)+免费层限速兜底, 主力价值转 scrape 模式 — 商量-2026-11-24
@@ -203,18 +203,21 @@ _MCP_CONFIGS = {
         "build_args": lambda q, n: {"query": q, "type": "auto", "numResults": n, "livecrawl": "fallback"},
     },
     # 2026-11-23 商量 - Firecrawl keyless 免费层(实测200, 免UA); 仅 scrape/search/parse 三工具限速
+    # 2026-11-24 商量 - cap 20→10: 链序重排后六家上限之和须=90(保 Bing 轮得到), firecrawl 最慢兜底且
+    #   搜索非其主业(实测均值5.7s, 10s充裕), 让位预算 — 商量-2026-11-24
     "firecrawl": {
         "url": "https://mcp.firecrawl.dev/v2/mcp",
         "tool_name": "firecrawl_search",
-        "timeout_cap": 20,
+        "timeout_cap": 10,
         "build_args": lambda q, n: {"query": q, "limit": n},
     },
     # 2026-11-23 商量 - TinyFish keyless(实测200, 免握手); 须带 X-TinyFish-Access-Mode: keyless header;
     #   build_args 不带 count(实测 count 参数致 400, 仅 query 200)
+    # 2026-11-24 商量 - cap 15→10: 同上预算收敛(实测延迟1.7~3s, 10s充裕) — 商量-2026-11-24
     "tinyfish": {
         "url": "https://agent.tinyfish.ai/mcp",
         "tool_name": "search",
-        "timeout_cap": 15,
+        "timeout_cap": 10,
         "build_args": lambda q, n: {"query": q},
         "extra_headers": {"X-TinyFish-Access-Mode": "keyless"},
     },
@@ -623,8 +626,8 @@ async def searchweb(
 ) -> Dict[str, Any]:
     """搜索网络 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-10-20 域名过滤参数口径与schema对齐(str,逗号分隔)
     2026-11-23 小欧 - timeout = 链级共享预算(秒): 每家后端只拿剩余时间, 预算用完即停并如实报超时
-    2026-11-24 商量 - 单家上限见 _MCP_CONFIGS.timeout_cap: 20+20+20+15 留 15 给 Bing, 合计等于本预算默认值,
-      前四家最坏也吃不掉 Bing 的兜底时间"""
+    2026-11-24 商量 - 单家上限见 _MCP_CONFIGS.timeout_cap: 六家之和=90(exa20+tavily15+parallel20+
+      tinyfish10+firecrawl10+bing15), 等于本预算默认值, 前几家最坏也吃不掉 Bing 的兜底时间"""
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         t0 = _time_mod.perf_counter()
