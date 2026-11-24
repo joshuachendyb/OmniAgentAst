@@ -187,7 +187,7 @@ async def run_chain(
         remaining = None if deadline is None else deadline - time.monotonic()
         if remaining is not None and remaining <= 0:
             attempts.append({"backend": backend.id, "result": "BUDGET_EXHAUSTED"})
-            last_error = NetError(ERR_NET_TIMEOUT, f"搜索总预算{budget_sec:.0f}秒已耗尽")
+            last_error = NetError(ERR_NET_TIMEOUT, f"总预算{budget_sec:.0f}秒已耗尽")
             budget_exhausted = True
             break
 

@@ -42,6 +42,12 @@
 #   other_data["artifacts"](未落盘不塞空清单), success/warning 两态都声明 — 小欧-2026-11-21
 # 2026-11-23 商量 - P1抓取链(8.2): 新增 _fetch_via_exa/_fetch_via_firecrawl 外部API兜底(补 Jina 单点, keyless);
 #   三个接入点(Jina优先分支/js_render失败分支/403降级分支) Jina失败后追加 Exa→Firecrawl, 成功即返回(同 Jina 成功规则) — 商量-2026-11-23
+# 2026-11-24 商量 - 抓取链整改: 三个接入点合并为 _fetch_via_external_providers(Jina→Exa→Firecrawl 逐家,
+#   每家只拿剩余预算, 不再预热后续 provider/full timeout) + 主函数闭包统一包装响应(消三份重复, 403分支补 save_to);
+#   MCP 传输细节收敛到 mcp_client(限体/末帧/error信封), 外部腿透传 proxy; 清洗与 200 字符门槛各只留一处 — 商量-2026-11-24
+
+# 2026-11-24 商量 - KISS: run_prompt 布尔透传消除 — _external_api_fallback 去 prompt/timeout/t0/run_prompt 四参,
+#   只负责"抓取+clean+落盘"(SRP); run_prompt 决策收口到 fetchpage 闭包内单点使用, 不再向下透传 — 商量-2026-11-24
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -86,6 +92,7 @@ from app.tools.network.http_client_sdk import (
     create_http_client,
     is_ssrf_blocked_error,
 )
+from app.tools.network.mcp_client import call_tool, result_structured, result_text
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
     ERR_NET_UNKNOWN,
@@ -104,7 +111,6 @@ from app.tools.toolhelper.tool_utils import save_text_to_file
 from app.tools.validate.timeout_validator import validate_timeout
 from app.tools.validate.url_validator import transcode_url, validate_proxy, validate_url
 from app.utils.artifacts import declare_artifact_file  # 产物声明(五字段契约) — 小欧 2026-11-21
-from app.utils.json_utils import parse_json  # 2026-11-23 商量 - Exa/Firecrawl MCP抓取解析
 from app.utils.text_utils import smart_truncate_text
 
 _VOID_ELEMENTS = frozenset({
@@ -114,6 +120,14 @@ _VOID_ELEMENTS = frozenset({
 
 # prompt 提取的正文预算(字符) — 防巨页全文直灌 LLM 爆上下文(保留头尾省略中间) — 小欧 2026-10-20
 FETCHPAGE_PROMPT_EXTRACT_BUDGET = 60_000
+
+# 外部抓取API兜底内容的最短可用长度(字符): 低于此值视为导航壳/空页, 继续降级 — 商量 2026-11-24
+EXTERNAL_FETCH_MIN_CHARS = 200
+
+
+def _remaining_seconds(deadline: float) -> float:
+    """距抓取总预算 deadline 的剩余秒数, 下限 1s(防负值直接判超时) — 商量 2026-11-24"""
+    return max(1.0, deadline - _time_mod.perf_counter())
 
 
 def _match_attrs(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
@@ -686,82 +700,89 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout: float,
 # 外部抓取API兜底(免费第三方Jina Reader,无需API key,零本地依赖)
 # 特点: 自有IP+指纹, 能绕过Cloudflare等反爬; 缺点是可能也被反爬(稳定性一般)
 # 未来可替换为: Firecrawl/Parallel(需API key+费用, 但更稳定) — 小欧 2026-07-29
-async def _fetch_via_external_reader(url: str, timeout: int) -> Optional[str]:
-    """外部抓取API兜底(Jina Reader, 零本地浏览器, 可选) — 小欧 2026-07-17"""
+async def _fetch_via_external_reader(url: str, timeout: float, proxy: Optional[str] = None) -> Optional[str]:
+    """外部抓取API兜底(Jina Reader, 零本地浏览器, 可选) — 小欧 2026-07-17
+    timeout 为本次预算剩余秒数, 与 Exa/Firecrawl 同一条时间线 — 商量 2026-11-24"""
     try:
-        async with create_http_client(timeout_sec=timeout) as client:
+        async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
             r = await client.get(f"https://r.jina.ai/{url}")
             if r.status_code == 200:
                 md = r.text.strip()
-                if len(md) > 50:
+                if md:
                     return md
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[fetchpage] Jina Reader 失败: {type(exc).__name__}: {str(exc)[:FETCH_WEBPAGE_OUTPARM_LIMIT_DESC]}")
     return None
 
 
-# 2026-11-23 商量 - 8.2.2/8.2.3 抓取链外部API兜底(补 Jina 单点, keyless):
+# 2026-11-23 商量 - 抓取链外部API兜底(补 Jina 单点, keyless):
 #   Exa web_fetch_exa(须带浏览器UA实测必需) / Firecrawl firecrawl_scrape(免费层JS渲染+强反爬, 免UA)
 #   两者均走 MCP tools/call, 返回干净 markdown; 失败返回 None 不抛(降级链继续)
-async def _fetch_via_exa(url: str, timeout: int) -> Optional[str]:
+async def _fetch_via_exa(url: str, timeout: float, proxy: Optional[str] = None) -> Optional[str]:
     """Exa web_fetch_exa 抓取兜底(keyless, 须带浏览器UA) — 商量 2026-11-23"""
-    payload = {
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": "web_fetch_exa", "arguments": {"urls": [url]}},
-    }
     try:
-        async with create_http_client(timeout_sec=timeout) as client:
-            async with client.stream("POST", "https://mcp.exa.ai/mcp", json=payload,
-                    headers={"Accept": "application/json, text/event-stream", "User-Agent": TOOL_BROWSER_UA}) as resp:
-                resp.raise_for_status()
-                raw = b"".join([c async for c in resp.aiter_bytes()]).decode("utf-8", "replace")
-        data = parse_json(raw, raise_on_error=True) if raw.lstrip().startswith("{") else None
-        if data is None:
-            for line in raw.split("\n"):
-                line = line.strip()
-                if line.startswith("data: "):
-                    data = parse_json(line[6:], raise_on_error=True)
-                    break
-        content_list = (data or {}).get("result", {}).get("content", [])
-        md = "\n".join(str(c.get("text", "")) for c in content_list if c.get("type") == "text")
-        if len(md) > 50:
-            return _clean_markdown_content(md)
-    except Exception:
-        pass
-    return None
+        frame = await call_tool("https://mcp.exa.ai/mcp", "web_fetch_exa", {"urls": [url]}, timeout, proxy)
+        return result_text(frame) or None
+    except Exception as exc:
+        logger.warning(f"[fetchpage] Exa 抓取失败: {type(exc).__name__}: {str(exc)[:FETCH_WEBPAGE_OUTPARM_LIMIT_DESC]}")
+        return None
 
 
-async def _fetch_via_firecrawl(url: str, timeout: int) -> Optional[str]:
+async def _fetch_via_firecrawl(url: str, timeout: float, proxy: Optional[str] = None) -> Optional[str]:
     """Firecrawl firecrawl_scrape 抓取兜底(keyless 免费层, JS渲染+强反爬) — 商量 2026-11-23"""
-    payload = {
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": "firecrawl_scrape", "arguments": {"url": url, "formats": ["markdown"]}},
-    }
     try:
-        async with create_http_client(timeout_sec=timeout) as client:
-            async with client.stream("POST", "https://mcp.firecrawl.dev/v2/mcp", json=payload,
-                    headers={"Accept": "application/json, text/event-stream"}) as resp:
-                resp.raise_for_status()
-                raw = b"".join([c async for c in resp.aiter_bytes()]).decode("utf-8", "replace")
-        data = parse_json(raw, raise_on_error=True) if raw.lstrip().startswith("{") else None
-        if data is None:
-            for line in raw.split("\n"):
-                line = line.strip()
-                if line.startswith("data: "):
-                    data = parse_json(line[6:], raise_on_error=True)
-                    break
-        result = (data or {}).get("result", {})
-        # 2026-11-23 商量 - 实测 firecrawl_scrape 返回 structuredContent{markdown} 干净文本; text 是 JSON 包裹, 优先 markdown
-        _sc = result.get("structuredContent")
-        md = str(_sc.get("markdown", "")) if isinstance(_sc, dict) and _sc.get("markdown") else ""
-        if not md:
-            content_list = result.get("content", [])
-            md = "\n".join(str(c.get("text", "")) for c in content_list if c.get("type") == "text")
-        if len(md) > 50:
-            return _clean_markdown_content(md)
-    except Exception:
-        pass
+        frame = await call_tool(
+            "https://mcp.firecrawl.dev/v2/mcp", "firecrawl_scrape",
+            {"url": url, "formats": ["markdown"]}, timeout, proxy,
+        )
+        # 实测 firecrawl_scrape 返回 structuredContent{markdown} 干净文本; text 是 JSON 包裹, 优先 markdown
+        md = str(result_structured(frame).get("markdown") or "")
+        return md or result_text(frame) or None
+    except Exception as exc:
+        logger.warning(f"[fetchpage] Firecrawl 抓取失败: {type(exc).__name__}: {str(exc)[:FETCH_WEBPAGE_OUTPARM_LIMIT_DESC]}")
+        return None
+
+
+_EXTERNAL_FETCHERS = (
+    ("Jina Reader", _fetch_via_external_reader),
+    ("Exa", _fetch_via_exa),
+    ("Firecrawl", _fetch_via_firecrawl),
+)
+
+
+async def _fetch_via_external_providers(url: str, deadline: float, proxy: Optional[str]) -> Optional[Tuple[str, str]]:
+    """外部抓取API降级链(Jina→Exa→Firecrawl): 剩余预算内逐家尝试, 首个达标内容即返回 (来源, 正文)，全失败 None — 商量 2026-11-24"""
+    for provider, fetch in _EXTERNAL_FETCHERS:
+        left = deadline - _time_mod.perf_counter()
+        if left <= 1:
+            logger.warning(f"[fetchpage] 外部API兜底预算耗尽(剩余{left:.1f}s), 跳过{provider}")
+            return None
+        md = await fetch(url, left, proxy)
+        if md and len(md) >= EXTERNAL_FETCH_MIN_CHARS:
+            return provider, md
     return None
+
+
+async def _external_api_fallback(
+    url: str,
+    deadline: float,
+    proxy: Optional[str],
+    save_to: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """外部抓取API兜底: 抓取+clean+落盘, 只回 raw dict; prompt 提取决策上移到调用闭包 — 商量 2026-11-24
+
+    单一职责(SRP): 本函数不承担 LLM 提取, 消除 run_prompt 布尔透传(KISS)。提取由 fetchpage 内闭包决定。
+    """
+    found = await _fetch_via_external_providers(url, deadline, proxy)
+    if not found:
+        return None
+    provider, md = found
+    content = _clean_markdown_content(md)
+    save_note = ""
+    saved_path = ""
+    if save_to:
+        save_note, saved_path = await save_text_to_file(save_to, content)
+    return {"provider": provider, "content": content, "save_note": save_note, "saved_path": saved_path}
 
 
 # save_text_to_file 已抽取至 app/tools/toolhelper/tool_utils.py 公用函数 — 小沈 2026-10-26
@@ -809,6 +830,38 @@ async def fetchpage(
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
+    # 外部抓取API与静态抓取共享一条时间线: 任何一个网络腿都不得超过声明的 timeout — 商量 2026-11-24
+    deadline = t0 + timeout
+
+    async def _external_fallback_result(run_prompt: bool) -> Optional[Dict[str, Any]]:
+        """外部API兜底成功即包装成工具响应(Jina→Exa→Firecrawl, 剩余预算内逐家尝试)，全失败 None — 商量 2026-11-24
+
+        run_prompt: markdown 优先分支沿用既有定案(外部API成功不执行 prompt)，其余降级分支执行 prompt 提取。
+        """
+        fb = await _external_api_fallback(url, deadline, proxy, save_to)
+        if not fb:
+            return None
+        content = fb["content"]
+        note = fb["save_note"]
+        # run_prompt 决策在闭包内单点收口: markdown 优先分支不提取 prompt, 降级分支执行提取 (KISS 消除透传) — 商量 2026-11-24
+        if run_prompt and prompt:
+            extracted, pnote = await _extract_by_prompt(content, prompt, timeout, t0)
+            if extracted is not None:
+                content = extracted
+                note = pnote
+        detail = f"内容来自外部API({fb['provider']})兜底"
+        if prompt and not run_prompt:
+            detail += ";prompt因外部API成功未执行"
+        if note:
+            detail += f"；{note}"
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        artifacts = declare_artifact_file({}, fb["saved_path"]) if fb["saved_path"] else {}
+        if len(content) >= 100:
+            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+            return build_success(data={"content": content}, llm_data=llm_data, other_data=artifacts)
+        # 清理后过短 → warning, 与 Jina 成功路径同一口径
+        llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, 200, False, detail=detail, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
+        return build_warning(data={} if len(content) < 30 else {"content": content}, llm_data=llm_data, other_data=artifacts)
 
     try:
         # 非ASCII URL转码(IDNA+percent-encoding) — 小欧 2026-07-25  — 2026-07-28 小欧: 加 None 防御
@@ -834,71 +887,12 @@ async def fetchpage(
         headers = _build_browser_headers()
 
         # 2026-10-26 小沈 问题1-8重构: format=markdown且js_render=False时Jina优先
-        #   Jina直接出MD+绕反爬, 成功则不调LLM(prompt不执行); 失败降级httpx静态+本地库
+        #   外部API直接出MD+绕反爬, 成功则不调LLM(prompt不执行); 失败降级httpx静态+本地库
         if extract_format == "markdown" and not js_render:
-            _jina_md = await _fetch_via_external_reader(url, timeout)
-            if _jina_md and len(_jina_md) >= 200:
-                # 问题6: Jina返回走_clean_markdown_content统一质量
-                extracted_content = _clean_markdown_content(_jina_md)
-                _detail = "内容来自Jina Reader"
-                # 用户定案: Jina成功不调LLM, prompt不执行
-                if prompt:
-                    _detail += ";prompt因Jina成功未执行"
-                # 问题8: save_to落盘(走write工具完整安全链路)
-                _saved_path = ""
-                if save_to:
-                    _save_note, _saved_path = await save_text_to_file(save_to, extracted_content)
-                    if _save_note:
-                        _detail += f";{_save_note}"
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                content_len = len(extracted_content)
-                _result_data = {"content": extracted_content}
-                if content_len >= 100:
-                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                    return build_success(
-                        data=_result_data, llm_data=llm_data,
-                        # 落盘才有产物: save_to 未指定时 other_data 为空(不塞空清单)
-                        other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                    )
-                # Jina成功但内容短 → warning
-                _warn_data = {} if content_len < 30 else _result_data
-                llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, 200, False, detail=_detail, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                return build_warning(
-                    data=_warn_data, llm_data=llm_data,
-                    other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                )
-            # Jina失败 → 追加 Exa/Firecrawl 外部API兜底(8.2.4, 补 Jina 单点); 成功即返回(与Jina同规则: 不调LLM/prompt不执行)
-            #   2026-11-23 商量 - Exa 次选(带浏览器UA), Firecrawl 三选(免费层JS渲染); 全部失败才落到下方httpx静态
-            for _provider, _md in (
-                ("Exa", await _fetch_via_exa(url, timeout)),
-                ("Firecrawl", await _fetch_via_firecrawl(url, timeout)),
-            ):
-                if _md and len(_md) >= 200:
-                    extracted_content = _clean_markdown_content(_md)
-                    _detail = f"内容来自{_provider}外部API兜底"
-                    if prompt:
-                        _detail += ";prompt因外部API成功未执行"
-                    _saved_path = ""
-                    if save_to:
-                        _save_note, _saved_path = await save_text_to_file(save_to, extracted_content)
-                        if _save_note:
-                            _detail += f";{_save_note}"
-                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    content_len = len(extracted_content)
-                    _result_data = {"content": extracted_content}
-                    if content_len >= 100:
-                        llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                        return build_success(
-                            data=_result_data, llm_data=llm_data,
-                            other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                        )
-                    _warn_data = {} if content_len < 30 else _result_data
-                    llm_data = _build_fetch_webpage_llm_data("warning", duration_ms, url, extract_format, 200, False, detail=_detail, hint="尝试其他的网站地址", prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                    return build_warning(
-                        data=_warn_data, llm_data=llm_data,
-                        other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                    )
-            # 全部外部API失败 → 继续走下方httpx静态抓取(降级)
+            _external_result = await _external_fallback_result(run_prompt=False)
+            if _external_result:
+                return _external_result
+            # 外部API全部失败 → 继续走下方httpx静态抓取(降级)
 
         playwright_result = None
         js_render_ok = False
@@ -906,55 +900,10 @@ async def fetchpage(
             playwright_result = await _fetch_via_playwright(url, proxy, timeout, extract_format)
             js_render_ok = not playwright_result.get("error")
         if js_render and playwright_result.get("error"):
-            # 浏览器渲染失败, 先尝试外部API兜底(Jina Reader) — 小欧 2026-07-17
-            external_md = await _fetch_via_external_reader(url, timeout)
-            if external_md and len(external_md) >= 200:
-                # 2026-10-20 小欧 - prompt 提取接入(Jina兜底路径): 成功用提取结果, 失败降级原文
-                # 2026-10-26 小沈 - 三堂会审P0: 补t0+save_to+with_artifact_file(原路径三重缺口)
-                _ext, _note = await _extract_by_prompt(external_md, prompt, timeout, t0)
-                if _ext is not None:
-                    external_md = _ext
-                _saved_path = ""
-                if save_to:
-                    _save_note, _saved_path = await save_text_to_file(save_to, external_md)
-                else:
-                    _save_note = ""
-                _detail = "内容来自外部API(Jina Reader)兜底"
-                if _note:
-                    _detail += f"；{_note}"
-                if _save_note:
-                    _detail += f"；{_save_note}"
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                return build_success(
-                    data={"content": external_md}, llm_data=llm_data,
-                    other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                )
-            # 2026-11-23 商量 - 8.2.4: Jina失败后追加 Exa/Firecrawl 外部API兜底(同 Jina 成功规则: prompt提取+落盘)
-            for _provider, _md in (
-                ("Exa", await _fetch_via_exa(url, timeout)),
-                ("Firecrawl", await _fetch_via_firecrawl(url, timeout)),
-            ):
-                if _md and len(_md) >= 200:
-                    _ext, _note = await _extract_by_prompt(_md, prompt, timeout, t0)
-                    if _ext is not None:
-                        _md = _ext
-                    _saved_path = ""
-                    if save_to:
-                        _save_note, _saved_path = await save_text_to_file(save_to, _md)
-                    else:
-                        _save_note = ""
-                    _detail = f"内容来自外部API({_provider})兜底"
-                    if _note:
-                        _detail += f"；{_note}"
-                    if _save_note:
-                        _detail += f"；{_save_note}"
-                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=_detail, prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                    return build_success(
-                        data={"content": _md}, llm_data=llm_data,
-                        other_data=declare_artifact_file({}, _saved_path) if _saved_path else {},
-                    )
+            # 浏览器渲染失败 → 外部API兜底链(prompt 提取+落盘) — 小欧 2026-07-17
+            _external_result = await _external_fallback_result(run_prompt=True)
+            if _external_result:
+                return _external_result
             logger.warning(f"js_render渲染失败, 外部API兜底失败, 回落静态抓取: {playwright_result.get('detail')}")
             # 不return, 继续下方静态抓取
         elif js_render and not playwright_result.get("error"):
@@ -983,30 +932,11 @@ async def fetchpage(
                     mime = content_type.split(";")[0].strip().lower() if content_type else ""
 
                     if resp.status_code == 403:
-                        # [L1] 403 → 优先Jina Reader降级(免费第三方API,绕Cloudflare反爬) — 小欧 2026-07-29
-                        _jina_md = await _fetch_via_external_reader(url, timeout)
-                        if _jina_md and len(_jina_md) >= 200:
-                            # 2026-10-20 小欧 - prompt 提取接入(403→Jina降级路径): 成功用提取结果, 失败降级原文
-                            # 2026-10-26 小沈 - BUG-2修复: 加t0用总timeout剩余
-                            _ext, _note = await _extract_by_prompt(_jina_md, prompt, timeout, t0)
-                            if _ext is not None:
-                                _jina_md = _ext
-                            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                            llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=("内容来自Jina Reader降级(绕过反爬)" + ("；" + _note if _note else "")), prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                            return build_success(data={"content": _jina_md}, llm_data=llm_data)
-                        # 2026-11-23 商量 - 8.2.4: Jina失败后追加 Exa/Firecrawl 外部API兜底(同 Jina 成功规则: prompt提取)
-                        for _provider, _md in (
-                            ("Exa", await _fetch_via_exa(url, timeout)),
-                            ("Firecrawl", await _fetch_via_firecrawl(url, timeout)),
-                        ):
-                            if _md and len(_md) >= 200:
-                                _ext, _note = await _extract_by_prompt(_md, prompt, timeout, t0)
-                                if _ext is not None:
-                                    _md = _ext
-                                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                                llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, 200, False, detail=(f"内容来自{_provider}外部API兜底(绕过反爬)" + ("；" + _note if _note else "")), prompt=prompt, js_render=js_render, timeout=timeout, proxy=proxy)
-                                return build_success(data={"content": _md}, llm_data=llm_data)
-                        # [L2] Jina失败→尝试cf-mitigated UA降级 — 小欧 2026-07-29
+                        # [L1] 403 → 外部API兜底链降级(免费第三方API, 绕Cloudflare反爬) — 小欧 2026-07-29
+                        _external_result = await _external_fallback_result(run_prompt=True)
+                        if _external_result:
+                            return _external_result
+                        # [L2] 外部API失败→尝试cf-mitigated UA降级 — 小欧 2026-07-29
                         if resp.headers.get("cf-mitigated") == "challenge":
                             logger.info(f"[fetchpage] Cloudflare挑战检测,降级UA重试: {url}")
                             actual_headers["User-Agent"] = "Chrome/120.0.0.0"
@@ -1058,7 +988,7 @@ async def fetchpage(
                 if not pw_res.get("error"):
                     pw_content = pw_res
                 else:
-                    ext_md = await _fetch_via_external_reader(url, timeout)   # 小欧 2026-07-17 L2兜底
+                    ext_md = await _fetch_via_external_reader(url, _remaining_seconds(deadline), proxy)   # 小欧 2026-07-17 L2兜底
                     if ext_md:
                         pw_content = {"extracted_content": ext_md, "truncated": False, "content_type": "text/markdown", "status_code": 200}
 

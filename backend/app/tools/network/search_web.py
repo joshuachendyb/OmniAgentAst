@@ -27,6 +27,8 @@
 #   ⑥bing 全域名网络失败时上抛给底座(原来 continue 吞掉, 三家全挂也报 success 0); ⑦成功也打 attempts 日志 — 小欧-2026-11-23
 # 2026-11-23 商量 - P0+P2: MCP调用headers补User-Agent(TOOL_BROWSER_UA)修Cloudflare 403(原仅Accept被Exa/Parallel拒);
 #   _search_mcp_engine支持config.extra_headers合并(TinyFish keyless header), 与UA并存 — 商量-2026-11-23
+# 2026-11-24 商量 - MCP 传输层抽到 mcp_client: 本文件不再手写请求/限体/SSE/error信封; 单家上限改由
+#   _MCP_CONFIGS.timeout_cap 声明(20/20/20/15), 与链级预算 90s 对齐, 修复 Bing 被前四家吃满预算永远轮不到 — 商量-2026-11-24
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -39,7 +41,6 @@ N4: searchweb — 搜索网络获取最新信息
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import base64
-import json
 import re
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union
@@ -50,6 +51,12 @@ import httpx
 from app.constants import HTML_TAG_PATTERN
 from app.logger import logger
 from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.mcp_client import (
+    McpFrameMissing,
+    call_tool,
+    result_structured,
+    result_text,
+)
 from app.tools.network.net_backend import (
     Backend,
     NetError,
@@ -64,7 +71,6 @@ from app.tools.tool_constants import (
     ERR_NET_UPSTREAM_BROKEN,
     ERR_PARAM_INVALID,
     SEARCH_WEB_INER_HTML_PARSE,
-    SEARCH_WEB_MCP_MAX_BYTES,
     SEARCH_WEB_OUTPARM_LIMIT_RAW,
     SEARCH_WEB_TIMEOUT_DEFAULT,
     TOOL_BROWSER_UA,
@@ -182,17 +188,20 @@ _MCP_CONFIGS = {
     "parallel": {
         "url": "https://search.parallel.ai/mcp",
         "tool_name": "web_search",
+        "timeout_cap": 20,
         "build_args": lambda q, n: {"objective": q, "search_queries": [q], "session_id": "omniagent-search"},
     },
     "exa": {
         "url": "https://mcp.exa.ai/mcp",
         "tool_name": "web_search_exa",
+        "timeout_cap": 20,
         "build_args": lambda q, n: {"query": q, "type": "auto", "numResults": n, "livecrawl": "fallback"},
     },
     # 2026-11-23 商量 - Firecrawl keyless 免费层(实测200, 免UA); 仅 scrape/search/parse 三工具限速
     "firecrawl": {
         "url": "https://mcp.firecrawl.dev/v2/mcp",
         "tool_name": "firecrawl_search",
+        "timeout_cap": 20,
         "build_args": lambda q, n: {"query": q, "limit": n},
     },
     # 2026-11-23 商量 - TinyFish keyless(实测200, 免握手); 须带 X-TinyFish-Access-Mode: keyless header;
@@ -200,14 +209,17 @@ _MCP_CONFIGS = {
     "tinyfish": {
         "url": "https://agent.tinyfish.ai/mcp",
         "tool_name": "search",
+        "timeout_cap": 15,
         "build_args": lambda q, n: {"query": q},
         "extra_headers": {"X-TinyFish-Access-Mode": "keyless"},
     },
 }
 
-# 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行; tavily 待 S3 有 key 时接入。
+# 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行; tavily 待有 key 时接入。
 #   每个后端末参数 remaining = 链级预算剩余秒数(None=不限), 底层逐家按剩余时间收敛硬超时
-# 2026-11-23 商量 - 端点顺序(8.1.1): parallel(结构化首选)→exa(次选)→firecrawl(免费层三选)→tinyfish(备用四选)
+# 2026-11-23 商量 - 端点顺序: parallel(结构化首选)→exa(次选)→firecrawl(免费层三选)→tinyfish(备用四选)
+# 2026-11-24 商量 - 单家上限写进 _MCP_CONFIGS.timeout_cap(Bing 兜底 15s 计入总账), 上限之和与
+#   SEARCH_WEB_TIMEOUT_DEFAULT 对齐, 避免前四家吃掉全部预算导致 Bing 永远轮不到 — 商量-2026-11-24
 SEARCH_CHAIN = (
     Backend("parallel", lambda q, n, p, t: _search_mcp_engine("parallel", q, n, p, t)),
     Backend("exa", lambda q, n, p, t: _search_mcp_engine("exa", q, n, p, t)),
@@ -313,79 +325,27 @@ async def _search_mcp_engine(
     timeout_sec: Optional[float] = None,
 ) -> Optional[List[dict]]:
     """MCP搜索引擎统一入口 — 小欧 2026-06-22
-    timeout_sec: 链级预算剩余秒数(None=按单家缺省25s)，只收敛本次调用，不改变解析语义 — 2026-11-23 小欧"""
+    timeout_sec: 链级预算剩余秒数(None=按该家 timeout_cap 上限)，只收敛本次调用，不改变解析语义 — 2026-11-23 小欧"""
     config = _MCP_CONFIGS.get(engine)
     if not config:
         _search_failed(engine, "未知引擎")
         return None
 
-    payload = {
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": config["tool_name"], "arguments": config["build_args"](query, num_results)},
-    }
-    call_timeout = 25.0 if timeout_sec is None else max(1.0, min(25.0, timeout_sec))
+    cap = config["timeout_cap"]
+    call_timeout = cap if timeout_sec is None else max(0.1, min(cap, timeout_sec))
     try:
-        async with create_http_client(timeout_sec=call_timeout, proxy=proxy) as client:
-            # 2026-11-23 小欧 - S4: 流式读取并限制响应体, 避免大响应整体进内存
-            # 2026-11-23 商量 - P0 UA修复 + P2 extra_headers合并: MCP调用带浏览器UA(TOOL_BROWSER_UA)修Cloudflare 403
-            #   (原仅Accept, httpx默认python-httpx被Exa/Parallel拒); 并合并config.extra_headers(TinyFish keyless header)
-            _headers = {"Accept": "application/json, text/event-stream", "User-Agent": TOOL_BROWSER_UA}
-            _headers.update(config.get("extra_headers") or {})
-            async with client.stream("POST", config["url"], json=payload,
-                    headers=_headers) as resp:
-                resp.raise_for_status()
-                content_type = resp.headers.get("content-type", "")
-                chunks = []
-                total = 0
-                async for chunk in resp.aiter_bytes():
-                    total += len(chunk)
-                    if total > SEARCH_WEB_MCP_MAX_BYTES:
-                        raise NetError(ERR_NET_UPSTREAM_BROKEN, f"响应超过{SEARCH_WEB_MCP_MAX_BYTES}字节")
-                    chunks.append(chunk)
-                raw_text = b"".join(chunks).decode("utf-8", errors="replace")
+        frame = await call_tool(
+            config["url"], config["tool_name"], config["build_args"](query, num_results),
+            call_timeout, proxy, config.get("extra_headers"),
+        )
+        text = result_text(frame)
+        structured = result_structured(frame)
 
-            if "text/event-stream" in content_type or raw_text.lstrip().startswith("data: "):
-                # 2026-11-23 小欧 - 整改: 取最后一个携带 result/error 的帧; 首帧常是 notifications/progress,
-                #   原实现遇到首个可解析帧就 break, 会把进度通知当结果 → "返回空数据"
-                data = None
-                fallback = None
-                for line in raw_text.split("\n"):
-                    line = line.strip()
-                    if not line.startswith("data: "):
-                        continue
-                    try:
-                        frame = json.loads(line[6:])
-                    except json.JSONDecodeError:
-                        continue
-                    fallback = frame
-                    if isinstance(frame, dict) and ("result" in frame or "error" in frame):
-                        data = frame
-                if data is None:
-                    data = fallback
-                if data is None:
-                    _search_failed(engine, f"SSE无有效JSON帧: {raw_text[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
-                    return None
-            else:
-                # 2026-11-23 小欧 - 流式模式下 body 未入 resp._content, 直接解析已拼接的受限文本
-                data = json.loads(raw_text)
-
-            # 2026-11-23 小欧 - MCP 特有: HTTP 200 也可能带 JSON-RPC error envelope, 不检查会被当空数据吞掉
-            rpc_error = data.get("error")
-            if isinstance(rpc_error, dict):
-                raise NetError(ERR_NET_UPSTREAM_BROKEN,
-                               f"JSON-RPC error: {str(rpc_error.get('message', ''))[:SEARCH_WEB_OUTPARM_LIMIT_RAW]}")
-
-            content_list = (data.get("result") or {}).get("content") or []
-            result_text = content_list[0].get("text", "") if content_list else ""
-            structured = (data.get("result") or {}).get("structuredContent") or {}
-
-    # 2026-11-23 小欧 - 整改: 空值守卫下沉进各分支 —— 原来在 engine 分支前无条件 return,
-    #   MCP 只返回 structuredContent 的合法响应被当"空数据"吞掉, S1 的结构化优先在目标场景完全失效
         if engine == "parallel":
-            # 2026-11-23 小欧 - S1: 优先读 MCP 结构化结果; text 内嵌 JSON 作为同一 provider 的响应格式容错
+            # 2026-11-23 小欧 - 优先读 MCP 结构化结果; text 内嵌 JSON 作为同一 provider 的响应格式容错
             results = _parse_parallel_results(structured, num_results)
-            if not results and result_text:
-                results = _parse_parallel_results(_parse_json_text(result_text), num_results)
+            if not results and text:
+                results = _parse_parallel_results(_parse_json_text(text), num_results)
             if not results:
                 _search_failed(engine, "无搜索结果")
                 return None
@@ -394,28 +354,31 @@ async def _search_mcp_engine(
         if engine == "firecrawl":
             # 2026-11-23 商量 - Firecrawl 返回 structuredContent{data:{web:[]}}; text 内嵌 JSON 作容错
             results = _parse_firecrawl_results(structured, num_results)
-            if not results and result_text:
-                results = _parse_firecrawl_results(_parse_json_text(result_text), num_results)
+            if not results and text:
+                results = _parse_firecrawl_results(_parse_json_text(text), num_results)
             if not results:
                 _search_failed(engine, "无搜索结果")
                 return None
             return results
 
         if engine == "tinyfish":
-            # 2026-11-23 商量 - TinyFish 返回 result_text JSON{results:[]}; 解析失败归 None 交底座
-            formatted = _parse_tinyfish_results(result_text, num_results)
+            # 2026-11-23 商量 - TinyFish 返回 text JSON{results:[]}; 解析失败归 None 交底座
+            formatted = _parse_tinyfish_results(text, num_results)
             if not formatted:
                 _search_failed(engine, "无搜索结果")
             return formatted
 
-        if not result_text:
+        if not text:
             _search_failed(engine, "返回空数据")
             return None
-        formatted = _parse_exa_results(result_text, num_results)
+        formatted = _parse_exa_results(text, num_results)
         if not formatted:
             _search_failed(engine, "无搜索结果")
         return formatted
 
+    except McpFrameMissing as exc:
+        _search_failed(engine, f"响应无可解析帧: {exc}")
+        return None
     # 2026-11-23 小欧 - 整改: 放行整个 httpx 家族(HTTPStatus/Transport/Timeout/InvalidURL)交给底座分类,
     #   原来只放行三个子类, RemoteProtocolError/ReadError 被吞成 EMPTY 导致既不分类也不冷却
     except (httpx.HTTPError, NetError):
@@ -580,8 +543,9 @@ async def searchweb(
     timeout: int = SEARCH_WEB_TIMEOUT_DEFAULT,
 ) -> Dict[str, Any]:
     """搜索网络 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-10-20 域名过滤参数口径与schema对齐(str,逗号分隔)
-    2026-11-23 小欧 - timeout = 链级共享预算(秒): 每家后端只拿剩余时间, 预算用完即停并如实报超时,
-      不再让各家硬超时之和(25+25+15×2=80s)超过外层保险丝被整链掐断"""
+    2026-11-23 小欧 - timeout = 链级共享预算(秒): 每家后端只拿剩余时间, 预算用完即停并如实报超时
+    2026-11-24 商量 - 单家上限见 _MCP_CONFIGS.timeout_cap: 20+20+20+15 留 15 给 Bing, 合计等于本预算默认值,
+      前四家最坏也吃不掉 Bing 的兜底时间"""
     proxy_valid, proxy_err, _ = validate_proxy(proxy)
     if not proxy_valid:
         t0 = _time_mod.perf_counter()

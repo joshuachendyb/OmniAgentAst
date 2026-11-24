@@ -24,6 +24,8 @@
 # 2026-11-19 - 小欧 - multiple→single 语义反转: single 默认true=单选(正向语义), 前端同步 — 小欧-2026-11-19
 # 2026-11-19 - 小欧 - 一致性整改: 加字段白名单(schema派生, 拒未知字段)/single 结构化 default:true — 小欧-2026-11-19
 # 2026-11-23 - 小欧 - 新增 SEARCH_WEB_MCP_MAX_BYTES(256KiB): MCP 搜索响应体流式读取上限, 防超大响应撑爆内存 — 小欧-2026-11-23
+# 2026-11-24 商量 - SEARCH_WEB_MCP_MAX_BYTES 扩为 MCP 传输层共用(抓取链与搜索链同一个 mcp_client 执行),
+#   名称保持不变; 同步修正 SEARCH_WEB_TIMEOUT_DEFAULT 注释里的链长算式(原写 25+25+15×2=80 与实现不符) — 商量-2026-11-24
 
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
@@ -436,8 +438,8 @@ EXECUTE_SQL_OUTPARM_LIMIT_SQL: int = 100              # 使用对象: execute_sq
 QUERY_SQL_OUTPARM_LIMIT_SQL: int = 100                # 使用对象: query_sql.py(SQL params/target 预览截断, 主函数入口统一截断)
 # network
 SEARCH_WEB_OUTPARM_LIMIT_RAW: int = 200               # 使用对象: search_web.py(raw_text/str(e)日志/error截断)
-SEARCH_WEB_MCP_MAX_BYTES: int = 256 * 1024            # 使用对象: search_web.py(MCP响应体字节上限, 超则记失败并降级)
-SEARCH_WEB_TIMEOUT_DEFAULT: int = 90                  # 使用对象: search_web.py/network_schema.py(链级共享预算默认秒: parallel25+exa25+bing15×2=80s 最坏链+余量)
+SEARCH_WEB_MCP_MAX_BYTES: int = 256 * 1024            # 使用对象: mcp_client.py(search_web/fetch_webpage 的 MCP 响应体字节上限, 超则记上游响应坏并降级)
+SEARCH_WEB_TIMEOUT_DEFAULT: int = 90                  # 使用对象: search_web.py/network_schema.py(链级共享预算默认秒: parallel20+exa20+firecrawl20+tinyfish15+bing15=90s 最坏链)
 FETCH_WEBPAGE_OUTPARM_LIMIT_DESC: int = 300            # 使用对象: fetch_webpage.py(metadata描述字段截断)
 # chart/data
 GENERATE_CHART_OUTPARM_LIMIT_DATA: int = 200           # 使用对象: generate_chart.py(chart data params/detail 预览截断)
