@@ -48,6 +48,8 @@
 
 # 2026-11-24 商量 - KISS: run_prompt 布尔透传消除 — _external_api_fallback 去 prompt/timeout/t0/run_prompt 四参,
 #   只负责"抓取+clean+落盘"(SRP); run_prompt 决策收口到 fetchpage 闭包内单点使用, 不再向下透传 — 商量-2026-11-24
+# 2026-11-24 商量 - 云端代抓前置: 外部链重排 Firecrawl→Tavily→Jina→Exa(反反爬最强的云端代抓打头, keyless 补位后置);
+#   新增 _fetch_via_tavily_extract(REST /extract, key 复用 searchweb 的 tool_websearch_Tavily_key) — 商量-2026-11-24
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -729,7 +731,8 @@ async def _fetch_via_exa(url: str, timeout: float, proxy: Optional[str] = None) 
 
 
 async def _fetch_via_firecrawl(url: str, timeout: float, proxy: Optional[str] = None) -> Optional[str]:
-    """Firecrawl firecrawl_scrape 抓取兜底(keyless 免费层, JS渲染+强反爬) — 商量 2026-11-23"""
+    """Firecrawl firecrawl_scrape 抓取(keyless 免费层, JS渲染+强反爬) — 商量 2026-11-23
+    2026-11-24 商量 - 提为外部链首位: 云端代抓反反爬最强, 实测返回干净 markdown(37k字)"""
     try:
         frame = await call_tool(
             "https://mcp.firecrawl.dev/v2/mcp", "firecrawl_scrape",
@@ -743,10 +746,39 @@ async def _fetch_via_firecrawl(url: str, timeout: float, proxy: Optional[str] = 
         return None
 
 
+# 2026-11-24 商量 - 新增 Tavily /extract 云端代抓(同 searchweb 的 key 复用: tool_websearch_Tavily_key /
+#   env TAVILY_API_KEY); 实测返回 {results:[{url, raw_content}]} 干净正文(34k字); 无 key/失败返回 None 链续走
+async def _fetch_via_tavily_extract(url: str, timeout: float, proxy: Optional[str] = None) -> Optional[str]:
+    """Tavily /extract 云端代抓兜底(需 key) — 商量 2026-11-24"""
+    from app.config import get_config  # 惰性导入, 与 search_web._search_tavily 同风格
+
+    api_key = (get_config().get("tool_websearch_Tavily_key", "") or "").strip()
+    if not api_key:
+        return None
+    try:
+        async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
+            r = await client.post(
+                "https://api.tavily.com/extract",
+                json={"urls": [url]},
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if r.status_code != 200:
+                logger.warning(f"[fetchpage] Tavily extract 失败: HTTP {r.status_code}")
+                return None
+            results = (r.json() or {}).get("results") or []
+            return str(results[0].get("raw_content") or "") if results else None
+    except Exception as exc:
+        logger.warning(f"[fetchpage] Tavily extract 失败: {type(exc).__name__}: {str(exc)[:FETCH_WEBPAGE_OUTPARM_LIMIT_DESC]}")
+        return None
+
+
+# 2026-11-24 商量 - 外部链重排(Firecrawl→Tavily→Jina→Exa): 云端代抓(反反爬最强)打头,
+#   Jina/Exa(keyless)后置补位; 每家失败返回 None 链续走, 首个达标(≥EXTERNAL_FETCH_MIN_CHARS)即用
 _EXTERNAL_FETCHERS = (
+    ("Firecrawl", _fetch_via_firecrawl),
+    ("Tavily", _fetch_via_tavily_extract),
     ("Jina Reader", _fetch_via_external_reader),
     ("Exa", _fetch_via_exa),
-    ("Firecrawl", _fetch_via_firecrawl),
 )
 
 
