@@ -59,6 +59,10 @@
 #   后端命令行可见"终态 CANCELLED + source" — 小欧-2026-09-08
 # 2026-11-03 小欧 - log_and_print 增 level 参数: C 路径取消终态显式传 level="WARNING"(取消必须可见) — 小欧-2026-11-03
 #   同轮 [Final] 终态全文行一并传 level="WARNING"(控制台默认档即可见终态正文) — 小欧-2026-11-03
+
+# 2026-11-24 小欧 - 空响应重试统一进 notice 信封: 独立 MetaStep(retrying) 改 notice(retrying,start)+置 _retrying_notice_active,
+#   下轮首 chunk/response 由 react_step._clear_active_notices 发 done 清除(消除位置2残留); dispatch 据 notice 置 RETRYING 保编排重试
+
 """
 answer_handler — 统一处理所有"说"类型(action以外的答案/错误/未知)
 
@@ -162,12 +166,16 @@ async def handle_answer(agent, parsed: Dict) -> dict:
         logger.warning(f"[handle_answer] LLM返回空内容(step={step}), 触发系统重试")
         note_progress(agent)  # 小健 2026-09-05：空转计数唯一写者收口(原注解 2026-07-17 小欧 真空非reasoning空转 归零防残留误累计 缀回行尾，语义不变)
         agent.message_builder.add_assistant_message("")
+        # 2026-11-24 小欧 统一进 notice 信封: 原独立 MetaStep(retrying) 无 done, 位置2 残留不清;
+        #   改 notice(retrying,start), 下轮首 chunk/response 由 react_step._clear_active_notices 发 done 清除;
+        #   dispatch 据本 notice(kind=retrying,phase=start) 置 RETRYING, 编排层重试语义不变
+        agent._retrying_notice_active = True
         _events.append(agent._step_emitter.emit(MetaStep(
-            type="retrying",
+            type="notice",
             step=step,
             content="LLM返回空内容，触发重试",
-            wait_time=1,
-            severity="info",
+            kind="retrying",
+            phase="start",
         )))  # 4A(5.5): yield→append — 小欧-2026-09-06
         return {"events": _events, "type": parsed_type}
 

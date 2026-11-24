@@ -33,6 +33,10 @@
 #   deniedStepSet 停齿轮控制信号 + 分桶计数键 _deny_counts 的键) 保持不变 — 小欧-2026-10-11
 # 2026-11-03 小欧 - log_and_print 增 level 参数: [Thought] 步骤行显式传 level="WARNING", 控制台默认档即可见 — 小欧-2026-11-03
 
+# 2026-11-24 小欧 - 空响应 notice(retrying,start) 驱动重试: 收集循环识别 notice(kind=retrying,phase=start) 置 retry_signal,
+#   状态推断 `_EV_RETRY in seen_types or retry_signal` → set RETRYING; 承接 handle_answer 空响应改 notice 后编排层重试不丢
+
+
 """react_dispatch — 类型分派 + 状态推断
 
 按type分派handler(action/answer), 依事件流(seen_types)推断终态/可恢复错误/拒绝计数。
@@ -112,6 +116,7 @@ async def _dispatch_handler(agent, llm_response):
     seen_types = set()
     last_denial_event = None
     final_event = None
+    retry_signal = False   # 2026-11-24 小欧: 空响应改用 notice(retrying,start) 承载, 据此置 RETRYING 驱动编排层重试
     # 4C(5.8.1): 返 list — 收集 _dispatch_events, 状态推断块逐行保留, 循环尾 return(5.8.2 消费 await 拿 list 同 commit) — 小欧-2026-09-06
     verdict = await handler  # handler 为 handle_action/handle_answer(agent, llm_response) 的 coroutine 结果
     _dispatch_events: List = []
@@ -123,9 +128,13 @@ async def _dispatch_handler(agent, llm_response):
             last_denial_event = event
         elif event.type == _EV_FINAL:
             final_event = event
+        elif event.type == "notice":
+            _nk = getattr(event, "_kwargs", {}) or {}
+            if _nk.get("kind") == "retrying" and _nk.get("phase") == "start":
+                retry_signal = True
         _dispatch_events.append(event)
 
-    if _EV_RETRY in seen_types:
+    if _EV_RETRY in seen_types or retry_signal:
         set_status(agent, AgentStatus.RETRYING, "触发重试")
     elif _EV_FINAL in seen_types:
         # outcome 驱动终态声明: 读 FinalStep.outcome, 不依赖位置/类型 — 小欧 2026-07-18

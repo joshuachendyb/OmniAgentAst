@@ -86,6 +86,10 @@
 #   ②冷却成功清零补调用点(_cd>0 且成功出口 clear, 原注册表 clear 全链零调用) — 小欧-2026-11-08
 # 2026-11-08 小欧 三堂会审修复: 冷却成功清零改无条件调用(clear 内部有 if model_id in self._table 守卫, 幂等) —
 #   原 if _cd>0 漏掉"冷却已过期但条目残留"(delay_info 返 0.0 不删条目), 成功调用后旧 hits 残留下次 mark 直接跳档; 现无条件清 — 小欧-2026-11-08
+
+# 2026-11-24 小欧 - 摘要重试补 done: call_llm_text_task 原只发 summarizing start 无配对 done(前端死转圈);
+#   跟踪 _summarizing_started, 流程结束(成功/失败)统一 emit_notice(summarizing, done) 复位
+
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -500,6 +504,7 @@ async def call_llm_text_task(llm_agent, feed: list) -> str:
         logger.warning(f"[llm_call] 定制调用钩子异常, 回落通用路径: {type(e).__name__}: {e}")
 
     content = ""
+    _summarizing_started = False
     async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None,
                                              max_response_retries=_SUMMARY_MAX_RETRIES):
         _p = getattr(item, "payload", None)
@@ -512,11 +517,18 @@ async def call_llm_text_task(llm_agent, feed: list) -> str:
                 if _emitter is not None:
                     with contextlib.suppress(Exception):
                         await _emitter.emit_notice("summarizing", "start",
-                            f"摘要重试中({_p.get('content', '')})")
+                            f"摘要重试({_p.get('content', '')})")
+                    _summarizing_started = True
                 continue
             if _ptype == "answer":
                 c = str(_p.get("content") or "").strip()
                 if c:
                     content = c
+    # 2026-11-24 小欧 补 done: 原只发 start 无配对 done → 前端摘要重试死转圈; 流程结束(成功/失败)统一 done 复位
+    if _summarizing_started:
+        _emitter = getattr(llm_agent, "_step_emitter", None)
+        if _emitter is not None:
+            with contextlib.suppress(Exception):
+                await _emitter.emit_notice("summarizing", "done", "摘要完成")
     return content
 
