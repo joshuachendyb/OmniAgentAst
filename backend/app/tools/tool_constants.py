@@ -439,7 +439,10 @@ QUERY_SQL_OUTPARM_LIMIT_SQL: int = 100                # 使用对象: query_sql.
 # network
 SEARCH_WEB_OUTPARM_LIMIT_RAW: int = 200               # 使用对象: search_web.py(raw_text/str(e)日志/error截断)
 SEARCH_WEB_MCP_MAX_BYTES: int = 256 * 1024            # 使用对象: mcp_client.py(search_web/fetch_webpage 的 MCP 响应体字节上限, 超则记上游响应坏并降级)
-SEARCH_WEB_TIMEOUT_DEFAULT: int = 90                  # 使用对象: search_web.py/network_schema.py(链级共享预算默认秒: parallel20+exa20+firecrawl20+tinyfish15+bing15=90s 最坏链)
+SEARCH_WEB_TIMEOUT_DEFAULT: int = 90                  # 使用对象: search_web.py/network_schema.py(链级共享预算默认秒: exa20+tavily15+parallel20+tinyfish10+firecrawl10+bing15=90s 最坏链)
+# 2026-11-24 商量 - [58]§五 并行合并开关: True=前3家(exa+tavily+parallel)并行合并+串行尾兜底; False=回退原串行链(一键降级保底)
+SEARCH_PARALLEL_MERGE: bool = False                    # 使用对象: search_web.py(searchweb 主函数分流; 默认关, 阶段4冒烟通过后开)
+SEARCH_PARALLEL_WIDTH: int = 3                         # 使用对象: search_web.py(并行宽度=取链头前N家, 代码常量不进LLM schema — [58]§3.3)
 FETCH_WEBPAGE_OUTPARM_LIMIT_DESC: int = 300            # 使用对象: fetch_webpage.py(metadata描述字段截断)
 # chart/data
 GENERATE_CHART_OUTPARM_LIMIT_DATA: int = 200           # 使用对象: generate_chart.py(chart data params/detail 预览截断)

@@ -32,6 +32,9 @@
 # 2026-11-24 商量 - 链序重排(exa→tavily→parallel→tinyfish→firecrawl): 三源实测 tavily 最快(1.6s)+snippet最长+
 #   来源权威, 前移至次位; exa 48次全稳居首位; parallel 有429配额退第三; tinyfish 快但snippet短居四;
 #   firecrawl 最慢(5.7s)+免费层限速兜底, 主力价值转 scrape 模式 — 商量-2026-11-24
+# 2026-11-24 商量 - P4 并行合并实施([58]§4): 新增 _normalize_search_url/merge_search_items(去重保序)/
+#   _PARALLEL_GROUP/search_parallel_merge(前3家并行+串行尾兜底)/_mk_parallel_out(错误分类+冷却);
+#   主函数接 SEARCH_PARALLEL_MERGE 开关(默认关, 冒烟通过后开), engine_used 多引擎展示适配 — 商量-2026-11-24
 
 """
 N4: searchweb — 搜索网络获取最新信息
@@ -44,10 +47,11 @@ N4: searchweb — 搜索网络获取最新信息
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import asyncio
 import base64
 import re
 import time as _time_mod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -65,6 +69,9 @@ from app.tools.network.net_backend import (
     Backend,
     NetError,
     _retry_after_seconds,
+    classify,
+    cooldown_info,
+    mark_failure,
     run_chain,
 )
 from app.tools.tool_constants import (
@@ -75,6 +82,8 @@ from app.tools.tool_constants import (
     ERR_NET_TIMEOUT,
     ERR_NET_UPSTREAM_BROKEN,
     ERR_PARAM_INVALID,
+    SEARCH_PARALLEL_MERGE,
+    SEARCH_PARALLEL_WIDTH,
     SEARCH_WEB_INER_HTML_PARSE,
     SEARCH_WEB_OUTPARM_LIMIT_RAW,
     SEARCH_WEB_TIMEOUT_DEFAULT,
@@ -237,6 +246,119 @@ SEARCH_CHAIN = (
     Backend("tinyfish", lambda q, n, p, t: _search_mcp_engine("tinyfish", q, n, p, t)),
     Backend("firecrawl", lambda q, n, p, t: _search_mcp_engine("firecrawl", q, n, p, t)),
 )
+
+
+# ---------- P4 并行合并([58]§4) — 商量 2026-11-24 ----------
+
+
+def _normalize_search_url(url: str) -> str:
+    """URL 归一化键: 去 scheme/www/尾斜杠, 作合并去重键 — 商量 2026-11-24"""
+    try:
+        p = urlparse(url)
+        host = (p.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = p.path.rstrip("/") or "/"
+        return f"{host}{path}"
+    except Exception:
+        return (url or "").strip().lower()
+
+
+def merge_search_items(sources: List[Optional[List[dict]]], num_results: int) -> List[dict]:
+    """多源结果合并: URL 去重, 保首源顺序; 返回至多 num_results 条 — 商量 2026-11-24
+    sources 顺序即优先级(首源在前); 每项已带 source 字段, 合并后可辨来源。"""
+    merged, seen = [], set()
+    for items in sources:
+        for it in items or []:
+            if not it or not it.get("url"):
+                continue
+            key = _normalize_search_url(it["url"])
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(it)
+            if len(merged) >= num_results:
+                return merged
+    return merged
+
+
+def _parallel_remaining(deadline: Optional[float]) -> Optional[float]:
+    """剩余预算秒数; deadline 为 None(不限)则返回 None — 商量 2026-11-24"""
+    if deadline is None:
+        return None
+    return max(0.1, deadline - _time_mod.monotonic())
+
+
+def _mk_parallel_out(name_map: Dict[str, list], errors: Dict[str, BaseException],
+                     kind: str, group: tuple) -> Tuple[List[dict], List[dict]]:
+    """并行组错误统一分类 + 冷却; 返回 (failures, attempts), 与 run_chain 口径一致 — 商量 2026-11-24
+    - name_map: {backend_id: items}, 有结果才在; 冷却被跳过的家(items 缺省)记 SKIPPED
+    - errors:   {backend_id: BaseException}, gather return_exceptions 捕获的异常
+    单点冷却(不在 task 内记), 与串行链同口径, 不与 run_chain 分裂(DRY)。"""
+    failures, attempts = [], []
+    for name in group:
+        err = errors.get(name)
+        if err is not None:
+            net = classify(err)
+            mark_failure(kind, name, net)  # 429→3600s/上游坏→120s/超时→60s 冷却(与串行同)
+            failures.append({"backend": name, "code": net.code, "message": net.message[:200]})
+            attempts.append({"backend": name, "result": net.code, "message": net.message[:200]})
+        elif name in name_map:
+            attempts.append({"backend": name, "result": "OK", "items": len(name_map[name])})
+        else:
+            attempts.append({"backend": name,
+                             "result": "SKIPPED" if cooldown_info(kind, name)[0] > 0 else "EMPTY"})
+    return failures, attempts
+
+
+async def search_parallel_merge(query: str, num_results: int, proxy: Optional[str],
+                                budget_sec: Optional[float], kind: str, args: tuple) -> Dict[str, Any]:
+    """并行第一段(前 SEARCH_PARALLEL_WIDTH 家并发) + 串行第二段(链尾+bing 兜底) 两层编排 — 商量 2026-11-24
+    并行组 gather(return_exceptions) 一家失败不拖垮其他家; 冷却中的家不进组(配额保护, 绝不硬打限流后端);
+    合并已足直接返回, 不足/全败续 run_chain 串行尾, 可用性不退化。返回结构与 run_chain 一致。"""
+    deadline = None if budget_sec is None else _time_mod.monotonic() + budget_sec
+    group = tuple(b.id for b in SEARCH_CHAIN[:SEARCH_PARALLEL_WIDTH])
+
+    # ---- 第一段: 并行组((name, task) 二元组保证 gather 结果与后端名一一对应, 杜绝管道错位) ----
+    pending = []
+    for name in group:
+        if cooldown_info(kind, name)[0] <= 0:
+            fn = _PARALLEL_GROUP[name]
+            pending.append((name, asyncio.create_task(
+                fn(query, num_results, proxy, _parallel_remaining(deadline)))))
+
+    items_map, errors = {}, {}
+    if pending:
+        names = [n for n, _ in pending]
+        tasks = [t for _, t in pending]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for name, res in zip(names, results):
+            if isinstance(res, BaseException):
+                errors[name] = res
+            elif res:
+                items_map[name] = res  # 有结果才记; 空结果缺省 → 下游按 EMPTY
+
+    failures, attempts = _mk_parallel_out(name_map=items_map, errors=errors, kind=kind, group=group)
+    merged = merge_search_items([items_map.get(n) for n in group], num_results)
+
+    # ---- 第二段: 合并已足 → 直接返回; 不足/全败 → 续串行兜底(链尾 + bing) ----
+    if merged and len(merged) >= num_results:
+        return {"items": merged, "backend": "+".join(items_map.keys()),
+                "attempts": attempts, "failures": failures,
+                "error": None, "budget_exhausted": False}
+
+    tail_chain = SEARCH_CHAIN[SEARCH_PARALLEL_WIDTH:] + (
+        Backend("bing", lambda q, n, p, t: _search_bing(q, n, p, t)),)
+    leftover = await run_chain(kind, tail_chain, args, budget_sec=_parallel_remaining(deadline))
+    final = merge_search_items([merged, leftover.get("items")], num_results)
+    merged_out = final or leftover.get("items", [])
+    backend_src = leftover.get("backend") or ""
+    par_names = "+".join(items_map.keys()) or "parallel-group"
+    # attempts 显式合并: {**leftover} 会拿串行尾 attempts 覆盖并行段, 丢前几家轨迹
+    return {**leftover, "items": merged_out,
+            "backend": f"{par_names}+{backend_src}" if backend_src else par_names,
+            "attempts": attempts + leftover.get("attempts", []),
+            "failures": failures + leftover.get("failures", [])}
 
 
 def _parse_parallel_results(parsed: Optional[dict], num_results: int) -> List[dict]:
@@ -616,6 +738,15 @@ async def _search_tavily(
     return results
 
 
+# 并行组后端名→调用函数映射(与 SEARCH_CHAIN 前 SEARCH_PARALLEL_WIDTH 家一一对应, 链序变更时同步)
+# 置于 _search_tavily 之后(避免前向引用) — 商量 2026-11-24
+_PARALLEL_GROUP = {
+    "exa": lambda q, n, p, t: _search_mcp_engine("exa", q, n, p, t),
+    "tavily": _search_tavily,
+    "parallel": lambda q, n, p, t: _search_mcp_engine("parallel", q, n, p, t),
+}
+
+
 async def searchweb(
     query: str,
     allowed_domains: Optional[str] = None,
@@ -652,13 +783,19 @@ async def searchweb(
             return build_error(data={}, llm_data=llm_data)
 
         # 2026-11-23 小欧 - S2 统一调度: 错误分类/分级冷却/尝试轨迹/链级预算由底座负责
+        # 2026-11-24 商量 - P4 并行合并([58]§4): 开=True 前3家(exa+tavily+parallel)并行合并+串行尾兜底;
+        #   开=False 原串行链原样保留(一键回退)
         budget = SEARCH_WEB_TIMEOUT_DEFAULT if timeout is None else timeout
-        out = await run_chain(
-            "search",
-            SEARCH_CHAIN + (Backend("bing", lambda q, n, p, t: _search_bing(q, n, p, t)),),
-            (query, num_results, proxy),
-            budget_sec=budget,
-        )
+        chain_args = (query, num_results, proxy)
+        if SEARCH_PARALLEL_MERGE:
+            out = await search_parallel_merge(query, num_results, proxy, budget, "search", chain_args)
+        else:
+            out = await run_chain(
+                "search",
+                SEARCH_CHAIN + (Backend("bing", lambda q, n, p, t: _search_bing(q, n, p, t)),),
+                chain_args,
+                budget_sec=budget,
+            )
         if out["error"] is not None:
             error = out["error"]
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -677,7 +814,8 @@ async def searchweb(
             return build_error(data={}, llm_data=llm_data)
         # backend 为 None = 至少一家正常往返但均无结果, 保持 success 0 条语义
         results = out["items"]
-        engine_used = (out["backend"] or "").capitalize()
+        # 2026-11-24 商量 - 多引擎串(如 "exa+tavily+parallel")按 + 拆开各自 capitalize 再拼回
+        engine_used = "+".join(s.capitalize() for s in (out["backend"] or "").split("+") if s)
 
         if _allowed_domains:
             results = [r for r in results if any(_url_match_domain(r.get("url", ""), d) for d in _allowed_domains)]
