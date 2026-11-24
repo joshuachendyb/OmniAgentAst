@@ -29,6 +29,10 @@
 #   _search_mcp_engine支持config.extra_headers合并(TinyFish keyless header), 与UA并存 — 商量-2026-11-23
 # 2026-11-24 商量 - MCP 传输层抽到 mcp_client: 本文件不再手写请求/限体/SSE/error信封; 单家上限改由
 #   _MCP_CONFIGS.timeout_cap 声明(20/20/20/15), 与链级预算 90s 对齐, 修复 Bing 被前四家吃满预算永远轮不到 — 商量-2026-11-24
+# 2026-11-24 商量 - 链序重排(exa→tavily→parallel→tinyfish→firecrawl): 三源实测 tavily 最快(1.6s)+snippet最长+
+#   来源权威, 前移至次位; exa 48次全稳居首位; parallel 有429配额退第三; tinyfish 快但snippet短居四;
+#   firecrawl 最慢(5.7s)+免费层限速兜底, 主力价值转 scrape 模式 — 商量-2026-11-24
+
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -216,18 +220,19 @@ _MCP_CONFIGS = {
     },
 }
 
-# 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行; tavily 待有 key 时接入。
+# 2026-11-23 小欧 - 搜索后端链: 新增来源只需在此加一行。
 #   每个后端末参数 remaining = 链级预算剩余秒数(None=不限), 底层逐家按剩余时间收敛硬超时
-# 2026-11-23 商量 - 端点顺序: parallel(结构化首选)→exa(次选)→firecrawl(免费层三选)→tinyfish(备用四选)
+# 2026-11-24 商量 - 链序重排(实测依据见[58]文档§1.4): exa(48次全稳居首)→tavily(最快1.6s+snippet最长)→
+#   parallel(429配额退三)→tinyfish(快但snippet短)→firecrawl(最慢5.7s+免费层限速兜底)
 # 2026-11-24 商量 - 单家上限写进 _MCP_CONFIGS.timeout_cap(Bing 兜底 15s 计入总账), 上限之和与
-#   SEARCH_WEB_TIMEOUT_DEFAULT 对齐, 避免前四家吃掉全部预算导致 Bing 永远轮不到 — 商量-2026-11-24
+#   SEARCH_WEB_TIMEOUT_DEFAULT 对齐, 避免前几家吃掉全部预算导致 Bing 永远轮不到 — 商量-2026-11-24
 SEARCH_CHAIN = (
-    Backend("parallel", lambda q, n, p, t: _search_mcp_engine("parallel", q, n, p, t)),
     Backend("exa", lambda q, n, p, t: _search_mcp_engine("exa", q, n, p, t)),
-    Backend("firecrawl", lambda q, n, p, t: _search_mcp_engine("firecrawl", q, n, p, t)),
-    Backend("tinyfish", lambda q, n, p, t: _search_mcp_engine("tinyfish", q, n, p, t)),
     # 2026-11-24 商量 - Tavily 原生 REST 搜索(需 key, 无 key 时后端抛 NEED_SETUP 由底座跳过)
     Backend("tavily", lambda q, n, p, t: _search_tavily(q, n, p, t)),
+    Backend("parallel", lambda q, n, p, t: _search_mcp_engine("parallel", q, n, p, t)),
+    Backend("tinyfish", lambda q, n, p, t: _search_mcp_engine("tinyfish", q, n, p, t)),
+    Backend("firecrawl", lambda q, n, p, t: _search_mcp_engine("firecrawl", q, n, p, t)),
 )
 
 
