@@ -36,12 +36,15 @@ Author: 小沈 - 2026-05-31
 #   (schedule error); 纯前端字段不落库不进 LLM, 老 notice 无此字段按默认 False 处理, 兼容零退化。
 # 2026-11-19 小欧 - 新增 emit_interact: 通用双向交互事件统一发射器(interaction_id/kind/event/payload),
 #   event=ask/answered/cancelled/expired(phase+outcome 合并), question 为第一个使用者, 用专用 InteractStep 类
+# 2026-11-24 商量 - complete_task 去 success 布尔: 改读 agent.status 经 status_table.tracker_terminal_status 翻译落库,
+#   取消独立落 cancelled(原调用点二值化把 CANCELLED 压成 failed, 任务列表/历史与 SSE、chat_tasks 不一致) — 商量-2026-11-24
 """
 
 import time
 from typing import Dict, List, Optional
 
 from app.logger import log_and_print, logger
+from app.services.agent.status_table import tracker_terminal_status  # 商量 2026-11-24: 终态翻译唯一源
 from app.services.agent.steps import (  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
     FinalStep,
     ReasoningStep,
@@ -198,12 +201,19 @@ class StepEmitter:
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""
         return getattr(self.agent, '_task_tracker', None)
 
-    def complete_task(self, success: bool):
-        """Task追踪:完成任务记录 — 小欧 2026-07-16 删除 _tracked_task_id 别名, 直读 agent.task_id"""
+    def complete_task(self):
+        """Task追踪:按 agent 终态写任务记录 — 小欧 2026-07-16 删除 _tracked_task_id 别名, 直读 agent.task_id
+        商量 2026-11-24: 取消独立落 cancelled。原签名收 success: bool 由调用点二值化(status==COMPLETED),
+        取消被压成 failed 与 SSE/chat_tasks 分叉; 现由 status_table.tracker_terminal_status 唯一翻译,
+        本层只透传(KISS-DIRECT, 不再让调用方各自压二值)。"""
         task_tracker = self._get_tracker()
         if task_tracker:
             try:
-                task_tracker.complete_task(self.agent.task_id, success=success)
+                _st = tracker_terminal_status(self.agent.status)
+                logger.info(f"[TaskTracker] 写任务终态 task_id={self.agent.task_id} agent.status={self.agent.status} -> status={_st}")
+                task_tracker.complete_task(
+                    self.agent.task_id, status=_st,
+                )
             except Exception as _e:
                 logger.warning(f"[TaskTracker] 完成任务失败: {_e}")
 

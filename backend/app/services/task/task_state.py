@@ -185,6 +185,16 @@ async def check_cancelled(task_id: str) -> bool:
         return bool(task and task.get("cancelled"))
 
 
+def is_cancel_requested(task_id: str) -> bool:
+    """同步读取消标记(单键读, 不取锁) — 商量 2026-11-24
+    取消动作的第一步即置 running_tasks[task_id]["cancelled"](task_registry.set_cancelled),
+    而 agent.status 要到 agent_runner 的 CancelledError 分支才翻终态; 同步收尾路径
+    (react_cycle finally → 任务追踪落终态)在两者之间执行, 只能用本函数判定取消。
+    与 check_cancelled 同源字段(唯一真源), 只是去掉 await 以便同步收尾使用。"""
+    task = running_tasks.get(task_id) if task_id else None
+    return bool(task and task.get("cancelled"))
+
+
 async def check_paused(task_id: str) -> bool:
     async with running_tasks_lock:
         task = running_tasks.get(task_id)

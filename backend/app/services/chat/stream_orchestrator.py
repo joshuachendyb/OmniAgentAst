@@ -275,9 +275,8 @@
 #   build_interject_text 与降级 build_user_turn_text 两调用点补 plans=_iplans, 消插话恒降级文本 — 小欧-2026-11-14
 # 2026-11-14 小欧 附件物化: 首发/插话 prepare_refs 补 llm_model(任务级模型快照),
 #   供 resolver 本地 image/audio 原生物化判定 — 小欧-2026-11-14
-
-
-
+# 2026-11-24 商量 - 并发闸门接线: _create_and_launch_task 唯一启动出口由 run_agent_in_background 改
+#   run_agent_gated(agent_runner 外层 Semaphore 包装, 超限排队); 本层其余零改动 — 商量-2026-11-24
 """
 stream_orchestrator — 聊天流编排器(services 层)
 

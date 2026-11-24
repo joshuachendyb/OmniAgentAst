@@ -3,6 +3,8 @@
 # 2026-07-18 - 小欧 - 修复#5 删除 threading.RLock()+@_synchronized(asyncio单线程下是死重, KISS/YAGNI); 修复#2+#8 终态不可变(首终态为准, terminal→terminal 忽略不翻转, 杜绝ValueError崩溃与终态误标)
 # 2026-11-03 - 小欧 - 忽略终态翻转日志 WARNING→INFO(竞态守卫已安全忽略, 非故障) — 小欧-2026-11-03
 # 2026-11-04 - 小欧 - 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
+# 2026-11-24 - 商量 - 新增 tracker_terminal_status: AgentStatus→task_tracker 终态值唯一映射源(COMPLETED→success/FAILED→failed/CANCELLED→cancelled, 其余按failed);
+#   病根: 任务收尾曾用 complete_task(success=(status==COMPLETED)) 二值化, 取消被写成 failed, 与 SSE/chat_tasks 分叉 — 商量-2026-11-24
 """
 status_table — Agent状态集中管理
 
@@ -139,3 +141,20 @@ def set_completed(agent):
 
 def set_cancelled(agent):
     set_status(agent, AgentStatus.CANCELLED)
+
+
+# AgentStatus → task_tracker(tasks.status) 终态值映射, 唯一源 — 商量 2026-11-24
+# 取消是独立终态, 不得并入 failed: 原收尾用 complete_task(success=(status==COMPLETED)) 把五态压成二值,
+# CANCELLED 被写成 failed, 与 SSE final.outcome / chat_tasks.status 的 cancelled 分叉
+# (任务列表与历史把"已取消"显示成"失败")。五态→三态的翻译只此一处, 消费方不得各自再压二值。
+_TRACKER_TERMINAL_STATUS = {
+    AgentStatus.COMPLETED: "success",
+    AgentStatus.FAILED: "failed",
+    AgentStatus.CANCELLED: "cancelled",
+}
+
+
+def tracker_terminal_status(status: AgentStatus) -> str:
+    """AgentStatus → task_tracker 任务终态值(success/failed/cancelled) — 商量 2026-11-24
+    收尾时仍非终态(RETRYING/SUSPENDED/None)按失败落库: 任务未正常完成, 不得误标成功。"""
+    return _TRACKER_TERMINAL_STATUS.get(status, "failed")

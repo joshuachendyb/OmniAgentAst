@@ -77,6 +77,8 @@
 # 2026-11-08 小欧 - 接视觉通道: 按 supports_image_input 分流, 视觉模型把图片 ref 摘出正文走 wire image_url parts,
 #   非视觉模型原样全走文本档案卡 — 小欧-2026-11-08
 # 2026-11-11 小欧 计划器接线: refs→to_input_items→plan_refs→init_history(plans=), 删除图片能力 if 分流 — 小欧-2026-11-11
+# 2026-11-24 商量 - 收尾任务追踪去二值化: _finalize_cycle 改调 complete_task() 无参(原传 success=(status==COMPLETED)),
+#   取消由 step_emitter 经 status_table.tracker_terminal_status 落 cancelled, 修 task_tracker 把取消记 failed — 商量-2026-11-24
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -111,7 +113,7 @@ from app.services.agent.steps import (  # ThoughtStartStep 首发射点已于 20
     MetaStep,
 )
 from app.services.chat import storage
-from app.services.task.task_state import get_stream_buffer
+from app.services.task.task_state import get_stream_buffer, is_cancel_requested  # 商量 2026-11-24: 同步取消标记(收尾补终态用)
 
 
 def to_input_items(refs: list | None) -> list:
@@ -124,10 +126,16 @@ def to_input_items(refs: list | None) -> list:
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): retrying content 去冗余词(请求LLM重试) — 小欧-2026-10-25
 
 def _finalize_cycle(agent):
-    """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
+    """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取
+    商量 2026-11-24: ①任务追踪不再传 success 布尔(取消曾被压成 failed), 由 emitter 按 agent 终态翻译落库;
+    ②收尾前按取消标记补终态——取消打断在 await 点, 本 finally 先于 agent_runner 的 CancelledError 分支执行,
+    此刻 agent.status 仍为 EXECUTING/THINKING, 直接映射会把取消记成失败; set_cancelled 幂等
+    (终态不可变, 已完成/已失败不受影响), 故命中标记即补。"""
+    if getattr(agent, "task_id", None) and is_cancel_requested(agent.task_id):
+        set_cancelled(agent)
     agent.message_builder.pop_temp_messages()  # 小欧 2026-07-19 安全网: 清除残留标记推理再持久化
     agent._on_after_loop()
-    agent._step_emitter.complete_task(agent.status == AgentStatus.COMPLETED)
+    agent._step_emitter.complete_task()
 
 
 async def _terminate_cancelled(agent, task_id, _publish) -> bool:

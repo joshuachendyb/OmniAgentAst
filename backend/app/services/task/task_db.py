@@ -24,6 +24,8 @@
 # 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地): tasks 计数单口径——complete_task 删现场
 #   COUNT 重算, 只写 status/completed_at; ②Q4-D2 add_operation 成功分支补 success_count+1 增量(与 failed/total
 #   同点同事务, 三计数同一口径); rolled_back_count 保留 mark_rolled_back 子查询现场 COUNT 不动(批量迁移=现场数)
+# 2026-11-24 - 商量 - complete_task 签名 success: bool → status: str(TaskStatus 值), TaskStatus 增 CANCELLED;
+#   病根: 布尔二值化把取消压成 failed, 任务列表/历史与 SSE、chat_tasks 的 cancelled 不一致 — 商量-2026-11-24
 """
 task_db — 任务DB持久化（tasks表 + operations表）
 
@@ -54,6 +56,7 @@ class TaskStatus(str, Enum):
     EXECUTING = "executing"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"   # 取消是独立终态, 不与 failed 合并 — 商量 2026-11-24
     PARTIALLY_ROLLED_BACK = "partially_rolled_back"
     ROLLED_BACK = "rolled_back"
 
@@ -80,9 +83,11 @@ class TaskTracker:
             if cur.rowcount == 0:
                 logger.info(f"[task_db] create_task 幂等跳过(任务已存在): task_id={task_id}")
 
-    def complete_task(self, task_id: str, success: bool = True) -> None:
-        # 12.2-Q4: 删除现场COUNT重算 — success_count 已由 add_operation 实时增量维护(单条操作计数=增量,口径归一) — 小欧 2026-08-21
-        status = TaskStatus.SUCCESS.value if success else TaskStatus.FAILED.value
+    def complete_task(self, task_id: str, status: str) -> None:
+        """写任务终态 — 商量 2026-11-24: 参数由 success: bool 改为 status(str, TaskStatus 值)。
+        原布尔二值化把 cancelled 压成 failed, 与 SSE/chat_tasks 终态分叉; 状态翻译由调用方经
+        status_table.tracker_terminal_status(唯一映射源)完成, 本层只写值不判断。
+        12.2-Q4: 不现场COUNT重算 — success_count 已由 add_operation 实时增量维护(单条操作计数=增量,口径归一) — 小欧 2026-08-21"""
         with db.get_conn("task_tracker") as conn:
             conn.execute(
                 """UPDATE tasks SET status = ?, completed_at = ? WHERE task_id = ?""",

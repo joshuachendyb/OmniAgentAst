@@ -203,6 +203,10 @@
 #   派生工具触达路径(tool_paths, 后端权威, 与前端 roundHits 同源同口径)经 update_task 落
 #   tool_paths_json 列; ref_ledger 权威源在前端 store, 不经此 finally 汇合(前端经扩展
 #   process-events 端点直写该列, 消"前端 POST 晚于 finally"时序竞态)
+# 2026-11-24 商量 - 新增 agent 任务并发闸门: config.get_max_concurrent_tasks + _task_gate 惰性单例 + run_agent_gated
+#   外层 asyncio.Semaphore 包装(超限排队), 编排层 _create_and_launch_task 唯一启动出口改经闸门;
+#   不加 acquire 进 run_agent_in_background(需缩进数百行函数体, 回归风险高), 终态链路零改动;
+#   不新增 queued 状态(DB 仍 executing=已受理未完成, 前端词表零改动), 排队期取消由 start_step 首查 check_cancelled 兜底 — 商量-2026-11-24
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

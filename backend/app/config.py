@@ -24,6 +24,7 @@
 #   （原手写清单在同日键改名时漏改 → env 值注入旧键，页面读新键得 None，显示与生效脱节）
 # 2026-11-03 小欧 - 键名名副其实: logging.level → logging.file_level, LOG_LEVEL env 注入同步改键 — 小欧-2026-11-03
 # 2026-11-03 小欧 - 撤销双键(北京老陈令: 一个值即可): 键回到单键 logging.level, LOG_LEVEL env 注入同步 — 小欧-2026-11-03
+# 2026-11-24 商量 - 新增 get_max_concurrent_tasks(): agent.max_concurrent_tasks(默认3, 非正数/非数字回落默认), 供 agent 任务并发闸门取值 — 商量-2026-11-24
 
 import functools
 import os
