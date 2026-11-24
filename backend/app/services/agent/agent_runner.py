@@ -277,6 +277,45 @@ _background_tasks: set = set()
 _STEP_FLUSH_TIMEOUT_SEC = 120.0
 
 
+# 进程内 agent 任务并发闸门(惰性单例) — 2026-11-24 商量
+#   病根: 此前无任何并发上限(running_tasks 多键并存 + asyncio 同进程并发), 多会话同跑重任务
+#     会撞 LLM API 限流/文件锁冲突/CPU 打满, 且无背压、无提示。阀值读 agent.max_concurrent_tasks(默认3)。
+#   惰性创建: 不在导入期绑定事件循环(模块导入可能早于 loop), 首次调用时建。
+_TASK_GATE: Optional[asyncio.Semaphore] = None
+
+
+def _task_gate() -> asyncio.Semaphore:
+    """取并发闸门单例(惰性) — 2026-11-24 商量"""
+    global _TASK_GATE
+    if _TASK_GATE is None:
+        from app.config import get_config
+        _limit = get_config().get_max_concurrent_tasks()
+        _TASK_GATE = asyncio.Semaphore(_limit)
+        logger.info(f"[Runner] agent 并发闸门初始化: 上限 {_limit}")
+    return _TASK_GATE
+
+
+async def run_agent_gated(*args, **kwargs) -> None:
+    """并发闸门包装: 超限在此排队等许可, 取得后执行 run_agent_in_background — 2026-11-24 商量
+
+    为什么用外层包装而不是在 run_agent_in_background 内加 acquire:
+      内加需缩进整个函数体(数百行), 违背"复制不重写逻辑"且回归风险高; 外层包装零侵入,
+      终态链路(finally 落库/done 置位)完全不动。
+
+    取消语义(重要): 排队期协程句柄尚未登记(set_agent_task 在 runner 首行), cancel_task 只落到
+      cancelled 标记、拿不到句柄打断; 但取得许可进入 runner 后 start_step 首查 check_cancelled
+      即干净退出并产出 cancelled 终态(不产生僵尸任务, 不会卡在 executing)。
+      故本包装无需自造取消终态, 也不重复 runner 的 finally 逻辑(DRY)。
+
+    不新增 queued 状态: DB 已是 executing, 语义为"已受理未完成", 前端词表无需改动。
+    """
+    gate = _task_gate()
+    if gate.locked():
+        logger.info("[Runner] 并发已满, 任务排队等待许可")
+    async with gate:
+        await run_agent_in_background(*args, **kwargs)
+
+
 async def _build_history_context(db_ops, session_id) -> dict:
     """构建传给 start 装配层的历史上下文(锚点增量 / 全量老路 二选一) — 小欧 2026-10-14
 

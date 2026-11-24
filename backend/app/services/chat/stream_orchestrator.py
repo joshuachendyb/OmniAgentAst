@@ -314,7 +314,7 @@ from app.monitoring.agent_telemetry import (
     _log_task_end,  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
 )
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
-from app.services.agent.agent_runner import run_agent_in_background
+from app.services.agent.agent_runner import run_agent_gated
 # 2026-11-14 小欧 插话 plans 贯通: 计划器与首发同源, 编排层算 _iplans 后透传装配 — 小欧-2026-11-14
 from app.attachments.contract import plan_refs
 from app.services.agent.capability import profile
@@ -1126,7 +1126,7 @@ async def _create_and_launch_task(
         )
     except Exception as _writer_e:
         logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
-    bg_task = asyncio.create_task(run_agent_in_background(
+    bg_task = asyncio.create_task(run_agent_gated(
         agent, task_id, user_input, None, session_id, state, task_start_time,
         db_ops=db_ops, ai_message_id=ai_message_id))
     _agent_tasks.add(bg_task)

@@ -228,6 +228,19 @@ class Config:
         steps = to_int_or(self.get('agent.max_steps'), default)
         return steps if steps > 0 else default
 
+    def get_max_concurrent_tasks(self, default: int = 3) -> int:
+        """同时在跑的 agent 任务上限 — 2026-11-24 商量
+
+        2026-11-24 商量 - 新增: 进程内 agent 任务并发闸门阀值。此前无任何并发限制,
+        running_tasks 按 task_id 多键并存、asyncio 同进程并发, 多会话同时跑重任务会撞
+        LLM API 限流/文件锁冲突/CPU 打满且无背压无提示。闸门消费方见
+        agent_runner.run_agent_gated(超出在此排队, 不新增 queued 状态)。
+
+        归一: None/非数字/0/负数 → default(与 get_max_steps 同款, 调用处无需各写兜底)。
+        """
+        n = to_int_or(self.get('agent.max_concurrent_tasks'), default)
+        return n if n > 0 else default
+
     def get_project_root(self) -> str:
         """获取项目根目录配置 — 小欧 2026-08-10 ①改兜底
         2026-09-21 小欧 v4.20 键名按域收敛: app.project_root → workspace.project_root

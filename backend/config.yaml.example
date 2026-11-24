@@ -660,6 +660,10 @@ workspace:
 # Agent 循环配置
 agent:
   max_steps: 10000
+  # 进程内同时执行的 agent 任务上限 — 2026-11-24 商量
+  #   超出在此排队等许可(不新增 queued 状态, DB 仍为 executing=已受理未完成)。
+  #   防多会话同跑重任务撞 LLM API 限流/文件锁冲突/CPU 打满; 单机建议 2~4, 写 0 或非数字按默认 3。
+  max_concurrent_tasks: 3
 
 # 日志配置
 logging:
