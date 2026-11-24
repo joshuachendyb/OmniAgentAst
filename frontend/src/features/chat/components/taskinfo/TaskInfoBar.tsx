@@ -91,6 +91,7 @@
 //   另一任务的历史详情)时不渲染 —— 原状态会拿 A 任务的计划配 B 任务的耗时/步数 — 商量-2026-11-18
 // 编辑历史: 2026-11-19 小欧 - 计划清单来源由 useScheduleList(步骤流派生)改读 store.scheduleList(notice 写入);
 //   历史态(detail 非空)仍不渲染入口, 避免两套事实 — 小欧-2026-11-19
+// 编辑历史: 2026-11-24 商量 - 第三位(动态状态)截断宽度 25→19 汉字宽(300→228px): 收窄其显示最大宽度 — 商量-2026-11-24
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -153,7 +154,7 @@ import { ContextOverviewCard } from './ContextOverviewCard';
 // 2026-10-28 小欧 - 位2 动态状态文本**显示宽度**上限(按像素, 非字符数): 20 × FontSize.SECONDARY=12px ≈ 240px(20汉字宽) — 小欧-2026-10-28
 //   2026-10-29 小欧 - 位2与事件浮层宽度拆分(原共用 LIVE_META_MAX_W): 位2截断恢复 20 汉字宽(240px);
 //   事件浮层独立用 EVENT_CARD_W=40 汉字宽(480px) + 文本折行不截断, 两处各管各的 — 小欧-2026-10-29
-const LIVE_META_MAX_W = 25 * FontSize.SECONDARY; // 位2 截断: 25 汉字宽 ≈ 300px — 小欧-2026-11-07
+const LIVE_META_MAX_W = 19 * FontSize.SECONDARY; // 位3动态状态截断: 19 汉字宽 ≈ 228px — 商量-2026-11-24
 const EVENT_CARD_W = 40 * FontSize.SECONDARY; // 事件浮层宽: 40 汉字宽 ≈ 480px
 
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
