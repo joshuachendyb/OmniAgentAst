@@ -1,4 +1,24 @@
 v1.7.10
+发布时间: 2026-11-24 13:37:00 - 商量-2026-11-24
+## v1.7.10汇总 从上一个 tag v1.7.9(commit 49a4a8e04, 2026-11-24)以来全部 13 个 commit(feat 4 / fix 3 / refactor 3 / docs 3); 本批以搜索抓取链升级为轴心: Tavily搜索后端接入+链序重排(exa→tavily→parallel→tinyfish→firecrawl)+P4并行合并(前3家并发+串行尾兜底)+fetchpage外部链云端代抓前置(Firecrawl→Tavily→Jina→Exa)+并行合并开关改设置项(热读)+notice信封收口+TaskInfoBar宽度修复 - 商量-2026-11-24
+### 1.7.10.1 新增功能
+[feat] feat:search_web 接入 Tavily 搜索后端 _search_tavily(原生REST api.tavily.com/search, 需key, 无key抛NEED_SETUP由底座跳过) + 注册键tool_websearch_Tavily_key(env TAVILY_API_KEY覆盖, ENV_INJECTED_KEYS与registry键名严格对应) + config.example增键 + 前端SettingsGroup sectionOf system分支新增「工具」小节 - 商量-2026-11-24
+[feat] feat:settings_registry Tavily密钥项改url类型并调整文案+新增search_web并行多源方案文档 - 商量-2026-11-24
+[feat] feat:search_web P4并行合并实施([58]§4): 新增_normalize_search_url/merge_search_items(URL归一去重保序)/_PARALLEL_GROUP/search_parallel_merge(前3家并发+串行尾兜底)/_mk_parallel_out(错误分类+冷却), 主函数接SEARCH_PARALLEL_MERGE开关(默认关可一键回退)+engine_used多引擎展示适配 - 商量-2026-11-24
+[feat] feat:notice 空响应/降级Text/摘要重试统一信封收口: handle_answer空响应改notice(retrying,start)+置_active标志, react_step抽_clear_active_notices(清retrying/rate_limit_wait双done, chunk/response两路共用), react_dispatch识别notice(retrying,start)置RETRYING驱动重试, llm_call摘要补summarizing done, steps/__init__补登5个在用kind - 商量-2026-11-24
+### 1.7.10.2 缺陷修复
+[fix] fix:search_web 三堂会审P0修复 链序重排后六家timeout_cap之和105>90致Bing最坏BUDGET_EXHAUSTED轮不到, 收敛firecrawl 20→10/tinyfish 15→10(实测延迟充裕)使和=90恢复预算不变量 - 商量-2026-11-24
+[fix] fix:fetchpage 三堂会审DRY修复 SPA回退分支单点直调Jina改走_fetch_via_external_providers统一链(Firecrawl→Tavily→Jina→Exa), 消除绕链第二实现, 反爬SPA站云端代抓得以出场; 删死代码_remaining_seconds - 商量-2026-11-24
+[fix] fix:TaskInfoBar 位3动态状态截断宽度25→19汉字宽(300→228px): 收窄第三位(动态状态)显示最大宽度 - 商量-2026-11-24
+### 1.7.10.3 重构与优化
+[refactor] refactor:search_web SEARCH_CHAIN链序重排 exa→tavily→parallel→tinyfish→firecrawl(实测依据: exa48次全稳居首, tavily最快质量最优次位, firecrawl最慢限速兜底) - 商量-2026-11-24
+[refactor] refactor:fetchpage 外部抓取链云端代抓前置 Firecrawl→Tavily→Jina→Exa(新增_fetch_via_tavily_extract REST/extract key复用tool_websearch_Tavily_key, 反反爬最强打头) - 商量-2026-11-24
+[refactor] refactor:searchweb 并行合并开关从代码常量改设置项tool_websearch_parallel_merge(bool默认True): settings_registry system组新增项(设置页可见可改), search_web主函数改get_config惰性热读(与_search_tavily同模式), tool_constants删SEARCH_PARALLEL_MERGE常量(保留SEARCH_PARALLEL_WIDTH), config.example增键; 改后即时生效无需重启 - 商量-2026-11-24
+### 1.7.10.4 文档
+[docs] docs:SearchWebInput新增docstring能力/效果说明: 多引擎串行降级链+URL去重合并+可选并行合并, 让LLM了解搜索效果可能变化 - 商量-2026-11-24
+[docs] docs:[58]v4详细设计补全: 新增§4.6实施对接清单(asyncio/net_backend三函数导入清单, engine_used多引擎展示适配, schema零改动, 开关回退)+修§4.2设计bug(attempts轨迹被{**leftover}覆盖丢并行段, 显式合并) - 商量-2026-11-24
+[docs] docs:[58]v3全文一致性核查修订: 现状链序同步已实施新序(exa首位), 目标4/5对齐定稿决策, 并行组统一为exa+tavily+parallel, 删作废的scrape参数设计, 预算表同步cap新值(和=90), 实施步骤阶段1标记已完成 - 商量-2026-11-24
+v1.7.9
 发布时间: 2026-11-24 10:10:00 - 商量-2026-11-24
 ## v1.7.10汇总 从上一个 tag v1.7.9(commit 49a4a8e04, 2026-11-24)以来: Tavily 搜索密钥接入 searchweb 搜索链 + 设置页承载。含: search_web 新增 _search_tavily 原生 REST 后端(api.tavily.com/search, 需 key, 无 key 抛 NEED_SETUP 由底座跳过)、注册键 tool_websearch_Tavily_key(env TAVILY_API_KEY 覆盖, ENV_INJECTED_KEYS 与 registry 键名严格对应)、config.yaml.example 增 tool_websearch_Tavily_key 键、前端 SettingsGroup sectionOf system 分支新增「工具」小节(tool_websearch_* 前缀, 对齐后端 system 组承载, 不新建 Tab) - 商量-2026-11-24
 ### 1.7.10.1 新增功能

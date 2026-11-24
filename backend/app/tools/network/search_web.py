@@ -34,7 +34,11 @@
 #   firecrawl 最慢(5.7s)+免费层限速兜底, 主力价值转 scrape 模式 — 商量-2026-11-24
 # 2026-11-24 商量 - P4 并行合并实施([58]§4): 新增 _normalize_search_url/merge_search_items(去重保序)/
 #   _PARALLEL_GROUP/search_parallel_merge(前3家并行+串行尾兜底)/_mk_parallel_out(错误分类+冷却);
-#   主函数接 SEARCH_PARALLEL_MERGE 开关(默认关, 冒烟通过后开), engine_used 多引擎展示适配 — 商量-2026-11-24
+#   主函数接 SEARCH_PARALLEL_MERGE 开关(默认开=并行合并), engine_used 多引擎展示适配 — 商量-2026-11-24
+
+# 2026-11-24 商量 - SEARCH_PARALLEL_MERGE 默认开(False→True): 用户确认默认并行合并, 主函数分流默认走并行 — 商量-2026-11-24
+# 2026-11-24 商量 - 并行合并开关改设置项 tool_websearch_parallel_merge(bool, 默认开): 原 SEARCH_PARALLEL_MERGE
+#   常量删除, 主函数改 get_config 热读(设置页可见可改, 改后即时生效), 与 _search_tavily 同模式惰性导入 — 商量-2026-11-24
 
 """
 N4: searchweb — 搜索网络获取最新信息
@@ -82,7 +86,6 @@ from app.tools.tool_constants import (
     ERR_NET_TIMEOUT,
     ERR_NET_UPSTREAM_BROKEN,
     ERR_PARAM_INVALID,
-    SEARCH_PARALLEL_MERGE,
     SEARCH_PARALLEL_WIDTH,
     SEARCH_WEB_INER_HTML_PARSE,
     SEARCH_WEB_OUTPARM_LIMIT_RAW,
@@ -784,10 +787,11 @@ async def searchweb(
 
         # 2026-11-23 小欧 - S2 统一调度: 错误分类/分级冷却/尝试轨迹/链级预算由底座负责
         # 2026-11-24 商量 - P4 并行合并([58]§4): 开=True 前3家(exa+tavily+parallel)并行合并+串行尾兜底;
-        #   开=False 原串行链原样保留(一键回退)
+        #   开=False 原串行链原样保留(一键回退); 开关改设置项 tool_websearch_parallel_merge(默认开)
         budget = SEARCH_WEB_TIMEOUT_DEFAULT if timeout is None else timeout
         chain_args = (query, num_results, proxy)
-        if SEARCH_PARALLEL_MERGE:
+        from app.config import get_config  # 惰性导入(与 _search_tavily 同模式, 避顶层循环依赖)
+        if get_config().get("tool_websearch_parallel_merge", True):
             out = await search_parallel_merge(query, num_results, proxy, budget, "search", chain_args)
         else:
             out = await run_chain(

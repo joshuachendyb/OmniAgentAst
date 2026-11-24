@@ -12,6 +12,9 @@
 #   小于三家降级链最坏耗时80s, 整链会被外层掐断且attempts/已得结果全丢 — 小欧-2026-11-23
 # 2026-11-24 商量 - SearchWebInput新增docstring(能力/效果说明, 规范第3条"tool描述的增强信息"):
 #   多引擎串行降级链+URL去重合并+可选并行合并(SEARCH_PARALLEL_MERGE默认关), 让LLM了解搜索效果可能变化 — 商量-2026-11-24
+
+# 2026-11-24 商量 - SearchWebInput docstring 订正: 默认行为为并行(SEARCH_PARALLEL_MERGE 默认开), 前3家并发+串行尾兜底, 如实描述不再写默认关 — 商量-2026-11-24
+
 """
 Network Schema - 网络工具参数模型
 
@@ -104,10 +107,9 @@ class FetchWebpageInput(BaseModel):
 class SearchWebInput(BaseModel):
     """搜索引擎查询工具
 
-    【能力】多引擎串行降级链(前3家 exa/tavily/parallel + 尾 tinyfish/firecrawl + bing 兜底):
-    一家失败/限流自动降级下一家, 不拖垮整链; 结果按 URL 归一化去重合并, 保首源顺序。
-    【效果】可选并行合并(SEARCH_PARALLEL_MERGE 开关, 默认关): 开启后前3家并发请求, 更快更全;
-    默认串行链, 单次最坏耗时由 timeout 链级共享预算封顶(默认90s)。
+    【能力】支持工具内部多引擎并行搜索: 默认3家 exa/tavily/parallel引擎 + 串行尾兜底(链尾 tinyfish/firecrawl + bing);
+    一家失败/限流自动降级不拖垮整链; 结果按 URL 归一化去重合并, 保首源顺序。
+    【效果】默认并行: 并发搜索更快更全, 不足/全败续串行尾兜底; 链级共享预算封顶(默认90s)。
     """
     query: str = Field(
         ..., description="搜索查询字符串"
