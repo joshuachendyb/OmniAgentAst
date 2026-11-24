@@ -1,3 +1,8 @@
+v1.7.10
+发布时间: 2026-11-24 10:10:00 - 商量-2026-11-24
+## v1.7.10汇总 从上一个 tag v1.7.9(commit 49a4a8e04, 2026-11-24)以来: Tavily 搜索密钥接入 searchweb 搜索链 + 设置页承载。含: search_web 新增 _search_tavily 原生 REST 后端(api.tavily.com/search, 需 key, 无 key 抛 NEED_SETUP 由底座跳过)、注册键 tool_websearch_Tavily_key(env TAVILY_API_KEY 覆盖, ENV_INJECTED_KEYS 与 registry 键名严格对应)、config.yaml.example 增 tool_websearch_Tavily_key 键、前端 SettingsGroup sectionOf system 分支新增「工具」小节(tool_websearch_* 前缀, 对齐后端 system 组承载, 不新建 Tab) - 商量-2026-11-24
+### 1.7.10.1 新增功能
+[feat] feat:search_web 接入 Tavily 搜索后端 _search_tavily(原生 REST api.tavily.com/search, 需 key) + 注册键 tool_websearch_Tavily_key(env TAVILY_API_KEY 覆盖, ENV_INJECTED_KEYS 与键名严格对应) + config.example 增键 + 前端 SettingsGroup sectionOf system 分支新增「工具」小节(不新建 Tab, 学习现有 system 组小节做法) - 商量-2026-11-24
 v1.7.9
 发布时间: 2026-11-24 08:48:22 - 商量-2026-11-24
 ## v1.7.9汇总 从上一个 tag v1.7.8(commit 4f753decd, 2026-11-21)以来本线全部 40 个 commit(feat 11 / fix 7 / refactor 5 / docs 12 / perf 1 / chore 4); 本批以搜索抓取链升级为轴心, 含MCP传输层抽取到mcp_client(限体/末帧/error信封)、三家外部API合并_fetch_via_external_providers(Jina→Exa→Firecrawl)、单家timeout_cap(20/20/20/15)修复Bing永轮不到、run_prompt布尔透传消除(KISS)、搜索Web能力升级(错误码单一来源/链级预算/冷却分级/SSE取末帧)、OmniVPN两级池轮转方案与节点池动态展示、MediaCrawler开源项目分析与集成方案A/B - 商量-2026-11-24

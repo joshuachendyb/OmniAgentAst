@@ -454,6 +454,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
               notice="仅跨域部署时生效（如前端独立CDN、E2E代理）；打包版同源运行无需配置"),
+        # --- 工具（searchweb）：Tavily 搜索密钥（普通可编辑项, 非 secret 走通用设置写通道;
+        #    env TAVILY_API_KEY 可覆盖 config 值 — 商量 2026-11-24）---
+        _item("tool_websearch_Tavily_key", "text", "Tavily 搜索密钥",
+              "", env_key="TAVILY_API_KEY", env_inject=True,
+              notice="第三方搜索服务 Tavily 的 API key(供 searchweb 搜索用)。留空则不启用 Tavily 源；可在环境变量 TAVILY_API_KEY 设置以覆盖此值"),
         # --- 对话历史保留（1 键，归 system 命名空间，启动时清理超期会话）---
         _item("system.chat_retention_days", "int", "对话历史保留天数", 0,
               range_=[0, 3650], restart=True,

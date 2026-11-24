@@ -65,6 +65,8 @@ def env_nonempty(name: str) -> bool:
 ENV_INJECTED_KEYS: Dict[str, str] = {
     "security.access_token": "OMNIAGENT_ACCESS_TOKEN",
     "security.access_token_allowlist": "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
+    # 2026-11-24 商量 - Tavily 搜索密钥(searchweb 工具): env TAVILY_API_KEY 覆盖 config 值
+    "tool_websearch_Tavily_key": "TAVILY_API_KEY",
 }
 
 

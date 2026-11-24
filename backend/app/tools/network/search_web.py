@@ -60,6 +60,7 @@ from app.tools.network.mcp_client import (
 from app.tools.network.net_backend import (
     Backend,
     NetError,
+    _retry_after_seconds,
     run_chain,
 )
 from app.tools.tool_constants import (
@@ -225,6 +226,8 @@ SEARCH_CHAIN = (
     Backend("exa", lambda q, n, p, t: _search_mcp_engine("exa", q, n, p, t)),
     Backend("firecrawl", lambda q, n, p, t: _search_mcp_engine("firecrawl", q, n, p, t)),
     Backend("tinyfish", lambda q, n, p, t: _search_mcp_engine("tinyfish", q, n, p, t)),
+    # 2026-11-24 商量 - Tavily 原生 REST 搜索(需 key, 无 key 时后端抛 NEED_SETUP 由底座跳过)
+    Backend("tavily", lambda q, n, p, t: _search_tavily(q, n, p, t)),
 )
 
 
@@ -532,6 +535,77 @@ async def _search_bing(
     if net_error is not None:
         raise net_error
     return []
+
+
+async def _search_tavily(
+    query: str,
+    num_results: int,
+    proxy_config: Optional[str] = None,
+    timeout_sec: Optional[float] = None,
+) -> List[dict]:
+    """Tavily 原生 REST 搜索(api.tavily.com/search) — 商量 2026-11-24
+
+    需 key(配置 tool_websearch_Tavily_key 或 env TAVILY_API_KEY); 无 key 时抛 NEED_SETUP 由底座跳过该家。
+    错误由 httpx 自动分类(429→RATE_LIMITED / 401·403→NEED_SETUP / 其余→UPSTREAM_BROKEN)。
+    """
+    # 惰性导入避免模块加载期循环依赖(config 不依赖 tools, 但保持与 _search_bing 一致的局部导入风格)
+    from app.config import get_config
+
+    api_key = (get_config().get("tool_websearch_Tavily_key", "") or "").strip()
+    if not api_key:
+        raise NetError(ERR_NET_NEED_SETUP, "Tavily 未配置 API key(设置 tool_websearch_Tavily_key 或 env TAVILY_API_KEY)")
+
+    import time as _t
+
+    deadline = None if timeout_sec is None else _t.monotonic() + timeout_sec
+
+    def _remaining(default: float) -> float:
+        if deadline is None:
+            return default
+        return max(1.0, min(default, deadline - _t.monotonic()))
+
+    payload = {
+        "query": query,
+        "max_results": num_results,
+        "search_depth": "basic",
+        "include_answer": False,
+        "include_raw_content": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": TOOL_BROWSER_UA,
+    }
+
+    try:
+        async with create_http_client(timeout_sec=_remaining(15.0), proxy=proxy_config) as client:
+            response = await client.post("https://api.tavily.com/search", json=payload, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+    except httpx.HTTPStatusError as e:
+        # 401/403 缺 key 或额度 → NEED_SETUP; 429 限流 → RATE_LIMITED; 其余状态 → UPSTREAM_BROKEN
+        status = e.response.status_code
+        if status in (401, 403):
+            raise NetError(ERR_NET_NEED_SETUP, f"Tavily 拒绝访问(HTTP {status}), 请检查 key/额度") from e
+        if status == 429:
+            retry_after = _retry_after_seconds(e.response.headers.get("Retry-After"))
+            raise NetError(ERR_NET_RATE_LIMITED, "Tavily 限流(HTTP 429)", retry_after=retry_after) from e
+        raise NetError(ERR_NET_UPSTREAM_BROKEN, f"Tavily 上游错误(HTTP {status})") from e
+    except httpx.HTTPError as e:
+        # 连接/超时等传输层错误: 交由底座分类(网络→不冷却, 超时→TIMEOUT)
+        raise e
+
+    if not isinstance(body, dict):
+        raise NetError(ERR_NET_UPSTREAM_BROKEN, "Tavily 响应非 JSON 对象")
+
+    results: List[dict] = []
+    for r in (body.get("results") or [])[:num_results]:
+        title = (r.get("title") or "").strip()
+        url = (r.get("url") or "").strip()
+        if title and url:
+            snippet = (r.get("content") or "").strip() or (r.get("snippet") or "").strip()
+            results.append({"title": title, "url": url, "snippet": snippet, "source": "Tavily"})
+    return results
 
 
 async def searchweb(
