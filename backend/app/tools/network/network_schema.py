@@ -10,6 +10,8 @@
 # 2026-10-26 - 小沈 - FetchWebpageInput新增save_to字段; extract_format描述加MD守护说明; timeout默认30→60。
 # 2026-11-23 小欧 - SearchWebInput新增timeout(链级共享预算, 默认90): 无此参数时保险丝按无inner渐进算出60s,
 #   小于三家降级链最坏耗时80s, 整链会被外层掐断且attempts/已得结果全丢 — 小欧-2026-11-23
+# 2026-11-24 商量 - SearchWebInput新增docstring(能力/效果说明, 规范第3条"tool描述的增强信息"):
+#   多引擎串行降级链+URL去重合并+可选并行合并(SEARCH_PARALLEL_MERGE默认关), 让LLM了解搜索效果可能变化 — 商量-2026-11-24
 """
 Network Schema - 网络工具参数模型
 
@@ -100,6 +102,13 @@ class FetchWebpageInput(BaseModel):
 
 
 class SearchWebInput(BaseModel):
+    """搜索引擎查询工具
+
+    【能力】多引擎串行降级链(前3家 exa/tavily/parallel + 尾 tinyfish/firecrawl + bing 兜底):
+    一家失败/限流自动降级下一家, 不拖垮整链; 结果按 URL 归一化去重合并, 保首源顺序。
+    【效果】可选并行合并(SEARCH_PARALLEL_MERGE 开关, 默认关): 开启后前3家并发请求, 更快更全;
+    默认串行链, 单次最坏耗时由 timeout 链级共享预算封顶(默认90s)。
+    """
     query: str = Field(
         ..., description="搜索查询字符串"
     )
