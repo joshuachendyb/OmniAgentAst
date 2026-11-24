@@ -69,6 +69,8 @@
 // 编辑历史: 2026-11-19 小欧 - 新增 hasPendingInteraction 纯函数: HITL授权/question问询等待唯一判据, 暂停按钮 handler 拦截与 UI 置灰共用 — 小欧-2026-11-19
 // 编辑历史: 2026-11-22 商量 - clearSteps 补清 scheduleList: scheduleList 是任务级状态, 新任务边界须随 metaFrames 一并重置,
 //   否则上个任务的执行计划残留到新任务(taskinfo 位置2计划卡片不复位); 与 metaFrames 同因同补 — 商量-2026-11-22
+// 编辑历史: 2026-11-24 商量 - 生命周期信封驱动即时重锚定: 新增 handleLifecycleEvent 处理 task_started/task_ended/hitl_pending/hitl_settled,
+//   sessionEventsStore 变更触发 attachOrphanTask 对账, 替代 ChatPage 每 3 秒查库轮询
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -1811,6 +1813,27 @@ export const chatStreamStore = {
     detachResumeStream(s); // GET /chat/stream/{新taskId}?after_seq=0 接上续跑流
     console.info(
       `[Store] 续跑任务自动附着 session=${sessionId} task=${live.task_id}`
+    );
+    return true;
+  },
+
+  /** 生命周期信封驱动的即时重新锚定 — 商量 2026-11-24
+   *  场景: 后台 shell 命令完成后, 后端 resume_session_with_notice 以【新 task_id】建续跑任务,
+   *  本页锚点仍是旧终态任务 → 新任务的事件一条也收不到(AI 消息不流动)。
+   *  信封已带 task_id/created_at, 故无需查库即可 reanchor —— 这是消除 3 秒轮询延迟的关键。
+   *  守卫: 用户正在发送(pendingMessage)时一律不抢锚点 —— sendMessage 会自己锚定,
+   *  此处插手会打断其 POST 首连的正常锚定流程。
+   *  复用 reanchorToTask(清 lastSeq/steps/response, 否则 after_seq 会过滤掉新任务 seq 0 起的事件)
+   *  与 detachResumeStream(GET /chat/stream/{新taskId} 接流), 零新增重连实现。 */
+  onTaskStarted(sessionId: string, taskId: string, createdAt: string): boolean {
+    const s = sessions.get(sessionId);
+    if (!s) return false; // 本页未打开过该会话: 不主动造会话(与 attachOrphanTask 同口径)
+    if (s.serverTaskId === taskId) return false; // 已锚定同一任务, 幂等
+    if (s.pendingMessage) return false; // 用户正在发送, 交给 sendMessage 锚定
+    reanchorToTask(s, taskId, createdAt);
+    detachResumeStream(s);
+    console.info(
+      `[Store] 生命周期信封驱动重新锚定 session=${sessionId} task=${taskId}`
     );
     return true;
   },

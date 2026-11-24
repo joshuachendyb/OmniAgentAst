@@ -59,6 +59,8 @@
 
 // 编辑历史: 2026-11-06 小欧 - 附件建会话 ensureSessionForUpload: 先选文件、选中后才建(取消选择不建空会话);
 //   解构到组件作用域供 useCallback 引用(避免闭包访问 chatState 触发 deps warning) — 小欧-2026-11-06
+// 编辑历史: 2026-11-24 商量 - 生命周期事件流替代 3 秒轮询: 订阅 sessionEventsStore 全局 SSE(GET /chat/events),
+//   替代 ChatPage 每 3 秒查库轮询; 订阅 hitlPendingStore 驱动顶栏 HITL 待处理角标
 
 import React, {
   useState,
@@ -85,6 +87,10 @@ import { useChatLifecycle } from '../../features/chat/hooks/useChatLifecycle';
 import { useChatTitle } from '../../features/chat/hooks/useChatTitle';
 import { useChatPanels } from '../../features/chat/hooks/useChatPanels';
 import { chatStreamStore } from '../../features/chat/streams/chatStreamStore';
+import {
+  addReconcileHandler,
+  subscribeLifecycle,
+} from '../../features/chat/streams/sessionEventsStore';
 import {
   publishForegroundSession,
   clearForegroundSession,
@@ -210,18 +216,34 @@ const ChatPage: React.FC = () => {
     }
   }, [chatStreaming.serverTaskId, sessionId, refreshTasks]);
 
-  // 2026-11-18 opencode - 续跑任务自动附着轮询: 后台 shell 完成后后端以新 task_id 建续跑任务,
-  //   前端未走 sendMessage → store 锚在旧终态任务 → 不接流(不滚动/事件空/loading 卡死/发不出消息)。
-  //   本页空闲且后端有未锚定的 executing 任务时, attachOrphanTask 重新锚定并接流(内部全守卫, 幂等无副作用)。
-  //   3s 粒度足够(续跑非高频), 只在会话页挂载期间运行; 切走/卸载即停。
+  // 2026-11-24 商量 - 生命周期事件流替代 3 秒轮询(原实现见 2026-11-18 opencode 的注释, 已移除):
+  //   [病根] 后台 shell 命令完成 → 后端 resume_session_with_notice 以【新 task_id】建续跑任务,
+  //     本页锚点仍是旧终态任务 → 新任务事件一条也收不到(AI 消息不流动)。旧解是每 3 秒查
+  //     GET /sessions/{id}/tasks(SQLite) 才发现, 代价: 最坏 3 秒盲区 / 后台标签页被浏览器节流
+  //     (Chrome 对不可见页面 setInterval ≥1 分钟) / 每 3 秒一次库查询。
+  //   [改法] 后端 SSE 即时推 task_started, 信封已带 task_id+created_at → 直接重新锚定, 无需查库。
+  //   [可靠性] 信封允许丢, 故: ①挂载即对账一次(覆盖"订阅建立前已完成启动"); ②连接/重连成功后
+  //     再对账(attachOrphanTask 内部查 DB 比对锚点, 幂等), 覆盖断线期间丢失的信封。
+  //   [边界] 只处理本会话(task_started 的 session_id 匹配); 其他会话的新任务由壳层 Layout 刷新顶栏。
   useEffect(() => {
-    if (!sessionId) return;
-    const attach = () => {
+    if (!sessionId) return undefined;
+    const unsubscribe = subscribeLifecycle((ev) => {
+      if (ev.type !== 'task_started') return;
+      if (ev.session_id !== sessionId) return; // 非本会话, 交给壳层处理
+      const d = ev.data as { task_id?: unknown; created_at?: unknown };
+      const taskId = typeof d.task_id === 'string' ? d.task_id : '';
+      const createdAt = typeof d.created_at === 'string' ? d.created_at : '';
+      if (!taskId) return;
+      chatStreamStore.onTaskStarted(sessionId, taskId, createdAt);
+    });
+    const removeReconcile = addReconcileHandler(() => {
       void chatStreamStore.attachOrphanTask(sessionId);
+    });
+    void chatStreamStore.attachOrphanTask(sessionId); // 挂载/切会话即对账一次
+    return () => {
+      removeReconcile();
+      unsubscribe();
     };
-    attach(); // 挂载/切会话即查一次(覆盖"续跑任务在页面打开期间已完成启动"的窗口)
-    const timer = window.setInterval(attach, 3000);
-    return () => window.clearInterval(timer);
   }, [sessionId]);
 
   // 2026-11-02 小欧 - 左侧回复区写入：isReceiving 翻 false 时取 executionSteps 中 type=final 的 response 写入，

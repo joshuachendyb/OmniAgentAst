@@ -33,6 +33,7 @@
 #   过期清理判据与真 HITL 确认超时不再同源。
 # 2026-10-18 小欧 - 注释精简冗余标注(S2/T1/超时配置化/路径订正 四处, 技术说明与日期署名原样保留)。
 # 2026-11-03 小欧 - 确认失效/重复确认/窗口关闭三处 WARNING→DEBUG/INFO(请求侧状态与正常超时) — 小欧-2026-11-03
+# 2026-11-24 商量 - 新增 HITL 待处理广播: create_confirmation/resolve_confirmation 经 event_bus 播报 hitl_pending/hitl_settled 信封; 新增 list_pending_confirmations 供前端对账(只返回 id+定位, 不含弹窗正文)
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -56,6 +57,7 @@ from app.config import get_config
 from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
 from app.constants import MAX_PENDING_CONFIRMATIONS as _D_MAX_CONFIRM
 from app.logger import logger
+from app.services.task.event_bus import EVENT_HITL_PENDING, EVENT_HITL_SETTLED, publish_event, publish_for_task  # 商量 2026-11-24: HITL 待处理广播
 from app.services.task.task_runtime import check_cancelled
 
 
@@ -123,6 +125,13 @@ async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[
         )
         # 2026-09-03 小欧/北京老陈: create_confirmation补日志 — 确认confirm_id生命周期起点
         logger.info(f"[HITL] 创建confirm: confirm_id={confirm_id}, tool={tool_name}, path={path}")
+    # 2026-11-24 商量 - HITL 待处理广播: 多端/后台标签页即时可见待确认项(信封不含正文, 前端按 confirm_id 拉详情)
+    publish_for_task(EVENT_HITL_PENDING, task_id, {
+        "hitl_id": confirm_id,
+        "kind": "confirm",
+        "tool_name": tool_name,
+        "path": path or "",
+    })
     return confirm_id
 
 
@@ -210,7 +219,46 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
     _cleanup_stale_confirmations()
 
     logger.info(f"[HITL] 用户确认: confirm_id={confirm_id}, confirmed={confirmed}, trust_session={trust_session}")
+    # 2026-11-24 商量 - 待处理项已解决广播: 其他端收起弹窗, 避免"一端已批、另一端仍挂着"
+    publish_event(EVENT_HITL_SETTLED, {"hitl_id": confirm_id, "kind": "confirm"}, None)
     return True
 
 
-__all__ = ["create_confirmation", "wait_for_confirmation_result", "resolve_confirmation"]
+def list_pending_confirmations() -> list:
+    """列出当前未处理的确认请求(权威快照) — 商量 2026-11-24
+
+    用途: 前端"待处理项"对账源。信封(hitl_pending)可能因断线丢失, 重连后凭本函数重建集合;
+    与信封同为"只报 id + 定位信息", **不含弹窗正文**(params/content/safety_level 由内容流的
+    interact 帧提供) —— 信封只负责叫醒, 真相去内容流拿。
+
+    返回项: {hitl_id, kind, task_id, session_id, tool_name, path, created_at, age_s}
+    task_id 取自 hitl_id 前缀(create_confirmation 的 f"{task_id}:{hex}" 约定);
+    session_id 从内存活跃表反查, 查不到为 None(前端按 task_id 仍可定位)。
+    """
+    _cleanup_stale_confirmations()   # 先清理, 避免把已超时项当待处理返回
+    from app.services.task.task_state import running_tasks
+
+    now = time.time()
+    out = []
+    with _pending_lock:
+        snapshot = list(_pending_confirmations.items())
+    for hitl_id, entry in snapshot:
+        if entry.future.done():      # 已被处理(set_result)但尚未被清理 → 不是待处理
+            continue
+        task_id = hitl_id.split(":")[0] if ":" in hitl_id else ""
+        _t = running_tasks.get(task_id) if task_id else None
+        out.append({
+            "hitl_id": hitl_id,
+            "kind": "confirm",
+            "task_id": task_id,
+            "session_id": _t.get("session_id") if _t else None,
+            "tool_name": entry.tool_name or "",
+            "path": getattr(entry, "path", None) or "",
+            "created_at": entry.created_at,
+            "age_s": round(now - entry.created_at, 1),
+        })
+    return out
+
+
+__all__ = ["create_confirmation", "wait_for_confirmation_result", "resolve_confirmation",
+           "list_pending_confirmations"]

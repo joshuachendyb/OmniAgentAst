@@ -4,7 +4,7 @@
 # 2026-11-03 - 小欧 - 忽略终态翻转日志 WARNING→INFO(竞态守卫已安全忽略, 非故障) — 小欧-2026-11-03
 # 2026-11-04 - 小欧 - 删未使用的 typing.Optional(死导入) — 小欧-2026-11-04
 # 2026-11-24 - 商量 - 新增 tracker_terminal_status: AgentStatus→task_tracker 终态值唯一映射源(COMPLETED→success/FAILED→failed/CANCELLED→cancelled, 其余按failed);
-#   病根: 任务收尾曾用 complete_task(success=(status==COMPLETED)) 二值化, 取消被写成 failed, 与 SSE/chat_tasks 分叉 — 商量-2026-11-24
+#   病根: 任务收尾曾用 complete_task(success=(status==COMPLETED)) 二值化, 取消被写成 failed, 与 SSE/chat_tasks 分叉
 """
 status_table — Agent状态集中管理
 
@@ -158,3 +158,19 @@ def tracker_terminal_status(status: AgentStatus) -> str:
     """AgentStatus → task_tracker 任务终态值(success/failed/cancelled) — 商量 2026-11-24
     收尾时仍非终态(RETRYING/SUSPENDED/None)按失败落库: 任务未正常完成, 不得误标成功。"""
     return _TRACKER_TERMINAL_STATUS.get(status, "failed")
+
+
+# AgentStatus → 前端 UI / chat_tasks / SSE final.outcome 口径终态(completed/failed/cancelled)
+# 与 _TRACKER_TERMINAL_STATUS 并列, 因为两套词表客观不同(task_tracker 用 success, 其余用 completed);
+# 不得合并成一张表再在消费方转换 —— 那正是上一轮"布尔二值化把 cancelled 压成 failed"的同型错误。
+_UI_TERMINAL_STATUS = {
+    AgentStatus.COMPLETED: "completed",
+    AgentStatus.FAILED: "failed",
+    AgentStatus.CANCELLED: "cancelled",
+}
+
+
+def ui_terminal_status(status: AgentStatus) -> str:
+    """AgentStatus → 前端/chat_tasks 口径终态值(completed/failed/cancelled) — 商量 2026-11-24
+    用途: 生命周期广播 task_ended 的 status 字段(前端 isTerminalStatus 只认这三个值)。"""
+    return _UI_TERMINAL_STATUS.get(status, "failed")

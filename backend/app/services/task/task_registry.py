@@ -51,6 +51,10 @@
 #   仅非正常终态杀进程树; ④上一条"cleanup_task/cleanup_expired_tasks 删任务前 terminate 后台进程"
 #   记载与实现不符, 实际两处均未 terminate, 以本条为准 — 商量-2026-11-13
 # 2026-11-14 商量 - 补偿删除 SQL 收口到 storage.delete_user_message(与续跑失败补偿同一出口, DRY) — 商量-2026-11-14
+# 2026-11-24 商量 - 任务诞生广播: register_task 注册成功分支播 task_started(信封带 task_id/session_id/created_at),
+#   前端一条常驻 SSE 即时接流, 替代 ChatPage 每 3 秒查库轮询; 选本函数作播报点是因"任何任务诞生必过此处",
+#   挂编排层/业务调用点必漏(resume_session_with_notice 与 _create_and_launch_task 是两条独立路径, timer 是第三条);
+#   返回占位 tid(同会话已占位)时未真正注册, 不播报
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -77,6 +81,11 @@ from app.db import db
 from app.logger import logger
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 from app.services.chat.storage import bind_message_to_task, delete_user_message, insert_user_message
+from app.services.task.event_bus import (  # 2026-11-24 商量: 任务生命周期广播(前端即时接流, 替代 3 秒轮询)
+    EVENT_TASK_STARTED,
+    EVENT_TASK_STATUS_CHANGED,
+    publish_event,
+)
 from app.services.task.task_state import (
     running_tasks,
     running_tasks_lock,
@@ -123,17 +132,27 @@ async def register_task(task_id: str, session_id: Optional[str] = None) -> Optio
                         f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
                         f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
                     return _tid
+        _created_at = datetime.now()
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,
             "paused": False,
             "session_id": session_id,          # X5/X6 同会话判定
             "_inbox": asyncio.Queue(maxsize=INBOX_MAX),  # B机制: 运行中注入消息队列, agent 侧每轮 LLM 调用前合并吸收; 2026-09-28 小欧 加上限防无界堆积(设计文档[76] 6.1③)
-            "created_at": datetime.now(),
+            "created_at": _created_at,
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
         }
         running_tasks[task_id]["_pause_event"].set()
+        # 2026-11-24 商量 - 任务诞生广播: 前端据此立即接流(替代 3 秒查库轮询)。
+        #   信封带 created_at 让前端无需查库即可 reanchorToTask, 这是消除延迟的关键;
+        #   同步 put_nowait 无 await, 锁内调用安全。任务诞生必过本函数, 故播报点不可能漏。
+        publish_event(EVENT_TASK_STARTED, {
+            "task_id": task_id,
+            "session_id": session_id,
+            "created_at": _created_at.isoformat(),  # 本地 ISO 无 Z, 与 chat_tasks.created_at 同口径
+        }, session_id)
+        return None
 
 
 async def has_active_task_in_session(session_id: str) -> Optional[str]:
@@ -335,6 +354,11 @@ async def set_cancelled(task_id: str, **extra) -> bool:
         task["cancelled"] = True
         task["status"] = "cancelled"
         task.update(extra)
+        # 2026-11-24 商量 - 状态变更广播(顶栏/任务面板即时反映取消, 不必等内容流收尾)
+        publish_event(EVENT_TASK_STATUS_CHANGED, {
+            "task_id": task_id,
+            "status": "cancelled",
+        }, task.get("session_id"))
         return True
 
 
@@ -379,6 +403,11 @@ async def set_paused(task_id: str) -> dict:
         pause_event = task.get("_pause_event")
         if pause_event:
             pause_event.clear()
+        # 2026-11-24 商量 - 状态变更广播
+        publish_event(EVENT_TASK_STATUS_CHANGED, {
+            "task_id": task_id,
+            "status": "paused",
+        }, task.get("session_id"))
         return api_success(message=f"任务 {task_id} 已暂停")
 
 
@@ -397,6 +426,11 @@ async def set_resumed(task_id: str) -> dict:
         pause_event = task.get("_pause_event")
         if pause_event:
             pause_event.set()
+        # 2026-11-24 商量 - 状态变更广播
+        publish_event(EVENT_TASK_STATUS_CHANGED, {
+            "task_id": task_id,
+            "status": "running",
+        }, task.get("session_id"))
         return api_success(message=f"任务 {task_id} 已继续")
 
 

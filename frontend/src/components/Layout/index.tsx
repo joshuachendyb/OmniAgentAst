@@ -53,6 +53,7 @@
 //   否则取 LATEST_RUNNING(开跑最晚且仍在跑); currentSessionId 只留给侧栏, 不再当顶栏主语 — 小欧-2026-11-03
 // 编辑历史: 2026-11-03 16:40 小欧 - 主语改读 foregroundSessionStore(页面发布, URL 不再当权威): mounted 与 sessionId
 //   分开表达; 挂载/窗口聚焦/路由变化各拉一次 refreshRunningTasks, 壳层仍只透传 — 小欧-2026-11-03
+// 编辑历史: 2026-11-24 商量 - 接入生命周期事件流与 HITL 待处理项: 订阅 sessionEventsStore + hitlPendingStore, 顶栏角标即时感知任务起停与待确认项
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -86,6 +87,17 @@ import {
 } from '@/features/chat/streams/chatStreamStore';
 import { useForegroundSession } from '@/features/chat/services/foregroundSessionStore';
 import { refreshRunningTasks } from '@/features/chat/streams/runningTasksStore';
+import {
+  addReconcileHandler,
+  pokeLifecycle,
+  subscribeLifecycle,
+} from '@/features/chat/streams/sessionEventsStore';
+import {
+  addPending,
+  refreshHitlPending,
+  removePending,
+} from '@/features/chat/streams/hitlPendingStore';
+import { HitlPendingPill } from './HitlPendingPill';
 import ShortcutPanel from '../ShortcutPanel';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
@@ -155,14 +167,66 @@ const AppLayout: React.FC<LayoutProps> = ({
   //   挂载/窗口聚焦/标签页可见各拉一次(单飞去重, 不轮询), 拉不到保留上次结果, 不闪成 0。
   useEffect(() => {
     void refreshRunningTasks();
+    // 2026-11-24 商量 - HITL 待处理项同样需要"首次加载"真相源: 信封只管变化, 存量靠这一次查询
+    void refreshHitlPending();
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void refreshRunningTasks();
+      if (document.visibilityState === 'visible') {
+        void refreshRunningTasks();
+        void refreshHitlPending(); // 切回可见即对账: 后台标签页期间可能丢了信封
+        pokeLifecycle(); // 2026-11-24 商量: 后台标签页定时器被节流, 切回即复核事件流连接健康
+      }
     };
     window.addEventListener('focus', onVisible);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('focus', onVisible);
       document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+  // 2026-11-24 商量 - 生命周期事件流(壳层订阅): 顶栏"在跑任务"不再只靠挂载/聚焦/可见性触发。
+  //   任何会话有任务起停/状态变更即即时刷新, 覆盖"人在历史页/文件页, 感知不到别的会话新任务"的缺口。
+  //   会话页另有自己的订阅(接流), 两者共享同一条 SSE 连接(store 引用计数, 全站仍只 1 条)。
+  useEffect(() => {
+    const unsubscribe = subscribeLifecycle((ev) => {
+      if (
+        ev.type === 'task_started' ||
+        ev.type === 'task_ended' ||
+        ev.type === 'task_status_changed'
+      ) {
+        void refreshRunningTasks(); // 单飞去重, 多事件叠加也只会发一次请求
+        return;
+      }
+      // 2026-11-24 商量 - HITL 待处理项: 信封只带 id+定位, 存进索引即可; 弹窗详情由会话页内容流给出
+      const d = ev.data as {
+        hitl_id?: unknown;
+        kind?: unknown;
+        task_id?: unknown;
+        tool_name?: unknown;
+        count?: unknown;
+      };
+      const hitlId = typeof d.hitl_id === 'string' ? d.hitl_id : '';
+      if (ev.type === 'hitl_pending' && hitlId) {
+        addPending(
+          hitlId,
+          d.kind === 'question' ? 'question' : 'confirm',
+          typeof d.task_id === 'string' ? d.task_id : '',
+          ev.session_id,
+          {
+            toolName: typeof d.tool_name === 'string' ? d.tool_name : '',
+            count: typeof d.count === 'number' ? d.count : undefined,
+          }
+        );
+      } else if (ev.type === 'hitl_settled' && hitlId) {
+        removePending(hitlId); // 任一端处理即收敛, 其余端角标同步消失
+      }
+    });
+    // 重连成功后对账: 断线期间丢的信封无法补, 只能靠权威快照重建
+    const removeReconcile = addReconcileHandler(() => {
+      void refreshHitlPending();
+    });
+    return () => {
+      removeReconcile();
+      unsubscribe();
     };
   }, []);
   // 路由导航
@@ -395,6 +459,17 @@ const AppLayout: React.FC<LayoutProps> = ({
             <ServiceStatusPill />
             {/* SSE 流状态小灯 - 2026-11-02 小欧 新建: 与服务胶囊正交, 只答"当前这条流活没活/心跳新不新", 只读 store 不发请求 — 小欧-2026-11-02 */}
             <StreamStatusPill subject={pulseSubject} />
+            {/* 2026-11-24 商量 - HITL 待处理项角标: 用户不在发起确认的那个会话时也能知道"有活要干",
+                点击直达该会话; 无待处理项时不渲染(不占位)。弹窗详情仍由会话页内容流提供。 */}
+            <HitlPendingPill
+              currentSessionId={
+                foreground.mounted ? foreground.sessionId : null
+              }
+              onOpen={(item) => {
+                if (item.session_id)
+                  navigate(`/?session_id=${item.session_id}`);
+              }}
+            />
             {/* 2026-10-27 小欧 - 菜单宽度切换(宽/窄菜单, 漂亮的视觉设计) */}
             <SidebarModeSwitcher />
             <Avatar size="small" icon={<DesktopOutlined />} />

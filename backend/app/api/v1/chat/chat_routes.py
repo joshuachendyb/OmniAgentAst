@@ -32,12 +32,18 @@
 # 2026-10-30 - 小欧 - 注释缩进修正(零逻辑): refs 关键字透传注释缩进对齐, 无行为变化 — 小欧-2026-10-30
 # 2026-11-03 - 小欧 - [HITL-confirm] 缺 confirm_id / 已处理 两处 WARNING→DEBUG(请求侧参数问题) — 小欧-2026-11-03
 # 2026-11-18 - 商量 - 新增 /chat/stream/answer 端点: question 工具答案收口, 与 confirm 端点同构(必有返回+失效码)
+# 2026-11-24 - 商量 - 新增 GET /chat/events 全局生命周期事件流(SSE): 广播 task_started/task_ended/
+#   task_status_changed/hitl_pending/hitl_settled 信封, 前端一条常驻连接即时接流; 替代 ChatPage 每 3 秒
+#   查库轮询发现"后台 shell 完成续跑新建 task_id"。可靠性靠"信封可丢 + 重连对账", 不挂 seq/Journal
+#   (与 /chat/stream/{task_id} 的内容流职责正交)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
 编排逻辑迁至 services/chat/stream_orchestrator.py（方案4.7.3）
 小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db
 """
+import asyncio
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Query, Request
@@ -58,8 +64,9 @@ from app.services.chat.stream_orchestrator import (
     chat_stream_reconnect_orchestrator,
     validate_chat_config,
 )
-from app.services.task.hitl_confirmation import resolve_confirmation
-from app.services.task.hitl_question import resolve_question  # 2026-11-18 商量 - question 答案收口
+from app.services.task.event_bus import HEARTBEAT_SECONDS, bus  # 商量 2026-11-24: 全局生命周期事件流
+from app.services.task.hitl_confirmation import list_pending_confirmations, resolve_confirmation
+from app.services.task.hitl_question import list_pending_questions, resolve_question  # 2026-11-18 商量 - question 答案收口; 2026-11-24 增 list_pending_questions(待处理项对账)
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.task_runtime import cancel_task
 
@@ -184,3 +191,100 @@ async def chat_stream_reconnect(
             yield create_error_response(error_type="persistence_degraded",
                                         error_message="回放异常，实时流不受影响")
     return StreamingResponse(_guarded(), media_type="text/event-stream")
+
+
+# ============================================================
+# 全局生命周期事件流 — 商量 2026-11-24
+# ============================================================
+
+def _sse_frame(ev: dict) -> str:
+    """信封 → SSE 单帧。仅 data 行(前端 processSSEData 只消费 data:), type 在 JSON 内
+    (与 /chat/stream 的 event: 行风格不同, 因为前端这个流是独立解析器) — 商量 2026-11-24"""
+    return f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+
+async def _heartbeat_pump(q: "asyncio.Queue[dict]") -> None:
+    """心跳泵: 定时往订阅队列塞 ping — 商量 2026-11-24
+
+    一举两得: ①保活防中间代理按 idle 超时切流; ②让主循环的 q.get() 最多阻塞 HEARTBEAT_SECONDS,
+    从而让 request.is_disconnected() 有机会被检查到(否则客户端半开连接会让协程永久挂住)。
+    不注入 bus 的 ring 缓冲(它是传输层心跳, 不是业务事件)。
+    """
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        try:
+            q.put_nowait({"event_id": -1, "type": "ping", "session_id": None, "data": {}})
+        except asyncio.QueueFull:
+            pass  # 队列满说明消费者已滞后, 下一拍再试即可
+
+
+@router.get("/chat/events")
+async def chat_events_stream(
+    request: Request,
+    last_event_id: int = Query(0, ge=0, description="重连补发起点: ring 内 event_id > N 的信封"),
+    epoch: Optional[int] = Query(None, description="总线纪元; 与当前不符(进程已重启)则忽略 last_event_id"),
+):
+    """全局生命周期事件流(SSE) — 商量 2026-11-24
+
+    职责: 广播"变了"的信封(task 起停/状态变更/HITL 待处理), 让前端即时接流, 替代 3 秒查库轮询。
+    与 GET /chat/stream/{task_id} 的分工(两者不可合并):
+      本端点 = 变更通知, 无 seq 不落库, **允许丢**;
+      任务流 = AI 正文, 有 seq + Journal + after_seq 续传, 不许丢。
+    可靠性靠"重连对账"(前端连上后拉 GET /sessions/tasks/running 与本地锚点比对)
+    """
+    async def _gen():
+        q = bus.subscribe()
+        heartbeat = asyncio.create_task(_heartbeat_pump(q))
+        try:
+            # 首帧声明 epoch: 前端据此判断手里的 last_event_id 是否还属于当前总线
+            yield _sse_frame({"event_id": 0, "type": "ready", "session_id": None,
+                              "data": {"epoch": bus.epoch}})
+            # 补发: epoch 不符(进程重启过)则忽略 last_event_id, 交由前端对账
+            if epoch is None or epoch == bus.epoch:
+                for _ev in bus.replay_since(last_event_id):
+                    yield _sse_frame(_ev)
+            while True:
+                if await request.is_disconnected():
+                    break
+                _ev = await q.get()   # 心跳保证 ≤ HEARTBEAT_SECONDS 必返回, 断开不会被无限挂住
+                yield _sse_frame(_ev)
+        except asyncio.CancelledError:
+            raise               # 客户端断开走正常取消语义, 不吞
+        except Exception as exc:  # 单条连接异常不得影响总线与其他连接
+            logger.warning(f"[EventBus] 事件流异常: {exc}")
+        finally:
+            heartbeat.cancel()
+            bus.unsubscribe(q)
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 反代/nginx 不缓冲, 否则信封被攒成一坨才下发
+        },
+    )
+
+
+@router.get("/chat/hitl/pending")
+async def hitl_pending_endpoint(session_id: Optional[str] = None):
+    """HITL 待处理项权威快照 — 商量 2026-11-24
+
+    为什么需要它: hitl_pending 信封允许丢(信封可丢模型), 断线期间产生的待确认/待回答
+    若只靠信封, 重连后就再也想不起来。本端点是"重连对账 + 首次加载"的真相源。
+
+    与信封的分工(不可混): 信封只报"变了"(带 hitl_id + 定位), 详情(params/题目正文/安全级别)
+    由内容流的 interact 帧提供; 本端点同信封口径, 只返回 id + 定位, 不搬运弹窗正文。
+
+    session_id 可选: 传则只返回该会话的项(会话页用), 不传返回全部(顶栏角标用)。
+    """
+    try:
+        items = list_pending_confirmations() + list_pending_questions()
+        if session_id:
+            items = [i for i in items if i.get("session_id") == session_id]
+        items.sort(key=lambda i: i.get("created_at", 0))
+        return {"success": True, "items": items, "count": len(items)}
+    except Exception as e:  # 后端必有返回(北京老陈铁律), 异常不得让前端 await 死等
+        logger.warning(f"[HITL] 待处理项查询失败: {e!r}")
+        return {"success": False, "items": [], "count": 0, "error": str(e)}
