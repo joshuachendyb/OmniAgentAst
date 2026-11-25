@@ -48,7 +48,7 @@ from app.tools.timer.timer_set import timer_set
 # 能力详情与默认支持的能力只写在对应 Schema 类的 docstring 里(会进入 JSON Schema 发给 LLM);
 # 本字典仅作一句话路由/适用场景说明,严禁重复 schema docstring 内容。
 TIMER_TOOL_DESCRIPTIONS = {
-    "timer_set": """设置一个定时器,在指定的延迟后触发提醒。delay为延迟秒数(1~86400,最长24小时),callback为触发时的提醒内容。适用场景:需要延迟执行提醒、定时通知用户时使用。""",
+    "timer_set": """设置一个定时器,在指定的延迟后触发。delay为延迟秒数(1~86400,最长24小时),callback为触发时的内容。若在会话中设置,到点会在该会话自动发起任务执行callback(可用于"到点提醒/到点自己干");无会话上下文时按文本提醒或URL回调处理。适用场景:需要延迟执行、定时通知用户时使用。""",
 
     "timer_clear": """清除(取消)一个已设置的定时器。timer_id为必填参数,由timer_set返回的完整ID。适用场景:需要取消已设置的定时器时使用。""",
 

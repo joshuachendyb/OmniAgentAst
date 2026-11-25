@@ -653,7 +653,8 @@ def init_operations_db(get_conn):
 
 
 def init_timers_db(get_conn):
-    """初始化定时器数据库（独立域）— 12.2-Q7 新增 — 小欧 2026-08-21"""
+    """初始化定时器数据库（独立域）— 12.2-Q7 新增 — 小欧 2026-08-21
+    2026-11-25 商量 - timers 表加 session_id 列(触发时在该会话创建/续跑任务, 空串=无会话上下文的老行为)"""
     with get_conn("timers") as conn:
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS timers (
@@ -661,12 +662,15 @@ def init_timers_db(get_conn):
                 timer_id TEXT UNIQUE NOT NULL,
                 delay REAL NOT NULL,
                 callback TEXT NOT NULL DEFAULT '',
+                session_id TEXT NOT NULL DEFAULT '',  -- 发起会话(本地ISO同口径TEXT); 触发时在此会话建任务 — 商量 2026-11-25
                 created_at TEXT NOT NULL,   -- 本地ISO无Z (12.2-Q8: 新表一律TEXT)
                 trigger_at TEXT NOT NULL,   -- 本地ISO无Z (12.2-Q8)
                 triggered_at TEXT,          -- 本地ISO无Z (12.2-Q8)
                 status TEXT NOT NULL DEFAULT 'active'
             );
         ''')
+        # 旧库幂等补列(新库 CREATE 已含, _ensure_column 只 ADD 缺列) — 商量 2026-11-25
+        _ensure_column(conn, "timers", "session_id", "TEXT NOT NULL DEFAULT ''")
 
 
 def init_task_tracker_db(get_conn):

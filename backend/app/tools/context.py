@@ -29,6 +29,8 @@
 # 2026-11-22 小欧 - 新增 _current_precheck_info ContextVar(get/set/reset): 承载沙箱预检纯静态检查结果,
 #   由 sandbox_resolve(passed=True 分支)注入, 工具(如 shell)经 get_current_precheck_info 消费——
 #   预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层, 未注入返回 None 自行降级)。
+# 2026-11-25 商量 - 新增 _current_session_id ContextVar(get/set/reset): 发起会话ID, tool_executor 从
+#   agent._start_meta 注入; timer_set 消费——定时器触发时回到发起会话创建任务(持久调度器"到点自己干")
 """
 
 tools/context — 工具层运行上下文
@@ -59,6 +61,9 @@ _current_generate_callback: ContextVar[Optional[object]] = ContextVar("current_g
 # 2026-11-22 小欧 - 沙箱预检纯静态检查结果: sandbox_resolve(passed=True)注入, 工具(如 shell)经 get_current_precheck_info
 #   消费——预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层, 未注入返回 None 自行降级)
 _current_precheck_info: ContextVar[Optional[dict]] = ContextVar("current_precheck_info", default=None)
+# 2026-11-25 商量 - 发起会话ID: 入口层(tool_executor)持 agent._start_meta 注入, 工具(如 timer_set)
+#   经 get_current_session_id 消费——定时器触发时回到该会话创建任务; 未注入返回 None 自行降级
+_current_session_id: ContextVar[Optional[str]] = ContextVar("current_session_id", default=None)
 
 def get_current_task_id() -> Optional[str]:
     """获取当前任务的 taskId — 小沈 2026-07-30(迁自 task_context)"""
@@ -188,6 +193,23 @@ def get_current_precheck_info() -> Optional[dict]:
 def set_current_precheck_info(info: Optional[dict]):
     """设置当前作用域的沙箱预检纯静态检查结果, 返回 token 供 reset — 小欧 2026-11-22"""
     return _current_precheck_info.set(info)
+
+
+def get_current_session_id() -> Optional[str]:
+    """获取当前发起会话ID(入口层注入) — 商量 2026-11-25
+    返回 None 表示未注入(直接调工具/无agent场景), 由工具自行降级。
+    """
+    return _current_session_id.get()
+
+
+def set_current_session_id(session_id: Optional[str]):
+    """设置当前发起会话ID, 返回 token 供 reset — 商量 2026-11-25"""
+    return _current_session_id.set(session_id)
+
+
+def reset_current_session_id(token) -> None:
+    """恢复上一个发起会话ID — 商量 2026-11-25"""
+    _current_session_id.reset(token)
 
 
 def reset_current_precheck_info(token) -> None:

@@ -10,6 +10,7 @@ timer_list — 列出所有定时器
 # 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP), 与 writer(timer_set/timer_clear)保持读写同库一致性 — 小欧 2026-08-21
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出定时器→列定时器
+# 2026-11-25 商量 - 持久调度器(3.5): 内存与DB两路输出补 session_id(定时器触发时回的会话), 便于核对归属
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -53,19 +54,21 @@ async def timer_list() -> Dict[str, Any]:
                 timers.append({
                     "timer_id": timer_id,
                     "callback": info.get("callback", ""),
+                    "session_id": info.get("session_id", ""),  # 2026-11-25 商量 - 触发时回的会话
                     "created_at": info.get("created_at", ""),
                     "trigger_at": info.get("trigger_at", ""),
                     "status": "active",
                 })
         try:
             with db.get_conn("timers") as conn:
-                rows = conn.execute("SELECT timer_id, callback, created_at, trigger_at, triggered_at, status FROM timers ORDER BY created_at DESC LIMIT 50").fetchall()
+                rows = conn.execute("SELECT timer_id, callback, session_id, created_at, trigger_at, triggered_at, status FROM timers ORDER BY created_at DESC LIMIT 50").fetchall()
                 for r in rows:
                     d = dict(r)
                     if not any(t["timer_id"] == d["timer_id"] for t in timers):
                         timers.append({
                             "timer_id": d["timer_id"],
                             "callback": d["callback"],
+                            "session_id": d["session_id"] or "",  # 2026-11-25 商量
                             "created_at": d["created_at"],
                             "trigger_at": d["trigger_at"],
                             "triggered_at": d["triggered_at"],

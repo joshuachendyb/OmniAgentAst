@@ -95,6 +95,8 @@
 #   console_put 会从所有日志消失; 改为 logger.info(落 app 文件) + console_put(真控制台上屏) 双通道 — 小欧-2026-11-16
 # 2026-11-21 小欧 - startup 增保留期清理: 日志(app/boot/prompt-logs)与转码缓存按 logging.retention_days
 #   (默认 10 天)删超期档; 原日志只按大小轮转、prompt-logs 只增不减 — 小欧-2026-11-21
+# 2026-11-25 商量 - 持久调度器(3.5): startup 注入 timer 触发回调(resume_session_with_notice, tools 层禁 import services 故在此注入)
+#   + 调 rebuild_timers_from_db 重建 timers 表 active 定时器(未到期重建/过期补触发), 失败降级不阻断启动
 import asyncio
 import sys
 import threading
@@ -646,6 +648,20 @@ async def startup_event():
     _t1 = time.time()
     ensure_tools_registered()
     logger.info(f"[启动耗时] ensure_tools_registered: {time.time()-_t1:.3f}s")
+    # 2026-11-25 商量 - 持久调度器(3.5): 注入"定时器触发→回会话建任务"回调 + 启动重建 timers 表 active 定时器。
+    #   tools 层不得 import app.services, 故在此(app 层)注入 resume_session_with_notice; timers 表为跨重启唯一真源。
+    _t_timer = time.time()
+    try:
+        from app.services.chat.stream_orchestrator import resume_session_with_notice as _resume_cb
+        from app.tools.timer.timer_set import (
+            rebuild_timers_from_db as _rebuild_timers,
+            set_timer_resume_callback as _set_resume_cb,
+        )
+        _set_resume_cb(_resume_cb)
+        _tr = await _rebuild_timers()
+        logger.info(f"[启动耗时] timer rebuild(重建 {_tr['rebuilt']} / 补触发 {_tr['fired']}): {time.time()-_t_timer:.3f}s")
+    except Exception as _e:
+        logger.warning(f"[启动] 定时器重建失败(降级为不恢复, 不影响其余启动): {_e!r}")
     _t2 = time.time()
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {time.time()-_t2:.3f}s")

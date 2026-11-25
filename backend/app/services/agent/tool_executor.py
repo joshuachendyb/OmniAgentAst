@@ -40,6 +40,8 @@ tool_executor — 工具执行逻辑
 
 # 2026-11-22 小欧 - execute_tool 消费/清理沙箱预检纯静态结果: 入口读 get_current_precheck_info 并重新 set 到当前
 #   作用域(跨 await 边界), finally reset; 供 shell 等 tool 消费, 零越层未注入自行降级。
+# 2026-11-25 商量 - 注入发起会话ID set_current_session_id(源同 _sid=agent._start_meta, 空串归一 None),
+#   timer_set 等工具消费——定时器触发时回到发起会话创建任务; finally reset 防跨工具泄漏。
 
 import asyncio
 import time
@@ -60,12 +62,14 @@ from app.tools.context import (
     reset_current_hooks,
     reset_current_notice_callback,
     reset_current_question_callback,
+    reset_current_session_id,  # 2026-11-25 商量 - 发起会话ID
     reset_current_text_task,
     set_current_generate_callback,  # 2026-11-20 小欧 - 生图/生视频回调
     set_current_hooks,
     set_current_notice_callback,  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
     set_current_precheck_info,  # 2026-11-22 小欧 - 沙箱预检纯静态结果注入
     set_current_question_callback,  # 2026-11-18 商量 - question 阻塞问询回调
+    set_current_session_id,  # 2026-11-25 商量 - 发起会话ID(供 timer_set 等工具回会话建任务)
     set_current_text_task,
 )
 from app.tools.tool_response import is_success
@@ -150,6 +154,9 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         return await invoke_generate(kind, model, prompt, session_id=_sid, **kwargs)
 
     _generate_token = set_current_generate_callback(_invoke_generate)
+    # 2026-11-25 商量 - 注入发起会话ID(同 _sid 源): timer_set 等工具经 get_current_session_id 消费,
+    #   定时器触发时回到发起会话创建任务; 空串归一 None(未注入语义, 工具自行降级)
+    _session_token = set_current_session_id(_sid or None)
     # 2026-11-22 小欧 - 消费沙箱预检纯静态结果(sandbox_resolve 注入): 读取后供 shell 等工具经
     #   get_current_precheck_info 消费, finally 置 None 清理防跨工具泄漏(未注入则 None, 工具自行降级)。
     _precheck_info = get_current_precheck_info()
@@ -174,6 +181,7 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
             reset_current_question_callback(_question_token)
         if _generate_token is not None:  # 2026-11-20 小欧 生成回调token同finally reset
             reset_current_generate_callback(_generate_token)
+        reset_current_session_id(_session_token)  # 2026-11-25 商量 会话ID token同finally reset
         if _precheck_info:  # 2026-11-22 小欧 沙箱预检纯静态结果作用域清理(防跨工具泄漏, 置 None 不残留)
             set_current_precheck_info(None)
     elapsed = time.time() - start
