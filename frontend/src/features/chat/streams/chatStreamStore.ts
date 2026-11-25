@@ -71,6 +71,8 @@
 //   否则上个任务的执行计划残留到新任务(taskinfo 位置2计划卡片不复位); 与 metaFrames 同因同补 — 商量-2026-11-22
 // 编辑历史: 2026-11-24 商量 - 生命周期信封驱动即时重锚定: 新增 handleLifecycleEvent 处理 task_started/task_ended/hitl_pending/hitl_settled,
 //   sessionEventsStore 变更触发 attachOrphanTask 对账, 替代 ChatPage 每 3 秒查库轮询
+// 编辑历史: 2026-11-25 小欧 - onTaskStarted 补陈旧信封守卫: 首连 last_event_id=0 会补发 ring 内历史 task_started,
+//   比当前锚点更早的信封不得抢锚点(否则清掉在跑任务 steps/lastSeq 并停在已终态任务), 用 serverTaskStartedAt 判定 — 小欧-2026-11-25
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -1830,6 +1832,13 @@ export const chatStreamStore = {
     if (!s) return false; // 本页未打开过该会话: 不主动造会话(与 attachOrphanTask 同口径)
     if (s.serverTaskId === taskId) return false; // 已锚定同一任务, 幂等
     if (s.pendingMessage) return false; // 用户正在发送, 交给 sendMessage 锚定
+    // 2026-11-25 小欧 - 防旧信封抢锚点: 首连 last_event_id=0 会把 ring 里的历史 task_started 全补发一遍,
+    //   若它比当前锚点更早(任务已被后续任务取代), 重锚定会清掉在跑任务的 steps/lastSeq 并停在已终态任务上。
+    //   同一后端时钟域比较 serverTaskStartedAt 即可判定陈旧, 解析失败(非 ISO 值)则放行, 不阻断正常锚定。
+    const startedAt = Date.parse(createdAt);
+    if (Number.isFinite(startedAt) && startedAt < s.serverTaskStartedAt) {
+      return false; // 陈旧信封: 比当前锚点更早, 不抢锚点(解析失败则放行)
+    }
     reanchorToTask(s, taskId, createdAt);
     detachResumeStream(s);
     console.info(

@@ -57,7 +57,12 @@ from app.config import get_config
 from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT
 from app.constants import MAX_PENDING_CONFIRMATIONS as _D_MAX_CONFIRM
 from app.logger import logger
-from app.services.task.event_bus import EVENT_HITL_PENDING, EVENT_HITL_SETTLED, publish_event, publish_for_task  # 商量 2026-11-24: HITL 待处理广播
+from app.services.task.event_bus import (  # 商量 2026-11-24: HITL 待处理广播
+    EVENT_HITL_PENDING,
+    EVENT_HITL_SETTLED,
+    publish_event,
+    publish_for_task,
+)
 from app.services.task.task_runtime import check_cancelled
 
 

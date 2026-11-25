@@ -14,6 +14,11 @@
 #   (call_later 注册+callbacks 登记)供 timer_set 与 rebuild_timers_from_db 共用(DRY); ③新增 rebuild_timers_from_db:
 #   启动扫描 status='active' 重建未到期定时器、过期立即补触发(timers 表为跨重启唯一真源); ④新增 set_timer_resume_callback
 #   供 app 层注入(tools 层禁 import services, 用回调注入解越层)
+# 2026-11-25 小欧 - 三堂会审整改: ①resume 返回 False(会话忙/建任务失败)时补直接投递兜底, 此前该分支回调内容
+#   静默丢失(只有 executed_as=resume_task_failed 一个字段, 无日志无投递); ②_schedule_handle 增 created_at 入参,
+#   rebuild 透传 DB 原始创建时间(此前重启后定时器列表显示的"创建时间"变成重启时刻); ③非法 trigger_at 行置
+#   status='invalid'(此前永久滞留 active, 每次重启重复告警且永不触发); ④重建日志措辞改为"已排入"(补触发是
+#   call_later(0) 异步执行, 计数不含投递结果)
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -31,7 +36,9 @@ from typing import Any, Dict
 
 from app.db import db
 from app.logger import logger
-from app.tools.context import get_current_session_id  # 2026-11-25 商量 - 发起会话ID(定时器触发回会话建任务)
+from app.tools.context import (
+    get_current_session_id,  # 2026-11-25 商量 - 发起会话ID(定时器触发回会话建任务)
+)
 from app.tools.tool_constants import ERR_TIMER_SET, HTTPX_TIMEOUT_DEFAULT
 from app.tools.tool_response import build_error, build_success
 from app.utils.time_utils import (
@@ -61,7 +68,9 @@ def set_timer_resume_callback(cb) -> None:
 
 async def _invoke_timer_callback(timer_id: str, callback: str, session_id: str = "") -> Dict[str, Any]:
     """定时器回调执行 — 小欧 2026-06-17 — 2026-08-05 小欧: except httpx.TimeoutException 移入 http 分支内修复 UnboundLocalError
-    2026-11-25 商量 - 有 session_id 且已注入 resume 回调时走"回会话创建任务"(到点自己干), 否则维持原 log/http 行为"""
+    2026-11-25 商量 - 有 session_id 且已注入 resume 回调时走"回会话创建任务"(到点自己干), 否则维持原 log/http 行为
+    2026-11-25 小欧 - resume 返回 False(会话忙/建任务失败)时降级直接投递: 此前该分支回调内容静默丢失,
+    定时器仍记 triggered, 用户收不到任何提醒"""
     event = {
         "timer_id": timer_id,
         "triggered_at": get_local_iso_timestamp(),  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z
@@ -69,32 +78,44 @@ async def _invoke_timer_callback(timer_id: str, callback: str, session_id: str =
         "status": "triggered",
     }
     try:
+        delivered = False
         if session_id and _resume_callback is not None:
             # 到点自己干: 复用 resume_session_with_notice 双路(有活跃任务→注入, 无→建新任务), 不直接调 HTTP
             ok = await _resume_callback(session_id, callback)
-            event["executed_as"] = "resume_task" if ok else "resume_task_failed"
             event["session_id"] = session_id
-        elif not callback.strip().startswith("http"):
-            logger.info(f"[Timer {timer_id}] 提醒: {callback}")
-            event["executed_as"] = "log_message"
-        else:
-            import httpx
-            try:
-                resp = httpx.get(callback, timeout=HTTPX_TIMEOUT_DEFAULT)
-                event["executed_as"] = "http_call"
-                event["http_status"] = resp.status_code
-            except httpx.TimeoutException:
-                event["executed_as"] = "http_timeout"
+            delivered = ok
+            if ok:
+                event["executed_as"] = "resume_task"
+            else:
+                # 2026-11-25 小欧 - 降级兜底: 会话忙或建任务失败时不能丢提醒(原实现只记字段, 内容作废)
+                event["resume_failed"] = True
+                logger.warning(
+                    f"[Timer {timer_id}] 回会话建任务失败(session={session_id}), 降级直接投递: {callback[:80]}"
+                )
+        if not delivered:
+            if not callback.strip().startswith("http"):
+                logger.info(f"[Timer {timer_id}] 提醒: {callback}")
+                event["executed_as"] = "log_message"
+            else:
+                import httpx
+                try:
+                    resp = httpx.get(callback, timeout=HTTPX_TIMEOUT_DEFAULT)
+                    event["executed_as"] = "http_call"
+                    event["http_status"] = resp.status_code
+                except httpx.TimeoutException:
+                    event["executed_as"] = "http_timeout"
     except Exception as e:
         event["executed_as"] = "callback_failed"
         event["error"] = str(e)
     return event
 
 
-async def _schedule_handle(timer_id: str, callback: str, session_id: str, delay_sec: float, trigger_at: datetime) -> None:
+async def _schedule_handle(timer_id: str, callback: str, session_id: str, delay_sec: float, trigger_at: datetime,
+                           created_at: str = "") -> None:
     """注册内存句柄(call_later)并登记 callbacks 表 — timer_set 与 rebuild_timers_from_db 共用(DRY) — 商量 2026-11-25
 
     触发时置 DB status=triggered; 触发动作经 _invoke_timer_callback 分派(resume/log/http)。
+    2026-11-25 小欧 - 增 created_at 入参: 重建方传 DB 原始创建时间, 传空才取当前时刻(此前重建一律覆盖成重启时刻)。
     """
     trigger_at_iso = trigger_at.isoformat()
 
@@ -102,6 +123,10 @@ async def _schedule_handle(timer_id: str, callback: str, session_id: str, delay_
         event = await _invoke_timer_callback(timer_id, callback, session_id)
         async with _timer_lock:
             _timer_events.append(event)
+        if event.get("executed_as") in ("callback_failed", "http_timeout"):
+            # 2026-11-25 小欧 - 投递失败留痕: 行状态仍是 triggered(定时器确实到点了), 但提醒未送达需可追溯
+            logger.error(f"[Timer {timer_id}] 触发投递未成功 executed_as={event.get('executed_as')} "
+                         f"error={event.get('error', '')}")
         try:
             with db.get_conn("timers") as conn:
                 conn.execute("UPDATE timers SET status='triggered', triggered_at=? WHERE timer_id=?", (get_local_iso_timestamp(), timer_id))
@@ -120,7 +145,7 @@ async def _schedule_handle(timer_id: str, callback: str, session_id: str, delay_
         _timers[timer_id] = handle
         _timer_callbacks[timer_id] = {
             "callback": callback,
-            "created_at": get_local_iso_timestamp(),
+            "created_at": created_at or get_local_iso_timestamp(),  # 2026-11-25 小欧 - 优先用调用方给的原始创建时间
             "trigger_at": trigger_at_iso,
             "session_id": session_id,
         }
@@ -132,7 +157,9 @@ async def rebuild_timers_from_db() -> Dict[str, int]:
     持久调度器核心: call_later 句柄重启即丢, timers 表是跨重启唯一真源。
       · 未到期(trigger_at > now) → 按剩余秒数重建 call_later;
       · 已到期(重启期间错过)       → 立即补触发一次(不丢"到点该干"语义), 由 _timer_cb 置 triggered;
-      · 非 active 行                → 跳过。
+      · 非 active 行                → 跳过;
+      · 非法 trigger_at 行          → 置 status='invalid' 收口(2026-11-25 小欧: 原实现只跳过, 行永久滞留
+        active, 每次重启重复告警且永不触发, 列表里还显示为在跑)。
     由 main.py startup 调用(app 层注入 resume 回调之后)。
     """
     now = datetime.now()
@@ -141,21 +168,31 @@ async def rebuild_timers_from_db() -> Dict[str, int]:
     try:
         with db.get_conn("timers") as conn:
             rows = conn.execute(
-                "SELECT timer_id, callback, session_id, trigger_at FROM timers WHERE status='active'"
+                "SELECT timer_id, callback, session_id, created_at, trigger_at FROM timers WHERE status='active'"
             ).fetchall()
     except Exception as _e:
         logger.error(f"[timer] 启动重建读取失败(降级为不恢复): {_e!r}")
         return {"rebuilt": 0, "fired": 0}
     for r in rows:
         d = dict(r)
+        if d["timer_id"] in _timer_callbacks:
+            # 2026-11-25 小欧 - 已在内存调度则跳过: 重复调用 rebuild 不得为同一 timer 挂两个 call_later 句柄(双触发)
+            continue
         try:
             trig = datetime.fromisoformat(d["trigger_at"])
         except (ValueError, TypeError):
             logger.warning(f"[timer] 启动重建跳过非法 trigger_at: {d.get('timer_id')} {d.get('trigger_at')!r}")
+            # 2026-11-25 小欧 - 非法 trigger_at 行收口为 invalid, 避免反复告警与假"active"
+            try:
+                with db.get_conn("timers") as conn:
+                    conn.execute("UPDATE timers SET status='invalid' WHERE timer_id=?", (d.get("timer_id"),))
+            except Exception as _e:
+                logger.error(f"[timer] 非法 trigger_at 行置 invalid 失败 timer_id={d.get('timer_id')}: {_e!r}")
             continue
         remaining = (trig - now).total_seconds()
         try:
-            await _schedule_handle(d["timer_id"], d["callback"] or "", d["session_id"] or "", max(0.0, remaining), trig)
+            await _schedule_handle(d["timer_id"], d["callback"] or "", d["session_id"] or "", max(0.0, remaining),
+                                   trig, d.get("created_at") or "")
         except Exception as _e:
             logger.error(f"[timer] 启动重建注册失败 timer_id={d.get('timer_id')}: {_e!r}")
             continue
@@ -164,7 +201,7 @@ async def rebuild_timers_from_db() -> Dict[str, int]:
         else:
             fired += 1
     if rows:
-        logger.info(f"[timer] 启动重建完成: 未到期重建 {rebuilt} 个, 过期补触发 {fired} 个")
+        logger.info(f"[timer] 启动重建完成: 未到期重建 {rebuilt} 个, 过期已排入补触发 {fired} 个")
     return {"rebuilt": rebuilt, "fired": fired}
 
 
@@ -222,13 +259,14 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             _timer_counter += 1
             timer_id = f"timer_{_timer_counter}_{create_timestamp()}"
         trigger_at = datetime.now() + timedelta(seconds=delay)  # 小欧 2026-08-08 全程统一本地时区: naive本地, 后续 isoformat() 无偏移
+        created_at = get_local_iso_timestamp()  # 2026-11-25 小欧 - 内存与DB共用同一创建时间, 定时器列表两路口径一致
         # 注册内存句柄(call_later)与 callbacks 表, 与 rebuild_timers_from_db 共用 — 商量 2026-11-25
-        await _schedule_handle(timer_id, callback, session_id, delay, trigger_at)
+        await _schedule_handle(timer_id, callback, session_id, delay, trigger_at, created_at)
 
         try:
             with db.get_conn("timers") as conn:
                 conn.execute("INSERT OR REPLACE INTO timers (timer_id, delay, callback, session_id, created_at, trigger_at, status) VALUES (?, ?, ?, ?, ?, ?, 'active')",
-                             (timer_id, delay, callback, session_id, get_local_iso_timestamp(), trigger_at.isoformat()))
+                             (timer_id, delay, callback, session_id, created_at, trigger_at.isoformat()))
         except Exception as _e:
             logger.error(f"[timer_set] 定时器落库失败 timer_id={timer_id}(内存定时器仍会触发, 重启后丢失, 可凭此日志追溯): {_e!r}")  # 12.2-Q2: 静默pass→error提级留痕 — 小欧 2026-08-21
 

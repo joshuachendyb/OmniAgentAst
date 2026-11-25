@@ -64,9 +64,15 @@ from app.services.chat.stream_orchestrator import (
     chat_stream_reconnect_orchestrator,
     validate_chat_config,
 )
-from app.services.task.event_bus import HEARTBEAT_SECONDS, bus  # 商量 2026-11-24: 全局生命周期事件流
+from app.services.task.event_bus import (  # 商量 2026-11-24: 全局生命周期事件流
+    HEARTBEAT_SECONDS,
+    bus,
+)
 from app.services.task.hitl_confirmation import list_pending_confirmations, resolve_confirmation
-from app.services.task.hitl_question import list_pending_questions, resolve_question  # 2026-11-18 商量 - question 答案收口; 2026-11-24 增 list_pending_questions(待处理项对账)
+from app.services.task.hitl_question import (  # 2026-11-18 商量 - question 答案收口; 2026-11-24 增 list_pending_questions(待处理项对账)
+    list_pending_questions,
+    resolve_question,
+)
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.task_runtime import cancel_task
 

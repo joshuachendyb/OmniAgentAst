@@ -44,11 +44,17 @@ import time
 from typing import Dict, List, Optional
 
 from app.logger import log_and_print, logger
-from app.services.agent.status_table import tracker_terminal_status, ui_terminal_status  # 商量 2026-11-24: 终态翻译唯一源(两套词表各一函数)
-from app.services.task.event_bus import EVENT_TASK_ENDED, publish_for_task  # 商量 2026-11-24: 任务终态广播
+from app.services.agent.status_table import (  # 商量 2026-11-24: 终态翻译唯一源(两套词表各一函数)
+    tracker_terminal_status,
+    ui_terminal_status,
+)
 from app.services.agent.steps import (  # 2026-11-03 小欧 - 补 ReasoningStep: emit() 返回注解此前引用悬空名
     FinalStep,
     ReasoningStep,
+)
+from app.services.task.event_bus import (  # 商量 2026-11-24: 任务终态广播
+    EVENT_TASK_ENDED,
+    publish_for_task,
 )
 
 
