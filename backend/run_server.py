@@ -70,6 +70,9 @@
 #     开浏览器成败全静默无法排障; 现成功/失败/异常均写 boot 日志, 并以 open() 返回值判成败。 — 小欧-2026-11-16
 #   2026-11-18 商量 - 自动开浏览器仅打包态执行: 第⑤步 if not args.no_browser 改为 if is_frozen and
 #     not args.no_browser, 开发环境(源码模式)不再自动打开浏览器, 避免调试时频繁弹窗干扰。 — 商量-2026-11-18
+#   2026-11-26 小欧 - 进程宿主([65] E1): main() 增 --proc-host 分支(打包态宿主以 `exe --proc-host` 拉起,
+#     必须在 argparse/业务初始化前判); ③ 脱离控制台与配置就绪后启动期 ensure_host() 预拉起宿主,
+#     请求路径不再 CreateProcessW; 拉起失败仅告警不阻断启动(工具调用侧 fail-closed)。
 # ============================================================================
 import argparse
 import shutil
@@ -364,6 +367,11 @@ def _port_busy_text(host: str, port: int) -> str:
 
 def main() -> None:
     freeze_support()
+    # 2026-11-26 小欧 - 进程宿主分支: 必须在 argparse/业务初始化之前判, 宿主不走正常启动流程
+    if "--proc-host" in sys.argv:
+        from app.proc_host.host import main as _proc_host_main
+        _proc_host_main()
+        return
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
     parser.add_argument("--host", default="127.0.0.1")
     # 2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(代码库占惯例 :8000 不动):
@@ -451,6 +459,15 @@ def main() -> None:
     if is_frozen:
         from app.utils.win_job_object import assign_current_to_kill_on_close_job
         _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
+
+    # 2026-11-26 小欧 - 阶段零([65] E1): 启动期预拉起进程宿主, 此后请求路径不再 CreateProcessW。
+    #   置于 ③ 脱离控制台、资源/配置就绪之后; 失败仅告警不阻断启动(工具调用侧 fail-closed, 自动重建)。
+    try:
+        from app.proc_host.client import ensure_host
+        ensure_host()
+    except Exception as _e:
+        from app.logger import logger as _logger
+        _logger.warning(f"[proc_host] 启动期拉起宿主失败(请求时自动重建): {_e}")
 
     import app.main as _app_main  # 供PyInstaller静态收集业务第三方依赖, 同时取 app 对象供编程式启动
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。

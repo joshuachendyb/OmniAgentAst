@@ -12,10 +12,12 @@
 #   (Start-Process/Start-Job/&) 脱离 Job, 预检 cleanup 杀树不误杀。SILENT 与 BREAKAWAY 互斥(Windows 限制),
 #   沙箱默认启用 SILENT(自动脱离覆盖任意 shell 后台), BREAKAWAY_OK 保留为显式控制基础设施。
 #   新增 QueryInformationJobObject 声明(验证 LimitFlags 读回生效)。
+# 2026-11-26 - 小欧 - 进程宿主([65] E1)复用: 新增 create_kill_on_close_job/assign_to_job/terminate_job/close_job
+#   四个通用句柄操作(宿主用独立 Job 收编每条命令的子进程树, 超时/宿主退出整树杀净); logger 改函数内惰性导入,
+#   使本模块 import 零副作用(轻量宿主进程导入不进 app.logger 控制台线程)。
 import ctypes
+import subprocess
 from ctypes import wintypes
-
-from app.logger import logger
 
 # ── 内核限额标志 ──
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
@@ -96,6 +98,7 @@ def assign_current_to_kill_on_close_job() -> int:
     失败只 warning 不 crash(进程可能已在其他 Job Object 中, Windows 8+ 允许嵌套但旧版不允许)。
     返回 Job Object 句柄(内核句柄, Python GC 不关闭; 进程退出时 OS 自动回收句柄触发杀树)。— 小欧-2026-11-07
     """
+    from app.logger import logger  # 惰性导入: 保持本模块 import 零副作用(见文件头 2026-11-26)
     handle = kernel32.CreateJobObjectW(None, None)
     if not handle:
         logger.warning(f"[job] CreateJobObjectW 失败: {ctypes.GetLastError()}")
@@ -114,3 +117,51 @@ def assign_current_to_kill_on_close_job() -> int:
         return 0
     logger.info("[job] 当前进程已收编入 KILL_ON_JOB_CLOSE Job, 子进程将随主进程退出自动终止")
     return handle
+
+
+def create_kill_on_close_job() -> int:
+    """创建独立 Job 并仅设 KILL_ON_JOB_CLOSE, 返回内核句柄 — 2026-11-26 小欧
+
+    供进程宿主按命令收编子进程树: 句柄关闭(含宿主退出)时内核杀净整棵树。
+    失败抛 OSError(fail-closed: 调用方不得在无 Job 时裸跑子进程)。
+    注意: 不设 SILENT_BREAKAWAY_OK —— 那会让孙进程逃离 Job 致杀树失效(沙箱场景另论)。
+    """
+    handle = kernel32.CreateJobObjectW(None, None)
+    if not handle:
+        raise OSError(ctypes.GetLastError(), "CreateJobObjectW 失败")
+    info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(
+            handle, JobObjectExtendedLimitInformation,
+            ctypes.byref(info), ctypes.sizeof(info)):
+        err = ctypes.GetLastError()
+        kernel32.CloseHandle(handle)
+        raise OSError(err, "SetInformationJobObject(KILL_ON_JOB_CLOSE) 失败")
+    return handle
+
+
+def assign_to_job(job_handle: int, proc: "subprocess.Popen") -> None:
+    """把已创建的子进程收编进 Job(应在子进程派生子进程前尽快执行) — 2026-11-26 小欧
+
+    用 Popen 暴露的进程句柄(_handle); 失败抛 OSError, 调用方须 fail-closed。
+    """
+    proc_handle = getattr(proc, "_handle", None)
+    if not proc_handle:
+        raise OSError(0, "Popen 无进程句柄(_handle), 无法收编 Job")
+    if not kernel32.AssignProcessToJobObject(job_handle, proc_handle):
+        raise OSError(ctypes.GetLastError(), "AssignProcessToJobObject 失败")
+
+
+def terminate_job(job_handle: int) -> None:
+    """立即杀净 Job 内全部进程 — 2026-11-26 小欧
+
+    失败抛 OSError(句柄已失效等), 由调用方按清理链容错。
+    """
+    if not kernel32.TerminateJobObject(job_handle, 1):
+        raise OSError(ctypes.GetLastError(), "TerminateJobObject 失败")
+
+
+def close_job(job_handle: int) -> None:
+    """关闭 Job 句柄(KILL_ON_JOB_CLOSE 触发杀树; 空句柄/已关闭容错不抛) — 2026-11-26 小欧"""
+    if job_handle:
+        kernel32.CloseHandle(job_handle)

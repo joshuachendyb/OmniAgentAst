@@ -143,6 +143,10 @@ a = Analysis(
         "uvicorn.lifespan.off",
         "jinja2",
         "platformdirs",  # setuptools/pkg_resources运行时rthook依赖(构建机原缺失已补装) — 小欧 2026-09-19
+        "app.proc_host",          # 进程宿主([65] E1): 独立进程包, 由 --proc-host/-m 动态拉起 — 小欧 2026-11-26
+        "app.proc_host.host",
+        "app.proc_host.client",
+        "app.utils.win_job_object",  # 宿主 Job 收编(动态 import, modulegraph 收不全) — 小欧 2026-11-26
     ] + _hiddenimports,
     # pyarrow 测试套件瘦身: 自定义 hook-pyarrow.py 覆盖 contrib 原版(collect_data_files 全量收集
     #   会把 tests/、include/arrow/testing 及零散 test_*.h 一并带入), 经 excludes 精确排除 —

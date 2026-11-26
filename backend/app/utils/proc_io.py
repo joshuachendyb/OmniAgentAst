@@ -10,6 +10,8 @@
 #   继续用 CREATE_NO_WINDOW 防打包版闪黑窗, 无需退回 subprocess.run 的 _readerthread 建线程路径
 # 2026-11-16 - 小欧 - proc_spawn.py 并入: isolation_kwargs 迁入本模块(proc_io 本是其调用方, 单函数独立模块
 #   违反 KISS); 消掉 run() 内函数级 import 绕路; 5 处调用方统一 from app.utils.proc_io import isolation_kwargs
+# 2026-11-26 - 小欧 - 进程宿主([65] E1)复用: logger 改截断告警处惰性导入, 本模块 import 零副作用
+#   (宿主/轻量进程导入不拉起 app.logger 控制台线程、不读配置)。逻辑零变化。
 
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04
 
@@ -30,8 +32,6 @@ import subprocess
 import sys
 import time
 from typing import Any, Dict, Optional, Tuple
-
-from app.logger import logger  # 截断告警: 有界静默不得变成静默丢数据 — 2026-11-04 小欧
 
 __all__ = ["drain_until_exit", "drain_after_exit", "run", "isolation_kwargs"]
 
@@ -145,6 +145,7 @@ def drain_until_exit(proc, timeout: Optional[float]) -> Tuple[bytes, bytes, bool
         if proc.poll() is not None and now - last_data >= IDLE_AFTER_EXIT:
             # 已退出但管道未 EOF: 孙进程/后台作业仍持写端。旧 communicate 会一直等到超时才放弃,
             # 本实现有界静默后截断 —— 绝不静默丢数据: 告警 + truncated=True 交给调用方标注。
+            from app.logger import logger  # 惰性导入: 保持本模块 import 零副作用(2026-11-26 小欧)
             logger.warning(
                 f"[proc_io] 进程 {proc.pid} 已退出但管道未 EOF(疑孙进程持写端), "
                 f"静默 {IDLE_AFTER_EXIT}s 后截断; 已读 out={len(out_buf)}B err={len(err_buf)}B")
