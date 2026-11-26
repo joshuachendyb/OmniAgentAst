@@ -291,6 +291,10 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
 # 2026-11-26 - 小欧 - 通用接入: CMD/bash 前台分支同步走宿主; .bat 写盘是纯文件 I/O 仍留主进程,
 #   执行改 argv=["cmd.exe","/c",bat]; 删除三分支共用的本地杀树/读残存 helper 与 _iso,
 #   三分支行为口径统一(见方案 7.2.5)。
+# 2026-11-26 - 小欧 - 三堂会审整改二: ①三分支 client.run 调用与宿主错误/截断处理抽为 _run_in_host、
+#   _host_error_result(消除三处逐字重复的 except/decode 块); ②timeout 由 max(1,int(_remaining)) 改为
+#   max(1.0,_remaining), 修小 timeout 被截断误杀(实测 timeout=2 跑 1.5s 命令被砍成 1s 而误报超时);
+#   ③宿主错误按 kind 区分 not_found(程序不存在)与宿主故障, 提示更准确。
 import locale
 import os
 import re
@@ -1029,6 +1033,45 @@ def _looks_like_cmd(command: str) -> bool:
 #  shell() — 主函数（v2 引擎版）
 # ═══════════════════════════════════════════════════════
 
+
+def _host_error_result(e, t0, processed_command, shell_type, timeout, cwd,
+                       cmd_short, requested, switch):
+    """宿主路径失败的统一 error 结构(PS/CMD/bash 三分支共用, 消除重复)。
+
+    not_found: which 校验后程序/解释器消失等竞态, 不是"宿主故障", 单独提示;
+    其余 HostError: 宿主启动/通信/接收超时, 系统自愈重建并给排查 hint。
+    """
+    d = int((_time_mod.perf_counter() - t0) * 1000)
+    if getattr(e, "kind", "host") == "not_found":
+        detail = f"命令程序不存在: {e}"
+        hint = "请检查命令或解释器是否已安装且在 PATH 中"
+    else:
+        detail = f"进程宿主不可用: {e}"
+        hint = "宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log"
+    llm = _build_execute_shell_command_llm_data(
+        "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
+        detail, timeout=timeout, cwd=cwd or "", hint=hint,
+        cmd_short=cmd_short,
+        shell_type_requested=requested, shell_type_switch=switch)
+    return build_error(data={}, llm_data=llm)
+
+
+def _run_in_host(argv, cwd, env, remaining):
+    """前台经进程宿主执行一条命令, 返回解码后的
+    (stdout_str, stderr_str, timed_out, truncated, returncode)。
+
+    client.run 只回 truncated 标记(见其 run 文档), 留痕在此统一补齐; timeout 保留小数,
+    不做 int 截断(否则 timeout=2 的预算被砍成 1s, 1.5s 命令被误杀)。
+    """
+    stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
+        argv, cwd=cwd, env=env, timeout=max(1.0, remaining))
+    if truncated:
+        stderr_b += TRUNCATED_NOTE
+    return (_fix_encoding(_decode_bytes_safe(stdout_b)),
+            _fix_encoding(_decode_bytes_safe(stderr_b)),
+            timed_out, truncated, returncode)
+
+
 def shell(
     command: str, shell_type: Literal["ps7", "ps5", "cmd", "bash", None] = "ps7",
     timeout: Optional[int] = None, cwd: Optional[str] = None,
@@ -1299,25 +1342,13 @@ def shell(
             # 2026-11-26 小欧 - 进程宿主接入: PS 分支改走进程宿主, CreateProcessW 移出主进程;
             #   一命令一连接 + 独立 Job 杀整树; 宿主不可用按 error 返回, 不保留本地回退路径。
             try:
-                stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
+                stdout_str, stderr_str, timed_out, truncated, returncode = _run_in_host(
                     [pwsh_exe, "-NoProfile", "-Command", processed_command],
-                    cwd=cwd, env=_sanitize_env(), timeout=max(1, int(_remaining)))
+                    cwd, _sanitize_env(), _remaining)
             except client.HostError as e:
-                # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
-                d = int((_time_mod.perf_counter() - t0) * 1000)
-                llm = _build_execute_shell_command_llm_data(
-                    "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
-                    f"进程宿主不可用: {e}", timeout=timeout, cwd=cwd or "",
-                    hint="宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log",
-                    cmd_short=cmd_short,
-                    shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
-                return build_error(data={}, llm_data=llm)
-            if truncated:
-                # 宿主已关 Job 杀净残留, 这里只补留痕(语义同 drain_until_exit 的 TRUNCATED_NOTE)
-                stderr_b += TRUNCATED_NOTE
-            # timed_out 不需 _kill_and_read_output: 宿主杀树后 pump 线程已把残存输出回传完毕
-            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
-            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
+                return _host_error_result(
+                    e, t0, processed_command, shell_type, timeout, cwd, cmd_short,
+                    _requested_shell_type, _shell_type_switch)
 
         elif shell_type == "cmd":  # ── 【CMD专属】: .bat 写盘 + 宿主执行 ──
             # 写入 .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
@@ -1334,28 +1365,17 @@ def shell(
                 child_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
                 # 2026-11-26 小欧 - .bat 写盘是纯文件 I/O, 留主进程; 执行交宿主, argv 不带 shell=True
                 try:
-                    stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
-                        ["cmd.exe", "/c", bat_path],
-                        cwd=cwd, env=child_env, timeout=max(1, int(_remaining)))
+                    stdout_str, stderr_str, timed_out, truncated, returncode = _run_in_host(
+                        ["cmd.exe", "/c", bat_path], cwd, child_env, _remaining)
                 except client.HostError as e:
-                    # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
-                    d = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm = _build_execute_shell_command_llm_data(
-                        "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
-                        f"进程宿主不可用: {e}", timeout=timeout, cwd=cwd or "",
-                        hint="宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log",
-                        cmd_short=cmd_short,
-                        shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
-                    return build_error(data={}, llm_data=llm)
+                    return _host_error_result(
+                        e, t0, processed_command, shell_type, timeout, cwd, cmd_short,
+                        _requested_shell_type, _shell_type_switch)
             finally:
                 try:
                     os.unlink(bat_path)
                 except OSError:
                     pass
-            if truncated:
-                stderr_b += TRUNCATED_NOTE   # 宿主已关 Job 杀净残留, 这里只补留痕
-            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
-            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
 
         else:  # ── 【bash专属】: 进程宿主 + 非登录 shell(免 profile/rc 加载) ──
             bash_exe = _find_bash()
@@ -1368,23 +1388,13 @@ def shell(
                 return build_error(data={}, llm_data=llm)
             # 2026-11-26 小欧 - bash 分支接入进程宿主, 与 PS 分支同构(见方案 7.2.5)
             try:
-                stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
+                stdout_str, stderr_str, timed_out, truncated, returncode = _run_in_host(
                     [bash_exe, "--noprofile", "--norc", "-c", processed_command],
-                    cwd=cwd, env=_sanitize_env(), timeout=max(1, int(_remaining)))
+                    cwd, _sanitize_env(), _remaining)
             except client.HostError as e:
-                # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
-                d = int((_time_mod.perf_counter() - t0) * 1000)
-                llm = _build_execute_shell_command_llm_data(
-                    "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
-                    f"进程宿主不可用: {e}", timeout=timeout, cwd=cwd or "",
-                    hint="宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log",
-                    cmd_short=cmd_short,
-                    shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
-                return build_error(data={}, llm_data=llm)
-            if truncated:
-                stderr_b += TRUNCATED_NOTE   # 宿主已关 Job 杀净残留, 这里只补留痕
-            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
-            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
+                return _host_error_result(
+                    e, t0, processed_command, shell_type, timeout, cwd, cmd_short,
+                    _requested_shell_type, _shell_type_switch)
 
         # ── 阶段 4【通用】: 后处理(UTF-8 编码修复) ──
         # 小欧 2026-07-20: 依规则删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(50K/20K) — 2026-07-23 小欧更新
