@@ -111,6 +111,8 @@
 #   ERR_* 风格及 status.code 口径不一致); searchweb 三处配置清理 —— TOOL_TIMEOUTS/TOOL_TIMEOUT_HINTS 移出
 #   (schema 新增 timeout 参数, 按"有 timeout 参数工具不进本表"约定), TOOL_RETRY_CONFIG 移出(链内自带降级,
 #   外层重试永远等不到 connect/timeout 异常, 该条已死) — 小欧-2026-11-23
+# 2026-11-27 小欧 - stderr 截断改头尾双向: 新增 HEAD=400/TAIL=1100 两个常量,
+#   MAX 由两者相加派生(=1500), 不再独立写数字; 修 head-only 丢尾部异常类型的已知缺陷 — 小欧-2026-11-27
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -405,7 +407,9 @@ QUESTION_OPTION_SCHEMA_KEYS = frozenset(
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell
 SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 10000          # 使用对象: execute_shell_command.py(shell 成功输出字符上限, 超则截断; 原50000→20000→10000) — 小欧-2026-10-27
-SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = 2000           # 使用对象: execute_shell_command.py(shell 失败输出字符上限, 超则截断; 原20000→2000) — 小欧-2026-10-27
+SHELL_OUTLIMIT_STDERR_HEAD_CHARS: int = 400           # 使用对象: execute_shell_command.py(stderr 头尾截断的头部预算(行边界收口)) — 小欧-2026-11-27
+SHELL_OUTLIMIT_STDERR_TAIL_CHARS: int = 1100          # 使用对象: execute_shell_command.py(stderr 头尾截断的尾部预算(异常类型/最终摘要在尾)) — 小欧-2026-11-27
+SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = SHELL_OUTLIMIT_STDERR_HEAD_CHARS + SHELL_OUTLIMIT_STDERR_TAIL_CHARS  # stderr 上限由头+尾预算派生(原2000), 改一处自动同步 — 小欧-2026-11-27
 # shell 退出码含义单源(同步/后台共用): 失败时给 LLM 解释, 只认确定的常见码, 未收录的不猜 — 小欧-2026-11-21
 EXIT_CODE_MEANING: dict = {
     1: "通用错误", 2: "命令语法错误", 3: "配置错误",

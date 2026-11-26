@@ -198,6 +198,11 @@
 
 # 2026-11-22 小欧 - shell() 消费沙箱预检纯静态结果: 入口 get_current_precheck_info 读取(未注入返回 None 降级),
 #   仅记录日志不拦截; 预检本体不再启动进程/不弹窗 HITL, 正常业务零误杀。
+# 2026-11-27 小欧 - DRY: _stderr_for_diag 诊断窗口硬编码 2000 改引用 SHELL_OUTLIMIT_STDERR_MAX_CHARS,
+#   切片天然覆盖短文本(去条件), 常量调整后窗口自动同步 — 小欧-2026-11-27
+# 2026-11-27 小欧 - stderr 输出截断改头尾双向: _truncate_shell_field 增可选 tail_chars
+#   (默认0保原 head-only, stdout 零退化), 头预算由总量减尾预算派生, 两端行边界收口, 中段说明写明保留量;
+#   stderr 取头400+尾1100=1500(原2000), 修 head-only 丢尾部异常类型; 诊断窗口取头尾同形并补换行防接缝粘词 — 小欧-2026-11-27
 
 """
 S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07-05
@@ -333,7 +338,9 @@ from app.tools.tool_constants import (
     ERR_SHELL_TIMEOUT,
     EXECUTE_SHELL_OUTPARM_LIMIT_CMD,
     EXIT_CODE_MEANING,
+    SHELL_OUTLIMIT_STDERR_HEAD_CHARS,
     SHELL_OUTLIMIT_STDERR_MAX_CHARS,
+    SHELL_OUTLIMIT_STDERR_TAIL_CHARS,
     SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
 )
 from app.tools.tool_fc_helper import _decode_bytes_safe
@@ -717,20 +724,36 @@ def _fix_encoding(text: str) -> str:
 
 
 # 注意: OBS_SHELL_MAX_ROWS×OBS_SHELL_MAX_ROW_CHARS=200K
-#       展示上限, tool截断10K(stdout)/2K(stderr)保守对齐,
-#       试用后再视需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)
-def _truncate_shell_field(text: str, max_chars: int) -> tuple[str, bool]:
-    """shell 工具输出截断(head-only+行边界): 超 max_chars 保留文首至最近行尾, 末尾追加截断说明 — 小欧 2026-07-23
+#       展示上限, tool截断10K(stdout)/1.5K(stderr 头400+尾1100)保守对齐,
+#       试用后再视需调整(2026-07-23; 2026-10-27 stdout 50K→10K; 2026-11-27 stderr 2K→1.5K 改头尾双向)
+def _truncate_shell_field(text: str, max_chars: int, *, tail_chars: int = 0) -> tuple[str, bool]:
+    """shell 工具输出截断(行边界收口): 超 max_chars 按头尾预算保留两端, 中间省略处追加说明 — 小欧 2026-07-23
+    默认 tail_chars=0 走原 head-only 路径(stdout 零退化); tail_chars>0 启头尾双向(stderr),
+    头预算由 max_chars-tail_chars 派生, 不另设参数(YAGNI)。
+    头尾都对齐行边界, 避免 LLM 看到半截行; 说明放两端之间, 明写各端保留量与省略量。
     注意: OBS_SHELL_MAX_ROWS(200)×OBS_SHELL_MAX_ROW_CHARS(1000)=200K 是formatter展示上限;
-          tool截断10K(stdout)/2K(stderr)为存储保护值, 低于展示上限; 试用后按需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)"""
+          tool截断10K(stdout)/1.5K(stderr)为存储保护值, 低于展示上限 — 小欧-2026-11-27"""
     if len(text) <= max_chars:
         return text, False
-    cut = text[:max_chars].rfind('\n')
-    if cut <= 0:
-        cut = max_chars
-    head = text[:cut]
-    note = f"\n...[shell输出截断: 原文{len(text)}字符, 保留{cut}字符]...\n"
-    return head + note, True
+    if tail_chars <= 0:
+        cut = text[:max_chars].rfind('\n')
+        if cut <= 0:
+            cut = max_chars
+        note = f"\n...[shell输出截断: 原文{len(text)}字符, 保留{cut}字符]...\n"
+        return text[:cut] + note, True
+    # 头尾双向: 头预算=总量-尾预算(派生), 两端均收口到行边界
+    head = text[:max_chars - tail_chars]
+    _cut = head.rfind('\n')
+    if _cut > 0:
+        head = head[:_cut]
+    tail = text[-tail_chars:]
+    _nl = tail.find('\n')
+    if 0 <= _nl < len(tail) - 1:
+        tail = tail[_nl + 1:]
+    omitted = len(text) - len(head) - len(tail)
+    note = (f"\n...[shell输出截断: 原文{len(text)}字符, "
+            f"保留头{len(head)}+尾{len(tail)}字符, 中间省略{omitted}字符]...\n")
+    return head + note + tail, True
 
 
 # 已知良性stderr模式白名单（不触发warning）— 小欧 2026-07-08
@@ -1389,7 +1412,7 @@ def shell(
                     _requested_shell_type, _shell_type_switch)
 
         # ── 阶段 4【通用】: 后处理(UTF-8 编码修复) ──
-        # 小欧 2026-07-20: 依规则删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(50K/20K) — 2026-07-23 小欧更新
+        # 小欧 2026-07-20: 依规则删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(stdout 10K / stderr 头400+尾1100=1.5K) — 2026-11-27 小欧更新
         if returncode == 0 and '>' in command:
             _convert_redirect_to_utf8(command, cwd)
 
@@ -1397,9 +1420,19 @@ def shell(
         # ── 阶段 4.5【通用】: Tool 输出截断 — 小欧 2026-07-23 ──
         _stdout_orig_len = len(stdout_str)
         _stderr_orig_len = len(stderr_str)
-        _stderr_for_diag = stderr_str[:2000] if len(stderr_str) > 2000 else stderr_str  # 截断前保存原始值用于诊断(如PS/CMD混用检测) — 小欧 2026-07-28
+        # 诊断窗口与截断窗口同形(头+尾): 短文本全量, 长文本取头尾不含省略说明,
+        #   保证 shell 混用提示能命中尾部错误信号(原仅取头部会漏) — 小欧 2026-11-27
+        if len(stderr_str) > SHELL_OUTLIMIT_STDERR_MAX_CHARS:
+            # 两段之间补换行: 防首尾字符粘成新 token 干扰正则判别 — 小欧-2026-11-27
+            _stderr_for_diag = (stderr_str[:SHELL_OUTLIMIT_STDERR_HEAD_CHARS] + "\n"
+                                + stderr_str[-SHELL_OUTLIMIT_STDERR_TAIL_CHARS:])
+        else:
+            _stderr_for_diag = stderr_str
         stdout_str, stdout_trunc = _truncate_shell_field(stdout_str, SHELL_OUTLIMIT_STDOUT_MAX_CHARS)
-        stderr_str, stderr_trunc = _truncate_shell_field(stderr_str, SHELL_OUTLIMIT_STDERR_MAX_CHARS)
+        stderr_str, stderr_trunc = _truncate_shell_field(
+            stderr_str, SHELL_OUTLIMIT_STDERR_MAX_CHARS,
+            tail_chars=SHELL_OUTLIMIT_STDERR_TAIL_CHARS,
+        )
         data: Dict[str, Any] = {
             "stdout": stdout_str, "stderr": stderr_str,
         }
