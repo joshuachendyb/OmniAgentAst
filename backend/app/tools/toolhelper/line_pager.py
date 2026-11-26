@@ -6,7 +6,8 @@
 - 2026-08-05 小欧 修复: select_lines双换行bug - splitlines(keepends=True) + "\\n".join导致空行翻倍(三堂会审)
 - 2026-10-30 小欧 offset 分支支持 limit=None(切到末尾, 供 read 的"offset 单独给=读到文件尾"使用);
   负/零 offset 改显式 warning(原负索引静默返回文件尾部内容)
-- 2026-11-27 小欧 新增 reconcile_page_params: read 翻页参数互斥归约(tail 优先), 被忽略参数经 notice 如实点名
+- 2026-11-27 小欧 新增 reconcile_page_params: read 翻页参数互斥归约(tail 优先), 被忽略参数经 notice 如实点名;
+  单位由 unit 参数注入(文本文件=行, docx=段), 避免 notice 与工具语义不一致
 行分页/截断工具 — 小欧 2026-07-20
 
 #10 去噪专用: 将已完整读入内存的文本内容, 按 行号窗口(offset/limit/tail) 选取子集,
@@ -24,10 +25,11 @@ from typing import Any, Dict, Optional
 # 2026-11-27 小欧 - 新增: read 翻页参数互斥归约(单点)。tail 优先于 offset/limit,
 #   与 select_lines 既有分支优先级一致; 被忽略参数在 notice 中如实点名, 由工具层转为 warning。
 def reconcile_page_params(
-    offset: Optional[int], limit: Optional[int], tail: Optional[int]
+    offset: Optional[int], limit: Optional[int], tail: Optional[int], unit: str = "行"
 ) -> tuple:
     """按 tail 优先归约互斥的翻页参数, 返回 (offset, limit, tail, notice)。
 
+    unit 注入被读物的自然单位(文本文件=行, docx=段), 保证 notice 与工具语义一致。
     只做参数归约, 不构建 llm_data / 不计时(遵守工具层 helper 铁规)。
     notice 为空表示无冲突, 非空时由调用方转 warning 并如实告知被忽略的参数。
     """
@@ -41,7 +43,7 @@ def reconcile_page_params(
     _dropped = "、".join(dropped)
     notice = (
         f"参数互斥: 检测到 tail={tail} 与 {_dropped} 同时传入, "
-        f"已按 tail={tail} 读取文件尾部 {tail} 行, {_dropped} 已忽略"
+        f"已按 tail={tail} 读取文件尾部 {tail} {unit}, {_dropped} 已忽略"
     )
     return None, None, tail, notice
 

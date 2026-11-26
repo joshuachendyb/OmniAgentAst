@@ -99,8 +99,23 @@ def read_docx(
     """读取Word(.docx)文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-24 移除.doc死代码(pandoc转换)"""
     t0 = _time_mod.perf_counter()
     file_path = path
-    # 2026-11-27 小欧 - 与 read 同款互斥归约(tail 优先), 须早于 limit 范围校验
-    offset, limit, tail, _reconcile_notice = reconcile_page_params(offset, limit, tail)
+    # 2026-11-27 小欧 - 越界先 clamp 再归约, 保证 notice 里的值是实际执行值(与 read 同口径)
+    _bounds_notice = []
+    if limit is not None and (limit < 1 or limit > 1000):
+        _fixed = 1 if limit < 1 else 1000
+        _bounds_notice.append(
+            f"limit={limit} 超出 [1,1000]，已按边界值 {_fixed} 执行；"
+            f"需要更多段落请用 offset+limit 分页"
+        )
+        limit = _fixed
+    if tail is not None and tail < 1:
+        _bounds_notice.append(f"tail={tail} 小于1，已按 1 执行（读最后1段）")
+        tail = 1
+    if offset is not None and offset < 1:
+        _bounds_notice.append(f"offset={offset} 小于1，已按 1 执行（从第1段起）")
+        offset = 1
+    # 2026-11-27 小欧 - 与 read 同款互斥归约(tail 优先), 在 clamp 之后执行
+    offset, limit, tail, _reconcile_notice = reconcile_page_params(offset, limit, tail, unit="段")
     # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
     ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
@@ -126,24 +141,11 @@ def read_docx(
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail="python-docx库未安装", hint="请安装python-docx库")
         return build_error(data={}, llm_data=llm_data)
 
-    # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 read 的 offset/limit/tail 语义)
-    if limit is not None and (limit < 1 or limit > 1000):
+    # "offset 须配合 limit"是本工具语义规则, 非数值越界, 保持 error 不动
+    if offset is not None and limit is None:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间，传入值：{limit}", hint="把 limit 改为 1-1000 的整数；需要更多段落请用 offset+limit 分页")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="read_docx 的 offset 须配合 limit；从第 10 段起读 20 段请传 offset=10, limit=20")
         return build_error(data={}, llm_data=llm_data)
-    if tail is not None and tail < 1:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1，传入值：{tail}", hint="tail 须为 ≥1 的整数；读最后 20 段请传 tail=20")
-        return build_error(data={}, llm_data=llm_data)
-    if offset is not None:
-        if offset < 1:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1，当前值：{offset}", hint="offset 从 1 开始；读第 10 段起请传 offset=10")
-            return build_error(data={}, llm_data=llm_data)
-        if limit is None:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="read_docx 的 offset 须配合 limit；从第 10 段起读 20 段请传 offset=10, limit=20")
-            return build_error(data={}, llm_data=llm_data)
 
     try:
         import docx
@@ -181,8 +183,10 @@ def read_docx(
 
         # 2026-11-27 小欧 - 归约 notice 与既有 warning 并存; 有 notice 时强制 warning,
         #   hint 给 LLM 下一轮可直接复制的写法(read_docx 以"段"为单位)。
-        if _reconcile_notice:
-            warning = "; ".join(p for p in (warning, _reconcile_notice) if p)
+        _param_notice = "; ".join(_bounds_notice)
+        _all_notice = "; ".join(p for p in (_reconcile_notice, _param_notice) if p)
+        if _all_notice:
+            warning = "; ".join(p for p in (warning, _all_notice) if p)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if warning:
             _hint = (
@@ -191,6 +195,10 @@ def read_docx(
                 if _reconcile_notice
                 else "文件为空或行号越界时，请按警告内容改用 tail=N 或 offset+limit 重试"
             )
+            if _param_notice:
+                _hint = "；".join(
+                    p for p in (_hint, "越界参数已按边界值执行；下次请直接传允许范围内的值") if p
+                )
             llm_data = _build_read_docx_llm_data(
                 "warning", duration_ms, path, len(paragraphs), len(selected_text),
                 len(non_empty_paragraphs), empty_para_count, len(tables_data),

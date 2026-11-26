@@ -96,6 +96,10 @@
 #   会早于 security.hitl.timeout(默认120s)截杀; 改取 HITL 超时 + INSURANCE_BUFFER, 与工具内等待同源。
 # 2026-11-27 小欧 - 参数校验提示补齐: 类型错误分支补可行动 hint(原分支空 hint, LLM 不知如何转换);
 #   取消静默数值 clamp(原越界值被改写且无反馈, LLM 基于错误前提推理), 改为越界点名报错+可执行改法。
+# 2026-11-27 小欧 - 越界 hint 去工具特判: 原对 limit 硬编码"offset+limit 分段读取"把 read 的分页语义泄漏进通用引擎,
+#   且对 analyze_data 等同名参数给出错误建议; 工具特定出路由各工具 schema description 承载, 引擎只给通用改法。
+# 2026-11-27 小欧 - 越界处理最终归位: 引擎层彻底移除数值范围 clamp/报错及配套 helper,
+#   越界容错下沉各工具自行 clamp+warning; 上两条中间方案被本条覆盖, 引擎只保留非法字段/必需参数/类型校验。
 
 """
 统一工具重试引擎 — 工具的外部重试机制
@@ -562,27 +566,7 @@ class ToolRetryEngine:
         return await self._execute_with_retry(action, params_or_error, tool, on_retry_started=on_retry_started,
                                               on_attempt_recorded=on_attempt_recorded)
 
-    def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
-        """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
-        Pydantic v2对Optional[int]生成{"anyOf":[{...,"minimum"/"maximum"...},{"type":"null"}], "type":"integer"},
-        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证read limit=1200漏过引擎层)。
-        提取顺序: 顶层优先(普通非Optional字段), 无则取anyOf[0](Optional字段), 再无返回(None,None)表示无范围约束。
-        """
-        if not isinstance(spec, dict):
-            return None, None
-        top_min, top_max = spec.get("minimum"), spec.get("maximum")
-        if top_min is not None or top_max is not None:
-            return top_min, top_max
-        any_of = spec.get("anyOf")
-        if isinstance(any_of, list):
-            # 2026-08-13 - 小欧 - 三堂会审修复: 全量扫描 anyOf 成员取首个含 min/max 者,
-            #   原固定取 anyOf[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
-            #   anyOf 成员顺序不保证。
-            for a in any_of:
-                if isinstance(a, dict) and ("minimum" in a or "maximum" in a):
-                    return a.get("minimum"), a.get("maximum")
-        return None, None
-
+    # 2026-11-27 小欧 - 删 _extract_numeric_bounds: 数值范围处理下沉到工具层后本 helper 无调用方, 按 YAGNI 移除
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
         """验证参数（非法参数+必需参数）— 修复: 返回错误字典而非None
         小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
@@ -686,45 +670,9 @@ class ToolRetryEngine:
                             for k in type_errors
                         ),
                     )
-                # 修复: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
-                # 2026-08-05 小欧 修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
-                # 2026-08-12 小欧 三堂会审修复: 范围提取走_extract_numeric_bounds, 兼容Pydantic v2 anyOf嵌套
-                #   (Optional字段min/max在anyOf[0]子结构, 原顶层取None→clamp失效, limit=1200漏到运行时)
-                # 2026-08-13 - 小欧 - 三堂会审修复: 门控不再依赖顶层type(数组形式type如["integer","null"]
-                #   时 _t in ("integer","number") 为False→整段clamp被跳过), 改为以"能取到数值边界"为准。
-                # 2026-11-27 小欧 - clamp 改越界收集(下方点名报错), 不再静默改写参数值。
-                _out_of_bounds = []
-                for k, v in params.items():
-                    spec = props.get(k)
-                    if not spec:
-                        continue
-                    minimum, maximum = self._extract_numeric_bounds(spec)
-                    if minimum is None and maximum is None:
-                        continue
-                    if isinstance(v, (int, float)) and not isinstance(v, bool):
-                        if (minimum is not None and v < minimum) or (maximum is not None and v > maximum):
-                            _out_of_bounds.append((k, v, minimum, maximum))
-                if _out_of_bounds:
-                    # 2026-11-27 小欧 - 取消静默 clamp: 原越界值被悄悄改写(limit=1200→1000)且无反馈,
-                    #   LLM 以为读了 1200 行, 结论建立在错误前提上。改为点名报错 + 可执行改法。
-                    _parts, _hints = [], []
-                    for k, v, lo, hi in _out_of_bounds:
-                        _range = (
-                            f"[{lo}, {hi}]" if lo is not None and hi is not None
-                            else (f"≥{lo}" if lo is not None else f"≤{hi}")
-                        )
-                        _parts.append(f"{k}={v} 超出允许范围 {_range}")
-                        _hints.append(
-                            f"把 {k} 改为 {_range} 范围内的整数"
-                            + ("；需要更多行请用 offset+limit 分段读取" if k == "limit" else "")
-                        )
-                    return self._build_retry_error(
-                        ERR_INVALID_PARAMS,
-                        f"参数验证失败: {action} 数值越界: {'; '.join(_parts)}",
-                        0, error_type="invalid_params",
-                        action_name=action, action_params=params,
-                        hint="；".join(_hints),
-                    )
+                # 2026-11-27 小欧 - 数值范围容错下沉到各工具: 引擎只做通用校验(非法字段/必需参数/类型),
+                #   越界值的 clamp + warning 由工具自己决定(只有工具知道边界外的出路, 如 read 的 offset+limit 分页);
+                #   原引擎层静默 clamp(改写值无反馈)与点名报错(终止执行)两种做法均已废除。
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
 

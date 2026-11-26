@@ -185,9 +185,24 @@ async def read(
         limit = int(limit)
     if tail is not None:
         tail = int(tail)
-    # 2026-11-27 小欧 - 互斥归约: 原 error 分支改为"tail 优先 + warning 明示",
-    #   省一轮 LLM 重试且不隐瞒被忽略的参数; 归约须早于 limit 范围校验,
-    #   否则被忽略的越界 limit 会先报错。
+    # 2026-11-27 小欧 - 越界容错下沉工具层: 先 clamp 再归约, 保证 notice 里的值是实际执行值
+    #   (否则 tail=0 与 limit=10 同时传入时, 归约 notice 会写"按 tail=0 读", 而实际 clamp 后读1行, 自相矛盾);
+    #   边界外的出路只有工具知道(read 的分页语义), 引擎层只做通用校验, 越界事实记入 notice 不终止执行。
+    _bounds_notice = []
+    if limit is not None and (limit < 1 or limit > 1000):
+        _fixed = 1 if limit < 1 else 1000
+        _bounds_notice.append(
+            f"limit={limit} 超出 [1,1000]，已按边界值 {_fixed} 执行；"
+            f"需要更多行请用 offset+limit 分页（如 offset=1001, limit=1000）"
+        )
+        limit = _fixed
+    if tail is not None and tail < 1:
+        _bounds_notice.append(f"tail={tail} 小于1，已按 1 执行（读最后1行）")
+        tail = 1
+    if offset is not None and offset < 1:
+        _bounds_notice.append(f"offset={offset} 小于1，已按 1 执行（从第1行起）")
+        offset = 1
+    # 2026-11-27 小欧 - 互斥归约: 原 error 分支改为"tail 优先 + warning 明示", 省一轮 LLM 重试且不隐瞒被忽略参数
     offset, limit, tail, _reconcile_notice = reconcile_page_params(offset, limit, tail)
     t0 = _time_mod.perf_counter()
     # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
@@ -210,26 +225,6 @@ async def read(
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 
-        if limit is not None and (limit < 1 or limit > 1000):
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"limit参数必须在1-1000之间，传入值：{limit}",
-                hint="把 limit 改为 1-1000 的整数；需要更多行请用 offset+limit 分页（如 offset=1001, limit=1000）",
-                user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-            )
-            return build_error(data={}, llm_data=llm_data)
-
-        if tail is not None and tail < 1:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"tail参数不能小于1，传入值：{tail}",
-                hint="tail 须为 ≥1 的整数；读最后 20 行请传 tail=20",
-                user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-            )
-            return build_error(data={}, llm_data=llm_data)
-
         if encoding is not None:
             try:
                 "".encode(encoding)
@@ -239,17 +234,6 @@ async def read(
                     "error", duration_ms, file_path=file_path,
                     detail=f"不支持的编码：{encoding}",
                     hint="请使用正确的编码名称,如utf-8/gbk",
-                    user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-                )
-                return build_error(data={}, llm_data=llm_data)
-
-        if offset is not None:
-            if offset < 1:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_read_text_file_llm_data(
-                    "error", duration_ms, file_path=file_path,
-                    detail=f"offset参数不能小于1，传入值：{offset}，行号从1开始",
-                    hint="offset 从 1 开始；读第 10 行起请传 offset=10",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
                 return build_error(data={}, llm_data=llm_data)
@@ -315,10 +299,12 @@ async def read(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
-        # 2026-11-27 小欧 - 归约 notice 与既有 warning 并存(不互相覆盖, 同截断原因并存口径):
+        # 2026-11-27 小欧 - 归约/越界 notice 与既有 warning 并存(不互相覆盖, 同截断原因并存口径):
         #   有 notice 时强制走 warning 分支, detail 合并, hint 给 LLM 可下一轮直接复制的参数写法。
-        if _reconcile_notice:
-            _warning = "; ".join(p for p in (_warning, _reconcile_notice) if p)
+        _param_notice = "; ".join(_bounds_notice)
+        _all_notice = "; ".join(p for p in (_reconcile_notice, _param_notice) if p)
+        if _all_notice:
+            _warning = "; ".join(p for p in (_warning, _all_notice) if p)
         if _warning:
             warning_hint = ""
             if "空文件" in _warning:
@@ -326,9 +312,15 @@ async def read(
             elif "超出文件范围" in _warning:
                 warning_hint = f"offset 超出文件总行数 {_total_lines}；请改用 tail=N 从尾部读取"
             if _reconcile_notice:
-                warning_hint = (
+                _reconcile_hint = (
                     f"下次只传 tail={tail} 即可；若要读文件前 N 行请只传 limit=N，"
                     f"若要从第 N 行起读 M 行请传 offset=N, limit=M"
+                )
+                # 2026-11-27 小欧 - 与既有 warning hint 合并而非覆盖(空文件+归约并存时两条都要给用户)
+                warning_hint = "；".join(p for p in (warning_hint, _reconcile_hint) if p)
+            if _param_notice:
+                warning_hint = "；".join(
+                    p for p in (warning_hint, "越界参数已按边界值执行；下次请直接传允许范围内的值") if p
                 )
             llm_data = _build_read_text_file_llm_data(
                 "warning", duration_ms, file_path=file_path,
