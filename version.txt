@@ -1,3 +1,30 @@
+v1.7.12
+发布时间: 2026-11-26 22:26:02 - 小欧-2026-11-26
+
+## v1.7.12汇总 从上一个 tag v1.7.11(commit 4e1d28214, 2026-11-26)以来全部 16 个 commit(feat 2 / fix 3 / refactor 2 / test 1 / docs 8); 本批以 [65]E1 通用进程宿主外置落地实施方案为主线: 阶段三/四/五通用进程宿主接入(bash/CMD 前台走宿主+proc_io.run 内部走宿主保持 subprocess 契约)、进程域目录归位(app/proc 集中+常量单点)、多会话并发真 bug 修复(排队重算预算/guardian 同 tick 复检/预算常量集中)、阶段六 ffmpeg 转码接入、阶段七/八后台 shell 接入与 fire-and-forget 合规审查 - 小欧-2026-11-26
+### 1.7.12.1 新增功能
+[feat] feat:app/services/agent/video_transcode.py 阶段六ffmpeg转码接入进程宿主: subprocess.run改proc_io.run(内部走宿主,主进程零CreateProcessW),删死导入import subprocess; CompletedProcess/TimeoutExpired契约一致,超时由宿主Job杀整树; 三堂会审审查通过(关联审查排除相对路径风险),5项真实回归+py_compile+ruff F全过 - 小欧-2026-11-26
+[feat] feat:app/proc_host/__init__.py+client.py+host.py+app/utils/proc_io.py+app/tools/fundamental/execute_shell_command.py 阶段三/四/五通用进程宿主接入: bash/CMD 前台分支走宿主并清理本地杀树死代码, proc_io.run 内部改走宿主保持subprocess契约(600s单一上限/错误kind透传/creationflags白名单/shell显式报错), 宿主12项测试与真实回归通过 - 小欧-2026-11-26
+### 1.7.12.2 缺陷修复
+[fix] fix: [65]E1 阶段七/八后台 shell 接入与 fire-and-forget 合规审查 - 小欧-2026-11-26
+[fix] fix:app/proc/constants.py+client.py+host.py 多会话并发真 bug 与常量集中: 排队后重算命令预算(修客户端误杀宿主连累在飞命令)/guardian单次ping失败改同tick复检(防误杀且不拖慢真僵死)/13+1个预算常量集中并标注制约关系, 真实case修复前后对照与37项测试150命令压测通过 - 小欧-2026-11-26
+[fix] fix:execute_shell_command 修复timeout被int截断致小超时误杀(实测timeout=2跑1.5s命令被砍成1s误报超时),三分支宿主调用收敛为_run_in_host/_host_error_result消DRY,宿主错误按kind区分not_found - 小欧-2026-11-26
+### 1.7.12.3 重构与优化
+[refactor] refactor:env 环境变量统一 OMNI_ 前缀单点化(env_keys)+配置迁移(enable_api_docs/trusted_proxies/fg_output_mb)+宿主握手合并 - 小欧-2026-11-26
+[refactor] refactor:app/proc/ 进程域集中: 宿主(host/client)与 proc_io/proc_utils/spawn_gate/win_job_object/console_mode/workers 统一迁入, 原 app/proc_host 与 app/utils 同名模块删除; 常量单点 app/proc/constants.py, 启动入口 -m app.proc.host, .spec 与全仓42处import同步; 纯路径迁移逻辑零变化, 36项测试与150命令并发压测通过 - 小欧-2026-11-26
+### 1.7.12.4 测试
+[test] test:conftest/e2e_helpers 环境变量名配套更新 OMNI_ 前缀(测试基础设施,与生产 env_keys 同步) - 小欧-2026-11-26
+### 1.7.12.5 文档
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.24/v1.25 阶段六实施与阶段九评估收口: 逐项核实4.6/7.2/7.4/7.5状态标注(零~六已实施,七~九未实施), 阶段六ffmpeg落地与5项真实回归, 7.5.5阶段九四项不纳入逐条代码事实依据, 两处过期case修复 - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.23 第八章事实校正不凭推演: 8.5回收改为回池复用非销毁进程(与原预热池方案一致)/8.1澄清workers.py ContextVar传播task_id但无关宿主路由/8.6澄清EventBus职责是系统到前端SSE广播非会话互通, 并保留会话删除按cancel_cascade挂接 - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.21 新增第八章按活动会话分配宿主的架构演进分析: 全局单宿主代码事实/预热池vs即时创建与阶段零硬指标/四项收益四条代价/生命周期与空闲回收/会话间通信YAGNI与主进程层扩展点/四阶段演进路线 - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.20 重写7.5为阶段六~八实施设计(ffmpeg直接适配/阶段七八共享的后台任务通道协议扩展详细设计/后台shell与fire-and-forget各自接入), 原7.5索引冗余并入7.4末尾, 7.6改标题明确为底座原理非实施步骤并修正漂移行号 - 小欧-2026-11-26
+[docs] docs:FUNCTIONS.md+[65]E1-通用进程宿主外置落地实施方案 v5.54/v1.19 同步常量集中与并发真bug修复: 预算制约关系、排队case修复前后对照数据、ping复检方案与37项测试取证 - 小欧-2026-11-26
+[docs] docs:FUNCTIONS.md+[65]E1-通用进程宿主外置落地实施方案 v5.52/v1.18 同步进程域目录归位: 4.4模块划分重写、常量归属改 app/proc/constants.py、旧约束作废说明、并发压测取证(150命令/15并发/主进程popen_calls增量0) - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.17 回填阶段三/四/五落地口径(600s单一上限/错误映射/creationflags白名单/shell显式报错)与三阶段真实回归取证 - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.16 补齐阶段三~五施工口径: 7.2.5 bash/CMD改造骨架与死代码清理、7.4.1 阶段五五项实施口径、7.4.2 验收用例, 并勘误 CMD/bash 分支行号与 7.2.1/7.4/4.5.3/4.2.5/7.5 交叉引用 - 小欧-2026-11-26
+
+
 v1.7.11
 发布时间: 2026-11-26 13:52:00 - 小欧-2026-11-26
 
