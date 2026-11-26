@@ -10,6 +10,9 @@
 #   "排队+完整 timeout"超过客户端截止而误杀宿主、连累全场在飞命令; 长排队告警留痕。
 # 2026-11-27 - 小欧 - 阶段七/八: 新增后台任务通道 submit/query/terminate 与 _bg_watch 看护线程;
 #   background 输出直写文件、超时/超限由宿主单方判定; fire_and_forget 不入 Job; 断连按 mode 分派不杀树。
+# 2026-11-27 - 小欧 - 后台通道边界修正: timeout 按 None 判定且按剩余时间切片, 终止回传 -1,
+#   无 Job 任务终止改杀整棵树, 回收上限后等真实退出再写终态, 输出目录错误归类为启动失败,
+#   提交时拒绝未知 mode, query 对 fire_and_forget 用 poll() 判真实运行(不把仍存活误报未运行)。
 """proc_host — 通用进程宿主进程
 
 【为什么独立进程】CreateProcessW 卡在控制台 IOCTL 时不释放 GIL, 同解释器内任何线程
@@ -250,6 +253,10 @@ def _handle_submit(conn, req, send_lock) -> None:
         _send(conn, {"type": "error", "message": "argv 必须是 list/tuple"}, send_lock)
         return
     mode = req.get("mode", "background")
+    if mode not in ("background", "fire_and_forget"):
+        _BG_TASK_SEM.release()
+        _send(conn, {"type": "error", "message": f"未知 mode: {mode!r}"}, send_lock)
+        return
     output_file = req.get("output_file")
     timeout = req.get("timeout")   # None 透传, 不套 DEFAULT_TIMEOUT
     max_bytes = int(req.get("max_output_bytes") or 0)
@@ -269,7 +276,15 @@ def _handle_submit(conn, req, send_lock) -> None:
                 _BG_TASK_SEM.release()
                 _send(conn, {"type": "error", "message": "background mode 需 output_file"}, send_lock)
                 return
-            fout = open(output_file, "ab")
+            try:
+                fout = open(output_file, "ab")
+            except OSError as e:
+                # 打开输出文件失败是"产物路径问题", 非"程序不存在": 单独映射 spawn_failed,
+                #   不落入下方 Popen 的 not_found(否则目录不存在会误报"程序不存在") — 小欧-2026-11-27
+                _BG_TASK_SEM.release()
+                _send(conn, {"type": "error", "message": f"{type(e).__name__}: {e}",
+                             "kind": "spawn_failed"}, send_lock)
+                return
             try:
                 proc = subprocess.Popen(
                     list(argv), cwd=req.get("cwd"), env=req.get("env"),
@@ -325,7 +340,12 @@ def _handle_query(conn, req, send_lock) -> None:
         _send(conn, {"type": "error", "message": f"未知任务 {task_id}"}, send_lock)
         return
     outcome = info.get("outcome") or "running"
-    running = outcome == "running"
+    if info.get("mode") == "fire_and_forget" and outcome != "running":
+        # fire_and_forget 超时(_FIRE_FORGET_REAP)后 watch 已写终态但进程可能仍活:
+        #   以 poll() 判真实状态, 不把"仍存活"误报为"未运行"(状态一致性) — 小欧-2026-11-27
+        running = info["proc"].poll() is None
+    else:
+        running = outcome == "running"
     rc = None if running else info.get("rc")
     if not running and rc is None:
         rc = info["proc"].returncode
@@ -348,6 +368,7 @@ def _handle_terminate(conn, req, send_lock) -> None:
     with _BG_LOCK:
         if info.get("outcome") == "running":
             info["outcome"] = "terminated"
+            info["rc"] = -1          # 被终止语义: 与 timeout/oversize 同口径, 不把真实 rc 混入 — 小欧-2026-11-27
             info["t_end"] = time.monotonic()
     job = info.get("job")
     if job is not None:
@@ -355,8 +376,16 @@ def _handle_terminate(conn, req, send_lock) -> None:
             terminate_job(job)   # TerminateJobObject, 内核级杀整棵树
         except Exception:
             pass
+    else:
+        # fire_and_forget 无 Job(刻意不建, 防 KILL_ON_JOB_CLOSE 关窗): terminate 仍需杀净树,
+        #   用 taskkill /f /t 杀根+孙, 不留孤儿(否则孙进程残留, 真实资源泄漏) — 小欧-2026-11-27
+        try:
+            subprocess.run(["taskkill", "/pid", str(info["proc"].pid), "/f", "/t"],
+                           capture_output=True)
+        except Exception:
+            pass
     try:
-        info["proc"].kill()      # fire_and_forget 无 Job, 只能杀根
+        info["proc"].kill()      # 兜底杀根: 有 Job 时树已由 terminate_job 清净, 无 Job 时 taskkill 已先清孙进程
     except OSError:
         pass
     _send(conn, {"type": "terminated", "task_id": task_id}, send_lock)
@@ -373,7 +402,8 @@ def _bg_watch(task_id: str) -> None:
     proc = info["proc"]
     timeout = info.get("timeout")
     max_bytes = info.get("max_output_bytes") or 0
-    deadline = (time.monotonic() + timeout) if timeout else None
+    # timeout=0 须立即超时(0 是合法"零预算", 非"无超时"): 用 is not None 判, 不用真值 — 小欧-2026-11-27
+    deadline = (time.monotonic() + timeout) if timeout is not None else None
     outcome, rc = "exited", None
     if info.get("mode") == "fire_and_forget":
         # 不入 Job、不杀树: 回收上限到了只解除登记, 进程交 OS 收尾
@@ -384,8 +414,17 @@ def _bg_watch(task_id: str) -> None:
             rc = None
     else:
         while True:
+            # 判超时须及时: wait 切片取 min(_BG_POLL, 剩余预算), 否则 timeout=0.5 会拖到 2s 才判定 — 小欧-2026-11-27
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    outcome, rc = "timeout", -1
+                    break
+                wait_slice = min(_BG_POLL, remaining)
+            else:
+                wait_slice = _BG_POLL
             try:
-                rc = proc.wait(timeout=_BG_POLL)
+                rc = proc.wait(timeout=wait_slice)
                 break
             except subprocess.TimeoutExpired:
                 pass
@@ -396,9 +435,6 @@ def _bg_watch(task_id: str) -> None:
                         break
                 except OSError:
                     pass
-            if deadline is not None and time.monotonic() >= deadline:
-                outcome, rc = "timeout", -1
-                break
         if outcome != "exited":
             try:
                 terminate_job(info["job"])   # 杀整棵树, 不留孙进程
