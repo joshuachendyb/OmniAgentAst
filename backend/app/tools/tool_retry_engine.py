@@ -94,6 +94,8 @@
 #   顺带删除因换实现而失效的 threading 死导入。
 # 2026-11-18 商量 - _compute_fuse 增 question 特判: 无 timeout 参数的阻塞问答若按常规无inner路径=60s,
 #   会早于 security.hitl.timeout(默认120s)截杀; 改取 HITL 超时 + INSURANCE_BUFFER, 与工具内等待同源。
+# 2026-11-27 小欧 - 参数校验提示补齐: 类型错误分支补可行动 hint(原分支空 hint, LLM 不知如何转换);
+#   取消静默数值 clamp(原越界值被改写且无反馈, LLM 基于错误前提推理), 改为越界点名报错+可执行改法。
 
 """
 统一工具重试引擎 — 工具的外部重试机制
@@ -116,6 +118,10 @@ import inspect
 from typing import Any, Callable, Dict, Optional
 
 from app.logger import logger
+from app.proc.workers import (  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
+    WorkerPool,
+    WorkerSlots,
+)
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import (
     ERR_INVALID_PARAMS,
@@ -134,7 +140,6 @@ from app.utils.json_utils import (  # coerce_json: 反向类型容错复用(DRY,
     coerce_json,
     safe_json_dumps,
 )
-from app.proc.workers import WorkerPool, WorkerSlots  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）
@@ -672,6 +677,14 @@ class ToolRetryEngine:
                         f"参数验证失败: {action} 参数类型错误: {'; '.join(type_errors)}",
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
+                        # 2026-11-27 小欧 - 类型错误分支补可行动 hint: 原分支未传 hint,
+                        #   LLM 只看到"期望array实际str"不知如何转换, 反复试错。
+                        hint="；".join(
+                            f"参数 '{k.split('期望')[0]}' 须传 JSON 原生类型："
+                            f"array→[...], object→{{...}}, integer→整数, boolean→true/false, "
+                            f"不要把整个值写成带引号的字符串"
+                            for k in type_errors
+                        ),
                     )
                 # 修复: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
                 # 2026-08-05 小欧 修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
@@ -679,6 +692,8 @@ class ToolRetryEngine:
                 #   (Optional字段min/max在anyOf[0]子结构, 原顶层取None→clamp失效, limit=1200漏到运行时)
                 # 2026-08-13 - 小欧 - 三堂会审修复: 门控不再依赖顶层type(数组形式type如["integer","null"]
                 #   时 _t in ("integer","number") 为False→整段clamp被跳过), 改为以"能取到数值边界"为准。
+                # 2026-11-27 小欧 - clamp 改越界收集(下方点名报错), 不再静默改写参数值。
+                _out_of_bounds = []
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
@@ -686,11 +701,30 @@ class ToolRetryEngine:
                     minimum, maximum = self._extract_numeric_bounds(spec)
                     if minimum is None and maximum is None:
                         continue
-                    if isinstance(v, (int, float)):
-                        if minimum is not None and v < minimum:
-                            params[k] = minimum
-                        elif maximum is not None and v > maximum:
-                            params[k] = maximum
+                    if isinstance(v, (int, float)) and not isinstance(v, bool):
+                        if (minimum is not None and v < minimum) or (maximum is not None and v > maximum):
+                            _out_of_bounds.append((k, v, minimum, maximum))
+                if _out_of_bounds:
+                    # 2026-11-27 小欧 - 取消静默 clamp: 原越界值被悄悄改写(limit=1200→1000)且无反馈,
+                    #   LLM 以为读了 1200 行, 结论建立在错误前提上。改为点名报错 + 可执行改法。
+                    _parts, _hints = [], []
+                    for k, v, lo, hi in _out_of_bounds:
+                        _range = (
+                            f"[{lo}, {hi}]" if lo is not None and hi is not None
+                            else (f"≥{lo}" if lo is not None else f"≤{hi}")
+                        )
+                        _parts.append(f"{k}={v} 超出允许范围 {_range}")
+                        _hints.append(
+                            f"把 {k} 改为 {_range} 范围内的整数"
+                            + ("；需要更多行请用 offset+limit 分段读取" if k == "limit" else "")
+                        )
+                    return self._build_retry_error(
+                        ERR_INVALID_PARAMS,
+                        f"参数验证失败: {action} 数值越界: {'; '.join(_parts)}",
+                        0, error_type="invalid_params",
+                        action_name=action, action_params=params,
+                        hint="；".join(_hints),
+                    )
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
 
