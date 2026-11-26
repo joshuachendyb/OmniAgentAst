@@ -25,6 +25,9 @@
 #                     ③_spawn_host 就绪轮询改用本地 proc 并加实例守卫(修并发 _kill_host 置空全局
 #                     导致的 None.poll NPE 与误杀期间已重建的新宿主); ④_client_with_deadline 用锁
 #                     闭合 box 写入与放弃判定的竞态(消除连接超时放弃后的悬挂连接窗口)。
+# 2026-11-26 - 小欧 - 通用接入: ①600s 上限收口到 app.proc_host.DEFAULT_TIMEOUT(宿主/客户端/
+#                     proc_io 同源); ②error 帧回传 kind, not_found 供 proc_io 还原 FileNotFoundError;
+#                     ③argv 为 str 时按 [str] 传(与 shell=False 的 subprocess 同义, 不拆成字符)。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
 对外两个入口:
@@ -47,7 +50,7 @@ import uuid
 from multiprocessing.connection import Client
 from typing import Optional, Tuple
 
-from app.proc_host import PROTO  # 协议版本唯一真源(包 __init__), 与宿主必须一致
+from app.proc_host import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(包 __init__)
 
 _CONNECT_TIMEOUT = 3.0      # 单次连接尝试上限
 _START_WAIT = 5.0           # 拉起宿主后等其就绪的上限
@@ -79,7 +82,15 @@ _last_log_ts = 0.0
 
 
 class HostError(RuntimeError):
-    """宿主不可用(启动失败/中途死亡/无响应)。"""
+    """宿主不可用(启动失败/中途死亡/无响应)。
+
+    kind 区分可还原的失败类型(目前仅 not_found): 调用方据此保持 subprocess 的异常契约,
+    不把"程序不存在"伪装成"宿主故障"。缺省 host 表示宿主层自身失败。
+    """
+
+    def __init__(self, message: str, kind: str = "host"):
+        super().__init__(message)
+        self.kind = kind
 
 
 def _identity() -> Tuple[str, bytes]:
@@ -452,8 +463,11 @@ def run(argv, cwd=None, env=None, timeout=None):
     调用方改造时: returncode = rc, 其余四项语义与 drain_until_exit 完全一致。
     输出总量超 OMNI_PROC_HOST_MAX_OUTPUT 时丢弃后续 chunk、继续 drain 到 done(不让宿主反压),
     置 truncated=True; 截断留痕由调用方负责(同 proc_io.drain_until_exit 的用法, 本层不追加 note)。
-    宿主异常时抛 HostError(继承 RuntimeError), 调用方按 error 结构返回, 不静默。
+    宿主异常时抛 HostError(继承 RuntimeError), 调用方按 error 结构返回, 不静默;
+    error 帧的 kind 透传到 HostError.kind(not_found 供调用方还原 FileNotFoundError)。
     """
+    if isinstance(argv, str):
+        argv = [argv]           # subprocess(shell=False) 把整串当程序名, list() 会拆成字符
     _ensure_guardian()          # 兜底: 未经启动期 ensure_host 也能由监护人自愈(不在此创建进程)
     conn = _connect()
     host_at_connect = _host_proc   # 记录本连接对应的宿主实例, 判死时只杀它, 避免误杀期间已重建的新宿主
@@ -462,7 +476,7 @@ def run(argv, cwd=None, env=None, timeout=None):
     rc = -1
     total = 0
     cap = _max_output()
-    deadline = time.monotonic() + (timeout if timeout else 600) + _RECV_SLACK
+    deadline = time.monotonic() + (timeout if timeout else DEFAULT_TIMEOUT) + _RECV_SLACK
     try:
         conn.send({"proto": PROTO, "argv": list(argv), "cwd": cwd,
                    "env": env, "timeout": timeout})
@@ -487,7 +501,7 @@ def run(argv, cwd=None, env=None, timeout=None):
                 if len(data) > room:
                     truncated = True
             elif t == "error":
-                raise HostError(msg["message"])
+                raise HostError(msg["message"], kind=msg.get("kind") or "host")
             elif t == "done":
                 rc = msg["rc"]
                 timed_out = msg["timed_out"]

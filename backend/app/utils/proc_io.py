@@ -12,6 +12,10 @@
 #   违反 KISS); 消掉 run() 内函数级 import 绕路; 5 处调用方统一 from app.utils.proc_io import isolation_kwargs
 # 2026-11-26 - 小欧 - 进程宿主复用: logger 改截断告警处惰性导入, 本模块 import 零副作用
 #   (宿主/轻量进程导入不拉起 app.logger 控制台线程、不读配置)。逻辑零变化。
+# 2026-11-26 - 小欧 - 通用接入: run() 内部改走进程宿主, 主进程零 CreateProcessW; 保持
+#   subprocess.run 等价契约(not_found→FileNotFoundError, 其余宿主故障→OSError,
+#   timed_out→TimeoutExpired 携带已读输出); shell=True 与不支持的 creationflags 显式报错;
+#   timeout=None 按 app.proc_host.DEFAULT_TIMEOUT 单一上限; 客户端函数级惰性导入防循环。
 
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04
 
@@ -178,35 +182,44 @@ def _decode(data: bytes, encoding, errors):
 
 def run(args, *, timeout=None, cwd=None, env=None, shell=False,
         encoding=None, errors=None, text=False, capture_output=True, creationflags=0):
-    """`subprocess.run` 的零线程等价(只覆盖本库实际用到的参数) — 2026-11-04 小欧
+    """`subprocess.run` 的等价入口(只覆盖本库实际用到的参数) — 2026-11-04 小欧
 
-    capture_output 仅为签名兼容(恒为 True: 本函数的价值就是接管管道读取)。
-    超时语义与 subprocess.run 一致: 杀进程树后抛 TimeoutExpired(携带已读输出)。
-    creationflags 透传(如 CREATE_NO_WINDOW), 与 subprocess.run 同名同义 — 2026-11-15 小欧
+    2026-11-26 小欧 - 收敛进程宿主: 创建动作全部交给 app.proc_host, 主进程不再调
+      CreateProcessW; 本函数只留参数校验、解码与 CompletedProcess/TimeoutExpired 契约,
+      调用方零改动。边界(见方案 7.4.1):
+      · shell=True 不支持(宿主只认 argv, 全仓无调用方), 显式报错而非静默丢语义;
+      · creationflags 仅接受 CREATE_NO_WINDOW(宿主已默认带), 其余无法跨进程边界, 显式报错;
+      · timeout=None 按 DEFAULT_TIMEOUT 单一上限, 不再有"无限等待"双语义;
+      · 失败映射与 subprocess 同类: 程序不存在→FileNotFoundError, 其余宿主故障→OSError,
+        超时→TimeoutExpired(携带已读输出)。
+    capture_output 仅为签名兼容(恒为 True)。
     """
     if text and encoding is None:
         encoding = locale.getpreferredencoding(False)
-    # 2026-11-16 小欧 - isolation_kwargs 已并入本模块([42] P4); 调用方显式 creationflags 优先
-    spawn_kwargs = isolation_kwargs()
-    flags = creationflags or spawn_kwargs.pop("creationflags", 0)
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            cwd=cwd, env=env, shell=shell, creationflags=flags,
-                            **spawn_kwargs)
-    out_b, err_b, timed_out, truncated = drain_until_exit(
-        proc, timeout if timeout is not None else float("inf"))
+    if shell:
+        raise ValueError("proc_io.run 已收敛到进程宿主, 不支持 shell=True: 请显式传 argv")
+    if creationflags and creationflags != subprocess.CREATE_NO_WINDOW:
+        raise ValueError(
+            f"proc_io.run 宿主路径仅支持 CREATE_NO_WINDOW(宿主已默认启用), "
+            f"无法透传 creationflags={creationflags}")
+    from app.proc_host import DEFAULT_TIMEOUT  # 函数级: 保持本模块 import 零副作用
+    from app.proc_host import client as host_client  # 函数级: client 亦惰性导入本模块, 防循环
+    if timeout is None:
+        timeout = DEFAULT_TIMEOUT
+    try:
+        out_b, err_b, timed_out, truncated, rc = host_client.run(
+            args, cwd=cwd, env=env, timeout=timeout)
+    except host_client.HostError as e:
+        # 保持 subprocess 的异常契约: 否则 19 处调用方要各自新增 HostError 分支(破坏 KISS)
+        if e.kind == "not_found":
+            raise FileNotFoundError(str(e)) from e
+        raise OSError(str(e)) from e
     if truncated:
         err_b += TRUNCATED_NOTE     # 截断必须对调用方可见(subprocess.run 不会静默丢)
     if timed_out:
-        from app.utils.proc_utils import (
-            kill_process_tree,  # 局部导入: proc_utils 只依赖 logger, 无循环风险
-        )
-        kill_process_tree(proc)
-        _tail_out, _tail_err = drain_after_exit(proc, 1.0)
-        out_b += _tail_out
-        err_b += _tail_err
         raise subprocess.TimeoutExpired(args, timeout,
                                         output=_decode(out_b, encoding, errors),
                                         stderr=_decode(err_b, encoding, errors))
-    return subprocess.CompletedProcess(args, proc.returncode,
+    return subprocess.CompletedProcess(args, rc,
                                        stdout=_decode(out_b, encoding, errors),
                                        stderr=_decode(err_b, encoding, errors))

@@ -3,6 +3,8 @@
 # 2026-11-26 - 小欧 - 新建: 通用进程宿主(一命令一连接, Job Object 杀树; 接口只有 argv/cwd/env/timeout, 无业务语义)
 # 2026-11-26 - 小欧 - 修正: 补单连接发送锁(并发 send 抛 ValueError)/每实例管道名与随机 authkey/协议版本握手/
 #                     槽位排队而非立即拒绝/Job 收编失败 fail-closed/回传真实 returncode/自身装 spawn_gate/日志落文件
+# 2026-11-26 - 小欧 - 通用接入: 超时上限收口到 app.proc_host.DEFAULT_TIMEOUT(与客户端同源);
+#                     Popen 失败回传 kind(not_found), 供主进程还原 FileNotFoundError 语义。
 """proc_host — 通用进程宿主进程
 
 【为什么独立进程】CreateProcessW 卡在控制台 IOCTL 时不释放 GIL, 同解释器内任何线程
@@ -27,7 +29,7 @@ import threading
 import time
 from multiprocessing.connection import Listener
 
-from app.proc_host import PROTO  # 协议版本唯一真源(包 __init__), 握手两端同源
+from app.proc_host import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(包 __init__)
 
 PIPE_NAME = os.environ["OMNI_PROC_HOST_PIPE"]                 # 形如 \\.\pipe\omni-proc-host-<uuid4hex>
 AUTHKEY = bytes.fromhex(os.environ["OMNI_PROC_HOST_KEY"])     # 32 字节随机数
@@ -96,7 +98,7 @@ def _handle(conn, slots) -> None:
         timeout = req.get("timeout")
         # ★ 排队等待槽位(不是立即拒绝): 与现网 _SHELL_PROC_SEM.acquire(timeout=_remaining) 同语义,
         #   立即拒绝会让"并发 20 条命令"从'排队后全部成功'退化为'一半直接报错'。
-        if not slots.acquire(timeout=timeout if timeout else 600):
+        if not slots.acquire(timeout=timeout if timeout else DEFAULT_TIMEOUT):
             _send(conn, {"type": "error", "message": "宿主并发已达上限(排队超时)"}, send_lock)
             return
         try:
@@ -108,7 +110,11 @@ def _handle(conn, slots) -> None:
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     **isolation_kwargs())
             except (OSError, ValueError) as e:
-                _send(conn, {"type": "error", "message": f"{type(e).__name__}: {e}"}, send_lock)
+                # 2026-11-26 - 小欧 - 错误种类回传: 调用方据此还原 FileNotFoundError,
+                #   否则"程序不存在"退化成"宿主故障", 现有 catch FileNotFoundError 的分支失效
+                kind = "not_found" if isinstance(e, FileNotFoundError) else "spawn_failed"
+                _send(conn, {"type": "error", "message": f"{type(e).__name__}: {e}",
+                             "kind": kind}, send_lock)
                 return
             # ★ Job 收编 fail-closed: 没有 Job 就没有"杀整棵树"的保证, 超时承诺直接失效。
             #   故收编失败 → 杀掉刚起的进程并回 error, 绝不静默降级为 proc.kill()(只杀根, 孙进程残留)。
@@ -139,7 +145,9 @@ def _handle(conn, slots) -> None:
 
             timed_out = False
             try:
-                proc.wait(timeout=timeout)     # None = 不设上限, 由客户端截止时间兜底(会杀宿主重建)
+                # 2026-11-26 - 小欧 - None 不再等于无限: 与客户端接收截止同源上限, 超时走正常
+                #   TimeoutExpired 链路(terminate_job 杀树), 不靠客户端杀宿主来收尾。
+                proc.wait(timeout=timeout if timeout else DEFAULT_TIMEOUT)
             except subprocess.TimeoutExpired:
                 timed_out = True
                 terminate_job(job)            # TerminateJobObject, 内核级杀整棵树

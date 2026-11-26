@@ -288,6 +288,9 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
 #   CreateProcessW 移出主进程; 一命令一连接 + 独立 Job 杀整树。
 # 2026-11-26 - 小欧 - 三堂会审整改: 删除 OMNI_PROC_HOST 回退分支与 Disabled 捕获, PS 分支收敛为
 #   宿主单路径(宿主不可用按 error 返回), 消除新旧实现并存的兼容层。
+# 2026-11-26 - 小欧 - 通用接入: CMD/bash 前台分支同步走宿主; .bat 写盘是纯文件 I/O 仍留主进程,
+#   执行改 argv=["cmd.exe","/c",bat]; 删除三分支共用的本地杀树/读残存 helper 与 _iso,
+#   三分支行为口径统一(见方案 7.2.5)。
 import locale
 import os
 import re
@@ -304,7 +307,7 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
-from app.proc_host import client  # 2026-11-26 小欧: 进程宿主客户端(PS 分支外置)
+from app.proc_host import client  # 2026-11-26 小欧: 进程宿主客户端(shell 三分支外置)
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.context import (  # 2026-11-22 小欧: 预检纯静态结果消费
@@ -327,22 +330,14 @@ from app.tools.tool_constants import (
     EXIT_CODE_MEANING,
     SHELL_OUTLIMIT_STDERR_MAX_CHARS,
     SHELL_OUTLIMIT_STDOUT_MAX_CHARS,
-    SUBPROCESS_TIMEOUT_SHORT,
 )
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.path_utils import get_tool_dir  # 2026-11-20 小欧: .bat 中间脚本落会话 temp 目录
-from app.utils.proc_io import (  # 2026-11-04 小欧: 零线程读管道, 取代 communicate 的 _readerthread
-    TRUNCATED_NOTE,
-    drain_after_exit,
-    drain_until_exit,
-)
+from app.utils.proc_io import TRUNCATED_NOTE
 from app.utils.proc_io import (
     isolation_kwargs as _isolation_kwargs,  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
-)
-from app.utils.proc_utils import (
-    kill_process_tree,  # 2026-11-04 小欧: 树杀属通用进程层(分层, 非 shell 引擎私有)
 )
 
 _SHELL_MAX_PROCESSES = int(get_config().get("tuning.concurrency.shell_max_processes", 10))
@@ -868,24 +863,6 @@ def _find_bash() -> Optional[str]:
 
 
 # ═══════════════════════════════════════════════════════
-#  _kill_and_read_output — 超时后杀进程+读残存输出 (DRY抽取)
-# ═══════════════════════════════════════════════════════
-
-def _kill_and_read_output(proc: subprocess.Popen) -> tuple[bytes, bytes]:
-    """CMD超时后 杀进程树 + 等退出 + 读残存 stdout/stderr — 小欧 2026-07-28 / 2026-08-06
-
-    2026-11-04 小欧: 树杀改走 kill_process_tree(psutil+proc.kill), 不再起 taskkill 子进程 ——
-    CreateProcessW 持 loader lock 与 Thread.start() 互锁是 shell 卡死根因, 超时路径必须零建进程。"""
-    kill_process_tree(proc)
-    try:
-        proc.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
-    except Exception as e:
-        logger.warning(f"[卡死C11] 等退出超时/异常 → 读残存继续 (pid={proc.pid}): {e}")
-    # 2026-11-04 小欧: 残存读取改非阻塞有界(零建线程); 原 proc.stdout.read() 在孙进程持写端时会永久阻塞
-    return drain_after_exit(proc, wait=SUBPROCESS_TIMEOUT_SHORT)
-
-
-# ═══════════════════════════════════════════════════════
 #  _looks_like_bash — 检测命令是否像bash命令
 # ═══════════════════════════════════════════════════════
 
@@ -1304,7 +1281,6 @@ def shell(
         _slot_acquired = True
         _remaining = timeout - (_time_mod.perf_counter() - t0)  # 2026-11-06 小欧: 排队耗时后重算剩余, drain 用此值(总时长≤timeout)
 
-        _iso = _isolation_kwargs()  # 脱离父控制台, 见 helper 说明 — 小欧 2026-11-15
         if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5】: 一次性子进程 — 2026-11-06 小欧 去池化
             if shell_type == "ps5":
                 processed_command = _translate_powershell_operators(processed_command)
@@ -1343,7 +1319,7 @@ def shell(
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
 
-        elif shell_type == "cmd":  # ── 【CMD专属】: .bat + subprocess ──
+        elif shell_type == "cmd":  # ── 【CMD专属】: .bat 写盘 + 宿主执行 ──
             # 写入 .bat 执行，绕过 cmd.exe /c 的引号解析 bug — 小欧 2026-07-05
             # cmd.exe读.bat用的是系统OEM编码(中文Win=gbk)，utf-8写入会乱 — 小欧 2026-07-07
             # 2026-11-20 小欧: 落点改会话 temp 目录(用完即弃), 唯一文件名仍由 mkstemp 保证
@@ -1356,31 +1332,32 @@ def shell(
                     f.write('exit /b %errorlevel%\r\n')
                 child_env = _sanitize_env()
                 child_env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
-                proc = subprocess.Popen(
-                    f'"{bat_path}"', shell=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, cwd=cwd, env=child_env, **_iso)
-                # 2026-11-04 小欧: 收编为 drain_until_exit(与 PS/bash 同一实现, DRY); 原内联 poll+非阻塞读
-                # 的结论保留: 仅 poll 不读管道会被 200KB 输出写满缓冲→子进程 write 阻塞→互锁至超时,
-                # 故必须"有数据立即再读, 无数据指数退避"。communicate 收尾一并去掉(它会起 _readerthread)。
-                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
-                if truncated:
-                    kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
-                    stderr_b += TRUNCATED_NOTE
-                if timed_out:
-                    logger.warning(f"[卡死C10] CMD命令超时{timeout}s(子进程持管道/死循环) → 杀进程树+读残存 (cmd={cmd_short})")
-                    _tail_out, _tail_err = _kill_and_read_output(proc)
-                    stdout_b += _tail_out
-                    stderr_b += _tail_err
+                # 2026-11-26 小欧 - .bat 写盘是纯文件 I/O, 留主进程; 执行交宿主, argv 不带 shell=True
+                try:
+                    stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
+                        ["cmd.exe", "/c", bat_path],
+                        cwd=cwd, env=child_env, timeout=max(1, int(_remaining)))
+                except client.HostError as e:
+                    # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
+                    d = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm = _build_execute_shell_command_llm_data(
+                        "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
+                        f"进程宿主不可用: {e}", timeout=timeout, cwd=cwd or "",
+                        hint="宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log",
+                        cmd_short=cmd_short,
+                        shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
+                    return build_error(data={}, llm_data=llm)
             finally:
                 try:
                     os.unlink(bat_path)
                 except OSError:
                     pass
+            if truncated:
+                stderr_b += TRUNCATED_NOTE   # 宿主已关 Job 杀净残留, 这里只补留痕
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
-            returncode = proc.returncode if proc.returncode is not None else -1
 
-        else:  # ── 【bash专属】: subprocess + 非登录 shell(免 profile/rc 加载) ──
+        else:  # ── 【bash专属】: 进程宿主 + 非登录 shell(免 profile/rc 加载) ──
             bash_exe = _find_bash()
             if not bash_exe:
                 d = int((_time_mod.perf_counter() - t0) * 1000)
@@ -1389,26 +1366,25 @@ def shell(
                     timeout=timeout, cwd=cwd or "", hint="请检查Git Bash或WSL是否安装", cmd_short=cmd_short,
                     shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
                 return build_error(data={}, llm_data=llm)
-            child_env = _sanitize_env()
-            proc = subprocess.Popen(
-                [bash_exe, "--noprofile", "--norc", "-c", processed_command],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                cwd=cwd, env=child_env,
-                **_iso,
-            )
-            # bash分支: 零线程轮询读(有界超时), 超时→_kill_and_read_output(杀进程树+读残存) — 2026-11-04 小欧
-            stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
+            # 2026-11-26 小欧 - bash 分支接入进程宿主, 与 PS 分支同构(见方案 7.2.5)
+            try:
+                stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
+                    [bash_exe, "--noprofile", "--norc", "-c", processed_command],
+                    cwd=cwd, env=_sanitize_env(), timeout=max(1, int(_remaining)))
+            except client.HostError as e:
+                # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
+                d = int((_time_mod.perf_counter() - t0) * 1000)
+                llm = _build_execute_shell_command_llm_data(
+                    "error", d, processed_command, -1, shell_type, ERR_SHELL_EXCEPTION,
+                    f"进程宿主不可用: {e}", timeout=timeout, cwd=cwd or "",
+                    hint="宿主进程异常, 系统会自动重建; 若反复出现请查看 logs/proc_host.log",
+                    cmd_short=cmd_short,
+                    shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
+                return build_error(data={}, llm_data=llm)
             if truncated:
-                kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
-                stderr_b += TRUNCATED_NOTE
-            if timed_out:
-                logger.warning(f"[卡死C10] Bash命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
-                _tail_out, _tail_err = _kill_and_read_output(proc)
-                stdout_b += _tail_out
-                stderr_b += _tail_err
+                stderr_b += TRUNCATED_NOTE   # 宿主已关 Job 杀净残留, 这里只补留痕
             stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
             stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
-            returncode = proc.returncode if proc.returncode is not None else -1
 
         # ── 阶段 4【通用】: 后处理(UTF-8 编码修复) ──
         # 小欧 2026-07-20: 依规则删除 SHELL_OUTPUT_MAX_CHARS 头尾截断; 工具输出截断收口于阶段 4.5(50K/20K) — 2026-07-23 小欧更新
