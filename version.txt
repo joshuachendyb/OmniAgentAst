@@ -1,13 +1,14 @@
 v1.7.11
 发布时间: 2026-11-26 13:52:00 - 小欧-2026-11-26
 
-## v1.7.11汇总 从上一个 tag v1.7.10(commit 7120e29c1, 2026-11-24)以来全部 21 个 commit(feat 4 / fix 5 / docs 11 / merge 1); 本批以通用进程宿主外置为轴心: app/proc_host 独立宿主进程落地(PS7/PS5 走宿主 + 启动期 ensure_host + 一命令一连接 + 独立 Job 杀整树 + 退避/熔断 + 后台监护人自愈 + 输出上限)、parse_kill shell 杀进程判定根治(块感知切分/foreach 有界性/对象变量/标量变量间接/opaque 可见目标全量堵截)、三堂会审整改(连接超时悬挂消除 + 删除 OMNI_PROC_HOST 回退收敛宿主单路径 + 注释编辑历史违规清理)、持久调度器(3.5)与 agent 任务并发闸门、超时定时任务重建兜底、task_tracker 取消终态落库 - 小欧-2026-11-26
+## v1.7.11汇总 从上一个 tag v1.7.10(commit 7120e29c1, 2026-11-24)以来全部 22 个 commit(feat 4 / fix 6 / docs 11 / merge 1); 本批以通用进程宿主外置为轴心: app/proc_host 独立宿主进程落地(PS7/PS5 走宿主 + 启动期 ensure_host + 一命令一连接 + 独立 Job 杀整树 + 退避/熔断 + 后台监护人自愈 + 输出上限)、parse_kill shell 杀进程判定根治(块感知切分/foreach 有界性/对象变量/标量变量间接/opaque 可见目标全量堵截)、三堂会审整改(连接超时悬挂消除 + 删除 OMNI_PROC_HOST 回退收敛宿主单路径 + 注释编辑历史违规清理)、持久调度器(3.5)与 agent 任务并发闸门、超时定时任务重建兜底、task_tracker 取消终态落库 - 小欧-2026-11-26
 ### 1.7.11.1 新增功能
 [feat] feat:proc_host 通用进程宿主 阶段零/一/二落地（PS7/PS5 走宿主 + 底座加固） - 小欧-2026-11-26
 [feat] feat:timer 持久调度器(3.5)后端内核 - 小欧-2026-11-25
 [feat] feat: HITL pending store & event bus reconstruction - add edit history, remove doc refs [59]/[60], integrate event_bus broadcasts - 小欧-2026-11-25
 [feat] feat:agent_runner 新增 agent 任务并发闸门: agent.max_concurrent_tasks(默认3)+run_agent_gated(外层Semaphore包装,超限排队)+_task_gate(惰性单例), 编排层_create_and_launch_task改经闸门启动; 不新增queued状态,终态链路零改动, 实测5慢任务上限3耗时分层8.4/10.3/10.5 vs 17.4/19.2全completed零僵尸 - 商量-2026-11-24
 ### 1.7.11.2 缺陷修复
+[fix] fix:app/proc_host/client.py + [65]方案 v1.15 复核整改: 熔断半开探测失败重冷却(消重建风暴)/run去TRUNCATED_NOTE双写/_spawn_host本地proc实例守卫(修None.poll NPE与误杀新宿主)/_client_with_deadline用锁闭合box竞态, 同步[65]文档v1.15 - 小欧-2026-11-26
 [fix] fix:app/proc_host/client.py 等10文件 三堂会审整改: _client_with_deadline加放弃标记消除连接超时悬挂窗口(实测case证实), 删除OMNI_PROC_HOST回退开关与Disabled降级分支收敛宿主单路径(禁止backward), 清理两提交注释/编辑历史违规(文档号/阶段号/过期函数名), FUNCTIONS.md升v5.51 - 小欧-2026-11-26
 [fix] fix:parse_kill shell杀进程判定根治 块感知切分/foreach有界性/taskkill正则 + /对象变量/opaque可见目标/标量变量间接自杀漏拦全量堵截, 附[67]根治说明v1.2 - 小欧-2026-11-26
 [fix] fix: OmniVPN mihomo config单节点备份与二级方案说明 - 小欧-2026-11-26
@@ -16,6 +17,7 @@ v1.7.11
 ### 1.7.11.3 重构与优化
 [merge] Merge branch 'master' of https://github.com/joshuachendyb/OmniAgentAst - 2026-11-24
 ### 1.7.11.4 文档
+[docs] docs:[65]E1 方案 v1.15 同步 v1.15 复核整改(熔断半开重冷却/run去双写/_spawn_host实例守卫/锁闭合竞态) 与 5.2.2 Q1/Q3/Q4、5.3、7.6.3 行号校正、4.7 补单路径爆炸半径 - 小欧-2026-11-26
 [docs] docs:[65]E1 方案 v1.14 与整改后代码一致性核查 - 删除回退开关/Disabled 引用并改为不回退持续发展(4.7)、_client_with_deadline 放弃标记同步、PS/CMD/bash 分支行号校正、阶段计划去回滚列 - 小欧-2026-11-26
 [docs] docs:[65]E1 通用进程宿主方案 v1.13 前六章与代码一致性核查（5.3/Q4/Q5 行号校正、4.5 骨架定性、2.2/4.4/4.5.5 勘误） - 小欧-2026-11-26
 [docs] docs:[65]E1 通用进程宿主 目录归属迁至 app/proc_host 并收口 PROTO 与导入副作用 - 小欧-2026-11-26
