@@ -11,15 +11,21 @@
   (见 media_constants 同名整改); 纯改名零行为变更。
 编辑历史: 2026-11-21 小欧 缓存目录单源 + 保留期清理: 目录拼装收口 default_cache_dir(), 新增 sweep_cache(days)
   按 mtime 删超期 .mp4/.tmp_(保留期同日志 logging.retention_days), 原缓存只增不减 — 小欧-2026-11-21
+编辑历史: 2026-11-26 小欧 阶段六接入进程宿主: 转码 subprocess.run 改 proc_io.run(内部走宿主, 主进程零
+  CreateProcessW); CompletedProcess/TimeoutExpired 契约一致, 超时由宿主 Job 杀整树(原只杀 ffmpeg 本体,
+  孙进程残留风险消除); 删除模块级 import subprocess(已无调用方)。方案见 [65] 7.5.1。
 """
+
 import os
-import subprocess
 import tempfile
 import threading
 import time
 from typing import Dict, Optional, Tuple
 
 from app.logger import logger
+from app.proc.proc_io import (
+    run as proc_run,  # 阶段六: 转码走进程宿主, 主进程零 CreateProcessW — 小欧-2026-11-26
+)
 from app.services.agent.media_constants import (
     VIDEO_ACCEPTED_FOURCCS,
     VIDEO_TRANSCODE_CRF,
@@ -167,7 +173,7 @@ def ensure_h264(path: str, cache_dir: Optional[str] = None) -> Tuple[str, bool]:
             # 清理可能的旧半成品
             if os.path.exists(partial_path):
                 os.remove(partial_path)
-            result = subprocess.run(cmd, capture_output=True, timeout=VIDEO_TRANSCODE_TIMEOUT_SEC)
+            result = proc_run(cmd, capture_output=True, timeout=VIDEO_TRANSCODE_TIMEOUT_SEC)
             if result.returncode != 0 or not os.path.exists(partial_path) or os.path.getsize(partial_path) == 0:
                 logger.warning(f"[video_transcode] 转码失败 codec={codec} path={path} err={result.stderr[-_TRANSCODE_STDERR_TAIL:]!r}")
                 _safe_remove(partial_path)
