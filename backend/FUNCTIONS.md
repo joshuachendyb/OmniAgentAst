@@ -18,7 +18,7 @@
 
 ---
 
-## 一、全局层（app/utils/）
+## 一、全局层（app/utils/）与进程域（app/proc/）
 
 ### 1.1 时间处理（time_utils.py）
 
@@ -201,7 +201,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 
 ---
 
-### 1.18 进程 I/O 零线程读（proc_io.py）
+### 1.18 进程 I/O 零线程读（app/proc/proc_io.py）
 
 `Popen.communicate()` 每次调用起 1~3 条 `_readerthread`，Windows 上新线程 bootstrap 要 loader lock，与 `CreateProcessW` 并发即互锁（2026-11-04 shell 卡死事故根因）。本模块用"非阻塞 fd + 有界退避轮询"读管道，全程零建线程且可被超时硬中断。分工：只读/等退出，不杀；超时后由调用方 `kill_process_tree` 再 `drain_after_exit` 收残存（SRP）。
 
@@ -212,7 +212,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `run` | `subprocess.run` 的零线程等价（支持 timeout/cwd/env/shell/encoding/errors/text）；超时=杀进程树后抛 `TimeoutExpired`（携带已读输出）；截断时向 stderr 追加 `TRUNCATED_NOTE` | args, timeout, cwd, env, shell, encoding, errors, text, capture_output | CompletedProcess |
 | `TRUNCATED_NOTE` | 管道未 EOF 被有界截断时的可见提示（UTF-8 bytes），供工具层追加到 stderr 并置 `_truncated` | — | bytes |
 
-### 1.19 进程树清杀（proc_utils.py）
+### 1.19 进程树清杀（app/proc/proc_utils.py）
 
 零 `CreateProcess` 的树杀：psutil 按 **ppid 全量映射 + BFS** 枚举后代（不依赖根进程存活——根退出后 `Process(pid).children()` 抛 `NoSuchProcess`，而 Windows 父死子不重挂），随后 `TerminateProcess` 逐个击杀，先叶子后父。用于 shell/sandbox 超时清理链。
 
@@ -221,7 +221,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `kill_process_tree` | 幂等清杀整棵树；根已退出也继续清后代（防孤儿 ping/pwsh） | proc: Optional[Popen] | None |
 | `kill_pid_descendants` | 按 ppid 映射 BFS 枚举并清杀 root 的全部后代（先叶子后父） | root_pid: Optional[int] | None |
 
-### 1.20 常驻线程池（workers.py）
+### 1.20 常驻线程池（app/proc/workers.py）
 
 启动期一次建满 daemon 线程，运行期只入队（`queue.put`），彻底消除"运行期 `Thread.start` × `CreateProcessW`"互锁。两类语义不合并：一次性任务用 `WorkerPool.submit`（有界等待 `future.result(timeout)`），长期服务用 `ThreadLeasePool.lease`（任务返回即归还，卡死则槽位永久损失、有界失败）。
 
@@ -232,7 +232,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `ThreadLeasePool(n, name)` | 构造期建满 n 条常驻 worker；`lease(fn, timeout)` 租一个 worker 长期执行 fn | n: int, name: str | ThreadLeasePool |
 | `ThreadLeasePool.lease` | 有界租借：池满/全卡住返回 False（调用方判损坏，绝不兜底新建线程） | fn: Callable[[], None], timeout: float | bool |
 
-### 1.21 进程/线程创建闸门（spawn_gate.py）
+### 1.21 进程/线程创建闸门（app/proc/spawn_gate.py）
 
 `CreateProcessW` × `Thread.start` 的全局互斥闸门。旧实现用 RLock 包住无界等待，持锁方卡死即全站排队死；现为**可回收租约**：持有者带线程名/ident/起始时刻登记，看门狗每 0.5s 巡检，持锁超 `HOLD_LIMIT` 即强制回收并落盘全线程栈（落盘投常驻 worker，不阻塞巡检）。等锁侧有界，超限抛 `SpawnGateBusy`。
 
@@ -283,9 +283,9 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 
 **工具侧用法**：`return build_success(data=..., llm_data=..., other_data=declare_artifact_file({}, str(path)))`；多条目用 `declare_artifacts`；URL 产物用 `declare_artifacts(other, [artifact_from_url(url, "image")])`。**不要**手搓条目 dict（`form`/`type` 判错就会让抽屉把远程资源与目录当本地文件判"已不存在"）。
 
-### 1.24 进程宿主客户端（app/proc_host/client.py）
+### 1.24 进程宿主客户端（app/proc/client.py）
 
-把"在主进程内 `CreateProcessW`"外置到独立宿主进程（[65] E1）。宿主进程见 `app/proc_host/host.py`（不属公用层：有生命周期、由 `-m` / `--proc-host` 拉起）。客户端为主进程侧薄代理，一命令一连接，连接/接收均有界；宿主异常抛 `HostError`（调用方按工具 error 返回，不静默），下一条命令自动重建宿主。
+把"在主进程内 `CreateProcessW`"外置到独立宿主进程（[65] E1）。宿主进程见 `app/proc/host.py`（不属公用层：有生命周期、由 `-m` / `--proc-host` 拉起）。客户端为主进程侧薄代理，一命令一连接，连接/接收均有界；宿主异常抛 `HostError`（调用方按工具 error 返回，不静默），下一条命令自动重建宿主。
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -293,7 +293,7 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `run` | 发命令给宿主并收流式 out/err，语义与 `proc_io.drain_until_exit` 对齐（多一个真实 rc） | argv, cwd=None, env=None, timeout=None | (stdout_b, stderr_b, timed_out, truncated, rc) |
 | `HostError` | 宿主不可用（启动失败/中途死亡/无响应） | — | RuntimeError |
 
-### 1.25 Windows Job Object 句柄操作（win_job_object.py）
+### 1.25 Windows Job Object 句柄操作（app/proc/win_job_object.py）
 
 底层 ctypes 封装（通用，非沙箱专属）。`assign_current_to_kill_on_close_job` 供打包版主进程顶层收编；其余四个供进程宿主按命令收编子进程树（超时/宿主退出整树杀净）。本模块导入零副作用（`logger` 已改惰性导入）。
 
@@ -304,6 +304,19 @@ fire-and-forget 后台协程的统一生成口（2026-11-03 新建）。裸 `asy
 | `terminate_job` | 立即杀净 Job 内全部进程；失败抛 `OSError` | job_handle: int | None |
 | `close_job` | 关闭 Job 句柄（触发 `KILL_ON_JOB_CLOSE` 杀树；空/已关闭容错不抛） | job_handle: int | None |
 | `assign_current_to_kill_on_close_job` | 当前进程收编入 `KILL_ON_JOB_CLOSE` Job（打包版随主进程退出杀子树） | — | int（0=失败） |
+
+### 1.26 控制台隔离（app/proc/console_mode.py）
+
+frozen 态摘掉主进程与 conhost 的关联并重定向 stdio 到 boot 日志，从源头移除"子进程继承控制台→IOCTL 卡死"的触发源；仅打包态生效，源码态直接返回。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `detach_console_if_needed` | 打包态调 FreeConsole 并重定向 stdio，幂等 | — | None |
+| `is_console_detached` | 查询是否已摘除（供 console_writer 避免把 boot 日志误判为真实控制台） | — | bool |
+
+### 1.27 宿主进程（app/proc/host.py）
+
+独立进程入口（`python -m app.proc.host` 或 `--proc-host`）：一命令一连接、每命令独立 Job 杀树、流式回传 out/err、ping/pong 健康探测、父进程存活看门狗；入口首行装 `install_spawn_gate()`，确保本进程内 `CreateProcessW` 与 `Thread.start` 互斥。
 
 ---
 
@@ -972,6 +985,7 @@ def my_parse_json(json_str):
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 
+| v5.52 | 2026-11-26 | **进程域目录归位**: 宿主与全部配套进程设施收拢到 `app/proc/`(host/client + proc_io/proc_utils/spawn_gate/win_job_object/console_mode/workers), 原 `app/proc_host/` 与 `app/utils/` 同名模块删除; 常量单点改 `app/proc/constants.py`(PROTO/DEFAULT_TIMEOUT), 启动入口改 `-m app.proc.host`, `.spec` hiddenimports 与全仓 42 处 import 同步; 第一章标题改为"全局层与进程域", 新增 1.26 控制台隔离/1.27 宿主进程; 纯路径迁移, 逻辑零变化, 36 项测试 + 150 命令并发压测通过 | 小欧 |
 | v5.51 | 2026-11-26 | **三堂会审整改（小欧）**: 按禁止backward铁规删除 `OMNI_PROC_HOST=0` 本地回退开关与 `Disabled` 降级分支，§1.24 移除 `Disabled` 登记，PS 分支收敛为宿主单路径（宿主不可用按 error 返回）；`_client_with_deadline` 加放弃标记，消除连接超时后辅助线程连上无人接管的悬挂窗口 | 小欧 |
 | v5.50 | 2026-11-26 | **新增 §1.24 进程宿主客户端 / §1.25 Job 句柄操作**（[65] E1）: 新建独立包 `app/proc_host/`（`__init__.py` 只放 `PROTO`、`host.py` 宿主进程、`client.py` 主进程薄代理），把 shell 的 `CreateProcessW` 外置到可抛弃宿主进程（一命令一连接、独立 Job 杀整树、连接/接收有界、宿主异常自动重建）；`win_job_object.py` 增 `create_kill_on_close_job`/`assign_to_job`/`terminate_job`/`close_job` 并改 logger 惰性导入（导入零副作用）；`proc_io.py` 同改惰性导入；`execute_shell_command.py` PS7/PS5 分支接入 `client.run()`（`OMNI_PROC_HOST=0` 为验证期本地回退）；`run_server.py` 增 `--proc-host` 入口与启动期 `ensure_host()`；`.spec` 补 hiddenimports | 小欧 |
 | v5.49 | 2026-11-25 | **§2.4 新登记持久调度器(3.5)**(商量): `app/tools/timer/timer_set.py` 新增 `rebuild_timers_from_db()`(启动扫 timers 表 status='active' 恢复内存 call_later: 未到期按剩余秒重建 / 过期立即补触发, timers 表为跨重启唯一真源)与 `set_timer_resume_callback(cb)`(app 层注入"触发→回会话建任务"回调, tools 层禁 import app.services 故用回调注入解越层); 抽出 `_schedule_handle`(call_later 注册+callbacks 登记)供 timer_set 与 rebuild 共用(DRY); timer_set 落 session_id(取自 `tools/context.get_current_session_id`), 触发时经注入回调 `resume_session_with_notice` 回发起会话创建任务("到点自己干"), 无会话/无回调时维持原 log/http。`tools/context.py` 新增 `_current_session_id` ContextVar(get/set/reset), `tool_executor.execute_tool` 从 `agent._start_meta` 注入并 finally 清理。timers 表加 `session_id` 列(`_ensure_column` 幂等迁移); `main.py` startup 注入回调 + 调 rebuild(失败降级不阻断启动) | 商量 |
