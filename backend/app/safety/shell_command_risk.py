@@ -42,6 +42,9 @@
 # 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): shellparam 改 SafetyLevel.SHELL_MEDIUM_RISK, 并写明职责边界 ——
 #   本标签只表"与文件路径无关的命令级确认, 作用域=整条命令", 命令内路径的读/写/删权限由 shell_path_check
 #   派三线标签承载, 不在本标签职责内。命中条数合并与文案零变更。
+# 2026-11-26 - 小欧 - taskkill 强制杀确认修正: `taskkill\s+/f` 只认紧跟的 /f, 漏掉参数乱序的
+#   `taskkill /PID 1 /F` / `taskkill /T /F /IM x`(强制杀未转确认); 改为 `taskkill\b.*\s/f\b`
+#   参数任意位置命中。`/fi` 过滤器因 f 后接 i 无边界不误命中(`taskkill /FI "..."` 不强制, 仍不确认)。
 """
 shell 中风险命令判定 — 需用户确认，与文件系统路径无关
 
@@ -89,7 +92,7 @@ SHELL_MEDIUM_PATTERNS = [
     (r"\bsc\s+(stop|start)\b", "停止/启动服务(sc stop/start)", "MEDIUM", "cmd"),
     (r"\bsc\s+config\b", "修改服务配置(sc config)", "MEDIUM", "cmd"),
     # ---- PS+CMD ----
-    (r"taskkill\s+/f", "强制杀进程", "MEDIUM", None),
+    (r"taskkill\b.*\s/f\b", "强制杀进程", "MEDIUM", None),
     # ---- bash ----
     (r"\bkill\b\s", "kill进程(bash)", "MEDIUM", "bash"),
 ]

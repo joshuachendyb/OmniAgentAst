@@ -39,6 +39,11 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
 2026-11-15 - 小欧 - 严格测试整改: build_var_map 值部正则遇引号即截断, `$v='Stop'+'-Process'`
   只捕到 'Stop' 且错值照填代回(动词被拆没, 漏拦自杀命令)。值部扩为字面量拼接链并折叠
   (_flatten_concat_literal): 拼接字面量仍是确定性字面量, 折叠后入表; 表达式赋值仍不入表。
+2026-11-26 - 小欧 - 语句切分块感知(根治): _split_respect_quotes 跟踪 `{}` 块深度, 块内不切
+  `;`/`&&`/`||`/换行/`|`; `${name}` 变量语法整段吞下, 不参与块计数。
+  【病根】此前只跟踪引号不跟踪块, `foreach($p in @(1,2)){ "x"; $p.Kill() }` 被块内 `;`/换行切碎,
+  foreach 头与 Kill 分属两段: 危险全杀的 foreach 信号丢失(漏拦), 显式列表则因 foreach 头留在
+  上一段被误判无界(误拦)。块内属单一语句, 分隔符归块内, 外层不得切。
 """
 import os
 import re
@@ -123,17 +128,19 @@ def blank_quotes(text: str) -> str:
 
 
 def _split_respect_quotes(text: str, seps) -> List[str]:
-    """按给定分隔符在"引号外"切分文本(引号内的分隔符不算) — 小欧 2026-10-18
+    """按给定分隔符在"引号外 + 块外"切分文本(引号内/大括号块内的分隔符不算) — 小欧 2026-10-18
 
     手写扫描而非正则: 正则无法可靠区分引号内外; 涂空引号会连路径一起抹掉,
     故在此按位置切分(保留路径原文), 动词识别由各 parse_* 另对片段涂空。
     2026-10-18 小欧: 非字符串入参原抛 TypeError(len(None)), 改为安全返回 []。
+    2026-11-26 小欧 - 块感知: 跟踪 `{}` 深度, 块内不切 `;`/`&&`/`||`/换行/`|`。
+      块内属单一语句, 分隔符归块内, 外层不得切; `${name}` 变量语法整段吞下, 不参与块计数。
     """
     if not isinstance(text, str):
         return []
     out: List[str] = []
     buf: List[str] = []
-    i, n, quote = 0, len(text), None
+    i, n, quote, depth = 0, len(text), None, 0
     while i < n:
         ch = text[i]
         if quote:
@@ -147,11 +154,32 @@ def _split_respect_quotes(text: str, seps) -> List[str]:
             buf.append(ch)
             i += 1
             continue
-        matched = None
-        for s in seps:
-            if text.startswith(s, i):
-                matched = s
+        if ch == "$" and i + 1 < n and text[i + 1] == "{":
+            # ${name} 变量语法: 整段吞下(变量名不含分隔符), 不参与块计数
+            j = text.find("}", i + 2)
+            if j == -1:
+                buf.append(text[i:])
                 break
+            buf.append(text[i:j + 1])
+            i = j + 1
+            continue
+        if ch == "{":
+            depth += 1
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "}":
+            if depth > 0:
+                depth -= 1
+            buf.append(ch)
+            i += 1
+            continue
+        matched = None
+        if depth == 0:  # 只在块外切; 块内分隔符属内部语句
+            for s in seps:
+                if text.startswith(s, i):
+                    matched = s
+                    break
         if matched:
             out.append("".join(buf))
             buf = []
