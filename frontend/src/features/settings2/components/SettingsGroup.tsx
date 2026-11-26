@@ -52,6 +52,8 @@
 //   ③ 裸数字归位: lineHeight 1.6→READING_LINE_HEIGHT(markdownStyles 唯一常量)、
 //     padding '0 8px'→Spacing.MD、三处 1px→BorderWidth.THIN。 — 小欧-2026-11-13
 
+// 2026-11-26 小欧 - sectionOf 增两分支: system 组 server.* → 「服务」(API 文档开关); tuning 组 tuning.shell_* → 「命令执行」(前台/后台输出上限) — 小欧-2026-11-26
+
 import React from 'react';
 import { Card } from 'antd';
 import { BorderWidth, FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -109,6 +111,8 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('app.')) return '系统参数';
     if (key.startsWith('network.')) return '网络';
     if (key.startsWith('tool_websearch_')) return '工具';
+    // 2026-11-26 小欧 - server.* 独立「服务」小节(API 文档开关)
+    if (key.startsWith('server.')) return '服务';
     if (key === 'system.chat_retention_days') return '数据治理';
     return '关于';
   }
@@ -151,6 +155,8 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
     if (key.startsWith('tuning.concurrency.')) return '并发配额';
+    // 2026-11-26 小欧 - 前台/后台 shell 输出上限独立「命令执行」小节
+    if (key.startsWith('tuning.shell_')) return '命令执行';
     if (key.startsWith('tuning.agent.')) return 'Agent 循环参数';
     if (key.startsWith('tuning.trim.')) return '裁剪(Trim)';
     if (key.startsWith('tuning.compaction.')) return '压缩(Compaction)';

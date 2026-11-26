@@ -9,7 +9,7 @@ deps — API 统一鉴权依赖（token）
 设计要点：
   - token 存 security.access_token，支持环境变量覆盖（多机统一配置，不必逐台改 yaml）
   - 支持 Authorization: Bearer 与 X-API-Token 两种头
-  - 未配置 token 时拒绝所有受保护请求（fail-closed），显式 OMNIAGENT_REQUIRE_AUTH=0 才放行
+  - 未配置 token 时拒绝所有受保护请求（fail-closed），显式 OMNI_REQUIRE_AUTH=0 才放行
   - 失败返回 401 且文案统一，不区分"token 不对"与"未配置"（防探测）
 
 编辑历史:
@@ -35,6 +35,8 @@ from typing import Optional
 
 from fastapi import HTTPException, Request
 
+from app.env_keys import ACCESS_TOKEN, ACCESS_TOKEN_ALLOWLIST, REQUIRE_AUTH
+
 # 白名单语法单一权威（写侧落盘校验与本模块读侧匹配同源）
 from app.utils.allowlist import matches as matches_allowlist
 from app.utils.allowlist import normalize as normalize_allowlist
@@ -44,9 +46,9 @@ from app.utils.allowlist import normalize as normalize_allowlist
 #   （本项目 `ai.*.api_key` / `{PROVIDER}_API_KEY` 遍地都是）。access_token 专指"访问本服务
 #   所需的令牌"，看名字即知是鉴权而非模型密钥。配置键与环境变量同步改，不留旧名（禁止 backward）。
 ACCESS_TOKEN_CONFIG_KEY = "security.access_token"   # config.yaml 中的键
-ACCESS_TOKEN_ENV = "OMNIAGENT_ACCESS_TOKEN"          # 环境变量名（优先于配置文件，便于多机统一配置）
+ACCESS_TOKEN_ENV = ACCESS_TOKEN                      # 环境变量名（优先于配置文件，便于多机统一配置）
 # 显式关闭鉴权的环境变量（仅供本机开发/自动化测试显式声明；生产不得设置）
-REQUIRE_AUTH_ENV = "OMNIAGENT_REQUIRE_AUTH"
+REQUIRE_AUTH_ENV = REQUIRE_AUTH
 # 首次设置豁免的端点路径单一来源。原为内联字面量、auth_routes 又各写一次前缀，
 # 同一事实两处硬编码，改路径必漏一处（漏一处=没口令就永远设不了口令的死锁）。
 # verify_token 只对 GET /auth/status 做豁免；AUTH_TOKEN_PATH 仅为写端点路径的权威定义。
@@ -64,7 +66,7 @@ SET_TOKEN_LOCAL_ONLY_MESSAGE = (
 SET_TOKEN_PROXY_UNTRUSTED_MESSAGE = (
     "当前 uvicorn 配成信任任意来源的转发头（FORWARDED_ALLOW_IPS=*），"
     "无法确认你是不是本机，故不放开设口令入口（否则任何人都能冒充本机改口令）。"
-    "请改为只信任反代所在机器的 IP，或改用环境变量 OMNIAGENT_ACCESS_TOKEN 配置后重启"
+    "请改为只信任反代所在机器的 IP，或改用环境变量 OMNI_ACCESS_TOKEN 配置后重启"
 )
 # 拒绝原因 → 文案。deps 与 auth_routes 共用，防同一文案两处硬编码改一处即漂移。
 SET_TOKEN_BLOCKED_MESSAGES = {
@@ -76,7 +78,7 @@ SET_TOKEN_BLOCKED_MESSAGES = {
 #   看不出与访问令牌有关。同步改配置键与环境变量。
 # ⚠ 白名单内等于无鉴权（可读全部明文密钥），只应放可信网段。
 ACCESS_TOKEN_ALLOWLIST_CONFIG_KEY = "security.access_token_allowlist"
-ACCESS_TOKEN_ALLOWLIST_ENV = "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST"
+ACCESS_TOKEN_ALLOWLIST_ENV = ACCESS_TOKEN_ALLOWLIST
 
 
 def _resolve_configured_token() -> str:
@@ -94,7 +96,7 @@ def _resolve_configured_token() -> str:
 
 
 def _auth_required() -> bool:
-    """是否启用鉴权。默认启用；仅 OMNIAGENT_REQUIRE_AUTH=0 / false（大小写等价）时关闭。
+    """是否启用鉴权。默认启用；仅 OMNI_REQUIRE_AUTH=0 / false（大小写等价）时关闭。
 
     无法识别的值按"启用"处理（fail-closed）。
     """
@@ -155,7 +157,7 @@ def _is_trusted_localhost(ip: str) -> bool:
     FORWARDED_ALLOW_IPS=* 时的两项后果：
       安全侧  回环不再免口令 —— 任何客户端可伪造 client.host 为 127.0.0.1，fail-closed。
       可用性侧 本机也无法设置/更换口令（同判据）→ 首次部署只能改用环境变量
-                OMNIAGENT_ACCESS_TOKEN 或配置文件 security.access_token 后重启。
+                OMNI_ACCESS_TOKEN 或配置文件 security.access_token 后重启。
     _forwarded_allow_ips 仅由 run_server.py 注入；换 uvicorn 命令行等方式启动则注入不发生，
     此时无法得知实际是否配了 *，故 warn_startup_checks() 在启动时告警。
     """

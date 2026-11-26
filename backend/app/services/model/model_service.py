@@ -374,12 +374,6 @@ def _raise_if_env_takeover(name: str) -> None:
         raise ValueError(f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读")
 
 
-def _raise_if_current_ref_env() -> None:
-    """当前模型 env 接管守卫：AI_PROVIDER 命中时切换/删除当前模型只读（settings 页同源语义）。"""
-    if os.environ.get("AI_PROVIDER"):
-        raise ValueError("当前模型由环境变量 AI_PROVIDER 接管，切换/删除当前模型只读")
-
-
 def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
     """更新嵌套树（merge_nested_patch）中的当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只写 ai.model_ref（删扁平双写）。"""
     ai = tree.setdefault("ai", {})
@@ -546,7 +540,6 @@ def delete_model(provider: str, model: str) -> Dict[str, Any]:
     switched_to = None
     cur = get_current_ref(ai)
     if cur["provider"] == provider and cur["model"] == model:
-        _raise_if_current_ref_env()
         names = [m for m in models if isinstance(m, str)] or \
                 [(_m["name"]) for _m in _models_of(ai, provider) if _m["name"] in models]
         if names:
@@ -685,7 +678,6 @@ def delete_provider(name: str) -> Dict[str, Any]:
     switched_to = None
     cur = get_current_ref(ai)
     if cur["provider"] == name:
-        _raise_if_current_ref_env()
         rest = [n for n in names if n != name]
         target_p, target_m = "", ""
         for n in rest:  # 2026-09-21 小欧 修 M10/M11：扫第一个有可用模型的 provider，不止取 rest[0]

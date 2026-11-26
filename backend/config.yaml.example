@@ -764,6 +764,7 @@ tuning:
   # 后台命令结果文件（2 键）— 商量-2026-11-13
   shell_bg_max_output_mb: 512    # 单条后台命令输出上限MB,超限强杀防磁盘写满;并发5条峰值约2.5GB;0=不限
   shell_bg_result_retain_hours: 24 # 后台命令结果文件保留N小时,到期惰性清理
+  shell_fg_max_output_mb: 64     # 单条前台命令输出上限MB,超限截断并标记truncated(仍读空管道防反压);下限1 — 小欧-2026-11-26 迁移
 
   # Agent 循环参数（2 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   agent:
@@ -809,9 +810,14 @@ tuning:
     action_log_result_max_chars: 5000 # 工具结果写进对话最多留N字,超长截断(防大文件撑爆)
     temp_history_char_limit: 50000    # 压缩时临时副本最多N字,超了硬截断(防爆保险)
 
-# 网络（1 键，顶层 network 域，系统组显示）— 小欧-2026-09-23 键名去 tuning 前缀
+# 网络（2 键，顶层 network 域，系统组显示）— 小欧-2026-09-23 键名去 tuning 前缀 / 2026-11-26 迁移受信反代白名单
 network:
   cors_origins: "http://localhost:2000,http://127.0.0.1:2000"  # 仅跨域部署时生效; 打包版同源运行无需配置
+  attachments_trusted_proxies: ""  # 受信反代IP白名单(逗号分隔): 仅直连对端命中时才采信X-Forwarded-For判断同机(取最右一跳); 留空=不采信 — 小欧-2026-11-26 迁移
+
+# 服务（1 键，顶层 server 域，系统组显示）— 小欧-2026-11-26 迁移
+server:
+  enable_api_docs: false  # 开启后暴露 /docs /redoc /openapi.json(应用级路由,绕过鉴权); 仅本机/内网排障临时开,用完关闭; 需重启
 
 # 工具（tool）：第三方工具/搜索服务参数（设置页 工具 tab）— 商量-2026-11-24
 tool_websearch_Tavily_key: ""  # Tavily 搜索密钥(供 searchweb 工具搜索用); 留空则不启用该源; 也可用环境变量 TAVILY_API_KEY 覆盖 — 商量-2026-11-24

@@ -10,13 +10,13 @@
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 # 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
 # 2026-09-21 小欧 - v4.20 单源收敛: _apply_env_overrides 的 AI_PROVIDER 注入由扁平 ai.provider 改为结构化 ai.model_ref.provider（唯一源）
-# 2026-09-21 小欧 - 配置路径单源化 — 顶层 get_config_path() 尊重 OMNIAGENT_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
+# 2026-09-21 小欧 - 配置路径单源化 — 顶层 get_config_path() 尊重 OMNI_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
 #   与 Config 实例 env 路径双源分裂，设置页改的不是实际运行配置）; Config._get_config_path 删除自身 env 分支改调顶层（DRY 唯一源）
 # 2026-09-21 小欧 - 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
 #   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
 # 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
 # 2026-09-27 小欧 - ①新增 env_flag()：布尔型 env 统一按"假值列表"({空,0,false})判定，替代各处手搓的
-#   真值列表 in ("1","true","True")（语义相反且 TRUE/yes/on 会失效）。deps 的 OMNIAGENT_REQUIRE_AUTH
+#   真值列表 in ("1","true","True")（语义相反且 TRUE/yes/on 会失效）。deps 的 OMNI_REQUIRE_AUTH
 #   故意未并入 —— 安全核心路径，改动风险大于 DRY 收益。②get_max_steps 源头归一 None/非数字/0，
 #   调用处不再各写兜底；归一复用 app.utils.type_utils.to_int_or（该模块无依赖，故本文件可安全 import）。
 # 2026-09-27 小欧 - security 段 env 注入的手写键名清单改为 ENV_INJECTED_KEYS 常量 +
@@ -35,6 +35,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from app.env_keys import CONFIG_PATH, env_nonempty
 from app.utils.type_utils import to_int_or
 
 
@@ -54,34 +55,15 @@ def _make_safe_loader() -> type:
     return _Loader
 
 
-def env_nonempty(name: str) -> bool:
-    """返回环境变量是否非空且非纯空白 — 2026-09-21 小欧：env 覆盖语义统一单点"""
-    v = os.environ.get(name)
-    return bool(v and v.strip())
-
-
 # 需注入内存配置的 env 键（让页面显示值=实际生效值）。
 #   放本模块而非 registry：get_config() 在 app.logger 导入期间就被调用，本模块不能反向依赖
 #   app.services（否则 logger→config→services→db→logger 循环）。一致性由 registry 自检兜底。
 ENV_INJECTED_KEYS: Dict[str, str] = {
-    "security.access_token": "OMNIAGENT_ACCESS_TOKEN",
-    "security.access_token_allowlist": "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
+    "security.access_token": "OMNI_ACCESS_TOKEN",
+    "security.access_token_allowlist": "OMNI_ACCESS_TOKEN_ALLOWLIST",
     # 2026-11-24 商量 - Tavily 搜索密钥(searchweb 工具): env TAVILY_API_KEY 覆盖 config 值
     "tool_websearch_Tavily_key": "TAVILY_API_KEY",
 }
-
-
-def env_flag(name: str, default: str = "0") -> bool:
-    """布尔型环境变量：值在 {空, 0, false}（忽略大小写）视为关，其余视为开。
-
-    2026-09-27 小欧 - 抽成单点：此前各处手搓 `in ("1","true","True")` 真值列表，与 deps 的
-    `not in ("0","false","False")` 语义相反，且 `TRUE`/`yes`/`on` 会失效。
-    统一为假值列表（凡不是显式关闭就算开）。
-
-    注：`deps.verify_token` 里的 `OMNIAGENT_REQUIRE_AUTH` 判定故意未并入 —— 那是安全核心路径
-    （默认 "1"=开），统一它须写成 `env_flag(REQUIRE_AUTH_ENV, default="1")` 并跑通鉴权全部护栏测试。
-    """
-    return (os.environ.get(name) or default).strip().lower() not in ("", "0", "false")
 
 
 class Config:
@@ -149,21 +131,6 @@ class Config:
             env_value = os.getenv(env_key)
             if env_value:
                 provider_config['api_key'] = env_value
-
-        # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
-        # 2026-09-21 小欧: env_nonempty 排除纯空白覆写
-        _env_provider = os.getenv('AI_PROVIDER')
-        if env_nonempty('AI_PROVIDER'):
-            _ref = ai_config.get('model_ref')
-            if not isinstance(_ref, dict):
-                _ref = {}
-                ai_config['model_ref'] = _ref
-            _ref['provider'] = _env_provider
-
-        # 日志级别(单键 logging.level, 撤销 file_level/console_level 双键 — 北京老陈令 2026-11-03)
-        logging_config = self._config_data.get('logging', {})
-        if env_nonempty('LOG_LEVEL'):
-            logging_config['level'] = os.getenv('LOG_LEVEL')
 
         # security 段注入改为按 ENV_INJECTED_KEYS 驱动（键名不再散落两处）
         self._inject_registry_env()
@@ -348,9 +315,9 @@ def get_code_root() -> str:
 
 
 def get_config_path(filename: str = "config.yaml") -> str:
-    """统一配置路径获取 — 尊重 OMNIAGENT_CONFIG_PATH(环境变量指定则用之)，否则代码库根 config 目录
+    """统一配置路径获取 — 尊重 OMNI_CONFIG_PATH(环境变量指定则用之)，否则代码库根 config 目录
     — 小欧 2026-08-10 ④内部改调; 2026-09-21 小欧 补 env 分支(与 Config 实例单源一致)"""
-    env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
+    env_path = os.getenv(CONFIG_PATH)
     if env_path:
         return str(Path(env_path))
     return str(_get_code_root() / "config" / filename)

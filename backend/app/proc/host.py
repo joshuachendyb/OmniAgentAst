@@ -23,21 +23,26 @@
 【创建模式】宿主自身由主进程以 CREATE_NO_WINDOW 拉起; 禁用 DETACHED_PROCESS
   (实测该模式 pwsh/ps5 返回 rc=0 但 stdout 为空, 静默丢输出)。
 
-【命名】管道名与 authkey 由主进程每实例生成, 经环境变量传入; 不写死常量
+【命名】管道名与 authkey 由主进程每实例生成, 经握手串(PROC_HANDSHAKE)传入; 不写死常量
   (写死会让开发态/打包态互抢同一管道, 且固定 authkey 等于对本机任意进程开放命令执行)。
 """
+import base64
+import json
 import os
 import subprocess
 import threading
 import time
 from multiprocessing.connection import Listener
 
+from app.env_keys import PROC_HANDSHAKE
 from app.proc.constants import DEFAULT_TIMEOUT, IDLE_JOIN, PROTO  # 协议/预算唯一真源(域常量)
 
-PIPE_NAME = os.environ["OMNI_PROC_HOST_PIPE"]                 # 形如 \\.\pipe\omni-proc-host-<uuid4hex>
-AUTHKEY = bytes.fromhex(os.environ["OMNI_PROC_HOST_KEY"])     # 32 字节随机数
-CONCURRENCY = int(os.environ.get("OMNI_PROC_HOST_CONCURRENCY", "12"))
-_LOG_PATH = os.environ.get("OMNI_PROC_HOST_LOG") or os.path.join("logs", "proc_host.log")
+# 启动握手串(单变量, base64 JSON): 由 client._spawn_host 注入。
+_HS = json.loads(base64.b64decode(os.environ[PROC_HANDSHAKE]).decode("utf-8"))
+PIPE_NAME = _HS["pipe"]                                       # 形如 \\.\pipe\omni-proc-host-<uuid4hex>
+AUTHKEY = bytes.fromhex(_HS["key"])                           # 32 字节随机数
+CONCURRENCY = int(_HS.get("concurrency", 12))
+_LOG_PATH = _HS.get("log") or os.path.join("logs", "proc_host.log")
 try:
     os.makedirs(os.path.dirname(os.path.abspath(_LOG_PATH)), exist_ok=True)
 except OSError:
@@ -280,7 +285,7 @@ def main() -> None:
     # ★ spawn_gate 只在主服务 app/main.py 装过一次, 宿主是另一个进程, 不装就没有任何闸门保护
     from app.proc.spawn_gate import install_spawn_gate
     install_spawn_gate()
-    parent_pid = int(os.environ.get("OMNI_PROC_HOST_PARENT_PID", "0") or 0)
+    parent_pid = int(_HS.get("parent_pid", 0) or 0)
     if parent_pid:
         threading.Thread(target=_watch_parent, args=(parent_pid,), daemon=True).start()
     try:

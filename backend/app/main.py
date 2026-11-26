@@ -21,7 +21,7 @@
 # 2026-09-26 小欧 - 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
 #   原状态下局域网任意设备可直调任何接口：读走全部明文密钥、改擦密钥、越权读会话）。
 #   鉴权细节与设计依据见 deps.py 文件头；_mount() 抽成唯一入口的理由见挂载点处注释。
-# 2026-09-27 小欧 - 默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_API_DOCS=1 开启）：这三者是
+# 2026-09-27 小欧 - 默认关闭 /docs /redoc /openapi.json（server.enable_api_docs=1 开启）：这三者是
 #   **应用级**路由，不在任何 APIRouter 内，走不到 verify_token，实跑确认无 token 可拉走全部端点与模型。
 #   / 的 docs 键同步条件化，避免广播一个必 404 的地址。访问口令路由改走 _mount()，不再手写
 #   include_router 绕过唯一入口。_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
@@ -162,9 +162,10 @@ from app.api.v1.token_usage import (
 from app.api.v1.tool_routes import (
     router as tool_routes_router,  # 工具测试路由迁出 health.py — 小欧 2026-08-12
 )
-from app.config import env_flag, get_code_root, get_config
+from app.config import get_code_root, get_config
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.db import db
+from app.env_keys import ENABLE_API_DOCS, deprecated_in_use, env_flag
 from app.logger import logger
 from app.logger.shared_handler import (  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤; 2026-11-08 小欧补 setup_uvicorn_loggers(裸 uvicorn 同样收口 uvicorn 三 logger 只落盘不上屏)
     install_access_noise_filter,
@@ -219,9 +220,9 @@ logger.info(f"Backend version: {app_version}")
 
 # 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修鉴权缺口）：/docs /redoc /openapi.json
 #   是**应用级路由**，不在任何 APIRouter 内，走不到 verify_token —— 实跑确认无 token 可拉走 57 个端点
-#   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_API_DOCS=1（多机部署下别开）。
-#   布尔解析复用 config.env_flag（假值列表统一单点），不手搓真值列表。
-_ENABLE_DOCS = env_flag("OMNIAGENT_ENABLE_API_DOCS")
+#   + 44 个请求模型。默认关闭; 本机需查看在 设置›系统›服务 打开 server.enable_api_docs(需重启),
+#   或部署级覆盖 OMNI_ENABLE_API_DOCS=1（多机部署下别开）。
+_ENABLE_DOCS = env_flag(ENABLE_API_DOCS) or bool(get_config().get("server.enable_api_docs", False))
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
@@ -231,11 +232,17 @@ app = FastAPI(
     openapi_url="/openapi.json" if _ENABLE_DOCS else None,
 )
 if not _ENABLE_DOCS:
-    logger.info("API 文档端点已关闭（如需本地查看设置：OMNIAGENT_ENABLE_API_DOCS=1）")
+    logger.info("API 文档端点已关闭（如需本地查看：设置›系统›服务 打开 server.enable_api_docs，或 OMNI_ENABLE_API_DOCS=1）")
 
 logger.info("Backend v" + app_version + " started")
 
-_cors_origins_str = os.getenv("CORS_ORIGINS", get_config().get("network.cors_origins", _D_CORS))
+# 旧 env 名残留告警（统一新名前留一条过渡提示）
+_deprecated_env = deprecated_in_use()
+if _deprecated_env:
+    for _old, _hint in _deprecated_env:
+        logger.warning(f"[配置] 环境变量 {_old} {_hint}")
+
+_cors_origins_str = get_config().get("network.cors_origins", _D_CORS)
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(
@@ -679,10 +686,9 @@ async def startup_event():
     logger.info(f"[启动耗时] _start_cleanup_task: {time.time()-_t2:.3f}s")
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
     _start_monitoring_retention_task()  # 2026-11-03 xiaoou: monitoring.db retention (http/metrics 7d, task/llm 30d), never on request path
-    # 2026-11-03 小欧 - chat_retention 启动参数: 只读 system.chat_retention_days(删已迁移旧键回退, 禁 backward),
-    #   复用模块级 os, get_config() 单次; int() 失败降级 0 仅告警, 不让坏 env 抛穿启动 — 小欧-2026-11-03
-    _retention_raw = (os.getenv('OMNIAGENT_CHAT_RETENTION_DAYS')
-                      or get_config().get('system.chat_retention_days', 0) or 0)
+    # 2026-11-03 小欧 - chat_retention 启动参数: 只读 system.chat_retention_days(单一真源, 禁 backward),
+    #   get_config() 单次; int() 失败降级 0 仅告警, 不让坏值抛穿启动。
+    _retention_raw = get_config().get('system.chat_retention_days', 0) or 0
     try:
         _chat_retention_days = int(_retention_raw)
     except (TypeError, ValueError):

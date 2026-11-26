@@ -4,7 +4,7 @@
 # 2026-11-26 - 小欧 - 修正: 补启动期 ensure_host(请求期零 Popen)/连接与接收真实截止时间/
 #                     每实例管道名与 authkey/协议版本握手/单飞重建
 # 2026-11-26 - 小欧 - 整改: 宿主 Popen 显式 cwd/PYTHONPATH(修复非 backend 目录
-#                     启动 ModuleNotFoundError); 注入 OMNI_PROC_HOST_CONCURRENCY(外部已设优先,
+#                     启动 ModuleNotFoundError); 注入 OMNI_PROC_CONCURRENCY(外部已设优先,
 #                     否则 max(12, shell_max_processes), 宿主不得比主进程闸门更紧); 连接失败/超时
 #                     且期间无人替换宿主时杀旧宿主重建(卡死宿主旧管道不销毁会让辅助线程永久阻塞)
 # 2026-11-26 - 小欧 - 底座加固: ①_spawn_host 合并 isolation_kwargs(宿主不继承控制台,
@@ -12,7 +12,7 @@
 #                     冷却 30s、半开探测、同因日志 60s 去重); ③请求路径 _connect 零创建(只连 + 有界
 #                     等待监护人重建, 熔断期间快速失败); ④后台监护人 daemon 线程每 5s ping/pong
 #                     判死并在退避内重建; ⑤宿主 ping/pong 见 host.py; ⑥run 输出总量上限
-#                     (OMNI_PROC_HOST_MAX_OUTPUT, 默认 64MB, 超限置 truncated + 追加
+#                     (OMNI_PROC_MAX_OUTPUT_MB, 默认 64MB, 超限置 truncated + 追加
 #                     TRUNCATED_NOTE, 防 OOM)。
 # 2026-11-26 - 小欧 - 三堂会审整改: _client_with_deadline 连接超时后辅助线程仍会继续连接,
 #                     连上的连接无人接管且依赖 GC 兜底; 加放弃标记, 辅助线程连上时若主线程已
@@ -45,6 +45,8 @@
   - 自愈: 宿主被外部杀/崩溃 → 监护人在退避内重建; 在飞命令显式 HostError, 后续命令恢复。
 宿主不可用时由监护人自愈重建, 在飞命令显式 HostError。
 """
+import base64
+import json
 import os
 import subprocess
 import sys
@@ -54,6 +56,7 @@ import uuid
 from multiprocessing.connection import Client
 from typing import Optional, Tuple
 
+from app.env_keys import PROC_CONCURRENCY, PROC_HANDSHAKE, PROC_MAX_OUTPUT_MB
 from app.proc.constants import (
     BACKOFF, BREAKER_COOLDOWN, BREAKER_THRESHOLD, CHUNK_WAIT, CONNECT_TIMEOUT,
     DEFAULT_TIMEOUT, LOG_THROTTLE, MAX_OUTPUT, PING_INTERVAL, PING_RECHECK_GAP,
@@ -119,7 +122,7 @@ def _host_concurrency() -> int:
 
     宿主不得比主进程 _SHELL_PROC_SEM 更紧, 否则配置调大后宿主先限流、两级排队口径冲突。
     """
-    env_val = os.environ.get("OMNI_PROC_HOST_CONCURRENCY")
+    env_val = os.environ.get(PROC_CONCURRENCY)
     if env_val:
         try:
             return max(1, int(env_val))
@@ -134,11 +137,22 @@ def _host_concurrency() -> int:
 
 
 def _max_output() -> int:
-    """单命令输出总量上限: OMNI_PROC_HOST_MAX_OUTPUT(字节), 默认 64MB, 下限 1KB。"""
+    """单命令输出总量上限(字节): 覆盖口 PROC_MAX_OUTPUT_MB 优先, 其次 tuning.shell_fg_max_output_mb(MB),
+    默认 64MB; 下限 1MB。env/配置非法时忽略该源, 不抛穿调用。"""
+    env_val = os.environ.get(PROC_MAX_OUTPUT_MB)
+    if env_val:
+        try:
+            return max(1, int(env_val)) * 1024 * 1024
+        except (TypeError, ValueError):
+            pass
     try:
-        return max(1024, int(os.environ.get("OMNI_PROC_HOST_MAX_OUTPUT", str(MAX_OUTPUT))))
-    except (TypeError, ValueError):
-        return MAX_OUTPUT
+        from app.config import get_config
+        cfg_val = get_config().get("tuning.shell_fg_max_output_mb")
+        if cfg_val is not None:
+            return max(1, int(cfg_val)) * 1024 * 1024
+    except Exception:
+        pass
+    return MAX_OUTPUT
 
 
 def _log_event(key: str, msg: str, throttle: float = LOG_THROTTLE) -> None:
@@ -259,6 +273,18 @@ def _kill_host() -> None:
         pass
 
 
+def _host_handshake_env(pipe_name: str, authkey: bytes) -> str:
+    """把管道名/authkey/父PID/并发度/日志路径打包成单串(base64 JSON), 免去 5 个环境变量各自解析。"""
+    payload = {
+        "pipe": pipe_name,
+        "key": authkey.hex(),
+        "parent_pid": os.getpid(),
+        "concurrency": _host_concurrency(),
+        "log": _default_log_path(),
+    }
+    return base64.b64encode(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode("ascii")
+
+
 def _spawn_host() -> None:
     """拉起宿主(调用方须持 _host_lock)。用 isolation_kwargs 切断控制台继承。"""
     global _host_proc
@@ -269,11 +295,7 @@ def _spawn_host() -> None:
     else:
         argv = [sys.executable, "-m", "app.proc.host"]
     env = dict(os.environ)
-    env["OMNI_PROC_HOST_PIPE"] = pipe_name
-    env["OMNI_PROC_HOST_KEY"] = authkey.hex()
-    env["OMNI_PROC_HOST_PARENT_PID"] = str(os.getpid())
-    env["OMNI_PROC_HOST_LOG"] = _default_log_path()
-    env["OMNI_PROC_HOST_CONCURRENCY"] = str(_host_concurrency())
+    env[PROC_HANDSHAKE] = _host_handshake_env(pipe_name, authkey)
     if not getattr(sys, "frozen", False):
         # -m 依赖 sys.path 含 backend 根: 显式注入 cwd/PYTHONPATH, 不再依赖调用方 cwd
         prev = env.get("PYTHONPATH")
@@ -464,7 +486,7 @@ def run(argv, cwd=None, env=None, timeout=None):
     rc = 子进程真实退出码(宿主回传; 取不到才为 -1)。比 drain_until_exit 多带一个 rc,
     是因为 drain_until_exit 从 proc 对象上取 returncode, 而宿主路径下调用方拿不到 proc。
     调用方改造时: returncode = rc, 其余四项语义与 drain_until_exit 完全一致。
-    输出总量超 OMNI_PROC_HOST_MAX_OUTPUT 时丢弃后续 chunk、继续 drain 到 done(不让宿主反压),
+    输出总量超 OMNI_PROC_MAX_OUTPUT_MB 时丢弃后续 chunk、继续 drain 到 done(不让宿主反压),
     置 truncated=True; 截断留痕由调用方负责(同 proc_io.drain_until_exit 的用法, 本层不追加 note)。
     宿主异常时抛 HostError(继承 RuntimeError), 调用方按 error 结构返回, 不静默;
     error 帧的 kind 透传到 HostError.kind(not_found 供调用方还原 FileNotFoundError)。

@@ -60,7 +60,7 @@
 #   2026-11-15 小欧 - P0 止血([42]): main() 第一条语句 detach_console_if_needed(),
 #     frozen 启动即 FreeConsole + stdio 重定向到 logs/boot_*.log; 父进程不持有控制台,
 #     子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失;
-#     排障开关 OMNI_KEEP_CONSOLE=1 可保留控制台
+#     排障开关 OMNI_DEBUG_KEEP_CONSOLE=1 可保留控制台
 #   2026-11-16 小欧 - 单实例与关闭入口: ①命名 Mutex 抢锁(抢不到=已有实例, 等就绪后开浏览器退出),
 #     堵死双击两次并发初始化同一 SQLite 库致 database is locked 的 TOCTOU 窗口; ②端口预检前移到
 #     detach 之前(原先 FreeConsole 致占用提示落 boot 日志看不到), 失败用 MessageBox 弹窗; ③就绪后

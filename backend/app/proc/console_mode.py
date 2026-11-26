@@ -16,13 +16,15 @@ sys.stdout / sys.stderr 重定向到 logs/boot_YYYY-MM-DD.log, sys.stdin 指向 
 
 【边界】FreeConsole 只解除本进程与 conhost 的关联, 不负责结束 conhost 进程;
 彻底形态由打包 console=False 承担(P1)。本函数与 P1 叠用时 FreeConsole 返回 0,
-直接返回, 幂等无副作用。环境变量 OMNI_KEEP_CONSOLE=1 可关闭本行为(排障用)。
+直接返回, 幂等无副作用。环境变量 OMNI_DEBUG_KEEP_CONSOLE=1 可关闭本行为(排障用)。
 """
 import ctypes
 import os
 import sys
 import time
 from pathlib import Path
+
+from app.env_keys import DEBUG_KEEP_CONSOLE
 
 _applied = False
 _detached = False
@@ -55,7 +57,7 @@ def detach_console_if_needed() -> None:
     _applied = True
     if not getattr(sys, "frozen", False):
         return
-    if os.environ.get("OMNI_KEEP_CONSOLE") == "1":
+    if os.environ.get(DEBUG_KEEP_CONSOLE) == "1":
         return
     if not ctypes.windll.kernel32.FreeConsole():
         return      # 本来就没有控制台(或已脱离): 不碰 stdio
@@ -70,6 +72,6 @@ def is_console_detached() -> bool:
 
     供 console_writer._probe_console 判定"当前无真实控制台": stdio 虽被换成可写文件对象,
     但那只是 boot 日志, 控制台镜像若继续写只会污染 boot 日志, 故 detach 后镜像整体旁路。
-    非 frozen / OMNI_KEEP_CONSOLE=1 / 未 detach 时恒 False(控制台仍有效)。
+    非 frozen / OMNI_DEBUG_KEEP_CONSOLE=1 / 未 detach 时恒 False(控制台仍有效)。
     """
     return _detached

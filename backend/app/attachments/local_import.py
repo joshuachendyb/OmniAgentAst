@@ -31,6 +31,7 @@ from app.attachments import attachment_service as service
 from app.attachments import extract
 from app.config import get_config
 from app.db import db
+from app.env_keys import ATTACHMENTS_TRUSTED_PROXIES
 from app.file_browse import local_fs
 from app.file_browse.errors import (
     ATTACHMENT_TOO_LARGE,
@@ -41,11 +42,17 @@ from app.file_browse.errors import (
     fail,
 )
 
+
 # 受信代理白名单（逗号分隔 IP，默认空=不采信任何 X-Forwarded-For）。
+# 覆盖口 OMNI_ATTACHMENTS_TRUSTED_PROXIES 优先于 network.attachments_trusted_proxies;
 # 仅当直连对端命中本列表时才解析 XFF；否则一律用 request.client.host。
-_TRUSTED_PROXIES: set[str] = {
-    ip.strip() for ip in os.environ.get("ATTACHMENTS_TRUSTED_PROXIES", "").split(",") if ip.strip()
-}
+def _trusted_proxies() -> set[str]:
+    raw = os.environ.get(ATTACHMENTS_TRUSTED_PROXIES)
+    if not raw:
+        raw = get_config().get("network.attachments_trusted_proxies", "") or ""
+    if isinstance(raw, (list, tuple)):
+        raw = ",".join(str(x) for x in raw)
+    return {ip.strip() for ip in str(raw).split(",") if ip.strip()}
 
 
 def _local_ips() -> set[str]:
@@ -66,7 +73,7 @@ def _client_ip(request: Request) -> str:
     最右一跳是受信代理追加、离服务端最近的可信值。
     """
     peer = request.client.host if request.client else ""
-    if peer in _TRUSTED_PROXIES:
+    if peer in _trusted_proxies():
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
             return xff.split(",")[-1].strip()

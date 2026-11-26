@@ -50,7 +50,7 @@ class SetTokenRequest(BaseModel):
         description=(
             "新的访问口令。**不可留空**（留空一律 400，见 set_api_token）；"
             "至少 8 位，建议 16 位以上随机串。关闭鉴权请改用环境变量 "
-            "OMNIAGENT_REQUIRE_AUTH=0（显式声明，可追溯），而非把口令置空"
+            "OMNI_REQUIRE_AUTH=0（显式声明，可追溯），而非把口令置空"
         ),
     )
 
@@ -102,7 +102,7 @@ async def set_api_token(req: SetTokenRequest, request: Request) -> Dict[str, Any
         raise HTTPException(
             status_code=400,
             detail="访问口令至少 8 位且不可为空（建议 16 位以上随机串）；"
-                   "如需关闭鉴权请显式设置环境变量 OMNIAGENT_REQUIRE_AUTH=0",
+                   "如需关闭鉴权请显式设置环境变量 OMNI_REQUIRE_AUTH=0",
         )
     # 2026-09-26 小欧 - 修 C01：deps 是 env 优先，本函数原先无 env 接管检测，无条件写 yaml 后
     #   回"旧口令已作废"。env 部署下管理员改口令 → 旧口令（env 里的）仍有效、新值永不生效且无报错，

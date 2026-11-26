@@ -389,10 +389,6 @@ def _update_model_ref(config_data: dict, update) -> None:
     2026-09-22 小欧 修 S10: AI_PROVIDER env 接管时切换只读(防假成功)——
       原无守卫, 切换写入 yaml 后被 _apply_env_overrides 读回覆盖, 前端"更换成功"实为无效"""
     ai_config = config_data.get('ai', {})
-    # 2026-09-22 小欧 修 S10: 与 settings_service env_key=AI_PROVIDER / model_service _raise_if_current_ref_env 同语义
-    from app.config import env_nonempty  # 局部 import 防顶层循环
-    if env_nonempty('AI_PROVIDER'):
-        raise HTTPException(status_code=400, detail="当前模型由环境变量 AI_PROVIDER 接管，切换/删除当前模型只读")
     if update.ai_model_ref.provider not in ai_config:
         raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_model_ref.provider}")
     config_data['ai']['model_ref'] = {

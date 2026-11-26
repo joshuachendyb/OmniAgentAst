@@ -77,6 +77,7 @@ from app.db.db_initializer import (
     init_task_tracker_db,
     init_timers_db,
 )
+from app.env_keys import DATA_DIR
 from app.logger import logger
 from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
 from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
@@ -176,17 +177,17 @@ _DB_READY_TABLE = {
 
 
 def resolve_db_dir() -> Path:
-    """数据目录唯一解析点: OMNIAGENT_DATA_DIR 优先, 否则 ~/.omniagent — 小欧 2026-09-30
+    """数据目录唯一解析点: OMNI_DATA_DIR 优先, 否则 ~/.omniagent — 小欧 2026-09-30
 
     病根: 路径原在 __init__ 硬编码 Path.home()/".omniagent" 且 db=DatabaseManager() 在导入期构造,
-      路径被冻结; 而 conftest 的 isolated_config_dir 只重定向配置文件(OMNIAGENT_CONFIG_PATH),
+      路径被冻结; 而 conftest 的 isolated_config_dir 只重定向配置文件(OMNI_CONFIG_PATH),
       管不到数据库 → 任何裸用 db.get_conn() 的测试都写真库(实测污染真库: 空会话/hello/v2 等)。
-    改法: 与系统已有的 OMNIAGENT_CONFIG_PATH 对称, 增加 OMNIAGENT_DATA_DIR 开关, 且**在 get_conn
+    改法: 与系统已有的 OMNI_CONFIG_PATH 对称, 增加 OMNI_DATA_DIR 开关, 且**在 get_conn
       内惰性解析**(不在 __init__ 冻结) —— 惰性是必须的: db 单例在模块导入期即构造, 若在 __init__ 读 env
       便受导入顺序影响, conftest 来不及设。改后测试只需设 env 即"够不到"真库(AGENTS.md 铁律:
       根治靠"够不到"而非"事后还原"), 无需逐个测试 patch, 也不会漏掉将来新增的测试。
     """
-    env = (os.getenv("OMNIAGENT_DATA_DIR") or "").strip()
+    env = (os.getenv(DATA_DIR) or "").strip()
     return Path(env) if env else Path.home() / ".omniagent"
 
 
@@ -267,7 +268,7 @@ def ensure_db_layout() -> None:
     """确保库目录布局就绪(幂等, 每数据目录只迁移一次) — 小欧-2026-11-21
 
     在 get_conn 内惰性调用: 与 resolve_db_dir 同款惰性口径, 不吃导入顺序;
-    OMNIAGENT_DATA_DIR 指向不同目录时各迁移各的(测试隔离不共享状态)。
+    OMNI_DATA_DIR 指向不同目录时各迁移各的(测试隔离不共享状态)。
     """
     data_dir = resolve_db_dir()
     key = str(data_dir)

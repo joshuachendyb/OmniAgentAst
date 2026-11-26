@@ -238,7 +238,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         #   控制台只显示 == 该值的行, 日志文件按原逻辑记 >= 该值; 调试模式开时文件强制 DEBUG(控制台不受影响)
         _item("logging.level", "select", "日志级别", "WARNING",
               options=["DEBUG", "INFO", "WARNING", "ERROR"],
-              notice="一个值两种用法：后端控制台（黑窗口）只显示「等于所选级别」的日志，不连带其他级别（例如选 WARNING 只显警告行，选 DEBUG 只显调试行）；日志文件（位置见下方「日志目录」）按常规方式记录「该级别及以上」。上方「调试模式」开启时日志文件被强制为 DEBUG，控制台不受影响。改动后约 10 秒自动生效，无需重启", env_key="LOG_LEVEL"),
+              notice="一个值两种用法：后端控制台（黑窗口）只显示「等于所选级别」的日志，不连带其他级别（例如选 WARNING 只显警告行，选 DEBUG 只显调试行）；日志文件（位置见下方「日志目录」）按常规方式记录「该级别及以上」。上方「调试模式」开启时日志文件被强制为 DEBUG，控制台不受影响。改动后约 10 秒自动生效，无需重启"),
         _item("agent.max_steps", "int", "最大轮数", 10000, range_=[1, 10000],
               notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
@@ -264,8 +264,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
         _item("ai.model_ref", "model_ref", "当前系统全局使用模型", None,
-              notice="当前选用的模型（哪个服务商+哪个模型）；被环境变量强制指定时整行只读",
-              env_key="AI_PROVIDER"),
+              notice="当前选用的模型（哪个服务商+哪个模型）"),
     ]},
     # 媒体（media）：图片/文档送进模型的上限与压缩参数，只管"怎么送"，不管"能不能送" —
     #   能不能送由 input_modalities 声明判定(capability.profile_of); 实测只在图片外链一处参与
@@ -447,7 +446,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("paths.download", "readonly", "下载目录", None, readonly=True,
               notice="项目根目录\\download；项目根未配置时=用户主目录\\download；download.dest 相对本目录"),
         _item("paths.database", "readonly", "数据库目录", None, readonly=True,
-              notice="固定 ~\\.omniagent（或 OMNIAGENT_DATA_DIR）；库文件在 db\\ 子目录，回收站 recycle_bin、资产 assets 同根"),
+              notice="固定 ~\\.omniagent（或 OMNI_DATA_DIR）；库文件在 db\\ 子目录，回收站 recycle_bin、资产 assets 同根"),
         _item("paths.record_tool", "readonly", "工具结果文件", None, readonly=True,
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1工具结果"),
         _item("paths.record_conv", "readonly", "对话历史文件", None, readonly=True,
@@ -456,6 +455,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
               notice="仅跨域部署时生效（如前端独立CDN、E2E代理）；打包版同源运行无需配置"),
+        # 2026-11-26 小欧 - 迁移: 受信反代白名单(原 ATTACHMENTS_TRUSTED_PROXIES env)并入配置文件
+        _item("network.attachments_trusted_proxies", "textarea", "受信反代 IP 白名单", "",
+              notice="仅当直连对端命中这些 IP 时才采信 X-Forwarded-For 判断同机（取最右一跳）。逗号分隔，每行一条。留空=不采信任何 XFF。⚠只填反代所在机器 IP，勿填来源客户端 IP"),
+        # 2026-11-26 小欧 - 新增: API 文档端点开关(原 OMNIAGENT_ENABLE_API_DOCS env)并入配置文件
+        _item("server.enable_api_docs", "bool", "开放 API 文档", False, restart=True,
+              notice="开启后暴露 /docs、/redoc、/openapi.json（含全部端点与请求模型）。⚠这些是应用级路由、绕过鉴权，仅限本机/内网排障临时开启，用完及时关闭；改动需重启服务"),
         # --- 工具（searchweb）：Tavily 搜索密钥（普通可编辑项, 非 secret 走通用设置写通道;
         #    env TAVILY_API_KEY 可覆盖 config 值 — 商量 2026-11-24）---
         _item("tool_websearch_Tavily_key", "url", "Web搜索Tavily密钥",
@@ -477,11 +482,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     "appearance": {"label": "前端", "items": [
         # 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
         _item("security.access_token", "secret", "访问口令", None, secret=True,
-              env_key="OMNIAGENT_ACCESS_TOKEN", env_inject=True,
+              env_key="OMNI_ACCESS_TOKEN", env_inject=True,
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
         # 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护）
         _item("security.access_token_allowlist", "textarea", "免口令 IP 白名单", "",
-              env_key="OMNIAGENT_ACCESS_TOKEN_ALLOWLIST", env_inject=True, list_of="ip_cidr",
+              env_key="OMNI_ACCESS_TOKEN_ALLOWLIST", env_inject=True, list_of="ip_cidr",
               notice="这些 IP/网段访问本服务免口令。每行一条，也可用逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1/::1)免口令。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
         _item("app.language", "select", "系统语言", "zh-CN",
               options=["zh-CN", "en-US"], restart=True),
@@ -555,6 +560,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单条后台命令输出文件最多写多少 MB；超过即强制终止该命令，防日志狂写把磁盘写满拖垮系统。默认512MB（并发5条时峰值约2.5GB）。0=不限制（不建议）"),
         _item("tuning.shell_bg_result_retain_hours", "int", "后台结果保留(小时)", 24, range_=[1, 720],
               notice="后台命令结束后结果文件保留多久；到期在新后台命令启动时顺带清理"),
+        # 2026-11-26 小欧 - 迁移: 前台单命令输出上限(原 OMNI_PROC_HOST_MAX_OUTPUT env)并入配置文件
+        _item("tuning.shell_fg_max_output_mb", "int", "前台输出上限(MB)", 64, range_=[1, 4096],
+              notice="单条前台命令输出最多保留多少 MB；超过即截断并标记 truncated（继续把管道读空到结束，不给宿主反压）。0 与负数按 1 处理（配置页范围 1~4096）"),
         # --- agent: Agent 循环参数（2 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),

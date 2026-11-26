@@ -76,8 +76,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 
-from app.config import env_nonempty, get_code_root, get_config
+from app.config import get_code_root, get_config
 from app.db.models.chat_models import ModelRef
+from app.env_keys import env_nonempty
 from app.logger import logger
 from app.services.model.config_helpers import (
     _config_mtime,

@@ -2,7 +2,7 @@
 """chat_history.db 保留期清理（数据治理）— 小欧 2026-11-03
 
 设计（KISS-DIRECT）：
-- 默认关闭（OMNIAGENT_CHAT_RETENTION_DAYS=0），避免误删用户对话历史。
+- 默认关闭（system.chat_retention_days=0），避免误删用户对话历史。
 - 开启时：删除 updated_at 早于保留期的会话，chat_tasks/chat_task_steps/chat_stream_events
   通过 ON DELETE CASCADE / 显式清理一并移除。
 - 仅在启动期后台任务中运行，绝不进请求链路；失败只 warning，降级不阻断。
