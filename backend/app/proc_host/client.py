@@ -19,6 +19,12 @@
 #                     超时即自行关闭, 消除悬挂窗口。
 # 2026-11-26 - 小欧 - 三堂会审整改: 删除 OMNI_PROC_HOST 本地回退开关与 Disabled 降级分支,
 #                     PS 分支收敛为宿主单路径, 杜绝新旧实现并存的兼容层。
+# 2026-11-26 - 小欧 - 三堂会审整改二: ①熔断半开探测失败后重新冷却(原已开时不重设冷却, 冷却后
+#                     恒放行致监护人每 5s 拉起必死宿主的重建风暴); ②run 不再追加 TRUNCATED_NOTE
+#                     (对齐 drain_until_exit 只返回标记, 留痕归调用方, 修 PS 分支与工具层双写);
+#                     ③_spawn_host 就绪轮询改用本地 proc 并加实例守卫(修并发 _kill_host 置空全局
+#                     导致的 None.poll NPE 与误杀期间已重建的新宿主); ④_client_with_deadline 用锁
+#                     闭合 box 写入与放弃判定的竞态(消除连接超时放弃后的悬挂连接窗口)。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
 对外两个入口:
@@ -144,11 +150,18 @@ def _log_event(key: str, msg: str, throttle: float = _LOG_THROTTLE) -> None:
 
 
 def _note_failure(cause: str) -> None:
-    """登记一次启动失败: 推进退避阶梯, 达阈值打开熔断。"""
+    """登记一次启动失败: 推进退避阶梯, 达阈值打开熔断; 熔断已开(半开探测又失败)时重新冷却。"""
     global _fail_count, _next_attempt_ts, _breaker_open, _breaker_until
     _fail_count += 1
     _next_attempt_ts = time.monotonic() + _BACKOFF[min(_fail_count - 1, len(_BACKOFF) - 1)]
-    if _fail_count >= _BREAKER_THRESHOLD and not _breaker_open:
+    if _breaker_open:
+        _breaker_until = time.monotonic() + _BREAKER_COOLDOWN
+        _log_event(
+            "breaker-probe-fail",
+            f"半开探测失败: 宿主仍不可用, 重新冷却 {_BREAKER_COOLDOWN:.0f}s; 末次原因: {cause}",
+            throttle=0.0,
+        )
+    elif _fail_count >= _BREAKER_THRESHOLD:
         _breaker_open = True
         _breaker_until = time.monotonic() + _BREAKER_COOLDOWN
         _log_event(
@@ -190,29 +203,34 @@ def _client_with_deadline(deadline: float):
     故把连接放进辅助线程, 主线程只做有界 join; 超时后辅助线程即便连上也不得留下悬挂连接。
     """
     box = {}
-    abandoned = threading.Event()   # 主线程已放弃: 辅助线程连上后须自行关闭
+    state = {"abandoned": False}
+    lock = threading.Lock()
     name, key = _identity()
 
     def _do():
         try:
             conn = Client(name, authkey=key)
         except Exception as e:      # AuthenticationError/OSError/EOFError
-            box["err"] = e
+            with lock:
+                box["err"] = e
         else:
-            if abandoned.is_set():
-                conn.close()        # 主线程已超时放弃, 不留悬挂连接等 GC
-            else:
-                box["conn"] = conn
+            with lock:
+                if state["abandoned"]:
+                    conn.close()    # 主线程已超时放弃: 辅助线程连上后自行关闭, 不留悬挂连接
+                else:
+                    box["conn"] = conn
 
     t = threading.Thread(target=_do, daemon=True)
     t.start()
     t.join(max(0.0, deadline - time.monotonic()))
-    if t.is_alive():
-        abandoned.set()
-        raise HostError("连接宿主超时(宿主可能卡死)")
-    if "err" in box:
-        raise box["err"]
-    return box["conn"]
+    with lock:
+        # box 写入与放弃判定在同一临界区: 要么拿到连接/错误, 要么置放弃让辅助线程自关
+        if "conn" not in box and "err" not in box:
+            state["abandoned"] = True
+            raise HostError("连接宿主超时(宿主可能卡死)")
+        if "err" in box:
+            raise box["err"]
+        return box["conn"]
 
 
 def _kill_host() -> None:
@@ -264,26 +282,30 @@ def _spawn_host() -> None:
         subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
     stdin = spawn_kwargs.pop("stdin", subprocess.DEVNULL)
     startupinfo = spawn_kwargs.pop("startupinfo", None)
-    _host_proc = subprocess.Popen(
+    proc = subprocess.Popen(
         argv, stdin=stdin, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, creationflags=creationflags,
         startupinfo=startupinfo, close_fds=True, env=env, cwd=root)
-    # 等管道可用(只探测可连, 不发业务帧)
+    _host_proc = proc
+    # 等管道可用(只探测可连, 不发业务帧); 全程用本地 proc, 并发 _kill_host 置空全局不致 None.poll
     deadline = time.monotonic() + _START_WAIT
     while time.monotonic() < deadline:
-        if _host_proc.poll() is not None:
-            rc = _host_proc.returncode
-            _kill_host()
+        if proc.poll() is not None:
+            rc = proc.returncode
+            if _host_proc is proc:
+                _kill_host()
             raise HostError(f"宿主启动即退出 rc={rc}")
         try:
             _client_with_deadline(min(deadline, time.monotonic() + 0.5)).close()
             return
         except HostError:
-            _kill_host()
+            if _host_proc is proc:
+                _kill_host()
             raise
         except Exception:
             time.sleep(0.05)
-    _kill_host()
+    if _host_proc is proc:
+        _kill_host()
     raise HostError("宿主启动超时")
 
 
@@ -429,11 +451,12 @@ def run(argv, cwd=None, env=None, timeout=None):
     是因为 drain_until_exit 从 proc 对象上取 returncode, 而宿主路径下调用方拿不到 proc。
     调用方改造时: returncode = rc, 其余四项语义与 drain_until_exit 完全一致。
     输出总量超 OMNI_PROC_HOST_MAX_OUTPUT 时丢弃后续 chunk、继续 drain 到 done(不让宿主反压),
-    置 truncated=True 并追加 TRUNCATED_NOTE(与 proc_io.drain_until_exit 语义一致)。
+    置 truncated=True; 截断留痕由调用方负责(同 proc_io.drain_until_exit 的用法, 本层不追加 note)。
     宿主异常时抛 HostError(继承 RuntimeError), 调用方按 error 结构返回, 不静默。
     """
     _ensure_guardian()          # 兜底: 未经启动期 ensure_host 也能由监护人自愈(不在此创建进程)
     conn = _connect()
+    host_at_connect = _host_proc   # 记录本连接对应的宿主实例, 判死时只杀它, 避免误杀期间已重建的新宿主
     out, err = [], []
     timed_out = truncated = False
     rc = -1
@@ -448,7 +471,8 @@ def run(argv, cwd=None, env=None, timeout=None):
             #   于是"命令超时"退化成"工具调用永不返回"(比卡死更糟, 上层无从判定)。
             if not conn.poll(min(_CHUNK_WAIT, max(0.0, deadline - time.monotonic()))):
                 if time.monotonic() >= deadline:
-                    _kill_host()
+                    if _host_proc is host_at_connect:
+                        _kill_host()
                     raise HostError(f"宿主接收超时(>{timeout}s), 已杀宿主等待重建")
                 continue
             msg = conn.recv()
@@ -470,15 +494,13 @@ def run(argv, cwd=None, env=None, timeout=None):
                 truncated = truncated or bool(msg.get("truncated"))
                 break
     except (EOFError, BrokenPipeError, OSError) as e:
-        # 宿主中途死亡: 视为该次执行失败, 上层按 error 处理, 下次调用自愈
-        _kill_host()
+        # 宿主中途死亡: 视为该次执行失败, 上层按 error 处理, 下次调用自愈; 期间已重建则不误杀新宿主
+        if _host_proc is host_at_connect:
+            _kill_host()
         raise HostError(f"宿主通信中断: {type(e).__name__}: {e}") from e
     finally:
         try:
             conn.close()
         except Exception:
             pass
-    if truncated:
-        from app.utils.proc_io import TRUNCATED_NOTE
-        err.append(TRUNCATED_NOTE)
     return b"".join(out), b"".join(err), timed_out, truncated, rc
