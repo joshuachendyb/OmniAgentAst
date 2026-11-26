@@ -1,3 +1,33 @@
+v1.7.11
+发布时间: 2026-11-26 13:52:00 - 小欧-2026-11-26
+
+## v1.7.11汇总 从上一个 tag v1.7.10(commit 7120e29c1, 2026-11-24)以来全部 21 个 commit(feat 4 / fix 5 / docs 11 / merge 1); 本批以通用进程宿主外置为轴心: app/proc_host 独立宿主进程落地(PS7/PS5 走宿主 + 启动期 ensure_host + 一命令一连接 + 独立 Job 杀整树 + 退避/熔断 + 后台监护人自愈 + 输出上限)、parse_kill shell 杀进程判定根治(块感知切分/foreach 有界性/对象变量/标量变量间接/opaque 可见目标全量堵截)、三堂会审整改(连接超时悬挂消除 + 删除 OMNI_PROC_HOST 回退收敛宿主单路径 + 注释编辑历史违规清理)、持久调度器(3.5)与 agent 任务并发闸门、超时定时任务重建兜底、task_tracker 取消终态落库 - 小欧-2026-11-26
+### 1.7.11.1 新增功能
+[feat] feat:proc_host 通用进程宿主 阶段零/一/二落地（PS7/PS5 走宿主 + 底座加固） - 小欧-2026-11-26
+[feat] feat:timer 持久调度器(3.5)后端内核 - 小欧-2026-11-25
+[feat] feat: HITL pending store & event bus reconstruction - add edit history, remove doc refs [59]/[60], integrate event_bus broadcasts - 小欧-2026-11-25
+[feat] feat:agent_runner 新增 agent 任务并发闸门: agent.max_concurrent_tasks(默认3)+run_agent_gated(外层Semaphore包装,超限排队)+_task_gate(惰性单例), 编排层_create_and_launch_task改经闸门启动; 不新增queued状态,终态链路零改动, 实测5慢任务上限3耗时分层8.4/10.3/10.5 vs 17.4/19.2全completed零僵尸 - 商量-2026-11-24
+### 1.7.11.2 缺陷修复
+[fix] fix:app/proc_host/client.py 等10文件 三堂会审整改: _client_with_deadline加放弃标记消除连接超时悬挂窗口(实测case证实), 删除OMNI_PROC_HOST回退开关与Disabled降级分支收敛宿主单路径(禁止backward), 清理两提交注释/编辑历史违规(文档号/阶段号/过期函数名), FUNCTIONS.md升v5.51 - 小欧-2026-11-26
+[fix] fix:parse_kill shell杀进程判定根治 块感知切分/foreach有界性/taskkill正则 + /对象变量/opaque可见目标/标量变量间接自杀漏拦全量堵截, 附[67]根治说明v1.2 - 小欧-2026-11-26
+[fix] fix: OmniVPN mihomo config单节点备份与二级方案说明 - 小欧-2026-11-26
+[fix] fix:timer_set.py/chatStreamStore.ts 定时器重启重建兜底(resume失败降级投递/非法行收口invalid/创建时间口径统一/防重复重建/投递失败留痕)与前端陈旧信封守卫 - 小欧-2026-11-25
+[fix] fix:task_tracker 取消终态落 cancelled: status_table 新增 tracker_terminal_status 作 AgentStatus→任务终态唯一映射源, TaskStatus 补 CANCELLED, complete_task 签名 success:bool→status:str, step_emitter.complete_task 无参化读 agent.status 翻译落库, react_loop._finalize_cycle 收尾前同步取消标记补 set_cancelled; 实测三场景取消后三处均 cancelled, 回归正常完成仍 completed - 商量-2026-11-24
+### 1.7.11.3 重构与优化
+[merge] Merge branch 'master' of https://github.com/joshuachendyb/OmniAgentAst - 2026-11-24
+### 1.7.11.4 文档
+[docs] docs:[65]E1 方案 v1.14 与整改后代码一致性核查 - 删除回退开关/Disabled 引用并改为不回退持续发展(4.7)、_client_with_deadline 放弃标记同步、PS/CMD/bash 分支行号校正、阶段计划去回滚列 - 小欧-2026-11-26
+[docs] docs:[65]E1 通用进程宿主方案 v1.13 前六章与代码一致性核查（5.3/Q4/Q5 行号校正、4.5 骨架定性、2.2/4.4/4.5.5 勘误） - 小欧-2026-11-26
+[docs] docs:[65]E1 通用进程宿主 目录归属迁至 app/proc_host 并收口 PROTO 与导入副作用 - 小欧-2026-11-26
+[docs] docs:[65]E1 通用进程宿主外置方案 复核修正残留错误（落地清单引用第12项→第1项、阶段四剩余直接创建10→3、时间戳统一） - 小欧-2026-11-26
+[docs] docs: [62]记忆系统架构分析 [63]记忆与知识库一体化 [64]进程与线程模型 [65]E1通用进程宿主外置 四份新文档 - 小欧-2026-11-26
+[docs] docs:[61]OmniAgent-记忆系统架构设计 全文一致性核查修正21处升v1.10 - 小欧-2026-11-25
+[docs] docs: [59][60] 四段结构重组与章节编号统一 - 小欧-2026-11-25
+[docs] docs:[59] 更正3.1关联缺陷记录: 原判断(根因在 agent_runner._STATUS_MAP fallback)经实测不成立作废, 按实测重写为两层根因(_finalize_cycle 布尔二值化 + 取消打断在 await 点), 补修复方案四步与三场景实测结果 - 商量-2026-11-24
+[docs] docs:[59]架构协同与能力缺陷分析 按代码实证重写: 新增1.4代码实证表-1.5底座判定, 3.1标注已完成+并发闸门已实施+关联缺陷留痕, 3.2拆总线已成型/推送真必要需HTTPS硬前置, 更新矩阵/分期表/总结 - 商量-2026-11-24
+[docs] docs:doc-11月优化 新增架构协同与能力缺陷分析及实施说明 - 商量-2026-11-24
+[docs] docs:README 对齐最新本地代码并新增Tool注入策略节(版本v1.7.10/工具数67/调优键41/E2E手册v2.20与文档目录归位/tool_websearch_*配置键/前端E2E用例24个/首次注入3类19工具清单) - 商量-2026-11-24
+
 v1.7.10
 发布时间: 2026-11-24 13:37:00 - 商量-2026-11-24
 
