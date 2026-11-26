@@ -12,6 +12,9 @@
 #   ② 路径键做 abspath+normcase 归一, 相对/绝对、大小写变体视为同一文件;
 #   ③ 远端库键经 make_url 取 backend/host/port/database(去账号口令), 同库不同连接串/不同口令不再漏并组;
 #   _parse_paths 仍返回原值供 trust 使用, 归一化只在 _conflict_keys 内完成(不动信任口径)
+# 2026-11-27 06:58:02 小欧 - _parse_paths 只收 path/dest 两个安全层路径名: 原遍历 aliases.values() 全集,
+#   edit 的 old_string/new_string/mode 等非路径别名值也入候选, 无序 set 取首个使 extract_trust_path 返回
+#   正文内容, 进而污染授权弹窗参数、会话信任落库与冲突分组; 文件工具白名单与路径名契约保持一致
 """
 conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
 
@@ -73,8 +76,10 @@ def _parse_paths(name: str, params: Dict) -> Set[str]:
         canon = aliases.get(key, key)
         if canon not in resolved:
             resolved[canon] = value
+    # 只收安全层路径名 path/dest(与解析层路径名契约一致): 遍历 aliases.values() 全集会把
+    # edit.old_string/new_string/mode 等非路径参数值当路径候选 — 小欧-2026-11-27
     out = set()
-    for pname in set(aliases.values()):
+    for pname in ("path", "dest"):
         pval = resolved.get(pname)
         if pval and isinstance(pval, str):
             out.add(pval)

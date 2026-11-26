@@ -35,6 +35,10 @@
 # 2026-11-19 小欧 - HITL 授权从 paused/resumed MetaStep 收敛到 interact(kind=confirm): paused/resumed 归还按钮本位;
 #   ask/answered/cancelled/expired 四态都发(消除收口不对称); 授权特殊字段全在 payload — 小欧-2026-11-19
 # 2026-11-19 小欧 - 配套删 MetaStep 导入与 hitl_confirm 的 publish 参数(emit_interact 内部 publish, 与 question_gateway 同构) — 小欧-2026-11-19
+# 2026-11-27 07:06:28 小欧 - _summarize_params 的 path 直取执行链 params 原值: 原按 extract_trust_path 重算并覆盖属
+#   显示层二次加工, 提取口径问题会直接放大到弹窗; 信任落库/查询仍走 extract_trust_path, 由 _parse_paths 单点保证
+# 2026-11-27 07:13:38 小欧 - _summarize_params 单行化覆盖所有字符串值: 原仅截断值压平换行,
+#   未达140阈值的多行值仍带换行破坏"每参数一行"契约; docstring 同步订正 — 小欧-2026-11-27
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -61,27 +65,27 @@ class ConfirmSpec:
 
 
 def _summarize_params(tool_name: str, params: dict) -> dict:
-    """HITL弹窗参数摘要: 主键(path类extract_trust_path权威)优先展示 + 长值truncate_text尾部截断(阈值140) + 截断结果单行化 — 小欧-2026-09-16
-    参数摘要设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
+    """HITL弹窗参数摘要: path 原值前置 + 长值尾部截断(阈值140) + 所有字符串值单行化 — 小欧-2026-09-16
+    展示设计: 全部参数按 key=value 逐行展示, path 取原值不截断, 长值折叠防弹窗超高;
        尾部截断: 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
-    单行化: 截断结果内换行(含四周空白)压成空格, 保证每个参数值恒为一行
-       (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"契约);
-    弹窗参数原文展示(用户本人数据); 落盘出口(日志/落库)另经 redact_* 遮蔽。"""
-    from app.safety.trust import extract_trust_path  # 延迟import防环(主键权威) — 老陈-2026-09-16
+    单行化: 所有字符串值(含未达阈值的多行值)把换行(含四周空白)压成空格, 保证每个参数值恒为一行
+       (前端 pre-wrap 逐参数分行, 值内换行会显"多行+空行", 违反"每参数一行"契约);
+    落盘出口(日志/落库)另经 redact_* 遮蔽, 本函数只做展示裁剪。"""
     from app.utils.text_utils import (
         truncate_text,  # 延迟import防环(FUNCTIONS.md已登记) — 小欧-2026-09-16
     )
     _all: dict = {k: v for k, v in (params or {}).items()}
-    _path = extract_trust_path(tool_name, params)          # 复用trust.py主键权威, 不重写
+    _path = _all.get("path")                                # 执行链原值, 显示层不再按信任主键重算 — 小欧-2026-11-27
     _out: dict = {}
-    if _path:
-        _out["path"] = _path
+    if isinstance(_path, str) and _path:
+        _out["path"] = _path                                # 原值前置, 信任落库另走 extract_trust_path
     for _k, _v in _all.items():
         if _k in ("path",) or _k in _out:
-            continue                                        # path已由主键摘出, 防重复展示
-        if isinstance(_v, str) and len(_v) > 140:           # 长值→尾部截断防弹窗超高(复用公用函数, 阈值140)
-            _truncated, _f = truncate_text(_v, 140)         # text[:140]+\\n...[截断N字符] — 小欧-2026-09-16
-            _out[_k] = re.sub(r"\s*\n\s*", " ", _truncated)  # 换行(含四周空白)压空格单行化 — 小欧-2026-09-16
+            continue                                        # path已前置, 防重复展示
+        if isinstance(_v, str):                             # 所有字符串值统一单行化, 长值先截断 — 小欧-2026-11-27
+            if len(_v) > 140:                               # 长值→尾部截断防弹窗超高(阈值140)
+                _v, _f = truncate_text(_v, 140)             # 保留前 140 + 截断标记
+            _out[_k] = re.sub(r"\s*\n\s*", " ", _v)         # 换行(含四周空白)压空格, 含未达阈值的多行值
         else:
             _out[_k] = _v
     return _out
