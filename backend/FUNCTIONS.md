@@ -985,6 +985,7 @@ def my_parse_json(json_str):
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 
+| v5.54 | 2026-11-26 | **进程域常量集中与并发真 bug 修复**: client 13 个 + host 1 个超时/退避/流控常量迁入 `app/proc/constants.py`, 去下划线(域级不变量)并按相互制约关系分组标注(RECV_SLACK ≥ IDLE_JOIN / 判死 ≤ RECOVERY_BUDGET); 宿主排队后重算命令预算(修复客户端误杀宿主并连累在飞命令的真 bug); guardian 单次 ping 失败改同 tick 复检一次才判死(防慢 CreateProcess 误杀, 又不拖慢真僵死恢复); 37 项测试 + 150 命令并发压测通过 | 小欧 |
 | v5.52 | 2026-11-26 | **进程域目录归位**: 宿主与全部配套进程设施收拢到 `app/proc/`(host/client + proc_io/proc_utils/spawn_gate/win_job_object/console_mode/workers), 原 `app/proc_host/` 与 `app/utils/` 同名模块删除; 常量单点改 `app/proc/constants.py`(PROTO/DEFAULT_TIMEOUT), 启动入口改 `-m app.proc.host`, `.spec` hiddenimports 与全仓 42 处 import 同步; 第一章标题改为"全局层与进程域", 新增 1.26 控制台隔离/1.27 宿主进程; 纯路径迁移, 逻辑零变化, 36 项测试 + 150 命令并发压测通过 | 小欧 |
 | v5.51 | 2026-11-26 | **三堂会审整改（小欧）**: 按禁止backward铁规删除 `OMNI_PROC_HOST=0` 本地回退开关与 `Disabled` 降级分支，§1.24 移除 `Disabled` 登记，PS 分支收敛为宿主单路径（宿主不可用按 error 返回）；`_client_with_deadline` 加放弃标记，消除连接超时后辅助线程连上无人接管的悬挂窗口 | 小欧 |
 | v5.50 | 2026-11-26 | **新增 §1.24 进程宿主客户端 / §1.25 Job 句柄操作**（[65] E1）: 新建独立包 `app/proc_host/`（`__init__.py` 只放 `PROTO`、`host.py` 宿主进程、`client.py` 主进程薄代理），把 shell 的 `CreateProcessW` 外置到可抛弃宿主进程（一命令一连接、独立 Job 杀整树、连接/接收有界、宿主异常自动重建）；`win_job_object.py` 增 `create_kill_on_close_job`/`assign_to_job`/`terminate_job`/`close_job` 并改 logger 惰性导入（导入零副作用）；`proc_io.py` 同改惰性导入；`execute_shell_command.py` PS7/PS5 分支接入 `client.run()`（`OMNI_PROC_HOST=0` 为验证期本地回退）；`run_server.py` 增 `--proc-host` 入口与启动期 `ensure_host()`；`.spec` 补 hiddenimports | 小欧 |
