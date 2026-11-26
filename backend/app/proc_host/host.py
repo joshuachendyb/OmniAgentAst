@@ -68,7 +68,7 @@ def _serve_forever() -> None:
 
 def _handle(conn, slots) -> None:
     """一连接一命令。"""
-    # 2026-11-26 - 独立 Job: 禁用 SILENT_BREAKAWAY_OK, 否则孙进程逃离 Job, kill_tree 失效
+    # 2026-11-26 - 小欧 - 独立 Job: 禁用 SILENT_BREAKAWAY_OK, 否则孙进程逃离 Job, kill_tree 失效
     #   (实测: SandboxJob 配置下 cmd/c ping 的 ping 残留; 仅 KILL_ON_JOB_CLOSE 时被杀净)
     from app.utils.win_job_object import (
         assign_to_job,
@@ -81,7 +81,7 @@ def _handle(conn, slots) -> None:
     proc = None
     try:
         req = conn.recv()
-        # 阶段二-⑤: 健康探测帧, 直接回 pong, 不占并发槽位(监护人以 ping/pong 判僵死)
+        # 健康探测帧: 直接回 pong, 不占并发槽位(监护人以 ping/pong 判僵死)
         if isinstance(req, dict) and req.get("cmd") == "ping":
             _send(conn, {"type": "pong"}, send_lock)
             return
@@ -232,7 +232,7 @@ def _watch_parent(parent_pid: int) -> None:
     """生命周期看门狗: 主进程消失即自杀, 不留孤儿。
 
     为什么不用"空闲 10 分钟自退": 宿主一退出, 下一条命令就得在主进程请求路径上重新 Popen 宿主,
-    等于把 CreateProcessW 又搬回主进程(违背阶段零前提)。所以只在"父进程真的没了"时退出。
+    等于把 CreateProcessW 又搬回主进程。所以只在"父进程真的没了"时退出。
     为什么不用 Job 继承兜底: run_server.py 只在 is_frozen 时给主进程挂 KILL_ON_JOB_CLOSE,
     源码态(dev/E2E)没有, 靠 Job 继承在 dev 下不成立。
     """

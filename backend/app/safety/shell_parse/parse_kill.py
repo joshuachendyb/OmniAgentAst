@@ -9,7 +9,7 @@
   同轮修复九处误拦/漏拦: -Id/-Name 被当进程名的假名 bug、helpish 全文门改段内生效、
   CIM -Query 引号隔断、注释与 echo 提及误拦、processid=/Filter 显式 PID 零提取、
   变量目标一律硬拦、iex 内嵌引号杀漏拦。
-2026-11-15 - 小欧 - 严格测试整改(73 案矩阵第二轮): ①裸 wmic process list/get 是查询, 从动词表
+2026-11-15 - 小欧 - 严格测试整改(第二轮): ①裸 wmic process list/get 是查询, 从动词表
   移除(误拦运维); ②引号内 kill 无 iex 不触发(Select-String -Pattern "kill" 误拦); ③动词藏引号/
   拼接/[char] 混淆时以归一文参与动词识别, 目标可见按 literal 抽取(此前整体漏网); ④上游段目标
   无条件并入(管道+开关双杀漏拦); ⑤服务杀动词一律 bounded 转确认(服务名非进程名, 静态不可证实);
@@ -19,18 +19,16 @@
   除 `Select-String -Pattern kill` 误拦(参数值不是命令); ②_strip_quotes 转正 strip_quotes(公开,
   解跨层私有导入); ③动词表按"PowerShell/服务类"与"bash 裸动词"两组分治。
 2026-11-26 - 小欧 - foreach 有界性判定(根治误拦/漏拦): 裸 foreach 从 _UNBOUNDED_RES 移出,
-  改由 _classify 的 foreach_bounded 参数控制。新增 _extract_foreach_source(括号平衡扫迭代源)、
+  改由 _classify 的 foreach_bounded 参数控制。新增 _extract_foreach(括号平衡扫迭代源)、
   _build_array_vars(整条命令抽 `$var=@(数字列表)`)、_source_bounded(判迭代源有界性)。
   【口径】显式数字数组/数字范围/纯数字数组变量 → 目标静态可枚举(并入 pids, 按 literal 核对保护名单);
   (Get-Process)/Get-CimInstance/wmic/$_/非数字数组变量 → 无界仍硬拦。
   与词法层块感知配合: 块内 `;`/换行不再把 foreach 头与 Kill 拆开, 判定不随排版翻转。
 
-
 2026-11-26 - 小欧 - 根治 foreach 有界判定的连带漏洞: ①迭代源改用原始段文本提取(引号字符串数组
   不再被涂空误判纯数字有界); ②块体不引用迭代变量时不再借"源有界"豁免——块体内独立全量枚举源
   (Get-Process 无筛选)仍判无界, 堵住"有界源 + 块内全杀"静默放行; ③数组赋值表支持裸数字列表
   (`$ids=1,2`), 与 `@(1,2)` 同等可枚举。
-
 
 2026-11-26 - 小欧 - 审计补漏(逐壳 ps/bash/cmd 全矩阵实测): ①PowerShell 自动变量 $PID(当前进程PID=自己人)
   纳入无界硬拦; ②`$var=Get-Process -Id <数字>; $var.Kill()` / `-InputObject $var` 对象变量解析为
@@ -42,8 +40,6 @@
   落 BOUNDED 兜底放行)。新增 _build_scalar_vars(标量赋值表: $v=$PID/数字/别名, 链式
   传递, 键小写)与 _scalar_refs(-Id $var 引用还原), 杀段与上游段均扫: 自身变量硬拦、
   字面 PID 并入 literal 交保护盾; 未定义变量维持 BOUNDED 兜底不误伤。
-
-
 
 分层: 本文件只解析杀动作并给目标分类; 不判保护名单、不产 SafetyResult(判定在 shell_process_guard)。
 """

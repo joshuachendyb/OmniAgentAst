@@ -12,7 +12,7 @@
 #   (Start-Process/Start-Job/&) 脱离 Job, 预检 cleanup 杀树不误杀。SILENT 与 BREAKAWAY 互斥(Windows 限制),
 #   沙箱默认启用 SILENT(自动脱离覆盖任意 shell 后台), BREAKAWAY_OK 保留为显式控制基础设施。
 #   新增 QueryInformationJobObject 声明(验证 LimitFlags 读回生效)。
-# 2026-11-26 - 小欧 - 进程宿主([65] E1)复用: 新增 create_kill_on_close_job/assign_to_job/terminate_job/close_job
+# 2026-11-26 - 小欧 - 进程宿主复用: 新增 create_kill_on_close_job/assign_to_job/terminate_job/close_job
 #   四个通用句柄操作(宿主用独立 Job 收编每条命令的子进程树, 超时/宿主退出整树杀净); logger 改函数内惰性导入,
 #   使本模块 import 零副作用(轻量宿主进程导入不进 app.logger 控制台线程)。
 import ctypes

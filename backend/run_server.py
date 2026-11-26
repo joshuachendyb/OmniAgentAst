@@ -70,7 +70,7 @@
 #     开浏览器成败全静默无法排障; 现成功/失败/异常均写 boot 日志, 并以 open() 返回值判成败。 — 小欧-2026-11-16
 #   2026-11-18 商量 - 自动开浏览器仅打包态执行: 第⑤步 if not args.no_browser 改为 if is_frozen and
 #     not args.no_browser, 开发环境(源码模式)不再自动打开浏览器, 避免调试时频繁弹窗干扰。 — 商量-2026-11-18
-#   2026-11-26 小欧 - 进程宿主([65] E1): main() 增 --proc-host 分支(打包态宿主以 `exe --proc-host` 拉起,
+#   2026-11-26 小欧 - 进程宿主: main() 增 --proc-host 分支(打包态宿主以 `exe --proc-host` 拉起,
 #     必须在 argparse/业务初始化前判); ③ 脱离控制台与配置就绪后启动期 ensure_host() 预拉起宿主,
 #     请求路径不再 CreateProcessW; 拉起失败仅告警不阻断启动(工具调用侧 fail-closed)。
 # ============================================================================
@@ -460,7 +460,7 @@ def main() -> None:
         from app.utils.win_job_object import assign_current_to_kill_on_close_job
         _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
 
-    # 2026-11-26 小欧 - 阶段零([65] E1): 启动期预拉起进程宿主, 此后请求路径不再 CreateProcessW。
+    # 2026-11-26 小欧 - 进程宿主: 启动期预拉起进程宿主, 此后请求路径不再 CreateProcessW。
     #   置于 ③ 脱离控制台、资源/配置就绪之后; 失败仅告警不阻断启动(工具调用侧 fail-closed, 自动重建)。
     try:
         from app.proc_host.client import ensure_host

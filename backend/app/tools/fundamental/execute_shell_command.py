@@ -284,8 +284,10 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
 约定3: 计时仅在 shell() 主函数
 """
 # 小欧 - 2026-07-15: 新增success_codes参数+退出码判断改为`==0 or in`追加式,0永远成功
-# 2026-11-26 - 小欧 - 阶段一([65] E1): PS7/PS5 分支改走进程宿主 app.proc_host.client.run(),
-#   CreateProcessW 移出主进程; 一命令一连接 + 独立 Job 杀整树; OMNI_PROC_HOST=0 为验证期本地回退开关。
+# 2026-11-26 - 小欧 - 进程宿主接入: PS7/PS5 分支改走 app.proc_host.client.run(),
+#   CreateProcessW 移出主进程; 一命令一连接 + 独立 Job 杀整树。
+# 2026-11-26 - 小欧 - 三堂会审整改: 删除 OMNI_PROC_HOST 回退分支与 Disabled 捕获, PS 分支收敛为
+#   宿主单路径(宿主不可用按 error 返回), 消除新旧实现并存的兼容层。
 import locale
 import os
 import re
@@ -302,7 +304,7 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
-from app.proc_host import client  # 2026-11-26 小欧: 进程宿主客户端(阶段一 PS 分支外置, 见 [65] E1)
+from app.proc_host import client  # 2026-11-26 小欧: 进程宿主客户端(PS 分支外置)
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.context import (  # 2026-11-22 小欧: 预检纯静态结果消费
@@ -1318,29 +1320,12 @@ def shell(
                     timeout=timeout, cwd=cwd or "", hint="请确认 PowerShell 已安装并在 PATH 中", cmd_short=cmd_short,
                     shell_type_requested=_requested_shell_type, shell_type_switch=_shell_type_switch)
                 return build_error(data={}, llm_data=llm)
-            # 2026-11-26 小欧 - 阶段一([65] E1): PS 分支改走进程宿主, CreateProcessW 移出主进程;
-            #   一命令一连接 + 独立 Job 杀整树。OMNI_PROC_HOST=0 为验证期本地回退开关(阶段三验收后删)。
+            # 2026-11-26 小欧 - 进程宿主接入: PS 分支改走进程宿主, CreateProcessW 移出主进程;
+            #   一命令一连接 + 独立 Job 杀整树; 宿主不可用按 error 返回, 不保留本地回退路径。
             try:
                 stdout_b, stderr_b, timed_out, truncated, returncode = client.run(
                     [pwsh_exe, "-NoProfile", "-Command", processed_command],
                     cwd=cwd, env=_sanitize_env(), timeout=max(1, int(_remaining)))
-            except client.Disabled:
-                proc = subprocess.Popen(
-                    [pwsh_exe, "-NoProfile", "-Command", processed_command],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    cwd=cwd, env=_sanitize_env(),
-                    **_iso,
-                )
-                stdout_b, stderr_b, timed_out, truncated = drain_until_exit(proc, max(1, int(_remaining)))
-                if truncated:
-                    kill_process_tree(proc)  # 2026-11-06 小欧: 根已退出但孙进程持管道, 杀孙防僵尸
-                    stderr_b += TRUNCATED_NOTE
-                if timed_out:
-                    logger.warning(f"[卡死C10] PS命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
-                    _tail_out, _tail_err = _kill_and_read_output(proc)
-                    stdout_b += _tail_out
-                    stderr_b += _tail_err
-                returncode = proc.returncode if proc.returncode is not None else -1
             except client.HostError as e:
                 # 宿主不可用: 返回 error 结构, 不静默; 下一条命令由客户端自动重建宿主
                 d = int((_time_mod.perf_counter() - t0) * 1000)

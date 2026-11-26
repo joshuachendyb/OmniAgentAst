@@ -10,7 +10,7 @@
 #   继续用 CREATE_NO_WINDOW 防打包版闪黑窗, 无需退回 subprocess.run 的 _readerthread 建线程路径
 # 2026-11-16 - 小欧 - proc_spawn.py 并入: isolation_kwargs 迁入本模块(proc_io 本是其调用方, 单函数独立模块
 #   违反 KISS); 消掉 run() 内函数级 import 绕路; 5 处调用方统一 from app.utils.proc_io import isolation_kwargs
-# 2026-11-26 - 小欧 - 进程宿主([65] E1)复用: logger 改截断告警处惰性导入, 本模块 import 零副作用
+# 2026-11-26 - 小欧 - 进程宿主复用: logger 改截断告警处惰性导入, 本模块 import 零副作用
 #   (宿主/轻量进程导入不拉起 app.logger 控制台线程、不读配置)。逻辑零变化。
 
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04

@@ -3,28 +3,34 @@
 # 2026-11-26 - 小欧 - 新建: 进程宿主客户端(自愈重建, run() 与 drain 语义对齐)
 # 2026-11-26 - 小欧 - 修正: 补启动期 ensure_host(请求期零 Popen)/连接与接收真实截止时间/
 #                     每实例管道名与 authkey/协议版本握手/单飞重建
-# 2026-11-26 - 小欧 - 阶段零/一整改([66]): 宿主 Popen 显式 cwd/PYTHONPATH(修复非 backend 目录
+# 2026-11-26 - 小欧 - 整改: 宿主 Popen 显式 cwd/PYTHONPATH(修复非 backend 目录
 #                     启动 ModuleNotFoundError); 注入 OMNI_PROC_HOST_CONCURRENCY(外部已设优先,
 #                     否则 max(12, shell_max_processes), 宿主不得比主进程闸门更紧); 连接失败/超时
 #                     且期间无人替换宿主时杀旧宿主重建(卡死宿主旧管道不销毁会让辅助线程永久阻塞)
-# 2026-11-26 - 小欧 - 阶段H底座加固([65] 6.4): ①_spawn_host 合并 isolation_kwargs(宿主不继承控制台,
+# 2026-11-26 - 小欧 - 底座加固: ①_spawn_host 合并 isolation_kwargs(宿主不继承控制台,
 #                     消除 CreateProcessW 卡 conhost 诱因); ②熔断/退避(0.5→30s 封顶, 连败 5 次开、
 #                     冷却 30s、半开探测、同因日志 60s 去重); ③请求路径 _connect 零创建(只连 + 有界
 #                     等待监护人重建, 熔断期间快速失败); ④后台监护人 daemon 线程每 5s ping/pong
-#                     判死并在退避内重建; ⑥run 输出总量上限(OMNI_PROC_HOST_MAX_OUTPUT, 默认 64MB,
-#                     超限置 truncated + 追加 TRUNCATED_NOTE, 防 OOM)。⑤宿主 ping/pong 见 host.py。
+#                     判死并在退避内重建; ⑤宿主 ping/pong 见 host.py; ⑥run 输出总量上限
+#                     (OMNI_PROC_HOST_MAX_OUTPUT, 默认 64MB, 超限置 truncated + 追加
+#                     TRUNCATED_NOTE, 防 OOM)。
+# 2026-11-26 - 小欧 - 三堂会审整改: _client_with_deadline 连接超时后辅助线程仍会继续连接,
+#                     连上的连接无人接管且依赖 GC 兜底; 加放弃标记, 辅助线程连上时若主线程已
+#                     超时即自行关闭, 消除悬挂窗口。
+# 2026-11-26 - 小欧 - 三堂会审整改: 删除 OMNI_PROC_HOST 本地回退开关与 Disabled 降级分支,
+#                     PS 分支收敛为宿主单路径, 杜绝新旧实现并存的兼容层。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
 对外两个入口:
   ensure_host()  启动期调用, 拉起宿主并等就绪 + 启动后台监护人; 请求路径不再创建进程。
   run()          返回五元组 (stdout_b, stderr_b, timed_out, truncated, rc)。
 
-生命周期模型(阶段二):
+生命周期模型:
   - 后台监护人(daemon)是运行期唯一的"创建/重建"发起者: 每 5s ping, 判死即按熔断退避重建。
   - 请求路径零创建: _connect 只连接; 宿主不可用时向监护人发唤醒并在有界预算内等其重建,
     仍不可用则快速 HostError。熔断打开期间不等待, 立即失败。
   - 自愈: 宿主被外部杀/崩溃 → 监护人在退避内重建; 在飞命令显式 HostError, 后续命令恢复。
-降级: OMNI_PROC_HOST=0 时抛 Disabled(仅验证期存在的应急开关)。
+宿主不可用时由监护人自愈重建, 在飞命令显式 HostError。
 """
 import os
 import subprocess
@@ -66,16 +72,8 @@ _last_log_key: Optional[str] = None
 _last_log_ts = 0.0
 
 
-class Disabled(RuntimeError):
-    """宿主被配置关闭; 调用方按降级策略处理(仅验证期)。"""
-
-
 class HostError(RuntimeError):
     """宿主不可用(启动失败/中途死亡/无响应)。"""
-
-
-def _enabled() -> bool:
-    return os.environ.get("OMNI_PROC_HOST", "1") != "0"
 
 
 def _identity() -> Tuple[str, bytes]:
@@ -106,7 +104,7 @@ def _default_log_path() -> str:
 def _host_concurrency() -> int:
     """宿主并发上限: 外部已设优先; 否则 max(12, 主进程 shell_max_processes)。
 
-    宿主不得比主进程 _SHELL_PROC_SEM 更紧, 否则配置调大后宿主先限流、两级排队口径冲突([66] 问题四)。
+    宿主不得比主进程 _SHELL_PROC_SEM 更紧, 否则配置调大后宿主先限流、两级排队口径冲突。
     """
     env_val = os.environ.get("OMNI_PROC_HOST_CONCURRENCY")
     if env_val:
@@ -188,22 +186,29 @@ def _client_with_deadline(deadline: float):
     """在截止时间内完成连接。
 
     AF_PIPE 的 Client() 内部是 WaitNamedPipe(1s)/20s 上限的轮询, 宿主活着但不 accept 时
-    仍会阻塞远超命令预算, 等于把"宿主卡死"传导成"主进程线程长阻塞", 与 E1 目标相反。
-    故把连接放进辅助线程, 主线程只做有界 join。
+    仍会阻塞远超命令预算, 等于把"宿主卡死"传导成"主进程线程长阻塞", 与设计目标相反。
+    故把连接放进辅助线程, 主线程只做有界 join; 超时后辅助线程即便连上也不得留下悬挂连接。
     """
     box = {}
+    abandoned = threading.Event()   # 主线程已放弃: 辅助线程连上后须自行关闭
     name, key = _identity()
 
     def _do():
         try:
-            box["conn"] = Client(name, authkey=key)
+            conn = Client(name, authkey=key)
         except Exception as e:      # AuthenticationError/OSError/EOFError
             box["err"] = e
+        else:
+            if abandoned.is_set():
+                conn.close()        # 主线程已超时放弃, 不留悬挂连接等 GC
+            else:
+                box["conn"] = conn
 
     t = threading.Thread(target=_do, daemon=True)
     t.start()
     t.join(max(0.0, deadline - time.monotonic()))
     if t.is_alive():
+        abandoned.set()
         raise HostError("连接宿主超时(宿主可能卡死)")
     if "err" in box:
         raise box["err"]
@@ -245,11 +250,11 @@ def _spawn_host() -> None:
     env["OMNI_PROC_HOST_LOG"] = _default_log_path()
     env["OMNI_PROC_HOST_CONCURRENCY"] = str(_host_concurrency())
     if not getattr(sys, "frozen", False):
-        # -m 依赖 sys.path 含 backend 根: 显式注入 cwd/PYTHONPATH, 不再依赖调用方 cwd([66] 问题五)
+        # -m 依赖 sys.path 含 backend 根: 显式注入 cwd/PYTHONPATH, 不再依赖调用方 cwd
         prev = env.get("PYTHONPATH")
         env["PYTHONPATH"] = root if not prev else root + os.pathsep + prev
     # ★ 不继承父控制台: CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES。
-    #   宿主自身再起命令时也走同一 isolation_kwargs, 从源头消除 conhost 卡死诱因(阶段二-①)。
+    #   宿主自身再起命令时也走同一 isolation_kwargs, 从源头消除 conhost 卡死诱因。
     try:
         from app.utils.proc_io import isolation_kwargs
         spawn_kwargs = isolation_kwargs()
@@ -345,8 +350,6 @@ def _guardian_loop() -> None:
         try:
             _wake_event.wait(_PING_INTERVAL)
             _wake_event.clear()
-            if not _enabled():
-                continue
             _guardian_tick()
         except Exception as e:
             _log_event("guardian-error", f"监护人异常: {type(e).__name__}: {e}")
@@ -370,8 +373,6 @@ def ensure_host() -> None:
     失败按 0.5 / 1 / 2s 退避重试; 仍失败则记录熔断状态并抛 HostError, 由已启动的监护人
     在后台继续按退避恢复(调用方仅告警, 不阻断启动)。
     """
-    if not _enabled():
-        return
     _ensure_guardian()
     last: Optional[Exception] = None
     for attempt in range(len(_START_RETRY_DELAYS) + 1):
@@ -431,8 +432,6 @@ def run(argv, cwd=None, env=None, timeout=None):
     置 truncated=True 并追加 TRUNCATED_NOTE(与 proc_io.drain_until_exit 语义一致)。
     宿主异常时抛 HostError(继承 RuntimeError), 调用方按 error 结构返回, 不静默。
     """
-    if not _enabled():
-        raise Disabled("OMNI_PROC_HOST=0")
     _ensure_guardian()          # 兜底: 未经启动期 ensure_host 也能由监护人自愈(不在此创建进程)
     conn = _connect()
     out, err = [], []

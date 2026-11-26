@@ -97,8 +97,8 @@
 #   (默认 10 天)删超期档; 原日志只按大小轮转、prompt-logs 只增不减 — 小欧-2026-11-21
 # 2026-11-25 商量 - 持久调度器(3.5): startup 注入 timer 触发回调(resume_session_with_notice, tools 层禁 import services 故在此注入)
 #   + 调 rebuild_timers_from_db 重建 timers 表 active 定时器(未到期重建/过期补触发), 失败降级不阻断启动
-# 2026-11-26 小欧 - 进程宿主([65] E1): startup 预拉起宿主(ensure_host), 与打包链 run_server.py 同口径,
-#   开发 uvicorn --reload/watchfiles 下不再由首条 PS 命令在请求路径惰性创建宿主; 失败仅告警 — 小欧-2026-11-26
+# 2026-11-26 小欧 - 进程宿主: startup 预拉起宿主(ensure_host), 与打包链 run_server.py 同口径,
+#   开发 uvicorn --reload/watchfiles 下不再由首条 PS 命令在请求路径惰性创建宿主; 失败仅告警
 import asyncio
 import sys
 import threading
@@ -621,7 +621,7 @@ async def startup_event():
     setup_uvicorn_loggers()
     # 2026-11-08 小欧: 老 capabilities 一次性迁移(先于任何配置读取; 幂等, 无残留零改动)
     migrate_legacy_capabilities()
-    # 2026-11-26 小欧 - 进程宿主([65] E1): 启动期预拉起宿主, 与 run_server.py(打包链)同口径。
+    # 2026-11-26 小欧 - 进程宿主: 启动期预拉起宿主, 与 run_server.py(打包链)同口径。
     #   开发态 uvicorn --reload / watchfiles 均跑本 lifespan, 故不再等首条 PS 命令在请求路径惰性拉起;
     #   失败仅告警不阻断启动(工具侧 fail-closed, 下一条命令自动重建)。
     _t_host = time.time()
