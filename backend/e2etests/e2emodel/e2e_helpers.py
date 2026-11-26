@@ -101,8 +101,8 @@
 #   后端给 12 个 router 挂了统一 token 鉴权(/health 豁免)后, 本文件所有 HTTP 调用(注册回归用例的
 #   同步客户端、GET 类校验、SSE 流)不带口令会**集体 401**。按 9.6-3"统一在 helper 注入、不逐个用例改"
 #   的要求, 在此单点收口: 新增 auth_headers() 供同步客户端与 SSE 头部共用, 口令取环境变量
-#   OMNIAGENT_ACCESS_TOKEN(与后端同一份来源, 不在用例里硬编码, 免口令一换全库用例失效);
-#   后端显式关闭鉴权(OMNIAGENT_REQUIRE_AUTH=0)时返回空 dict, 用例代码零分支(KISS-DIRECT)。
+#   OMNI_ACCESS_TOKEN(与后端同一份来源, 不在用例里硬编码, 免口令一换全库用例失效);
+#   后端显式关闭鉴权(OMNI_REQUIRE_AUTH=0)时返回空 dict, 用例代码零分支(KISS-DIRECT)。
 #   连带: SSE 流式请求头与普通 GET 校验头统一走 auth_headers(), 不再两处各拼一遍(DRY) — 小欧-2026-09-26
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14.4 必改: send_chat 增可选形参 link_enabled 并入 POST /chat/stream
 #   payload, 以覆盖"会话 link 开关值随消息携带"这条新链路(默认 None=不携带, 后端沿用会话现值,
@@ -291,14 +291,14 @@ READ_TOOLS = {"read", "readmedia"}
 #   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
 #   **全部 76 个后端 E2E 会 100% 401 失败**。按 9.6-3 的要求"统一在 HTTP 调用封装处注入，
 #   不逐个用例改" —— 故在此提供 AUTH_HEADERS 单一来源，各用例的 httpx 调用带上它即可。
-#   token 来源优先级: 环境变量 OMNIAGENT_ACCESS_TOKEN（与后端同一份，保证前后端一致）
+#   token 来源优先级: 环境变量 OMNI_ACCESS_TOKEN（与后端同一份，保证前后端一致）
 #     → 回落读后端配置文件 security.access_token（自动化场景无需额外导出环境变量）。
-#   后端未启用鉴权（OMNIAGENT_REQUIRE_AUTH=0）时，本 header 存在也无害（后端不校验）。
+#   后端未启用鉴权（OMNI_REQUIRE_AUTH=0）时，本 header 存在也无害（后端不校验）。
 
 
 def _resolve_e2e_token() -> str:
     """取 E2E 用的访问口令：环境变量优先，回落后端配置文件 security.access_token。"""
-    env_tok = (_os.environ.get("OMNIAGENT_ACCESS_TOKEN") or "").strip()
+    env_tok = (_os.environ.get("OMNI_ACCESS_TOKEN") or "").strip()
     if env_tok:
         return env_tok
     try:
@@ -323,11 +323,11 @@ if _E2E_TOKEN:
 #   原此处写 `_sys.stderr` —— 但 `_sys` 只是本文件两函数内的局部别名，模块级不存在。
 #   本块在模块顶层执行，import 本 helper 的 7 个 test_p9_*.py 在收集期全部 NameError 中断。
 #   改用模块顶层已有的 `import sys`（:179）。一字之差，教训记下。
-if not _E2E_TOKEN and (_os.environ.get("OMNIAGENT_REQUIRE_AUTH") or "1") not in ("0", "false"):
+if not _E2E_TOKEN and (_os.environ.get("OMNI_REQUIRE_AUTH") or "1") not in ("0", "false"):
     sys.stderr.write(
         "[E2E][第九章] 未取到访问口令：E2E 请求将不带 Authorization，"
         "若后端已启用 token 鉴权则全部用例会 401。"
-        "请设置环境变量 OMNIAGENT_ACCESS_TOKEN 或在 config.yaml 配 security.access_token。\n"
+        "请设置环境变量 OMNI_ACCESS_TOKEN 或在 config.yaml 配 security.access_token。\n"
     )
 
 

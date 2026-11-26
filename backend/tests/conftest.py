@@ -25,10 +25,10 @@ tests/conftest.py — 全局测试夹具
   新建的 client 自动带口令；已建的 client 也会补上（幂等）。测试代码零改动。
 
 口令来源（与 e2e_helpers.AUTH_HEADERS 同一口径）：
-  ① 环境变量 OMNIAGENT_ACCESS_TOKEN 优先
+  ① 环境变量 OMNI_ACCESS_TOKEN 优先
   ② 回落读 ~/.omniagent/config.yaml 的 security.access_token
   ③ 都没有 → 用固定测试口令（后端未配置口令时本就会 fail-closed 拒绝，
-     故此时设 OMNIAGENT_REQUIRE_AUTH=0 由 fixture 兜底，见下方 _autouse_force_off_when_unset）
+     故此时设 OMNI_REQUIRE_AUTH=0 由 fixture 兜底，见下方 _autouse_force_off_when_unset）
 """
 import os
 import sqlite3
@@ -138,7 +138,7 @@ def chat_db(tmp_path, monkeypatch):
 
 
 def _resolve_token() -> str:
-    env = (os.environ.get("OMNIAGENT_ACCESS_TOKEN") or "").strip()
+    env = (os.environ.get("OMNI_ACCESS_TOKEN") or "").strip()
     if env:
         return env
     try:
@@ -172,7 +172,7 @@ def _inject_auth_token_into_testclient(request):
     # 此时由 _autouse_force_off_when_unset 关闭鉴权（仅测试进程内）
     from app.api.v1.deps import _resolve_configured_token
     if not _resolve_configured_token():
-        os.environ.setdefault("OMNIAGENT_REQUIRE_AUTH", "0")
+        os.environ.setdefault("OMNI_REQUIRE_AUTH", "0")
         yield
         return
 
@@ -203,7 +203,7 @@ def _inject_auth_token_into_testclient(request):
 #     ② 本轮我中途打断测试 → 真配置停在 sensenova/sensenova-6.8-flash-lite。
 #   根因: 靠"事后还原"兜底, 而还原不是可靠机制(进程可随时被杀)。
 #   根治(北京老陈 2026-09-26 定): **永不碰真配置** —— 靠 app/config.py:276 get_config_path()
-#   的 OMNIAGENT_CONFIG_PATH 分支(唯一入口, DRY 单源)把整个测试进程的读写重定向到临时副本。
+#   的 OMNI_CONFIG_PATH 分支(唯一入口, DRY 单源)把整个测试进程的读写重定向到临时副本。
 #   真配置退化为"只读模板", 任何中断/超时都不可能污染它(可证: 写操作根本够不到真文件)。
 import shutil
 import tempfile
@@ -227,12 +227,12 @@ def isolated_config_dir():
 
     ── 怎么做到(为什么不 monkeypatch 业务函数) ──────────────────────────────
     系统本来就提供了唯一覆盖入口 app/config.py:276 get_config_path():
-        env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
+        env_path = os.getenv('OMNI_CONFIG_PATH')
         if env_path: return str(Path(env_path))          # 设了就用它
         return str(_get_code_root() / "config" / filename)
     全项目所有配置读写(read_yaml_config / write_yaml_config / update_provider_config /
     settings_service / model_service / resolver …)都经过这一个函数, 因此:
-        只要把 OMNIAGENT_CONFIG_PATH 指到临时副本 → 全链自动改道, 一行业务代码不用动。
+        只要把 OMNI_CONFIG_PATH 指到临时副本 → 全链自动改道, 一行业务代码不用动。
     这符合 10 大规范: 复用既有单一权威入口(DRY/复用优先), 而非新造一套并行机制。
 
     ── 三个易错点(改动本夹具时务必保留) ────────────────────────────────────
@@ -257,15 +257,15 @@ def isolated_config_dir():
         )
 
     # ② 改道: 此后全进程配置读写一律落临时副本
-    prev_env = os.environ.get("OMNIAGENT_CONFIG_PATH")
-    os.environ["OMNIAGENT_CONFIG_PATH"] = str(tmp_path)
+    prev_env = os.environ.get("OMNI_CONFIG_PATH")
+    os.environ["OMNI_CONFIG_PATH"] = str(tmp_path)
     # ②-2 数据目录同步改道(小欧 2026-09-30 修订): 配置隔离只管住了 config.yaml, 管不到 SQLite ——
     #   app/db/database.py 原在 __init__ 硬编码 Path.home()/".omniagent", 致任何裸用 db.get_conn() 的
     #   测试直写真库(实测污染真库: 空会话/hello/v2 垃圾会话)。现 database.resolve_db_dir() 认
-    #   OMNIAGENT_DATA_DIR 且在 get_conn 内惰性解析, 故此处设 env 即让测试"够不到"真库 ——
+    #   OMNI_DATA_DIR 且在 get_conn 内惰性解析, 故此处设 env 即让测试"够不到"真库 ——
     #   无需逐个测试 patch, 也不会漏掉将来新增的测试(AGENTS.md: 根治靠"够不到"而非"事后还原")。
-    prev_data_dir = os.environ.get("OMNIAGENT_DATA_DIR")
-    os.environ["OMNIAGENT_DATA_DIR"] = str(tmp_dir / "data")
+    prev_data_dir = os.environ.get("OMNI_DATA_DIR")
+    os.environ["OMNI_DATA_DIR"] = str(tmp_dir / "data")
     # ③ 清单例强制按新路径重建(见易错点②)
     _app_config._config_instance = None
     try:
@@ -273,13 +273,13 @@ def isolated_config_dir():
     finally:
         # 还原环境变量与单例, 删除临时目录; 真配置自始至终未被写入, 无需也无法"还原"
         if prev_env is None:
-            os.environ.pop("OMNIAGENT_CONFIG_PATH", None)
+            os.environ.pop("OMNI_CONFIG_PATH", None)
         else:
-            os.environ["OMNIAGENT_CONFIG_PATH"] = prev_env
+            os.environ["OMNI_CONFIG_PATH"] = prev_env
         if prev_data_dir is None:
-            os.environ.pop("OMNIAGENT_DATA_DIR", None)
+            os.environ.pop("OMNI_DATA_DIR", None)
         else:
-            os.environ["OMNIAGENT_DATA_DIR"] = prev_data_dir
+            os.environ["OMNI_DATA_DIR"] = prev_data_dir
         _app_config._config_instance = None
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
