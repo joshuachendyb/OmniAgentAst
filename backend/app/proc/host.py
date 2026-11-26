@@ -6,6 +6,8 @@
 # 2026-11-26 - 小欧 - 通用接入: 超时上限收口到 app.proc_host.DEFAULT_TIMEOUT(与客户端同源);
 #                     Popen 失败回传 kind(not_found), 供主进程还原 FileNotFoundError 语义。
 # 2026-11-26 - 小欧 - 目录归位: 由 app/proc_host 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
+# 2026-11-26 - 小欧 - 排队预算: 槽位等待耗时从命令 timeout 中扣除(对齐现网 _remaining), 防
+#   "排队+完整 timeout"超过客户端截止而误杀宿主、连累全场在飞命令; 长排队告警留痕。
 """proc_host — 通用进程宿主进程
 
 【为什么独立进程】CreateProcessW 卡在控制台 IOCTL 时不释放 GIL, 同解释器内任何线程
@@ -30,12 +32,11 @@ import threading
 import time
 from multiprocessing.connection import Listener
 
-from app.proc.constants import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(域常量)
+from app.proc.constants import DEFAULT_TIMEOUT, IDLE_JOIN, PROTO  # 协议/预算唯一真源(域常量)
 
 PIPE_NAME = os.environ["OMNI_PROC_HOST_PIPE"]                 # 形如 \\.\pipe\omni-proc-host-<uuid4hex>
 AUTHKEY = bytes.fromhex(os.environ["OMNI_PROC_HOST_KEY"])     # 32 字节随机数
 CONCURRENCY = int(os.environ.get("OMNI_PROC_HOST_CONCURRENCY", "12"))
-_IDLE_JOIN = 3.0        # pump 线程收尾等待(秒): 与 proc_io.IDLE_AFTER_EXIT(2.5) 同量级, 超时即判 truncated
 _LOG_PATH = os.environ.get("OMNI_PROC_HOST_LOG") or os.path.join("logs", "proc_host.log")
 try:
     os.makedirs(os.path.dirname(os.path.abspath(_LOG_PATH)), exist_ok=True)
@@ -97,12 +98,24 @@ def _handle(conn, slots) -> None:
             _send(conn, {"type": "error", "message": "argv 必须是 list/tuple"}, send_lock)
             return
         timeout = req.get("timeout")
+        # 2026-11-26 - 小欧 - 排队耗时计入命令预算: 现网 shell 在 acquire 后重算 _remaining,
+        #   宿主若用原始 timeout 做 wait, "排队+完整 timeout"会超过客户端 timeout+5 截止,
+        #   触发客户端误杀宿主并连累其他会话的在飞命令(真实 case 已复现)。
+        t_req = time.monotonic()
         # ★ 排队等待槽位(不是立即拒绝): 与现网 _SHELL_PROC_SEM.acquire(timeout=_remaining) 同语义,
         #   立即拒绝会让"并发 20 条命令"从'排队后全部成功'退化为'一半直接报错'。
         if not slots.acquire(timeout=timeout if timeout else DEFAULT_TIMEOUT):
             _send(conn, {"type": "error", "message": "宿主并发已达上限(排队超时)"}, send_lock)
             return
         try:
+            waited = time.monotonic() - t_req
+            if waited >= 1.0:                    # 长排队告警: 多会话争抢槽位必须可观测
+                _log(f"槽位排队等待 {waited:.1f}s(timeout={timeout}s)")
+            budget = (timeout - waited) if timeout else DEFAULT_TIMEOUT
+            if budget <= 0:
+                _send(conn, {"type": "error", "message":
+                             f"排队耗尽命令预算(等待 {waited:.1f}s >= timeout {timeout}s)"}, send_lock)
+                return
             t0 = time.monotonic()
             from app.proc.proc_io import isolation_kwargs
             try:
@@ -148,7 +161,7 @@ def _handle(conn, slots) -> None:
             try:
                 # 2026-11-26 - 小欧 - None 不再等于无限: 与客户端接收截止同源上限, 超时走正常
                 #   TimeoutExpired 链路(terminate_job 杀树), 不靠客户端杀宿主来收尾。
-                proc.wait(timeout=timeout if timeout else DEFAULT_TIMEOUT)
+                proc.wait(timeout=budget)   # 用扣掉排队后的剩余预算, 总耗时 ≤ timeout
             except subprocess.TimeoutExpired:
                 timed_out = True
                 terminate_job(job)            # TerminateJobObject, 内核级杀整棵树
@@ -157,7 +170,7 @@ def _handle(conn, slots) -> None:
                 except subprocess.TimeoutExpired:
                     pass
             for t in pumps:
-                t.join(timeout=_IDLE_JOIN)
+                t.join(timeout=IDLE_JOIN)
 
             truncated = any(t.is_alive() for t in pumps)
             if truncated:

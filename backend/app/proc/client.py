@@ -29,6 +29,9 @@
 #                     proc_io 同源); ②error 帧回传 kind, not_found 供 proc_io 还原 FileNotFoundError;
 #                     ③argv 为 str 时按 [str] 传(与 shell=False 的 subprocess 同义, 不拆成字符)。
 # 2026-11-26 - 小欧 - 目录归位: 由 app/proc_host 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
+# 2026-11-26 - 小欧 - 监护误判: 单次 ping 超时不再立即判死(慢 CreateProcess 持闸门锁会误杀
+#   宿主、连累全场在飞命令); 改为同 tick 间隔复检一次, 两次都失败才判死 —— 既防误杀, 又不
+#   把真僵死的恢复拖到多个 5s 巡检周期之后(请求路径 _connect 的等待预算只有 8s)。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
 对外两个入口:
@@ -51,20 +54,12 @@ import uuid
 from multiprocessing.connection import Client
 from typing import Optional, Tuple
 
-from app.proc.constants import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(域常量)
-
-_CONNECT_TIMEOUT = 3.0      # 单次连接尝试上限
-_START_WAIT = 5.0           # 拉起宿主后等其就绪的上限
-_RECV_SLACK = 5.0           # 接收截止 = 命令 timeout + 本余量(覆盖杀树/收尾/时钟抖动)
-_CHUNK_WAIT = 0.2           # 单次 poll 粒度
-_PING_INTERVAL = 5.0        # 监护人巡检间隔
-_PING_TIMEOUT = 3.0         # 单次 ping 等 pong 上限(超过判僵死)
-_BACKOFF = (0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0)  # 重建退避阶梯(秒, 封顶 30)
-_BREAKER_THRESHOLD = 5      # 连续启动失败达到该值即熔断
-_BREAKER_COOLDOWN = 30.0    # 熔断冷却(秒); 冷却后半开探测
-_START_RETRY_DELAYS = (0.5, 1.0, 2.0)             # ensure_host 启动期重试间隔
-_DEFAULT_MAX_OUTPUT = 64 * 1024 * 1024            # 单命令输出总量上限(字节)
-_LOG_THROTTLE = 60.0        # 同因日志去重窗口(秒)
+from app.proc.constants import (
+    BACKOFF, BREAKER_COOLDOWN, BREAKER_THRESHOLD, CHUNK_WAIT, CONNECT_TIMEOUT,
+    DEFAULT_TIMEOUT, LOG_THROTTLE, MAX_OUTPUT, PING_INTERVAL, PING_RECHECK_GAP,
+    PING_TIMEOUT, PROTO, RECOVERY_BUDGET, RECV_SLACK, START_RETRY_DELAYS,
+    START_WAIT,
+)
 
 _pipe_name: Optional[str] = None
 _authkey: Optional[bytes] = None
@@ -141,12 +136,12 @@ def _host_concurrency() -> int:
 def _max_output() -> int:
     """单命令输出总量上限: OMNI_PROC_HOST_MAX_OUTPUT(字节), 默认 64MB, 下限 1KB。"""
     try:
-        return max(1024, int(os.environ.get("OMNI_PROC_HOST_MAX_OUTPUT", str(_DEFAULT_MAX_OUTPUT))))
+        return max(1024, int(os.environ.get("OMNI_PROC_HOST_MAX_OUTPUT", str(MAX_OUTPUT))))
     except (TypeError, ValueError):
-        return _DEFAULT_MAX_OUTPUT
+        return MAX_OUTPUT
 
 
-def _log_event(key: str, msg: str, throttle: float = _LOG_THROTTLE) -> None:
+def _log_event(key: str, msg: str, throttle: float = LOG_THROTTLE) -> None:
     """按 key 去重的告警日志(同因 60s 内只落一条), 降噪而不是丢失。"""
     global _last_log_key, _last_log_ts
     now = time.monotonic()
@@ -165,24 +160,24 @@ def _note_failure(cause: str) -> None:
     """登记一次启动失败: 推进退避阶梯, 达阈值打开熔断; 熔断已开(半开探测又失败)时重新冷却。"""
     global _fail_count, _next_attempt_ts, _breaker_open, _breaker_until
     _fail_count += 1
-    _next_attempt_ts = time.monotonic() + _BACKOFF[min(_fail_count - 1, len(_BACKOFF) - 1)]
+    _next_attempt_ts = time.monotonic() + BACKOFF[min(_fail_count - 1, len(BACKOFF) - 1)]
     if _breaker_open:
-        _breaker_until = time.monotonic() + _BREAKER_COOLDOWN
+        _breaker_until = time.monotonic() + BREAKER_COOLDOWN
         _log_event(
             "breaker-probe-fail",
-            f"半开探测失败: 宿主仍不可用, 重新冷却 {_BREAKER_COOLDOWN:.0f}s; 末次原因: {cause}",
+            f"半开探测失败: 宿主仍不可用, 重新冷却 {BREAKER_COOLDOWN:.0f}s; 末次原因: {cause}",
             throttle=0.0,
         )
-    elif _fail_count >= _BREAKER_THRESHOLD:
+    elif _fail_count >= BREAKER_THRESHOLD:
         _breaker_open = True
-        _breaker_until = time.monotonic() + _BREAKER_COOLDOWN
+        _breaker_until = time.monotonic() + BREAKER_COOLDOWN
         _log_event(
             "breaker",
-            f"熔断开启: 连续 {_fail_count} 次启动失败, 冷却 {_BREAKER_COOLDOWN:.0f}s; 末次原因: {cause}",
+            f"熔断开启: 连续 {_fail_count} 次启动失败, 冷却 {BREAKER_COOLDOWN:.0f}s; 末次原因: {cause}",
             throttle=0.0,
         )
     else:
-        _log_event("spawn-fail", f"宿主启动失败({_fail_count}/{_BREAKER_THRESHOLD}): {cause}")
+        _log_event("spawn-fail", f"宿主启动失败({_fail_count}/{BREAKER_THRESHOLD}): {cause}")
 
 
 def _note_success() -> None:
@@ -300,7 +295,7 @@ def _spawn_host() -> None:
         startupinfo=startupinfo, close_fds=True, env=env, cwd=root)
     _host_proc = proc
     # 等管道可用(只探测可连, 不发业务帧); 全程用本地 proc, 并发 _kill_host 置空全局不致 None.poll
-    deadline = time.monotonic() + _START_WAIT
+    deadline = time.monotonic() + START_WAIT
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             rc = proc.returncode
@@ -340,17 +335,17 @@ def _rebuild(respect_backoff: bool = True) -> bool:
 def _ping_host() -> bool:
     """发一帧 ping 等 pong(带连接与接收双截止); 任一超时/异常判 False。"""
     try:
-        conn = _client_with_deadline(time.monotonic() + _CONNECT_TIMEOUT)
+        conn = _client_with_deadline(time.monotonic() + CONNECT_TIMEOUT)
     except Exception:
         return False
     try:
         conn.send({"cmd": "ping"})
-        deadline = time.monotonic() + _PING_TIMEOUT
+        deadline = time.monotonic() + PING_TIMEOUT
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return False
-            if conn.poll(min(_CHUNK_WAIT, remaining)):
+            if conn.poll(min(CHUNK_WAIT, remaining)):
                 msg = conn.recv()
                 return isinstance(msg, dict) and msg.get("type") == "pong"
     except Exception:
@@ -363,7 +358,7 @@ def _ping_host() -> bool:
 
 
 def _guardian_tick() -> None:
-    """一次巡检: 宿主不在→按退避重建; 在但 ping 不通→判僵死, 杀旧立即重建。"""
+    """一次巡检: 宿主不在→按退避重建; ping 失败→同 tick 复检一次, 仍失败才判僵死。"""
     host_at_start = _host_proc
     if host_at_start is None or host_at_start.poll() is not None:
         _rebuild(respect_backoff=True)
@@ -371,7 +366,14 @@ def _guardian_tick() -> None:
     if _ping_host():
         _note_success()
         return
-    _log_event("ping-fail", "宿主 ping 超时(疑似僵死), 杀旧重建")
+    # 2026-11-26 - 小欧 - 单次超时可能只是 CreateProcess 持闸门锁(实测 popen 持锁毫秒级,
+    #   但杀软扫描会拉长), 立即判死会误杀宿主连累全场; 同 tick 间隔复检一次, 仍失败才是真僵死。
+    _log_event("ping-fail", "宿主 ping 超时, 间隔复检")
+    time.sleep(PING_RECHECK_GAP)
+    if _ping_host():
+        _note_success()
+        return
+    _log_event("ping-fail", "宿主复检 ping 仍超时, 判僵死并重建")
     with _host_lock:
         if _host_proc is host_at_start:
             _kill_host()
@@ -382,7 +384,7 @@ def _guardian_loop() -> None:
     """后台监护人 daemon: 每 5s 巡检, 或在请求路径唤醒时立即巡检。"""
     while True:
         try:
-            _wake_event.wait(_PING_INTERVAL)
+            _wake_event.wait(PING_INTERVAL)
             _wake_event.clear()
             _guardian_tick()
         except Exception as e:
@@ -409,7 +411,7 @@ def ensure_host() -> None:
     """
     _ensure_guardian()
     last: Optional[Exception] = None
-    for attempt in range(len(_START_RETRY_DELAYS) + 1):
+    for attempt in range(len(START_RETRY_DELAYS) + 1):
         with _host_lock:
             if _host_proc is not None and _host_proc.poll() is None:
                 _note_success()
@@ -421,10 +423,10 @@ def ensure_host() -> None:
             except Exception as e:
                 last = e
                 _note_failure(f"{type(e).__name__}: {e}")
-        if attempt < len(_START_RETRY_DELAYS):
-            time.sleep(_START_RETRY_DELAYS[attempt])
+        if attempt < len(START_RETRY_DELAYS):
+            time.sleep(START_RETRY_DELAYS[attempt])
     raise HostError(
-        f"启动期宿主拉起失败(已重试 {len(_START_RETRY_DELAYS)} 次, 监护人后台继续): {last}")
+        f"启动期宿主拉起失败(已重试 {len(START_RETRY_DELAYS)} 次, 监护人后台继续): {last}")
 
 
 def _recovery_wait_budget() -> float:
@@ -434,14 +436,14 @@ def _recovery_wait_budget() -> float:
     if _breaker_open and now < _breaker_until:
         return 0.0
     if not _breaker_open and now < _next_attempt_ts:
-        return min(_next_attempt_ts - now, _CONNECT_TIMEOUT + _START_WAIT)
-    return _CONNECT_TIMEOUT + _START_WAIT
+        return min(_next_attempt_ts - now, RECOVERY_BUDGET)
+    return RECOVERY_BUDGET
 
 
 def _connect():
     """连接宿主。请求路径零创建: 只连接; 不可用则唤醒监护人并在预算内等其重建。"""
     try:
-        return _client_with_deadline(time.monotonic() + _CONNECT_TIMEOUT)
+        return _client_with_deadline(time.monotonic() + CONNECT_TIMEOUT)
     except Exception as first:
         last: Exception = first
     _wake_event.set()
@@ -449,7 +451,7 @@ def _connect():
     while time.monotonic() < deadline:
         time.sleep(0.1)
         try:
-            return _client_with_deadline(min(deadline, time.monotonic() + _CONNECT_TIMEOUT))
+            return _client_with_deadline(min(deadline, time.monotonic() + CONNECT_TIMEOUT))
         except Exception as e:
             last = e
     raise HostError(
@@ -477,14 +479,14 @@ def run(argv, cwd=None, env=None, timeout=None):
     rc = -1
     total = 0
     cap = _max_output()
-    deadline = time.monotonic() + (timeout if timeout else DEFAULT_TIMEOUT) + _RECV_SLACK
+    deadline = time.monotonic() + (timeout if timeout else DEFAULT_TIMEOUT) + RECV_SLACK
     try:
         conn.send({"proto": PROTO, "argv": list(argv), "cwd": cwd,
                    "env": env, "timeout": timeout})
         while True:
             # ★ 接收必须有截止时间: recv() 本身无超时参数, 宿主卡死时会永远等下去,
             #   于是"命令超时"退化成"工具调用永不返回"(比卡死更糟, 上层无从判定)。
-            if not conn.poll(min(_CHUNK_WAIT, max(0.0, deadline - time.monotonic()))):
+            if not conn.poll(min(CHUNK_WAIT, max(0.0, deadline - time.monotonic()))):
                 if time.monotonic() >= deadline:
                     if _host_proc is host_at_connect:
                         _kill_host()
