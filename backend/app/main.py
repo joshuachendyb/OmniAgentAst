@@ -752,10 +752,12 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数; 补充 cancel 清理循环 小欧 2026-07-15"""
-    # 2026-11-13 商量 - 关闭先杀全部后台进程树: 主循环关闭会使等待协程被取消, 不主动杀则子进程
-    #   脱离父进程继续存活(Windows 父死子不重挂)→ 跨重启孤儿; 同步收口, shutdown 允许短暂阻塞
+    # 2026-11-13 商量 - 关闭先终止全部后台任务: 主循环关闭会使等待协程被取消, 不主动终止则子进程
+    #   脱离父进程继续存活(Windows 父死子不重挂)→ 跨重启孤儿。
+    #   2026-11-27 小欧 - terminate 是逐任务 socket 往返(每任务 ≤ RECV_SLACK), 必须 offload, 否则
+    #   事件循环被串行阻塞 N×RECV_SLACK(原"同步收口, shutdown 允许短暂阻塞"是杀本地进程树的毫秒代价)
     from app.tools.fundamental.shell_background import kill_all_background
-    _n_bg = kill_all_background("shutdown")
+    _n_bg = await asyncio.to_thread(kill_all_background, "shutdown")
     if _n_bg:
         logger.warning(f"[shutdown] 已终止 {_n_bg} 个后台进程, 防孤儿跨重启")
     global _cleanup_task_ref

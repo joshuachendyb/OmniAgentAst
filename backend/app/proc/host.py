@@ -8,6 +8,8 @@
 # 2026-11-26 - 小欧 - 目录归位: 由 app/proc_host 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 # 2026-11-26 - 小欧 - 排队预算: 槽位等待耗时从命令 timeout 中扣除(对齐现网 _remaining), 防
 #   "排队+完整 timeout"超过客户端截止而误杀宿主、连累全场在飞命令; 长排队告警留痕。
+# 2026-11-27 - 小欧 - 阶段七/八: 新增后台任务通道 submit/query/terminate 与 _bg_watch 看护线程;
+#   background 输出直写文件、超时/超限由宿主单方判定; fire_and_forget 不入 Job; 断连按 mode 分派不杀树。
 """proc_host — 通用进程宿主进程
 
 【为什么独立进程】CreateProcessW 卡在控制台 IOCTL 时不释放 GIL, 同解释器内任何线程
@@ -32,10 +34,27 @@ import os
 import subprocess
 import threading
 import time
+import uuid
 from multiprocessing.connection import Listener
 
 from app.env_keys import PROC_HANDSHAKE
 from app.proc.constants import DEFAULT_TIMEOUT, IDLE_JOIN, PROTO  # 协议/预算唯一真源(域常量)
+from app.proc.win_job_object import (
+    assign_to_job,
+    close_job,
+    create_kill_on_close_job,
+    terminate_job,
+)
+
+# ── 后台任务通道(阶段七/八) ─────────────────────────────
+# 跨连接共享: 每连接一份会让 submit 断连后任务信息丢失, query/terminate 走独立连接时查不到
+_BG_TASKS: dict = {}
+_BG_LOCK = threading.Lock()
+_BG_MAX = 256
+_BG_TASK_SEM = threading.BoundedSemaphore(_BG_MAX)
+_BG_RETAIN = 120.0          # 终态记录保留窗: 主进程 query 须在此期间读到终态
+_BG_POLL = 2.0              # 看护线程轮询粒度(与现网 _wait_process 的 2s 切片同口径)
+_FIRE_FORGET_REAP = 30.0    # fire_and_forget 回收上限: 超时只解除登记, 不杀进程
 
 # 启动握手串(单变量, base64 JSON): 由 client._spawn_host 注入。
 _HS = json.loads(base64.b64decode(os.environ[PROC_HANDSHAKE]).decode("utf-8"))
@@ -79,12 +98,6 @@ def _handle(conn, slots) -> None:
     """一连接一命令。"""
     # 2026-11-26 - 小欧 - 独立 Job: 禁用 SILENT_BREAKAWAY_OK, 否则孙进程逃离 Job, kill_tree 失效
     #   (实测: SandboxJob 配置下 cmd/c ping 的 ping 残留; 仅 KILL_ON_JOB_CLOSE 时被杀净)
-    from app.proc.win_job_object import (
-        assign_to_job,
-        close_job,
-        create_kill_on_close_job,
-        terminate_job,
-    )
     send_lock = threading.Lock()      # ★ 单连接同一时刻只允许一个发送者, 见 _send
     job = None
     proc = None
@@ -98,6 +111,13 @@ def _handle(conn, slots) -> None:
             proto_repr = req.get("proto") if isinstance(req, dict) else req
             _send(conn, {"type": "error", "message": f"协议版本不匹配: {proto_repr!r}"}, send_lock)
             return
+        # 阶段七/八 后台通道: 必须在 argv 校验之前分派(query/terminate 不带 argv)
+        if isinstance(req, dict) and req.get("cmd") == "submit":
+            return _handle_submit(conn, req, send_lock)
+        if isinstance(req, dict) and req.get("cmd") == "query":
+            return _handle_query(conn, req, send_lock)
+        if isinstance(req, dict) and req.get("cmd") == "terminate":
+            return _handle_terminate(conn, req, send_lock)
         argv = req.get("argv")
         if not argv or not isinstance(argv, (list, tuple)):
             _send(conn, {"type": "error", "message": "argv 必须是 list/tuple"}, send_lock)
@@ -217,6 +237,192 @@ def _handle(conn, slots) -> None:
             conn.close()
         except Exception:
             pass
+
+
+def _handle_submit(conn, req, send_lock) -> None:
+    """阶段七/八: submit 帧。提交即脱离, 回 submitted 后关闭连接, 进程由注册表托管。"""
+    if not _BG_TASK_SEM.acquire(blocking=False):
+        _send(conn, {"type": "error", "message": "后台任务并发已达上限"}, send_lock)
+        return
+    argv = req.get("argv")
+    if not argv or not isinstance(argv, (list, tuple)):
+        _BG_TASK_SEM.release()
+        _send(conn, {"type": "error", "message": "argv 必须是 list/tuple"}, send_lock)
+        return
+    mode = req.get("mode", "background")
+    output_file = req.get("output_file")
+    timeout = req.get("timeout")   # None 透传, 不套 DEFAULT_TIMEOUT
+    max_bytes = int(req.get("max_output_bytes") or 0)
+    task_id = uuid.uuid4().hex[:12]
+    job = None
+    try:
+        from app.proc.proc_io import isolation_kwargs
+        if mode == "fire_and_forget":
+            # 不建 pump、不建 Job: 输出丢弃; 入 Job 会让收尾时的 KILL_ON_JOB_CLOSE 关掉 explorer 刚打开的窗口
+            proc = subprocess.Popen(
+                list(argv), cwd=req.get("cwd"), env=req.get("env"),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                **isolation_kwargs())
+        else:
+            # background: 输出直写文件(与现网同构), 不攒内存
+            if output_file is None:
+                _BG_TASK_SEM.release()
+                _send(conn, {"type": "error", "message": "background mode 需 output_file"}, send_lock)
+                return
+            fout = open(output_file, "ab")
+            try:
+                proc = subprocess.Popen(
+                    list(argv), cwd=req.get("cwd"), env=req.get("env"),
+                    stdout=fout, stderr=subprocess.STDOUT,
+                    **isolation_kwargs())
+            finally:
+                fout.close()
+    except (OSError, ValueError) as e:
+        _BG_TASK_SEM.release()
+        kind = "not_found" if isinstance(e, FileNotFoundError) else "spawn_failed"
+        _send(conn, {"type": "error", "message": f"{type(e).__name__}: {e}", "kind": kind}, send_lock)
+        return
+    if mode != "fire_and_forget":
+        # Job 收编 fail-closed: 没有 Job 就没有"杀整棵树"的保证, 超时承诺直接失效
+        try:
+            job = create_kill_on_close_job()
+            assign_to_job(job, proc)
+        except OSError as e:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            if job is not None:
+                try:
+                    close_job(job)
+                except Exception:
+                    pass
+            _BG_TASK_SEM.release()
+            _send(conn, {"type": "error", "message": f"Job 收编失败: {e}"}, send_lock)
+            return
+    with _BG_LOCK:
+        _BG_TASKS[task_id] = {
+            "proc": proc, "job": job, "output_file": output_file,
+            "mode": mode, "start_ts": time.monotonic(),
+            "timeout": timeout, "max_output_bytes": max_bytes,
+            "outcome": "running", "rc": None, "t_end": None,
+            "sem_released": False,
+        }
+    # 提交即脱离: 先交给看护线程, 再回 submitted; 名额归还在 _bg_watch 里做
+    threading.Thread(target=_bg_watch, args=(task_id,), daemon=True).start()
+    _send(conn, {"type": "submitted", "task_id": task_id, "pid": proc.pid}, send_lock)
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _handle_query(conn, req, send_lock) -> None:
+    """查询后台任务状态。单一真源是 outcome(看护线程/terminate 写定), 不拿 proc.poll() 另算一份。"""
+    task_id = req.get("task_id")
+    info = _BG_TASKS.get(task_id)
+    if info is None:
+        _send(conn, {"type": "error", "message": f"未知任务 {task_id}"}, send_lock)
+        return
+    outcome = info.get("outcome") or "running"
+    running = outcome == "running"
+    rc = None if running else info.get("rc")
+    if not running and rc is None:
+        rc = info["proc"].returncode
+    _send(conn, {
+        "type": "status", "task_id": task_id,
+        "running": running, "rc": rc,
+        "outcome": outcome,
+        "output_file": info.get("output_file"),
+        "mode": info.get("mode"),
+    }, send_lock)
+
+
+def _handle_terminate(conn, req, send_lock) -> None:
+    """按 task_id 杀树。终态先写定, 看护线程只做收尾(不覆盖 terminated)。"""
+    task_id = req.get("task_id")
+    info = _BG_TASKS.get(task_id)
+    if info is None:
+        _send(conn, {"type": "error", "message": f"未知任务 {task_id}"}, send_lock)
+        return
+    with _BG_LOCK:
+        if info.get("outcome") == "running":
+            info["outcome"] = "terminated"
+            info["t_end"] = time.monotonic()
+    job = info.get("job")
+    if job is not None:
+        try:
+            terminate_job(job)   # TerminateJobObject, 内核级杀整棵树
+        except Exception:
+            pass
+    try:
+        info["proc"].kill()      # fire_and_forget 无 Job, 只能杀根
+    except OSError:
+        pass
+    _send(conn, {"type": "terminated", "task_id": task_id}, send_lock)
+
+
+def _bg_watch(task_id: str) -> None:
+    """后台任务看护线程: 执行 timeout/oversize、写终态、关 Job、归还名额、保留后弹出。
+
+    判据只此一份: 主进程只读 query 的 outcome, 不再自行判超时/超限(否则重复杀进程、rc 退化成 -1)。
+    """
+    info = _BG_TASKS.get(task_id)
+    if info is None:
+        return
+    proc = info["proc"]
+    timeout = info.get("timeout")
+    max_bytes = info.get("max_output_bytes") or 0
+    deadline = (time.monotonic() + timeout) if timeout else None
+    outcome, rc = "exited", None
+    if info.get("mode") == "fire_and_forget":
+        # 不入 Job、不杀树: 回收上限到了只解除登记, 进程交 OS 收尾
+        try:
+            proc.wait(timeout=_FIRE_FORGET_REAP)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            rc = None
+    else:
+        while True:
+            try:
+                rc = proc.wait(timeout=_BG_POLL)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if max_bytes > 0:
+                try:
+                    if os.path.getsize(info["output_file"]) > max_bytes:
+                        outcome, rc = "oversize", -1
+                        break
+                except OSError:
+                    pass
+            if deadline is not None and time.monotonic() >= deadline:
+                outcome, rc = "timeout", -1
+                break
+        if outcome != "exited":
+            try:
+                terminate_job(info["job"])   # 杀整棵树, 不留孙进程
+            except Exception:
+                pass
+        # KILL_ON_JOB_CLOSE: 句柄关闭即杀净仍持写端的孙进程(根已退出/hung 都覆盖)
+        if info.get("job") is not None:
+            try:
+                close_job(info["job"])
+            except Exception:
+                pass
+            info["job"] = None
+    with _BG_LOCK:
+        if info.get("outcome") == "running":      # terminate 已写定则不覆盖
+            info["outcome"] = outcome
+            info["rc"] = rc
+        info["t_end"] = info.get("t_end") or time.monotonic()
+        sem_released = info.get("sem_released")
+        info["sem_released"] = True
+    if not sem_released:
+        _BG_TASK_SEM.release()                    # ★ 名额守恒: 成功路径也必须归还
+    time.sleep(_BG_RETAIN)                        # 终态留给主进程 query 读取
+    with _BG_LOCK:
+        _BG_TASKS.pop(task_id, None)
 
 
 def _pump(stream, kind, conn, send_lock) -> None:

@@ -31,11 +31,15 @@
 #   为何端点本身保留：北京老陈裁定 configApi.switchCurrentModel（AppContext.tsx:266 切全局模型）仍走此端点，
 #   整条删除会打断该功能（功能退化，禁止）—— 故保留端点、只收窄可写字段（KISS-DIRECT，不新造第二个切模型端点）。
 #   连带 config_service.update_config 同步收敛 + FIELD_HANDLERS 只剩 ai_model_ref 一项 — 小欧 2026-09-26
+# 2026-11-27 - 小欧 - 阶段八: open_config_folder 改 await asyncio.to_thread(svc_...):
+#   该 service 已改宿主 submit(fire-and-forget), 宿主不可用时同步直调会阻塞事件循环(最坏 8s+10s)。
 """
 config_routes — 配置API路由薄壳 (下沉后路由+DTO 调 config_service)
 
 小欧 2026-07-10
 """
+import asyncio
+
 from fastapi import APIRouter
 
 from app.api.v1.config_schemas import (
@@ -198,4 +202,5 @@ async def read_version_file():
 @router.post("/config/open-folder")
 @handle_api_errors("打开配置目录")
 async def open_config_folder():
-    return svc_open_config_folder()
+    # 2026-11-27 小欧 - 阶段八: service 内为宿主 socket 往返, offload 出事件循环
+    return await asyncio.to_thread(svc_open_config_folder)

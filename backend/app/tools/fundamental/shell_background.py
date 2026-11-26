@@ -37,6 +37,11 @@
 # 2026-11-21 小欧 三堂会审补漏: 拆出 _build_notice_text(纯函数, 只拼文案不发路由) 与 persist_notice_text
 #   (路由未注册/异常时把通知正文追加进输出文件, 不再只留一行日志); 超限通知补报实际已写大小;
 #   被外部终止(任务取消/服务关闭/等待协程取消)在输出文件尾写终止说明, 不再完全无痕 — 小欧-2026-11-21
+# 2026-11-27 - 小欧 - 阶段七: 后台进程改由宿主 submit 托管(主进程不再 CreateProcessW); 等待改
+#   轮询 client.query(判据全信宿主 outcome), 终止改 client.terminate; 删本地 _wait_process/_kill_tree;
+#   _BG_WAIT_POOL 降级为"取消兜底终止专用池"。
+# 2026-11-27 - 小欧 - 补取消兜底健壮性: _on_wait_future_done 投递专用池失败(池已关, shutdown 尾段)时
+#   退化为同步 terminate, 宁可短暂阻塞也不留孤儿。
 """
 S: shell_background — bash 工具后台执行支撑
 
@@ -47,7 +52,6 @@ shell() 保持同步函数, 本模块异步部分经 run_coroutine_threadsafe �
 import asyncio
 import functools
 import os
-import subprocess
 import threading
 import time
 import uuid
@@ -56,12 +60,13 @@ from typing import Any, Dict, Optional
 
 from app.config import get_config
 from app.logger import logger
+from app.proc import client
+from app.proc.workers import WorkerPool
 from app.tools.tool_constants import ERR_SHELL_EXCEPTION, EXIT_CODE_MEANING
 from app.tools.tool_response import build_error, build_success
-from app.proc.workers import WorkerPool
 
 # ── 全局态 ──────────────────────────────────────────────
-_BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {proc, output_file, task_id, command, shell_type, outcome, started_at, t0_mono, timeout, notice_id, sem_released}}
+_BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {bg_task_id, output_file, task_id, command, shell_type, outcome, started_at, t0_mono, timeout, notice_id, sem_released}}
 _BG_LOCK = threading.Lock()          # 注册表读写锁(工作线程注册 vs 主循环协程更新)
 _BG_TASKS: set = set()               # Future 强引用集合, done 回调 discard 防GC(仿 agent_runner._background_tasks)
 
@@ -71,10 +76,10 @@ _BG_NOTIFY_ROUTER = None  # 完成通知路由回调(services 层启动时注册
 _BG_MAX = max(1, int(get_config().get("tuning.concurrency.shell_max_background", 5)))
 _BG_SEM = threading.BoundedSemaphore(_BG_MAX)
 _BG_SIDECAR_SUFFIX = ".bat"   # cmd 后台启动脚本后缀(与输出文件同目录同名)
-# 专用等待池: 容量=后台并发上限, 常驻线程(WorkerPool 构造期建满, 运行期零 Thread.start)。
-#   后台等待默认无超时, 必须与 tool-sync 共享池隔离, 否则卡死后台永久霸占工具线程池拖垮全系统;
-#   池大小与 _BG_SEM 同源, 每个在跑后台恰占 1 线程, 一对一不排队。
-_BG_WAIT_POOL = WorkerPool(_BG_MAX, "bg-shell-wait")
+# 取消兜底终止专用池: 容量=后台并发上限(需要终止的任务数天然不超过后台并发数)。
+#   等待已改走宿主 query(事件循环外), 本池只承载"Future 被取消时 offload 的 terminate"。
+_BG_WAIT_POOL = WorkerPool(_BG_MAX, "bg-shell-kill")
+_BG_QUERY_INTERVAL = 2.0       # 轮询宿主 query 的间隔(原 _wait_process 的 2s 切片节奏, 只影响发现结束的快慢)
 _BG_CLEANUP_MAX_ATTEMPTS = 5   # 产物删除连续失败上限, 超过则放弃记录防注册表无限增长
 _NOTICE_TAIL_CHARS = 600       # 完成通知附带的输出尾部字符数(超则只给尾部并在正文声明截断) — 小欧-2026-11-21
 _NOTICE_CMD_CHARS = 200        # 完成通知里的命令展示上限(超则加省略号) — 小欧-2026-11-21
@@ -168,10 +173,10 @@ def _bg_error(command: str, cmd_short: str, detail: str, hint: str,
 
 def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                           task_id: str, cmd_short: str,
-                          popen_factory, timeout: Optional[int] = None,
+                          argv_factory, timeout: Optional[int] = None,
                           success_codes: Optional[list[int]] = None) -> Dict[str, Any]:
-    """启动后台命令并立即返回。popen_factory: 由调用方注入(Popen 构造, 复用 shell() 各
-    shell_type 的启动参数装配, 避免本模块重复实现四种 shell 的命令行拼装 DRY)。
+    """启动后台命令并立即返回。argv_factory: 调用方注入的"纯装配"(返回 (argv, env)),
+    Popen 与 Job 收编在宿主侧完成, 主进程不再 CreateProcessW — 小欧-2026-11-27
     返回 build_success 标准格式, data={}(启动无结果本体; shell_id/output_file 在 llm_data.metrics)。
 
     duration_ms 为"本次启动动作"的真实墙钟耗时(进程起完即返回, 不等于命令运行时长),
@@ -193,15 +198,15 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                          f"后台并发已达上限({_BG_MAX}), 请等待现有后台命令结束",
                          "属容量管理, 非命令本身错误", _dur(), shell_type, cwd)
     shell_id = ""
-    proc = None
+    bg_task_id = ""
     try:
         shell_id = _new_shell_id()
         output_file = os.path.join(_bg_output_dir(), f"{shell_id}.log")
         # stdout/stderr 合流写文件(2>&1 语义); 进程写端只管追加, 结果文件按保留时长惰性清理
         with open(output_file, "ab"):
             pass
-        proc = popen_factory(command, cwd, output_file)
-        if proc is None:
+        built = argv_factory(command, cwd, output_file)
+        if built is None:
             _BG_SEM.release()
             try:   # 启动失败不留空产物(无注册表记录 → 惰性清理覆盖不到)
                 os.remove(output_file)
@@ -209,14 +214,30 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 pass
             return _bg_error(command, cmd_short, "后台进程启动失败", "请检查命令与解释器",
                              _dur(), shell_type, cwd)
+        argv, env = built
+        # 一次算定: 同一值既作宿主强杀判据, 又作注册表里的通知阈值, 两处同源不漂移 — 小欧-2026-11-27
+        max_bytes = _max_output_bytes()
+        try:
+            sub = client.submit(argv, cwd=cwd, env=env, mode="background",
+                                timeout=timeout, output_file=output_file,
+                                max_output_bytes=max_bytes)
+        except client.HostError as e:
+            _BG_SEM.release()
+            try:
+                os.remove(output_file)
+            except OSError:
+                pass
+            return _bg_error(command, cmd_short, f"后台进程提交失败: {e}",
+                             "宿主不可用, 请稍后重试", _dur(), shell_type, cwd)
+        bg_task_id = sub["task_id"]
         with _BG_LOCK:
             _BG_REGISTRY[shell_id] = {
-                "proc": proc, "output_file": output_file, "task_id": task_id,
+                "bg_task_id": bg_task_id, "output_file": output_file, "task_id": task_id,
                 "command": command, "shell_type": shell_type, "cwd": cwd or "",
                 "started_at": time.time(), "t0_mono": time.monotonic(),
                 "timeout": timeout,
                 # 启动时定下输出上限, 等待/通知共用同一个值(通知里报的阈值必须与强杀判据一致)
-                "max_output_bytes": _max_output_bytes(),
+                "max_output_bytes": max_bytes,
                 "success_codes": success_codes or [],
                 # 状态单一真源: outcome ∈ running(未结束)/completed/failed/timeout/oversize/killed。
                 # 原另存一份 status(少 timeout/oversize 两词) 与 outcome 表达同一件事, 已删 — 小欧-2026-11-21
@@ -230,15 +251,11 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
         try:
             fut = asyncio.run_coroutine_threadsafe(_wait_and_notify(shell_id), _MAIN_LOOP)
         except Exception as _sub_e:
-            from app.proc.proc_utils import kill_process_tree
             with _BG_LOCK:
                 _BG_REGISTRY.pop(shell_id, None)
-            try:
-                kill_process_tree(proc)
-            except Exception:
-                pass
+            _terminate_quiet(bg_task_id)
             _BG_SEM.release()
-            logger.error(f"[bg_shell] {shell_id} 等待协程提交失败(主循环不可用), 进程已终结: {_sub_e}")
+            logger.error(f"[bg_shell] {shell_id} 等待协程提交失败(主循环不可用), 后台任务已终结: {_sub_e}")
             return _bg_error(command, cmd_short,
                              f"等待协程提交失败: {_sub_e}", "服务正在关闭, 请稍后重试",
                              _dur(), shell_type, cwd)
@@ -262,18 +279,14 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
                 "metrics": {"shell_id": {"value": shell_id, "text": f"后台ID {shell_id}"},
                             "output_file": {"value": output_file, "text": "输出文件"}}})
     except Exception as e:
-        # 启动中途异常: 已启动的进程必须杀掉(否则成孤儿), 且信号量只还一次
-        if proc is not None:
-            from app.proc.proc_utils import kill_process_tree
-            try:
-                kill_process_tree(proc)
-            except Exception:
-                pass
+        # 启动中途异常: 已提交到宿主的任务必须终止(否则成孤儿), 且信号量只还一次
         with _BG_LOCK:
             _info = _BG_REGISTRY.get(shell_id)
             if _info is not None:
                 _info["sem_released"] = True
         _BG_SEM.release()
+        if bg_task_id:
+            _terminate_quiet(bg_task_id)
         logger.error(f"[bg_shell] 后台启动异常: {e}", exc_info=True)
         return _bg_error(command, cmd_short, str(e), "后台启动异常", _dur(), shell_type, cwd)
 
@@ -356,11 +369,13 @@ def _on_wait_future_done(shell_id: str, fut) -> None:
     info = _BG_REGISTRY.get(shell_id)
     if info is None or info.get("outcome") != "running":
         return
-    from app.proc.proc_utils import kill_process_tree
+    bg_task_id = info.get("bg_task_id")
     try:
-        kill_process_tree(info["proc"])
-    except Exception as e:
-        logger.debug(f"[bg_shell] 取消兜底杀进程异常(忽略) {shell_id}: {e}")
+        # 回调跑在事件循环线程: 同步 terminate 会堵循环最多 RECV_SLACK, offload 到专用池
+        _BG_WAIT_POOL.submit(functools.partial(_terminate_quiet, bg_task_id))
+    except RuntimeError:
+        # 池已关(shutdown 尾段): 宁可同步阻塞也不留孤儿
+        _terminate_quiet(bg_task_id)
     with _BG_LOCK:
         if info.get("outcome") == "running":
             info["outcome"] = "killed"
@@ -379,60 +394,43 @@ def _file_size(path: str) -> int:
         return 0
 
 
-def _wait_process(proc: subprocess.Popen, timeout: Optional[float],
-                  output_file: str, max_bytes: int):
-    """线程池阻塞等待, 返回 (rc, reason); reason=None 正常退出, "oversize" 输出超限。
-    timeout 命中抛 subprocess.TimeoutExpired。无超时且无大小上限时一次阻塞到底(零轮询)。
-    轮询期间每 2s 检查一次输出文件大小, 超限提前返回, 防磁盘写满拖垮整机。"""
-    if timeout is None and not max_bytes:
-        return proc.wait(None), None
-    deadline = time.monotonic() + timeout if timeout else None
-    while True:
-        if deadline is None:
-            slice_ = 2.0
-        else:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(proc.args, timeout)
-            slice_ = min(remaining, 2.0)
-        try:
-            return proc.wait(slice_), None
-        except subprocess.TimeoutExpired:
-            if deadline is not None and time.monotonic() >= deadline:
-                raise
-            if max_bytes and _file_size(output_file) > max_bytes:
-                return None, "oversize"
-
-
-async def _kill_tree(proc: subprocess.Popen) -> None:
-    """杀进程树 offload 到专用池(不与 tool-sync 争线程); 清理路径吞异常, 绝不再抛。"""
-    from app.proc.proc_utils import kill_process_tree
+def _terminate_quiet(bg_task_id) -> None:
+    """同步按 task_id 终止宿主侧任务(≤ RECV_SLACK)。
+    专供 offload 路径(取消兜底/提交失败/连带终止): 失败只留日志, 绝不再抛(清理路径)。
+    bg_task_id 为空(注册表未写/任务未提交)是合法情况, 直接返回 — 小欧-2026-11-27
+    """
+    if not bg_task_id:
+        return
     try:
-        await asyncio.wrap_future(_BG_WAIT_POOL.submit(functools.partial(kill_process_tree, proc)))
+        client.terminate(bg_task_id)
     except Exception as e:
-        logger.debug(f"[bg_shell] 杀进程树异常(忽略): {e}")
+        logger.warning(f"[bg_shell] 终止后台任务失败({bg_task_id}): {e}")
 
 
 async def _await_process(info: dict):
-    """等待进程并归一为 (rc, outcome, t_end_mono), outcome ∈ {completed, failed, timeout, oversize}。
-    t_end_mono 在"判定结束"那一瞬记录: 杀进程树要几秒, 放到杀完再记会把杀进程时间算进命令耗时。
-    输出上限用注册表启动时定下的值, 不重新读配置(否则通知里的阈值与实际强杀判据可能不一致) — 小欧-2026-11-21"""
-    proc: subprocess.Popen = info["proc"]
-    cf = _BG_WAIT_POOL.submit(functools.partial(
-        _wait_process, proc, info.get("timeout") or None,
-        info["output_file"], info.get("max_output_bytes") or 0))
-    try:
-        rc, reason = await asyncio.wrap_future(cf)
-    except subprocess.TimeoutExpired:
-        t_end = time.monotonic()
-        await _kill_tree(proc)
-        return (proc.returncode if proc.returncode is not None else -1), "timeout", t_end
-    t_end = time.monotonic()
-    if reason == "oversize":
-        await _kill_tree(proc)
-        return (proc.returncode if proc.returncode is not None else -1), "oversize", t_end
-    success_codes = info.get("success_codes") or []
-    return rc, ("completed" if (rc == 0 or rc in success_codes) else "failed"), t_end
+    """轮询宿主 query, 归一为 (rc, outcome, t_end_mono)。
+    判据全信宿主(超时/超限/终止都在宿主看护线程写定): 主进程再自行判一次只会重复杀进程,
+    并把真实 rc 退化成 -1 — 小欧-2026-11-27
+    outcome ∈ {completed, failed, timeout, oversize, killed}。
+    """
+    bg_task_id = info.get("bg_task_id")
+    while True:
+        try:
+            st = await asyncio.to_thread(client.query, bg_task_id)
+        except client.HostError as e:
+            logger.warning(f"[bg_shell] 后台任务查询失败({bg_task_id}): {e}")
+            return -1, "failed", time.monotonic()
+        if not st.get("running"):
+            break
+        await asyncio.sleep(_BG_QUERY_INTERVAL)
+    rc = st.get("rc")
+    host_outcome = st.get("outcome") or "exited"
+    if host_outcome == "exited":
+        success_codes = info.get("success_codes") or []
+        outcome = "completed" if (rc == 0 or rc in success_codes) else "failed"
+    else:
+        outcome = "killed" if host_outcome == "terminated" else host_outcome
+    return (rc if rc is not None else -1), outcome, time.monotonic()
 
 
 def _build_notice_text(shell_id: str, info: dict, rc: int, outcome: str) -> str:
@@ -554,8 +552,8 @@ def _read_output_tail(path: str, max_chars: int) -> tuple[str, bool]:
 
 
 def kill_background_by_task(task_id: str) -> int:
-    """任务 cancelled 连带杀: 终结本 task_id 名下全部后台进程。返回杀掉数。"""
-    from app.proc.proc_utils import kill_process_tree
+    """任务 cancelled 连带杀: 终结本 task_id 名下全部后台任务。返回终止数。
+    同步阻塞(每任务 ≤ RECV_SLACK); 事件循环内调用必须 asyncio.to_thread — 小欧-2026-11-27"""
     n = 0
     with _BG_LOCK:
         targets = [sid for sid, i in _BG_REGISTRY.items() if i["task_id"] == task_id]
@@ -563,7 +561,7 @@ def kill_background_by_task(task_id: str) -> int:
         info = _BG_REGISTRY.get(sid)
         if info and info.get("outcome") == "running":
             try:
-                kill_process_tree(info["proc"])
+                client.terminate(info.get("bg_task_id"))
                 with _BG_LOCK:
                     # 锁内二次校验: 锁外判定到加锁之间等待协程可能已写终态(completed/timeout),
                     #   无条件覆盖成 killed 会抹掉真实终态与耗时, 与 kill_all_background 同口径 — 小欧-2026-11-21
@@ -584,16 +582,16 @@ def kill_background_by_task(task_id: str) -> int:
 
 
 def kill_all_background(reason: str = "shutdown") -> int:
-    """终态收口: 杀全部 running 后台进程树并还槽。服务关闭时调用, 防孤儿进程跨重启存活。
-    同步执行(shutdown 路径允许短暂阻塞); 返回终止的进程数。"""
-    from app.proc.proc_utils import kill_process_tree
+    """终态收口: 终止全部 running 后台任务并还槽。服务关闭时调用, 防孤儿进程跨重启存活。
+    同步执行, 调用方须 offload: terminate 是逐任务 socket 往返(每任务 ≤ RECV_SLACK),
+    在事件循环内直调会把关闭流程拖成 N×RECV_SLACK — 小欧-2026-11-27"""
     with _BG_LOCK:
         targets = [(sid, info) for sid, info in _BG_REGISTRY.items()
                    if info.get("outcome") == "running"]
     n = 0
     for sid, info in targets:
         try:
-            kill_process_tree(info["proc"])
+            client.terminate(info.get("bg_task_id"))
             with _BG_LOCK:
                 _killed = info.get("outcome") == "running"
                 if _killed:

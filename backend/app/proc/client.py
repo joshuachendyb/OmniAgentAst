@@ -32,11 +32,16 @@
 # 2026-11-26 - 小欧 - 监护误判: 单次 ping 超时不再立即判死(慢 CreateProcess 持闸门锁会误杀
 #   宿主、连累全场在飞命令); 改为同 tick 间隔复检一次, 两次都失败才判死 —— 既防误杀, 又不
 #   把真僵死的恢复拖到多个 5s 巡检周期之后(请求路径 _connect 的等待预算只有 8s)。
+# 2026-11-27 - 小欧 - 阶段七/八: 新增 submit/query/terminate 三个薄方法(共用 _request 一命令一连接),
+#   供后台 shell 与 fire-and-forget 复用, 不在客户端复制连接/校验/重连逻辑。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
-对外两个入口:
+对外入口:
   ensure_host()  启动期调用, 拉起宿主并等就绪 + 启动后台监护人; 请求路径不再创建进程。
   run()          返回五元组 (stdout_b, stderr_b, timed_out, truncated, rc)。
+  submit()       提交后台/fire-and-forget 任务, 返回 task_id(提交即脱离)。
+  query()        查询后台任务状态(单一真源 outcome)。
+  terminate()    按 task_id 杀树。三个方法共用 _request, 一命令一连接。
 
 生命周期模型:
   - 后台监护人(daemon)是运行期唯一的"创建/重建"发起者: 每 5s ping, 判死即按熔断退避重建。
@@ -543,3 +548,67 @@ def run(argv, cwd=None, env=None, timeout=None):
         except Exception:
             pass
     return b"".join(out), b"".join(err), timed_out, truncated, rc
+
+
+def _request(payload: dict, timeout: float) -> dict:
+    """一命令一连接: 发送一个请求帧, 等一个应答帧, 返回该帧(dict)。
+
+    submit/query/terminate 共用此路径: 三份"连接/校验/判死/重连"复制出来必然漂移。
+    重连/判死语义与 run() 完全一致。query/terminate 的任务只有 ≤ RECV_SLACK 的 socket 往返。
+    """
+    _ensure_guardian()
+    conn = _connect()
+    host_at_connect = _host_proc
+    deadline = time.monotonic() + timeout
+    try:
+        conn.send(payload)
+        while True:
+            if not conn.poll(min(CHUNK_WAIT, max(0.0, deadline - time.monotonic()))):
+                if time.monotonic() >= deadline:
+                    if _host_proc is host_at_connect:
+                        _kill_host()
+                    raise HostError("宿主后台通道应答超时")
+                continue
+            msg = conn.recv()
+            if msg.get("type") == "error":
+                raise HostError(msg.get("message") or "宿主返回错误",
+                                kind=msg.get("kind") or "host")
+            return msg
+    except (EOFError, BrokenPipeError, OSError) as e:
+        if _host_proc is host_at_connect:
+            _kill_host()
+        raise HostError(f"宿主通信中断: {type(e).__name__}: {e}") from e
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def submit(argv, cwd=None, env=None, mode="background", timeout=None,
+           output_file=None, max_output_bytes=0) -> dict:
+    """提交后台任务, 返回 {task_id, pid}。timeout=None 表无限(与现网后台一致, 不套 DEFAULT_TIMEOUT)。
+
+    预算 = START_WAIT + RECV_SLACK: submit 只需宿主拉起 Popen 并回包, 不含任务本身的耗时。
+    """
+    payload = {
+        "proto": PROTO, "cmd": "submit",
+        "argv": list(argv) if not isinstance(argv, str) else [argv],
+        "cwd": cwd, "env": env, "mode": mode,
+        "timeout": timeout,
+        "output_file": output_file,
+        "max_output_bytes": int(max_output_bytes or 0),
+    }
+    return _request(payload, START_WAIT + RECV_SLACK)
+
+
+def query(task_id: str) -> dict:
+    """查询任务: {task_id, running, rc, outcome, output_file, mode}。"""
+    return _request({"proto": PROTO, "cmd": "query", "task_id": task_id},
+                    CONNECT_TIMEOUT + RECV_SLACK)
+
+
+def terminate(task_id: str) -> None:
+    """按 task_id 杀树。"""
+    _request({"proto": PROTO, "cmd": "terminate", "task_id": task_id},
+             CONNECT_TIMEOUT + RECV_SLACK)

@@ -477,7 +477,8 @@ async def task_cleanup(task_id: str, llm_call_count: int = 0,
     #   进程继续跑、完成后照常唤醒续跑; 非正常终态(failed/cancelled)杀进程树防孤儿。
     if terminal_status != "completed":
         from app.tools.fundamental import shell_background
-        shell_background.kill_background_by_task(task_id)
+        # 2026-11-27 小欧 - terminate 是逐任务 socket 往返(每任务 ≤ RECV_SLACK), 事件循环内必须 offload
+        await asyncio.to_thread(shell_background.kill_background_by_task, task_id)
     if cleaned:
         logger.info(f"[Cleanup] 任务 {task_id} 正常完成,已清理")
     else:

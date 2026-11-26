@@ -31,6 +31,8 @@
 #   security 读取端全部改嵌套取值(system.confirm_dangerous_ops / trust.ttl_days / hitl.enabled 等);
 #   confirmDangerousOps 旧扁平键此前已成死字段(读不到任何已写入的值), 本次随命名空间迁移一并取回。
 #   同批精简注释冗余标注, "别再删"的两个坑与技术说明原样保留。
+# 2026-11-27 小欧 - 阶段八: open_config_folder 打开目录改走宿主 fire-and-forget submit;
+#   宿主不可用(HostError)转 HTTPException(503), 用户显式动作不静默当成功。
 """
 config_service — 配置业务服务(services/model)
 
@@ -40,13 +42,13 @@ A7(小欧 2026-08-13): update_config 业务编排。
 """
 import copy
 import os
-import subprocess
 from pathlib import Path
 
 from fastapi import HTTPException
 
 from app.config import get_config as get_config_instance
 from app.logger import logger
+from app.proc import client  # 2026-11-27 小欧 - 阶段八: explorer 打开目录改走宿主 fire-and-forget
 from app.services.model.config_helpers import (
     _auto_fix_and_validate,
     _backup_config,
@@ -62,7 +64,6 @@ from app.services.model.config_helpers import (
     write_yaml_config,
 )
 from app.services.model.resolver import get_ai_config_resolver
-from app.proc.proc_io import isolation_kwargs  # 2026-11-15 小欧: 统一出口([42] P4); 2026-11-16 并入 proc_io
 from app.utils.response_utils import (
     api_success,  # open_config_folder 在用，别删（见文件头"别再删的坑"）
 )
@@ -397,16 +398,17 @@ def read_version_file() -> dict:
 
 
 def open_config_folder() -> dict:
-    """打开配置目录 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
+    """打开配置目录 — 自 model_routes.py 迁入 — 小沈 2026-08-13
+    2026-11-27 小欧 - 阶段八: 改宿主 submit(fire_and_forget), 主进程不再 CreateProcessW;
+    explorer 不入 Job, 宿主被 kill/重建不会连带关掉已打开的窗口。
+    """
     config_path = get_config_path()
     config_dir = str(config_path.parent)
     if not os.path.exists(config_dir):
         raise HTTPException(status_code=404, detail=f"配置目录不存在: {config_dir}")
-    subprocess.Popen(
-        ["explorer", "/e,", config_dir],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        **isolation_kwargs(),   # 2026-11-15 小欧: 统一出口([42] P4)
-    )
+    try:
+        client.submit(["explorer", "/e,", config_dir], mode="fire_and_forget")
+    except client.HostError as e:
+        raise HTTPException(status_code=503, detail=f"进程宿主不可用，无法打开目录: {e}")
     logger.info(f"已打开配置目录: {config_dir}")
     return api_success(path=config_dir)
