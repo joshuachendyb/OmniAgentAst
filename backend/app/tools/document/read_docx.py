@@ -17,6 +17,8 @@
 # 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 # 2026-10-12 小欧 - tool_zh改短名词: 读取Word→读WORD
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-11-27 小欧 - 与 read 同款互斥归约: tail 优先 + warning 明示(原直接 error 改为可执行结果);
+#   同步将 path/limit/tail/offset/offset+limit 五处 hint 改为点名参数+正确写法的动作指引
 """
 D2: read_docx — 读取Word文档
 
@@ -35,7 +37,7 @@ from app.tools.tool_constants import ERR_DOC_READ_DOCX, READ_DOCX_OUTLIMIT_CHARS
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.tools.toolhelper.line_pager import select_lines
+from app.tools.toolhelper.line_pager import reconcile_page_params, select_lines
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -97,11 +99,13 @@ def read_docx(
     """读取Word(.docx)文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-24 移除.doc死代码(pandoc转换)"""
     t0 = _time_mod.perf_counter()
     file_path = path
+    # 2026-11-27 小欧 - 与 read 同款互斥归约(tail 优先), 须早于 limit 范围校验
+    offset, limit, tail, _reconcile_notice = reconcile_page_params(offset, limit, tail)
     # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
     ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail=err, hint="read_docx 的 path 须为存在的 .docx 文件绝对路径；请确认路径拼写，或先用 find/listdir 确认文件是否存在")
         return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查 — 小欧 2026-06-24
@@ -125,24 +129,20 @@ def read_docx(
     # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 read 的 offset/limit/tail 语义)
     if limit is not None and (limit < 1 or limit > 1000):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间，传入值：{limit}", hint="limit参数必须设置在1-1000之间")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间，传入值：{limit}", hint="把 limit 改为 1-1000 的整数；需要更多段落请用 offset+limit 分页")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and tail < 1:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1，传入值：{tail}", hint="tail参数不能小于1")
-        return build_error(data={}, llm_data=llm_data)
-    if tail is not None and (offset is not None or limit is not None):
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail="tail参数不能与offset/limit同时使用", hint="tail与offset/limit参数互斥,请选择其一")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1，传入值：{tail}", hint="tail 须为 ≥1 的整数；读最后 20 段请传 tail=20")
         return build_error(data={}, llm_data=llm_data)
     if offset is not None:
         if offset < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1，当前值：{offset}", hint="offset行号从1开始")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1，当前值：{offset}", hint="offset 从 1 开始；读第 10 段起请传 offset=10")
             return build_error(data={}, llm_data=llm_data)
         if limit is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="请提供limit参数配合offset")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="read_docx 的 offset 须配合 limit；从第 10 段起读 20 段请传 offset=10, limit=20")
             return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -179,12 +179,22 @@ def read_docx(
         if tables_data:
             result_data["tables"] = tables_data
 
+        # 2026-11-27 小欧 - 归约 notice 与既有 warning 并存; 有 notice 时强制 warning,
+        #   hint 给 LLM 下一轮可直接复制的写法(read_docx 以"段"为单位)。
+        if _reconcile_notice:
+            warning = "; ".join(p for p in (warning, _reconcile_notice) if p)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if warning:
+            _hint = (
+                f"下次只传 tail={tail} 即可；若要读前 N 段请只传 limit=N，"
+                f"若要从第 N 段起读 M 段请传 offset=N, limit=M"
+                if _reconcile_notice
+                else "文件为空或行号越界时，请按警告内容改用 tail=N 或 offset+limit 重试"
+            )
             llm_data = _build_read_docx_llm_data(
                 "warning", duration_ms, path, len(paragraphs), len(selected_text),
                 len(non_empty_paragraphs), empty_para_count, len(tables_data),
-                total_lines, detail=warning, hint="请调整offset/limit参数",
+                total_lines, detail=warning, hint=_hint,
                 user_limit=limit,
             )
             return build_warning(data=result_data, llm_data=llm_data)

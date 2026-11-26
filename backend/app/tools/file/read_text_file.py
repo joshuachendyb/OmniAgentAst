@@ -58,6 +58,9 @@ F1: read — 读取文本文件
 #   带 offset 的区间读全靠它挡不住, 删校验直接放开会让 offset 之后全部内容绕开闸门灌进上下文。
 #   现改为: 闸门移到"窗口选定之后", 覆盖"无上界窗口(全文读 / 只给offset)", 截断后重算 line_count 防谎报;
 #   limit/tail 由用户参数定上界, 不在闸门内。
+# 2026-11-27 小欧 - 互斥参数归约: tail 与 offset/limit 同时传入时按 tail 执行并返回 warning(原直接 error 需多一轮 LLM 重试);
+#   归约经 line_pager.reconcile_page_params 单点实现, 被忽略参数在 detail/hint 如实点名;
+#   同步将各错误/警告 hint 改为可复制的动作指引(点名参数+正确写法+替代路径)。
 
 import time as _time_mod
 from pathlib import Path
@@ -71,7 +74,7 @@ from app.tools.file.file_state import record_read
 from app.tools.tool_constants import ERR_FILE_READ_FAILED, READ_INPUT_MAX_BYTES, READ_OUTLIMIT_CHARS
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
-from app.tools.toolhelper.line_pager import select_lines
+from app.tools.toolhelper.line_pager import reconcile_page_params, select_lines
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.utils.path_utils import (  # 2026-10-17 小欧 - 路径四级合法性总入口
     OpCategory,
@@ -125,7 +128,7 @@ def _build_read_text_file_llm_data(
         return {
             "summary": f"读文件{file_path}，成功：{_ps}{line_count}行，{file_size}字节",  # 2026-10-14 小欧 - warning 分支补字节(与成功分支同口径, file_size 入参直取) — 小欧-2026-10-14
             "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
-            "status": {"exec_code": "warning", "message": f"成功但有警告：{detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
+            "status": {"exec_code": "warning", "message": f"成功但有警告：{detail}", "code": "", "detail": detail, "hint": hint if hint else "请按警告内容调整翻页参数；读尾部请用 tail=N，读前 N 行请用 limit=N"},
             "duration_ms": duration_ms,
             "metrics": {
                 "lines": {"value": line_count, "text": f"{line_count}行"},
@@ -139,10 +142,12 @@ def _build_read_text_file_llm_data(
         hint_text = ""
     elif line_count == 0:
         msg = "已无更多内容，当前读取结果为空"
-        hint_text = "请调整offset/limit参数"
+        hint_text = "已到文件末尾，没有更多内容；请改用 offset/tail 重读，或结束本轮读取"
     elif line_count < total_lines:
         msg = f"成功：从第{start_line}-{end_line}行"
-        hint_text = "可使用offset+limit继续读取后续内容" if end_line < total_lines else ""
+        # 2026-11-27 小欧 - hint 给可下一轮直接复制的具体参数(原只说"继续读取", LLM 还得自己算行号)
+        _next = f"offset={end_line + 1}" + (f", limit={user_limit}" if user_limit is not None else "")
+        hint_text = f"下次传 {_next} 继续读取后续内容" if end_line < total_lines else ""
     else:
         msg = f"成功：从第{start_line}-{end_line}行"
         hint_text = ""
@@ -169,7 +174,7 @@ async def read(
     """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-28 新增tail参数替代offset负数 — 小欧 2026-07-11 路径参数统一为path
     offset: 起始行号(正数); 不传limit时读到文件尾(超过输出上限则截断并标记)
     limit: 读取行数(1-1000)
-    tail: 读取尾部N行（不能与offset/limit同时使用）"""
+    tail: 读取尾部N行（不能与offset/limit同时使用；误同时传入时按 tail 执行并忽略其余，返回警告）"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
     # 修复: 翻页参数强制int, 防直接调用(read)绕过Pydantic schema时 offset=1.5 引起 slice 崩溃 — 小欧 2026-08-07
@@ -180,12 +185,16 @@ async def read(
         limit = int(limit)
     if tail is not None:
         tail = int(tail)
+    # 2026-11-27 小欧 - 互斥归约: 原 error 分支改为"tail 优先 + warning 明示",
+    #   省一轮 LLM 重试且不隐瞒被忽略的参数; 归约须早于 limit 范围校验,
+    #   否则被忽略的越界 limit 会先报错。
+    offset, limit, tail, _reconcile_notice = reconcile_page_params(offset, limit, tail)
     t0 = _time_mod.perf_counter()
     # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
     ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="read 的 path 须为存在的文本文件绝对路径；请确认路径拼写，或先用 find/listdir 确认文件是否存在", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
     try:
         # 文件类型前置检查 — 小健 2026-06-24(2026-10-16 小欧: 其内含 validate_path 存在性校验已随 tool去检查化删除, 现只做类型检查)
@@ -206,7 +215,7 @@ async def read(
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
                 detail=f"limit参数必须在1-1000之间，传入值：{limit}",
-                hint="limit参数必须设置在1-1000之间",
+                hint="把 limit 改为 1-1000 的整数；需要更多行请用 offset+limit 分页（如 offset=1001, limit=1000）",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
             return build_error(data={}, llm_data=llm_data)
@@ -216,7 +225,7 @@ async def read(
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
                 detail=f"tail参数不能小于1，传入值：{tail}",
-                hint="tail参数不能小于1",
+                hint="tail 须为 ≥1 的整数；读最后 20 行请传 tail=20",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
             return build_error(data={}, llm_data=llm_data)
@@ -234,24 +243,13 @@ async def read(
                 )
                 return build_error(data={}, llm_data=llm_data)
 
-        if tail is not None:
-            if offset is not None or limit is not None:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_read_text_file_llm_data(
-                    "error", duration_ms, file_path=file_path,
-                    detail="tail参数不能与offset/limit同时使用",
-                    hint="tail与offset/limit参数互斥,请选择其一",
-                    user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-                )
-                return build_error(data={}, llm_data=llm_data)
-
         if offset is not None:
             if offset < 1:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
                     detail=f"offset参数不能小于1，传入值：{offset}，行号从1开始",
-                    hint="offset行号从1开始",
+                    hint="offset 从 1 开始；读第 10 行起请传 offset=10",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
                 return build_error(data={}, llm_data=llm_data)
@@ -317,10 +315,21 @@ async def read(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
+        # 2026-11-27 小欧 - 归约 notice 与既有 warning 并存(不互相覆盖, 同截断原因并存口径):
+        #   有 notice 时强制走 warning 分支, detail 合并, hint 给 LLM 可下一轮直接复制的参数写法。
+        if _reconcile_notice:
+            _warning = "; ".join(p for p in (_warning, _reconcile_notice) if p)
         if _warning:
             warning_hint = ""
             if "空文件" in _warning:
-                warning_hint = "文件为空,无需使用行选择参数"
+                warning_hint = "文件为空，无需使用行选择参数，请直接读取全文"
+            elif "超出文件范围" in _warning:
+                warning_hint = f"offset 超出文件总行数 {_total_lines}；请改用 tail=N 从尾部读取"
+            if _reconcile_notice:
+                warning_hint = (
+                    f"下次只传 tail={tail} 即可；若要读文件前 N 行请只传 limit=N，"
+                    f"若要从第 N 行起读 M 行请传 offset=N, limit=M"
+                )
             llm_data = _build_read_text_file_llm_data(
                 "warning", duration_ms, file_path=file_path,
                 line_count=_line_count, total_lines=_total_lines, file_size=file_size, detail=_warning,

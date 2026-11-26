@@ -20,6 +20,7 @@
 # 2026-10-11 - 小欧 - _SLIDE_DESC 增补硬约束首行: "⚠️ 必须直接传JSON数组(list)，禁止序列化为字符串。"
 #   起因: LLM 误把整个slides数组序列化成字符串传入 write_pptx, coerce_json 无法还原为list 而报错,
 #   且原schema描述未警示类型, LLM 重试仍照旧。首行显式约束以从源头阻断 — 小欧 2026-10-11
+# 2026-11-27 小欧 - ReadDocxInput.tail description 同步 read_docx 的互斥归约行为(按 tail 执行并忽略其余, 返回警告)
 """
 Document Schema - 文档工具参数模型
 
@@ -59,7 +60,7 @@ class ReadDocxInput(BaseModel):
     path: str = Field(..., description="文件名+路径(.docx) — 不支持.doc格式")
     offset: Optional[int] = Field(default=None, description="1-based; 须配合limit使用")
     limit: Optional[int] = Field(default=None, ge=1, le=1000, description="与tail互斥")
-    tail: Optional[int] = Field(default=None, description="与offset/limit互斥")
+    tail: Optional[int] = Field(default=None, description="与offset/limit互斥；若同时传入，按 tail 执行并忽略其余，返回警告")
 
 
 class ReadPptxInput(BaseModel):

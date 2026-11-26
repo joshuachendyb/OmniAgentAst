@@ -19,6 +19,8 @@
 # 2026-08-05 - 小欧 - 修复: CompressInput.timeout 补 ge=5/le=1800 (description写5-1800但Field缺约束,clamp失效;配合compress internal timeout-2 deadline,ge=5使internal≥3s安全,防LLM传≤2导致deadline过去拿不到信息)
 # 2026-11-13 商量 - GrepInput.glob / FindInput.pattern 描述补花括号多扩展名支持(如 "*.{py,ts,tsx}"),
 #   与实现(app.utils.glob_pattern.expand_braces)对齐, 让 LLM 知道该能力可用
+# 2026-11-27 小欧 - ReadInput 互斥规则补说明: 同时传 tail 与 offset/limit 时按 tail 执行并忽略其余(返回警告),
+#   让 LLM 事前知道归约行为, 减少无效重试
 """
 File Schema - 文件工具参数模型
 
@@ -61,7 +63,7 @@ class ReadInput(BaseModel):
     5. 从某行读到文件尾: 只传offset（如offset=500读第500行到末尾，超长会被截断并标记）
 
     【互斥规则】
-    - tail不能与offset/limit同时使用
+    - tail不能与offset/limit同时使用；若同时传入，工具按 tail 执行并忽略 offset/limit，返回带警告的结果
 
     【示例】
     - 不传参数: 读全文
@@ -99,7 +101,7 @@ class ReadInput(BaseModel):
         ge=1,
         description="""读取尾部N行。
 
-【重要】tail不能与offset/limit同时使用！
+【重要】tail不能与offset/limit同时使用；若误同时传入，工具按 tail 执行并忽略其余参数，返回带警告的结果
 
 【示例】
 - tail=20: 读最后20行
