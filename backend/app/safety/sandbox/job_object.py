@@ -22,7 +22,7 @@ import ctypes
 import subprocess
 
 from app.logger import logger
-from app.utils.win_job_object import (
+from app.proc.win_job_object import (
     JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
     JOB_OBJECT_LIMIT_PROCESS_MEMORY,
     JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,

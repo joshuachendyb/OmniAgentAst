@@ -15,6 +15,7 @@
 # 2026-11-26 - 小欧 - 进程宿主复用: 新增 create_kill_on_close_job/assign_to_job/terminate_job/close_job
 #   四个通用句柄操作(宿主用独立 Job 收编每条命令的子进程树, 超时/宿主退出整树杀净); logger 改函数内惰性导入,
 #   使本模块 import 零副作用(轻量宿主进程导入不进 app.logger 控制台线程)。
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 import ctypes
 import subprocess
 from ctypes import wintypes

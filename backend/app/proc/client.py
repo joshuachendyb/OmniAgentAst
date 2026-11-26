@@ -28,6 +28,7 @@
 # 2026-11-26 - 小欧 - 通用接入: ①600s 上限收口到 app.proc_host.DEFAULT_TIMEOUT(宿主/客户端/
 #                     proc_io 同源); ②error 帧回传 kind, not_found 供 proc_io 还原 FileNotFoundError;
 #                     ③argv 为 str 时按 [str] 传(与 shell=False 的 subprocess 同义, 不拆成字符)。
+# 2026-11-26 - 小欧 - 目录归位: 由 app/proc_host 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """client — 与 drain_until_exit 语义对齐的宿主调用层
 
 对外两个入口:
@@ -50,7 +51,7 @@ import uuid
 from multiprocessing.connection import Client
 from typing import Optional, Tuple
 
-from app.proc_host import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(包 __init__)
+from app.proc.constants import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(域常量)
 
 _CONNECT_TIMEOUT = 3.0      # 单次连接尝试上限
 _START_WAIT = 5.0           # 拉起宿主后等其就绪的上限
@@ -271,7 +272,7 @@ def _spawn_host() -> None:
     if getattr(sys, "frozen", False):
         argv = [sys.executable, "--proc-host"]
     else:
-        argv = [sys.executable, "-m", "app.proc_host.host"]
+        argv = [sys.executable, "-m", "app.proc.host"]
     env = dict(os.environ)
     env["OMNI_PROC_HOST_PIPE"] = pipe_name
     env["OMNI_PROC_HOST_KEY"] = authkey.hex()
@@ -285,7 +286,7 @@ def _spawn_host() -> None:
     # ★ 不继承父控制台: CREATE_NO_WINDOW + stdin=DEVNULL + STARTF_USESTDHANDLES。
     #   宿主自身再起命令时也走同一 isolation_kwargs, 从源头消除 conhost 卡死诱因。
     try:
-        from app.utils.proc_io import isolation_kwargs
+        from app.proc.proc_io import isolation_kwargs
         spawn_kwargs = isolation_kwargs()
     except Exception:
         spawn_kwargs = {}

@@ -186,7 +186,7 @@ from app.tools.fundamental.shell_engine import (
 from app.utils.background_tasks import (
     spawn_bg,  # 2026-11-03 小欧: 后台任务统一存引用防 GC(与 middleware 同源)
 )
-from app.utils.spawn_gate import (  # 2026-11-04 小欧: 进程×线程创建闸门
+from app.proc.spawn_gate import (  # 2026-11-04 小欧: 进程×线程创建闸门
     install_spawn_gate,
     mark_runtime_started,
 )
@@ -626,7 +626,7 @@ async def startup_event():
     #   失败仅告警不阻断启动(工具侧 fail-closed, 下一条命令自动重建)。
     _t_host = time.time()
     try:
-        from app.proc_host.client import ensure_host
+        from app.proc.client import ensure_host
         ensure_host()
     except Exception as _exc:
         logger.warning(f"[proc_host] 启动期拉起宿主失败(请求时自动重建): {_exc}")

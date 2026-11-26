@@ -25,7 +25,7 @@ from app.tools.tool_constants import (
 )
 from app.tools.tool_response import build_error, build_success
 from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
-from app.utils.proc_io import (
+from app.proc.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 

@@ -67,7 +67,7 @@ import sys
 import threading
 from typing import Optional
 
-from app.utils.console_mode import is_console_detached
+from app.proc.console_mode import is_console_detached
 
 _console_queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=512)
 

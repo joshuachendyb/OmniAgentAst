@@ -7,6 +7,7 @@
 #   faulthandler 写盘, 写盘期间巡检停摆(实测 12 次连发只回收 9 次) — 安全网不得阻塞在取证上
 # 2026-11-15 - 小欧 - 新增严格模式(OMNI_SPAWN_STRICT=1): 启动完成后的任何 Thread.start 直接 RuntimeError,
 #   把"计数为 0"的软判定升级为硬失败(实验用, 生产默认关闭); 违规次数入 snapshot.strict_violations
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """spawn_gate — 进程创建 × 线程创建 互斥闸门 — 小欧 2026-11-04
 
 【问题】Windows 上 `CreateProcessW` 与新建线程的原生启动(DLL_THREAD_ATTACH/LdrpInitializeThread)
@@ -37,7 +38,7 @@ import traceback
 from typing import Any, Dict, List, Optional
 
 from app.logger import LOG_DIR, logger
-from app.utils.workers import WorkerPool  # 落盘取证常驻线程(零运行期建线程) — 2026-11-04 小欧
+from app.proc.workers import WorkerPool  # 落盘取证常驻线程(零运行期建线程) — 2026-11-04 小欧
 
 __all__ = ["SpawnGateBusy", "install_spawn_gate", "mark_runtime_started", "snapshot"]
 

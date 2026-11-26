@@ -5,6 +5,7 @@
 #   输出管道(实证孤儿 ping), Windows 父死子不重挂, 仍可按 pid 枚举后代清杀
 # 2026-11-04 - 小欧 - P20 二次修复: 后代枚举改 ppid 全量映射 + BFS(Process(pid).children() 在根退出后抛
 #   NoSuchProcess, 映射法不依赖根存活) — 小欧-2026-11-04
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """proc_utils — 通用进程工具(零子进程) — 小欧 2026-11-04
 
 【为什么自研】原来树杀靠 `taskkill /T /F` 和 `powershell Get-CimInstance|Stop-Process`,

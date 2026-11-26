@@ -13,7 +13,7 @@
 #   ([附件·正文]/[附件·正文·预览]/[附件·元信息·{类型}]), 字面量收归 app.wire_prefix 单一真源,
 #   消除散落字面量 — 小欧-2026-11-15
 # 2026-11-15 小欧 截断尾注收归 app.wire_prefix(INLINE_TRUNCATED), 与 ENV/ITEM 层同源 — 小欧-2026-11-15
-# 2026-11-15 小欧 L1-2: _ffprobe_meta 由 subprocess.run 改 app.utils.proc_io.run(零线程读取),
+# 2026-11-15 小欧 L1-2: _ffprobe_meta 由 subprocess.run 改 app.proc.proc_io.run(零线程读取),
 #   subprocess.run→communicate 每次起 2~3 条 _readerthread, 与 CreateProcess 抢 loader lock;
 #   行为等价(非零退出返回 CompletedProcess 不抛, 超时仍抛 TimeoutExpired 被子类捕获), CREATE_NO_WINDOW 保留
 
@@ -43,7 +43,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit
 
 from app.file_browse import browse_service as browse
-from app.utils import proc_io
+from app.proc import proc_io
 from app.wire_prefix import (
     INLINE_ATT_BODY,
     INLINE_ATT_BODY_KIND,

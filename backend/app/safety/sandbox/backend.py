@@ -14,7 +14,7 @@ from typing import Optional, Protocol
 
 from app.logger import logger
 from app.safety.sandbox.job_object import SandboxJob
-from app.utils.proc_io import (  # 零线程读管道 — 2026-11-04 小欧
+from app.proc.proc_io import (  # 零线程读管道 — 2026-11-04 小欧
     TRUNCATED_NOTE,
     drain_after_exit,
     drain_until_exit,
@@ -62,7 +62,7 @@ class JobObjectBackend:
         try:
             self._job = SandboxJob()
             # 2026-11-15 小欧 - 统一隔离参数([42] P4): 不继承父控制台
-            from app.utils.proc_io import isolation_kwargs
+            from app.proc.proc_io import isolation_kwargs
             self._proc = subprocess.Popen(argv, cwd=str(workspace),
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                           **isolation_kwargs())

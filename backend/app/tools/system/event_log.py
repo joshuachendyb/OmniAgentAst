@@ -27,7 +27,7 @@ from app.tools.tool_constants import (
     TOOL_TIMEOUTS,
 )
 from app.tools.tool_response import build_error, build_success
-from app.utils.proc_io import (
+from app.proc.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 

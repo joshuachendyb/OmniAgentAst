@@ -17,6 +17,7 @@
 #   timed_out→TimeoutExpired 携带已读输出); shell=True 与不支持的 creationflags 显式报错;
 #   timeout=None 按 app.proc_host.DEFAULT_TIMEOUT 单一上限; 客户端函数级惰性导入防循环。
 
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """proc_io — 零线程子进程管道 I/O — 小欧 2026-11-04
 
 【为什么自研】`Popen.communicate()` 每次调用都会 `Thread.start()` 1~3 条 `_readerthread`
@@ -184,7 +185,7 @@ def run(args, *, timeout=None, cwd=None, env=None, shell=False,
         encoding=None, errors=None, text=False, capture_output=True, creationflags=0):
     """`subprocess.run` 的等价入口(只覆盖本库实际用到的参数) — 2026-11-04 小欧
 
-    2026-11-26 小欧 - 收敛进程宿主: 创建动作全部交给 app.proc_host, 主进程不再调
+    2026-11-26 小欧 - 收敛进程宿主: 创建动作全部交给 app.proc 进程域, 主进程不再调
       CreateProcessW; 本函数只留参数校验、解码与 CompletedProcess/TimeoutExpired 契约,
       调用方零改动。边界(见方案 7.4.1):
       · shell=True 不支持(宿主只认 argv, 全仓无调用方), 显式报错而非静默丢语义;
@@ -202,8 +203,8 @@ def run(args, *, timeout=None, cwd=None, env=None, shell=False,
         raise ValueError(
             f"proc_io.run 宿主路径仅支持 CREATE_NO_WINDOW(宿主已默认启用), "
             f"无法透传 creationflags={creationflags}")
-    from app.proc_host import DEFAULT_TIMEOUT  # 函数级: 保持本模块 import 零副作用
-    from app.proc_host import client as host_client  # 函数级: client 亦惰性导入本模块, 防循环
+    from app.proc.constants import DEFAULT_TIMEOUT  # 函数级: 保持本模块 import 零副作用
+    from app.proc import client as host_client  # 函数级: client 亦惰性导入本模块, 防循环
     if timeout is None:
         timeout = DEFAULT_TIMEOUT
     try:

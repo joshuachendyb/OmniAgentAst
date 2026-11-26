@@ -143,9 +143,9 @@
 #   改为按「先诊断命令本身→再考虑调预算」排序: 查低效写法(逐字符循环/大文件全量扫描)优先优化算法; 写入.py脚本便于定位; 确认已排除性能问题后才考虑增大timeout(加前置条件); 与TOOL_TIMEOUT_HINTS中delete/write/edit/readmedia已正确写法(分批/减小范围)对齐。
 # 2026-11-03 小欧 - cwd 不存在回退上级/临时目录两处 WARNING→INFO(有兜底) — 小欧-2026-11-03
 # 2026-11-04 小欧 - 删未使用的 PersistentShell(死导入, 测试均直接从 shell_engine 导入) — 小欧-2026-11-04
-# 2026-11-04 小欧 - _kill_and_read_output 树杀改 kill_process_tree(app.utils.proc_utils): 删 taskkill 子进程与其
+# 2026-11-04 小欧 - _kill_and_read_output 树杀改 kill_process_tree(app.proc.proc_utils): 删 taskkill 子进程与其
 #   proc.kill 兜底分支(psutil 枚举后代 + TerminateProcess 根进程, 零 CreateProcess); 后续 wait/读残存语义不变 — 小欧-2026-11-04
-# 2026-11-04 小欧 - 四处 Popen.communicate 全部改 app.utils.proc_io.drain_until_exit/drain_after_exit(非阻塞读, 零建线程):
+# 2026-11-04 小欧 - 四处 Popen.communicate 全部改 app.proc.proc_io.drain_until_exit/drain_after_exit(非阻塞读, 零建线程):
 #   communicate 每次起 1~3 条 _readerthread, 新线程 bootstrap 抢 loader lock 与 CreateProcess 互锁 = 11:28 卡死真凶;
 #   cmd 分支内联 poll+非阻塞读收编为同一 helper(DRY), 超时仍走 _kill_and_read_output 收残存 — 小欧-2026-11-04
 # 2026-11-04 小欧 - 红队 P21 修复: drain_until_exit 增 truncated 回传(进程已退出但孙进程持管道), 工具层追加
@@ -191,7 +191,7 @@
 # 2026-11-15 小欧 - P4 统一出口([42]): 隔离参数迁出到 app/utils/proc_spawn.py(全仓唯一出口, DRY),
 #   _child_console_isolation_kwargs 删除, 3 处调用改用 isolation_kwargs(); 语义零改动;
 #   实测 CREATE_NO_WINDOW 仍分配隐藏控制台, 真正的根因治理在父进程无控制台(P0/P1)
-# 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.utils.proc_io(函数本体的迁移史见其 docstring)
+# 2026-11-16 小欧 - proc_spawn.py 并入 proc_io.py, import 改自 app.proc.proc_io(函数本体的迁移史见其 docstring)
 # 2026-11-18 小欧 - 清遗留死导入 sys(模块内零引用, ruff F401 长期红), 不涉运行逻辑 — 小欧-2026-11-18
 # 2026-11-21 小欧 - 退出码含义字典上移 tool_constants.EXIT_CODE_MEANING 单源(与后台完成通知共用),
 #   删本地副本; 后台启动 action.params 的 shell_type/cwd 由 shell_background._start_params 统一补齐 — 小欧-2026-11-21
@@ -284,7 +284,7 @@ S1: execute_shell_command — 执行Shell命令（引擎版）— 小欧 2026-07
 约定3: 计时仅在 shell() 主函数
 """
 # 小欧 - 2026-07-15: 新增success_codes参数+退出码判断改为`==0 or in`追加式,0永远成功
-# 2026-11-26 - 小欧 - 进程宿主接入: PS7/PS5 分支改走 app.proc_host.client.run(),
+# 2026-11-26 - 小欧 - 进程宿主接入: PS7/PS5 分支改走 app.proc.client.run(),
 #   CreateProcessW 移出主进程; 一命令一连接 + 独立 Job 杀整树。
 # 2026-11-26 - 小欧 - 三堂会审整改: 删除 OMNI_PROC_HOST 回退分支与 Disabled 捕获, PS 分支收敛为
 #   宿主单路径(宿主不可用按 error 返回), 消除新旧实现并存的兼容层。
@@ -307,7 +307,7 @@ from typing import Any, Dict, Literal, Optional
 #   旧按 key 分池/_inst_map/LRU/idle 回收/探活/cleanup_by_task 全部删除(见 shell_engine.py 瘦身)。
 from app.config import get_config  # 2026-11-06 小欧: 全局 shell 进程并发上限读配置(默认10)
 from app.logger import logger
-from app.proc_host import client  # 2026-11-26 小欧: 进程宿主客户端(shell 三分支外置)
+from app.proc import client  # 2026-11-26 小欧: 进程宿主客户端(shell 三分支外置)
 from app.safety.shell_command_risk import check_shell_risk_command  # 2026-10-16: 中风险层独立
 from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16: 危险层独立
 from app.tools.context import (  # 2026-11-22 小欧: 预检纯静态结果消费
@@ -335,8 +335,8 @@ from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.tool_response import build_error, build_success, build_warning
 from app.tools.validate.timeout_validator import validate_timeout
 from app.utils.path_utils import get_tool_dir  # 2026-11-20 小欧: .bat 中间脚本落会话 temp 目录
-from app.utils.proc_io import TRUNCATED_NOTE
-from app.utils.proc_io import (
+from app.proc.proc_io import TRUNCATED_NOTE
+from app.proc.proc_io import (
     isolation_kwargs as _isolation_kwargs,  # 2026-11-15 小欧: 全仓唯一出口(DRY), 本地实现删除; 2026-11-16 并入 proc_io
 )
 

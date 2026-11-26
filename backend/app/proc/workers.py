@@ -7,6 +7,7 @@
 # 2026-11-15 - 小欧 - 修复槽位容量永久泄漏: 超时 mark_lost 后线程迟到归还时回收已记损耗(原 _active 单标志
 #   使迟到回调空操作, 瞬时超时反复发生会把 available 永久侵蚀到 0); SlotLease 状态机 held/released/lost
 #   与计数在同一把 cond 锁内原子推进, 消除 mark_lost(事件循环线程)与 release(worker 线程)并发双扣
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """workers — 常驻线程池(运行期零 Thread.start) — 小欧 2026-11-04
 
 【为什么要有这个模块】Windows 上 `Thread.start()` 内部 `self._started.wait()` 无超时, 新线程

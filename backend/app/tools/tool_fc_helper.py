@@ -43,7 +43,7 @@ import pandas as pd
 from app.constants import UTC_OFFSET_PATTERN
 from app.logger import logger
 from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
-from app.utils.proc_io import (
+from app.proc.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 

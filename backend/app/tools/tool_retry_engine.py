@@ -77,7 +77,7 @@
 # 2026-10-09 - 小欧 - 保险丝公式重写(北京老陈裁定 BUFFER=15+timeout不重试): max(inner,CEILING=600)+30 恒630与max_retries脱钩, 退化为固定定时器丧失兜底意义(YAGNI), 且inner调大时兜底预算被正常执行吃掉; 改 inner×(max_retries+1)+BUFFER="整条重试链总闸", 恒>内层最坏总耗时不变式保持。实测bash75/compress315/httpget105/download195(原均630); 删INSURANCE_CEILING, 保留_get_schema_timeout_default(算inner的必要输入)。
 # 2026-10-09 - 小欧 - 修复bool timeout潜在缺陷(本次重写暴露非引入): isinstance(True,int)为真使timeout=True被当inner=1, 旧公式被CEILING=600掩盖, 新公式下暴露为compress保险丝16(应315)反小于内层超时会抢先截杀; 新增_is_positive_number显式排除bool, 走schema默认兜底, 正常int/float行为零变化。compliance: YAGNI/DRY/KISS-DIRECT
 # 2026-11-03 小欧 - [参数验证] 非法字段 WARNING→DEBUG(LLM 编参数属调用方错误) — 小欧-2026-11-03
-# 2026-11-04 小欧 - shell 卡死根治(执行器层): 删私有 _ShellWorkerPool 改 app.utils.workers.WorkerPool(同一实现,
+# 2026-11-04 小欧 - shell 卡死根治(执行器层): 删私有 _ShellWorkerPool 改 app.proc.workers.WorkerPool(同一实现,
 #   构造期建满 N 线程, 运行期 submit 只入队); 容量 _SHELL_EXECUTOR_MAX 按 tuning 配置在池构造处计算(不塞进
 #   tool_constants 纯常量表); 排队与执行共用单一 deadline(原各等 timeout, 最坏 2×timeout 撑破保险丝) — 小欧-2026-11-04
 # 2026-11-14 小欧 - 同步工具有界执行器泛化(8100 grep 假死事故根治): 非shell同步工具原走 asyncio.to_thread
@@ -134,7 +134,7 @@ from app.utils.json_utils import (  # coerce_json: 反向类型容错复用(DRY,
     coerce_json,
     safe_json_dumps,
 )
-from app.utils.workers import WorkerPool, WorkerSlots  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
+from app.proc.workers import WorkerPool, WorkerSlots  # 2026-11-15 小欧: 槽位与损耗线程对账(常驻线程池统一实现)
 
 # ============================================================
 # 保险丝超时策略 — 设计逻辑（北京老陈 2026-07-30）

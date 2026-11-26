@@ -56,7 +56,7 @@ def _delete_registry_recursive(hkey, sub_key):
     """
     import subprocess  # noqa: F401  (保留: 异常类型对上层可见)
 
-    from app.utils.proc_io import (
+    from app.proc.proc_io import (
         run as proc_run,  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
     )
     full_key = f"{ROOT_KEY_MAP_REVERSE.get(hkey, 'HKEY_CURRENT_USER')}\\{sub_key}"

@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-11-15 - 小欧 - 新建: frozen 启动即 FreeConsole + stdio 重定向, 取消父进程持有控制台这一前提
 # 2026-11-16 小欧 - 新增 _detached 标志与 is_console_detached(): 供 console_writer 探测"是否已无真实控制台"。原 stdio 重定向到 boot 日志后, sys.stdout 仍是可写文件对象, _probe_console 误判为有效控制台 → 控制台镜像把 app 运行日志全灌进 boot 日志(污染, 含整段会话历史); 现由本标志唯一判定, detach 后镜像整体旁路 — 小欧-2026-11-16
+# 2026-11-26 - 小欧 - 目录归位: 由 app/utils 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """console_mode — 运行期控制台调度 — 小欧 2026-11-15
 
 【问题】打包版 console=True 启动即绑定 conhost; 子进程默认继承该控制台句柄,

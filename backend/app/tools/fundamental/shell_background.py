@@ -58,7 +58,7 @@ from app.config import get_config
 from app.logger import logger
 from app.tools.tool_constants import ERR_SHELL_EXCEPTION, EXIT_CODE_MEANING
 from app.tools.tool_response import build_error, build_success
-from app.utils.workers import WorkerPool
+from app.proc.workers import WorkerPool
 
 # ── 全局态 ──────────────────────────────────────────────
 _BG_REGISTRY: Dict[str, dict] = {}   # {shell_id: {proc, output_file, task_id, command, shell_type, outcome, started_at, t0_mono, timeout, notice_id, sem_released}}
@@ -230,7 +230,7 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
         try:
             fut = asyncio.run_coroutine_threadsafe(_wait_and_notify(shell_id), _MAIN_LOOP)
         except Exception as _sub_e:
-            from app.utils.proc_utils import kill_process_tree
+            from app.proc.proc_utils import kill_process_tree
             with _BG_LOCK:
                 _BG_REGISTRY.pop(shell_id, None)
             try:
@@ -264,7 +264,7 @@ def run_shell_background(command: str, shell_type: str, cwd: Optional[str],
     except Exception as e:
         # 启动中途异常: 已启动的进程必须杀掉(否则成孤儿), 且信号量只还一次
         if proc is not None:
-            from app.utils.proc_utils import kill_process_tree
+            from app.proc.proc_utils import kill_process_tree
             try:
                 kill_process_tree(proc)
             except Exception:
@@ -356,7 +356,7 @@ def _on_wait_future_done(shell_id: str, fut) -> None:
     info = _BG_REGISTRY.get(shell_id)
     if info is None or info.get("outcome") != "running":
         return
-    from app.utils.proc_utils import kill_process_tree
+    from app.proc.proc_utils import kill_process_tree
     try:
         kill_process_tree(info["proc"])
     except Exception as e:
@@ -406,7 +406,7 @@ def _wait_process(proc: subprocess.Popen, timeout: Optional[float],
 
 async def _kill_tree(proc: subprocess.Popen) -> None:
     """杀进程树 offload 到专用池(不与 tool-sync 争线程); 清理路径吞异常, 绝不再抛。"""
-    from app.utils.proc_utils import kill_process_tree
+    from app.proc.proc_utils import kill_process_tree
     try:
         await asyncio.wrap_future(_BG_WAIT_POOL.submit(functools.partial(kill_process_tree, proc)))
     except Exception as e:
@@ -555,7 +555,7 @@ def _read_output_tail(path: str, max_chars: int) -> tuple[str, bool]:
 
 def kill_background_by_task(task_id: str) -> int:
     """任务 cancelled 连带杀: 终结本 task_id 名下全部后台进程。返回杀掉数。"""
-    from app.utils.proc_utils import kill_process_tree
+    from app.proc.proc_utils import kill_process_tree
     n = 0
     with _BG_LOCK:
         targets = [sid for sid, i in _BG_REGISTRY.items() if i["task_id"] == task_id]
@@ -586,7 +586,7 @@ def kill_background_by_task(task_id: str) -> int:
 def kill_all_background(reason: str = "shutdown") -> int:
     """终态收口: 杀全部 running 后台进程树并还槽。服务关闭时调用, 防孤儿进程跨重启存活。
     同步执行(shutdown 路径允许短暂阻塞); 返回终止的进程数。"""
-    from app.utils.proc_utils import kill_process_tree
+    from app.proc.proc_utils import kill_process_tree
     with _BG_LOCK:
         targets = [(sid, info) for sid, info in _BG_REGISTRY.items()
                    if info.get("outcome") == "running"]

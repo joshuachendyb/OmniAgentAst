@@ -5,6 +5,7 @@
 #                     槽位排队而非立即拒绝/Job 收编失败 fail-closed/回传真实 returncode/自身装 spawn_gate/日志落文件
 # 2026-11-26 - 小欧 - 通用接入: 超时上限收口到 app.proc_host.DEFAULT_TIMEOUT(与客户端同源);
 #                     Popen 失败回传 kind(not_found), 供主进程还原 FileNotFoundError 语义。
+# 2026-11-26 - 小欧 - 目录归位: 由 app/proc_host 迁入 app/proc 进程域包, 仅改导入路径, 逻辑零变化。
 """proc_host — 通用进程宿主进程
 
 【为什么独立进程】CreateProcessW 卡在控制台 IOCTL 时不释放 GIL, 同解释器内任何线程
@@ -29,7 +30,7 @@ import threading
 import time
 from multiprocessing.connection import Listener
 
-from app.proc_host import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(包 __init__)
+from app.proc.constants import DEFAULT_TIMEOUT, PROTO  # 协议版本与超时上限唯一真源(域常量)
 
 PIPE_NAME = os.environ["OMNI_PROC_HOST_PIPE"]                 # 形如 \\.\pipe\omni-proc-host-<uuid4hex>
 AUTHKEY = bytes.fromhex(os.environ["OMNI_PROC_HOST_KEY"])     # 32 字节随机数
@@ -72,7 +73,7 @@ def _handle(conn, slots) -> None:
     """一连接一命令。"""
     # 2026-11-26 - 小欧 - 独立 Job: 禁用 SILENT_BREAKAWAY_OK, 否则孙进程逃离 Job, kill_tree 失效
     #   (实测: SandboxJob 配置下 cmd/c ping 的 ping 残留; 仅 KILL_ON_JOB_CLOSE 时被杀净)
-    from app.utils.win_job_object import (
+    from app.proc.win_job_object import (
         assign_to_job,
         close_job,
         create_kill_on_close_job,
@@ -103,7 +104,7 @@ def _handle(conn, slots) -> None:
             return
         try:
             t0 = time.monotonic()
-            from app.utils.proc_io import isolation_kwargs
+            from app.proc.proc_io import isolation_kwargs
             try:
                 proc = subprocess.Popen(
                     list(argv), cwd=req.get("cwd"), env=req.get("env"),
@@ -264,7 +265,7 @@ def _watch_parent(parent_pid: int) -> None:
 def main() -> None:
     """宿主入口。frozen 时由 run_server.main() 按 --proc-host 直接调用。"""
     # ★ spawn_gate 只在主服务 app/main.py 装过一次, 宿主是另一个进程, 不装就没有任何闸门保护
-    from app.utils.spawn_gate import install_spawn_gate
+    from app.proc.spawn_gate import install_spawn_gate
     install_spawn_gate()
     parent_pid = int(os.environ.get("OMNI_PROC_HOST_PARENT_PID", "0") or 0)
     if parent_pid:

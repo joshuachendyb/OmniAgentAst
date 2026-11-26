@@ -369,7 +369,7 @@ def main() -> None:
     freeze_support()
     # 2026-11-26 小欧 - 进程宿主分支: 必须在 argparse/业务初始化之前判, 宿主不走正常启动流程
     if "--proc-host" in sys.argv:
-        from app.proc_host.host import main as _proc_host_main
+        from app.proc.host import main as _proc_host_main
         _proc_host_main()
         return
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
@@ -401,7 +401,7 @@ def main() -> None:
         _got, _handle = _acquire_single_instance_mutex()
         if not _got:
             # 已有实例是正常现象, 不报错: 先脱离控制台免窗口驻留, 再等它就绪后开浏览器。
-            from app.utils.console_mode import detach_console_if_needed
+            from app.proc.console_mode import detach_console_if_needed
             detach_console_if_needed()
             if not args.no_browser and not _open_browser_when_ready(args.host, args.port):
                 _show_messagebox(
@@ -426,7 +426,7 @@ def main() -> None:
         onm = owner or (0, "", "")
         if "omniagent" in (onm[1] or "").lower() or "omniagent" in (onm[2] or "").lower():
             # 被本程序旧实例占用(无 Mutex 的旧版/另一端口配置): 当已在运行处理
-            from app.utils.console_mode import detach_console_if_needed
+            from app.proc.console_mode import detach_console_if_needed
             detach_console_if_needed()
             if not args.no_browser and not _open_browser_when_ready(args.host, args.port):
                 _show_messagebox(
@@ -446,7 +446,7 @@ def main() -> None:
 
     # ③ 通过全部前置检查后才脱离控制台(P0 止血逻辑与前提不变): 父进程不持有控制台,
     #   子进程无从继承, CreateProcessW 控制台 IOCTL 阻塞(不释放 GIL)的前提消失
-    from app.utils.console_mode import detach_console_if_needed
+    from app.proc.console_mode import detach_console_if_needed
     detach_console_if_needed()
 
     base = _exe_dir()
@@ -457,13 +457,13 @@ def main() -> None:
     #   随主进程自动终止, 不留孤儿锁 DLL(重新部署时 MSVCP140.dll 等被锁无法覆盖) — 小欧-2026-11-07
     _job_handle = 0
     if is_frozen:
-        from app.utils.win_job_object import assign_current_to_kill_on_close_job
+        from app.proc.win_job_object import assign_current_to_kill_on_close_job
         _job_handle = assign_current_to_kill_on_close_job()  # 内核句柄, 进程退出时 OS 回收触发杀树
 
     # 2026-11-26 小欧 - 进程宿主: 启动期预拉起进程宿主, 此后请求路径不再 CreateProcessW。
     #   置于 ③ 脱离控制台、资源/配置就绪之后; 失败仅告警不阻断启动(工具调用侧 fail-closed, 自动重建)。
     try:
-        from app.proc_host.client import ensure_host
+        from app.proc.client import ensure_host
         ensure_host()
     except Exception as _e:
         from app.logger import logger as _logger

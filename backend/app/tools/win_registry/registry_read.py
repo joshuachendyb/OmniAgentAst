@@ -42,7 +42,7 @@ from app.tools.tool_constants import (
 from app.tools.tool_response import build_error, build_success
 from app.tools.validate.registry_path_checker import validate_registry_key
 from app.utils.path_utils import get_tool_dir  # 2026-11-20 小欧: 注册表备份落会话 temp 目录
-from app.utils.proc_io import (
+from app.proc.proc_io import (
     run as proc_run,  # 零线程读管道(取代 subprocess.run 的 _readerthread) — 2026-11-04 小欧
 )
 from app.utils.time_utils import timestamp_for_filename

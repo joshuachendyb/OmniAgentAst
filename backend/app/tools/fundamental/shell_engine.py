@@ -117,8 +117,8 @@
 #   2026-11-04 小欧 - 收口最后一处运行期建线程: _StdinWriter 的线程改由导入期预建的
 #         _StdinWriterPool 租借(池耗尽才兜底新建, 且必须过 spawn_gate 闸门);
 #         spawn_gate 全局串行化 Thread.start × CreateProcessW, 覆盖所有调用点(不靠逐点记忆)。
-#   2026-11-04 小欧 - 分层收口: 树杀/后代清杀移入 app.utils.proc_utils(通用进程层);
-#         线程池统一为 app.utils.workers.WorkerPool / ThreadLeasePool(取代 serial_worker + 两处私有池);
+#   2026-11-04 小欧 - 分层收口: 树杀/后代清杀移入 app.proc.proc_utils(通用进程层);
+#         线程池统一为 app.proc.workers.WorkerPool / ThreadLeasePool(取代 serial_worker + 两处私有池);
 #         闸门改有界等待+快速失败(无限等待=僵死, 只是换个位置), 指标经 /health 暴露;
 #         即: 本文件只留 shell 协议与生命周期, 不再持有通用进程/线程原语。
 #         历史条目中的 taskkill/Thread.join/serial_worker/_kill_fallback/_kill_descendants/
@@ -154,7 +154,7 @@ import time
 from typing import Optional
 
 from app.logger import logger
-from app.utils.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread)
+from app.proc.proc_io import run as proc_run  # 零线程读管道(取代 subprocess.run 的 _readerthread)
 
 # ═══════════════════════════════════════════════════════
 #  常量(仅保留支撑函数所需)

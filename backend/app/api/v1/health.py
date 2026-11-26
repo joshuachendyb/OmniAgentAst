@@ -55,7 +55,7 @@ from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
 from app.utils.background_tasks import spawn_bg  # 强引用防 GC; shutdown 按引用 cancel — 2026-11-15 小欧
 from app.utils.build_fingerprint import build_snapshot  # 2026-11-15 小欧: 运行代码指纹
-from app.utils.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
+from app.proc.spawn_gate import snapshot as spawn_snapshot  # 2026-11-04 小欧: 进程/线程创建指标
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 
 router = APIRouter()

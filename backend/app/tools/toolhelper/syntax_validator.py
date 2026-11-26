@@ -219,7 +219,7 @@ def _node_check_js(content: str, file_path: Optional[str] = None):
     import shutil
     import tempfile
 
-    from app.utils.proc_io import (
+    from app.proc.proc_io import (
         run as proc_run,  # 2026-11-04 小欧: 零线程读管道, 不起 _readerthread
     )
     _node = shutil.which("node")
