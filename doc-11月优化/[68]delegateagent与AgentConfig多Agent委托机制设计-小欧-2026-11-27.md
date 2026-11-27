@@ -17,6 +17,8 @@
 - v2.1 2026-11-27 小欧 章节结构重组：①§2 小节合并——原 2.4(ContextVar)+2.5(入口层注入)合并为新 2.4"注入机制"；原 2.6(运行器)+2.7(并行模式)合并为新 2.5"子 Agent 运行器"；原 2.8 顺延为新 2.6"OCP 扩展点总表"；②原 §4 防递归与安全防护整体前置并入新 2.7"安全与递归防护"（原 4.1/4.2/4.3 内容不变，仅降级为 2.7.x）；③原 §7 通信交互与数据流总览提前为新 §3；④原 §3 与现有代码的集成顺延为新 §4；⑤原 §6 插件/Skill Manifest 格式并入新 §2.1 作为子节（2.1.x 插件 manifest 加载），不再独立成章；⑥原 §5/§8/§9 顺延为新 §5/§6/§7；⑦全文交叉引用章节号同步更新
 - v2.2 2026-11-27 小欧 设计决策记录由文末移至 §1.4（概述阶段先给决策全貌，读者不必翻到末尾）；修正 §1.3 与 §1.4 之间缺空行、标题多余空格、文末悬空分隔线
 - v2.3 2026-11-27 小欧 补执行模型与并行前提两处口径：①§1.4 增两条决策——子 Agent 前台阻塞+可并行（不做后台 fire-and-forget）的理由、子 Agent 价值定位在上下文隔离；②§2.5.1 增"并行的真实前提"（`delegateagent` 不在 `_has_conflict` 三类工具集内 → 恒无冲突恒可并行，属结构性巧合，加路径参数会静默退化为串行）与"前台阻塞 ≠ 串行等待"，并标注 `MAX_PARALLEL_SUB_AGENTS` 当前代码尚无、为 §5.2 新增项；③§3.1 增"前台/后台"与"串行/并行"两维度独立说明；④§6 P0 并行上限行补常量新增
+- v2.4 2026-11-27 20:03:59 小欧 逐条对码后的收口整改：①删 `AgentConfig.allow_delegate` 死字段（全仓无消费方，没人读的开关即假开关）及 manifest 加载 kwarg，§2.1.1/§2.7.1 口径同步为 P1 再引入；②`DELEGATE_DENY_CATEGORIES` 增 `SYSTEM`（`create_task`/`delete_task` 能删父任务台账行）与 `MEDIA`（生成即落盘并计费）并逐类注理由，§1.2/§2.6/§2.7.1/§2.7.2 同步；③`_find_unattended_blocker` 覆盖面订正——只拦 AGENT 分类与声明 `needs_confirmation`/`confirm_fn` 的工具，FILE 写类因 `file_register.py:246 CONFIRMATION_MAP = {}` 不声明确认（delete 的确认在 `check_delete_permission` 执行期产出），唯一防线是 `DELEGATE_DENY_TOOLS`，原"新工具自动兜底"的措辞属高估；④`run_delegate` 增 `wait=False` 显式拒绝（静默当同步跑等于谎报已后台执行）；⑤`UniversalAgent(...)` 构造包 try/except + `_close_quietly`，修构造失败时独立 client 泄漏（原 `try/finally` 尚未开始）；⑥取消路径改有界：新增 `_CANCEL_GRACE_S = 5.0`，`finally` 内 `asyncio.wait(..., timeout=)` 后仍未退出则记 error 并放弃等待，避免父任务被无界挂住，同步删 `import contextlib`；⑦§4.1 补 `tool_methods["delegateagent"]` 注册步骤（漏此步工具根本不 register）；⑧§4.2/§5.2 补可见性传参链 `tool_cache_manager.get_openai_tools`（`tool_cache_manager.py:29` 现只传 `categories`）→ `registry.to_openai_tools` → `tool_description.to_openai_tools`，清单新增 `tool_cache_manager.py`；⑨§2.5.1 补"上限校验必须在工具名归一之后"（`tool_runner.py:54-59` 重写 `c["tool_name"]`，否则别名绕过 6 路上限）；⑩§3.1 ⑤ 通道载体改模块级 `task_registry.inject_system_notice`、参数名 `content`（原写 `TaskRegistry.` 方法与 `text`）；§3.2 数据流第 6 步 `track_task=False` 改 `track_task=config.track_task`；⑪§4.1 注意 2 补 callable 描述的全部落点（`tool_description.py:54`、`registry.py:374`、`register(description=...)` 类型放宽、`tool_cache_manager.py:54` 亦直读 `.description`）；⑫§3.1 架构边界第 4 条改为 `DATAANALYSIS`/`DOCUMENT` 仍属待复核 CPU 类（`SYSTEM`/`MEDIA` 已被拒绝分类覆盖）；⑬§5.2 `base_agent.py` 改为删掉 `**kwargs` 由 Python 原生 `TypeError` fail-fast（比手写校验少一层代码）
+- v2.6 2026-11-27 OmniAgent 追加 2026 Agent 趋势增量章节：①§7「A2A 开放委托层」——把子 Agent"来源维度"从进程内注册表扩到 A2A/MCP 开放协议（Agent Card/Task/Artifact 映射到现有 AgentConfig/委托/回传，保留 fail-closed 可靠性内核），定位 P2+ 增量、不推翻 §1-§6；②§8「其他 2026 趋势增量」——agent RL 兼容声明、会话内自演化记忆槽、测试时 effort 预算档、按需图编排开关（默认 KISS 关闭）；③§6 里程碑表新增 P2+ 开放委托层行。原 §1-§6 正文与可靠性内核不变
 
 
 ---
@@ -1321,4 +1323,65 @@ TOOL_NAME_ALIASES.update({
 | **P2** | SSE 子 Agent 步骤折叠透传（改 `_SSE_FORWARD_TYPES` + 嵌套渲染） | 暂缓 |
 | **P2** | 事件 sink 注入（`react_loop._publish` 可注入 `agent.event_sink`），去掉私有 buffer 通行证 | 暂缓 |
 | **P2** | 收编 `subagent` 别名（需同时从 `UNAVAILABLE_OFFICIAL_TOOLS` 移除，并处理 `tuning.agent.disabled_tools` 同名屏蔽后的语义） | 暂缓 |
+| **P2+ 开放委托层** | §7 A2A 来源维度：`AgentConfig.agent_source` + 远端 Agent Card 解析 + 远端子 Agent 过 fail-closed 校验；§8 四项增量（agent RL 兼容声明 / 会话内记忆槽 / 测试时 effort 预算档 / 按需图编排开关，均默认 KISS 关闭或兼容不改动） | 按需，1-3 天 |
+
+---
+
+## 7 A2A 开放委托层（P2+ 增量）
+
+> 本章是 §1-§6 可靠性内核之上的**来源维度扩展**，不推翻、不新增框架。定位：把"子 Agent 从哪来"从进程内注册表，扩到 **A2A/MCP 开放协议**，吃到"一次接入、处处可用"的 Agent 生态红利；同时**完整保留 §2.7 的 fail-closed 可靠性内核**（远程来源按不可信对待）。
+>
+> 与 §1.2 约束的关系：§1.2 的"不引入框架"指不引入 LangGraph/AutoGen 等**编排框架**；A2A/MCP 是**协议与数据格式**（能力发现 / 任务委派 / 结果回传），不是编排框架，二者不冲突。
+
+### 7.1 概念映射（A2A 概念 → 本设计既有件）
+
+| A2A/MCP 概念 | 映射到本设计 | 落点 |
+|---|---|---|
+| **Agent Card**（远端 Agent 能力描述：名称/能力/端点/鉴权） | `AgentConfig` 的**远端来源**变体 | `AgentConfig.agent_source`（`local`=默认，`a2a_endpoint`/`mcp_server`=新增），新增远端 Agent 定义仍走 §2.1 的 manifest/注册表，**注册表多一个数据来源，不改注册结构** |
+| **Task**（委派一个有界任务） | `delegateagent` 的 `task`/`context` 参数 | 不变，复用 §2 的委托入口 |
+| **Artifact**（子 Agent 产出的结构化结果） | 既有回传路径 `FinalStep.response → summary → observation`（§3.2） | 不变，远端 Artifact 经同一 summary 回灌 |
+| **MCP 工具原语**（Tools/Resources/Prompts） | 子 Agent 工具子集（§2.6 的 categories/tool_names） | 远端子 Agent 的工具清单由 MCP server 提供，**仍过 §2.7.1 拒绝分类/拒绝名单 + 构造后确认工具校验**，远程工具默认视为需确认（fail-closed） |
+
+### 7.2 最小改动面（KISS）
+
+1. `AgentConfig` 增一个 `agent_source` 字段（默认 `local`，行为完全同现状）。
+2. 新增一个**来源解析器**（source resolver）：`local` 走现有 `AgentRegistry`；`a2a_endpoint`/`mcp_server` 拉取远端 Agent Card / MCP 工具清单，转成本地 `AgentConfig` 对象再进同一注册流程。
+3. 远端子 Agent 一律走 §2.7 的 fail-closed 校验：**远程来源默认按"不可信"对待**——委托深度 ContextVar、拒绝分类/名单、构造后确认工具校验、只读约束**全部照旧生效**，不因"是远端"而放宽。
+4. 不动 §2.5 协程隔离 / 守卫协程 / 私有 buffer / 上下文克隆等已验证的可靠性内核。
+
+### 7.3 取舍（YAGNI）
+
+- P2+ **只做**：Agent Card 发现 + Task 委派 + Artifact 回传 + MCP 工具清单接入（request/response + 轮询即可）。
+- **暂不做**（不提前引入抽象）：远端 Artifact 流式推送 / push notification / 多 Agent 跨组织协商 / 跨厂商鉴权联邦。等真实出现跨组织 Agent 生态需求再补，避免"为可扩展引入注册表、实际只有一个 entry"的过度设计（§1.2 KISS-DIRECT 正例反例）。
+
+## 8 其他 2026 趋势增量
+
+> 本章四块均为**增量/兼容**，遵循 KISS：能声明兼容的不改代码，要动的只加一个字段或一个默认关闭的开关。
+
+### 8.1 agent RL 兼容声明
+
+模型层"被训练成会规划/会调工具/会长程执行"（Qwen3-Coder、GPT-5 等 agent RL 方向）与本设计**解耦**：本设计的外层脚手架（`delegateagent` tool + 注册表 + prompt + fail-closed）是纯 scaffolding，**天然兼容**任一底座模型；底座换成更强的 agent RL 模型时，子 Agent 外层脚手架可顺势变薄。**本设计无需改动**，仅在 §1.4 决策记录补一句"模型线独立演进，scaffolding 不变"。
+
+### 8.2 会话内自演化记忆槽
+
+方向对齐"记忆从存取进化为自我沉淀"，但**克制到会话内**，不引入跨天长期库（避免过度设计，仍满足 KISS）：
+
+- 子 Agent 成功完成的 `task → summary` 写入**会话作用域的轻量经验槽**（随会话结束即弃），供同一会话内的后续委托复用（父 LLM 可把上一条子 Agent 的经验摘要注入下一次委托的 `context`）。
+- `track_task` 维持 `False` 不变（§2.5/§5.3），经验槽不落 `tasks` 台账、不进 DB。
+
+### 8.3 测试时 effort 预算档
+
+把 `max_steps`/`timeout_s` 从 `AgentConfig` 的**静态值**，改为"**基础值 + 父 LLM 可传 `effort` 档动态上调**"：
+
+- `delegateagent` 新增可选参数 `effort`（`low`/`med`/`high`，默认 `med`=现状值）；`high` 上调 `max_steps`/`timeout_s`，`low` 下调以快路径直出。
+- 对齐"推理×工具"的测试时扩展趋势：简单任务快出、难任务自动加预算。改动面小——一个字段 + §4.1 一处校验（effort 档映射到静态上限的倍数，仍受 §2.5 守卫协程的墙钟/取消收口约束）。
+
+### 8.4 按需图编排开关（默认关闭）
+
+- 默认坚持 §1.2"不引入 DAG"原则（if/elif 分派 + 单 tool 有界循环）。
+- **仅当**真实出现"条件分支 + 循环回边 + 并行汇聚"的多步骤任务时，才在 §7 来源层之上加一个**可选的"图模式"开关**（默认关），支持显式节点/边表达；开关关闭时代码路径与现状完全一致，**不引入框架**（图只是配置数据，执行仍走 `run_react_cycle`）。
+
+---
+> §7/§8 为 2026 Agent 趋势增量章节（v2.6，OmniAgent 2026-11-27 追加）：开放委托层定位 P2+、其余四项默认 KISS 关闭或兼容不改动；§1-§6 可靠性内核（协程隔离 / fail-closed / 只读 / 守卫协程 / 上下文隔离 / OCP 注册表）原样保留。
+
 
