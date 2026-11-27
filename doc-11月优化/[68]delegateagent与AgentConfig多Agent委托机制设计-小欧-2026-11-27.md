@@ -23,6 +23,7 @@
 - v2.8 2026-11-27 小欧 补齐实施代码（对码核实后把"只描述未给码"的缺口落码）：①§2.1.1 补 `plugin_loader.py` 完整扫描器实现 + 调用点；②§2.4.2 把 delegate 回调注入改为嵌入现有 try/finally 的真实结构（含 token 守卫理由），usage 合并交叉引用 §4.3 避免重复；③§2.5.1 把并行上限伪代码替换为可落地完整实现，并点明 `_active_calls` 取号前移的隐藏改动点；④§2.7.3 补 `base_agent` 的 `track_task` 门控代码 + 遥测归属取舍（子 Agent 不 finalize，token 经 accumulated_usage 回灌父）；⑤§4.2 补前置改造全套代码（`tool_loader`/`universal_agent`/`tool_description`/`registry`/`tool_cache_manager`/`client_sdk.api_key` 六项），并补 §5.2 清单里 `registry.to_openai_tools` 增 `exclude` 的漏项；⑥修正描述性不符：OCP 扩展口 17→18、`_find_unattended_blocker` 覆盖面措辞（全仓 needs_confirmation=True 零命中，bash/execute_sql 靠 confirm_fn）
 - v2.9 2026-11-27 小欧 实施清单与里程碑逐项对齐：①§5.1/§5.2 每个文件补「修改要点（落码位置）」列，点名改哪个函数、改什么、代码在哪一节，消除"只列文件名不知改什么"；②§5.2 补原清单遗漏的 `config/config.yaml`（P1 新增 `tuning.agent.plugins_dir` 配置项）与 `stream_orchestrator.py`（P2 改 `_SSE_FORWARD_TYPES`）；③§5.3 补 `task_registry.py`（`inject_system_notice`/`drain_inbox` 已存在，P1 直接复用）、`tools/agent/__init__.py`（已存在）不改理由，并标注 `react_loop.py` 的 P2 事件 sink 例外；④§6 每阶段增「涉及文件（新增/修改）」列，逐阶段点名代码落点，工期不变
 - v2.10 2026-11-27 小欧 全章交叉核查修正（逐章互相核查）：①§5.1 `load_from_manifest` 职责归属纠正——它是 `AgentRegistry` 的方法（`agent_config.py:195`），非 `plugin_loader.py` 的；`plugin_loader.py` 只做 `load_plugins()` 扫描 + 逐 manifest 调 `registry.load_from_manifest()`，行数 ~50 改 ~30（与 §2.1.1 一致）；②§5.1 `agent_config.py` 补 `load_from_manifest` 与 `get_agent_registry`/`reset_agent_registry`（模块级函数，非 Registry 方法）落点；③§5.2 `agent_register.py` 修改要点由"三张分类/依赖表"改为"三张表（描述/入参/示例）+ `tool_methods` 注册循环"（与 §4.1 四张表口径一致）；④§5.2 `stream_orchestrator.py` 预估列改"P2（暂缓）"；⑤§6 P1 插件行 `plugin_loader.py` 由"改"改"新增"（§5.1 已列为新增文件）
+- v2.11 2026-11-27 22:39:03 小欧 §6 由单张优先级表扩为两节：原表收为 §6.1「优先级总表」；新增 §6.2「阶段实施方案」，把 P0 拆为 S0-S5 六个可独立验收的串行阶段、P1/P2/P2+ 各一阶段，逐阶段给出目标/改动面/验收清单/退出标准/失败回退，并补 §6.2.11 验收门禁与记录规则（每阶段一记录、红项不出阶段、安全项与能力同阶段验收）；同时纠正 §2.5.1 上限校验落点的错误前提——`execute_tools` 开头逐 call 的修正实为文件扩展名纠错（`_auto_correct_file_tool`，不查 `TOOL_NAME_ALIASES`），别名归一在下游 `registry.get_tool` 才发生，故计数必须自行调 `normalize_tool_name`，同步改 §2.5.1 代码与 §5.2 `tool_runner.py` 行、§6.2.7 验收第 2 项
 
 
 ---
@@ -938,7 +939,7 @@ def _extract_summary(sub_agent) -> str:
 **上限校验落点**：必须在 `tool_runner.execute_tools` —— 它是唯一持有 `all_calls` 全量的一层。
 `delegateagent()` 与 `tool_executor.execute_tool()` 都是单工具粒度，放在那里看不到同轮其它调用，校验无效。
 
-位置还有第二个硬约束：**必须在工具名归一之后**。`execute_tools` 开头逐 call 做 `c["tool_name"] = _corrected`（别名/纠错归一，`tool_runner.py:54-59`）；插在归一之前，`delegate_task`/`call_agent` 这类别名会绕过计数（名字还没变成 `delegateagent`）。正确位置是归一循环结束、`if len(all_calls) == 1` 分支之前。
+位置还有第二个硬约束：**计数前必须自己做别名归一**。`execute_tools` 开头那段逐 call 的 `c["tool_name"] = _corrected`（`tool_runner.py:53-60`）实际只做**文件扩展名纠错**（`_auto_correct_file_tool`，仅对 `read*`/`write*` 且带 `path` 的调用生效），**不查 `TOOL_NAME_ALIASES`**；别名归一发生在下游 `registry.get_tool`/`resolve_registered_tool`，属单工具粒度、晚于本处。也就是说 `delegate_task`/`call_agent` 进到 `execute_tools` 时名字仍是别名，若直接 `c.get("tool_name") == "delegateagent"` 计数，别名会全部绕过上限。正确做法是**计数时对每个 call 调一次 `normalize_tool_name`**（顺手把归一结果写回 `c["tool_name"]`，让下游步骤与预览显示主名，属可选增强）。插入点是扩展名纠错循环结束、`if len(all_calls) == 1` 分支之前。
 
 ```python
 # tool_constants.py
@@ -947,10 +948,12 @@ MAX_PARALLEL_SUB_AGENTS = 6
 # tool_runner.py import 段补：
 from app.tools.tool_constants import MAX_PARALLEL_SUB_AGENTS
 from app.tools.tool_response import build_error
+from app.tools.tools_alias_mapper import normalize_tool_name
 
-# execute_tools 内、工具名归一循环之后 / if len(all_calls) == 1 之前：
+# execute_tools 内、扩展名纠错循环之后 / if len(all_calls) == 1 之前：
+# 计数自带归一：all_calls 里的 tool_name 此时可能仍是 delegate_task/call_agent 等别名
 _delegate_idx = [i for i, c in enumerate(all_calls)
-                 if c.get("tool_name") == "delegateagent"]
+                 if normalize_tool_name(c.get("tool_name", "")) == "delegateagent"]
 _over = set(_delegate_idx[MAX_PARALLEL_SUB_AGENTS:])
 _rejected: Dict[int, Any] = {}
 if _over:
@@ -1451,7 +1454,7 @@ TOOL_NAME_ALIASES.update({
 | `backend/app/tools/agent/agent_register.py` | ① `AGENT_TOOL_DESCRIPTIONS` 增 delegateagent 条目，description 走 `build_delegate_tool_description()` callable 动态生成（新增 Agent 零改字面量）；② `_register_agent_tools()` 内先调 `plugin_loader.load_plugins()` 再注册内置工具；③ 三张表（`AGENT_TOOL_DESCRIPTIONS`/`AGENT_INPUT_MODELS`/`AGENT_TOOL_EXAMPLES`）+ `tool_methods` 注册循环登记（漏 `tool_methods` 则工具根本没 register）。代码见 §4.1 | +20 行 |
 | `backend/app/tools/context.py` | ① 新增 `_current_delegate_callback` ContextVar（签名 `async (agent_id, task, context, wait) -> Dict`）；② 新增 `_current_delegate_depth` ContextVar（并发各算各的，不能用模块全局）；③ set/reset/get 三件套。代码见 §2.4.1 | +20 行 |
 | `backend/app/services/agent/tool_executor.py` | ① `execute_tool` 入口在 `set_current_session_id` 同处 set delegate 回调，finally 按 `_delegate_token is not None` 守卫 reset；② usage 合并（成功/失败分支都按 `data.usage` 存在性累加到父 accumulated_usage）。代码见 §2.4.2、§4.3 | +22 行 |
-| `backend/app/services/agent/tool_runner.py` | ① `execute_tools` 内、工具名归一之后加并行上限校验（`len(all_calls)>6` 拒绝多余委托）；② 三分支改用 `_active_calls` 执行 + 末尾按原索引回填（隐藏改动点：`_active_calls` 取号前移）。代码见 §2.5.1 | +10 行 |
+| `backend/app/services/agent/tool_runner.py` | ① `execute_tools` 内、扩展名纠错循环之后加并行上限校验（计数时对每个 call 调 `normalize_tool_name`——`all_calls` 里的 `tool_name` 可能仍是 `delegate_task`/`call_agent` 别名，直接比较会让别名全部绕过；`len>6` 拒绝多余委托）；② 三分支改用 `_active_calls` 执行 + 末尾按原索引回填（隐藏改动点：`_active_calls` 取号前移）。代码见 §2.5.1 | +12 行 |
 | `backend/app/services/agent/tool_loader.py` | ① `init_tools(initial_categories, excluded_tools=None)` 存 `agent._excluded_tools` 单一权威 + 装载循环跳过被拒；② `load_category` 动态注入同样跳过（searchtool 灌回仍不可调）。代码见 §4.2① | +12 行 |
 | `backend/app/services/agent/universal_agent.py` | ① `__init__` 增显式 `excluded_tools`/`track_task` 形参；② `init_tools` 与 `super().__init__` 按名传；③ 删掉 `**kwargs`（漏改即 TypeError，启动期 fail-fast）。代码见 §4.2② | +6 行 |
 | `backend/app/services/agent/base_agent.py` | ① `__init__` 增 `track_task: bool = True`，仅门控 `tracker.create_task`；② 删掉 `**kwargs`；③ 子 Agent 不 finalize 遥测，token 经 accumulated_usage 回灌父。代码见 §2.7.3 | +2 行 |
@@ -1482,6 +1485,8 @@ TOOL_NAME_ALIASES.update({
 
 ## 6 优先级与里程碑
 
+### 6.1 优先级总表
+
 | 阶段 | 内容 | 涉及文件（新增/修改） | 预估工期 |
 |------|------|----------------------|----------|
 | **P0** | AgentConfig + AgentRegistry（含 `__post_init__` 校验/`unregister`/`reset`）+ delegateagent_runner（含守卫协程 + 私有 buffer + 上下文克隆）+ delegateagent 工具（同步 `wait=True`）+ ContextVar（回调 + 深度）+ 注册 + 内置 3 个 Agent | 新增 `agent_config.py`/`delegateagent_runner.py`/`delegateagent.py`/`delegateagent_schema.py`；改 `agent_register.py`/`context.py` | 2-3 天 |
@@ -1505,6 +1510,225 @@ TOOL_NAME_ALIASES.update({
 | **P2** | 事件 sink 注入（`react_loop._publish` 可注入 `agent.event_sink`），去掉私有 buffer 通行证 | 改 `react_loop.py`（P0/P1 不改，P2 才动）/ `base_agent.py` | 暂缓 |
 | **P2** | 收编 `subagent` 别名（需同时从 `UNAVAILABLE_OFFICIAL_TOOLS` 移除，并处理 `tuning.agent.disabled_tools` 同名屏蔽后的语义） | 改 `tools_alias_mapper.py`/`config/config.yaml` | 暂缓 |
 | **P2+ 远期增量** | §7.1 A2A 开放委托层：`AgentConfig.agent_source` + 远端 Agent Card 解析 + 远端子 Agent 过 fail-closed 校验；§7.2 会话内经验槽 + §7.3 effort 预算档（均默认 KISS 关闭或兼容不改动）；agent RL 兼容声明与图模式开关已分别融入 §1.4、§1.2，不占独立实施条目 | 改 `agent_config.py`（agent_source/经验槽/effort 字段）/ `delegateagent_runner.py`（远端 fail-closed）/ `plugin_loader.py`（远端来源） | 按需，1-3 天 |
+
+### 6.2 阶段实施方案
+
+§6.1 按优先级横切（P0/P1/P2），本节按"可独立验收的纵向阶段"纵切：把 P0 重排为 S0–S5 六个串行阶段，P1/P2/P2+ 各一个阶段。拆分遵循五条规则：
+
+1. **单一职责**：一个阶段只交付一类能力，改动面封闭在本阶段列出的文件内，不跨阶段混改。
+2. **可独立验收**：验收动作只依赖本阶段及之前阶段的产物，不依赖后续阶段；判据是"可执行动作 + 可观察结果"，不是"代码看起来对"。
+3. **安全与能力同阶段**：只读、递归防护、耗时有界三类承诺必须与能力在同一阶段验收通过（§1.4"不接受静默降级"）。
+4. **门禁串行**：前一阶段未全绿不得进入下一阶段；红项只能在本阶段修，不允许"带到下一阶段顺带修"。
+5. **主链路始终可跑**：每个阶段收尾时主 Agent 既有链路（`backend/tests` 单测 + E2E-P0-03b）必须通过，工具列表与行为不退化。
+
+#### 6.2.1 阶段划分与依赖
+
+| 阶段 | 一句话目标 | 新增/修改文件 | 前置 | 对应 §6.1 条目 | 工期 |
+|------|-----------|--------------|------|---------------|------|
+| **S0** 契约前置改造 | 让 `excluded_tools`/`exclude`/`track_task`/`api_key` 这些新形参真实存在，默认行为零变化 | 改 `tool_loader.py`/`tool_description.py`/`registry.py`/`tool_cache_manager.py`/`universal_agent.py`/`base_agent.py`/`client_sdk.py` | — | P0 契约前置改造 + `api_key` property 与 callable 描述的形参部分 | 0.5 天 |
+| **S1** 配置层 | 子 Agent"是什么"可声明、可校验、可查询 | 新增 `agent_config.py` | S0 | P0 首版（配置/注册表部分） | 0.5 天 |
+| **S2** 委托通道 | 工具能取到回调、schema 正确、失败即结构化报错 | 改 `context.py`；新增 `delegateagent_schema.py`/`delegateagent.py` | S1 | P0 首版（工具层部分） | 0.5 天 |
+| **S3** 子 Agent 运行器 | 跑通一次同步委托，同时兑现只读/递归/超时三条安全承诺 | 新增 `delegateagent_runner.py` | S2 | P0 首版（运行器/递归/只读/超时/台账/隔离） | 1 天 |
+| **S4** 主链路接入 | 主 Agent 经 LLM 真能调起委托，用量记到父账，别名可用 | 改 `agent_register.py`/`tool_executor.py`/`tools_alias_mapper.py` | S3 | P0 注册/注入/usage/别名/动态描述 | 1 天（含别名 0.5） |
+| **S5** 并行上限 | 单轮最多 6 个子 Agent，超出部分结构化拒绝且结果不错位 | 改 `tool_runner.py`/`tool_constants.py` | S4 | P0 并行上限校验 | 0.5 天 |
+| **S6** P1 增强 | 异步委托、插件化、名粒度放行、多层委托 | 新增 `plugin_loader.py`；改 `delegateagent.py`/`delegateagent_runner.py`/`tool_executor.py`/`tool_cache_manager.py`/`tools_alias_mapper.py`/`config/config.yaml` | S5 | P1 四项 | 3–4 天 |
+| **S7** P2 体验增量 | 前端可见子步骤、事件 sink 可注入、`subagent` 收编 | 改 `stream_orchestrator.py`/`react_loop.py`/`base_agent.py`/`tools_alias_mapper.py`/`config/config.yaml` + 前端嵌套渲染 | S6 | P2 三项 | 暂缓 |
+| **S8** P2+ 开放生态 | A2A/MCP 远端 Agent 作为新来源，可靠性内核不放宽 | 改 `agent_config.py`/`delegateagent_runner.py`/`plugin_loader.py` | S7 | §7.1 | 按需 1–3 天 |
+
+> P0 合计 ≈ 4 人日（0.5 + 0.5 + 0.5 + 1 + 1 + 0.5），与 §6.1 各 P0 行相加（0.5 契约 + 2.5 首版 + 0.5 并行 + 0.5 别名）一致。
+
+#### 6.2.2 S0 契约前置改造（0.5 天）
+
+**目标**：让后续阶段依赖的新形参/新属性真实存在，且**默认行为零变化**。这是唯一"改了但功能未上线"的阶段，验收标准因此是"零行为变化 + 漏改必炸"。
+
+**改动面**（7 个既有文件，全部为增量形参，默认值保持原语义）：
+
+| 文件 | 落点 |
+|------|------|
+| `tool_loader.py` | `init_tools(initial_categories=None, excluded_tools=None)`（现 `:28`）：存 `agent._excluded_tools` 作单一权威，装载循环跳过；`load_category` 动态注入同样跳过 |
+| `tool_description.py` | `to_openai_tools(registry, categories=None, tool_names=None, strict=False, exclude=None)`（现 `:27`）：`if name in _exclude: continue`；description 取值支持 callable（`meta.description() if callable(...)`） |
+| `registry.py` | `to_openai_tools` 增 `exclude` 并透传（现 `:410`）；`list_tools` 解析 callable；`register(description=...)` 放宽为 `Union[str, Callable[[], str]]` |
+| `tool_cache_manager.py` | `get_openai_tools` 调 `to_openai_tools` 时补 `exclude=getattr(agent, "_excluded_tools", None)`（现 `:29` 只传 `categories`） |
+| `universal_agent.py` | `__init__` 增显式 `excluded_tools`/`track_task`，删 `**kwargs`（现 `:50-56`）；`init_tools` 与 `super().__init__` 按名传 |
+| `base_agent.py` | `__init__` 增 `track_task: bool = True`，删 `**kwargs`（现 `:52-57`）；`if track_task:` 门控 `tracker.create_task`（现 `:95-102` 无条件建行） |
+| `client_sdk.py` | `LLMClient.api_key` 只读 property（`_api_key` 现 `:441`，无 setter，避免绕过 strip 清洗） |
+
+**验收清单**：
+
+1. **启动零报错**：`backend` 目录下 `python -c "import app.services.agent.universal_agent"` 无异常；`start_watch.bat` 起服务后健康检查通过。
+2. **主 Agent 工具列表零变化**：改造前先落一份快照（`sorted(t["function"]["name"] for t in get_openai_tools(agent))`），改造后同配置重建 Agent 再取，两份集合逐项相等、数量相同。
+3. **默认台账行为不变**：不传 `track_task` 构造主 Agent，`tasks` 表新增一行且 `_task_tracker` 非 None。
+4. **fail-fast 生效**：`UniversalAgent(..., foo=1)` / `BaseAgent(..., foo=1)` 抛 `TypeError`（`**kwargs` 已删）；`BaseAgent(..., track_task=False)` 时 `_task_tracker is None` 且 `tasks` 表零新增。
+5. **拒绝清单三处贯通**：`UniversalAgent(initial_categories={FUNDAMENTAL, FILE}, excluded_tools={"write"})` 后——`_tools_dict` 无 `write`；`get_openai_tools` 名字集合无 `write`；手动 `load_category(FILE)` 后仍无 `write`。
+6. **`api_key` 可读且只读**：`agent.llm_client.api_key` 返回非空字符串；赋值 `agent.llm_client.api_key = "x"` 抛 `AttributeError`。
+7. **回归**：`cd backend; pytest -q` 单测全绿；E2E-P0-03b 通过。
+
+**退出标准**：1–7 全绿；日志无新增 warning（预期内的缺库提示除外）。
+
+**失败回退**：本阶段全是"默认值不变的增量形参"，回退只需 revert 这 7 个文件；若第 5 项失败，说明 `exclude` 传参链断了一环，按 `tool_cache_manager → registry → tool_description` 顺序逐段加打点定位，不得跳过。
+
+#### 6.2.3 S1 配置层（0.5 天）
+
+**目标**：把"某个子 Agent 是什么能力"变成可声明、构造即校验、可查询的注册表数据。
+
+**改动面**：新增 `backend/app/tools/agent/agent_config.py`（§2.1 全量代码：字段、`__post_init__`、`effective_categories()`、`AgentRegistry` 六个方法 + `load_from_manifest`、`get/reset_agent_registry`、`DELEGATE_DENY_CATEGORIES`/`DELEGATE_DENY_TOOLS`、内置 3 Agent）。
+
+**验收清单**：
+
+1. **agent_id 校验**：`Researcher`/`1abc`/长度 33 字符/空串 逐个抛 `ValueError`，错误信息含该 id；长度 32 字符的合法 id 通过。
+2. **字段边界**：空 `description`、`max_steps=0`/`31`、`timeout_s=4`/`1801`、空 `tool_categories` 均抛 `ValueError`；边界值 `max_steps=1`/`30`、`timeout_s=5`/`1800` 通过。
+3. **集合拷贝**：传入外部可变集合，构造后修改原集合，`config.tool_categories` 不受影响。
+4. **拒绝分类**：给 `researcher` 传 `{NETWORK, FUNDAMENTAL, AGENT, SYSTEM, MEDIA, WIN_REGISTRY, DESKTOP, TIMER}`，`effective_categories() == {NETWORK, FUNDAMENTAL}`。
+5. **拒绝名单**：`DELEGATE_DENY_TOOLS` 含 `write`/`delete`/`bash`/`question`/`schedule`/`delegateagent`/`execute_sql`/`screen_capture`；不含 `read`/`find`/`searchweb`。
+6. **注册表语义**：重名 `register` 抛 `ValueError`；`replace=True` 覆盖后 `get()` 返回新对象；`unregister` 存在返回 True、不存在返回 False。
+7. **单例与复位**：`get_agent_registry()` 两次返回同一对象；`reset_agent_registry()` 后重新获取为新对象且重新含 3 个内置；`list_available()` 为 `["researcher", "reviewer", "kb_analyst"]`。
+8. **manifest 容错**：临时目录造 4 个 manifest（合法 / 未知分类 / 缺 `name` / 与内置重名），`load_from_manifest` 分别返回 config / 回落 fundamental 的 config / None / None，全程不抛异常且各有 warning 日志。
+
+**退出标准**：1–8 全绿；注册表在进程内只被 `get_agent_registry()` 创建（全仓无第二处 `AgentRegistry()`）。
+
+**失败回退**：只影响配置层，回退删除该文件即可；若第 8 项出现异常外泄，说明 `load_from_manifest` 的 try/except 覆盖面不足，须补到"任何异常都返回 None"。
+
+#### 6.2.4 S2 委托通道（0.5 天）
+
+**目标**：工具层能拿到入口层注入的回调、schema 与契约一致、任何失败都返回结构化错误而不外抛。
+
+**改动面**：改 `context.py`（`_current_delegate_callback`/`_current_delegate_depth` + set/reset/get）；新增 `delegateagent_schema.py`、`delegateagent.py`（§2.2/§2.3/§2.4.1 代码）。
+
+**验收清单**：
+
+1. **未注入即失败**：直接 `await delegateagent(agent_id="researcher", task="x")`，返回 `llm_data.status.exec_code == "error"`，detail 含"无可用 delegate_callback"，且不抛异常。
+2. **成功契约**：注入返回固定字典的回调后，`data` 含 `agent_id`/`summary`/`usage`/`steps`，`other_data.duration_ms` 为非负整数，`llm_data.status.exec_code == "success"`。
+3. **异常收口**：回调抛 `RuntimeError("boom")`，工具返回 error 结构且 detail 含 `boom`，不向上抛。
+4. **wait 透传**：`wait=False` 时回调实收 `wait=False`（本阶段只透传，拒绝在 S3）。
+5. **ContextVar 隔离**：`set_current_delegate_callback(cb)` 后 `asyncio.create_task` 内可见；`reset` 后父侧为 None；两个并发任务各自 set 不同回调互不污染。
+6. **深度隔离**：默认 `get_delegate_depth() == 0`；某任务内 `set(1)` 不影响并发另一任务的 0。
+7. **Schema**：`DelegateAgentInput.model_json_schema()` 的 required 为 `["agent_id", "task"]`，`wait` 默认 `True`，`task` 有 500 字上限；该 schema 可直接作为 `input_schema` 交给 `tool_registry.register`（注册动作在 S4）。
+
+**退出标准**：1–7 全绿；工具函数内无 `app.services.*` 导入（工具层零越层，用 `grep` 核对）。
+
+**失败回退**：回退三个文件；若第 5 项在并发下失败，说明用了模块级全局而非 ContextVar，必须改回 ContextVar（模块全局会被 6 路并发互相污染）。
+
+#### 6.2.5 S3 子 Agent 运行器（1 天，关键路径）
+
+**目标**：真跑通一次同步委托，并在同一阶段兑现"只读 + 递归 fail-closed + 耗时有界 + 作用域隔离"四项承诺。这是全设计的安全核心，验收项最多、最不允许"大概通过"。
+
+**改动面**：新增 `backend/app/services/agent/delegateagent_runner.py`（§2.5 全量：`run_delegate`/`_build_sub_task`/`_extract_summary`/`_delegate_scope`/`_run_child_guarded`/`_find_unattended_blocker`/`_close_quietly`/`_usage_of` + 深度硬顶 + model 分支）。
+
+**验收清单**：
+
+*正常路径*
+
+1. **同步成功**：用真实父 Agent（真实 LLM 配置）调 `run_delegate(agent=父, agent_id="researcher", task="搜索…")`，返回 `status == "success"`，`summary` 非空且是任务结论（不是原始网页罗列），`usage.total_tokens > 0`，`steps >= 1`。
+2. **未知 id**：`agent_id="nope"` 返回 error，summary 列出 3 个可用 id。
+3. **wait=False 显式拒绝**：返回 error，summary 明说"P1 能力，当前版本未实现"，不得静默按同步执行。
+4. **父已取消不启动**：父任务经 `register_task` 登记后 `set_cancelled(父task_id)`，再调 `run_delegate` 返回"父任务已取消，跳过委托"，且子 Agent 未被构造。
+
+*只读与递归防护*
+
+5. **分类只读**：子 Agent 的 `_tools_dict` 不含 `write`/`delete`/`move`/`copy`/`rename`/`edit`/`bash`/`question`/`schedule`/`delegateagent`/`execute_sql`/`screen_capture`；`_loaded_categories` 不含 AGENT/SYSTEM/MEDIA/WIN_REGISTRY/DESKTOP/TIMER。
+6. **动态灌回仍不可调**：在子作用域内执行 `load_category(ToolCategory.AGENT)`，`_tools_dict` 与 `get_openai_tools` 仍无 `question`/`schedule`（三处同源全部生效）；此条失败即回 S0 修 `exclude` 链。
+7. **运行层清空回调**：子作用域内 `get_current_delegate_callback() is None`（打点断言即可，等价于"delegateagent 被灌回也只会拿到 None"）。
+8. **深度硬顶**：在 `_current_delegate_depth = 1` 的作用域内调 `run_delegate`，返回 error 且 summary 含"委托深度超限"；返回后深度仍为 1（未被重置）。
+9. **确认类工具兜底**：临时注册一个 `needs_confirmation=True` 的 FUNDAMENTAL 工具，构造 reviewer 子 Agent，`run_delegate` 返回 error 且 summary 含该工具名与"已拒绝委托"；测完 `unregister`。
+
+*资源与隔离*
+
+10. **墙钟超时**：临时注册 `timeout_s=5` 的 AgentConfig，跑一个明显超 5s 的任务，返回 error 且 summary 含"超时"；总耗时 ≤ `timeout_s + _CANCEL_GRACE_S + 2×_POLL_S`（≈12s）；随后再委托一次仍成功（证明子任务已收干净、buffer 未被撞）。
+11. **父取消联动**：父任务 `set_cancelled` 后，运行中的委托在 ≤ 2×`_POLL_S` 内结束并向上传播取消；`agent_streams` 无 `sub-` 前缀残留（`reclaim_memory_buffer` 已执行）。
+12. **台账与遥测**：`tasks` 表与 `chat_task_steps` 均无 `sub-` 前缀行；`chat_tasks` 无子任务行；子 Agent 的 `TaskTelemetry` 未 finalize 时既不在 `react_loop` 结尾抛异常、也不留悬挂资源（§2.7.3）；父 `accumulated_usage` 在 `run_delegate` 返回前后不变（合并由 S4 的 `tool_executor` 做）。
+13. **SSE 隔离**：委托前后父 buffer 的 `event_log` 长度不变（子步骤未透传），子步骤只出现在日志。
+14. **授权不串味**：委托前给父加临时授权路径，委托后父 `_authorized_paths` 逐键相同（子 Agent 的 `clear_temp_auth` 只作用于副本）。
+15. **model 分支**：把临时 AgentConfig 的 `model` 设为与父相同的模型名（确保走 `create_llm_client` 分支），委托成功，且返回后父 `agent.llm_client._client.is_closed is False`（独立 client 的 `close()` 未关掉共享池）。
+16. **构造失败收口**：传非法 `sub_task_id`（如含空格）使 `UniversalAgent` 构造抛错，返回 error 且不残留独立 client（`_close_quietly` 已调用）。
+
+**退出标准**：1–16 全绿；第 5/6/7/8/10/11 六项任一红即视为安全承诺未落地，不得进入 S4。
+
+**失败回退**：第 6 项回 S0；第 7/8 项回 S2（ContextVar 定义）；第 10/11/13 项改 `_run_child_guarded`/`_delegate_scope` 的收口顺序（先 cancel + 有界等待，再回收 buffer），不得靠加大 `_CANCEL_GRACE_S` 掩盖。
+
+#### 6.2.6 S4 主链路接入（1 天，含别名 0.5 天）
+
+**目标**：把工具真正注册进 AGENT 分类、入口层注入回调并把用量记到父账、别名归一可用、工具描述由注册表动态生成。
+
+**改动面**：改 `agent_register.py`（四张表 + `tool_methods` 注册 + `load_plugins` 调用位留空）、`tool_executor.py`（注入 + finally 按 token 守卫 reset + usage 合并）、`tools_alias_mapper.py`（4 条别名）。
+
+**验收清单**：
+
+1. **真的注册**：`tool_registry.get_tool("delegateagent")` 非 None；AGENT 分类列表含 `delegateagent`；`visible_in_steps` 为 True（未进 `HIDE_FROM_STEPS`）。
+2. **描述动态生成**：`build_delegate_tool_description()` 文本含 `researcher`/`reviewer`/`kb_analyst` 三个 id 及各自 description；运行期 `register(AgentConfig(agent_id="tmp_agent", ...))` 并 `invalidate_tool_cache` 后，工具描述立即出现 `tmp_agent`，`unregister` 后消失——证明"新增 Agent 零改代码"。
+3. **注入与复位**：主 Agent 一轮真实对话中 LLM 调 `delegateagent` 成功，observation 含子 Agent 摘要；随后调任一非 delegate 工具，`get_current_delegate_callback()` 为 None（无残留泄漏）。
+4. **别名归一**：`normalize_tool_name` 对 `delegate_task`/`delegate_to_agent`/`call_agent`/`invoke_agent` 均返回 `delegateagent`；`subagent` 原样返回；真实一轮用 `delegate_task` 名字调用成功，日志出现 `[tool_name_alias]`。
+5. **usage 合并**：成功委托后父 `accumulated_usage.total_tokens` 增量等于子返回的 `usage.total_tokens`；失败委托（子 Agent 中途失败）同样有增量；非 delegate 工具不改变父 usage。
+6. **终态记账**：任务 FinalStep 与 DB 的父任务 token 统计包含子 Agent 消耗。
+7. **全链路 E2E**：本地新增 `backend/e2etests/test_e2e_40_delegateagent_sync.py`（`@pytest.mark.e2e_full_link`），用户输入触发"researcher 并行搜两个主题 + reviewer 审查"；通过标准：SSE 出现 `delegateagent` 步骤、DB 步骤表有该工具、父回复含两份摘要、`chat_task_steps` 无 `sub-` 行。
+8. **回归**：E2E-P0-03b 与 `backend/tests` 单测通过（工具列表多一个 `delegateagent` 不影响原链路）。
+
+**退出标准**：1–8 全绿；E2E 脚本按铁律本地运行、**不提交**。
+
+**失败回退**：第 1 项查 `tool_methods` 注册循环（漏此步工具根本没 register）；第 2 项查 callable 描述的三个读取点（`tool_description`/`registry.list_tools`/`tool_cache_manager`）；第 5 项查 `data.usage` 是否存在性判据（不得用 `is_success`）。
+
+#### 6.2.7 S5 并行上限（0.5 天）
+
+**目标**：单轮并行子 Agent 数硬顶 6，超出部分结构化拒绝，且结果索引不错位、既有分支不退化。
+
+**改动面**：`tool_constants.py` 新增 `MAX_PARALLEL_SUB_AGENTS = 6`；`tool_runner.execute_tools` 在**扩展名纠错循环之后**插入上限校验（计数时自行 `normalize_tool_name`，别名不能绕过）、三分支改用 `_active_calls`、末尾按原索引回填（§2.5.1 代码）。
+
+**验收清单**：
+
+1. **超限拒绝**：一轮 7 个 `delegateagent` 调用，前 6 个执行、第 7 个返回 error（summary 含"上限 6"），`results` 长度仍为 7 且索引对齐。
+2. **别名同拦**：7 个调用混用 `delegate_task`/`call_agent`，计数自带 `normalize_tool_name` 后仍按 6 拦（此时 `all_calls` 里的 `tool_name` 仍是别名，直接比较会全部放过——本条就是卡这个漏洞）。
+3. **不误伤**：一轮 8 个非委托工具（或 3 个委托 + 5 个读工具）全部执行，无上限误拦。
+4. **取号不回退**：被拒委托之后的调用，`on_attempt_recorded` 序号仍等于其原始调用序号（§2.5.1 隐藏改动点）。
+5. **单工具路径不变**：1 个 `delegateagent` 调用仍走 A 分支，结果与 S4 一致。
+6. **真并行**：同轮 3 个不同主题的 researcher 委托，总耗时 < 最慢单个耗时 × 2（证明 `gather` 生效，不是串行累加）。
+
+**退出标准**：1–6 全绿；`MAX_PARALLEL_SUB_AGENTS` 全仓仅 `tool_constants.py` 定义、`tool_runner.py` 引用两处。
+
+**失败回退**：第 1/4 项说明回填或取号映射没做对，回退 `tool_runner` 改动重做（不得只删校验保留 `_active_calls`）；第 6 项若退化，核对是否误把 `delegateagent` 加入了 `FILE_OPERATION_TOOLS`/`WINDOW_TARGET_TOOLS`/`_SQL_TOOLS`（§2.5.1 结构性前提）。
+
+#### 6.2.8 S6 P1 增强（3–4 天，四个可独立验收的子阶段）
+
+| 子阶段 | 目标 | 验收要点 |
+|--------|------|----------|
+| **S6.1** 异步委托 | `wait=False` 立即返回 `delegate_id`，完成后经 inbox 回灌 | ①调用 1s 内返回 `status=running` + `delegate_id`；②子 Agent 完成后父下一轮 `drain_inbox` 取到通知，对话历史出现该消息且带 `delegate_id`；③3 个并发异步委托结果不串（按 `delegate_id` 区分）；④父任务取消后未完成后台委托终止，无 `sub-` 残留；⑤不再出现"P1 未实现"拒绝 |
+| **S6.2** 插件化 | manifest 扫描注册，新增 Agent 不放代码 | ①`config/config.yaml` 增 `tuning.agent.plugins_dir`；②放 2 个 manifest（1 合法 1 非法），启动后 `list_available` 含合法项、非法项仅 warning；③工具描述含插件 agent；④manifest 写 `track_task`/`allow_delegate` 被忽略（`config.track_task is False`）；⑤目录不存在静默跳过、不阻塞启动 |
+| **S6.3** 名粒度放行 | `tool_names` 精确放行 + 参数别名 | ①manifest 写 `tool_names:["read","find"]` 后子 `_tools_dict` 与可见列表都只剩这两项（过滤发生在 `ToolRetryEngine` 构造之前）；②`PARAM_ALIASES["delegateagent"]={"prompt":"task"}` 下传 `prompt` 能成功；③未声明 `tool_names` 时行为与 S5 一致 |
+| **S6.4** 多层与跨 provider | `allow_delegate=True` 允许 2 层；`AgentConfig` 增 `provider`/`api_base` | ①允许配置下深度 1 可再委托、深度 2 被拒；②不带 `allow_delegate` 仍只 1 层；③跨 provider 子 client 用正确 `base_url`，不误用父池；④父池不被关闭 |
+
+**退出标准**：四个子阶段各自全绿后才算 S6 完成；S6.1 必须验证"父 LLM 真能读到结果"（只看 SSE 出现 notice 不算通过）。
+
+**失败回退**：S6.1 若出现 tool_call 配对错乱，说明直接改了 `conversation_history`，必须改回 `inject_system_notice → drain_inbox`；S6.2/S6.3 若插件 manifest 能越权（自开写权限/多层委托），视为 fail-closed 破口，立即回退并补拒绝清单。
+
+#### 6.2.9 S7 P2 体验增量（暂缓）
+
+- **目标**：前端折叠展示子 Agent 步骤（`stream_orchestrator._SSE_FORWARD_TYPES` + 嵌套渲染）、`react_loop._publish` 支持 `agent.event_sink` 注入、`subagent` 收编。
+- **验收要点**：①子步骤在前端可折叠展开，关闭开关时行为回退到 P0；②`event_sink` 注入后不再需要"纯内存 buffer 通行证"，且默认路径零开销；③`subagent` 收编同批完成三件事——从 `UNAVAILABLE_OFFICIAL_TOOLS` 移除、`tuning.agent.disabled_tools` 同步移除、设置页说明同步修改；三者缺一不得上线。
+- **退出标准**：三项各自开关可控、默认关闭时与 P0/P1 行为完全一致。
+
+#### 6.2.10 S8 P2+ 开放生态（按需）
+
+- **目标**：`AgentConfig.agent_source`（`local`/`a2a_endpoint`/`mcp_server`）+ 来源解析器，把远端 Agent Card / MCP 工具清单转成本地 `AgentConfig` 进同一注册流程。
+- **验收要点**：①`local` 行为零变化（S1–S5 验收项全部仍绿）；②远端 Agent Card 能转出合法 `AgentConfig` 并通过 `__post_init__` 校验；③远端来源默认按不可信处理——远程工具默认视为需确认，`_find_unattended_blocker` 命中即整单拒绝；④深度硬顶、拒绝分类/名单、只读约束对远端**照旧生效**（不因"是远端"放宽）。
+- **退出标准**：远端全部走 fail-closed 且失败信息可读；未接入远端时 `load_plugins` 与工具描述与 S6 完全一致。
+
+#### 6.2.11 验收门禁与记录规则
+
+1. **一阶段一记录**：每阶段收尾产出 `notes/阶段验收记录-<阶段号>-delegateagent-小欧-<YYYY-MM-DD>.md`（按笔记存放规则放项目根 `notes/`），必须含：阶段号、验收项编号、执行命令、原始输出摘要（日志/DB 查询结果/断言输出）、结论（通过/失败）、失败原因与回退动作。禁止只写"已验证通过"而无原始输出。
+2. **门禁判据**：本阶段验收项全绿 + 回归（`backend/tests` 单测 + E2E-P0-03b）通过，两项同时满足才可进入下一阶段。
+3. **安全项不可顺延**：只读、递归防护、耗时有界三类验收项（S3 第 5–11 项）与能力同阶段验收；出现红项时禁止"先上线后补校验"，因为静默降级不会让测试变红、日志也不会报警（§1.4）。
+4. **测试代码不入库**：验收脚本放本地 `backend/tests/probe_delegate_*.py` 与 `backend/e2etests/test_e2e_40_*.py`，跑通即用，按仓库铁律不提交（测试用例只用于发现问题，不作为锁死系统逻辑的借口）。
+5. **提交粒度**：每阶段 1 个 commit，格式 `<type>:<代码名> <description> - <签名>-<日期>`；提交信息写清阶段号与本阶段关闭的验收项编号。
+6. **阶段内自检**：每阶段收尾按"熟读代码全文 → 合规审查（10 大规范）→ 合理审查（逻辑是否最直）→ 关联审查（上下前后是否退化）"四步走一遍，再跑验收。
+
+#### 6.2.12 关键路径与可并行机会
+
+```
+S0 → S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8      （验收门禁顺序，不可跳过）
+```
+
+- **关键路径**是 S3：安全承诺全部压在这一阶段，工期最长且红项回退成本最高，排期时应预留 0.5 天缓冲。
+- **S0 与 S1 的编码可交错**（改的文件完全不重叠），但**验收顺序不变**：S1 的验收必须在 S0 全绿之后开始，因为 `agent_config.py` 的拒绝清单语义依赖 S0 的 `excluded_tools` 已落地。
+- **S4 与 S5 的编码可交错**（`agent_register`/`tool_executor` 与 `tool_runner` 不重叠），但 S5 的验收第 5 项依赖 S4 已完成注册。
+- **S6 的四个子阶段**串行为主：S6.1 与 S6.2 可并行编码，S6.3 依赖 S6.2（`tool_names` 来自 manifest），S6.4 依赖 S6.3（多层委托需名粒度放行先到位）。
 
 ---
 
