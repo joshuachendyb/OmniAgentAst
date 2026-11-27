@@ -65,6 +65,7 @@
 //   questions/timeout 从 payload 取; event=ask 发问/answered·cancelled·expired 清窗; 新增交互 tool 加分支即可 — 小欧-2026-11-19
 // 编辑历史: 2026-11-19 小欧 - HITL 授权收敛到 interact(kind=confirm): interactHandlers 加 onConfirm(写 pendingAuthorization/收口清窗,
 //   授权期间 agent 串行阻塞无 chunk 需暂存, 删 buffer 事件); hitlHandlers 保留 onPaused/onResumed(按钮暂停)/onRejected — 小欧-2026-11-19
+// 编辑历史: 2026-11-27 小欧 - interact confirm 帧透传 trust_scope(后端授权目录真值) — 小欧-2026-11-27
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -1126,6 +1127,8 @@ function interactHandlers(s: ChatStreamSession) {
         trust_impact:
           payload?.trust_impact as PendingAuthorizationPayload['trust_impact'],
         trust_path: payload?.trust_path as string | null | undefined,
+        trust_scope: payload?.trust_scope as string | null | undefined,
+        trust_paths: payload?.trust_paths as string[] | null | undefined,
         auto_confirm: payload?.auto_confirm as
           | boolean
           | string

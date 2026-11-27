@@ -36,6 +36,8 @@
 #   修改点: validate_write 异常分支 → 放行(True, None, None)。
 # 2026-10-19 小欧 - 去冗余: check_write_permission 删死参 tool_name(本口只按参数键判路径, 不用工具名);
 #   router 调用点同步改单参。
+# 2026-11-27 11:45:54 小欧 - auth_path 源头正名: 授权本就针对目录, 本口不再把叶子文件当 auth_path 输出,
+#   落库前经 trust_scope_path 收敛到所在目录; 下游 grant/分组/信任落库拿到的直接是授权根 — 小欧-2026-11-27
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方说明含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -77,7 +79,8 @@ from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收�
     permission_of,
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
-from app.safety.temp_auth import is_temp_authorized
+from app.safety.temp_auth import is_grantable_root, is_temp_authorized
+from app.safety.trust_db import trust_scope_path  # auth_path 源头收敛到目录 — 小欧-2026-11-27
 from app.utils.path_utils import (  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
     check_preconditions,
     reject_reason_empty_path,
@@ -142,7 +145,17 @@ def write_permission(path: str) -> SafetyResult:
     logger.warning(f"[write_path_check] 写线需授权: path={path}, scope={_scope}, "
                    f"命中规则={_cls_rule}")
     # 拦截原因直接用名单自带的标签文案(SCOPE_TEXT), 与判定同源, 不再二次转述
-    return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
+    # 授权根=目录: auth_path 从源头即为所在目录(同目录换文件名不再反复弹窗), 下游不再各自收敛 — 小欧-2026-11-27
+    _auth = trust_scope_path(path)
+    # 目录根不可授权(如写 D:\out.zip, 所在目录是盘根): 退回精确目标单文件授权。
+    #   此时拦死等于"为了省弹窗把合法写入拒了"(实测 compress→盘根被 blocked), 退回精确授权可正常放行 — 小欧-2026-11-27
+    if not is_grantable_root(_auth):
+        _auth = path
+    # 精确目标仍不可授权(空/盘根本身): 硬拦, 不弹一个点了也白点的窗 — 小欧-2026-11-27
+    if not is_grantable_root(_auth):
+        return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,
+                            message=f"授权根不可授予(盘根/空路径), 禁止写入: {path}")
+    return SafetyResult(needs_confirm=True, blocked=False, auth_path=_auth, auth_paths=(_auth,),
                         message=f"待执行操作: 写入文件\n"
                                 f"目标路径: {path}\n"
                                 f"拦截原因: {SCOPE_TEXT.get(_scope, '该路径不在允许写入范围内')}\n"

@@ -38,6 +38,7 @@
 #   (原实现异常会直接冒泡成 500, 两条入口对同一故障表现不一致); ②放行时经 ContextVar 注入 precheck_info
 #   供 shell 消费(原来只有 agent 链路注入, API 直调丢静态检查结果); ③注释去 sandbox_gate.py 行号引用(易过期) — 小欧-2026-11-23
 # 2026-11-27 11:15:24 小欧 - 授权改走 grant_temp_auth_scoped(目录级收敛): 与 agent 链路同口径, 同目录换文件免重复授权 — 小欧-2026-11-27
+# 2026-11-27 12:00:19 小欧 - 多目标一次点击全授: auth_paths 逐个 grant, 不逐个弹窗 — 小欧-2026-11-27
 
 """
 tool_facade — 工具门面(API 适配层)
@@ -215,9 +216,12 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     # 授权: 白名单外写预检已放行, 但工具体内 validate_path 仍查 temp_auth → 不 grant 会二次拦截。
     #   必须带 auth_path 守卫: shell 类确认(返回的 SafetyResult 不带 auth_path)裸调会传 None。
     #   单次调用作用域: 请求结束随 ContextVar 消亡, 不跨调用(API 链自建 task_id, 无"同 task"概念)。
-    if getattr(safety, "auth_path", None):
+    _auth_paths = safety.all_auth_paths()
+    if _auth_paths:
         from app.safety.temp_auth import grant_temp_auth_scoped
-        grant_temp_auth_scoped(safety.auth_path, tool_name, recursive=True)
+        # 一次确认全部目标目录授齐(不逐个点击) — 小欧-2026-11-27
+        for _p in _auth_paths:
+            grant_temp_auth_scoped(_p, tool_name, recursive=True)
 
     # 3. 设置任务上下文(try/finally reset, 防 ContextVar 泄漏污染并发) — 小欧 2026-08-12
     task_id = str(uuid.uuid4())

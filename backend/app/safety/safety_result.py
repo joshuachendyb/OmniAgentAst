@@ -21,9 +21,10 @@
 
 分层: 本文件只持契约(纯 dataclass, 无任何逻辑), 不做任何判定。
 """
+# 2026-11-27 小欧 - 新增 auth_paths: 多目标一次确认全部授齐, auth_path 保留为主授权根(单值 DB/文案用)
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class SafetyLevel(StrEnum):
@@ -110,10 +111,17 @@ class SafetyResult:
     message: str = ""
     safety_level: str = ""          # 取值必须取自 SafetyLevel; 空串=放行(无确认无拦截, 无分类可言)
     auto_confirm: bool = False
+    # auth_path=主授权根(单路径=唯一, 多目标=首个; 供 DB 单值字段/文案使用);
+    # auth_paths=全部授权根, 一次确认全部授齐 — 小欧-2026-11-27
     auth_path: Optional[str] = None
+    auth_paths: Tuple[str, ...] = ()
     sandbox_required: bool = False  # 沙箱预检触发标记: 由 path_tool_safety_checker 四条置位路径点亮,
                                      #   action_handler 仅对 True 者调 SandboxExecutor.pre_execute;
                                      #   缺省 False 不改变既有安全流(非破坏性工具不进沙箱预检)
+
+    def all_auth_paths(self) -> Tuple[str, ...]:
+        """全部授权根单源: 多目标取 auth_paths, 单路径回落 auth_path — 小欧-2026-11-27"""
+        return tuple(self.auth_paths) or ((self.auth_path,) if self.auth_path else ())
 
     @staticmethod
     def pass_result() -> "SafetyResult":

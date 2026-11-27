@@ -37,6 +37,9 @@
 # 2026-10-19 小欧 - 去冗余: delete_permission 原先调 guard_forbidden_delete 再调 check_delete_risk,
 #   两者同走 classify_path(每次删两次 realpath)且禁区结论一致(矩阵删格即 DENY)—— guard 一步移除,
 #   禁区拦截由 check_delete_risk 单点承担; guard_forbidden_delete 保留为删工具执行层自持底线。
+# 2026-11-27 小欧 - 授权根改为删除目标本身(精确授权): 上一版把 auth_path 收敛到所在目录, 实测
+#   「允许删 a.txt」后同目录兄弟文件与子目录一并 is_temp_authorized=True(权限放大), 文案却仍写"删除文件或目录";
+#   删除不可撤销, 不外扩父目录。递归删目录时目标本身即目录, 子树由 recursive 表达 — 小欧-2026-11-27
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方说明含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -80,6 +83,7 @@ from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收�
     permission_of,
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult
+from app.safety.temp_auth import is_grantable_root
 from app.utils.path_utils import (  # 2026-10-17 小欧: 公共步骤从 path_check_common 迁 path_utils
     check_preconditions,
     reject_reason_empty_path,
@@ -136,9 +140,18 @@ def check_delete_risk(params: dict) -> SafetyResult:
 
     # 需确认: auth_path 必须一并给出 —— safety_gate 确认后凭 auth_path 调 grant_temp_auth
     #   落地临时授权, 缺它则本分支是死路(弹窗承诺授权, 实际无授权落地, 操作照样失败)。
-    return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
+    # 2026-11-27 小欧 - 授权根=删除目标本身(精确授权): 删除是不可撤销操作, 不得外扩到父目录。
+    #   原实现把 auth_path 收敛到所在目录, 实测「允许删 a.txt」= 该目录树内任意文件可删(兄弟文件/子目录
+    #   一并 True), 用户从文案看不到范围已扩大; 递归删目录时目标本身是目录, 子树授权由 recursive 表达 — 小欧-2026-11-27
+    _auth = path
+    # 不可授权根硬拦(与写线同口径): 不弹一个点了也白点的窗 — 小欧-2026-11-27
+    if not is_grantable_root(_auth):
+        return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,
+                            message=f"授权根不可授予(盘根/空路径), 禁止删除: {path}")
+    return SafetyResult(needs_confirm=True, blocked=False, auth_path=_auth, auth_paths=(_auth,),
                         message=f"待执行操作: {'递归删除目录(含目录内全部子项)' if recursive else '删除文件或目录'}\n"
                                 f"目标路径: {path}\n"
+                                f"授权范围: 仅上述目标路径本身(不会连带同目录其它文件)\n"
                                 f"拦截原因: {SCOPE_TEXT[scope]}\n"
                                 f"授权时效: 仅本次任务有效, 任务结束自动失效",
                         safety_level=SafetyLevel.DELETE_OUTSIDE_WHITELIST)

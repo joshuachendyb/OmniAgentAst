@@ -34,6 +34,10 @@
 # 2026-10-18 小欧 - 注释精简冗余标注(S2/T1/超时配置化/路径订正 四处, 技术说明与日期署名原样保留)。
 # 2026-11-03 小欧 - 确认失效/重复确认/窗口关闭三处 WARNING→DEBUG/INFO(请求侧状态与正常超时) — 小欧-2026-11-03
 # 2026-11-24 商量 - 新增 HITL 待处理广播: create_confirmation/resolve_confirmation 经 event_bus 播报 hitl_pending/hitl_settled 信封; 新增 list_pending_confirmations 供前端对账(只返回 id+定位, 不含弹窗正文)
+# 2026-11-27 12:00:19 小欧 - 多目标一次确认全授: _PendingConfirmation.paths 存全部授权根,
+#   resolve_confirmation 逐行落信任; create_confirmation 增 paths 形参 — 小欧-2026-11-27
+# 2026-11-27 小欧 - 待确认条目收敛为 paths 单源: 删 path 字段与 resolve 兜底分支(create 已折算),
+#   避免"path/paths 双字段、到底哪个落库"两处判断 — 小欧-2026-11-27
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -50,7 +54,7 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from uuid import uuid4
 
 from app.config import get_config
@@ -72,7 +76,7 @@ class _PendingConfirmation:
     future: asyncio.Future
     created_at: float
     tool_name: str = ""  # ②-5 S2(10.1.7②-5): tool_name 随 create_confirmation 透传, 供 trust 落库 — 小欧 2026-08-16
-    path: Optional[str] = None  # v1.5(2026-09-02 小欧): 信任目标路径透传, tool+path 精确落库 — 小欧 2026-09-02
+    paths: Tuple[str, ...] = ()  # 全部授权根(单源, 单路径确认亦折算入此): 一次确认逐行落信任 — 小欧-2026-11-27
 # 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
 # 修复: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
@@ -104,7 +108,8 @@ def _cleanup_stale_confirmations():
             logger.info(f"[HITL] 清理过期confirm: {stale}, hitl_timeout={_hitl_timeout}s")
 
 
-async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[str] = None) -> str:
+async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[str] = None,
+                              paths: Tuple[str, ...] = ()) -> str:
     """
     创建确认请求，返回confirm_id
 
@@ -126,7 +131,8 @@ async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         _pending_confirmations[confirm_id] = _PendingConfirmation(
-            future=future, created_at=time.time(), tool_name=tool_name, path=path
+            future=future, created_at=time.time(), tool_name=tool_name,
+            paths=paths or ((path,) if path else ()),
         )
         # 2026-09-03 小欧/北京老陈: create_confirmation补日志 — 确认confirm_id生命周期起点
         logger.info(f"[HITL] 创建confirm: confirm_id={confirm_id}, tool={tool_name}, path={path}")
@@ -215,11 +221,18 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
     entry.future.set_result({"confirmed": confirmed, "trust_session": trust_session})
 
     if confirmed and trust_session and entry.tool_name and _task_id:
-        try:
-            from app.safety.trust import save_session_trust
-            await save_session_trust(_task_id, entry.tool_name, getattr(entry, "path", None))
-        except Exception as _te:
-            logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
+        # 2026-11-27 小欧 - 一次确认的全部授权根逐行落信任(不逐个弹窗); paths 为单源,
+        #   create_confirmation 已把单路径参数折算进 paths — 小欧-2026-11-27
+        _paths = tuple(getattr(entry, "paths", ()) or ())
+        from app.safety.trust import save_session_trust
+        # 无路径确认(工具级通配)无授权根: 仍落一条 path=NULL 行, 任意路径查询命中(既有语义)
+        for _p in (_paths or (None,)):
+            # 逐路径独立兜底: 单个路径失败不影响其余目标落库(一次点击全授的承诺不被一条坏数据打断)
+            try:
+                await save_session_trust(_task_id, entry.tool_name, _p)
+            except Exception as _te:
+                logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, "
+                               f"tool_name={entry.tool_name}, path={_p}, err={_te}")
 
     _cleanup_stale_confirmations()
 

@@ -114,6 +114,9 @@
 //   ⑤ 参数区高度/行高由裸值 72/18 改为令牌推导(4 行 × 12px 字 × 行高 1.5), 内距/圆角/框宽同样走令牌 — 商量-2026-11-18
 // 编辑历史: 2026-11-27 小欧 - 订正误导性核查注释: 原写"二者各自正确不可混改"掩盖了临时授权按文件+查询键恒 None
 //   两个真缺陷(同目录换名反复弹窗); 后端已改目录级授权, 注释同步说明展示与授权范围现一致 — 小欧-2026-11-27
+// 编辑历史: 2026-11-27 小欧 - AuthorizationRequest 增 trustScope(后端授权目录真值): 操作范围行优先直接显示,
+//   仅无路径确认回退 truncateDir; 原对已是目录的 trustPath 再剥末段会显示成上一级 — 小欧-2026-11-27
+// 编辑历史: 2026-11-27 小欧 - 增 trustPaths: 一条命令多目标时逐行列出全部授权目录, 用户只点一次全授 — 小欧-2026-11-27
 import React from 'react';
 import { Button, Checkbox } from 'antd';
 import {
@@ -163,6 +166,10 @@ export interface AuthorizationRequest {
   /** 授权影响面(后端 SafetyLevel 分档): high=删除类 / medium=写入类 / low=其余 */
   trustImpact?: 'high' | 'medium' | 'low';
   trustPath?: string | null;
+  /** 授权目录真值(后端 auth_path 源头收敛到目录): 有值直接显示, 不再 truncateDir 剥末段 */
+  trustScope?: string | null;
+  /** 全部授权目录: 多目标一次确认全授, 逐行列出(点一次即可) */
+  trustPaths?: string[];
   autoConfirm?: boolean;
   confirmTimeout?: number;
   backendTimeout?: number;
@@ -494,27 +501,32 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             minWidth: 0,
           }}
         >
-          {/* trust_path 操作范围展示: 操作目标路径(仅目录, 去文件名) — 小欧-2026-09-18 */}
-          {request.trustPath && (
-            <div style={META_ROW}>
+          {/* 操作范围: 多目标逐行列出(一次点击全授); 单路径优先授权目录真值, 无路径才回退剥末段 — 小欧-2026-11-27 */}
+          {(request.trustPaths && request.trustPaths.length > 0
+            ? request.trustPaths
+            : request.trustPath
+              ? [request.trustScope ?? truncateDir(request.trustPath)]
+              : []
+          ).map((scope, idx) => (
+            <div key={`${scope}-${idx}`} style={META_ROW}>
               <FolderOutlined
                 style={{ color: Colors.WAIT_ACTION, flexShrink: 0 }}
               />
               <span
-                title={`操作范围: ${request.toolName} › ${request.trustPath}${
+                title={`操作范围: ${request.toolName} › ${scope}${
                   request.toolName.startsWith('registry')
                     ? '，含子键'
                     : '，含子目录'
                 }`}
                 style={{ wordBreak: 'break-all' }}
               >
-                操作范围: {truncateDir(request.trustPath)}
+                操作范围: {scope}
                 {request.toolName.startsWith('registry')
                   ? '，含子键'
                   : '，含子目录'}
               </span>
             </div>
-          )}
+          ))}
 
           {/* 2026-10-18 小欧 - 说明行: 授权影响面(后端 SafetyLevel 分档给出, 前端只呈现不做权限判断)
               紧跟"操作范围"之后 —— 两者同属"这次操作会碰什么"的一组, 顺序不可颠倒。

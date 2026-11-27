@@ -45,6 +45,9 @@
 #   读取点仍只有 _ttl_expiry() 一处, TTL 时长与过期判据零变更。
 #   同批精简注释冗余标注, 技术说明(UPSERT 只 set task_id、created_at/expires_at 保持首次值
 #   故 TTL 不因重复点击续期)原样保留。
+# 2026-11-27 小欧 - insert_session_trust 去掉内部目录收敛(改 norm_trust_path): 收敛点唯一 = 安全层,
+#   落库再收敛会把已收敛的授权根 E:\dir.v1 收成盘根 E:\(整盘免确认); 调用方(hitl_confirmation)传入的
+#   已是安全层授权根。trust_scope_path 保留为安全层/分组/撤销侧共用的收敛原子 — 小欧-2026-11-27
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -141,6 +144,9 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
     path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免
     2026-10-06 小欧 - 落库前经 trust_scope_path 归一：文件类工具登记【所在目录】而非叶子文件，
       否则"信任此操作"只对那一个文件名生效(实测连续信任 4 个文件仍 4 次弹窗) — 小欧-2026-10-06
+    2026-11-27 小欧 - 收敛职责上移到安全层: 落库只做路径规范化(norm_trust_path), 不再自行收敛目录。
+      安全层产出 auth_path 时已是授权根, 在此再收敛一次会把「尚不存在的带点目录」E:\\dir.v1 收成
+      盘根 E:\\(探针实证), 勾一次"信任本次会话"即整盘免确认。收敛点唯一 = 安全层(write/delete 线) — 小欧-2026-11-27
     2026-10-15 小欧 - 落库写 expires_at(now+TTL), 信任不再是永久有效。— 小欧-2026-10-15
     2026-10-15 小欧 - 增 task_id(可追溯): 记录该条信任由哪个任务产生, 供事后审计。
       **不进 UNIQUE 键、也不参与豁免判定** —— 信任仍是会话级, task_id 纯只读旁挂。
@@ -173,7 +179,7 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
         "   expires_at=CASE WHEN chat_session_trust.expires_at IS NOT NULL"
         "                    AND chat_session_trust.expires_at <= ?"
         "                   THEN excluded.expires_at ELSE chat_session_trust.expires_at END",
-        (session_id, tool_name, trust_scope_path(path, tool_name),
+        (session_id, tool_name, norm_trust_path(path, tool_name),
          get_local_iso_timestamp(), _ttl_expiry(), task_id,
          get_local_iso_timestamp()),
     )

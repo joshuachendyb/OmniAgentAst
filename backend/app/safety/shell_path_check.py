@@ -48,6 +48,11 @@
 #   均为解析失败(判定不出/输入畸形), 非确定危险, 不得因解析能力不足错杀。
 #   读线非法路径(空值/穿越/格式化/判定异常)改 continue 放行; 系统源外泄拦截保留。
 #   确定危险(真路径含元字符/系统区删除)仍拦, 见各 check 内注释。
+# 2026-11-27 12:00:19 小欧 - 多目标一次确认全部授齐: _judge_actions 收集全部需确认动作,
+#   合并 auth_paths(全目标目录)回一条 SafetyResult, 弹窗列全部范围、点一次全部授权 — 小欧-2026-11-27
+# 2026-11-27 小欧 - 合并结果补全: ①文案追加"同批动作共 N 项 + 一并授权的全部路径"(原只留首个动作说明,
+#   用户看不出同时授了写目录); ②auth_paths 统一走 all_auth_paths() 单源(原手写 auth_paths or auth_path 双份兜底);
+#   ③sandbox_required 取任一(原只取首个, 多动作时可能漏走沙箱预检) — 小欧-2026-11-27
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -90,11 +95,12 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
 
     最严档序: blocked > needs_confirm > pass。
     blocked 与 malformed(BLOCK_COMMAND) 属最高档, 命中即返;
-    needs_confirm 只暂存(取先到者, 删线优先), 继续判完其余动作 ——
+    needs_confirm 全部收集(删线在前, auth_paths 按先后去重), 继续判完其余动作 ——
     否则"删源越界需授权"会挡住其后"系统目标写"的 blocked, 硬拦被降级为可授权(under-block)。
     通道 B 语义(无弹窗): blocked 即拒; needs_confirm 交上层确认层。
     """
-    pending_confirm: Optional[SafetyResult] = None
+    # 2026-11-27 小欧 - 多目标一次确认全部授齐: 收集全部需确认动作, 不取首个即返
+    pending_confirms: List[SafetyResult] = []
     # 删线优先: 抹除后果不可授权
     for action in actions:
         if action.kind != DELETE_KIND:
@@ -115,13 +121,12 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
             return perm
         # 2026-10-18 小欧: 原「需确认 → 当通过(无弹窗)」会静默放行「需授权才能删」的路径。
         # 2026-10-19 小欧: needs_confirm 不再即时返回(否则挡住其后系统目标写的 blocked);
-        #   暂存待终判, 无任何 blocked 时才回它。
+        #   全收集待终判, 无任何 blocked 时才合并回它(全部目标一次点击全授)。
         if perm.needs_confirm:
             logger.warning(f"[shell_path_check] bash删源需授权: path={action.path}, "
                            f"command={command.strip()[:200]}")
-            if pending_confirm is None:
-                pending_confirm = perm
-        # 写线: 越权写(blocked)即拒; 需授权(needs_confirm)暂存待终判
+            pending_confirms.append(perm)
+        # 写线: 越权写(blocked)即拒; 需授权(needs_confirm)全收集待终判
     for action in actions:
         if action.kind != WRITE_KIND:
             continue
@@ -139,8 +144,7 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
         if result.needs_confirm:
             logger.warning(f"[shell_path_check] bash写目标需授权: path={action.path}, "
                            f"command={command.strip()[:200]}")
-            if pending_confirm is None:
-                pending_confirm = result
+            pending_confirms.append(result)
     # 读线: 处处放行, 仅"空路径/穿越/异常"非法输入硬拦
     for action in actions:
         if action.kind != READ_KIND:
@@ -168,7 +172,24 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
                            f"command={command.strip()[:200]}")
             return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,
                                 message=f"路径位于{SCOPE_TEXT[_scope]}, 禁止作为源路径: {action.path}")
-    return pending_confirm
+    if not pending_confirms:
+        return None
+    # 全部目标一次列全, 一次点击全部授齐(逐个点击是被禁止的); 分类取首个(删线在前 = 最严档)
+    _first = pending_confirms[0]
+    _paths = tuple(dict.fromkeys(p for r in pending_confirms for p in r.all_auth_paths() if p))
+    _msg = _first.message
+    if len(pending_confirms) > 1:
+        # 2026-11-27 小欧 - 文案补全: 原只留首个动作说明, 用户看不出"这一次点击同时授了另外几个动作"
+        #   (删/写分属不同目录时, 弹窗只描述删除却把写入目录也一并授权) — 小欧-2026-11-27
+        _msg = (f"{_msg}\n同批动作: 共 {len(pending_confirms)} 项, "
+                f"本次确认对以下路径一并授权: {'、'.join(_paths) if _paths else '各动作目标路径'}")
+    return SafetyResult(
+        needs_confirm=True, blocked=False, message=_msg,
+        safety_level=_first.safety_level, auto_confirm=_first.auto_confirm,
+        auth_path=_paths[0] if _paths else None, auth_paths=_paths,
+        # 沙箱预检取任一: 只要有一项动作需进沙箱, 整条命令就走预检(原只取首个会漏)
+        sandbox_required=any(r.sandbox_required for r in pending_confirms),
+    )
 
 
 def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:

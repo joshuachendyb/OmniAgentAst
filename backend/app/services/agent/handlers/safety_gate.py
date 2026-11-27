@@ -62,6 +62,12 @@
 # 2026-11-27 11:15:24 小欧 - 目录级授权彻底整改: 四处 grant 改 grant_temp_auth_scoped(auth_path 收敛到目录);
 #   resolve_skip 透传 auth_path 并认本任务 temp_auth(修 shell 无 path 键致会话信任永不命中);
 #   _group_ref 收敛到目录 + _group_size 同源计数(同目录不同文件不再各弹一次) — 小欧-2026-11-27
+# 2026-11-27 12:00:19 小欧 - 多目标一次点击全授: 四处 grant 改 _grant_all_auth_paths 循环授齐 auth_paths,
+#   不再逐个弹窗; 单路径仍由 auth_path 兜底 — 小欧-2026-11-27
+# 2026-11-27 小欧 - 二次收敛真 bug 修复(探针实证 E:\dir.v1 → E:\): 授权根只在安全层产出点收敛一次,
+#   _group_ref 不再对 auth_path 再收敛(分组改按参数路径, 与授权根解耦), 组大小同源改造(原实测组大小=0,
+#   文案"另有 -1 个同类调用"); grant 去 _group_lead 前置, 组内每个调用各授自己的精确目标
+#   (删除线改精确授权后, 仅首调用授齐会让后续调用"确认过却没授权") — 小欧-2026-11-27
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -86,16 +92,30 @@ __all__ = ["check_safety_and_confirm"]
 
 
 def _group_ref(tool_name: str, params: dict, safety_result: Optional[SafetyResult] = None) -> Optional[str]:
-    """组内引用键的唯一表达式: auth_path or trust_path — 小欧 2026-10-14
+    """同批分组身份: 只由调用参数决定, 与授权根 auth_path 解耦 — 小欧 2026-10-14 / 2026-11-27
 
     抽出独立纯函数的理由: refusal_key 与 _group_size 两处都要这个表达式, 此前各写一遍,
     一处漏改即出现「弹窗按 auth 分组、组大小按 trust 数」的口径分裂(DRY)。
+
+    2026-11-27 小欧 - 不再读 auth_path: 安全层产出的 auth_path 已是授权根(目录或精确目标),
+      对此再调一次 trust_scope_path 会把「尚不存在的带点目录」E:\\dir.v1 收成盘根 E:\\
+      (探针实证), 组键与组大小随之口径分裂(组大小算成 0, 弹窗文案出现"另有 -1 个同类调用")。
+      分组只按参数路径收敛到目录: 同目录不同文件(写)、同目录不同删除目标都能并成一弹窗,
+      授权范围仍由 auth_path 精确表达, 两件事互不干扰。
+    safety_result 形参保留: 调用点(refusal_key/sandbox_gate)按既有签名传参, 分组不再消费它。
     """
     from app.safety.trust import extract_trust_path  # 延迟导入(与本模块既有模式一致)
-    _p = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
-        or extract_trust_path(tool_name, params or {})
-    # 2026-11-27 小欧 - 收敛到所在目录: 原直接用叶子文件, 同目录不同文件拆成不同组各弹一次
+    _p = extract_trust_path(tool_name, params or {})
     return trust_scope_path(_p, tool_name) if _p else _p
+
+
+def _grant_all_auth_paths(safety_result, tool_name: str) -> None:
+    """一次确认把全部目标目录授齐(用户只点一次, 不逐个弹) — 小欧-2026-11-27
+
+    auth_paths 由安全层收集全部需确认目标; 单路径场景仓库旧字段 auth_path 兜底。
+    """
+    for _p in safety_result.all_auth_paths():
+        grant_temp_auth_scoped(_p, tool_name, recursive=True)
 
 
 def refusal_key(tool_name: str, params: dict, safety_result=None):
@@ -214,8 +234,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
         )
         from app.safety.shell_tool_classify import is_shell_tool
         from app.safety.trust import (
-            extract_trust_path,  # 同组路径归一(trust 主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
-            resolve_skip,
+            resolve_skip,  # 信任预查(同组路径归一已随分组收口到 _group_ref) — 小欧-2026-11-27
         )
         safety_checker = get_path_tool_safety_checker()
 
@@ -295,9 +314,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                     _rej_cache = _rejection_cache_of(agent)
                     _rej_cache.pop(refusal_key(_cn, _cp, safety_result), None)
                     # 会话信任豁免: 免弹窗, 仍 grant auth_path 收口授权, 直通沙箱(trusted=True)
-                    if getattr(safety_result, "auth_path", None):
+                    if safety_result.all_auth_paths():
                         try:
-                            grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
+                            _grant_all_auth_paths(safety_result, _cn)
                         except Exception as e:
                             logger.warning(f"[action] 信任豁免grant_temp_auth失败不阻断: {e!r}")
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied, True)
@@ -320,7 +339,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                 # 同批合并: 组键(tool, auth_path或trust_path)归一; 组内首call弹窗, 其余复用裁决(拒绝整组/确认同放) — 小欧-2026-09-18
                 # shell 无 path 主键时 refusal_key 按 command 全文分组(同命令合并, 不同命令各弹) — 小欧-2026-09-18
                 _group_key = refusal_key(_cn, _cp, safety_result)
-                _group_ref = _group_key[1]
+                _gref = _group_key[1]   # 组键路径部分(改名避免与模块级 _group_ref() 同名遮蔽) — 小欧-2026-11-27
                 _group_lead = _group_key not in _confirm_cache
                 _bypass = bool(getattr(safety_result, "auto_confirm", False))  # 上移: 原在组首分支内, 复用分支 else 取不到(隐含未定义) — 小欧-2026-09-18
                 # 用户拒绝记忆(2026-09-18 小欧): 同 (tool, path) 本任务内被用户拒绝过, 不再弹直接复用拒绝;
@@ -342,12 +361,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                             if c.get("tool_name") == "bash"
                             and str((c.get("tool_params") or {}).get("command") or "") == str(_cp.get("command") or ""))
                     else:
+                        # 与组键同一表达式(DRY): 组大小恒按 _group_ref() 计数, 不再另写一份收敛逻辑
                         _group_size = sum(
                             1 for c in all_calls
                             if c.get("tool_name") == _cn
-                            and trust_scope_path(
-                                extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})),
-                                c.get("tool_name", "")) == _group_ref)
+                            and _group_ref(c.get("tool_name", ""), c.get("tool_params") or {}) == _gref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
                     _msg, _sl, _trust_impact, _content = _confirm_payload(safety_result, _group_size)
 
@@ -359,7 +377,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         # 2026-10-14 小欧 - 透传 auth_path。
                         #   auth 轨(白名单外临时授权)此前在 HITL 链丢失 — 下游 hitl_gateway
                         #   已按 spec.path 优先消费, 但此处不传则它恒 None, 授权路径无处可查。
-                        path=getattr(safety_result, "auth_path", None)))  # 2026-11-19 小欧: 删 publish 传参; _buf 上方仍做 buffer 存在守卫
+                        path=getattr(safety_result, "auth_path", None),
+                        paths=tuple(getattr(safety_result, "auth_paths", ()) or ())))  # 多目标一次确认全授 — 小欧-2026-11-27
                     _confirm_cache[_group_key] = _verdict
                 else:
                     _verdict = _confirm_cache[_group_key]   # 组内复用首call裁决, 不发第二次弹窗 — 小欧-2026-09-18
@@ -373,9 +392,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         _events.append({"step": step, "tool_name": _cn,
                                         "rejected": "user", "reason": "bypass未确认即终止"})
                         continue
-                    if _group_lead and getattr(safety_result, "auth_path", None):    # 仅凭auth_path, 不设trust_session门; 组内仅首call授齐 — 小欧-2026-09-06/2026-09-18
+                    if safety_result.all_auth_paths():    # 授权路径非空即授齐全部, 不设trust_session门; 每个调用各授自己的目标 — 小欧-2026-11-27
                         try:
-                            grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
+                            _grant_all_auth_paths(safety_result, _cn)
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
                     # auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口) — 小健 2026-09-04/2026-09-06
@@ -441,10 +460,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         _rejection_cache_of(agent)[_group_key] = _rej_text
                     continue  # was: return  — 小欧 2026-07-18 修复
 
-                # 用户已确认: 仅凭auth_path授权(不设trust_session门), 组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18
-                if _group_lead and getattr(safety_result, "auth_path", None):
+                # 用户已确认: 仅凭auth_path授权(不设trust_session门), 每个调用各授自己的目标(删除线为精确目标, 非首调用也要授) — 小欧 2026-09-06/2026-11-27
+                if safety_result.all_auth_paths():
                     try:
-                        grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
+                        _grant_all_auth_paths(safety_result, _cn)
                         # 2026-09-06 小欧: 保留授权日志(决策日志SRP, 语义沿用2026-08-28)
                         logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
                     except Exception as e:
@@ -461,8 +480,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
             try:
                 # 2026-09-03 小欧 修复: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
-                if getattr(safety_result, "auth_path", None):
-                    grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
+                if safety_result.all_auth_paths():
+                    _grant_all_auth_paths(safety_result, _cn)
             except Exception as e:
                 logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
 

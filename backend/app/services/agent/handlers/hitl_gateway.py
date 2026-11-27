@@ -39,10 +39,14 @@
 #   显示层二次加工, 提取口径问题会直接放大到弹窗; 信任落库/查询仍走 extract_trust_path, 由 _parse_paths 单点保证
 # 2026-11-27 07:13:38 小欧 - _summarize_params 单行化覆盖所有字符串值: 原仅截断值压平换行,
 #   未达140阈值的多行值仍带换行破坏"每参数一行"契约; docstring 同步订正 — 小欧-2026-11-27
+# 2026-11-27 11:45:54 小欧 - payload 增 trust_scope(授权目录真值): auth_path 源头已改为目录,
+#   前端不能再对 trustPath 剥末段, 否则授权范围显示成上一级; 无路径确认仍回退原展示 — 小欧-2026-11-27
+# 2026-11-27 小欧 - 授权范围只去重不收敛: spec.path/paths 已是安全层授权根, 网关再收敛一次会把
+#   「尚不存在的带点目录」E:\dir.v1 收成盘根 E:\(弹窗显示 E:\ 且整盘写入会话信任) — 小欧-2026-11-27
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.logger import logger
 from app.services.agent.status_table import (  # AgentStatus真实位置status_table行19 — 小健-2026-09-05
@@ -57,7 +61,8 @@ class ConfirmSpec:
     auto_confirm: True=bypass全自动确认(倒计时自动代发) / False=真HITL人工裁决 — 小欧-2026-09-18"""
     tool_name: str
     params: Optional[dict] = None
-    path: Optional[str] = None
+    path: Optional[str] = None             # 主授权根(DB 单值字段/文案)
+    paths: Tuple[str, ...] = ()            # 全部授权根: 一次确认全授/全展示 — 小欧-2026-11-27
     content: str = ""
     trust_impact: str = ""       # 授权/信任影响面: high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余确认
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
@@ -127,7 +132,12 @@ async def hitl_confirm(agent, spec: ConfirmSpec):
         wait_for_confirmation_result,
     )
     _path = spec.path or extract_trust_path(spec.tool_name, spec.params)
-    confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
+    # 授权范围真值: spec.path/spec.paths 由安全层产出时已是授权根(目录或精确目标), 此处只去重不再收敛
+    #   —— 再收敛一次会把「尚不存在的带点目录」E:\dir.v1 收成盘根 E:\(弹窗显示 E:\ + 整盘落库信任) — 小欧-2026-11-27
+    _raw = spec.paths or ((_path,) if _path else ())
+    _scope_paths = tuple(dict.fromkeys(p for p in _raw if p))
+    _scope_path = _scope_paths[0] if _scope_paths else None
+    confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path, paths=_scope_paths)
     _bt, _ct = await _resolve_timeouts(spec.auto_confirm)
     _auto = spec.auto_confirm
     # 2026-11-19 小欧 - HITL 授权从 paused/resumed MetaStep 收敛到通用 interact(kind=confirm):
@@ -142,6 +152,8 @@ async def hitl_confirm(agent, spec: ConfirmSpec):
             "trust_impact": spec.trust_impact,
             "safety_level": spec.safety_level,
             "trust_path": _path,
+            "trust_scope": _scope_path,  # 主授权目录(前端直接显示, 不再剥末段) — 小欧-2026-11-27
+            "trust_paths": list(_scope_paths),  # 全部授权目录: 一次点击全授, 弹窗逐行列出 — 小欧-2026-11-27
             "auto_confirm": _auto,
             "confirm_timeout": _ct,
             "backend_timeout": _bt,

@@ -10,6 +10,9 @@
 # 2026-11-27 11:15:24 小欧 - 新增 grant_temp_auth_scoped: HITL 授权统一落地口, 文件类路径先经
 #   trust_db.trust_scope_path 收敛到所在目录再 grant(与会话信任落库同口径), 消除同目录换文件名反复弹窗;
 #   低层 grant_temp_auth 原语保持不变(仍支持精确单路径授权) — 小欧-2026-11-27
+# 2026-11-27 12:14:44 小欧 - 真 bug 修复: grant_temp_auth_scoped 去掉二次收敛(带点目录名 E:\dir.v1
+#   被误收敛到盘根致零授权), 新增 is_grantable_root 供安全层产出时就挡掉不可授权根;
+#   低层 grant 增 root_is_dir 供已知目录跳过后缀启发式(带点目录名不再退化为单路径) — 小欧-2026-11-27
 """
 temp_auth — 白名单外路径临时授权(决策记录, 补项)
 
@@ -25,7 +28,7 @@ temp_auth — 白名单外路径临时授权(决策记录, 补项)
 import os
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 # 每 task 的临时授权映射: {授权根(Path) -> 是否递归} — M3: task 级生命周期
 _authorized_paths: ContextVar[Dict[Path, bool]] = ContextVar("temp_authorized_paths", default=None)
@@ -97,7 +100,7 @@ def resolve_grant_recursive(root: str, requested: bool = True) -> bool:
     return not bool(Path(root).suffix)
 
 
-def grant_temp_auth(root: str, recursive: bool = True) -> None:
+def grant_temp_auth(root: str, recursive: bool = True, *, root_is_dir: bool = False) -> None:
     """临时授权某路径(本 task 内有效, task 结束清零) — 小欧 2026-08-10, M3 更新
     HITL确认后 grant 写入点: 路径层校验内 is_temp_authorized 读取 — 小欧-2026-10-14
     Args:
@@ -110,7 +113,8 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
         _lg.warning(f"[temp_auth] 空/根路径拒绝授权: {root!r}")
         return
     # 2026-09-03 小欧 修复: 文件路径(有后缀)强制recursive False，仅目录保持True，防task级目录越权
-    _recursive = resolve_grant_recursive(root, recursive)
+    # 2026-11-27 小欧 - root_is_dir=True 时调用方已确认是目录, 不再按后缀猜(带点目录名 E:\dir.v1 曾被误判文件)
+    _recursive = True if root_is_dir and not _is_rejectable_root(root) else resolve_grant_recursive(root, recursive)
     # 2026-10-20 05:27 小欧 - FIX: 存取两侧统一 normcase —— Windows 路径不区分大小写,
     #   原 Path 相等比较区分, 授权时 e:\testdir 与使用时 E:\TestDir 命不中造成弹窗重出(过拦)
     #   注: 比较语义仍保持"授权了才能命中", 仅消除大小写/分隔符书写差导致的无谓失效 — 小欧-2026-10-20
@@ -120,17 +124,21 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
     _lg.info(f"[temp_auth] 授权: root={root}, recursive={_recursive}")
 
 
-def grant_temp_auth_scoped(root: str, tool_name: str, recursive: bool = True) -> None:
-    """HITL 授权统一落地口: 文件类工具的 auth_path 先收敛到所在目录再授权 — 小欧-2026-11-27
+def is_grantable_root(root: Optional[str]) -> bool:
+    """该授权根能否真正落地(空/盘根不可授) — 小欧-2026-11-27
 
-    与会话信任落库 trust_db.trust_scope_path 同口径(目录级授权)。原调用点直接把叶子文件传给
-    grant_temp_auth, resolve_grant_recursive 见后缀即判 recursive=False → 只授权那一个文件名,
-    同目录换名必再弹窗。此处收敛后 grant 的才是真正承诺给用户的"目录(含子目录)"范围。
-    非文件信任域(registry/sql)由 trust_scope_path 原样透传; 低层原语 grant_temp_auth 不变。
+    安全层在产出 auth_path 时就要用它挡掉不可授权根, 否则弹窗承诺授权而 grant 静默拒绝。
     """
-    from app.safety.trust_db import trust_scope_path  # 延迟 import 防环(同层无反向依赖)
+    return bool(root) and not _is_rejectable_root(root)
 
-    grant_temp_auth(trust_scope_path(root, tool_name) or root, recursive=recursive)
+
+def grant_temp_auth_scoped(root: str, tool_name: str, recursive: bool = True) -> None:
+    r"""HITL 授权统一落地口: root 由安全层产出时已是目录, 此处不再二次收敛 — 小欧-2026-11-27
+
+    二次收敛是真实缺陷: `E:\dir.v1\file.txt` 源头已算出正确目录 `E:\dir.v1`, 再按后缀判一次
+    会把它误当文件收敛到盘根 `E:\` 而被拒, 用户点了允许却零授权。tool_name 仅为调用口径保留。
+    """
+    grant_temp_auth(root, recursive=recursive, root_is_dir=True)
 
 
 def clear_temp_auth() -> None:
@@ -198,4 +206,5 @@ def is_temp_authorized(file_path: str) -> bool:
 
 
 __all__ = ["grant_temp_auth", "grant_temp_auth_scoped", "clear_temp_auth",
-           "is_temp_authorized", "get_authorized", "resolve_grant_recursive"]
+           "is_temp_authorized", "get_authorized", "resolve_grant_recursive",
+           "is_grantable_root"]

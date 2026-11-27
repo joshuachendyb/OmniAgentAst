@@ -19,6 +19,7 @@
 //   SessionSnapshot 增 scheduleList 字段(入 StreamBackup 落盘, 刷新恢复清单卡) — 小欧-2026-11-19
 // 2026-11-19 小欧 - 文件名 backupTypes.ts→chatStreamTypes.ts: 原名只覆盖 StreamBackup 一类, 实为 stream 领域
 //   全部共享类型(授权/question/状态/台账/清单/快照/事件/备份)单一真源, 新名名副其实; 12 处 import 同步 — 小欧-2026-11-19
+// 2026-11-27 小欧 - PendingAuthorizationPayload 增 trust_scope(后端授权目录真值), 前端弹窗直接显示不再剥末段 — 小欧-2026-11-27
 import type { QuestionItem } from '@/types/chat';
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
@@ -37,6 +38,10 @@ export interface PendingAuthorizationPayload {
   /** 授权影响面(后端 SafetyLevel 分档给出): high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余 */
   trust_impact?: 'high' | 'medium' | 'low';
   trust_path?: string | null;
+  /** 授权目录真值(后端 auth_path 源头已收敛到目录): 操作范围行直接显示, 不再剥末段 */
+  trust_scope?: string | null;
+  /** 全部授权目录: 一条命令多目标时一次点击全授, 弹窗逐行列出 */
+  trust_paths?: string[] | null;
   auto_confirm?: boolean | string | number;
   confirm_timeout?: number | string;
   backend_timeout?: number | string;

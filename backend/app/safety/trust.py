@@ -18,6 +18,8 @@
 #   剩余 Dict/Optional/PARAM_ALIASES/normalize_tool_name/NON_FILE_TRUST_TOOLS/_parse_paths 均有真实引用。— 小欧-2026-10-15
 # 2026-11-27 11:15:24 小欧 - resolve_skip 增 path_override(透传安全层 auth_path)并认本任务 temp_auth:
 #   shell 参数无 path 键致 extract_trust_path 恒 None, 会话信任目录行永不命中; 已授权目录的后续写入免弹窗 — 小欧-2026-11-27
+# 2026-11-27 小欧 - save_session_trust 日志回归落库原值: 收敛点唯一在安全层, 此处二次收敛会把
+#   带点目录打印成盘根(日志与真实落库值不一致) — 小欧-2026-11-27
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -134,10 +136,10 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
 
     await db.atxn("chat", _do)
     # 2026-10-06 小欧 - 日志补登记范围: 原先只打 tool_name, 落库的是文件还是目录根本看不出来,
-    #   "信任4次仍反复弹窗"正是因此查不出根因(表里4行全是叶子文件)。改为打印 trust_scope_path 归一后的值。
-    #   弹了弹窗但登记范围不符预期时, 这一行即第一现场证据。
-    from app.safety.trust_db import trust_scope_path as _scope
+    #   "信任4次仍反复弹窗"正是因此查不出根因(表里4行全是叶子文件)。
+    #   2026-11-27 小欧 - 改为直接打落库原值: 收敛已上移到安全层, 此处再调 trust_scope_path 只是二次收敛,
+    #   会把带点目录 E:\dir.v1 打印成盘根 E:\(日志失真, 且与真实落库值不同)。— 小欧-2026-11-27
     logger.info(
         f"[HITL] 会话信任落库: task_id={task_id}, tool_name={normalize_tool_name(tool_name)}, "
-        f"raw_path={path!r}, 登记范围={_scope(path, normalize_tool_name(tool_name))!r}"
+        f"登记范围={path!r}"
     )

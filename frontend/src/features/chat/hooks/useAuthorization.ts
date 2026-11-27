@@ -22,6 +22,7 @@
 //   React 只渲染末帧 → effect 里的 pendingRef 镜像拿不到中间帧, 中间 confirm_id 从未
 //   confirm(false), 静默泄漏到后端等自身超时(正是 2026-09-02 ⑭ 要防的);
 //   保留在此还会与 Store 重复发起 confirm(false)(DRY/SRP: 单一 owner) — 小欧-2026-09-30 01:05:17
+// 2026-11-27 小欧 - AuthorizationRequest 增 trustScope: 后端授权目录真值透传, 弹窗不再剥末段 — 小欧-2026-11-27
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -95,6 +96,16 @@ export function useAuthorization(sessionId: string | null) {
           typeof pendingAuthorization.trust_path === 'string'
             ? pendingAuthorization.trust_path
             : null,
+        trustScope:
+          typeof pendingAuthorization.trust_scope === 'string'
+            ? pendingAuthorization.trust_scope
+            : null,
+        trustPaths:
+          Array.isArray(pendingAuthorization.trust_paths)
+            ? pendingAuthorization.trust_paths.filter(
+                (p): p is string => typeof p === 'string' && p.length > 0,
+              )
+            : [],
         confirmTimeout: parseTimeout(pendingAuthorization.confirm_timeout),
         backendTimeout: parseTimeout(pendingAuthorization.backend_timeout),
       };
