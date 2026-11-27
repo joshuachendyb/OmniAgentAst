@@ -59,6 +59,9 @@
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): rejected content 去工具名(前端已拼_label·工具名), 去详情err — 小欧-2026-10-25
 # 2026-11-19 小欧 - hitl_confirm 删 publish 传参: 授权事件经 emit_interact 内部 publish(与 question_gateway 同构);
 #   _buf 保留仅作 buffer 存在守卫(授权事件发不出则显式失败), 第345行调用同步 — 小欧-2026-11-19
+# 2026-11-27 11:15:24 小欧 - 目录级授权彻底整改: 四处 grant 改 grant_temp_auth_scoped(auth_path 收敛到目录);
+#   resolve_skip 透传 auth_path 并认本任务 temp_auth(修 shell 无 path 键致会话信任永不命中);
+#   _group_ref 收敛到目录 + _group_size 同源计数(同目录不同文件不再各弹一次) — 小欧-2026-11-27
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -71,7 +74,10 @@ from app.safety.path_dir_lists import (
 )
 from app.safety.safety_result import SafetyLevel, SafetyResult
 from app.safety.temp_auth import (
-    grant_temp_auth,  # 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
+    grant_temp_auth_scoped,  # 四处授权统一走目录级收敛口 — 小欧-2026-11-27
+)
+from app.safety.trust_db import (
+    trust_scope_path,  # 组键目录级收敛(与授权落库同口径) — 小欧-2026-11-27
 )
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
 from app.services.agent.steps import MetaStep
@@ -86,8 +92,10 @@ def _group_ref(tool_name: str, params: dict, safety_result: Optional[SafetyResul
     一处漏改即出现「弹窗按 auth 分组、组大小按 trust 数」的口径分裂(DRY)。
     """
     from app.safety.trust import extract_trust_path  # 延迟导入(与本模块既有模式一致)
-    return (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
+    _p = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
         or extract_trust_path(tool_name, params or {})
+    # 2026-11-27 小欧 - 收敛到所在目录: 原直接用叶子文件, 同目录不同文件拆成不同组各弹一次
+    return trust_scope_path(_p, tool_name) if _p else _p
 
 
 def refusal_key(tool_name: str, params: dict, safety_result=None):
@@ -276,7 +284,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                          and is_shell_readonly_whitelisted(str(_cp.get("command") or "")))
             if safety_result.needs_confirm and not _readonly:
                 # 确认 — 信任预查移入本层(与"是否免确认"同层, SRP)。
-                _skip = await resolve_skip(agent.task_id, _cn, _cp)
+                # 2026-11-27 小欧 - bash 参数无 path 键, extract_trust_path 恒 None 使目录信任永不命中;
+                #   透传安全层已算出的 auth_path 作查询键(无则原逻辑不变) — 小欧-2026-11-27
+                _skip = await resolve_skip(
+                    agent.task_id, _cn, _cp,
+                    path_override=getattr(safety_result, "auth_path", None),
+                )
                 if _skip:
                     # 信任让位: 清同组拒绝记忆, 信任后不吃旧拒 — 小欧 2026-10-20
                     _rej_cache = _rejection_cache_of(agent)
@@ -284,7 +297,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                     # 会话信任豁免: 免弹窗, 仍 grant auth_path 收口授权, 直通沙箱(trusted=True)
                     if getattr(safety_result, "auth_path", None):
                         try:
-                            grant_temp_auth(safety_result.auth_path, recursive=True)
+                            grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
                         except Exception as e:
                             logger.warning(f"[action] 信任豁免grant_temp_auth失败不阻断: {e!r}")
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied, True)
@@ -332,7 +345,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         _group_size = sum(
                             1 for c in all_calls
                             if c.get("tool_name") == _cn
-                            and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
+                            and trust_scope_path(
+                                extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})),
+                                c.get("tool_name", "")) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
                     _msg, _sl, _trust_impact, _content = _confirm_payload(safety_result, _group_size)
 
@@ -360,7 +375,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         continue
                     if _group_lead and getattr(safety_result, "auth_path", None):    # 仅凭auth_path, 不设trust_session门; 组内仅首call授齐 — 小欧-2026-09-06/2026-09-18
                         try:
-                            grant_temp_auth(safety_result.auth_path, recursive=True)
+                            grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
                     # auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口) — 小健 2026-09-04/2026-09-06
@@ -429,7 +444,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                 # 用户已确认: 仅凭auth_path授权(不设trust_session门), 组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18
                 if _group_lead and getattr(safety_result, "auth_path", None):
                     try:
-                        grant_temp_auth(safety_result.auth_path, recursive=True)
+                        grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
                         # 2026-09-06 小欧: 保留授权日志(决策日志SRP, 语义沿用2026-08-28)
                         logger.info(f"[action] step={step} resumed+auth: tool={_cn} path={safety_result.auth_path}")
                     except Exception as e:
@@ -447,7 +462,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             try:
                 # 2026-09-03 小欧 修复: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
                 if getattr(safety_result, "auth_path", None):
-                    grant_temp_auth(safety_result.auth_path, recursive=True)
+                    grant_temp_auth_scoped(safety_result.auth_path, _cn, recursive=True)
             except Exception as e:
                 logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
 

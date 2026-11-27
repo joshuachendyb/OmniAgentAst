@@ -7,6 +7,9 @@
 # 2026-10-20 05:27 小欧 - FIX resolve_grant_recursive: 目录判定原用后缀启发式(Path.suffix),
 #   目录名含点(如 E:\dir\v1.0)被误判为"文件"使递归授权静默失效; 已存在者改 os.path.isdir/isfile
 #   真实类型判定, 不存在者维持后缀口径。授权行为对存量目录零退化, 文件仍单精确授权。
+# 2026-11-27 11:15:24 小欧 - 新增 grant_temp_auth_scoped: HITL 授权统一落地口, 文件类路径先经
+#   trust_db.trust_scope_path 收敛到所在目录再 grant(与会话信任落库同口径), 消除同目录换文件名反复弹窗;
+#   低层 grant_temp_auth 原语保持不变(仍支持精确单路径授权) — 小欧-2026-11-27
 """
 temp_auth — 白名单外路径临时授权(决策记录, 补项)
 
@@ -117,6 +120,19 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
     _lg.info(f"[temp_auth] 授权: root={root}, recursive={_recursive}")
 
 
+def grant_temp_auth_scoped(root: str, tool_name: str, recursive: bool = True) -> None:
+    """HITL 授权统一落地口: 文件类工具的 auth_path 先收敛到所在目录再授权 — 小欧-2026-11-27
+
+    与会话信任落库 trust_db.trust_scope_path 同口径(目录级授权)。原调用点直接把叶子文件传给
+    grant_temp_auth, resolve_grant_recursive 见后缀即判 recursive=False → 只授权那一个文件名,
+    同目录换名必再弹窗。此处收敛后 grant 的才是真正承诺给用户的"目录(含子目录)"范围。
+    非文件信任域(registry/sql)由 trust_scope_path 原样透传; 低层原语 grant_temp_auth 不变。
+    """
+    from app.safety.trust_db import trust_scope_path  # 延迟 import 防环(同层无反向依赖)
+
+    grant_temp_auth(trust_scope_path(root, tool_name) or root, recursive=recursive)
+
+
 def clear_temp_auth() -> None:
     """清空当前作用域临时授权(task 结束调用) — 小欧 2026-08-10, M3 更新
     task结束清零点(run_react_cycle finally) — 小欧-2026-10-14"""
@@ -181,5 +197,5 @@ def is_temp_authorized(file_path: str) -> bool:
     return False
 
 
-__all__ = ["grant_temp_auth", "clear_temp_auth", "is_temp_authorized",
-           "get_authorized", "resolve_grant_recursive"]
+__all__ = ["grant_temp_auth", "grant_temp_auth_scoped", "clear_temp_auth",
+           "is_temp_authorized", "get_authorized", "resolve_grant_recursive"]

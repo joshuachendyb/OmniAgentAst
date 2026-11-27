@@ -32,6 +32,8 @@
 #   allowed_dirs), 白名单只含 用户目录 + 临时目录 + 允许根; 盘上其余目录落白名单外(需确认);
 #   _data_drive_roots() 及 26 盘符扫描删除; 绝对性检查下沉 format_path(require_absolute);
 #   快照内容未变则跳过重复 UPDATE — 小欧-2026-10-20
+# 2026-11-27 11:15:24 小欧 - SCOPE_TEXT 文案订正: 非系统禁区的实际语义是"仅支持任务级临时授权",
+#   原文案"不允许授权"与弹窗仍可"允许执行+任务级临时授权"的行为自相矛盾 — 小欧-2026-11-27
 """
 path_dir_lists · 目录数组清单 + 归属判定(全系统唯一)
 
@@ -129,7 +131,7 @@ LINE_READ, LINE_WRITE, LINE_DELETE, LINE_DELETE_RECURSIVE = range(4)
 #: 归属 → 中文文案(供提示消息查用; 禁止把英文枚举值直接插进面向用户的消息)
 SCOPE_TEXT: dict = {
     SCOPE_FORBIDDEN_SYSTEM:     "系统禁区, 禁止操作",
-    SCOPE_FORBIDDEN_NON_SYSTEM: "受保护的代码目录或允许根, 不允许授权",
+    SCOPE_FORBIDDEN_NON_SYSTEM: "受保护的代码目录或允许根, 仅支持任务级临时授权",
     SCOPE_WHITELIST_SELF:       "允许范围根目录本身",
     SCOPE_WHITELIST_SUB:        "允许范围内的目录",
     SCOPE_OUTSIDE:              "允许范围之外",

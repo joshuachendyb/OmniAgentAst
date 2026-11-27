@@ -16,6 +16,8 @@
 #   (AST 实证代码与注解皆未引用)。其中 Set 设计 5.12 明文要求删, 而
 #   WINDOW_TARGET_TOOLS 系实施时多补的 import(设计只要求删本地定义, 未要求新增 import)。
 #   剩余 Dict/Optional/PARAM_ALIASES/normalize_tool_name/NON_FILE_TRUST_TOOLS/_parse_paths 均有真实引用。— 小欧-2026-10-15
+# 2026-11-27 11:15:24 小欧 - resolve_skip 增 path_override(透传安全层 auth_path)并认本任务 temp_auth:
+#   shell 参数无 path 键致 extract_trust_path 恒 None, 会话信任目录行永不命中; 已授权目录的后续写入免弹窗 — 小欧-2026-11-27
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -75,20 +77,32 @@ def extract_trust_path(name: str, params: Dict) -> Optional[str]:
 # async函数：信任跳过判定（复制自 action_handler.py:297-327）
 # ════════════════════════════════════════════════════════════
 
-async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool:
-    """信任跳过判定: 查询会话级信任记录,决定是否跳过HITL确认
+async def resolve_skip(agent_task_id: str, tool_name: str, params: dict,
+                       path_override: Optional[str] = None) -> bool:
+    """信任跳过判定: 本任务临时授权或会话级信任命中则跳过HITL确认
     完整复制自 action_handler.py:297-327（check_safety_and_confirm内联逻辑提取）
     信任预查第2步: 上游 safety_gate 预查, 下游总闸 skip_confirmation — 小欧-2026-10-14
+    2026-11-27 小欧 - path_override 透传安全层 auth_path(shell 无 path 参数键, 原 extract_trust_path 恒 None);
+      同时认本任务 temp_auth(目录已授后同目录后续写入免弹) — 小欧-2026-11-27
     """
     from app.db import db
+    from app.safety.temp_auth import is_temp_authorized
     from app.safety.trust_db import check_session_trust, get_session_id_by_task
+    # 查询键: 安全层已算出的 auth_path 优先, 否则按工具参数提取(原逻辑)
+    _tgt = path_override if path_override is not None else extract_trust_path(tool_name, params)
+    # 本任务已授权该路径(含目录子树) → 免弹窗, 与会话信任同级豁免
+    if _tgt:
+        try:
+            if is_temp_authorized(_tgt):
+                return True
+        except Exception:
+            pass
     try:
         _sid = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent_task_id))
     except Exception:
         return False
     if not _sid:
         return False
-    _tgt = extract_trust_path(tool_name, params)
     try:
         return await db.atxn("chat", lambda conn: check_session_trust(conn, _sid, normalize_tool_name(tool_name), _tgt))
     except Exception as _te:
