@@ -155,3 +155,6 @@ OmniVPN/backup/
 
 # 2026-11-27 小欧: E2E 共享会话ID运行时文件(测试自动再生, 不入库) - 小欧-2026-11-27
 backend/e2etests/e2emodel/.e2e_shared_session_id
+
+# 2026-11-28 小健: 一级 mihomo-single 运行时缓存不入库(对齐 mihomo/cache.db*) - 小健-2026-11-28
+OmniVPN/mihomo-single/cache.db*
