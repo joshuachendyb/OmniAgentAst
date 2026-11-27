@@ -19,6 +19,7 @@ $mihomoExe = Join-Path $PSScriptRoot 'mihomo\mihomo-slim.exe'
 $mihomoDir = Join-Path $PSScriptRoot 'mihomo-single'
 $singleCfg = Join-Path $mihomoDir 'config.yaml'
 $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$ctrl = "http://127.0.0.1:9092"   # 一级 mihomo 外部控制器(切换节点用)
 
 "============================================================"
 "proxy-on-single v1.0  一键开代理(一级模式)   $stamp"
@@ -105,9 +106,31 @@ $proxyOut = python $rot --verify --proxy "http://127.0.0.1:$Port"
 $proxyOut | ForEach-Object { "    $_" }
 if (($proxyOut -join "`n") -match '当前出口: \? \(\?\)') {
     '    [提示] 选中节点失联(出口 ? (?)), 自动切换到下一个存活节点'
-    python $rot --target mihomo --group PROXY --wait --proxy http://127.0.0.1:$Port
+    python $rot --target mihomo --url $ctrl --group PROXY --wait --proxy http://127.0.0.1:$Port
     '    复验出口   :'
     python $rot --verify --proxy "http://127.0.0.1:$Port" | ForEach-Object { "    $_" }
+}
+""
+
+# 5.5 启动时自动避开最近桶(记住上次退出的桶, 用新桶启动)
+'[5.5] 启动时避开最近桶 (读 bucket_history.json, 当前桶在历史里就换新桶)'
+$histFile = Join-Path $PSScriptRoot 'log\bucket_history.json'
+if (Test-Path $histFile) {
+    $hist = Get-Content $histFile -Encoding UTF8 | ConvertFrom-Json
+    $recentKeys = $hist | ForEach-Object { $_.key }
+    $currentOut = python $rot --verify --proxy "http://127.0.0.1:$Port"
+    $m = ($currentOut -join "`n") | Select-String -Pattern '(\d+\.\d+\.\d+\.\d+/\d+).*?loc=(\w+)'
+    if ($m.Matches.Count -gt 0) {
+        $currentBucket = "$($m.Matches[0].Groups[1].Value)|$($m.Matches[0].Groups[2].Value)"
+        if ($recentKeys -contains $currentBucket) {
+            "    当前出口桶 $currentBucket 在最近用过列表里, 自动换新桶..."
+            python $rot --target mihomo --url $ctrl --group PROXY --wait --proxy http://127.0.0.1:$Port
+            '    复验出口   :'
+            python $rot --verify --proxy "http://127.0.0.1:$Port" | ForEach-Object { "    $_" }
+        } else {
+            "    当前出口桶 $currentBucket 不在最近用过列表里, 无需换桶"
+        }
+    }
 }
 ""
 
