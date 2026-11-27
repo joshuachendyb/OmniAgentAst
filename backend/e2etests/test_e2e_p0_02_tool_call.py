@@ -24,10 +24,10 @@
 
 TEST_CASE_ID = "E2E-P0-02"
 TEST_CASE_NAME = "FILE基础通路验证"
-USER_INPUT = ("请在E盘根目录创建一个名为e2e_p0_02.txt的文件，文件内容写入'hello world 测试文件'。"
+USER_INPUT = ("请在 E:\\test_dir\\ 目录下创建一个名为e2e_p0_02.txt的文件，文件内容写入'hello world 测试文件'。"
                "读取验证内容正确后，在末尾追加一行'第二行内容已追加，证明追加功能正常'并再次读取确认。"
                "随后用Shell执行命令查看该文件的大小与修改时间，最后把所有操作步骤与结果"
-               "汇总成一份report.md保存到E:\\test_dir\\e2e_p0_02_report.md。所有步骤必须真实执行并相互校验。")
+               "汇总成一份report.md保存到 E:\\test_dir\\e2e_p0_02_report.md。所有步骤必须真实执行并相互校验。")
 
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +42,7 @@ from e2emodel.e2e_helpers import (
     READ_TOOLS,
 )
 
-TEST_FILE = Path("E:/e2e_p0_02.txt")
+TEST_FILE = Path("E:/test_dir/e2e_p0_02.txt")  # 2026-11-27 小欧 - 与 USER_INPUT 的 E:\test_dir 授权目录对齐
 
 
 @pytest.mark.e2e_full_link

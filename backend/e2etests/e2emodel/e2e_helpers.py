@@ -190,6 +190,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.db.database import db_file_path  # 2026-11-27 小欧 - DB路径唯一真源(对齐生产迁库后的 /db 子目录)
+
 
 # ─── 超时保护机制（手册5.5铁律：即使超时也要写记录）──────────────
 # 小健 2026-06-18 添加
@@ -280,12 +282,37 @@ def remove_pending_record(test_id: str):
 BACKEND_PORT = int(_os.environ.get("BACKEND_PORT") or 8100)
 BASE_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 API_PREFIX = "/api/v1"
-DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
+# 2026-11-27 小欧 - 生产 2026-11-21 迁库到 {数据根}/db/chat_history.db, 原路径少 /db 子目录
+#   导致 check_db/token_usage/一致性全部读旧库(0行)→记录假 FAILED。复用生产唯一真源, 跟随 OMNI_DATA_DIR。
+DB_PATH = db_file_path("chat")
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
 # 读类工具名唯一源(DRY): SSE has_read断言 + verify_db_tool_usage(expect_any_tools) 共用
 # 2026-10-02 小欧 - readtext→read 改名 + FUNDAMENTAL 侧 read 别名删除后去重(原为 {"readtext","read","readmedia"})
 READ_TOOLS = {"read", "readmedia"}
+# 2026-11-27 小欧 - 隐藏工具(schedule/question)注册声明 hide_from_steps=True, 其 action 只落 DB
+#   不进 SSE 步骤流(真源: app/tools/agent/agent_register.py)。SSE-DB 数量对比须排除, 否则误报偏差。
+INTERNAL_TOOLS = {"schedule", "question"}
+
+# ─── 共享会话(北京老陈 2026-11-27 要求: 所有 case 在同一个会话里测试)───────
+# 每个 case 跑独立 pytest 进程, 模块级变量无法跨进程, 故用文件持久化同一 session_id。
+# 首个 case 建会话写入, 后续 case 读文件复用; 显式给 send_chat 传 session_id 的 case 不受影响。
+# 需重新开会话时删除此文件即可。
+_SHARED_SESSION_FILE = Path(__file__).parent / ".e2e_shared_session_id"
+
+
+def _get_shared_session_id() -> Optional[str]:
+    try:
+        return _SHARED_SESSION_FILE.read_text(encoding="utf-8").strip() or None
+    except (OSError, UnicodeError):
+        return None
+
+
+def _save_shared_session_id(sid: str) -> None:
+    try:
+        _SHARED_SESSION_FILE.write_text(sid, encoding="utf-8")
+    except OSError:
+        pass
 
 # [72]第九章(9.6-3) - 小欧 - 2026-09-26: E2E 统一注入访问口令。
 #   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
@@ -643,7 +670,16 @@ async def send_chat(
     -- 小欧 2026-10-07
     """
     if not session_id:
-        session_id = await create_session()
+        # 2026-11-27 小欧 - 北京老陈要求: 所有 case 同会话, 唯独多会话并行测试(PAR)用不同会话。
+        #   PAR 用例靠"N个session_id两两不同"断言, 必须各自新建; 用 PYTEST_CURRENT_TEST 识别, 不改 case。
+        _cur_test = _os.environ.get("PYTEST_CURRENT_TEST", "").lower()
+        _is_par = "par_" in _cur_test or "_par" in _cur_test
+        if not _is_par:
+            session_id = _get_shared_session_id()
+        if not session_id:
+            session_id = await create_session()
+            if session_id and not _is_par:
+                _save_shared_session_id(session_id)
         if not session_id:
             raise RuntimeError("创建session失败")
 
@@ -1353,6 +1389,10 @@ def verify_consistency(
     for s in db_steps:
         if _is_action_step(s):
             db_tool_calls.extend(_action_entries(s))
+
+    # 2026-11-27 小欧 - 排除 hide_from_steps 的内部工具(只落DB不进SSE), 避免数量偏差误报(过时 case 修补)
+    sse_tool_calls = [t for t in sse_tool_calls if t.get("tool_name", "") not in INTERNAL_TOOLS]
+    db_tool_calls = [t for t in db_tool_calls if t.get("tool_name", "") not in INTERNAL_TOOLS]
 
     # ── 数量对比(偏差<=2) ──
     sse_count = len(sse_tool_calls)
