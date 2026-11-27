@@ -22,6 +22,7 @@
 - v2.7 2026-11-27 小欧 趋势增量章节收敛：①§8 整章删除——8.1 agent RL 兼容声明融入 §1.4 决策表（纯声明零代码改动，原文本就指定落点），8.4 按需图编排开关融入 §1.2「不引入 DAG」约束行（本就是该约束的破例条件），8.2 记忆槽/8.3 effort 预算档移入 §7 成为 7.2/7.3；②§7 更名「远期增量与开放生态（P2+）」，原 7.1-7.3 降为 7.1.1-7.1.3 归到 7.1 A2A 开放委托层下，全文 8 章收敛为 7 章；③§2.6 OCP 总表补「Agent 来源」行（原漏项，指向 §7.1）；④§6 P2+ 行与文末说明同步新章节号，消除对已删除 §8 的引用
 - v2.8 2026-11-27 小欧 补齐实施代码（对码核实后把"只描述未给码"的缺口落码）：①§2.1.1 补 `plugin_loader.py` 完整扫描器实现 + 调用点；②§2.4.2 把 delegate 回调注入改为嵌入现有 try/finally 的真实结构（含 token 守卫理由），usage 合并交叉引用 §4.3 避免重复；③§2.5.1 把并行上限伪代码替换为可落地完整实现，并点明 `_active_calls` 取号前移的隐藏改动点；④§2.7.3 补 `base_agent` 的 `track_task` 门控代码 + 遥测归属取舍（子 Agent 不 finalize，token 经 accumulated_usage 回灌父）；⑤§4.2 补前置改造全套代码（`tool_loader`/`universal_agent`/`tool_description`/`registry`/`tool_cache_manager`/`client_sdk.api_key` 六项），并补 §5.2 清单里 `registry.to_openai_tools` 增 `exclude` 的漏项；⑥修正描述性不符：OCP 扩展口 17→18、`_find_unattended_blocker` 覆盖面措辞（全仓 needs_confirmation=True 零命中，bash/execute_sql 靠 confirm_fn）
 - v2.9 2026-11-27 小欧 实施清单与里程碑逐项对齐：①§5.1/§5.2 每个文件补「修改要点（落码位置）」列，点名改哪个函数、改什么、代码在哪一节，消除"只列文件名不知改什么"；②§5.2 补原清单遗漏的 `config/config.yaml`（P1 新增 `tuning.agent.plugins_dir` 配置项）与 `stream_orchestrator.py`（P2 改 `_SSE_FORWARD_TYPES`）；③§5.3 补 `task_registry.py`（`inject_system_notice`/`drain_inbox` 已存在，P1 直接复用）、`tools/agent/__init__.py`（已存在）不改理由，并标注 `react_loop.py` 的 P2 事件 sink 例外；④§6 每阶段增「涉及文件（新增/修改）」列，逐阶段点名代码落点，工期不变
+- v2.10 2026-11-27 小欧 全章交叉核查修正（逐章互相核查）：①§5.1 `load_from_manifest` 职责归属纠正——它是 `AgentRegistry` 的方法（`agent_config.py:195`），非 `plugin_loader.py` 的；`plugin_loader.py` 只做 `load_plugins()` 扫描 + 逐 manifest 调 `registry.load_from_manifest()`，行数 ~50 改 ~30（与 §2.1.1 一致）；②§5.1 `agent_config.py` 补 `load_from_manifest` 与 `get_agent_registry`/`reset_agent_registry`（模块级函数，非 Registry 方法）落点；③§5.2 `agent_register.py` 修改要点由"三张分类/依赖表"改为"三张表（描述/入参/示例）+ `tool_methods` 注册循环"（与 §4.1 四张表口径一致）；④§5.2 `stream_orchestrator.py` 预估列改"P2（暂缓）"；⑤§6 P1 插件行 `plugin_loader.py` 由"改"改"新增"（§5.1 已列为新增文件）
 
 
 ---
@@ -1435,11 +1436,11 @@ TOOL_NAME_ALIASES.update({
 
 | 文件 | 职责 | 修改要点（落码位置） | 预估行数 |
 |------|------|----------------------|----------|
-| `backend/app/tools/agent/agent_config.py` | AgentConfig 数据类 + AgentRegistry + 拒绝清单 | ① `AgentConfig` 字段（agent_id/description/system_prompt/tool_categories/output_instruction/model/max_steps/timeout_s/track_task）；② `__post_init__` 构造即校验（id 正则、description 非空、max_steps 1..30、timeout 5..1800、分类非空、集合拷贝）；③ `effective_categories()` 扣拒绝分类；④ `AgentRegistry.register/unregister/reset_agent_registry`（重名默认报错、replace 显式覆盖）；⑤ `DELEGATE_DENY_CATEGORIES`/`DELEGATE_DENY_TOOLS` 复用算子层 PATH_* 表；⑥ 内置 3 Agent 注册。代码见 §2.1 | ~150 |
+| `backend/app/tools/agent/agent_config.py` | AgentConfig 数据类 + AgentRegistry + 拒绝清单 | ① `AgentConfig` 字段（agent_id/description/system_prompt/tool_categories/output_instruction/model/max_steps/timeout_s/track_task）；② `__post_init__` 构造即校验（id 正则、description 非空、max_steps 1..30、timeout 5..1800、分类非空、集合拷贝）；③ `effective_categories()` 扣拒绝分类；④ `AgentRegistry.register/unregister/get/list_configs/list_available`（重名默认报错、replace 显式覆盖）+ 模块级 `get_agent_registry`/`reset_agent_registry`（单例 + 测试复位）；⑤ `AgentRegistry.load_from_manifest()` 逐 manifest 容错解析（未知分类 warning 回落 fundamental、缺 name/类型错/`__post_init__` 校验不过/重名 ValueError 均返回 None 跳过）；⑥ `DELEGATE_DENY_CATEGORIES`/`DELEGATE_DENY_TOOLS` 复用算子层 PATH_* 表；⑦ 内置 3 Agent 注册。代码见 §2.1 | ~150 |
 | `backend/app/services/agent/delegateagent_runner.py` | 子 Agent 运行器 | ① `run_delegate()` 查注册表→建子 UniversalAgent（独立 task_id / 工具子集 / excluded_tools / track_task）；② `_build_sub_task()` 自包含任务描述；③ `_delegate_scope()` 私有 buffer + 上下文副本 + 清空 delegate 回调、深度 +1；④ `_run_child_guarded()` 守卫协程（墙钟超时 + 父取消轮询 + 先收子任务再回收 buffer + `_CANCEL_GRACE_S` 有界放弃）；⑤ 从 `FinalStep.response` 提摘要 + `accumulated_usage` 回传；⑥ 深度硬顶 fail-closed。代码见 §2.5 | ~230 |
 | `backend/app/tools/agent/delegateagent.py` | delegateagent 工具函数 | ① `delegateagent(agent_id, task, context, wait)` 从 ContextVar 取回调，空则 fail-closed 报错；② `wait=True` 同步返回摘要 + usage；③ `wait=False` 显式拒绝（P1 再放开）。代码见 §2.3 | ~60 |
 | `backend/app/tools/agent/delegateagent_schema.py` | DelegateAgentInput pydantic 模型 | ① 入参模型字段（agent_id/task/context/wait）与约束；② 工具 Schema 由模型生成（§2.2）。 | ~30 |
-| `backend/app/tools/agent/plugin_loader.py` | 插件扫描器 | ① `load_plugins()` 扫 `tuning.agent.plugins_dir`（缺省 `<code_root>/plugins`），目录不存在/空静默跳过；② `load_from_manifest()` 逐 manifest 容错（未知分类 warning 回落 fundamental、重名 ValueError 跳过、JSON 错跳过）；③ 调用点在 `agent_register._register_agent_tools()`。代码见 §2.1.1 | ~50 |
+| `backend/app/tools/agent/plugin_loader.py` | 插件扫描器 | ① `load_plugins()` 扫 `tuning.agent.plugins_dir`（缺省 `<code_root>/plugins`），目录不存在/空静默跳过；② 逐 manifest.json 调 `registry.load_from_manifest()`（容错在 agent_config 内，见上行⑤）；③ 调用点在 `agent_register._register_agent_tools()`。代码见 §2.1.1 | ~30 |
 
 > `agent_config.py` 放 tools 层而非 services 层：`agent_register.py`（tools 层）要读注册表生成工具描述，放 services 会形成"工具层 import services"的越层。
 
@@ -1447,7 +1448,7 @@ TOOL_NAME_ALIASES.update({
 
 | 文件 | 修改要点（落码位置） | 预估 |
 |------|----------------------|------|
-| `backend/app/tools/agent/agent_register.py` | ① `AGENT_TOOL_DESCRIPTIONS` 增 delegateagent 条目，description 走 `build_delegate_tool_description()` callable 动态生成（新增 Agent 零改字面量）；② `_register_agent_tools()` 内先调 `plugin_loader.load_plugins()` 再注册内置工具；③ 三张分类/依赖表补登记（漏则工具根本没 register）。代码见 §4.1 | +20 行 |
+| `backend/app/tools/agent/agent_register.py` | ① `AGENT_TOOL_DESCRIPTIONS` 增 delegateagent 条目，description 走 `build_delegate_tool_description()` callable 动态生成（新增 Agent 零改字面量）；② `_register_agent_tools()` 内先调 `plugin_loader.load_plugins()` 再注册内置工具；③ 三张表（`AGENT_TOOL_DESCRIPTIONS`/`AGENT_INPUT_MODELS`/`AGENT_TOOL_EXAMPLES`）+ `tool_methods` 注册循环登记（漏 `tool_methods` 则工具根本没 register）。代码见 §4.1 | +20 行 |
 | `backend/app/tools/context.py` | ① 新增 `_current_delegate_callback` ContextVar（签名 `async (agent_id, task, context, wait) -> Dict`）；② 新增 `_current_delegate_depth` ContextVar（并发各算各的，不能用模块全局）；③ set/reset/get 三件套。代码见 §2.4.1 | +20 行 |
 | `backend/app/services/agent/tool_executor.py` | ① `execute_tool` 入口在 `set_current_session_id` 同处 set delegate 回调，finally 按 `_delegate_token is not None` 守卫 reset；② usage 合并（成功/失败分支都按 `data.usage` 存在性累加到父 accumulated_usage）。代码见 §2.4.2、§4.3 | +22 行 |
 | `backend/app/services/agent/tool_runner.py` | ① `execute_tools` 内、工具名归一之后加并行上限校验（`len(all_calls)>6` 拒绝多余委托）；② 三分支改用 `_active_calls` 执行 + 末尾按原索引回填（隐藏改动点：`_active_calls` 取号前移）。代码见 §2.5.1 | +10 行 |
@@ -1461,7 +1462,7 @@ TOOL_NAME_ALIASES.update({
 | `backend/app/tools/tool_constants.py` | ① 新增 `MAX_PARALLEL_SUB_AGENTS`（当前代码零命中，须同批新增）；② `MAX_DELEGATE_DEPTH` 不进本文件（只在 runner 内使用，留该模块）。代码见 §2.5.1 | +1 行 |
 | `backend/app/tools/tools_alias_mapper.py` | ① `TOOL_NAME_ALIASES` 增 4 条大众名→`delegateagent`；② P1 可选 `PARAM_ALIASES["delegateagent"].prompt→task`。代码见 §4.5 | +5 行 |
 | `config/config.yaml` | ① 新增 `tuning.agent.plugins_dir` 配置项（P1，缺省 `<code_root>/plugins`），供 `plugin_loader.load_plugins()` 读取；当前配置无此键（§2.1.1、§6 P1）。 | +2 行 |
-| `backend/app/services/chat/stream_orchestrator.py` | ① P2 才改：`_SSE_FORWARD_TYPES` 增子 Agent 步骤类型 + 嵌套渲染（§6 P2）；P0/P1 不改。 | P2 |
+| `backend/app/services/chat/stream_orchestrator.py` | ① P2 才改：`_SSE_FORWARD_TYPES` 增子 Agent 步骤类型 + 嵌套渲染（§6 P2）；P0/P1 不改。 | P2（暂缓） |
 
 > `subagent` 不进别名表：它已在 `UNAVAILABLE_OFFICIAL_TOOLS` 里，且 `tuning.agent.disabled_tools` 可能按此名屏蔽；收进来会与"未注册即禁用"的判定打架。`assistant`/`worker` 同理不收。
 
@@ -1497,7 +1498,7 @@ TOOL_NAME_ALIASES.update({
 | **P0** | `AgentConfig.model` 配置层扩展位（默认继承父 LLM；非 None 时 `shared_client` 复用父池） | 改 `agent_config.py`（model 字段）/ `delegateagent_runner.py`（client 分支）/ `client_sdk.py`（api_key） | 含在首版 |
 | **P0** | `LLMClient.api_key` 只读 property + 工具描述 callable 动态生成（新增 Agent 零改代码） | 改 `client_sdk.py`/`tool_description.py`/`registry.py` | 含在首版 |
 | **P1** | `wait=False` 异步模式：立即返回 `delegate_id` + 完成经 `inject_system_notice`/`drain_inbox` 回灌 | 改 `delegateagent.py`/`delegateagent_runner.py`/`tool_executor.py`；复用 `task_registry.py`（不改） | 1-2 天 |
-| **P1** | 插件 manifest 加载 + `tuning.agent.plugins_dir` 目录扫描 | 改 `plugin_loader.py`（§5.1 已列新增）/ `agent_register.py`（调用点）；**改 `config/config.yaml`（新增 plugins_dir 配置项）** | 1 天 |
+| **P1** | 插件 manifest 加载 + `tuning.agent.plugins_dir` 目录扫描 | 新增 `plugin_loader.py`（§5.1）；改 `agent_register.py`（调用点）；**改 `config/config.yaml`（新增 plugins_dir 配置项）** | 1 天 |
 | **P1** | `tool_names` 名粒度过滤（构造 retry_engine 前筛 + `get_openai_tools` 接 tool_names）；可选 `PARAM_ALIASES["delegateagent"].prompt→task` | 改 `delegateagent_runner.py`/`tool_cache_manager.py`/`tools_alias_mapper.py` | 1 天 |
 | **P1** | `allow_delegate=True` 精确多层委托（≤2 层）+ 跨 provider 模型（`AgentConfig` 增 provider/api_base） | 改 `agent_config.py`/`delegateagent_runner.py` | 1 天 |
 | **P2** | SSE 子 Agent 步骤折叠透传（改 `_SSE_FORWARD_TYPES` + 嵌套渲染） | 改 `stream_orchestrator.py`（`_SSE_FORWARD_TYPES`）+ 前端嵌套渲染 | 暂缓 |
