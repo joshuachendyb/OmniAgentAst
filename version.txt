@@ -1,3 +1,32 @@
+v1.7.14
+发布时间: 2026-11-27 22:31:11 - 小欧-2026-11-27
+
+## v1.7.14汇总 从上一个 tag v1.7.13(commit 3e71312790, 2026-11-27)以来全部 19 个 commit(refactor 1 / fix 5 / docs 12 / test 1); 本批以 [68]delegateagent 多Agent委托机制设计文档 v2.0-v2.10 全链路演进为主线(对码核实/三堂会审整改/章节重组/实施代码补齐/交叉核查), 辅以目录级临时授权整改(safety+HITL 5文件)、useChatFacade 容器级 useMemo 移除修 metaFrames 陈旧、远程模型拉取失败可观测性、StaticStatsBlock 概览区精简、E2E 基础设施整改(INTERNAL_TOOLS 派生+PAR 精确识别+共享会话等待) - 小欧-2026-11-27
+### 1.7.14.1 重构与优化
+[refactor] refactor:StaticStatsBlock 概览展开区删除任务元信息节与任务级Token主值, 会话级/链级合并为一行 - 小欧-2026-11-27
+### 1.7.14.2 缺陷修复
+[fix] fix:useChatFacade 删除容器级 useMemo 致 metaFrames 陈旧使实时任务概览行点击不展开 - 小欧-2026-11-27
+[fix] fix:model_service.py,ModelLibraryTab.tsx 远程模型拉取失败可观测性-异常文本为空时日志与前端文案带异常类型名兜底, 空串错误提示改按trim兜底不再空白 - 小欧-2026-11-27
+[fix] fix:safety+HITL 临时授权目录级整改+多Agent委托设计文档 - 小欧-2026-11-27
+[fix] fix:agent_register.py+generate_video.py 三堂会审P2整改(AGENT_HIDE_FROM_STEPS提为模块级真源常量供e2e派生,消除隐藏工具清单硬编码漂移;generate_video补timeout 120-1200越界校验,低于/超出范围回结构化error不再静默按原值下发) - 小欧-2026-11-27
+[fix] fix:path_dir_lists.py+temp_auth.py+trust.py+safety_gate.py+tool_facade.py 目录级临时授权整改(新增grant_temp_auth_scoped把文件类auth_path收敛到所在目录再授权,消除同目录换名反复弹窗;resolve_skip增path_override透传auth_path并认本任务temp_auth,修shell无path键致目录信任永不命中;_group_ref收敛目录+_group_size同源计数同目录不再分组各弹;SCOPE_TEXT非系统禁区文案订正为仅支持任务级临时授权) - 小欧-2026-11-27
+### 1.7.14.3 测试
+[test] test:e2e_helpers.py E2E基础设施整改(INTERNAL_TOOLS改从agent_register.AGENT_HIDE_FROM_STEPS派生消除硬编码;PAR识别改精确前缀test_e2e_par_避免separate/compare/sparse子串误判;新增_wait_shared_session_idle共享会话前序任务终态串行等待,修session_busy拒绝) - 小欧-2026-11-27
+### 1.7.14.4 文档
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.10 全章交叉核查修正(load_from_manifest归属/四张表口径/plugin_loader新增/行数统一) - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.9 实施清单与里程碑逐项对齐(修改要点/涉及文件列/补config.yaml与stream_orchestrator) - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.8 补齐实施代码(plugin_loader/前置改造全套/并行上限/台账门控/遥测归属) - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.7 趋势增量章节收敛8章并7章 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.4对码收口整改+v2.6追加A2A开放委托层与2026趋势增量章节 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.3 补执行模型与并行前提口径 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.2 决策记录前置§1.4 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.1 章节结构重组 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.0 对码核实整改 - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v1.8/v1.9三堂会审对码复核整改(AgentConfig构造即校验与拒绝分类清单;递归防护改fail-closed深度ContextVar+子作用域清回调;子Agent只读三事实与元数据校验;资源保护表重写墙钟超时与取消联动;并行上限落tool_runner;新增OCP扩展点总表13开放口;落层与工具描述动态生成;全文一致性修订) - 小欧-2026-11-27
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 多Agent委托机制设计定稿（重命名+v1.1-v1.7契约核验修订） - 小欧-2026-11-27
+[docs] docs:AuthorizationModal/index.tsx 订正HITL授权核查注释(原二者各自正确不可混改掩盖临时授权按文件+shell查询键恒None两真缺陷致同目录换名反复弹窗;后端已改grant_temp_auth_scoped目录级+resolve_skip透传auth_path,注释同步说明前端truncateDir展示与实际授权范围一致) - 小欧-2026-11-27
+
+
 v1.7.13
 发布时间: 2026-11-27 10:50:59 - 小欧-2026-11-27
 
