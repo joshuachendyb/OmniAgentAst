@@ -31,6 +31,8 @@
   本模块只调 vendor_duration_ms, 不再自带一份时间戳解析 — 小欧-2026-11-21
 编辑历史: 2026-11-21 小欧 b64 落盘加固: 解码失败(确定性)与写盘/登记失败(瞬时)分开处理, 后者线性退避重试
   _PERSIST_RETRIES 次; 全败回 None 由工具报 error(ERR_GENERATE_PERSIST_FAILED), 不再按未定警告 — 小欧-2026-11-21
+编辑历史: 2026-11-27 小欧 分层整改: vendor_spec 迁中立层 utils 供 tools/services 共用, 本模块 import
+  改 app.utils.vendor_spec, 消除 tools→services 越层(业务逻辑零改动) — 小欧-2026-11-27
 """
 import asyncio
 import base64
@@ -51,7 +53,7 @@ from app.services.generation.generation_client import (
     generate_image,
     generate_video,
 )
-from app.services.generation.vendor_spec import vendor_duration_ms
+from app.utils.vendor_spec import vendor_duration_ms
 
 # b64 落盘重试: 写盘失败多为杀软/索引器瞬时占锁, 线性退避重试后仍失败才算真失败 — 小欧-2026-11-21
 _PERSIST_RETRIES = 3

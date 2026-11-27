@@ -555,7 +555,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `_active_session_ids` | 在跑任务所属会话集合：内存 `running_tasks`(running/paused) ∪ `list_running_tasks(conn)`（含重启遗留任务），`None` 剔除。清理时"宁少删不误删"的唯一判据 | conn | set[str] |
 | `cleanup_sessions` | 历史页批量软删：`invalid`=空壳会话（无用户消息且无任务；`is_valid` 只是创建入参+存消息后自愈置真，不作判据，否则会连有消息但标记未翻真的会话一起删）、`older`=updated_at 早于 N 天；命中集先扣活跃会话，执行前二次取活跃集；`preview=True` 只统计且 `session_ids` 返回空（未删的 id 不得给前端清 Store）；`deleted` 按 UPDATE rowcount 累计 | mode: str, days: int, preview: bool | dict |
 
-### 3.13 生成回调与厂商字段落地（`services/agent/media_generate.py` + `services/generation/vendor_spec.py` + `tools/media/`）(2026-11-21 新增 §, 小欧)
+### 3.13 生成回调与厂商字段落地（`services/agent/media_generate.py` + `utils/vendor_spec.py` + `tools/media/`）(2026-11-21 新增 §, 小欧; 2026-11-27 vendor_spec 迁 utils, 小欧)
 
 会话生图/生视频工具取产物的唯一回调口，以及「厂商响应 → 落点」的口径：**规格拼进 summary（一句通顺中文）**、**模型与规格及有价值标量进 metrics**、**other_data 只装厂商返回的 token 用量数字**。成功 summary 不复述产物指针（URL/路径在 data，重复即噪音）；厂商响应的过程量（created/completed_at/progress/status/input_* 原文）不落库，用完即弃。
 
@@ -985,6 +985,7 @@ def my_parse_json(json_str):
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 
+| v5.55 | 2026-11-27 07:28:20 | **§3.13 分层整改**: `vendor_spec.py` 是纯映射逻辑(零 I/O 零配置), 从 `services/generation/` 迁中立层 `app/utils/`, 供 tools 与 services 共用; generate_image/generate_video/media_generate 三处 import 同步改 `app.utils.vendor_spec`, 消除 tools→services 越层(架构边界测试违规项), 业务逻辑逐字未改 | 小欧 |
 | v5.54 | 2026-11-26 | **进程域常量集中与并发真 bug 修复**: client 13 个 + host 1 个超时/退避/流控常量迁入 `app/proc/constants.py`, 去下划线(域级不变量)并按相互制约关系分组标注(RECV_SLACK ≥ IDLE_JOIN / 判死 ≤ RECOVERY_BUDGET); 宿主排队后重算命令预算(修复客户端误杀宿主并连累在飞命令的真 bug); guardian 单次 ping 失败改同 tick 复检一次才判死(防慢 CreateProcess 误杀, 又不拖慢真僵死恢复); 37 项测试 + 150 命令并发压测通过 | 小欧 |
 | v5.52 | 2026-11-26 | **进程域目录归位**: 宿主与全部配套进程设施收拢到 `app/proc/`(host/client + proc_io/proc_utils/spawn_gate/win_job_object/console_mode/workers), 原 `app/proc_host/` 与 `app/utils/` 同名模块删除; 常量单点改 `app/proc/constants.py`(PROTO/DEFAULT_TIMEOUT), 启动入口改 `-m app.proc.host`, `.spec` hiddenimports 与全仓 42 处 import 同步; 第一章标题改为"全局层与进程域", 新增 1.26 控制台隔离/1.27 宿主进程; 纯路径迁移, 逻辑零变化, 36 项测试 + 150 命令并发压测通过 | 小欧 |
 | v5.51 | 2026-11-26 | **三堂会审整改（小欧）**: 按禁止backward铁规删除 `OMNI_PROC_HOST=0` 本地回退开关与 `Disabled` 降级分支，§1.24 移除 `Disabled` 登记，PS 分支收敛为宿主单路径（宿主不可用按 error 返回）；`_client_with_deadline` 加放弃标记，消除连接超时后辅助线程连上无人接管的悬挂窗口 | 小欧 |

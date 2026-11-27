@@ -29,11 +29,12 @@
 编辑历史: 2026-11-21 小欧 产物声明迁出 tool_response 并补形态: 公网 URL 走 declare_artifacts+artifact_from_url
   (form=url, type 取 URL 后缀), 本地落盘走 declare_artifact_file(form=file), 两者都挂 other_data["artifacts"]
   (不再挂 llm_data.action.artifacts, 也不再手搓条目 dict) — 小欧-2026-11-21
+编辑历史: 2026-11-27 小欧 分层整改: vendor_spec 是纯映射逻辑, 从 services/generation 迁中立层 utils,
+  本工具 import 改 app.utils.vendor_spec, 消除 tools→services 越层(业务逻辑零改动) — 小欧-2026-11-27
 """
 import time
 from typing import Any, Dict, List, Optional
 
-from app.services.generation.vendor_spec import build_vendor_fields
 from app.tools.context import get_current_generate_callback
 
 # 默认生成图像模型与错误码从工具层常量引入 — 小欧-2026-11-20
@@ -54,6 +55,7 @@ from app.utils.artifacts import (  # 产物契约唯一实现 — 小欧 2026-11
     declare_artifact_file,
     declare_artifacts,
 )
+from app.utils.vendor_spec import build_vendor_fields
 
 
 def _build_image_llm_data(
