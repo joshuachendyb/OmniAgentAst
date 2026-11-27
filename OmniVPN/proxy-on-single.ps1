@@ -1,4 +1,4 @@
-# proxy-on-single.ps1 — 一键开代理(一级模式): 启动 mihomo(用 config-single.yaml) + 设系统代理 + 验证出口
+﻿# proxy-on-single.ps1 — 一键开代理(一级模式): 启动 mihomo(用 config-single.yaml) + 设系统代理 + 验证出口
 # 编写人: 商量    日期: 2026-11-28    版本: v1.1
 # 用途: 与二级 proxy-on.ps1 并存互斥。一级模式 = 出口节点直连裸线, 无二级池(INDONESIA_POOL/EXIT_POOL)。
 #       用 mihomo\config-single.yaml(-f 指定) 启动, 独立端口 7892/9092, 与二级 7890/9090 并存不冲突。
