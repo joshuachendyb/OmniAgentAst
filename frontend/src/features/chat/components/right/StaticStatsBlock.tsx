@@ -48,6 +48,10 @@
 // 编辑历史: 2026-11-14 商量 - 工具调用链折叠箭头尺寸走令牌 FoldArrow.LG(20→16 并删本地 ARROW_SIZE, 禁裸数字) — 商量-2026-11-14
 // 编辑历史: 2026-11-21 小欧 - 产出物类型列补形态前缀(远程/目录): 产物契约新增 form 字段,
 //   远程 URL 与解压目录不再与本地文件同形显示 — 小欧-2026-11-21
+// 编辑历史: 2026-11-27 小欧 - 展开区瘦身(北京老陈定案): 删「任务元信息」整节(标题+步数/LLM/模型,
+//   与概览行状态/时长同属低频信息, 判定无价值) 与任务级 P/C/T 主值行(与 TitleBlock 完全重复);
+//   保留概览行没有的会话级/链级, 由两行合并为一行(中点 · 分隔, 窄栏自动换行);
+//   两者皆空时整块不渲染, 不留孤立分隔线 — 小欧-2026-11-27
 
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
@@ -81,7 +85,6 @@ import {
   type TokenLayer,
 } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
 import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复用省略+Tooltip全文封装 — 小欧-2026-09-15
-import { formatTokenK } from '../taskinfo/infoMaps'; // 2026-10-28 小欧 - 展开区域 Token 主值用 K/M 单位(对齐 TitleBlock) — 小欧-2026-10-28
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
 // 2026-11-02 小欧 - 链接 UI 收敛到唯一组件 PathLink（行内 + 等宽）；别针不属链接组件 — 小欧-2026-11-02
@@ -94,7 +97,7 @@ import { collectArtifact } from '@/features/refs/uploadAttachment';
 // 2026-10-28 小欧 - 去魔法数字: 本组件专属尺寸(无现成令牌)提模块级常量;
 //   能复用现有令牌(Spacing/Radius/BorderWidth/FontSize)一律用令牌, 不重造(DRY/复用优先)。
 //   命名沿用项目先例(ParamsPanel NESTED_INDENT_PX / InputHistoryPanel PANEL_W 等局部常量) — 小欧-2026-10-28
-const LABEL_COL_W = 72; // 基本信息 grid 标签列宽(标签左值右)
+// 2026-11-27 小欧 - 删 LABEL_COL_W: 唯一消费方「任务元信息」步数/LLM/模型 grid 已随本节删除 — 小欧-2026-11-27
 const CHIP_RADIUS = 2; // 工具汇总 chip 圆角(Radius.SM=4 偏大, chip 用更小)
 const CHAIN_ROW_GAP = Spacing.XS / 2; // 工具调用链行间距(Spacing.XS 半档)
 const SEQ_COL_W = 20; // 工具调用链序号列宽
@@ -155,8 +158,12 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
     detail?.artifacts && detail.artifacts.length > 0
       ? detail.artifacts
       : (finalStats?.artifacts ?? detail?.artifacts ?? []);
-  const llmCallCount = detail?.llm_call_count ?? finalStats?.llm_call_count;
-  const stepCount = detail?.total_steps ?? finalStats?.step_count;
+  // 2026-11-27 小欧 - 会话级/链级合并为一行(北京老陈定案): 两段全保留、中点 · 分隔, 窄右栏自动换行;
+  //   任一侧缺失只渲染另一侧, 两侧皆空则整块不渲染(不留孤立分隔线) — 小欧-2026-11-27
+  const tokenParts: string[] = [];
+  if (sessionTokens)
+    tokenParts.push(`会话级: ${formatTokenFull(sessionTokens)}`);
+  if (chainTokens) tokenParts.push(`链级: ${formatTokenFull(chainTokens)}`);
   const chain = (chainSteps ?? []).filter((s) => s.type === 'action');
   const chainSeq =
     chain.flatMap((s) => (s.tools ?? []).map((t) => t.tool)).join(' -> ') ||
@@ -172,87 +179,24 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
         // borderTop 已移至 TitleBlock（L71 附近），此处删除防双线 — 小欧-2026-09-11
       }}
     >
-      {/* 展开内容（title 段已由父级 TitleBlock 渲染，此处从"基本信息"开始）— 小欧 2026-09-11 第七章 M3c */}
+      {/* 展开内容（title 段已由父级 TitleBlock 渲染，此处从 Token 行开始）— 小欧 2026-09-11 第七章 M3c */}
       <>
-        {/* 2026-10-28 小欧 - 布局分组: 5 碎片节→2 大语义组。组1「任务元信息」= 基本信息(去开始/结束/事件)
-            + Token(主值 K/M 对齐 TitleBlock, 任务级重复已并入 usage 不再单显) — 小欧-2026-10-28 */}
-        <div style={sectionStyle}>
-          <Typography.Text style={sectionTitleStyle}>
-            任务元信息
-          </Typography.Text>
-          {/* 基本信息: 去"开始/结束"(用户令)/"事件"(与步数重复), grid 4列→2列(标签左值右) — 小欧-2026-10-28 */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `${LABEL_COL_W}px 1fr`,
-              columnGap: Spacing.LG,
-              rowGap: Spacing.XS,
-              marginTop: Spacing.SM,
-              fontSize: FontSize.SECONDARY,
-            }}
-          >
-            <span style={{ color: Colors.TEXT.SECONDARY }}>步数</span>
-            <span style={{ color: Colors.TEXT.STRONG }}>
-              {stepCount ?? '-'}
-            </span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>LLM</span>
-            <span style={{ color: Colors.TEXT.STRONG }}>
-              {llmCallCount ?? '-'}
-            </span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>模型</span>
-            <span
-              style={{
-                color: Colors.TEXT.STRONG,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {detail?.provider ?? '-'} / {detail?.model ?? '-'}
-            </span>
-          </div>
-          {/* Token 主值: 任务级 P/C/T, K/M 单位对齐 TitleBlock; task_accumulated_tokens 已由 adaptTaskDetail
-              兜底并入 accumulated_usage, 不再单显(修任务级重复) — 小欧-2026-10-28 */}
-          <div
-            style={{
-              marginTop: Spacing.SM,
-              fontSize: FontSize.SECONDARY,
-            }}
-          >
-            <Typography.Text style={{ color: Colors.TEXT.SECONDARY }}>
-              Token{' '}
-            </Typography.Text>
+        {/* 2026-11-27 小欧 - 原「任务元信息」节(标题+步数/LLM/模型 grid + 任务级 P/C/T 主值)整节删除
+            (北京老陈定案): 概览行 TitleBlock 已含状态/时长/任务级 P/C/T, 此处重复且低频无价值;
+            仅保留概览行没有的会话级/链级, 合并为一行, 两侧皆空时整块不渲染 — 小欧-2026-11-27 */}
+        {tokenParts.length > 0 && (
+          <div style={sectionStyle}>
             <Typography.Text
               style={{
-                color: Colors.TEXT.PRIMARY,
-                fontWeight: FontWeight.MEDIUM,
+                fontSize: FontSize.CAPTION,
+                color: Colors.TEXT.SECONDARY,
+                lineHeight: `${FontSize.CAPTION + Spacing.XS}px`,
               }}
             >
-              {detail?.accumulated_usage
-                ? `P ${formatTokenK(detail.accumulated_usage.prompt_tokens)} / C ${formatTokenK(detail.accumulated_usage.completion_tokens)} / T ${formatTokenK(detail.accumulated_usage.total_tokens)} [tok]`
-                : '-'}
+              {tokenParts.join(' · ')}
             </Typography.Text>
           </div>
-          {/* 会话级/链级 次要行(任务级已并入主值) — 小欧-2026-10-28 */}
-          {(() => {
-            const s = sessionTokens;
-            const c = chainTokens;
-            if (!s && !c) return null;
-            return (
-              <div
-                style={{
-                  marginTop: Spacing.XS,
-                  fontSize: FontSize.CAPTION,
-                  color: Colors.TEXT.SECONDARY,
-                  lineHeight: `${FontSize.CAPTION + Spacing.XS}px`,
-                }}
-              >
-                {s && <div>会话级: {formatTokenFull(s)}</div>}
-                {c && <div>链级: {formatTokenFull(c)}</div>}
-              </div>
-            );
-          })()}
-        </div>
+        )}
         {/* 2026-10-28 小欧 - 布局分组: 组2「执行结果」= 工具汇总+产出物 — 小欧-2026-10-28 */}
         <div style={sectionStyle}>
           <Typography.Text style={sectionTitleStyle}>执行结果</Typography.Text>
@@ -465,7 +409,11 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       setCollecting(a.path);
                       try {
                         // 溯源: 传来源任务 id, 后端据此落 source_task_id(产物归属可追)
-                        await collectArtifact(sessionId, a.path, detail?.task_id ?? null);
+                        await collectArtifact(
+                          sessionId,
+                          a.path,
+                          detail?.task_id ?? null
+                        );
                       } finally {
                         setCollecting('');
                       }
