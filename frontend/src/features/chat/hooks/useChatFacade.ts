@@ -18,6 +18,15 @@
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: options 加 onTasksChanged 透传(插话并入后刷新左栏)
 // 编辑历史: 2026-10-08 小欧 - 文档[19] 3.7.2: useMemo deps 删 sessionJumpLoading/isRenderingMessages
 //   及其 setter(死旗, 生产零读取, 之前仅凑 deps 数组), 随 useChatState 一并删净 — 小欧-2026-10-08
+// 编辑历史: 2026-11-27 小欧 - 删本层 useMemo(北京老陈实报"实时任务执行完成后概览行点击不展开"的根因):
+//   该 memo 用手工维护的字段级 deps 复刻 7 个子 hook 的返回面, 与真源字段集合脱钩 ——
+//   chatStreaming 的 metaFrames/status/waitClock/deniedSteps/deniedEntries 均不在 deps 内。
+//   final_stats 帧到达时其余 deps 无变化 → memo 不重算 → 下游拿到上一版 metaFrames(finalStats=null)
+//   → RightViewer 的 hasFinalStats 恒 false → REST 详情守卫早退 → detail 恒 null
+//   → StaticStatsBlock 返回 null → 概览行点击后无任何内容(历史任务因 activeTaskId 变化触发重算而正常)。
+//   子 hook 返回对象本就是每渲染新字面量, 稳定其引用无收益; 唯一消费者(ChatPage/useChatInit/
+//   useChatLifecycle/useChatPanels)全部按字段取用, 无一处以本对象入依赖 → 直接返回字面量,
+//   消除"新增字段漏入 deps 即静默陈旧"的整类缺陷 — 小欧-2026-11-27
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -200,83 +209,19 @@ export const useChatFacade = (options?: {
     },
   });
 
-  // 通过useMemo统一返回，避免不必要的重渲染
-  return useMemo(
-    () => ({
-      // 2026-09-30 小欧 - 删九组结构化分组的构造（原 session/message/streaming/ui/send/
-      //   interrupt/sessionOps/persistence/shared）：运行时零消费者（ChatPage 自始只解构
-      //   四个子 Hook；useChatScroll 仅把分组当**类型引用源**、运行时仍传原始对象，
-      //   该类型引用已改指 UseChatStateReturn/UseChatStreamingReturn）。详见 K2 说明。
-      // ===== 本 Hook 组装并透出的各子 Hook（唯一一套暴露面）=====
-      chatState,
-      chatCallbacks,
-      chatStreaming,
-      chatSession,
-      chatPersistence,
-      chatSend,
-      chatTaskControl,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- facade单次组装: 底层各hook各自精确依赖, 整体入deps会全量重建级联渲染 — 小欧-2026-09-09
-    [
-      // ===== 会话状态 =====
-      chatState.sessionId,
-      chatState.sessionTitle,
-      chatState.sessionVersion,
-      chatState.titleLocked,
-      chatState.editingTitle,
-      chatState.titleInput,
-      chatState.setSessionId,
-      chatState.setSessionTitle,
-      chatState.setSessionVersion,
-      chatState.setTitleLocked,
-      chatState.setEditingTitle,
-      chatState.setTitleInput,
-      chatState.currentSessionIdRef,
-      // ===== 消息状态 =====
-      chatState.messages,
-      chatState.loading,
-      chatState.isRetrying,
-      chatState.setMessages,
-      chatState.setLoading,
-      chatState.setIsRetrying,
-      chatState.messagesRef,
-      chatState.messagesEndRef,
-      // ===== 流式状态 =====
-      chatStreaming.isReceiving,
-      chatStreaming.executionSteps,
-      chatStreaming.serverTaskId,
-      chatStreaming.currentResponse,
-      storeSessionId,
-      chatState.isPaused,
-      chatState.waitTime,
-      chatState.setIsPaused,
-      chatState.setWaitTime,
-      // ===== UI状态 =====
-      chatState.useStream,
-      chatState.isInitialized,
-      chatState.isMessageListLoading,
-      chatState.setUseStream,
-      chatState.setIsInitialized,
-      chatState.setIsMessageListLoading,
-      chatState.userScrolledUpRef,
-      chatState.lastScrollTimeRef,
-      // ===== 操作函数 =====
-      chatSend.handleSend,
-      chatTaskControl.handleCancel,
-      chatTaskControl.handleTogglePause,
-      chatSession.initializeSession,
-      chatSession.handleNewSession,
-      chatSession.handleClear,
-      chatPersistence.saveStateWithSSECheck,
-      chatPersistence.saveMessagesToStorage,
-      // ===== Refs =====
-      chatState.waitTimerRef,
-      chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: deps 同步改源
-      chatState.isPausedRef,
-      chatState.hasReceivedCancelEventRef,
-      chatState.cancelInProgressRef,
-    ]
-  );
+  // 2026-11-27 小欧 - 直接返回字面量, 不再 useMemo 包裹(理由见文件头编辑历史):
+  //   本层只做"7 个子 hook 结果的容器", 不派生任何数据; 容器身份无需稳定,
+  //   各消费方均按字段取用, 稳定性由各自 useMemo/useCallback 的字段级 deps 承担。
+  return {
+    // ===== 本 Hook 组装并透出的各子 Hook（唯一一套暴露面）=====
+    chatState,
+    chatCallbacks,
+    chatStreaming,
+    chatSession,
+    chatPersistence,
+    chatSend,
+    chatTaskControl,
+  };
 };
 
 /**
