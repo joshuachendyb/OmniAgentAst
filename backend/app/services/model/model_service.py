@@ -212,6 +212,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   part 形状与 media_payload.to_wire_part 的 file 方言同构; 用途是取证"声明了文档输入的模型是否真收",
 #   探不通只写回设置页供人工判断, 不改变请求怎么发(注入条件仍以 input_modalities 声明为准)
 #   — opencode-2026-11-18
+# 2026-11-27 小欧 - 远程模型拉取失败可诊断性: _http_get_remote_models 原只打 {e}, 而异步链路部分
+#   httpx 异常(ReadError/ConnectTimeout)的 str 为空, 日志与前端文案一起退化成"拉取失败: ",
+#   失败时无任何可查信息(实测 SenseNova 出口 TLS 被重置即如此)。改为带异常类型名, 文本为空时
+#   仅用类型名兜底; 日志与返回文案同源, 不改失败分类与控制流 — 小欧-2026-11-27
 """
 import base64
 import os
@@ -710,8 +714,12 @@ async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tup
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
     except Exception as e:
-        logger.error(f"拉取远程模型失败: {e}")
-        return None, f"拉取失败: {e}"
+        # 2026-11-27 小欧 - 异常文本可能为空(异步链路 ReadError/ConnectTimeout), 只打 {e} 会产出
+        #   "拉取远程模型失败: " 这种无信息日志; 统一带类型名, 空文本退化为类型名 — 小欧-2026-11-27
+        msg = str(e).strip()
+        detail = f"{type(e).__name__}: {msg}" if msg else type(e).__name__
+        logger.error(f"拉取远程模型失败: {detail}")
+        return None, f"拉取失败: {detail}"
     return resp, None
 
 

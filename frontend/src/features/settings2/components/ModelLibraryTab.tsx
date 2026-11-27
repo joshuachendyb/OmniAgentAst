@@ -49,6 +49,8 @@
 // 2026-11-09 小欧 - 输出模态列「音频生成」补位(实库 kilo/lyria out=[text,audio]), OUTPUT_LABEL 增 audio 中文标签 — 小欧-2026-11-09
 // 2026-11-09 小欧 - 本地 OUTPUT_LABEL 撤除改用 modelUtils 单源映射, 标签去「生成」后缀与输入侧同词 — 小欧-2026-11-09
 // 2026-11-12 小欧 - 字号档归位: FontSize.TERTIARY → FontSize.SECONDARY(同值两档, 阶梯收敛为单一真源) — 小欧-2026-11-12
+// 2026-11-27 小欧 - 拉取失败提示不再空白: 后端 message 在异常文本为空时是空串, 原 `?? '拉取失败'`
+//   只兜 null/undefined, 空串照传 → 提示区一片空白。改为 trim 后按空值兜底 — 小欧-2026-11-27
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -455,7 +457,8 @@ export const ModelLibraryTab: React.FC<Props> = ({
       if (!res.ok) {
         setRemote(null);
         setChecked(new Set());
-        setFetchError(res.message ?? '拉取失败');
+        // 2026-11-27 小欧 - message 可能是空串(异常文本为空), ?? 不兜空串致提示区空白, 改按 trim 后兜底 — 小欧-2026-11-27
+        setFetchError(res.message?.trim() || '拉取失败');
         return;
       }
       setRemote(res);
