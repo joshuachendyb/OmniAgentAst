@@ -65,13 +65,17 @@ AGENT_TOOL_EXAMPLES = {
     ],
 }
 
+# 2026-11-27 小欧 - 隐藏工具清单提升为模块级常量(真源): e2e_helpers.INTERNAL_TOOLS 从此派生,
+#   消除硬编码漂移风险(P2-3 整改)。hide_from_steps=True 的工具只落库不进 SSE 步骤流。
+AGENT_HIDE_FROM_STEPS = {"schedule", "question"}
+
 
 def _register_agent_tools():
     """注册 question/schedule 两个智能体交互工具 — 商量 2026-11-18"""
     tool_methods = {"question": question, "schedule": schedule}
     # 2026-11-19 小欧 - 前端步骤流隐藏(非业务 tool 共性): 两者都是 agent 与用户的交互, 产出由专属 UI 呈现,
     #   不画通用工具行; 落库/喂 LLM 照常。schedule→notice 清单卡; question→interact 问询浮层。
-    hide_from_steps = {"schedule", "question"}
+    hide_from_steps = AGENT_HIDE_FROM_STEPS
     for name, method in tool_methods.items():
         tool_registry.register(
             name=name,

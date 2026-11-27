@@ -100,6 +100,21 @@ async def generate_video(prompt: str, model: Optional[str] = None,
                          timeout: int = 660) -> Dict[str, Any]:
     """生成一段视频(text/keyframe/reference 全模式)。返回 {data, llm_data, other_data}。"""
     t0 = time.monotonic()
+    # timeout 越界校验 — schema ge=120 le=1200，引擎层不再校验，工具层自行处理（P2-1 整改）— 小欧-2026-11-27
+    if timeout < 120:
+        return build_error(
+            data={},
+            llm_data=_build_video_llm_data(
+                "error", 0, summary="timeout低于范围", detail=f"timeout={timeout} s < 120 s，已按 120 s 执行；", hint="请将 timeout 设置在 120-1200 秒之间，默认 660 秒"
+            )
+        )
+    if timeout > 1200:
+        return build_error(
+            data={},
+            llm_data=_build_video_llm_data(
+                "error", 0, summary="timeout超出范围", detail=f"timeout={timeout} s > 1200 s，已按 1200 s 执行；", hint="请将 timeout 设置在 120-1200 秒之间，默认 660 秒"
+            )
+        )
     generate_callback = get_current_generate_callback()
     effective_model = model or MEDIA_DEFAULT_VIDEO_MODEL
     kwargs: Dict[str, Any] = {"timeout": float(timeout), "mode": mode}
