@@ -1,3 +1,27 @@
+v1.7.13
+发布时间: 2026-11-27 10:50:59 - 小欧-2026-11-27
+
+## v1.7.13汇总 从上一个 tag v1.7.12(commit 2143354effb5, 2026-11-26)以来全部 13 个 commit(feat 3 / fix 6 / refactor 1 / test 1 / docs 2); 本批以 [65]E1 通用进程宿主阶段七/八后台通道外置落地与三堂会审整改为主线: 阶段七/八后台通道外置落地(host/client/shell_background/execute_shell_command)、后台通道七处真实缺陷整改(timeout切片/终止rc/无Job杀树/状态一致/参数校验)、三堂会审复审整改(f&f终态真源/树杀复用/存活守卫)、stderr截断改头尾双向、HITL弹窗path参数错乱修复、tool_retry_engine参数校验归位、vendor_spec分层整改、opencli_gateway二进制更新、read_text_file翻页参数互斥归约、E2E基础设施整改 - 小欧-2026-11-27
+### 1.7.13.1 新增功能
+[feat] feat:opencli_gateway 网关 opencode2api 二进制更新(13972480->14131200字节, mtime 2026-11-20 15:33:40, SHA256 A685C100...CC5EE31; 版本台账待与编译来源核对后回填) - 小欧-2026-11-27
+[feat] feat:host.py/client.py/shell_background.py/execute_shell_command.py/[65]E1方案 阶段七/八后台通道外置落地与设计回填v1.29~v1.31 - 小欧-2026-11-27
+[feat] feat:read_text_file.py read/read_docx 翻页参数互斥归约与可行动提示 - 小欧-2026-11-27
+### 1.7.13.2 缺陷修复
+[fix] fix:execute_shell_command.py+tool_constants.py stderr截断改头尾双向(头400+尾1100派生MAX=1500;诊断窗口同形补换行;修head-only丢尾部异常类型) - 小欧-2026-11-27
+[fix] fix:conflict_detector.py+hitl_gateway.py HITL弹窗path参数错乱修复(_parse_paths只收path/dest;显示层path直取原值;字符串值统一单行化) - 小欧-2026-11-27
+[fix] fix:host.py/[65]E1方案 三堂会审复审整改(f&f终态真源/树杀复用/存活守卫)与文档v1.33 - 小欧-2026-11-27
+[fix] fix:host.py/[65]E1方案 后台通道七处真实缺陷整改(timeout切片/终止rc/无Job杀树/状态一致/参数校验)与文档v1.32 - 小欧-2026-11-27
+[fix] fix:tool_retry_engine.py 越界容错下沉工具层与引擎通用校验归位 - 小欧-2026-11-27
+[fix] fix:tool_retry_engine.py 参数校验提示补齐与取消静默clamp - 小欧-2026-11-27
+### 1.7.13.3 重构与优化
+[refactor] refactor:vendor_spec.py+generate_image.py+generate_video.py+media_generate.py+FUNCTIONS.md 分层整改(vendor_spec纯映射逻辑从services/generation迁中立层app/utils;3处import同步改app.utils.vendor_spec消除tools→services越层;FUNCTIONS.md §3.13路径与版本历史v5.55同步,业务逻辑零改动) - 小欧-2026-11-27
+### 1.7.13.4 测试
+[test] test:e2e_helpers.py+test_e2e_p0_02_tool_call.py+.gitignore E2E基础设施整改(DB路径改生产唯一真源db_file_path修复假FAILED/共享会话文件持久化满足同会话测试/verify_consistency排除hide_from_steps内部工具/用例路径对齐E:\test_dir授权目录/.e2e_shared_session_id运行时文件入gitignore) - 小欧-2026-11-27
+### 1.7.13.5 文档
+[docs] docs:version.txt 补写 v1.7.12 版本汇总(16 commit: feat2/fix3/refactor2/test1/docs8) - 小欧-2026-11-26
+[docs] docs:[65]E1-通用进程宿主外置落地实施方案 v1.28 阶段七/八三堂会审整改 - 小欧-2026-11-26
+
+
 v1.7.12
 发布时间: 2026-11-26 22:26:02 - 小欧-2026-11-26
 
