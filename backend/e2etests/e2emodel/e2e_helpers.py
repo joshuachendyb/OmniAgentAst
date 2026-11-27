@@ -191,6 +191,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.db.database import db_file_path  # 2026-11-27 小欧 - DB路径唯一真源(对齐生产迁库后的 /db 子目录)
+from app.tools.agent.agent_register import AGENT_HIDE_FROM_STEPS as _AGENT_HIDE_FROM_STEPS  # P2-3: INTERNAL_TOOLS 真源
 
 
 # ─── 超时保护机制（手册5.5铁律：即使超时也要写记录）──────────────
@@ -292,7 +293,7 @@ PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
 READ_TOOLS = {"read", "readmedia"}
 # 2026-11-27 小欧 - 隐藏工具(schedule/question)注册声明 hide_from_steps=True, 其 action 只落 DB
 #   不进 SSE 步骤流(真源: app/tools/agent/agent_register.py)。SSE-DB 数量对比须排除, 否则误报偏差。
-INTERNAL_TOOLS = {"schedule", "question"}
+INTERNAL_TOOLS = set(_AGENT_HIDE_FROM_STEPS)  # P2-3: 已由模块顶部 from ... import 派生
 
 # ─── 共享会话(北京老陈 2026-11-27 要求: 所有 case 在同一个会话里测试)───────
 # 每个 case 跑独立 pytest 进程, 模块级变量无法跨进程, 故用文件持久化同一 session_id。
@@ -313,6 +314,33 @@ def _save_shared_session_id(sid: str) -> None:
         _SHARED_SESSION_FILE.write_text(sid, encoding="utf-8")
     except OSError:
         pass
+
+
+async def _wait_shared_session_idle(session_id: str, max_wait: float = 600.0) -> None:
+    """共享会话串行: 等本会话没有 executing 任务再发下一条 — 小欧 2026-11-27
+    北京老陈要求所有 case 同会话串行执行; 前一任务未终态时发消息会被后端 session_busy 拒绝。
+    轮询 /sessions/tasks/running 按 session_id 过滤; 有界等待(超时抛明确错, 不静默)。
+    """
+    url = f"{BASE_URL}{API_PREFIX}/sessions/tasks/running"
+    waited = 0.0
+    step = 2.0
+    async with httpx.AsyncClient(timeout=10) as client:
+        while True:
+            try:
+                resp = await client.get(url, headers=AUTH_HEADERS)
+                data = resp.json() if resp.status_code == 200 else {}
+                busy = [t for t in (data.get("tasks") or [])
+                        if t.get("session_id") == session_id and t.get("status") == "executing"]
+            except Exception:
+                busy = []
+            if not busy:
+                return
+            if waited >= max_wait:
+                raise RuntimeError(
+                    f"共享会话 {session_id} 等待前任务终态超时({max_wait}s): "
+                    f"{[t.get('task_id') for t in busy]}")
+            await asyncio.sleep(step)
+            waited += step
 
 # [72]第九章(9.6-3) - 小欧 - 2026-09-26: E2E 统一注入访问口令。
 #   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
@@ -669,19 +697,28 @@ async def send_chat(
     关态下第2条起会被 save_message 落库前 409 拒绝(决策 11), 不传即失败。
     -- 小欧 2026-10-07
     """
+    _is_shared = False
     if not session_id:
         # 2026-11-27 小欧 - 北京老陈要求: 所有 case 同会话, 唯独多会话并行测试(PAR)用不同会话。
         #   PAR 用例靠"N个session_id两两不同"断言, 必须各自新建; 用 PYTEST_CURRENT_TEST 识别, 不改 case。
         _cur_test = _os.environ.get("PYTEST_CURRENT_TEST", "").lower()
-        _is_par = "par_" in _cur_test or "_par" in _cur_test
+        # P2-2 整改：改为精确前缀匹配 test_e2e_par_，避免子串误判（如 separate/compare/sparse 误触发）。
+        # 建议后续：在 conftest.py fixture 中设置 OMNI_E2E_PAR=1 环境变量，配合 pytest marker 显式声明。
+        _is_par = "test_e2e_par_" in _cur_test
         if not _is_par:
             session_id = _get_shared_session_id()
+            _is_shared = bool(session_id)
         if not session_id:
             session_id = await create_session()
             if session_id and not _is_par:
                 _save_shared_session_id(session_id)
+                _is_shared = True
         if not session_id:
             raise RuntimeError("创建session失败")
+
+    # 2026-11-27 小欧 - 共享会话串行: 等前序任务终态再发, 否则被 session_busy 拒绝
+    if _is_shared:
+        await _wait_shared_session_idle(session_id)
 
     user_msg_id = await save_user_message(session_id, user_input)
 
