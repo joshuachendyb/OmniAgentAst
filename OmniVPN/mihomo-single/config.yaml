@@ -1,0 +1,104 @@
+port: 7892
+socks-port: 7893
+allow-lan: false
+mode: Rule
+log-level: info
+external-controller: 127.0.0.1:9092
+proxies:
+  # 出口 163.123.193.5 (DE/FRA) — N201  406ms
+  - name: N201
+    type: ss
+    server: 47.254.167.157
+    port: 443
+    cipher: "2022-blake3-chacha20-poly1305"
+    password: "8yO3ANWefuuGs1lRKXECQA1FEhxlWFV2ppQMcBaZo5Y="
+    udp: true
+  # 出口 80.174.118.24 (IT/MXP) — N17  475ms
+  - name: N17
+    type: ss
+    server: 202.50.253.27
+    port: 19999
+    cipher: "aes-256-gcm"
+    password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
+    udp: true
+  # 出口 107.175.54.116 (US/LAX) — N1077  893ms
+  - name: N1077
+    type: vmess
+    server: 104.18.42.163
+    port: 443
+    cipher: auto
+    uuid: "6a89a215-22bf-4bd7-9642-b95b2e09583a"
+    alterId: 0
+    udp: true
+    tls: true
+    servername: guanwang.awsno.com
+    network: ws
+    ws-opts:
+      path: /hls/cctv5phd.m3u8
+      headers:
+        Host: guanwang.awsno.com
+  # 出口 163.123.193.7 (DE/FRA) — N02  6867ms
+  - name: N02
+    type: ss
+    server: 47.254.128.109
+    port: 443
+    cipher: "2022-blake3-chacha20-poly1305"
+    password: "8yO3ANWefuuGs1lRKXECQA1FEhxlWFV2ppQMcBaZo5Y="
+    udp: true
+  # 出口 80.174.118.15 (IT/MXP) — N16  484ms
+  - name: N16
+    type: ss
+    server: 202.50.253.18
+    port: 19999
+    cipher: "aes-256-gcm"
+    password: "ZRpgaBeGxtENIXgvhpkZBKz9GnWRS2dYcx9O+a2iwN4="
+    udp: true
+  # 出口 107.175.54.116 (US/LAX) — N1067  908ms
+  - name: N1067
+    type: vmess
+    server: www.shopify.com
+    port: 443
+    cipher: auto
+    uuid: "6a89a215-22bf-4bd7-9642-b95b2e09583a"
+    alterId: 0
+    udp: true
+    tls: true
+    servername: guanwang.awsno.com
+    network: ws
+    ws-opts:
+      path: /hls/cctv5phd.m3u8
+      headers:
+        Host: guanwang.awsno.com
+proxy-groups:
+- name: PROXY
+  type: select
+  proxies:
+  - Auto
+  - DIRECT
+  - N201
+  - N17
+  - N1077
+  - N02
+  - N16
+  - N1067
+- name: Auto
+  type: url-test
+  proxies:
+  - N201
+  - N17
+  - N1077
+  - N02
+  - N16
+  - N1067
+  url: https://www.google.com/generate_204
+  interval: 300
+  tolerance: 50
+rules:
+- DOMAIN-SUFFIX,local,DIRECT
+- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+- IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+- GEOIP,LAN,DIRECT,no-resolve
+- MATCH,PROXY

@@ -103,6 +103,7 @@ Auto 组是 `url-test`，会自动选最快的二级节点。**只要 PROXY=Auto
 | `mihomo\config.yaml` | 正式运行配置（两级池） | 两级结构本体 |
 | `mihomo\config-expand-test.yaml` | 两级源配置（复制为正式 config.yaml 用） | 两级结构源 |
 | `mihomo\config-single-backup-20261125_164726.yaml` | 原单级配置备份（回滚用） | 单级备份 |
+| 一级模式全套（`mihomo-single\config.yaml` + `proxy-*-single.bat/ps1`） | 一级独立端口 7892/9092，出口节点直连裸线 | 见 `OmniVPN一级方案说明.md`（不属二级） |
 | `log\pool2_live_reach.json` | 二级可达性实测结果 | 实测数据 |
 | `log\pool2_live_buckets2.json` | 二级桶数实测结果 | 实测数据 |
 
@@ -203,7 +204,11 @@ powershell -ExecutionPolicy Bypass -File proxy-on.ps1
 
 > 建议后续把 `_rebuild_config.py` 的 `GROUP_TAIL` 升级为两级结构（或重建后自动套用 config-expand-test.yaml），现文档标注为待办。
 
-### 3.6 配置文件三者关系
+### 3.6 与一级模式的并存关系
+
+一级模式（出口节点直连裸线，无二级池）用**独立端口 7892/9092 + 独立目录 `mihomo-single\`**，与二级 7890/9090 并存互不干扰。一级方案完整说明见 `OmniVPN一级方案说明.md`；本方案只说明二级侧：二级保持 7890/7891/9090，与一级并存时不受影响。**一级与二级必须用不同工作目录**（各自独立 cache.db），共用 `-d mihomo` 会冲突导致后启动实例被挤出。
+
+### 3.7 配置文件三者关系
 
 | 文件 | 用途 | 说明 |
 |------|------|------|
@@ -211,7 +216,7 @@ powershell -ExecutionPolicy Bypass -File proxy-on.ps1
 | `mihomo\config-expand-test.yaml` | **两级源配置**（未改动） | 复制为正式 config.yaml 用；重建回退单级后用它恢复两级 |
 | `mihomo\config-single-backup-20261125_164726.yaml` | **单级备份**（回滚用） | 原单级 17 节点配置；如需回滚复制回 config.yaml 并重启 |
 
-### 3.7 保证二级可用性的完整链条
+### 3.8 保证二级可用性的完整链条
 
 ```
 [启动]   proxy-on.bat ──> config.yaml(两级) ──> PROXY 默认 Auto(二级) ──> 走二级出口 ✅
@@ -225,7 +230,7 @@ powershell -ExecutionPolicy Bypass -File proxy-on.ps1
 
 **可用性结论**：启动、换桶（用 `--mode exit`）、轻量巡检、出口验证四条链都支持二级；唯一会破坏二级的是**全量重建**（`_rebuild_config.py` 写回单级），重建后需重新套用 `config-expand-test.yaml` 恢复两级。
 
-### 3.8 当前运行态（2026-11-25 18:49 实测）
+### 3.9 当前运行态（2026-11-25 18:49 实测）
 
 - 正式实例 7890/9090 两级模式，**PROXY=EXIT_POOL**（走二级池）。
 - EXIT_POOL now = **N314**，INDONESIA_POOL now = **IDN-08**。
@@ -233,8 +238,13 @@ powershell -ExecutionPolicy Bypass -File proxy-on.ps1
 - 系统代理：`ProxyEnable=1`，`ProxyServer=127.0.0.1:7890`（已启用）。
 - 注意：mihomo 进程**仍在运行**（非停止态），若需真正重启需先 `Stop-Process -Name mihomo*`。
 
-### 3.9 待办与建议
+### 3.10 待办与建议
 
 1. **proxy-switch.ps1 默认改 `--mode exit`**：当前默认 `--group PROXY` 在二级下轮换 PROXY 组（在 INDONESIA_POOL / EXIT_POOL 间切换），不能换二级出口桶；应默认用 `--mode exit`（轮换 EXIT_POOL）。
 2. **_rebuild_config.py 升级两级结构**：当前 `GROUP_TAIL` 是单级，全量重建会回退单级；建议升级为含 INDONESIA_POOL / EXIT_POOL 的两级结构，或重建后自动套用 config-expand-test.yaml。
 3. **73 个二级节点 delay 测不通**：N01/N03/N28/N48/N1364/N22/N37/N62/N41/N47/N58/N51/N96/N53/N63/N92/N76/N93/N79/N120/N95/N101/N119/N109/N111/N118/N142/N143/N171/N145/N146/N180/N148/N170/N178/N200/N166/N198/N214/N224/N217/N190/N193/N195/N234/N226/N203/N244/N207/N209/N232/N245/N255/N258/N261/N265/N270/N269/N263/N259/N286/N264/N275/N272/N302/N277/N289/N296/N295/N304/N299/N308/N313。delay 测不通可能为偶发超时，出口探测复验部分节点实际通，可择机复测。
+
+
+## 7 查询方法
+python exit_probe.py                              # 二级(默认 7890/9090)
+python exit_probe.py --controller-port 9092 --proxy-port 7892   # 一级

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # exit_probe.py — 出口身份探测与 mihomo VPN 状态检查（查桶）
-# 编写人: 小欧    版本: v2.9    更新时间: 2026-11-22 11:30:00
+# 编写人: 小欧    版本: v2.10    更新时间: 2026-11-28 06:15:00
 #
 # 修改历史（最新在最下）:
 #   ...（v1.2~v2.0 同旧版 opcode225-gate.py）
@@ -48,6 +48,10 @@
 #   v2.9 2026-11-22 小欧 不带参数默认附带两级池当前桶(用户要求: 执行时同时看一级/二级各自的桶):
 #                       新增 pool_now_buckets() 读 INDONESIA_POOL/EXIT_POOL 当前选中节点,
 #                       分别切顶层 PROXY 查出口桶后恢复原选择; 仅不带任何参数时触发
+#   v2.10 2026-11-28 商量 支持一级/二级查询(用户要求: 一级和两级都能正常显示, 不破坏现有):
+#                       控制器/代理端口参数化 --controller-port/--proxy-port(默认 9090/7890=二级, 不变);
+#                       pool_now_buckets 探测 INDONESIA_POOL, 一级模式(无两级组)退化为查 PROXY 组当前
+#                       节点出口桶; mihomo_status/pool_bucket_survey 同步端口参数化
 
 #
 # 用途:
@@ -384,23 +388,24 @@ def tunnel_env(log):
     return tun_up
 
 
-def mihomo_status(log, proxy):
+def mihomo_status(log, proxy, proxy_port=PROXY_PORT, controller_port=CONTROLLER_PORT):
     """一条命令体检 mihomo VPN: 服务进程 -> 节点池 -> 系统代理 -> 出口对照。
-    作者: 小欧 2026-11-12"""
+    作者: 小欧 2026-11-12  端口参数化 2026-11-28 商量(支持一级 7892/9092 与二级 7890/9090)"""
     tun_up = tunnel_env(log)
+    base = "http://127.0.0.1:%d" % controller_port
     log("[1] 服务进程")
-    up, api = _port_open(PROXY_PORT), _port_open(CONTROLLER_PORT)
-    log("    代理端口 %d : %s" % (PROXY_PORT, "运行中" if up else "未运行"))
-    log("    控制器 %d : %s" % (CONTROLLER_PORT, "运行中" if api else "未运行"))
+    up, api = _port_open(proxy_port), _port_open(controller_port)
+    log("    代理端口 %d : %s" % (proxy_port, "运行中" if up else "未运行"))
+    log("    控制器 %d : %s" % (controller_port, "运行中" if api else "未运行"))
     if api:
         try:
             c = httpx.Client(trust_env=False, timeout=10)
-            log("    内核版本   : %s" % c.get(CONTROLLER + "/version").json().get("version", "?"))
-            g = c.get(CONTROLLER + "/proxies/PROXY").json()
+            log("    内核版本   : %s" % c.get(base + "/version").json().get("version", "?"))
+            g = c.get(base + "/proxies/PROXY").json()
             log("[2] 节点池 (PROXY 组, 读最近测活缓存, 不发新探针)")
             log("    当前选中   : %s" % g.get("now"))
             for n in [x for x in (g.get("all") or []) if x not in ("Auto", "DIRECT")]:
-                d = c.get(CONTROLLER + "/proxies/" + n).json()
+                d = c.get(base + "/proxies/" + n).json()
                 h = d.get("history") or []
                 delay = ("%dms" % h[-1]["delay"]) if h else "-"
                 state = "存活" if d.get("alive") else "失联"
@@ -429,7 +434,7 @@ def mihomo_status(log, proxy):
     log("[4] 出口对照 (Cloudflare trace 实测, 服务端所见)")
     log("    直连出口   : %s" % fmt_identity(exit_identity(make_client())))
     log("    代理出口   : %s" % fmt_identity(
-        exit_identity(make_client(proxy=proxy or "http://127.0.0.1:%d" % PROXY_PORT))))
+        exit_identity(make_client(proxy=proxy or "http://127.0.0.1:%d" % proxy_port))))
     log("    判定       : %s" % (
         "直连出口已被隧道接管(见[0]), 这一行是 VPN 的出口不是裸线; 看「代理出口」的前缀+loc 即 mihomo 出口桶"
         if tun_up else
@@ -437,12 +442,13 @@ def mihomo_status(log, proxy):
 
 
 
-def pool_bucket_survey(log, pool_name, proxy, settle=4):
+def pool_bucket_survey(log, pool_name, proxy, settle=4,
+                       proxy_port=PROXY_PORT, controller_port=CONTROLLER_PORT):
     """遍历指定节点池全部成员, 逐个切换实测出口, 按桶指纹(prefix|loc)去重统计。
     适用于两级池任一组: 二级 EXIT_POOL(挂 dialer-proxy 经一级中转, 出口=二级最终出口)
     或 一级 INDONESIA_POOL(直接出口)。切换后须把顶层 PROXY 指向该池, 否则 7890 出口不生效。
-    作者: 小欧 2026-11-22"""
-    api = CONTROLLER + "/proxies"
+    作者: 小欧 2026-11-22  端口参数化 2026-11-28 商量"""
+    api = "http://127.0.0.1:%d/proxies" % controller_port
     ctrl = make_client(timeout=30)
     try:
         # 读池成员
@@ -475,7 +481,7 @@ def pool_bucket_survey(log, pool_name, proxy, settle=4):
                 ctrl.put(api + "/" + urllib.parse.quote(pool_name, safe=""),
                          json={"name": name})
                 time.sleep(settle)
-                client = make_client(proxy=proxy or "http://127.0.0.1:%d" % PROXY_PORT)
+                client = make_client(proxy=proxy or "http://127.0.0.1:%d" % proxy_port)
                 ident = exit_identity(client)
                 client.close()
                 ip = (ident or {}).get("ip")
@@ -528,19 +534,45 @@ def pool_bucket_survey(log, pool_name, proxy, settle=4):
 
 
 
-def pool_now_buckets(log):
+def pool_now_buckets(log, proxy_port=PROXY_PORT, controller_port=CONTROLLER_PORT):
     """不带参数默认附带: 显示一级池与二级池各自当前选中节点的出口桶。
     分别把顶层 PROXY 切到 INDONESIA_POOL / EXIT_POOL, 查出口桶后恢复原 PROXY 选择。
-    作者: 小欧 2026-11-22"""
-    api = CONTROLLER + "/proxies"
+    一级模式(无两级组)时退化为查 PROXY 组当前选中节点出口桶(单级直出)。
+    作者: 小欧 2026-11-22  端口参数化+一级兼容 2026-11-28 商量"""
+    api = "http://127.0.0.1:%d/proxies" % controller_port
     ctrl = make_client(timeout=30)
     try:
+        # 探测两级组是否存在(一级配置无 INDONESIA_POOL/EXIT_POOL)
+        twolevel = False
+        try:
+            ctrl.get(api + "/INDONESIA_POOL")
+            twolevel = True
+        except Exception:
+            twolevel = False
         # 记录原 PROXY 选择
         try:
             orig = ctrl.get(api + "/PROXY").json().get("now", "EXIT_POOL")
         except Exception:
             orig = None
         log("")
+        if not twolevel:
+            # 一级模式: PROXY 组当前选中节点出口桶(单级直出)
+            log("[5] 一级池当前出口桶 (单级直出, 无两级组)")
+            log("    注: 一级=单级节点直接出口; 桶=出口IP网段前缀+loc")
+            try:
+                e = ctrl.get(api + "/PROXY").json()
+                now = e.get("now") or "?"
+                client = make_client(proxy="http://127.0.0.1:%d" % proxy_port)
+                ident = exit_identity(client)
+                client.close()
+                ip = (ident or {}).get("ip")
+                key = identity_key(ident)
+                log("    当前节点       : %s" % now)
+                log("    出口 IP        : %s" % (ip or "?"))
+                log("    出口桶         : %s" % (key or "?"))
+            except Exception as e:
+                log("    查询失败       : %s" % str(e).splitlines()[-1][:60])
+            return
         log("[5] 两级池当前出口桶 (切换查桶, 查完恢复 PROXY=%s)" % (orig or "?"))
         log("    注: 一级=跳板直接出口, 二级=经一级中转后最终出口; 桶=出口IP网段前缀+loc")
         for gname, label in (("INDONESIA_POOL", "一级跳板池"), ("EXIT_POOL", "二级出口池")):
@@ -549,7 +581,7 @@ def pool_now_buckets(log):
                 now = e.get("now") or "?"
                 ctrl.put(api + "/PROXY", json={"name": gname})
                 time.sleep(3)
-                client = make_client(proxy="http://127.0.0.1:%d" % PROXY_PORT)
+                client = make_client(proxy="http://127.0.0.1:%d" % proxy_port)
                 ident = exit_identity(client)
                 client.close()
                 ip = (ident or {}).get("ip")
@@ -585,6 +617,10 @@ def main():
     ap.add_argument("--cf-trace", action="store_true",
                     help="只查出口身份与 ASN 归属(不带 --proxy 时查裸线; 不带任何参数时自动走 7890)")
     ap.add_argument("--proxy", default="", help="观测出口用的代理(如 http://127.0.0.1:7890)，查节点桶用")
+    ap.add_argument("--controller-port", type=int, default=CONTROLLER_PORT,
+                    help="mihomo 外部控制器端口(默认 %d=二级; 一级用 9092)" % CONTROLLER_PORT)
+    ap.add_argument("--proxy-port", type=int, default=PROXY_PORT,
+                    help="mihomo 本地 HTTP 代理端口(默认 %d=二级; 一级用 7892)" % PROXY_PORT)
     ap.add_argument("--pool", default="", choices=["EXIT_POOL", "INDONESIA_POOL"],
                     help="遍历指定节点池全部成员实测出口桶并去重统计(二级 EXIT_POOL / 一级 INDONESIA_POOL)")
     args = ap.parse_args()
@@ -601,18 +637,19 @@ def main():
         lines.append(s)
 
     log("=" * 78)
-    log("exit_probe v2.9  出口身份探测 / mihomo VPN 状态    %s" % stamp)
+    log("exit_probe v2.10  出口身份探测 / mihomo VPN 状态    %s" % stamp)
     log("=" * 78)
 
     # --pool 独立模式: 遍历指定节点池全部成员实测出口桶并去重统计(用户指定 2026-11-22)
     if args.pool:
-        if not _port_open(CONTROLLER_PORT):
-            log("  [错误] 控制器 %d 未运行: --pool 需 mihomo 在跑, 先启动 mihomo" % CONTROLLER_PORT)
+        if not _port_open(args.controller_port):
+            log("  [错误] 控制器 %d 未运行: --pool 需 mihomo 在跑, 先启动 mihomo" % args.controller_port)
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
             print("报告已落盘: %s" % out_path)
             return 2
-        rc = pool_bucket_survey(log, args.pool, args.proxy)
+        rc = pool_bucket_survey(log, args.pool, args.proxy,
+                                proxy_port=args.proxy_port, controller_port=args.controller_port)
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         print("报告已落盘: %s" % out_path)
@@ -624,26 +661,27 @@ def main():
     mode_trace = args.cf_trace or not args.mihomo
 
     if mode_status:
-        mihomo_status(log, args.proxy)
+        mihomo_status(log, args.proxy,
+                      proxy_port=args.proxy_port, controller_port=args.controller_port)
 
     # 不带任何参数默认附带: 显示一级/二级池各自当前节点出口桶(用户要求 2026-11-22)
     if mode_status and mode_trace and not args.cf_trace and not args.mihomo and not args.pool:
-        pool_now_buckets(log)
+        pool_now_buckets(log, proxy_port=args.proxy_port, controller_port=args.controller_port)
 
     if mode_trace:
         if args.cf_trace:
             obs = args.proxy or None   # 显式 --cf-trace: 不给 --proxy 即查裸线(None=直连, 口径不变)
         else:
-            # v2.5: 7890 未运行不再跳过——不管哪个 VPN 在跑都要给完整出口信息;
+            # v2.5: 代理端口未运行不再跳过——不管哪个 VPN 在跑都要给完整出口信息;
             # mihomo 没跑时当前出口 = 直连链路出口(skyline 等 TUN 接管时即该 VPN 出口, 见[0])
             if args.proxy:
                 obs = args.proxy
-            elif _port_open(PROXY_PORT):
-                obs = "http://127.0.0.1:%d" % PROXY_PORT
+            elif _port_open(args.proxy_port):
+                obs = "http://127.0.0.1:%d" % args.proxy_port
             else:
                 obs = None
                 log("[提示] 本地代理端口 %d 未运行: 无 mihomo 代理出口可查, "
-                    "下面查的是直连链路出口(被 TUN VPN 接管时即该 VPN 的出口, 见[0])" % PROXY_PORT)
+                    "下面查的是直连链路出口(被 TUN VPN 接管时即该 VPN 的出口, 见[0])" % args.proxy_port)
         client = make_client(proxy=obs)
         trace = cf_trace(client)
         if not trace:
