@@ -82,9 +82,10 @@
 //   撤回项(自查发现，未实施)：原计划新增一行醒目 trustPath，实测 request.trustPath 已由
 //   「操作范围」行展示(truncateDir 剥末段得目录)，新增即重复渲染违反 DRY；
 //   参数区折叠/信任勾选改版经指示一并撤回(参数与信任展示不动)。
-//   核查澄清(避免误修): 后端信任本就是【目录级】——trust_db.trust_scope_path 落库前按
-//   「有后缀→p.parent」把叶子文件收敛到父目录(2026-10-06 已修)；SSE 帧走 hitl_gateway
-//   extract_trust_path 发的是叶子文件路径，前端 truncateDir 剥末段与之匹配，二者各自正确不可混改。
+//   核查澄清(2026-11-27 订正): 会话信任落库(trust_db.trust_scope_path)确为目录级, 但此前 HITL 临时
+//   授权仍按叶子文件 grant(temp_auth 见后缀判 recursive=False), 且 shell 查询键恒 None, 二者均导致
+//   同目录换文件名反复弹窗; 后端已改 grant_temp_auth_scoped(收敛到目录)+resolve_skip 透传 auth_path。
+//   前端 truncateDir 剥末段的展示现与实际授权范围一致, 不再是"各自正确不可混改"的假象。
 //   验证：typecheck 0 错 / lint 0 错 / Vitest 1484 全过 / 人工确认态+bypass 态双截图复核 — 小欧-2026-10-11
 
 // 编辑历史: 2026-10-11 00:55:20 小欧 - HTL危险确认列出具体变更+后果提示; 计时钟移标题行右侧并缩至44(辅助信息退位, 主内容优先); CountdownRing 直径可调配套 — 小欧-2026-10-11
@@ -111,6 +112,8 @@
 //   ④ 文本改自绘 span: 原 <Typography.Text type="secondary"> 的灰是 antd 的 secondary 色
 //      (rgba(0,0,0,.45)), 属库缺省色 → Colors.TEXT.SECONDARY, Typography 依赖整体摘除。
 //   ⑤ 参数区高度/行高由裸值 72/18 改为令牌推导(4 行 × 12px 字 × 行高 1.5), 内距/圆角/框宽同样走令牌 — 商量-2026-11-18
+// 编辑历史: 2026-11-27 小欧 - 订正误导性核查注释: 原写"二者各自正确不可混改"掩盖了临时授权按文件+查询键恒 None
+//   两个真缺陷(同目录换名反复弹窗); 后端已改目录级授权, 注释同步说明展示与授权范围现一致 — 小欧-2026-11-27
 import React from 'react';
 import { Button, Checkbox } from 'antd';
 import {
