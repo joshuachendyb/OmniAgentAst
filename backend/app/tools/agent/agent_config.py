@@ -7,6 +7,7 @@ tool_categories 只收 ToolCategory 集合、track_task 只收 bool），避免�
 同轮修正 agent_id 为全串匹配，拒绝结尾换行
 小欧 2026-11-28 修正 manifest 外部输入容错：分类形状非法回落默认集合，描述非字符串直接拒绝，
 提示词非字符串回落空串，消除 str() 把 null/数字变成假描述与假提示词
+小欧 2026-11-28 新增 build_delegate_tool_description()：工具描述由注册表动态生成，新增 Agent 零改代码
 """
 import json
 import re
@@ -201,3 +202,18 @@ def _register_builtin_agents(registry: AgentRegistry) -> None:
         max_steps=10,
         timeout_s=240,
     ))
+
+
+def build_delegate_tool_description() -> str:
+    """生成委托工具描述 — 可用 agent 列表实时取自注册表，新增 Agent 无需改代码"""
+    items = "；".join(
+        f"{c.agent_id}({c.description})" for c in get_agent_registry().list_configs()
+    )
+    return (
+        "委托子Agent执行独立任务。子Agent拥有独立上下文与只读工具子集"
+        "（不能写文件、不能执行命令、不能向用户提问）。"
+        "适用于：并行搜索不同来源、独立审查验证、工具专精任务、知识库多域对照分析。"
+        "参数：agent_id(见下) + task(自包含任务描述，≤500字) + context(可选附加信息) + wait(默认同步等待结果)。"
+        "子Agent完成后回传摘要和token用量，父Agent整合结果继续。"
+        f"可用agent_id：{items or '（注册表为空）'}。"
+    )

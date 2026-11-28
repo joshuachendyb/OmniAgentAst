@@ -423,6 +423,11 @@ TOOL_NAME_ALIASES = {
     "todo_write": "schedule",
     "todoWrite": "schedule",
     "TodoWrite": "schedule",
+    # 2026-11-28 小欧 - 多 Agent 委托生态名归一到主名；subagent 刻意不收，保留其禁用语义
+    "delegate_task": "delegateagent",
+    "delegate_to_agent": "delegateagent",
+    "call_agent": "delegateagent",
+    "invoke_agent": "delegateagent",
 }
 
 # 官方13件套中禁用工具的回落名单: 无诚实对应能力不收编, 命中即反馈"禁止使用"并点明全组, 防弱模型逐个试错 — 小欧-2026-11-10

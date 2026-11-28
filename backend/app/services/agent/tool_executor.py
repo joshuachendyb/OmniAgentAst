@@ -42,11 +42,14 @@ tool_executor — 工具执行逻辑
 #   作用域(跨 await 边界), finally reset; 供 shell 等 tool 消费, 零越层未注入自行降级。
 # 2026-11-25 商量 - 注入发起会话ID set_current_session_id(源同 _sid=agent._start_meta, 空串归一 None),
 #   timer_set 等工具消费——定时器触发时回到发起会话创建任务; finally reset 防跨工具泄漏。
+# 2026-11-28 小欧 - 委托回调注入：按归一名仅在 delegateagent 调用期注入，finally 按 token 守卫 reset；
+#   同一 finally 内还要把子 Agent 用量并入父账（成功失败都记）。
 
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from app.db import db
 from app.logger import logger
 from app.safety.default_hooks import (
     DefaultToolSecurityHooks,  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
@@ -56,14 +59,17 @@ from app.services.agent.llm_call import (
 )
 from app.services.agent.media_generate import invoke_generate  # 2026-11-20 小欧 生图/生视频回调实现
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
+from app.services.chat import storage
 from app.tools.context import (
     get_current_precheck_info,  # 2026-11-22 小欧 - 沙箱预检纯静态结果消费
+    reset_current_delegate_callback,  # 2026-11-28 小欧 - 委托回调
     reset_current_generate_callback,  # 2026-11-20 小欧 - 生成回调
     reset_current_hooks,
     reset_current_notice_callback,
     reset_current_question_callback,
     reset_current_session_id,  # 2026-11-25 商量 - 发起会话ID
     reset_current_text_task,
+    set_current_delegate_callback,  # 2026-11-28 小欧 - 委托回调
     set_current_generate_callback,  # 2026-11-20 小欧 - 生图/生视频回调
     set_current_hooks,
     set_current_notice_callback,  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
@@ -74,6 +80,7 @@ from app.tools.context import (
 )
 from app.tools.tool_response import is_success
 from app.tools.tool_types import ToolCategory
+from app.tools.tools_alias_mapper import normalize_tool_name  # 2026-11-28 小欧 - 委托判据按归一名
 
 #: 缺库自愈冷却窗(秒): 装不上时窗内不再重复起 pip, 直接回缺库契约。
 #: 取值权衡: pip 冷启动+下载常需数十秒, 窗太小则每次工具调用都拖一次 pip 阻塞。
@@ -88,25 +95,25 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
                        on_retry_started: Optional[Callable] = None,
                        on_attempt_recorded: Optional[Callable] = None) -> Dict[str, Any]:
     """执行工具（单入口）— 根据parallel参数分派try_once或带重试执行
-     
+
     职责（SRP：只决定「执行方式」，不重写重试逻辑）：
     1. parallel=True → 调retry_engine.try_once() → 一次执行，不重试
        适用场景：action_handler并行分支（asyncio.gather），瞬态失败概率低
     2. parallel=False → 调retry_engine.execute_tool_with_retry() → 带重试
        适用场景：单工具/顺序执行，需要自动重试瞬态失败
-     
+
     无论哪种路径，统一处理：
     - 耗时统计 + 日志输出
     - is_success状态判断
     - searchtool自动注入（searchtool成功时自动注入整个工具类别给LLM）
-     
+
     Args:
         agent: UniversalAgent实例
         tool_name: 工具名
         tool_params: 工具参数字典
         parallel: True=并行模式用try_once，False=顺序模式用execute_tool_with_retry
         on_retry_started: 仅在parallel=False时透传给execute_tool_with_retry
-     
+
     小健 2026-06-26: 修复状态判断逻辑
     小欧 2026-07-09: 新增parallel/on_retry_started参数，支持并行无重试模式
     """
@@ -157,6 +164,16 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     # 2026-11-25 商量 - 注入发起会话ID(同 _sid 源): timer_set 等工具经 get_current_session_id 消费,
     #   定时器触发时回到发起会话创建任务; 空串归一 None(未注入语义, 工具自行降级)
     _session_token = set_current_session_id(_sid or None)
+    # 2026-11-28 小欧 - 委托回调注入：只给 delegateagent 注入，按归一名判据（直调别名也覆盖）。
+    #   其它工具零开销；run_delegate 惰性 import，避免非委托调用提前加载运行器。
+    _delegate_token = None
+    if normalize_tool_name(tool_name) == "delegateagent":
+        from app.services.agent.delegateagent_runner import run_delegate
+
+        async def _delegate_cb(**kwargs):
+            return await run_delegate(agent=agent, **kwargs)
+
+        _delegate_token = set_current_delegate_callback(_delegate_cb)
     # 2026-11-22 小欧 - 消费沙箱预检纯静态结果(sandbox_resolve 注入): 读取后供 shell 等工具经
     #   get_current_precheck_info 消费, finally 置 None 清理防跨工具泄漏(未注入则 None, 工具自行降级)。
     _precheck_info = get_current_precheck_info()
@@ -182,6 +199,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         if _generate_token is not None:  # 2026-11-20 小欧 生成回调token同finally reset
             reset_current_generate_callback(_generate_token)
         reset_current_session_id(_session_token)  # 2026-11-25 商量 会话ID token同finally reset
+        if _delegate_token is not None:  # 2026-11-28 小欧 委托回调 token守卫reset(未set者reset(None)会抛ValueError)
+            reset_current_delegate_callback(_delegate_token)
         if _precheck_info:  # 2026-11-22 小欧 沙箱预检纯静态结果作用域清理(防跨工具泄漏, 置 None 不残留)
             set_current_precheck_info(None)
     elapsed = time.time() - start
@@ -192,7 +211,46 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
 
     if tool_name == "searchtool":
         auto_inject_from_search(agent, result)
+    # 2026-11-28 小欧 - 委托用量并入父账：按归一名判据，成功失败都记（有 usage 即记）
+    if normalize_tool_name(tool_name) == "delegateagent":
+        await _merge_delegate_usage(agent, (result.get("data") or {}).get("usage") or {})
     return result
+
+
+async def _merge_delegate_usage(agent, sub_usage: dict) -> None:
+    """子 Agent 用量并入父账 — 四层合并 + DB 落账（小欧 2026-11-28）
+
+    成功与失败委托同样记账：子 Agent 已消耗的 token 是真实花费。
+    判据 usage 存在性，不用 is_success（后者读工具执行状态，与是否产生 token 是两件事）。
+    """
+    if not sub_usage:
+        return
+    keys = ("prompt_tokens", "completion_tokens", "total_tokens")
+    delta = {k: int(sub_usage.get(k) or 0) for k in keys}
+    for k in keys:
+        agent.accumulated_usage[k] += delta[k]
+        agent.task_accumulated_tokens[k] += delta[k]
+    # session/chain 是基线 + 当前任务累计的派生值，合并时不再叠加基线（否则下一轮双计）
+    zero = {k: 0 for k in keys}
+    s_base = getattr(agent, "_session_acc_base", None) or zero
+    c_base = getattr(agent, "_chain_acc_base", None) or zero
+    agent.session_accumulated_tokens = {
+        k: s_base[k] + agent.task_accumulated_tokens[k] for k in keys
+    }
+    agent.chain_accumulated_tokens = {
+        k: c_base[k] + agent.task_accumulated_tokens[k] for k in keys
+    }
+    # DB 权威列必须落子用量：react_step 每轮只记本次 LLM 调用，取不到委托消耗
+    sid = (getattr(agent, "_start_meta", None) or {}).get("session_id")
+
+    def _write(conn):
+        storage.update_task_accumulation(
+            conn, task_id=agent.task_id, llm_call_count_token=delta)
+        if sid:
+            storage.update_session_accumulation(
+                conn, session_id=sid, llm_call_count_token=delta)
+
+    await db.atxn("chat", _write, retry_locked=3)
 
 
 async def _emit_installing(agent, tool_name: str, pkgs: List[str]) -> None:
@@ -280,7 +338,7 @@ def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
 
     修复: 匹配到一个工具，就把该工具所在的整个类(如NETWORK)全部注入LLM。
     因为LLM知道类名后就能理解该类的所有工具，无需逐个注入。
-    
+
     注意：注入(inject)是指将工具描述提供给LLM使用，工具函数已在启动时注册(register)
     """
     data = result.get("data", {})

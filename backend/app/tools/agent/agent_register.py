@@ -6,11 +6,15 @@
 # 2026-11-19 小欧 - 注册描述补 plan_stage 必填说明(init/update/finish)
 # 2026-11-19 小欧 - question 注册也声明 hide_from_steps=True(与 schedule 同: 非业务交互 tool 不画通用工具行)
 # 2026-11-19 小欧 - question 工具描述字段顺序统一 header(可选)→question→options; multiple 改 single(默认true单选) — 小欧-2026-11-19
+# 2026-11-28 小欧 - 注册 delegateagent：描述由注册表动态生成(callable)，入参/示例入表，加入 tool_methods 注册循环
 """
-agent_register — 智能体交互工具注册点(question / schedule)
+agent_register — 智能体交互工具注册点(question / schedule / delegateagent)
 """
 from app.logger import logger
+from app.tools.agent.agent_config import build_delegate_tool_description
 from app.tools.agent.agent_schema import QuestionInput, ScheduleInput
+from app.tools.agent.delegateagent import delegateagent
+from app.tools.agent.delegateagent_schema import DelegateAgentInput
 from app.tools.agent.question import question
 from app.tools.agent.schedule import schedule
 from app.tools.registry import tool_registry
@@ -31,11 +35,14 @@ AGENT_TOOL_DESCRIPTIONS = {
         "中途替换-可按需修改每项的content与status, status按实际进度填写即可(pending/in_progress/completed/cancelled)。"
         "必填 plan_stage 声明本次阶段(init=初建/update=更新进展/finish=结束清空), 需与 items 相符。"
     ),
+    # 描述传 callable 而非字面量：取值时解析，新增 Agent 自动出现在描述里
+    "delegateagent": build_delegate_tool_description,
 }
 
 AGENT_INPUT_MODELS = {
     "question": QuestionInput,
     "schedule": ScheduleInput,
+    "delegateagent": DelegateAgentInput,
 }
 
 AGENT_TOOL_EXAMPLES = {
@@ -63,6 +70,13 @@ AGENT_TOOL_EXAMPLES = {
             "plan_stage": "init",
         }
     ],
+    "delegateagent": [
+        {
+            "agent_id": "researcher",
+            "task": "搜索 2026年 Windows 桌面 Agent 框架的最新进展，重点关注上下文隔离和工具子集设计",
+            "context": {"focus": "上下文隔离", "time_range": "2026"},
+        }
+    ],
 }
 
 # 2026-11-27 小欧 - 隐藏工具清单提升为模块级常量(真源): e2e_helpers.INTERNAL_TOOLS 从此派生,
@@ -71,8 +85,10 @@ AGENT_HIDE_FROM_STEPS = {"schedule", "question"}
 
 
 def _register_agent_tools():
-    """注册 question/schedule 两个智能体交互工具 — 商量 2026-11-18"""
-    tool_methods = {"question": question, "schedule": schedule}
+    """注册 question/schedule 与委托工具 — 商量 2026-11-18 / 小欧 2026-11-28"""
+    tool_methods = {"question": question, "schedule": schedule,
+                    "delegateagent": delegateagent}
+    # 插件加载入口预留：当前只注册内置 Agent，不加载外部插件配置
     # 2026-11-19 小欧 - 前端步骤流隐藏(非业务 tool 共性): 两者都是 agent 与用户的交互, 产出由专属 UI 呈现,
     #   不画通用工具行; 落库/喂 LLM 照常。schedule→notice 清单卡; question→interact 问询浮层。
     hide_from_steps = AGENT_HIDE_FROM_STEPS
