@@ -1581,6 +1581,11 @@ TOOL_NAME_ALIASES.update({
    - 首轮改造后曾多出 3 条（`test_12_006/007/009_get_original_search_desc_*`）：`MagicMock` 未配置 `resolved_description()`，属测试替身未跟新契约（生产侧读的是真实 `ToolMetadata`）；已改测试替身并单类重跑 15/15 通过，同批全量重跑回到 15/1635；
    - 全量 `pytest -q` 不可用（多个用例挂满 `timeout=300`，实测 26% 处单条卡死，单次预计 40 分钟以上），故用定向集；全量口径判据仍按 §6.2.11 第 2 条执行。
    - E2E-P0-03b（真实后端 + 真实 LLM，非 mock）：**PASSED**，31.1s，5 次 LLM 调用，DB 22 步，工具链 `read → write → bash → write`，SSE 191 事件，一致性/步骤合理性/日志三项均 0 issue。
+8. **存量红项清零**（2026-11-28 08:43）：基线里那 15 条逐条定性并修复，**15/15 通过**，不留"与本次无关"的借口。分类与处置：
+   - **过时断言/夹具（13 条）**：`test_artifacts_11_6` 三条——产物上限现为"丢最早保最新"（`f10..f59` 而非 `f0..f49`）、`normalize_artifact` 现为五字段（`tool_name/name/path/form/type`）、`with_artifact_file` 已于 2026-11-21 删除并改为 `other_data["artifacts"]` + `app/utils/artifacts.py`；`test_config_zen` 两条——agnes 配置已无 `label` 键、sensenova 的 `glm-5.2` 已升 `glm-5.3`；`test_critical_flow_deep_bugs` 两条——`MetaStep(retrying)` 已于 2026-11-24 并入 notice 信封（`type=notice` + `kind=retrying`）；`test_flow_deep_bugs` 一条——`prepare_messages_for_llm` 早已是 async，补 `asyncio.run`；`test_tdd_26_29_quota`/`test_tdd_30_32_integration` 各一条——2026-11-20 起闸门为 `max_connections - HEADROOM`（10-2=8），原断言 `>=10`/`==10` 是加余量前旧契约；`test_tdd_59_63_bug_e_red` 两条——夹具缺 `msg_kind` 列、替身仍打 `mod.subprocess.run`（实际调用点已是 `mod.proc_run`）。
+   - **真实分层违规（1 条）**：`test_p1_layer_ownership::test_utils_does_not_depend_on_upper_layers` 抓到 `app/utils/sse_formatter.py` 反向 import `app.tools.registry`。修法不是放宽门禁，而是把可见性判据改为上层注入：`format_agent_sse(..., visible_in_steps=None)` 保持 utils 纯格式化，两个 SSE 出口（`stream_orchestrator` 实时转发 + 重连回放）传 `tool_registry.visible_in_steps`，过滤语义与落点零变化。
+   - **测试环境串味（1 条）**：`test_proc_host_stage345_real::test_stage5_proc_run_text_decoding`——外壳 `PYTHONIOENCODING=utf-8` 让子进程用 UTF-8 输出、父进程 `text=True` 按 locale(cp936) 解码必炸；实测原生 `subprocess.run(text=True)` 同环境同样失败，属夹具而非生产缺陷，显式剔除该变量使子进程编码与 locale 同源。
+   - 验证：15 条定点重跑 **15 passed**；生产侧 `sse_formatter.py`/`stream_orchestrator.py` 的 F 类 lint 零新增（I001 为 HEAD 既有）；63 文件定向集改造后重跑 **1650 passed / 0 failed**（251s），与基线 1650 条总数一致，失败集合清空。
 
 **S0 落码后补测发现并修复的静默失效点**（2026-11-28，攻击性用例 `backend/tests/probe_delegate_s0_edge.py`，首轮 8 条中 5 条失败）：
 
@@ -1596,7 +1601,7 @@ TOOL_NAME_ALIASES.update({
 
 **开发启动器的崩溃自愈**（2026-11-28，非 S0 交付面，但直接影响验收第 1 项）：`watchfiles` 只在文件变更时重启子进程（`watchfiles/run.py` 的 `arun_process` 把 stop/start 全放在 `awatch` 循环内），子进程崩溃后它空转等待、服务永久失联——实测杀掉 `run_server` 后 30s 无监听、`watchfiles` 进程仍活。`backend/start_dev.ps1` 补两层：①清残留时上溯并**先杀**重载器守护进程（只杀监听者会被父进程立刻重生，实测 8s 内抢回端口），并按命令行精确清掉"子进程已死、watchfiles 还活"的孤儿链；②外层端口看护（启动宽限 60s，连续 10s 无监听即整体重起重载链）。实测：杀掉子进程后 25s 自愈，`/health` 200。
 
-**退出标准**：1–7 全绿；日志无新增 warning（预期内的缺库提示除外）。
+**退出标准**：1–8 全绿；日志无新增 warning（预期内的缺库提示除外）。
 
 **失败回退**：本阶段全是"默认值/默认行为不变的增量形参与取值口径收敛"，回退只需 revert 这 9 个文件；若第 5 项失败，说明 `exclude` 传参链断了一环，按 `tool_cache_manager → registry → tool_description` 顺序逐段加打点定位，不得跳过。
 

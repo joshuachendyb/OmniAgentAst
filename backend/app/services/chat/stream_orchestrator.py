@@ -407,13 +407,13 @@ from app.session_workspace import (  # 会话 Workspace 任务级快照(中立�
     reset_current_session_workspaces,
     set_current_session_workspaces,
 )
+# 2026-11-28 小欧 - SSE 出口注入工具可见性判据: sse_formatter 属 utils 层, 不得反向 import tools;
+#   过滤语义上移到本层调用点, 由注册表统一出口提供 visible_in_steps — 小欧-2026-11-28
+from app.tools.registry import tool_registry
 from app.utils.sse_formatter import (  # format_sse_event: 目录块超限 notice 组帧 — 小欧-2026-10-31
     format_agent_sse,
     format_sse_event,
 )
-# 2026-11-28 小欧 - SSE 出口注入工具可见性判据: sse_formatter 属 utils 层, 不得反向 import tools;
-#   过滤语义上移到本层调用点, 由注册表统一出口提供 visible_in_steps — 小欧-2026-11-28
-from app.tools.registry import tool_registry
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
 # 会被 GC 回收并取消, 导致 run_agent_in_background 的 finally(DB 保存)被打断、结果丢失(问题2)。
