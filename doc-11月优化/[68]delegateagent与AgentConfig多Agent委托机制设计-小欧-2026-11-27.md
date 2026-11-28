@@ -32,6 +32,11 @@
 - v2.17 2026-11-28 09:19:41 小欧 §6.2.4 S2 TDD 与落码完成：测试要求写入文档（A 失败收口与透传 / B ContextVar 隔离 / C Schema / D 分层，T01–T12），新增 `backend/tests/probe_delegate_s2_channel.py` 与两个设计内新文件 `delegateagent_schema.py`/`delegateagent.py`，`context.py` 追加 §2.4.1 原样代码；首轮导入红 → 12 passed / 0 failed，ruff 全过；澄清深度只按参考代码提供 `get_delegate_depth()`，不新增设计外包装函数；§6.2.4 末尾补实施记录，产出 `notes/阶段验收记录-S2-delegateagent-小欧-2026-11-28.md`
 - v2.18 2026-11-28 09:34:08 小欧 §6.2.5 S3 补 TDD 实施方法：新增 A 同步成功与显式拒绝 / B 只读与递归防护 / C 资源与收口 / D 台账·SSE·授权隔离 / E client 与构造失败共 16 条用例设计（T01–T16，逐条对应 16 项验收），明确「真实 LLM/工具/SQLite，只做观测型 spy + 唯一构造故障注入」的打点边界、8 轮红绿节奏与可运行探针 `backend/tests/probe_delegate_s3_runner.py`；不改本阶段验收口径与失败回退口径
 - v2.18 2026-11-28 09:33:49 小欧 三堂会审违规整改：①`agent_id` 正则由 `$` 锚点改全串 `fullmatch`，堵住结尾换行 fail-open，补 T02c 回归；②清除本次新增代码注释与参考代码块中的章节号/阶段号（`§6.2.3`/`S0`/`§2.7.2`/`§2.4.1`/`§2.5`/`§4.3`/`§2.2`/`§2.3`），只保留技术描述；③S1/S2 实施记录改为指向正文、不再指向阶段验收记录文件（按用户要求不再产出该类文件）；④整改后两探针 88 passed、定向回归 130 passed、ruff 全过、代码注释违规命中 0
+- v2.19 2026-11-28 10:54:57 小欧 §6.2.6 S4 补 TDD 实施说明（只写测试与实施口径，不改本阶段验收口径）：新增 A 注册与描述 / B 注入与复位 / C 别名归一 / D usage 合并与终态记账 / E 全链路 E2E / F 回归共六组用例（T01–T08b + T03d）、打点边界、8 轮红绿节奏与可运行探针 `backend/tests/probe_delegate_s4_wiring.py`；对码发现并写明三处实施口径：`build_delegate_tool_description()` 尚未实现须在 S4 新增、usage 合并须同时落 `task_accumulated_tokens` 并写 DB 方能达成验收第 6 项、注入与合并判据改用 `normalize_tool_name` 防直调别名漏注入；同步把 §2.4.2 与 §4.3 的参考代码对齐这三处口径，消除新旧实现分歧
+- v2.20 2026-11-28 11:00:11 小欧 §6.2.7 S5 补 TDD 实施说明（只写测试与实施口径，不改本阶段验收口径）：新增 A 上限拦截 / B 索引与取号 / C 并行不退化 / D 回归与静态契约四组用例（T01–T09）、打点边界、6 轮红绿节奏与可运行探针 `backend/tests/probe_delegate_s5_parallel_cap.py`；对码发现并写明四处实施口径：常量当前零命中须新增、`_active_calls` 改造须同步三分支且取号用 `_active_indices[pos]+1`（`make_fp_callback` 按 `exec_calls[_tno-1]` 取原始参数串）、被拒结果体用 `build_error` 空 data、别名计数须写回主名（`tool_retry_engine._prepare_execution` 裸名查表）；同步把 §2.5.1 的写回口径从"可选增强"订正为"必做"
+- v2.21 2026-11-28 11:26:42 小欧 §6.2.8 S6 补 TDD 实施方法（四个子阶段逐个先红后绿，只写测试与实施口径，不改原验收要点与退出标准）：对码核实四处缺口——异步回灌通道已存在但 `wait=False` 仍显式拒绝、插件扫描器与配置项不存在、`tool_names` 字段与构造前过滤/参数别名缺失、`allow_delegate`/`provider`/`api_base` 字段与深度上限配置化缺失；新增 S6.1–S6.4 四组用例表（各 T01–T05）、打点边界、9 轮红绿节奏与四个可运行探针代码；明确 S6.1 必须证明父 LLM 经 inbox 真读到结果
+- v2.22 2026-11-28 11:31:16 小欧 §6.2.6 S4 按 TDD 真实落码完成（红线→最小实现→全绿）：四处改动全部落地——`agent_config.py` 新增动态描述、`agent_register.py` 四张表+注册循环+插件占位、`tool_executor.py` 归一名注入+token 守卫 reset+四层 usage 合并写 DB、`tools_alias_mapper.py` 四别名；探针首轮 ImportError 红，逐组推进后离线用例 A/C/D 组共 15 条全绿、定向回归 101 passed、`ruff` 无新增错误。B/E 组真实 LLM 用例（T03/T03b/T03c/T03d/T04c/T04d/T07）受服务端账户级 429 速率限制（每 3 分钟 1 次、Retry-After 等待 >工具 60s 保险丝）本环境不可验证，如实标注、不宣称全绿；探针落盘两处实测修正：共享事件循环（避免跨 loop 异常）、`temp_config` 改 `setdefault` 覆盖语义（文档参考代码同步修正）
+- v2.22 2026-11-28 11:29:17 小欧 补记 S4/S5 实施记录（不产出独立阶段验收记录文件，按用户要求写回正文）：S4 代码对码核实与参考代码 0 处差异、探针与 E2E 未落盘不宣称全绿；S5 探针完整 9 passed、修两处用例设计错误、429 限流下只锁真实执行与拒绝契约不放宽上限断言、ruff F 类零命中但有 8 条存量 W29x、定向回归未执行故不宣称 D 组全过
 
 
 ---
@@ -564,10 +569,11 @@ def get_delegate_depth() -> int:
 ```python
 # import 段补（与现有 set_current_* 同一 import 块）：
 #   set_current_delegate_callback, reset_current_delegate_callback
+# 另需 normalize_tool_name：判据用归一名，直调别名也不漏注入 — 小欧 2026-11-28
 
 # execute_tool 内，在 _session_token = set_current_session_id(...) 之后、try 之前：
 _delegate_token = None
-if tool_name == "delegateagent":
+if normalize_tool_name(tool_name) == "delegateagent":
     from app.services.agent.delegateagent_runner import run_delegate
     async def _delegate_cb(**kwargs):
         return await run_delegate(agent=agent, **kwargs)
@@ -577,14 +583,14 @@ if tool_name == "delegateagent":
 if _delegate_token is not None:
     reset_current_delegate_callback(_delegate_token)
 
-# 现有 return result 之前补 usage 合并（完整代码见 §4.3）：
-if tool_name == "delegateagent":
-    ...  # §4.3
+# 现有 return result 之前补 usage 合并（完整实现见 usage 合并段落）：
+if normalize_tool_name(tool_name) == "delegateagent":
+    ...  # 完整实现见 usage 合并段落
 ```
 
 > 为什么用 `_delegate_token is not None` 守卫而不是无条件 reset：非 delegate 工具从未 set，token 为 None，`ContextVar.reset(None)` 会抛 `ValueError`。这与现有 `_text_token`/`_notice_token` 的守卫写法同源（`tool_executor.py:176-183`）。
 
-> 为什么在 `if tool_name == "delegateagent"` 内才注入：其它工具不消费 delegate 回调，无条件注入等于每个工具调用都多一次 set/reset，且 `run_delegate` 的 import 会提前触发模块加载。按需注入符合 KISS-DIRECT 的"默认零开销"。
+> 为什么在 `if normalize_tool_name(tool_name) == "delegateagent"` 内才注入：其它工具不消费 delegate 回调，无条件注入等于每个工具调用都多一次 set/reset，且 `run_delegate` 的 import 会提前触发模块加载。按需注入符合 KISS-DIRECT 的"默认零开销"；用归一名而非裸名判据，是为了直调别名时也不漏注入。
 
 ### 2.5 子 Agent 运行器（核心）
 
@@ -948,7 +954,7 @@ def _extract_summary(sub_agent) -> str:
 **上限校验落点**：必须在 `tool_runner.execute_tools` —— 它是唯一持有 `all_calls` 全量的一层。
 `delegateagent()` 与 `tool_executor.execute_tool()` 都是单工具粒度，放在那里看不到同轮其它调用，校验无效。
 
-位置还有第二个硬约束：**计数前必须自己做别名归一**。`execute_tools` 开头那段逐 call 的 `c["tool_name"] = _corrected`（`tool_runner.py:53-60`）实际只做**文件扩展名纠错**（`_auto_correct_file_tool`，仅对 `read*`/`write*` 且带 `path` 的调用生效），**不查 `TOOL_NAME_ALIASES`**；别名归一发生在下游 `registry.get_tool`/`resolve_registered_tool`，属单工具粒度、晚于本处。也就是说 `delegate_task`/`call_agent` 进到 `execute_tools` 时名字仍是别名，若直接 `c.get("tool_name") == "delegateagent"` 计数，别名会全部绕过上限。正确做法是**计数时对每个 call 调一次 `normalize_tool_name`**（顺手把归一结果写回 `c["tool_name"]`，让下游步骤与预览显示主名，属可选增强）。插入点是扩展名纠错循环结束、`if len(all_calls) == 1` 分支之前。
+位置还有第二个硬约束：**计数前必须自己做别名归一**。`execute_tools` 开头那段逐 call 的 `c["tool_name"] = _corrected`（`tool_runner.py:53-60`）实际只做**文件扩展名纠错**（`_auto_correct_file_tool`，仅对 `read*`/`write*` 且带 `path` 的调用生效），**不查 `TOOL_NAME_ALIASES`**；别名归一发生在下游 `registry.get_tool`/`resolve_registered_tool`，属单工具粒度、晚于本处。也就是说 `delegate_task`/`call_agent` 进到 `execute_tools` 时名字仍是别名，若直接 `c.get("tool_name") == "delegateagent"` 计数，别名会全部绕过上限。正确做法是**计数时对每个 call 调一次 `normalize_tool_name`**，并且**命中委托的必须把主名原地写回 `c["tool_name"]`**（不是可选增强）：`tool_retry_engine._prepare_execution` 用 `self._tools.get(action)` 裸名查表，别名不写回则前 6 个虽被正确放行，仍会在执行层报"工具未找到"。写回只针对归一后为 `delegateagent` 的调用，不动其它工具的别名路径。插入点是扩展名纠错循环结束、`if len(all_calls) == 1` 分支之前。
 
 ```python
 # tool_constants.py
@@ -961,8 +967,12 @@ from app.tools.tools_alias_mapper import normalize_tool_name
 
 # execute_tools 内、扩展名纠错循环之后 / if len(all_calls) == 1 之前：
 # 计数自带归一：all_calls 里的 tool_name 此时可能仍是 delegate_task/call_agent 等别名
+# 命中委托即写回主名：执行层裸名查表，别名不写回会"工具未找到" — 小欧 2026-11-28
+for c in all_calls:
+    if normalize_tool_name(c.get("tool_name", "")) == "delegateagent":
+        c["tool_name"] = "delegateagent"
 _delegate_idx = [i for i, c in enumerate(all_calls)
-                 if normalize_tool_name(c.get("tool_name", "")) == "delegateagent"]
+                 if c.get("tool_name") == "delegateagent"]
 _over = set(_delegate_idx[MAX_PARALLEL_SUB_AGENTS:])
 _rejected: Dict[int, Any] = {}
 if _over:
@@ -993,7 +1003,9 @@ for _i, _err in _rejected.items():
     results[_i] = _err
 ```
 
-> **隐藏改动点（易漏）**：原三分支内部用 `all_calls[i]` 的全局下标给 `on_attempt_recorded(indices[0]+1)` 取号（`tool_runner.py:102/109/117`）。改用 `_active_calls` 后，被拒委托之前的调用取号不变，但**被拒委托之后的调用取号会前移**（`_active_calls` 里下标变小）。若要保持文件落盘序号与"本轮原始调用序号"一致，须额外维护 `_active_indices[pos]` 映射传给回调，而不是直接用 `_active_calls` 的局部下标。这是伪代码阶段看不出来的实施细节，P0 落地时一并处理。
+> **隐藏改动点（易漏）**：原三分支内部用 `all_calls[i]` 的全局下标给 `on_attempt_recorded(indices[0]+1)` 取号（`tool_runner.py:75/102/109/117/146`）。改用 `_active_calls` 后，被拒委托之前的调用取号不变，但**被拒委托之后的调用取号会前移**（`_active_calls` 里下标变小）。必须统一用 `_active_indices[pos] + 1` 取号：A 分支 `_active_indices[0]+1`（不再硬写 1）、B' 分支 `_active_indices[indices[0]]+1` 与 `_active_indices[_gi]+1`、C 分支 `_active_indices[_pos]+1`，末尾回填同样按 `_active_indices[_i]` 定位原下标。
+>
+> **为什么不是"序号难看"而是数据错误**：`handle_action` 传入的工厂是 `make_fp_callback(agent, step, _exec_calls)`，`file_persist.py:268` 按 `exec_calls[_tno - 1]` 取 `params_raw_str` 写文件A。取号回退会让被拒调用之后的工具把**别人的原始参数串**写进排查文件。三分支的分组/组内取数/回填/取号四处须一起改，只删校验保留 `_active_calls` 属半成品，必须整段回退重做。
 
 ### 2.6 开放封闭原则（OCP）扩展点总表
 
@@ -1387,16 +1399,40 @@ P1 正确做法：过滤发生在 `ToolRetryEngine` 构造之前（把筛完的�
 1. **不分成功失败，有 usage 就记账**：子 Agent 跑了 6 步才失败，那 6 步的 token 是真实花费。故 §2.3 的失败分支也把 `usage` 放进 `data`。
 2. **判据用 `data.usage` 存在性，不用 `is_success`**：`is_success` 读的是 `llm_data.status.exec_code`（工具"是否成功"），与"是否产生 token"是两件事。
 
+需在 `tool_executor.py` 增 `db`（`app.db.database`）、`storage`（`app.services.chat`）与 `normalize_tool_name` 三个 import。合并落点为工具执行完成后；判据用归一名，避免直调别名漏合并。
+
 ```python
-# tool_executor.py 中，工具执行完成后：
-if tool_name == "delegateagent":
-    sub_usage = (result.get("data") or {}).get("usage") or {}
-    if sub_usage:
-        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
-            agent.accumulated_usage[key] += int(sub_usage.get(key, 0) or 0)
+# tool_executor.py — 小欧 2026-11-28：四层合并 + DB 落账，失败委托同样记账
+async def _merge_delegate_usage(agent, sub_usage: dict) -> None:
+    if not sub_usage:
+        return
+    keys = ("prompt_tokens", "completion_tokens", "total_tokens")
+    delta = {k: int(sub_usage.get(k) or 0) for k in keys}
+    for k in keys:
+        agent.accumulated_usage[k] += delta[k]
+        agent.task_accumulated_tokens[k] += delta[k]
+    # session/chain 是基线 + 当前任务累计的派生值，合并时不再叠加基线（否则下轮双计）
+    zero = {k: 0 for k in keys}
+    s_base = getattr(agent, "_session_acc_base", None) or zero
+    c_base = getattr(agent, "_chain_acc_base", None) or zero
+    agent.session_accumulated_tokens = {k: s_base[k] + agent.task_accumulated_tokens[k] for k in keys}
+    agent.chain_accumulated_tokens = {k: c_base[k] + agent.task_accumulated_tokens[k] for k in keys}
+    # DB 权威列必须落子用量：react_step 每轮只记本次 LLM 调用，取不到 delegate 的消耗
+    sid = (getattr(agent, "_start_meta", None) or {}).get("session_id")
+
+    def _write(conn):
+        storage.update_task_accumulation(conn, task_id=agent.task_id, llm_call_count_token=delta)
+        if sid:
+            storage.update_session_accumulation(conn, session_id=sid, llm_call_count_token=delta)
+
+    await db.atxn("chat", _write, retry_locked=3)
+
+
+if normalize_tool_name(tool_name) == "delegateagent":
+    await _merge_delegate_usage(agent, (result.get("data") or {}).get("usage") or {})
 ```
 
-这样父 Agent 的 `FinalStep` 终态输出里已包含子 Agent 的 token 消耗（失败委托也计入）。
+这样父 Agent 的 `FinalStep` 终态输出里已包含子 Agent 的 token 消耗（失败委托也计入），DB 的 `chat_tasks.task_accumulated_tokens` 也不漏账。
 
 ### 4.4 SSE 隔离（P0 已实现）
 
@@ -2753,7 +2789,427 @@ def test_T16_construct_failure_closes_client(parent, spy, parent_client, temp_co
 
 **目标**：把工具真正注册进 AGENT 分类、入口层注入回调并把用量记到父账、别名归一可用、工具描述由注册表动态生成。
 
-**改动面**：改 `agent_register.py`（四张表 + `tool_methods` 注册 + `load_plugins` 调用位留空）、`tool_executor.py`（注入 + finally 按 token 守卫 reset + usage 合并）、`tools_alias_mapper.py`（4 条别名）。
+**改动面**：改 `agent_register.py`（四张表 + `tool_methods` 注册 + `load_plugins` 调用位留空）、`tool_executor.py`（注入 + finally 按 token 守卫 reset + usage 合并）、`tools_alias_mapper.py`（4 条别名）、`agent_config.py`（新增 `build_delegate_tool_description()`）。
+
+**TDD 测试要求（先红后绿；本阶段全部用例跑在真实链路）**：
+
+> 纪律同 S1/S2/S3：**先写失败用例（红）→ 最小实现（绿）→ 重构保持绿**；禁止先落实现再补"能过就行"的用例，禁止为变绿放宽断言。本阶段仍用真实 LLM / 真实工具注册与执行 / 真实 SQLite，不打桩 LLM、不用假库、不替换 `run_react_cycle`。只允许三类观测型打点：临时注册再注销探针工具、`storage` 累计函数包装（记录入参并调用原函数）、`caplog` 抓别名日志；不替换委托回调，失败委托由 T07 的真实路径覆盖。若实现期需要临时受控回调定位问题，必须用 `set_current_delegate_callback` 且在 `finally` 用 token reset，不得把它写进正式用例的断言依据。
+>
+> 对码发现三处必须在实施时一并收口的缺口，否则本阶段验收项不可达：
+>
+> 1. `build_delegate_tool_description()` 只在 §4.1 设计，`agent_config.py` 尚未实现。S4 须新增（读 `get_agent_registry().list_configs()` 动态拼 id + description），并把注册描述由静态字符串改为该函数（callable），新增 Agent 才真正零改代码。
+> 2. §4.3 原合并代码只改 `accumulated_usage`；但 DB 权威列 `chat_tasks.task_accumulated_tokens` 由 `react_step` 每轮按"本次 LLM 调用 token"累加（经 `storage.update_task_accumulation`），子 usage 不会自动进去，验收第 6 项不可达。故合并必须同时做四件事：`accumulated_usage` += 子 usage、`task_accumulated_tokens` += 子 usage、按既有基线重算 `session_accumulated_tokens`/`chain_accumulated_tokens`、在 `db.atxn("chat", ...)` 内把子 usage 作为 `llm_call_count_token` 写 `storage.update_task_accumulation`，并在 `_start_meta.session_id` 非空时写 `update_session_accumulation`。**不可**在合并时再叠加 session/chain 基线，否则下一轮 `react_step` 会双计。
+> 3. 入口层注入与合并的判据用 `normalize_tool_name(tool_name) == "delegateagent"`，不用裸 `tool_name == "delegateagent"`。真实链路 `action_input_parser._claim` 已把 `call["tool_name"]` 原地写回主名、`tool_facade.execute_tool` 也经 `resolve_registered_tool` 归一，但直调别名时裸名判据会漏注入；归一判据零成本且堵住该口。
+>
+> `load_plugins` 在 S4 只保留调用位（注释占位），S6.2 再实装；T02c 用"注册表仍只有 3 个内置 Agent"守住这条边界。
+
+**测试文件**：`backend/tests/probe_delegate_s4_wiring.py`（本地探针，按 §6.2.11 第 4 条不提交）。运行：`cd backend && python -m pytest tests/probe_delegate_s4_wiring.py -v --timeout=90`。用例顺序 A→F 与下方红绿节奏同序。
+
+**A. 注册与描述（验收 1、2）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 注册契约 | `get_tool("delegateagent")` 非 None；`category is AGENT`；`get_implementation("delegateagent")` 是 `delegateagent` 函数；`input_schema.required == {"agent_id","task"}` 且 properties 含 context/wait；`hide_from_steps is False`、`visible_to_llm is True`、`visible_in_steps` 为 True、`"delegateagent" not in AGENT_HIDE_FROM_STEPS` |
+| T01b | 主 Agent 可见 | 默认 `_INITIAL_CATEGORIES` 含 AGENT，`get_openai_tools(parent)` 含 name=`delegateagent`，且描述含 `researcher` |
+| T02 | 描述动态生成 | `build_delegate_tool_description()` 含三个内置 id 及各自 description；`meta.resolved_description()` 与其同源；运行期 register `tmp_agent` + `invalidate_tool_cache(parent)` 后工具描述出现 `tmp_agent`，unregister + invalidate 后消失 |
+| T02b | 描述是字符串 | `tool_registry.list_tools()` 中该工具 description 为 `str`（非函数对象），且含 `researcher` |
+| T02c | 无插件边界 | `get_agent_registry().list_available()` 恰为 3 个内置 id（S4 不加载插件） |
+
+**B. 注入与复位（验收 3）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T03 | 成功注入并复位 | 直调 `execute_tool(parent, "delegateagent", {...}, parent._retry_engine)` → `is_success`；`data.summary` 非空、`usage.total_tokens>0`、`steps>=1`；`llm_data.summary` 含"委托子Agent(researcher)完成"；返回后 `get_current_delegate_callback() is None` |
+| T03b | 非 delegate 不注入、无残留 | 临时注册探针工具，实现内记录 `get_current_delegate_callback()`；先调它记录为 None，再调 delegateagent，再调它仍为 None |
+| T03c | 未注入 fail-closed | 绕过入口层直接 `delegateagent(...)` → error，summary 含"委托通道未注入" |
+| T03d | 真实一轮 | 建父 buffer 后 `run_react_cycle(parent, 强指令调用 delegateagent, max_steps=3, task_id=父task)`：事件含 delegateagent action 与非空 observation，结束后回调 None；`finally reclaim_memory_buffer` |
+
+**C. 别名归一（验收 4）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T04 | 别名映射 | `delegate_task`/`delegate_to_agent`/`call_agent`/`invoke_agent` 经 `normalize_tool_name` 均得 `delegateagent`；canonical/`subagent`/未知名原样 |
+| T04b | 注册表解析 | `resolve_registered_tool` 四别名均返回 `(delegateagent, 非 None meta)` |
+| T04c | 真实链路归一 | `_build_call_list({"tool_name":"delegate_task",...})` → `all_calls[0]["tool_name"]=="delegateagent"`；`execute_tools(parent, calls, False)` 成功；`caplog` 含 `[tool_name_alias]` 与 `delegate_task→delegateagent` |
+| T04d | 别名也记账 | 同 T04c 调用前后父 `accumulated_usage`/`task_accumulated_tokens` 增量等于返回 usage |
+| T04e | 禁用名不收编 | `"subagent" not in TOOL_NAME_ALIASES` |
+
+**D. usage 合并与终态记账（验收 5、6）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T05 | 成功合并 | `_merge_delegate_usage(parent, usage)` 后 `accumulated_usage` 与 `task_accumulated_tokens` 增量均等于 usage；session/chain 仍等于各自基线 + `task_accumulated_tokens`（不重复加基线） |
+| T06 | 失败也记账 | 失败形状返回体（`exec_code=="error"` 但 `data.usage` 非空）：判据是 usage 存在性而非 `is_success`，合并仍发生；真实失败路径由 T07 覆盖 |
+| T06b | 无 usage 不记账 | 空 usage → 四层内存态逐键不变 |
+| T06c | 非 delegate 不记账 | 探针工具返回含 usage 的成功体 → `execute_tool` 不改父 usage |
+| T06d | 脏数值安全 | `None`/字符串数值经 `int(v or 0)` 归一，不抛异常 |
+| T07 | 真实失败委托 | 临时 config `max_steps=1` + 强指令先 read 临时文件 → `status failed` 且 `usage.total_tokens>0`；父增量等于返回 usage；若模型直接回答则调整 prompt，不放宽断言 |
+| T08a | 终态记账 | `emit_completed_final(step=1, response="x")[0]` 的 `accumulated_usage`/`task_accumulated_tokens` 等于父内存态且含子 usage |
+| T08b | DB 落账契约 | `storage` 累计函数 spy 记录入参并调原函数：合并后 task 写 1 次、`llm_call_count_token` 等于子 usage、task_id 正确；`_start_meta.session_id` 非空时 session 写 1 次；无真实行时 rowcount-0 warning 可接受，真实终值由 E2E 覆盖 |
+
+**E. 全链路 E2E（验收 7）**
+
+新增 `backend/e2etests/test_e2e_40_delegateagent_sync.py`（`@pytest.mark.e2e_full_link`，本地跑通、**不提交**）。沿用 `e2e_helpers` 的 `ensure_backend_ready` / `send_chat` / `assert_stream_ended` / `check_db` / `verify_db_tool_usage` / `check_logs` / `write_test_record`；用户输入要求"用两个 researcher 分别搜两个主题，再用 reviewer 审查两份结果并汇总"。通过标准：`result["tool_calls"]` 与 SSE 步骤含 `delegateagent`，父回复含两份摘要要点与审查结论；DB `chat_task_steps` 有该工具行；`chat_task_steps`/`chat_tasks` 无 `sub-%` 行；按 `e2e_helpers` 同源库直连查询 `chat_tasks.task_accumulated_tokens` 包含子消耗，且与终态帧 `accumulated_usage` 一致。不得靠放宽断言（如只判"回复非空"）让它变绿。
+
+**F. 回归（验收 8）**
+
+E2E-P0-03b 必须 PASSED；按本阶段改动符号（`agent_register` / `tool_executor` / `tools_alias_mapper` / `agent_config`）筛出的定向集 `--timeout=60` 全跑，失败集合与改造前基线逐条相同、新增 0；S1/S2/S3 探针全绿；`ruff check` 全过。出现新的红项即停，不得以"工具列表多了一个 delegateagent"为由忽略。
+
+**打点边界（红绿之外的纪律）**：允许 = 临时注册/注销探针工具、`storage` 累计函数包装（必须调用原函数）、`caplog`；禁止 = mock LLM 返回、假 SQLite 连接、替换 `run_react_cycle`、替换委托回调（定位问题可临时 set，但必须 `finally` reset 且不写进正式断言）、临时改小拒绝清单或别名表来让用例变绿。每个 fixture 的 `unregister`/`reclaim`/`reset` 必须在 `finally` 或 fixture 卸载时还原，否则下一条用例会出现"串味假红"。
+
+**红绿节奏（每轮只推进一组，全绿再进下一组）**：
+
+| 轮次 | 先写的红用例 | 让它变绿的最小实现 |
+|------|-------------|-------------------|
+| R1 | T01、T01b、T02、T02b、T02c | 先落 `build_delegate_tool_description()` 骨架与四张表 + `tool_methods` 注册（把 ImportError 转成断言红），描述改 callable |
+| R2 | T03、T03b、T03c | `execute_tool` 入口按归一名注入回调，`finally` 按 `_delegate_token is not None` 守卫 reset |
+| R3 | T04、T04b、T04c、T04e | `TOOL_NAME_ALIASES` 加 4 条（不收 `subagent`）；别名用例走 `_build_call_list → execute_tools` 真实链路 |
+| R4 | T05、T06、T06b、T06c、T06d | `_merge_delegate_usage` 四层合并 + 脏数值归一 + DB 落账，判据用 usage 存在性 |
+| R5 | T07 | 真实失败委托（不 mock、不放宽断言），确认失败分支同样带 usage 且父侧记账 |
+| R6 | T08a、T08b | 终态注入与 storage spy 验证，确认 session/chain 未被重复累加 |
+| R7 | T03d | 真实主 Agent 一轮：prompt 强指令调 delegateagent，验证 action/observation 与回调复位 |
+| R8 | E 与 F | E2E 与定向回归、`ruff check` 全过；无 `skip`/`xfail` 才算本阶段可提交 |
+
+**测试代码**：
+
+```python
+# -*- coding: utf-8 -*-
+"""delegateagent 主链路接入 TDD 探针 — 小欧 2026-11-28
+
+真实 LLM / 工具注册与执行 / SQLite；只做观测型打点与受控回调注入。
+探针按仓库铁律不入库。
+运行：cd backend && python -m pytest tests/probe_delegate_s4_wiring.py -v --timeout=90
+"""
+import asyncio
+import copy
+import uuid
+
+import pytest
+
+from app.services.agent import tool_executor
+from app.services.agent.action_input_parser import _build_call_list
+from app.services.agent.react_loop import run_react_cycle
+from app.services.agent.tool_cache_manager import get_openai_tools, invalidate_tool_cache
+from app.services.agent.tool_runner import execute_tools
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.chat import storage
+from app.services.lifecycle.service import get_service
+from app.services.task import task_state
+from app.tools import ensure_tools_registered
+from app.tools.agent.agent_config import (
+    AgentConfig, build_delegate_tool_description, get_agent_registry,
+)
+from app.tools.agent.agent_register import AGENT_HIDE_FROM_STEPS
+from app.tools.agent.delegateagent import delegateagent
+from app.tools.context import get_current_delegate_callback
+from app.tools.registry import resolve_registered_tool, tool_registry
+from app.tools.tool_response import build_error, build_success, is_success
+from app.tools.tool_types import ToolCategory
+from app.tools.tools_alias_mapper import TOOL_NAME_ALIASES, normalize_tool_name
+
+ensure_tools_registered()
+
+_K = ("prompt_tokens", "completion_tokens", "total_tokens")
+_ALIASES = ("delegate_task", "delegate_to_agent", "call_agent", "invoke_agent")
+_BUILTINS = {"researcher", "reviewer", "kb_analyst"}
+_SHORT = "一句话回答：1+1等于几？不要调用工具。"
+
+
+@pytest.fixture
+def parent_task():
+    return f"s4-probe-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture(scope="module")
+def parent_client():
+    c = get_service()
+    yield c
+    asyncio.run(c.close())
+
+
+@pytest.fixture
+def parent(parent_client, parent_task):
+    return UniversalAgent(llm_client=parent_client, task_id=parent_task,
+                          max_steps=4, track_task=False)
+
+
+@pytest.fixture
+def probe_tools():
+    made = []
+
+    def _add(name, impl):
+        tool_registry.register(name=name, description="探针工具",
+                               category=ToolCategory.FUNDAMENTAL, implementation=impl)
+        made.append(name)
+
+    yield _add
+    for name in made:
+        tool_registry.unregister(name)
+
+
+@pytest.fixture
+def temp_config():
+    made = []
+
+    def _add(agent_id, **kw):
+        kw.setdefault("tool_categories", {ToolCategory.FUNDAMENTAL})
+        kw.setdefault("max_steps", 4)
+        cfg = AgentConfig(agent_id=agent_id, description="S4 探针临时配置", **kw)
+        get_agent_registry().register(cfg)
+        made.append(agent_id)
+        return cfg
+
+    yield _add
+    for aid in made:
+        get_agent_registry().unregister(aid)
+
+
+@pytest.fixture
+def storage_spy(monkeypatch):
+    seen = {"task": [], "session": []}
+    real_task, real_session = storage.update_task_accumulation, storage.update_session_accumulation
+
+    def _task(conn, *, task_id, llm_call_count_token):
+        seen["task"].append((task_id, dict(llm_call_count_token)))
+        return real_task(conn, task_id=task_id, llm_call_count_token=llm_call_count_token)
+
+    def _session(conn, *, session_id, llm_call_count_token):
+        seen["session"].append((session_id, dict(llm_call_count_token)))
+        return real_session(conn, session_id=session_id, llm_call_count_token=llm_call_count_token)
+
+    monkeypatch.setattr(storage, "update_task_accumulation", _task)
+    monkeypatch.setattr(storage, "update_session_accumulation", _session)
+    return seen
+
+
+# ------------------------------------------------ A. 注册与描述
+def test_T01_registered_contract():
+    meta = tool_registry.get_tool("delegateagent")
+    assert meta is not None and meta.category is ToolCategory.AGENT
+    assert tool_registry.get_implementation("delegateagent") is delegateagent
+    schema = meta.input_schema or {}
+    assert set(schema.get("required") or []) == {"agent_id", "task"}
+    assert {"agent_id", "task", "context", "wait"} <= set(schema.get("properties") or {})
+    assert meta.hide_from_steps is False and meta.visible_to_llm is True
+    assert tool_registry.visible_in_steps("delegateagent") is True
+    assert "delegateagent" not in AGENT_HIDE_FROM_STEPS
+
+
+def test_T01b_visible_to_parent(parent):
+    tools = {t["function"]["name"]: t["function"] for t in get_openai_tools(parent)}
+    assert "delegateagent" in tools and "researcher" in tools["delegateagent"]["description"]
+
+
+def test_T02_dynamic_description(parent):
+    desc = build_delegate_tool_description()
+    reg = get_agent_registry()
+    for aid in _BUILTINS:
+        assert aid in desc and reg.get(aid).description in desc
+    assert tool_registry.get_tool("delegateagent").resolved_description() == desc
+    reg.register(AgentConfig(agent_id="tmp_agent", description="临时探针 Agent",
+                             tool_categories={ToolCategory.FUNDAMENTAL}))
+    try:
+        invalidate_tool_cache(parent)
+        tools = {t["function"]["name"]: t["function"]["description"]
+                 for t in get_openai_tools(parent)}
+        assert "tmp_agent" in tools["delegateagent"]
+    finally:
+        reg.unregister("tmp_agent")
+        invalidate_tool_cache(parent)
+    tools = {t["function"]["name"]: t["function"]["description"]
+             for t in get_openai_tools(parent)}
+    assert "tmp_agent" not in tools["delegateagent"]
+
+
+def test_T02b_list_tools_description_is_str():
+    entries = [t for t in tool_registry.list_tools() if t["name"] == "delegateagent"]
+    assert len(entries) == 1 and isinstance(entries[0]["description"], str)
+    assert "researcher" in entries[0]["description"]
+
+
+def test_T02c_only_builtin_agents():
+    assert set(get_agent_registry().list_available()) == _BUILTINS
+
+
+# ------------------------------------------------ B. 注入与复位
+def test_T03_injection_and_reset(parent):
+    r = asyncio.run(tool_executor.execute_tool(
+        parent, "delegateagent", {"agent_id": "researcher", "task": _SHORT},
+        parent._retry_engine))
+    assert is_success(r)
+    assert r["data"]["summary"] and r["data"]["usage"]["total_tokens"] > 0
+    assert r["data"]["steps"] >= 1
+    assert "委托子Agent(researcher)完成" in r["llm_data"]["summary"]
+    assert get_current_delegate_callback() is None
+
+
+def test_T03b_non_delegate_no_residue(parent, probe_tools):
+    seen = []
+
+    def _obs(**kw):
+        seen.append(get_current_delegate_callback())
+        return build_success(data={"ok": True})
+
+    probe_tools("s4_probe_observer", _obs)
+    asyncio.run(tool_executor.execute_tool(parent, "s4_probe_observer", {}, parent._retry_engine))
+    asyncio.run(tool_executor.execute_tool(
+        parent, "delegateagent", {"agent_id": "researcher", "task": _SHORT},
+        parent._retry_engine))
+    asyncio.run(tool_executor.execute_tool(parent, "s4_probe_observer", {}, parent._retry_engine))
+    assert seen == [None, None]
+
+
+def test_T03c_no_callback_fail_closed():
+    r = asyncio.run(delegateagent(agent_id="researcher", task=_SHORT))
+    assert not is_success(r) and "委托通道未注入" in r["llm_data"]["summary"]
+
+
+def test_T03d_real_react_cycle(parent, parent_task):
+    buf = task_state.create_task_stream_buffer(parent_task, "")
+    try:
+        asyncio.run(run_react_cycle(
+            parent,
+            "必须调用 delegateagent 委托 researcher 回答 1+1=几，禁止不调用工具直接回答。",
+            max_steps=3, task_id=parent_task))
+        types = [e.get("type") for e in buf.event_log]
+        assert "action" in types and "observation" in types
+        assert any("delegateagent" in str(e) for e in buf.event_log
+                   if e.get("type") == "action")
+        assert get_current_delegate_callback() is None
+    finally:
+        task_state.reclaim_memory_buffer(parent_task)
+
+
+# ------------------------------------------------ C. 别名归一
+def test_T04_alias_mapping():
+    for name in _ALIASES:
+        assert normalize_tool_name(name) == "delegateagent"
+    for name in ("delegateagent", "subagent", "unknown_tool"):
+        assert normalize_tool_name(name) == name
+
+
+def test_T04b_resolve_alias():
+    for name in _ALIASES:
+        canonical, meta = resolve_registered_tool(name)
+        assert canonical == "delegateagent" and meta is not None
+
+
+def test_T04c_alias_real_chain(parent, caplog):
+    parsed = {"tool_name": "delegate_task",
+              "tool_params": {"agent_id": "researcher", "task": _SHORT},
+              "fc_context": {}}
+    calls = _build_call_list(parsed).all_calls
+    assert calls[0]["tool_name"] == "delegateagent"
+    with caplog.at_level("INFO"):
+        results = asyncio.run(execute_tools(parent, calls, False))
+    assert is_success(results[0])
+    assert "[tool_name_alias]" in caplog.text
+    assert "delegate_task→delegateagent" in caplog.text
+
+
+def test_T04d_alias_usage_counted(parent):
+    before = copy.deepcopy(parent.accumulated_usage)
+    parsed = {"tool_name": "call_agent",
+              "tool_params": {"agent_id": "researcher", "task": _SHORT},
+              "fc_context": {}}
+    results = asyncio.run(execute_tools(parent, _build_call_list(parsed).all_calls, False))
+    usage = (results[0].get("data") or {}).get("usage") or {}
+    assert usage.get("total_tokens", 0) > 0
+    assert parent.accumulated_usage["total_tokens"] - before["total_tokens"] == int(usage["total_tokens"])
+
+
+def test_T04e_subagent_not_alias():
+    assert "subagent" not in TOOL_NAME_ALIASES
+
+
+# ------------------------------------------------ D. usage 合并与终态记账
+def test_T05_success_merge(parent):
+    usage = {"prompt_tokens": 21, "completion_tokens": 9, "total_tokens": 30}
+    before_u = copy.deepcopy(parent.accumulated_usage)
+    before_t = copy.deepcopy(parent.task_accumulated_tokens)
+    parent._session_acc_base = {k: 100 for k in _K}
+    parent._chain_acc_base = {k: 200 for k in _K}
+    asyncio.run(tool_executor._merge_delegate_usage(parent, usage))
+    assert {k: parent.accumulated_usage[k] - before_u[k] for k in _K} == usage
+    assert {k: parent.task_accumulated_tokens[k] - before_t[k] for k in _K} == usage
+    assert parent.session_accumulated_tokens == {k: 100 + parent.task_accumulated_tokens[k] for k in _K}
+    assert parent.chain_accumulated_tokens == {k: 200 + parent.task_accumulated_tokens[k] for k in _K}
+
+
+def test_T06_error_usage_still_counted(parent):
+    err = build_error(
+        data={"usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}},
+        llm_data={"status": {"exec_code": "error", "message": "失败"}})
+    assert not is_success(err)
+    before = copy.deepcopy(parent.accumulated_usage)
+    asyncio.run(tool_executor._merge_delegate_usage(parent, err["data"]["usage"]))
+    assert {k: parent.accumulated_usage[k] - before[k] for k in _K} == err["data"]["usage"]
+
+
+def test_T06b_empty_usage_noop(parent):
+    before = (copy.deepcopy(parent.accumulated_usage),
+              copy.deepcopy(parent.task_accumulated_tokens))
+    asyncio.run(tool_executor._merge_delegate_usage(parent, {}))
+    assert (parent.accumulated_usage, parent.task_accumulated_tokens) == before
+
+
+def test_T06c_non_delegate_no_merge(parent, probe_tools):
+    before = copy.deepcopy(parent.accumulated_usage)
+
+    def _with_usage(**kw):
+        return build_success(data={"usage": {"prompt_tokens": 9, "completion_tokens": 9,
+                                             "total_tokens": 18}})
+
+    probe_tools("s4_probe_usage", _with_usage)
+    asyncio.run(tool_executor.execute_tool(parent, "s4_probe_usage", {}, parent._retry_engine))
+    assert parent.accumulated_usage == before
+
+
+def test_T06d_dirty_numbers_safe(parent):
+    dirty = {"prompt_tokens": None, "completion_tokens": "7", "total_tokens": "18"}
+    before = copy.deepcopy(parent.accumulated_usage)
+    asyncio.run(tool_executor._merge_delegate_usage(parent, dirty))
+    assert parent.accumulated_usage["prompt_tokens"] == before["prompt_tokens"]
+    assert parent.accumulated_usage["completion_tokens"] - before["completion_tokens"] == 7
+    assert parent.accumulated_usage["total_tokens"] - before["total_tokens"] == 18
+
+
+def test_T07_real_failed_delegate(parent, temp_config, tmp_path):
+    f = tmp_path / "s4_fail.txt"
+    f.write_text("sample", encoding="utf-8")
+    temp_config("s4_fail", tool_categories={ToolCategory.FILE}, max_steps=1)
+    task = f"先调用 read 工具读取 {f.as_posix()}，再输出摘要；禁止不调用工具直接回答。"
+    before = copy.deepcopy(parent.accumulated_usage)
+    r = asyncio.run(tool_executor.execute_tool(
+        parent, "delegateagent", {"agent_id": "s4_fail", "task": task},
+        parent._retry_engine))
+    usage = (r.get("data") or {}).get("usage") or {}
+    assert not is_success(r) and usage.get("total_tokens", 0) > 0
+    assert parent.accumulated_usage["total_tokens"] - before["total_tokens"] == int(usage["total_tokens"])
+
+
+def test_T08a_final_step_has_child_usage(parent):
+    usage = {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+    asyncio.run(tool_executor._merge_delegate_usage(parent, usage))
+    final = parent._step_emitter.emit_completed_final(step=1, response="x")[0]
+    assert final.accumulated_usage == parent.accumulated_usage
+    assert final.task_accumulated_tokens == parent.task_accumulated_tokens
+    assert final.task_accumulated_tokens["total_tokens"] >= usage["total_tokens"]
+
+
+def test_T08b_db_write_contract(parent, storage_spy):
+    usage = {"prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42}
+    parent._start_meta = {"session_id": "s4-probe-session"}
+    asyncio.run(tool_executor._merge_delegate_usage(parent, usage))
+    assert len(storage_spy["task"]) == 1
+    assert storage_spy["task"][0][0] == parent.task_id
+    assert storage_spy["task"][0][1] == usage
+    assert len(storage_spy["session"]) == 1
+    assert storage_spy["session"][0][0] == "s4-probe-session"
+    assert storage_spy["session"][0][1] == usage
+```
+
+**退出判据**：A–D 共 T01–T08b 与 T03d 全绿（无 `skip`/`xfail`），E 全链路 E2E 与 F 定向回归全过且新增失败 0、`ruff check` 全过；每条用例有原始输出（SSE/日志/DB 查询/断言输出）支撑。探针按铁律不提交。
 
 **验收清单**：
 
@@ -2770,11 +3226,269 @@ def test_T16_construct_failure_closes_client(parent, spy, parent_client, temp_co
 
 **失败回退**：第 1 项查 `tool_methods` 注册循环（漏此步工具根本没 register）；第 2 项查 callable 描述的三个读取点（`tool_description`/`registry.list_tools`/`tool_cache_manager`）；第 5 项查 `data.usage` 是否存在性判据（不得用 `is_success`）。
 
+**实施记录（2026-11-28）**：S4 代码已落地——`agent_register.py` 三张表 + `tool_methods` 注册 + `load_plugins` 注释占位、`agent_config.py` 新增动态描述函数、`tool_executor.py` 按归一名注入回调且 finally 守卫 reset、四层 usage 合并并写 DB、`tools_alias_mapper.py` 四别名；逐条对码核实与本文档参考代码 0 处实现差异。`backend/tests/probe_delegate_s4_wiring.py` 与 `backend/e2etests/test_e2e_40_delegateagent_sync.py` 按铁律未落盘提交，文档保留完整用例与代码；验收第 1/4 项由 S5 探针的注册与别名用例间接覆盖，第 7 项 E2E 尚未执行，不宣称 S4 全绿。按用户要求不产出独立阶段验收记录文件。
+
+**TDD 落码实测补充（2026-11-28）**：探针 `backend/tests/probe_delegate_s4_wiring.py` 实际落盘运行（按铁律不提交）。首轮因 `build_delegate_tool_description` 未实现报 ImportError 红，按 R1→R4 逐组推进：A 组注册与描述 5 项、C 组别名归一 3 项、D 组 usage 合并与终态记账 7 项共 15 条全部全绿（无 skip/xfail）；定向回归 101 passed、改动文件 `ruff` 无新增错误。落盘时修正探针两处自身缺陷：①整模块共享单个事件循环（多个 `asyncio.run` 各自建 loop 会让真实 LLM 客户端报跨 loop 异常）；②`temp_config` 用 `setdefault` 让调用方覆盖 `tool_categories`/`max_steps`（原写法重复传参触发 TypeError，参考代码已同步订正）。B 组注入复位与 E 组真实 LLM 用例（T03/T03b/T03c/T03d/T04c/T04d/T07）在本环境被服务端账户级 429 速率限制拦截（每 3 分钟 1 次，Retry-After 恢复等待超工具 60s 保险丝），换 `agnes-3.0-flash` 仍为 provider 级限流，多次重试均失败；该组未通过属环境约束、非实现缺陷，待配额可用时按同探针补跑，当前不宣称 S4 全绿。
+
 #### 6.2.7 S5 并行上限（0.5 天）
 
 **目标**：单轮并行子 Agent 数硬顶 6，超出部分结构化拒绝，且结果索引不错位、既有分支不退化。
 
 **改动面**：`tool_constants.py` 新增 `MAX_PARALLEL_SUB_AGENTS = 6`；`tool_runner.execute_tools` 在**扩展名纠错循环之后**插入上限校验（计数时自行 `normalize_tool_name`，别名不能绕过）、三分支改用 `_active_calls`、末尾按原索引回填（§2.5.1 代码）。
+
+**TDD 测试要求（先红后绿；不 mock、不改小上限）**：
+
+> 纪律同 S1–S4：**先写失败用例（红）→ 最小实现（绿）→ 重构保持绿**。本阶段只改 `tool_constants.py` 与 `tool_runner.py`，但触达三分支调度与文件落盘取号，任何"只删校验、保留 `_active_calls`"的半成品都会在取号用例上暴露。仍用真实 LLM / 真实工具 / 真实 SQLite；允许的观测型打点只有三类：包装真 `execute_tool` 记 start/end、`on_attempt_recorded` 工厂记录收到的序号、`caplog`；禁止 mock LLM 返回、替换执行逻辑或冲突检测、把上限临时改小让用例变绿。
+>
+> 对码发现四处必须一并收口，否则本阶段验收项不可达：
+>
+> 1. `MAX_PARALLEL_SUB_AGENTS` 在 `app/` 下当前零命中，须在 `tool_constants.py` 新增；`tool_runner.py` 是唯一消费方，不得在别处再定义一份。
+> 2. `_active_calls` 改造不是换个列表那么简单：B' 分支的 `_partition_calls`/组内 `all_calls[i]`/回填 `results[_i]`、C 分支的 `enumerate(all_calls, 1)`、A 分支固定取号 `1`，都要同步改。最关键是取号必须用 `_active_indices[pos] + 1`——`handle_action` 传给 `execute_tools` 的是 `make_fp_callback(agent, step, _exec_calls)`，工厂按 `exec_calls[_tno - 1]` 取 `params_raw_str`；取号回退会把**原始参数串写错文件**（落盘污染，非仅仅序号难看）。
+> 3. 被拒调用的结果体用 `build_error(llm_data={summary, action, status})`，`data` 为空即可；observation 拼装直接读 `llm_data.summary`，不需要伪造工具数据。
+> 4. 别名计数不能只归一不写回：`tool_retry_engine._prepare_execution` 用 `self._tools.get(action)` **裸名查表**，别名不写回会在执行层报"工具未找到"。计数循环命中委托时须把 `c["tool_name"]` 原地写回主名（只写回委托别名，不碰其它工具的别名路径），否则别名虽然被正确计数，前 6 个也跑不起来。
+>
+> 并行前提不变：`delegateagent` 不在 `FILE_OPERATION_TOOLS`/`WINDOW_TARGET_TOOLS`/`_SQL_TOOLS`，`_partition_calls` 对无冲突键的委托各自成组，`gather` 才真并行；不得为了"方便"把它加进这三张表。
+
+**测试文件**：`backend/tests/probe_delegate_s5_parallel_cap.py`（本地探针，按 §6.2.11 第 4 条不提交）。运行：`cd backend && python -m pytest tests/probe_delegate_s5_parallel_cap.py -v --timeout=90`（用例含多轮 6 路真实委托；遇到 429 限流时把任务提示改短、分批跑，不得改为 mock）。
+
+**A. 上限拦截（验收 1、2）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 常量单点 | `tool_constants.MAX_PARALLEL_SUB_AGENTS == 6`；`tool_runner.MAX_PARALLEL_SUB_AGENTS` 与之同一对象；`tool_runner` 源码中无 `MAX_PARALLEL_SUB_AGENTS =` 定义行 |
+| T02 | 超限拒绝 | 一轮 7 个 `delegateagent` → `len(results)==7`；前 6 个锁"真实执行返回的结构体（含 `llm_data`、无上限拒绝文案）"，第 7 个 `is_success` 为 False、summary 含「上限 6」；执行 spy 只记录 6 次（第 7 个未执行）。provider 限流下前 6 个可能返回限流错误体，故不锁 LLM 成功；上限断言本身不放宽 |
+| T03 | 别名同拦 | 7 个调用混用 `delegate_task`/`delegate_to_agent`/`call_agent`/`invoke_agent`：计数自带归一仍按 6 拦；前 6 个写回主名后真实执行、第 7 个被拒（同 T02，只判真实执行与被拒结果，不锁 LLM 成功） |
+| T04 | 不误伤 | 8 个非委托探针工具全执行、全成功；另测 3 委托 + 5 探针混跑同样 8 条全执行（委托数 3 < 6） |
+
+**B. 索引与取号（验收 3、4、5）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T05 | 结果索引对齐 | 8 调用 = 7 委托 + 1 探针（探针在第 8 位）：`len(results)==8`，被拒的委托位是 error、其它位保留各自真实结果，不得整体前移错位 |
+| T06 | 取号不回退 | 同上用例注入 `on_attempt_recorded` 工厂记录收到的序号 → 恰为 `[1,2,3,4,5,6,8]`（被拒的第 7 位不取号，第 8 位不能回退成 7） |
+| T07 | 单工具路径不变 | 1 个 `delegateagent` 仍走 A 分支：`len(results)==1`、结果仍是真实委托返回、执行 spy 只 1 次，与 S4 一致 |
+
+**C. 并行不退化（验收 6）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T08 | 真并行 | 同轮 3 个不同主题 researcher 委托：执行 spy 的 start/end 时间戳显示至少 2 个 start 早于第一个 end（重叠执行）；静态断言 `_has_conflict(calls) is False`（结构性前提），并报告总耗时佐证；重叠断言比验收第 6 项的耗时阈值更严格（串行时必红），耗时只作证据、不放宽为"只判耗时" |
+| T09 | 冲突仍串行 | 同路径 `write` + `read`（读-读无竞态不算冲突，必须用一写一读）：`_has_conflict` 为 True；spy 显示第 2 个 start 不早于第 1 个 end——证明切到 `_active_calls` 后 B' 分组串行语义未退化 |
+
+**D. 回归与静态契约**
+
+S1–S4 探针全绿；E2E-P0-03b PASSED；按改动符号（`tool_runner`/`tool_constants`）筛出的定向集 `--timeout=60` 失败集合与基线逐条相同、新增 0；`ruff check` 全过；`MAX_PARALLEL_SUB_AGENTS` 全仓只在 `tool_constants.py` 定义、`tool_runner.py` 消费。
+
+**打点边界（红绿之外的纪律）**：允许 = 包装真 `execute_tool` 记时间戳（行为原样透传）、`on_attempt_recorded` 工厂只记序号、`caplog`；禁止 = mock LLM / 替执行函数 / 替 `_has_conflict` / 改小常量上限 / 把被拒调用直接丢弃而不回填 error（那会让 `len(results)` 变短，属于用破坏契约换"看起来正常"）。快照与还原统一放 fixture 卸载，`finally` 里 reset。
+
+**红绿节奏（每轮只推进一组，全绿再进下一组）**：
+
+| 轮次 | 先写的红用例 | 让它变绿的最小实现 |
+|------|-------------|-------------------|
+| R1 | T01、T02 | 新增常量 + 扩展名纠错循环之后插入计数与 `_over` 拒绝（先把 ImportError 转成断言红） |
+| R2 | T03 | 计数时 `normalize_tool_name` + 委托别名写回主名；只拦不写回会让前 6 个"工具未找到" |
+| R3 | T04 | 非委托调用不进 `_over`：`_active_calls` 原样透传，三分支行为不变 |
+| R4 | T05、T06、T07 | 全量 `_active_indices` 映射：末尾按原索引回填、三分支取号统一用 `_active_indices[pos]+1`、A 分支同样走映射 |
+| R5 | T08、T09 | 不动冲突检测与 `gather` 分组；只把分组/组内取数改读 `_active_calls`，验证并行与串行两面都不退化 |
+| R6 | D 组 | 四探针 + 定向回归 + `ruff check` 全过；无 `skip`/`xfail` 才算本阶段可提交 |
+
+**测试代码**：
+
+```python
+# -*- coding: utf-8 -*-
+"""并行上限 TDD 探针 — 小欧 2026-11-28
+
+真实 LLM / 工具 / SQLite；只做观测型打点（包装真执行函数、记录取号序号）。
+探针按仓库铁律不入库。
+运行：cd backend && python -m pytest tests/probe_delegate_s5_parallel_cap.py -v --timeout=90
+"""
+import asyncio
+import inspect
+import time
+import uuid
+from pathlib import Path
+
+import pytest
+
+from app.services.agent import tool_runner
+from app.services.agent.tool_runner import execute_tools
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.lifecycle.service import get_service
+from app.tools import ensure_tools_registered, tool_constants
+from app.tools.conflict_detector import _has_conflict
+from app.tools.registry import tool_registry
+from app.tools.tool_response import build_success, is_success
+from app.tools.tool_types import ToolCategory
+
+ensure_tools_registered()
+
+
+def _delegate(task):
+    return {"tool_name": "delegateagent",
+            "tool_params": {"agent_id": "researcher", "task": task},
+            "fc_context": {}}
+
+
+@pytest.fixture
+def parent_task():
+    return f"s5-probe-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture(scope="module")
+def parent_client():
+    c = get_service()
+    yield c
+    asyncio.run(c.close())
+
+
+@pytest.fixture
+def parent(parent_client, parent_task):
+    return UniversalAgent(llm_client=parent_client, task_id=parent_task,
+                          max_steps=4, track_task=False)
+
+
+@pytest.fixture
+def events(monkeypatch):
+    seen = []
+    real = tool_runner.execute_tool
+
+    async def _spy(agent, tool_name, *a, **kw):
+        seen.append(("start", tool_name, time.monotonic()))
+        try:
+            return await real(agent, tool_name, *a, **kw)
+        finally:
+            seen.append(("end", tool_name, time.monotonic()))
+
+    monkeypatch.setattr(tool_runner, "execute_tool", _spy)
+    return seen
+
+
+@pytest.fixture
+def echo_tools(parent):
+    made = []
+    seen = []
+
+    for i in range(8):
+        name = f"s5_probe_echo_{i}"
+
+        def _make(idx):
+            def _impl(**kw):
+                seen.append(idx)
+                return build_success(data={"idx": idx})
+            return _impl
+
+        tool_registry.register(name=name, description="探针回显",
+                               category=ToolCategory.FUNDAMENTAL, implementation=_make(i))
+        made.append(name)
+    parent._tool_loader.load_category(ToolCategory.FUNDAMENTAL)
+    yield seen
+    for name in made:
+        tool_registry.unregister(name)
+
+
+def test_T01_constant_single_source():
+    assert tool_constants.MAX_PARALLEL_SUB_AGENTS == 6
+    assert tool_runner.MAX_PARALLEL_SUB_AGENTS is tool_constants.MAX_PARALLEL_SUB_AGENTS
+    src = Path(inspect.getsourcefile(tool_runner)).read_text(encoding="utf-8")
+    assert "MAX_PARALLEL_SUB_AGENTS =" not in src
+
+
+def test_T02_cap_rejects(parent, events):
+    calls = [_delegate(f"1+1=? 第{i}题") for i in range(7)]
+    results = asyncio.run(execute_tools(parent, calls, True))
+    assert len(results) == 7
+    assert len([e for e in events if e[0] == "start"]) == 6
+    # 前 6 个锁真实执行返回的结构体，不锁 LLM 成功：provider 限流下委托可能返回限流错误体，
+    # 但上限断言（spy 只 6 次、第 7 个被拒、results 长度 7）不受影响。
+    assert all(isinstance(r, dict) and isinstance(r.get("llm_data"), dict)
+               and "上限 6" not in (r.get("llm_data") or {}).get("summary", "")
+               for r in results[:6])
+    assert not is_success(results[6])
+    assert "上限 6" in results[6]["llm_data"]["summary"]
+
+
+def test_T03_alias_cap(parent, events):
+    names = ("delegate_task", "delegate_to_agent", "call_agent",
+             "invoke_agent", "delegate_task", "call_agent", "invoke_agent")
+    calls = [{"tool_name": n, "tool_params": {"agent_id": "researcher", "task": "1+1=?"},
+              "fc_context": {}} for n in names]
+    results = asyncio.run(execute_tools(parent, calls, True))
+    assert len(results) == 7
+    assert len([e for e in events if e[0] == "start"]) == 6
+    assert all(isinstance(r, dict) and isinstance(r.get("llm_data"), dict)
+               and "上限 6" not in (r.get("llm_data") or {}).get("summary", "")
+               for r in results[:6])
+    assert not is_success(results[6]) and "上限 6" in results[6]["llm_data"]["summary"]
+
+
+def test_T04_no_false_positive(parent, echo_tools):
+    calls = [{"tool_name": f"s5_probe_echo_{i}", "tool_params": {}, "fc_context": {}}
+             for i in range(8)]
+    results = asyncio.run(execute_tools(parent, calls, True))
+    assert len(results) == 8 and all(is_success(r) for r in results)
+    assert echo_tools == list(range(8))
+    mixed = [_delegate("1+1=?") for _ in range(3)] + calls[:5]
+    results2 = asyncio.run(execute_tools(parent, mixed, True))
+    assert len(results2) == 8 and all(isinstance(r, dict) for r in results2)
+
+
+def test_T05_result_index_aligned(parent, echo_tools):
+    calls = [_delegate(f"1+1=? 第{i}题") for i in range(7)]
+    calls.append({"tool_name": "s5_probe_echo_7", "tool_params": {}, "fc_context": {}})
+    results = asyncio.run(execute_tools(parent, calls, True))
+    assert len(results) == 8
+    assert not is_success(results[6]) and is_success(results[7])
+    assert results[7]["data"]["idx"] == 7
+
+
+def test_T06_attempt_number_not_shifted(parent, echo_tools):
+    calls = [_delegate(f"1+1=? 第{i}题") for i in range(7)]
+    calls.append({"tool_name": "s5_probe_echo_7", "tool_params": {}, "fc_context": {}})
+    numbers = []
+
+    def _factory(n):
+        numbers.append(n)
+        return lambda *a, **kw: None
+
+    asyncio.run(execute_tools(parent, calls, True, on_attempt_recorded=_factory))
+    assert numbers == [1, 2, 3, 4, 5, 6, 8]
+
+
+def test_T07_single_tool_path(parent, events):
+    results = asyncio.run(execute_tools(parent, [_delegate("1+1=?")], False))
+    assert len(results) == 1
+    assert (results[0].get("data") or {}).get("agent_id") == "researcher"
+    assert len([e for e in events if e[0] == "start"]) == 1
+
+
+def test_T08_true_parallel(parent, events):
+    calls = [_delegate(f"主题{i}：1+1=?") for i in range(3)]
+    assert _has_conflict(calls) is False
+    t0 = time.monotonic()
+    results = asyncio.run(execute_tools(parent, calls, True))
+    elapsed = time.monotonic() - t0
+    starts = [e[2] for e in events if e[0] == "start"]
+    first_end = min(e[2] for e in events if e[0] == "end")
+    assert sum(1 for t in starts if t < first_end) >= 2, "至少两个委托在第一个结束前启动"
+    assert len(results) == 3 and all(isinstance(r, dict) for r in results)
+    print(f"  [T08] 3 路委托总耗时 {elapsed:.2f}s，重叠启动 {len(starts)} 次")
+
+
+def test_T09_conflict_still_serial(parent, events, tmp_path):
+    f = tmp_path / "s5_conflict.txt"
+    f.write_text("x", encoding="utf-8")
+    calls = [
+        {"tool_name": "write", "tool_params": {"path": str(f), "content": "x"}, "fc_context": {}},
+        {"tool_name": "read", "tool_params": {"path": str(f)}, "fc_context": {}},
+    ]
+    assert _has_conflict(calls) is True
+    asyncio.run(execute_tools(parent, calls, True))
+    starts = [e[2] for e in events if e[0] == "start"]
+    ends = [e[2] for e in events if e[0] == "end"]
+    assert starts[1] >= ends[0], "同路径两读必须串行，切 _active_calls 不得退化"
+```
+
+**退出判据**：A–C 共 T01–T09 全绿（无 `skip`/`xfail`），D 组回归与静态契约全过；每条用例有原始输出（执行 spy 时间戳 / 取号序号 / 结果体 / `ruff` 输出）支撑。探针按铁律不提交。
 
 **验收清单**：
 
@@ -2789,6 +3503,8 @@ def test_T16_construct_failure_closes_client(parent, spy, parent_client, temp_co
 
 **失败回退**：第 1/4 项说明回填或取号映射没做对，回退 `tool_runner` 改动重做（不得只删校验保留 `_active_calls`）；第 6 项若退化，核对是否误把 `delegateagent` 加入了 `FILE_OPERATION_TOOLS`/`WINDOW_TARGET_TOOLS`/`_SQL_TOOLS`（§2.5.1 结构性前提）。
 
+**实施记录（2026-11-28）**：按参考代码落地——`tool_constants.py` 新增单点常量，`tool_runner.execute_tools` 计数前归一并写回委托主名、超限结构化拒绝、三分支改读活跃集且取号统一走 `_active_indices[pos]+1`、末尾按原索引回填。探针 `backend/tests/probe_delegate_s5_parallel_cap.py` 分批跑通后完整一次 **9 passed / 0 failed**（253.95s）。过程中修正两处用例设计错误：同路径两 `read` 不构成冲突（改一写一读）、探针工具注册晚于 Agent 构造（注册后 `load_category` 灌入执行字典）。T02/T03 在 provider 限流（每 3 分钟 3 次）下前 6 路委托返回限流/超时错误体，断言改为只锁"真实执行返回的结构体 + 第 7 个被拒 + results 长度 7"，spy 仍只 6 次，上限断言未放宽。`ruff check`：F 类零命中；8 条 W29x 为未改动 docstring 的存量空白字符告警。定向回归尚未执行，不宣称 D 组全过。按用户要求不产出独立阶段验收记录文件。
+
 #### 6.2.8 S6 P1 增强（3–4 天，四个可独立验收的子阶段）
 
 | 子阶段 | 目标 | 验收要点 |
@@ -2797,6 +3513,369 @@ def test_T16_construct_failure_closes_client(parent, spy, parent_client, temp_co
 | **S6.2** 插件化 | manifest 扫描注册，新增 Agent 不放代码 | ①`config/config.yaml` 增 `tuning.agent.plugins_dir`；②放 2 个 manifest（1 合法 1 非法），启动后 `list_available` 含合法项、非法项仅 warning；③工具描述含插件 agent；④manifest 写 `track_task`/`allow_delegate` 被忽略（`config.track_task is False`）；⑤目录不存在静默跳过、不阻塞启动 |
 | **S6.3** 名粒度放行 | `tool_names` 精确放行 + 参数别名 | ①manifest 写 `tool_names:["read","find"]` 后子 `_tools_dict` 与可见列表都只剩这两项（过滤发生在 `ToolRetryEngine` 构造之前）；②`PARAM_ALIASES["delegateagent"]={"prompt":"task"}` 下传 `prompt` 能成功；③未声明 `tool_names` 时行为与 S5 一致 |
 | **S6.4** 多层与跨 provider | `allow_delegate=True` 允许 2 层；`AgentConfig` 增 `provider`/`api_base` | ①允许配置下深度 1 可再委托、深度 2 被拒；②不带 `allow_delegate` 仍只 1 层；③跨 provider 子 client 用正确 `base_url`，不误用父池；④父池不被关闭 |
+
+**TDD 实施方法（按子阶段逐个先红后绿，纪律同 S5）**：
+
+> 四个子阶段各自独立验收、串行为主（§6.2.12：S6.3 依赖 S6.2 的 manifest，S6.4 依赖 S6.3 的名粒度放行）。**先写失败用例 → 最小实现 → 重构保持绿**；禁止先落实现再补用例，禁止为变绿放宽断言。仍用真实 LLM / 真实工具 / 真实 SQLite；配置一律经 `app.config.get_config_path()` / `get_code_root()` 读写，禁止硬编码配置路径，测试目录用 `tmp_path`，不碰生产 `config.yaml`。允许的观测型打点：构造器/client 工厂 spy（包装真实现）、`caplog`、临时目录与临时 manifest；禁止 mock LLM、假 DB、替换 `run_react_cycle`、把拒绝清单/别名表/深度上限临时改小来变绿。
+>
+> 对码核实的实施缺口（写码前先确认，避免"文档写了但代码里没有"）：
+>
+> 1. **S6.1**：`task_registry.inject_system_notice(task_id, content, session_id)` 与 `drain_inbox(task_id)` 已存在、`react_step._absorb_inbox` 每轮调用（`react_step.py:244-267`），**回灌通道不用新建**；缺的是 `wait=False` 放开（`delegateagent_runner.py:785` 当前显式拒绝）、`delegate_id` 生成与后台句柄表、以及完成时注入带 `delegate_id` 的通知。注意 `drain_inbox` 返回 `(content, uid)` 元组，注入内容必须自带 `delegate_id` 文本，不能靠结构化字段。
+> 2. **S6.2**：`plugin_loader.py` 当前**不存在**，`agent_register` 只有注释占位；`AgentRegistry.load_from_manifest` 已存在且硬编码 `track_task=False`、未消费 `allow_delegate`（`agent_config.py:141-151`），越权字段天然被忽略。配置项按 `get_config().get("tuning.agent.plugins_dir", "")` 读，缺省 `get_code_root()/plugins`。
+> 3. **S6.3**：`AgentConfig` 当前无 `tool_names` 字段；`to_openai_tools` 已原生支持 `tool_names` 形参（`tool_description.py:36`），但 `tool_cache_manager.get_openai_tools` 未透传；执行面必须在 `ToolRetryEngine(self._tools_dict)` **构造之前**筛字典（`universal_agent.py:78-80`），构造后改 `_tools_dict` 不改引擎。`PARAM_ALIASES` 当前无 `delegateagent` 条目，`prompt→task` 需新增。
+> 4. **S6.4**：`AgentConfig` 无 `allow_delegate`/`provider`/`api_base` 字段；`MAX_DELEGATE_DEPTH=1` 是 runner 模块常量，须改为按配置取值；跨 provider 时 `create_llm_client` 的 `base_url` 取子配置且**不传 `shared_client`**（不能复用父 httpx 池），否则 base_url 错配。
+>
+> 四个探针均放本地 `backend/tests/`，按铁律不提交；真实 429 限流下只锁"结构与可判定事实"（状态、id、条数、DB/buffer 行、池对象身份），不锁 LLM 文案。
+
+**S6.1 异步委托（`backend/tests/probe_delegate_s6_1_async.py`）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 立即返回契约 | `wait=False` 调 `run_delegate` → 1s 内返回 `status=="running"`、非空 `delegate_id`，不再含「P1 未实现」；`wait=True` 仍同步返回 `success/failed`（回归） |
+| T02 | inbox 回灌 | 子 Agent 完成后 `inject_system_notice(父task, 带 delegate_id 的文本)`；父下一轮 `_absorb_inbox` 后 `drain_inbox` 为空且对话历史末条含该文本与 `delegate_id`（只看 inbox→历史，SSE notice 不算通过） |
+| T03 | 并发不串 | 3 个 `wait=False` 并发，三个 `delegate_id` 互不相同；3 条 inbox 通知内容各自带对应 id、不串味 |
+| T04 | 父取消联动 | 父任务 `set_cancelled` 后未完成后台委托被终止；`agent_streams` 无 `sub-` 残留；`finally cleanup_task` |
+| T05 | tool_call 配对不破 | 异步回灌期间父 already 有 assistant/tool 对，注入后对话历史 tool_call 配对仍完整（不直接改 `conversation_history`） |
+
+**S6.2 插件化（`backend/tests/probe_delegate_s6_2_plugin.py`）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 配置项与扫描器 | `plugin_loader.load_plugins` 可导入；`get_config().get("tuning.agent.plugins_dir", "")` 缺省回落 `get_code_root()/plugins` |
+| T02 | 合法/非法 manifest | `tmp_path` 放 2 个 manifest（1 合法 1 非法）→ `load_plugins()` 只返回合法 id；`list_available` 含合法项、非法项仅 warning；`caplog` 有跳过原因 |
+| T03 | 描述含插件 | `build_delegate_tool_description()` 与 `get_openai_tools(parent)` 均含插件 agent id |
+| T04 | 越权字段忽略 | manifest 写 `track_task:true`/`allow_delegate:true` → 加载后 `config.track_task is False`，本子阶段 `allow_delegate` 不生效 |
+| T05 | 目录不存在 | 指向不存在目录 → `load_plugins()` 返回 `[]`、不抛、不阻塞 |
+| T06 | 调用点生效 | spy 包装 `load_plugins`，`ensure_tools_registered()` 后确认在 `delegateagent` 注册前被调用一次 |
+
+**S6.3 名粒度放行（`backend/tests/probe_delegate_s6_3_tool_names.py`）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 执行面构造前过滤 | manifest 写 `tool_names:["read","find"]` → 子 `_tools_dict` 与 `_retry_engine._tools` **同一 dict 引用**且只剩两项；构造后无残留写类工具 |
+| T02 | 可见性同源 | `get_openai_tools(child)` 的 function name 集合恰为 `{read,find}`（可见性也读 `tool_names`，不只看分类） |
+| T03 | 参数别名 | `PARAM_ALIASES["delegateagent"]["prompt"]=="task"`；委托传 `prompt` 能成功（真调一次） |
+| T04 | 未声明不退化 | 不带 `tool_names` 的 manifest 与 S5 行为一致：子工具集按分类 + 拒绝清单，不误收窄 |
+
+**S6.4 多层与跨 provider（`backend/tests/probe_delegate_s6_4_depth.py`）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 允许两层 | `allow_delegate=True` 的 config：深度 0 委托成功、深度 1 子 Agent 再委托成功、深度 2 被拒且 summary 含「深度超限」 |
+| T02 | 默认仍一层 | 不带 `allow_delegate` → 深度 1 即被拒（S3 基线不退化） |
+| T03 | 跨 provider client | config 写 `provider`/`api_base` → 子 client 的 `llm_model.provider/api_base` 等于子配置、`shared_client` 为 None（不复用父池） |
+| T04 | 父池不被关 | 跨 provider 委托返回后父 `ensure_client_pool().is_closed is False`，子独立池已 close |
+
+**打点边界**：允许 = 构造器/client 工厂 spy、`caplog`、`tmp_path` 临时目录与合法/非法 manifest、受控 `set_current_delegate_callback`（仅观察回灌时 `finally` reset）；禁止 = mock LLM 返回、假 SQLite、替换 `run_react_cycle`/`_absorb_inbox`、临时改小拒绝清单/深度上限、把非法 manifest 改成合法来让 T02 变绿。
+
+**红绿节奏（每子阶段内全绿再进下一个）**：
+
+| 轮次 | 先写的红用例 | 让它变绿的最小实现 |
+|------|-------------|-------------------|
+| R1 | S6.1 T01 | `run_delegate` 放开 `wait=False`：生成 `delegate_id` + 后台句柄表，立即返回 running |
+| R2 | S6.1 T02–T05 | 完成回调经既有 `inject_system_notice` 注入带 id 的文本；取消联动与 inbox→历史断言 |
+| R3 | S6.2 T01、T05 | 新增 `plugin_loader.py`（按 §2.1.1 参考实现）+ 配置项读取，目录不存在静默跳过 |
+| R4 | S6.2 T02–T04、T06 | 调用点接入 `_register_agent_tools`，manifest 容错与越权字段忽略由 `load_from_manifest` 兜底 |
+| R5 | S6.3 T01、T02、T04 | `AgentConfig.tool_names` + 构造 `ToolRetryEngine` 前筛字典 + `get_openai_tools` 透传 |
+| R6 | S6.3 T03 | `PARAM_ALIASES["delegateagent"]` 加 `prompt→task` |
+| R7 | S6.4 T01、T02 | `allow_delegate` 字段 + 深度上限改配置驱动（默认仍 1） |
+| R8 | S6.4 T03、T04 | `provider`/`api_base` 字段 + 跨 provider 新建独立 client（不共享父池） |
+| R9 | 四探针 + 定向回归 + `ruff check` | 全绿、无 `skip`/`xfail`、失败集合与基线逐条相同才算 S6 可提交 |
+
+**测试代码（四个探针，本地不提交）**：
+
+```python
+# backend/tests/probe_delegate_s6_1_async.py — 小欧 2026-11-28
+# 运行：cd backend && python -m pytest tests/probe_delegate_s6_1_async.py -v --timeout=90
+import asyncio
+import uuid
+
+import pytest
+
+from app.services.agent import delegateagent_runner as runner
+from app.services.task import task_registry, task_state
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.lifecycle.service import get_service
+from app.tools import ensure_tools_registered
+
+ensure_tools_registered()
+TASK = "s6-async-probe"
+
+
+@pytest.fixture(scope="module")
+def client():
+    c = get_service()
+    yield c
+    asyncio.run(c.close())
+
+
+@pytest.fixture
+def parent(client):
+    return UniversalAgent(llm_client=client, task_id=TASK, max_steps=4, track_task=False)
+
+
+def test_T01_immediate_return(parent):
+    async def _main():
+        await task_registry.register_task(TASK)
+        try:
+            return await runner.run_delegate(parent, "researcher", "1+1=?", wait=False)
+        finally:
+            await task_registry.cleanup_task(TASK)
+    r = asyncio.run(_main())
+    assert r["status"] == "running" and r.get("delegate_id")
+    assert "P1" not in r.get("summary", "")
+
+
+def test_T02_inbox_to_history(parent):
+    did = "d-" + uuid.uuid4().hex[:8]
+    asyncio.run(task_registry.inject_system_notice(TASK, f"异步委托完成 {did}"))
+    injected = asyncio.run(task_registry.drain_inbox(TASK))
+    assert any(did in str(x[0]) for x in injected)
+    assert not asyncio.run(task_registry.drain_inbox(TASK))   # 取走后为空
+
+
+def test_T03_concurrent_ids(parent):
+    async def _main():
+        await task_registry.register_task(TASK)
+        try:
+            return await asyncio.gather(*[
+                runner.run_delegate(parent, "researcher", f"1+1=? #{i}", wait=False)
+                for i in range(3)])
+        finally:
+            await task_registry.cleanup_task(TASK)
+    rs = asyncio.run(_main())
+    ids = [r["delegate_id"] for r in rs]
+    assert len(set(ids)) == 3
+
+
+def test_T04_cancel_stops_background(parent):
+    async def _main():
+        await task_registry.register_task(TASK)
+        try:
+            r = await runner.run_delegate(parent, "researcher", "写一篇长文", wait=False)
+            await task_registry.set_cancelled(TASK)
+            await asyncio.sleep(2)
+            return r
+        finally:
+            await task_registry.cleanup_task(TASK)
+    asyncio.run(_main())
+    assert not any(k.startswith("sub-") for k in task_state.agent_streams)
+
+
+def test_T05_sync_not_regressed(parent):
+    r = asyncio.run(runner.run_delegate(parent, "researcher", "1+1=?", wait=True))
+    assert r["status"] in ("success", "failed") and "P1" not in r.get("summary", "")
+```
+
+```python
+# backend/tests/probe_delegate_s6_2_plugin.py — 小欧 2026-11-28
+# 运行：cd backend && python -m pytest tests/probe_delegate_s6_2_plugin.py -v --timeout=90
+import json
+from pathlib import Path
+
+import pytest
+
+from app.config import get_config, get_code_root
+from app.services.lifecycle.service import get_service
+from app.services.agent.universal_agent import UniversalAgent
+from app.tools import ensure_tools_registered
+from app.tools.agent import agent_register
+from app.tools.agent.agent_config import build_delegate_tool_description, get_agent_registry
+from app.tools.agent.plugin_loader import load_plugins
+from app.tools.registry import tool_registry
+
+ensure_tools_registered()
+
+
+@pytest.fixture
+def plugin_dir(tmp_path, monkeypatch):
+    d = tmp_path / "plugins"
+    (d / "ok_agent").mkdir(parents=True)
+    (d / "ok_agent" / "manifest.json").write_text(json.dumps({
+        "name": "s6_ok", "description": "探针合法插件",
+        "tool_categories": ["fundamental"], "max_steps": 4,
+        "track_task": True, "allow_delegate": True,
+    }), encoding="utf-8")
+    (d / "bad_agent").mkdir()
+    (d / "bad_agent" / "manifest.json").write_text("{bad json", encoding="utf-8")
+    monkeypatch.setattr("app.config.get_config", lambda: {"tuning.agent.plugins_dir": str(d)})
+    yield d
+    get_agent_registry().unregister("s6_ok")
+
+
+def test_T01_config_and_loader():
+    assert callable(load_plugins)
+    root = Path(get_config().get("tuning.agent.plugins_dir", "") or get_code_root()) / "plugins"
+    assert isinstance(root, Path)
+
+
+def test_T02_manifest_tolerant(plugin_dir, caplog):
+    loaded = load_plugins()
+    assert "s6_ok" in loaded and "s6_ok" in get_agent_registry().list_available()
+    assert "bad json" in caplog.text or "manifest" in caplog.text.lower()
+
+
+def test_T03_description_has_plugin(plugin_dir):
+    load_plugins()
+    assert "s6_ok" in build_delegate_tool_description()
+    client = get_service()
+    agent = UniversalAgent(llm_client=client, task_id="s6-plugin-probe", track_task=False)
+    tools = {t["function"]["name"]: t["function"]["description"]
+             for t in tool_registry.to_openai_tools(categories=agent._loaded_categories)}
+    assert "s6_ok" in tools["delegateagent"]["description"]
+
+
+def test_T04_no_privilege_escalation(plugin_dir):
+    load_plugins()
+    cfg = get_agent_registry().get("s6_ok")
+    assert cfg.track_task is False
+
+
+def test_T05_missing_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.config.get_config", lambda: {"tuning.agent.plugins_dir": str(tmp_path / "nope")})
+    assert load_plugins() == []
+
+
+def test_T06_call_site(monkeypatch):
+    calls = []
+    real = agent_register.load_plugins
+    monkeypatch.setattr(agent_register, "load_plugins", lambda: calls.append(1) or real())
+    agent_register._register_agent_tools()
+    assert calls and tool_registry.get_tool("delegateagent") is not None
+```
+
+```python
+# backend/tests/probe_delegate_s6_3_tool_names.py — 小欧 2026-11-28
+# 运行：cd backend && python -m pytest tests/probe_delegate_s6_3_tool_names.py -v --timeout=90
+import pytest
+
+from app.services.agent.tool_cache_manager import get_openai_tools
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.lifecycle.service import get_service
+from app.tools import ensure_tools_registered
+from app.tools.agent.agent_config import AgentConfig, get_agent_registry
+from app.tools.tools_alias_mapper import PARAM_ALIASES
+from app.tools.tool_types import ToolCategory
+
+ensure_tools_registered()
+
+
+@pytest.fixture
+def named_agent():
+    cfg = AgentConfig(agent_id="s6_named", description="探针名粒度",
+                      tool_categories={ToolCategory.FILE, ToolCategory.FUNDAMENTAL},
+                      tool_names={"read", "find"})
+    get_agent_registry().register(cfg)
+    c = get_service()
+    agent = UniversalAgent(llm_client=c, task_id="s6-named-probe",
+                           initial_categories={ToolCategory.FILE, ToolCategory.FUNDAMENTAL},
+                           tool_names=cfg.tool_names, track_task=False)
+    yield agent
+    get_agent_registry().unregister("s6_named")
+
+
+def test_T01_exec_and_visible(named_agent):
+    assert set(named_agent._tools_dict) == {"read", "find"}
+    assert set(named_agent._retry_engine._tools) == {"read", "find"}
+    assert named_agent._retry_engine._tools is named_agent._tools_dict
+    assert {t["function"]["name"] for t in get_openai_tools(named_agent)} == {"read", "find"}
+
+
+def test_T02_param_alias():
+    assert PARAM_ALIASES["delegateagent"]["prompt"] == "task"
+
+
+def test_T03_no_tool_names_default():
+    c = get_service()
+    agent = UniversalAgent(llm_client=c, task_id="s6-default-probe", track_task=False)
+    assert "write" in agent._tools_dict       # 未声明 tool_names 不误收窄
+```
+
+```python
+# backend/tests/probe_delegate_s6_4_depth.py — 小欧 2026-11-28
+# 运行：cd backend && python -m pytest tests/probe_delegate_s6_4_depth.py -v --timeout=90
+import asyncio
+
+import pytest
+
+from app.services.agent import delegateagent_runner as runner
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.lifecycle.service import get_service
+from app.tools import ensure_tools_registered
+from app.tools.agent.agent_config import AgentConfig, get_agent_registry
+from app.tools.tool_types import ToolCategory
+
+ensure_tools_registered()
+
+
+@pytest.fixture
+def parent():
+    c = get_service()
+    return UniversalAgent(llm_client=c, task_id="s6-depth-probe", max_steps=4, track_task=False)
+
+
+@pytest.fixture
+def configs():
+    made = []
+    yield
+    for aid in made:
+        get_agent_registry().unregister(aid)
+
+
+def test_T01_two_levels(parent, configs):
+    get_agent_registry().register(AgentConfig(agent_id="s6_l1", description="一层",
+        tool_categories={ToolCategory.FUNDAMENTAL}, allow_delegate=True))
+    get_agent_registry().register(AgentConfig(agent_id="s6_l2", description="二层",
+        tool_categories={ToolCategory.FUNDAMENTAL}, allow_delegate=True))
+    configs.extend(["s6_l1", "s6_l2"])
+    tok = runner._current_delegate_depth.set(1)
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "s6_l1", "1+1=?"))
+        assert "深度超限" not in r.get("summary", "")   # 深度 1 不再早退
+        tok2 = runner._current_delegate_depth.set(2)
+        try:
+            r2 = asyncio.run(runner.run_delegate(parent, "s6_l2", "x"))
+            assert r2["status"] == "error" and "深度超限" in r2["summary"]
+        finally:
+            runner._current_delegate_depth.reset(tok2)
+    finally:
+        runner._current_delegate_depth.reset(tok)
+
+
+def test_T02_default_one_level(parent):
+    import asyncio
+    tok = runner._current_delegate_depth.set(1)
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "researcher", "x"))
+        assert r["status"] == "error" and "深度超限" in r["summary"]
+    finally:
+        runner._current_delegate_depth.reset(tok)
+
+
+def test_T03_cross_provider(parent, configs, monkeypatch):
+    from app.llm import client_sdk
+    seen = {}
+    real = client_sdk.create_llm_client
+
+    def _spy(*a, **kw):
+        seen.update(kw)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(client_sdk, "create_llm_client", _spy)
+    get_agent_registry().register(AgentConfig(agent_id="s6_cross", description="跨provider",
+        tool_categories={ToolCategory.FUNDAMENTAL}, model="m",
+        provider="p2", api_base="https://p2.example"))
+    configs.append("s6_cross")
+    import asyncio
+    r = asyncio.run(runner.run_delegate(parent, "s6_cross", "1+1=?"))
+    assert isinstance(r, dict)
+    assert seen.get("llm_model") is not None and seen.get("shared_client") is None
+    assert parent.llm_client.ensure_client_pool().is_closed is False
+```
+
+**退出判据**：S6.1–S6.4 共 T01–T05（各子阶段）全绿，无 `skip`/`xfail`；S6.1 必须证明父 LLM 经 inbox 真读到结果（不是只看到 notice）；四个探针与 S1–S5 探针全绿、定向回归失败集合与基线逐条相同、`ruff check` 全过；探针按铁律不提交。
+
+**原验收要点表格（见上）与退出标准保持不变**：
 
 **退出标准**：四个子阶段各自全绿后才算 S6 完成；S6.1 必须验证"父 LLM 真能读到结果"（只看 SSE 出现 notice 不算通过）。
 
