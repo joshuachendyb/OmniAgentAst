@@ -37,6 +37,8 @@
 - v2.21 2026-11-28 11:26:42 小欧 §6.2.8 S6 补 TDD 实施方法（四个子阶段逐个先红后绿，只写测试与实施口径，不改原验收要点与退出标准）：对码核实四处缺口——异步回灌通道已存在但 `wait=False` 仍显式拒绝、插件扫描器与配置项不存在、`tool_names` 字段与构造前过滤/参数别名缺失、`allow_delegate`/`provider`/`api_base` 字段与深度上限配置化缺失；新增 S6.1–S6.4 四组用例表（各 T01–T05）、打点边界、9 轮红绿节奏与四个可运行探针代码；明确 S6.1 必须证明父 LLM 经 inbox 真读到结果
 - v2.22 2026-11-28 11:31:16 小欧 §6.2.6 S4 按 TDD 真实落码完成（红线→最小实现→全绿）：四处改动全部落地——`agent_config.py` 新增动态描述、`agent_register.py` 四张表+注册循环+插件占位、`tool_executor.py` 归一名注入+token 守卫 reset+四层 usage 合并写 DB、`tools_alias_mapper.py` 四别名；探针首轮 ImportError 红，逐组推进后离线用例 A/C/D 组共 15 条全绿、定向回归 101 passed、`ruff` 无新增错误。B/E 组真实 LLM 用例（T03/T03b/T03c/T03d/T04c/T04d/T07）受服务端账户级 429 速率限制（每 3 分钟 1 次、Retry-After 等待 >工具 60s 保险丝）本环境不可验证，如实标注、不宣称全绿；探针落盘两处实测修正：共享事件循环（避免跨 loop 异常）、`temp_config` 改 `setdefault` 覆盖语义（文档参考代码同步修正）
 - v2.22 2026-11-28 11:29:17 小欧 补记 S4/S5 实施记录（不产出独立阶段验收记录文件，按用户要求写回正文）：S4 代码对码核实与参考代码 0 处差异、探针与 E2E 未落盘不宣称全绿；S5 探针完整 9 passed、修两处用例设计错误、429 限流下只锁真实执行与拒绝契约不放宽上限断言、ruff F 类零命中但有 8 条存量 W29x、定向回归未执行故不宣称 D 组全过
+- v2.23 2026-11-28 11:43:57 小欧 §6.2.8 S6 TDD 实施方法合规修正（四个子阶段的验收要点与退出标准不变）：①对码订正 `to_openai_tools(tool_names=...)` 语义为「额外包含」而非「精确白名单」，S6.3 须新增真正的白名单过滤路径，不能靠透传达成；②S6.1 T02/T04 改为可真正变红的用例——T02 真跑 `_absorb_inbox` 并断言 `message_builder.conversation_history` 含 `delegate_id`，T04 先确认 `sub-` 委托已创建再取消并断言清退，使退出判据可验证；③S6.3 明确 `UniversalAgent.__init__` 新增 `tool_names` 形参并写入 R5，runner 构造子 Agent 处透传 `config.tool_names`；④S6.4 补 T04 子池关闭断言、`shared_client` 改为显式传参校验；⑤对齐用例表／探针／红绿节奏／退出判据的编号与条数，并标注别名与两层成功在 429 限流下的锁定位；⑥订正对码行号（`delegateagent_runner.py:785` → 221-223）、插件目录配置语义（配置项即插件目录，缺省回落 `get_code_root()/plugins`）、清理探针内冗余 import；⑦T05 口径改为同步回归，把 tool_call 配对不破并入 T02 的历史条数断言，消除用例表与探针不符
+- v2.24 2026-11-28 12:56:23 小欧 修正 S6 实施中发现的 manifest 隐式强转缺陷：`agent_config.load_from_manifest` 去掉 `int()/float()`，原值交 `__post_init__` 统一校验，非法 manifest 由外层跳过+warning（原 v2.15 与正文"保持不变、解析后仍走严格校验"的口径不成立：强转发生在校验前，会把 `true`/`"8"`/`8.5` 洗白成合法 int/float）；同步订正正文该说明，不改字段语义与默认值
 
 
 ---
@@ -1728,7 +1730,7 @@ TOOL_NAME_ALIASES.update({
 | `tool_categories` | 只判真假 | 必须 `Set[ToolCategory]`，str/list/含非法成员一律 `TypeError` | `set("file")` 拆成 `{'f','i','l','e'}`，`effective_categories()` 返回字符集，运行期工具子集静默失控 |
 | `track_task` | 无校验 | 必须 `bool`，否则 `TypeError` | `"false"` 为真 → 子 Agent 静默进用户任务台账（S0 同款缺陷） |
 
-> 这四处只改校验口径，不改字段语义与默认值；`load_from_manifest` 内的 `int()/float()` 解析保持不变（manifest 是 JSON，数字与字符串混用属外部输入，解析后交给 `__post_init__` 仍走严格校验）。
+> 这四处只改校验口径，不改字段语义与默认值；`load_from_manifest` 同样不做隐式强转——原值直传 `__post_init__` 作唯一校验点。manifest 是 JSON，数字与字符串混用属外部输入，类型非法（如 `true`、`"8"`、`8.5` 用于 `max_steps`）由外层 `try/except` 跳过该插件并 warning，不洗白成合法值（原"保持不变、解析后仍走严格校验"的说法不成立：强转发生在校验之前，会把非法输入变成合法 int/float）。
 
 **红绿节奏（每轮只推进一组，跑完再进下一组）**：
 
@@ -3520,9 +3522,9 @@ def test_T09_conflict_still_serial(parent, events, tmp_path):
 >
 > 对码核实的实施缺口（写码前先确认，避免"文档写了但代码里没有"）：
 >
-> 1. **S6.1**：`task_registry.inject_system_notice(task_id, content, session_id)` 与 `drain_inbox(task_id)` 已存在、`react_step._absorb_inbox` 每轮调用（`react_step.py:244-267`），**回灌通道不用新建**；缺的是 `wait=False` 放开（`delegateagent_runner.py:785` 当前显式拒绝）、`delegate_id` 生成与后台句柄表、以及完成时注入带 `delegate_id` 的通知。注意 `drain_inbox` 返回 `(content, uid)` 元组，注入内容必须自带 `delegate_id` 文本，不能靠结构化字段。
+> 1. **S6.1**：`task_registry.inject_system_notice(task_id, content, session_id)` 与 `drain_inbox(task_id)` 已存在、`react_step._absorb_inbox` 每轮调用（`react_step.py:244-267`），**回灌通道不用新建**；缺的是 `wait=False` 放开（`delegateagent_runner.py:221-223` 当前显式拒绝）、`delegate_id` 生成与后台句柄表、以及完成时注入带 `delegate_id` 的通知。注意 `drain_inbox` 返回 `(content, uid)` 元组，注入内容必须自带 `delegate_id` 文本，不能靠结构化字段。
 > 2. **S6.2**：`plugin_loader.py` 当前**不存在**，`agent_register` 只有注释占位；`AgentRegistry.load_from_manifest` 已存在且硬编码 `track_task=False`、未消费 `allow_delegate`（`agent_config.py:141-151`），越权字段天然被忽略。配置项按 `get_config().get("tuning.agent.plugins_dir", "")` 读，缺省 `get_code_root()/plugins`。
-> 3. **S6.3**：`AgentConfig` 当前无 `tool_names` 字段；`to_openai_tools` 已原生支持 `tool_names` 形参（`tool_description.py:36`），但 `tool_cache_manager.get_openai_tools` 未透传；执行面必须在 `ToolRetryEngine(self._tools_dict)` **构造之前**筛字典（`universal_agent.py:78-80`），构造后改 `_tools_dict` 不改引擎。`PARAM_ALIASES` 当前无 `delegateagent` 条目，`prompt→task` 需新增。
+> 3. **S6.3**：`AgentConfig` 当前无 `tool_names` 字段；`to_openai_tools` 的 `tool_names` 形参语义是**额外包含**（`tool_description.py:45/66-68`：分类命中的工具无条件保留，`tool_names` 只放行分类外的工具），**不是精确白名单**，因此不能靠「透传」达成「只剩两项」——须新增真正的白名单过滤（`categories=None` + `tool_names` 精确集，或独立过滤路径）；`tool_cache_manager.get_openai_tools` 当前只透传 `exclude`、未透传 `tool_names`（`tool_cache_manager.py:31-34`）；执行面必须在 `ToolRetryEngine(self._tools_dict)` **构造之前**筛字典（`universal_agent.py:78-80`），构造后改 `_tools_dict` 不改引擎。子 Agent 唯一构造点在 `delegateagent_runner.py:259-266`，`tool_names` 须由 `AgentConfig` 在该处传入；`UniversalAgent.__init__`（`universal_agent.py:52-60`）当前无 `tool_names` 形参，新增该形参并接入 `ToolLoader.init_tools` 属 R5 最小实现。`PARAM_ALIASES` 当前无 `delegateagent` 条目，`prompt→task` 需新增。
 > 4. **S6.4**：`AgentConfig` 无 `allow_delegate`/`provider`/`api_base` 字段；`MAX_DELEGATE_DEPTH=1` 是 runner 模块常量，须改为按配置取值；跨 provider 时 `create_llm_client` 的 `base_url` 取子配置且**不传 `shared_client`**（不能复用父 httpx 池），否则 base_url 错配。
 >
 > 四个探针均放本地 `backend/tests/`，按铁律不提交；真实 429 限流下只锁"结构与可判定事实"（状态、id、条数、DB/buffer 行、池对象身份），不锁 LLM 文案。
@@ -3532,10 +3534,10 @@ def test_T09_conflict_still_serial(parent, events, tmp_path):
 | # | 场景 | 测试设计（输入 → 预期 → 断言） |
 |---|------|-------------------------------|
 | T01 | 立即返回契约 | `wait=False` 调 `run_delegate` → 1s 内返回 `status=="running"`、非空 `delegate_id`，不再含「P1 未实现」；`wait=True` 仍同步返回 `success/failed`（回归） |
-| T02 | inbox 回灌 | 子 Agent 完成后 `inject_system_notice(父task, 带 delegate_id 的文本)`；父下一轮 `_absorb_inbox` 后 `drain_inbox` 为空且对话历史末条含该文本与 `delegate_id`（只看 inbox→历史，SSE notice 不算通过） |
-| T03 | 并发不串 | 3 个 `wait=False` 并发，三个 `delegate_id` 互不相同；3 条 inbox 通知内容各自带对应 id、不串味 |
-| T04 | 父取消联动 | 父任务 `set_cancelled` 后未完成后台委托被终止；`agent_streams` 无 `sub-` 残留；`finally cleanup_task` |
-| T05 | tool_call 配对不破 | 异步回灌期间父 already 有 assistant/tool 对，注入后对话历史 tool_call 配对仍完整（不直接改 `conversation_history`） |
+| T02 | inbox 回灌 | 子 Agent 完成后 `inject_system_notice(父task, 带 delegate_id 的文本)`；父下一轮 `_absorb_inbox`（或父 step）后 `drain_inbox` 为空且对话历史末条含该文本与 `delegate_id`（只看 inbox→历史，SSE notice 不算通过；探针须真跑吸收路径，只手工 `inject`/`drain` 不算通过；注入前已有 assistant/tool 对时配对不破，以历史条数只 +1 判定） |
+| T03 | 并发不串 | 3 个 `wait=False` 并发，三个 `delegate_id` 互不相同；3 条 inbox 通知内容各自带对应 id、不串味（探针锁 id 唯一；通知内容不串由完成回调注入实现与 T02 同源覆盖） |
+| T04 | 父取消联动 | 父任务 `set_cancelled` 后未完成后台委托被终止；`agent_streams` 无 `sub-` 残留；`finally cleanup_task`（探针须先让 `wait=False` 真正创建 `sub-` 委托再取消，仅在 `wait=False` 被拒绝时断言无 `sub-` 属恒绿、不算通过） |
+| T05 | 同步回归 | `wait=True` 仍同步返回 `success/failed`，不再含「P1 未实现」拒绝；异步 T01–T04 不改同步路径行为（tool_call 配对不破由 T02 的历史条数断言覆盖） |
 
 **S6.2 插件化（`backend/tests/probe_delegate_s6_2_plugin.py`）**
 
@@ -3554,33 +3556,33 @@ def test_T09_conflict_still_serial(parent, events, tmp_path):
 |---|------|-------------------------------|
 | T01 | 执行面构造前过滤 | manifest 写 `tool_names:["read","find"]` → 子 `_tools_dict` 与 `_retry_engine._tools` **同一 dict 引用**且只剩两项；构造后无残留写类工具 |
 | T02 | 可见性同源 | `get_openai_tools(child)` 的 function name 集合恰为 `{read,find}`（可见性也读 `tool_names`，不只看分类） |
-| T03 | 参数别名 | `PARAM_ALIASES["delegateagent"]["prompt"]=="task"`；委托传 `prompt` 能成功（真调一次） |
+| T03 | 参数别名 | `PARAM_ALIASES["delegateagent"]["prompt"]=="task"`；别名归一执行路径由 S4 探针覆盖，本探针只锁映射表条目（真调一次受 429 限流时按同一口径） |
 | T04 | 未声明不退化 | 不带 `tool_names` 的 manifest 与 S5 行为一致：子工具集按分类 + 拒绝清单，不误收窄 |
 
 **S6.4 多层与跨 provider（`backend/tests/probe_delegate_s6_4_depth.py`）**
 
 | # | 场景 | 测试设计（输入 → 预期 → 断言） |
 |---|------|-------------------------------|
-| T01 | 允许两层 | `allow_delegate=True` 的 config：深度 0 委托成功、深度 1 子 Agent 再委托成功、深度 2 被拒且 summary 含「深度超限」 |
+| T01 | 允许两层 | `allow_delegate=True` 的 config：深度 0 委托成功、深度 1 子 Agent 再委托成功、深度 2 被拒且 summary 含「深度超限」（探针只锁深度门禁早退边界；「两层都成功」由真实委托调用覆盖，429 限流下不锁 LLM 文案） |
 | T02 | 默认仍一层 | 不带 `allow_delegate` → 深度 1 即被拒（S3 基线不退化） |
 | T03 | 跨 provider client | config 写 `provider`/`api_base` → 子 client 的 `llm_model.provider/api_base` 等于子配置、`shared_client` 为 None（不复用父池） |
 | T04 | 父池不被关 | 跨 provider 委托返回后父 `ensure_client_pool().is_closed is False`，子独立池已 close |
 
-**打点边界**：允许 = 构造器/client 工厂 spy、`caplog`、`tmp_path` 临时目录与合法/非法 manifest、受控 `set_current_delegate_callback`（仅观察回灌时 `finally` reset）；禁止 = mock LLM 返回、假 SQLite、替换 `run_react_cycle`/`_absorb_inbox`、临时改小拒绝清单/深度上限、把非法 manifest 改成合法来让 T02 变绿。
+**打点边界**：允许 = 构造器/client 工厂 spy、`caplog`、`tmp_path` 临时目录与合法/非法 manifest、受控 `set_current_delegate_callback`（仅观察回灌时 `finally` reset）；禁止 = mock LLM 返回、假 SQLite、替换 `run_react_cycle`/`_absorb_inbox`、临时改小拒绝清单/深度上限、把非法 manifest 改成合法来让 T02 变绿。S6.3 的 `named_agent` 直接构造只验证执行面（`_tools_dict` / `_retry_engine` / 可见性）过滤；真实委托路径由 runner 在 `delegateagent_runner.py:259-266` 透传 `config.tool_names` 覆盖（R5），两者缺一不可。
 
 **红绿节奏（每子阶段内全绿再进下一个）**：
 
 | 轮次 | 先写的红用例 | 让它变绿的最小实现 |
 |------|-------------|-------------------|
 | R1 | S6.1 T01 | `run_delegate` 放开 `wait=False`：生成 `delegate_id` + 后台句柄表，立即返回 running |
-| R2 | S6.1 T02–T05 | 完成回调经既有 `inject_system_notice` 注入带 id 的文本；取消联动与 inbox→历史断言 |
+| R2 | S6.1 T02–T05 | 完成回调经既有 `inject_system_notice` 注入带 id 的文本；探针 T02 必须真跑 `_absorb_inbox` 且断言 `message_builder.conversation_history` 含 `delegate_id`（只手工 `inject`/`drain` 不算红转绿）；T04 须先确认 `sub-` 委托已创建再取消并断言清退 |
 | R3 | S6.2 T01、T05 | 新增 `plugin_loader.py`（按 §2.1.1 参考实现）+ 配置项读取，目录不存在静默跳过 |
 | R4 | S6.2 T02–T04、T06 | 调用点接入 `_register_agent_tools`，manifest 容错与越权字段忽略由 `load_from_manifest` 兜底 |
-| R5 | S6.3 T01、T02、T04 | `AgentConfig.tool_names` + 构造 `ToolRetryEngine` 前筛字典 + `get_openai_tools` 透传 |
-| R6 | S6.3 T03 | `PARAM_ALIASES["delegateagent"]` 加 `prompt→task` |
+| R5 | S6.3 表 T01、T02、T04 | `AgentConfig.tool_names` 字段 + `UniversalAgent.__init__` 新增 `tool_names` 形参并接入 `ToolLoader.init_tools`（在 `ToolRetryEngine(self._tools_dict)` 构造前筛字典，`universal_agent.py:80`）+ runner 构造子 Agent 处透传 `config.tool_names`（`delegateagent_runner.py:259-266`）+ `get_openai_tools` 以 `tool_names` 作**精确白名单**（不能用现有「额外包含」语义，否则分类内工具不会被收窄） |
+| R6 | S6.3 表 T03 | `PARAM_ALIASES["delegateagent"]` 加 `prompt→task`（别名归一执行路径由 S4 探针覆盖，本探针只锁映射表条目） |
 | R7 | S6.4 T01、T02 | `allow_delegate` 字段 + 深度上限改配置驱动（默认仍 1） |
 | R8 | S6.4 T03、T04 | `provider`/`api_base` 字段 + 跨 provider 新建独立 client（不共享父池） |
-| R9 | 四探针 + 定向回归 + `ruff check` | 全绿、无 `skip`/`xfail`、失败集合与基线逐条相同才算 S6 可提交 |
+| R9 | 四探针 + 定向回归 + `ruff check` | 全绿、无 `skip`/`xfail`、失败集合与基线逐条相同才算 S6 可提交；探针条数以实际代码为准（S6.1 5 条、S6.2 6 条、S6.3 3 条、S6.4 4 条） |
 
 **测试代码（四个探针，本地不提交）**：
 
@@ -3593,6 +3595,7 @@ import uuid
 import pytest
 
 from app.services.agent import delegateagent_runner as runner
+from app.services.agent import react_step
 from app.services.task import task_registry, task_state
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.lifecycle.service import get_service
@@ -3628,10 +3631,22 @@ def test_T01_immediate_return(parent):
 
 def test_T02_inbox_to_history(parent):
     did = "d-" + uuid.uuid4().hex[:8]
-    asyncio.run(task_registry.inject_system_notice(TASK, f"异步委托完成 {did}"))
-    injected = asyncio.run(task_registry.drain_inbox(TASK))
-    assert any(did in str(x[0]) for x in injected)
-    assert not asyncio.run(task_registry.drain_inbox(TASK))   # 取走后为空
+    async def _main():
+        await task_registry.register_task(TASK)
+        try:
+            parent.message_builder.add_assistant_tool_call([{"id": "c1", "type": "function"}])
+            parent.message_builder.add_tool_result("c1", "done")
+            before = len(parent.message_builder.conversation_history)
+            await task_registry.inject_system_notice(TASK, f"异步委托完成 {did}")
+            n = await react_step._absorb_inbox(parent)      # 真跑吸收路径，不是手工 drain
+            assert n >= 1
+            assert not await task_registry.drain_inbox(TASK)              # inbox 已取走
+            hist = parent.message_builder.conversation_history
+            assert len(hist) == before + 1                                # 已有 assistant/tool 对未被改写
+            assert any(did in str(m.get("content", "")) for m in hist)    # 父 LLM 真读到
+        finally:
+            await task_registry.cleanup_task(TASK)
+    asyncio.run(_main())
 
 
 def test_T03_concurrent_ids(parent):
@@ -3653,13 +3668,16 @@ def test_T04_cancel_stops_background(parent):
         await task_registry.register_task(TASK)
         try:
             r = await runner.run_delegate(parent, "researcher", "写一篇长文", wait=False)
+            assert r["status"] == "running" and r.get("delegate_id")      # 必须先真创建后台委托
+            await asyncio.sleep(0.1)
+            assert any(k.startswith("sub-") for k in task_state.agent_streams)  # 后台委托已建
             await task_registry.set_cancelled(TASK)
             await asyncio.sleep(2)
             return r
         finally:
             await task_registry.cleanup_task(TASK)
     asyncio.run(_main())
-    assert not any(k.startswith("sub-") for k in task_state.agent_streams)
+    assert not any(k.startswith("sub-") for k in task_state.agent_streams)  # 取消联动已清退
 
 
 def test_T05_sync_not_regressed(parent):
@@ -3705,7 +3723,7 @@ def plugin_dir(tmp_path, monkeypatch):
 
 def test_T01_config_and_loader():
     assert callable(load_plugins)
-    root = Path(get_config().get("tuning.agent.plugins_dir", "") or get_code_root()) / "plugins"
+    root = Path(get_config().get("tuning.agent.plugins_dir", "") or str(Path(get_code_root()) / "plugins"))
     assert isinstance(root, Path)
 
 
@@ -3843,7 +3861,6 @@ def test_T01_two_levels(parent, configs):
 
 
 def test_T02_default_one_level(parent):
-    import asyncio
     tok = runner._current_delegate_depth.set(1)
     try:
         r = asyncio.run(runner.run_delegate(parent, "researcher", "x"))
@@ -3866,14 +3883,34 @@ def test_T03_cross_provider(parent, configs, monkeypatch):
         tool_categories={ToolCategory.FUNDAMENTAL}, model="m",
         provider="p2", api_base="https://p2.example"))
     configs.append("s6_cross")
-    import asyncio
     r = asyncio.run(runner.run_delegate(parent, "s6_cross", "1+1=?"))
     assert isinstance(r, dict)
-    assert seen.get("llm_model") is not None and seen.get("shared_client") is None
+    assert seen.get("llm_model") is not None
+    assert "shared_client" in seen and seen["shared_client"] is None  # 显式传 None，不是省略参数
     assert parent.llm_client.ensure_client_pool().is_closed is False
+
+
+def test_T04_child_pool_closed(parent, configs, monkeypatch):
+    from app.llm import client_sdk
+    made = []
+    real = client_sdk.create_llm_client
+
+    def _spy(*a, **kw):
+        c = real(*a, **kw)
+        made.append(c)
+        return c
+
+    monkeypatch.setattr(client_sdk, "create_llm_client", _spy)
+    get_agent_registry().register(AgentConfig(agent_id="s6_cross2", description="跨provider",
+        tool_categories={ToolCategory.FUNDAMENTAL}, model="m",
+        provider="p2", api_base="https://p2.example"))
+    configs.append("s6_cross2")
+    asyncio.run(runner.run_delegate(parent, "s6_cross2", "1+1=?"))
+    assert made and made[0].ensure_client_pool().is_closed            # 子独立池已关闭
+    assert parent.llm_client.ensure_client_pool().is_closed is False  # 父池不受影响
 ```
 
-**退出判据**：S6.1–S6.4 共 T01–T05（各子阶段）全绿，无 `skip`/`xfail`；S6.1 必须证明父 LLM 经 inbox 真读到结果（不是只看到 notice）；四个探针与 S1–S5 探针全绿、定向回归失败集合与基线逐条相同、`ruff check` 全过；探针按铁律不提交。
+**退出判据**：四个探针实际条数全绿（S6.1 T01–T05、S6.2 T01–T06、S6.3 T01–T03、S6.4 T01–T04），无 `skip`/`xfail`；S6.1 必须证明父 LLM 经 inbox 真读到结果——探针 T02 真跑 `_absorb_inbox` 且 `message_builder.conversation_history` 末条含 `delegate_id`，只手工 `inject`/`drain` 不算通过；四个探针与 S1–S5 探针全绿、定向回归失败集合与基线逐条相同、`ruff check` 全过；探针按铁律不提交。
 
 **原验收要点表格（见上）与退出标准保持不变**：
 
