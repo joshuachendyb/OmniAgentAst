@@ -32,6 +32,10 @@ def get_openai_tools(agent) -> list:
         categories=agent._loaded_categories,
         exclude=getattr(agent, "_excluded_tools", None),   # 2026-11-27 小欧 - 拒绝清单可见性同源
     )
+    # 小欧 2026-11-28 - 精确白名单收窄: to_openai_tools(tool_names=) 是"额外包含"语义，不能用于只留具名工具
+    _names = getattr(agent, "_tool_names", None)
+    if _names:
+        tools = [t for t in tools if t.get("function", {}).get("name") in _names]
 
     override = getattr(agent, '_searchtool_desc_override', None)
     if override:

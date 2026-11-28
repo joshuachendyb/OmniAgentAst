@@ -29,6 +29,7 @@
     构造失败 _close_quietly；T16 用 spy 记录 close() 验证（共享池 close 为 no-op）
   2026-11-28 - OmniAgent - 三堂会审整改：清除注释中的文档章节号与阶段号引用，
     纯注释改动零行为变更
+  2026-11-28 - 小欧 - 异步委托落地：wait=False 立即返回 delegate_id 并后台执行，完成后经既有 inbox 注入通知父任务；父取消联动复用 _run_child_guarded 的既有轮询
 """
 import asyncio
 import contextvars
@@ -39,8 +40,10 @@ from typing import Any, Dict, Optional
 
 from app.logger import logger
 from app.services.agent.universal_agent import UniversalAgent
+from app.services.task.task_registry import inject_system_notice
 from app.services.task.task_state import (
     create_task_stream_buffer,
+    get_task_field,
     is_cancel_requested,
     reclaim_memory_buffer,
 )
@@ -56,6 +59,10 @@ from app.tools.tool_types import ToolCategory
 MAX_DELEGATE_DEPTH = 1        # P0 只允许 1 层委托；P1 引入 allow_delegate 字段时改配置驱动
 _POLL_S = 1.0                 # 取消/超时轮询步长（异步等待，不阻塞事件循环）
 _CANCEL_GRACE_S = 5.0         # 取消后等待子任务真正退出的上限；超时即放弃等待并留错误日志
+
+# 异步委托后台句柄表（delegate_id -> asyncio.Task） — 小欧 2026-11-28
+# 只持强引用防任务被回收；生命周期由任务自身收口，父取消联动复用 _run_child_guarded 的既有轮询。
+_background_delegates: Dict[str, asyncio.Task] = {}
 
 # 小欧 2026-11-28 BUG-3 整改：子 Agent 只读能力白名单（静态枚举）。
 # 名单制 DELEGATE_DENY_TOOLS 对"未列入 PATH_* 的新工具"天然 fail-open，与只读承诺冲突。
@@ -192,16 +199,10 @@ async def run_delegate(
     agent_id: str,
     task: str,
     context: Optional[Dict[str, Any]] = None,
-    wait: bool = True,  # P0 恒 True 同步；P1 False 走后台任务 + inbox 回灌
+    wait: bool = True,  # True 同步等待结果；False 后台运行 + inbox 回灌
 ) -> Dict[str, Any]:
-    """执行一次子 Agent 委托"""
+    """执行一次子 Agent 委托；wait=False 立即返回 delegate_id，完成后经 inbox 通知父任务"""
     from app.services.agent.status_table import AgentStatus
-
-    # 深度硬顶：不看工具可见性，只看当前调用栈深度（P0 上限 1 层）
-    depth = _current_delegate_depth.get()
-    if depth >= MAX_DELEGATE_DEPTH:
-        return {"status": "error",
-                "summary": f"委托深度超限(当前 {depth}，上限 {MAX_DELEGATE_DEPTH})，子Agent不可再委托"}
 
     registry = get_agent_registry()
     config = registry.get(agent_id)
@@ -212,15 +213,57 @@ async def run_delegate(
             "summary": f"未知 agent_id '{agent_id}'，可用: {available}",
         }
 
+    # 深度硬顶：默认 1 层；allow_delegate 的 Agent 放宽到 2 层（小欧 2026-11-28）
+    depth = _current_delegate_depth.get()
+    max_depth = 2 if config.allow_delegate else MAX_DELEGATE_DEPTH
+    if depth >= max_depth:
+        return {"status": "error",
+                "summary": f"委托深度超限(当前 {depth}，上限 {max_depth})，子Agent不可再委托"}
+
     # 父任务已取消 → 不启动子 Agent（运行中的子 Agent 由 _run_child_guarded 轮询联动）
     if is_cancel_requested(agent.task_id):
         return {"status": "error", "summary": "父任务已取消，跳过委托"}
 
-    # P0 只实现同步路径：wait=False 必须显式拒绝，不能静默当同步跑——
-    # 谎报"已后台执行"比直接说"未实现"更坏（LLM 会据此继续推进错误假设）。
-    if not wait:
-        return {"status": "error",
-                "summary": "异步委托(wait=False)属 P1 能力，当前版本未实现；请用 wait=True 同步等待结果"}
+    if wait:
+        return await _execute_delegate(agent, config, task, context, AgentStatus)
+
+    # 异步：后台句柄表持引用；父任务取消由 _run_child_guarded 的既有轮询联动终止子 Agent
+    delegate_id = "d-" + uuid.uuid4().hex[:12]
+    parent_task_id = agent.task_id
+    session_id = await get_task_field(parent_task_id, "session_id")
+
+    async def _background():
+        outcome = ""
+        try:
+            result = await _execute_delegate(agent, config, task, context, AgentStatus)
+            outcome = f"异步委托 {delegate_id} 完成: {str(result.get('summary', ''))[:300]}"
+        except asyncio.CancelledError:
+            outcome = f"异步委托 {delegate_id} 因父任务取消而终止"
+            raise
+        except Exception as e:
+            outcome = f"异步委托 {delegate_id} 失败: {e}"
+        finally:
+            _background_delegates.pop(delegate_id, None)
+            if session_id:
+                await inject_system_notice(parent_task_id, outcome, session_id)
+            else:
+                logger.warning(
+                    f"[delegateagent_runner] 异步委托 {delegate_id} 无父会话归属，跳过 inbox 通知"
+                )
+
+    _background_delegates[delegate_id] = asyncio.create_task(
+        _background(), name=f"delegate-bg:{delegate_id}"
+    )
+    return {
+        "status": "running", "delegate_id": delegate_id,
+        "summary": "异步委托已启动，完成后经 inbox 通知父 Agent",
+    }
+
+
+async def _execute_delegate(agent, config: AgentConfig, task: str,
+                            context: Optional[Dict[str, Any]], AgentStatus) -> Dict[str, Any]:
+    """同步执行体（原 run_delegate 主体），同步/异步两条入口共用，零逻辑分叉"""
+    agent_id = config.agent_id       # 日志与 sub_task_id 的单一取名源，与注册表键同源
 
     # 分类层：配置的 categories 再扣一遍拒绝分类（配置可能来自 manifest，不可信）。
     # 显式传集合：空集就是零工具；不可写 `or None` —— 那会回落到
@@ -238,18 +281,23 @@ async def run_delegate(
     sub_task_id = f"sub-{agent.task_id}-{agent_id}-{uuid.uuid4().hex[:6]}"
     _sub_client = None
     if config.model:
-        # OCP 扩展位：指定模型 → 新建 client，但复用父的连接池与凭据（默认零开销继承父）。
-        # P0 限制：只支持"同 provider / 同 api_base 换模型"（ModelRef 沿用父的 provider/api_base）；
-        #          跨 provider 需 AgentConfig 增 provider/api_base 字段（P1），否则共享池 base_url 不对。
+        # OCP 扩展位：指定模型 → 新建 client。同 provider 复用父池；跨 provider（配置 provider/api_base）
+        # 用子配置定位端点且**不传 shared_client** — httpx 池与 base_url 绑定，复用父池会错配到父端点。
         from app.db.models.chat_models import ModelRef
         from app.llm.client_sdk import create_llm_client
         _parent_model = agent.llm_client.llm_model
-        _model_ref = ModelRef(provider=_parent_model.provider, model=config.model,
-                              api_base=_parent_model.api_base)
+        if config.provider or config.api_base:
+            _model_ref = ModelRef(provider=config.provider or _parent_model.provider,
+                                  model=config.model, api_base=config.api_base)
+            _shared = None                            # 独立池：子任务结束由 _close_quietly 真正关闭
+        else:
+            _model_ref = ModelRef(provider=_parent_model.provider, model=config.model,
+                                  api_base=_parent_model.api_base)
+            _shared = _parent_http_client(agent.llm_client)  # 复用父 httpx 池，零新建开销
         _sub_client = create_llm_client(
             llm_model=_model_ref,
             api_key=agent.llm_client.api_key,        # 只读 property（client_sdk 需补）
-            shared_client=_parent_http_client(agent.llm_client),  # 复用父 httpx 池，不新建连接池
+            shared_client=_shared,
         )
         _llm_client = _sub_client
     else:
@@ -262,6 +310,7 @@ async def run_delegate(
             max_steps=config.max_steps,
             initial_categories=sub_categories,
             excluded_tools=_excluded,   # 只读：名单拒绝 ∪ (已注册全集 - 白名单)，新工具默认拒绝
+            tool_names=config.tool_names,  # 小欧 2026-11-28 - 名粒度放行：从 AgentConfig 透传，构造前生效
             track_task=False,   # 小欧 2026-11-28 BUG-1 整改：子过程恒不落 tasks 台账，不接受配置绕过
         )
     except Exception as e:
@@ -288,7 +337,7 @@ async def run_delegate(
 
     sub_task = _build_sub_task(config, task, context)
 
-    # P0：wait=True 同步等，本轮 observation 直接带结果。
+    # 同步执行体：同步入口直接等结果；异步入口在后台任务里跑同一段，零逻辑分叉。
     # 私有事件总线 + 克隆上下文：子 Agent 的终态清理（clear_temp_auth 等）与工具回调
     # set/reset 全落在副本，父作用域零污染。
     try:

@@ -8,6 +8,8 @@ tool_categories 只收 ToolCategory 集合、track_task 只收 bool），避免�
 小欧 2026-11-28 修正 manifest 外部输入容错：分类形状非法回落默认集合，描述非字符串直接拒绝，
 提示词非字符串回落空串，消除 str() 把 null/数字变成假描述与假提示词
 小欧 2026-11-28 新增 build_delegate_tool_description()：工具描述由注册表动态生成，新增 Agent 零改代码
+小欧 2026-11-28 增 tool_names 精确放行白名单：manifest 可声明具名工具，构造期类型显式校验（禁止 str 拆单字符静默失效），装载与可见性同源收窄
+小欧 2026-11-28 修正 manifest 隐式强转：去掉 int()/float()，原值交 __post_init__ 统一校验，非法输入由外层跳过而非洗白成合法值
 """
 import json
 import re
@@ -46,6 +48,10 @@ class AgentConfig:
     description: str                       # 一句话说明（给 LLM 看，帮助主 Agent 选择委托目标）
     system_prompt: str = ""                # 子 Agent 的 system prompt
     tool_categories: Set[ToolCategory] = field(default_factory=lambda: {ToolCategory.FUNDAMENTAL})
+    tool_names: Set[str] = field(default_factory=set)  # 精确放行白名单；空集=按分类+拒绝清单（不收窄）
+    allow_delegate: bool = False              # 是否允许子 Agent 再委托（深度上限由 1 放宽到 2）
+    provider: Optional[str] = None            # 跨 provider 委托时子 client 的 provider
+    api_base: Optional[str] = None            # 跨 provider 委托时子 client 的端点
     output_instruction: Optional[str] = None  # 输出约束（自由文本；None=默认摘要要求）
     model: Optional[str] = None            # 指定模型（None=继承父 Agent 的 LLM）
     max_steps: int = 8                     # 子 Agent 最大 ReAct 步数（有界）
@@ -74,6 +80,17 @@ class AgentConfig:
         if not self.tool_categories:
             raise ValueError(f"agent_id={self.agent_id}: tool_categories 不能为空")
         self.tool_categories = set(self.tool_categories)   # 拷贝成独立集合，防调用方共享可变对象
+        if not isinstance(self.tool_names, (set, frozenset)):
+            raise TypeError(f"agent_id={self.agent_id}: tool_names 必须为集合，收到 {type(self.tool_names).__name__}")
+        if not all(isinstance(n, str) for n in self.tool_names):
+            raise TypeError(f"agent_id={self.agent_id}: tool_names 成员必须为字符串")
+        self.tool_names = set(self.tool_names)             # 拷贝成独立集合，别名归一下游 ToolLoader 统一处理
+        if not isinstance(self.allow_delegate, bool):
+            raise TypeError(f"agent_id={self.agent_id}: allow_delegate 必须为 bool，收到 {type(self.allow_delegate).__name__}")
+        if self.provider is not None and not isinstance(self.provider, str):
+            raise TypeError(f"agent_id={self.agent_id}: provider 必须为字符串或 None")
+        if self.api_base is not None and not isinstance(self.api_base, str):
+            raise TypeError(f"agent_id={self.agent_id}: api_base 必须为字符串或 None")
         if not isinstance(self.track_task, bool):
             raise TypeError(f"agent_id={self.agent_id}: track_task 必须为 bool，收到 {type(self.track_task).__name__}")
 
@@ -132,6 +149,11 @@ class AgentRegistry:
                     categories.add(ToolCategory(str(name)))
                 except ValueError:
                     logger.warning(f"[AgentRegistry] 未知工具分类 {name!r}，跳过")
+            raw_names = data.get("tool_names", [])
+            if not isinstance(raw_names, (list, tuple, set)):
+                logger.warning(f"[AgentRegistry] tool_names 形状非法，回落空集({path})")
+                raw_names = []
+            tool_names = {str(n) for n in raw_names}
             description = data.get("description", "")
             if not isinstance(description, str):
                 raise ValueError(f"description 须为字符串，收到 {type(description).__name__}")
@@ -144,10 +166,12 @@ class AgentRegistry:
                 description=description,
                 system_prompt=system_prompt,
                 tool_categories=categories or {ToolCategory.FUNDAMENTAL},
+                tool_names=tool_names,
                 output_instruction=data.get("output_instruction"),
                 model=data.get("model"),
-                max_steps=int(data.get("max_steps", 8)),
-                timeout_s=float(data.get("timeout_s", 300)),
+                # 小欧 2026-11-28 - 零隐式强转：类型校验单点在 __post_init__，非法 manifest 由外层跳过+warning
+                max_steps=data.get("max_steps", 8),
+                timeout_s=data.get("timeout_s", 300.0),
                 track_task=False,   # 插件不得自开台账
             )
         except Exception as e:     # 缺 name / 类型错 / 校验不过 → 跳过该插件

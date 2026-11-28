@@ -34,7 +34,8 @@ class ToolLoader:
     def __init__(self, agent):
         self.agent = agent
 
-    def init_tools(self, initial_categories=None, excluded_tools: Optional[Set[str]] = None):
+    def init_tools(self, initial_categories=None, excluded_tools: Optional[Set[str]] = None,
+                   tool_names: Optional[Set[str]] = None):
         """初始化工具,按分类注入工具给LLM
 
         2026-11-27 小欧 - 增 excluded_tools: 子Agent只读拒绝清单, 存 agent._excluded_tools(单一权威),
@@ -45,23 +46,38 @@ class ToolLoader:
         """
         # 单一权威 — 2026-11-27 小欧; 别名归一 + str fail-fast 收口 normalize_name_set — 2026-11-28 OmniAgent
         self.agent._excluded_tools = normalize_name_set(excluded_tools, "excluded_tools")
+        # 小欧 2026-11-28 - 具名白名单: 空集=按分类+拒绝清单(不收窄); 非空=精确放行, 先于 ToolRetryEngine 构造生效
+        _names = normalize_name_set(tool_names, "tool_names")
+        self.agent._tool_names = _names
         self.agent._tools_dict = {}
-        # _loaded_categories 由实际加载结果重建, 保证与_tools_dict一致(单一权威: 只含真正加载了实现的分类)
-        # 2026-08-05 小欧: 修复 - 空实现分类不再被标记为已加载; 消除initial_categories=None时标记与实现失配
         self.agent._loaded_categories = set()
-        # 2026-08-13 小欧 三堂会审修复#28: 区分None与空集合 — 显式空set()为假值会回退"全部", 与"加载指定(空)"意图反转
-        categories_to_load = list(initial_categories) if initial_categories is not None else list(ToolCategory)
-        for cat in categories_to_load:
-            cat_tools = tool_registry.get_implementations_by_category(cat)
-            # 2026-11-27 小欧 - 拒绝清单过滤: 整类被拒时该分类不标记已加载(避免"标记=已实现"失配)
-            # 小欧 2026-11-28 BUG-2 整改：比对键归一到注册名，与 get_tool 执行口径同源
-            _kept = {name: impl for name, impl in cat_tools.items()
-                     if normalize_tool_name(name) not in self.agent._excluded_tools}
-            if _kept:
-                self.agent._tools_dict.update(_kept)
-                self.agent._loaded_categories.add(cat)
+        if _names:
+            # 白名单模式: 以已注册全集为源精确取名，分类只用于重建标记(不参与放行判定)
+            _all: dict = {}
+            for _cat in ToolCategory:
+                _all.update(tool_registry.get_implementations_by_category(_cat))
+            self.agent._tools_dict = {
+                name: impl for name, impl in _all.items()
+                if normalize_tool_name(name) in _names
+                and normalize_tool_name(name) not in self.agent._excluded_tools
+            }
+            self.agent._loaded_categories = {
+                cat for cat in ToolCategory
+                if any(normalize_tool_name(n) in _names
+                       for n in tool_registry.get_implementations_by_category(cat))
+            }
+        else:
+            # 2026-08-13 三堂会审修复#28: 区分None与空集合 — 空集合=加载指定(空), 不回退"全部"
+            categories_to_load = list(initial_categories) if initial_categories is not None else list(ToolCategory)
+            for cat in categories_to_load:
+                cat_tools = tool_registry.get_implementations_by_category(cat)
+                _kept = {name: impl for name, impl in cat_tools.items()
+                         if normalize_tool_name(name) not in self.agent._excluded_tools}
+                if _kept:
+                    self.agent._tools_dict.update(_kept)
+                    self.agent._loaded_categories.add(cat)
         logger.info(f"[ToolLoader] 初始化完成,共{len(self.agent._tools_dict)}个工具"
-                    f"(拒绝清单{len(self.agent._excluded_tools)}项)")
+                    f"(拒绝清单{len(self.agent._excluded_tools)}项,白名单{len(_names)}项)")
 
     def get_tools(self) -> dict:
         """获取工具字典"""
@@ -80,9 +96,10 @@ class ToolLoader:
             logger.info(f"[ToolLoader] 分类{category.value}无可用实现, 不标记为已加载")
             return False
         _excluded = getattr(self.agent, "_excluded_tools", ())
-        # 小欧 2026-11-28 BUG-2 整改：动态灌回也按归一名比对，别名形态工具不得绕过
+        _names = getattr(self.agent, "_tool_names", ())   # 小欧 2026-11-28 - 白名单同源，动态灌回不得绕过
         _kept = {name: impl for name, impl in cat_tools.items()
-                 if normalize_tool_name(name) not in _excluded}
+                 if normalize_tool_name(name) not in _excluded
+                 and (not _names or normalize_tool_name(name) in _names)}
         if not _kept:
             logger.info(f"[ToolLoader] 分类{category.value}工具全部在拒绝清单内, 不加载不标记")
             return False

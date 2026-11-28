@@ -56,6 +56,7 @@ class UniversalAgent(BaseAgent):
         max_steps: Optional[int] = None,
         initial_categories=None,
         excluded_tools=None,
+        tool_names=None,
         track_task: bool = True,
     ):
         if not task_id:
@@ -76,7 +77,8 @@ class UniversalAgent(BaseAgent):
         self._tool_loader = ToolLoader(self)
         # 2026-11-27 小欧 - excluded_tools: 子Agent只读拒绝清单, 装载/动态注入/可见性三处同源过滤
         self._tool_loader.init_tools(initial_categories=initial_categories,
-                                     excluded_tools=excluded_tools)
+                                     excluded_tools=excluded_tools,
+                                     tool_names=tool_names)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
 
         self.prompts = PromptBuilder()

@@ -57,6 +57,9 @@ from typing import Any, Dict, Set, Tuple
 from app.logger import logger
 
 PARAM_ALIASES = {
+    "delegateagent": {
+        "prompt": "task",   # 小欧 2026-11-28 - 委托参数别名：LLM 常把 task 写成 prompt
+    },
     # 路径参数统一为path后,旧规范名(file_path/dir_path/search_dir)降级为别名 — 小欧 2026-07-11
     "read": {
         "file_path": "path",

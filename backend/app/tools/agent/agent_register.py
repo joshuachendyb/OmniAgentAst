@@ -7,6 +7,7 @@
 # 2026-11-19 小欧 - question 注册也声明 hide_from_steps=True(与 schedule 同: 非业务交互 tool 不画通用工具行)
 # 2026-11-19 小欧 - question 工具描述字段顺序统一 header(可选)→question→options; multiple 改 single(默认true单选) — 小欧-2026-11-19
 # 2026-11-28 小欧 - 注册 delegateagent：描述由注册表动态生成(callable)，入参/示例入表，加入 tool_methods 注册循环
+# 2026-11-28 小欧 - 注册前先扫描插件 manifest 并注册 AgentConfig，使委托描述随插件动态扩展而无需改代码
 """
 agent_register — 智能体交互工具注册点(question / schedule / delegateagent)
 """
@@ -15,6 +16,7 @@ from app.tools.agent.agent_config import build_delegate_tool_description
 from app.tools.agent.agent_schema import QuestionInput, ScheduleInput
 from app.tools.agent.delegateagent import delegateagent
 from app.tools.agent.delegateagent_schema import DelegateAgentInput
+from app.tools.agent.plugin_loader import load_plugins
 from app.tools.agent.question import question
 from app.tools.agent.schedule import schedule
 from app.tools.registry import tool_registry
@@ -88,7 +90,8 @@ def _register_agent_tools():
     """注册 question/schedule 与委托工具 — 商量 2026-11-18 / 小欧 2026-11-28"""
     tool_methods = {"question": question, "schedule": schedule,
                     "delegateagent": delegateagent}
-    # 插件加载入口预留：当前只注册内置 Agent，不加载外部插件配置
+    # 插件先注册：委托工具描述是 callable，注册时取注册表快照，故扫描必须早于 delegateagent 注册
+    load_plugins()
     # 2026-11-19 小欧 - 前端步骤流隐藏(非业务 tool 共性): 两者都是 agent 与用户的交互, 产出由专属 UI 呈现,
     #   不画通用工具行; 落库/喂 LLM 照常。schedule→notice 清单卡; question→interact 问询浮层。
     hide_from_steps = AGENT_HIDE_FROM_STEPS
