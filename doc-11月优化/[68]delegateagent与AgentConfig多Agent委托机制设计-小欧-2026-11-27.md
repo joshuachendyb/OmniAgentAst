@@ -173,7 +173,7 @@ class AgentConfig:
     api_base: Optional[str] = None            # 跨 provider 子 client 端点
     output_instruction: Optional[str] = None  # 输出约束（自由文本；None=默认摘要要求，见 §2.5）
     model: Optional[str] = None            # 指定模型（None=继承父 Agent 的 LLM，见 §2.5）
-    api_key: Optional[str] = None            # 跨 provider 可选凭据；repr=False；不进入 manifest 插件装载
+    api_key: Optional[str] = field(default=None, repr=False)  # 跨 provider 可选凭据；repr=False；不进入 manifest 插件装载
     max_steps: int = 8                     # 子 Agent 最大 ReAct 步数（有界）
     timeout_s: float = 300.0               # 墙钟超时（秒），由 §2.5 守卫协程强制执行
     track_task: bool = False               # 是否在 tasks 台账建行（默认不建；仅显式配置才建）
@@ -261,22 +261,44 @@ class AgentRegistry:
             logger.warning(f"[AgentRegistry] 读取 manifest 失败({path}): {e}")
             return None
 
+        if not isinstance(data, dict):
+            logger.warning(f"[AgentRegistry] manifest 顶层必须是对象({path})")
+            return None
+        raw_categories = data.get("tool_categories", ["fundamental"])
+        if not isinstance(raw_categories, (list, tuple, set)):
+            logger.warning(...)
+            raw_categories = ["fundamental"]
         categories: Set[ToolCategory] = set()
-        for name in data.get("tool_categories", ["fundamental"]):
+        for name in raw_categories:
             try:
                 categories.add(ToolCategory(str(name)))
             except ValueError:
                 logger.warning(f"[AgentRegistry] 未知工具分类 {name!r}，跳过")
+        raw_names = data.get("tool_names", [])
+        if not isinstance(raw_names, (list, tuple, set)):
+            raw_names = []
+        tool_names = {str(n) for n in raw_names}
+        description = data.get("description", "")
+        if not isinstance(description, str):
+            logger.warning(f"[AgentRegistry] manifest 不合法已跳过({path}): description 须为字符串")
+            return None
+        system_prompt = data.get("system_prompt", "")
+        if not isinstance(system_prompt, str):
+            system_prompt = ""
         try:
             config = AgentConfig(
                 agent_id=str(data["name"]),
-                description=str(data.get("description", "")),
-                system_prompt=str(data.get("system_prompt", "")),
+                description=description,
+                system_prompt=system_prompt,
                 tool_categories=categories or {ToolCategory.FUNDAMENTAL},
+                tool_names=tool_names,
                 output_instruction=data.get("output_instruction"),
                 model=data.get("model"),
-                max_steps=int(data.get("max_steps", 8)),
-                timeout_s=float(data.get("timeout_s", 300)),
+                # 读取 provider/api_base；不读取 api_key、allow_delegate；不做 int()/float() 强转，类型由 __post_init__ 校验
+                provider=data.get("provider"),
+                api_base=data.get("api_base"),
+                max_steps=data.get("max_steps", 8),
+                timeout_s=data.get("timeout_s", 300.0),
                 track_task=False,
             )
         except Exception as e:     # 缺 name / 类型错 / __post_init__ 校验不过 → 跳过该插件
@@ -375,13 +397,15 @@ plugins/
 | `description` | 是 | 一句话（给 LLM 路由用，进工具描述，见 §4.1） |
 | `system_prompt` | 否 | 子 Agent 的 system prompt（空则用默认） |
 | `tool_categories` | 否 | 工具分类列表（默认 `["fundamental"]`；拒绝分类会被 `effective_categories()` 扣掉） |
-| `tool_names` | 否 | P1 工具名粒度（null=用分类，P0 读入但不消费，留给 P1 精确放行） |
-| `model` | 否 | 指定模型（null=继承父 Agent 的 LLM；非 null 时新建独立 client） |
+| `tool_names` | 否 | 名粒度精确放行白名单（null/空=用分类+拒绝清单；不能扩大只读面；装载与可见性同源） |
+| `model` | 否 | 指定模型（null=继承父 Agent 的 LLM；model/provider/api_base/api_key 任一触发独立 client；provider/api_base 不再依赖 model 非空） |
+| `provider` | 否 | 跨 provider 子 client provider；不读取凭据，默认继承 provider |
+| `api_base` | 否 | 子 client 端点；跨 provider/自定义端点不复用父 httpx 池 |
 | `max_steps` | 否 | 最大步数（默认 8，上限 30） |
 | `timeout_s` | 否 | 墙钟超时秒数（默认 300，5..1800） |
 | `output_instruction` | 否 | 输出约束自由文本（缺省时用内置摘要要求，见 §2.5） |
 
-> 字段集与 `AgentConfig` 一一对应，`load_from_manifest` 只读上面这些键；`track_task` 不允许由插件指定（恒 False），插件也不能给自己开写权限（由 `DELEGATE_DENY_*` 决定）或再委托权限（由 `MAX_DELEGATE_DEPTH` 硬顶决定）。
+> 字段集与 `AgentConfig` 对应；`load_from_manifest` 只读 `name/description/system_prompt/tool_categories/tool_names/output_instruction/model/provider/api_base/max_steps/timeout_s`；`track_task` 不允许由插件指定（恒 False）；`api_key` 不从 manifest 读取；`allow_delegate` 不从 manifest 读取（插件不能自开多层委托）；写权限由 `DELEGATE_DENY_*` + 只读白名单决定；深度由 `MAX_DELEGATE_DEPTH` + `allow_delegate` 硬顶决定。
 
 ##### 加载时机
 
@@ -538,6 +562,8 @@ async def delegateagent(
 
     try:
         result = await callback(agent_id=agent_id, task=task, context=context, wait=wait)
+        if not isinstance(result, dict):
+            raise TypeError(f"委托回调返回非法形状: {type(result).__name__}")
     except Exception as e:
         return build_error(llm_data={
             "summary": f"delegateagent，失败：子 Agent 执行异常 {e}",
@@ -551,8 +577,24 @@ async def delegateagent(
 
     # result 结构由 callback 保证: {"summary", "usage", "status", "steps"}，llm_data 统一走项目契约
     status = result.get("status", "failed")
+    # 异步委托：running 是成功启动，不是失败；完成经 inbox 回灌
+    if status == "running":
+        return build_success(
+            data={
+                "agent_id": agent_id,
+                "status": "running",
+                "delegate_id": result.get("delegate_id", ""),
+                "summary": result.get("summary", ""),
+            },
+            llm_data={
+                "summary": f"委托子Agent({agent_id})已后台启动: {result.get('delegate_id', '')}",
+                "action": {"tool": "delegateagent", "tool_zh": "委托子Agent", "params": {"agent_id": agent_id}},
+                "status": {"exec_code": "success", "message": "已启动"},
+            },
+            other_data={"duration_ms": duration_ms},
+        )
     if status == "success":
-        _summary = result.get("summary", "")
+        _summary = result.get("summary") or ""
         return build_success(
             data={
                 "agent_id": agent_id,
@@ -580,7 +622,7 @@ async def delegateagent(
                 "summary": f"delegateagent，失败：子Agent({agent_id})执行未成功",
                 "action": {"tool": "delegateagent", "tool_zh": "委托子Agent", "params": {}},
                 "status": {"exec_code": "error", "message": "失败",
-                           "detail": result.get("summary", "未知原因"),
+                           "detail": result.get("summary") or "未知原因",
                            "hint": "可检查任务描述是否清晰后重试，或自行处理"},
             },
             other_data={"duration_ms": duration_ms},
