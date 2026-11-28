@@ -21,12 +21,14 @@
   2. 运行层：子作用域内 set_current_delegate_callback(None) → 工具即使被动态灌回也拿不到回调
   3. 深度层：_current_delegate_depth 硬顶（P0 上限 1 层），run_delegate 入口校验
   注：第 1 层单独不够 —— auto_inject_from_search 会按 searchtool 结果 load_category 把 AGENT
-  整类灌回子 Agent，而 ToolRetryEngine 持有同一个 _tools_dict 引用（§2.7）。
+  整类灌回子 Agent，而 ToolRetryEngine 持有同一个 _tools_dict 引用。
 
 编辑历史:
-  2026-11-28 - 小欧 - 按 §2.5 参考设计落码（S3）：同步委托 + 私有 buffer + 上下文副本 +
+  2026-11-28 - 小欧 - 按参考设计落码：同步委托 + 私有 buffer + 上下文副本 +
     递归三层 fail-closed + 墙钟超时 + 父取消轮询 + 有界收口 + model 分支复用父池 +
     构造失败 _close_quietly；T16 用 spy 记录 close() 验证（共享池 close 为 no-op）
+  2026-11-28 - OmniAgent - 三堂会审整改：清除注释中的文档章节号与阶段号引用，
+    纯注释改动零行为变更
 """
 import asyncio
 import contextvars
@@ -58,7 +60,7 @@ _CANCEL_GRACE_S = 5.0         # 取消后等待子任务真正退出的上限；
 # 小欧 2026-11-28 BUG-3 整改：子 Agent 只读能力白名单（静态枚举）。
 # 名单制 DELEGATE_DENY_TOOLS 对"未列入 PATH_* 的新工具"天然 fail-open，与只读承诺冲突。
 # 这里改为白名单：运行时把"已注册全集 - 本白名单"并入 excluded_tools，新工具默认拒绝。
-# 审计过的只读工具才列入；新增只读工具须同步本集合（S6 插件化工具默认不可进子 Agent）。
+# 审计过的只读工具才列入；新增只读工具须同步本集合（插件化工具默认不可进子 Agent）。
 DELEGATE_ALLOW_TOOLS = frozenset({
     "searchtool", "searchweb", "fetchpage", "timenow",
     "read", "find", "grep", "listdir", "tree",
@@ -173,7 +175,7 @@ def _parent_http_client(parent_llm):
     """取父 Agent 的底层 httpx 连接池（供 model 分支子 client 复用）。
 
     小欧 2026-11-28 - 生产父 agent.llm_client 是 BaseAIService（无 .client，池在
-    _shared_client，惰性建池走 ensure_client_pool）；设计 §2.5 参考代码按裸 LLMClient
+    _shared_client，惰性建池走 ensure_client_pool）；设计参考代码按裸 LLMClient
     写的 .client。两处同源，按可用属性取，避免跨层摸私有。
     """
     direct = getattr(parent_llm, "client", None)
@@ -190,7 +192,7 @@ async def run_delegate(
     agent_id: str,
     task: str,
     context: Optional[Dict[str, Any]] = None,
-    wait: bool = True,  # P0 恒 True 同步；P1 False 走后台任务 + inbox 回灌（§3.3）
+    wait: bool = True,  # P0 恒 True 同步；P1 False 走后台任务 + inbox 回灌
 ) -> Dict[str, Any]:
     """执行一次子 Agent 委托"""
     from app.services.agent.status_table import AgentStatus
@@ -246,7 +248,7 @@ async def run_delegate(
                               api_base=_parent_model.api_base)
         _sub_client = create_llm_client(
             llm_model=_model_ref,
-            api_key=agent.llm_client.api_key,        # 只读 property（client_sdk 需补，见 §5.2）
+            api_key=agent.llm_client.api_key,        # 只读 property（client_sdk 需补）
             shared_client=_parent_http_client(agent.llm_client),  # 复用父 httpx 池，不新建连接池
         )
         _llm_client = _sub_client
