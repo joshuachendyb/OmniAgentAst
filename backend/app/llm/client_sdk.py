@@ -63,6 +63,8 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
  编辑历史: 2026-11-03 小欧 - 可重试状态(429/5xx)响应体记录 WARNING→INFO(交 L1 重试, 非终态故障) — 小欧-2026-11-03
  编辑历史: 2026-11-20 小欧 - 连接池耗尽根治: 软配额闸门上限改 max(1, max_connections - 余量), 通常小于 httpx 池上限使池结构上难被占满; 排队超时不再保底放行(会挤占池), 改熔断失败并置 pool_full 标记交错误分类器短路, 避免重试放大; 保留配置项 soft_pool_wait_timeout 控制排队时长 — 小欧-2026-11-20
  编辑历史: 2026-11-20 小欧 - 三堂会审整改: 闸门余量提常量 _SOFT_POOL_HEADROOM, 去掉封顶8(改大 max_connections 时闸门不再被卡住, 配置意图生效); 同步排队超时注释与配置文案为熔断语义; 熔断标记提共享常量 ERR_TYPE_POOL_FULL 消跨模块裸字符串; _acquire_soft_pool 返回值简化为 None 消死分支 — 小欧-2026-11-20
+ 编辑历史: 2026-11-27 小欧 - 新增只读 api_key 属性(与 client 属性对称): 委托子Agent按 AgentConfig 解析真实凭据时需读取当前生效 key,
+   原先 _api_key 为私有字段全仓零读取, 子Agent只能另取配置易与主Agent实际使用不一致 — 小欧-2026-11-27
 """
 
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
@@ -745,6 +747,17 @@ class LLMClient:
     def client(self) -> httpx.AsyncClient:
         """公开底层 httpx 客户端 — 替代跨层摸 _client 私有字段 — 小欧 2026-09-25"""
         return self._client
+
+    @property
+    def api_key(self) -> str:
+        """当前生效的 API Key(只读) — 小欧 2026-11-27
+
+        委托子Agent按 AgentConfig 解析凭据时读此值, 与主Agent实际发出的凭据同源;
+        只读不写: 换凭据须重建客户端(连接池与静态头已按旧 key 建好)。
+        2026-11-28 小欧 - 类型契约: _api_key 可能为 None(配置缺 key / env 未设), 原样返回 None 会让
+          调用方拿 None 去建子 client、请求期才炸; 按空串返回, 由调用方判空给出可读错误。
+        """
+        return self._api_key or ""
 
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09
