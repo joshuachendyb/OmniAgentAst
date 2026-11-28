@@ -423,6 +423,9 @@ async def set_resumed(task_id: str) -> dict:
             return api_failure(message=f"任务 {task_id} 未暂停,无法恢复")
         task["paused"] = False
         task["status"] = "running"
+        # 2026-11-28 小欧 - 恢复必须一并清 _was_paused: 暂停超时自动恢复走本函数, 原不清会让
+        #   下次 task_pause_check 误判"已提示过暂停"而跳过暂停帧/状态更新 — 小欧-2026-11-28
+        task["_was_paused"] = False
         pause_event = task.get("_pause_event")
         if pause_event:
             pause_event.set()

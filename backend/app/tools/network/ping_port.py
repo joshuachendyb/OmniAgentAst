@@ -37,6 +37,7 @@ from app.tools.tool_constants import (
     ERR_NETWORK_INVALID_HOST,
     ERR_NETWORK_INVALID_PORT,
     ERR_NETWORK_TIMEOUT,
+    ERR_PARAMETER_INVALID,
     ERR_SHELL_COMMAND_NOT_FOUND,
 )
 from app.tools.tool_response import build_error, build_success
@@ -250,6 +251,15 @@ async def ping_port(
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "ping_port")
     if not timeout_valid:
         llm_data = _build_ping_port_llm_data("error", 0, host, mode, ERR_NETWORK_INVALID_HOST, timeout_err, hint="请检查超时设置", port=port, count=count, timeout=timeout)
+        return build_error(data={}, llm_data=llm_data)
+    # 2026-11-28 小欧 - count 负数/非整数会让 _ping 算出负的 proc 超时(-10s)→宿主 HostError→整个工具 500;
+    #   在主函数入口 fail-closed 拦下(返回结构化 error), 不把坏参数透给进程宿主 — 小欧-2026-11-28
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 10:
+        llm_data = _build_ping_port_llm_data(
+            "error", 0, host, mode, ERR_PARAMETER_INVALID,
+            f"count={count!r} 超出 [1,10]", hint="ping 次数须为 1..10 的整数",
+            port=port, count=count, timeout=timeout,
+        )
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
