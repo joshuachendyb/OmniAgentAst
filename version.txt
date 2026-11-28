@@ -1,3 +1,21 @@
+v1.7.15
+发布时间: 2026-11-28 09:20:00 - OmniAgent-2026-11-28
+
+## v1.7.15汇总 从上一个 tag v1.7.14(commit c7dd022041, 2026-11-27)以来全部 8 个 commit(feat 3 / fix 3 / docs 1 / chore 1); 本批以 delegateagent S0 子Agent只读拒绝清单落地+三文件三堂会审整改为主线: excluded_tools 装载/动态注入/可见性三处同源贯通与别名归一收口 normalize_name_set(DRY)、sse_formatter 分层倒挂解除(visible_in_steps 判据注入, 修复 HEAD 断裂态)、start_dev.ps1 看护误杀健康重载修复与端口 cmdline 边界匹配、client_sdk 只读 api_key 属性; 辅以 OmniVPN 一级方案脚本与 exit_probe v2.10(小健) - OmniAgent-2026-11-28
+### 1.7.15.1 新增功能
+[feat] feat:delegateagent-s0 子Agent只读拒绝清单贯通(excluded_tools装载/注入/可见性同源)+别名归一收口normalize_name_set(DRY) - OmniAgent-2026-11-28
+[feat] feat:proxy-on-single 启动时自动避开最近桶([5.5]读 bucket_history.json,当前桶在历史里就换新桶),exit_rotator 切换调用补 --url 9092 修控制器不可达 - 小健-2026-11-28
+[feat] feat:exit_probe v2.10 + OmniVPN 一级方案 exit_probe 端口参数化与一级兼容,新增一级配置/启动/代理切换脚本与一级方案说明 - 小健-2026-11-28
+### 1.7.15.2 缺陷修复
+[fix] fix:三堂会审整改 修复HEAD断裂态(sse_formatter新签名visible_in_steps补入库,调用方stream_orchestrator已先行提交)+start_dev看护误杀健康重载修复(探活加子进程存活判据)与端口cmdline匹配加边界(防短端口误杀长端口进程)+client_sdk只读api_key属性(None按空串返回) - OmniAgent-2026-11-28
+[fix] fix:恢复一级池到 17 节点 9 桶(DE/ES/FR/HK/IT/NG/NL/PL/US),从 backup-20261125 恢复并改端口 7892/7893/9092 - 小健-2026-11-28
+[fix] fix:proxy-single 脚本 .bat 转 CRLF 修 cmd 解析乱码, .ps1 补 UTF-8 BOM 修中文乱码, switch-single 传 --url 9092 修控制器不可达 - 小健-2026-11-28
+### 1.7.15.3 文档
+[docs] docs:[68]delegateagent与AgentConfig多Agent委托机制设计 v2.11 §6.2阶段实施方案(S0-S8可独立验收)+纠正上限校验别名归一前提 - 小欧-2026-11-27
+### 1.7.15.4 杂项
+[chore] chore:.gitignore 补 OmniVPN/mihomo-single/cache.db* 运行时缓存不入库,对齐 mihomo/cache.db* - 小健-2026-11-28
+
+
 v1.7.14
 发布时间: 2026-11-27 22:31:11 - 小欧-2026-11-27
 
