@@ -12,6 +12,8 @@
 # 2026-11-19 - 小欧 - ToolMetadata 新增 hide_from_steps 属性(工具行是否进前端步骤流), 供框架层统一判据 visible_in_steps 消费;
 #   走专用通道的工具(如 schedule→notice)注册时声明, 业务调用点零改动(OCP)
 # 2026-11-20 - 小欧 - 新增 MEDIA 分类(order 11): generate_image/generate_video 走 generation 端点产多媒体, 不碰文件/网络工具链
+# 2026-11-27 - 小欧 - ToolMetadata.description 放宽为 Union[str, Callable[[], str]] 并新增 resolved_description():
+#   callable 描述由注册表快照动态生成(delegateagent 可用 Agent 列表), 读取方统一走解析点, 直接拼接会得到函数对象
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -85,7 +87,9 @@ CATEGORY_NAMES: Dict[ToolCategory, str] = {cat: cat.name_cn for cat in ToolCateg
 class ToolMetadata:
     """工具元数据"""
     name: str
-    description: str
+    #: 2026-11-27 小欧 - 允许 callable: 描述可由注册表快照动态生成(delegateagent 的可用 Agent 列表),
+    #: 新增 Agent 零改描述代码; 读取方一律走 resolved_description(), 禁止直接拼接本字段。
+    description: Union[str, Callable[[], str]]
     category: ToolCategory
     version: str = "1.0.0"
     input_schema: Dict[str, Any] = field(default_factory=dict)
@@ -123,6 +127,21 @@ class ToolMetadata:
         各消费方只读这一个判据, 加维度只改这一处。
         """
         return self.expose_to_llm and self.available
+
+    def resolved_description(self) -> str:
+        """取描述文本 —— description 允许 callable 时的唯一解析点 — 小欧 2026-11-27
+
+        读取方(tool_description/registry.list_tools/tool_search/tool_cache_manager)一律调本方法,
+        不得直接拼接 self.description: callable 被拼进字符串会变成函数对象, 运行期才炸。
+        解析异常按空串返回并留日志, 不让一个坏描述拖垮整个工具列表。
+        """
+        if callable(self.description):
+            try:
+                return str(self.description() or "")
+            except Exception as e:
+                logger.warning(f"[ToolMetadata] 工具 '{self.name}' 动态描述生成失败: {e}")
+                return ""
+        return str(self.description or "")
 
     # 【2026-11-19 小欧】工具行前端可见性: True=该工具的 action/observation 不在前端步骤流画工具行
     #   (走专用通道呈现, 如 schedule 清单走 notice→taskinfo 卡片)。框架层构建 tools/tool_result 视图

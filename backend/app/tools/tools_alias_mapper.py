@@ -36,6 +36,8 @@
 # 2026-11-18 - 商量 - question 已实现, 从禁用回落名单移除; 新增 question/schedule 参数别名(qs/todos/tasks/plan 等归一);
 #   TOOL_NAME_ALIASES 增 opencode todoWrite 变体→schedule(LLM 按原名调用时归一到注册名);
 #   新增 PARAM_DROP question.title(整次调用的标题, 本工具无此槽位, 实证 LLM 反复附带致每轮判非法)
+# 2026-11-28 - OmniAgent - 抽 normalize_name_set(): 工具名集合"归一 + str fail-fast"在 tool_loader.init_tools
+#   与 tool_description.to_openai_tools 三处重复, 收口本模块单一实现(DRY); 调用方传 param_name 复用同一报错文案
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -50,7 +52,7 @@
 """
 
 import re
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Set, Tuple
 
 from app.logger import logger
 
@@ -471,6 +473,21 @@ def normalize_tool_name(tool_name: str) -> str:
         logger.info(f"[tool_name_alias] {tool_name}→{_canonical}")
         return _canonical
     return tool_name
+
+
+def normalize_name_set(names, param_name: str = "names") -> Set[str]:
+    """工具名集合归一到注册名集合 — 2026-11-28 OmniAgent
+
+    单一收口点: 装载(ToolLoader.init_tools)/动态注入(load_category)/可见性(to_openai_tools)
+    三处名单归一与 str fail-fast 共用本函数, 防各写一份判据漂移(DRY)。
+    传 str 直接 TypeError: set("write") 会把名单拆成单字符集合, 致拒绝/白名单静默失效;
+    名字逐个过 normalize_tool_name, 写别名(write_file)与写注册名(write)等价。
+    """
+    if isinstance(names, str):
+        raise TypeError(
+            f"{param_name} 须为工具名集合(Set[str]), 收到 str: {names!r}"
+        )
+    return {normalize_tool_name(n) for n in (names or ())}
 
 
 # XML 闭标签分割: 按 </tag> 切串, 奇数段=文本(去开标签后即值), 偶数段=标签名 — 商量 2026-11-13

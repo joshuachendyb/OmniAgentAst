@@ -15,6 +15,8 @@
 # 2026-10-19 - 小欧 - list_tools 的 expose_to_llm_only 改读 visible_to_llm, 与 tool_description 同判据。
 # 2026-11-19 - 小欧 - ToolMetadata 增 hide_from_steps 属性, register/_update_existing/_register_new/装饰器四处贯通透传;
 #   新增 visible_in_steps(name) 判据(未注册/默认可见零退化), 供 SSE 出口统一查工具行前端可见性。
+# 2026-11-27 - 小欧 - description 类型放宽为 Union[str, Callable[[], str]](register/_update_existing/_register_new 三处贯通);
+#   list_tools 改读 resolved_description(); to_openai_tools 增 exclude 黑名单形参透传(子Agent只读拒绝清单)。
 """
 工具注册表模块 - 统一入口
 
@@ -135,7 +137,7 @@ class ToolRegistry:
     def register(
         self,
         name: str,
-        description: str,
+        description: Union[str, Callable[[], str]],
         category: ToolCategory,
         implementation: Callable,
         version: str = "1.0.0",
@@ -189,7 +191,7 @@ class ToolRegistry:
     def _update_existing_tool(
         self,
         name: str,
-        description: str,
+        description: Union[str, Callable[[], str]],
         category: ToolCategory,
         implementation: Callable,
         input_schema: Optional[Dict],
@@ -237,7 +239,7 @@ class ToolRegistry:
     def _register_new_tool(
         self,
         name: str,
-        description: str,
+        description: Union[str, Callable[[], str]],
         category: ToolCategory,
         implementation: Callable,
         input_schema: Optional[Dict],
@@ -371,7 +373,8 @@ class ToolRegistry:
         return [
             {
                 "name": self._tools[name].name,
-                "description": self._tools[name].description,
+                # 2026-11-27 小欧 - 走 resolved_description(): description 可为 callable, 直取会把函数对象吐给前端
+                "description": self._tools[name].resolved_description(),
                 "category": self._tools[name].category.value,
                 "version": self._tools[name].version,
             }
@@ -408,9 +411,13 @@ class ToolRegistry:
         return {k: list(v) for k, v in self._categories.items()}
 
     def to_openai_tools(self, categories: Optional[Set[ToolCategory]] = None,
-                        tool_names: Optional[Set[str]] = None) -> list:
-        """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09"""
-        return to_openai_tools(self, categories=categories, tool_names=tool_names)
+                        tool_names: Optional[Set[str]] = None,
+                        exclude: Optional[Set[str]] = None) -> list:
+        """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09
+
+        2026-11-27 小欧 - 增 exclude(工具名黑名单): 子Agent只读拒绝清单的可见性过滤, 与装载/动态注入同源。
+        """
+        return to_openai_tools(self, categories=categories, tool_names=tool_names, exclude=exclude)
 
     def generate_param_reminder(self, category: Optional[ToolCategory] = None, style: str = "code") -> str:
         """自动生成Parameter Reminder — 委托给tool_description.generate_param_reminder — 小沈 2026-06-09"""
@@ -432,7 +439,7 @@ def resolve_registered_tool(tool_name: str) -> Tuple[Optional[str], Optional[Too
 # 装饰器版本(支持 Pydantic 模型)
 def register_tool(
     name: Optional[str] = None,
-    description: str = "",
+    description: Union[str, Callable[[], str]] = "",
     category: ToolCategory = ToolCategory.FILE,
     version: str = "1.0.0",
     input_model: Optional[Type[BaseModel]] = None,

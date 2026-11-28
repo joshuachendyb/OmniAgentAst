@@ -10,6 +10,8 @@ tool_cache_manager — 工具缓存管理
 # 2026-08-05 小欧 patch_search_desc默认已注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再列为默认注入(需要时经searchtool动态注入)
 # 2026-08-05 小欧 修复BUG A(DRY): unloaded计算删除硬编码默认分类{FUNDAMENTAL,FILE}, 改由_loaded_categories全权决定, 消除与_INITIAL_CATEGORIES重复定义失配隐患
 # 2026-10-02 小欧 patch_search_desc的unloaded叠加"该分类确有实现"条件: 零工具分类(SHELL消亡后)若进searchtool描述, LLM搜索无果、搜3次触发熔断FAILED
+# 2026-11-27 小欧 get_openai_tools 透传 agent._excluded_tools 作 exclude(子Agent只读拒绝清单);
+#   _get_original_search_desc 改读 resolved_description(), 支持 callable 描述
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
@@ -26,7 +28,10 @@ def get_openai_tools(agent) -> list:
     if cached is not None:
         return cached
 
-    tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
+    tools = tool_registry.to_openai_tools(
+        categories=agent._loaded_categories,
+        exclude=getattr(agent, "_excluded_tools", None),   # 2026-11-27 小欧 - 拒绝清单可见性同源
+    )
 
     override = getattr(agent, '_searchtool_desc_override', None)
     if override:
@@ -51,7 +56,7 @@ def _get_original_search_desc() -> str:
     ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
         return ""
-    desc = ts_meta.description
+    desc = ts_meta.resolved_description()   # 2026-11-27 小欧 - description 可为 callable, 统一走解析点
     # 剥离之前可能注入的"当前未加载分类"部分,只取原始描述
     marker = "\n\n当前未加载分类:"
     if marker in desc:

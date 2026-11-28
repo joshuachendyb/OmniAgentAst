@@ -669,6 +669,7 @@ LLM 工具名与参数名的别名归一层，schema 校验前执行（调用点
 | `expand_misplaced_params`（2026-11-13） | 展开 LLM 幻觉的错位参数：嵌套 dict（`{'new_string': {'old_string':..., '$text':...}}`）和 XML 标签串（`'val</newString><old_string>...</old_string><path>...</path>'`）→ 顶层平铺。**判据（防误伤合法内容）**：①承载错位的字段名本身须是已知参数名（否则 `write_xlsx.data` 等合法 dict 参数被误展开）；②XML 串须提取出 ≥2 个参数且含自身规范名（否则编辑含 `"</path>"` 的代码时 `new_string` 被吞）；③`_EXTRA_KNOWN_KEYS` 补 `edit.replaceAll`（不在别名表，丢则静默只替换首处）。通用设计：从 `PARAM_ALIASES` 推导参数名集合，其他 tool 有条目即自动获得能力。`normalize_params` 开头调用（键名映射之前） | tool_name: str, params: Dict | (expanded_params, has_expansion) |
 | `TOOL_NAME_ALIASES`（官方13件套收编，2026-11-10） | 网关强塞的官方工具名收编：`websearch→searchweb`（真联网搜索，必填 `{query}` 逐字兼容）/`glob→find`（`{pattern,path}` 必填参数对齐）/`webfetch→fetchpage`（`url` 必填同名）；配套 `PARAM_ALIASES["fetchpage"]` 增 `format→extract_format`（枚举值 markdown/html/text 一致）。实证 beam-free 连调未注册 `websearch`×13 全被拒致 19 轮死循环，收编后假动作→真执行；`execute`(JS运行时)/`patch`(diff)/`question`/`skill`/`subagent` 无诚实对应，不收 | — | Dict |
 | `add_param_alias` | 运行期登记别名（幂等覆盖） | tool_name, alias, canonical | None |
+| `normalize_name_set`（2026-11-28） | 工具名集合归一到注册名集合 + str fail-fast：传 str 直接 TypeError（`set("write")` 会拆单字符致名单静默失效）；名字逐个过 `normalize_tool_name`（写别名与写注册名等价）。工具装载/动态注入/可见性三处名单判据共用此单一实现（DRY），`param_name` 定制报错文案 | names, param_name: str | Set[str] |
 
 ### 4.3 基础工具（app/tools/fundamental/）
 

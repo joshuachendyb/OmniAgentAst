@@ -22,6 +22,10 @@
 #   ②新增 _task_llm_model 任务级快照(构造时 L2 已生效), 供 react_cycle/telemetry 全程读快照,
 #   根治"单例被并发还原后记录到他人模型"竞态
 # 2026-08-23 - 小欧 - 注释卫生勘误: 行内注缩进噪声修正 + 两处日期笔误 08-22→08-23(无任何逻辑变更)
+# 2026-11-27 - 小欧 - 增 track_task 形参(默认 True)并删 **kwargs: 子Agent(委托)复用主任务ID时不再 create_task,
+#   避免覆盖主任务记录; kwargs 白名单早已删且全仓无调用方传参, 保留即"静默吞错", 改为显式形参漏改必炸
+# 2026-11-28 - 小欧 - track_task fail-fast: 传 "false"/0 等非 bool 值时 `if track_task:` 按真值处理,
+#   子Agent 会静默建台账行(进用户任务列表), 与"安全类承诺不走静默降级"冲突, 构造期直接 TypeError
 """
 Agent 核心基类 — 类骨架
 
@@ -54,8 +58,13 @@ class BaseAgent(ABC):
         llm_client: Any,
         task_id: str,
         max_steps: Optional[int] = None,
-        **kwargs
+        track_task: bool = True,
     ):
+        # 2026-11-28 小欧 - fail-fast: "false"/0 等非 bool 值在 if 下按真值处理, 会让子Agent静默建台账行
+        if not isinstance(track_task, bool):
+            raise TypeError(
+                f"track_task 须为 bool, 收到 {type(track_task).__name__}: {track_task!r}"
+            )
         # 原 AgentInitializer._init_llm — 归一后模型身份唯一入口 llm_client.llm_model, 不再接受散装 kwargs 覆写
         self.llm_client = llm_client
         # 三堂会审修复(小欧 2026-08-23): 任务级模型身份快照——构造时(L2 sessionModel 已生效)定格,
@@ -87,19 +96,22 @@ class BaseAgent(ABC):
         # A6(2026-08-12): 由子类 UniversalAgent.__init__ 驱动 tool_loader 初始化, 抽象基类不依赖工具注册表
 
         # 原 AgentInitializer._init_task_tracking
+        # 2026-11-27 小欧 - track_task=False 时不建任务记录: 子Agent(委托)共用主任务ID,
+        #   再 create_task 会覆盖主任务状态; 默认 True 主Agent行为不变。
         self._task_tracker = None
-        try:
-            from app.services.task import get_tracker
-            tracker = get_tracker()
-            # 统一任务ID: SSE task_id 为全场唯一标识, tracker 不再自编号 — 北京老陈/小欧 2026-07-16
-            tracker.create_task(
-                task_id=self.task_id,
-                agent_id=self.__class__.__name__,
-                description="",
-            )
-            self._task_tracker = tracker
-        except Exception as _e:
-            logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
+        if track_task:
+            try:
+                from app.services.task import get_tracker
+                tracker = get_tracker()
+                # 统一任务ID: SSE task_id 为全场唯一标识, tracker 不再自编号 — 北京老陈/小欧 2026-07-16
+                tracker.create_task(
+                    task_id=self.task_id,
+                    agent_id=self.__class__.__name__,
+                    description="",
+                )
+                self._task_tracker = tracker
+            except Exception as _e:
+                logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
 
         self._step_emitter = StepEmitter(self)
 

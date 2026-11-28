@@ -24,6 +24,9 @@
 - v2.9 2026-11-27 小欧 实施清单与里程碑逐项对齐：①§5.1/§5.2 每个文件补「修改要点（落码位置）」列，点名改哪个函数、改什么、代码在哪一节，消除"只列文件名不知改什么"；②§5.2 补原清单遗漏的 `config/config.yaml`（P1 新增 `tuning.agent.plugins_dir` 配置项）与 `stream_orchestrator.py`（P2 改 `_SSE_FORWARD_TYPES`）；③§5.3 补 `task_registry.py`（`inject_system_notice`/`drain_inbox` 已存在，P1 直接复用）、`tools/agent/__init__.py`（已存在）不改理由，并标注 `react_loop.py` 的 P2 事件 sink 例外；④§6 每阶段增「涉及文件（新增/修改）」列，逐阶段点名代码落点，工期不变
 - v2.10 2026-11-27 小欧 全章交叉核查修正（逐章互相核查）：①§5.1 `load_from_manifest` 职责归属纠正——它是 `AgentRegistry` 的方法（`agent_config.py:195`），非 `plugin_loader.py` 的；`plugin_loader.py` 只做 `load_plugins()` 扫描 + 逐 manifest 调 `registry.load_from_manifest()`，行数 ~50 改 ~30（与 §2.1.1 一致）；②§5.1 `agent_config.py` 补 `load_from_manifest` 与 `get_agent_registry`/`reset_agent_registry`（模块级函数，非 Registry 方法）落点；③§5.2 `agent_register.py` 修改要点由"三张分类/依赖表"改为"三张表（描述/入参/示例）+ `tool_methods` 注册循环"（与 §4.1 四张表口径一致）；④§5.2 `stream_orchestrator.py` 预估列改"P2（暂缓）"；⑤§6 P1 插件行 `plugin_loader.py` 由"改"改"新增"（§5.1 已列为新增文件）
 - v2.11 2026-11-27 22:39:03 小欧 §6 由单张优先级表扩为两节：原表收为 §6.1「优先级总表」；新增 §6.2「阶段实施方案」，把 P0 拆为 S0-S5 六个可独立验收的串行阶段、P1/P2/P2+ 各一阶段，逐阶段给出目标/改动面/验收清单/退出标准/失败回退，并补 §6.2.11 验收门禁与记录规则（每阶段一记录、红项不出阶段、安全项与能力同阶段验收）；同时纠正 §2.5.1 上限校验落点的错误前提——`execute_tools` 开头逐 call 的修正实为文件扩展名纠错（`_auto_correct_file_tool`，不查 `TOOL_NAME_ALIASES`），别名归一在下游 `registry.get_tool` 才发生，故计数必须自行调 `normalize_tool_name`，同步改 §2.5.1 代码与 §5.2 `tool_runner.py` 行、§6.2.7 验收第 2 项
+- v2.12 2026-11-28 00:04:29 小欧 S0 落码后的口径校正（对码实测）：①§6.2.2 改动面由 7 个文件改 9 个——补 `tool_types.py`（`description` 放宽 + `resolved_description()` 唯一解析点）与 `tool_search.py`（BM25 索引与结果回填两处直读 `.description`，不改则 callable 描述在检索期抛 TypeError），并说明原表按 `exclude` 传参链列文件、漏了 callable 描述链路的两个读取点；②描述取值统一表述为 `resolved_description()`，不再写 `meta.description() if callable(...)` 的内联写法（单一解析点，六处读取点一处收口）；③验收第 2 项补"快照须取自真实改造前代码（`git archive HEAD backend` + 同一探针），不得用复算等价代替"；④验收第 7 项与 §6.2.11 第 2 条把"单测全绿"改为可执行的"失败集合与改造前基线同一集合，新增一条即失败"（实测基线存量 52 条红项，全绿不可达，原措辞会把每个阶段都卡死）
+- v2.13 2026-11-28 06:32:54 小欧 全文再核（S0 已落码后的一致性收口）：①§6.1/§6.2.1/§5.2 三处文件清单与 §6.2.2 的 9 文件对齐——补 `tool_types.py`/`tool_search.py`，§6.2.2 失败回退"7 个文件"订正为 9；②§6.2.2 增注「表中『现 :N』指 S0 改造前位置」，避免落码后行号下移被误读；「全仓 6 处读取点」改为不计数表述，并订正 v2.12 的该计数——实测 ToolMetadata 直读点为 5 处（`tool_description.py:54`/`registry.py:374`/`tool_cache_manager.py:54`/`tool_search.py:110`、`:294`）；③§4.1 注意点 2 由"各 +1 行内联解析 callable"改为"只在一处解析"：`tool_types.resolved_description()` 为唯一解析点，补 `tool_search` 两处直读，说明散落写法会在检索期抛 TypeError；④§4.2 ①～⑥ 由"形参当前不存在"改为"S0 前不存在 / S0 已落码"（`init_tools(excluded_tools)`、`to_openai_tools(exclude)`、`registry`/`tool_cache_manager` 传参链、`api_key` property），③ 代码样例 `meta.description() if callable(...)` 改 `meta.resolved_description()`；⑤§1.4 与 §2.7.3 台账/`**kwargs` 两处口径由"当前无条件建台账、现有 kwargs 不校验"改为"S0 前如此，S0 已门控/已删"，台账行与门控代码块标注 S0 已落码；⑥工具侧 ContextVar 清单三处不一致（§2.7.2 七组、§2.6 九项含 depth、§3.1 八项缺 task_id）统一为"10 个，清单见 §2.7.2"，清单按 `app/tools/context.py` 实测（task_id/hooks/text_task/notice/question/generate/precheck/session_id/delegate/depth）；⑦§6.2.5 第 16 项原用"传非法 sub_task_id（含空格）"触发构造失败——该 id 由 runner 内部生成、`UniversalAgent` 只校验非空，此路不通，改为故障注入（临时替换构造器）并断言独立 client 已关闭；⑧§3.2 第 9 步把"delegate 回调置空"从 `_delegate_scope` 移到第 10 步子任务内（实际在 `_child()` 内 set）；⑨§7.2 台账引用 §5.3（不改的文件）改 §2.7.3；§7.3 effort 校验落点由 §4.1（工具注册）改 §2.2 Schema + §2.3 工具实现
+- v2.14 2026-11-28 07:30:29 小欧 S0 验收补测与订正：①§6.2.2 第 1 项补服务级冒烟实测（`start_dev.ps1 watch` 真起进程 → `GET /health` 200、`status/db_status=healthy`），并写明 import 探针覆盖不到启动期建库/挂路由/构造 Agent；②第 4 项订正 `BaseAgent` 是 ABC，"无 `**kwargs`"须用 `inspect.signature` 断言 `VAR_KEYWORD`，直接实例化抛的 `TypeError` 来自抽象类、不能作证据；③第 7 项补定向回归实测（63 文件，基线 15 失败/1635 通过 vs 改造后 15/1635，失败集合逐条相同、新增 0）与 E2E-P0-03b 实测（PASSED，31.1s，5 次 LLM 调用，22 步）；④新增"补测发现并修复的静默失效点"表（5 点：`excluded_tools` 传 str 被拆单字符、别名不归一、`exclude`/`tool_names` 子串判定、`track_task` 传字符串当真有、`api_key` 返回 None），并订正 `write_file` 并非别名表键、原判断不成立；⑤新增开发启动器崩溃自愈记录（watchfiles 只在文件变更时重启子进程，补守护进程上溯清理 + 孤儿链清理 + 端口看护，实测 25s 自愈）；⑥§6.2.11 第 2 条订正回归基线取法——`git archive` 在本仓取不到测试（435 个 `test_*.py` 全部未入库），改为改动文件逐字节回退 + sha256 校验恢复，并说明全量 pytest 因 300s 超时不可用、改用定向集
 
 
 ---
@@ -66,7 +69,7 @@
 | 子 Agent 复用 `UniversalAgent` 而非新 Agent 子类 | KISS-DIRECT：现有类已支持 `initial_categories`，无需新抽象 |
 | 不走 `agent_runner.run_agent_in_background` | 子 Agent 是同步子过程不是用户任务；完整 runner 的台账/取消/重连/统计属用户任务语义，套上去是类别错误 |
 | 私有纯内存 buffer 而非改 runner 加开关 | 复用 `create_task_stream_buffer(..., journal_sink=None)` 现成纯内存模式；框架零改动、SSE/DB 天然隔离 |
-| 上下文副本（`copy_context` + `create_task(context=)`） | `clear_temp_auth`、`set/reset_current_task_id`、七组工具回调都是 ContextVar 操作，副本天然隔离父子，优于手工保存恢复 |
+| 上下文副本（`copy_context` + `create_task(context=)`） | `clear_temp_auth`、`set/reset_current_task_id`、工具侧各 ContextVar 回调都是 ContextVar 操作，副本天然隔离父子，优于手工保存恢复 |
 | 递归防护 fail-closed（深度 + 清空回调）而非只看工具可见性 | `auto_inject_from_search` 会按 searchtool 结果把 AGENT 整类灌回（`_retry_engine._tools` 与 `_tools_dict` 同一 dict），"看不见"不是防线；只有"拿不到回调"才是 |
 | 子 Agent 只读（拒绝分类 + 拒绝名单 + 元数据校验） | HITL 确认正文只走 interact 帧，子 Agent 的确认/问询落在私有 buffer，用户不可见；`wait_for_confirmation_result` 120s 后按拒处理。开写权限等于给用户一个静默超时的黑洞 |
 | 守卫协程 `_run_child_guarded` 统一收口超时与取消 | 子 Agent 不注册 `running_tasks`，框架内 `is_cancel_requested(子task_id)` 恒 False；超时/取消只能由父侧轮询 + `Task.cancel` 实现，且必须先 cancel+await 再回收 buffer，否则 publish 撞已回收 buffer |
@@ -77,8 +80,8 @@
 | `subagent` 不入 `TOOL_NAME_ALIASES` | 它在 `UNAVAILABLE_OFFICIAL_TOOLS` 内，且 `tuning.agent.disabled_tools` 可能按此名屏蔽；收进来会与"未注册即禁用"判定打架（P2 再处理） |
 | `AgentConfig`/`AgentRegistry` 放 `backend/app/tools/agent/` | `agent_register.py`（tools 层）要读注册表生成描述；放 services 会形成"工具层 import services"的越层（`shell_background.set_notify_router` 是既有合规范式） |
 | 工具描述由注册表动态生成（`description` 支持 callable） | OCP：新增 Agent 只注册配置，不改描述代码；描述文本永远与 `list_configs()` 同源，不会漂移 |
-| 子 Agent `track_task=False` | 它不是用户任务：不该占 `tasks` 台账、不该被启动期超时扫描当僵尸任务、也不该让 `_finalize_cycle` 去写用户可见状态。**该门控须在 `BaseAgent.__init__` 实装**——当前无条件建台账且 `track_task` 会被 `**kwargs` 静默吞掉 |
-| 改造项一律"显式形参 + 启动期 fail-fast"，不接受 `**kwargs` 兜底 | `UniversalAgent`/`BaseAgent` 现有 `**kwargs` 只接收不校验，`excluded_tools`/`track_task` 漏改时无任何报错：sub 拿到全量工具（只读承诺失效）、sub 建台账行（幽灵任务）。安全类承诺若走静默降级，测试不红、日志不报，只能靠线上发现 |
+| 子 Agent `track_task=False` | 它不是用户任务：不该占 `tasks` 台账、不该被启动期超时扫描当僵尸任务、也不该让 `_finalize_cycle` 去写用户可见状态。**该门控须在 `BaseAgent.__init__` 实装**——S0 前是无条件建台账、`track_task` 会被 `**kwargs` 静默吞掉；S0 已改为 `if track_task:` 门控（§2.7.3） |
+| 改造项一律"显式形参 + 启动期 fail-fast"，不接受 `**kwargs` 兜底 | `UniversalAgent`/`BaseAgent` 在 S0 前用 `**kwargs` 只接收不校验（S0 已删，见 §4.2 改造前提），`excluded_tools`/`track_task` 漏改时无任何报错：sub 拿到全量工具（只读承诺失效）、sub 建台账行（幽灵任务）。安全类承诺若走静默降级，测试不红、日志不报，只能靠线上发现 |
 | P0 只做分类粒度工具集，名粒度推迟 P1 | 现成 `to_openai_tools(tool_names=)` 只控可见性不控执行，需与 `ToolRetryEngine` 构造前筛选联动 |
 | 主名称定为 `delegateagent`，其它生态名走别名归一 | 名称唯一、零重复注册；复用 `TOOL_NAME_ALIASES`/`normalize_tool_name` 现成能力，注册表 `get_tool`/`resolve_registered_tool` 已内置归一调用，零改调用点 |
 | `wait` 默认 True（P0 同步）/ False（P1 异步） | P0 先跑通同步直线路径；异步复用既有 inbox 通道回灌，不在父轮次结束后硬改 `conversation_history` |
@@ -1000,7 +1003,7 @@ for _i, _err in _rejected.items():
 | 步数/超时/台账 | 8 步 / 300s / 不建台账 | `max_steps` / `timeout_s` / `track_task` | P0 | 配置驱动 |
 | 名称/别名 | `delegateagent` 唯一 | `TOOL_NAME_ALIASES` 增条目 → `normalize_tool_name` | P0 | 不另注册工具、不改调用点 |
 | 工具描述内容 | 注册表快照动态生成 | 描述支持 callable（`to_openai_tools` 取值时调用） | P0 | 新增 Agent 不改描述字面量 |
-| 工具回调通道 | 入口层注入 | `ContextVar` set/reset（hooks/text_task/notice/question/generate/session_id/precheck/delegate/depth） | P0 | 工具层零越层，新增回调不动工具代码 |
+| 工具回调通道 | 入口层注入 | `ContextVar` set/reset（10 个，清单见 §2.7.2） | P0 | 工具层零越层，新增回调不动工具代码 |
 | 事件总线 | 私有纯内存 buffer | `_delegate_scope` 可换 sink（P2 `agent.event_sink` 注入） | P0/P2 | 不改 react_loop/runner |
 | ReAct 引擎 | `react_loop.run_react_cycle` | 共用同一引擎，差异全在配置 | P0 | 子 Agent 零重写 |
 | 并行上限 | 6 | `tool_constants.MAX_PARALLEL_SUB_AGENTS` | P0 | 常量单点，校验落 tool_runner |
@@ -1047,7 +1050,7 @@ for _i, _err in _rejected.items():
 - `DefaultToolSecurityHooks`：安全确认/拒绝照常生效
 - 沙箱预检：读文件类工具（`reviewer` 允许 FILE 分类里的读侧）同样走路径校验；bash/写侧在 P0 已被拒绝清单挡住，P1 放开时也只会经过同一套安全门，不会因为"子 Agent"而放宽
 - 临时授权（ `_authorized_paths` 是 ContextVar）：子 Agent 继承父的授权映射；其 `clear_temp_auth()` 只清副本，**父 Agent 的授权不受影响**
-- 七组工具回调（hooks/notice/question/generate/session_id/task_id/delegate）在副本内 set/reset，父子互不干扰；其中 `delegate` 在副本启动前被显式置 `None`（§2.7.1 运行层）
+- 全部 10 个工具侧 ContextVar（`task_id`/`hooks`/`text_task`/`notice`/`question`/`generate`/`precheck`/`session_id`/`delegate`/`depth`，定义见 `app/tools/context.py`）在副本内 set/reset，父子互不干扰；其中 `delegate` 在子任务启动前被显式置 `None`（§2.7.1 运行层）
 
 > 不采用"手工保存/恢复授权"：ContextVar 本就是为这种作用域隔离设计的，克隆即用，零额外 API。
 
@@ -1079,10 +1082,10 @@ for _i, _err in _rejected.items():
 | 连接池 | 默认共享父 Agent 的 `httpx` 客户端（`create_llm_client(..., shared_client=...)` 使 `_owns_client=False`，子实例 `close()` 为 no-op）；`AgentConfig.model` 非 None 才新建独立 client，finally 关闭 |
 | 取消联动 | 子 Agent 不注册进 `running_tasks`，框架内 `is_cancel_requested(子task_id)` 恒为 False，故联动只能由父侧轮询：`_run_child_guarded` 按 `_POLL_S` 周期查 `is_cancel_requested(父task_id)`，命中即 `task.cancel()` 并等待收敛 |
 | 事件总线 | 私有纯内存 buffer；回收顺序必须是"先 cancel + 有界等待子任务收干净，再 `reclaim_memory_buffer`"，反序会让子任务 publish 撞上已回收 buffer 抛 RuntimeError |
-| 任务台账 | 子 Agent 须 `track_task=False`，但 **`BaseAgent.__init__` 当前无条件执行 `tracker.create_task(...)` 且无 `track_task` 形参**（`base_agent.py:95`；该参数会被 `**kwargs` 静默吞掉、不报错）。P0 前必须实装门控，否则子 Agent 以 `sub-xxx` 建台账行，既占 `tasks` 列表被用户看见，又会被启动期僵尸任务扫描命中 |
+| 任务台账 | 子 Agent 须 `track_task=False`。**S0 前 `BaseAgent.__init__` 无条件执行 `tracker.create_task(...)` 且无 `track_task` 形参**（参数被 `**kwargs` 静默吞掉、不报错），子 Agent 会以 `sub-xxx` 建台账行，既占 `tasks` 列表被用户看见，又会被启动期僵尸任务扫描命中；**S0 已实装 `if track_task:` 门控**（`base_agent.py:95`），传 False 即不建行 |
 | 遥测归属 | `react_loop.run_react_cycle` 内部会建 `TaskTelemetry` 并 `on_start`（`react_loop.py:197-205`），但 `finalize()` 由 `agent_runner` 收尾路径调用；子 Agent 不跑完整 runner（§5.3），故**子 Agent 的 telemetry 无人 finalize**——P0 取舍：**不 finalize**，子 Agent 的 token 只经 `accumulated_usage` 回灌父 Agent（§4.3）统一记账，不单独落 `task_metrics`（子 task_id 不在 `chat_tasks` 里，强落会外键失败）。P0 验证时须确认 `TaskTelemetry` 未 finalize 不会在 `react_loop` 结尾抛异常或留悬挂资源 |
 
-**台账门控改造**（`base_agent.py`，§5.2 前置改造的一部分）：
+**台账门控改造**（`base_agent.py`，§5.2 前置改造的一部分，S0 已落码）：
 
 ```python
 def __init__(self, llm_client, task_id, max_steps=None,
@@ -1114,7 +1117,7 @@ def __init__(self, llm_client, task_id, max_steps=None,
 | 通道 | 对象 | 载体 | 谁消费 |
 |------|------|------|--------|
 | ① LLM 回路 | LLM | `message_builder.conversation_history`（内存消息列表） | 仅 LLM |
-| ② 工具层 | 各工具实现 | `ContextVar` 回调注入（hooks/text_task/notice/question/generate/session_id/precheck/delegate） | 工具实现 |
+| ② 工具层 | 各工具实现 | `ContextVar` 回调注入（10 个，清单见 §2.7.2） | 工具实现 |
 | ③ 前端 | 浏览器 SSE | `StreamBuffer.event_log`（`agent_streams[task_id]`） | `stream_reader` → SSE 帧 |
 | ④ 子 Agent | 子会话 | `delegate_callback` + 返回字典 | 父 Agent 的 conversation_history |
 | ⑤ 异步回灌（P1） | 父 Agent 自己 | `task_registry.inject_system_notice` → `drain_inbox` → 对话历史 | 父 ReAct 下一轮 |
@@ -1169,7 +1172,7 @@ delegateagent_runner.run_delegate(agent=父agent, agent_id, task, context, wait)
   │  6. 创建 UniversalAgent(excluded_tools=DELEGATE_DENY_TOOLS, track_task=config.track_task)
   │  7. 只读校验: _find_unattended_blocker 扫到需确认/交互工具 → 整单拒绝
   │  8. system_prompt 覆盖 _get_system_prompt；组装 sub_task（task≤500 / 单值≤200）
-  │  9. _delegate_scope: 建 sub_task_id 纯内存 buffer + copy_context() + delegate 回调置空
+  │  9. _delegate_scope: 建 sub_task_id 纯内存 buffer + copy_context()（回调置空在子任务内做，见 10）
   │ 10. _run_child_guarded: create_task(..., context=副本) 跑 run_react_cycle
   │     · 墙钟 timeout_s 到点 → task.cancel() → 收敛 → 抛 TimeoutError
   │     · 每 _POLL_S 查 is_cancel_requested(父task_id) → task.cancel() → 收敛 → 抛 CancelledError
@@ -1253,13 +1256,13 @@ def _register_agent_tools():
 注意两点：
 
 1. `delegateagent` **不加入** `AGENT_HIDE_FROM_STEPS`（它是有业务产出的工具，前端步骤流应展示"正在委托 researcher 子Agent..."）。
-2. `ToolMetadata.description` 现为 `str`；需让 `tool_description.to_openai_tools`（`tool_description.py:54` 取值处）与 `registry.list_tools`（`registry.py:374`）在取值时解析 callable（各 +1 行，向后零影响），否则 callable 会被原样塞进 schema；同时把 `ToolRegistry.register(description=...)` 的形参标注放宽为 `Union[str, Callable[[], str]]`。注意 `tool_cache_manager.py:54` 也直接读 `.description`，目前只服务 searchtool，`delegateagent` 不走该路径；若将来把 callable 描述推广到别的工具，这处必须一并解析。
+2. `ToolMetadata.description` 需支持 callable，且**解析只在一处**：S0 把字段放宽为 `Union[str, Callable[[], str]]` 并在 `tool_types.py` 新增 `resolved_description()`（解析异常按空串返回 + warning），所有取值方一律走它——`tool_description.to_openai_tools`、`registry.list_tools`、`tool_cache_manager._get_original_search_desc`、`tool_search` 的 BM25 索引与结果回填。**不要在调用方各自写 `callable(x) and x()`**：5 个直读点各写一遍等于把同一判据复制 5 份，漏一处就把函数对象塞进 schema、或在检索期抛 TypeError（S0 落码前正是这种散落写法）。`register(description=...)` 的形参标注同步放宽。
 
 ### 4.2 工具子集注入
 
-子 Agent 的工具注入走 `ToolLoader.init_tools`，但 **`excluded_tools` 形参当前并不存在**——`tool_loader.py:28` 实际签名为 `init_tools(self, initial_categories=None)`，须按 §5.2 改造后下段代码才成立：
+子 Agent 的工具注入走 `ToolLoader.init_tools`。**`excluded_tools` 形参在 S0 前并不存在**（原签名 `init_tools(self, initial_categories=None)`，`tool_loader.py:28`）；S0 已落码为 `init_tools(self, initial_categories=None, excluded_tools=None)`（`:30`），下段代码按此写：
 
-> 改造前提：下文「三处同源」列的每个落点都要改造才生效（`init_tools`/`load_category` 增 `excluded_tools`、`to_openai_tools` 增 `exclude` 形参并经 `registry`/`tool_cache_manager` 打通、两个构造器改显式形参并删掉 `**kwargs`）。**当前 `UniversalAgent.__init__` 与 `BaseAgent.__init__` 都是 `**kwargs` 接收后不消费、不报错**（`universal_agent.py:56`、`base_agent.py:57`），所以漏改任何一项都表现为"参数被吞掉、程序照跑"，不会在启动期暴露；删掉 `**kwargs` 后，漏改由 Python 原生 `TypeError` 在构造时炸出来。
+> 改造前提（S0，已落码）：下文「三处同源」列的每个落点都要改造才生效（`init_tools`/`load_category` 增 `excluded_tools`、`to_openai_tools` 增 `exclude` 形参并经 `registry`/`tool_cache_manager` 打通、两个构造器改显式形参并删掉 `**kwargs`）。**S0 前 `UniversalAgent.__init__` 与 `BaseAgent.__init__` 都是 `**kwargs` 接收后不消费、不报错**（`universal_agent.py:56`、`base_agent.py:57`），漏改任何一项都表现为"参数被吞掉、程序照跑"，不会在启动期暴露；S0 已删 `**kwargs`，此后再漏改由 Python 原生 `TypeError` 在构造时炸出来。
 
 ```python
 # delegateagent_runner.py 中
@@ -1279,9 +1282,9 @@ sub_agent = UniversalAgent(
 2. `load_category` 动态注入时同样跳过（否则 searchtool 一命中又灌回来）；
 3. `get_openai_tools`/`to_openai_tools` 生成可见列表时同样跳过（否则 LLM 看得见但调不通，白耗轮次）。
 
-实现口径：`ToolLoader.init_tools(..., excluded_tools)` 把清单存成 `agent._excluded_tools`（单一权威），`load_category` 读它过滤动态注入。**可见性侧不能直接抄 `to_openai_tools(exclude=...)`——该形参不存在**：现签名为 `to_openai_tools(registry, categories=None, tool_names=None, strict=False)`（`tool_description.py:27`），`tool_description.py:54` 处 `"description": meta.description` 也是原样取 `str`。故须先给 `to_openai_tools` 增 `exclude` 形参（或改由 `tool_names` 白名单反推），再让 `_excluded_tools` 生效。写入点只有 `UniversalAgent.__init__`（`excluded_tools=None` 保持既有行为）。
+实现口径：`ToolLoader.init_tools(..., excluded_tools)` 把清单存成 `agent._excluded_tools`（单一权威），`load_category` 读它过滤动态注入。**可见性侧在 S0 前无法直接传 `exclude`**：原签名 `to_openai_tools(registry, categories=None, tool_names=None, strict=False)`（`tool_description.py:27`）没有该形参；S0 已增 `exclude`（`:29-31`），`registry.to_openai_tools` 与 `tool_cache_manager.get_openai_tools` 同步透传，`_excluded_tools` 因此才真正生效。写入点只有 `UniversalAgent.__init__`（`excluded_tools=None` 保持既有行为）。
 
-> 传参链要一次打通，缺一环拒绝清单在 LLM 眼里就等于不存在：`tool_cache_manager.get_openai_tools(agent)`（现为 `to_openai_tools(categories=agent._loaded_categories)`，`tool_cache_manager.py:29`）→ `registry.to_openai_tools(..., exclude=agent._excluded_tools)` → `tool_description.to_openai_tools(...)`。三者任一漏传，子 Agent 会"看得见但调不通"，白耗一轮。
+> 传参链要一次打通，缺一环拒绝清单在 LLM 眼里就等于不存在：`tool_cache_manager.get_openai_tools(agent)`（S0 前只传 `categories=agent._loaded_categories`；S0 已补 `exclude=getattr(agent, "_excluded_tools", None)`）→ `registry.to_openai_tools(..., exclude=agent._excluded_tools)` → `tool_description.to_openai_tools(...)`。三者任一漏传，子 Agent 会"看得见但调不通"，白耗一轮。
 
 **前置改造完整代码**（§5.2 清单逐项落地；`base_agent.py` 的 `track_task` 门控见 §2.7.3，`tool_executor.py` 的注入见 §2.4.2，此处不重述）：
 
@@ -1327,7 +1330,7 @@ def to_openai_tools(registry, categories=None, tool_names=None,
         if name in _exclude:                       # 新增：可见性过滤
             continue
         ...
-        "description": meta.description() if callable(meta.description) else meta.description,
+        "description": meta.resolved_description(),   # 唯一解析点（tool_types.py），不在调用方各写一份
 ```
 
 ④ `registry.py` —— `to_openai_tools` 增 `exclude` 并透传（§5.2 清单原漏此项，补上）：
@@ -1339,7 +1342,7 @@ def to_openai_tools(self, categories=None, tool_names=None,
                            tool_names=tool_names, exclude=exclude)
 ```
 
-> `list_tools`（`registry.py:374` 附近）与 `register(description=...)` 的形参标注也须同步：前者取值时解析 callable，后者放宽为 `Union[str, Callable[[], str]]`（§4.1 注意点2）。
+> `list_tools`（`registry.py:374` 附近）、`register(description=...)` 的形参标注、`tool_search` 的两处直读也须同步：取值一律走 `resolved_description()`，后者放宽为 `Union[str, Callable[[], str]]`（§4.1 注意点2）。
 
 ⑤ `tool_cache_manager.py` —— 补传 `exclude`：
 
@@ -1350,7 +1353,7 @@ tools = tool_registry.to_openai_tools(
 )
 ```
 
-⑥ `client_sdk.py` —— `LLMClient` 补只读 `api_key` property（§2.5 model 分支用 `agent.llm_client.api_key`；该类现仅有 `_api_key`，`client_sdk.py:441`）：
+⑥ `client_sdk.py` —— `LLMClient` 补只读 `api_key` property（§2.5 model 分支用 `agent.llm_client.api_key`；该类 S0 前仅有 `_api_key`，`client_sdk.py:441`；S0 已加 property）：
 
 ```python
 @property
@@ -1461,6 +1464,8 @@ TOOL_NAME_ALIASES.update({
 | `backend/app/llm/client_sdk.py` | ① `LLMClient` 增只读 `api_key` property（现仅 `_api_key`，无 setter 防绕过 strip 清洗）；② 并行子 Agent 共享父 client 时的 api_key 读取。代码见 §4.2⑥ | +4 行 |
 | `backend/app/tools/registry.py` | ① `list_tools`/`to_openai_tools` 解析 callable description；② `to_openai_tools` 增 `exclude` 形参并透传给 `tool_description.to_openai_tools`；③ `register(description=...)` 放宽为 `Union[str, Callable]`。代码见 §4.2④ | +8 行 |
 | `backend/app/tools/tool_description.py` | ① `to_openai_tools` 增 `exclude: Optional[Set[str]]` 形参 + 可见性过滤；② description 取值支持 callable。代码见 §4.2③ | +8 行 |
+| `backend/app/tools/tool_types.py` | ① `ToolMetadata.description` 放宽为 `Union[str, Callable[[], str]]`；② 新增 `resolved_description()` 作 callable 描述的唯一解析点（解析异常按空串返回 + warning，不让一个坏描述拖垮整张工具列表）。代码见 §6.2.2 | +12 行 |
+| `backend/app/tools/fundamental/tool_search.py` | BM25 索引文本与检索结果回填两处改走 `resolved_description()`（直拼 callable 会在检索期抛 TypeError）。代码见 §6.2.2 | +2 行 |
 | `backend/app/services/agent/tool_cache_manager.py` | ① `get_openai_tools(agent)` 调 `to_openai_tools` 时补传 `exclude=getattr(agent, "_excluded_tools", None)`（漏则可见性过滤形同不存在）。代码见 §4.2⑤ | +2 行 |
 | `backend/app/tools/tool_constants.py` | ① 新增 `MAX_PARALLEL_SUB_AGENTS`（当前代码零命中，须同批新增）；② `MAX_DELEGATE_DEPTH` 不进本文件（只在 runner 内使用，留该模块）。代码见 §2.5.1 | +1 行 |
 | `backend/app/tools/tools_alias_mapper.py` | ① `TOOL_NAME_ALIASES` 增 4 条大众名→`delegateagent`；② P1 可选 `PARAM_ALIASES["delegateagent"].prompt→task`。代码见 §4.5 | +5 行 |
@@ -1491,7 +1496,7 @@ TOOL_NAME_ALIASES.update({
 |------|------|----------------------|----------|
 | **P0** | AgentConfig + AgentRegistry（含 `__post_init__` 校验/`unregister`/`reset`）+ delegateagent_runner（含守卫协程 + 私有 buffer + 上下文克隆）+ delegateagent 工具（同步 `wait=True`）+ ContextVar（回调 + 深度）+ 注册 + 内置 3 个 Agent | 新增 `agent_config.py`/`delegateagent_runner.py`/`delegateagent.py`/`delegateagent_schema.py`；改 `agent_register.py`/`context.py` | 2-3 天 |
 | **P0** | 递归防护 fail-closed：深度硬顶 + 子作用域清空 delegate 回调（不依赖工具可见性） | 改 `delegateagent_runner.py`（子作用域清空 + 深度校验）/ `context.py`（深度 ContextVar） | 含在首版 |
-| **P0** | 契约前置改造（先于下述各项）：`init_tools`/`load_category` 增 `excluded_tools`、`to_openai_tools` 增 `exclude` 并沿线打通 `registry.to_openai_tools`/`tool_cache_manager.get_openai_tools`、`UniversalAgent`/`BaseAgent` 改显式形参并删掉 `**kwargs`（漏改即 `TypeError` 炸在构造时） | 改 `tool_loader.py`/`tool_description.py`/`registry.py`/`tool_cache_manager.py`/`universal_agent.py`/`base_agent.py` | 0.5 天 |
+| **P0** | 契约前置改造（先于下述各项）：`init_tools`/`load_category` 增 `excluded_tools`、`to_openai_tools` 增 `exclude` 并沿线打通 `registry.to_openai_tools`/`tool_cache_manager.get_openai_tools`、`UniversalAgent`/`BaseAgent` 改显式形参并删掉 `**kwargs`（漏改即 `TypeError` 炸在构造时） | 改 `tool_loader.py`/`tool_types.py`/`tool_description.py`/`tool_search.py`/`registry.py`/`tool_cache_manager.py`/`universal_agent.py`/`base_agent.py`（8 个；`client_sdk.py` 见下方 api_key 行） | 0.5 天 |
 | **P0** | 子 Agent 只读：拒绝分类/拒绝名单三处同源 + 构造后按 `needs_confirmation`/`confirm_fn` 整单拒绝 | 改 `agent_config.py`（拒绝清单）/ `tool_loader.py`/`tool_description.py`/`registry.py`/`tool_cache_manager.py`（三处同源） | 含在首版 |
 | **P0** | 耗时有界：`timeout_s` 墙钟超时 + 父取消轮询联动 + "先收子任务再回收 buffer" | 改 `delegateagent_runner.py`（守卫协程） | 含在首版 |
 | **P0** | 并行上限校验落地 `tool_runner.execute_tools`（`len(all_calls)` > 6 拒绝该轮多余委托）；`tool_constants.MAX_PARALLEL_SUB_AGENTS` 当前不存在，须同批新增 | 改 `tool_runner.py`/`tool_constants.py` | 0.5 天 |
@@ -1525,7 +1530,7 @@ TOOL_NAME_ALIASES.update({
 
 | 阶段 | 一句话目标 | 新增/修改文件 | 前置 | 对应 §6.1 条目 | 工期 |
 |------|-----------|--------------|------|---------------|------|
-| **S0** 契约前置改造 | 让 `excluded_tools`/`exclude`/`track_task`/`api_key` 这些新形参真实存在，默认行为零变化 | 改 `tool_loader.py`/`tool_description.py`/`registry.py`/`tool_cache_manager.py`/`universal_agent.py`/`base_agent.py`/`client_sdk.py` | — | P0 契约前置改造 + `api_key` property 与 callable 描述的形参部分 | 0.5 天 |
+| **S0** 契约前置改造 | 让 `excluded_tools`/`exclude`/`track_task`/`api_key` 这些新形参真实存在，默认行为零变化 | 改 `tool_loader.py`/`tool_types.py`/`tool_description.py`/`tool_search.py`/`registry.py`/`tool_cache_manager.py`/`universal_agent.py`/`base_agent.py`/`client_sdk.py`（9 个，明细见 §6.2.2） | — | P0 契约前置改造 + `api_key` property 与 callable 描述的形参部分 | 0.5 天 |
 | **S1** 配置层 | 子 Agent"是什么"可声明、可校验、可查询 | 新增 `agent_config.py` | S0 | P0 首版（配置/注册表部分） | 0.5 天 |
 | **S2** 委托通道 | 工具能取到回调、schema 正确、失败即结构化报错 | 改 `context.py`；新增 `delegateagent_schema.py`/`delegateagent.py` | S1 | P0 首版（工具层部分） | 0.5 天 |
 | **S3** 子 Agent 运行器 | 跑通一次同步委托，同时兑现只读/递归/超时三条安全承诺 | 新增 `delegateagent_runner.py` | S2 | P0 首版（运行器/递归/只读/超时/台账/隔离） | 1 天 |
@@ -1541,31 +1546,59 @@ TOOL_NAME_ALIASES.update({
 
 **目标**：让后续阶段依赖的新形参/新属性真实存在，且**默认行为零变化**。这是唯一"改了但功能未上线"的阶段，验收标准因此是"零行为变化 + 漏改必炸"。
 
-**改动面**（7 个既有文件，全部为增量形参，默认值保持原语义）：
+**改动面**（9 个既有文件，全部为增量形参或取值口径收敛，默认值/默认行为保持原语义）：
 
 | 文件 | 落点 |
 |------|------|
-| `tool_loader.py` | `init_tools(initial_categories=None, excluded_tools=None)`（现 `:28`）：存 `agent._excluded_tools` 作单一权威，装载循环跳过；`load_category` 动态注入同样跳过 |
-| `tool_description.py` | `to_openai_tools(registry, categories=None, tool_names=None, strict=False, exclude=None)`（现 `:27`）：`if name in _exclude: continue`；description 取值支持 callable（`meta.description() if callable(...)`） |
-| `registry.py` | `to_openai_tools` 增 `exclude` 并透传（现 `:410`）；`list_tools` 解析 callable；`register(description=...)` 放宽为 `Union[str, Callable[[], str]]` |
-| `tool_cache_manager.py` | `get_openai_tools` 调 `to_openai_tools` 时补 `exclude=getattr(agent, "_excluded_tools", None)`（现 `:29` 只传 `categories`） |
-| `universal_agent.py` | `__init__` 增显式 `excluded_tools`/`track_task`，删 `**kwargs`（现 `:50-56`）；`init_tools` 与 `super().__init__` 按名传 |
-| `base_agent.py` | `__init__` 增 `track_task: bool = True`，删 `**kwargs`（现 `:52-57`）；`if track_task:` 门控 `tracker.create_task`（现 `:95-102` 无条件建行） |
+| `tool_loader.py` | `init_tools(initial_categories=None, excluded_tools=None)`（现 `:30`）：存 `agent._excluded_tools` 作单一权威，装载循环跳过；`load_category` 动态注入同样跳过 |
+| `tool_types.py` | `ToolMetadata.description` 放宽为 `Union[str, Callable[[], str]]`；新增 `resolved_description()` 作 callable 描述的唯一解析点（解析异常按空串返回 + warning，不让一个坏描述拖垮整张工具列表） |
+| `tool_description.py` | `to_openai_tools(registry, categories=None, tool_names=None, strict=False, exclude=None)`（现 `:29`）：`if name in _exclude: continue`；description 取值走 `meta.resolved_description()` |
+| `registry.py` | `to_openai_tools` 增 `exclude` 并透传（现 `:413`）；`list_tools` 走 `resolved_description()`（现 `:374` 直读 `.description`）；`register`/`_update_existing_tool`/`_register_new_tool`/`register_tool` 的 `description` 放宽为 `Union[str, Callable[[], str]]` |
+| `tool_cache_manager.py` | `get_openai_tools` 调 `to_openai_tools` 时补 `exclude=getattr(agent, "_excluded_tools", None)`（现 `:31` 只传 `categories`）；`_get_original_search_desc` 走 `resolved_description()`（现 `:54` 直读 `.description`） |
+| `tool_search.py` | BM25 索引文本（现 `:110`）与结果回填（现 `:294`）两处走 `resolved_description()`：直接拼接 callable 会在检索期抛 TypeError |
+| `universal_agent.py` | `__init__` 增显式 `excluded_tools`/`track_task`，删 `**kwargs`（现 `:50-57`）；`init_tools` 与 `super().__init__` 按名传 |
+| `base_agent.py` | `__init__` 增 `track_task: bool = True`，删 `**kwargs`（现 `:52-58`）；`if track_task:` 门控 `tracker.create_task`（现 `:89-102` 无条件建行） |
 | `client_sdk.py` | `LLMClient.api_key` 只读 property（`_api_key` 现 `:441`，无 setter，避免绕过 strip 清洗） |
+
+> 表中「现 `:N`」指 **S0 改造前**的代码位置（S0 落码后行号整体下移，按符号名定位，不按行号）；「+N 行」为增量估算。
+>
+> 文件数由 7 改 9 的原因：原表按"`exclude` 传参链"列文件，漏了 callable 描述链路的两个读取点——`tool_types.py`（类型定义与解析点本身）与 `tool_search.py`（`grep '\.description'` 直读点中的 2 处）。只加 `exclude` 不改这两处，`delegateagent` 的动态描述一上线就会在 searchtool 检索期抛 TypeError。
 
 **验收清单**：
 
 1. **启动零报错**：`backend` 目录下 `python -c "import app.services.agent.universal_agent"` 无异常；`start_watch.bat` 起服务后健康检查通过。
-2. **主 Agent 工具列表零变化**：改造前先落一份快照（`sorted(t["function"]["name"] for t in get_openai_tools(agent))`），改造后同配置重建 Agent 再取，两份集合逐项相等、数量相同。
+   实测（2026-11-28 06:49–07:15）：`start_dev.ps1 watch` 真起进程后 `GET /health` 返回 200，`status=healthy`、`db_status=healthy`、`build.app_root` 指向工作区。`import` 探针覆盖不到启动期的建库、挂路由、构造 Agent 等路径，服务级冒烟必须真起进程，不能用 import 代替。
+2. **主 Agent 工具列表零变化**：改造前先落一份快照（`sorted(t["function"]["name"] for t in get_openai_tools(agent))`），改造后同配置重建 Agent 再取，两份集合逐项相等、数量相同。快照须取自**真实改造前代码**（`git archive HEAD backend` 抽到临时目录 + 同一探针），不得用"复算等价"代替（`app` 代码已入库，archive 可用；测试未入库，回归基线不能照此办理，见 §6.2.11 第 2 条）。
 3. **默认台账行为不变**：不传 `track_task` 构造主 Agent，`tasks` 表新增一行且 `_task_tracker` 非 None。
-4. **fail-fast 生效**：`UniversalAgent(..., foo=1)` / `BaseAgent(..., foo=1)` 抛 `TypeError`（`**kwargs` 已删）；`BaseAgent(..., track_task=False)` 时 `_task_tracker is None` 且 `tasks` 表零新增。
+4. **fail-fast 生效**：`UniversalAgent(..., foo=1)` 抛 `TypeError`（`**kwargs` 已删）；`BaseAgent` 是 ABC、不能直接实例化，其"无 `**kwargs`"用 `inspect.signature(BaseAgent.__init__)` 断言不存在 `VAR_KEYWORD`（直接 `BaseAgent(..., foo=1)` 抛的 `TypeError` 来自"抽象类不可实例化"，与本项无关，不能当作证据）；`track_task=False` 时 `_task_tracker is None` 且 `tasks` 表零新增。
 5. **拒绝清单三处贯通**：`UniversalAgent(initial_categories={FUNDAMENTAL, FILE}, excluded_tools={"write"})` 后——`_tools_dict` 无 `write`；`get_openai_tools` 名字集合无 `write`；手动 `load_category(FILE)` 后仍无 `write`。
 6. **`api_key` 可读且只读**：`agent.llm_client.api_key` 返回非空字符串；赋值 `agent.llm_client.api_key = "x"` 抛 `AttributeError`。
-7. **回归**：`cd backend; pytest -q` 单测全绿；E2E-P0-03b 通过。
+7. **回归**：定向回归的失败集合与改造前基线**同一集合**（存量红项不计入本阶段，判据见 §6.2.11 第 2 条）。实测（2026-11-28 07:16–07:31）：
+   - 范围：引用 S0 改动面的 63 个测试文件（`tool_loader`/`tool_description`/`registry`/`universal_agent`/`tool_cache_manager`/`tool_search`/`client_sdk`/`base_agent`/`tool_types`/`from app.tools`），`--timeout=60`；
+   - 基线（9 个文件逐字节回退 HEAD，跑完按 sha256 校验恢复）：**15 失败 / 1635 通过**，243s；
+   - 改造后：**15 失败 / 1635 通过**，237s；
+   - 失败集合逐条相同（15 条存量红项：`test_artifacts_11_6` 3 条、`test_config_zen` 2 条、`test_critical_flow_deep_bugs` 2 条、`test_flow_deep_bugs` 1 条、`test_p1_layer_ownership` 2 条、`test_proc_host_stage345_real` 1 条、`test_tdd_26_29_quota` 1 条、`test_tdd_30_32_integration` 1 条、`test_tdd_59_63_bug_e_red` 2 条），**新增 0 条**；
+   - 首轮改造后曾多出 3 条（`test_12_006/007/009_get_original_search_desc_*`）：`MagicMock` 未配置 `resolved_description()`，属测试替身未跟新契约（生产侧读的是真实 `ToolMetadata`）；已改测试替身并单类重跑 15/15 通过，同批全量重跑回到 15/1635；
+   - 全量 `pytest -q` 不可用（多个用例挂满 `timeout=300`，实测 26% 处单条卡死，单次预计 40 分钟以上），故用定向集；全量口径判据仍按 §6.2.11 第 2 条执行。
+   - E2E-P0-03b（真实后端 + 真实 LLM，非 mock）：**PASSED**，31.1s，5 次 LLM 调用，DB 22 步，工具链 `read → write → bash → write`，SSE 191 事件，一致性/步骤合理性/日志三项均 0 issue。
+
+**S0 落码后补测发现并修复的静默失效点**（2026-11-28，攻击性用例 `backend/tests/probe_delegate_s0_edge.py`，首轮 8 条中 5 条失败）：
+
+| # | 现象 | 后果 | 修法 |
+|---|------|------|------|
+| 1 | `excluded_tools="write"` 被 `set()` 拆成 `{'w','r','i','t','e'}` | 只读拒绝清单静默失效，`write` 仍在工具集 | `init_tools` 收到 str 直接 `TypeError`，形参标注 `Optional[Set[str]]` |
+| 2 | 拒绝/白名单写别名不生效（如 `write_text`） | 名单写别名静默失效 | 两处名单统一过 `normalize_tool_name`（`write_text`→`write`） |
+| 3 | `exclude="write"`/`tool_names="read"` 走 `in` 子串判定 | 静默多排除或少排除一批工具 | 两参数收到 str 直接 `TypeError` |
+| 4 | `track_task="false"`/`0` 在 `if` 下为真 | 子 Agent 静默建台账行、进用户任务列表 | `BaseAgent.__init__` 非 bool 直接 `TypeError` |
+| 5 | 底层 `_api_key` 为 `None` 时 `api_key` 返回 `None` | 标注 `-> str` 失真，调用方拿 `None` 建子 client 到请求期才炸 | `return self._api_key or ""` |
+
+> 订正一处先前判断：`write_file` **不是** `TOOL_NAME_ALIASES` 的键（表内为 `writefile`/`write_text`/`write_text_file`/`writetext`/`writeetext`/`write_content`），"`exclude={'write_file'}` 不排除 `write`"只是"拒绝一个不存在的名字"，不构成缺口；真正的缺口是"别名不做归一"，已按第 2 条修复。修复后 18 条契约用例 + 12 条边界用例共 30 条全绿。
+
+**开发启动器的崩溃自愈**（2026-11-28，非 S0 交付面，但直接影响验收第 1 项）：`watchfiles` 只在文件变更时重启子进程（`watchfiles/run.py` 的 `arun_process` 把 stop/start 全放在 `awatch` 循环内），子进程崩溃后它空转等待、服务永久失联——实测杀掉 `run_server` 后 30s 无监听、`watchfiles` 进程仍活。`backend/start_dev.ps1` 补两层：①清残留时上溯并**先杀**重载器守护进程（只杀监听者会被父进程立刻重生，实测 8s 内抢回端口），并按命令行精确清掉"子进程已死、watchfiles 还活"的孤儿链；②外层端口看护（启动宽限 60s，连续 10s 无监听即整体重起重载链）。实测：杀掉子进程后 25s 自愈，`/health` 200。
 
 **退出标准**：1–7 全绿；日志无新增 warning（预期内的缺库提示除外）。
 
-**失败回退**：本阶段全是"默认值不变的增量形参"，回退只需 revert 这 7 个文件；若第 5 项失败，说明 `exclude` 传参链断了一环，按 `tool_cache_manager → registry → tool_description` 顺序逐段加打点定位，不得跳过。
+**失败回退**：本阶段全是"默认值/默认行为不变的增量形参与取值口径收敛"，回退只需 revert 这 9 个文件；若第 5 项失败，说明 `exclude` 传参链断了一环，按 `tool_cache_manager → registry → tool_description` 顺序逐段加打点定位，不得跳过。
 
 #### 6.2.3 S1 配置层（0.5 天）
 
@@ -1639,7 +1672,7 @@ TOOL_NAME_ALIASES.update({
 13. **SSE 隔离**：委托前后父 buffer 的 `event_log` 长度不变（子步骤未透传），子步骤只出现在日志。
 14. **授权不串味**：委托前给父加临时授权路径，委托后父 `_authorized_paths` 逐键相同（子 Agent 的 `clear_temp_auth` 只作用于副本）。
 15. **model 分支**：把临时 AgentConfig 的 `model` 设为与父相同的模型名（确保走 `create_llm_client` 分支），委托成功，且返回后父 `agent.llm_client._client.is_closed is False`（独立 client 的 `close()` 未关掉共享池）。
-16. **构造失败收口**：传非法 `sub_task_id`（如含空格）使 `UniversalAgent` 构造抛错，返回 error 且不残留独立 client（`_close_quietly` 已调用）。
+16. **构造失败收口**：`sub_task_id` 由 runner 内部生成（`sub-{父task}-{agent_id}-{6hex}`），没有外部入参，且 `UniversalAgent` 只对空 `task_id` 抛错——**不要指望用"非法 id"触发这条分支**。改用故障注入：探针里把 `delegateagent_runner.UniversalAgent` 临时替换为"构造即抛 `RuntimeError`"的可调用对象（只替换构造器，不 mock LLM/工具/DB），断言返回 error，且探针持有的独立 client 句柄事后 `is_closed is True`（`_close_quietly` 已执行）。
 
 **退出标准**：1–16 全绿；第 5/6/7/8/10/11 六项任一红即视为安全承诺未落地，不得进入 S4。
 
@@ -1713,7 +1746,9 @@ TOOL_NAME_ALIASES.update({
 #### 6.2.11 验收门禁与记录规则
 
 1. **一阶段一记录**：每阶段收尾产出 `notes/阶段验收记录-<阶段号>-delegateagent-小欧-<YYYY-MM-DD>.md`（按笔记存放规则放项目根 `notes/`），必须含：阶段号、验收项编号、执行命令、原始输出摘要（日志/DB 查询结果/断言输出）、结论（通过/失败）、失败原因与回退动作。禁止只写"已验证通过"而无原始输出。
-2. **门禁判据**：本阶段验收项全绿 + 回归（`backend/tests` 单测 + E2E-P0-03b）通过，两项同时满足才可进入下一阶段。
+2. **门禁判据**：本阶段验收项全绿 + 回归通过，两项同时满足才可进入下一阶段。回归的"通过"定义为**不新增失败**：失败集合必须与改造前基线逐条相同；存量红项不构成本阶段红项，但**新增一条即判本阶段失败**。
+   基线怎么取（2026-11-28 实测订正）：`git archive HEAD backend` 在本仓**取不到测试**——`backend/tests` 的 435 个 `test_*.py` 全部未入库，archive 里只有 1 个，抽出后等于换了一套测试，失败集合没有可比性。可执行做法是把本阶段改动文件**逐字节回退到 HEAD**（先按字节备份并记 sha256，`git show HEAD:<path>` 覆盖写，跑完 finally 恢复并校验 sha256），测试用同一份工作区文件。
+   全量 `pytest -q` 也不可用作门禁：多个用例会挂满 `timeout=300`（实测跑到 26% 处单条卡死，单次预计 40 分钟以上）。改为**定向集**——按改动面符号筛出引用它的测试文件（S0 为 63 个），`--timeout=60`，基线与改造后各跑一次对比失败集合；定向集覆盖不到的模块，由该阶段验收项逐条点名兜底，不得以"定向集绿"代替全量结论。
 3. **安全项不可顺延**：只读、递归防护、耗时有界三类验收项（S3 第 5–11 项）与能力同阶段验收；出现红项时禁止"先上线后补校验"，因为静默降级不会让测试变红、日志也不会报警（§1.4）。
 4. **测试代码不入库**：验收脚本放本地 `backend/tests/probe_delegate_*.py` 与 `backend/e2etests/test_e2e_40_*.py`，跑通即用，按仓库铁律不提交（测试用例只用于发现问题，不作为锁死系统逻辑的借口）。
 5. **提交粒度**：每阶段 1 个 commit，格式 `<type>:<代码名> <description> - <签名>-<日期>`；提交信息写清阶段号与本阶段关闭的验收项编号。
@@ -1766,14 +1801,14 @@ S0 → S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8      （验收门禁�
 方向对齐"记忆从存取进化为自我沉淀"，但**克制到会话内**，不引入跨天长期库（避免过度设计，仍满足 KISS）：
 
 - 子 Agent 成功完成的 `task → summary` 写入**会话作用域的轻量经验槽**（随会话结束即弃），供同一会话内的后续委托复用（父 LLM 可把上一条子 Agent 的经验摘要注入下一次委托的 `context`）。
-- `track_task` 维持 `False` 不变（§2.5/§5.3），经验槽不落 `tasks` 台账、不进 DB。
+- `track_task` 维持 `False` 不变（台账门控见 §2.7.3），经验槽不落 `tasks` 台账、不进 DB。
 
 ### 7.3 测试时 effort 预算档
 
 把 `max_steps`/`timeout_s` 从 `AgentConfig` 的**静态值**，改为"**基础值 + 父 LLM 可传 `effort` 档动态上调**"：
 
 - `delegateagent` 新增可选参数 `effort`（`low`/`med`/`high`，默认 `med`=现状值）；`high` 上调 `max_steps`/`timeout_s`，`low` 下调以快路径直出。
-- 对齐"推理×工具"的测试时扩展趋势：简单任务快出、难任务自动加预算。改动面小——一个字段 + §4.1 一处校验（effort 档映射到静态上限的倍数，仍受 §2.5 守卫协程的墙钟/取消收口约束）。
+- 对齐"推理×工具"的测试时扩展趋势：简单任务快出、难任务自动加预算。改动面小——`AgentConfig` 一个字段 + §2.2 Schema 增可选 `effort` 参数 + §2.3 工具实现一处映射（effort 档映射到静态上限的倍数，仍受 §2.5 守卫协程的墙钟/取消收口约束）。
 
 ---
 > §7 为 2026 Agent 趋势增量章节（v2.6 追加，v2.7 收敛为一章）：开放委托层、会话内记忆槽、effort 预算档均定位 P2+，默认 KISS 关闭或兼容不改动；§1-§6 可靠性内核（协程隔离 / fail-closed / 只读 / 守卫协程 / 上下文隔离 / OCP 注册表）原样保留。

@@ -16,6 +16,8 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
     缓存 TTL 语义/_D_TOOL_CACHE_TTL 默认值零改动 — 小欧-2026-09-24
    2026-11-18 商量 - _INITIAL_CATEGORIES 增 AGENT(question/schedule): 两工具是会话内交互能力,
      若仅靠 searchtool 动态注入, LLM 不主动搜就永远看不到, 工具等于没上线 — 商量-2026-11-18
+   2026-11-27 小欧 - 增 excluded_tools(子Agent只读拒绝清单, 透传 ToolLoader) / track_task(透传 BaseAgent,
+     子Agent不建独立任务记录), 并删 **kwargs: 显式形参替代静默吞参, 漏改即构造报 TypeError
 """
 from typing import Any, Optional, Set
 
@@ -53,7 +55,8 @@ class UniversalAgent(BaseAgent):
         task_id: str,
         max_steps: Optional[int] = None,
         initial_categories=None,
-        **kwargs
+        excluded_tools=None,
+        track_task: bool = True,
     ):
         if not task_id:
             raise ValueError("task_id is required for operation tracking")
@@ -66,12 +69,14 @@ class UniversalAgent(BaseAgent):
             llm_client=llm_client,
             task_id=task_id,
             max_steps=max_steps,
-            **kwargs
+            track_task=track_task,
         )
 
         # 工具加载(A6, 方案4.6.3步骤3): 从 BaseAgent.__init__ 移入本类, 抽象基类不依赖工具注册表
         self._tool_loader = ToolLoader(self)
-        self._tool_loader.init_tools(initial_categories=initial_categories)
+        # 2026-11-27 小欧 - excluded_tools: 子Agent只读拒绝清单, 装载/动态注入/可见性三处同源过滤
+        self._tool_loader.init_tools(initial_categories=initial_categories,
+                                     excluded_tools=excluded_tools)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
 
         self.prompts = PromptBuilder()

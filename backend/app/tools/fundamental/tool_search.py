@@ -23,6 +23,8 @@
 # 2026-10-19 小欧 缺库工具不入 BM25 索引: 入索引则会被搜中并注入其分类, 而渲染时又被 visible_to_llm
 #   滤掉, 结果是"搜到1个却注入0类"的误导(与上面 searchtool 自身不入索引是同一个坑)。
 #   不可用的工具既不该被搜到, 也不该被承诺。
+# 2026-11-27 小欧 description 改读 ToolMetadata.resolved_description(): 描述允许 callable(注册表快照动态生成),
+#   BM25 索引与结果回填两处直接取字段会得到函数对象(callable 拼接抛 TypeError)
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -107,7 +109,7 @@ def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
             continue
         text = (
             " ".join([name] * 3)
-            + " " + metadata.description
+            + " " + metadata.resolved_description()
             + " " + metadata.category.value
             + " " + metadata.category.name_cn
         )
@@ -291,7 +293,7 @@ def searchtool(query: str) -> Dict[str, Any]:
             {
                 "name": r["name"],
                 "category": r["category"],
-                "description": all_tools[r["name"]].description,
+                "description": all_tools[r["name"]].resolved_description(),
             }
             for r in top_results
         ],

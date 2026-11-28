@@ -411,6 +411,9 @@ from app.utils.sse_formatter import (  # format_sse_event: 目录块超限 notic
     format_agent_sse,
     format_sse_event,
 )
+# 2026-11-28 小欧 - SSE 出口注入工具可见性判据: sse_formatter 属 utils 层, 不得反向 import tools;
+#   过滤语义上移到本层调用点, 由注册表统一出口提供 visible_in_steps — 小欧-2026-11-28
+from app.tools.registry import tool_registry
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
 # 会被 GC 回收并取消, 导致 run_agent_in_background 的 finally(DB 保存)被打断、结果丢失(问题2)。
@@ -1331,7 +1334,8 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                     offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
                     if _ev and _ev.get("type") in _SSE_FORWARD_TYPES:
                         logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
-                        _pending = format_agent_sse(_ev)
+                        _pending = format_agent_sse(
+                            _ev, visible_in_steps=tool_registry.visible_in_steps)
                         break
                 if _pending is None:
                     if buffer.done.is_set():
@@ -1444,7 +1448,8 @@ async def journal_reader(task_id: str, session_id: str, after_seq: int) -> Async
                     if not isinstance(payload, dict) or payload.get("type") not in _SSE_FORWARD_TYPES:
                         skipped.append(seq)     # 脏帧/仅内存信号：消费掉不转发，游标照常前进
                         continue
-                    yield format_agent_sse(payload)                     # 3.7 第 3 条：禁止第二套格式器
+                    yield format_agent_sse(
+                        payload, visible_in_steps=tool_registry.visible_in_steps)  # 3.7 第 3 条：禁止第二套格式器
                 if skipped:
                     logger.warning(f"[Journal] task={task_id} 跳过 {len(skipped)} 个不可转发事件 seq={skipped[:10]}")
                 cursor = expected                                 # 列 seq 权威 → 游标只增不减，不会原地打转

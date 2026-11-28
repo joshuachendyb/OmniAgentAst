@@ -16,16 +16,26 @@
 # 2026-10-19 小欧 缺库工具不暴露给 LLM: to_openai_tools 与 generate_param_reminder 两处改读
 #   ToolMetadata.visible_to_llm(= expose_to_llm and 依赖齐备)。原先缺库工具照常进 LLM 工具列表,
 #   LLM 试调一次才知不可用、白耗一轮; 两处必须同判据, 否则清单列了签名而实际调不通。
+# 2026-11-27 小欧 增 exclude 形参(工具名黑名单, 子Agent只读拒绝清单的可见性同源过滤);
+#   description 取值改走 ToolMetadata.resolved_description(), 支持 callable 动态描述(delegateagent 零改代码)
+# 2026-11-28 小欧 exclude/tool_names fail-fast + 别名归一: 传 str 时 `name in str` 是子串判定而非集合判定,
+#   exclude="write" 会把 write 及任何子串命中项一起藏掉, tool_names="read" 会放进任何子串命中项 ——
+#   静默改变可见工具集, 与"安全类承诺不走静默降级"冲突; 名单统一过 normalize_tool_name,
+#   拒绝名单写别名(write_file)与写注册名(write)等价
+# 2026-11-28 - OmniAgent - 名单归一与 str fail-fast 改调 tools_alias_mapper.normalize_name_set():
+#   与 tool_loader.init_tools 共用同一实现, 消除重复表达式(DRY), 行为等价
 """
 
 from typing import Optional, Set
 
 from app.tools.tool_types import ToolCategory
+from app.tools.tools_alias_mapper import normalize_name_set
 from app.utils.display_utils import format_param_value
 
 
 def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
-                    tool_names: Optional[Set[str]] = None, strict: bool = False) -> list:
+                    tool_names: Optional[Set[str]] = None, strict: bool = False,
+                    exclude: Optional[Set[str]] = None) -> list:
     """
     生成OpenAI API格式的tools定义 - 小沈 2026-05-09
 
@@ -35,13 +45,20 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
         tool_names: 额外包含的指定工具名集合(即使其分类不在categories中) — 修复 2026-06-23 小欧
         strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17;
                默认False(opencodeZen 会校验 strict 且本仓 schema 不合规) - 小欧 2026-10-02
+        exclude: 工具名黑名单(None=不排除) — 子Agent只读拒绝清单的可见性同源过滤 - 小欧 2026-11-27
 
     Returns:
         [{"type": "function", "function": {...}}, ...]
     """
     tools = []
-    tool_names_set = tool_names or set()
+    # 2026-11-28 小欧 - fail-fast: 传 str 时 `name in str` 是子串判定, 会静默改变可见工具集;
+    #   别名归一: 拒绝/白名单写别名(write_file)与写注册名(write)等价 — 收口 normalize_name_set(2026-11-28 OmniAgent)
+    tool_names_set = normalize_name_set(tool_names, "tool_names")
+    _exclude = normalize_name_set(exclude, "exclude")
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
+        # 2026-11-27 小欧 - 黑名单先过滤: 被拒工具不该出现在 LLM 眼里(看得见却调不通=白耗轮次)
+        if name in _exclude:
+            continue
         # 2026-10-19 小欧 - 可见性单一判据(visible_to_llm = expose_to_llm and 依赖齐备):
         #   缺库工具不进 LLM 工具列表, 免得 LLM 试调一次才知不可用、白耗一轮。
         if not meta.visible_to_llm:
@@ -51,7 +68,8 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
                 continue
         func_def = {
             "name": meta.name,
-            "description": meta.description,
+            # 2026-11-27 小欧 - 走 resolved_description(): description 允许 callable(注册表快照动态生成)
+            "description": meta.resolved_description(),
             "parameters": meta.input_schema,
             "strict": strict,
         }
