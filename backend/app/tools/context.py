@@ -31,6 +31,9 @@
 #   预检只做静态检查不执行不弹窗不拦截, 结果经此渠道给 tool 自行处理(零越层, 未注入返回 None 自行降级)。
 # 2026-11-25 商量 - 新增 _current_session_id ContextVar(get/set/reset): 发起会话ID, tool_executor 从
 #   agent._start_meta 注入; timer_set 消费——定时器触发时回到发起会话创建任务(持久调度器"到点自己干")
+# 2026-11-28 小欧 - 新增委托回调与委托深度两个 ContextVar:
+#   回调提供 get/set/reset，深度只提供 get；深度 set/reset 由使用方直接操作 ContextVar（与运行器同款），
+#   不新增包装函数；工具层零越层，未注入返回 None 由工具降级
 """
 
 tools/context — 工具层运行上下文
@@ -215,3 +218,28 @@ def reset_current_session_id(token) -> None:
 def reset_current_precheck_info(token) -> None:
     """恢复上一个沙箱预检纯静态检查结果 — 小欧 2026-11-22"""
     _current_precheck_info.reset(token)
+
+
+# 2026-11-27 小欧 - 新增 _current_delegate_callback ContextVar
+# 签名: async (agent_id, task, context, wait) -> Dict
+# 入口层(tool_executor)持 agent + AgentRegistry 注入; 工具层零越层, 未注入返回 None 自行降级
+_current_delegate_callback: ContextVar[Optional[object]] = ContextVar(
+    "current_delegate_callback", default=None
+)
+
+# 委托深度: 主 Agent 作用域为 0, 子 Agent 内部为 1。深度用 ContextVar 而非模块全局,
+# 才能在并发委托时各算各的(模块全局会被 6 路并发互相污染)。
+_current_delegate_depth: ContextVar[int] = ContextVar("current_delegate_depth", default=0)
+
+def get_current_delegate_callback():
+    return _current_delegate_callback.get()
+
+def set_current_delegate_callback(callback):
+    """返回 token 供 reset 恢复上一作用域值（与 hooks/notice/question 同模式）"""
+    return _current_delegate_callback.set(callback)
+
+def reset_current_delegate_callback(token) -> None:
+    _current_delegate_callback.reset(token)
+
+def get_delegate_depth() -> int:
+    return _current_delegate_depth.get()

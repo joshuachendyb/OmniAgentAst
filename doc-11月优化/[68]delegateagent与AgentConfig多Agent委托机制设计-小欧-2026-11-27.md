@@ -27,6 +27,10 @@
 - v2.12 2026-11-28 00:04:29 小欧 S0 落码后的口径校正（对码实测）：①§6.2.2 改动面由 7 个文件改 9 个——补 `tool_types.py`（`description` 放宽 + `resolved_description()` 唯一解析点）与 `tool_search.py`（BM25 索引与结果回填两处直读 `.description`，不改则 callable 描述在检索期抛 TypeError），并说明原表按 `exclude` 传参链列文件、漏了 callable 描述链路的两个读取点；②描述取值统一表述为 `resolved_description()`，不再写 `meta.description() if callable(...)` 的内联写法（单一解析点，六处读取点一处收口）；③验收第 2 项补"快照须取自真实改造前代码（`git archive HEAD backend` + 同一探针），不得用复算等价代替"；④验收第 7 项与 §6.2.11 第 2 条把"单测全绿"改为可执行的"失败集合与改造前基线同一集合，新增一条即失败"（实测基线存量 52 条红项，全绿不可达，原措辞会把每个阶段都卡死）
 - v2.13 2026-11-28 06:32:54 小欧 全文再核（S0 已落码后的一致性收口）：①§6.1/§6.2.1/§5.2 三处文件清单与 §6.2.2 的 9 文件对齐——补 `tool_types.py`/`tool_search.py`，§6.2.2 失败回退"7 个文件"订正为 9；②§6.2.2 增注「表中『现 :N』指 S0 改造前位置」，避免落码后行号下移被误读；「全仓 6 处读取点」改为不计数表述，并订正 v2.12 的该计数——实测 ToolMetadata 直读点为 5 处（`tool_description.py:54`/`registry.py:374`/`tool_cache_manager.py:54`/`tool_search.py:110`、`:294`）；③§4.1 注意点 2 由"各 +1 行内联解析 callable"改为"只在一处解析"：`tool_types.resolved_description()` 为唯一解析点，补 `tool_search` 两处直读，说明散落写法会在检索期抛 TypeError；④§4.2 ①～⑥ 由"形参当前不存在"改为"S0 前不存在 / S0 已落码"（`init_tools(excluded_tools)`、`to_openai_tools(exclude)`、`registry`/`tool_cache_manager` 传参链、`api_key` property），③ 代码样例 `meta.description() if callable(...)` 改 `meta.resolved_description()`；⑤§1.4 与 §2.7.3 台账/`**kwargs` 两处口径由"当前无条件建台账、现有 kwargs 不校验"改为"S0 前如此，S0 已门控/已删"，台账行与门控代码块标注 S0 已落码；⑥工具侧 ContextVar 清单三处不一致（§2.7.2 七组、§2.6 九项含 depth、§3.1 八项缺 task_id）统一为"10 个，清单见 §2.7.2"，清单按 `app/tools/context.py` 实测（task_id/hooks/text_task/notice/question/generate/precheck/session_id/delegate/depth）；⑦§6.2.5 第 16 项原用"传非法 sub_task_id（含空格）"触发构造失败——该 id 由 runner 内部生成、`UniversalAgent` 只校验非空，此路不通，改为故障注入（临时替换构造器）并断言独立 client 已关闭；⑧§3.2 第 9 步把"delegate 回调置空"从 `_delegate_scope` 移到第 10 步子任务内（实际在 `_child()` 内 set）；⑨§7.2 台账引用 §5.3（不改的文件）改 §2.7.3；§7.3 effort 校验落点由 §4.1（工具注册）改 §2.2 Schema + §2.3 工具实现
 - v2.14 2026-11-28 07:30:29 小欧 S0 验收补测与订正：①§6.2.2 第 1 项补服务级冒烟实测（`start_dev.ps1 watch` 真起进程 → `GET /health` 200、`status/db_status=healthy`），并写明 import 探针覆盖不到启动期建库/挂路由/构造 Agent；②第 4 项订正 `BaseAgent` 是 ABC，"无 `**kwargs`"须用 `inspect.signature` 断言 `VAR_KEYWORD`，直接实例化抛的 `TypeError` 来自抽象类、不能作证据；③第 7 项补定向回归实测（63 文件，基线 15 失败/1635 通过 vs 改造后 15/1635，失败集合逐条相同、新增 0）与 E2E-P0-03b 实测（PASSED，31.1s，5 次 LLM 调用，22 步）；④新增"补测发现并修复的静默失效点"表（5 点：`excluded_tools` 传 str 被拆单字符、别名不归一、`exclude`/`tool_names` 子串判定、`track_task` 传字符串当真有、`api_key` 返回 None），并订正 `write_file` 并非别名表键、原判断不成立；⑤新增开发启动器崩溃自愈记录（watchfiles 只在文件变更时重启子进程，补守护进程上溯清理 + 孤儿链清理 + 端口看护，实测 25s 自愈）；⑥§6.2.11 第 2 条订正回归基线取法——`git archive` 在本仓取不到测试（435 个 `test_*.py` 全部未入库），改为改动文件逐字节回退 + sha256 校验恢复，并说明全量 pytest 因 300s 超时不可用、改用定向集
+- v2.15 2026-11-28 08:55:59 小欧 §6.2.3 S1 补 TDD 测试要求：新增 A–E 五组共 30 条用例设计（构造校验 / 集合语义与拒绝清单 / 注册表与单例 / manifest 容错 / 分层）、8 轮红绿节奏、可运行探针代码 `backend/tests/probe_delegate_s1_config.py` 与运行退出判据；并列出相对 §2.1 的四处字段类型收紧（`max_steps`/`timeout_s`/`tool_categories`/`track_task` 禁止隐式强转，沿用 S0 静默失效教训），`load_from_manifest` 的 `int()/float()` 解析保持不变
+- v2.16 2026-11-28 09:07:41 小欧 §6.2.3 S1 按 TDD 落码完成：新增 `backend/app/tools/agent/agent_config.py`（构造即校验含四处类型收紧、拒绝清单同源、注册表六方法、单例与内置 3 Agent、manifest 容错）；探针 `backend/tests/probe_delegate_s1_config.py` 首轮导入红 → 骨架断言红 51/22 → 全绿 73 passed，ruff 全过；§6.2.3 末尾补实施记录，并产出 `notes/阶段验收记录-S1-delegateagent-小欧-2026-11-28.md`
+- v2.17 2026-11-28 09:19:41 小欧 §6.2.4 S2 TDD 与落码完成：测试要求写入文档（A 失败收口与透传 / B ContextVar 隔离 / C Schema / D 分层，T01–T12），新增 `backend/tests/probe_delegate_s2_channel.py` 与两个设计内新文件 `delegateagent_schema.py`/`delegateagent.py`，`context.py` 追加 §2.4.1 原样代码；首轮导入红 → 12 passed / 0 failed，ruff 全过；澄清深度只按参考代码提供 `get_delegate_depth()`，不新增设计外包装函数；§6.2.4 末尾补实施记录，产出 `notes/阶段验收记录-S2-delegateagent-小欧-2026-11-28.md`
+- v2.18 2026-11-28 09:33:49 小欧 三堂会审违规整改：①`agent_id` 正则由 `$` 锚点改全串 `fullmatch`，堵住结尾换行 fail-open，补 T02c 回归；②清除本次新增代码注释与参考代码块中的章节号/阶段号（`§6.2.3`/`S0`/`§2.7.2`/`§2.4.1`/`§2.5`/`§4.3`/`§2.2`/`§2.3`），只保留技术描述；③S1/S2 实施记录改为指向正文、不再指向阶段验收记录文件（按用户要求不再产出该类文件）；④整改后两探针 88 passed、定向回归 130 passed、ruff 全过、代码注释违规命中 0
 
 
 ---
@@ -117,7 +121,7 @@ from app.tools.tool_constants import DELETE_PATH_TOOLS, DUAL_PATH_TOOLS, WRITE_P
 from app.tools.tool_types import ToolCategory
 
 # 子 Agent 禁止持有的工具分类:
-#   AGENT       — 用户交互（question/schedule），子 Agent 没有前端出口（§2.7.2）
+#   AGENT       — 用户交互（question/schedule），子 Agent 没有前端出口，也不得自行提问
 #   SYSTEM      — create_task/delete_task 会动任务台账，子 Agent 能删掉父任务行
 #   MEDIA       — 生成即落盘并计费，属"写"+花钱，不该出现在只读子 Agent 里
 #   WIN_REGISTRY/DESKTOP/TIMER — 宿主副作用，与"干净上下文只做分析"无关
@@ -134,7 +138,8 @@ DELEGATE_DENY_TOOLS: Set[str] = (
     | {"bash", "question", "schedule", "delegateagent"}
 )
 
-_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+# 全串匹配：不用 $ 锚点（会放过结尾换行），交给 fullmatch 判定
+_ID_RE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 
 
 @dataclass
@@ -152,7 +157,7 @@ class AgentConfig:
 
     def __post_init__(self) -> None:
         """构造即校验 — 非法配置在注册/委托之前失败，不留到运行期"""
-        if not isinstance(self.agent_id, str) or not _ID_RE.match(self.agent_id):
+        if not isinstance(self.agent_id, str) or not _ID_RE.fullmatch(self.agent_id):
             raise ValueError(f"agent_id 非法: {self.agent_id!r}（要求小写字母开头，[a-z0-9_]）")
         if not (self.description or "").strip():
             raise ValueError(f"agent_id={self.agent_id}: description 不能为空（LLM 靠它路由）")
@@ -497,7 +502,7 @@ async def delegateagent(
             other_data={"duration_ms": duration_ms},
         )
     else:
-        # 失败也带上 usage：子 Agent 可能已烧掉几步 token，父侧仍要记账（§4.3）
+        # 失败也带上 usage：子 Agent 可能已烧掉几步 token，父侧仍要记账
         return build_error(
             data={
                 "agent_id": agent_id,
@@ -1611,7 +1616,471 @@ TOOL_NAME_ALIASES.update({
 
 **改动面**：新增 `backend/app/tools/agent/agent_config.py`（§2.1 全量代码：字段、`__post_init__`、`effective_categories()`、`AgentRegistry` 六个方法 + `load_from_manifest`、`get/reset_agent_registry`、`DELEGATE_DENY_CATEGORIES`/`DELEGATE_DENY_TOOLS`、内置 3 Agent）。
 
-**验收清单**：
+**TDD 测试要求（先红后绿）**：
+
+> 本阶段是纯数据层（无 I/O、无 LLM、无 DB），TDD 收益最高：全部用例 1s 内跑完，且每条断言都对应一条"配置写错了要到运行期才静默失控"的契约。纪律：**先写失败用例（红）→ 最小实现（绿）→ 重构（保持绿）**；禁止先写实现再补"能过就行"的测试，禁止为让断言变绿而放宽断言（如把 `pytest.raises` 改成 `except Exception: pass`）。
+
+**测试文件**：`backend/tests/probe_delegate_s1_config.py`（本地探针，按 §6.2.11 第 4 条不提交）。模块尚不存在时首轮是 `ImportError`——这不算"红"；第一步先落字段骨架（空 `__post_init__`），让断言真正失败。
+
+**A. 构造即校验（验收 1、2）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 最小合法配置的默认值 | 只给 `agent_id`/`description` → `tool_categories == {FUNDAMENTAL}`、`output_instruction is None`、`model is None`、`(max_steps, timeout_s, track_task) == (8, 300.0, False)`、`system_prompt == ""` |
+| T02 | `agent_id` 非法 | `Researcher`（大写开头）/`1abc`（数字开头）/`"a"*33`（超长）/`""`（空）逐个抛 `ValueError`，消息含该 id；`123`/`None` 抛 `ValueError` 或 `TypeError`，消息含 `agent_id` |
+| T02b | `agent_id` 边界合法 | `a`、`"a"*32`（32 字符上限）、`kb_analyst`、`probe2` 构造成功且 `agent_id` 原样 |
+| T02c | `agent_id` 结尾换行 | `abc\n`、`"a"*32+"\n"`、`abc\r\n` 逐个抛 `ValueError`（`$` 锚点会放过结尾换行，必须全串匹配） |
+| T03 | `description` 空白 | `""`/`"   "`/`"\n\t"` → `ValueError`，消息含 `description` |
+| T04 | `max_steps` 越界 | `0`/`31`/`-1`/`100` → `ValueError`，消息含 `max_steps`；边界 `1`/`30` 通过 |
+| T04b | `max_steps` 类型 | `"8"`/`8.5`/`True`/`None` → `TypeError`（禁止 `int()` 隐式强转，见下方落码口径） |
+| T05 | `timeout_s` 越界 | `4`/`4.9`/`1801`/`0`/`-1` → `ValueError`；边界 `5`/`5.0`/`1800` 通过 |
+| T05b | `timeout_s` 类型 | `"300"`/`True`/`None` → `TypeError` |
+| T06 | `tool_categories` 空 | `set()`/`frozenset()` → `ValueError`，消息含 `tool_categories` |
+| T06b | `tool_categories` 类型 | `"file"`/`["file"]`/`{FILE, "file"}` → `TypeError`（`set("file")` 会拆成单字符，见落码口径） |
+| T07 | `track_task` 类型 | `"false"`/`0`/`1`/`None` → `TypeError`（只收 `bool`） |
+
+**B. 集合语义与拒绝清单（验收 3、4、5）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T08 | 集合拷贝 | 外部 `{NETWORK, FUNDAMENTAL}` 构造后 `add(FILE)`/`discard(NETWORK)` → `config.tool_categories` 仍为 `{NETWORK, FUNDAMENTAL}`，且 `is not` 外部对象 |
+| T10 | 拒绝分类扣减 | 传 `set(ToolCategory)` 全集 → `effective_categories() == {FILE, FUNDAMENTAL, NETWORK, DOCUMENT, DATAANALYSIS}`，且 `config.tool_categories` 仍是全集（不就地扣减） |
+| T11 | 全为拒绝分类 | 只传 `DELEGATE_DENY_CATEGORIES` → 构造成功、`effective_categories() == set()`（合法但无工具，运行器照常跑空工具集） |
+| T12 | 返回值是副本 | `eff = config.effective_categories(); eff.add(FILE)` → `config.tool_categories` 与再次调用的结果均不变 |
+| T13 | 拒绝名单与 PATH_* 同源 | `DELEGATE_DENY_TOOLS >= set(WRITE_PATH_TOOLS) \| set(DELETE_PATH_TOOLS) \| set(DUAL_PATH_TOOLS)`；含 `bash`/`question`/`schedule`/`delegateagent`/`execute_sql`/`screen_capture`；不含 `read`/`find`/`searchweb`/`query_sql` |
+| T14 | 拒绝分类精确 | `DELEGATE_DENY_CATEGORIES == {AGENT, SYSTEM, MEDIA, WIN_REGISTRY, DESKTOP, TIMER}`，与 `{FILE, FUNDAMENTAL, NETWORK, DOCUMENT, DATAANALYSIS}` 交集为空 |
+
+**C. 注册表与单例（验收 6、7）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T16 | 重名注册 | 同 id 注册两次（第二次 `replace` 缺省）→ 抛 `ValueError` 且 `get()` 仍返回**第一个**对象（抛错时不得"先写后抛"） |
+| T17 | 显式覆盖 | `register(新, replace=True)` → `get()` 返回新对象（`is` 断言），`list_configs()` 长度为 1 |
+| T18 | 注销语义 | 存在 → `unregister` 返回 `True` 且 `get()` 为 `None`；再注销同一 id / 从未注册的 id → 返回 `False` |
+| T19 | 列表语义 | 依次注册 `c_agent`/`a_agent`/`b_agent` → `list_available()` 按注册顺序返回三 id；`[c.agent_id for c in list_configs()]` 与 `list_available()` 逐项相等 |
+| T20 | 单例身份 | `get_agent_registry() is get_agent_registry()` |
+| T21 | 内置 3 Agent | `list_available() == ["researcher", "reviewer", "kb_analyst"]`；researcher `{NETWORK, FUNDAMENTAL}`、`max_steps=10`、`timeout_s=240`；reviewer `output_instruction` 非空、`max_steps=12`；kb_analyst `max_steps=10` |
+| T22 | 复位 | 先注册 `transient` → `reset_agent_registry()` → 新对象 `is not` 旧对象、`get("transient") is None`、`list_available()` 重新为 3 个内置（防用例串态） |
+| T23 | 唯一构造点 | 读 `agent_config.py` 源码 → `"AgentRegistry()"` 出现次数为 1；遍历 `backend/app/**/*.py` 除本文件外无 `AgentRegistry(` 命中 |
+
+**D. manifest 容错（验收 8）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T24 | 合法 manifest | `{"name":"web_researcher","description":"…","tool_categories":["network","fundamental"],"max_steps":12,"timeout_s":300,"track_task":true}` → 返回 config、分类为 `{NETWORK, FUNDAMENTAL}`、**`track_task is False`**（插件不得自开台账）、已进入注册表 |
+| T25 | 未知分类回落 | `tool_categories: ["no_such_cat"]` → 返回 config、`tool_categories == {FUNDAMENTAL}`，全程不抛 |
+| T25b | 分类写成字符串 | `tool_categories: "file"` → 逐字符 warning 后回落 `{FUNDAMENTAL}`（不得把 `{'f','i','l','e'}` 灌进配置） |
+| T26 | 缺 `name` / 校验不过 | `{"description":"x"}`、`{"name":"bad_id","description":""}`、`{"name":"Bad",…}`、`{"name":"steps0",…,"max_steps":0}` → 逐个返回 `None` 且 `list_available()` 仍为空；`logger.warning` 被调用且消息含 `manifest` |
+| T27 | 与内置重名 | manifest `name="researcher"` → 返回 `None`，`get("researcher")` 仍是内置对象（未被冒名覆盖） |
+| T28 | 坏输入不外抛 | JSON 语法错（`"{not json"`）、文件不存在、目录不存在 → 均返回 `None`，不抛异常 |
+| T29 | 失败不粘 | 先加载一个非法 manifest（返回 `None`）→ 再加载合法 manifest 成功，`list_available() == ["good_one"]` |
+| T29b | 插件不能提权 | manifest 写 `tool_categories: ["file","agent","system","media"]` + `track_task: true` → 返回 config，`effective_categories() == {FILE}`、`track_task is False` |
+
+**E. 分层（退出标准）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T30 | 工具层零越层 | 读 `agent_config.py` 源码 → 不含 `app.services`（本模块只 import `app.logger`/`app.tools.*`） |
+
+**落码口径（相对 §2.1 的四处字段类型收紧，均为 S0 已实证的同类静默失效）**：
+
+| 字段 | §2.1 现写法 | 本条要求 | 不收的后果 |
+|------|------------|---------|-----------|
+| `max_steps` | `int(self.max_steps)` | `isinstance(x, int) and not isinstance(x, bool)`，否则 `TypeError` | `"8"`/`8.5`/`True` 静默通过，越界校验形同虚设 |
+| `timeout_s` | `float(self.timeout_s)` | `isinstance(x, (int, float)) and not isinstance(x, bool)`，否则 `TypeError` | `"300"` 静默通过；`True` 被当成 1.0，错误信息误导排查方向 |
+| `tool_categories` | 只判真假 | 必须 `Set[ToolCategory]`，str/list/含非法成员一律 `TypeError` | `set("file")` 拆成 `{'f','i','l','e'}`，`effective_categories()` 返回字符集，运行期工具子集静默失控 |
+| `track_task` | 无校验 | 必须 `bool`，否则 `TypeError` | `"false"` 为真 → 子 Agent 静默进用户任务台账（S0 同款缺陷） |
+
+> 这四处只改校验口径，不改字段语义与默认值；`load_from_manifest` 内的 `int()/float()` 解析保持不变（manifest 是 JSON，数字与字符串混用属外部输入，解析后交给 `__post_init__` 仍走严格校验）。
+
+**红绿节奏（每轮只推进一组，跑完再进下一组）**：
+
+| 轮次 | 先写的红用例 | 让它变绿的最小实现 |
+|------|-------------|-------------------|
+| R1 | T01、T02、T02b | 字段骨架 + `_ID_RE` 校验 |
+| R2 | T03–T07 | `__post_init__` 其余校验（含四处类型收紧） |
+| R3 | T08、T10–T12 | 集合拷贝 + `effective_categories()` |
+| R4 | T13、T14 | `DELEGATE_DENY_CATEGORIES`/`DELEGATE_DENY_TOOLS` 两张表 |
+| R5 | T16–T19 | `AgentRegistry` 六个方法 |
+| R6 | T20–T23 | 单例 + 内置 3 Agent + `reset_agent_registry` |
+| R7 | T24–T29b | `load_from_manifest` 容错（任何异常都返回 `None`） |
+| R8 | T30 | 不改代码，只确认无越层 |
+
+**测试代码**：
+
+```python
+# -*- coding: utf-8 -*-
+"""S1 配置层 TDD 探针 — 小欧 2026-11-28
+
+覆盖配置层的构造校验、集合语义、拒绝清单、注册表、单例与 manifest 容错全部契约。
+本阶段是纯数据层，不 mock 任何生产依赖（无 LLM/DB/工具注册）；先红后绿，断言即契约。
+运行：cd backend && python -m pytest tests/probe_delegate_s1_config.py -v --timeout=60
+"""
+import json
+from pathlib import Path
+
+import pytest
+
+from app.tools.agent import agent_config as ac
+from app.tools.agent.agent_config import (
+    DELEGATE_DENY_CATEGORIES,
+    DELEGATE_DENY_TOOLS,
+    AgentConfig,
+    AgentRegistry,
+    get_agent_registry,
+    reset_agent_registry,
+)
+from app.tools.tool_constants import DELETE_PATH_TOOLS, DUAL_PATH_TOOLS, WRITE_PATH_TOOLS
+from app.tools.tool_types import ToolCategory as C
+
+
+@pytest.fixture(autouse=True)
+def _isolate_registry():
+    """单例是进程级全局：每个用例前后复位，防用例互相串态"""
+    reset_agent_registry()
+    yield
+    reset_agent_registry()
+
+
+def make(**kw) -> AgentConfig:
+    base = dict(agent_id="probe_agent", description="探针用子 Agent")
+    base.update(kw)
+    return AgentConfig(**base)
+
+
+def manifest(tmp_path, dirname: str, payload) -> str:
+    d = tmp_path / dirname
+    d.mkdir()
+    p = d / "manifest.json"
+    p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return str(p)
+
+
+# ------------------------------------------------ A. 构造即校验（验收 1、2）
+def test_T01_minimal_config_defaults():
+    c = make()
+    assert c.tool_categories == {C.FUNDAMENTAL}
+    assert c.output_instruction is None and c.model is None
+    assert (c.max_steps, c.timeout_s, c.track_task) == (8, 300.0, False)
+    assert c.system_prompt == ""
+
+
+@pytest.mark.parametrize("bad", ["Researcher", "1abc", "a" * 33, "", "_abc", "a-b"])
+def test_T02_agent_id_rejected(bad):
+    with pytest.raises(ValueError) as ei:
+        make(agent_id=bad)
+    assert "agent_id" in str(ei.value)
+
+
+@pytest.mark.parametrize("bad", [123, None])
+def test_T02_agent_id_non_str_rejected(bad):
+    with pytest.raises((ValueError, TypeError)) as ei:
+        make(agent_id=bad)
+    assert "agent_id" in str(ei.value)
+
+
+@pytest.mark.parametrize("ok", ["a", "a" * 32, "kb_analyst", "probe2"])
+def test_T02b_agent_id_accepted(ok):
+    assert make(agent_id=ok).agent_id == ok
+
+
+@pytest.mark.parametrize("bad", ["abc\n", "a" * 32 + "\n", "abc\r\n"])
+def test_T02c_agent_id_trailing_newline_rejected(bad):
+    """结尾换行不得放过：正则锚点 $ 会匹配换行前，必须全串匹配拒绝"""
+    with pytest.raises(ValueError, match="agent_id"):
+        make(agent_id=bad)
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "\n\t"])
+def test_T03_description_blank_rejected(bad):
+    with pytest.raises(ValueError, match="description"):
+        make(description=bad)
+
+
+@pytest.mark.parametrize("bad", [0, 31, -1, 100])
+def test_T04_max_steps_out_of_range(bad):
+    with pytest.raises(ValueError, match="max_steps"):
+        make(max_steps=bad)
+
+
+@pytest.mark.parametrize("ok", [1, 30])
+def test_T04_max_steps_boundary(ok):
+    assert make(max_steps=ok).max_steps == ok
+
+
+@pytest.mark.parametrize("bad", ["8", 8.5, True, None])
+def test_T04b_max_steps_type_strict(bad):
+    """禁止 int() 强转：'8'/8.5/True 静默通过会让越界校验形同虚设"""
+    with pytest.raises(TypeError, match="max_steps"):
+        make(max_steps=bad)
+
+
+@pytest.mark.parametrize("bad", [4, 4.9, 1801, 0, -1])
+def test_T05_timeout_out_of_range(bad):
+    with pytest.raises(ValueError, match="timeout_s"):
+        make(timeout_s=bad)
+
+
+@pytest.mark.parametrize("ok", [5, 5.0, 1800, 300.0])
+def test_T05_timeout_boundary(ok):
+    assert make(timeout_s=ok).timeout_s == float(ok)
+
+
+@pytest.mark.parametrize("bad", ["300", True, None])
+def test_T05b_timeout_type_strict(bad):
+    with pytest.raises(TypeError, match="timeout_s"):
+        make(timeout_s=bad)
+
+
+@pytest.mark.parametrize("bad", [set(), frozenset()])
+def test_T06_empty_categories_rejected(bad):
+    with pytest.raises(ValueError, match="tool_categories"):
+        make(tool_categories=bad)
+
+
+@pytest.mark.parametrize("bad", ["file", ["file"], {C.FILE, "file"}])
+def test_T06b_categories_type_strict(bad):
+    """set('file') 会拆成 {'f','i','l','e'}，effective_categories() 静默变成字符集"""
+    with pytest.raises(TypeError, match="tool_categories"):
+        make(tool_categories=bad)
+
+
+@pytest.mark.parametrize("bad", ["false", 0, 1, None])
+def test_T07_track_task_type_strict(bad):
+    with pytest.raises(TypeError, match="track_task"):
+        make(track_task=bad)
+
+
+# ------------------------------------------------ B. 集合语义与拒绝清单（验收 3、4、5）
+def test_T08_categories_copied():
+    outer = {C.NETWORK, C.FUNDAMENTAL}
+    c = make(tool_categories=outer)
+    assert c.tool_categories == outer and c.tool_categories is not outer
+    outer.add(C.FILE)
+    outer.discard(C.NETWORK)
+    assert c.tool_categories == {C.NETWORK, C.FUNDAMENTAL}
+
+
+def test_T10_effective_drops_denied_without_mutating():
+    all_cats = set(C)
+    c = make(tool_categories=all_cats)
+    assert c.effective_categories() == {
+        C.FILE, C.FUNDAMENTAL, C.NETWORK, C.DOCUMENT, C.DATAANALYSIS,
+    }
+    assert c.tool_categories == all_cats, "effective_categories() 不得就地扣减"
+
+
+def test_T11_all_denied_effective_empty():
+    c = make(tool_categories=set(DELEGATE_DENY_CATEGORIES))
+    assert c.effective_categories() == set()
+
+
+def test_T12_effective_returns_copy():
+    c = make(tool_categories={C.FUNDAMENTAL})
+    eff = c.effective_categories()
+    eff.add(C.FILE)
+    assert c.tool_categories == {C.FUNDAMENTAL}
+    assert C.FILE not in c.effective_categories()
+
+
+def test_T13_deny_tools_same_source_as_path_tables():
+    assert DELEGATE_DENY_TOOLS >= (
+        set(WRITE_PATH_TOOLS) | set(DELETE_PATH_TOOLS) | set(DUAL_PATH_TOOLS)
+    )
+    for name in ("bash", "question", "schedule", "delegateagent", "execute_sql", "screen_capture"):
+        assert name in DELEGATE_DENY_TOOLS, f"{name} 必须在拒绝名单"
+    for name in ("read", "find", "searchweb", "query_sql"):
+        assert name not in DELEGATE_DENY_TOOLS, f"{name} 不该被拒（只读工具）"
+
+
+def test_T14_deny_categories_exact():
+    assert DELEGATE_DENY_CATEGORIES == {
+        C.AGENT, C.SYSTEM, C.MEDIA, C.WIN_REGISTRY, C.DESKTOP, C.TIMER,
+    }
+    assert not (DELEGATE_DENY_CATEGORIES & {
+        C.FILE, C.FUNDAMENTAL, C.NETWORK, C.DOCUMENT, C.DATAANALYSIS,
+    })
+
+
+# ------------------------------------------------ C. 注册表与单例（验收 6、7）
+def test_T16_duplicate_register_keeps_original():
+    r = AgentRegistry()
+    first = make(agent_id="dup", description="第一个")
+    second = make(agent_id="dup", description="第二个")
+    r.register(first)
+    with pytest.raises(ValueError, match="dup"):
+        r.register(second)
+    assert r.get("dup") is first, "重名抛错时不得先写后抛"
+
+
+def test_T17_replace_overwrites():
+    r = AgentRegistry()
+    a = make(agent_id="x")
+    b = make(agent_id="x", description="新")
+    r.register(a)
+    r.register(b, replace=True)
+    assert r.get("x") is b and len(r.list_configs()) == 1
+
+
+def test_T18_unregister_semantics():
+    r = AgentRegistry()
+    r.register(make(agent_id="tmp"))
+    assert r.unregister("tmp") is True and r.get("tmp") is None
+    assert r.unregister("tmp") is False
+    assert r.unregister("never") is False
+
+
+def test_T19_list_order_and_alignment():
+    r = AgentRegistry()
+    for aid in ("c_agent", "a_agent", "b_agent"):
+        r.register(make(agent_id=aid))
+    assert r.list_available() == ["c_agent", "a_agent", "b_agent"]
+    assert [c.agent_id for c in r.list_configs()] == r.list_available()
+
+
+def test_T20_singleton_identity():
+    assert get_agent_registry() is get_agent_registry()
+
+
+def test_T21_builtin_agents():
+    r = get_agent_registry()
+    assert r.list_available() == ["researcher", "reviewer", "kb_analyst"]
+    rs = r.get("researcher")
+    assert rs.tool_categories == {C.NETWORK, C.FUNDAMENTAL}
+    assert (rs.max_steps, rs.timeout_s) == (10, 240.0)
+    rv = r.get("reviewer")
+    assert rv.output_instruction and rv.max_steps == 12
+    assert r.get("kb_analyst").max_steps == 10
+
+
+def test_T22_reset_drops_transient_and_rebuilds():
+    r1 = get_agent_registry()
+    r1.register(make(agent_id="transient"))
+    reset_agent_registry()
+    r2 = get_agent_registry()
+    assert r2 is not r1
+    assert r2.get("transient") is None
+    assert r2.list_available() == ["researcher", "reviewer", "kb_analyst"]
+
+
+def test_T23_single_construction_site():
+    src = Path(ac.__file__).resolve().read_text(encoding="utf-8")
+    assert src.count("AgentRegistry()") == 1, "AgentRegistry() 只允许出现在 get_agent_registry"
+    app_dir = Path(ac.__file__).resolve().parents[2]
+    hits = [
+        str(p) for p in app_dir.rglob("*.py")
+        if p.name != "agent_config.py"
+        and "AgentRegistry(" in p.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert hits == [], f"全仓不得有第二处 AgentRegistry() 构造：{hits}"
+
+
+# ------------------------------------------------ D. manifest 容错（验收 8）
+def test_T24_manifest_ok(tmp_path):
+    p = manifest(tmp_path, "ok", {
+        "name": "web_researcher", "description": "多源搜索",
+        "tool_categories": ["network", "fundamental"],
+        "max_steps": 12, "timeout_s": 300,
+        "track_task": True,          # 插件不得自开台账
+    })
+    r = AgentRegistry()
+    c = r.load_from_manifest(p)
+    assert c is not None and c.agent_id == "web_researcher"
+    assert c.tool_categories == {C.NETWORK, C.FUNDAMENTAL}
+    assert c.track_task is False
+    assert r.get("web_researcher") is c
+
+
+def test_T25_unknown_category_falls_back(tmp_path):
+    p = manifest(tmp_path, "unknown", {
+        "name": "u1", "description": "x", "tool_categories": ["no_such_cat"],
+    })
+    c = AgentRegistry().load_from_manifest(p)
+    assert c is not None and c.tool_categories == {C.FUNDAMENTAL}
+
+
+def test_T25b_categories_string_does_not_char_split(tmp_path):
+    p = manifest(tmp_path, "cat_str", {
+        "name": "u2", "description": "x", "tool_categories": "file",
+    })
+    c = AgentRegistry().load_from_manifest(p)
+    assert c is not None and c.tool_categories == {C.FUNDAMENTAL}
+
+
+@pytest.mark.parametrize("payload", [
+    {"description": "缺 name"},
+    {"name": "bad_id", "description": ""},
+    {"name": "Bad", "description": "大写 id"},
+    {"name": "steps0", "description": "x", "max_steps": 0},
+])
+def test_T26_invalid_manifest_returns_none(tmp_path, payload, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(ac.logger, "warning", lambda msg, *a, **k: warnings.append(str(msg)))
+    r = AgentRegistry()
+    assert r.load_from_manifest(manifest(tmp_path, "bad", payload)) is None
+    assert r.list_available() == []
+    assert warnings and "manifest" in warnings[0]
+
+
+def test_T27_duplicate_with_builtin_skipped(tmp_path):
+    r = get_agent_registry()
+    before = r.get("researcher")
+    p = manifest(tmp_path, "dup", {"name": "researcher", "description": "冒名"})
+    assert r.load_from_manifest(p) is None
+    assert r.get("researcher") is before
+
+
+def test_T28_bad_input_never_raises(tmp_path):
+    d = tmp_path / "broken"
+    d.mkdir()
+    p = d / "manifest.json"
+    p.write_text("{not json", encoding="utf-8")
+    r = AgentRegistry()
+    assert r.load_from_manifest(str(p)) is None
+    assert r.load_from_manifest(str(tmp_path / "nope" / "manifest.json")) is None
+
+
+def test_T29_failure_does_not_stick(tmp_path):
+    r = AgentRegistry()
+    assert r.load_from_manifest(
+        manifest(tmp_path, "bad", {"name": "Bad", "description": "x"})
+    ) is None
+    good = manifest(tmp_path, "good", {"name": "good_one", "description": "x"})
+    assert r.load_from_manifest(good) is not None
+    assert r.list_available() == ["good_one"]
+
+
+def test_T29b_plugin_cannot_escalate(tmp_path):
+    p = manifest(tmp_path, "esc", {
+        "name": "esc_agent", "description": "试图要写权限",
+        "tool_categories": ["file", "agent", "system", "media"],
+        "track_task": True,
+    })
+    c = AgentRegistry().load_from_manifest(p)
+    assert c is not None
+    assert c.effective_categories() == {C.FILE}
+    assert c.track_task is False
+
+
+# ------------------------------------------------ E. 分层（退出标准）
+def test_T30_no_services_import():
+    src = Path(ac.__file__).resolve().read_text(encoding="utf-8")
+    assert "app.services" not in src, "工具层不得 import services（越层）"
+```
+
+**运行与退出判据**：
+
+```powershell
+cd backend
+python -m pytest tests/probe_delegate_s1_config.py -v --timeout=60   # 分组推进时逐轮跑
+python -m pytest tests/probe_delegate_s1_config.py -q                # 收尾：全绿
+```
+
+1. 上表用例 100% 通过，无 `skip`/`xfail`；收集数与用例数一致（`--collect-only -q` 核对）。
+2. 红→绿每一轮都能指出"这条断言原来为什么红"，不允许"写完实现一次性跑绿"倒推测试。
+3. 测试文件不提交；若某条断言与实现冲突，先判"断言是否在守护真实契约"，是则改实现、不是则改断言并在阶段记录里写清理由。
+
+**验收清单**（验收项 1–8 对应的 TDD 用例见上方 A–E 各表）：
 
 1. **agent_id 校验**：`Researcher`/`1abc`/长度 33 字符/空串 逐个抛 `ValueError`，错误信息含该 id；长度 32 字符的合法 id 通过。
 2. **字段边界**：空 `description`、`max_steps=0`/`31`、`timeout_s=4`/`1801`、空 `tool_categories` 均抛 `ValueError`；边界值 `max_steps=1`/`30`、`timeout_s=5`/`1800` 通过。
@@ -1622,15 +2091,254 @@ TOOL_NAME_ALIASES.update({
 7. **单例与复位**：`get_agent_registry()` 两次返回同一对象；`reset_agent_registry()` 后重新获取为新对象且重新含 3 个内置；`list_available()` 为 `["researcher", "reviewer", "kb_analyst"]`。
 8. **manifest 容错**：临时目录造 4 个 manifest（合法 / 未知分类 / 缺 `name` / 与内置重名），`load_from_manifest` 分别返回 config / 回落 fundamental 的 config / None / None，全程不抛异常且各有 warning 日志。
 
-**退出标准**：1–8 全绿；注册表在进程内只被 `get_agent_registry()` 创建（全仓无第二处 `AgentRegistry()`）。
+> 类型收紧项（`max_steps`/`timeout_s`/`tool_categories`/`track_task` 传错类型必须 `TypeError`）不在原 8 条内，按上方「落码口径」与 T04b/T05b/T06b/T07 一并验收；这四条与第 1–8 条同属"配置错了运行期才炸"的防线，不得当作可选项。
+
+**退出标准**：1–8 全绿 + A–E 五组 TDD 用例全绿（无 `skip`/`xfail`）；注册表在进程内只被 `get_agent_registry()` 创建（全仓无第二处 `AgentRegistry()`）。
 
 **失败回退**：只影响配置层，回退删除该文件即可；若第 8 项出现异常外泄，说明 `load_from_manifest` 的 try/except 覆盖面不足，须补到"任何异常都返回 None"。
+
+**实施记录（2026-11-28）**：TDD 探针先落（首轮为导入红，再落字段骨架转断言红 `51 failed / 22 passed`），按 R1–R8 逐组实现后 **73 passed / 0 failed**；`ruff check` 全过（首轮 `I001` 导入排序已清零，F 类为零）。落码时确认一处口径偏差：`tool_categories` 成员非法初版按 §2.1 抛 `ValueError`，与 T06b 要求的 `TypeError` 冲突，已改正。三堂会审整改：`agent_id` 正则改全串匹配（`fullmatch`）拒绝结尾换行，补 T02c 三条回归；注释中的章节号/阶段号已清理。按用户要求不再产出阶段验收记录文件。
 
 #### 6.2.4 S2 委托通道（0.5 天）
 
 **目标**：工具层能拿到入口层注入的回调、schema 与契约一致、任何失败都返回结构化错误而不外抛。
 
 **改动面**：改 `context.py`（`_current_delegate_callback`/`_current_delegate_depth` + set/reset/get）；新增 `delegateagent_schema.py`、`delegateagent.py`（§2.2/§2.3/§2.4.1 代码）。
+
+**TDD 测试要求（严格按参考设计）**：
+
+> **实施口径：本阶段落码以 §2.2 / §2.3 / §2.4.1 给出的参考代码为准，逐行照抄，不新增设计外的接口、不自行改写返回体文案。** 澄清上一版的一处措辞差异：§5.2/§6.2.4 写"深度也带 set/reset/get 三件套"，但 §2.4.1 参考代码只定义了 `get_delegate_depth()`，深度的 set/reset 由使用方直接操作 `_current_delegate_depth`（与 §2.5 运行器 `_d_token = _current_delegate_depth.set(...)` / `.reset(_d_token)` 同款）。本阶段按 §2.4.1 代码实施，不另造 `set_delegate_depth`/`reset_delegate_depth` 包装函数。
+
+**测试文件**：`backend/tests/probe_delegate_s2_channel.py`（本地探针，按 §6.2.11 第 4 条不提交）。异步用例统一用 `asyncio.run(...)`（与仓库现有探针一致，不依赖 pytest-asyncio 配置）。
+
+**A. 失败收口与透传（验收 1–4）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 未注入即错误 | 不设回调直接 `delegateagent(agent_id="researcher", task="x")` → `llm_data.status.exec_code == "error"`、`detail` 含"无可用 delegate_callback"、不外抛 |
+| T02 | 成功契约 | 注入返回 `{status:"success",summary:"结论",usage:{total_tokens:12},steps:3}` 的回调 → `data` 含 `agent_id`/`summary`/`usage`/`steps` 且逐项相等、`other_data.duration_ms` 为非负 `int`、`exec_code == "success"`；同步记录回调实收的 `agent_id`/`task`/`context`/`wait` 并断言一致 |
+| T03 | 异常收口 | 回调抛 `RuntimeError("boom")` → error 结构、`detail` 含 `boom`、不外抛 |
+| T04 | wait 透传 | `wait=False` → 回调实收 `wait=False`（本阶段只透传，拒绝在 S3）；其余字段与 T02 相同 |
+
+**B. ContextVar 隔离（验收 5、6）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T05 | 作用域可见与复位 | `set_current_delegate_callback(cb)` 后 `asyncio.create_task` 内取到的就是 `cb`；父侧仍为 `cb`；`reset(token)` 后父侧为 `None` |
+| T06 | 并发不串味 | 两个并发任务各自 set 不同回调 → 各自读到自己的回调；各自 reset 后父侧仍为 `None` |
+| T07 | 默认深度 | `get_delegate_depth() == 0` |
+| T08 | 深度并发隔离 | 按 §2.4.1/§2.5 用法直接 `_current_delegate_depth.set(1)` / `.set(0)`，并发各读各的 → 结果 `[1, 0]`；reset 后父侧仍为 0 |
+
+**C. Schema（验收 7）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T09 | Schema 形状 | `DelegateAgentInput.model_json_schema()` → `required == ["agent_id","task"]`、`wait` 默认 `True`、type 为 object |
+| T10 | task 长度边界 | `task` 长 500 → 构造成功；长 501 / 空串 → 抛 `ValueError` |
+| T11 | 可注册 | 把 `model_json_schema()` 作为 `input_schema` 交给 `tool_registry.register` → `get_tool` 非 None；finally `unregister` 复原 |
+
+**D. 分层（退出标准）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T12 | 工具层零越层 | 读 `delegateagent.py`/`delegateagent_schema.py` 源码 → 不含 `app.services` |
+
+**红绿节奏**：R1 = T01（骨架只落签名与"未注入"分支）→ R2 = T02–T04（回调调用与三分支返回体，照 §2.3 代码）→ R3 = T05–T08（§2.4.1 ContextVar）→ R4 = T09–T11（§2.2 Schema）→ R5 = T12（分层核对，不改代码）。
+
+**测试代码**：
+
+```python
+# -*- coding: utf-8 -*-
+"""S2 委托通道 TDD 探针 — 小欧 2026-11-28
+
+严格按参考设计，不新增设计外接口；深度 set/reset 直接操作 ContextVar。
+运行：cd backend && python -m pytest tests/probe_delegate_s2_channel.py -v --timeout=60
+"""
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from app.tools import context as ctx
+from app.tools.agent import delegateagent as da
+from app.tools.agent.delegateagent_schema import DelegateAgentInput
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
+
+
+@pytest.fixture(autouse=True)
+def _clean_callback():
+    tok = ctx.set_current_delegate_callback(None)
+    yield
+    ctx.reset_current_delegate_callback(tok)
+
+
+def _ok():
+    return {"status": "success", "summary": "结论",
+            "usage": {"total_tokens": 12}, "steps": 3}
+
+
+# ------------------------------------------------ A. 失败收口与透传（验收 1–4）
+def test_T01_no_callback_returns_structured_error():
+    r = asyncio.run(da.delegateagent(agent_id="researcher", task="x"))
+    assert r["llm_data"]["status"]["exec_code"] == "error"
+    assert "无可用 delegate_callback" in r["llm_data"]["status"]["detail"]
+
+
+def test_T02_success_contract():
+    seen = {}
+
+    async def cb(agent_id, task, context, wait):
+        seen.update(agent_id=agent_id, task=task, context=context, wait=wait)
+        return _ok()
+
+    tok = ctx.set_current_delegate_callback(cb)
+    try:
+        r = asyncio.run(da.delegateagent(
+            agent_id="researcher", task="查一下", context={"k": "v"}
+        ))
+    finally:
+        ctx.reset_current_delegate_callback(tok)
+    assert r["llm_data"]["status"]["exec_code"] == "success"
+    assert r["data"] == {
+        "agent_id": "researcher", "summary": "结论",
+        "usage": {"total_tokens": 12}, "steps": 3,
+    }
+    d = r["other_data"]["duration_ms"]
+    assert isinstance(d, int) and d >= 0
+    assert seen == {
+        "agent_id": "researcher", "task": "查一下", "context": {"k": "v"}, "wait": True,
+    }
+
+
+def test_T03_callback_exception_is_collected():
+    async def cb(**kw):
+        raise RuntimeError("boom")
+
+    tok = ctx.set_current_delegate_callback(cb)
+    try:
+        r = asyncio.run(da.delegateagent(agent_id="researcher", task="x"))
+    finally:
+        ctx.reset_current_delegate_callback(tok)
+    assert r["llm_data"]["status"]["exec_code"] == "error"
+    assert "boom" in r["llm_data"]["status"]["detail"]
+
+
+def test_T04_wait_passthrough():
+    seen = {}
+
+    async def cb(**kw):
+        seen.update(kw)
+        return _ok()
+
+    tok = ctx.set_current_delegate_callback(cb)
+    try:
+        asyncio.run(da.delegateagent(agent_id="researcher", task="x", wait=False))
+    finally:
+        ctx.reset_current_delegate_callback(tok)
+    assert seen["wait"] is False
+
+
+# ------------------------------------------------ B. ContextVar 隔离（验收 5、6）
+def test_T05_callback_visible_in_task_and_reset_restores():
+    async def cb(**kw):
+        return _ok()
+
+    async def child():
+        return ctx.get_current_delegate_callback()
+
+    async def parent():
+        return await asyncio.create_task(child())
+
+    tok = ctx.set_current_delegate_callback(cb)
+    try:
+        assert asyncio.run(parent()) is cb
+        assert ctx.get_current_delegate_callback() is cb
+    finally:
+        ctx.reset_current_delegate_callback(tok)
+    assert ctx.get_current_delegate_callback() is None
+
+
+def test_T06_concurrent_callbacks_do_not_pollute():
+    async def cb_a(**kw):
+        return _ok()
+
+    async def cb_b(**kw):
+        return _ok()
+
+    async def worker(cb):
+        tok = ctx.set_current_delegate_callback(cb)
+        try:
+            await asyncio.sleep(0)
+            return ctx.get_current_delegate_callback() is cb
+        finally:
+            ctx.reset_current_delegate_callback(tok)
+
+    async def main():
+        return await asyncio.gather(worker(cb_a), worker(cb_b))
+
+    assert asyncio.run(main()) == [True, True]
+    assert ctx.get_current_delegate_callback() is None
+
+
+def test_T07_default_depth_zero():
+    assert ctx.get_delegate_depth() == 0
+
+
+def test_T08_depth_isolation_between_concurrent_tasks():
+    async def worker(target):
+        tok = ctx._current_delegate_depth.set(target)
+        try:
+            await asyncio.sleep(0)
+            return ctx.get_delegate_depth()
+        finally:
+            ctx._current_delegate_depth.reset(tok)
+
+    async def main():
+        return await asyncio.gather(worker(1), worker(0))
+
+    assert asyncio.run(main()) == [1, 0]
+    assert ctx.get_delegate_depth() == 0
+
+
+# ------------------------------------------------ C. Schema（验收 7）
+def test_T09_schema_shape():
+    schema = DelegateAgentInput.model_json_schema()
+    assert schema["type"] == "object"
+    assert schema["required"] == ["agent_id", "task"]
+    assert schema["properties"]["wait"]["default"] is True
+
+
+def test_T10_task_length_bounds():
+    assert DelegateAgentInput(agent_id="researcher", task="x" * 500).task == "x" * 500
+    with pytest.raises(ValueError):
+        DelegateAgentInput(agent_id="researcher", task="x" * 501)
+    with pytest.raises(ValueError):
+        DelegateAgentInput(agent_id="researcher", task="")
+
+
+def test_T11_schema_can_be_registered():
+    name = "s2_probe_delegate_schema"
+    try:
+        tool_registry.register(
+            name=name, description="探针", category=ToolCategory.AGENT,
+            implementation=lambda **kw: _ok(),
+            input_schema=DelegateAgentInput.model_json_schema(),
+        )
+        assert tool_registry.get_tool(name) is not None
+    finally:
+        tool_registry.unregister(name)
+
+
+# ------------------------------------------------ D. 分层（退出标准）
+def test_T12_no_services_import():
+    base = Path(da.__file__).parent
+    for name in ("delegateagent.py", "delegateagent_schema.py"):
+        src = (base / name).read_text(encoding="utf-8")
+        assert "app.services" not in src, f"{name} 不得 import services"
+```
+
+**退出判据**：1–7 与 T01–T12 全绿（无 `skip`/`xfail`）；探针不提交。
 
 **验收清单**：
 
@@ -1645,6 +2353,8 @@ TOOL_NAME_ALIASES.update({
 **退出标准**：1–7 全绿；工具函数内无 `app.services.*` 导入（工具层零越层，用 `grep` 核对）。
 
 **失败回退**：回退三个文件；若第 5 项在并发下失败，说明用了模块级全局而非 ContextVar，必须改回 ContextVar（模块全局会被 6 路并发互相污染）。
+
+**实施记录（2026-11-28）**：首轮导入红，按 §2.2/§2.3/§2.4.1 参考代码逐行落码后探针 **12 passed / 0 failed**，`ruff check` 全过。深度只按 §2.4.1 参考代码提供 `get_delegate_depth()`，未新增 `set_delegate_depth`/`reset_delegate_depth` 包装函数；并发隔离用例直接操作 `_current_delegate_depth`（与 §2.5 运行器同款），未越出设计。三堂会审整改：注释中的章节号已清理。按用户要求不再产出阶段验收记录文件。
 
 #### 6.2.5 S3 子 Agent 运行器（1 天，关键路径）
 
