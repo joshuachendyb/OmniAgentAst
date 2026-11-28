@@ -113,6 +113,7 @@
 #   外层重试永远等不到 connect/timeout 异常, 该条已死) — 小欧-2026-11-23
 # 2026-11-27 小欧 - stderr 截断改头尾双向: 新增 HEAD=400/TAIL=1100 两个常量,
 #   MAX 由两者相加派生(=1500), 不再独立写数字; 修 head-only 丢尾部异常类型的已知缺陷 — 小欧-2026-11-27
+# 2026-11-28 小欧 - 新增单轮并行委托上限常量, 常量单点定义, tool_runner 唯一消费方
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -960,5 +961,12 @@ ERR_GENERATE_NO_CHANNEL = "ERR_GENERATE_NO_CHANNEL"  # 生成回调未注入
 ERR_GENERATE_INCOMPLETE = "ERR_GENERATE_INCOMPLETE"  # 生成未完成(未定/队列/环境, settled=False → warning)
 ERR_GENERATE_REJECTED = "ERR_GENERATE_REJECTED"  # 厂商确定拒绝(模型不存在/参数非法/鉴权/no_output, settled=True → error) — 小欧-2026-11-20
 ERR_GENERATE_PERSIST_FAILED = "ERR_GENERATE_PERSIST_FAILED"  # 厂商已生成但 b64 落盘失败(本地产物丢失, → error) — 小欧-2026-11-21
+
+
+# ====================================================================
+# 17. 并行调度上限 — 【工具层】（单轮工具调用中的委托子 Agent 数硬顶）— 小欧 2026-11-28
+# ====================================================================
+# 使用对象: tool_runner.execute_tools 计数并拒绝超出部分; 其它模块不得另定义同名常量。
+MAX_PARALLEL_SUB_AGENTS: int = 6
 
 

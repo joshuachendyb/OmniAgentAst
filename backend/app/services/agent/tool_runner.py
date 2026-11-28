@@ -10,6 +10,8 @@
 #   redact_sensitive_params 脱敏敏感键。
 # 2026-11-03 小欧 - log_and_print 增 level 参数: 4 处 [action_handler] 调度日志(单工具/并行/分组明细/顺序)
 #   显式传 level="WARNING", 控制台默认 WARNING 档即可见步骤 — 小欧-2026-11-03
+# 2026-11-28 小欧 - 单轮委托并行上限: 计数前归一并写回委托主名, 超出部分结构化拒绝;
+#   三分支改读活跃调用集, 取号与结果回填统一按原始下标映射, 防文件落盘串号
 import asyncio
 import time
 from typing import Any, Dict, List
@@ -20,6 +22,9 @@ from app.logger import log_and_print, logger
 from app.services.agent.tool_executor import execute_tool
 from app.tools.conflict_detector import _has_conflict, _partition_calls
 from app.tools.file_tool_utils import _auto_correct_file_tool
+from app.tools.tool_constants import MAX_PARALLEL_SUB_AGENTS
+from app.tools.tool_response import build_error
+from app.tools.tools_alias_mapper import normalize_tool_name
 from app.utils.secret_utils import redact_sensitive_params
 
 
@@ -28,7 +33,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
          
         三分支说明：
-          A: 单工具（len==1）→ execute_tool(on_retry_started=...)
+          A: 单工具（活跃调用集 len==1）→ execute_tool(on_retry_started=...)
              单个工具执行，注入重试回调。引擎层自动处理重试+通知。
           B: 多工具无冲突 → execute_tool(parallel=True, 无on_retry_started)
              各工具并行执行，用try_once一次执行不重试。
@@ -61,52 +66,75 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         # 2026-10-19 小欧 - 删除原始主调用的二次自动纠正: 上方循环已逐 call 纠正并登记 _correction_map,
         #   单工具分支改取 all_calls[0] 后再按 tool_name/tool_params 补写会把纠正来源错记到实际执行的 call 上。
 
+        # 2026-11-28 小欧 - 单轮委托上限: 计数前归一, 命中委托写回主名(执行层按裸名查表),
+        #   超出部分结构化拒绝且保留原索引, 活跃调用集供三分支使用。
+        for _c in all_calls:
+            if normalize_tool_name(_c.get("tool_name", "")) == "delegateagent":
+                _c["tool_name"] = "delegateagent"
+        _delegate_idx = [i for i, _c in enumerate(all_calls)
+                         if _c.get("tool_name") == "delegateagent"]
+        _over = set(_delegate_idx[MAX_PARALLEL_SUB_AGENTS:])
+        _rejected: Dict[int, Any] = {}
+        if _over:
+            for _i in _over:
+                _rejected[_i] = build_error(llm_data={
+                    "summary": f"delegateagent，失败：单轮并行子Agent上限 {MAX_PARALLEL_SUB_AGENTS}",
+                    "status": {"exec_code": "error", "message": "失败",
+                               "detail": f"本轮共 {len(_delegate_idx)} 个委托，超出部分未执行",
+                               "hint": "请分批委托：本轮先处理这些，下一轮再发其余"},
+                })
+            _active_indices = [i for i in range(len(all_calls)) if i not in _over]
+            _active_calls = [all_calls[i] for i in _active_indices]
+        else:
+            _active_indices = list(range(len(all_calls)))
+            _active_calls = all_calls
+
         def _cn(c):
             return c.get("tool_name", "") if isinstance(c, dict) else ""
         def _cp(c):
             return c.get("tool_params", {}) if isinstance(c, dict) else {}
 
-        if len(all_calls) == 1:
-            # A: 单工具 — 2026-10-19 小欧: 取 all_calls[0](安全门过滤后的真实执行集);
+        if len(_active_calls) == 1:
+            # A: 单工具 — 2026-10-19 小欧: 取 _active_calls[0](安全门过滤后的真实执行集);
             #   原用入参 tool_name/tool_params(原始主调用)会在主调用被拒、后续调用存活时执行被拒工具
-            _only = all_calls[0]
+            _only = _active_calls[0]
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={_cn(_only)}", level="WARNING")
-            # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
-            _cb = on_attempt_recorded(1) if on_attempt_recorded else None
+            # #18(2026-08-23): 按【原始全局序号】取号, 不能用活跃集局部下标 — 小欧 2026-11-28
+            _cb = on_attempt_recorded(_active_indices[0] + 1) if on_attempt_recorded else None
             result = await execute_tool(agent, _cn(_only), _cp(_only), agent._retry_engine,
                                         on_retry_started=on_retry_started, on_attempt_recorded=_cb)
-            results = [result]
+            _active_results = [result]
 
         elif is_parallel:
             # B': 并行分组调度 — 冲突组内串行, 无冲突组并行("该并行就并行") — 小欧 2026-08-09
-            _names = [_cn(c) for c in all_calls]
+            _names = [_cn(c) for c in _active_calls]
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组并行执行: tools={_names}", level="WARNING")
-            groups = _partition_calls(all_calls)
+            groups = _partition_calls(_active_calls)
             # DRY(规范6): 每组冲突判定只算一次, 监控(_gmode)与执行(_run_group)共用,
             # 消除二次 _has_conflict 冗余调用; 纯函数确定性保证监控与实际执行必然一致(无失真) — 小欧 2026-08-09
             _gd = []
             _gconf = []  # 每组冲突判定结果, 按 groups 顺序对齐
             for _g in groups:
-                _gt = [_cn(all_calls[i]) for i in _g]
-                _conflicted = len(_g) > 1 and _has_conflict([all_calls[i] for i in _g])
+                _gt = [_cn(_active_calls[i]) for i in _g]
+                _conflicted = len(_g) > 1 and _has_conflict([_active_calls[i] for i in _g])
                 _gconf.append(_conflicted)
                 _gmode = "单工具" if len(_g) == 1 else ("并行" if not _conflicted else "串行")
                 _gd.append(f"[{'/'.join(_gt)}:{_gmode}]")
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 分组明细({len(groups)}组): {' '.join(_gd)}", level="WARNING")
 
             async def _run_group(indices: List[int], conflicted: bool):
-                group = [all_calls[i] for i in indices]
+                group = [_active_calls[i] for i in indices]
                 _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
-                    # 2026-08-23: 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
-                    _cb = on_attempt_recorded(indices[0] + 1) if on_attempt_recorded else None
+                    # 工厂实参=原始全局序号, 活跃集局部下标须经 _active_indices 还原 — 小欧 2026-11-28
+                    _cb = on_attempt_recorded(_active_indices[indices[0]] + 1) if on_attempt_recorded else None
                     _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
                                                on_retry_started=on_retry_started, on_attempt_recorded=_cb)]
                     _gmode = "单工具"
                 elif not conflicted:  # 组内无冲突→并行(try_once), 语义同原B
-                    # #18(2026-08-23): zip(indices, group) 对齐全局下标取号 — 小欧 2026-08-23
+                    # zip(indices, group) 的局部下标须映射回原始全局序号 — 小欧 2026-11-28
                     tasks = [execute_tool(agent, _cn(c), _cp(c), agent._retry_engine, parallel=True,
-                                          on_attempt_recorded=(on_attempt_recorded(_gi + 1) if on_attempt_recorded else None))
+                                          on_attempt_recorded=(on_attempt_recorded(_active_indices[_gi] + 1) if on_attempt_recorded else None))
                              for _gi, c in zip(indices, group)]
                     _res = await asyncio.gather(*tasks, return_exceptions=True)
                     _gmode = "并行"
@@ -114,7 +142,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                     _res = []
                     for _gi, call in zip(indices, group):
                         try:
-                            _cb = on_attempt_recorded(_gi + 1) if on_attempt_recorded else None
+                            _cb = on_attempt_recorded(_active_indices[_gi] + 1) if on_attempt_recorded else None
                             _res.append(await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
                                                            on_retry_started=on_retry_started, on_attempt_recorded=_cb))
                         except Exception as e:
@@ -126,30 +154,37 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
 
             _grouped = await asyncio.gather(*[_run_group(g, _gconf[i]) for i, g in enumerate(groups)],
                                             return_exceptions=True)  # 组间失败隔离: 单组异常不取消其他组
-            results = [None] * len(all_calls)  # 结果按原顺序填回
+            _active_results = [None] * len(_active_calls)  # 活跃集局部顺序, 末尾再映射回原索引
             for _indices, _res in zip(groups, _grouped):
                 if isinstance(_res, Exception):  # 整组失败: 组内全部标记为该异常(与原C分支单工具异常append语义一致)
                     for _i in _indices:
-                        results[_i] = _res
+                        _active_results[_i] = _res
                     continue
                 for _i, _r in zip(_indices, _res):
-                    results[_i] = _r
+                    _active_results[_i] = _r
         else:
-            # C: 非并行模式 → 顺序执行（一个不丢）
-            _names = [_cn(c) for c in all_calls]
+            # C: 非并行模式 → 顺序执行（活跃调用一个不丢）
+            _names = [_cn(c) for c in _active_calls]
             _reason = "非并行模式"
             log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 顺序执行({_reason}): tools={_names}", level="WARNING")
-            results = []
-            for _gi, call in enumerate(all_calls, 1):
+            _active_results = []
+            for _pos, call in enumerate(_active_calls):
                 try:
-                    # #18(2026-08-23): 顺序分支按全局序号取号 — 小欧 2026-08-23
-                    _cb = on_attempt_recorded(_gi) if on_attempt_recorded else None
+                    # 原始全局序号取号, 不从活跃集局部下标算 — 小欧 2026-11-28
+                    _cb = on_attempt_recorded(_active_indices[_pos] + 1) if on_attempt_recorded else None
                     result = await execute_tool(agent, _cn(call), _cp(call), agent._retry_engine,
                                                 on_retry_started=on_retry_started, on_attempt_recorded=_cb)
-                    results.append(result)
+                    _active_results.append(result)
                 except Exception as e:
                     logger.warning(f"[action_handler] 工具{_cn(call)}顺序执行失败: {e}")
-                    results.append(e)
+                    _active_results.append(e)
+
+        # 活跃集结果按原始索引回填, 被拒位填结构化错误, 保证长度与调用序一致 — 小欧 2026-11-28
+        results = [None] * len(all_calls)
+        for _pos, _i in enumerate(_active_indices):
+            results[_i] = _active_results[_pos]
+        for _i, _err in _rejected.items():
+            results[_i] = _err
 
         elapsed = time.time() - start_time
         tool_names = [_cn(c) for c in all_calls]
