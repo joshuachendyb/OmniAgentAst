@@ -10,6 +10,9 @@ tool_categories 只收 ToolCategory 集合、track_task 只收 bool），避免�
 小欧 2026-11-28 新增 build_delegate_tool_description()：工具描述由注册表动态生成，新增 Agent 零改代码
 小欧 2026-11-28 增 tool_names 精确放行白名单：manifest 可声明具名工具，构造期类型显式校验（禁止 str 拆单字符静默失效），装载与可见性同源收窄
 小欧 2026-11-28 修正 manifest 隐式强转：去掉 int()/float()，原值交 __post_init__ 统一校验，非法输入由外层跳过而非洗白成合法值
+小欧 2026-11-28 收紧可选字段校验：system_prompt/output_instruction/model 必须为字符串或 None，避免运行期字符串拼接失败
+小欧 2026-11-28 跨 provider 精确配置：新增可选 api_key（repr 隐藏，不进入 manifest 插件装载），provider/api_base 不再依赖 model 非空
+小欧 2026-11-28 manifest 装载 provider/api_base；仍不装载 api_key、track_task、allow_delegate
 """
 import json
 import re
@@ -54,6 +57,7 @@ class AgentConfig:
     api_base: Optional[str] = None            # 跨 provider 委托时子 client 的端点
     output_instruction: Optional[str] = None  # 输出约束（自由文本；None=默认摘要要求）
     model: Optional[str] = None            # 指定模型（None=继承父 Agent 的 LLM）
+    api_key: Optional[str] = field(default=None, repr=False)  # 跨 provider 子 client 的可选凭据；不进入 manifest 插件装载
     max_steps: int = 8                     # 子 Agent 最大 ReAct 步数（有界）
     timeout_s: float = 300.0               # 墙钟超时（秒），由守卫协程强制执行
     track_task: bool = False               # 是否在 tasks 台账建行（子过程默认不建）
@@ -64,6 +68,13 @@ class AgentConfig:
             raise ValueError(f"agent_id 非法: {self.agent_id!r}（要求小写字母开头，[a-z0-9_]）")
         if not isinstance(self.description, str) or not self.description.strip():
             raise ValueError(f"agent_id={self.agent_id}: description 不能为空（LLM 靠它路由）")
+        # 小欧 2026-11-28 - 可选字符串字段构造期收口，避免运行期字符串拼接/模型构造失败
+        if not isinstance(self.system_prompt, str):
+            raise TypeError(f"agent_id={self.agent_id}: system_prompt 必须为字符串，收到 {type(self.system_prompt).__name__}")
+        if self.output_instruction is not None and not isinstance(self.output_instruction, str):
+            raise TypeError(f"agent_id={self.agent_id}: output_instruction 必须为字符串或 None，收到 {type(self.output_instruction).__name__}")
+        if self.model is not None and not isinstance(self.model, str):
+            raise TypeError(f"agent_id={self.agent_id}: model 必须为字符串或 None，收到 {type(self.model).__name__}")
         # 类型显式：bool 是 int 子类，必须单独排除；禁止 int()/float() 隐式强转（隐式强转会让非法类型静默通过）
         if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool):
             raise TypeError(f"agent_id={self.agent_id}: max_steps 必须为 int，收到 {type(self.max_steps).__name__}")
@@ -91,6 +102,8 @@ class AgentConfig:
             raise TypeError(f"agent_id={self.agent_id}: provider 必须为字符串或 None")
         if self.api_base is not None and not isinstance(self.api_base, str):
             raise TypeError(f"agent_id={self.agent_id}: api_base 必须为字符串或 None")
+        if self.api_key is not None and not isinstance(self.api_key, str):
+            raise TypeError(f"agent_id={self.agent_id}: api_key 必须为字符串或 None")
         if not isinstance(self.track_task, bool):
             raise TypeError(f"agent_id={self.agent_id}: track_task 必须为 bool，收到 {type(self.track_task).__name__}")
 
@@ -169,6 +182,9 @@ class AgentRegistry:
                 tool_names=tool_names,
                 output_instruction=data.get("output_instruction"),
                 model=data.get("model"),
+                # 小欧 2026-11-28 - 跨 provider 从 manifest 读取 provider/api_base；不读取 api_key，避免插件夹带凭据
+                provider=data.get("provider"),
+                api_base=data.get("api_base"),
                 # 小欧 2026-11-28 - 零隐式强转：类型校验单点在 __post_init__，非法 manifest 由外层跳过+warning
                 max_steps=data.get("max_steps", 8),
                 timeout_s=data.get("timeout_s", 300.0),

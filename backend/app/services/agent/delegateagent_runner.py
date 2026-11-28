@@ -30,6 +30,7 @@
   2026-11-28 - OmniAgent - 三堂会审整改：清除注释中的文档章节号与阶段号引用，
     纯注释改动零行为变更
   2026-11-28 - 小欧 - 异步委托落地：wait=False 立即返回 delegate_id 并后台执行，完成后经既有 inbox 注入通知父任务；父取消联动复用 _run_child_guarded 的既有轮询
+2026-11-28 小欧 - 整改：track_task 透传；精确 allow_delegate 真正放行嵌套委托且深度≤2；只读白名单 fail-closed 但不过度误拒 read 工具；provider/api_base 不再依赖 model；支持可选 api_key；异步委托 usage 合并父账
 """
 import asyncio
 import contextvars
@@ -47,7 +48,12 @@ from app.services.task.task_state import (
     is_cancel_requested,
     reclaim_memory_buffer,
 )
-from app.tools.agent.agent_config import DELEGATE_DENY_TOOLS, AgentConfig, get_agent_registry
+from app.tools.agent.agent_config import (
+    DELEGATE_DENY_CATEGORIES,
+    DELEGATE_DENY_TOOLS,
+    AgentConfig,
+    get_agent_registry,
+)
 from app.tools.context import (
     _current_delegate_depth,
     reset_current_delegate_callback,
@@ -56,7 +62,7 @@ from app.tools.context import (
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 
-MAX_DELEGATE_DEPTH = 1        # P0 只允许 1 层委托；P1 引入 allow_delegate 字段时改配置驱动
+MAX_DELEGATE_DEPTH = 1        # 默认 1 层委托；精确 allow_delegate=True 时放宽到 2 层，仍不超过 2
 _POLL_S = 1.0                 # 取消/超时轮询步长（异步等待，不阻塞事件循环）
 _CANCEL_GRACE_S = 5.0         # 取消后等待子任务真正退出的上限；超时即放弃等待并留错误日志
 
@@ -64,10 +70,9 @@ _CANCEL_GRACE_S = 5.0         # 取消后等待子任务真正退出的上限；
 # 只持强引用防任务被回收；生命周期由任务自身收口，父取消联动复用 _run_child_guarded 的既有轮询。
 _background_delegates: Dict[str, asyncio.Task] = {}
 
-# 小欧 2026-11-28 BUG-3 整改：子 Agent 只读能力白名单（静态枚举）。
-# 名单制 DELEGATE_DENY_TOOLS 对"未列入 PATH_* 的新工具"天然 fail-open，与只读承诺冲突。
-# 这里改为白名单：运行时把"已注册全集 - 本白名单"并入 excluded_tools，新工具默认拒绝。
-# 审计过的只读工具才列入；新增只读工具须同步本集合（插件化工具默认不可进子 Agent）。
+# 子 Agent 只读能力白名单（fail-closed）：显式审计过的只读工具 + 元数据 read 工具可进；
+# 拒绝分类/拒绝名单/需人工确认一律不进。显式白名单工具优先于 action_kind 元数据；
+# 其余 read 工具按注册元数据放行，避免新增只读工具被无意义误拒，但写/未知工具仍拒绝。
 DELEGATE_ALLOW_TOOLS = frozenset({
     "searchtool", "searchweb", "fetchpage", "timenow",
     "read", "find", "grep", "listdir", "tree",
@@ -105,8 +110,8 @@ async def _run_child_guarded(sub_agent, sub_task: str, max_steps: int, scope_ctx
     （宽限期 `_CANCEL_GRACE_S` 内未退出则放弃等待并留错误日志，见 finally）。
     """
     async def _child():
-        # 运行层 fail-closed：子作用域内清空委托回调。即使 searchtool 把 AGENT 分类
-        # 动态灌回子 Agent、或将来配置泄漏，delegateagent 工具也只会拿到 None 而立即失败。
+        # 运行层 fail-closed：子作用域先清空委托回调；若子 Agent 精确放行嵌套委托，
+        # 入口层在子 Agent 实际调用 delegateagent 时重新注入，仍受深度硬顶约束。
         _cb_token = set_current_delegate_callback(None)
         _d_token = _current_delegate_depth.set(_current_delegate_depth.get() + 1)
         try:
@@ -142,16 +147,24 @@ async def _run_child_guarded(sub_agent, sub_task: str, max_steps: int, scope_ctx
                 )
 
 
-def _find_unattended_blocker(sub_agent) -> Optional[str]:
+def _is_delegate_readonly(name: str, meta) -> bool:
+    """子 Agent 只读判定：拒绝分类/拒绝名单/需人工确认先拒；显式只读白名单或 read 元数据放行 — 小欧 2026-11-28"""
+    if meta is None or not meta.visible_to_llm:
+        return False
+    if name in DELEGATE_DENY_TOOLS or meta.category in DELEGATE_DENY_CATEGORIES:
+        return False
+    if meta.needs_confirmation or meta.confirm_fn is not None:
+        return False
+    if name in DELEGATE_ALLOW_TOOLS:
+        return True
+    return meta.action_kind == "read"
+
+
+def _find_unattended_blocker(sub_agent, *, allow_delegate: bool = False) -> Optional[str]:
     """剩余工具里出现"需人工确认/交互"者即返回其名 — 子 Agent 没有前端出口，宁可拒绝委托
 
-    覆盖面（别高估）：AGENT 分类工具 + 靠 confirm_fn 声明确认的工具（现为 bash、execute_sql，
-    分别见 fundamental_register.py:144 / dataanalysis_register.py:178）；全仓 needs_confirmation=True 零命中，
-    故 needs_confirmation 分支实际不触发。FILE 写类工具不声明确认——
-    delete 的确认由 check_delete_permission(R3-R6) 在执行期产出（file_register.py:246 CONFIRMATION_MAP 为空），
-    所以 write/delete/move 这类只能靠 DELEGATE_DENY_TOOLS 拦，本函数兜不住。
-    这也正是拒绝清单必须真落地的原因：一旦 excluded_tools 被静默吞掉，delete 会漏进子 Agent，
-    然后在不可见的 HITL 上空转 120s 后拿到"拒绝"。
+    覆盖面：AGENT 分类 + needs_confirmation/confirm_fn；不可见工具跳过；精确 allow_delegate 只放行 delegateagent。
+    只读面另由 _is_delegate_readonly 与 _excluded 同源过滤；写/未知工具默认拒绝。
     """
     for name in list(sub_agent._tools_dict.keys()):
         meta = tool_registry.get_tool(name)
@@ -159,6 +172,9 @@ def _find_unattended_blocker(sub_agent) -> Optional[str]:
             return f"{name}(未注册)"
         # 小欧 2026-11-28 BUG-5 整改：对 LLM 不可见的工具（缺依赖/expose=False）不应触发拒绝
         if not meta.visible_to_llm:
+            continue
+        # 精确多层委托只放行 delegateagent；AGENT 下的 question/schedule 等仍拒
+        if name == "delegateagent" and allow_delegate:
             continue
         if meta.category is ToolCategory.AGENT or meta.needs_confirmation or meta.confirm_fn is not None:
             return name
@@ -213,9 +229,11 @@ async def run_delegate(
             "summary": f"未知 agent_id '{agent_id}'，可用: {available}",
         }
 
-    # 深度硬顶：默认 1 层；allow_delegate 的 Agent 放宽到 2 层（小欧 2026-11-28）
+    # 深度硬顶：默认 1 层；精确 allow_delegate 的 Agent 放宽到 2 层
+    # 子作用域 allow_delegate 与目标 agent allow_delegate 任一满足即可进入第 2 层，仍不超过 2 层
     depth = _current_delegate_depth.get()
-    max_depth = 2 if config.allow_delegate else MAX_DELEGATE_DEPTH
+    source_allows_delegate = bool(getattr(agent, "_allow_delegate", False))
+    max_depth = 2 if (config.allow_delegate or source_allows_delegate) else MAX_DELEGATE_DEPTH
     if depth >= max_depth:
         return {"status": "error",
                 "summary": f"委托深度超限(当前 {depth}，上限 {max_depth})，子Agent不可再委托"}
@@ -237,6 +255,13 @@ async def run_delegate(
         try:
             result = await _execute_delegate(agent, config, task, context, AgentStatus)
             outcome = f"异步委托 {delegate_id} 完成: {str(result.get('summary', ''))[:300]}"
+            # 异步委托完成后同样记父账；记账失败不阻断 inbox 通知
+            try:
+                from app.services.agent.tool_executor import _merge_delegate_usage
+
+                await _merge_delegate_usage(agent, result.get("usage") or {})
+            except Exception as merge_error:
+                logger.warning(f"[delegateagent_runner] 异步委托 {delegate_id} usage 合并失败: {merge_error}")
         except asyncio.CancelledError:
             outcome = f"异步委托 {delegate_id} 因父任务取消而终止"
             raise
@@ -269,34 +294,48 @@ async def _execute_delegate(agent, config: AgentConfig, task: str,
     # 显式传集合：空集就是零工具；不可写 `or None` —— 那会回落到
     # UniversalAgent._INITIAL_CATEGORIES（含 AGENT），把刚剔除的分类工具又装回来。
     sub_categories = config.effective_categories()
+    _allow_nested = bool(config.allow_delegate)
 
-    # 小欧 2026-11-28 BUG-3 整改：只读白名单求差——已注册全集里不在白名单者一律拒绝，
-    # 新工具默认 fail-closed。与原拒绝清单取并集，两层防线都保留。
+    # 只读白名单求差：已注册全集里不是只读者一律拒绝；再并拒绝清单，两层防线都保留。
+    # 显式 allowlist + read 元数据均可放行，未知/写/需人工确认仍 fail-closed。
     _registered: set = set()
     for _cat in ToolCategory:
         _registered.update(tool_registry.get_implementations_by_category(_cat))
-    _excluded = DELEGATE_DENY_TOOLS | (_registered - DELEGATE_ALLOW_TOOLS)
+    _readonly_registered = {
+        _name
+        for _name in _registered
+        if _is_delegate_readonly(_name, tool_registry.get_tool(_name))
+    }
+    _excluded = DELEGATE_DENY_TOOLS | (_registered - _readonly_registered)
+
+    # 精确多层委托：只放行 delegateagent；question/schedule 等 AGENT 工具仍被拒绝清单挡住
+    if _allow_nested:
+        sub_categories = set(sub_categories) | {ToolCategory.AGENT}
+        _excluded = _excluded - {"delegateagent"}
 
     # 创建子 Agent（独立 task_id；默认继承父 llm_client，零新建池）
     sub_task_id = f"sub-{agent.task_id}-{agent_id}-{uuid.uuid4().hex[:6]}"
     _sub_client = None
-    if config.model:
-        # OCP 扩展位：指定模型 → 新建 client。同 provider 复用父池；跨 provider（配置 provider/api_base）
-        # 用子配置定位端点且**不传 shared_client** — httpx 池与 base_url 绑定，复用父池会错配到父端点。
+    # 指定模型 / 跨 provider / 自定义端点 / 自定义凭据任一出现，建独立子 client；
+    # model 未指定时继承父模型；provider/api_base 不再依赖 model 非空。
+    _needs_child_client = bool(config.model or config.provider or config.api_base or config.api_key)
+    if _needs_child_client:
+        # OCP 扩展位：新建 client。同 provider/同端点可复用父池；跨 provider/自定义端点不传 shared_client，
+        # httpx 池与 base_url/凭据绑定，复用父池会错配到父端点。
         from app.db.models.chat_models import ModelRef
         from app.llm.client_sdk import create_llm_client
         _parent_model = agent.llm_client.llm_model
-        if config.provider or config.api_base:
-            _model_ref = ModelRef(provider=config.provider or _parent_model.provider,
-                                  model=config.model, api_base=config.api_base)
-            _shared = None                            # 独立池：子任务结束由 _close_quietly 真正关闭
-        else:
-            _model_ref = ModelRef(provider=_parent_model.provider, model=config.model,
-                                  api_base=_parent_model.api_base)
-            _shared = _parent_http_client(agent.llm_client)  # 复用父 httpx 池，零新建开销
+        _cross_endpoint = bool(config.provider or config.api_base)
+        _model_ref = ModelRef(
+            provider=config.provider or _parent_model.provider,
+            model=config.model or _parent_model.model,
+            api_base=config.api_base if config.api_base is not None else _parent_model.api_base,
+        )
+        _shared = None if (_cross_endpoint or config.api_key) else _parent_http_client(agent.llm_client)
+        _api_key = config.api_key if config.api_key is not None else agent.llm_client.api_key
         _sub_client = create_llm_client(
             llm_model=_model_ref,
-            api_key=agent.llm_client.api_key,        # 只读 property（client_sdk 需补）
+            api_key=_api_key,
             shared_client=_shared,
         )
         _llm_client = _sub_client
@@ -309,9 +348,9 @@ async def _execute_delegate(agent, config: AgentConfig, task: str,
             task_id=sub_task_id,
             max_steps=config.max_steps,
             initial_categories=sub_categories,
-            excluded_tools=_excluded,   # 只读：名单拒绝 ∪ (已注册全集 - 白名单)，新工具默认拒绝
-            tool_names=config.tool_names,  # 小欧 2026-11-28 - 名粒度放行：从 AgentConfig 透传，构造前生效
-            track_task=False,   # 小欧 2026-11-28 BUG-1 整改：子过程恒不落 tasks 台账，不接受配置绕过
+            excluded_tools=_excluded,   # 只读：名单拒绝 ∪ (已注册全集 - 只读放行)，未知/写工具默认拒绝
+            tool_names=config.tool_names,  # 名粒度放行：从 AgentConfig 透传，构造前生效；不能扩大只读面
+            track_task=config.track_task,   # 与设计一致：子过程默认不落 tasks 台账；仅显式配置才建行
         )
     except Exception as e:
         # 构造失败（task_id 非法/依赖缺失等）必须在这里收口：下面的 try/finally 还没开始，
@@ -321,7 +360,8 @@ async def _execute_delegate(agent, config: AgentConfig, task: str,
         return {"status": "error", "summary": f"子Agent构造失败: {e}"}
 
     # 配置层已扣分类，这里按工具元数据兜底：剩余工具若有需确认/交互者，直接拒绝委托
-    _blocked = _find_unattended_blocker(sub_agent)
+    sub_agent._allow_delegate = _allow_nested
+    _blocked = _find_unattended_blocker(sub_agent, allow_delegate=_allow_nested)
     if _blocked:
         await _close_quietly(_sub_client)
         return {"status": "error",

@@ -12,9 +12,11 @@ tool_cache_manager — 工具缓存管理
 # 2026-10-02 小欧 patch_search_desc的unloaded叠加"该分类确有实现"条件: 零工具分类(SHELL消亡后)若进searchtool描述, LLM搜索无果、搜3次触发熔断FAILED
 # 2026-11-27 小欧 get_openai_tools 透传 agent._excluded_tools 作 exclude(子Agent只读拒绝清单);
 #   _get_original_search_desc 改读 resolved_description(), 支持 callable 描述
+# 2026-11-28 小欧 精确白名单过滤时对已注册名 normalize_tool_name，与装载/动态注入同源
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
+from app.tools.tools_alias_mapper import normalize_tool_name
 
 
 def get_openai_tools(agent) -> list:
@@ -35,7 +37,7 @@ def get_openai_tools(agent) -> list:
     # 小欧 2026-11-28 - 精确白名单收窄: to_openai_tools(tool_names=) 是"额外包含"语义，不能用于只留具名工具
     _names = getattr(agent, "_tool_names", None)
     if _names:
-        tools = [t for t in tools if t.get("function", {}).get("name") in _names]
+        tools = [t for t in tools if normalize_tool_name(t.get("function", {}).get("name", "")) in _names]
 
     override = getattr(agent, '_searchtool_desc_override', None)
     if override:

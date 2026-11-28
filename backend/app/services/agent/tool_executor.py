@@ -44,6 +44,7 @@ tool_executor — 工具执行逻辑
 #   timer_set 等工具消费——定时器触发时回到发起会话创建任务; finally reset 防跨工具泄漏。
 # 2026-11-28 小欧 - 委托回调注入：按归一名仅在 delegateagent 调用期注入，finally 按 token 守卫 reset；
 #   同一 finally 内还要把子 Agent 用量并入父账（成功失败都记）。
+# 2026-11-28 小欧 - usage 合并容错：子用量非 dict 直接 no-op，脏数值安全归一为 0，不因记账击穿委托结果。
 
 import asyncio
 import time
@@ -213,8 +214,26 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         auto_inject_from_search(agent, result)
     # 2026-11-28 小欧 - 委托用量并入父账：按归一名判据，成功失败都记（有 usage 即记）
     if normalize_tool_name(tool_name) == "delegateagent":
-        await _merge_delegate_usage(agent, (result.get("data") or {}).get("usage") or {})
+        # 小欧 2026-11-28 - data 可能非 dict；不能让记账逻辑击穿工具返回
+        data = result.get("data") if isinstance(result, dict) else None
+        sub_usage = data.get("usage") if isinstance(data, dict) else {}
+        await _merge_delegate_usage(agent, sub_usage or {})
     return result
+
+
+def _safe_int(value) -> int:
+    """脏数值安全归一：None/空串/非数字/NaN/inf -> 0；数字字符串与浮点字符串截断为 int — 小欧 2026-11-28"""
+    try:
+        if value is None:
+            return 0
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    except OverflowError:
+        return 0
 
 
 async def _merge_delegate_usage(agent, sub_usage: dict) -> None:
@@ -222,11 +241,12 @@ async def _merge_delegate_usage(agent, sub_usage: dict) -> None:
 
     成功与失败委托同样记账：子 Agent 已消耗的 token 是真实花费。
     判据 usage 存在性，不用 is_success（后者读工具执行状态，与是否产生 token 是两件事）。
+    子用量非 dict 直接 no-op；脏数值经 _safe_int 归一，不抛。
     """
-    if not sub_usage:
+    if not sub_usage or not isinstance(sub_usage, dict):
         return
     keys = ("prompt_tokens", "completion_tokens", "total_tokens")
-    delta = {k: int(sub_usage.get(k) or 0) for k in keys}
+    delta = {k: _safe_int(sub_usage.get(k)) for k in keys}
     for k in keys:
         agent.accumulated_usage[k] += delta[k]
         agent.task_accumulated_tokens[k] += delta[k]

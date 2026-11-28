@@ -10,6 +10,7 @@ delegateagent — 子Agent委托工具实现
   4. 工具层零越层：不 import services/agent，只消费 ContextVar 回调
 小欧 2026-11-28 收口回调返回体形状：非字典回传走既有错误分支，摘要缺失按空串处理，
 避免异常穿出工具入口
+小欧 2026-11-28 异步委托：status=running 视为成功启动，返回 delegate_id，不误报失败；完成走 inbox
 """
 import time
 from typing import Any, Dict, Optional
@@ -55,6 +56,23 @@ async def delegateagent(
 
     # result 结构由 callback 保证: {"summary", "usage", "status", "steps"}，llm_data 统一走项目契约
     status = result.get("status", "failed")
+    # 小欧 2026-11-28 - 异步委托：running 是成功启动，不是失败；完成经 inbox 回灌
+    if status == "running":
+        return build_success(
+            data={
+                "agent_id": agent_id,
+                "status": "running",
+                "delegate_id": result.get("delegate_id", ""),
+                "summary": result.get("summary", ""),
+            },
+            llm_data={
+                "summary": f"委托子Agent({agent_id})已后台启动: {result.get('delegate_id', '')}",
+                "action": {"tool": "delegateagent", "tool_zh": "委托子Agent",
+                           "params": {"agent_id": agent_id}},
+                "status": {"exec_code": "success", "message": "已启动"},
+            },
+            other_data={"duration_ms": duration_ms},
+        )
     if status == "success":
         _summary = result.get("summary") or ""
         return build_success(

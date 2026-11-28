@@ -24,12 +24,13 @@
 #   拒绝名单写别名(write_file)与写注册名(write)等价
 # 2026-11-28 - OmniAgent - 名单归一与 str fail-fast 改调 tools_alias_mapper.normalize_name_set():
 #   与 tool_loader.init_tools 共用同一实现, 消除重复表达式(DRY), 行为等价
+# 2026-11-28 小欧 - 过滤时对已注册名也 normalize_tool_name，exclude/tool_names 与执行层同源
 """
 
 from typing import Optional, Set
 
 from app.tools.tool_types import ToolCategory
-from app.tools.tools_alias_mapper import normalize_name_set
+from app.tools.tools_alias_mapper import normalize_name_set, normalize_tool_name
 from app.utils.display_utils import format_param_value
 
 
@@ -57,14 +58,14 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
     _exclude = normalize_name_set(exclude, "exclude")
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
         # 2026-11-27 小欧 - 黑名单先过滤: 被拒工具不该出现在 LLM 眼里(看得见却调不通=白耗轮次)
-        if name in _exclude:
+        if normalize_tool_name(name) in _exclude:
             continue
         # 2026-10-19 小欧 - 可见性单一判据(visible_to_llm = expose_to_llm and 依赖齐备):
         #   缺库工具不进 LLM 工具列表, 免得 LLM 试调一次才知不可用、白耗一轮。
         if not meta.visible_to_llm:
             continue
         if categories is not None and meta.category not in categories:
-            if name not in tool_names_set:
+            if normalize_tool_name(name) not in tool_names_set:
                 continue
         func_def = {
             "name": meta.name,

@@ -306,8 +306,10 @@ class ToolRegistry:
         return self._tools.get(normalize_tool_name(name))
 
     def get_implementation(self, name: str) -> Optional[Callable]:
-        """获取工具实现函数"""
-        return self._implementations.get(name)
+        """获取工具实现函数 — 精确匹配失败时归一工具名别名"""
+        if name in self._implementations:
+            return self._implementations[name]
+        return self._implementations.get(normalize_tool_name(name))
 
     def visible_in_steps(self, name: str) -> bool:
         """工具行是否进前端步骤流 —— 框架层唯一判据 — 小欧 2026-11-19

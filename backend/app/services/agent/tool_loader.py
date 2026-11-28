@@ -12,6 +12,7 @@
 #   (安全承诺不得静默降级), 构造期直接 TypeError; 名单统一过 normalize_tool_name, 写别名(write_file)同样生效
 # 2026-11-28 - OmniAgent - 名单归一与 str fail-fast 改调 tools_alias_mapper.normalize_name_set():
 #   与 tool_description.to_openai_tools 共用同一实现, 消除三处重复表达式(DRY), 行为等价
+# 2026-11-28 小欧 - 装载与动态注入时对已注册名也 normalize_tool_name，裸名/别名不能绕过拒绝或白名单
 """
 tool_loader — 工具加载器
 
