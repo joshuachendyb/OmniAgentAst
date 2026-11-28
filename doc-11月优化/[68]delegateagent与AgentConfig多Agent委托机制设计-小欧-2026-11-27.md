@@ -30,6 +30,7 @@
 - v2.15 2026-11-28 08:55:59 小欧 §6.2.3 S1 补 TDD 测试要求：新增 A–E 五组共 30 条用例设计（构造校验 / 集合语义与拒绝清单 / 注册表与单例 / manifest 容错 / 分层）、8 轮红绿节奏、可运行探针代码 `backend/tests/probe_delegate_s1_config.py` 与运行退出判据；并列出相对 §2.1 的四处字段类型收紧（`max_steps`/`timeout_s`/`tool_categories`/`track_task` 禁止隐式强转，沿用 S0 静默失效教训），`load_from_manifest` 的 `int()/float()` 解析保持不变
 - v2.16 2026-11-28 09:07:41 小欧 §6.2.3 S1 按 TDD 落码完成：新增 `backend/app/tools/agent/agent_config.py`（构造即校验含四处类型收紧、拒绝清单同源、注册表六方法、单例与内置 3 Agent、manifest 容错）；探针 `backend/tests/probe_delegate_s1_config.py` 首轮导入红 → 骨架断言红 51/22 → 全绿 73 passed，ruff 全过；§6.2.3 末尾补实施记录，并产出 `notes/阶段验收记录-S1-delegateagent-小欧-2026-11-28.md`
 - v2.17 2026-11-28 09:19:41 小欧 §6.2.4 S2 TDD 与落码完成：测试要求写入文档（A 失败收口与透传 / B ContextVar 隔离 / C Schema / D 分层，T01–T12），新增 `backend/tests/probe_delegate_s2_channel.py` 与两个设计内新文件 `delegateagent_schema.py`/`delegateagent.py`，`context.py` 追加 §2.4.1 原样代码；首轮导入红 → 12 passed / 0 failed，ruff 全过；澄清深度只按参考代码提供 `get_delegate_depth()`，不新增设计外包装函数；§6.2.4 末尾补实施记录，产出 `notes/阶段验收记录-S2-delegateagent-小欧-2026-11-28.md`
+- v2.18 2026-11-28 09:34:08 小欧 §6.2.5 S3 补 TDD 实施方法：新增 A 同步成功与显式拒绝 / B 只读与递归防护 / C 资源与收口 / D 台账·SSE·授权隔离 / E client 与构造失败共 16 条用例设计（T01–T16，逐条对应 16 项验收），明确「真实 LLM/工具/SQLite，只做观测型 spy + 唯一构造故障注入」的打点边界、8 轮红绿节奏与可运行探针 `backend/tests/probe_delegate_s3_runner.py`；不改本阶段验收口径与失败回退口径
 - v2.18 2026-11-28 09:33:49 小欧 三堂会审违规整改：①`agent_id` 正则由 `$` 锚点改全串 `fullmatch`，堵住结尾换行 fail-open，补 T02c 回归；②清除本次新增代码注释与参考代码块中的章节号/阶段号（`§6.2.3`/`S0`/`§2.7.2`/`§2.4.1`/`§2.5`/`§4.3`/`§2.2`/`§2.3`），只保留技术描述；③S1/S2 实施记录改为指向正文、不再指向阶段验收记录文件（按用户要求不再产出该类文件）；④整改后两探针 88 passed、定向回归 130 passed、ruff 全过、代码注释违规命中 0
 
 
@@ -2361,6 +2362,361 @@ def test_T12_no_services_import():
 **目标**：真跑通一次同步委托，并在同一阶段兑现"只读 + 递归 fail-closed + 耗时有界 + 作用域隔离"四项承诺。这是全设计的安全核心，验收项最多、最不允许"大概通过"。
 
 **改动面**：新增 `backend/app/services/agent/delegateagent_runner.py`（§2.5 全量：`run_delegate`/`_build_sub_task`/`_extract_summary`/`_delegate_scope`/`_run_child_guarded`/`_find_unattended_blocker`/`_close_quietly`/`_usage_of` + 深度硬顶 + model 分支）。
+
+**TDD 测试要求（先红后绿，安全项优先落绿）**：
+
+> 本阶段是全设计唯一同时触碰真实 LLM、真实工具注册表、真实 SQLite 与异步取消/超时的阶段，不能照搬 S1「1s 全绿」的节奏。纪律不变：**先写失败用例（红）→ 最小实现（绿）→ 重构（保持绿）**；禁止先落实现再补「能过就行」的用例，禁止为变绿而放宽断言（把 `pytest.raises` 改成 `except: pass`、把「summary 含超时」改成只判 `status`）。与 S1/S2 的差别只有两处：① 模块不存在时的 `ImportError` 不算红，第一步先落函数签名与四个早退分支（未知 id / 父已取消 / `wait=False` / 深度超限）让断言真正失败；② 真实 LLM 有随机性，断言只锁**结构与可判定事实**（`status`、summary 关键字、`usage/steps` 数值关系、耗时上界、DB/buffer 行），不锁完整文案。全程只允许两类**观测型**打点——构造器 spy（包装真构造器、记录子 Agent 实例）、client 工厂 spy（包装真工厂、记录独立 client 句柄）；唯一的行为替换是 T16 的构造故障注入，且必须 `finally` 还原。禁止 mock LLM 返回、禁止假 DB、禁止替换 `run_react_cycle` 实现。
+
+**测试文件**：`backend/tests/probe_delegate_s3_runner.py`（本地探针，按 §6.2.11 第 4 条不提交）。运行：`cd backend && python -m pytest tests/probe_delegate_s3_runner.py -v --timeout=90`（T10 含约 12s 超时窗口，单条上限 90s）。用例顺序 A→E 与下方红绿节奏同序。
+
+**A. 同步成功与显式拒绝（验收 1–4）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T01 | 同步成功契约 | 真实父 Agent + 真实 researcher，`task="一句话回答 1+1=几，不要调用工具"` → `status=="success"`、`summary` 非空且含 `2`、不含 `http`（排除原始网页罗列）、`usage.total_tokens>0`、`steps>=1`；spy 记录的子 `task_id` 匹配 `^sub-{父task}-researcher-[0-9a-f]{6}$` |
+| T02 | 未知 id | `agent_id="nope"` → error，summary 列出 `researcher`/`reviewer`/`kb_analyst`；spy 记录构造次数为 0（查表失败不得先建对象） |
+| T03 | wait=False 显式拒绝 | `wait=False` → error，summary 含「P1 能力，当前版本未实现」；构造次数为 0（不得静默按同步跑） |
+| T04 | 父已取消不启动 | `await register_task(父task)` → `await set_cancelled(父task)` → `run_delegate` 返回 error、summary 含「父任务已取消，跳过委托」，构造次数为 0；`finally cleanup_task` |
+
+**B. 只读与递归防护（验收 5–9，安全核心；任一红即不得进 S4）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T05 | 分类只读 | 取 spy 捕获的子 Agent → `_tools_dict` 键与 `DELEGATE_DENY_TOOLS` 交集为空（含 write/delete/move/copy/rename/edit/bash/question/schedule/delegateagent/execute_sql/screen_capture）；`_loaded_categories` 与 `{AGENT, SYSTEM, MEDIA, WIN_REGISTRY, DESKTOP, TIMER}` 交集为空 |
+| T06 | 动态灌回仍不可调 | 在子 Agent 实例上调 `_tool_loader.load_category(ToolCategory.AGENT)`（`_retry_engine` 与 `_tools_dict` 同一 dict 引用）→ `_tools_dict` 仍无 `question`/`schedule`；`invalidate_tool_cache` 后 `get_openai_tools` 的 function name 集合亦无；三处同源全部生效，红则回 S0 |
+| T07 | 子作用域回调清空 | spy 钩子只**观测** `run_react_cycle` 入口：`get_current_delegate_callback() is None` 且 `_current_delegate_depth.get()==1`（父侧预置 0）；钩子把结果记入列表而非在子任务内 `assert`（子任务异常会被 `run_delegate` 收口成 error，断言红信号会失真）；返回后父侧回调仍是注入值、深度仍为 0 |
+| T08 | 深度硬顶 | `tok=_current_delegate_depth.set(1)` → `run_delegate` 返回 error、summary 含「委托深度超限」；`finally reset(tok)` 后仍为 1（函数内不得 reset 调用方的 token） |
+| T09 | 确认类工具兜底 | 临时 `tool_registry.register` 一个 `needs_confirmation=True` 的 FUNDAMENTAL 工具 `s3_probe_confirm` → `run_delegate(agent_id="reviewer")` 返回 error、summary 含该工具名与「已拒绝委托」；`finally unregister` |
+
+**C. 资源与收口（验收 10–11）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T10 | 墙钟超时 | 临时注册 `timeout_s=5` 的 config，给一个明显超 5s 的任务（提示写 3000 字长文）→ error、summary 含「超时」；`elapsed <= timeout_s + runner._CANCEL_GRACE_S + 2×runner._POLL_S + 2`；随后再正常委托一次成功（证明子任务已收干净、buffer 未被撞）；不得靠加大 `_CANCEL_GRACE_S` 让用例变绿 |
+| T11 | 父取消联动 | `register_task(父task)` → `asyncio.create_task(run_delegate(...))`，轮询 spy 确认子 Agent 已构造后 `await set_cancelled(父task)` → 委托在 `<=2×_POLL_S+2` 内以 `asyncio.CancelledError` 结束并向上传播；`agent_streams` 无 `sub-` 前缀键；`finally cleanup_task`。任务提示要足够长，避免子任务抢先完成导致假绿 |
+
+**D. 台账 / SSE / 授权隔离（验收 12–14）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T12 | 台账与遥测 | 委托后查 `db.get_conn("task_tracker")` 的 `tasks`、`db.get_conn("chat")` 的 `chat_tasks`/`chat_task_steps`：`task_id LIKE 'sub-%'` 行数均为 0；子 `TaskTelemetry` 未 finalize 时既不在 `react_loop` 结尾抛异常也不留悬挂；父 `accumulated_usage` 深拷贝前后逐键相等（合并留给 S4） |
+| T13 | SSE 隔离 | `create_task_stream_buffer(父task,"")` 取 `event_log` 长度快照 → 委托后父 buffer 长度不变、子步骤只在日志出现；`agent_streams` 中 `sub-` 键为 0；`finally reclaim_memory_buffer(父task)` |
+| T14 | 授权不串味 | `temp_auth._authorized_paths.set({Path("F:/s3_probe"): True})` → 委托后父侧 `get_authorized()` 逐键相同（子侧 `clear_temp_auth` 只作用于 `copy_context()` 副本）；`finally` 用原 token reset |
+
+**E. client 与构造失败（验收 15–16）**
+
+| # | 场景 | 测试设计（输入 → 预期 → 断言） |
+|---|------|-------------------------------|
+| T15 | model 分支 | 临时 config 的 `model` 设为父 `llm_model.model`（确保走 `create_llm_client` 分支）→ 委托成功；factory spy 记录 1 个独立 client，`._client is not 父._client`；返回后独立 client `_client.is_closed is True`，父 `llm_client._client.is_closed is False` |
+| T16 | 构造失败收口 | 按验收第 16 项：`monkeypatch` 把 `runner.UniversalAgent` 临时替换为「构造即抛 `RuntimeError("构造故障注入")`」的可调用对象（只换构造器，不 mock LLM/工具/DB），model 非 None 走独立 client；factory spy 留句柄 → 返回 error、summary 含注入文案、句柄 `_client.is_closed is True`（`_close_quietly` 已执行）；`finally` 还原 |
+
+**打点边界（红绿之外的纪律）**：允许 = 构造器 spy / client 工厂 spy / T16 构造器故障注入 / 临时注册再注销探针工具；禁止 = 替换 `run_react_cycle`、替 LLM 返回固定摘要、用假 SQLite 连接、把 `DELEGATE_DENY_TOOLS` 临时改小来让 T05 变绿。每个 fixture 的 `monkeypatch`/`unregister`/`reclaim` 都必须在 `finally` 或 fixture 卸载时还原，否则下一条用例会出现「串味假红」。
+
+**红绿节奏（每轮只推进一组，全绿再进下一组）**：
+
+| 轮次 | 先写的红用例 | 让它变绿的最小实现 |
+|------|-------------|-------------------|
+| R1 | T02、T03、T04、T08 | 先落模块与函数签名 + 四个早退分支（查表 / 取消 / wait / 深度），不做任何子 Agent 构造 |
+| R2 | T01 | 查表后的成功路径：`_build_sub_task` / `_extract_summary` / `_usage_of` + `sub-{父}-{id}-{6hex}` 生成 |
+| R3 | T05、T06 | 只读分类扣减 + `DELEGATE_DENY_TOOLS` 三处同源（依赖 S0 的 `excluded_tools` 链） |
+| R4 | T07、T09 | `_child()` 内回调置 None + 深度 +1；`_find_unattended_blocker` 兜底 |
+| R5 | T10、T11 | `_run_child_guarded` 守卫协程：`timeout_s` 墙钟 + 父取消轮询 + cancel 后有界等待 |
+| R6 | T12、T13、T14 | `_delegate_scope` 私有 buffer + `copy_context()`，收口顺序「先收子任务、再回收 buffer」 |
+| R7 | T15、T16 | `config.model` 的独立 client 分支（复用父池）+ `try/except` 构造失败与 `_close_quietly` |
+| R8 | 回归 | 本探针 + S0/S1/S2 探针全跑、`ruff check` 全过；无 `skip`/`xfail` 才算本阶段可提交 |
+
+**测试代码**：
+
+```python
+# -*- coding: utf-8 -*-
+"""S3 子 Agent 运行器 TDD 探针 — 小欧 2026-11-28
+
+真实 LLM / 工具 / SQLite；只做构造器与 client 工厂的观测型 spy，唯一行为注入是 T16 的构造故障。
+所有 monkeypatch 在 fixture 卸载时还原；探针按仓库铁律不入库（§6.2.11 第 4 条）。
+运行：cd backend && python -m pytest tests/probe_delegate_s3_runner.py -v --timeout=90
+"""
+import asyncio
+import copy
+import os
+import re
+import time
+from pathlib import Path
+
+import pytest
+
+from app.db import database as db
+from app.db.models.chat_models import ModelRef
+from app.llm import client_sdk
+from app.llm.client_sdk import create_llm_client
+from app.safety import temp_auth
+from app.services.agent import delegateagent_runner as runner
+from app.services.agent.tool_cache_manager import get_openai_tools, invalidate_tool_cache
+from app.services.agent.universal_agent import UniversalAgent
+from app.services.model.resolver import get_ai_config_resolver
+from app.services.task import task_registry, task_state
+from app.tools import ensure_tools_registered
+from app.tools.agent.agent_config import DELEGATE_DENY_TOOLS, AgentConfig, get_agent_registry
+from app.tools.context import _current_delegate_depth, get_current_delegate_callback
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
+
+ensure_tools_registered()
+
+PARENT_TASK = "s3-probe-parent"
+_DENY_CATS = {ToolCategory.AGENT, ToolCategory.SYSTEM, ToolCategory.MEDIA,
+              ToolCategory.WIN_REGISTRY, ToolCategory.DESKTOP, ToolCategory.TIMER}
+_SHORT = "一句话回答：1+1等于几？不要调用工具。"
+_LONG = "请写一篇 3000 字的长文，逐段展开论述。"
+
+
+@pytest.fixture(scope="module")
+def parent_client():
+    resolver = get_ai_config_resolver()
+    ref = resolver.resolve_model_ref()
+    pcfg = resolver.get_service_config(ref.provider, ref.model)
+    api_key = str(pcfg.get("api_key") or "") or os.environ.get(f"{ref.provider.upper()}_API_KEY", "")
+    c = create_llm_client(ModelRef(provider=ref.provider, model=ref.model,
+                                   api_base=pcfg.get("api_base")), api_key)
+    yield c
+    asyncio.run(c.close())
+
+
+@pytest.fixture
+def parent(parent_client):
+    return UniversalAgent(llm_client=parent_client, task_id=PARENT_TASK,
+                          max_steps=4, track_task=False)
+
+
+@pytest.fixture
+def spy(monkeypatch):
+    """观测型打点：包装真构造器与真工厂，不改变行为；on_child 只记录断言结果。"""
+    seen = {"agents": [], "clients": [], "construct_calls": 0, "on_child": None, "hook": []}
+    real_agent, real_factory = runner.UniversalAgent, client_sdk.create_llm_client
+
+    def _agent(*a, **kw):
+        seen["construct_calls"] += 1
+        inst = real_agent(*a, **kw)
+        seen["agents"].append(inst)
+        if seen["on_child"] is not None:
+            orig = inst.run_react_cycle
+            async def _wrapped(*aa, **kk):
+                seen["hook"].append(seen["on_child"]())
+                return await orig(*aa, **kk)
+            inst.run_react_cycle = _wrapped
+        return inst
+
+    def _factory(*a, **kw):
+        c = real_factory(*a, **kw)
+        seen["clients"].append(c)
+        return c
+
+    monkeypatch.setattr(runner, "UniversalAgent", _agent)
+    monkeypatch.setattr(client_sdk, "create_llm_client", _factory)
+    return seen
+
+
+@pytest.fixture
+def temp_config():
+    made = []
+
+    def _add(agent_id, **kw):
+        cfg = AgentConfig(agent_id=agent_id, description="S3 探针临时配置",
+                          tool_categories={ToolCategory.FUNDAMENTAL}, max_steps=4, **kw)
+        get_agent_registry().register(cfg)
+        made.append(agent_id)
+        return cfg
+
+    yield _add
+    for aid in made:
+        get_agent_registry().unregister(aid)
+
+
+# ------------------------------------------------ A. 同步成功与显式拒绝（验收 1–4）
+def test_T01_sync_success(parent, spy):
+    r = asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+    assert r["status"] == "success"
+    assert r["summary"] and "2" in r["summary"] and "http" not in r["summary"]
+    assert r["usage"]["total_tokens"] > 0 and r["steps"] >= 1
+    assert re.fullmatch(rf"sub-{re.escape(PARENT_TASK)}-researcher-[0-9a-f]{{6}}",
+                        spy["agents"][0].task_id)
+
+
+def test_T02_unknown_id(parent, spy):
+    r = asyncio.run(runner.run_delegate(parent, "nope", "x"))
+    assert r["status"] == "error"
+    assert all(x in r["summary"] for x in ("researcher", "reviewer", "kb_analyst"))
+    assert spy["construct_calls"] == 0
+
+
+def test_T03_wait_false_rejected(parent, spy):
+    r = asyncio.run(runner.run_delegate(parent, "researcher", "x", wait=False))
+    assert r["status"] == "error" and "P1 能力，当前版本未实现" in r["summary"]
+    assert spy["construct_calls"] == 0
+
+
+def test_T04_parent_cancelled(parent, spy):
+    async def _main():
+        await task_registry.register_task(PARENT_TASK)
+        try:
+            await task_registry.set_cancelled(PARENT_TASK)
+            return await runner.run_delegate(parent, "researcher", "x")
+        finally:
+            await task_registry.cleanup_task(PARENT_TASK)
+
+    r = asyncio.run(_main())
+    assert r["status"] == "error" and "父任务已取消" in r["summary"]
+    assert spy["construct_calls"] == 0
+
+
+# ------------------------------------------------ B. 只读与递归防护（验收 5–9）
+def test_T05_readonly_toolset(parent, spy):
+    asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+    child = spy["agents"][0]
+    assert not (set(child._tools_dict) & DELEGATE_DENY_TOOLS)
+    assert not (set(child._loaded_categories) & _DENY_CATS)
+
+
+def test_T06_dynamic_load_still_denied(parent, spy):
+    asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+    child = spy["agents"][0]
+    child._tool_loader.load_category(ToolCategory.AGENT)   # 与 _tools_dict 同一引用
+    invalidate_tool_cache(child)
+    names = {t["function"]["name"] for t in get_openai_tools(child)}
+    assert not (set(child._tools_dict) & {"question", "schedule"})
+    assert not (names & {"question", "schedule"})
+
+
+def test_T07_child_scope_clears_callback(parent, spy, parent_client):
+    cb = object()
+    tok = runner.set_current_delegate_callback(cb)
+    spy["on_child"] = lambda: (get_current_delegate_callback() is None,
+                               _current_delegate_depth.get())
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+    finally:
+        runner.reset_current_delegate_callback(tok)
+    assert r["status"] == "success"
+    assert spy["hook"] == [(True, 1)]
+    assert get_current_delegate_callback() is cb
+    assert _current_delegate_depth.get() == 0
+
+
+def test_T08_depth_hard_cap(parent, spy):
+    tok = _current_delegate_depth.set(1)
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "researcher", "x"))
+        assert r["status"] == "error" and "委托深度超限" in r["summary"]
+        assert _current_delegate_depth.get() == 1
+    finally:
+        _current_delegate_depth.reset(tok)
+    assert spy["construct_calls"] == 0
+
+
+def test_T09_confirm_blocker(parent, spy):
+    name = "s3_probe_confirm"
+    tool_registry.register(name=name, description="探针确认工具", category=ToolCategory.FUNDAMENTAL,
+                           implementation=lambda **kw: {}, needs_confirmation=True)
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "reviewer", "x"))
+    finally:
+        tool_registry.unregister(name)
+    assert r["status"] == "error" and name in r["summary"] and "已拒绝委托" in r["summary"]
+
+
+# ------------------------------------------------ C. 资源与收口（验收 10–11）
+def test_T10_wall_clock_timeout(parent, spy, temp_config):
+    temp_config("s3_timeout", timeout_s=5)
+    t0 = time.monotonic()
+    r = asyncio.run(runner.run_delegate(parent, "s3_timeout", _LONG))
+    elapsed = time.monotonic() - t0
+    assert r["status"] == "error" and "超时" in r["summary"]
+    assert elapsed <= 5 + runner._CANCEL_GRACE_S + 2 * runner._POLL_S + 2
+    assert not any(k.startswith("sub-") for k in task_state.agent_streams)
+    assert asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))["status"] == "success"
+
+
+def test_T11_parent_cancel_linked(parent, spy):
+    async def _main():
+        await task_registry.register_task(PARENT_TASK)
+        try:
+            t = asyncio.create_task(runner.run_delegate(parent, "researcher", _LONG))
+            while not spy["agents"]:
+                await asyncio.sleep(0.02)
+            await task_registry.set_cancelled(PARENT_TASK)
+            t0 = time.monotonic()
+            with pytest.raises(asyncio.CancelledError):
+                await t
+            return time.monotonic() - t0
+        finally:
+            await task_registry.cleanup_task(PARENT_TASK)
+
+    elapsed = asyncio.run(_main())
+    assert elapsed <= 2 * runner._POLL_S + 2
+    assert not any(k.startswith("sub-") for k in task_state.agent_streams)
+
+
+# ------------------------------------------------ D. 台账 / SSE / 授权隔离（验收 12–14）
+def test_T12_no_ledger_rows(parent, spy):
+    before_usage = copy.deepcopy(parent.accumulated_usage)
+    asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+    with db.get_conn("task_tracker") as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE task_id LIKE ?",
+                            ("sub-%",)).fetchone()[0] == 0
+    with db.get_conn("chat") as conn:
+        assert conn.execute("SELECT COUNT(*) FROM chat_tasks WHERE task_id LIKE ?",
+                            ("sub-%",)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM chat_task_steps WHERE task_id LIKE ?",
+                            ("sub-%",)).fetchone()[0] == 0
+    assert parent.accumulated_usage == before_usage
+    assert spy["agents"][0].status is not None   # telemetry 未 finalize 也不抛
+
+
+def test_T13_sse_isolated(parent, spy):
+    buf = task_state.create_task_stream_buffer(PARENT_TASK, "")
+    n0 = len(buf.event_log)
+    try:
+        r = asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+        assert r["status"] == "success"
+        assert len(task_state.get_stream_buffer(PARENT_TASK).event_log) == n0
+        assert not any(k.startswith("sub-") for k in task_state.agent_streams)
+    finally:
+        task_state.reclaim_memory_buffer(PARENT_TASK)
+
+
+def test_T14_auth_not_leaked(parent, spy):
+    tok = temp_auth._authorized_paths.set({Path("F:/s3_probe"): True})
+    try:
+        before = dict(temp_auth.get_authorized())
+        asyncio.run(runner.run_delegate(parent, "researcher", _SHORT))
+        assert temp_auth.get_authorized() == before
+    finally:
+        temp_auth._authorized_paths.reset(tok)
+
+
+# ------------------------------------------------ E. client 与构造失败（验收 15–16）
+def test_T15_model_branch_reuses_parent_pool(parent, spy, parent_client, temp_config):
+    temp_config("s3_model", model=parent_client.llm_model.model)
+    r = asyncio.run(runner.run_delegate(parent, "s3_model", _SHORT))
+    assert r["status"] == "success"
+    assert len(spy["clients"]) == 1
+    assert spy["clients"][0]._client is not parent_client._client
+    assert spy["clients"][0]._client.is_closed is True
+    assert parent_client._client.is_closed is False
+
+
+def test_T16_construct_failure_closes_client(parent, spy, parent_client, temp_config, monkeypatch):
+    temp_config("s3_broken", model=parent_client.llm_model.model)
+
+    def _boom(*a, **kw):
+        raise RuntimeError("构造故障注入")
+
+    monkeypatch.setattr(runner, "UniversalAgent", _boom)   # 只换构造器
+    r = asyncio.run(runner.run_delegate(parent, "s3_broken", "x"))
+    assert r["status"] == "error" and "构造故障注入" in r["summary"]
+    assert spy["clients"] and spy["clients"][-1]._client.is_closed is True
+```
+
+**退出判据**：A–E 共 T01–T16 全绿（无 `skip`/`xfail`），且 1–16 项验收逐条有原始输出（日志/DB 查询/断言输出）支撑；安全项 B 组（第 5–9 项）与 C 组（第 10–11 项）任一红即停，不进 S4。探针按铁律不提交。
 
 **验收清单**：
 

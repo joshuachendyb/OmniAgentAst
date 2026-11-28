@@ -25,7 +25,7 @@ from typing import Optional, Set
 from app.logger import logger
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.tools.tools_alias_mapper import normalize_name_set
+from app.tools.tools_alias_mapper import normalize_name_set, normalize_tool_name
 
 
 class ToolLoader:
@@ -54,8 +54,9 @@ class ToolLoader:
         for cat in categories_to_load:
             cat_tools = tool_registry.get_implementations_by_category(cat)
             # 2026-11-27 小欧 - 拒绝清单过滤: 整类被拒时该分类不标记已加载(避免"标记=已实现"失配)
+            # 小欧 2026-11-28 BUG-2 整改：比对键归一到注册名，与 get_tool 执行口径同源
             _kept = {name: impl for name, impl in cat_tools.items()
-                     if name not in self.agent._excluded_tools}
+                     if normalize_tool_name(name) not in self.agent._excluded_tools}
             if _kept:
                 self.agent._tools_dict.update(_kept)
                 self.agent._loaded_categories.add(cat)
@@ -79,7 +80,9 @@ class ToolLoader:
             logger.info(f"[ToolLoader] 分类{category.value}无可用实现, 不标记为已加载")
             return False
         _excluded = getattr(self.agent, "_excluded_tools", ())
-        _kept = {name: impl for name, impl in cat_tools.items() if name not in _excluded}
+        # 小欧 2026-11-28 BUG-2 整改：动态灌回也按归一名比对，别名形态工具不得绕过
+        _kept = {name: impl for name, impl in cat_tools.items()
+                 if normalize_tool_name(name) not in _excluded}
         if not _kept:
             logger.info(f"[ToolLoader] 分类{category.value}工具全部在拒绝清单内, 不加载不标记")
             return False
