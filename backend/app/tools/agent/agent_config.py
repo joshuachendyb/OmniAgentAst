@@ -5,6 +5,8 @@
 小欧 2026-11-28 按 TDD 落码：补四类字段类型显式校验（禁止 int()/float() 隐式强转、
 tool_categories 只收 ToolCategory 集合、track_task 只收 bool），避免类型容错导致的静默失效；
 同轮修正 agent_id 为全串匹配，拒绝结尾换行
+小欧 2026-11-28 修正 manifest 外部输入容错：分类形状非法回落默认集合，描述非字符串直接拒绝，
+提示词非字符串回落空串，消除 str() 把 null/数字变成假描述与假提示词
 """
 import json
 import re
@@ -119,16 +121,27 @@ class AgentRegistry:
         try:
             if not isinstance(data, dict):
                 raise ValueError("manifest 顶层必须是对象")
+            raw_categories = data.get("tool_categories", ["fundamental"])
+            if not isinstance(raw_categories, (list, tuple, set)):
+                logger.warning(f"[AgentRegistry] 工具分类形状非法，回落 fundamental({path})")
+                raw_categories = ["fundamental"]
             categories: Set[ToolCategory] = set()
-            for name in data.get("tool_categories", ["fundamental"]):
+            for name in raw_categories:
                 try:
                     categories.add(ToolCategory(str(name)))
                 except ValueError:
                     logger.warning(f"[AgentRegistry] 未知工具分类 {name!r}，跳过")
+            description = data.get("description", "")
+            if not isinstance(description, str):
+                raise ValueError(f"description 须为字符串，收到 {type(description).__name__}")
+            system_prompt = data.get("system_prompt", "")
+            if not isinstance(system_prompt, str):
+                logger.warning(f"[AgentRegistry] system_prompt 形状非法，回落空串({path})")
+                system_prompt = ""
             config = AgentConfig(
                 agent_id=str(data["name"]),
-                description=str(data.get("description", "")),
-                system_prompt=str(data.get("system_prompt", "")),
+                description=description,
+                system_prompt=system_prompt,
                 tool_categories=categories or {ToolCategory.FUNDAMENTAL},
                 output_instruction=data.get("output_instruction"),
                 model=data.get("model"),
